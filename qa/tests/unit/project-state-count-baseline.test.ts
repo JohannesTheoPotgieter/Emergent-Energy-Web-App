@@ -2,17 +2,17 @@
  * Baseline harness for markProjectsActive + getProjectCounts.
  *
  * PURPOSE: Lock down the behavioral invariants of the project-state/count
- * cluster before extraction into a repository.
+ * cluster after extraction into ProjectStateRepository.
  *
- * In-scope methods:
- *   - markProjectsActive(activeNames: string[])  (server/storage.ts)
- *   - getProjectCounts()                          (server/storage.ts)
+ * Implementation now lives in:
+ *   - server/repositories/project-state-repository.ts
+ *
+ * Facade (unchanged interface) remains in:
+ *   - server/storage.ts
  *
  * These tests are source-structural: they read the implementation source and
  * assert that critical contracts have not drifted.  They do NOT require
  * a running database or mocks.
- *
- * After extraction, these tests verify the invariants hold in the new locations.
  */
 
 import fs from "node:fs";
@@ -20,6 +20,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 const STORAGE_PATH = path.join(process.cwd(), "server/storage.ts");
+const REPO_PATH = path.join(process.cwd(), "server/repositories/project-state-repository.ts");
 const SCHEMA_PATH = path.join(process.cwd(), "shared/schema/projects.ts");
 const CONSUMER_PATH = path.join(
   process.cwd(),
@@ -27,6 +28,7 @@ const CONSUMER_PATH = path.join(
 );
 
 const storageSource = fs.readFileSync(STORAGE_PATH, "utf8");
+const repoSource = fs.readFileSync(REPO_PATH, "utf8");
 const schemaSource = fs.readFileSync(SCHEMA_PATH, "utf8");
 const consumerSource = fs.readFileSync(CONSUMER_PATH, "utf8");
 
@@ -35,30 +37,32 @@ const consumerSource = fs.readFileSync(CONSUMER_PATH, "utf8");
 // ────────────────────────────────────────────────────────
 
 describe("markProjectsActive — method structure", () => {
-  // Extract the method body for targeted assertions
-  const methodStart = storageSource.indexOf(
-    "async markProjectsActive(activeNames: string[])",
-  );
-  const methodBlock = storageSource.slice(methodStart, methodStart + 1200);
-
-  it("exists as a public method on DatabaseStorage", () => {
-    expect(methodStart).toBeGreaterThan(-1);
-  });
-
-  it("declares correct signature: (activeNames: string[]) => Promise<void>", () => {
+  it("exists as a public method on DatabaseStorage (facade)", () => {
     expect(storageSource).toContain(
       "async markProjectsActive(activeNames: string[]): Promise<void>",
     );
   });
 
-  it("early-returns on empty array input", () => {
-    expect(methodBlock).toContain("if (activeNames.length === 0) return;");
+  it("facade delegates to projectStateRepository", () => {
+    expect(storageSource).toContain(
+      "this.projectStateRepository.markProjectsActive(activeNames)",
+    );
   });
 
   it("is declared in the IStorage interface", () => {
     expect(storageSource).toContain(
       "markProjectsActive(activeNames: string[]): Promise<void>",
     );
+  });
+
+  it("implementation exists in ProjectStateRepository", () => {
+    expect(repoSource).toContain(
+      "async markProjectsActive(activeNames: string[]): Promise<void>",
+    );
+  });
+
+  it("early-returns on empty array input (in repository)", () => {
+    expect(repoSource).toContain("if (activeNames.length === 0) return;");
   });
 });
 
@@ -67,10 +71,10 @@ describe("markProjectsActive — method structure", () => {
 // ────────────────────────────────────────────────────────
 
 describe("markProjectsActive — projectInfo table writes (post-remediation)", () => {
-  const methodStart = storageSource.indexOf(
+  const methodStart = repoSource.indexOf(
     "async markProjectsActive(activeNames: string[])",
   );
-  const methodBlock = storageSource.slice(methodStart, methodStart + 1500);
+  const methodBlock = repoSource.slice(methodStart, methodStart + 1500);
 
   it("touches updatedAt on projectInfo for active projects", () => {
     expect(methodBlock).toContain(".update(projectInfo)");
@@ -109,10 +113,10 @@ describe("markProjectsActive — projectInfo table writes (post-remediation)", (
 // ────────────────────────────────────────────────────────
 
 describe("markProjectsActive — dual-write to project_execution_state", () => {
-  const methodStart = storageSource.indexOf(
+  const methodStart = repoSource.indexOf(
     "async markProjectsActive(activeNames: string[])",
   );
-  const methodBlock = storageSource.slice(methodStart, methodStart + 1500);
+  const methodBlock = repoSource.slice(methodStart, methodStart + 1500);
 
   it("contains deprecation comment referencing 2026-03-31 observation window", () => {
     expect(methodBlock).toContain("deprecated 2026-03-31");
@@ -164,10 +168,10 @@ describe("markProjectsActive — dual-write to project_execution_state", () => {
 // ────────────────────────────────────────────────────────
 
 describe("markProjectsActive — PostgreSQL-specific behavior", () => {
-  const methodStart = storageSource.indexOf(
+  const methodStart = repoSource.indexOf(
     "async markProjectsActive(activeNames: string[])",
   );
-  const methodBlock = storageSource.slice(methodStart, methodStart + 1500);
+  const methodBlock = repoSource.slice(methodStart, methodStart + 1500);
 
   it("uses NOW() which is PostgreSQL/standard SQL (not SQLite compatible)", () => {
     expect(methodBlock).toContain("NOW()");
@@ -193,21 +197,30 @@ describe("markProjectsActive — PostgreSQL-specific behavior", () => {
 // ────────────────────────────────────────────────────────
 
 describe("getProjectCounts — method structure", () => {
-  it("exists as a public method on DatabaseStorage", () => {
+  it("exists as a public method on DatabaseStorage (facade)", () => {
     expect(storageSource).toContain("async getProjectCounts()");
   });
 
-  it("returns { active, historical, total } (not 'archived')", () => {
+  it("facade delegates to projectStateRepository", () => {
     expect(storageSource).toContain(
+      "this.projectStateRepository.getProjectCounts()",
+    );
+  });
+
+  it("returns { active, historical, total } (not 'archived')", () => {
+    expect(repoSource).toContain(
       "Promise<{ active: number; historical: number; total: number }>",
     );
   });
 
   it("is declared in the IStorage interface with matching return type", () => {
-    // The interface line should be above the implementation
     const interfaceDecl =
       "getProjectCounts(): Promise<{ active: number; historical: number; total: number }>";
     expect(storageSource).toContain(interfaceDecl);
+  });
+
+  it("implementation exists in ProjectStateRepository", () => {
+    expect(repoSource).toContain("async getProjectCounts()");
   });
 });
 
@@ -216,8 +229,8 @@ describe("getProjectCounts — method structure", () => {
 // ────────────────────────────────────────────────────────
 
 describe("getProjectCounts — query semantics", () => {
-  const methodStart = storageSource.indexOf("async getProjectCounts()");
-  const methodBlock = storageSource.slice(methodStart, methodStart + 600);
+  const methodStart = repoSource.indexOf("async getProjectCounts()");
+  const methodBlock = repoSource.slice(methodStart, methodStart + 600);
 
   it("counts active via LEFT JOIN with projectExecutionState on projectId", () => {
     expect(methodBlock).toContain(
@@ -256,8 +269,8 @@ describe("getProjectCounts — query semantics", () => {
 // ────────────────────────────────────────────────────────
 
 describe("getProjectCounts — LEFT JOIN behavior (active count)", () => {
-  const methodStart = storageSource.indexOf("async getProjectCounts()");
-  const methodBlock = storageSource.slice(methodStart, methodStart + 600);
+  const methodStart = repoSource.indexOf("async getProjectCounts()");
+  const methodBlock = repoSource.slice(methodStart, methodStart + 600);
 
   it("uses LEFT JOIN (projects without execution_state rows are included)", () => {
     // LEFT JOIN means: if a project_info row has no matching
@@ -282,17 +295,17 @@ describe("getProjectCounts — LEFT JOIN behavior (active count)", () => {
 
 describe("markProjectsActive ↔ getProjectCounts — semantic coupling", () => {
   it("markProjectsActive writes to project_execution_state.deleted_at", () => {
-    const methodStart = storageSource.indexOf(
+    const methodStart = repoSource.indexOf(
       "async markProjectsActive(activeNames: string[])",
     );
-    const methodBlock = storageSource.slice(methodStart, methodStart + 1500);
+    const methodBlock = repoSource.slice(methodStart, methodStart + 1500);
     expect(methodBlock).toContain("SET deleted_at = NULL");
     expect(methodBlock).toContain("SET deleted_at = NOW()");
   });
 
   it("getProjectCounts reads project_execution_state.deletedAt via isNull()", () => {
-    const methodStart = storageSource.indexOf("async getProjectCounts()");
-    const methodBlock = storageSource.slice(methodStart, methodStart + 600);
+    const methodStart = repoSource.indexOf("async getProjectCounts()");
+    const methodBlock = repoSource.slice(methodStart, methodStart + 600);
     expect(methodBlock).toContain(
       "isNull(projectExecutionState.deletedAt)",
     );
@@ -301,13 +314,13 @@ describe("markProjectsActive ↔ getProjectCounts — semantic coupling", () => 
   it("both methods agree on deleted_at as the active/inactive signal", () => {
     // markProjectsActive: active => deleted_at = NULL
     // getProjectCounts:   active => deletedAt IS NULL
-    // These are semantically coupled — extraction must preserve both
-    const markStart = storageSource.indexOf(
+    // These are semantically coupled and now co-located in the repository
+    const markStart = repoSource.indexOf(
       "async markProjectsActive(activeNames: string[])",
     );
-    const markBlock = storageSource.slice(markStart, markStart + 1500);
-    const countStart = storageSource.indexOf("async getProjectCounts()");
-    const countBlock = storageSource.slice(countStart, countStart + 600);
+    const markBlock = repoSource.slice(markStart, markStart + 1500);
+    const countStart = repoSource.indexOf("async getProjectCounts()");
+    const countBlock = repoSource.slice(countStart, countStart + 600);
 
     // Write side sets deleted_at = NULL for active
     expect(markBlock).toContain("deleted_at = NULL");
@@ -316,18 +329,18 @@ describe("markProjectsActive ↔ getProjectCounts — semantic coupling", () => 
   });
 
   it("markProjectsActive writes isActive boolean only via raw SQL (deprecated dual-write)", () => {
-    const methodStart = storageSource.indexOf(
+    const methodStart = repoSource.indexOf(
       "async markProjectsActive(activeNames: string[])",
     );
-    const methodBlock = storageSource.slice(methodStart, methodStart + 1500);
+    const methodBlock = repoSource.slice(methodStart, methodStart + 1500);
     // After remediation: isActive is only in the raw SQL path, not the Drizzle path
     expect(methodBlock).toContain("is_active = true");
     expect(methodBlock).toContain("is_active = false");
   });
 
   it("getProjectCounts does NOT read isActive — uses only deletedAt", () => {
-    const countStart = storageSource.indexOf("async getProjectCounts()");
-    const countBlock = storageSource.slice(countStart, countStart + 600);
+    const countStart = repoSource.indexOf("async getProjectCounts()");
+    const countBlock = repoSource.slice(countStart, countStart + 600);
     expect(countBlock).not.toContain("isActive");
     expect(countBlock).not.toContain("is_active");
   });
@@ -456,27 +469,53 @@ describe("markProjectsActive — schema drift remediation (isActive on projectIn
     expect(tableBlock).not.toContain("isActive");
   });
 
-  it("Drizzle .set() call no longer includes isActive field", () => {
+  it("Drizzle .set() call no longer includes isActive field (in repository)", () => {
     // After remediation: the .update(projectInfo).set() call only sets updatedAt.
     // The dead isActive writes have been removed.
     // Note: The word "isActive" still appears in explanatory comments,
     // so we check the actual .set() invocations, not comment text.
-    const methodStart = storageSource.indexOf(
+    const methodStart = repoSource.indexOf(
       "async markProjectsActive(activeNames: string[])",
     );
-    const methodBlock = storageSource.slice(methodStart, methodStart + 1500);
+    const methodBlock = repoSource.slice(methodStart, methodStart + 1500);
     expect(methodBlock).not.toContain(".set({ isActive: true");
     expect(methodBlock).not.toContain(".set({ isActive: false");
     expect(methodBlock).toContain(".set({ updatedAt: new Date() })");
   });
 
-  it("raw SQL path correctly writes is_active on project_execution_state only", () => {
-    const methodStart = storageSource.indexOf(
+  it("raw SQL path correctly writes is_active on project_execution_state only (in repository)", () => {
+    const methodStart = repoSource.indexOf(
       "async markProjectsActive(activeNames: string[])",
     );
-    const methodBlock = storageSource.slice(methodStart, methodStart + 1500);
+    const methodBlock = repoSource.slice(methodStart, methodStart + 1500);
     // is_active appears only in raw SQL targeting project_execution_state
     expect(methodBlock).toContain("UPDATE project_execution_state SET deleted_at = NULL, is_active = true");
     expect(methodBlock).toContain("UPDATE project_execution_state SET deleted_at = NOW(), is_active = false");
+  });
+});
+
+// ────────────────────────────────────────────────────────
+// SECTION 13 — extraction: repository injection pattern
+// ────────────────────────────────────────────────────────
+
+describe("extraction — ProjectStateRepository injection pattern", () => {
+  it("repository accepts optional db instance in constructor", () => {
+    expect(repoSource).toContain("constructor(dbInstance?: typeof db)");
+  });
+
+  it("repository falls back to default db when no instance injected", () => {
+    expect(repoSource).toContain("return this._dbInstance || db;");
+  });
+
+  it("DatabaseStorage creates repository with its own dbInstance", () => {
+    expect(storageSource).toContain(
+      "this.projectStateRepository = new ProjectStateRepository(this.dbInstance)",
+    );
+  });
+
+  it("DatabaseStorage imports ProjectStateRepository", () => {
+    expect(storageSource).toContain(
+      'import { ProjectStateRepository } from "./repositories/project-state-repository"',
+    );
   });
 });
