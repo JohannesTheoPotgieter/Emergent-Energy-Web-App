@@ -21,7 +21,7 @@ import { resolveStageFromPhase, isFullyCompletedPhase, stagesBefore } from "../s
 import { jwtAuth, requireAuth } from "./auth-context";
 import { bridgeCatch } from "./bridge/bridge-writer";
 import { computeMarginPct } from "./lib/finance/margin";
-import { isCanonicalCosRealised } from "./lib/finance/cos-realisation";
+import { isCanonicalCosRealised, OVERRIDE_REALISED, OVERRIDE_NOT_REALISED } from "./lib/finance/cos-realisation";
 import { paramStr } from "./lib/req-params";
 
 const EXEC_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"];
@@ -1012,8 +1012,8 @@ export function registerLifecycleRoutes(app: Express) {
         }
       }
 
-      const COS_REALISED_OVERRIDES = new Set(["COS REALISED", "REALISED"]);
-      const COS_NOT_REALISED_OVERRIDES = new Set(["PLANNED", "COMMITTED", "INVOICED", "APPROVED", "PAID"]);
+      const COS_REALISED_OVERRIDES = OVERRIDE_REALISED;
+      const COS_NOT_REALISED_OVERRIDES = OVERRIDE_NOT_REALISED;
       for (const row of costLines) {
         const amount = parseFloat(row.amountExVat || "0") || 0;
         const dateKey = pickFirstPopulatedDate(row as any, ["approvedDate", "invoiceDate", "paidDate"]);
