@@ -356,25 +356,7 @@ export function registerProjectInfoExtractedRoutes(app: Express): void {
     }
   });
 
-  // ==================== SINGLE PROJECT BY ID ====================
-
-  app.get("/api/projects/:id", requireAuth, async (req, res) => {
-    try {
-      const id = parseInt(String(req.params.id));
-      if (isNaN(id)) {
-        return res.status(400).json({ error: "Invalid project ID", message: "Project ID must be a number" });
-      }
-      const project = await storage.getProject(id);
-      if (!project) {
-        return res.status(404).json({ error: "Project not found", message: "Project not found" });
-      }
-      // Strip internal fields before responding
-      const { sourceFile, ...shaped } = project as any;
-      res.json(shaped);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch project", message: "Failed to fetch project" });
-    }
-  });
+  // GET /api/projects/:id — retired: department project-routes handler wins by registration order
 
   // ==================== PROJECT INFO / DETAIL MASTER / DIAGNOSTICS / READINESS ====================
 

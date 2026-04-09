@@ -210,6 +210,54 @@ The following conditions must ALL be true before extracting these methods into a
 - [ ] Add explicit transaction around the 3 DB operations
 - [ ] Collapse dual-write (`is_active` + `deleted_at`) to `deleted_at`-only after observation window (post 2026-04-30)
 
+### Post-observation-window cleanup: `isActive` bridge removal (DO NOT EXECUTE BEFORE 2026-04-30)
+
+**Status:** Observation window runs through ~2026-04-30 (30 days from 2026-03-31 deprecation).
+
+**Preconditions for removal:**
+1. Observation window has expired (on or after 2026-05-01)
+2. No production alerts or drift detected between `is_active` and `deleted_at`
+3. All consumers confirmed migrated to `deleted_at IS NULL` semantics
+
+**Cleanup targets (60+ server files, 14 shared schema files reference `isActive`/`is_active`):**
+
+Schema/migration:
+- `shared/schema/projects.ts` — remove `isActive` column definition from `projectInfo`
+- `shared/schema/soft-delete.ts` — review/remove `isActive` compatibility shims
+- `migrations/20260331_soft_delete_project_execution_state.sql` — already preserves `is_active`; create follow-up migration to `ALTER TABLE project_info DROP COLUMN is_active`
+
+Bridge writer:
+- `server/bridge/bridge-writer.ts` — remove `isActive` dual-write logic
+
+Repository:
+- `server/repositories/project-state-repository.ts` — remove `isActive` references, use `deleted_at`-only
+
+Fallback/compatibility:
+- `server/lib/project-info-fallback.ts` — remove `isActive: true` hardcoded default (line 177)
+- `server/lib/project-info-sync.ts` — remove any `isActive` sync logic
+- `server/services/promoted-read-compat.ts` — review `isActive` usage
+
+High-touch route files (sample — full audit needed):
+- `server/departments/project-routes.ts`
+- `server/departments/board-pack-routes.ts`
+- `server/routes/dashboard-routes.ts`
+- `server/storage.ts`
+- `server/importPipeline.ts`
+- `server/template-routes.ts`
+- ~50 additional route/service files
+
+Tests:
+- `qa/tests/unit/soft-delete-project-execution-state.test.ts` — update schema assertions
+- `qa/tests/unit/project-state-count-baseline.test.ts` — update deprecation tests
+
+**Approach:**
+1. Verify zero drift in production logs
+2. Remove dual-write from bridge-writer
+3. Update all read paths to `deleted_at IS NULL`
+4. Remove `isActive` from Drizzle schema
+5. Create migration to drop the column
+6. Update/remove compatibility tests
+
 ---
 
 ## 6. Risks and blind spots
