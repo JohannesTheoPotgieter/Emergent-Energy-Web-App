@@ -831,20 +831,7 @@ export class DatabaseStorage implements IStorage {
 
   async upsertProjectInfo(info: InsertProjectInfo): Promise<ProjectInfo> {
     const existing = await this.getProjectInfo((info as any).projectName);
-    if (existing) {
-      const { executionEnabled, ...updateFields } = info as any;
-      const [updated] = await this.dbInstance
-        .update(projectInfo)
-        .set({ ...updateFields, updatedAt: new Date() })
-        .where(eq(projectInfo.projectName, (info as any).projectName))
-        .returning();
-      await syncProjectSplitTables(updated.id, updateFields, this.dbInstance);
-      return updated;
-    }
-    const insertFields = { ...info, executionEnabled: false, updatedAt: new Date() };
-    const [created] = await this.dbInstance.insert(projectInfo).values(insertFields).returning();
-    await syncProjectSplitTablesAfterInsert(created.id, insertFields as any, this.dbInstance);
-    return created;
+    return this.projectInfoRepository.upsert(info, existing);
   }
 
   async deleteProjectInfo(projectName: string): Promise<void> {
