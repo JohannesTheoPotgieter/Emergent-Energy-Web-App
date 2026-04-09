@@ -12,6 +12,8 @@ import { FinanceExpenseEngineRepository } from "./repositories/finance-expense-e
 import { ProjectInfoRepository } from "./repositories/project-info-repository";
 import { ProjectInfoReadRepository } from "./repositories/project-info-read-repository";
 import { ProjectStateRepository } from "./repositories/project-state-repository";
+import { LegacyProjectReadRepository } from "./repositories/legacy-project-read-repository";
+import { mapProjectInfoToLegacyProject } from "./lib/legacy-project-mapper";
 import { shouldUseLegacyProjectInfoReadFallback, listLegacyCompatibleProjectInfo } from "./lib/project-info-fallback";
 import { softCloseByProjectName } from "./lib/temporal-helpers";
 import { eq, desc, and, or, gte, lte, isNull, sql, inArray, not, ilike } from "drizzle-orm";
@@ -433,6 +435,7 @@ export class DatabaseStorage implements IStorage {
   private readonly projectInfoRepository: ProjectInfoRepository;
   private readonly projectInfoReadRepository: ProjectInfoReadRepository;
   private readonly projectStateRepository: ProjectStateRepository;
+  private readonly legacyProjectReadRepository: LegacyProjectReadRepository;
 
   // Getter that always returns the current db (handles dynamic switching)
   private get dbInstance(): typeof db {
@@ -453,6 +456,7 @@ export class DatabaseStorage implements IStorage {
     this.projectInfoRepository = new ProjectInfoRepository(this.dbInstance);
     this.projectInfoReadRepository = new ProjectInfoReadRepository(this.dbInstance);
     this.projectStateRepository = new ProjectStateRepository(this.dbInstance);
+    this.legacyProjectReadRepository = new LegacyProjectReadRepository(this.dbInstance);
   }
   
   // Transaction support
@@ -490,24 +494,6 @@ export class DatabaseStorage implements IStorage {
 
   async createUser(user: InsertUser): Promise<User> {
     return this.usersRepository.create(user);
-  }
-
-  private mapProjectInfoToLegacyProject(project: any): Project {
-    const code = `PI-${String(project.id).padStart(5, "0")}`;
-    return {
-      id: project.id,
-      name: project.projectName,
-      code,
-      manager: project.pm || project.pd || "Unassigned",
-      site: "N/A",
-      status: (project.phase || "Planning") as any,
-      stage: (project.executionPhase || project.phase || "Development") as any,
-      startDate: project.constructionStartDate || project.pdHandoverDate || "",
-      completionDate: project.clientHandoverDate || project.omHandoverDate || "",
-      budget: project.contractValue || "0",
-      sourceFile: "project_info",
-      lastUpdated: project.updatedAt,
-    };
   }
 
   private mapCostLineToLegacyExpense(line: typeof normalizedCostLines.$inferSelect, projectId: number): Expense {
@@ -557,30 +543,20 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  // Projects (legacy)
+  // Projects (legacy) — delegated to LegacyProjectReadRepository
   async getAllProjects(): Promise<Project[]> {
-    try {
-      const rows = await this.dbInstance.select().from(projectInfo).orderBy(desc(projectInfo.updatedAt));
-      return rows.map((p: any) => this.mapProjectInfoToLegacyProject(p));
-    } catch (error) {
-      if (shouldUseLegacyProjectInfoReadFallback(error)) {
-        const rows = await listLegacyCompatibleProjectInfo(this.dbInstance);
-        return rows.map((p: any) => this.mapProjectInfoToLegacyProject(p));
-      }
-      throw error;
-    }
+    return this.legacyProjectReadRepository.getAll();
   }
 
   async getProject(id: number): Promise<Project | undefined> {
-    const [project] = await this.dbInstance.select().from(projectInfo).where(eq(projectInfo.id, id));
-    return project ? this.mapProjectInfoToLegacyProject(project) : undefined;
+    return this.legacyProjectReadRepository.getById(id);
   }
 
   async getProjectByCode(code: string): Promise<Project | undefined> {
     const id = Number.parseInt(code.replace(/\D+/g, ""), 10);
     if (Number.isNaN(id)) return undefined;
     const [project] = await this.dbInstance.select().from(projectInfo).where(eq(projectInfo.id, id));
-    return project ? this.mapProjectInfoToLegacyProject(project) : undefined;
+    return project ? mapProjectInfoToLegacyProject(project) : undefined;
   }
 
   async createProject(project: InsertProject): Promise<Project> {
@@ -596,7 +572,7 @@ export class DatabaseStorage implements IStorage {
     };
     const [created] = await this.dbInstance.insert(projectInfo).values(insertFields as any).returning();
     await syncProjectSplitTablesAfterInsert(created.id, insertFields, this.dbInstance);
-    return this.mapProjectInfoToLegacyProject(created);
+    return mapProjectInfoToLegacyProject(created);
   }
 
   async updateProject(id: number, project: Partial<InsertProject>): Promise<Project | undefined> {
@@ -617,7 +593,7 @@ export class DatabaseStorage implements IStorage {
     if (updated) {
       await syncProjectSplitTables(id, payload, this.dbInstance);
     }
-    return updated ? this.mapProjectInfoToLegacyProject(updated) : undefined;
+    return updated ? mapProjectInfoToLegacyProject(updated) : undefined;
   }
 
   async deleteProject(id: number): Promise<boolean> {
