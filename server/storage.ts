@@ -6,7 +6,8 @@ import { SupportTicketsRepository } from "./repositories/support-tickets-reposit
 import { MytoolStateRepository } from "./repositories/mytool-state-repository";
 import { ProjectSupportRepository } from "./repositories/project-support-repository";
 import { FinanceSupportRepository } from "./repositories/finance-support-repository";
-import { softCloseByProjectName, addTemporalColumns } from "./lib/temporal-helpers";
+import { FinanceTemporalRepository } from "./repositories/finance-temporal-repository";
+import { softCloseByProjectName } from "./lib/temporal-helpers";
 import { getExpenseBusinessKey, selectWinningExpenseRows } from "./lib/expense-row-selector";
 import { eq, desc, and, or, gte, lte, isNotNull, isNull, sql, inArray, count, not, ilike } from "drizzle-orm";
 import {
@@ -15,7 +16,6 @@ import {
   cashflowPoints, financeRevenueMonthly, financeCosMonthly,
   workingPlanScenario, projectPlanDependency,
   workingPlanDependencyOverride, scheduleChangeNotice,
-  projectRevenueSummary,
   taskComments, taskChecklists, taskChecklistItems, taskAttachments, taskActivityLog, writebackMappings, writebackAuditLog,
   type User, type InsertUser,
   type Project, type InsertProject,
@@ -422,6 +422,7 @@ export class DatabaseStorage implements IStorage {
   private readonly mytoolStateRepository: MytoolStateRepository;
   private readonly projectSupportRepository: ProjectSupportRepository;
   private readonly financeSupportRepository: FinanceSupportRepository;
+  private readonly financeTemporalRepository: FinanceTemporalRepository;
 
   // Getter that always returns the current db (handles dynamic switching)
   private get dbInstance(): typeof db {
@@ -436,6 +437,7 @@ export class DatabaseStorage implements IStorage {
     this.mytoolStateRepository = new MytoolStateRepository(this.dbInstance);
     this.projectSupportRepository = new ProjectSupportRepository(this.dbInstance);
     this.financeSupportRepository = new FinanceSupportRepository(this.dbInstance);
+    this.financeTemporalRepository = new FinanceTemporalRepository(this.dbInstance);
   }
   
   // Transaction support
@@ -1587,97 +1589,55 @@ export class DatabaseStorage implements IStorage {
     await this.deleteProjectPlansByProject(projectName);
   }
 
-  // Cashflow Points (new)
+  // Cashflow Points (repository extracted)
   async getAllCashflowPoints(): Promise<CashflowPoint[]> {
-    return this.dbInstance.select().from(cashflowPoints).where(isNull(cashflowPoints.effectiveTo)).orderBy(desc(cashflowPoints.createdAt));
+    return this.financeTemporalRepository.getAllCashflowPoints();
   }
 
   async getCashflowPointsByProject(projectName: string): Promise<CashflowPoint[]> {
-    return this.dbInstance.select().from(cashflowPoints).where(and(eq(cashflowPoints.projectName, projectName), isNull(cashflowPoints.effectiveTo)));
+    return this.financeTemporalRepository.getCashflowPointsByProject(projectName);
   }
 
   async createManyCashflowPoints(pointList: InsertCashflowPoint[]): Promise<CashflowPoint[]> {
-    if (pointList.length === 0) return [];
-    // Explicitly provide timestamp for SQLite compatibility
-    const now = new Date();
-    const withTimestamps = pointList.map(p => ({ ...p, createdAt: now }));
-    
-    // Batch inserts to avoid SQLite variable limit (max ~999 variables, each row has ~6 fields)
-    const batchSize = 100;
-    const results: CashflowPoint[] = [];
-    for (let i = 0; i < withTimestamps.length; i += batchSize) {
-      const batch = withTimestamps.slice(i, i + batchSize);
-      const batchResults = await this.dbInstance.insert(cashflowPoints).values(batch).returning();
-      results.push(...batchResults);
-    }
-    return results;
+    return this.financeTemporalRepository.createManyCashflowPoints(pointList);
   }
 
   async deleteCashflowPointsByProject(projectName: string): Promise<void> {
-    // Temporal: soft-close instead of hard delete (Prompt 10)
-    await softCloseByProjectName(this.dbInstance, "cashflow_points", projectName);
+    return this.financeTemporalRepository.deleteCashflowPointsByProject(projectName);
   }
 
-  // Finance Revenue Monthly (new)
+  // Finance Revenue Monthly (repository extracted)
   async getAllFinanceRevenueMonthly(): Promise<FinanceRevenueMonthly[]> {
-    return this.dbInstance.select().from(financeRevenueMonthly).where(isNull(financeRevenueMonthly.effectiveTo)).orderBy(desc(financeRevenueMonthly.createdAt));
+    return this.financeTemporalRepository.getAllFinanceRevenueMonthly();
   }
 
   async getFinanceRevenueMonthlyByProject(projectName: string): Promise<FinanceRevenueMonthly[]> {
-    return this.dbInstance.select().from(financeRevenueMonthly).where(and(eq(financeRevenueMonthly.projectName, projectName), isNull(financeRevenueMonthly.effectiveTo)));
+    return this.financeTemporalRepository.getFinanceRevenueMonthlyByProject(projectName);
   }
 
   async createManyFinanceRevenueMonthly(dataList: InsertFinanceRevenueMonthly[]): Promise<FinanceRevenueMonthly[]> {
-    if (dataList.length === 0) return [];
-    // Explicitly provide timestamp for SQLite compatibility
-    const now = new Date();
-    const withTimestamps = dataList.map(d => ({ ...d, createdAt: now }));
-    
-    // Batch inserts to avoid SQLite variable limit
-    const batchSize = 100;
-    const results: FinanceRevenueMonthly[] = [];
-    for (let i = 0; i < withTimestamps.length; i += batchSize) {
-      const batch = withTimestamps.slice(i, i + batchSize);
-      const batchResults = await this.dbInstance.insert(financeRevenueMonthly).values(batch).returning();
-      results.push(...batchResults);
-    }
-    return results;
+    return this.financeTemporalRepository.createManyFinanceRevenueMonthly(dataList);
   }
 
   async deleteFinanceRevenueMonthlyByProject(projectName: string): Promise<void> {
-    // Temporal: soft-close instead of hard delete (Prompt 10)
-    await softCloseByProjectName(this.dbInstance, "finance_revenue_monthly", projectName);
+    return this.financeTemporalRepository.deleteFinanceRevenueMonthlyByProject(projectName);
   }
 
-  // Finance COS Monthly (new)
+  // Finance COS Monthly (repository extracted)
   async getAllFinanceCosMonthly(): Promise<FinanceCosMonthly[]> {
-    return this.dbInstance.select().from(financeCosMonthly).where(isNull(financeCosMonthly.effectiveTo)).orderBy(desc(financeCosMonthly.createdAt));
+    return this.financeTemporalRepository.getAllFinanceCosMonthly();
   }
 
   async getFinanceCosMonthlyByProject(projectName: string): Promise<FinanceCosMonthly[]> {
-    return this.dbInstance.select().from(financeCosMonthly).where(and(eq(financeCosMonthly.projectName, projectName), isNull(financeCosMonthly.effectiveTo)));
+    return this.financeTemporalRepository.getFinanceCosMonthlyByProject(projectName);
   }
 
   async createManyFinanceCosMonthly(dataList: InsertFinanceCosMonthly[]): Promise<FinanceCosMonthly[]> {
-    if (dataList.length === 0) return [];
-    // Explicitly provide timestamp for SQLite compatibility
-    const now = new Date();
-    const withTimestamps = dataList.map(d => ({ ...d, createdAt: now }));
-    
-    // Batch inserts to avoid SQLite variable limit
-    const batchSize = 100;
-    const results: FinanceCosMonthly[] = [];
-    for (let i = 0; i < withTimestamps.length; i += batchSize) {
-      const batch = withTimestamps.slice(i, i + batchSize);
-      const batchResults = await this.dbInstance.insert(financeCosMonthly).values(batch).returning();
-      results.push(...batchResults);
-    }
-    return results;
+    return this.financeTemporalRepository.createManyFinanceCosMonthly(dataList);
   }
 
   async deleteFinanceCosMonthlyByProject(projectName: string): Promise<void> {
-    // Temporal: soft-close instead of hard delete (Prompt 10)
-    await softCloseByProjectName(this.dbInstance, "finance_cos_monthly", projectName);
+    return this.financeTemporalRepository.deleteFinanceCosMonthlyByProject(projectName);
   }
 
   // ===================== INLINE EDIT METHODS (replaces override tables) =====================
@@ -1867,31 +1827,17 @@ export class DatabaseStorage implements IStorage {
     return { tablesCleared, filesDeleted };
   }
 
-  // Project Revenue Summary
+  // Project Revenue Summary (repository extracted)
   async getAllProjectRevenueSummaries(): Promise<ProjectRevenueSummary[]> {
-    return this.dbInstance.select().from(projectRevenueSummary).where(isNull(projectRevenueSummary.effectiveTo));
+    return this.financeTemporalRepository.getAllProjectRevenueSummaries();
   }
 
   async getProjectRevenueSummary(projectName: string): Promise<ProjectRevenueSummary | undefined> {
-    const results = await this.dbInstance.select().from(projectRevenueSummary).where(and(eq(projectRevenueSummary.projectName, projectName), isNull(projectRevenueSummary.effectiveTo)));
-    return results[0];
+    return this.financeTemporalRepository.getProjectRevenueSummary(projectName);
   }
 
   async upsertProjectRevenueSummary(data: InsertProjectRevenueSummary): Promise<ProjectRevenueSummary> {
-    const existing = await this.getProjectRevenueSummary((data as any).projectName);
-    if (existing) {
-      // Temporal: soft-close old row, insert new version (Prompt 10)
-      await softCloseByProjectName(this.dbInstance, "project_revenue_summary", (data as any).projectName);
-      const inserted = await this.dbInstance.insert(projectRevenueSummary)
-        .values(addTemporalColumns({ ...data, capturedAt: new Date() }) as any)
-        .returning();
-      return inserted[0];
-    } else {
-      const inserted = await this.dbInstance.insert(projectRevenueSummary)
-        .values(addTemporalColumns(data) as any)
-        .returning();
-      return inserted[0];
-    }
+    return this.financeTemporalRepository.upsertProjectRevenueSummary(data);
   }
 
   // Milestone Task Links
