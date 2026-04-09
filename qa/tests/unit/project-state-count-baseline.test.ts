@@ -63,44 +63,44 @@ describe("markProjectsActive — method structure", () => {
 });
 
 // ────────────────────────────────────────────────────────
-// SECTION 2 — markProjectsActive: projectInfo table writes
+// SECTION 2 — markProjectsActive: projectInfo table writes (post-remediation)
 // ────────────────────────────────────────────────────────
 
-describe("markProjectsActive — projectInfo table writes", () => {
+describe("markProjectsActive — projectInfo table writes (post-remediation)", () => {
   const methodStart = storageSource.indexOf(
     "async markProjectsActive(activeNames: string[])",
   );
-  const methodBlock = storageSource.slice(methodStart, methodStart + 1200);
+  const methodBlock = storageSource.slice(methodStart, methodStart + 1500);
 
-  it("updates projectInfo to set isActive=true for matching names", () => {
+  it("touches updatedAt on projectInfo for active projects", () => {
     expect(methodBlock).toContain(".update(projectInfo)");
-    expect(methodBlock).toContain("isActive: true");
+    expect(methodBlock).toContain("updatedAt: new Date()");
     expect(methodBlock).toContain(
       "inArray(projectInfo.projectName, activeNames)",
     );
   });
 
-  it("sets updatedAt on active rows", () => {
-    expect(methodBlock).toContain("updatedAt: new Date()");
+  it("does NOT set isActive on projectInfo (column dropped in migration 20260337)", () => {
+    // After remediation: only updatedAt is set on projectInfo.
+    // The .set() call should contain ONLY updatedAt, not isActive.
+    const setCallStart = methodBlock.indexOf(".set({ updatedAt: new Date() })");
+    expect(setCallStart).toBeGreaterThan(-1);
+    // The actual .set() invocation uses only updatedAt — no isActive key
+    // (The word "isActive" appears in explanatory comments but not in .set() calls)
+    expect(methodBlock).not.toContain(".set({ isActive: true");
+    expect(methodBlock).not.toContain(".set({ isActive: false");
   });
 
-  it("updates projectInfo to set isActive=false for non-matching names", () => {
-    expect(methodBlock).toContain("isActive: false");
-    expect(methodBlock).toContain(
-      "not(inArray(projectInfo.projectName, activeNames))",
-    );
+  it("does NOT update projectInfo for non-active projects (no second Drizzle update)", () => {
+    // Previously there was a second .update(projectInfo).set({ isActive: false })
+    // that targeted all non-matching rows. That was dead code (empty SET clause
+    // at runtime) and has been removed.
+    const drizzleUpdates = methodBlock.split(".update(projectInfo)").length - 1;
+    expect(drizzleUpdates).toBe(1);
   });
 
-  it("updates ALL non-matching rows (not scoped by additional filters)", () => {
-    // The second update uses only NOT IN — no additional WHERE clauses
-    // This means every row not in activeNames becomes inactive
-    const secondUpdate = methodBlock.slice(
-      methodBlock.indexOf("isActive: false"),
-    );
-    const nextSemicolon = secondUpdate.indexOf(";");
-    const updateClause = secondUpdate.slice(0, nextSemicolon);
-    // Should NOT contain AND or additional filtering beyond not(inArray(...))
-    expect(updateClause).not.toContain(".and(");
+  it("documents the migration that dropped is_active from project_info", () => {
+    expect(methodBlock).toContain("migration 20260337");
   });
 });
 
@@ -112,10 +112,14 @@ describe("markProjectsActive — dual-write to project_execution_state", () => {
   const methodStart = storageSource.indexOf(
     "async markProjectsActive(activeNames: string[])",
   );
-  const methodBlock = storageSource.slice(methodStart, methodStart + 1200);
+  const methodBlock = storageSource.slice(methodStart, methodStart + 1500);
 
   it("contains deprecation comment referencing 2026-03-31 observation window", () => {
     expect(methodBlock).toContain("deprecated 2026-03-31");
+  });
+
+  it("documents project_execution_state as sole source of truth", () => {
+    expect(methodBlock).toContain("project_execution_state is the sole source of truth");
   });
 
   it("uses raw SQL for project_execution_state updates (not Drizzle ORM)", () => {
@@ -163,7 +167,7 @@ describe("markProjectsActive — PostgreSQL-specific behavior", () => {
   const methodStart = storageSource.indexOf(
     "async markProjectsActive(activeNames: string[])",
   );
-  const methodBlock = storageSource.slice(methodStart, methodStart + 1200);
+  const methodBlock = storageSource.slice(methodStart, methodStart + 1500);
 
   it("uses NOW() which is PostgreSQL/standard SQL (not SQLite compatible)", () => {
     expect(methodBlock).toContain("NOW()");
@@ -177,10 +181,10 @@ describe("markProjectsActive — PostgreSQL-specific behavior", () => {
     expect(methodBlock).toContain("!= ALL(");
   });
 
-  it("relies on 4 sequential database operations (no transaction wrapper)", () => {
-    // Count distinct DB calls in the method
+  it("relies on 3 sequential database operations (no transaction wrapper)", () => {
+    // 1x Drizzle update (projectInfo.updatedAt) + 2x raw SQL (project_execution_state)
     const dbCalls = methodBlock.split("this.dbInstance").length - 1;
-    expect(dbCalls).toBe(4);
+    expect(dbCalls).toBe(3);
   });
 });
 
@@ -281,7 +285,7 @@ describe("markProjectsActive ↔ getProjectCounts — semantic coupling", () => 
     const methodStart = storageSource.indexOf(
       "async markProjectsActive(activeNames: string[])",
     );
-    const methodBlock = storageSource.slice(methodStart, methodStart + 1200);
+    const methodBlock = storageSource.slice(methodStart, methodStart + 1500);
     expect(methodBlock).toContain("SET deleted_at = NULL");
     expect(methodBlock).toContain("SET deleted_at = NOW()");
   });
@@ -301,7 +305,7 @@ describe("markProjectsActive ↔ getProjectCounts — semantic coupling", () => 
     const markStart = storageSource.indexOf(
       "async markProjectsActive(activeNames: string[])",
     );
-    const markBlock = storageSource.slice(markStart, markStart + 1200);
+    const markBlock = storageSource.slice(markStart, markStart + 1500);
     const countStart = storageSource.indexOf("async getProjectCounts()");
     const countBlock = storageSource.slice(countStart, countStart + 600);
 
@@ -311,14 +315,12 @@ describe("markProjectsActive ↔ getProjectCounts — semantic coupling", () => 
     expect(countBlock).toContain("isNull(projectExecutionState.deletedAt)");
   });
 
-  it("markProjectsActive also writes isActive boolean (deprecated, dual-write)", () => {
+  it("markProjectsActive writes isActive boolean only via raw SQL (deprecated dual-write)", () => {
     const methodStart = storageSource.indexOf(
       "async markProjectsActive(activeNames: string[])",
     );
-    const methodBlock = storageSource.slice(methodStart, methodStart + 1200);
-    // Both the Drizzle path and the raw SQL path set isActive
-    expect(methodBlock).toContain("isActive: true");
-    expect(methodBlock).toContain("isActive: false");
+    const methodBlock = storageSource.slice(methodStart, methodStart + 1500);
+    // After remediation: isActive is only in the raw SQL path, not the Drizzle path
     expect(methodBlock).toContain("is_active = true");
     expect(methodBlock).toContain("is_active = false");
   });
@@ -443,20 +445,10 @@ describe("consumer map — getProjectCounts", () => {
 });
 
 // ────────────────────────────────────────────────────────
-// SECTION 12 — markProjectsActive: isActive on projectInfo (schema drift bug)
+// SECTION 12 — markProjectsActive: schema drift remediation verification
 // ────────────────────────────────────────────────────────
 
-describe("markProjectsActive — schema drift: isActive on projectInfo", () => {
-  it("code still references isActive on projectInfo (Drizzle ORM path)", () => {
-    const methodStart = storageSource.indexOf(
-      "async markProjectsActive(activeNames: string[])",
-    );
-    const methodBlock = storageSource.slice(methodStart, methodStart + 400);
-    // Lines 843-850: Drizzle .update(projectInfo).set({ isActive: ... })
-    expect(methodBlock).toContain(".update(projectInfo)");
-    expect(methodBlock).toContain("isActive: true");
-  });
-
+describe("markProjectsActive — schema drift remediation (isActive on projectInfo)", () => {
   it("projectInfo schema does NOT have isActive (dropped in 20260337)", () => {
     const tableStart = schemaSource.indexOf('pgTable("project_info"');
     const tableEnd = schemaSource.indexOf("});", tableStart);
@@ -464,18 +456,27 @@ describe("markProjectsActive — schema drift: isActive on projectInfo", () => {
     expect(tableBlock).not.toContain("isActive");
   });
 
-  it("KNOWN BUG: Drizzle update of isActive on projectInfo will fail at runtime", () => {
-    // This test documents the schema drift.
-    // The column was dropped in migration 20260337_drop_moved_columns_project_info.sql
-    // but the code at lines 843-850 still tries to set it.
-    //
-    // Runtime behavior depends on whether Drizzle silently ignores unknown columns
-    // or throws an error. Either way, the Drizzle path is broken.
-    //
-    // The raw SQL dual-write path (lines 854-862) targeting project_execution_state
-    // is correct and is the path that actually maintains state.
-    //
-    // EXTRACTION GATE: This drift must be resolved before extraction.
-    expect(true).toBe(true); // Documenting the known issue
+  it("Drizzle .set() call no longer includes isActive field", () => {
+    // After remediation: the .update(projectInfo).set() call only sets updatedAt.
+    // The dead isActive writes have been removed.
+    // Note: The word "isActive" still appears in explanatory comments,
+    // so we check the actual .set() invocations, not comment text.
+    const methodStart = storageSource.indexOf(
+      "async markProjectsActive(activeNames: string[])",
+    );
+    const methodBlock = storageSource.slice(methodStart, methodStart + 1500);
+    expect(methodBlock).not.toContain(".set({ isActive: true");
+    expect(methodBlock).not.toContain(".set({ isActive: false");
+    expect(methodBlock).toContain(".set({ updatedAt: new Date() })");
+  });
+
+  it("raw SQL path correctly writes is_active on project_execution_state only", () => {
+    const methodStart = storageSource.indexOf(
+      "async markProjectsActive(activeNames: string[])",
+    );
+    const methodBlock = storageSource.slice(methodStart, methodStart + 1500);
+    // is_active appears only in raw SQL targeting project_execution_state
+    expect(methodBlock).toContain("UPDATE project_execution_state SET deleted_at = NULL, is_active = true");
+    expect(methodBlock).toContain("UPDATE project_execution_state SET deleted_at = NOW(), is_active = false");
   });
 });

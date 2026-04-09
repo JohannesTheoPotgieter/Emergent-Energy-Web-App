@@ -840,17 +840,21 @@ export class DatabaseStorage implements IStorage {
 
   async markProjectsActive(activeNames: string[]): Promise<void> {
     if (activeNames.length === 0) return;
-    await this.dbInstance
-      .update(projectInfo)
-      .set({ isActive: true, updatedAt: new Date() })
-      .where(inArray(projectInfo.projectName, activeNames));
-    await this.dbInstance
-      .update(projectInfo)
-      .set({ isActive: false })
-      .where(not(inArray(projectInfo.projectName, activeNames)));
 
-    // Dual-write: sync soft-delete to project_execution_state
-    // isActive kept in sync during 30-day observation window (deprecated 2026-03-31)
+    // Touch updated_at on project_info for active projects (identity-table timestamp only).
+    // NOTE: is_active was dropped from project_info in migration 20260337.
+    // The Drizzle schema no longer includes isActive on projectInfo, so the
+    // previous Drizzle writes of isActive were silently ignored (op 1) or
+    // produced invalid SQL (op 2).  Removed in this remediation —
+    // project_execution_state is the sole source of truth.
+    await this.dbInstance
+      .update(projectInfo)
+      .set({ updatedAt: new Date() })
+      .where(inArray(projectInfo.projectName, activeNames));
+
+    // Canonical state writes: project_execution_state owns active/archived.
+    // is_active is maintained alongside deleted_at during the 30-day
+    // observation window (deprecated 2026-03-31).
     await this.dbInstance.execute(sql`
       UPDATE project_execution_state SET deleted_at = NULL, is_active = true, updated_at = NOW()
       WHERE project_id IN (SELECT id FROM project_info WHERE project_name = ANY(${activeNames}))

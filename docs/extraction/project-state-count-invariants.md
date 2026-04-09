@@ -1,15 +1,15 @@
 # markProjectsActive + getProjectCounts — Behavioral Invariants
 
 > Baseline document for extraction wave.
-> Source: `server/storage.ts` lines 841–877 (as of 2026-04-09).
+> Source: `server/storage.ts` lines 841–867 (as of 2026-04-09, updated after remediation).
 > Do NOT modify this doc unless the production code changes first.
 
 ## Methods in scope
 
 | Method | Visibility | Lines | Role |
 |--------|-----------|-------|------|
-| `markProjectsActive(activeNames: string[])` | public (IStorage) | 841–863 | State writer — marks projects active/archived via dual-write |
-| `getProjectCounts()` | public (IStorage) | 865–877 | State reader — returns active/historical/total counts |
+| `markProjectsActive(activeNames: string[])` | public (IStorage) | 841–867 | State writer — marks projects active/archived |
+| `getProjectCounts()` | public (IStorage) | 869–881 | State reader — returns active/historical/total counts |
 
 ---
 
@@ -25,42 +25,48 @@ async markProjectsActive(activeNames: string[]): Promise<void>
 
 `activeNames.length === 0` → early return, no DB calls.
 
-### Database operations (4 sequential, no transaction)
+### Database operations (3 sequential, no transaction)
 
 | # | Target table | Method | SQL behavior | Platform |
 |---|-------------|--------|-------------|----------|
-| 1 | `project_info` | Drizzle `.update()` | SET isActive=true, updatedAt=new Date() WHERE project_name IN activeNames | Portable (Drizzle) |
-| 2 | `project_info` | Drizzle `.update()` | SET isActive=false WHERE project_name NOT IN activeNames | Portable (Drizzle) |
-| 3 | `project_execution_state` | Raw SQL `execute()` | SET deleted_at=NULL, is_active=true, updated_at=NOW() WHERE project_id IN (SELECT id FROM project_info WHERE project_name = ANY(activeNames)) | **PostgreSQL-only** |
-| 4 | `project_execution_state` | Raw SQL `execute()` | SET deleted_at=NOW(), is_active=false, updated_at=NOW() WHERE project_id IN (SELECT id FROM project_info WHERE project_name != ALL(activeNames)) AND deleted_at IS NULL | **PostgreSQL-only** |
+| 1 | `project_info` | Drizzle `.update()` | SET updatedAt=new Date() WHERE project_name IN activeNames | Portable (Drizzle) |
+| 2 | `project_execution_state` | Raw SQL `execute()` | SET deleted_at=NULL, is_active=true, updated_at=NOW() WHERE project_id IN (SELECT id FROM project_info WHERE project_name = ANY(activeNames)) | **PostgreSQL-only** |
+| 3 | `project_execution_state` | Raw SQL `execute()` | SET deleted_at=NOW(), is_active=false, updated_at=NOW() WHERE project_id IN (SELECT id FROM project_info WHERE project_name != ALL(activeNames)) AND deleted_at IS NULL | **PostgreSQL-only** |
 
-### CRITICAL BUG: Operations 1 & 2 reference dropped column
+### REMEDIATED: Dead Drizzle writes to projectInfo.isActive removed (2026-04-09)
 
 - Migration `20260337_drop_moved_columns_project_info.sql` (line 36) dropped `is_active` from `project_info`.
 - The Drizzle schema at `shared/schema/projects.ts:100–119` has NO `isActive` column.
-- Operations 1 & 2 attempt to set `isActive` on `projectInfo` via Drizzle ORM.
-- **Runtime behavior**: Drizzle may silently ignore the unknown field, or may throw. Either way, this is dead code — operations 3 & 4 are the actual state writers.
+- The previous code had two Drizzle `.update(projectInfo).set({ isActive: ... })` calls that were dead code:
+  - **Operation 1** (old): `.set({ isActive: true, updatedAt })` — Drizzle's `buildUpdateSet` silently dropped `isActive` (not in `tableColumns`), only `updatedAt` was written.
+  - **Operation 2** (old): `.set({ isActive: false })` — Drizzle produced an empty SET clause → invalid SQL → runtime crash before reaching the raw SQL path.
+- **Fix**: Removed both dead writes. Operation 1 now sets only `updatedAt`. Operation 2 removed entirely. `project_execution_state` is the sole source of truth.
 
 ### Semantic rules
 
 - **"Active"** = `project_execution_state.deleted_at IS NULL` (AND `is_active = true`, deprecated)
 - **"Archived"** = `project_execution_state.deleted_at IS NOT NULL` (AND `is_active = false`, deprecated)
-- The method marks ALL rows not in `activeNames` as archived (operations 2 & 4)
-- Operation 4 has an idempotent guard: `AND deleted_at IS NULL` — already-archived rows are not re-archived
+- The method marks ALL rows not in `activeNames` as archived (operation 3)
+- Operation 3 has an idempotent guard: `AND deleted_at IS NULL` — already-archived rows are not re-archived
 
 ### PostgreSQL-specific constructs
 
 | Construct | Used in | SQLite equivalent |
 |-----------|---------|-------------------|
-| `= ANY(array)` | Operation 3 | `IN (...)` |
-| `!= ALL(array)` | Operation 4 | `NOT IN (...)` |
-| `NOW()` | Operations 3 & 4 | `datetime('now')` |
+| `= ANY(array)` | Operation 2 | `IN (...)` |
+| `!= ALL(array)` | Operation 3 | `NOT IN (...)` |
+| `NOW()` | Operations 2 & 3 | `datetime('now')` |
 
 ### Transaction safety
 
-There is **no explicit transaction** wrapping the 4 operations. If operation 3 succeeds but operation 4 fails, the database will be in an inconsistent state where:
+There is **no explicit transaction** wrapping the 3 operations. If operation 2 succeeds but operation 3 fails, the database will be in an inconsistent state where:
 - Some projects are correctly active in `project_execution_state`
 - But non-active projects have not been archived in `project_execution_state`
+
+**Decision (2026-04-09)**: Transaction wrapping is deferred to the extraction task. Rationale:
+- All consumers are admin-only, low-concurrency operations
+- The existing behavior has been running without transactions
+- Adding a transaction is a behavior change best made during extraction with proper testing
 
 ---
 
@@ -132,7 +138,7 @@ This is intentional — newly created projects may not yet have an execution_sta
 | Normal operation | Sets deleted_at correctly | Reads deleted_at | Yes |
 | project_info row with no execution_state | Subquery finds id, but no execution_state row to update | LEFT JOIN → NULL → counts as active | **Possible disagreement** |
 | Empty activeNames | Early return (no-op) | Reads current state | N/A |
-| Partial failure (op 3 succeeds, op 4 fails) | Some rows updated, some not | Reads inconsistent state | **Disagreement** |
+| Partial failure (op 2 succeeds, op 3 fails) | Some rows updated, some not | Reads inconsistent state | **Disagreement** |
 
 ### isActive vs deletedAt divergence
 
@@ -186,24 +192,23 @@ The following conditions must ALL be true before extracting these methods into a
 
 ### Must-fix before extraction
 
-- [ ] **Schema drift resolved**: Drizzle `.update(projectInfo).set({ isActive: ... })` references a dropped column. Must either remove those lines or replace with updatedAt-only update.
-- [ ] **Transaction wrapper evaluated**: 4 sequential DB operations with no transaction — document whether partial failure is acceptable or whether extraction should add a transaction.
+- [x] **Schema drift resolved** (2026-04-09): Dead Drizzle writes to `projectInfo.isActive` removed. Operation 1 now sets only `updatedAt`. Operation 2 (empty SET) removed entirely. `project_execution_state` is sole source of truth.
+- [x] **Transaction wrapper evaluated** (2026-04-09): 3 sequential DB operations with no transaction. Decision: acceptable for now — all consumers are admin-only, low-concurrency. Transaction wrapping deferred to extraction task.
+- [x] **isActive deprecation status** (2026-04-09): Deprecated 2026-03-31, 9 days past. Observation window still running (30 days → expires ~2026-04-30). Dual-write of `is_active` + `deleted_at` maintained during extraction. Can collapse to `deleted_at`-only after 2026-04-30.
 
-### Must-verify before extraction
+### Must-verify during extraction
 
 - [ ] **Before/after count equality**: Run `getProjectCounts()` before and after extraction — results must match.
-- [ ] **Active/archive semantics documented**: `deleted_at IS NULL` = active (confirmed in this doc).
-- [ ] **SQL portability assumptions documented**: `ANY()`, `!= ALL()`, `NOW()` are PostgreSQL-only (confirmed in this doc).
-- [ ] **All direct consumers verified**: 6 call sites in 1 file (confirmed in this doc).
-- [ ] **Orphan project behavior documented**: projects without execution_state rows count as active (confirmed in this doc).
+- [x] **Active/archive semantics documented**: `deleted_at IS NULL` = active (confirmed in this doc).
+- [x] **SQL portability assumptions documented**: `ANY()`, `!= ALL()`, `NOW()` are PostgreSQL-only (confirmed in this doc).
+- [x] **All direct consumers verified**: 6 call sites in 1 file (confirmed in this doc).
+- [x] **Orphan project behavior documented**: projects without execution_state rows count as active (confirmed in this doc).
 - [ ] **No unresolved environment-specific behavior**: SQLite will fail on the raw SQL path — confirm dev environment uses PostgreSQL or confirm raw SQL path is not exercised in dev.
-- [ ] **isActive deprecation timeline**: is_active column deprecated 2026-03-31, 30-day observation window. Confirm whether dual-write can be removed during extraction.
 
-### Nice-to-have before extraction
+### Nice-to-have during extraction
 
-- [ ] Add explicit transaction around the 4 DB operations
-- [ ] Remove dead Drizzle writes to projectInfo.isActive
-- [ ] Collapse dual-write (isActive + deletedAt) to deletedAt-only after observation window
+- [ ] Add explicit transaction around the 3 DB operations
+- [ ] Collapse dual-write (`is_active` + `deleted_at`) to `deleted_at`-only after observation window (post 2026-04-30)
 
 ---
 
@@ -211,8 +216,8 @@ The following conditions must ALL be true before extracting these methods into a
 
 | Risk | Severity | Detail |
 |------|----------|--------|
-| Schema drift on projectInfo.isActive | HIGH | Drizzle ORM may throw at runtime; needs runtime verification |
-| No transaction wrapper | MEDIUM | Partial failure leaves inconsistent state |
+| ~~Schema drift on projectInfo.isActive~~ | ~~HIGH~~ | **RESOLVED** — dead writes removed 2026-04-09 |
+| No transaction wrapper | MEDIUM | Partial failure leaves inconsistent state; deferred to extraction |
 | PostgreSQL-only raw SQL | MEDIUM | Dev/test environments using SQLite will fail on raw SQL path |
 | Orphan project counting | LOW | Known and intentional, but must be preserved during extraction |
 | `|| 0` falsy coercion | LOW | `count()` returns number, but `|| 0` would mask a genuine 0 count if chained differently |
