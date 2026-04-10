@@ -25,6 +25,8 @@ import { RevenueTrackingTab } from "@/components/tabs/RevenueTrackingTab";
 import { ExpenditureEditableTab } from "@/components/tabs/ExpenditureEditableTab";
 // Legacy finance tab imports removed — revenue/GP/COS now under PD department
 import { CashflowTab } from "@/components/tabs/CashflowTab";
+import { MonthlyRealisationTab } from "@/components/tabs/MonthlyRealisationTab";
+import { GpTrackerTab } from "@/components/tabs/GpTrackerTab";
 import { ProjectSubcontractorsTab } from "@/components/tabs/ProjectSubcontractorsTab";
 import TaskDetailDrawer from "@/components/TaskDetailDrawer";
 import BoardView from "@/components/BoardView";
@@ -1705,6 +1707,8 @@ export default function ProjectDetailPage() {
             {[
               { key: "revenue", label: "Revenue", icon: DollarSign, visible: canViewSubTab.revenue },
               { key: "cost-lines", label: "Cost Lines", icon: CreditCard, visible: canViewSubTab.expenditure },
+              { key: "cos-tracker", label: "COS Tracker", icon: CheckCircle, visible: canViewSubTab.expenditure },
+              { key: "gp-tracker", label: "GP Tracker", icon: TrendingUp, visible: canViewSubTab.revenue && canViewSubTab.expenditure },
               { key: "cashflow", label: "Cashflow", icon: Activity, visible: canViewSubTab.cashflow },
               { key: "procurement", label: "Procurement", icon: CreditCard, visible: true },
               { key: "subcontractors", label: "Subs", icon: Users, visible: canViewSubTab.subcontractors },
@@ -1722,6 +1726,8 @@ export default function ProjectDetailPage() {
 
           {activeSubTab === "revenue" && canViewSubTab.revenue && <RevenueTrackingTab projectName={projectName} highlightId={highlightType === 'revenue' ? highlightId : null} />}
           {activeSubTab === "cost-lines" && canViewSubTab.expenditure && <ExpenditureEditableTab projectName={projectName} projectId={projectInfoId ?? null} highlightId={highlightType === 'expense' ? highlightId : null} initialFilter={costFilter || undefined} />}
+          {activeSubTab === "cos-tracker" && canViewSubTab.expenditure && <MonthlyRealisationTab projectName={projectName} projectId={projectInfoId ?? null} />}
+          {activeSubTab === "gp-tracker" && canViewSubTab.revenue && canViewSubTab.expenditure && <GpTrackerTab projectName={projectName} projectId={projectInfoId ?? null} />}
           {activeSubTab === "cashflow" && canViewSubTab.cashflow && <CashflowTab projectName={projectName} canOverrideFinance={v2Perms?.canOverrideFinance ?? false} />}
           {activeSubTab === "procurement" && projectInfoId && <ProjectProcurementTab projectId={projectInfoId} projectName={projectName} initialFilter={procurementFilter || undefined} />}
           {activeSubTab === "subcontractors" && canViewSubTab.subcontractors && <ProjectSubcontractorsTab projectName={projectName} />}
