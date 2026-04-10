@@ -47,6 +47,7 @@ import {
   categoryRevenueAllocations,
 } from "@shared/schema";
 import { normalizeCategoryKey } from "./lib/import/normalizer";
+import { materializeDerivatives } from "./lib/import/derivative-materializer";
 import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { softCloseByProjectId, softCloseByProjectName, softCloseByImportRunId, addTemporalColumns } from "./lib/temporal-helpers";
 import { recordImportChange, recordSystemEvent } from "./lib/audit/diff-engine";
@@ -2057,6 +2058,73 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
             updates.updatedAt = new Date();
             await tx.update(projectInfo).set(updates).where(eq(projectInfo.id, projectId));
             await syncProjectSplitTables(projectId, updates, tx);
+          }
+        }
+
+        // ── S12: Post-commit derivative materializer ──
+        // Refresh program_expense, program_inflows, and project_revenue_summary
+        // from canonical data so legacy consumers see fresh data after v2 commit.
+        // This is a COMPATIBILITY mechanism — see derivative-materializer.ts.
+        try {
+          const matResult = await materializeDerivatives({
+            tx, projectId, projectName, runId, commitTimestamp, norm,
+          });
+          console.log(`[SmartImport] v2 derivative materialization: ${matResult.programInflowsWritten} PI, ${matResult.programExpenseWritten} PE, PRS=${matResult.projectRevenueSummaryUpdated}`);
+        } catch (matErr: unknown) {
+          // Derivative materialization failure is non-blocking for the canonical commit.
+          // Log and continue — canonical data is committed successfully.
+          console.warn("[SmartImport] Derivative materialization failed (non-blocking):", (matErr instanceof Error ? matErr.message : String(matErr)));
+        }
+
+        // ── S13: Canonical expense_task_links re-linking ──
+        // After v2 commit creates new NCL rows (soft-close + insert for CHANGED),
+        // update canonical_expense_id on expense_task_links to point to the new IDs.
+        if (costResult && (costResult.counts.updated > 0 || costResult.counts.inserted > 0)) {
+          try {
+            // Build old→new NCL ID map from the commit result.
+            // updatedIds = old IDs that were soft-closed, insertedIds = new IDs that replaced them.
+            // For CHANGED rows, updatedIds[i] is the old ID and insertedIds[i] is the new ID
+            // (both arrays are populated in parallel by writeExpenditureIncremental).
+            const oldToNewNcl = new Map<number, number>();
+            if (costResult.updatedIds && costResult.insertedIds) {
+              for (let i = 0; i < costResult.updatedIds.length; i++) {
+                if (i < costResult.insertedIds.length) {
+                  oldToNewNcl.set(costResult.updatedIds[i], costResult.insertedIds[i]);
+                }
+              }
+            }
+
+            // Also build a set of all current active NCL IDs for orphan detection
+            const activeNclIds = new Set<number>();
+            const activeNclForLinks = await tx.select({ id: normalizedCostLines.id })
+              .from(normalizedCostLines)
+              .where(and(eq(normalizedCostLines.projectId, projectId), isNull(normalizedCostLines.effectiveTo)));
+            for (const r of activeNclForLinks) activeNclIds.add(r.id);
+
+            // Fetch links for this project that have canonical_expense_id set
+            const projectLinks = await tx.select().from(expenseTaskLinks)
+              .where(eq(expenseTaskLinks.projectName, projectName));
+
+            for (const link of projectLinks) {
+              const canonId = link.canonicalExpenseId;
+              if (canonId == null) continue;
+
+              // If the canonical ID was soft-closed (old ID), remap to the new ID
+              if (oldToNewNcl.has(canonId)) {
+                await tx.update(expenseTaskLinks)
+                  .set({ canonicalExpenseId: oldToNewNcl.get(canonId)! })
+                  .where(eq(expenseTaskLinks.id, link.id));
+              }
+              // If the canonical ID no longer points to an active NCL row
+              // (and wasn't remapped), clear it so it can be re-resolved
+              else if (!activeNclIds.has(canonId)) {
+                await tx.update(expenseTaskLinks)
+                  .set({ canonicalExpenseId: null })
+                  .where(eq(expenseTaskLinks.id, link.id));
+              }
+            }
+          } catch (linkErr: unknown) {
+            console.warn("[SmartImport] Canonical link re-pointing failed (non-blocking):", (linkErr instanceof Error ? linkErr.message : String(linkErr)));
           }
         }
 
