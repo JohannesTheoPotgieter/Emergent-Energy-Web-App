@@ -30,13 +30,13 @@ export const standupMoodEnum = pgEnum('standup_mood', ['great', 'good', 'okay', 
 
 export const notifications = pgTable("notifications", {
   id: serial("id").primaryKey(),
-  recipientUserId: integer("recipient_user_id").notNull().references(() => users.id),
+  recipientUserId: integer("recipient_user_id").notNull().references(() => users.id, { onDelete: "set null" }),
   eventType: text("event_type").notNull(),
   title: text("title").notNull(),
   body: text("body"),
   /** @deprecated Denormalized display field. Use projectId FK + join instead. */
   projectName: text("project_name"),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
   linkedTaskId: integer("linked_task_id"),
   linkedDeliverableId: integer("linked_deliverable_id"),
   linkedWarningId: integer("linked_warning_id"),
@@ -58,7 +58,7 @@ export type Notification = typeof notifications.$inferSelect;
 
 export const notificationThrottle = pgTable("notification_throttle", {
   id: serial("id").primaryKey(),
-  recipientUserId: integer("recipient_user_id").notNull().references(() => users.id),
+  recipientUserId: integer("recipient_user_id").notNull().references(() => users.id, { onDelete: "set null" }),
   eventType: text("event_type").notNull(),
   entityType: text("entity_type").notNull(),
   entityId: integer("entity_id").notNull(),
@@ -114,18 +114,18 @@ export const approvals = pgTable("approvals", {
   title: text("title").notNull(),
   description: text("description"),
   status: approvalStatusEnum("status").notNull().default('pending'),
-  requestedBy: integer("requested_by").notNull().references(() => users.id),
+  requestedBy: integer("requested_by").notNull().references(() => users.id, { onDelete: "set null" }),
   requestedAt: timestamp("requested_at").notNull().defaultNow(),
-  decidedBy: integer("decided_by").references(() => users.id),
+  decidedBy: integer("decided_by").references(() => users.id, { onDelete: "set null" }),
   decidedAt: timestamp("decided_at"),
   decisionNote: text("decision_note"),
   token: text("token"),
   expiresAt: timestamp("expires_at"),
   relatedEntityType: text("related_entity_type"),
   relatedEntityId: integer("related_entity_id"),
-  assignedApprover: integer("assigned_approver").references(() => users.id),
+  assignedApprover: integer("assigned_approver").references(() => users.id, { onDelete: "set null" }),
   dueDate: timestamp("due_date"),
-  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   approvalCategory: text("approval_category"),
   // B8: Universal approval engine extensions
   approvalType: text("approval_type"),          // 'handover', 'budget', 'vo', 'procurement', 'gate', 'handover_pack', 'exception', 'hse_incident', 'hse_corrective_action', 'sseg_application', 'sseg_document', 'quality_ncr', 'quality_inspection', 'contract', 'general'
@@ -146,7 +146,7 @@ export type Approval = typeof approvals.$inferSelect;
 
 export const supportTickets = pgTable("support_tickets", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id),
+  userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
   summary: text("summary").notNull(),
   stepsToReproduce: text("steps_to_reproduce").notNull(),
   currentRoute: text("current_route"),
@@ -184,14 +184,14 @@ export const entityAssignments = pgTable("entity_assignments", {
   id: serial("id").primaryKey(),
   entityType: text("entity_type").notNull(),
   entityId: integer("entity_id").notNull(),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
   assignmentRole: text("assignment_role").notNull().default("ASSIGNEE"),
   assigneeType: text("assignee_type").notNull(),
   assigneeId: integer("assignee_id").notNull(),
   displayLabelSnapshot: text("display_label_snapshot").notNull(),
   active: boolean("active").notNull().default(true),
-  assignedByUserId: integer("assigned_by_user_id").references(() => users.id),
-  clearedByUserId: integer("cleared_by_user_id").references(() => users.id),
+  assignedByUserId: integer("assigned_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  clearedByUserId: integer("cleared_by_user_id").references(() => users.id, { onDelete: "set null" }),
   assignedAt: timestamp("assigned_at").notNull().defaultNow(),
   clearedAt: timestamp("cleared_at"),
   metadata: jsonb("metadata"),
@@ -216,7 +216,7 @@ export const auditEvents = pgTable("audit_events", {
   changesJson: jsonb("changes_json"),
   /** @deprecated Denormalized display field. Use projectId FK + join instead. */
   projectName: text("project_name"),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
   correlationId: text("correlation_id"),
   ipAddress: text("ip_address"),
   requestPath: text("request_path"),
@@ -367,7 +367,7 @@ export type EeInfoNodeMetric = typeof eeInfoNodeMetrics.$inferSelect;
 
 export const userBadges = pgTable("user_badges", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => users.id),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "set null" }),
   badgeKey: text("badge_key").notNull(),
   awardedAt: timestamp("awarded_at").notNull().defaultNow(),
   meta: jsonb("meta"),
@@ -376,7 +376,7 @@ export type UserBadge = typeof userBadges.$inferSelect;
 
 export const userPoints = pgTable("user_points", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => users.id),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "set null" }),
   points: integer("points").notNull().default(0),
   category: text("category").notNull(),
   description: text("description"),
@@ -429,10 +429,10 @@ export const teamsChatGroups = pgTable("teams_chat_groups", {
   department: text("department"),
   /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name"),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
   teamsChatId: text("teams_chat_id"),
   description: text("description"),
-  createdBy: integer("created_by").references(() => users.id),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -445,7 +445,7 @@ export const teamsChatMembers = pgTable("teams_chat_members", {
   groupId: integer("group_id").notNull().references(() => teamsChatGroups.id, { onDelete: "cascade" }),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   role: text("role").notNull().default("member"),
-  addedBy: integer("added_by").references(() => users.id),
+  addedBy: integer("added_by").references(() => users.id, { onDelete: "set null" }),
   addedAt: timestamp("added_at").notNull().defaultNow(),
 });
 export const insertTeamsChatMemberSchema = createInsertSchema(teamsChatMembers).omit({ id: true, addedAt: true } as any);
@@ -455,7 +455,7 @@ export type TeamsChatMember = typeof teamsChatMembers.$inferSelect;
 export const teamsChatMessages = pgTable("teams_chat_messages", {
   id: serial("id").primaryKey(),
   groupId: integer("group_id").notNull().references(() => teamsChatGroups.id, { onDelete: "cascade" }),
-  senderUserId: integer("sender_user_id").references(() => users.id),
+  senderUserId: integer("sender_user_id").references(() => users.id, { onDelete: "set null" }),
   senderName: text("sender_name"),
   content: text("content").notNull(),
   teamsMessageId: text("teams_message_id"),
@@ -474,7 +474,7 @@ export type TeamsChatMessage = typeof teamsChatMessages.$inferSelect;
 
 export const dashboardWidgetConfig = pgTable("dashboard_widget_config", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => users.id),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "set null" }),
   widgetOrder: jsonb("widget_order").notNull().$type<string[]>(),
   hiddenWidgets: jsonb("hidden_widgets").notNull().$type<string[]>(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -777,7 +777,7 @@ export const standupSchedules = pgTable("standup_schedules", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   teamLabel: text("team_label"),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
   cadence: standupCadenceEnum("cadence").notNull().default("EVERY_2_DAYS"),
   cadenceDays: integer("cadence_days").notNull().default(2),
   anchorDate: text("anchor_date").notNull(),
@@ -785,8 +785,8 @@ export const standupSchedules = pgTable("standup_schedules", {
   deadlineTimezone: text("deadline_timezone").notNull().default("Africa/Johannesburg"),
   isActive: boolean("is_active").notNull().default(true), // TODO: migrate to deletedAt pattern
   deletedAt: timestamp("deleted_at"),
-  deletedBy: integer("deleted_by").references(() => users.id),
-  createdBy: integer("created_by").references(() => users.id),
+  deletedBy: integer("deleted_by").references(() => users.id, { onDelete: "set null" }),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -797,7 +797,7 @@ export type StandupSchedule = typeof standupSchedules.$inferSelect;
 export const standupParticipants = pgTable("standup_participants", {
   id: serial("id").primaryKey(),
   scheduleId: integer("schedule_id").notNull().references(() => standupSchedules.id, { onDelete: "cascade" }),
-  userId: integer("user_id").notNull().references(() => users.id),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "set null" }),
   isRequired: boolean("is_required").notNull().default(true),
   addedAt: timestamp("added_at").notNull().defaultNow(),
 });
@@ -808,7 +808,7 @@ export type StandupParticipant = typeof standupParticipants.$inferSelect;
 export const standupEntries = pgTable("standup_entries", {
   id: serial("id").primaryKey(),
   scheduleId: integer("schedule_id").notNull().references(() => standupSchedules.id, { onDelete: "cascade" }),
-  userId: integer("user_id").notNull().references(() => users.id),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "set null" }),
   standupDate: text("standup_date").notNull(),
   whatIDid: text("what_i_did"),
   whatImDoing: text("what_im_doing"),

@@ -4,6 +4,7 @@
 import { Router, type Express, type Request, type Response } from "express";
 import { requireAuth } from "./shared-middleware";
 import { db } from "../db";
+import { parseBody } from "../lib/input-validation";
 import { eq, desc, and, isNull } from "drizzle-orm";
 import { drawingRegister, drawingRevisions } from "@shared/schema/engineering";
 
@@ -30,7 +31,9 @@ router.get("/api/drawings", requireAuth, async (req: Request, res: Response) => 
 
 router.post("/api/drawings", requireAuth, async (req: Request, res: Response) => {
   try {
-    const [row] = await db.insert(drawingRegister).values(req.body).returning();
+    const [parsed, validationError] = parseBody(req.body, insertDrawingRegisterSchema);
+    if (validationError) return res.status(400).json(validationError);
+    const [row] = await db.insert(drawingRegister).values(parsed).returning();
     res.status(201).json(row);
   } catch (err) {
     console.error("[Drawings] Failed to create:", err);

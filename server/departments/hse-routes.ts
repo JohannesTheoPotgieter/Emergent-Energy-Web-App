@@ -5,7 +5,9 @@
 import { Router, type Express, type Request, type Response } from "express";
 import { requireAuth } from "./shared-middleware";
 import { db } from "../db";
+import { parseBody } from "../lib/input-validation";
 import { eq, desc, and, isNull } from "drizzle-orm";
+import { DEFAULT_QUERY_LIMIT } from "../lib/safe-query";
 import { hseIncidents, correctiveActions } from "@shared/schema/hse";
 
 const router = Router();
@@ -22,7 +24,8 @@ router.get("/api/hse/incidents", requireAuth, async (req: Request, res: Response
       .select()
       .from(hseIncidents)
       .where(and(...conditions))
-      .orderBy(desc(hseIncidents.incidentDate));
+      .orderBy(desc(hseIncidents.incidentDate))
+      .limit(DEFAULT_QUERY_LIMIT);
 
     res.json(rows);
   } catch (err) {
@@ -33,7 +36,9 @@ router.get("/api/hse/incidents", requireAuth, async (req: Request, res: Response
 
 router.post("/api/hse/incidents", requireAuth, async (req: Request, res: Response) => {
   try {
-    const [row] = await db.insert(hseIncidents).values(req.body).returning();
+    const [parsed, validationError] = parseBody(req.body, insertHseIncidentSchema);
+    if (validationError) return res.status(400).json(validationError);
+    const [row] = await db.insert(hseIncidents).values(parsed).returning();
     res.status(201).json(row);
   } catch (err) {
     console.error("[HSE] Failed to create incident:", err);
@@ -84,7 +89,8 @@ router.get("/api/hse/corrective-actions", requireAuth, async (req: Request, res:
       .select()
       .from(correctiveActions)
       .where(and(...conditions))
-      .orderBy(desc(correctiveActions.createdAt));
+      .orderBy(desc(correctiveActions.createdAt))
+      .limit(DEFAULT_QUERY_LIMIT);
 
     res.json(rows);
   } catch (err) {
@@ -95,7 +101,9 @@ router.get("/api/hse/corrective-actions", requireAuth, async (req: Request, res:
 
 router.post("/api/hse/corrective-actions", requireAuth, async (req: Request, res: Response) => {
   try {
-    const [row] = await db.insert(correctiveActions).values(req.body).returning();
+    const [parsed, validationError] = parseBody(req.body, insertCorrectiveActionSchema);
+    if (validationError) return res.status(400).json(validationError);
+    const [row] = await db.insert(correctiveActions).values(parsed).returning();
     res.status(201).json(row);
   } catch (err) {
     console.error("[HSE] Failed to create corrective action:", err);

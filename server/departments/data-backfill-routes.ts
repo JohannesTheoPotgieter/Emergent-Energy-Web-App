@@ -15,6 +15,7 @@ const router = Router();
  */
 router.get("/api/admin/backfill/status", requireAuth, async (_req: Request, res: Response) => {
   try {
+    // SAFETY: table names are from this hardcoded whitelist only — not user input
     const tables = [
       "sites", "opportunities", "budget_baselines",
       "site_activities", "snags", "site_inspections", "contractor_assignments",

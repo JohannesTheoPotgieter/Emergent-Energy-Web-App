@@ -69,7 +69,7 @@ export const stageAcceptances = pgTable("stage_acceptances", {
   projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   stageCode: text("stage_code").notNull(),
   outcome: text("outcome").notNull(), // accepted / accepted_with_reservations / rejected
-  decidedByUserId: integer("decided_by_user_id").references(() => users.id),
+  decidedByUserId: integer("decided_by_user_id").references(() => users.id, { onDelete: "set null" }),
   decidedDate: timestamp("decided_date").notNull().defaultNow(),
   rejectionReason: text("rejection_reason"),
   adminOverride: boolean("admin_override").notNull().default(false),
@@ -93,7 +93,7 @@ export const acceptanceReservations = pgTable("acceptance_reservations", {
   projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   stageCode: text("stage_code").notNull(),
   description: text("description").notNull(),
-  ownerUserId: integer("owner_user_id").references(() => users.id),
+  ownerUserId: integer("owner_user_id").references(() => users.id, { onDelete: "set null" }),
   deadline: date("deadline"),
   status: text("status").notNull().default("open"), // open / closed / overdue
   closedDate: timestamp("closed_date"),
@@ -120,7 +120,7 @@ export const clientCommitments = pgTable("client_commitments", {
   projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   stageCodeCreated: text("stage_code_created").notNull(),
   commitmentText: text("commitment_text").notNull(),
-  committedByUserId: integer("committed_by_user_id").references(() => users.id),
+  committedByUserId: integer("committed_by_user_id").references(() => users.id, { onDelete: "set null" }),
   committedDate: timestamp("committed_date").notNull().defaultNow(),
   deliveryStageCode: text("delivery_stage_code"),
   status: text("status").notNull().default("open"), // open / delivered / overdue / cancelled
@@ -143,9 +143,9 @@ export const evidenceRequests = pgTable("evidence_requests", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   stageCode: text("stage_code").notNull(),
-  requestedByUserId: integer("requested_by_user_id").references(() => users.id),
+  requestedByUserId: integer("requested_by_user_id").references(() => users.id, { onDelete: "set null" }),
   requestedFromDepartment: text("requested_from_department").notNull(),
-  requestedFromUserId: integer("requested_from_user_id").references(() => users.id),
+  requestedFromUserId: integer("requested_from_user_id").references(() => users.id, { onDelete: "set null" }),
   description: text("description").notNull(),
   dueDate: date("due_date"),
   status: text("status").notNull().default("requested"), // requested / uploaded / overdue / waived
@@ -182,8 +182,8 @@ export const clientUpdates = pgTable("client_updates", {
   blockersText: text("blockers_text"),
   clientActionsRequiredText: text("client_actions_required_text"),
   attachmentUrls: jsonb("attachment_urls").default([]),
-  clientUpdateSentBy: integer("client_update_sent_by").references(() => users.id),
-  reviewerUserId: integer("reviewer_user_id").references(() => users.id),
+  clientUpdateSentBy: integer("client_update_sent_by").references(() => users.id, { onDelete: "set null" }),
+  reviewerUserId: integer("reviewer_user_id").references(() => users.id, { onDelete: "set null" }),
   sentDate: timestamp("sent_date"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({

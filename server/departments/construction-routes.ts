@@ -7,11 +7,17 @@ import { requireAuth } from "./shared-middleware";
 import { requirePermission } from "../permission-middleware";
 import { db } from "../db";
 import { eq, desc, and, isNull } from "drizzle-orm";
+import { DEFAULT_QUERY_LIMIT } from "../lib/safe-query";
+import { parseBody } from "../lib/input-validation";
 import {
   siteActivities,
+  insertSiteActivitySchema,
   snags,
+  insertSnagSchema,
   siteInspections,
+  insertSiteInspectionSchema,
   contractorAssignments,
+  insertContractorAssignmentSchema,
 } from "@shared/schema/construction";
 
 const router = Router();
@@ -28,7 +34,8 @@ router.get("/api/construction/activities", requireAuth, async (req: Request, res
       .select()
       .from(siteActivities)
       .where(and(...conditions))
-      .orderBy(desc(siteActivities.activityDate));
+      .orderBy(desc(siteActivities.activityDate))
+      .limit(DEFAULT_QUERY_LIMIT);
 
     res.json(rows);
   } catch (err) {
@@ -39,7 +46,9 @@ router.get("/api/construction/activities", requireAuth, async (req: Request, res
 
 router.post("/api/construction/activities", requireAuth, async (req: Request, res: Response) => {
   try {
-    const [row] = await db.insert(siteActivities).values(req.body).returning();
+    const [parsed, validationError] = parseBody(req.body, insertSiteActivitySchema);
+    if (validationError) return res.status(400).json(validationError);
+    const [row] = await db.insert(siteActivities).values(parsed).returning();
     res.status(201).json(row);
   } catch (err) {
     console.error("[Construction] Failed to create site activity:", err);
@@ -88,7 +97,8 @@ router.get("/api/construction/snags", requireAuth, async (req: Request, res: Res
       .select()
       .from(snags)
       .where(and(...conditions))
-      .orderBy(desc(snags.createdAt));
+      .orderBy(desc(snags.createdAt))
+      .limit(DEFAULT_QUERY_LIMIT);
 
     res.json(rows);
   } catch (err) {
@@ -99,7 +109,9 @@ router.get("/api/construction/snags", requireAuth, async (req: Request, res: Res
 
 router.post("/api/construction/snags", requireAuth, async (req: Request, res: Response) => {
   try {
-    const [row] = await db.insert(snags).values(req.body).returning();
+    const [parsed, validationError] = parseBody(req.body, insertSnagSchema);
+    if (validationError) return res.status(400).json(validationError);
+    const [row] = await db.insert(snags).values(parsed).returning();
     res.status(201).json(row);
   } catch (err) {
     console.error("[Construction] Failed to create snag:", err);
@@ -148,7 +160,8 @@ router.get("/api/construction/inspections", requireAuth, async (req: Request, re
       .select()
       .from(siteInspections)
       .where(and(...conditions))
-      .orderBy(desc(siteInspections.inspectionDate));
+      .orderBy(desc(siteInspections.inspectionDate))
+      .limit(DEFAULT_QUERY_LIMIT);
 
     res.json(rows);
   } catch (err) {
@@ -159,7 +172,9 @@ router.get("/api/construction/inspections", requireAuth, async (req: Request, re
 
 router.post("/api/construction/inspections", requireAuth, async (req: Request, res: Response) => {
   try {
-    const [row] = await db.insert(siteInspections).values(req.body).returning();
+    const [parsed, validationError] = parseBody(req.body, insertSiteInspectionSchema);
+    if (validationError) return res.status(400).json(validationError);
+    const [row] = await db.insert(siteInspections).values(parsed).returning();
     res.status(201).json(row);
   } catch (err) {
     console.error("[Construction] Failed to create inspection:", err);
@@ -208,7 +223,8 @@ router.get("/api/construction/contractors", requireAuth, async (req: Request, re
       .select()
       .from(contractorAssignments)
       .where(and(...conditions))
-      .orderBy(desc(contractorAssignments.createdAt));
+      .orderBy(desc(contractorAssignments.createdAt))
+      .limit(DEFAULT_QUERY_LIMIT);
 
     res.json(rows);
   } catch (err) {
@@ -219,7 +235,9 @@ router.get("/api/construction/contractors", requireAuth, async (req: Request, re
 
 router.post("/api/construction/contractors", requireAuth, async (req: Request, res: Response) => {
   try {
-    const [row] = await db.insert(contractorAssignments).values(req.body).returning();
+    const [parsed, validationError] = parseBody(req.body, insertContractorAssignmentSchema);
+    if (validationError) return res.status(400).json(validationError);
+    const [row] = await db.insert(contractorAssignments).values(parsed).returning();
     res.status(201).json(row);
   } catch (err) {
     console.error("[Construction] Failed to create contractor assignment:", err);
@@ -231,7 +249,7 @@ router.patch("/api/construction/contractors/:id", requireAuth, async (req: Reque
   try {
     const [row] = await db
       .update(contractorAssignments)
-      .set(req.body)
+      .set({ ...req.body, updatedAt: new Date(), createdAt: undefined, deletedAt: undefined, id: undefined })
       .where(eq(contractorAssignments.id, Number(req.params.id)))
       .returning();
     res.json(row);

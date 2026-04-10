@@ -17,16 +17,16 @@ export type DeliverableStatus = typeof DELIVERABLE_STATUSES[number];
 
 export const deliverables = pgTable("deliverables", {
   id: serial("id").primaryKey(),
-  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   deliverableType: text("deliverable_type").notNull(),
   title: text("title").notNull(),
   description: text("description"),
   phase: text("phase"),
-  ownerUserId: integer("owner_user_id").references(() => users.id),
-  reviewerUserId: integer("reviewer_user_id").references(() => users.id),
-  qcReviewerUserId: integer("qc_reviewer_user_id").references(() => users.id),
+  ownerUserId: integer("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+  reviewerUserId: integer("reviewer_user_id").references(() => users.id, { onDelete: "set null" }),
+  qcReviewerUserId: integer("qc_reviewer_user_id").references(() => users.id, { onDelete: "set null" }),
   status: text("status").notNull().default("TO DO"),
   currentVersion: integer("current_version").notNull().default(1),
   sharepointFolderSiteId: text("sharepoint_folder_site_id"),
@@ -51,7 +51,7 @@ export const deliverableVersions = pgTable("deliverable_versions", {
   changeReason: text("change_reason"),
   impactJson: jsonb("impact_json"),
   status: text("status").notNull().default("IN PROGRESS"),
-  createdByUserId: integer("created_by_user_id").references(() => users.id),
+  createdByUserId: integer("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export const insertDeliverableVersionSchema = createInsertSchema(deliverableVersions).omit({ id: true, createdAt: true } as any);
@@ -68,7 +68,7 @@ export const deliverableFiles = pgTable("deliverable_files", {
   fileName: text("file_name").notNull(),
   webUrl: text("web_url"),
   isApproved: boolean("is_approved").notNull().default(false),
-  uploadedByUserId: integer("uploaded_by_user_id").references(() => users.id),
+  uploadedByUserId: integer("uploaded_by_user_id").references(() => users.id, { onDelete: "set null" }),
   uploadedAt: timestamp("uploaded_at").notNull().defaultNow(),
 });
 export const insertDeliverableFileSchema = createInsertSchema(deliverableFiles).omit({ id: true, uploadedAt: true } as any);
@@ -82,7 +82,7 @@ export const deliverableEvents = pgTable("deliverable_events", {
   fromStatus: text("from_status"),
   toStatus: text("to_status"),
   feedbackText: text("feedback_text"),
-  actorUserId: integer("actor_user_id").references(() => users.id),
+  actorUserId: integer("actor_user_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export const insertDeliverableEventSchema = createInsertSchema(deliverableEvents).omit({ id: true, createdAt: true } as any);
@@ -127,7 +127,7 @@ export const engStageTemplates = pgTable("eng_stage_templates", {
   version: integer("version").notNull().default(1),
   isActive: boolean("is_active").notNull().default(true), // TODO: migrate to deletedAt pattern
   deletedAt: timestamp("deleted_at"),
-  createdBy: integer("created_by").references(() => users.id),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export const insertEngStageTemplateSchema = createInsertSchema(engStageTemplates).omit({ id: true, createdAt: true } as any);
@@ -162,13 +162,13 @@ export type EngDeliverableTemplate = typeof engDeliverableTemplates.$inferSelect
 
 export const projectEngStages = pgTable("project_eng_stages", {
   id: serial("id").primaryKey(),
-  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   stageTemplateId: integer("stage_template_id").notNull().references(() => engStageTemplates.id),
   status: engStageStatusEnum("status").notNull().default('not_started'),
   startedAt: timestamp("started_at"),
   completedAt: timestamp("completed_at"),
   overrideReason: text("override_reason"),
-  createdBy: integer("created_by").references(() => users.id),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export const insertProjectEngStageSchema = createInsertSchema(projectEngStages).omit({ id: true, createdAt: true } as any);
@@ -180,11 +180,11 @@ export const projectEngTasks = pgTable("project_eng_tasks", {
   projectEngStageId: integer("project_eng_stage_id").notNull().references(() => projectEngStages.id, { onDelete: 'cascade' }),
   taskTemplateId: integer("task_template_id").notNull().references(() => engTaskTemplates.id),
   status: engTaskInstanceStatusEnum("status").notNull().default('pending'),
-  ownerUserId: integer("owner_user_id").references(() => users.id),
+  ownerUserId: integer("owner_user_id").references(() => users.id, { onDelete: "set null" }),
   notes: text("notes"),
   dueDate: text("due_date"),
   completedAt: timestamp("completed_at"),
-  completedBy: integer("completed_by").references(() => users.id),
+  completedBy: integer("completed_by").references(() => users.id, { onDelete: "set null" }),
   hasDeliverable: boolean("has_deliverable").notNull().default(false),
   workItemId: integer("work_item_id").references(() => workItems.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -202,13 +202,13 @@ export const projectEngDeliverables = pgTable("project_eng_deliverables", {
   fileSize: integer("file_size"),
   mimeType: text("mime_type"),
   storageRef: text("storage_ref").notNull(),
-  uploadedBy: integer("uploaded_by").references(() => users.id),
+  uploadedBy: integer("uploaded_by").references(() => users.id, { onDelete: "set null" }),
   uploadedAt: timestamp("uploaded_at").notNull().defaultNow(),
   versionTag: text("version_tag"),
   notes: text("notes"),
   sharepointFolderPath: text("sharepoint_folder_path"),
   approvalStatus: text("approval_status").default("pending"),
-  approvedBy: integer("approved_by").references(() => users.id),
+  approvedBy: integer("approved_by").references(() => users.id, { onDelete: "set null" }),
   approvedAt: timestamp("approved_at"),
 });
 export const insertProjectEngDeliverableSchema = createInsertSchema(projectEngDeliverables).omit({ id: true, uploadedAt: true } as any);
@@ -219,7 +219,7 @@ export const projectEngApprovals = pgTable("project_eng_approvals", {
   id: serial("id").primaryKey(),
   projectEngStageId: integer("project_eng_stage_id").notNull().references(() => projectEngStages.id, { onDelete: 'cascade' }),
   approverRole: text("approver_role").notNull(),
-  approverUserId: integer("approver_user_id").references(() => users.id),
+  approverUserId: integer("approver_user_id").references(() => users.id, { onDelete: "set null" }),
   status: engApprovalStatusEnum("status").notNull().default('pending'),
   comments: text("comments"),
   scheduledDate: date("scheduled_date"),
@@ -236,16 +236,16 @@ export type ProjectEngApproval = typeof projectEngApprovals.$inferSelect;
 
 export const drawingRegister = pgTable("drawing_register", {
   id: serial("id").primaryKey(),
-  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   drawingNumber: text("drawing_number").notNull(),
   title: text("title").notNull(),
   discipline: text("discipline"),           // 'electrical', 'structural', 'mechanical', 'civil', 'architectural'
   currentRevision: text("current_revision").default("A"),
   revisionDate: date("revision_date"),
   status: text("status").default("draft"),  // 'draft', 'for_review', 'for_approval', 'approved', 'ifc', 'as_built', 'superseded'
-  authorUserId: integer("author_user_id").references(() => users.id),
-  reviewerUserId: integer("reviewer_user_id").references(() => users.id),
-  approverUserId: integer("approver_user_id").references(() => users.id),
+  authorUserId: integer("author_user_id").references(() => users.id, { onDelete: "set null" }),
+  reviewerUserId: integer("reviewer_user_id").references(() => users.id, { onDelete: "set null" }),
+  approverUserId: integer("approver_user_id").references(() => users.id, { onDelete: "set null" }),
   sharepointLink: text("sharepoint_link"),
   sheetSize: text("sheet_size"),
   notes: text("notes"),
@@ -264,7 +264,7 @@ export const drawingRevisions = pgTable("drawing_revisions", {
   revision: text("revision").notNull(),
   revisionDate: date("revision_date").notNull(),
   description: text("description"),
-  revisedByUserId: integer("revised_by_user_id").references(() => users.id),
+  revisedByUserId: integer("revised_by_user_id").references(() => users.id, { onDelete: "set null" }),
   sharepointLink: text("sharepoint_link"),
   createdAt: timestamp("created_at").defaultNow(),
 });

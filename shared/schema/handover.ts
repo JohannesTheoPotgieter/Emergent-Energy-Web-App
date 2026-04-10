@@ -11,12 +11,12 @@ import { counterparties } from "./finance";
 
 export const handoverPacks = pgTable("handover_packs", {
   id: serial("id").primaryKey(),
-  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   packType: text("pack_type").notNull(),            // 'pd_to_pm', 'practical_completion', 'client_handover', 'matriarch_handover', 'sseg_closeout'
   checklistStatus: text("checklist_status").default("not_started"), // 'not_started', 'in_progress', 'complete', 'submitted', 'accepted', 'rejected'
   documentCompletenessPct: integer("document_completeness_pct").default(0),
   openSnagsCount: integer("open_snags_count").default(0),
-  finalReviewerUserId: integer("final_reviewer_user_id").references(() => users.id),
+  finalReviewerUserId: integer("final_reviewer_user_id").references(() => users.id, { onDelete: "set null" }),
   clientSubmissionDate: date("client_submission_date"),
   clientAcceptanceDate: date("client_acceptance_date"),
   matriarchAcceptanceDate: date("matriarch_acceptance_date"),
@@ -41,7 +41,7 @@ export const handoverChecklistItems = pgTable("handover_checklist_items", {
   required: boolean("required").default(true),
   status: text("status").default("pending"),        // 'pending', 'complete', 'not_applicable', 'waived'
   evidenceLink: text("evidence_link"),
-  completedByUserId: integer("completed_by_user_id").references(() => users.id),
+  completedByUserId: integer("completed_by_user_id").references(() => users.id, { onDelete: "set null" }),
   completedDate: timestamp("completed_date"),
   notes: text("notes"),
 });
@@ -54,7 +54,7 @@ export type HandoverChecklistItem = typeof handoverChecklistItems.$inferSelect;
 
 export const ssegItems = pgTable("sseg_items", {
   id: serial("id").primaryKey(),
-  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   itemType: text("item_type").notNull(),            // 'application', 'approval', 'inspection', 'certificate', 'connection'
   authority: text("authority"),
   referenceNumber: text("reference_number"),
@@ -84,7 +84,7 @@ export const lessonsLearnt = pgTable("lessons_learnt", {
   tags: jsonb("tags").default([]),
   projectType: text("project_type"),
   technologyTags: jsonb("technology_tags").default([]),
-  addedByUserId: integer("added_by_user_id").references(() => users.id),
+  addedByUserId: integer("added_by_user_id").references(() => users.id, { onDelete: "set null" }),
   addedByName: text("added_by_name"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
