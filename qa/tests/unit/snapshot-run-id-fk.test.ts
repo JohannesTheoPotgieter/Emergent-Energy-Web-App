@@ -29,9 +29,9 @@ describe("snapshotRunId FK constraints", () => {
     const matches = financeSchema.match(
       /snapshotRunId: integer\("snapshot_run_id"\)\.references\(\(\) => smartImportRuns\.id, \{ onDelete: "set null" \}\)/g
     );
-    // 7 columns in finance.ts
+    // 8 columns in finance.ts (7 original + 1 from category_revenue_allocations)
     expect(matches).not.toBeNull();
-    expect(matches!.length).toBe(7);
+    expect(matches!.length).toBe(8);
   });
 
   it("snapshotRunId in projects.ts references smartImportRuns with onDelete: set null", () => {
