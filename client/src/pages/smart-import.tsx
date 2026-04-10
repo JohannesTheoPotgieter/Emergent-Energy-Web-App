@@ -4069,6 +4069,9 @@ export default function SmartImportPage() {
   /** When v2 is active and user clicks Review on a bulk run, open it in v2 flow */
   const [v2ReviewRunId, setV2ReviewRunId] = useState<number | null>(null);
   const [v2ActiveRunId, setV2ActiveRunId] = useState<number | null>(null);
+  // S22: Emergency v1 mode is COO-only — not rendered at all for other roles.
+  const companyRolePage = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
+  const isCOO = companyRolePage === "COO_ADMIN";
   const pendingRunsQuery = useQuery<PendingRun[], Error>({
     queryKey: ["smart-import-pending-governance"],
     queryFn: async () => {
