@@ -154,7 +154,18 @@ export default function AdminPipedrivePage() {
                 <p className="text-sm font-medium text-amber-800">Pipedrive API not configured</p>
                 <p className="text-xs text-amber-700 mt-1">
                   Set the <code className="px-1 py-0.5 bg-amber-100 rounded text-[11px]">PIPEDRIVE_API_TOKEN</code> environment
-                  variable to enable deal synchronization. Contact your system administrator.
+                  variable to enable deal synchronization.
+                </p>
+                <p className="text-xs text-amber-700 mt-2 font-medium">Setup steps:</p>
+                <ol className="text-xs text-amber-700 mt-1 list-decimal pl-4 space-y-0.5">
+                  <li>In Pipedrive, go to Settings &rarr; Personal preferences &rarr; API</li>
+                  <li>Copy your personal API token</li>
+                  <li>Add <code className="px-1 py-0.5 bg-amber-100 rounded text-[11px]">PIPEDRIVE_API_TOKEN=your-token</code> to your .env file (or Replit Secrets)</li>
+                  <li>Restart the server, then return here and click Sync Now</li>
+                </ol>
+                <p className="text-xs text-amber-600 mt-2">
+                  Sync is read-only: deals are imported from Pipedrive into Opportunities. No data is written back to Pipedrive.
+                  Clients are auto-created from Pipedrive organizations if they don't already exist.
                 </p>
               </div>
             </div>
