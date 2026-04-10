@@ -48,6 +48,11 @@ export const EXPENDITURE_SYNONYMS: Record<string, string[]> = {
   budget_cos: ["budget cos", "budget cost of sales"],
   actual_cos: ["actual cos", "total cos", "cost of sales"],
   revenue_recognition_amount: ["revenue recognition amount", "revenue recognition", "rev recognition"],
+  // Budget-pane column for category-level revenue allocation (J_cat).
+  // This is the "Total Revenue" column in the costed section, always in the budget pane.
+  category_revenue_allocation: ["total revenue", "revenue allocation", "revenue alloc", "category revenue", "rev allocation", "costed revenue"],
+  // Budget-pane column for category-level COS total (X_cat costed).
+  category_cos_total: ["total cos"],
 };
 
 export const SECTION_ANCHORS: Record<string, { sheetNames: string[]; anchorPhrases: string[]; requiredFields: string[] }> = {
