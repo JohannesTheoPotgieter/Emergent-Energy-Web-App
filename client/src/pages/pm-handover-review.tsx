@@ -54,7 +54,7 @@ export default function PmHandoverReviewPage() {
       ))}
 
       {!error && !isLoading && (data?.items || []).length === 0 ? (
-        <p className="text-sm text-muted-foreground">No submitted or recently rejected handovers are waiting for PM review.</p>
+        <p className="text-sm text-muted-foreground">No submitted or recently returned handovers are waiting for PM review.</p>
       ) : null}
     </div>
   );
