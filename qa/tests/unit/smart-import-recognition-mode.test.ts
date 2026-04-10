@@ -37,31 +37,56 @@ describe("S14: recognition-mode-service structure", () => {
   it("exports RecognitionModeResult interface with required fields", () => {
     expect(serviceCode).toContain("export interface RecognitionModeResult");
     expect(serviceCode).toContain("mode: RecognitionMode");
-    expect(serviceCode).toContain("directCategoryCount: number");
+    expect(serviceCode).toContain("trustedCategoryCount: number");
     expect(serviceCode).toContain("totalCategoryCount: number");
     expect(serviceCode).toContain("incompleteCategoryKeys: string[]");
-    expect(serviceCode).toContain("latestImportHadJcatIssues: boolean");
+    expect(serviceCode).toContain("latestImportHadJcatFailure: boolean");
   });
 
   it("queries category_revenue_allocations for active rows", () => {
     expect(serviceCode).toContain("categoryRevenueAllocations");
     expect(serviceCode).toContain("isNull(categoryRevenueAllocations.effectiveTo)");
   });
+});
 
-  it("treats DIRECT, HEADER_ERROR_POSITIONAL, and MANUAL as trusted", () => {
-    expect(serviceCode).toContain('"DIRECT"');
-    expect(serviceCode).toContain('"HEADER_ERROR_POSITIONAL"');
-    expect(serviceCode).toContain('"MANUAL"');
-    expect(serviceCode).toContain("TRUSTED_CONFIDENCES");
+// ---------------------------------------------------------------------------
+// S14: Trust classification
+// ---------------------------------------------------------------------------
+describe("S14: trust classification", () => {
+  const serviceCode = read("server/services/recognition-mode-service.ts");
+
+  it("TRUSTED_CONFIDENCES includes DIRECT, HEADER_ERROR_POSITIONAL, MANUAL", () => {
+    const trustedBlock = serviceCode.slice(
+      serviceCode.indexOf("TRUSTED_CONFIDENCES = new Set"),
+      serviceCode.indexOf("TRUSTED_CONFIDENCES = new Set") + 200,
+    );
+    expect(trustedBlock).toContain('"DIRECT"');
+    expect(trustedBlock).toContain('"HEADER_ERROR_POSITIONAL"');
+    expect(trustedBlock).toContain('"MANUAL"');
   });
 
-  it("PROVISIONAL is NOT treated as trusted", () => {
-    // PROVISIONAL should not be in the trusted set
-    const trustedLine = serviceCode.slice(
-      serviceCode.indexOf("TRUSTED_CONFIDENCES"),
-      serviceCode.indexOf("TRUSTED_CONFIDENCES") + 200,
+  it("TRUSTED_CONFIDENCES does NOT include PROVISIONAL", () => {
+    const trustedBlock = serviceCode.slice(
+      serviceCode.indexOf("TRUSTED_CONFIDENCES = new Set"),
+      serviceCode.indexOf("TRUSTED_CONFIDENCES = new Set") + 200,
     );
-    expect(trustedLine).not.toContain('"PROVISIONAL"');
+    expect(trustedBlock).not.toContain('"PROVISIONAL"');
+  });
+
+  it("JCAT_FAILURE_ISSUE_TYPES only includes JCAT_COLUMN_MISSING", () => {
+    const failureBlock = serviceCode.slice(
+      serviceCode.indexOf("JCAT_FAILURE_ISSUE_TYPES = new Set"),
+      serviceCode.indexOf("JCAT_FAILURE_ISSUE_TYPES = new Set") + 200,
+    );
+    expect(failureBlock).toContain('"JCAT_COLUMN_MISSING"');
+    expect(failureBlock).not.toContain('"JCAT_POSITIONAL_FALLBACK"');
+    expect(failureBlock).not.toContain('"JCAT_RECONCILIATION_VARIANCE"');
+  });
+
+  it("documents that JCAT_POSITIONAL_FALLBACK is a WARNING, not a FAILURE", () => {
+    expect(serviceCode).toContain("JCAT_POSITIONAL_FALLBACK");
+    expect(serviceCode).toContain("WARNING");
+    expect(serviceCode).toContain("not failures");
   });
 });
 
@@ -72,16 +97,15 @@ describe("S14: recognition mode classification", () => {
   const serviceCode = read("server/services/recognition-mode-service.ts");
 
   it("returns CATEGORY_READY when all categories have trusted confidence and non-null revenue", () => {
-    expect(serviceCode).toContain("directCategoryCount === totalCategoryCount");
-    // After this check passes, mode should be CATEGORY_READY
+    expect(serviceCode).toContain("trustedCategoryCount === totalCategoryCount");
     const readyBlock = serviceCode.slice(
-      serviceCode.indexOf("directCategoryCount === totalCategoryCount"),
-      serviceCode.indexOf("directCategoryCount === totalCategoryCount") + 200,
+      serviceCode.indexOf("trustedCategoryCount === totalCategoryCount"),
+      serviceCode.indexOf("trustedCategoryCount === totalCategoryCount") + 200,
     );
     expect(readyBlock).toContain("CATEGORY_READY");
   });
 
-  it("returns LEGACY_PRE_REIMPORT when no allocations exist and no J_cat issues", () => {
+  it("returns LEGACY_PRE_REIMPORT when no allocations exist and no J_cat failure", () => {
     expect(serviceCode).toContain("totalCategoryCount === 0");
     const noAllocBlock = serviceCode.slice(
       serviceCode.indexOf("totalCategoryCount === 0"),
@@ -90,18 +114,38 @@ describe("S14: recognition mode classification", () => {
     expect(noAllocBlock).toContain("LEGACY_PRE_REIMPORT");
   });
 
-  it("returns REIMPORT_FAILED when latest import had J_cat issues", () => {
+  it("returns REIMPORT_FAILED only when latest import had a JCAT FAILURE issue", () => {
     expect(serviceCode).toContain("REIMPORT_FAILED");
-    expect(serviceCode).toContain("checkLatestImportForJcatIssues");
+    expect(serviceCode).toContain("checkLatestImportForJcatFailure");
   });
 
-  it("detects J_cat issues by checking for JCAT_ prefixed issue types", () => {
-    expect(serviceCode).toContain('.startsWith("JCAT_")');
+  it("failure check uses JCAT_FAILURE_ISSUE_TYPES, not startsWith('JCAT_')", () => {
+    expect(serviceCode).toContain("JCAT_FAILURE_ISSUE_TYPES.has(i.issueType)");
+    // Must NOT use the old broad prefix check
+    expect(serviceCode).not.toContain('.startsWith("JCAT_")');
   });
 
-  it("checks the latest COMMITTED import run for issues", () => {
+  it("checks the latest COMMITTED import run for failure issues", () => {
     expect(serviceCode).toContain('eq(smartImportRuns.status, "COMMITTED")');
     expect(serviceCode).toContain("desc(smartImportRuns.committedAt)");
+  });
+
+  it("CATEGORY_READY sets latestImportHadJcatFailure=false (no contradiction possible)", () => {
+    // When all categories are trusted, the function returns before checking import issues.
+    // The latestImportHadJcatFailure field is explicitly false.
+    const readyReturn = serviceCode.slice(
+      serviceCode.indexOf('mode: "CATEGORY_READY"'),
+      serviceCode.indexOf('mode: "CATEGORY_READY"') + 200,
+    );
+    expect(readyReturn).toContain("latestImportHadJcatFailure: false");
+  });
+
+  it("HEADER_ERROR_POSITIONAL allocations can produce CATEGORY_READY (no contradiction)", () => {
+    // A project where all categories are HEADER_ERROR_POSITIONAL (positional fallback
+    // succeeded) should be CATEGORY_READY. The JCAT_POSITIONAL_FALLBACK warning on the
+    // import run does NOT trigger REIMPORT_FAILED because it is not in JCAT_FAILURE_ISSUE_TYPES.
+    // The trusted confidence check passes. The early return fires. No contradiction.
+    expect(serviceCode).toContain("TRUSTED_CONFIDENCES.has(a.allocationConfidence)");
   });
 });
 
@@ -149,7 +193,6 @@ describe("S15: allocateRevenueByCategory behavior", async () => {
   );
 
   it("computes (Q / X_cat) * J_cat correctly", () => {
-    // Q=100, X_cat=500, J_cat=1000 → (100/500)*1000 = 200
     expect(allocateRevenueByCategory(100, 500, 1000, false)).toBe(200);
   });
 
@@ -174,18 +217,15 @@ describe("S15: allocateRevenueByCategory behavior", async () => {
   });
 
   it("handles full category allocation (Q = X_cat)", () => {
-    // When a category has only one line, Q = X_cat, so result = J_cat
     expect(allocateRevenueByCategory(500, 500, 1000, false)).toBe(1000);
   });
 
   it("handles fractional amounts correctly", () => {
-    // Q=33.33, X_cat=100, J_cat=300 → (33.33/100)*300 = 99.99
     const result = allocateRevenueByCategory(33.33, 100, 300, false);
     expect(result).toBeCloseTo(99.99, 2);
   });
 
   it("project-level allocateRevenue still works (backward compat)", () => {
-    // Same formula shape but project-level parameters
     expect(allocateRevenue(100, 500, 1000, false)).toBe(200);
     expect(allocateRevenue(100, 0, 1000, false)).toBe(0);
     expect(allocateRevenue(100, 500, 1000, true)).toBe(0);
@@ -208,7 +248,6 @@ describe("S15: no premature endpoint cutover", () => {
   });
 
   it("finance-routes.ts still uses project-level allocateRevenue or inline formula", () => {
-    // At least one of these should still exist
     const hasOldFunction = finRoutes.includes("allocateRevenue(");
     const hasInlineFormula = finRoutes.includes("projectTotalCOS") || finRoutes.includes("totalCOSProject");
     expect(hasOldFunction || hasInlineFormula).toBe(true);
