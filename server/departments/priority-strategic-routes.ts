@@ -964,7 +964,7 @@ router.get("/api/priorities/:id/updates", requireAuth, async (req: Request, res:
 });
 
 // ==================== POST /api/priorities/:id/escalate ====================
-router.post("/api/priorities/:id/escalate", requireAuth, async (req: Request, res: Response) => {
+router.post("/api/priorities/:id/escalate", requireAuth, requirePriorityAdmin, async (req: Request, res: Response) => {
   try {
     const user = getEffectiveUser(req)!;
     const priorityId = parseIdParam(req.params.id);
