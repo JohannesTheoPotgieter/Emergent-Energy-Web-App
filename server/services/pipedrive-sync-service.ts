@@ -14,7 +14,7 @@
  */
 
 import { db } from "../db";
-import { eq } from "drizzle-orm";
+import { eq, isNull } from "drizzle-orm";
 import { opportunities, clients } from "@shared/schema/projects";
 
 // ===================== TYPES =====================
@@ -129,17 +129,39 @@ async function syncSingleDeal(deal: PipedriveDeal, result: PipedriveSyncResult) 
     .from(opportunities)
     .where(eq(opportunities.pipedriveDealId, dealIdStr));
 
-  // Try to match client by pipedrive_org_id
+  // Try to match client by pipedrive_org_id, auto-create if not found
   let clientId: number | null = null;
   if (deal.org_id) {
+    const orgIdStr = String(deal.org_id.value);
     const [matchedClient] = await db
       .select()
       .from(clients)
-      .where(eq(clients.pipedriveOrgId, String(deal.org_id.value)));
-    if (matchedClient) clientId = matchedClient.id;
+      .where(eq(clients.pipedriveOrgId, orgIdStr));
+    if (matchedClient) {
+      clientId = matchedClient.id;
+    } else {
+      // Auto-create client from Pipedrive organization
+      const orgName = deal.org_id.name || `Pipedrive Org ${deal.org_id.value}`;
+      const clientIdCode = `PD-${orgIdStr}`;
+      try {
+        const [newClient] = await db.insert(clients).values({
+          clientId: clientIdCode,
+          name: orgName,
+          pipedriveOrgId: orgIdStr,
+          status: "prospect",
+        }).returning();
+        clientId = newClient.id;
+      } catch {
+        // Client with this clientId may already exist (race condition) — try to find it
+        const [retryClient] = await db.select().from(clients)
+          .where(eq(clients.pipedriveOrgId, orgIdStr));
+        if (retryClient) clientId = retryClient.id;
+      }
+    }
   }
 
   const stage = DEAL_STATUS_TO_STAGE[deal.status] ?? "prospect";
+  const dealTitle = deal.title || `Deal ${deal.id}`;
   const opportunityData = {
     pipedriveDealId: dealIdStr,
     clientId,
@@ -148,6 +170,7 @@ async function syncSingleDeal(deal: PipedriveDeal, result: PipedriveSyncResult) 
     expectedCloseDate: deal.expected_close_date ?? null,
     signedDate: deal.won_time ? deal.won_time.split(" ")[0] : null,
     status: deal.status === "open" ? "active" : deal.status === "won" ? "won" : "lost",
+    notes: `Pipedrive: ${dealTitle}`,
     updatedAt: new Date(),
   };
 
@@ -158,10 +181,7 @@ async function syncSingleDeal(deal: PipedriveDeal, result: PipedriveSyncResult) 
       .where(eq(opportunities.id, existing.id));
     result.dealsUpdated++;
   } else {
-    await db.insert(opportunities).values({
-      ...opportunityData,
-      notes: `Auto-synced from Pipedrive deal: ${deal.title}`,
-    });
+    await db.insert(opportunities).values(opportunityData);
     result.dealsCreated++;
   }
 }
