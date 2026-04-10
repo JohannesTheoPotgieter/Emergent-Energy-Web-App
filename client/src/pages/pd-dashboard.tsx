@@ -210,7 +210,7 @@ export default function PdDashboardPage() {
           {handoverStats.rejected > 0 && (
             <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-xs text-red-700" data-testid="handover-rejected-alert">
               <XCircle className="h-4 w-4 shrink-0" />
-              <span><strong>{handoverStats.rejected}</strong> handover{handoverStats.rejected !== 1 ? "s" : ""} rejected — PD action required to address feedback and resubmit.</span>
+              <span><strong>{handoverStats.rejected}</strong> handover{handoverStats.rejected !== 1 ? "s" : ""} returned for rework — PD action required to address feedback and resubmit.</span>
             </div>
           )}
         </div>
