@@ -2464,7 +2464,7 @@ export function PreviewCommitStep({
       const res = await fetch(`/api/smart-import/${runId}/commit`, {
         method: "POST",
         headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify(extraBody),
+        body: JSON.stringify({ skipV2ConflictCheck: true, ...extraBody }),
       });
       if (res.ok) {
         const data = await res.json();
