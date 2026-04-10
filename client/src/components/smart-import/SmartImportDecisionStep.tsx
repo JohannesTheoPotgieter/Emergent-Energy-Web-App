@@ -1,8 +1,9 @@
 /**
  * Smart Import v2 — "Needs your decision" step
  *
- * Shows conflicts where both the app and spreadsheet changed differently.
- * For each conflict, the user chooses: Keep current app value OR Use uploaded value.
+ * Compact list showing conflicts where both the app and spreadsheet changed
+ * differently. For each conflict, the user chooses: Keep current app value OR
+ * Use uploaded value.
  */
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,12 +40,132 @@ interface ConflictRow {
   fields: ConflictField[];
 }
 
-function ValueDisplay({ label, value, accent }: { label: string; value: unknown; accent?: string }) {
-  const displayValue = value != null && value !== "" ? (typeof value === "object" ? JSON.stringify(value) : String(value)) : "\u2014 (empty)";
+function formatValue(value: unknown): string {
+  if (value == null || value === "") return "\u2014";
+  return String(value);
+}
+
+/** Compact inline field row: field name | 3 values | 2 decision buttons */
+function FieldRow({
+  field,
+  decisionKey,
+  current,
+  onDecision,
+}: {
+  field: ConflictField;
+  decisionKey: string;
+  current: "keep_app" | "accept_file" | undefined;
+  onDecision: (key: string, value: "keep_app" | "accept_file") => void;
+}) {
   return (
-    <div className={`px-3 py-2 rounded-lg border text-sm ${accent || "bg-white border-slate-200"}`}>
-      <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">{label}</div>
-      <div className="font-medium">{displayValue}</div>
+    <div
+      className="grid grid-cols-[minmax(100px,1.2fr)_1fr_1fr_1fr_auto] items-center gap-x-2 px-3 py-1.5 text-xs border-t first:border-t-0 hover:bg-slate-50/50"
+      data-testid={`conflict-field-${decisionKey}`}
+    >
+      {/* Field name */}
+      <span className="font-medium text-slate-700 truncate" title={fieldLabel(field.fieldName)}>
+        {fieldLabel(field.fieldName)}
+      </span>
+
+      {/* Last import */}
+      <span className="text-slate-500 truncate font-mono text-[11px]" title={formatValue(field.baselineValue)}>
+        {formatValue(field.baselineValue)}
+      </span>
+
+      {/* Current app value */}
+      <span className="text-blue-700 truncate font-mono text-[11px]" title={formatValue(field.currentAppValue)}>
+        {formatValue(field.currentAppValue)}
+      </span>
+
+      {/* Uploaded value */}
+      <span className="text-amber-700 truncate font-mono text-[11px]" title={formatValue(field.uploadedValue)}>
+        {formatValue(field.uploadedValue)}
+      </span>
+
+      {/* Decision toggle */}
+      <span className="flex gap-1 flex-shrink-0">
+        <button
+          className={`px-2 py-0.5 rounded text-[10px] font-medium border transition-colors ${
+            current === "keep_app"
+              ? "bg-blue-600 text-white border-blue-600"
+              : "bg-white text-slate-600 border-slate-300 hover:border-blue-400 hover:text-blue-600"
+          }`}
+          onClick={() => onDecision(decisionKey, "keep_app")}
+          data-testid={`decision-keep-${decisionKey}`}
+          title={CONFLICT_ACTIONS.KEEP_APP}
+        >
+          {current === "keep_app" && <Check className="w-2.5 h-2.5 inline mr-0.5 -mt-px" />}
+          Keep app
+        </button>
+        <button
+          className={`px-2 py-0.5 rounded text-[10px] font-medium border transition-colors ${
+            current === "accept_file"
+              ? "bg-amber-600 text-white border-amber-600"
+              : "bg-white text-slate-600 border-slate-300 hover:border-amber-400 hover:text-amber-600"
+          }`}
+          onClick={() => onDecision(decisionKey, "accept_file")}
+          data-testid={`decision-accept-${decisionKey}`}
+          title={CONFLICT_ACTIONS.ACCEPT_FILE}
+        >
+          {current === "accept_file" && <Check className="w-2.5 h-2.5 inline mr-0.5 -mt-px" />}
+          Use upload
+        </button>
+      </span>
+    </div>
+  );
+}
+
+/** Compact row for mobile: stacked layout */
+function FieldRowMobile({
+  field,
+  decisionKey,
+  current,
+  onDecision,
+}: {
+  field: ConflictField;
+  decisionKey: string;
+  current: "keep_app" | "accept_file" | undefined;
+  onDecision: (key: string, value: "keep_app" | "accept_file") => void;
+}) {
+  return (
+    <div
+      className="px-3 py-2 text-xs border-t first:border-t-0"
+      data-testid={`conflict-field-mobile-${decisionKey}`}
+    >
+      <div className="flex items-center justify-between mb-1">
+        <span className="font-medium text-slate-700">{fieldLabel(field.fieldName)}</span>
+        <span className="flex gap-1">
+          <button
+            className={`px-2 py-0.5 rounded text-[10px] font-medium border transition-colors ${
+              current === "keep_app"
+                ? "bg-blue-600 text-white border-blue-600"
+                : "bg-white text-slate-600 border-slate-300"
+            }`}
+            onClick={() => onDecision(decisionKey, "keep_app")}
+            title={CONFLICT_ACTIONS.KEEP_APP}
+          >
+            {current === "keep_app" && <Check className="w-2.5 h-2.5 inline mr-0.5 -mt-px" />}
+            Keep app
+          </button>
+          <button
+            className={`px-2 py-0.5 rounded text-[10px] font-medium border transition-colors ${
+              current === "accept_file"
+                ? "bg-amber-600 text-white border-amber-600"
+                : "bg-white text-slate-600 border-slate-300"
+            }`}
+            onClick={() => onDecision(decisionKey, "accept_file")}
+            title={CONFLICT_ACTIONS.ACCEPT_FILE}
+          >
+            {current === "accept_file" && <Check className="w-2.5 h-2.5 inline mr-0.5 -mt-px" />}
+            Use upload
+          </button>
+        </span>
+      </div>
+      <div className="grid grid-cols-3 gap-1 text-[10px]">
+        <div><span className="text-slate-400">Last: </span><span className="text-slate-600 font-mono">{formatValue(field.baselineValue)}</span></div>
+        <div><span className="text-blue-400">App: </span><span className="text-blue-700 font-mono">{formatValue(field.currentAppValue)}</span></div>
+        <div><span className="text-amber-400">Upload: </span><span className="text-amber-700 font-mono">{formatValue(field.uploadedValue)}</span></div>
+      </div>
     </div>
   );
 }
@@ -53,87 +174,94 @@ function ConflictCard({
   row,
   decisions,
   onDecision,
+  defaultExpanded,
 }: {
   row: ConflictRow;
   decisions: Record<string, "keep_app" | "accept_file">;
   onDecision: (key: string, value: "keep_app" | "accept_file") => void;
+  defaultExpanded: boolean;
 }) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const conflictFields = row.fields.filter(f => f.requiresDecision);
-  const allResolved = conflictFields.every(f => decisions[`${row.rowKey}::${f.fieldName}`]);
+  const resolvedFields = conflictFields.filter(f => decisions[`${row.rowKey}::${f.fieldName}`]);
+  const allResolved = resolvedFields.length === conflictFields.length;
 
   return (
-    <div className={`border rounded-lg overflow-hidden ${allResolved ? "border-emerald-300 bg-emerald-50/30" : "border-amber-300"}`} data-testid={`conflict-row-${row.rowKey}`}>
-      <div className="px-4 py-3 flex items-center justify-between bg-white border-b">
-        <div className="flex items-center gap-2">
+    <div
+      className={`border rounded-md overflow-hidden ${allResolved ? "border-emerald-200 bg-emerald-50/20" : "border-amber-200"}`}
+      data-testid={`conflict-row-${row.rowKey}`}
+    >
+      {/* Header row — always visible */}
+      <button
+        className="w-full px-3 py-2 flex items-center justify-between bg-white hover:bg-slate-50 transition-colors text-left"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <div className="flex items-center gap-1.5 min-w-0">
           {allResolved
-            ? <Check className="w-4 h-4 text-emerald-600" />
-            : <AlertTriangle className="w-4 h-4 text-amber-600" />
+            ? <Check className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+            : <AlertTriangle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
           }
-          <span className="text-sm font-semibold">{String(row.displayLabel || "")}</span>
-          <Badge variant="outline" className="text-[10px]">
+          <span className="text-xs font-semibold truncate">{String(row.displayLabel || "")}</span>
+          <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 flex-shrink-0">
             {SECTION_LABELS[row.section] || String(row.section || "")}
           </Badge>
-          {allResolved && (
-            <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px]">
+          {allResolved ? (
+            <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[9px] px-1.5 py-0 h-4 flex-shrink-0">
               Resolved
             </Badge>
+          ) : (
+            <span className="text-[10px] text-amber-600 flex-shrink-0">
+              {resolvedFields.length}/{conflictFields.length}
+            </span>
           )}
         </div>
-        <button
-          className="text-xs text-muted-foreground hover:text-slate-700 flex items-center gap-1"
-          onClick={() => setExpanded(!expanded)}
-        >
-          {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-        </button>
-      </div>
+        {expanded ? <ChevronUp className="w-3 h-3 text-slate-400 flex-shrink-0" /> : <ChevronDown className="w-3 h-3 text-slate-400 flex-shrink-0" />}
+      </button>
 
+      {/* Expanded: table header + field rows */}
       {expanded && (
-        <div className="divide-y">
-          {conflictFields.map((field) => {
-            const decisionKey = `${row.rowKey}::${field.fieldName}`;
-            const current = decisions[decisionKey];
+        <>
+          {/* Column headers — desktop only */}
+          <div className="hidden md:grid grid-cols-[minmax(100px,1.2fr)_1fr_1fr_1fr_auto] gap-x-2 px-3 py-1 bg-slate-100 border-t text-[9px] uppercase tracking-wider text-slate-500 font-semibold">
+            <span>Field</span>
+            <span>Last import</span>
+            <span className="text-blue-600">Current app value</span>
+            <span className="text-amber-600">Uploaded value</span>
+            <span className="w-[136px]">Decision</span>
+          </div>
 
-            return (
-              <div key={field.fieldName} className="px-4 py-3 space-y-2" data-testid={`conflict-field-${decisionKey}`}>
-                <div className="text-sm font-medium text-slate-700">
-                  {fieldLabel(field.fieldName)}
-                </div>
+          {/* Desktop rows */}
+          <div className="hidden md:block">
+            {conflictFields.map((field) => {
+              const decisionKey = `${row.rowKey}::${field.fieldName}`;
+              return (
+                <FieldRow
+                  key={field.fieldName}
+                  field={field}
+                  decisionKey={decisionKey}
+                  current={decisions[decisionKey]}
+                  onDecision={onDecision}
+                />
+              );
+            })}
+          </div>
 
-                {/* Three-value comparison */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
-                  <ValueDisplay label="Last import" value={field.baselineValue} accent="bg-slate-50 border-slate-200" />
-                  <ValueDisplay label="Current app value" value={field.currentAppValue} accent="bg-blue-50 border-blue-200" />
-                  <ValueDisplay label="Uploaded value" value={field.uploadedValue} accent="bg-amber-50 border-amber-200" />
-                </div>
-
-                {/* Decision buttons */}
-                <div className="flex gap-2 pt-1">
-                  <Button
-                    size="sm"
-                    variant={current === "keep_app" ? "default" : "outline"}
-                    className={`text-xs h-8 ${current === "keep_app" ? "bg-blue-600 hover:bg-blue-700" : ""}`}
-                    onClick={() => onDecision(decisionKey, "keep_app")}
-                    data-testid={`decision-keep-${decisionKey}`}
-                  >
-                    {current === "keep_app" && <Check className="w-3 h-3 mr-1" />}
-                    {CONFLICT_ACTIONS.KEEP_APP}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant={current === "accept_file" ? "default" : "outline"}
-                    className={`text-xs h-8 ${current === "accept_file" ? "bg-amber-600 hover:bg-amber-700" : ""}`}
-                    onClick={() => onDecision(decisionKey, "accept_file")}
-                    data-testid={`decision-accept-${decisionKey}`}
-                  >
-                    {current === "accept_file" && <Check className="w-3 h-3 mr-1" />}
-                    {CONFLICT_ACTIONS.ACCEPT_FILE}
-                  </Button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+          {/* Mobile rows */}
+          <div className="md:hidden">
+            {conflictFields.map((field) => {
+              const decisionKey = `${row.rowKey}::${field.fieldName}`;
+              return (
+                <FieldRowMobile
+                  key={field.fieldName}
+                  field={field}
+                  decisionKey={decisionKey}
+                  current={decisions[decisionKey]}
+                  onDecision={onDecision}
+                />
+              );
+            })}
+          </div>
+        </>
       )}
     </div>
   );
@@ -188,37 +316,36 @@ export function SmartImportDecisionStep({
 
   return (
     <Card data-testid="decision-step">
-      <CardHeader>
-        <CardTitle className="text-lg flex items-center gap-2">
-          <AlertTriangle className="w-5 h-5 text-amber-600" />
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 text-amber-600" />
           Needs your decision
         </CardTitle>
-        <p className="text-sm text-muted-foreground">
-          We found {conflictRows.length} item{conflictRows.length > 1 ? "s" : ""} where
-          both the app and your spreadsheet changed differently since the last import.
-          Please choose which value to keep for each.
+        <p className="text-xs text-muted-foreground">
+          {conflictRows.length} item{conflictRows.length > 1 ? "s" : ""} where
+          both the app and your spreadsheet changed differently.
+          Choose which value to keep for each field.
         </p>
       </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Progress */}
-        <div className="flex items-center justify-between bg-slate-50 rounded-lg px-4 py-2 border" data-testid="decision-progress">
-          <span className="text-sm">
+      <CardContent className="space-y-2 pt-0">
+        {/* Progress + bulk actions */}
+        <div className="flex items-center justify-between bg-slate-50 rounded px-3 py-1.5 border text-xs" data-testid="decision-progress">
+          <span>
             {allResolved
-              ? <span className="text-emerald-700 font-medium">All decisions made</span>
-              : <span>{resolvedCount} of {totalDecisions} decisions made</span>
+              ? <span className="text-emerald-700 font-medium">All {totalDecisions} decisions made</span>
+              : <span className="text-slate-600"><strong>{resolvedCount}</strong> of <strong>{totalDecisions}</strong> decided</span>
             }
           </span>
-          {/* Bulk actions */}
-          <div className="flex gap-2">
+          <div className="flex gap-1">
             <Button
-              variant="outline" size="sm" className="text-xs h-7"
+              variant="outline" size="sm" className="text-[10px] h-6 px-2"
               onClick={() => onBulkDecision("keep_app")}
               data-testid="decision-bulk-keep"
             >
               Keep all app values
             </Button>
             <Button
-              variant="outline" size="sm" className="text-xs h-7"
+              variant="outline" size="sm" className="text-[10px] h-6 px-2"
               onClick={() => onBulkDecision("accept_file")}
               data-testid="decision-bulk-accept"
             >
@@ -227,18 +354,30 @@ export function SmartImportDecisionStep({
           </div>
         </div>
 
-        {/* Conflict cards */}
-        {conflictRows.map(row => (
-          <ConflictCard
-            key={row.rowKey}
-            row={row}
-            decisions={decisions}
-            onDecision={onDecision}
-          />
-        ))}
+        {/* Conflict cards — collapsed by default, first unresolved expanded */}
+        {conflictRows.map((row, idx) => {
+          const rowResolved = row.fields
+            .filter(f => f.requiresDecision)
+            .every(f => decisions[`${row.rowKey}::${f.fieldName}`]);
+          // Expand the first unresolved card, or the first card if all resolved
+          const isFirstUnresolved = !rowResolved && conflictRows.slice(0, idx).every(r =>
+            r.fields.filter(f => f.requiresDecision).every(f => decisions[`${r.rowKey}::${f.fieldName}`])
+          );
+          const defaultExpanded = isFirstUnresolved || (idx === 0 && allResolved);
+
+          return (
+            <ConflictCard
+              key={row.rowKey}
+              row={row}
+              decisions={decisions}
+              onDecision={onDecision}
+              defaultExpanded={defaultExpanded}
+            />
+          );
+        })}
 
         {/* Navigation */}
-        <div className="flex justify-between pt-2">
+        <div className="flex justify-between pt-1">
           <Button variant="outline" size="sm" onClick={onBack} data-testid="decision-back-btn">
             <ArrowLeft className="w-3.5 h-3.5 mr-1.5" /> Back
           </Button>
