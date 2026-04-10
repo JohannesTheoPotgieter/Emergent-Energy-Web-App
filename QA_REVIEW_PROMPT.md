@@ -1189,17 +1189,552 @@ Include every SQL query you ran against production (read-only) with result count
 
 ---
 
+## 15. LEGACY MIGRATION COMPLETENESS
+
+The platform has undergone significant migration from a legacy architecture to a canonical, normalized structure. Several migration artifacts remain. This section audits whether all legacy code has been fully migrated, and flags anything still in limbo.
+
+### 15A. Dropped Tables — Verify No References Remain
+
+The following tables have been **dropped** from the database. Their schema definitions have been removed, but legacy type stubs remain in `shared/schema/legacy.ts`. Verify that **no production code still queries these tables**:
+
+| Dropped Table | Replaced By | Legacy Stub In | QA Check |
+|--------------|-------------|---------------|----------|
+| `projects` (old) | `project_info` | `shared/schema/legacy.ts` (interface `Project`) | Grep for `FROM projects` or `.projects` in server code — should find ZERO hits |
+| `expenses` (old) | `program_expense` + `normalized_cost_lines` | `shared/schema/legacy.ts` (interface `Expense`) | No queries to old `expenses` table |
+| `revenues` (old) | `program_inflows` + `normalized_revenue_lines` | `shared/schema/legacy.ts` (interface `Revenue`) | No queries to old `revenues` table |
+| `tasks` (old) | `work_items` | `shared/schema/legacy.ts` (interface `Task`) | No queries to old `tasks` table |
+| `budgets` (old) | Finance module tables | `shared/schema/legacy.ts` (interface `Budget`) | No queries to old `budgets` table |
+| `operational_tasks` | `work_items` | Comment in `shared/schema/tasks.ts` line 35 | `grep -r "operational_tasks" server/` should return ZERO |
+| `engineering_tasks` | `work_items` (workstream='ENG') | Comment in `shared/schema/engineering.ts` line 107 | `grep -r "engineering_tasks" server/` should return ZERO |
+
+**ACTION:** If any code still references these dropped tables, it is using legacy type stubs as a compatibility layer. Flag these for migration to canonical types.
+
+### 15B. Deprecated `projectName` Columns — Migration to `projectId` FK
+
+The biggest ongoing migration is from `projectName` (denormalized text) to `projectId` (foreign key). Many tables have BOTH columns, with `projectName` marked `@deprecated`. Verify migration completeness:
+
+| Schema File | Tables With Deprecated `projectName` | QA Check |
+|-------------|--------------------------------------|----------|
+| `shared/schema/collaboration.ts` | `approvals`, `audit_events`, `standup_agenda_items` | Does API layer use `projectId` for all queries? Or still falling back to `projectName`? |
+| `shared/schema/engineering.ts` | `deliverables` | All deliverable queries use `projectId`? |
+| `shared/schema/finance.ts` | `program_expense`, `program_inflows`, `project_plan`, `cashflow_points`, `finance_revenue_monthly`, `finance_cos_monthly`, `working_plan_scenario`, `project_plan_dependency`, `schedule_change_notice`, `normalized_revenue_lines`, `normalized_cost_lines`, `weekly_reviews`, `milestone_task_links`, `expense_task_links`, `counterparties`, `financial_edit_requests`, `financial_integration_rules`, `fye_revenue_tracking`, `fye_revenue_detailed` | CRITICAL: Finance has the most deprecated columns. Verify ALL finance queries use `projectId` FK, not `projectName` string matching. |
+| `shared/schema/imports.ts` | `smart_import_runs`, `issue_resolution_rules`, `task_import_overrides`, `change_sets`, `plan_edit_notifications`, `import_lineage` | Import pipeline must use `projectId` |
+
+**MIGRATION AUDIT QUERY:**
+```sql
+-- Find any rows where projectId is NULL but projectName is set
+-- (indicates incomplete backfill)
+SELECT 'program_expense' AS tbl, COUNT(*) FROM program_expense WHERE project_id IS NULL AND project_name IS NOT NULL
+UNION ALL
+SELECT 'program_inflows', COUNT(*) FROM program_inflows WHERE project_id IS NULL AND project_name IS NOT NULL
+UNION ALL
+SELECT 'deliverables', COUNT(*) FROM deliverables WHERE project_id IS NULL AND project_name IS NOT NULL
+UNION ALL
+SELECT 'smart_import_runs', COUNT(*) FROM smart_import_runs WHERE project_id IS NULL AND project_name IS NOT NULL
+-- ... repeat for every table with deprecated projectName
+```
+
+Any non-zero counts indicate **incomplete projectId backfill** — data that only has the legacy string identifier.
+
+### 15C. Legacy Finance Columns — Rollback Window
+
+Two legacy TEXT columns exist in the finance schema and are explicitly marked as temporary:
+
+| Table | Legacy Column | Note in Schema |
+|-------|-------------|---------------|
+| `normalized_revenue_lines` | `amount_ex_vat_legacy` (TEXT) | "Legacy TEXT column preserved for 30-day rollback window. Remove after cleanup PR." |
+| `normalized_revenue_lines` | `vat_legacy` (TEXT) | Same |
+| `normalized_cost_lines` | `amount_ex_vat_legacy` (TEXT) | Same |
+
+**QA CHECK:** The 30-day rollback window has likely expired. Verify:
+1. Are any API routes or queries still reading from `amount_ex_vat_legacy` or `vat_legacy`?
+2. Is the new DECIMAL `amount_ex_vat` column fully populated for all rows?
+3. Can these legacy columns be safely dropped?
+
+### 15D. Legacy Work Item Columns
+
+The `work_items` table contains migration tracking columns:
+
+| Column | Purpose | QA Check |
+|--------|---------|----------|
+| `legacy_table` | Which old table this row was migrated from | Should only contain `operational_tasks`, `engineering_tasks`, or NULL for new rows |
+| `legacy_id` | The ID in the old table | Should match historical data; never reused |
+
+Similarly, `project_plan` has `legacy_table` and `legacy_id` columns.
+
+**QA CHECK:** Are these columns still needed? If all migration is complete and no code references them, they can be dropped.
+
+### 15E. Legacy Route Redirects
+
+The app maintains `LEGACY_REDIRECTS` in the page registry for old bookmarks. Known redirects include:
+
+| Old Route | Redirects To | QA Check |
+|-----------|-------------|----------|
+| `/dashboard` | `/gates` | Still working? |
+| `/my-tool` | `/my-work` (or similar) | Still working? |
+| `/command-center` | `/admin/control-center` | Still working? |
+| `/revenue` | `/revenue-tracker` | Still working? |
+| `/exceptions` | `/exceptions` or similar | Not a circular redirect? |
+| `/project-lifecycle` | `/lifecycle-board` | Still working? |
+| `/sseg` | TBD | Still working? |
+
+**QA CHECK:**
+1. Test every LEGACY_REDIRECT by navigating to the old URL — it should redirect cleanly with no flash or error
+2. No redirect chains (A → B → C) — verified by existing test in `qa/tests/unit/redirect-chains.test.ts`
+3. All redirect targets exist in PAGE_REGISTRY as real renderable pages
+4. Consider: are users still hitting these old URLs? If analytics show zero traffic, they can be removed
+
+### 15F. v1 vs v2 API Layer
+
+The codebase has both:
+- **v1 routes**: `server/*-routes.ts` (root level, using `projectName` in URL params like `:projectName`)
+- **v2 routes**: `server/api/v2/` (using `projectId` in URL params)
+
+| Layer | Location | Pattern | QA Check |
+|-------|----------|---------|----------|
+| v1 routes | `server/*-routes.ts` | `/api/projects/:projectName/...` | 44+ occurrences of `projectName` in route params across 11 route files |
+| v2 routes | `server/api/v2/routes/` | `/api/v2/projects/:projectId/...` | Modern pattern with proper controller/service/repository |
+| v2 controller | `server/api/v2/controllers/v2-controller.ts` | Proper MVC | Has validators, permission checks |
+| v2 service | `server/api/v2/services/project-v2-service.ts` | Business logic | Proper separation of concerns |
+| v2 repository | `server/api/v2/repositories/project-v2-repository.ts` | Data access | Uses Drizzle ORM properly |
+
+**QA CHECK:**
+1. Are any front-end pages still calling v1 endpoints (`:projectName`) instead of v2 (`:projectId`)?
+2. Do v1 and v2 endpoints return the same data shape for the same entity?
+3. Is there a migration plan to deprecate all v1 routes?
+4. Are v1 routes missing permission checks that v2 routes have? (Security risk)
+
+### 15G. Backfill System Status
+
+The platform has a startup backfill system (`server/bootstrap/backfills/`). Verify all backfills have completed:
+
+| Backfill | File | Purpose | QA Check |
+|----------|------|---------|----------|
+| `project_ids` | `project-ids-backfill.ts` | Populate `projectId` FK from `projectName` | `SELECT COUNT(*) FROM app_settings WHERE key = 'backfill:project_ids'` returns 1 |
+| `pm_user` | `pm-user-backfill.ts` | Link PM names to user records | Completed? |
+| `user_assignment` | `user-assignment-backfill.ts` | Link text-based assignees to user IDs | Completed? |
+| `ms_assignment_cleanup` | `ms-assignment-cleanup-backfill.ts` | Clean up Microsoft sync assignments | Completed? |
+| `work_items` | `work-items-backfill.ts` | Migrate operational_tasks/engineering_tasks → work_items | Completed? |
+| `assignee_user_ids` | `assignee-user-ids-backfill.ts` | Resolve assignee names to user IDs | Completed? |
+| `integrity_guard` | `integrity-guard.ts` | Data integrity checks and repairs | Completed? |
+| `role_lens` | `role-lens-backfill.ts` | Seed lens profiles, widgets, contracts, SSEG | Completed? |
+| `stage_instance` | `stage-instance-backfill.ts` | Ensure all projects have 10 stage instances | Completed? |
+| `gate_evaluation` | `gate-evaluation-backfill.ts` | Compute gate completion scores | Completed? |
+| `startup_backfills_v1` | `run-startup-backfills.ts` | Master flag for all above | Must be set to prevent re-running |
+
+**VERIFICATION QUERY:**
+```sql
+SELECT key, value FROM app_settings WHERE key LIKE 'backfill:%' ORDER BY key;
+```
+
+Every backfill above should have a row with a `completedAt` timestamp in the value JSON. Any missing entries mean the backfill never completed.
+
+### 15H. Duplicate / Overlapping Route Files
+
+Several domain route files exist at BOTH the server root AND in `server/departments/`:
+
+| Root File | Department File | QA Check |
+|-----------|----------------|----------|
+| `server/handover-routes.ts` | `server/departments/handover-routes.ts` | Which is active? Are both mounted? Conflicting endpoints? |
+| `server/engineering-routes.ts` | (engineering split into multiple files) | `eng-stage-routes.ts`, `engineering-intake-routes.ts` — are these complementary or overlapping? |
+| `server/quality-routes.ts` | (quality split) | `quality-ncr-routes.ts` — complementary or overlapping? |
+
+**QA CHECK:** In `server/routes.ts` (master router), verify:
+1. No two route files register the same HTTP method + path
+2. If both root and department versions exist, only ONE is mounted
+3. No "shadow" routes where an older handler silently overrides a newer one
+
+---
+
+## 16. DATABASE STRUCTURE PROFESSIONALISM
+
+The database must reflect a production-grade, enterprise-quality structure. This section audits schema design, naming conventions, constraints, and data hygiene.
+
+### 16A. Schema Naming Conventions
+
+| Rule | Convention | QA Check |
+|------|-----------|----------|
+| Table names | `snake_case`, plural (e.g., `work_items`, `deliverables`) | Scan for any camelCase or singular table names |
+| Column names | `snake_case` (e.g., `created_at`, `project_id`) | Scan for any camelCase columns in DB |
+| Foreign keys | `<entity>_id` pattern (e.g., `project_id`, `user_id`) | All FKs follow this pattern |
+| Enum names | `<domain>_<field>_enum` (e.g., `procurement_status_enum`) | All pgEnum declarations follow pattern |
+| Boolean columns | Prefixed with `is_`, `has_`, `can_` (e.g., `is_done`, `can_edit`, `has_evidence`) | Scan for bare boolean columns without prefix (some exceptions acceptable) |
+| Timestamps | `created_at`, `updated_at`, `deleted_at` (consistent across all tables) | Every table has at minimum `created_at` |
+
+**QA CHECK:** Run a schema introspection query and flag any naming convention violations:
+```sql
+-- Find columns that don't follow snake_case
+SELECT table_name, column_name
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND column_name ~ '[A-Z]'
+ORDER BY table_name;
+```
+
+### 16B. Referential Integrity
+
+| Rule | QA Check |
+|------|----------|
+| Every FK column has a `REFERENCES` constraint | No orphan ID columns without FK constraints |
+| Cascade behavior defined | `ON DELETE CASCADE` or `ON DELETE SET NULL` explicitly set where appropriate |
+| No dangling FKs | No rows where `project_id` points to a non-existent `project_info.id` |
+| Self-referencing FKs | `recurrence_parent_id` in work_items references same table — verify no circular chains |
+
+**INTEGRITY QUERIES:**
+```sql
+-- Find orphan project references
+SELECT 'work_items' AS tbl, COUNT(*)
+FROM work_items wi
+LEFT JOIN project_info p ON wi.project_id = p.id
+WHERE wi.project_id IS NOT NULL AND p.id IS NULL AND wi.deleted_at IS NULL;
+
+-- Repeat for every table with project_id FK
+```
+
+### 16C. Index Coverage
+
+Verify indexes exist for all commonly queried columns:
+
+| Table | Expected Indexes | QA Check |
+|-------|-----------------|----------|
+| `work_items` | `project_id`, `assignee_id`, `status`, `workstream`, `deleted_at`, `bucket` | Missing indexes cause slow queries at scale |
+| `project_stage_instances` | `project_id`, `stage_code`, `stage_status` | Gate queries must be fast |
+| `deliverables` | `project_id`, `status` | Engineering page queries |
+| `normalized_revenue_lines` | `project_id`, `status`, `month` | Finance aggregation |
+| `normalized_cost_lines` | `project_id`, `status`, `month` | Finance aggregation |
+| `audit_events` | `entity_type`, `entity_id`, `created_at` | Audit log queries |
+| `approvals` | `project_id`, `status`, `requested_by` | Approval queries |
+| `procurements` | `project_id`, `status` | Procurement pages |
+
+**QA CHECK:**
+```sql
+SELECT tablename, indexname, indexdef
+FROM pg_indexes
+WHERE schemaname = 'public'
+ORDER BY tablename, indexname;
+```
+Compare with the expected indexes above. Flag any high-traffic tables missing indexes.
+
+### 16D. NOT NULL Constraints
+
+| Rule | QA Check |
+|------|----------|
+| Status columns should be NOT NULL with a default | No rows with NULL status on active records |
+| `created_at` should be NOT NULL DEFAULT NOW() | No NULL timestamps |
+| `project_id` on project-scoped tables should be NOT NULL | Unless the entity can exist without a project |
+| `user_id` on user-created records should be NOT NULL | Unless system-created records are allowed |
+
+**QA CHECK:**
+```sql
+-- Find rows with NULL status where they shouldn't be
+SELECT 'work_items' AS tbl, COUNT(*) FROM work_items WHERE status IS NULL AND deleted_at IS NULL
+UNION ALL
+SELECT 'deliverables', COUNT(*) FROM deliverables WHERE status IS NULL AND deleted_at IS NULL
+UNION ALL
+SELECT 'procurements', COUNT(*) FROM procurements WHERE status IS NULL
+-- ... extend for all status columns
+```
+
+### 16E. Data Type Consistency
+
+| Issue | QA Check |
+|-------|----------|
+| Financial amounts | Should ALL be `DECIMAL(15,2)` — not TEXT, not REAL, not INTEGER | Scan for TEXT amount columns (legacy: `amount_ex_vat_legacy`) |
+| Dates | Should use `DATE` or `TIMESTAMP` — not TEXT strings | No `'2024-01-15'` stored as TEXT |
+| Enums vs TEXT | Status columns should use `pgEnum` where possible, not free-text | Any status column storing values not in its enum is a bug |
+| Arrays | `text[]` columns (e.g., `stages_visible`) should have validation | No malformed array values |
+
+### 16F. Soft Delete Hygiene
+
+| Rule | QA Check |
+|------|----------|
+| Every table with `deleted_at` also has `deleted_by` | No anonymous deletions |
+| `deleted_at` and `deleted_by` are always set together | No `deleted_at` without `deleted_by` or vice versa |
+| Active queries always filter `WHERE deleted_at IS NULL` | Grep server code for queries that forget this filter |
+| Unique constraints exclude soft-deleted rows | e.g., a unique constraint on `(project_id, name)` should allow re-creation after soft delete |
+
+### 16G. Data Hygiene Checks
+
+| Check | Query/Method | Expected Result |
+|-------|-------------|----------------|
+| No duplicate primary keys | `SELECT id, COUNT(*) FROM <table> GROUP BY id HAVING COUNT(*) > 1` | Zero rows |
+| No empty string statuses | `SELECT * FROM work_items WHERE status = '' AND deleted_at IS NULL` | Zero rows |
+| No whitespace-only statuses | `SELECT * FROM work_items WHERE TRIM(status) != status` | Zero rows |
+| No future created_at dates | `SELECT * FROM work_items WHERE created_at > NOW() + INTERVAL '1 hour'` | Zero rows |
+| No `updated_at < created_at` | `SELECT * FROM work_items WHERE updated_at < created_at` | Zero rows |
+| No negative financial amounts | `SELECT * FROM normalized_revenue_lines WHERE amount_ex_vat < 0` | Zero rows (unless credits exist) |
+| UTF-8 validity | Scan for garbled text, encoding issues | Clean data |
+
+---
+
+## 17. API LAYER PROFESSIONALISM
+
+The API layer must be production-grade: consistent patterns, proper error handling, security, and clean architecture.
+
+### 17A. Architectural Consistency
+
+| Pattern | Expected | QA Check |
+|---------|----------|----------|
+| **Controller/Service/Repository** | v2 routes follow this pattern | All new routes should follow v2 pattern, not ad-hoc route handlers |
+| **Validation** | All inputs validated with Zod before processing | Search for routes that access `req.body` without validation |
+| **Error handling** | Centralized error handler catches all exceptions | No unhandled promise rejections that crash the server |
+| **Response format** | Consistent JSON response shape: `{ data, error, message }` | No routes returning raw arrays or inconsistent shapes |
+| **HTTP status codes** | Correct codes: 200, 201, 400, 401, 403, 404, 422, 500 | No routes returning 200 for errors or 500 for validation failures |
+
+**QA CHECK — Search for anti-patterns:**
+```bash
+# Routes that send raw 500 errors
+grep -rn "res.status(500)" server/
+# Should use centralized error handler instead
+
+# Routes accessing req.body without validation
+grep -rn "req.body\." server/*-routes.ts | grep -v "validate\|schema\|parse\|zod"
+# Should validate before accessing
+
+# Empty catch blocks
+grep -rn "catch.*{}" server/
+# Should at minimum log the error
+```
+
+### 17B. Authentication & Authorization Audit
+
+| Check | QA Method |
+|-------|----------|
+| Every route (except health/auth) requires JWT auth | Read `server/routes.ts` — verify all sub-routers use auth middleware |
+| JWT tokens have proper expiration | Check `server/jwt.ts` — tokens should expire (not be infinite) |
+| Token refresh works | Test with expired token — should return 401, not 500 |
+| Role checks on sensitive routes | Admin routes check for admin role, not just valid JWT |
+| No authorization bypass | A `viewer` user cannot call mutation endpoints even with valid JWT |
+
+### 17C. Error Handling Quality
+
+| Pattern | Expected Behavior | QA Check |
+|---------|-------------------|----------|
+| Database errors | Caught, logged, returned as 500 with generic message (no SQL in response) | No raw Drizzle/pg errors exposed to client |
+| Validation errors | Returned as 422 with field-level error details | Front-end can display per-field errors |
+| Not found | Returned as 404 with entity type | Not 500 or empty 200 |
+| Concurrent modification | Handled gracefully (optimistic locking or last-write-wins) | No silent data loss |
+| Rate limiting | Protected against abuse | At minimum: login endpoint, import endpoint |
+
+### 17D. Console/Logging Hygiene
+
+| Issue | QA Check |
+|-------|----------|
+| No `console.log` in production routes | `grep -rn "console.log" server/*-routes.ts` — should use structured logger |
+| No `console.error` without context | `grep -rn "console.error" server/` — should include request ID and error details |
+| Sensitive data in logs | No passwords, tokens, PII, or full request bodies logged |
+| Structured logging | Logs should be JSON-parseable for production log aggregation |
+
+### 17E. API Response Completeness
+
+For every entity the front-end needs, verify the API provides:
+
+| Capability | Endpoint Pattern | QA Check |
+|-----------|-----------------|----------|
+| **List with pagination** | `GET /api/<entity>?page=1&limit=25` | Pagination works, returns total count |
+| **Single record** | `GET /api/<entity>/:id` | Returns full record with all fields |
+| **Create** | `POST /api/<entity>` | Returns created record with ID |
+| **Update** | `PATCH /api/<entity>/:id` | Returns updated record |
+| **Delete** | `DELETE /api/<entity>/:id` | Returns 204 or confirmation |
+| **Status transition** | `PATCH /api/<entity>/:id/status` | Validates transition, returns new status |
+| **Bulk operations** | `POST /api/<entity>/bulk` | Handles multiple IDs, returns per-item results |
+| **Search/filter** | `GET /api/<entity>?status=X&workstream=Y` | Filter parameters match front-end filter UI |
+
+**QA CHECK:** For each front-end page, trace the data fetching hooks back to the API endpoints. Flag any page that:
+- Makes 10+ API calls on load (N+1 problem)
+- Fetches data it doesn't display (over-fetching)
+- Cannot filter server-side (loads all data then filters client-side)
+- Has no loading state while fetching
+
+### 17F. Security Hardening
+
+| Check | QA Method |
+|-------|----------|
+| SQL injection prevention | All queries use Drizzle ORM parameterized queries — grep for `sql.raw()` with string interpolation |
+| XSS prevention | No `dangerouslySetInnerHTML` in React without sanitization |
+| CSRF protection | API requires auth token in header, not cookies |
+| Rate limiting | Login, import, and bulk endpoints have rate limits |
+| File upload validation | File type, size limits enforced |
+| No secrets in code | `grep -ri "password\|secret\|api_key\|token" server/ --include="*.ts"` — only references to env vars, never hardcoded |
+| CORS configuration | Only allowed origins can call the API |
+| Helmet/security headers | Response includes security headers (X-Frame-Options, CSP, etc.) |
+
+---
+
+## 18. FRONT-END PROFESSIONALISM & RUNNING AS INTENDED
+
+The front-end must be production-grade: no console errors, consistent UI, responsive design, and correct behavior for every user flow.
+
+### 18A. Zero Console Errors
+
+| Page Category | QA Check |
+|--------------|----------|
+| **Every page in the app** | Open browser DevTools console, navigate to each page, and verify ZERO errors, ZERO warnings (React warnings, TypeScript errors, missing props, etc.) |
+| **Page transitions** | Navigate between pages rapidly — no errors from unmounted component updates |
+| **Filter interactions** | Apply and clear every filter — no errors |
+| **Form submissions** | Submit every form (create, edit, delete) — no errors |
+| **Empty states** | Pages with no data should show empty state UI, not errors |
+| **Error boundaries** | If a component crashes, a fallback UI should appear — not a white screen |
+
+### 18B. TypeScript Strictness
+
+| Check | QA Method |
+|-------|----------|
+| No `any` type assertions in components | `grep -rn ": any" client/src/` — should be minimal |
+| No `@ts-ignore` or `@ts-expect-error` | `grep -rn "@ts-ignore\|@ts-expect-error" client/src/` |
+| No `as any` type casts | `grep -rn "as any" client/src/` — should be near-zero |
+| Shared types used consistently | Front-end types match shared schema types — no local redefinitions |
+| Build succeeds without errors | `npx tsc --noEmit` returns zero errors |
+
+### 18C. UI Consistency & Polish
+
+| Rule | QA Check |
+|------|----------|
+| **Consistent spacing** | All pages use the same padding, margin, gap system (TailwindCSS spacing scale) |
+| **Consistent typography** | Headings, body text, labels all use the same font sizes |
+| **Consistent button styles** | Primary, secondary, destructive, ghost — same across all pages |
+| **Consistent table styles** | All data tables use `TrackerTable` or equivalent — no ad-hoc table markup |
+| **Consistent status badges** | All status displays use `StatusBadge` component — no inline styling |
+| **Loading states** | Every page that fetches data shows a skeleton or spinner during load |
+| **Empty states** | Every list/table shows a meaningful empty state when no data exists |
+| **Responsive layout** | Pages render correctly at 1024px, 1280px, 1440px, 1920px widths |
+| **Dark mode** (if supported) | All pages render correctly in dark mode — no invisible text or broken contrast |
+| **Accessible focus states** | Tab navigation works on all interactive elements |
+
+### 18D. Data Freshness & Reactivity
+
+| Behavior | QA Check |
+|----------|----------|
+| **Mutation → UI update** | After creating/editing/deleting an item, the UI updates immediately without manual refresh |
+| **Cross-page sync** | Editing a task on `/engineering/tasks` reflects immediately when navigating to `/my-work/tasks` |
+| **Real-time counts** | The notification bell count updates when new notifications arrive |
+| **Stale data indicator** | If data is cached and potentially stale, UI should indicate this |
+| **Optimistic updates** | Status changes feel instant (optimistic update), with rollback on error |
+| **Cache invalidation** | After a mutation, related queries are invalidated (check `task-cache.ts` patterns) |
+
+### 18E. Form & Input Quality
+
+| Rule | QA Check |
+|------|----------|
+| **Required field indicators** | All required fields show `*` or similar indicator |
+| **Validation on blur/submit** | Errors show on field blur and form submit |
+| **Error message clarity** | Error messages tell the user what to fix, not technical jargon |
+| **Dropdown options** | Status dropdowns show only valid transitions from current state |
+| **Date pickers** | Date inputs use proper date picker components, not raw text input |
+| **Number inputs** | Financial amounts use number inputs with 2 decimal places |
+| **Confirmation dialogs** | Destructive actions (delete, cancel, terminate) show confirmation dialog |
+| **Unsaved changes warning** | Navigating away from a dirty form shows a warning |
+
+### 18F. Navigation & Routing Health
+
+| Check | QA Method |
+|-------|----------|
+| **All sidebar links work** | Click every sidebar link for every lens — no 404s, no blank pages |
+| **Direct URL access** | Paste every route directly into browser — renders correctly |
+| **Browser back/forward** | Navigate 5 pages deep, then back — no crashes or blank pages |
+| **Deep link sharing** | Copy URL from Project Detail page, open in new tab — same page loads |
+| **Auth redirect** | Accessing any route while logged out redirects to login, then returns to original route |
+| **Permission redirect** | Accessing a module outside the user's lens shows access denied, not a crash |
+| **404 page** | Accessing `/nonexistent-route` shows a proper 404 page |
+
+### 18G. Feature Completeness — "Can I Actually Do This?"
+
+For each role, verify they can perform every action their job requires:
+
+**CEO / CFO:**
+- [ ] View executive dashboard with correct KPIs
+- [ ] See portfolio financial summary
+- [ ] Drill down from portfolio → project → gate details
+- [ ] View all RAG statuses (schedule, cost, quality)
+
+**Program Manager / Project Manager:**
+- [ ] View and progress gate stages
+- [ ] Create and approve exceptions
+- [ ] Assign tasks to team members
+- [ ] View project financial summary
+- [ ] Run weekly reviews
+- [ ] Access standup view
+
+**Engineer:**
+- [ ] See assigned engineering tasks
+- [ ] Move tasks through Kanban columns
+- [ ] Upload deliverable versions
+- [ ] Mark engineering stage tasks complete
+- [ ] View blocked/review queues
+
+**Construction Manager:**
+- [ ] Create site inspections
+- [ ] Log snags and track resolution
+- [ ] Manage contractor assignments
+- [ ] View construction progress
+
+**Quality Manager:**
+- [ ] Create and manage QC checklists
+- [ ] Evaluate evidence
+- [ ] Track commissioning items
+- [ ] View quality dashboard
+
+**Finance Manager:**
+- [ ] Create revenue and cost lines
+- [ ] Process procurements end-to-end
+- [ ] Create and approve POs
+- [ ] Process payment requests and batches
+- [ ] View cashflow and GP tracker
+
+**HSE Manager:**
+- [ ] Log HSE incidents
+- [ ] Track corrective actions
+- [ ] View HSE dashboard
+
+**COO / Admin:**
+- [ ] Simulate any lens role
+- [ ] Access admin control center
+- [ ] Run smart imports
+- [ ] Access recovery center
+- [ ] Manage user roles and permissions
+
+### 18H. Performance Sanity
+
+While this isn't a performance audit, flag obvious issues:
+
+| Issue | Detection |
+|-------|-----------|
+| Pages that take > 3 seconds to load | Time each page load |
+| API calls that return > 1MB of data | Monitor network tab for oversized responses |
+| Pages making > 20 API calls on load | Count network requests per page |
+| Infinite re-render loops | React DevTools profiler shows constant re-renders |
+| Memory leaks | Navigate repeatedly between pages — memory should stabilize, not grow |
+| Bundle size | Main JS bundle should be < 2MB gzipped; lazy loading for page components |
+
+---
+
 ## END OF PROMPT
 
-This prompt covers the full stack of the Emergent Energy platform:
-- **100+ database tables** with every status enum documented
-- **60+ API route files** with middleware and service layer
-- **50+ front-end pages** with component and filter inventory
-- **13 lens roles** with module access and simulation testing
-- **20+ cross-domain consistency rules**
-- **45+ specific test scenarios**
-- **10 high-risk patterns** to proactively scan for
-- **Complete CRUD and transition button audit**
-- **Trustworthiness verification** with audit trail and provenance checks
+This prompt covers the **complete full-stack audit** of the Emergent Energy platform across 18 sections:
 
-The goal: **every status works correctly no matter what lens, page, or filter is viewing it.**
+| # | Section | Scope |
+|---|---------|-------|
+| 1 | Safety Rules | Read-only production access, PII redaction |
+| 2 | Architecture | Tech stack, data flow, directory map |
+| 3 | Database Layer | 100+ tables, every status enum, per-table QA checks |
+| 4 | Status Ecosystem | Universal normalization, 20+ cross-domain consistency rules |
+| 5 | Lens System | 13 roles, module access, COO simulation parity |
+| 6 | Access Control | projectAccess table, permission hierarchy, leakage tests |
+| 7 | API Layer | 60+ route files, services, middleware inventory |
+| 8 | Front-End Layer | 50+ pages, components, filters, state management |
+| 9 | Cross-Cutting QA | Golden invariants, cross-page data matrix, lens consistency |
+| 10 | Test Scenarios | 45+ specific test cases across 9 domains |
+| 11 | Risk Areas | 10 high-risk patterns, 8 anti-pattern grep commands |
+| 12 | Trustworthiness | Audit trail, financial arithmetic, data provenance |
+| 13 | Front-End Completeness | Every status transition button, CRUD audit, error handling |
+| 14 | Output Format | Structured report template, severity definitions |
+| 15 | Legacy Migration | Dropped tables, deprecated columns, v1 to v2 routes, backfill verification |
+| 16 | Database Professionalism | Naming conventions, referential integrity, indexes, data hygiene |
+| 17 | API Professionalism | Architectural consistency, auth audit, security hardening |
+| 18 | Front-End Professionalism | Zero console errors, TypeScript strictness, UI polish, feature completeness |
+
+### The Three Core Goals:
+
+1. **Consistency** — Every status works correctly no matter what lens, page, or filter is viewing it
+2. **Trustworthiness** — Every data point is auditable, traceable, and correct across all views
+3. **Professionalism** — Database, API, and front-end are production-grade, fully migrated from legacy, and running as intended
