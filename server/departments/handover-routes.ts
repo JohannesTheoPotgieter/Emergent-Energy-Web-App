@@ -4,11 +4,15 @@
 import { Router, type Express, type Request, type Response } from "express";
 import { requireAuth } from "./shared-middleware";
 import { db } from "../db";
+import { parseBody } from "../lib/input-validation";
 import { eq, desc, and, isNull } from "drizzle-orm";
+import { DEFAULT_QUERY_LIMIT } from "../lib/safe-query";
 import {
   handoverPacks,
+  insertHandoverPackSchema,
   handoverChecklistItems,
   ssegItems,
+  insertSsegItemSchema,
 } from "@shared/schema/handover";
 
 const router = Router();
@@ -27,7 +31,8 @@ router.get("/api/handover/packs", requireAuth, async (req: Request, res: Respons
       .select()
       .from(handoverPacks)
       .where(and(...conditions))
-      .orderBy(desc(handoverPacks.createdAt));
+      .orderBy(desc(handoverPacks.createdAt))
+      .limit(DEFAULT_QUERY_LIMIT);
 
     res.json(rows);
   } catch (err) {
@@ -38,7 +43,9 @@ router.get("/api/handover/packs", requireAuth, async (req: Request, res: Respons
 
 router.post("/api/handover/packs", requireAuth, async (req: Request, res: Response) => {
   try {
-    const [row] = await db.insert(handoverPacks).values(req.body).returning();
+    const [parsed, validationError] = parseBody(req.body, insertHandoverPackSchema);
+    if (validationError) return res.status(400).json(validationError);
+    const [row] = await db.insert(handoverPacks).values(parsed).returning();
     res.status(201).json(row);
   } catch (err) {
     console.error("[Handover] Failed to create pack:", err);
@@ -93,7 +100,7 @@ router.patch("/api/handover/checklist-items/:id", requireAuth, async (req: Reque
   try {
     const [row] = await db
       .update(handoverChecklistItems)
-      .set(req.body)
+      .set({ ...req.body, createdAt: undefined, deletedAt: undefined, id: undefined })
       .where(eq(handoverChecklistItems.id, Number(req.params.id)))
       .returning();
     res.json(row);
@@ -115,7 +122,8 @@ router.get("/api/handover/sseg", requireAuth, async (req: Request, res: Response
       .select()
       .from(ssegItems)
       .where(and(...conditions))
-      .orderBy(desc(ssegItems.createdAt));
+      .orderBy(desc(ssegItems.createdAt))
+      .limit(DEFAULT_QUERY_LIMIT);
 
     res.json(rows);
   } catch (err) {
@@ -126,7 +134,9 @@ router.get("/api/handover/sseg", requireAuth, async (req: Request, res: Response
 
 router.post("/api/handover/sseg", requireAuth, async (req: Request, res: Response) => {
   try {
-    const [row] = await db.insert(ssegItems).values(req.body).returning();
+    const [parsed, validationError] = parseBody(req.body, insertSsegItemSchema);
+    if (validationError) return res.status(400).json(validationError);
+    const [row] = await db.insert(ssegItems).values(parsed).returning();
     res.status(201).json(row);
   } catch (err) {
     console.error("[Handover] Failed to create SSEG item:", err);
@@ -138,7 +148,7 @@ router.patch("/api/handover/sseg/:id", requireAuth, async (req: Request, res: Re
   try {
     const [row] = await db
       .update(ssegItems)
-      .set({ ...req.body, updatedAt: new Date() })
+      .set({ ...req.body, updatedAt: new Date(), createdAt: undefined, deletedAt: undefined, id: undefined })
       .where(eq(ssegItems.id, Number(req.params.id)))
       .returning();
     res.json(row);

@@ -80,7 +80,7 @@ export type QcTemplatePostmortemMetric = typeof qcTemplatePostmortemMetric.$infe
 
 export const qcChecklist = pgTable("qc_checklist", {
   id: serial("id").primaryKey(),
-  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   templateId: integer("template_id").notNull().references(() => qcTemplate.id),
@@ -106,7 +106,7 @@ export const qcItemInstance = pgTable("qc_item_instance", {
   workingDays: integer("working_days"),
   allowedWorkingDays: integer("allowed_working_days"),
   qmStatus: text("qm_status").notNull().default("not_started"),
-  assigneeUserId: integer("assignee_user_id").references(() => users.id),
+  assigneeUserId: integer("assignee_user_id").references(() => users.id, { onDelete: "set null" }),
   lastUpdatedAt: timestamp("last_updated_at").notNull().defaultNow(),
   scheduledDate: text("scheduled_date"),
   scheduledStartTime: text("scheduled_start_time"),
@@ -146,7 +146,7 @@ export const qcPlanLink = pgTable("qc_plan_link", {
   id: serial("id").primaryKey(),
   /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
   planItemId: integer("plan_item_id").notNull(),
   itemInstanceId: integer("item_instance_id"),
   phaseId: integer("phase_id"),
@@ -161,7 +161,7 @@ export const qcWarning = pgTable("qc_warning", {
   id: serial("id").primaryKey(),
   /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
   severity: text("severity").notNull().default("Medium"),
   warningType: text("warning_type").notNull(),
   title: text("title").notNull(),
@@ -194,7 +194,7 @@ export const qcPostmortem = pgTable("qc_postmortem", {
   id: serial("id").primaryKey(),
   /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
   completedAt: timestamp("completed_at"),
   completedByUserId: integer("completed_by_user_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -246,11 +246,11 @@ export const commissioningStatusEnum = pgEnum('commissioning_status', ['not_star
 
 export const commissioningItems = pgTable("commissioning_items", {
   id: serial("id").primaryKey(),
-  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   itemType: text("item_type").notNull().default('commissioning'),
   title: text("title").notNull(),
   description: text("description"),
-  ownerUserId: integer("owner_user_id").references(() => users.id),
+  ownerUserId: integer("owner_user_id").references(() => users.id, { onDelete: "set null" }),
   dueDate: text("due_date"),
   status: commissioningStatusEnum("status").notNull().default('not_started'),
   evidenceNotes: text("evidence_notes"),
@@ -274,7 +274,7 @@ export const evidenceTypeEnum = pgEnum('evidence_type', ['document', 'photo', 'f
 
 export const evidenceRequirementDefinitions = pgTable("evidence_requirement_definitions", {
   id: serial("id").primaryKey(),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
   completionType: text("completion_type").notNull(),
   sourceType: text("source_type").notNull(),
   sourceRef: text("source_ref"),
@@ -294,7 +294,7 @@ export type EvidenceRequirementDefinition = typeof evidenceRequirementDefinition
 
 export const evidenceCollectedItems = pgTable("evidence_collected_items", {
   id: serial("id").primaryKey(),
-  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   completionType: text("completion_type").notNull(),
   sourceType: text("source_type").notNull(),
   sourceRef: text("source_ref").notNull(),
@@ -303,7 +303,7 @@ export const evidenceCollectedItems = pgTable("evidence_collected_items", {
   title: text("title"),
   valueRef: text("value_ref"),
   valueJson: jsonb("value_json"),
-  uploadedByUserId: integer("uploaded_by_user_id").references(() => users.id),
+  uploadedByUserId: integer("uploaded_by_user_id").references(() => users.id, { onDelete: "set null" }),
   uploadedByName: text("uploaded_by_name"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   deletedAt: timestamp("deleted_at"),
@@ -312,7 +312,7 @@ export type EvidenceCollectedItem = typeof evidenceCollectedItems.$inferSelect;
 
 export const evidenceEvaluations = pgTable("evidence_evaluations", {
   id: serial("id").primaryKey(),
-  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   completionType: text("completion_type").notNull(),
   sourceType: text("source_type").notNull(),
   sourceRef: text("source_ref").notNull(),
@@ -322,7 +322,7 @@ export const evidenceEvaluations = pgTable("evidence_evaluations", {
   totalPresent: integer("total_present").notNull(),
   missingItemsJson: jsonb("missing_items_json"),
   pass: boolean("pass").notNull(),
-  evaluatedByUserId: integer("evaluated_by_user_id").references(() => users.id),
+  evaluatedByUserId: integer("evaluated_by_user_id").references(() => users.id, { onDelete: "set null" }),
   evaluatedByName: text("evaluated_by_name"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
@@ -330,14 +330,14 @@ export type EvidenceEvaluation = typeof evidenceEvaluations.$inferSelect;
 
 export const evidenceOverrideRecords = pgTable("evidence_override_records", {
   id: serial("id").primaryKey(),
-  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   completionType: text("completion_type").notNull(),
   sourceType: text("source_type").notNull(),
   sourceRef: text("source_ref").notNull(),
   scorePercent: real("score_percent").notNull(),
   thresholdPercent: real("threshold_percent").notNull(),
   reason: text("reason").notNull(),
-  authorizedByUserId: integer("authorized_by_user_id").notNull().references(() => users.id),
+  authorizedByUserId: integer("authorized_by_user_id").notNull().references(() => users.id, { onDelete: "set null" }),
   authorizedByName: text("authorized_by_name"),
   authorizedByRole: text("authorized_by_role"),
   createdAt: timestamp("created_at").notNull().defaultNow(),

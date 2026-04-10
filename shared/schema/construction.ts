@@ -10,13 +10,13 @@ import { projectInfo, sites } from "./projects";
 
 export const siteActivities = pgTable("site_activities", {
   id: serial("id").primaryKey(),
-  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   siteId: integer("site_id").references(() => sites.id),
   activityDate: date("activity_date").notNull(),
   activityType: text("activity_type").notNull(),    // 'daily_log', 'inspection', 'toolbox_talk', 'incident', 'material_receipt', 'permit'
   title: text("title").notNull(),
   description: text("description"),
-  reportedByUserId: integer("reported_by_user_id").references(() => users.id),
+  reportedByUserId: integer("reported_by_user_id").references(() => users.id, { onDelete: "set null" }),
   status: text("status").default("open"),           // 'open', 'closed', 'flagged'
   weather: text("weather"),
   crewCount: integer("crew_count"),
@@ -34,14 +34,14 @@ export type SiteActivity = typeof siteActivities.$inferSelect;
 
 export const snags = pgTable("snags", {
   id: serial("id").primaryKey(),
-  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   siteId: integer("site_id").references(() => sites.id),
   title: text("title").notNull(),
   description: text("description"),
   severity: text("severity").default("minor"),      // 'critical', 'major', 'minor', 'observation'
   location: text("location"),
-  reportedByUserId: integer("reported_by_user_id").references(() => users.id),
-  assignedToUserId: integer("assigned_to_user_id").references(() => users.id),
+  reportedByUserId: integer("reported_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  assignedToUserId: integer("assigned_to_user_id").references(() => users.id, { onDelete: "set null" }),
   dueDate: date("due_date"),
   status: text("status").default("open"),           // 'open', 'in_progress', 'resolved', 'verified', 'closed'
   resolution: text("resolution"),
@@ -59,10 +59,10 @@ export type Snag = typeof snags.$inferSelect;
 
 export const siteInspections = pgTable("site_inspections", {
   id: serial("id").primaryKey(),
-  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   siteId: integer("site_id").references(() => sites.id),
   inspectionType: text("inspection_type").notNull(), // 'hold_point', 'witness_point', 'routine', 'final', 'joint_tenant'
-  inspectorUserId: integer("inspector_user_id").references(() => users.id),
+  inspectorUserId: integer("inspector_user_id").references(() => users.id, { onDelete: "set null" }),
   inspectionDate: date("inspection_date"),
   result: text("result"),                           // 'pass', 'fail', 'conditional', 'pending'
   notes: text("notes"),
@@ -82,7 +82,7 @@ export type SiteInspection = typeof siteInspections.$inferSelect;
 
 export const contractorAssignments = pgTable("contractor_assignments", {
   id: serial("id").primaryKey(),
-  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   counterpartyId: integer("counterparty_id"),       // References counterparties(id) - left as integer to avoid circular import
   scope: text("scope"),
   startDate: date("start_date"),

@@ -59,21 +59,21 @@ export const programExpense = pgTable("program_expense", {
   computedForecastPaymentDate: date("computed_forecast_payment_date"),
   adminDateOverride: date("admin_date_override"),
   adminDateOverrideReason: text("admin_date_override_reason"),
-  adminDateOverrideBy: integer("admin_date_override_by").references(() => users.id),
+  adminDateOverrideBy: integer("admin_date_override_by").references(() => users.id, { onDelete: "set null" }),
   adminDateOverrideAt: timestamp("admin_date_override_at"),
   supplierName: text("supplier_name"),
   isManual: boolean("is_manual").default(false),
   subProjectName: text("sub_project_name"),
   cosStatusOverride: text("cos_status_override"),
-  cosStatusOverrideBy: integer("cos_status_override_by").references(() => users.id),
+  cosStatusOverrideBy: integer("cos_status_override_by").references(() => users.id, { onDelete: "set null" }),
   cosStatusOverrideAt: timestamp("cos_status_override_at"),
   cosStatusOverrideReason: text("cos_status_override_reason"),
   dataSource: text("data_source").default("SMART_IMPORT"),
-  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   importRunId: integer("import_run_id").references(() => smartImportRuns.id, { onDelete: "set null" }),
   source: rowSourceEnum("source").notNull().default("imported"),
   importSnapshot: jsonb("import_snapshot"),
-  lastEditedBy: integer("last_edited_by").references(() => users.id),
+  lastEditedBy: integer("last_edited_by").references(() => users.id, { onDelete: "set null" }),
   lastEditedAt: timestamp("last_edited_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   // Temporal columns (Prompt 9)
@@ -110,15 +110,15 @@ export const programInflows = pgTable("program_inflows", {
   computedForecastReceiptDate: date("computed_forecast_receipt_date"),
   adminDateOverride: date("admin_date_override"),
   adminDateOverrideReason: text("admin_date_override_reason"),
-  adminDateOverrideBy: integer("admin_date_override_by").references(() => users.id),
+  adminDateOverrideBy: integer("admin_date_override_by").references(() => users.id, { onDelete: "set null" }),
   adminDateOverrideAt: timestamp("admin_date_override_at"),
   subProjectName: text("sub_project_name"),
   dataSource: text("data_source").default("SMART_IMPORT"),
-  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   importRunId: integer("import_run_id").references(() => smartImportRuns.id, { onDelete: "set null" }),
   source: rowSourceEnum("source").notNull().default("imported"),
   importSnapshot: jsonb("import_snapshot"),
-  lastEditedBy: integer("last_edited_by").references(() => users.id),
+  lastEditedBy: integer("last_edited_by").references(() => users.id, { onDelete: "set null" }),
   lastEditedAt: timestamp("last_edited_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   // Temporal columns (Prompt 9)
@@ -136,7 +136,7 @@ export const projectPlan = pgTable("project_plan", {
   id: serial("id").primaryKey(),
   /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
-  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   rowNumber: integer("row_number"),
   taskNo: text("task_no"),
   highLevelProgramme: text("high_level_programme"),
@@ -147,7 +147,7 @@ export const projectPlan = pgTable("project_plan", {
   expectedPctComplete: real("expected_pct_complete"),
   source: rowSourceEnum("source").notNull().default("imported"),
   importSnapshot: jsonb("import_snapshot"),
-  lastEditedBy: integer("last_edited_by").references(() => users.id),
+  lastEditedBy: integer("last_edited_by").references(() => users.id, { onDelete: "set null" }),
   lastEditedAt: timestamp("last_edited_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
@@ -164,10 +164,10 @@ export const cashflowPoints = pgTable("cashflow_points", {
   seriesName: text("series_name").notNull(),
   pointDate: date("point_date").notNull(),
   value: decimal("value", { precision: 15, scale: 2 }),
-  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   source: rowSourceEnum("source").notNull().default("imported"),
   importSnapshot: jsonb("import_snapshot"),
-  lastEditedBy: integer("last_edited_by").references(() => users.id),
+  lastEditedBy: integer("last_edited_by").references(() => users.id, { onDelete: "set null" }),
   lastEditedAt: timestamp("last_edited_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   // Temporal columns (Prompt 9)
@@ -183,13 +183,13 @@ export const financeRevenueMonthly = pgTable("finance_revenue_monthly", {
   id: serial("id").primaryKey(),
   /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
-  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   category: text("category").notNull(),
   monthEndDate: date("month_end_date").notNull(),
   value: decimal("value", { precision: 15, scale: 2 }),
   source: rowSourceEnum("source").notNull().default("imported"),
   importSnapshot: jsonb("import_snapshot"),
-  lastEditedBy: integer("last_edited_by").references(() => users.id),
+  lastEditedBy: integer("last_edited_by").references(() => users.id, { onDelete: "set null" }),
   lastEditedAt: timestamp("last_edited_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   // Temporal columns (Prompt 9)
@@ -205,13 +205,13 @@ export const financeCosMonthly = pgTable("finance_cos_monthly", {
   id: serial("id").primaryKey(),
   /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
-  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   category: text("category").notNull(),
   monthEndDate: date("month_end_date").notNull(),
   value: decimal("value", { precision: 15, scale: 2 }),
   source: rowSourceEnum("source").notNull().default("imported"),
   importSnapshot: jsonb("import_snapshot"),
-  lastEditedBy: integer("last_edited_by").references(() => users.id),
+  lastEditedBy: integer("last_edited_by").references(() => users.id, { onDelete: "set null" }),
   lastEditedAt: timestamp("last_edited_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   // Temporal columns (Prompt 9)
@@ -231,7 +231,7 @@ export const workingPlanScenario = pgTable("working_plan_scenario", {
   id: serial("id").primaryKey(),
   /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
   name: text("name").notNull().default("Working Plan"),
   isActive: boolean("is_active").notNull().default(true), // TODO: migrate to deletedAt pattern
   deletedAt: timestamp("deleted_at"),
@@ -246,7 +246,7 @@ export const projectPlanDependency = pgTable("project_plan_dependency", {
   id: serial("id").primaryKey(),
   /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
   predecessorTaskId: integer("predecessor_task_id").notNull().references(() => projectPlan.id, { onDelete: "cascade" }),
   successorTaskId: integer("successor_task_id").notNull().references(() => projectPlan.id, { onDelete: "cascade" }),
   dependencyType: text("dependency_type").notNull().default("FS"),
@@ -278,7 +278,7 @@ export const scheduleChangeNotice = pgTable("schedule_change_notice", {
   id: serial("id").primaryKey(),
   /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
   summary: text("summary").notNull(),
   oldFinishDate: date("old_finish_date"),
   newFinishDate: date("new_finish_date"),
@@ -287,7 +287,7 @@ export const scheduleChangeNotice = pgTable("schedule_change_notice", {
   userNote: text("user_note"),
   clientNotified: boolean("client_notified").notNull().default(false),
   documentationUpdated: boolean("documentation_updated").notNull().default(false),
-  createdBy: integer("created_by").references(() => users.id),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export const insertScheduleChangeNoticeSchema = createInsertSchema(scheduleChangeNotice).omit({ id: true, createdAt: true } as any);
@@ -417,7 +417,7 @@ export const counterparties = pgTable("counterparties", {
   bankBranchCode: text("bank_branch_code"),
   paymentTerms: text("payment_terms"),
   notes: text("notes"),
-  createdBy: integer("created_by").references(() => users.id),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   lastSeenAt: timestamp("last_seen_at"),
@@ -437,7 +437,7 @@ export const counterpartyContacts = pgTable("counterparty_contacts", {
   isActive: boolean("is_active").notNull().default(true), // TODO: migrate to deletedAt pattern
   deletedAt: timestamp("deleted_at"),
   notes: text("notes"),
-  createdByUserId: integer("created_by_user_id").references(() => users.id),
+  createdByUserId: integer("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -449,7 +449,7 @@ export type CounterpartyContact = typeof counterpartyContacts.$inferSelect;
 
 export const normalizedRevenueLines = pgTable("normalized_revenue_lines", {
   id: serial("id").primaryKey(),
-  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   description: text("description"),
@@ -477,7 +477,7 @@ export const normalizedRevenueLines = pgTable("normalized_revenue_lines", {
   turnaroundDays: integer("turnaround_days"),
   adminDateOverride: date("admin_date_override"),
   adminDateOverrideReason: text("admin_date_override_reason"),
-  adminDateOverrideBy: integer("admin_date_override_by").references(() => users.id),
+  adminDateOverrideBy: integer("admin_date_override_by").references(() => users.id, { onDelete: "set null" }),
   adminDateOverrideAt: timestamp("admin_date_override_at"),
   subProjectName: text("sub_project_name"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -497,7 +497,7 @@ export const allocationConfidenceEnum = pgEnum('allocation_confidence', ['DIRECT
 
 export const categoryRevenueAllocations = pgTable("category_revenue_allocations", {
   id: serial("id").primaryKey(),
-  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   projectName: text("project_name").notNull(),
   categoryNumber: text("category_number").notNull(),
   categoryName: text("category_name").notNull(),
@@ -524,7 +524,7 @@ export type CategoryRevenueAllocation = typeof categoryRevenueAllocations.$infer
 
 export const normalizedCostLines = pgTable("normalized_cost_lines", {
   id: serial("id").primaryKey(),
-  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   costCategory: text("cost_category"),
@@ -563,11 +563,11 @@ export const normalizedCostLines = pgTable("normalized_cost_lines", {
   forecastPaymentDate: date("forecast_payment_date"),
   adminDateOverride: date("admin_date_override"),
   adminDateOverrideReason: text("admin_date_override_reason"),
-  adminDateOverrideBy: integer("admin_date_override_by").references(() => users.id),
+  adminDateOverrideBy: integer("admin_date_override_by").references(() => users.id, { onDelete: "set null" }),
   adminDateOverrideAt: timestamp("admin_date_override_at"),
   subProjectName: text("sub_project_name"),
   cosStatusOverride: text("cos_status_override"),
-  cosStatusOverrideBy: integer("cos_status_override_by").references(() => users.id),
+  cosStatusOverrideBy: integer("cos_status_override_by").references(() => users.id, { onDelete: "set null" }),
   cosStatusOverrideAt: timestamp("cos_status_override_at"),
   cosStatusOverrideReason: text("cos_status_override_reason"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -601,7 +601,7 @@ export const invoicePatternRules = pgTable("invoice_pattern_rules", {
   counterpartyName: text("counterparty_name"),
   inferredType: counterpartyTypeEnum("inferred_type").notNull(),
   confidenceWeight: integer("confidence_weight").notNull().default(50),
-  createdBy: integer("created_by").references(() => users.id),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   lastConfirmedAt: timestamp("last_confirmed_at"),
   timesMatched: integer("times_matched").notNull().default(0),
@@ -617,7 +617,7 @@ export type InvoicePatternRule = typeof invoicePatternRules.$inferSelect;
 export const invoicePatternMatches = pgTable("invoice_pattern_matches", {
   id: serial("id").primaryKey(),
   importRunId: integer("import_run_id").references(() => smartImportRuns.id),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
   invoiceNumberRaw: text("invoice_number_raw"),
   invoiceNumberNorm: text("invoice_number_norm"),
   matchedRuleId: integer("matched_rule_id").references(() => invoicePatternRules.id),
@@ -652,9 +652,9 @@ export const weeklyReviews = pgTable("weekly_reviews", {
   id: serial("id").primaryKey(),
   /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
   weekStarting: date("week_starting").notNull(),
-  reviewedBy: integer("reviewed_by").references(() => users.id),
+  reviewedBy: integer("reviewed_by").references(() => users.id, { onDelete: "set null" }),
   status: text("status").notNull().default("draft"),
   stepSchedule: jsonb("step_schedule"),
   stepBudget: jsonb("step_budget"),
@@ -744,7 +744,7 @@ export const milestoneTaskLinks = pgTable("milestone_task_links", {
   id: serial("id").primaryKey(),
   /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
   milestoneRowNumber: integer("milestone_row_number").notNull(),
   taskId: integer("task_id").notNull().references(() => projectPlan.id, { onDelete: "cascade" }),
   dateOverride: date("date_override"),
@@ -759,7 +759,7 @@ export const expenseTaskLinks = pgTable("expense_task_links", {
   id: serial("id").primaryKey(),
   /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
   expenseId: integer("expense_id").notNull().references(() => programExpense.id, { onDelete: "cascade" }),
   taskId: integer("task_id").notNull().references(() => projectPlan.id, { onDelete: "cascade" }),
   dateOverride: date("date_override"),
@@ -781,7 +781,7 @@ export const writebackMappings = pgTable("writeback_mappings", {
   name: text("name").notNull(),
   /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name"),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
   workbookPath: text("workbook_path").notNull(),
   sheetName: text("sheet_name").notNull(),
   cellAddress: text("cell_address").notNull(),
@@ -790,7 +790,7 @@ export const writebackMappings = pgTable("writeback_mappings", {
   dataTransform: text("data_transform"),
   validationRule: text("validation_rule"),
   allowedRoles: text("allowed_roles").array(),
-  createdBy: integer("created_by").references(() => users.id),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -808,7 +808,7 @@ export const writebackAuditLog = pgTable("writeback_audit_log", {
   newValue: text("new_value").notNull(),
   status: text("status").notNull().default("applied"),
   projectId: text("project_id"),
-  actorId: integer("actor_id").references(() => users.id),
+  actorId: integer("actor_id").references(() => users.id, { onDelete: "set null" }),
   errorMessage: text("error_message"),
   appliedAt: timestamp("applied_at").notNull().defaultNow(),
   rolledBackAt: timestamp("rolled_back_at"),
@@ -823,8 +823,8 @@ export const financialEditRequests = pgTable("financial_edit_requests", {
   id: serial("id").primaryKey(),
   /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
-  projectId: integer("project_id").references(() => projectInfo.id),
-  requestedByUserId: integer("requested_by_user_id").notNull().references(() => users.id),
+  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
+  requestedByUserId: integer("requested_by_user_id").notNull().references(() => users.id, { onDelete: "set null" }),
   editType: text("edit_type").notNull(),
   editTarget: text("edit_target").notNull(),
   editPayload: text("edit_payload").notNull(),
@@ -848,12 +848,12 @@ export const financialIntegrationRules = pgTable("financial_integration_rules", 
   id: serial("id").primaryKey(),
   /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
   ruleType: text("rule_type").notNull(),
   ruleConfig: text("rule_config").notNull(),
   isActive: boolean("is_active").notNull().default(true), // TODO: migrate to deletedAt pattern
   deletedAt: timestamp("deleted_at"),
-  createdByUserId: integer("created_by_user_id").notNull().references(() => users.id),
+  createdByUserId: integer("created_by_user_id").notNull().references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -865,7 +865,7 @@ export type FinancialIntegrationRule = typeof financialIntegrationRules.$inferSe
 
 export const invoiceCaptures = pgTable("invoice_captures", {
   id: serial("id").primaryKey(),
-  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   supplierId: integer("supplier_id").references(() => counterparties.id),
   invoiceNumber: text("invoice_number"),
   invoiceDate: date("invoice_date"),
@@ -874,7 +874,7 @@ export const invoiceCaptures = pgTable("invoice_captures", {
   linkedPoId: integer("linked_po_id"),  // FK added via migration to purchase_orders
   linkedProcurementItemId: integer("linked_procurement_item_id"),  // FK to procurement_items managed via migration
   status: invoiceCaptureStatusEnum("status").notNull().default('captured'),
-  capturedByUserId: integer("captured_by_user_id").references(() => users.id),
+  capturedByUserId: integer("captured_by_user_id").references(() => users.id, { onDelete: "set null" }),
   documentPath: text("document_path"),
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -892,7 +892,7 @@ export type InvoiceCapture = typeof invoiceCaptures.$inferSelect;
 
 export const procurementItems = pgTable("procurement_items", {
   id: serial("id").primaryKey(),
-  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   description: text("description"),
   category: procurementCategoryEnum("category").notNull().default('other'),
@@ -901,8 +901,8 @@ export const procurementItems = pgTable("procurement_items", {
   expectedCost: real("expected_cost"),
   actualCost: real("actual_cost"),
   supplierId: integer("supplier_id").references(() => counterparties.id),
-  requestedByUserId: integer("requested_by_user_id").references(() => users.id),
-  ownerUserId: integer("owner_user_id").references(() => users.id),
+  requestedByUserId: integer("requested_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  ownerUserId: integer("owner_user_id").references(() => users.id, { onDelete: "set null" }),
   status: procurementStatusEnum("status").notNull().default('requested'),
   requiredDate: date("required_date"),
   poId: integer("po_id"),
@@ -940,14 +940,14 @@ export type ProcurementItem = typeof procurementItems.$inferSelect;
 
 export const fyeBudgets = pgTable("fye_budgets", {
   id: serial("id").primaryKey(),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
   /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   fye: text("fye").notNull(),
   monthKey: text("month_key").notNull(),
   budgetType: text("budget_type").notNull(),
   amount: decimal("amount", { precision: 15, scale: 2 }).notNull().default("0"),
-  updatedBy: integer("updated_by").references(() => users.id),
+  updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -985,7 +985,7 @@ export const forecastPipeline = pgTable("forecast_pipeline", {
   fyeYear: integer("fye_year").notNull().default(2026),
   /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
   projectDeveloper: text("project_developer"),
   location: text("location"),
   sizeKwp: decimal("size_kwp", { precision: 12, scale: 2 }),
@@ -996,8 +996,8 @@ export const forecastPipeline = pgTable("forecast_pipeline", {
   forecastGpPct: decimal("forecast_gp_pct", { precision: 6, scale: 4 }),
   status: text("status").notNull().default("active"),
   notes: text("notes"),
-  createdBy: integer("created_by").references(() => users.id),
-  updatedBy: integer("updated_by").references(() => users.id),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+  updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -1014,8 +1014,8 @@ export const lostDeals = pgTable("lost_deals", {
   lostReason: text("lost_reason"),
   lostDate: date("lost_date"),
   notes: text("notes"),
-  createdBy: integer("created_by").references(() => users.id),
-  updatedBy: integer("updated_by").references(() => users.id),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+  updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -1028,7 +1028,7 @@ export const fyeKpiCounters = pgTable("fye_kpi_counters", {
   fyeYear: integer("fye_year").notNull().unique(),
   broughtIn: integer("brought_in").notNull().default(0),
   signed: integer("signed").notNull().default(0),
-  updatedBy: integer("updated_by").references(() => users.id),
+  updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -1045,11 +1045,11 @@ export const fyeReportSnapshots = pgTable("fye_report_snapshots", {
   status: text("status").notNull().default("draft"),
   snapshotData: text("snapshot_data").notNull(),
   notes: text("notes"),
-  createdBy: integer("created_by").references(() => users.id),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-  submittedBy: integer("submitted_by").references(() => users.id),
+  submittedBy: integer("submitted_by").references(() => users.id, { onDelete: "set null" }),
   submittedAt: timestamp("submitted_at"),
-  approvedBy: integer("approved_by").references(() => users.id),
+  approvedBy: integer("approved_by").references(() => users.id, { onDelete: "set null" }),
   approvedAt: timestamp("approved_at"),
 });
 export type FyeReportSnapshot = typeof fyeReportSnapshots.$inferSelect;
@@ -1058,13 +1058,13 @@ export type FyeReportSnapshot = typeof fyeReportSnapshots.$inferSelect;
 
 export const budgetBaselines = pgTable("budget_baselines", {
   id: serial("id").primaryKey(),
-  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   version: integer("version").notNull().default(1),
   revenueBaseline: decimal("revenue_baseline", { precision: 15, scale: 2 }),
   cosBaseline: decimal("cos_baseline", { precision: 15, scale: 2 }),
   marginBaseline: decimal("margin_baseline", { precision: 15, scale: 2 }),
   contingency: decimal("contingency", { precision: 15, scale: 2 }),
-  approvedByUserId: integer("approved_by_user_id").references(() => users.id),
+  approvedByUserId: integer("approved_by_user_id").references(() => users.id, { onDelete: "set null" }),
   approvedDate: timestamp("approved_date"),
   changeLocked: boolean("change_locked").default(false),
   notes: text("notes"),
@@ -1091,7 +1091,7 @@ export const purchaseOrders = pgTable("purchase_orders", {
   poRef: text("po_ref").notNull().unique(),
   poNumber: integer("po_number").notNull(),
   projectName: text("project_name").notNull(),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
   supplierName: text("supplier_name").notNull(),
   supplierVat: text("supplier_vat"),
   supplierAddress: text("supplier_address"),
@@ -1128,7 +1128,7 @@ export type PurchaseOrder = typeof purchaseOrders.$inferSelect;
 export const poReviewAssignments = pgTable("po_review_assignments", {
   id: serial("id").primaryKey(),
   purchaseOrderId: integer("purchase_order_id").notNull().references(() => purchaseOrders.id, { onDelete: "cascade" }),
-  reviewerUserId: integer("reviewer_user_id").notNull().references(() => users.id),
+  reviewerUserId: integer("reviewer_user_id").notNull().references(() => users.id, { onDelete: "set null" }),
   reviewerRole: text("reviewer_role").notNull(),
   decision: poReviewDecisionEnum("decision").notNull().default("pending"),
   decidedAt: timestamp("decided_at"),
@@ -1147,7 +1147,7 @@ export type PoReviewAssignment = typeof poReviewAssignments.$inferSelect;
 
 export const paymentRequests = pgTable("payment_requests", {
   id: serial("id").primaryKey(),
-  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   purchaseOrderId: integer("purchase_order_id").references(() => purchaseOrders.id),
   invoiceCaptureId: integer("invoice_capture_id").references(() => invoiceCaptures.id),
   counterpartyId: integer("counterparty_id").references(() => counterparties.id),
@@ -1155,7 +1155,7 @@ export const paymentRequests = pgTable("payment_requests", {
   amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
   dueDate: date("due_date"),
   status: paymentRequestStatusEnum("status").notNull().default("new"),
-  submittedByUserId: integer("submitted_by_user_id").notNull().references(() => users.id),
+  submittedByUserId: integer("submitted_by_user_id").notNull().references(() => users.id, { onDelete: "set null" }),
   cutoffDate: date("cutoff_date"),
   evidenceEvaluationId: integer("evidence_evaluation_id"),
   notes: text("notes"),
@@ -1179,9 +1179,9 @@ export const paymentBatches = pgTable("payment_batches", {
   totalAmount: decimal("total_amount", { precision: 15, scale: 2 }).notNull().default("0"),
   itemCount: integer("item_count").notNull().default(0),
   status: paymentBatchStatusEnum("status").notNull().default("preparing"),
-  preparedByUserId: integer("prepared_by_user_id").notNull().references(() => users.id),
-  approvedByUserId: integer("approved_by_user_id").references(() => users.id),
-  releasedByUserId: integer("released_by_user_id").references(() => users.id),
+  preparedByUserId: integer("prepared_by_user_id").notNull().references(() => users.id, { onDelete: "set null" }),
+  approvedByUserId: integer("approved_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  releasedByUserId: integer("released_by_user_id").references(() => users.id, { onDelete: "set null" }),
   approvalId: integer("approval_id"),
   approvedAt: timestamp("approved_at"),
   releasedAt: timestamp("released_at"),
@@ -1221,7 +1221,7 @@ export const proofOfPayment = pgTable("proof_of_payment", {
   documentDriveId: text("document_drive_id"),
   documentItemId: text("document_item_id"),
   documentUrl: text("document_url"),
-  uploadedByUserId: integer("uploaded_by_user_id").notNull().references(() => users.id),
+  uploadedByUserId: integer("uploaded_by_user_id").notNull().references(() => users.id, { onDelete: "set null" }),
   confirmedAt: timestamp("confirmed_at"),
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),

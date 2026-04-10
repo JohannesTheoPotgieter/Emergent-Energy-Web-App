@@ -259,6 +259,10 @@ export interface UploadMetadata {
   status: string;
 }
 
+/**
+ * OverviewData uses snake_case field names to match the raw SQL response
+ * from /api/overview. 
+ */
 export interface OverviewData {
   total_program_budget: number;
   actual_spend_paid: number;
@@ -267,6 +271,14 @@ export interface OverviewData {
   data_as_of: string;
 }
 
+/**
+ * ProjectSummary uses snake_case field names to match the raw SQL response
+ * from /api/projects-summary. This is intentional — the endpoint builds
+ * its response manually from raw SQL queries.
+ * 
+ * NOTE: Other endpoints (finance, handover, etc.) use camelCase from Drizzle ORM.
+ * The shared_summary sub-object uses camelCase.
+ */
 export interface ProjectSummary {
   project_info_id: number | null;
   project_name: string;

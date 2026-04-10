@@ -25,7 +25,7 @@ export const spSettings = pgTable("sp_settings", {
   enabled: boolean("enabled").notNull().default(false),
   lastRunAt: timestamp("last_run_at"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-  updatedBy: integer("updated_by").references(() => users.id),
+  updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
 });
 
 export const insertSpSettingsSchema = createInsertSchema(spSettings).omit({ id: true, updatedAt: true } as any);
@@ -131,7 +131,7 @@ export const spFilePointers = pgTable("sp_file_pointers", {
   fileItemId: text("file_item_id").notNull(),
   fileName: text("file_name").notNull(),
   webUrl: text("web_url"),
-  uploadedByUserId: integer("uploaded_by_user_id").references(() => users.id),
+  uploadedByUserId: integer("uploaded_by_user_id").references(() => users.id, { onDelete: "set null" }),
   uploadedAt: timestamp("uploaded_at").notNull().defaultNow(),
 });
 export const insertSpFilePointerSchema = createInsertSchema(spFilePointers).omit({ id: true, uploadedAt: true } as any);
@@ -140,10 +140,10 @@ export type SpFilePointer = typeof spFilePointers.$inferSelect;
 
 export const smartImportRuns = pgTable("smart_import_runs", {
   id: serial("id").primaryKey(),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
   /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
-  uploadedBy: integer("uploaded_by").references(() => users.id),
+  uploadedBy: integer("uploaded_by").references(() => users.id, { onDelete: "set null" }),
   uploadedAt: timestamp("uploaded_at").notNull().defaultNow(),
   sourceFileName: text("source_file_name").notNull(),
   sourceFileHash: text("source_file_hash"),
@@ -151,7 +151,7 @@ export const smartImportRuns = pgTable("smart_import_runs", {
   templateProfileId: integer("template_profile_id"),
   summaryJson: jsonb("summary_json"),
   committedAt: timestamp("committed_at"),
-  committedBy: integer("committed_by").references(() => users.id),
+  committedBy: integer("committed_by").references(() => users.id, { onDelete: "set null" }),
   recordsAttempted: integer("records_attempted"),
   recordsSucceeded: integer("records_succeeded"),
   recordsFailed: integer("records_failed"),
@@ -177,7 +177,7 @@ export const importIssues = pgTable("import_issues", {
   resolved: boolean("resolved").notNull().default(false),
   resolution: text("resolution"),
   resolutionNote: text("resolution_note"),
-  resolvedBy: integer("resolved_by").references(() => users.id),
+  resolvedBy: integer("resolved_by").references(() => users.id, { onDelete: "set null" }),
   resolvedAt: timestamp("resolved_at"),
   autoResolved: boolean("auto_resolved").notNull().default(false),
   matchedRuleId: integer("matched_rule_id"),
@@ -192,7 +192,7 @@ export const issueResolutionRules = pgTable("issue_resolution_rules", {
   id: serial("id").primaryKey(),
   /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name"),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
   issueType: text("issue_type").notNull(),
   fingerprint: text("fingerprint").notNull(),
   section: importSectionEnum("section").notNull(),
@@ -201,7 +201,7 @@ export const issueResolutionRules = pgTable("issue_resolution_rules", {
   overrideData: jsonb("override_data"),
   applyAlways: boolean("apply_always").notNull().default(false),
   timesApplied: integer("times_applied").notNull().default(0),
-  createdBy: integer("created_by").references(() => users.id),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   lastAppliedAt: timestamp("last_applied_at"),
   active: boolean("active").notNull().default(true),
@@ -215,7 +215,7 @@ export const templateProfiles = pgTable("template_profiles", {
   name: text("name").notNull(),
   signatureJson: jsonb("signature_json"),
   isDefault: boolean("is_default").notNull().default(false),
-  createdBy: integer("created_by").references(() => users.id),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -239,7 +239,7 @@ export type MappingRule = typeof mappingRules.$inferSelect;
 
 export const normalizedPlanTasks = pgTable("normalized_plan_tasks", {
   id: serial("id").primaryKey(),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
   /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   taskName: text("task_name").notNull(),
@@ -252,7 +252,7 @@ export const normalizedPlanTasks = pgTable("normalized_plan_tasks", {
   actualEndDate: text("actual_end_date"),
   actualDurationDays: integer("actual_duration_days"),
   owner: text("owner"),
-  assigneeUserId: integer("assignee_user_id").references(() => users.id),
+  assigneeUserId: integer("assignee_user_id").references(() => users.id, { onDelete: "set null" }),
   status: text("status"),
   pctComplete: real("pct_complete"),
   expectedPctComplete: real("expected_pct_complete"),
@@ -313,7 +313,7 @@ export type SpListConfig = typeof spListConfig.$inferSelect;
 export const intakeRequests = pgTable("intake_requests", {
   id: serial("id").primaryKey(),
   spItemId: text("sp_item_id").notNull().unique(),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
   clientKey: text("client_key").notNull(),
   clientName: text("client_name").notNull(),
   requestType: text("request_type"),
@@ -492,16 +492,16 @@ export const planEditNotifications = pgTable("plan_edit_notifications", {
   id: serial("id").primaryKey(),
   /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
   taskId: integer("task_id"),
   taskName: text("task_name"),
   editType: text("edit_type").notNull(),
   fieldName: text("field_name"),
   oldValue: text("old_value"),
   newValue: text("new_value"),
-  editedByUserId: integer("edited_by_user_id").references(() => users.id),
+  editedByUserId: integer("edited_by_user_id").references(() => users.id, { onDelete: "set null" }),
   editedByName: text("edited_by_name"),
-  resolvedByUserId: integer("resolved_by_user_id").references(() => users.id),
+  resolvedByUserId: integer("resolved_by_user_id").references(() => users.id, { onDelete: "set null" }),
   resolvedByName: text("resolved_by_name"),
   resolvedAt: timestamp("resolved_at"),
   resolution: text("resolution"),
@@ -517,11 +517,11 @@ export const importLogs = pgTable("import_logs", {
   id: serial("id").primaryKey(),
   importRunId: integer("import_run_id").references(() => smartImportRuns.id),
   fileName: text("file_name").notNull(),
-  importedByUserId: integer("imported_by_user_id").references(() => users.id),
+  importedByUserId: integer("imported_by_user_id").references(() => users.id, { onDelete: "set null" }),
   importedByName: text("imported_by_name"),
   /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name"),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
   status: text("status").notNull(), // SUCCESS, PARTIAL, FAILED, REJECTED
   rowsAttempted: integer("rows_attempted").default(0),
   rowsWritten: integer("rows_written").default(0),
@@ -541,12 +541,12 @@ export const manualEditFlags = pgTable("manual_edit_flags", {
   entityType: text("entity_type").notNull(), // normalized_cost_lines, normalized_revenue_lines, work_items, etc.
   entityId: integer("entity_id").notNull(),
   fieldName: text("field_name").notNull(),
-  editedByUserId: integer("edited_by_user_id").references(() => users.id),
+  editedByUserId: integer("edited_by_user_id").references(() => users.id, { onDelete: "set null" }),
   editedByName: text("edited_by_name"),
   editedAt: timestamp("edited_at").notNull().defaultNow(),
   isProtected: boolean("is_protected").notNull().default(false), // true = "Keep Manual Edit" chosen
   protectedAt: timestamp("protected_at"),
-  protectedByUserId: integer("protected_by_user_id").references(() => users.id),
+  protectedByUserId: integer("protected_by_user_id").references(() => users.id, { onDelete: "set null" }),
 });
 export type ManualEditFlag = typeof manualEditFlags.$inferSelect;
 
@@ -560,7 +560,7 @@ export const conflictResolutionLog = pgTable("conflict_resolution_log", {
   manualValue: text("manual_value"),
   importValue: text("import_value"),
   decision: text("decision").notNull(), // KEEP_MANUAL, OVERWRITE_WITH_IMPORT
-  decidedByUserId: integer("decided_by_user_id").references(() => users.id),
+  decidedByUserId: integer("decided_by_user_id").references(() => users.id, { onDelete: "set null" }),
   decidedByName: text("decided_by_name"),
   decidedAt: timestamp("decided_at").notNull().defaultNow(),
 })

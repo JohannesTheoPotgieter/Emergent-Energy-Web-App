@@ -18,7 +18,7 @@ export const projectStageData = pgTable("project_stage_data", {
   projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   stageCode: text("stage_code").notNull(),
   data: jsonb("data").notNull().default({}),
-  updatedByUserId: integer("updated_by_user_id").references(() => users.id),
+  updatedByUserId: integer("updated_by_user_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
@@ -60,15 +60,15 @@ export const projectCharters = pgTable("project_charters", {
   charterClientRelationshipNotes: text("charter_client_relationship_notes"),
 
   // ── Section 2: Stakeholders — Internal ──
-  charterPdUserId: integer("charter_pd_user_id").references(() => users.id),
-  charterProgrammeManagerUserId: integer("charter_programme_manager_user_id").references(() => users.id),
-  charterProjectManagerUserId: integer("charter_project_manager_user_id").references(() => users.id),
-  charterProcurementManagerUserId: integer("charter_procurement_manager_user_id").references(() => users.id),
-  charterOmManagerUserId: integer("charter_om_manager_user_id").references(() => users.id),
-  charterAssetManagerUserId: integer("charter_asset_manager_user_id").references(() => users.id),
-  charterComplianceOfficerUserId: integer("charter_compliance_officer_user_id").references(() => users.id),
-  charterSafetyOfficerUserId: integer("charter_safety_officer_user_id").references(() => users.id),
-  charterDesignerUserId: integer("charter_designer_user_id").references(() => users.id),
+  charterPdUserId: integer("charter_pd_user_id").references(() => users.id, { onDelete: "set null" }),
+  charterProgrammeManagerUserId: integer("charter_programme_manager_user_id").references(() => users.id, { onDelete: "set null" }),
+  charterProjectManagerUserId: integer("charter_project_manager_user_id").references(() => users.id, { onDelete: "set null" }),
+  charterProcurementManagerUserId: integer("charter_procurement_manager_user_id").references(() => users.id, { onDelete: "set null" }),
+  charterOmManagerUserId: integer("charter_om_manager_user_id").references(() => users.id, { onDelete: "set null" }),
+  charterAssetManagerUserId: integer("charter_asset_manager_user_id").references(() => users.id, { onDelete: "set null" }),
+  charterComplianceOfficerUserId: integer("charter_compliance_officer_user_id").references(() => users.id, { onDelete: "set null" }),
+  charterSafetyOfficerUserId: integer("charter_safety_officer_user_id").references(() => users.id, { onDelete: "set null" }),
+  charterDesignerUserId: integer("charter_designer_user_id").references(() => users.id, { onDelete: "set null" }),
   charterPreferredInstaller: text("charter_preferred_installer"),
 
   // ── Section 3: Scope — System Specification ──
@@ -135,8 +135,8 @@ export const projectCharters = pgTable("project_charters", {
 
   // ── Meta ──
   status: text("status").notNull().default("draft"),  // draft, complete, reviewed, accepted
-  createdByUserId: integer("created_by_user_id").references(() => users.id),
-  updatedByUserId: integer("updated_by_user_id").references(() => users.id),
+  createdByUserId: integer("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  updatedByUserId: integer("updated_by_user_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

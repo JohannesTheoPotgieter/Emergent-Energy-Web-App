@@ -39,7 +39,7 @@ export const TASK_BUCKET_LABELS: Record<TaskBucket, string> = {
 export const taskComments = pgTable("task_comments", {
   id: serial("id").primaryKey(),
   workItemId: integer("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
-  authorId: integer("author_id").references(() => users.id),
+  authorId: integer("author_id").references(() => users.id, { onDelete: "set null" }),
   body: text("body").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
@@ -80,7 +80,7 @@ export const taskAttachments = pgTable("task_attachments", {
   url: text("url").notNull(),
   mimeType: text("mime_type"),
   sizeBytes: integer("size_bytes"),
-  uploadedBy: integer("uploaded_by").references(() => users.id),
+  uploadedBy: integer("uploaded_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -95,8 +95,8 @@ export const taskDeliverables = pgTable("task_deliverables", {
   originalName: text("original_name").notNull(),
   fileSize: integer("file_size"),
   note: text("note"),
-  sentByUserId: integer("sent_by_user_id").notNull().references(() => users.id),
-  recipientUserId: integer("recipient_user_id").notNull().references(() => users.id),
+  sentByUserId: integer("sent_by_user_id").notNull().references(() => users.id, { onDelete: "set null" }),
+  recipientUserId: integer("recipient_user_id").notNull().references(() => users.id, { onDelete: "set null" }),
   acknowledged: boolean("acknowledged").notNull().default(false),
   acknowledgedAt: timestamp("acknowledged_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -109,7 +109,7 @@ export type TaskDeliverable = typeof taskDeliverables.$inferSelect;
 export const taskActivityLog = pgTable("task_activity_log", {
   id: serial("id").primaryKey(),
   workItemId: integer("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
-  actorId: integer("actor_id").references(() => users.id),
+  actorId: integer("actor_id").references(() => users.id, { onDelete: "set null" }),
   actionType: text("action_type").notNull(),
   fieldName: text("field_name"),
   oldValue: text("old_value"),
@@ -126,7 +126,7 @@ export type TaskActivityLog = typeof taskActivityLog.$inferSelect;
 export const taskWatchers = pgTable("task_watchers", {
   id: serial("id").primaryKey(),
   workItemId: integer("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
-  userId: integer("user_id").notNull().references(() => users.id),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export const insertTaskWatcherSchema = createInsertSchema(taskWatchers).omit({ id: true, createdAt: true } as any);
@@ -143,7 +143,7 @@ export const workItemDepTypeEnum = pgEnum('work_item_dep_type', ['FS', 'SS', 'FF
 export const workItems = pgTable("work_items", {
   id: serial("id").primaryKey(),
   clientId: integer("client_id").references(() => clients.id),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
   workstream: workItemWorkstreamEnum("workstream").notNull(),
   type: text("type"),
   source: workItemSourceEnum("source").notNull().default("UI"),
@@ -162,7 +162,7 @@ export const workItems = pgTable("work_items", {
   parentId: integer("parent_id"),  // FK to work_items (self-ref) managed via migration
   isMilestone: boolean("is_milestone").default(false),
   phase: text("phase"),
-  ownerUserId: integer("owner_user_id").references(() => users.id),
+  ownerUserId: integer("owner_user_id").references(() => users.id, { onDelete: "set null" }),
   ownerName: text("owner_name"),
   isShared: boolean("is_shared").notNull().default(false),
   externalRef: text("external_ref").unique(),
@@ -171,7 +171,7 @@ export const workItems = pgTable("work_items", {
   sourceRow: integer("source_row"),
   sourceSheet: text("source_sheet"),
   importRunId: integer("import_run_id"),
-  createdBy: integer("created_by").notNull().references(() => users.id),
+  createdBy: integer("created_by").notNull().references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   deletedAt: timestamp("deleted_at"),
@@ -312,7 +312,7 @@ export type WorkItemScheduling = typeof workItemScheduling.$inferSelect;
 export const workItemAssignments = pgTable("work_item_assignments", {
   id: serial("id").primaryKey(),
   workItemId: integer("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
-  userId: integer("user_id").notNull().references(() => users.id),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "set null" }),
   role: workItemAssignmentRoleEnum("role").notNull().default("ASSIGNEE"),
   allocationPct: real("allocation_pct"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -341,7 +341,7 @@ export const workItemStatusHistory = pgTable("work_item_status_history", {
   workItemId: integer("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
   oldStatus: text("old_status"),
   newStatus: text("new_status").notNull(),
-  changedBy: integer("changed_by").references(() => users.id),
+  changedBy: integer("changed_by").references(() => users.id, { onDelete: "set null" }),
   changedAt: timestamp("changed_at").notNull().defaultNow(),
   reason: text("reason"),
 });
@@ -358,7 +358,7 @@ export const taskTags = pgTable("task_tags", {
   name: text("name").notNull().unique(),
   color: text("color").notNull().default("#6366f1"),
   category: taskTagCategoryEnum("category").notNull().default("CUSTOM"),
-  createdBy: integer("created_by").references(() => users.id),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   deletedAt: timestamp("deleted_at"),
   deletedBy: integer("deleted_by"),
@@ -382,7 +382,7 @@ export type WorkItemTag = typeof workItemTags.$inferSelect;
 export const taskTimeEntries = pgTable("task_time_entries", {
   id: serial("id").primaryKey(),
   workItemId: integer("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
-  userId: integer("user_id").notNull().references(() => users.id),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "set null" }),
   durationMinutes: integer("duration_minutes").notNull(),
   description: text("description"),
   date: date("date").notNull(),

@@ -1,5 +1,10 @@
 import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, real, boolean, date, time, jsonb, unique, index } from "drizzle-orm/pg-core";
+
+// ==================== STATUS ENUMS ====================
+export const archivedStatusEnum = pgEnum("archived_status_enum", ["ACTIVE", "ARCHIVED", "ARCHIVED_MERGED", "GONE"]);
+export const executionGateStatusEnum = pgEnum("execution_gate_status_enum", ["NOT_ELIGIBLE", "ELIGIBLE", "APPROVED"]);
+export const signedStatusEnum = pgEnum("signed_status_enum", ["NONE", "PENDING", "SIGNED"]);
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { users } from "./users";
@@ -70,8 +75,8 @@ export const opportunities = pgTable("opportunities", {
   id: serial("id").primaryKey(),
   pipedriveDealId: text("pipedrive_deal_id"),
   clientId: integer("client_id").references(() => clients.id),
-  siteId: integer("site_id").references(() => sites.id),
-  dealOwnerUserId: integer("deal_owner_user_id").references(() => users.id),
+  siteId: integer("site_id").references(() => sites.id, { onDelete: "set null" }),
+  dealOwnerUserId: integer("deal_owner_user_id").references(() => users.id, { onDelete: "set null" }),
   stage: text("stage").default("prospect"),              // 'prospect', 'qualification', 'proposal', 'negotiation', 'won', 'lost'
   contractType: text("contract_type"),                   // 'PPA', 'EPC', 'lease', 'hybrid'
   fundingType: text("funding_type"),                     // 'self_funded', 'third_party', 'blended'
@@ -112,7 +117,7 @@ export const projectInfo = pgTable("project_info", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   deletedAt: timestamp("deleted_at"),
   // B2/B3/B4: Entity linking and enrichment
-  siteId: integer("site_id").references(() => sites.id),
+  siteId: integer("site_id").references(() => sites.id, { onDelete: "set null" }),
   opportunityId: integer("opportunity_id").references(() => opportunities.id),
   deliveryModel: text("delivery_model"),     // 'turnkey', 'design_build', 'epc', 'consulting'
   projectCode: text("project_code"),
@@ -132,7 +137,7 @@ export const projectExecutionState = pgTable("project_execution_state", {
   // Phase lifecycle
   phase: text("phase"),
   phaseUpdatedAt: timestamp("phase_updated_at"),
-  phaseUpdatedByUserId: integer("phase_updated_by_user_id").references(() => users.id),
+  phaseUpdatedByUserId: integer("phase_updated_by_user_id").references(() => users.id, { onDelete: "set null" }),
   phaseNotes: text("phase_notes"),
 
   // Key dates (planned) — migrated from text to date in 20260331_convert_project_dates_to_date.sql
@@ -177,7 +182,7 @@ export const projectExecutionState = pgTable("project_execution_state", {
   // CP signed gate
   cpSigned: boolean("cp_signed").notNull().default(false),
   cpSignedDate: date("cp_signed_date"),
-  cpSignedByUserId: integer("cp_signed_by_user_id").references(() => users.id),
+  cpSignedByUserId: integer("cp_signed_by_user_id").references(() => users.id, { onDelete: "set null" }),
   cpEvidenceType: text("cp_evidence_type"),
   cpEvidenceRef: text("cp_evidence_ref"),
 
@@ -186,11 +191,11 @@ export const projectExecutionState = pgTable("project_execution_state", {
   engPostCpTaskPackCreated: boolean("eng_post_cp_task_pack_created").notNull().default(false),
 
   // B4: Role assignments
-  constructionManagerUserId: integer("construction_manager_user_id").references(() => users.id),
-  qualityLeadUserId: integer("quality_lead_user_id").references(() => users.id),
-  engineeringLeadUserId: integer("engineering_lead_user_id").references(() => users.id),
-  programManagerUserId: integer("program_manager_user_id").references(() => users.id),
-  projectFinanceUserId: integer("project_finance_user_id").references(() => users.id),
+  constructionManagerUserId: integer("construction_manager_user_id").references(() => users.id, { onDelete: "set null" }),
+  qualityLeadUserId: integer("quality_lead_user_id").references(() => users.id, { onDelete: "set null" }),
+  engineeringLeadUserId: integer("engineering_lead_user_id").references(() => users.id, { onDelete: "set null" }),
+  programManagerUserId: integer("program_manager_user_id").references(() => users.id, { onDelete: "set null" }),
+  projectFinanceUserId: integer("project_finance_user_id").references(() => users.id, { onDelete: "set null" }),
 
   // B4: Milestone targets
   matriarchHandoverTarget: date("matriarch_handover_target"),
@@ -206,11 +211,11 @@ export const projectExecutionState = pgTable("project_execution_state", {
   gateStatus: text("gate_status"),
   gateReadinessPct: integer("gate_readiness_pct"),
   waitingOnDepartment: text("waiting_on_department"),
-  waitingOnUserId: integer("waiting_on_user_id").references(() => users.id),
+  waitingOnUserId: integer("waiting_on_user_id").references(() => users.id, { onDelete: "set null" }),
   nextRequiredAction: text("next_required_action"),
-  stageOwnerUserId: integer("stage_owner_user_id").references(() => users.id),
-  stageApproverUserId: integer("stage_approver_user_id").references(() => users.id),
-  kamUserId: integer("kam_user_id").references(() => users.id),
+  stageOwnerUserId: integer("stage_owner_user_id").references(() => users.id, { onDelete: "set null" }),
+  stageApproverUserId: integer("stage_approver_user_id").references(() => users.id, { onDelete: "set null" }),
+  kamUserId: integer("kam_user_id").references(() => users.id, { onDelete: "set null" }),
 
   // Financial review gate
   siteEstablishmentDate: date("site_establishment_date"),
