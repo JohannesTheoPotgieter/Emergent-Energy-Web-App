@@ -8128,3 +8128,75 @@ ALTER TABLE project_eng_approvals ADD COLUMN IF NOT EXISTS scheduled_end_time TE
 ALTER TABLE approvals ADD COLUMN IF NOT EXISTS scheduled_date DATE;
 ALTER TABLE approvals ADD COLUMN IF NOT EXISTS scheduled_start_time TEXT;
 ALTER TABLE approvals ADD COLUMN IF NOT EXISTS scheduled_end_time TEXT;
+
+-- ============================================================================
+-- S01-S04: Smart Import Category Revenue Allocations (added 2026-04-11)
+-- Ensures all S01-S13+S22 schema objects exist idempotently at bootstrap.
+-- ============================================================================
+
+-- S01: allocation_confidence enum type
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'allocation_confidence') THEN
+    CREATE TYPE allocation_confidence AS ENUM ('DIRECT', 'HEADER_ERROR_POSITIONAL', 'PROVISIONAL', 'MANUAL');
+  END IF;
+END $$;
+
+-- S01: category_revenue_allocations table
+CREATE TABLE IF NOT EXISTS category_revenue_allocations (
+  id                    SERIAL PRIMARY KEY,
+  project_id            INTEGER NOT NULL REFERENCES project_info(id),
+  project_name          TEXT NOT NULL,
+  category_number       TEXT NOT NULL,
+  category_name         TEXT NOT NULL,
+  category_key          TEXT NOT NULL,
+  category_sort_order   INTEGER NOT NULL,
+  revenue_allocation    NUMERIC(15,2),
+  allocation_confidence allocation_confidence NOT NULL DEFAULT 'PROVISIONAL',
+  budget_total          NUMERIC(15,2),
+  budget_cos            NUMERIC(15,2),
+  import_run_id         INTEGER REFERENCES smart_import_runs(id),
+  effective_from        TIMESTAMP NOT NULL DEFAULT NOW(),
+  effective_to          TIMESTAMP,
+  snapshot_run_id       INTEGER REFERENCES smart_import_runs(id) ON DELETE SET NULL,
+  source_sheet          TEXT,
+  source_row            INTEGER,
+  created_at            TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at            TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- S01: Indexes for category_revenue_allocations
+CREATE UNIQUE INDEX IF NOT EXISTS uq_category_revenue_allocations_active
+  ON category_revenue_allocations (project_id, category_key)
+  WHERE effective_to IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_category_revenue_allocations_history
+  ON category_revenue_allocations (project_id, category_key, effective_to);
+
+CREATE INDEX IF NOT EXISTS idx_category_revenue_allocations_import_run
+  ON category_revenue_allocations (import_run_id);
+
+-- S02: Add category_key and category_allocation_id to normalized_cost_lines
+ALTER TABLE normalized_cost_lines
+  ADD COLUMN IF NOT EXISTS category_key TEXT,
+  ADD COLUMN IF NOT EXISTS category_allocation_id INTEGER REFERENCES category_revenue_allocations(id);
+
+CREATE INDEX IF NOT EXISTS idx_ncl_category_key
+  ON normalized_cost_lines (project_id, category_key)
+  WHERE effective_to IS NULL;
+
+-- S03: Add canonical_expense_id and canonical_task_id to expense_task_links
+ALTER TABLE expense_task_links
+  ADD COLUMN IF NOT EXISTS canonical_expense_id INTEGER REFERENCES normalized_cost_lines(id),
+  ADD COLUMN IF NOT EXISTS canonical_task_id INTEGER REFERENCES work_items(id);
+
+CREATE INDEX IF NOT EXISTS idx_expense_task_links_canonical_expense
+  ON expense_task_links (canonical_expense_id)
+  WHERE canonical_expense_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_expense_task_links_canonical_task
+  ON expense_task_links (canonical_task_id)
+  WHERE canonical_task_id IS NOT NULL;
+
+-- S04: Add pre_import_snapshot to smart_import_runs
+ALTER TABLE smart_import_runs
+  ADD COLUMN IF NOT EXISTS pre_import_snapshot JSONB;

@@ -3,6 +3,7 @@
  */
 import { Router, type Express, type Request, type Response } from "express";
 import { requireAuth } from "./shared-middleware";
+import { requirePermission } from "../permission-middleware";
 import { db } from "../db";
 import { eq, desc, isNull, and } from "drizzle-orm";
 import { opportunities } from "@shared/schema/projects";
@@ -22,7 +23,7 @@ const opportunityCreateSchema = z.object({
 
 const router = Router();
 
-router.get("/api/opportunities", requireAuth, async (req: Request, res: Response) => {
+router.get("/api/opportunities", requireAuth, requirePermission("pd_dashboard", "view"), async (req: Request, res: Response) => {
   try {
     const clientId = req.query.clientId ? Number(req.query.clientId) : undefined;
     const stage = req.query.stage as string | undefined;
@@ -43,7 +44,7 @@ router.get("/api/opportunities", requireAuth, async (req: Request, res: Response
   }
 });
 
-router.get("/api/opportunities/:id", requireAuth, async (req: Request, res: Response) => {
+router.get("/api/opportunities/:id", requireAuth, requirePermission("pd_dashboard", "view"), async (req: Request, res: Response) => {
   try {
     const [row] = await db
       .select()
@@ -58,7 +59,7 @@ router.get("/api/opportunities/:id", requireAuth, async (req: Request, res: Resp
   }
 });
 
-router.post("/api/opportunities", requireAuth, async (req: Request, res: Response) => {
+router.post("/api/opportunities", requireAuth, requirePermission("pd_tickets", "create"), async (req: Request, res: Response) => {
   try {
     const parsed = opportunityCreateSchema.parse(req.body);
     const [row] = await db.insert(opportunities).values(parsed).returning();
@@ -72,7 +73,7 @@ router.post("/api/opportunities", requireAuth, async (req: Request, res: Respons
   }
 });
 
-router.patch("/api/opportunities/:id", requireAuth, async (req: Request, res: Response) => {
+router.patch("/api/opportunities/:id", requireAuth, requirePermission("pd_tickets", "edit"), async (req: Request, res: Response) => {
   try {
     const parsed = opportunityCreateSchema.partial().parse(req.body);
     const [row] = await db
@@ -90,7 +91,7 @@ router.patch("/api/opportunities/:id", requireAuth, async (req: Request, res: Re
   }
 });
 
-router.delete("/api/opportunities/:id", requireAuth, async (req: Request, res: Response) => {
+router.delete("/api/opportunities/:id", requireAuth, requirePermission("pd_tickets", "delete"), async (req: Request, res: Response) => {
   try {
     const [row] = await db
       .update(opportunities)

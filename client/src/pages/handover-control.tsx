@@ -36,6 +36,14 @@ function countOpenRisks(formData: any): number {
   return Array.isArray(risks) ? risks.length : 0;
 }
 
+const STATUS_DISPLAY: Record<string, string> = {
+  DRAFT: "Draft",
+  SUBMITTED_FOR_PM_REVIEW: "Submitted for PM Review",
+  ACCEPTED: "Accepted",
+  REJECTED: "Returned for Rework",
+  HANDOVER_COMPLETE: "Handover Complete",
+};
+
 export default function HandoverControlPage() {
   const { data, isLoading, error } = useQuery<{ items: any[] }>({
     queryKey: ["/api/pd-pm-handover/control"],
@@ -92,7 +100,7 @@ export default function HandoverControlPage() {
                   <td className="p-2">{row.client_name || '—'}</td>
                   <td className="p-2">{row.pd_owner || row.pd || '—'}</td>
                   <td className="p-2">{row.pm_owner || row.pm || '—'}</td>
-                  <td className="p-2"><Badge variant="outline" className="text-[10px]">{row.handover_status || 'DRAFT'}</Badge></td>
+                  <td className="p-2"><Badge variant="outline" className="text-[10px]">{STATUS_DISPLAY[row.handover_status] || row.handover_status || 'Draft'}</Badge></td>
                   <td className="p-2">{days}d</td>
                   <td className="p-2">
                     <span className={readinessScore === 100 ? "text-emerald-700" : readinessScore > 0 ? "text-amber-700" : "text-muted-foreground"}>

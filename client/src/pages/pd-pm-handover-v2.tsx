@@ -25,7 +25,7 @@ const STATUS_LABELS: Record<string, string> = {
   DRAFT: "Draft",
   SUBMITTED_FOR_PM_REVIEW: "Submitted for PM Review",
   ACCEPTED: "Accepted",
-  REJECTED: "Rejected",
+  REJECTED: "Returned for Rework",
   HANDOVER_COMPLETE: "Handover Complete",
 };
 

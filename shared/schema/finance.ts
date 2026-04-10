@@ -6,6 +6,7 @@ import { z } from "zod";
 import { users } from "./users";
 import { projectInfo } from "./projects";
 import { smartImportRuns } from "./imports";
+import { workItems } from "./tasks";
 
 // ===================== ENUMS =====================
 
@@ -490,6 +491,37 @@ export const insertNormalizedRevenueLineSchema = createInsertSchema(normalizedRe
 export type InsertNormalizedRevenueLine = z.infer<typeof insertNormalizedRevenueLineSchema>;
 export type NormalizedRevenueLine = typeof normalizedRevenueLines.$inferSelect;
 
+// ===================== CATEGORY REVENUE ALLOCATIONS =====================
+
+export const allocationConfidenceEnum = pgEnum('allocation_confidence', ['DIRECT', 'HEADER_ERROR_POSITIONAL', 'PROVISIONAL', 'MANUAL']);
+
+export const categoryRevenueAllocations = pgTable("category_revenue_allocations", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  projectName: text("project_name").notNull(),
+  categoryNumber: text("category_number").notNull(),
+  categoryName: text("category_name").notNull(),
+  categoryKey: text("category_key").notNull(),
+  categorySortOrder: integer("category_sort_order").notNull(),
+  revenueAllocation: decimal("revenue_allocation", { precision: 15, scale: 2 }),
+  allocationConfidence: allocationConfidenceEnum("allocation_confidence").notNull().default('PROVISIONAL'),
+  budgetTotal: decimal("budget_total", { precision: 15, scale: 2 }),
+  budgetCos: decimal("budget_cos", { precision: 15, scale: 2 }),
+  importRunId: integer("import_run_id").references(() => smartImportRuns.id),
+  effectiveFrom: timestamp("effective_from").notNull().defaultNow(),
+  effectiveTo: timestamp("effective_to"),
+  snapshotRunId: integer("snapshot_run_id").references(() => smartImportRuns.id, { onDelete: "set null" }),
+  sourceSheet: text("source_sheet"),
+  sourceRow: integer("source_row"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertCategoryRevenueAllocationSchema = createInsertSchema(categoryRevenueAllocations).omit({ id: true, createdAt: true, updatedAt: true, effectiveFrom: true, effectiveTo: true } as any);
+export type InsertCategoryRevenueAllocation = z.infer<typeof insertCategoryRevenueAllocationSchema>;
+export type CategoryRevenueAllocation = typeof categoryRevenueAllocations.$inferSelect;
+
+// ===================== NORMALIZED COST LINES =====================
+
 export const normalizedCostLines = pgTable("normalized_cost_lines", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").notNull().references(() => projectInfo.id),
@@ -548,6 +580,11 @@ export const normalizedCostLines = pgTable("normalized_cost_lines", {
   // Prevents duplicate rows from double-clicks, browser resends, and network retries.
   // NULL for imported rows (no dedup needed — imports use soft-close + re-insert).
   idempotencyKey: text("idempotency_key"),
+  // Category-level fields for revenue release formula (S02).
+  // categoryKey: canonical numbered category key (e.g. "1. Panels") for grouping/sorting.
+  // categoryAllocationId: FK to the category_revenue_allocations row for direct formula lookup.
+  categoryKey: text("category_key"),
+  categoryAllocationId: integer("category_allocation_id").references(() => categoryRevenueAllocations.id),
 });
 export const insertNormalizedCostLineSchema = createInsertSchema(normalizedCostLines).omit({ id: true, createdAt: true, updatedAt: true, effectiveFrom: true, effectiveTo: true, amountExVatLegacy: true } as any);
 export type InsertNormalizedCostLine = z.infer<typeof insertNormalizedCostLineSchema>;
@@ -730,6 +767,10 @@ export const expenseTaskLinks = pgTable("expense_task_links", {
   createdBy: integer("created_by"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  // Canonical FK columns (S03) — point to canonical tables instead of legacy.
+  // During migration, both old (expenseId/taskId) and new columns coexist.
+  canonicalExpenseId: integer("canonical_expense_id").references(() => normalizedCostLines.id),
+  canonicalTaskId: integer("canonical_task_id").references(() => workItems.id),
 });
 export const insertExpenseTaskLinkSchema = createInsertSchema(expenseTaskLinks).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertExpenseTaskLink = z.infer<typeof insertExpenseTaskLinkSchema>;

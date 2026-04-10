@@ -386,7 +386,7 @@ export function registerPdRoutes(app: Express) {
     }
   });
 
-  app.post("/api/pd/tickets", requireAuth, requirePermission('pd_quality', 'edit'), async (req: Request, res: Response) => {
+  app.post("/api/pd/tickets", requireAuth, requirePermission('pd_tickets', 'create'), async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
       const role = user?.companyRole || user?.role || "";
@@ -452,7 +452,7 @@ export function registerPdRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/pd/tickets/:id", requireAuth, requirePermission('pd_quality', 'edit'), async (req: Request, res: Response) => {
+  app.patch("/api/pd/tickets/:id", requireAuth, requirePermission('pd_tickets', 'edit'), async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
       const role = user?.companyRole || user?.role || "";
@@ -504,7 +504,7 @@ export function registerPdRoutes(app: Express) {
     }
   });
 
-  app.post("/api/pd/tickets/:id/spawn-tasks", requireAuth, requirePermission('pd_quality', 'edit'), async (req: Request, res: Response) => {
+  app.post("/api/pd/tickets/:id/spawn-tasks", requireAuth, requirePermission('pd_tickets', 'edit'), async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
       const role = user?.companyRole || user?.role || "";
@@ -528,7 +528,7 @@ export function registerPdRoutes(app: Express) {
     }
   });
 
-  app.post("/api/pd/tickets/:id/engineering-tasks", requireAuth, requirePermission('pd_quality', 'edit'), async (req: Request, res: Response) => {
+  app.post("/api/pd/tickets/:id/engineering-tasks", requireAuth, requirePermission('pd_tickets', 'edit'), async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
       const role = user?.companyRole || user?.role || "";
