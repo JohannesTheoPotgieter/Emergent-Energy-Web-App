@@ -105,10 +105,10 @@ const ENGINEER_CONFIG: RoleDashboardConfig = {
 
 const PD_CONFIG: RoleDashboardConfig = {
   kpis: [
-    { key: "my_opportunities", label: "My Opportunities" },
-    { key: "handover_readiness", label: "Handover Readiness" },
-    { key: "pd_tickets_open", label: "PD Tickets Open" },
-    { key: "proposals_pending", label: "Proposals Pending" },
+    { key: "my_opportunities", label: "Total Projects" },
+    { key: "handover_readiness", label: "Active Projects" },
+    { key: "pd_tickets_open", label: "Planned Revenue (FY)" },
+    { key: "proposals_pending", label: "Received Inflow (FY)" },
   ],
   attentionPriority: ["handovers_needing_prep", "returned_tickets", "stale_opportunities", "my_overdue"],
   quickActions: [

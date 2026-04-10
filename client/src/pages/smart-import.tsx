@@ -2464,7 +2464,7 @@ export function PreviewCommitStep({
       const res = await fetch(`/api/smart-import/${runId}/commit`, {
         method: "POST",
         headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify(extraBody),
+        body: JSON.stringify({ emergencyV1Mode: true, emergencyV1Reason: "COO emergency v1 commit via Advanced view", ...extraBody }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -3349,6 +3349,8 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
 
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
   const isAdmin = ["COO_ADMIN", "CEO_ADMIN", "admin"].includes(companyRole || "");
+  // S22: Emergency v1 mode is COO-only — not rendered at all for other roles.
+  const isCOO = companyRole === "COO_ADMIN";
 
   const loadPendingRuns = useCallback(async () => {
     setLoading(true);
@@ -4067,6 +4069,9 @@ export default function SmartImportPage() {
   /** When v2 is active and user clicks Review on a bulk run, open it in v2 flow */
   const [v2ReviewRunId, setV2ReviewRunId] = useState<number | null>(null);
   const [v2ActiveRunId, setV2ActiveRunId] = useState<number | null>(null);
+  // S22: Emergency v1 mode is COO-only — not rendered at all for other roles.
+  const companyRolePage = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
+  const isCOO = companyRolePage === "COO_ADMIN";
   const pendingRunsQuery = useQuery<PendingRun[], Error>({
     queryKey: ["smart-import-pending-governance"],
     queryFn: async () => {
@@ -4193,7 +4198,8 @@ export default function SmartImportPage() {
         retryRecentRuns={() => { void recentRunsQuery.refetch(); }}
       />
 
-      {/* V2 / V1 toggle — available for admin power users */}
+      {/* S22: V2/V1 toggle — COO-only emergency mode. Not rendered for other roles. */}
+      {isCOO && (
       <div className="flex items-center justify-end gap-2 text-xs text-muted-foreground" data-testid="v2-mode-toggle">
         <button
           className={`px-2 py-1 rounded ${useV2 ? "bg-blue-100 text-blue-700 font-medium" : "hover:bg-slate-100"}`}
@@ -4207,7 +4213,7 @@ export default function SmartImportPage() {
           Simple view
         </button>
         <button
-          className={`px-2 py-1 rounded ${!useV2 ? "bg-blue-100 text-blue-700 font-medium" : "hover:bg-slate-100"}`}
+          className={`px-2 py-1 rounded ${!useV2 ? "bg-amber-100 text-amber-800 font-medium border border-amber-300" : "hover:bg-slate-100"}`}
           onClick={() => {
             const activeId = v2ActiveRunId;
             if (useV2 && activeId) {
@@ -4218,9 +4224,10 @@ export default function SmartImportPage() {
             setUseV2(false);
           }}
         >
-          Advanced view
+          Emergency v1 (COO only)
         </button>
       </div>
+      )}
 
       {/* ── V2 flow (plain-language) ── */}
       {useV2 && !bulkMode && (

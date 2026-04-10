@@ -38,10 +38,10 @@ export function extractMonthKey(dateStr: string | null | undefined): string | nu
   return `${match[1]}-${match[2]}`;
 }
 
-// ─── Revenue allocation (COS-ratio method) ───
-// Allocates revenue to an individual cost line item based on its proportion of
-// the project's total COS. This is the standard allocation used across all
-// finance tracker endpoints.
+// ─── Revenue allocation (COS-ratio method) — PROJECT-LEVEL ───
+// @deprecated This function uses project-level totals. After the re-import campaign
+// and S16 formula cutover, all callers should use allocateRevenueByCategory() instead.
+// Retained for backward compatibility until S16 replaces all 10 call sites.
 //
 // Formula: revenueAmount = (lineItemCOS / totalProjectCOS) * totalProjectRevenue
 //
@@ -54,6 +54,33 @@ export function allocateRevenue(
 ): number {
   if (totalProjectCOS <= 0 || noRevenueLinked) return 0;
   return (lineItemCOS / totalProjectCOS) * totalProjectRevenue;
+}
+
+// ─── Revenue allocation (COS-ratio method) — CATEGORY-LEVEL (S15) ───
+// Target allocation formula for category-based revenue recognition.
+// Uses per-category COS total (X_cat) and per-category revenue allocation (J_cat)
+// instead of project-level aggregates.
+//
+// Formula: revenueAmount = (lineItemCOS / categoryTotalCOS) * categoryRevenueAllocation
+//
+// Parameters:
+//   lineItemCOS               — Q: actual cost for this individual line item
+//   categoryTotalCOS          — X_cat: SUM(actual COS) for all lines in this cost category
+//   categoryRevenueAllocation — J_cat: revenue allocated to this category from the costing model
+//   noRevenueLinked           — true if the line is explicitly excluded from recognition
+//
+// Returns 0 if:
+//   - The category has no COS (categoryTotalCOS <= 0)
+//   - The line is flagged noRevenueLinked
+//   - J_cat is zero or negative
+export function allocateRevenueByCategory(
+  lineItemCOS: number,
+  categoryTotalCOS: number,
+  categoryRevenueAllocation: number,
+  noRevenueLinked: boolean,
+): number {
+  if (categoryTotalCOS <= 0 || noRevenueLinked || categoryRevenueAllocation <= 0) return 0;
+  return (lineItemCOS / categoryTotalCOS) * categoryRevenueAllocation;
 }
 
 // ─── Full COS status classification ───

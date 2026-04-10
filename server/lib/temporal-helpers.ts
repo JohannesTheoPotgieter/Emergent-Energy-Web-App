@@ -25,6 +25,7 @@ export const TEMPORAL_TABLES = new Set([
   "project_revenue_summary",
   "normalized_cost_lines",
   "normalized_revenue_lines",
+  "category_revenue_allocations",
 ]);
 
 /**
@@ -112,15 +113,23 @@ export async function softCloseByProjectId(
 
 /**
  * Soft-close by projectName column (common pattern in smart-import).
+ * Uses Drizzle sql tagged template for safe parameterization.
  */
 export async function softCloseByProjectName(
   tx: any,
   tableName: string,
   projectName: string,
 ): Promise<number> {
-  // Escape single quotes in project name
-  const escaped = projectName.replace(/'/g, "''");
-  return softCloseRows(tx, tableName, `project_name = '${escaped}'`);
+  if (!TEMPORAL_TABLES.has(tableName)) {
+    throw new Error(`softCloseByProjectName: invalid table "${tableName}"`);
+  }
+  const result = await tx.execute(sql`
+    UPDATE ${sql.raw(`"${tableName}"`)}
+    SET effective_to = NOW()
+    WHERE (effective_to IS NULL)
+      AND (project_name = ${projectName})
+  `);
+  return (result as any).rowCount ?? 0;
 }
 
 /**
