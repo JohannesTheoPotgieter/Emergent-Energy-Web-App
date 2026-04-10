@@ -1398,9 +1398,71 @@ These compatibility shims map new data shapes to old response formats. They shou
 
 **QA CHECK:** Run the existing test suite (`qa/tests/unit/`) — all migration tests should pass. Additionally, `grep -r "mytool_tasks" server/` should return ZERO hits in production route files (test files are acceptable).
 
-### 15M. Smart Import v1 → v2 Fallback
+### 15M. Legacy Table Archive System
 
-Smart Import has two versions running concurrently:
+The platform has an admin-only migration finalization system at `server/migration-finalize-routes.ts`:
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/admin/migration/status` | Check archive status of legacy tables |
+| `GET /api/admin/migration/verify` | Verify migration completion |
+| `POST /api/admin/migration/register-backup` | Register pre-migration backup |
+
+**Tables pending archival** (suffix `_legacy_archive`):
+- `normalized_plan_tasks`
+- `qc_item_instance`
+- `mytool_tasks`
+- `tasks`
+- `intake_tasks`
+- `project_eng_tasks`
+
+**Archive rules:**
+- Drop cooldown: 7 days after archiving
+- Tracking: `migration_cleanup_log` and `migration_backups` tables
+- Verification: Compare row counts between legacy and canonical representations
+
+**QA CHECK:**
+1. Run `GET /api/admin/migration/status` — which tables have been archived vs still active?
+2. Run `GET /api/admin/migration/verify` — are all migrations verified complete?
+3. Are any of the tables above still being queried by production code? If so, that's a bug.
+
+### 15N. Drizzle Migration Journal Discrepancy
+
+**Critical finding:** There are **160 SQL migration files** in `migrations/` but the Drizzle migration journal (`migrations/meta/_journal.json`) only tracks **2 applied migrations**:
+- `0000_neat_juggernaut`
+- `0001_useful_the_initiative`
+
+The remaining **158 SQL files** are applied via the startup schema sync (`runDrizzleSchemaSync`) using `psql` or `db.execute()`, bypassing Drizzle's migration tracking.
+
+**QA CHECK:**
+1. Are all 158 untracked migrations idempotent? (Use `IF NOT EXISTS`, `IF EXISTS` guards)
+2. Is there a risk of re-applying a migration and causing data corruption?
+3. Should these be reconciled into the Drizzle journal for proper tracking?
+
+### 15O. Startup Execution Order
+
+The server startup orchestrator (`server/bootstrap/startup-orchestrator.ts`) runs operations in this exact order:
+
+```
+1. Schema Sync          — psql or db.execute() applies SQL migrations
+2. Additive Alignments  — Safe table/column creation (ADD COLUMN IF NOT EXISTS)
+3. Data Seeds           — Seeds if enabled OR if project_info table is empty
+4. Integrity Guard      — Always runs (ensures 1:1 coverage for execution state, settings, metrics)
+5. Stage Instance       — Populates 10 stage instances per project
+6. Gate Evaluation      — Evaluates all gates, populates project_gate_evaluations
+7. Main Backfills       — All 8 startup backfills (guarded by startup_backfills_v1)
+8. Route Registration   — After all schema/data work completes
+9. Runtime Services     — Start background sync/scheduler if enabled
+```
+
+**QA CHECK:**
+1. Does the server start successfully in production? Check startup logs for errors.
+2. Are any backfills failing silently? (They use `.catch()` which swallows errors into logs)
+3. Does the integrity guard correctly create missing `project_execution_state` / `project_settings` / `dashboard_project_metrics` rows?
+
+### 15P. Smart Import v1 → v2 Fallback
+
+Smart Import has two versions running concurrently (documented in `docs/smart-import-v2-uat-report.md`):
 
 | Version | Status | Coverage |
 |---------|--------|----------|
