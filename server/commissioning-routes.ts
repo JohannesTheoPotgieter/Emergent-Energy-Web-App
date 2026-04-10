@@ -6,6 +6,35 @@ import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
 import { jwtAuth, requireAuth, getEffectiveUser, type AuthenticatedUser } from "./auth-context";
 import { evaluateEvidence, isEvidenceOverrideAuthorized, upsertEvidenceItem } from "./services/evidence-evaluation-service";
+import { z } from "zod";
+
+const COMMISSIONING_STATUSES = ['not_started', 'in_progress', 'ready_for_review', 'approved', 'closed'] as const;
+
+const createCommissioningItemSchema = z.object({
+  projectId: z.number({ required_error: "projectId is required" }),
+  title: z.string().min(1, "title is required"),
+  itemType: z.string().optional(),
+  description: z.string().optional(),
+  ownerUserId: z.number().optional(),
+  dueDate: z.string().optional(),
+  gateId: z.number().optional(),
+  category: z.string().optional(),
+  sortOrder: z.number().optional(),
+});
+
+const updateCommissioningItemSchema = z.object({
+  title: z.string().min(1).optional(),
+  description: z.string().optional(),
+  ownerUserId: z.number().optional(),
+  dueDate: z.string().optional(),
+  evidenceNotes: z.string().optional(),
+  gateId: z.number().optional(),
+  category: z.string().optional(),
+  sortOrder: z.number().optional(),
+  itemType: z.string().optional(),
+  status: z.enum(COMMISSIONING_STATUSES).optional(),
+  evidenceOverrideReason: z.string().optional(),
+});
 
 /** Check whether the Handover Pack engineering stage is complete for a project. */
 async function isHandoverPackComplete(projectId: number): Promise<{ complete: boolean; stageName?: string; status?: string }> {
@@ -86,8 +115,9 @@ export function registerCommissioningRoutes(app: Express): void {
 
   app.post("/api/commissioning", jwtAuth, requireAuth, requirePermission("commissioning", "create"), async (req: Request, res: Response) => {
     try {
-      const { projectId, itemType, title, description, ownerUserId, dueDate, gateId, category, sortOrder } = req.body;
-      if (!projectId || !title) return res.status(400).json({ error: "projectId and title required" });
+      const parsed = createCommissioningItemSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors });
+      const { projectId, itemType, title, description, ownerUserId, dueDate, gateId, category, sortOrder } = parsed.data;
 
       const result = await db.insert(commissioningItems).values({
         projectId,
@@ -127,19 +157,22 @@ export function registerCommissioningRoutes(app: Express): void {
       const old = existing[0];
 
       const updates: Record<string, unknown> = { updatedAt: new Date() };
-      const fields = ['title', 'description', 'ownerUserId', 'dueDate', 'evidenceNotes', 'gateId', 'category', 'sortOrder', 'itemType'];
+      const parsed = updateCommissioningItemSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors });
+
+      const fields = ['title', 'description', 'ownerUserId', 'dueDate', 'evidenceNotes', 'gateId', 'category', 'sortOrder', 'itemType'] as const;
       for (const f of fields) {
-        if (req.body[f] !== undefined) updates[f] = req.body[f];
+        if (parsed.data[f] !== undefined) updates[f] = parsed.data[f];
       }
 
-      if (req.body.status !== undefined && req.body.status !== old.status) {
+      if (parsed.data.status !== undefined && parsed.data.status !== old.status) {
         const allowed = VALID_TRANSITIONS[old.status] || [];
-        if (!allowed.includes(req.body.status)) {
-          return res.status(400).json({ error: `Cannot transition from ${old.status} to ${req.body.status}` });
+        if (!allowed.includes(parsed.data.status)) {
+          return res.status(400).json({ error: `Cannot transition from ${old.status} to ${parsed.data.status}` });
         }
 
         // Gate: commissioning cannot progress until Handover Pack stage is complete
-        if (old.status === "not_started" && req.body.status === "in_progress") {
+        if (old.status === "not_started" && parsed.data.status === "in_progress") {
           const hp = await isHandoverPackComplete(old.projectId);
           if (!hp.complete) {
             return res.status(400).json({
@@ -149,11 +182,11 @@ export function registerCommissioningRoutes(app: Express): void {
           }
         }
 
-        updates.status = req.body.status;
+        updates.status = parsed.data.status;
 
-        if (req.body.status === 'approved' || req.body.status === 'closed') {
+        if (parsed.data.status === 'approved' || parsed.data.status === 'closed') {
           const user = getEffectiveUser(req);
-          const overrideReason = String(req.body?.evidenceOverrideReason || "").trim();
+          const overrideReason = String(parsed.data.evidenceOverrideReason || "").trim();
           const wantsOverride = !!overrideReason;
 
           const evidence = await evaluateEvidence({
@@ -196,7 +229,7 @@ export function registerCommissioningRoutes(app: Express): void {
           updates.completedAt = new Date();
         }
 
-        if (req.body.status === 'ready_for_review' && !old.approvalId) {
+        if (parsed.data.status === 'ready_for_review' && !old.approvalId) {
           try {
             const user = getEffectiveUser(req);
             const approvalResult = await db.insert(approvals).values({
@@ -221,7 +254,7 @@ export function registerCommissioningRoutes(app: Express): void {
         entityType: "commissioning_item",
         entityId: String(id),
         action: "update",
-        changesJson: { before: { status: old.status }, after: { status: result[0].status }, updates: req.body },
+        changesJson: { before: { status: old.status }, after: { status: result[0].status }, updates: parsed.data },
       });
 
       res.json(result[0]);

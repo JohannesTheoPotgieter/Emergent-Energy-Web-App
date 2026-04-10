@@ -7,8 +7,44 @@ import { logAuditFromReq } from "./audit-logger";
 import { jwtAuth, requireAuth, getEffectiveUser } from "./auth-context";
 import { actorFromReq, createProjectEvent } from "./services/project-event-service";
 import { createVoApproval } from "./services/approval-service";
+import { z } from "zod";
 
 const VALID_STATUSES = ['draft', 'submitted', 'under_review', 'approved', 'rejected', 'implemented', 'closed'] as const;
+
+const createChangeRequestSchema = z.object({
+  projectId: z.number({ required_error: "projectId is required" }),
+  title: z.string().min(1, "title is required"),
+  description: z.string().optional(),
+  changeType: z.enum(['scope', 'cost', 'schedule', 'technical', 'commercial'], { required_error: "changeType is required" }),
+  ownerUserId: z.number().optional(),
+  impactSummary: z.string().optional(),
+  costImpact: z.string().optional(),
+  scheduleImpactDays: z.number().optional(),
+  cause: z.string().optional(),
+  clientLinked: z.boolean().optional(),
+  revenueImpact: z.string().optional(),
+  cosImpact: z.string().optional(),
+  marginImpact: z.string().optional(),
+  evidenceLink: z.string().optional(),
+});
+
+const updateChangeRequestSchema = z.object({
+  title: z.string().min(1).optional(),
+  description: z.string().optional(),
+  changeType: z.enum(['scope', 'cost', 'schedule', 'technical', 'commercial']).optional(),
+  ownerUserId: z.number().optional(),
+  impactSummary: z.string().optional(),
+  costImpact: z.string().optional(),
+  scheduleImpactDays: z.number().optional(),
+  status: z.enum(VALID_STATUSES).optional(),
+  cause: z.string().optional(),
+  clientLinked: z.boolean().optional(),
+  revenueImpact: z.string().optional(),
+  cosImpact: z.string().optional(),
+  marginImpact: z.string().optional(),
+  evidenceLink: z.string().optional(),
+  finalDecision: z.string().optional(),
+});
 const VALID_TRANSITIONS: Record<string, string[]> = {
   draft: ['submitted'],
   submitted: ['under_review', 'rejected'],
@@ -78,11 +114,11 @@ export function registerChangeControlRoutes(app: Express): void {
   app.post("/api/change-requests", jwtAuth, requireAuth, requirePermission("projects", "create"), async (req: Request, res: Response) => {
     try {
       const user = getEffectiveUser(req);
+      const parsed = createChangeRequestSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors });
       const { projectId, title, description, changeType, ownerUserId, impactSummary, costImpact, scheduleImpactDays,
-        // B6: enriched VO fields
         cause, clientLinked, revenueImpact, cosImpact, marginImpact, evidenceLink,
-      } = req.body;
-      if (!projectId || !title || !changeType) return res.status(400).json({ error: "projectId, title, changeType required" });
+      } = parsed.data;
 
       const result = await db.insert(changeRequests).values({
         projectId,
@@ -142,7 +178,10 @@ export function registerChangeControlRoutes(app: Express): void {
       const old = existing[0];
 
       const updates: Record<string, unknown> = { updatedAt: new Date() };
-      const { title, description, changeType, ownerUserId, impactSummary, costImpact, scheduleImpactDays, status } = req.body;
+      const parsed = updateChangeRequestSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors });
+      const { title, description, changeType, ownerUserId, impactSummary, costImpact, scheduleImpactDays, status,
+        cause, clientLinked, revenueImpact } = parsed.data;
 
       if (title !== undefined) updates.title = title;
       if (description !== undefined) updates.description = description;
@@ -152,14 +191,13 @@ export function registerChangeControlRoutes(app: Express): void {
       if (costImpact !== undefined) updates.costImpact = costImpact;
       if (scheduleImpactDays !== undefined) updates.scheduleImpact = scheduleImpactDays;
 
-      // B6: Accept enriched fields on update too
-      if (req.body.cause !== undefined) updates.cause = req.body.cause;
-      if (req.body.clientLinked !== undefined) updates.clientLinked = req.body.clientLinked;
-      if (req.body.revenueImpact !== undefined) updates.revenueImpact = req.body.revenueImpact;
-      if (req.body.cosImpact !== undefined) updates.cosImpact = req.body.cosImpact;
-      if (req.body.marginImpact !== undefined) updates.marginImpact = req.body.marginImpact;
-      if (req.body.evidenceLink !== undefined) updates.evidenceLink = req.body.evidenceLink;
-      if (req.body.finalDecision !== undefined) updates.finalDecision = req.body.finalDecision;
+      if (cause !== undefined) updates.cause = cause;
+      if (clientLinked !== undefined) updates.clientLinked = clientLinked;
+      if (revenueImpact !== undefined) updates.revenueImpact = revenueImpact;
+      if (parsed.data.cosImpact !== undefined) updates.cosImpact = parsed.data.cosImpact;
+      if (parsed.data.marginImpact !== undefined) updates.marginImpact = parsed.data.marginImpact;
+      if (parsed.data.evidenceLink !== undefined) updates.evidenceLink = parsed.data.evidenceLink;
+      if (parsed.data.finalDecision !== undefined) updates.finalDecision = parsed.data.finalDecision;
 
       if (status !== undefined && status !== old.status) {
         const allowed = VALID_TRANSITIONS[old.status] || [];
@@ -172,7 +210,7 @@ export function registerChangeControlRoutes(app: Express): void {
           try {
             const user = getEffectiveUser(req);
             // B8: Use universal approval service with VO-specific metadata
-            const revImpact = Number(old.revenueImpact || req.body.revenueImpact || old.costImpact || 0);
+            const revImpact = Number(old.revenueImpact || parsed.data.revenueImpact || old.costImpact || 0);
             const approval = await createVoApproval({
               projectId: old.projectId,
               changeRequestId: old.id,
@@ -195,7 +233,7 @@ export function registerChangeControlRoutes(app: Express): void {
         entityType: "change_request",
         entityId: String(id),
         action: "update",
-        changesJson: { before: { status: old.status }, after: { status: result[0].status }, updates: req.body },
+        changesJson: { before: { status: old.status }, after: { status: result[0].status }, updates: parsed.data },
       });
 
       if (updates.status && updates.status !== old.status) {
