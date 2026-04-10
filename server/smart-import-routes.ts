@@ -44,7 +44,9 @@ import {
   importLogs,
   manualEditFlags,
   conflictResolutionLog,
+  categoryRevenueAllocations,
 } from "@shared/schema";
+import { normalizeCategoryKey } from "./lib/import/normalizer";
 import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { softCloseByProjectId, softCloseByProjectName, softCloseByImportRunId, addTemporalColumns } from "./lib/temporal-helpers";
 import { recordImportChange, recordSystemEvent } from "./lib/audit/diff-engine";
@@ -1400,11 +1402,43 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       }
     }
 
+    // ── Emergency v1 mode (S22) ──
+    // The legacy v1 full-replace path is restricted to COO role only.
+    // Non-COO users cannot activate it. A justification reason is required.
+    const emergencyV1Mode = req.body?.emergencyV1Mode === true || req.body?.skipV2ConflictCheck === true;
+    let skipV2ConflictCheck = false;
+    if (emergencyV1Mode) {
+      const userRole = (req as any).user?.role || "";
+      const isCOO = userRole === "COO_ADMIN";
+      if (!isCOO) {
+        return res.status(403).json({
+          error: "emergency_v1_coo_only",
+          message: "Emergency v1 mode is restricted to COO role only.",
+        });
+      }
+      const reason = req.body?.emergencyV1Reason || "";
+      if (typeof reason !== "string" || reason.trim().length < 20) {
+        return res.status(400).json({
+          error: "emergency_v1_reason_required",
+          message: "Emergency v1 mode requires a justification reason (minimum 20 characters).",
+        });
+      }
+      skipV2ConflictCheck = true;
+      // Audit the emergency v1 usage
+      logAuditFromReq(req, {
+        entityType: "smart_import",
+        entityId: String(runId),
+        action: "emergency_v1_mode",
+        projectName: run.projectName,
+        source: "IMPORT",
+        changesJson: { reason: reason.trim(), userId: (req as any).user?.id },
+      });
+    }
+
     // ── Smart Import v2: 3-way conflict check ──
     // Run the planner to detect true conflicts (both app and file diverged from baseline).
     // Unresolved conflicts block commit.
     const v2ConflictResolutions = req.body?.v2ConflictResolutions as Record<string, "keep_app" | "accept_file"> | undefined;
-    const skipV2ConflictCheck = req.body?.skipV2ConflictCheck === true;
     const preserveManualEditsEarly = req.body?.preserveManualEdits === true;
 
     if (!skipV2ConflictCheck && !preserveManualEditsEarly && run.projectId) {
@@ -1820,6 +1854,29 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
 
         const v2Decisions = v2ConflictResolutions || {};
 
+        // ── S11: Pre-import work_items snapshot ──
+        // Capture current work_items state BEFORE v2 overwrites them in-place.
+        // Required for state-restoring rollback (S21).
+        if (planRows.length > 0) {
+          try {
+            const snapshotRows = planRows.map((r: any) => ({
+              id: r.id, taskName: r.taskName, taskNo: r.taskNo, phase: r.phase,
+              startDate: r.startDate, endDate: r.endDate, durationDays: r.durationDays,
+              actualStartDate: r.actualStartDate, actualEndDate: r.actualEndDate,
+              actualDurationDays: r.actualDurationDays, owner: r.owner,
+              status: r.status, pctComplete: r.pctComplete,
+              expectedPctComplete: r.expectedPctComplete, comment: r.comment,
+              isMilestone: r.isMilestone, parentTaskNo: r.parentTaskNo,
+              subProjectName: r.subProjectName, importRunId: r.importRunId,
+            }));
+            await tx.update(smartImportRuns)
+              .set({ preImportSnapshot: snapshotRows })
+              .where(eq(smartImportRuns.id, runId));
+          } catch (snapErr: unknown) {
+            console.warn("[SmartImport] Pre-import snapshot failed (non-blocking):", (snapErr instanceof Error ? snapErr.message : String(snapErr)));
+          }
+        }
+
         // Write PLAN incrementally
         let planResult = null;
         if (matchedPlan.length > 0) {
@@ -1859,6 +1916,98 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
             commitTimestamp,
           });
           counts.costLines = costResult.counts.inserted + costResult.counts.updated;
+        }
+
+        // ── S09: Write category_revenue_allocations ──
+        // Persist extracted J_cat values from the normalization result.
+        const catAllocs = norm.categoryAllocations as Array<{
+          categoryNumber: string; categoryName: string; categoryKey: string;
+          categorySortOrder: number; revenueAllocation: number | null;
+          cosTotalCosted: number | null; budgetTotal: number | null;
+          allocationSource: string; sourceSheet: string; sourceRow: number;
+        }> | undefined;
+
+        // Map from categoryKey → inserted allocation row ID (for S10 FK)
+        const catAllocIdByKey = new Map<string, number>();
+
+        if (catAllocs && catAllocs.length > 0) {
+          // Soft-close existing active allocations for this project
+          await tx.update(categoryRevenueAllocations)
+            .set({ effectiveTo: commitTimestamp })
+            .where(and(
+              eq(categoryRevenueAllocations.projectId, projectId),
+              isNull(categoryRevenueAllocations.effectiveTo),
+            ));
+
+          // Insert new allocations
+          for (const ca of catAllocs) {
+            const confidence = ca.allocationSource === "DIRECT_EXTRACTION" ? "DIRECT" as const
+              : ca.allocationSource === "HEADER_ERROR_POSITIONAL" ? "HEADER_ERROR_POSITIONAL" as const
+              : "PROVISIONAL" as const;
+
+            const [inserted] = await tx.insert(categoryRevenueAllocations).values({
+              projectId,
+              projectName,
+              categoryNumber: ca.categoryNumber,
+              categoryName: ca.categoryName,
+              categoryKey: ca.categoryKey,
+              categorySortOrder: ca.categorySortOrder,
+              revenueAllocation: ca.revenueAllocation != null ? String(ca.revenueAllocation) : null,
+              allocationConfidence: confidence,
+              budgetTotal: ca.budgetTotal != null ? String(ca.budgetTotal) : null,
+              budgetCos: ca.cosTotalCosted != null ? String(ca.cosTotalCosted) : null,
+              importRunId: runId,
+              effectiveFrom: commitTimestamp,
+              effectiveTo: null,
+              snapshotRunId: runId,
+              sourceSheet: ca.sourceSheet,
+              sourceRow: ca.sourceRow,
+            }).returning();
+            catAllocIdByKey.set(ca.categoryKey, inserted.id);
+          }
+        }
+
+        // ── S10: Populate category_key and category_allocation_id on NCL rows ──
+        // Set category_key on all active NCL rows for this project, including UNCHANGED rows.
+        if (catAllocIdByKey.size > 0) {
+          // Build a lookup from category_name (stripped) → categoryKey + allocationId
+          const catNameToKeyId = new Map<string, { key: string; id: number }>();
+          for (const ca of catAllocs!) {
+            catNameToKeyId.set(ca.categoryName.toLowerCase(), { key: ca.categoryKey, id: catAllocIdByKey.get(ca.categoryKey)! });
+            // Also index by full key for rows that already have numbered categories
+            catNameToKeyId.set(ca.categoryKey.toLowerCase(), { key: ca.categoryKey, id: catAllocIdByKey.get(ca.categoryKey)! });
+          }
+
+          // Fetch ALL active NCL rows for this project (includes UNCHANGED ones)
+          const activeNclRows = await tx.select({
+            id: normalizedCostLines.id,
+            costCategory: normalizedCostLines.costCategory,
+            categoryKey: normalizedCostLines.categoryKey,
+          })
+            .from(normalizedCostLines)
+            .where(and(
+              eq(normalizedCostLines.projectId, projectId),
+              isNull(normalizedCostLines.effectiveTo),
+            ));
+
+          // Update each row that needs category_key or category_allocation_id
+          for (const row of activeNclRows) {
+            const catName = (row.costCategory || "").toLowerCase().trim();
+            const match = catNameToKeyId.get(catName);
+            if (match && (row.categoryKey !== match.key)) {
+              await tx.update(normalizedCostLines)
+                .set({
+                  categoryKey: match.key,
+                  categoryAllocationId: match.id,
+                })
+                .where(eq(normalizedCostLines.id, row.id));
+            } else if (match && !row.categoryKey) {
+              // Row already has the right categoryKey but is missing the FK
+              await tx.update(normalizedCostLines)
+                .set({ categoryAllocationId: match.id })
+                .where(eq(normalizedCostLines.id, row.id));
+            }
+          }
         }
 
         v2Result = {
