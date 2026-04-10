@@ -7,7 +7,18 @@ export interface CosLineInput {
   expensePoNumber: string | null;
   paymentDate: string | null;
   today: string;
+  /** Actual cost amount. When provided, zero-amount lines are not considered realised. */
+  amountExVat?: string | number | null;
 }
+
+/**
+ * Placeholder invoice values that do not indicate a captured supplier invoice.
+ * Used both here (runtime check) and in the normalizer (import-time derivation).
+ */
+export const PLACEHOLDER_INVOICES = new Set([
+  "tbc", "tba", "pending", "n/a", "to follow", "to be confirmed",
+  "000", "0", "na", "none", "-", "tbd",
+]);
 
 /**
  * Admin override sets for manual COS status control.
@@ -42,11 +53,22 @@ export function isCanonicalCosRealised(input: CosLineInput): boolean {
   if (OVERRIDE_REALISED.has(override)) return true;
   if (OVERRIDE_NOT_REALISED.has(override)) return false;
 
-  // 2. Invoice number is the ONLY hard check for COS realisation.
-  //    If a supplier invoice is captured, the cost is realised.
+  // 2. Invoice number check — must be a valid (non-placeholder) supplier invoice.
   //    Status labels (INVOICED, PAID, etc.) do NOT independently gate this.
-  const hasInvoice = !!(input.expenseInvoiceNumber && input.expenseInvoiceNumber.trim());
-  if (hasInvoice) return true;
+  const invoiceTrimmed = (input.expenseInvoiceNumber ?? "").trim();
+  const hasInvoice = !!invoiceTrimmed;
+  const isPlaceholder = hasInvoice && PLACEHOLDER_INVOICES.has(invoiceTrimmed.toLowerCase());
+
+  if (hasInvoice && !isPlaceholder) {
+    // 2a. If amountExVat is provided and is zero, the line is not realised
+    //     (no actual cost = nothing to realise). When amountExVat is not provided
+    //     (undefined/null), we skip this check for backward compatibility.
+    if (input.amountExVat !== undefined && input.amountExVat !== null) {
+      const amount = typeof input.amountExVat === "number" ? input.amountExVat : parseFloat(String(input.amountExVat));
+      if (!isNaN(amount) && amount === 0) return false;
+    }
+    return true;
+  }
 
   // 3. Legacy cosRealised boolean — backward-compatible signal for rows
   //    that were marked during import. Respected but should be migrated
@@ -74,6 +96,12 @@ export function getCosRealisationWarnings(input: CosLineInput): string[] {
   const hasInvoiceDate = !!(input.expenseInvoicedDate && input.expenseInvoicedDate.trim());
   const hasPo = !!(input.expensePoNumber && input.expensePoNumber.trim());
 
+  const invoiceTrimmedW = (input.expenseInvoiceNumber ?? "").trim();
+  const isPlaceholderW = !!invoiceTrimmedW && PLACEHOLDER_INVOICES.has(invoiceTrimmedW.toLowerCase());
+
+  if (isPlaceholderW) {
+    warnings.push("PLACEHOLDER_INVOICE");
+  }
   if (hasInvoice && !hasPo) {
     warnings.push("INVOICE_WITHOUT_PO");
   }
