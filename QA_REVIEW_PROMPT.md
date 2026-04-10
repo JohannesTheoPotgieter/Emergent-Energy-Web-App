@@ -1344,6 +1344,141 @@ Several domain route files exist at BOTH the server root AND in `server/departme
 2. If both root and department versions exist, only ONE is mounted
 3. No "shadow" routes where an older handler silently overrides a newer one
 
+### 15I. Deprecated Tables With Drop Deadlines
+
+These tables are marked `@deprecated` with specific drop dates in `shared/schema/collaboration-workflow.ts`:
+
+| Table | Deprecated Date | Replacement | Migration SQL | QA Check |
+|-------|----------------|-------------|---------------|----------|
+| `clientCommitments` | 2026-03-31 | `projectClientCommitments` in `stage-collaboration.ts` | `20260331_consolidate_client_tables.sql` | Verify ZERO reads/writes to old table. If 90 days have passed, DROP IT. |
+| `clientUpdates` | 2026-03-31 | `projectClientUpdates` in `stage-collaboration.ts` | Same migration | Same check — zero reads/writes → safe to drop |
+
+**QA CHECK:** Grep the entire server codebase for `clientCommitments` and `clientUpdates` (old table names). Any imports or queries to these tables are bugs — all code should use the `projectClient*` replacements. The route file `server/stage-collaboration-routes.ts` line 5 explicitly states: "The client-commitments and client-updates routes in this file are DEPRECATED."
+
+### 15J. `isActive` Boolean → `deletedAt` Migration
+
+12+ tables still use the legacy `isActive: boolean` pattern instead of the canonical `deletedAt: timestamp` soft-delete pattern. These are marked with `// TODO: migrate to deletedAt pattern` in the schema:
+
+| Schema File | Tables Using `isActive` |
+|-------------|------------------------|
+| `shared/schema/users.ts` (line 11) | `users` |
+| `shared/schema/quality.ts` (line 15) | Quality records |
+| `shared/schema/projects.ts` (lines 624, 749, 782, 960) | 4 project-related tables |
+| `shared/schema/imports.ts` (lines 47, 375) | 2 import tables |
+| `shared/schema/finance.ts` (lines 236, 268, 404, 437, 610, 854) | 7 finance tables |
+| `shared/schema/engineering.ts` (line 128) | Engineering data |
+| `shared/schema/collaboration.ts` (line 786) | Collaboration records |
+
+**QA CHECK:**
+1. Which tables use `isActive` and which use `deletedAt`? Flag the inconsistency.
+2. Are any queries checking `isActive = true` when they should check `deletedAt IS NULL`? This split causes confusion.
+3. Can these tables be migrated to `deletedAt`? Backfill: `UPDATE <table> SET deleted_at = updated_at WHERE is_active = false`.
+
+### 15K. Backward Compatibility Shims
+
+These compatibility shims map new data shapes to old response formats. They should be removed once all consumers migrate:
+
+| File | Shim | Purpose | QA Check |
+|------|------|---------|----------|
+| `server/lib/data-merge.ts:121` | `_cosRealisedFlag` | Backward-compat alias for cost realised flag | Is any front-end code still reading `_cosRealisedFlag`? |
+| `server/services/company-overview-service.ts:225` | Multiple aliases | Old field names mapped to new | List all aliases, verify no front-end code reads old names |
+| `server/routes/mytool-routes.ts:791,832` | Legacy response shape | Maps work_items back to mytool_tasks shape | Is the old mytool UI still active? If not, remove shim |
+| `server/services/personal-task-bridge.ts:11,105` | Temporary bridge | "Planned removal: after one release" | Has the release passed? Remove if so |
+| `server/stage-collaboration-routes.ts:5` | Deprecated routes | Client commitments/updates old endpoints | Remove alongside table drop (Section 15I) |
+
+### 15L. Additional Dropped Table — `mytool_tasks`
+
+| Migration | File | Status |
+|-----------|------|--------|
+| `mytool_tasks` → `work_items` | `migrations/20260371_migrate_mytool_to_work_items.sql` | SQL migration executed |
+| Verification tests | `qa/tests/unit/mytool-workitems-migration.test.ts` | Tests exist |
+| Write canonicalization | `qa/tests/unit/personal-task-write-canonicalization.test.ts` | Ensures personal tasks use work_items |
+| FK remap | `qa/tests/unit/fk-remap-phase6.test.ts` | Tests mytool_tasks archival and DROP |
+| Legacy cleanup | `qa/tests/unit/legacy-cleanup-phase5a.test.ts` | Verifies no direct mytool_tasks SQL |
+
+**QA CHECK:** Run the existing test suite (`qa/tests/unit/`) — all migration tests should pass. Additionally, `grep -r "mytool_tasks" server/` should return ZERO hits in production route files (test files are acceptable).
+
+### 15M. Legacy Table Archive System
+
+The platform has an admin-only migration finalization system at `server/migration-finalize-routes.ts`:
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/admin/migration/status` | Check archive status of legacy tables |
+| `GET /api/admin/migration/verify` | Verify migration completion |
+| `POST /api/admin/migration/register-backup` | Register pre-migration backup |
+
+**Tables pending archival** (suffix `_legacy_archive`):
+- `normalized_plan_tasks`
+- `qc_item_instance`
+- `mytool_tasks`
+- `tasks`
+- `intake_tasks`
+- `project_eng_tasks`
+
+**Archive rules:**
+- Drop cooldown: 7 days after archiving
+- Tracking: `migration_cleanup_log` and `migration_backups` tables
+- Verification: Compare row counts between legacy and canonical representations
+
+**QA CHECK:**
+1. Run `GET /api/admin/migration/status` — which tables have been archived vs still active?
+2. Run `GET /api/admin/migration/verify` — are all migrations verified complete?
+3. Are any of the tables above still being queried by production code? If so, that's a bug.
+
+### 15N. Drizzle Migration Journal Discrepancy
+
+**Critical finding:** There are **160 SQL migration files** in `migrations/` but the Drizzle migration journal (`migrations/meta/_journal.json`) only tracks **2 applied migrations**:
+- `0000_neat_juggernaut`
+- `0001_useful_the_initiative`
+
+The remaining **158 SQL files** are applied via the startup schema sync (`runDrizzleSchemaSync`) using `psql` or `db.execute()`, bypassing Drizzle's migration tracking.
+
+**QA CHECK:**
+1. Are all 158 untracked migrations idempotent? (Use `IF NOT EXISTS`, `IF EXISTS` guards)
+2. Is there a risk of re-applying a migration and causing data corruption?
+3. Should these be reconciled into the Drizzle journal for proper tracking?
+
+### 15O. Startup Execution Order
+
+The server startup orchestrator (`server/bootstrap/startup-orchestrator.ts`) runs operations in this exact order:
+
+```
+1. Schema Sync          — psql or db.execute() applies SQL migrations
+2. Additive Alignments  — Safe table/column creation (ADD COLUMN IF NOT EXISTS)
+3. Data Seeds           — Seeds if enabled OR if project_info table is empty
+4. Integrity Guard      — Always runs (ensures 1:1 coverage for execution state, settings, metrics)
+5. Stage Instance       — Populates 10 stage instances per project
+6. Gate Evaluation      — Evaluates all gates, populates project_gate_evaluations
+7. Main Backfills       — All 8 startup backfills (guarded by startup_backfills_v1)
+8. Route Registration   — After all schema/data work completes
+9. Runtime Services     — Start background sync/scheduler if enabled
+```
+
+**QA CHECK:**
+1. Does the server start successfully in production? Check startup logs for errors.
+2. Are any backfills failing silently? (They use `.catch()` which swallows errors into logs)
+3. Does the integrity guard correctly create missing `project_execution_state` / `project_settings` / `dashboard_project_metrics` rows?
+
+### 15P. Smart Import v1 → v2 Fallback
+
+Smart Import has two versions running concurrently (documented in `docs/smart-import-v2-uat-report.md`):
+
+| Version | Status | Coverage |
+|---------|--------|----------|
+| v1 | Active fallback | 26 projects with key conflicts |
+| v2 | Primary | 36 of 62 projects safe for v2 |
+
+**Conflict breakdown:**
+- 9 projects have revenue key conflicts
+- 17 projects have cost key conflicts
+- Flag `skipV2ConflictCheck=true` forces v1 fallback
+
+**QA CHECK:**
+1. Are the 26 conflict projects being tracked for resolution?
+2. Is there a plan to fully deprecate v1?
+3. Does v1 fallback have the same permission checks as v2?
+
 ---
 
 ## 16. DATABASE STRUCTURE PROFESSIONALISM

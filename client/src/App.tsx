@@ -391,7 +391,8 @@ function ProtectedPages() {
             if (route.redirectTo) {
               return <Route key={route.path} path={route.path}>{() => <Redirect to={route.redirectTo!} />}</Route>;
             }
-            return <Route key={route.path} path={route.path} component={route.component!} />;
+            const PageComponent = route.component!;
+            return <Route key={route.path} path={route.path}>{() => <ErrorBoundary><PageComponent /></ErrorBoundary>}</Route>;
           })}
           <Route component={NotFound} />
         </Switch>

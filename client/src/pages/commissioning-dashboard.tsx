@@ -171,10 +171,10 @@ export default function CommissioningDashboardPage() {
       .filter((option): option is { value: string; label: string } => option !== null)
       .sort((a, b) => a.label.localeCompare(b.label));
 
-    if (malformed.length > 0) {
+    if (import.meta.env.DEV && malformed.length > 0) {
       console.warn("[commissioning-dashboard] Excluding malformed project records from selector", malformed);
     }
-    if (duplicateIds.length > 0) {
+    if (import.meta.env.DEV && duplicateIds.length > 0) {
       console.warn("[commissioning-dashboard] Excluding duplicate project IDs from selector", duplicateIds);
     }
 
