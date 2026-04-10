@@ -50,6 +50,8 @@ export interface NormalizationResult {
   }>;
   costLines: Array<{
     costCategory: string | null;
+    /** Canonical numbered category key, e.g. "1. Panels". Always includes numeric prefix. */
+    categoryKey: string | null;
     counterpartyName: string | null;
     description: string | null;
     amountExVat: string | null;
@@ -82,6 +84,19 @@ export interface NormalizationResult {
     phaseDate: string | null;
   }>;
   counterpartyNames: string[];
+  /** Per-category revenue allocation values (J_cat) extracted from the budget pane. */
+  categoryAllocations: Array<{
+    categoryNumber: string;
+    categoryName: string;
+    categoryKey: string;
+    categorySortOrder: number;
+    revenueAllocation: number | null;
+    cosTotalCosted: number | null;
+    budgetTotal: number | null;
+    allocationSource: "DIRECT_EXTRACTION" | "HEADER_ERROR_POSITIONAL" | "NOT_FOUND";
+    sourceSheet: string;
+    sourceRow: number;
+  }>;
   costedSummary: {
     plannedRevenue: number | null;
     plannedExpenditure: number | null;
@@ -105,6 +120,39 @@ export interface NormalizationResult {
 
 type SectionType = "PLAN" | "REVENUE" | "EXPENDITURE";
 type IssueEntry = NormalizationResult["issues"][number];
+type CategoryAllocationEntry = NormalizationResult["categoryAllocations"][number];
+
+// ---------------------------------------------------------------------------
+// Placeholder invoice blocklist (S07)
+// These values in the invoice number field do NOT indicate a captured supplier invoice.
+// ---------------------------------------------------------------------------
+const PLACEHOLDER_INVOICES = new Set([
+  "tbc", "tba", "pending", "n/a", "to follow", "to be confirmed",
+  "000", "0", "na", "none", "-", "tbd",
+]);
+
+/**
+ * Returns true if an invoice number is a real captured supplier invoice,
+ * not a placeholder or empty value.
+ */
+function isValidInvoiceNumber(invoiceNumber: string | null | undefined): boolean {
+  if (!invoiceNumber) return false;
+  const trimmed = invoiceNumber.trim();
+  if (!trimmed) return false;
+  return !PLACEHOLDER_INVOICES.has(trimmed.toLowerCase());
+}
+
+/**
+ * Normalize a category key to canonical "N. Name" format.
+ * Handles: "1. Panels", "1.Panels", "1 Panels", "7.BESS" → "N. Name".
+ */
+export function normalizeCategoryKey(raw: string): string {
+  const match = raw.match(/^(\d+)\.?\s*(.*)/);
+  if (!match) return raw.trim();
+  const num = match[1];
+  const name = match[2].trim();
+  return `${num}. ${name}`;
+}
 
 function makeFingerprint(issueType: string, section: string, key: string): string {
   return `${issueType}::${section}::${key}`;
@@ -760,9 +808,10 @@ function extractCostLines(
   issues: IssueEntry[],
   ws?: ExcelJS.Worksheet,
   isMultiProject: boolean = false
-): { lines: NormalizationResult["costLines"]; counterparties: string[] } {
+): { lines: NormalizationResult["costLines"]; counterparties: string[]; categoryAllocations: CategoryAllocationEntry[] } {
   const lines: NormalizationResult["costLines"] = [];
   const counterpartySet = new Set<string>();
+  const categoryAllocations: CategoryAllocationEntry[] = [];
 
   const categoryCol = getColIndex(mapping, "cost_category");
   const descCol = getColIndex(mapping, "description");
@@ -784,10 +833,63 @@ function extractCostLines(
   const budgetCosCol = getBudgetColIndex(bm, "budget_cos") >= 0 ? getBudgetColIndex(bm, "budget_cos") : getColIndex(mapping, "budget_cos");
   const forecastPayDateCol = getBudgetColIndex(bm, "forecast_payment_date") >= 0 ? getBudgetColIndex(bm, "forecast_payment_date") : getColIndex(mapping, "forecast_payment_date");
 
+  // S06: Detect J_cat column ("Total Revenue") and X_cat column ("Total COS") in the budget pane.
+  let jCatCol = getBudgetColIndex(bm, "category_revenue_allocation");
+  let xCatCol = getBudgetColIndex(bm, "category_cos_total");
+  let jCatSource: "DIRECT_EXTRACTION" | "HEADER_ERROR_POSITIONAL" | "NOT_FOUND" = jCatCol >= 0 ? "DIRECT_EXTRACTION" : "NOT_FOUND";
+
+  // Positional fallback: if "Total Revenue" synonym not matched, try the rightmost budget pane column.
+  // This handles "ERROR on REV" or other broken headers where the column position is still correct.
+  if (jCatCol < 0 && bm && bm.length > 0) {
+    // The rightmost budget pane column by position (highest colIndex) that we haven't already mapped.
+    const mappedBudgetCols = new Set(bm.map((m: any) => m.colIndex));
+    // Also check if there's a column to the right of the highest mapped column.
+    const maxMappedCol = Math.max(...bm.map((m: any) => m.colIndex));
+
+    // Look at the raw budget headers from the section detection for unmapped columns.
+    // The J_cat column is typically the rightmost populated budget-pane column.
+    // We check if the column right of "Total COS" (if found) has numeric data on row 2 (grand total).
+    if (xCatCol >= 0) {
+      // J_cat is expected to be the next column after "Total COS" or the one after that.
+      const candidateCol = xCatCol + 1;
+      if (data.length > 1) {
+        const r2val = data[1]?.[candidateCol]; // Row 2 (0-indexed row 1) has grand totals
+        if (r2val != null && typeof r2val === "number" && r2val !== 0) {
+          jCatCol = candidateCol;
+          jCatSource = "HEADER_ERROR_POSITIONAL";
+          issues.push({
+            severity: "WARNING",
+            section: "EXPENDITURE",
+            message: `Revenue allocation column header not matched by synonym. Using positional detection (column ${candidateCol + 1}, adjacent to "Total COS"). Grand total value found: ${r2val.toLocaleString()}.`,
+            suggestedAction: "Verify the revenue allocation column is correct in the Expenditure Breakdown",
+            issueType: "JCAT_POSITIONAL_FALLBACK",
+            issueFingerprint: makeFingerprint("JCAT_POSITIONAL_FALLBACK", "EXPENDITURE", "positional"),
+            payloadJson: { column: candidateCol + 1, grandTotal: r2val },
+          });
+        }
+      }
+    }
+  }
+
+  if (jCatCol < 0) {
+    issues.push({
+      severity: "WARNING",
+      section: "EXPENDITURE",
+      message: "Revenue allocation column ('Total Revenue') not found in the budget pane. Category-level revenue recognition will be unavailable until this project is re-imported with a tracker that includes this column.",
+      suggestedAction: "Ensure the Expenditure Breakdown budget pane has a 'Total Revenue' column",
+      issueType: "JCAT_COLUMN_MISSING",
+      issueFingerprint: makeFingerprint("JCAT_COLUMN_MISSING", "EXPENDITURE", "missing"),
+      payloadJson: { budgetMappingCount: bm?.length || 0 },
+    });
+  }
+
   const effectiveAmountCol = amountCol >= 0 ? amountCol : actualTotalCol;
 
   const invoiceNumbers = new Set<string>();
-  let currentCategory: string | null = null;
+  let currentCategoryKey: string | null = null;
+  let currentCategoryNumber: string | null = null;
+  let currentCategoryName: string | null = null;
+  const seenCategoryNumbers = new Set<string>();
 
   for (let i = startRow; i < Math.min(endRow, data.length); i++) {
     const row = data[i];
@@ -822,16 +924,80 @@ function extractCostLines(
     const lowerJoined = [rawCategory, description].filter(Boolean).join(" ").toLowerCase();
     if (lowerJoined.includes("sub total") || lowerJoined.includes("end of sheet")) continue;
 
+    // S05: Preserve numbered category key. Do NOT strip the numeric prefix.
+    // The category key (e.g. "1. Panels") comes from the actual pane column which has
+    // the combined "N. Name" format. The budget pane has number in one column and name
+    // in another. We use rawCategory from the actual pane to detect transitions.
     if (rawCategory) {
-      const isCategoryPattern = /^\d+\.?\s*[A-Za-z]/.test(rawCategory);
-      if (isCategoryPattern) {
-        const cleanCat = rawCategory.replace(/^\d+\.?\s*/, "").trim();
-        currentCategory = cleanCat || rawCategory;
-      } else if (!currentCategory) {
-        currentCategory = rawCategory;
+      const catMatch = rawCategory.match(/^(\d+)\.?\s*(.*)/);
+      if (catMatch) {
+        const catNum = catMatch[1];
+        const catName = catMatch[2].trim() || rawCategory;
+        const normalizedKey = normalizeCategoryKey(rawCategory);
+
+        // New category detected — record its allocation from the budget pane.
+        if (catNum !== currentCategoryNumber && !seenCategoryNumbers.has(catNum)) {
+          seenCategoryNumbers.add(catNum);
+          currentCategoryNumber = catNum;
+          currentCategoryName = catName;
+          currentCategoryKey = normalizedKey;
+
+          // S06: Extract J_cat and X_cat from the budget pane columns on this row.
+          let revenueAllocation: number | null = null;
+          let cosTotalCosted: number | null = null;
+          let budgetTotalCat: number | null = null;
+
+          if (jCatCol >= 0) {
+            const jVal = row[jCatCol];
+            if (jVal != null && typeof jVal === "number" && !isNaN(jVal)) {
+              revenueAllocation = jVal;
+            } else if (jVal != null) {
+              const parsed = parseFloat(String(jVal));
+              if (!isNaN(parsed) && parsed !== 0) revenueAllocation = parsed;
+            }
+          }
+          if (xCatCol >= 0) {
+            const xVal = row[xCatCol];
+            if (xVal != null && typeof xVal === "number" && !isNaN(xVal)) {
+              cosTotalCosted = xVal;
+            } else if (xVal != null) {
+              const parsed = parseFloat(String(xVal));
+              if (!isNaN(parsed) && parsed !== 0) cosTotalCosted = parsed;
+            }
+          }
+          if (budgetTotalCol >= 0) {
+            const btVal = row[budgetTotalCol];
+            if (btVal != null && typeof btVal === "number" && !isNaN(btVal)) {
+              budgetTotalCat = btVal;
+            }
+          }
+
+          categoryAllocations.push({
+            categoryNumber: catNum,
+            categoryName: catName,
+            categoryKey: normalizedKey,
+            categorySortOrder: parseInt(catNum, 10),
+            revenueAllocation,
+            cosTotalCosted,
+            budgetTotal: budgetTotalCat,
+            allocationSource: revenueAllocation != null ? jCatSource : "NOT_FOUND",
+            sourceSheet: sheetName,
+            sourceRow: i + 1,
+          });
+        } else if (catNum !== currentCategoryNumber) {
+          // Same category number seen again after a different one — update tracking.
+          currentCategoryNumber = catNum;
+          currentCategoryKey = normalizedKey;
+          currentCategoryName = catName;
+        }
+      } else if (!currentCategoryKey) {
+        // Non-numbered category text — use as-is only if we haven't seen a numbered one yet.
+        currentCategoryKey = rawCategory;
+        currentCategoryName = rawCategory;
       }
     }
-    const category = currentCategory || rawCategory;
+    const category = currentCategoryKey || rawCategory;
+    const categoryKey = currentCategoryKey;
     const invoiceNumber = cellStr(row, invoiceNumCol);
     const invoiceDate = invoiceDateCol >= 0 ? parseDate(row[invoiceDateCol]) : null;
     const approvedDate = approvedDateCol >= 0 ? parseDate(row[approvedDateCol]) : null;
@@ -933,10 +1099,9 @@ function extractCostLines(
       }
     }
 
-    // Canonical COS realisation: invoice number is the ONLY hard check.
-    // If a supplier invoice is captured, COS is realised.
-    // Invoice without date is still realised (flagged as data quality issue downstream).
-    const cosRealised = !!(invoiceNumber && invoiceNumber.trim());
+    // S07: COS realisation requires a valid (non-placeholder) invoice AND non-zero actual amount.
+    // Placeholder invoices (TBC, Pending, N/A, etc.) do not count as captured supplier invoices.
+    const cosRealised = isValidInvoiceNumber(invoiceNumber) && hasAmount;
     const cashflowConfirmed = !!(invoiceNumber && poNumber && paidDateConfirmed);
 
     // Extract sub-project name from category in multi-project trackers
@@ -944,6 +1109,7 @@ function extractCostLines(
 
     lines.push({
       costCategory: category,
+      categoryKey,
       counterpartyName: counterparty,
       description,
       amountExVat,
@@ -973,7 +1139,28 @@ function extractCostLines(
     });
   }
 
-  return { lines, counterparties: Array.from(counterpartySet) };
+  // S06: Reconcile J_cat grand total — SUM(revenueAllocation) vs row 2 grand total.
+  if (categoryAllocations.length > 0 && jCatCol >= 0 && data.length > 1) {
+    const r2val = data[1]?.[jCatCol];
+    if (r2val != null && typeof r2val === "number" && r2val !== 0) {
+      const sumJcat = categoryAllocations.reduce((s, c) => s + (c.revenueAllocation || 0), 0);
+      const variance = Math.abs(sumJcat - r2val);
+      const variancePct = Math.abs(r2val) > 0 ? (variance / Math.abs(r2val)) * 100 : 0;
+      if (variancePct > 0.5) {
+        issues.push({
+          severity: "WARNING",
+          section: "EXPENDITURE",
+          message: `Category revenue allocation total (R ${sumJcat.toLocaleString()}) differs from workbook grand total (R ${r2val.toLocaleString()}) by ${variancePct.toFixed(1)}%.`,
+          suggestedAction: "Review the Expenditure Breakdown costed section for missing or miscalculated categories",
+          issueType: "JCAT_RECONCILIATION_VARIANCE",
+          issueFingerprint: makeFingerprint("JCAT_RECONCILIATION_VARIANCE", "EXPENDITURE", "grand_total"),
+          payloadJson: { sumJcat, grandTotal: r2val, variancePct },
+        });
+      }
+    }
+  }
+
+  return { lines, counterparties: Array.from(counterpartySet), categoryAllocations };
 }
 
 export function normalizeData(
@@ -987,6 +1174,7 @@ export function normalizeData(
   let costLines: NormalizationResult["costLines"] = [];
   let executionPhases: NormalizationResult["executionPhases"] = [];
   let counterpartyNames: string[] = [];
+  let categoryAllocations: NormalizationResult["categoryAllocations"] = [];
   let costedSummary: NormalizationResult["costedSummary"] = null;
 
   const isMultiProject = detection.multiProject?.isMultiProject === true;
@@ -1114,6 +1302,7 @@ export function normalizeData(
         );
         costLines = result.lines;
         counterpartyNames = result.counterparties;
+        categoryAllocations = result.categoryAllocations;
         break;
       }
     }
@@ -1130,6 +1319,7 @@ export function normalizeData(
     costLines,
     executionPhases,
     counterpartyNames,
+    categoryAllocations,
     costedSummary,
     issues,
   };

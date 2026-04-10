@@ -156,6 +156,10 @@ export const smartImportRuns = pgTable("smart_import_runs", {
   recordsSucceeded: integer("records_succeeded"),
   recordsFailed: integer("records_failed"),
   importType: text("import_type"),
+  // Pre-import snapshot of work_items state (S04).
+  // Stores a JSON array of work_item rows as they were before a v2 commit
+  // overwrites them in-place. Required for state-restoring rollback.
+  preImportSnapshot: jsonb("pre_import_snapshot"),
 });
 export const insertSmartImportRunSchema = createInsertSchema(smartImportRuns).omit({ id: true, uploadedAt: true } as any);
 export type InsertSmartImportRun = z.infer<typeof insertSmartImportRunSchema>;
