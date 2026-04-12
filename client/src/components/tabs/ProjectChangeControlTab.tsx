@@ -43,7 +43,8 @@ interface ChangeRequest {
   requested_by_name: string;
   owner_name: string;
   impact_summary: string;
-  cost_impact: number;
+  // C4 (audit closeout): server now returns cost_impact as decimal string
+  cost_impact: string | number | null;
   schedule_impact_days: number;
   status: string;
   approval_id: number | null;
@@ -116,9 +117,13 @@ function formatDate(d: string | null): string {
   }
 }
 
-function formatCurrency(n: number | null | undefined): string {
-  if (n == null || isNaN(n)) return "R0";
-  return "R" + Math.round(n).toLocaleString("en-ZA");
+function formatCurrency(n: string | number | null | undefined): string {
+  // C4 (audit closeout): cost columns are now decimal(15,2) in DB, returned as
+  // strings by Drizzle. Coerce to number defensively.
+  if (n == null) return "R0";
+  const num = typeof n === "string" ? parseFloat(n) : n;
+  if (Number.isNaN(num)) return "R0";
+  return "R" + Math.round(num).toLocaleString("en-ZA");
 }
 
 function statusLabel(s: string): string {
