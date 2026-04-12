@@ -28,7 +28,7 @@ router.get("/api/budget-baselines", requireAuth, async (req: Request, res: Respo
   }
 });
 
-router.post("/api/budget-baselines", requireAuth, requirePermission("finance", "create"), async (req: Request, res: Response) => {
+router.post("/api/budget-baselines", requireAuth, requirePermission("financials", "create"), async (req: Request, res: Response) => {
   try {
     const { projectId } = req.body;
     if (!projectId) return res.status(400).json({ error: "projectId is required" });
@@ -53,7 +53,7 @@ router.post("/api/budget-baselines", requireAuth, requirePermission("finance", "
   }
 });
 
-router.post("/api/budget-baselines/:id/lock", requireAuth, requirePermission("finance", "edit"), async (req: Request, res: Response) => {
+router.post("/api/budget-baselines/:id/lock", requireAuth, requirePermission("financials", "edit"), async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
     const userId = (req as any).user?.id;
