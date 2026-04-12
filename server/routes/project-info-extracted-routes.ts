@@ -231,9 +231,9 @@ export function registerProjectInfoExtractedRoutes(app: Express): void {
     try {
       const projectName = decodeURIComponent(req.params.projectName as string);
       const editSchema = z.object({
-        costProposalSigned: z.string().nullable().optional(),
+        // C5 (audit closeout): costProposalSigned and epcContractSigned removed.
+        // Canonical source is projectExecutionState.cpSigned / signedStatus.
         fundingSigned: z.string().nullable().optional(),
-        epcContractSigned: z.string().nullable().optional(),
         costProposalType: z.enum(["link", "na"]).nullable().optional(),
         costProposalLink: z.string().nullable().optional(),
         costProposalNaReason: z.string().nullable().optional(),
