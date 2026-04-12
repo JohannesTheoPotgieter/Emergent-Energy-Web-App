@@ -869,8 +869,10 @@ export const invoiceCaptures = pgTable("invoice_captures", {
   supplierId: integer("supplier_id").references(() => counterparties.id),
   invoiceNumber: text("invoice_number"),
   invoiceDate: date("invoice_date"),
-  amount: real("amount"),
-  vatAmount: real("vat_amount"),
+  // C4 (audit closeout): converted from real() to decimal(15,2) for exact ZAR storage.
+  // Migration: 20260412_financial_columns_to_numeric.sql
+  amount: decimal("amount", { precision: 15, scale: 2 }),
+  vatAmount: decimal("vat_amount", { precision: 15, scale: 2 }),
   linkedPoId: integer("linked_po_id"),  // FK added via migration to purchase_orders
   linkedProcurementItemId: integer("linked_procurement_item_id"),  // FK to procurement_items managed via migration
   status: invoiceCaptureStatusEnum("status").notNull().default('captured'),
@@ -896,10 +898,13 @@ export const procurementItems = pgTable("procurement_items", {
   title: text("title").notNull(),
   description: text("description"),
   category: procurementCategoryEnum("category").notNull().default('other'),
-  quantity: real("quantity"),
+  // C4 (audit closeout): quantities and costs converted from real() to decimal()
+  // for exact storage (no float rounding errors). Migration:
+  // 20260412_financial_columns_to_numeric.sql
+  quantity: decimal("quantity", { precision: 15, scale: 3 }),
   unit: text("unit"),
-  expectedCost: real("expected_cost"),
-  actualCost: real("actual_cost"),
+  expectedCost: decimal("expected_cost", { precision: 15, scale: 2 }),
+  actualCost: decimal("actual_cost", { precision: 15, scale: 2 }),
   supplierId: integer("supplier_id").references(() => counterparties.id),
   requestedByUserId: integer("requested_by_user_id").references(() => users.id, { onDelete: "set null" }),
   ownerUserId: integer("owner_user_id").references(() => users.id, { onDelete: "set null" }),

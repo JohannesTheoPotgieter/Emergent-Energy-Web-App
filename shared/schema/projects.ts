@@ -901,7 +901,9 @@ export const changeRequests = pgTable("change_requests", {
   requestedByUserId: integer("requested_by_user_id").references(() => users.id),
   ownerUserId: integer("owner_user_id").references(() => users.id),
   impactSummary: text("impact_summary"),
-  costImpact: real("cost_impact"),
+  // C4 (audit closeout): converted from real() to decimal(15,2) for exact ZAR storage.
+  // Migration: 20260412_financial_columns_to_numeric.sql
+  costImpact: decimal("cost_impact", { precision: 15, scale: 2 }),
   scheduleImpact: integer("schedule_impact_days"),
   status: changeRequestStatusEnum("status").notNull().default('draft'),
   approvalId: integer("approval_id"),
