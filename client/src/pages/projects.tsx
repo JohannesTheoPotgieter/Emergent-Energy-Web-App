@@ -76,7 +76,8 @@ interface ProjectSummary {
   size_kwp: number | null;
   pd: string | null;
   pm: string | null;
-  cost_proposal_signed: string | null;
+  // C5 (audit closeout): cost_proposal_signed and epc_contract_signed removed.
+  // Canonical signed state lives on projectExecutionState (cpSigned, signedStatus).
   cost_proposal_type: string | null;
   cost_proposal_link: string | null;
   cost_proposal_na_reason: string | null;
@@ -84,7 +85,6 @@ interface ProjectSummary {
   funding_type: string | null;
   funding_link: string | null;
   funding_na_reason: string | null;
-  epc_contract_signed: string | null;
   epc_contract_type: string | null;
   epc_contract_link: string | null;
   epc_contract_na_reason: string | null;
@@ -841,9 +841,9 @@ const COLUMN_WIDTHS: Record<string, string> = {
   size_kwp: "42px",
   pd: "78px",
   pm: "78px",
-  cost_proposal_signed: "62px",
+  cost_proposal_type: "62px",
   funding_signed: "62px",
-  epc_contract_signed: "62px",
+  epc_contract_type: "62px",
   financial_close: "52px",
   phase: "90px",
   escalation_level: "58px",
@@ -868,7 +868,7 @@ const COLUMN_WIDTHS: Record<string, string> = {
 const COLUMN_GROUPS_META: { label: string; keys: string[]; color: string; stickyFirst?: boolean }[] = [
   { label: "Project Info", keys: ["project_name", "client_name", "size_kwp", "pd", "pm"], color: "bg-muted text-muted-foreground", stickyFirst: true },
   { label: "Execution", keys: ["rag_status", "pd_pm_handover_status", "execution_attention"], color: "bg-blue-50 text-blue-700" },
-  { label: "Financial Close", keys: ["cost_proposal_signed", "funding_signed", "epc_contract_signed", "financial_close"], color: "bg-emerald-50 text-emerald-700" },
+  { label: "Financial Close", keys: ["cost_proposal_type", "funding_signed", "epc_contract_type", "financial_close"], color: "bg-emerald-50 text-emerald-700" },
   { label: "Phase & Schedule", keys: ["phase", "escalation_level", "pd_handover_date", "construction_start_date", "commissioning_date", "om_handover_date", "client_handover_date", "duration", "kw_per_week"], color: "bg-blue-50 text-blue-700" },
   { label: "Progress", keys: ["project_pct_complete", "expected_pct_complete", "delta_vs_expected"], color: "bg-violet-50 text-violet-700" },
   { label: "Financials", keys: ["actual_revenue", "actual_expenses", "cashflow_delta", "gp_percent", "tracking_gp_percent", "cos_realised_pct", "revenue_outstanding", "expenses_due", "financial_summary"], color: "bg-green-50 text-green-700" },
@@ -1831,7 +1831,7 @@ export default function ProjectsSummary() {
       ),
     },
     {
-      key: "cost_proposal_signed",
+      key: "cost_proposal_type",
       header: "Cost Prop.",
       render: (p) => (
         <FinancialCloseCell
@@ -1859,7 +1859,7 @@ export default function ProjectsSummary() {
       ),
     },
     {
-      key: "epc_contract_signed",
+      key: "epc_contract_type",
       header: "EPC",
       render: (p) => (
         <FinancialCloseCell

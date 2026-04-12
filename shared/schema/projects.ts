@@ -342,9 +342,13 @@ export const projectEditableFields = pgTable("project_editable_fields", {
   /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull().unique(),
   projectId: integer("project_id").references(() => projectInfo.id),
-  costProposalSigned: text("cost_proposal_signed"),
+  // C5 (audit closeout): legacy `cost_proposal_signed` and `epc_contract_signed`
+  // text columns were dropped by migration 20260412_drop_legacy_signed_text_fields.sql.
+  // The canonical source of truth for contract-signed state is now:
+  //   - projectExecutionState.cpSigned (boolean) for cost proposal
+  //   - projectExecutionState.signedStatus (NONE/PENDING/SIGNED) for the EPC contract
+  // The remaining fields below are document-storage metadata, not signed-status.
   fundingSigned: text("funding_signed"),
-  epcContractSigned: text("epc_contract_signed"),
   costProposalType: text("cost_proposal_type"),
   costProposalLink: text("cost_proposal_link"),
   costProposalNaReason: text("cost_proposal_na_reason"),
