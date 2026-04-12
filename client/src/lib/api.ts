@@ -13,8 +13,27 @@ import { runAsyncAction } from "./async-action";
 
 const API_BASE = "/api";
 
+// ── A3 (audit closeout) — Browser auth migration ────────────────
+// Browser auth has been unified onto the httpOnly session cookie that the
+// server sets via Passport on /api/auth/login (and on the Microsoft SSO
+// callback). The bearer token returned in the login response body is
+// retained ONLY for machine-to-machine API clients; browser code MUST
+// rely on `credentials: "include"` plus the cookie.
+//
+// `setAuthToken()` is kept as an exported symbol for source compatibility
+// with the AuthProvider's existing call site, but it no longer writes new
+// tokens to localStorage. It only clears legacy values, so any call site
+// that still reaches into localStorage for `auth_token` will read `null`
+// after the next page load and silently fall through to cookie auth.
+//
+// Follow-up: removing the ~150 dead `localStorage.getItem("auth_token")`
+// reads sprinkled across pages and tabs is tracked as a separate cleanup
+// commit (audit item A3 phase 2).
+// ────────────────────────────────────────────────────────────────
+
 function getAuthToken(): string | null {
-  return localStorage.getItem('auth_token');
+  // Intentionally returns null. Browser auth uses the session cookie.
+  return null;
 }
 
 function getCsrfToken(): string | undefined {
@@ -25,11 +44,19 @@ function getCsrfToken(): string | undefined {
     ?.split("=")[1];
 }
 
-export function setAuthToken(token: string | null) {
-  if (token) {
-    localStorage.setItem('auth_token', token);
-  } else {
-    localStorage.removeItem('auth_token');
+/**
+ * Legacy bearer-token sink. As of audit closeout A3 this function only
+ * CLEARS the legacy localStorage entry — it never writes new values.
+ * Browser sessions are carried by the httpOnly session cookie set by
+ * the server on login. See docs/runbooks/secrets-rotation.md and the
+ * comment block above.
+ */
+export function setAuthToken(_token: string | null) {
+  // Always clear any stale legacy token; never write a new one.
+  try {
+    localStorage.removeItem("auth_token");
+  } catch {
+    // localStorage may be unavailable (private mode, SSR) — ignore.
   }
 }
 
