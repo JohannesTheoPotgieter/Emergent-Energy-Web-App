@@ -6,7 +6,7 @@ import { requireAuth } from "./shared-middleware";
 import { db } from "../db";
 import { parseBody } from "../lib/input-validation";
 import { eq, desc, and, isNull } from "drizzle-orm";
-import { drawingRegister, drawingRevisions } from "@shared/schema/engineering";
+import { drawingRegister, drawingRevisions, insertDrawingRegisterSchema } from "@shared/schema/engineering";
 
 const router = Router();
 

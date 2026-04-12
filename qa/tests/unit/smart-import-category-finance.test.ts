@@ -167,6 +167,7 @@ describe("S07: COS realisation tightening", () => {
       cosStatusOverride: null,
       cosRealised: null,
       expenseInvoicedDate: null,
+      expenseInvoiceNumber: null,
       expensePoNumber: null,
       paymentDate: null,
       today: "2026-04-10",

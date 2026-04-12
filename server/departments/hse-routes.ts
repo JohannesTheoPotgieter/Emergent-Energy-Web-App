@@ -8,7 +8,7 @@ import { db } from "../db";
 import { parseBody } from "../lib/input-validation";
 import { eq, desc, and, isNull } from "drizzle-orm";
 import { DEFAULT_QUERY_LIMIT } from "../lib/safe-query";
-import { hseIncidents, correctiveActions } from "@shared/schema/hse";
+import { hseIncidents, correctiveActions, insertHseIncidentSchema, insertCorrectiveActionSchema } from "@shared/schema/hse";
 
 const router = Router();
 
