@@ -177,7 +177,7 @@ export default function PaymentRequestBoardPage() {
         icon={<CreditCard className="h-5 w-5" />}
         eyebrow="Finance"
         title="Payment Requests"
-        subtitle="Track supplier payment request lifecycle"
+        description="Track supplier payment request lifecycle"
       />
 
       <div className="flex items-center gap-4 mb-4 flex-wrap">

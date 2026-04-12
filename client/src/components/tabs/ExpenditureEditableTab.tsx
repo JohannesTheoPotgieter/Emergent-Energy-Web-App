@@ -105,6 +105,7 @@ interface EnrichedExpense {
   projectName: string;
   rowNumber: number;
   rowType: string;
+  canonicalLineKey?: string | null;
   expenseCategory: string | null;
   expenseLineItem: string | null;
   budgetQty: string | null;

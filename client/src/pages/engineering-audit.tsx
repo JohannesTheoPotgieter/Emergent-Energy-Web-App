@@ -329,7 +329,7 @@ export default function EngineeringAuditPage() {
             <div className="text-center py-16 text-sm text-destructive">
               <p className="font-medium">Failed to load audit log</p>
               <p className="text-xs mt-1">{(error as Error).message}</p>
-              <Button variant="outline" size="sm" className="mt-3" onClick={() => refetch()}>
+              <Button variant="outline" size="sm" className="mt-3" onClick={() => { (refetch as any)(); }}>
                 <RefreshCw className="h-3 w-3 mr-1.5" /> Retry
               </Button>
             </div>

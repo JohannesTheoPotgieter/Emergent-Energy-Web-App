@@ -71,7 +71,7 @@ export default function MyWorkSettingsPage() {
 
   return (
     <PageShell>
-      <SectionHeader icon={Settings} title="Settings & Preferences" />
+      <SectionHeader icon={<Settings />} title="Settings & Preferences" />
 
       <div className="grid gap-6 max-w-2xl">
         <Card>

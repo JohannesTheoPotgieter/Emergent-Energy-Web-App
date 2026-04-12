@@ -860,7 +860,7 @@ export default function EngineeringDashboard() {
           defaultOpen={true}
           testId="section-blockers"
         >
-          {blockers.overdue.length > 0 && (
+          {blockers && blockers.overdue.length > 0 && (
             <div>
               <div className="px-3 py-2 bg-gradient-to-r from-red-50 to-transparent text-[10px] font-bold text-red-700 uppercase tracking-wider flex items-center gap-1.5 border-b">
                 <AlertTriangle className="h-3 w-3" />
@@ -869,7 +869,7 @@ export default function EngineeringDashboard() {
               {blockers.overdue.map(t => <TaskRow key={t.id} task={t} />)}
             </div>
           )}
-          {blockers.hold.length > 0 && (
+          {blockers && blockers.hold.length > 0 && (
             <div>
               <div className="px-3 py-2 bg-gradient-to-r from-amber-50 to-transparent text-[10px] font-bold text-amber-700 uppercase tracking-wider flex items-center gap-1.5 border-b">
                 <PauseCircle className="h-3 w-3" />

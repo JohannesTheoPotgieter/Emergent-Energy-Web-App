@@ -39,7 +39,7 @@ const prefetched = new Set<string>();
  * Call once per link — deduplicates automatically.
  */
 export function usePrefetchRoute() {
-  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   return useCallback((path: string) => {
     return {

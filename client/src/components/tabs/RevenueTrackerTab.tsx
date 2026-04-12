@@ -36,6 +36,7 @@ interface RevenueItem {
   supplier: string | null;
   isRealised: boolean;
   noRevenueLinked: boolean;
+  canonicalLineKey?: string | null;
 }
 
 interface RevenueMonthData {

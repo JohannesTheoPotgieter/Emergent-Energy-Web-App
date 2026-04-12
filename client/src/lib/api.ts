@@ -241,6 +241,11 @@ export interface User {
   name: string;
   role: "COO_ADMIN" | "CEO_ADMIN" | "CCO" | "CFO" | "PROGRAM_MANAGER" | "PROGRAM_FINANCE_MANAGER" | "CONSTRUCTION_MANAGER" | "QUALITY_MANAGER" | "ENGINEERING_MANAGER" | "KEY_ACCOUNTS_MANAGER" | "ACCOUNTANT" | "ENGINEER" | "PROJECT_MANAGER_SITE" | "PROJECT_DEVELOPER" | "HSE_MANAGER" | "SSEG_MANAGER";
   department?: string | null;
+  // Optional identity fields used across the UI for user-facing displays.
+  // Server may populate either depending on auth source (Microsoft SSO uses
+  // displayName, local auth uses username).
+  username?: string | null;
+  displayName?: string | null;
 }
 
 export interface Project {
@@ -324,6 +329,12 @@ export interface ProjectSummary {
   revenue_outstanding: number;
   expenses_outstanding: number;
   current_vo_total: number;
+  // Extended optional fields used by various detail/dashboard views.
+  // Server may or may not include these depending on the endpoint variant.
+  execution_phase?: string | null;
+  rag_status?: string | null;
+  contract_value?: number | string | null;
+  budget_total?: number | string | null;
   shared_summary?: {
     project: {
       canonicalProjectId: number;

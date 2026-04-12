@@ -20,8 +20,8 @@ import {
 interface ResolvedUser {
   id: number;
   name: string;
-  username: string;
-  role: string;
+  username?: string;
+  role?: string;
 }
 
 function getInitials(name: string): string {
@@ -39,12 +39,12 @@ function getAvatarColor(name: string): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
-function nameMatchesAnyUser(textName: string, user: { name: string; username: string }): boolean {
+function nameMatchesAnyUser(textName: string, user: { name: string; username?: string }): boolean {
   const n = textName.trim().toLowerCase().replace(/\s+/g, " ");
   if (!n) return false;
   const un = user.name.trim().toLowerCase().replace(/\s+/g, " ");
   if (un === n) return true;
-  if (user.username.toLowerCase() === n) return true;
+  if (user.username && user.username.toLowerCase() === n) return true;
   if (un.split(" ")[0] === n) return true;
   const uParts = un.split(" ");
   if (uParts.length >= 2 && uParts[uParts.length - 1] === n) return true;

@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { engFetch } from "@/lib/eng-fetch";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
@@ -1074,6 +1075,18 @@ function EditProjectInfoModal({
   const qc = useQueryClient();
   const rawName = project.project_name.replace(/_Tracker.*$/i, "");
 
+  // PM selector data — fetched inline because this modal is a separate
+  // component from ProjectsSummary.
+  const { data: pmUsers = [] } = useQuery<{ id: number; name: string; username?: string; role: string }[]>({
+    queryKey: ["/api/pm-assignable-users"],
+    queryFn: async () => {
+      const res = await engFetch("/api/pm-assignable-users");
+      if (!res || !res.ok) return [];
+      return res.json();
+    },
+    enabled: open,
+  });
+
   const [formData, setFormData] = useState({
     projectName: rawName,
     phase: project.phase || "",
@@ -1801,7 +1814,7 @@ export default function ProjectsSummary() {
       header: "PM",
       render: (p) => isAdmin && p.project_info_id ? (
         <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-0.5">
-          <SpreadsheetIcon className="w-2.5 h-2.5 text-muted-foreground/40 shrink-0" title="PM is managed via Excel import. Manual changes may be overwritten on next import." />
+          <span title="PM is managed via Excel import. Manual changes may be overwritten on next import."><SpreadsheetIcon className="w-2.5 h-2.5 text-muted-foreground/40 shrink-0" /></span>
           <SearchableSelect
           value={p.pm || "__unassigned"}
           placeholder={!p.pm ? "No PM" : undefined}
@@ -2246,7 +2259,7 @@ export default function ProjectsSummary() {
         description={`${sorted.length} of ${currentProjects.length} ${viewTab === "active" ? "active" : "archived"} projects${(pmFilter !== "all" || excludedPhases.size > 0 || searchTerm) ? " (filtered)" : ""}`}
         actions={
           <div className="flex items-center gap-2">
-            {canAccessEntityAction("project_create", "create") && (
+            {canAccessEntityAction("project_create" as any, "create") && (
               <Link href="/project-create">
                 <Button
                   size="sm"

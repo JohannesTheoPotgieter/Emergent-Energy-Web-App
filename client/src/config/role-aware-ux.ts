@@ -5,6 +5,7 @@ export type RoleAwareSection =
   | "MY_WORK"
   | "PROJECTS"
   | "PROJECT_DEVELOPMENT"
+  | "ENGINEERING"
   | "EXECUTION"
   | "OPERATIONS"
   | "FINANCE"
