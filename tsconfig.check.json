@@ -22,12 +22,14 @@
     "server/storage.ts",
     "server/index.ts",
     "shared/**/*.ts",
+    "scripts/**/*.ts",
     "qa/tests/unit/**/*.test.ts",
     "qa/tests/api/**/*.test.ts"
   ],
   "exclude": [
     "node_modules",
     "build",
-    "dist"
+    "dist",
+    "scripts/_archive/**"
   ]
 }

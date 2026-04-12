@@ -11,7 +11,6 @@
     "check": "tsc -p tsconfig.check.json",
     "db:push": "psql $DATABASE_URL -f script/pre-push-enums.sql && psql $DATABASE_URL -f script/full-schema-alignment.sql",
     "db:setup": "psql $DATABASE_URL -f script/pre-push-enums.sql && psql $DATABASE_URL -f script/full-schema-alignment.sql && ENABLE_STARTUP_SCHEMA_REPAIR=true ENABLE_STARTUP_DATA_SEED=true ENABLE_STARTUP_BACKFILL=true ENABLE_STARTUP_USER_SEED=true node script/with-node-env.cjs development tsx server/index.ts",
-    "migrate:clickup-engineering": "tsx scripts/migrate-clickup-engineering.ts",
     "reconcile:priority-links": "tsx scripts/reconcile-priority-links.ts",
     "report:finance-canonical-rollout": "tsx scripts/finance-canonical-rollout-report.ts",
     "test": "vitest run -c qa/vitest.config.ts --exclude 'qa/tests/api/**' --exclude 'qa/tests/e2e/**' --exclude 'qa/tests/integration/**'",
