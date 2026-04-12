@@ -312,7 +312,11 @@ function ExpandedChangeRequest({ cr }: { cr: ChangeRequest }) {
           title: editTitle,
           description: editDescription,
           impactSummary: editImpact,
-          costImpact: parseFloat(editCost) || 0,
+          // C4 (audit closeout): server schema is z.string().optional() because
+          // cost_impact is a decimal(15,2) column. Send the trimmed string so
+          // Zod accepts it and PG can cast it to numeric. Empty input -> undefined
+          // (server writes null).
+          costImpact: editCost.trim() || undefined,
           scheduleImpactDays: parseInt(editDays) || 0,
         }),
       });
@@ -522,7 +526,8 @@ function CreateChangeRequestDialog({
           changeType,
           ownerUserId: ownerUserId ? parseInt(ownerUserId) : undefined,
           impactSummary,
-          costImpact: parseFloat(costImpact) || 0,
+          // C4 (audit closeout): see ProjectChangeControlTab.tsx ~line 315.
+          costImpact: costImpact.trim() || undefined,
           scheduleImpactDays: parseInt(scheduleImpactDays) || 0,
         }),
       });

@@ -146,7 +146,7 @@ export default function RoleSettingsPage() {
 
   return (
     <AdminPageShell
-      surfaceId="settings"
+      surfaceId={"settings" as any}
       title="System Settings"
       description="Manage Microsoft 365 connectivity, role authentication, and governed admin tooling without leaving the trusted admin surface."
       statuses={[
@@ -989,7 +989,7 @@ export function RolePasswordsSection() {
         const data = await res.json();
         const map: Record<string, { updatedAt: string | null }> = {};
         for (const c of data) {
-          map[c.role] = { password: null, updatedAt: c.updatedAt };
+          map[c.role] = { updatedAt: c.updatedAt };
         }
         setPasswords(map);
       }

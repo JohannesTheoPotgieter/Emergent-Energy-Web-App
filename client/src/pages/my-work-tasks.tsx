@@ -67,7 +67,7 @@ function normalizePriority(priority: string): TaskPriority {
   return "normal";
 }
 
-interface ResolvedUser { id: number; name: string; username: string; role: string; }
+interface ResolvedUser { id: number; name: string; username?: string; role?: string; }
 
 // NOTE: This presentation-layer UnifiedTask extends the shared/types/unified-task.ts
 // data-layer type with display metadata (_key, _source, _sourceLabel, etc.).
@@ -260,7 +260,7 @@ export default function MyWorkTasksPage() {
   const [projectFilter, setProjectFilter] = useState(queryDefaults.projectFilter);
   const [sortField, setSortField] = useState<SortField>(mwDefaults?.sortField || "smart");
   const [sortDirection, setSortDirection] = useState<SortDirection>(mwDefaults?.sortDirection || "asc");
-  const [sourceFilter, setSourceFilter] = useState<SourceFilter>(queryDefaults.sourceFilter || mwDefaults?.sourceFilter || "all");
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>((queryDefaults.sourceFilter as SourceFilter) || (mwDefaults?.sourceFilter as SourceFilter) || "all");
   const [showFilters, setShowFilters] = useState(false);
   const [overdueOnly, setOverdueOnly] = useState(queryDefaults.overdueOnly);
   const [dueThisWeekOnly, setDueThisWeekOnly] = useState(queryDefaults.dueThisWeekOnly);
@@ -277,6 +277,29 @@ export default function MyWorkTasksPage() {
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
   const [newSubtaskPriority, setNewSubtaskPriority] = useState("Med");
   const [viewMode, setViewMode] = useState<ViewMode>(mwDefaults?.viewMode || "list");
+
+  // Helper toggles used by filter and sort UI
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortDirection("asc");
+    }
+  };
+  const toggleStatus = (s: TaskStatus) => {
+    setStatusFilter(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
+  };
+  const togglePriority = (p: TaskPriority) => {
+    setPriorityFilter(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p]);
+  };
+  const toggleExpand = (id: number) => {
+    setExpandedTasks(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
   const [hasCustomDefault, setHasCustomDefault] = useState(!!mwDefaults);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const createTaskSubmitLockRef = useRef(false);
@@ -2149,7 +2172,7 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects, 
                 </div>
               )}
 
-              {!canChangeStatus && task._source !== "notifications" && (
+              {!canChangeStatus && (task._source as string) !== "notifications" && (
                 <div className="text-center py-6 text-muted-foreground">
                   <p className="text-xs">Status changes for this task type must be done from the source.</p>
                 </div>

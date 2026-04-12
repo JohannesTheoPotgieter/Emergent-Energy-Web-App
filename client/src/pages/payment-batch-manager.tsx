@@ -180,7 +180,7 @@ export default function PaymentBatchManagerPage() {
         icon={<Wallet className="h-5 w-5" />}
         eyebrow="Finance"
         title="Payment Batches"
-        subtitle="Manage weekly pay runs — ManCo approval, bank release, proof of payment"
+        description="Manage weekly pay runs — ManCo approval, bank release, proof of payment"
       />
 
       {activeBatches.length > 0 && (

@@ -213,7 +213,7 @@ export default function POApprovalBoardPage() {
         icon={<FileText className="h-5 w-5" />}
         eyebrow="Finance"
         title="PO Approval Board"
-        subtitle="Track and review purchase order approvals"
+        description="Track and review purchase order approvals"
       />
 
       <div className="flex gap-2 mb-4">

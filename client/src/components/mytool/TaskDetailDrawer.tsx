@@ -307,7 +307,7 @@ export default function TaskDetailDrawer({ task, open, onOpenChange, onInvalidat
             />
             <div className="flex items-center justify-between gap-2">
               <Badge variant={form.status === "done" ? "default" : form.status === "blocked" ? "destructive" : "secondary"} className="text-xs">
-                <StatusIcon status={form.status} className="h-3 w-3 mr-1" />
+                <StatusIcon status={form.status} />
                 {STATUS_OPTIONS.find(s => s.value === form.status)?.label ?? form.status}
               </Badge>
               {primaryAction && (

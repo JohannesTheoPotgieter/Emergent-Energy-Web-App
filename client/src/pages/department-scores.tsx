@@ -19,7 +19,7 @@ const DEPARTMENT_MAP: Record<string, string> = {
   CEO_ADMIN: "Leadership",
 };
 
-function authHeaders() {
+function authHeaders(): Record<string, string> {
   const token = localStorage.getItem("auth_token");
   return token ? { Authorization: `Bearer ${token}` } : {};
 }

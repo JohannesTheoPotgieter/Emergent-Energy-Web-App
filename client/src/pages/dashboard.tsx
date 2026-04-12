@@ -8,6 +8,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Link, useSearch, useLocation } from "wouter";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { severityStyle, ragBadgeClasses } from "@/lib/status-colors";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageShell } from "@/components/layout/page-shell";
@@ -30,6 +31,7 @@ import {
   ChevronUp,
   TrendingDown,
   TrendingUp,
+  Briefcase,
   DollarSign,
   Clock,
   HardHat,
@@ -406,6 +408,8 @@ export default function DashboardPage() {
   const [collapsedQueues, setCollapsedQueues] = useState<Set<string>>(new Set());
   const [expandedQueues, setExpandedQueues] = useState<Set<string>>(new Set());
   const [financialPeriod, setFinancialPeriod] = useState("ytd");
+  const [customizeOpen, setCustomizeOpen] = useState(false);
+  const isMobile = useIsMobile();
   const { isAdmin } = useAuth();
   const queryClient = useQueryClient();
 
@@ -780,7 +784,7 @@ export default function DashboardPage() {
 
       <div className="flex items-center justify-between gap-2">
         <p className="text-[13px] text-muted-foreground -mt-2">Portfolio health at a glance — powered by live project data.</p>
-        <Button variant="outline" size="sm" onClick={() => setCustomizeOpen((v) => !v)}>Customize Dashboard</Button>
+        <Button variant="outline" size="sm" onClick={() => setCustomizeOpen((v: boolean) => !v)}>Customize Dashboard</Button>
       </div>
       {customizeOpen && (
         <Card className="border-dashed">
@@ -855,7 +859,7 @@ export default function DashboardPage() {
                 "Gross Profit": "/financials",
                 "Open Expenditure": "/financials",
               };
-              const href = kpi.href || hrefMap[kpi.label] || "/projects";
+              const href = (kpi as any).href || hrefMap[kpi.label] || "/projects";
               return (
               <Tooltip key={kpi.label}>
                 <TooltipTrigger asChild>
@@ -1011,14 +1015,14 @@ export default function DashboardPage() {
         );
         if (rows.length === 0) return null;
         return (
-          <Card className="border-border energy-card" data-testid="forecast-chart" testId="program-preset-chart">
+          <Card className="border-border energy-card" data-testid="forecast-chart">
             <CardContent className="p-4 md:p-5">
               <div className="flex items-center gap-2 mb-1">
                 <BarChart3 className="w-4 h-4 text-emerald-500" />
                 <h2 className="text-sm font-semibold">FY Revenue & Cost Forecast</h2>
               </div>
               <p className="text-xs text-muted-foreground mb-4">{ds?.description}</p>
-              <ResponsiveContainer width="100%" height={280} testId="execution-builder-chart">
+              <ResponsiveContainer width="100%" height={280}>
                 <AreaChart data={rows} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
                   <defs>
                     <linearGradient id="gradRevenue" x1="0" y1="0" x2="0" y2="1">

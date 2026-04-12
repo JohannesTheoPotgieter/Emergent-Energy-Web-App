@@ -1217,7 +1217,7 @@ function DetailTab({ fye }: { fye: number }) {
             </thead>
             <tbody>
               {filtered.length === 0 ? (
-                <tr><td colSpan={17} className="text-center py-8 text-muted-foreground">No projects found for FYE {fye}{search ? ` matching "${search}"` : ""}</td></tr>
+                <tr><td colSpan={17} className="text-center py-8 text-muted-foreground">No projects found for FYE {fye}{debouncedSearch ? ` matching "${debouncedSearch}"` : ""}</td></tr>
               ) : (
                 <>
                   {/* Totals Row — pinned at top */}
@@ -1240,14 +1240,14 @@ function DetailTab({ fye }: { fye: number }) {
                       </td>
                       <td className="px-2 py-1.5 truncate max-w-[120px]" title={p.businessDeveloper || ""}>{p.businessDeveloper || "—"}</td>
                       <td className="px-2 py-1.5">
-                        <InlineEditCell value={p.province} projectName={p.projectName} field="province" canEdit={canEdit} onSave={handleInlineEdit} />
+                        <InlineEditCell value={p.province} projectName={p.projectName} field="province" canEdit={canEdit.allowed} onSave={handleInlineEdit} />
                       </td>
                       <td className="text-right px-2 py-1.5 tabular-nums">{p.sizeKwp ? p.sizeKwp.toLocaleString() : "—"}</td>
                       <td className="px-2 py-1.5">
-                        <InlineEditCell value={p.projectType} projectName={p.projectName} field="projectType" canEdit={canEdit} onSave={handleInlineEdit} />
+                        <InlineEditCell value={p.projectType} projectName={p.projectName} field="projectType" canEdit={canEdit.allowed} onSave={handleInlineEdit} />
                       </td>
                       <td className="px-2 py-1.5">
-                        <InlineEditCell value={p.fundingType} projectName={p.projectName} field="fundingType" canEdit={canEdit} onSave={handleInlineEdit} />
+                        <InlineEditCell value={p.fundingType} projectName={p.projectName} field="fundingType" canEdit={canEdit.allowed} onSave={handleInlineEdit} />
                       </td>
                       <td className="px-2 py-1.5 whitespace-nowrap">{formatDate(p.startDate)}</td>
                       <td className="px-2 py-1.5 whitespace-nowrap">{formatDate(p.pcDate)}</td>

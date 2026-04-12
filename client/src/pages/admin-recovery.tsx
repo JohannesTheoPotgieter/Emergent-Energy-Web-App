@@ -807,7 +807,7 @@ function DeletedItemsTab() {
               onClick={() => setTypeFilter(type)}
               data-testid={`button-filter-${type}`}
             >
-              {DELETED_TYPE_LABELS[type] || type} ({count})
+              {DELETED_TYPE_LABELS[type] || type} ({count as number})
             </Button>
           ))}
         </div>

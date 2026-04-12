@@ -51,7 +51,7 @@ export default function PerformancePage() {
     { name: "Late", value: late },
   ].filter((d) => d.value > 0);
 
-  const issues = data?.repeatIssues ?? {};
+  const issues: any = data?.repeatIssues ?? {};
 
   return (
     <PageShell>

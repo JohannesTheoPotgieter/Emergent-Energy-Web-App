@@ -1009,7 +1009,8 @@ export default function ProjectDetailPage() {
 
   const queryClient = useQueryClient();
   const projectInfo = projectsSummary?.find((p: any) => p.project_name === projectName);
-  const projectInfoId = projectInfo?.project_info_id;
+  // Coerce null to undefined so this can be passed to hooks that expect `number | undefined`
+  const projectInfoId = projectInfo?.project_info_id ?? undefined;
 
   // Stage lifecycle data for CriticalControlPanel and Lifecycle tab
   const { data: stageData } = useProjectStages(projectInfoId);
@@ -1300,9 +1301,13 @@ export default function ProjectDetailPage() {
   // ─── KPI computation: V2 detail → healthSummary → client-side fallback ───
   const v2ContractValue = v2Detail?.financeSummary?.contractValue;
   const totalRevenueActual = (revenueData as any[]).reduce((s: number, r: any) => s + (Number(r.milestoneAmount) || 0), 0);
-  const contractValue = v2ContractValue ?? healthSummary?.revenue.contractValue ?? projectInfo?.contract_value ?? totalRevenueActual ?? 0;
+  // Coerce to number — projectInfo.contract_value is widened to string|number|null
+  // since the column is decimal. Drizzle returns decimal as string.
+  const contractValue = Number(v2ContractValue ?? healthSummary?.revenue.contractValue ?? projectInfo?.contract_value ?? totalRevenueActual ?? 0);
   const totalBudgetFromExpenses = (expenseData as any[]).reduce((s: number, e: any) => s + (Number(e.budgetTotal) || 0), 0);
-  const budgetTotal = healthSummary?.cost.budgetTotal ?? projectInfo?.budget_total ?? totalBudgetFromExpenses ?? 0;
+  // Coerce to number — projectInfo.budget_total is widened to string|number|null
+  // since the column is decimal. Drizzle returns decimal as string.
+  const budgetTotal = Number(healthSummary?.cost.budgetTotal ?? projectInfo?.budget_total ?? totalBudgetFromExpenses ?? 0);
 
   // Schedule KPIs
   const planTasks = projectPlanData as any[];
@@ -1353,7 +1358,8 @@ export default function ProjectDetailPage() {
   const isCosRealised = (e: any): boolean => {
     const hasInvoice = !!(e.expenseInvoiceNumber && String(e.expenseInvoiceNumber).trim());
     const hasPO = !!(e.expensePoNumber && String(e.expensePoNumber).trim());
-    const hasCommittedSignal = status === "COMMITTED" || override === "COMMITTED" || hasPO || hasInvoice;
+    // Read status / override from the expense row itself, not from outer scope.
+    const hasCommittedSignal = e.lineStatus === "COMMITTED" || e.cosStatusOverride === "COMMITTED" || hasPO || hasInvoice;
     if (!hasCommittedSignal) return false;
 
     const invDate = e.expenseInvoicedDate || e.paymentDate || e.expensePaymentDate || "";
@@ -1402,12 +1408,13 @@ export default function ProjectDetailPage() {
   const dependencyCount = pdTicketsData.length;
   // GC-010: Normalize engineering status casing for overdue count
   const overdueEngineeringCount = healthSummary?.alerts.overdueEngineeringTasks ?? (engDataForAlerts?.tasks || []).filter((t: any) => t.dueDate && t.dueDate < today && String(t.status).toUpperCase() !== "COMPLETE").length;
-  const topAlerts: Array<{ key: ProjectSummaryChipKey; label: string; count: number; action: () => void; title: string; ariaLabel: string }> = [
-    { key: "overdue-plan-tasks", label: "Overdue plan tasks", count: overduePlanTasks.length, action: () => setLocation(chipDestinations["overdue-plan-tasks"]?.path || ""), title: chipDestinations["overdue-plan-tasks"]?.title || "Open plan tasks", ariaLabel: chipDestinations["overdue-plan-tasks"]?.ariaLabel || "Open plan tasks" },
-    { key: "overdue-engineering-tasks", label: "Overdue engineering tasks", count: overdueEngineeringCount, action: () => setLocation(chipDestinations["overdue-engineering-tasks"]?.path || ""), title: chipDestinations["overdue-engineering-tasks"]?.title || "Open overdue engineering tasks", ariaLabel: chipDestinations["overdue-engineering-tasks"]?.ariaLabel || "Open overdue engineering tasks" },
-    { key: "pending-quality-approvals", label: "Pending quality approvals", count: Math.max(qualityTotalItems - qualityApprovedItems, 0), action: () => setLocation(chipDestinations["pending-quality-approvals"]?.path || ""), title: chipDestinations["pending-quality-approvals"]?.title || "Open pending quality approvals", ariaLabel: chipDestinations["pending-quality-approvals"]?.ariaLabel || "Open quality approvals" },
-    { key: "overdue-supplier-costs", label: "Overdue supplier costs", count: unpaidExpenseCount, action: () => setLocation(chipDestinations["overdue-supplier-costs"]?.path || ""), title: chipDestinations["overdue-supplier-costs"]?.title || "Open overdue supplier costs", ariaLabel: chipDestinations["overdue-supplier-costs"]?.ariaLabel || "Open overdue supplier costs" },
-  ].filter((alert) => alert.count > 0);
+  type TopAlert = { key: ProjectSummaryChipKey; label: string; count: number; action: () => void; title: string; ariaLabel: string };
+  const topAlerts: TopAlert[] = ([
+    { key: "overdue-plan-tasks" as ProjectSummaryChipKey, label: "Overdue plan tasks", count: overduePlanTasks.length, action: () => setLocation(chipDestinations["overdue-plan-tasks"]?.path || ""), title: chipDestinations["overdue-plan-tasks"]?.title || "Open plan tasks", ariaLabel: chipDestinations["overdue-plan-tasks"]?.ariaLabel || "Open plan tasks" },
+    { key: "overdue-engineering-tasks" as ProjectSummaryChipKey, label: "Overdue engineering tasks", count: overdueEngineeringCount, action: () => setLocation(chipDestinations["overdue-engineering-tasks"]?.path || ""), title: chipDestinations["overdue-engineering-tasks"]?.title || "Open overdue engineering tasks", ariaLabel: chipDestinations["overdue-engineering-tasks"]?.ariaLabel || "Open overdue engineering tasks" },
+    { key: "pending-quality-approvals" as ProjectSummaryChipKey, label: "Pending quality approvals", count: Math.max(qualityTotalItems - qualityApprovedItems, 0), action: () => setLocation(chipDestinations["pending-quality-approvals"]?.path || ""), title: chipDestinations["pending-quality-approvals"]?.title || "Open pending quality approvals", ariaLabel: chipDestinations["pending-quality-approvals"]?.ariaLabel || "Open quality approvals" },
+    { key: "overdue-supplier-costs" as ProjectSummaryChipKey, label: "Overdue supplier costs", count: unpaidExpenseCount, action: () => setLocation(chipDestinations["overdue-supplier-costs"]?.path || ""), title: chipDestinations["overdue-supplier-costs"]?.title || "Open overdue supplier costs", ariaLabel: chipDestinations["overdue-supplier-costs"]?.ariaLabel || "Open overdue supplier costs" },
+  ] as TopAlert[]).filter((alert) => alert.count > 0);
   const collaborationSignals = {
     hasHistory: !!projectInfoId,
     hasApprovals: !!projectInfoId,
@@ -1560,7 +1567,7 @@ export default function ProjectDetailPage() {
             </div>
             <div><span className="text-muted-foreground">Tasks:</span> <span className="font-semibold">{completedPlanTasks.length}/{planTasks.length}</span></div>
             {overduePlanTasks.length > 0 && <div className="text-amber-600 font-semibold"><AlertTriangle className="inline h-3 w-3 mr-0.5" />{overduePlanTasks.length} overdue</div>}
-            {stageData?.currentStage && <div><span className="text-muted-foreground">Gate:</span> <span className="font-semibold">{stageData.currentStage.label || stageData.currentStage.stageCode}</span></div>}
+            {stageData?.currentStage && <div><span className="text-muted-foreground">Gate:</span> <span className="font-semibold">{(stageData.currentStage as any).label || stageData.currentStage.stageCode}</span></div>}
           </div>
 
           {/* PM sub-tabs */}
@@ -1626,7 +1633,12 @@ export default function ProjectDetailPage() {
           {activeSubTab === "tasks" && projectInfoId && <EngTasksTab projectInfoId={projectInfoId} isAdmin={isAdmin} projectName={projectName} initialStatusFilter={engFilter || undefined} />}
           {activeSubTab === "timeline" && (
             <div className="space-y-4">
-              {projectInfoId && <StageTimeline projectId={projectInfoId} />}
+              {projectInfoId && stageData && (
+                <StageTimeline
+                  stages={(stageData.stages || []) as any}
+                  currentStageCode={stageData.currentStage?.stageCode ?? null}
+                />
+              )}
               <ProjectTimelineTab projectName={projectName} projectInfoId={projectInfoId ?? null} />
             </div>
           )}

@@ -77,7 +77,7 @@ export default function CreateTaskFromSourceDialog({ open, onOpenChange, source 
     queryFn: fetchRolloutFeatureFlags,
     enabled: open,
   });
-  const msCreateEnabled = !!rolloutFlags?.ms_create_action;
+  const msCreateEnabled = !!(rolloutFlags as any)?.ms_create_action;
 
   const { data: allProjects = [] } = useQuery<Array<{ project_name: string; is_active: boolean }>>({
     queryKey: ["/api/projects-summary"],
