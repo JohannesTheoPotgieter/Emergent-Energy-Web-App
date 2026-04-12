@@ -1,17 +1,51 @@
 node_modules
 dist
 .DS_Store
+
+# ── Environment & secrets (NEVER commit) ─────────────────────
+# Secrets must live in Replit Secrets Manager or Azure Key Vault.
+# See docs/runbooks/secrets-rotation.md for the rotation procedure.
 .env
-.env.local
-.env.production
+.env.*
+!.env.example
+!.env.test.example
+
+# ── Build & framework artifacts ──────────────────────────────
 server/public
 vite.config.ts.*
 *.tar.gz
+
+# ── Runtime data (developer machine state, not source) ───────
 uploads/
 data/
 server/data-seed/.migrated
 server/.pd-seed-done
 backups/
 .claude/
+
+# ── Logs (operational artifacts, never source) ───────────────
+*.log
+*.err.log
+*.out.log
 combined.log
 error.log
+login-request.log
+smoke-log.txt
+devserver.log
+devserver.err.log
+replit-debug.err.log
+replit-debug.out.log
+replid-dev.err.log
+replid-dev.out.log
+replit-startup-check.err.log
+replit-startup-check.out.log
+node20-dev.err.log
+node20-dev.out.log
+
+# QA test snapshots are intentional commits (under qa/artifacts/ and qa/reports/)
+!qa/artifacts/*.log
+!qa/reports/*.log
+
+# ── Type-check artefacts ─────────────────────────────────────
+tsc-all.txt
+tsc-errors.txt
