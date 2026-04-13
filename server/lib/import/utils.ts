@@ -95,13 +95,39 @@ export function parseStatus(value: any): number | null {
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// Import-time enum normalizers
+//
+// These map messy / legacy / mixed-case import values to the canonical
+// lowercase_underscore enum values that exist in the live PostgreSQL enums.
+// They are the single source of truth for any Smart Import write path and
+// MUST be called at every boundary that writes to normalized_cost_lines,
+// normalized_revenue_lines, category_revenue_allocations, or smart_import_runs.
+//
+// If you catch yourself typing a string literal like "PAID" or "PROVISIONAL"
+// in runtime code, use one of these helpers instead. See also the repo-level
+// invariant test at qa/tests/unit/smart-import-enum-canonical.test.ts which
+// asserts these constants match the pgEnum definitions in shared/schema.
+// ---------------------------------------------------------------------------
+
 export type CostLineStatus = "planned" | "invoiced" | "approved" | "paid";
 
-const CANONICAL_COST_LINE_STATUSES = new Set<CostLineStatus>(["planned", "invoiced", "approved", "paid"]);
+export const COST_LINE_STATUS_VALUES: readonly CostLineStatus[] = [
+  "planned",
+  "invoiced",
+  "approved",
+  "paid",
+] as const;
+
+const CANONICAL_COST_LINE_STATUSES = new Set<CostLineStatus>(COST_LINE_STATUS_VALUES);
 
 /**
  * Normalize imported Smart Import cost line status values to the canonical
  * cost_line_status enum values. Unknown or blank values default to "planned".
+ *
+ * Handles: PAID / Paid / paid, APPROVED / approved, INVOICED / Invoice /
+ * invoice / invoices / billed, PLANNED / planned, plus the legacy
+ * lookalikes ("authorised", "authorized", "settled", "pay").
  */
 export function normalizeCostLineStatus(value: unknown): CostLineStatus {
   const normalized = normalizeWithLegacy(value == null ? "" : String(value));
@@ -121,6 +147,119 @@ export function normalizeCostLineStatus(value: unknown): CostLineStatus {
   }
 
   return "planned";
+}
+
+export type RevenueLineStatus = "planned" | "invoiced" | "paid" | "in_bank" | "realised";
+
+export const REVENUE_LINE_STATUS_VALUES: readonly RevenueLineStatus[] = [
+  "planned",
+  "invoiced",
+  "paid",
+  "in_bank",
+  "realised",
+] as const;
+
+const CANONICAL_REVENUE_LINE_STATUSES = new Set<RevenueLineStatus>(REVENUE_LINE_STATUS_VALUES);
+
+/**
+ * Normalize imported Smart Import revenue line status values to the canonical
+ * revenue_line_status enum values. Unknown or blank values default to "planned".
+ */
+export function normalizeRevenueLineStatus(value: unknown): RevenueLineStatus {
+  const normalized = normalizeWithLegacy(value == null ? "" : String(value));
+  if (!normalized) return "planned";
+  if (CANONICAL_REVENUE_LINE_STATUSES.has(normalized as RevenueLineStatus)) {
+    return normalized as RevenueLineStatus;
+  }
+
+  if (normalized === "invoice" || normalized === "invoices" || normalized === "billed") {
+    return "invoiced";
+  }
+  if (normalized === "pay" || normalized === "settled") {
+    return "paid";
+  }
+  if (normalized === "in_the_bank" || normalized === "bank" || normalized === "received") {
+    return "in_bank";
+  }
+  if (normalized === "realized") {
+    return "realised";
+  }
+
+  return "planned";
+}
+
+export type AllocationConfidence =
+  | "direct"
+  | "header_error_positional"
+  | "provisional"
+  | "manual";
+
+export const ALLOCATION_CONFIDENCE_VALUES: readonly AllocationConfidence[] = [
+  "direct",
+  "header_error_positional",
+  "provisional",
+  "manual",
+] as const;
+
+const CANONICAL_ALLOCATION_CONFIDENCES = new Set<AllocationConfidence>(
+  ALLOCATION_CONFIDENCE_VALUES,
+);
+
+/**
+ * Normalize a category_revenue_allocations.allocation_confidence value to
+ * the canonical lowercase enum literal. Accepts UPPERCASE / mixed-case
+ * legacy inputs ("DIRECT", "Provisional", etc.) transparently. Defaults to
+ * "provisional" for unknown / blank values so category allocation writes
+ * never break downstream on enum_in.
+ */
+export function normalizeAllocationConfidence(value: unknown): AllocationConfidence {
+  const normalized = normalizeWithLegacy(value == null ? "" : String(value));
+  if (!normalized) return "provisional";
+  if (CANONICAL_ALLOCATION_CONFIDENCES.has(normalized as AllocationConfidence)) {
+    return normalized as AllocationConfidence;
+  }
+  // Tolerate the historical shorthand "positional" used in early parser code.
+  if (normalized === "positional" || normalized === "header_positional") {
+    return "header_error_positional";
+  }
+  if (normalized === "direct_extraction") {
+    return "direct";
+  }
+  return "provisional";
+}
+
+export type SmartImportStatus =
+  | "preview"
+  | "awaiting_review"
+  | "committed"
+  | "rolled_back"
+  | "failed"
+  | "superseded";
+
+export const SMART_IMPORT_STATUS_VALUES: readonly SmartImportStatus[] = [
+  "preview",
+  "awaiting_review",
+  "committed",
+  "rolled_back",
+  "failed",
+  "superseded",
+] as const;
+
+const CANONICAL_SMART_IMPORT_STATUSES = new Set<SmartImportStatus>(SMART_IMPORT_STATUS_VALUES);
+
+/**
+ * Normalize a smart_import_runs.status value to the canonical lowercase
+ * enum literal. Callers must use this (or a SMART_IMPORT_STATUS_VALUES
+ * constant) instead of hardcoding "FAILED" / "COMMITTED" / etc., otherwise
+ * the DB will reject the value with SQLSTATE 22P02 (invalid_text_representation).
+ */
+export function normalizeSmartImportStatus(value: unknown): SmartImportStatus | null {
+  const normalized = normalizeWithLegacy(value == null ? "" : String(value));
+  if (!normalized) return null;
+  if (CANONICAL_SMART_IMPORT_STATUSES.has(normalized as SmartImportStatus)) {
+    return normalized as SmartImportStatus;
+  }
+  return null;
 }
 
 export function getCellRawValue(cell: ExcelJS.Cell): any {
