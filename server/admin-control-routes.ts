@@ -59,6 +59,26 @@ function resolveIntegrationStatus({
   return "not_connected";
 }
 
+function getPgErrorDetails(err: unknown) {
+  const e = err as any;
+  const cause = e?.cause as any;
+  return {
+    message: e?.message || String(err),
+    code: e?.code || cause?.code || null,
+    detail: e?.detail || cause?.detail || null,
+    schema: e?.schema || cause?.schema || null,
+    table: e?.table || cause?.table || null,
+    column: e?.column || cause?.column || null,
+    constraint: e?.constraint || cause?.constraint || null,
+    routine: e?.routine || cause?.routine || null,
+  };
+}
+
+function isMissingDbObjectError(err: unknown) {
+  const details = getPgErrorDetails(err);
+  return details.code === "42P01" || details.code === "42703";
+}
+
 async function buildMicrosoftIntegrationSnapshot() {
   const config: Record<string, any> = {};
   try {
@@ -468,15 +488,20 @@ router.delete("/api/admin/control-center/sessions/:sid", requireAuth, requireAdm
 router.get("/api/admin/control-center/recent-import-failures", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
     const rows: any[] = await db.execute(sql`
-      SELECT sir.id, sir.project_name, sir.source_file_name, sir.uploaded_at, sir.status,
-             sir.records_attempted, sir.records_failed, sir.summary_json,
+      SELECT sir.id, sir.project_name, sir.source_file_name, sir.uploaded_at,
+             sir.records_attempted, sir.records_failed,
              u.name as uploaded_by_name
       FROM smart_import_runs sir
       LEFT JOIN users u ON sir.uploaded_by = u.id
       WHERE sir.status = 'FAILED'
       ORDER BY sir.uploaded_at DESC
       LIMIT 10
-    `).then((r: any) => r.rows || r);
+    `).then((r: any) => r.rows || r).catch((err: unknown) => {
+      const details = getPgErrorDetails(err);
+      console.error("[admin-control] recent-import-failures base query failed", details);
+      if (isMissingDbObjectError(err)) return [];
+      throw err;
+    });
 
     const enriched = [];
     for (const row of rows) {
@@ -485,13 +510,36 @@ router.get("/api/admin/control-center/recent-import-failures", requireAuth, requ
       try {
         const [issueResult] = await db.execute(
           sql`SELECT COUNT(*) as count FROM import_issues WHERE import_run_id = ${row.id} AND severity = 'BLOCKER'`
-        ).then((r: any) => r.rows || r);
+        ).then((r: any) => r.rows || r).catch((err: unknown) => {
+          const details = getPgErrorDetails(err);
+          console.error("[admin-control] recent-import-failures blocker count query failed", {
+            importRunId: row.id,
+            ...details,
+          });
+          if (isMissingDbObjectError(err)) return [{ count: "0" }];
+          throw err;
+        });
         issueCount = parseInt(issueResult?.count || "0");
+
         const issueRows: any[] = await db.execute(
           sql`SELECT message FROM import_issues WHERE import_run_id = ${row.id} AND severity = 'BLOCKER' ORDER BY id LIMIT 1`
-        ).then((r: any) => r.rows || r);
+        ).then((r: any) => r.rows || r).catch((err: unknown) => {
+          const details = getPgErrorDetails(err);
+          console.error("[admin-control] recent-import-failures top issue query failed", {
+            importRunId: row.id,
+            ...details,
+          });
+          if (isMissingDbObjectError(err)) return [];
+          throw err;
+        });
         topIssue = issueRows[0]?.message || null;
-      } catch {}
+      } catch (err: unknown) {
+        const details = getPgErrorDetails(err);
+        console.error("[admin-control] recent-import-failures enrichment query failed", {
+          importRunId: row.id,
+          ...details,
+        });
+      }
       enriched.push({
         id: row.id,
         projectName: row.project_name,
@@ -507,6 +555,10 @@ router.get("/api/admin/control-center/recent-import-failures", requireAuth, requ
 
     res.json(enriched);
   } catch (err: unknown) {
+    console.error("[admin-control] recent-import-failures handler failed", getPgErrorDetails(err));
+    if (isMissingDbObjectError(err)) {
+      return res.json([]);
+    }
     res.status(500).json({ error: "Failed to fetch import failures", message: (err instanceof Error ? err.message : String(err)) });
   }
 });
