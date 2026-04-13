@@ -55,6 +55,15 @@ export async function startRuntimeServices(options: {
     log(`[Integration Registry Seed] Failed: ${err}`, "Startup:Runtime");
   }
 
+  // C2: register org-wide dashboards and start the periodic refresh loop.
+  try {
+    const { scheduleDashboardRefresh } = await import("./dashboard-refresh-scheduler");
+    await scheduleDashboardRefresh();
+    started.push("dashboard-refresh-scheduler");
+  } catch (err) {
+    log(`[Dashboard Refresh Scheduler] Failed to start: ${err}`, "Startup:Runtime");
+  }
+
   try {
     const { startPeriodicSync } = await import("../ms-sync-service");
     if (startupSyncEnabled) {

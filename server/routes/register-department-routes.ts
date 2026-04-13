@@ -108,6 +108,14 @@ export async function registerDepartmentRoutes(app: Express) {
     console.error("[Routes] Failed to register integration-health-routes:", err);
   }
 
+  // C2: Dashboard snapshot read + freshness panel
+  try {
+    const { registerDashboardRefreshRoutes } = await import("../departments/dashboard-refresh-routes");
+    registerDashboardRefreshRoutes(app);
+  } catch (err) {
+    console.error("[Routes] Failed to register dashboard-refresh-routes:", err);
+  }
+
   // C4: Handover Packs
   try {
     const { registerHandoverRoutes } = await import("../departments/handover-routes");
