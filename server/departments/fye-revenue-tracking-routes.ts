@@ -13,8 +13,8 @@
  * DASHBOARD:
  *   Budget Revenue (monthly)   → fye_budgets (budgetType="revenue") [editable by finance]
  *   Budget COS (monthly)       → fye_budgets (budgetType="cos") [editable by finance]
- *   Actual Revenue (monthly)   → COS-ratio allocation: (lineItemCOS / projectTotalCOS) * projectTotalRevenue, keyed by expenseInvoicedDate [matches Revenue Tracker]
- *   Actual COS (monthly)       → program_expense.expenseActualTotal, keyed by expenseInvoicedDate [read-only import]
+ *   Actual Revenue (monthly)   → COS-ratio allocation: (lineItemCOS / projectTotalCOS) * projectTotalRevenue, keyed by normalized_cost_lines.invoice_date [matches Revenue Tracker]
+ *   Actual COS (monthly)       → normalized_cost_lines.amount_ex_vat, keyed by invoice_date [canonical source]
  *   Forecast Revenue           → fye_budgets for future months (budget as forecast proxy)
  *   GP                         → Revenue - COS (derived)
  *
@@ -56,8 +56,8 @@ import {
   projectExecutionState,
   projectRevenueSummary,
   projectEditableFields,
-  programInflows,
-  programExpense,
+  normalizedCostLines,
+  normalizedRevenueLines,
   fyeBudgets,
   forecastPipeline,
   lostDeals,
@@ -395,29 +395,31 @@ router.get(
       }
 
       // 2. Load inflows + expenses + COS overrides for COS-ratio revenue allocation
+      //    Canonical source: normalized_revenue_lines + normalized_cost_lines.
+      //    computedForecast* fields are v1-legacy and not populated by the v2 pipeline — return NULL.
       const [allInflows, allExpenses, cosOverrideMap] = await Promise.all([
         db.select({
-          projectName: programInflows.projectName,
-          milestoneAmount: programInflows.milestoneAmount,
-          plannedPaymentDate: programInflows.plannedPaymentDate,
-          computedForecastReceiptDate: programInflows.computedForecastReceiptDate,
-          invoiceRaisedDate: programInflows.invoiceRaisedDate,
-          paymentReceivedDate: programInflows.paymentReceivedDate,
-        }).from(programInflows).where(isNull(programInflows.effectiveTo)),
+          projectName: normalizedRevenueLines.projectName,
+          milestoneAmount: normalizedRevenueLines.amountExVat,
+          plannedPaymentDate: normalizedRevenueLines.expectedPaymentDate,
+          computedForecastReceiptDate: sql<string | null>`NULL`,
+          invoiceRaisedDate: normalizedRevenueLines.invoiceDate,
+          paymentReceivedDate: normalizedRevenueLines.paidDate,
+        }).from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
         db.select({
-          projectName: programExpense.projectName,
-          rowType: programExpense.rowType,
-          expenseActualTotal: programExpense.expenseActualTotal,
-          expenseInvoicedDate: programExpense.expenseInvoicedDate,
-          expenseInvoiceNumber: programExpense.expenseInvoiceNumber,
-          expensePoNumber: programExpense.expensePoNumber,
-          invoiceDateConfirmed: programExpense.invoiceDateConfirmed,
-          invoiceDateFontColor: programExpense.invoiceDateFontColor,
-          rowNumber: programExpense.rowNumber,
-          budgetTotal: programExpense.budgetTotal,
-          forecastPaymentDate: programExpense.forecastPaymentDate,
-          computedForecastPaymentDate: programExpense.computedForecastPaymentDate,
-        }).from(programExpense).where(isNull(programExpense.effectiveTo)),
+          projectName: normalizedCostLines.projectName,
+          rowType: sql<string>`'item'`,
+          expenseActualTotal: normalizedCostLines.amountExVat,
+          expenseInvoicedDate: normalizedCostLines.invoiceDate,
+          expenseInvoiceNumber: normalizedCostLines.invoiceNumber,
+          expensePoNumber: normalizedCostLines.poNumber,
+          invoiceDateConfirmed: normalizedCostLines.invoiceDateConfirmed,
+          invoiceDateFontColor: normalizedCostLines.invoiceDateFontColor,
+          rowNumber: normalizedCostLines.sourceRow,
+          budgetTotal: normalizedCostLines.budgetTotal,
+          forecastPaymentDate: normalizedCostLines.forecastPaymentDate,
+          computedForecastPaymentDate: sql<string | null>`NULL`,
+        }).from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
         loadCosOverrides(),
       ]);
       enrichWithOverrides(allExpenses, cosOverrideMap);
@@ -704,28 +706,29 @@ router.get(
         // project_plan may not exist
       }
 
-      // Load all inflows and expenses for FYE-specific budget + actual computation
+      // Load all inflows and expenses for FYE-specific budget + actual computation.
+      // Canonical source: normalized_revenue_lines + normalized_cost_lines.
       const [allInflows, allExpenses] = await Promise.all([
         db.select({
-          projectName: programInflows.projectName,
-          milestoneAmount: programInflows.milestoneAmount,
-          plannedPaymentDate: programInflows.plannedPaymentDate,
-          paymentReceivedDate: programInflows.paymentReceivedDate,
-          invoiceRaisedDate: programInflows.invoiceRaisedDate,
-        }).from(programInflows).where(isNull(programInflows.effectiveTo)),
+          projectName: normalizedRevenueLines.projectName,
+          milestoneAmount: normalizedRevenueLines.amountExVat,
+          plannedPaymentDate: normalizedRevenueLines.expectedPaymentDate,
+          paymentReceivedDate: normalizedRevenueLines.paidDate,
+          invoiceRaisedDate: normalizedRevenueLines.invoiceDate,
+        }).from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
         db.select({
-          projectName: programExpense.projectName,
-          rowType: programExpense.rowType,
-          budgetTotal: programExpense.budgetTotal,
-          expenseActualTotal: programExpense.expenseActualTotal,
-          expenseInvoicedDate: programExpense.expenseInvoicedDate,
-          forecastPaymentDate: programExpense.forecastPaymentDate,
-          computedForecastPaymentDate: programExpense.computedForecastPaymentDate,
-          expenseInvoiceNumber: programExpense.expenseInvoiceNumber,
-          expensePoNumber: programExpense.expensePoNumber,
-          invoiceDateConfirmed: programExpense.invoiceDateConfirmed,
-          invoiceDateFontColor: programExpense.invoiceDateFontColor,
-        }).from(programExpense).where(isNull(programExpense.effectiveTo)),
+          projectName: normalizedCostLines.projectName,
+          rowType: sql<string>`'item'`,
+          budgetTotal: normalizedCostLines.budgetTotal,
+          expenseActualTotal: normalizedCostLines.amountExVat,
+          expenseInvoicedDate: normalizedCostLines.invoiceDate,
+          forecastPaymentDate: normalizedCostLines.forecastPaymentDate,
+          computedForecastPaymentDate: sql<string | null>`NULL`,
+          expenseInvoiceNumber: normalizedCostLines.invoiceNumber,
+          expensePoNumber: normalizedCostLines.poNumber,
+          invoiceDateConfirmed: normalizedCostLines.invoiceDateConfirmed,
+          invoiceDateFontColor: normalizedCostLines.invoiceDateFontColor,
+        }).from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
       ]);
 
       // ── Budget COS per project (FYE-specific) ──
@@ -1317,9 +1320,10 @@ async function collectSnapshotData(fye: number) {
   } catch (e) { console.warn("[fye-revenue-tracking-routes] non-critical error:", e instanceof Error ? e.message : e); }
 
   // Actual Revenue + COS via COS-ratio allocation (matches Revenue Tracker)
+  // Canonical source: normalized_revenue_lines + normalized_cost_lines.
   const [allInflows, allExpenses, snapCosOverrides] = await Promise.all([
-    db.select({ projectName: programInflows.projectName, milestoneAmount: programInflows.milestoneAmount }).from(programInflows).where(isNull(programInflows.effectiveTo)),
-    db.select({ projectName: programExpense.projectName, rowType: programExpense.rowType, expenseActualTotal: programExpense.expenseActualTotal, expenseInvoicedDate: programExpense.expenseInvoicedDate, expenseInvoiceNumber: programExpense.expenseInvoiceNumber, expensePoNumber: programExpense.expensePoNumber, rowNumber: programExpense.rowNumber, budgetTotal: programExpense.budgetTotal, forecastPaymentDate: programExpense.forecastPaymentDate, computedForecastPaymentDate: programExpense.computedForecastPaymentDate }).from(programExpense).where(isNull(programExpense.effectiveTo)),
+    db.select({ projectName: normalizedRevenueLines.projectName, milestoneAmount: normalizedRevenueLines.amountExVat }).from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
+    db.select({ projectName: normalizedCostLines.projectName, rowType: sql<string>`'item'`, expenseActualTotal: normalizedCostLines.amountExVat, expenseInvoicedDate: normalizedCostLines.invoiceDate, expenseInvoiceNumber: normalizedCostLines.invoiceNumber, expensePoNumber: normalizedCostLines.poNumber, rowNumber: normalizedCostLines.sourceRow, budgetTotal: normalizedCostLines.budgetTotal, forecastPaymentDate: normalizedCostLines.forecastPaymentDate, computedForecastPaymentDate: sql<string | null>`NULL` }).from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
     loadCosOverrides(),
   ]);
   enrichWithOverrides(allExpenses, snapCosOverrides);
