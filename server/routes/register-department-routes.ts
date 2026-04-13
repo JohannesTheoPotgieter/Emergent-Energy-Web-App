@@ -100,6 +100,14 @@ export async function registerDepartmentRoutes(app: Express) {
     console.error("[Routes] Failed to register om-handover-routes:", err);
   }
 
+  // C1: Integration health dashboard
+  try {
+    const { registerIntegrationHealthRoutes } = await import("../departments/integration-health-routes");
+    registerIntegrationHealthRoutes(app);
+  } catch (err) {
+    console.error("[Routes] Failed to register integration-health-routes:", err);
+  }
+
   // C4: Handover Packs
   try {
     const { registerHandoverRoutes } = await import("../departments/handover-routes");

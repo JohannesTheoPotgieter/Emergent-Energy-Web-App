@@ -45,6 +45,16 @@ export async function startRuntimeServices(options: {
     log(`[COS Period Lock Scheduler] Failed to start: ${err}`, "Startup:Runtime");
   }
 
+  // C1: seed the integration registry so the health dashboard has tiles
+  // from day 1 even before the first run has been logged. Idempotent.
+  try {
+    const { seedIntegrationRegistry } = await import("../services/integration-health-service");
+    const { inserted } = await seedIntegrationRegistry();
+    started.push(`integration-registry-seed(inserted=${inserted})`);
+  } catch (err) {
+    log(`[Integration Registry Seed] Failed: ${err}`, "Startup:Runtime");
+  }
+
   try {
     const { startPeriodicSync } = await import("../ms-sync-service");
     if (startupSyncEnabled) {
