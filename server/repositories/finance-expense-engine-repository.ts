@@ -87,7 +87,14 @@ export class FinanceExpenseEngineRepository {
       this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo),
     ]);
     const resolve = createNameResolver(piRows.map((r: any) => r.projectName));
-    const adapted = costLines.map((c: any) => adaptCostToExpense(c, resolve(c.projectName)));
+    // Skip orphan rows with NULL project_name — they cannot be attributed to a
+    // project and would otherwise break name-resolution and downstream joins.
+    const attributedCostLines = costLines.filter((c: any) => typeof c.projectName === "string" && c.projectName.length > 0);
+    const skipped = costLines.length - attributedCostLines.length;
+    if (skipped > 0) {
+      console.warn(`[getAllCostLinesForCashflow] Skipped ${skipped} cost line(s) with NULL project_name`);
+    }
+    const adapted = attributedCostLines.map((c: any) => adaptCostToExpense(c, resolve(c.projectName)));
     const { winners, diagnostics } = selectWinningExpenseRows(adapted);
     console.log(`[getAllCostLinesForCashflow] ${costLines.length} active NCL → ${adapted.length} adapted → ${winners.length} after dedup (removed ${diagnostics.duplicatesRemoved})`);
     return winners;

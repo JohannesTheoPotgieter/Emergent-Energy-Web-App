@@ -24,7 +24,13 @@ export class FinanceInflowsRepository {
       this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo),
     ]);
     const resolve = createNameResolver(piRows.map((r: any) => r.projectName));
-    return revLines.map((r: any) => adaptRevenueToInflow(r, resolve(r.projectName)));
+    // Skip orphan rows with NULL project_name — they cannot be attributed.
+    const attributed = revLines.filter((r: any) => typeof r.projectName === "string" && r.projectName.length > 0);
+    const skipped = revLines.length - attributed.length;
+    if (skipped > 0) {
+      console.warn(`[getAllProgramInflows] Skipped ${skipped} revenue line(s) with NULL project_name`);
+    }
+    return attributed.map((r: any) => adaptRevenueToInflow(r, resolve(r.projectName)));
   }
 
   async getAllRevenueLinesForCashflow(): Promise<any[]> {
@@ -36,7 +42,14 @@ export class FinanceInflowsRepository {
       this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo),
     ]);
     const resolve = createNameResolver(piRows.map((r: any) => r.projectName));
-    return revLines.map((r: any) => adaptRevenueToInflow(r, resolve(r.projectName)));
+    // Skip orphan rows with NULL project_name — they cannot be attributed and
+    // would otherwise crash resolve() or contaminate cashflow totals.
+    const attributed = revLines.filter((r: any) => typeof r.projectName === "string" && r.projectName.length > 0);
+    const skipped = revLines.length - attributed.length;
+    if (skipped > 0) {
+      console.warn(`[getAllRevenueLinesForCashflow] Skipped ${skipped} revenue line(s) with NULL project_name`);
+    }
+    return attributed.map((r: any) => adaptRevenueToInflow(r, resolve(r.projectName)));
   }
 
   async getProgramInflowsByProject(projectName: string): Promise<any[]> {
