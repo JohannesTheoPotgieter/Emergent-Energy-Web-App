@@ -8197,3 +8197,18 @@ CREATE INDEX IF NOT EXISTS idx_expense_task_links_canonical_task
 -- S04: Add pre_import_snapshot to smart_import_runs
 ALTER TABLE smart_import_runs
   ADD COLUMN IF NOT EXISTS pre_import_snapshot JSONB;
+
+-- cos_period_locks table (COS period lock for finance audit closeout)
+CREATE TABLE IF NOT EXISTS cos_period_locks (
+  id SERIAL PRIMARY KEY,
+  period_month DATE NOT NULL,
+  locked_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  locked_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  auto_locked BOOLEAN NOT NULL DEFAULT FALSE,
+  unlocked_at TIMESTAMP,
+  unlocked_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  unlock_reason TEXT,
+  notes TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_cos_period_locks_period ON cos_period_locks(period_month);
+CREATE INDEX IF NOT EXISTS idx_cos_period_locks_active ON cos_period_locks(period_month) WHERE unlocked_at IS NULL;
