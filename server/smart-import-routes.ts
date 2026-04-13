@@ -1942,9 +1942,9 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
 
           // Insert new allocations
           for (const ca of catAllocs) {
-            const confidence = ca.allocationSource === "DIRECT_EXTRACTION" ? "DIRECT" as const
-              : ca.allocationSource === "HEADER_ERROR_POSITIONAL" ? "HEADER_ERROR_POSITIONAL" as const
-              : "PROVISIONAL" as const;
+            const confidence = ca.allocationSource === "DIRECT_EXTRACTION" ? "direct" as const
+              : ca.allocationSource === "HEADER_ERROR_POSITIONAL" ? "header_error_positional" as const
+              : "provisional" as const;
 
             const [inserted] = await tx.insert(categoryRevenueAllocations).values({
               projectId,
