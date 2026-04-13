@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  ArrowRight, ArrowLeft, AlertTriangle, ChevronDown, ChevronUp, Check,
+  ArrowRight, ArrowLeft, AlertTriangle, ChevronDown, ChevronUp, Check, Eye, EyeOff,
 } from "lucide-react";
 import { useState, useMemo } from "react";
 import { SECTION_LABELS, CONFLICT_ACTIONS, fieldLabel } from "./labels";
@@ -270,7 +270,8 @@ function ConflictCard({
 export function SmartImportDecisionStep({
   planning, decisions, onDecision, onBulkDecision, onContinue, onBack,
 }: DecisionStepProps) {
-  // Extract all conflict rows from the planning output
+  const [hideResolved, setHideResolved] = useState(false);
+
   const conflictRows: ConflictRow[] = useMemo(() => {
     if (!planning?.conflicts?.allRows) return [];
     return planning.conflicts.allRows
@@ -283,10 +284,28 @@ export function SmartImportDecisionStep({
       }));
   }, [planning]);
 
-  // Count total fields needing decisions
   const totalDecisions = conflictRows.reduce((sum, r) => sum + r.fields.length, 0);
   const resolvedCount = Object.keys(decisions).length;
   const allResolved = resolvedCount >= totalDecisions;
+
+  const isRowResolved = (row: ConflictRow) =>
+    row.fields
+      .filter(f => f.requiresDecision)
+      .every(f => decisions[`${row.rowKey}::${f.fieldName}`]);
+
+  const sortedRows = useMemo(() => {
+    return [...conflictRows].sort((a, b) => {
+      const aResolved = isRowResolved(a);
+      const bResolved = isRowResolved(b);
+      if (aResolved === bResolved) return 0;
+      return aResolved ? 1 : -1;
+    });
+  }, [conflictRows, decisions]);
+
+  const resolvedRowCount = sortedRows.filter(r => isRowResolved(r)).length;
+  const unresolvedRowCount = sortedRows.length - resolvedRowCount;
+
+  const visibleRows = hideResolved ? sortedRows.filter(r => !isRowResolved(r)) : sortedRows;
 
   if (conflictRows.length === 0) {
     return (
@@ -328,7 +347,6 @@ export function SmartImportDecisionStep({
         </p>
       </CardHeader>
       <CardContent className="space-y-2 pt-0">
-        {/* Progress + bulk actions */}
         <div className="flex items-center justify-between bg-slate-50 rounded px-3 py-1.5 border text-xs" data-testid="decision-progress">
           <span>
             {allResolved
@@ -354,15 +372,28 @@ export function SmartImportDecisionStep({
           </div>
         </div>
 
-        {/* Conflict cards — collapsed by default, first unresolved expanded */}
-        {conflictRows.map((row, idx) => {
-          const rowResolved = row.fields
-            .filter(f => f.requiresDecision)
-            .every(f => decisions[`${row.rowKey}::${f.fieldName}`]);
-          // Expand the first unresolved card, or the first card if all resolved
-          const isFirstUnresolved = !rowResolved && conflictRows.slice(0, idx).every(r =>
-            r.fields.filter(f => f.requiresDecision).every(f => decisions[`${r.rowKey}::${f.fieldName}`])
-          );
+        {resolvedRowCount > 0 && unresolvedRowCount > 0 && (
+          <div className="flex items-center justify-between px-1">
+            <span className="text-[11px] text-slate-500">
+              {unresolvedRowCount} item{unresolvedRowCount > 1 ? "s" : ""} need decisions
+              {resolvedRowCount > 0 && ` \u00b7 ${resolvedRowCount} resolved`}
+            </span>
+            <button
+              className="flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-700 transition-colors"
+              onClick={() => setHideResolved(!hideResolved)}
+              data-testid="toggle-resolved"
+            >
+              {hideResolved
+                ? <><Eye className="w-3 h-3" /> Show resolved ({resolvedRowCount})</>
+                : <><EyeOff className="w-3 h-3" /> Hide resolved ({resolvedRowCount})</>
+              }
+            </button>
+          </div>
+        )}
+
+        {visibleRows.map((row, idx) => {
+          const rowResolved = isRowResolved(row);
+          const isFirstUnresolved = !rowResolved && visibleRows.slice(0, idx).every(r => isRowResolved(r));
           const defaultExpanded = isFirstUnresolved || (idx === 0 && allResolved);
 
           return (
@@ -376,7 +407,6 @@ export function SmartImportDecisionStep({
           );
         })}
 
-        {/* Navigation */}
         <div className="flex justify-between pt-1">
           <Button variant="outline" size="sm" onClick={onBack} data-testid="decision-back-btn">
             <ArrowLeft className="w-3.5 h-3.5 mr-1.5" /> Back
