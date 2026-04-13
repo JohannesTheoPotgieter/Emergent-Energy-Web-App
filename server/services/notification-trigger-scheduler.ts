@@ -7,6 +7,16 @@
 import { checkAllNotificationTriggers } from "./notification-triggers";
 
 let intervalHandle: ReturnType<typeof setInterval> | null = null;
+let lastRunAt: Date | null = null;
+
+export function getSchedulerStatus() {
+  return {
+    running: intervalHandle !== null,
+    lastRunAt,
+    nextRunAt: lastRunAt ? new Date(lastRunAt.getTime() + INTERVAL_MS) : null,
+    intervalMs: INTERVAL_MS,
+  };
+}
 
 const INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
@@ -20,7 +30,8 @@ export function startNotificationTriggerScheduler() {
     try {
       const results = await checkAllNotificationTriggers();
       const totalNotified = results.reduce((sum, r) => sum + r.notified, 0);
-      console.log(`[NotificationScheduler] Initial check complete — ${totalNotified} notifications sent`);
+      lastRunAt = new Date();
+        console.log(`[NotificationScheduler] Initial check complete — ${totalNotified} notifications sent`);
     } catch (err) {
       console.warn("[NotificationScheduler] Initial check failed:", err);
     }
@@ -31,7 +42,8 @@ export function startNotificationTriggerScheduler() {
     try {
       const results = await checkAllNotificationTriggers();
       const totalNotified = results.reduce((sum, r) => sum + r.notified, 0);
-      if (totalNotified > 0) {
+      lastRunAt = new Date();
+        if (totalNotified > 0) {
         console.log(`[NotificationScheduler] Check complete — ${totalNotified} notifications sent`);
       }
     } catch (err) {
