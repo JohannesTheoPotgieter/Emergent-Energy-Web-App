@@ -496,7 +496,7 @@ export type NormalizedRevenueLine = typeof normalizedRevenueLines.$inferSelect;
 
 // ===================== CATEGORY REVENUE ALLOCATIONS =====================
 
-export const allocationConfidenceEnum = pgEnum('allocation_confidence', ['direct', 'header_error_positional', 'provisional', 'manual']);
+export const allocationConfidenceEnum = pgEnum('allocation_confidence', ['DIRECT', 'HEADER_ERROR_POSITIONAL', 'PROVISIONAL', 'MANUAL']);
 
 export const categoryRevenueAllocations = pgTable("category_revenue_allocations", {
   id: serial("id").primaryKey(),
@@ -507,7 +507,7 @@ export const categoryRevenueAllocations = pgTable("category_revenue_allocations"
   categoryKey: text("category_key").notNull(),
   categorySortOrder: integer("category_sort_order").notNull(),
   revenueAllocation: decimal("revenue_allocation", { precision: 15, scale: 2 }),
-  allocationConfidence: allocationConfidenceEnum("allocation_confidence").notNull().default('provisional'),
+  allocationConfidence: allocationConfidenceEnum("allocation_confidence").notNull().default('PROVISIONAL'),
   budgetTotal: decimal("budget_total", { precision: 15, scale: 2 }),
   budgetCos: decimal("budget_cos", { precision: 15, scale: 2 }),
   importRunId: integer("import_run_id").references(() => smartImportRuns.id),
