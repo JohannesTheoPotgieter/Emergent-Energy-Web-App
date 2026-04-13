@@ -60,9 +60,20 @@ interface TaskStatusMeta {
   completeForReporting: boolean;
 }
 
+// C6: canonical lowercase_underscore keys. Display labels stay
+// human-readable (rendered via formatStatusLabel-style strings).
 export const TASK_STATUS_META: Record<TaskStatus, TaskStatusMeta> = {
-  "TO DO": {
-    label: "TO DO",
+  not_started: {
+    label: "Not Started",
+    badgeClass: "bg-muted text-foreground",
+    columnClass: "border-t-gray-300",
+    barClass: "bg-gray-300",
+    stateType: "execution",
+    completeForExecution: false,
+    completeForReporting: false,
+  },
+  to_do: {
+    label: "To Do",
     badgeClass: "bg-muted text-foreground",
     columnClass: "border-t-gray-400",
     barClass: "bg-gray-400",
@@ -70,8 +81,8 @@ export const TASK_STATUS_META: Record<TaskStatus, TaskStatusMeta> = {
     completeForExecution: false,
     completeForReporting: false,
   },
-  "IN PROGRESS": {
-    label: "IN PROGRESS",
+  in_progress: {
+    label: "In Progress",
     badgeClass: "bg-blue-100 text-blue-700",
     columnClass: "border-t-blue-500",
     barClass: "bg-blue-500",
@@ -79,8 +90,8 @@ export const TASK_STATUS_META: Record<TaskStatus, TaskStatusMeta> = {
     completeForExecution: false,
     completeForReporting: false,
   },
-  "HOLD": {
-    label: "HOLD",
+  hold: {
+    label: "Hold",
     badgeClass: "bg-red-100 text-red-700",
     columnClass: "border-t-red-500",
     barClass: "bg-red-500",
@@ -88,8 +99,8 @@ export const TASK_STATUS_META: Record<TaskStatus, TaskStatusMeta> = {
     completeForExecution: false,
     completeForReporting: false,
   },
-  "PROJECTS ASSISTANCE": {
-    label: "PROJECTS ASSISTANCE",
+  projects_assistance: {
+    label: "Projects Assistance",
     badgeClass: "bg-cyan-100 text-cyan-700",
     columnClass: "border-t-cyan-500",
     barClass: "bg-cyan-500",
@@ -97,8 +108,8 @@ export const TASK_STATUS_META: Record<TaskStatus, TaskStatusMeta> = {
     completeForExecution: false,
     completeForReporting: false,
   },
-  "NEEDS APPROVAL": {
-    label: "NEEDS APPROVAL",
+  needs_approval: {
+    label: "Needs Approval",
     badgeClass: "bg-amber-100 text-amber-700",
     columnClass: "border-t-amber-500",
     barClass: "bg-amber-500",
@@ -106,8 +117,8 @@ export const TASK_STATUS_META: Record<TaskStatus, TaskStatusMeta> = {
     completeForExecution: false,
     completeForReporting: false,
   },
-  "QC APPROVED": {
-    label: "QC APPROVED",
+  qc_approved: {
+    label: "QC Approved",
     badgeClass: "bg-emerald-100 text-emerald-700",
     columnClass: "border-t-emerald-500",
     barClass: "bg-emerald-500",
@@ -115,8 +126,8 @@ export const TASK_STATUS_META: Record<TaskStatus, TaskStatusMeta> = {
     completeForExecution: false,
     completeForReporting: true,
   },
-  "PROVIDE FEEDBACK": {
-    label: "PROVIDE FEEDBACK",
+  provide_feedback: {
+    label: "Provide Feedback",
     badgeClass: "bg-purple-100 text-purple-700",
     columnClass: "border-t-purple-500",
     barClass: "bg-purple-500",
@@ -124,8 +135,8 @@ export const TASK_STATUS_META: Record<TaskStatus, TaskStatusMeta> = {
     completeForExecution: false,
     completeForReporting: false,
   },
-  "OPERATIONAL APPROVAL": {
-    label: "OPERATIONAL APPROVAL",
+  operational_approval: {
+    label: "Operational Approval",
     badgeClass: "bg-indigo-100 text-indigo-700",
     columnClass: "border-t-indigo-500",
     barClass: "bg-indigo-500",
@@ -133,8 +144,8 @@ export const TASK_STATUS_META: Record<TaskStatus, TaskStatusMeta> = {
     completeForExecution: false,
     completeForReporting: false,
   },
-  "COMPLETE": {
-    label: "COMPLETE",
+  complete: {
+    label: "Complete",
     badgeClass: "bg-green-100 text-green-700",
     columnClass: "border-t-green-500",
     barClass: "bg-green-500",

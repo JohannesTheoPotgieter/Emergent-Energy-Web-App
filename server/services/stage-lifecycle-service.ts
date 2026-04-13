@@ -446,10 +446,10 @@ export async function transitionStageStatus(params: TransitionParams): Promise<P
     updatedAt: new Date(),
   };
 
-  if (newStatus === 'IN_PROGRESS' && !instance.startedAt) {
+  if (newStatus === 'in_progress' && !instance.startedAt) {
     updateData.startedAt = new Date();
   }
-  if (newStatus === 'PROGRESSED' || newStatus === 'APPROVED') {
+  if (newStatus === 'progressed' || newStatus === 'approved') {
     updateData.completedAt = new Date();
   }
 
@@ -462,7 +462,7 @@ export async function transitionStageStatus(params: TransitionParams): Promise<P
   await db.insert(projectStageDecisions).values({
     projectId,
     stageCode,
-    decisionType: isAdmin ? 'STAGE_OVERRIDE' : (newStatus === 'APPROVED' ? 'GATE_PASS' : 'GATE_FAIL'),
+    decisionType: isAdmin ? 'stage_override' : (newStatus === 'approved' ? 'gate_pass' : 'gate_fail'),
     decisionSummary: `Stage ${stageCode} transitioned from ${currentStatus} to ${newStatus}${reason ? ': ' + reason : ''}`,
     decidedByUserId: actorUserId,
     decidedDate: new Date(),
@@ -470,10 +470,10 @@ export async function transitionStageStatus(params: TransitionParams): Promise<P
   });
 
   // B1: capture stage gate evidence snapshot for post-mortem. Non-blocking.
-  if (newStatus === 'APPROVED' || newStatus === 'PROGRESSED') {
+  if (newStatus === 'approved' || newStatus === 'progressed') {
     const transitionType = isAdmin
       ? 'admin_advance'
-      : (newStatus === 'APPROVED' ? 'gate_approved' : 'gate_progressed');
+      : (newStatus === 'approved' ? 'gate_approved' : 'gate_progressed');
     await captureStageGateSnapshot({
       projectId,
       fromStageCode: stageCode,

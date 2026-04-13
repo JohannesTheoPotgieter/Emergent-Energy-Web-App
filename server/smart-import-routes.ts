@@ -214,14 +214,14 @@ async function pruneOldImportRuns(projectName: string, currentRunId: number): Pr
     const keepIds = new Set<number>([currentRunId]);
     let committedKept = 0;
     for (const run of runs) {
-      if (run.status === "COMMITTED" && committedKept < 2) {
+      if (run.status === "committed" && committedKept < 2) {
         keepIds.add(run.id);
         committedKept++;
       }
     }
 
     const idsToDelete = runs
-      .filter((r: any) => !keepIds.has(r.id) && r.status !== "COMMITTED")
+      .filter((r: any) => !keepIds.has(r.id) && r.status !== "committed")
       .map((r: any) => r.id);
 
     if (idsToDelete.length > 0) {
@@ -375,7 +375,7 @@ router.post("/api/smart-import/upload", requireAuth, requirePermission("smart_im
         uploadedBy: userId,
         sourceFileName: fileName,
         sourceFileHash: fileHash,
-        status: "PREVIEW",
+        status: "preview",
         summaryJson: preview as any,
       })
       .returning();
@@ -518,7 +518,7 @@ router.get("/api/smart-import/health-dashboard", requireAuth, requirePermission(
         projectMap.set(run.projectName, {
           projectName: run.projectName,
           projectId: run.projectId,
-          lastImportDate: run.status === "COMMITTED" && run.committedAt ? run.committedAt.toISOString() : null,
+          lastImportDate: run.status === "committed" && run.committedAt ? run.committedAt.toISOString() : null,
           lastImportStatus: run.status,
           totalImportRuns: 0,
         });
@@ -526,9 +526,9 @@ router.get("/api/smart-import/health-dashboard", requireAuth, requirePermission(
       const entry = projectMap.get(run.projectName)!;
       entry.totalImportRuns++;
       // Update last committed date if this is a committed run and we don't have one yet
-      if (!entry.lastImportDate && run.status === "COMMITTED" && run.committedAt) {
+      if (!entry.lastImportDate && run.status === "committed" && run.committedAt) {
         entry.lastImportDate = run.committedAt.toISOString();
-        entry.lastImportStatus = "COMMITTED";
+        entry.lastImportStatus = "committed";
       }
     }
 
@@ -602,7 +602,7 @@ router.get("/api/smart-import/pending-runs", requireAuth, requirePermission("sma
         sourceFileName: smartImportRuns.sourceFileName,
       })
       .from(smartImportRuns)
-      .where(eq(smartImportRuns.status, "PREVIEW"))
+      .where(eq(smartImportRuns.status, "preview"))
       .orderBy(smartImportRuns.projectName);
 
     const latestByProject = new Map<string, typeof runs[0]>();
@@ -627,7 +627,7 @@ router.get("/api/smart-import/pending-runs", requireAuth, requirePermission("sma
     if (duplicateIds.length > 0) {
       for (const dupId of duplicateIds) {
         await db.update(smartImportRuns)
-          .set({ status: "SUPERSEDED" })
+          .set({ status: "superseded" })
           .where(eq(smartImportRuns.id, dupId));
       }
       console.log(`[smart-import] Marked ${duplicateIds.length} duplicate PREVIEW runs as SUPERSEDED`);
@@ -1356,7 +1356,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
     const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));
     if (!run) return res.status(404).json({ error: "Import run not found" });
 
-    if (run.status === "COMMITTED") {
+    if (run.status === "committed") {
       return res.status(400).json({ error: "This import has already been committed" });
     }
 
@@ -1366,7 +1366,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       .from(smartImportRuns)
       .where(and(
         eq(smartImportRuns.projectName, run.projectName),
-        eq(smartImportRuns.status, "COMMITTED")
+        eq(smartImportRuns.status, "committed")
       ))
       .orderBy(desc(smartImportRuns.committedAt))
       .limit(1);
@@ -2138,7 +2138,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         if (norm.costLines?.length > 0) detectedSections.push("EXPENDITURE");
 
         await tx.update(smartImportRuns).set({
-          status: "COMMITTED",
+          status: "committed",
           committedAt: new Date(),
           committedBy: userId,
           recordsAttempted: totalAttempted,
@@ -3024,7 +3024,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       await tx
         .update(smartImportRuns)
         .set({
-          status: "COMMITTED",
+          status: "committed",
           committedAt: new Date(),
           committedBy: userId,
           recordsAttempted: totalAttempted,
@@ -3167,7 +3167,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         importedByUserId: userId,
         importedByName: (req as any).user?.name || null,
         projectName: projectName || null,
-        status: totalWritten > 0 ? (totalSkipped > 0 ? "PARTIAL" : "SUCCESS") : "FAILED",
+        status: totalWritten > 0 ? (totalSkipped > 0 ? "partial" : "success") : "failed",
         rowsAttempted: totalAttempted,
         rowsWritten: totalWritten,
         rowsSkipped: totalSkipped,
@@ -3233,7 +3233,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           importedByUserId: userId,
           importedByName: (req as any).user?.name || null,
           projectName: failedRun?.projectName || null,
-          status: "FAILED",
+          status: "failed",
           errorMessage: ((err instanceof Error ? err.message : String(err)) + causeMsg).substring(0, 2000),
         });
       }
@@ -3254,7 +3254,7 @@ router.post("/api/smart-import/:runId/rollback", requireAuth, requireAdmin, asyn
     const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));
     if (!run) return res.status(404).json({ error: "Import run not found" });
 
-    if (run.status !== "COMMITTED") {
+    if (run.status !== "committed") {
       return res.status(400).json({ error: "Only committed imports can be rolled back" });
     }
 
@@ -3290,7 +3290,7 @@ router.post("/api/smart-import/:runId/rollback", requireAuth, requireAdmin, asyn
 
       await tx
         .update(smartImportRuns)
-        .set({ status: "ROLLED_BACK" })
+        .set({ status: "rolled_back" })
         .where(eq(smartImportRuns.id, runId));
     });
 
@@ -3303,7 +3303,7 @@ router.post("/api/smart-import/:runId/rollback", requireAuth, requireAdmin, asyn
       changesJson: { previousStatus: run.status },
     });
 
-    res.json({ success: true, runId, status: "ROLLED_BACK" });
+    res.json({ success: true, runId, status: "rolled_back" });
   } catch (err: unknown) {
     console.error("[smart-import] POST rollback error:", err);
     res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
@@ -3365,7 +3365,7 @@ router.get("/api/smart-import/normalized/:projectName/plan", requireAuth, async 
     const [latestRun] = await db
       .select()
       .from(smartImportRuns)
-      .where(and(eq(smartImportRuns.projectName, projectName), eq(smartImportRuns.status, "COMMITTED")))
+      .where(and(eq(smartImportRuns.projectName, projectName), eq(smartImportRuns.status, "committed")))
       .orderBy(desc(smartImportRuns.committedAt))
       .limit(1);
 
@@ -3410,7 +3410,7 @@ router.get("/api/smart-import/normalized/:projectName/revenue", requireAuth, asy
     const [latestRun] = await db
       .select()
       .from(smartImportRuns)
-      .where(and(eq(smartImportRuns.projectName, projectName), eq(smartImportRuns.status, "COMMITTED")))
+      .where(and(eq(smartImportRuns.projectName, projectName), eq(smartImportRuns.status, "committed")))
       .orderBy(desc(smartImportRuns.committedAt))
       .limit(1);
 
@@ -3435,7 +3435,7 @@ router.get("/api/smart-import/normalized/:projectName/expenditure", requireAuth,
     const [latestRun] = await db
       .select()
       .from(smartImportRuns)
-      .where(and(eq(smartImportRuns.projectName, projectName), eq(smartImportRuns.status, "COMMITTED")))
+      .where(and(eq(smartImportRuns.projectName, projectName), eq(smartImportRuns.status, "committed")))
       .orderBy(desc(smartImportRuns.committedAt))
       .limit(1);
 
@@ -3470,11 +3470,11 @@ router.post("/api/smart-import/bulk-commit", requireAuth, requirePermission("sma
       runs = await db.select().from(smartImportRuns)
         .where(and(
           inArray(smartImportRuns.id, validIds),
-          eq(smartImportRuns.status, "PREVIEW")
+          eq(smartImportRuns.status, "preview")
         ));
     } else {
       runs = await db.select().from(smartImportRuns)
-        .where(eq(smartImportRuns.status, "PREVIEW"));
+        .where(eq(smartImportRuns.status, "preview"));
     }
 
     if (runs.length === 0) {
@@ -3684,7 +3684,7 @@ router.get("/api/import-control-tower/history", requireAuth, requirePermission("
         uploadedBy: run.uploadedBy,
         uploaderName,
         recordsAttempted: run.recordsAttempted ?? attempted,
-        recordsSucceeded: run.recordsSucceeded ?? (run.status === "COMMITTED" ? attempted - failedIssues.length : 0),
+        recordsSucceeded: run.recordsSucceeded ?? (run.status === "committed" ? attempted - failedIssues.length : 0),
         recordsFailed: run.recordsFailed ?? failedIssues.length,
         importType: run.importType ?? sections.join(","),
         sections,
@@ -3749,12 +3749,12 @@ router.post("/api/import-control-tower/retry/:runId", requireAuth, requirePermis
     const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));
     if (!run) return res.status(404).json({ error: "Import run not found" });
 
-    if (run.status !== "FAILED" && run.status !== "ROLLED_BACK" && run.status !== "PREVIEW") {
+    if (run.status !== "FAILED" && run.status !== "rolled_back" && run.status !== "preview") {
       return res.status(400).json({ error: `Cannot retry import with status "${run.status}". Only FAILED, ROLLED_BACK, or PREVIEW runs can be retried.` });
     }
 
     await db.update(smartImportRuns)
-      .set({ status: "PREVIEW" })
+      .set({ status: "preview" })
       .where(eq(smartImportRuns.id, runId));
 
     await db.update(importIssues)
@@ -3769,7 +3769,7 @@ router.post("/api/import-control-tower/retry/:runId", requireAuth, requirePermis
       changesJson: { previousStatus: run.status },
     });
 
-    res.json({ success: true, runId, newStatus: "PREVIEW" });
+    res.json({ success: true, runId, newStatus: "preview" });
   } catch (err: unknown) {
     console.error("[import-control-tower] POST retry error:", err);
     res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });

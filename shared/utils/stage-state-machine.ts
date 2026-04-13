@@ -7,15 +7,15 @@
 import type { StageStatus, RequirementStatus, StageCode } from "../schema/stage-lifecycle";
 import { ACTIVE_STAGE_CODES, DEPRECATED_STAGE_CODES } from "../schema/stage-lifecycle";
 
-// Valid state transitions (non-admin)
+// Valid state transitions (non-admin) — C6 canonical lowercase_underscore
 export const VALID_STAGE_TRANSITIONS: Record<StageStatus, StageStatus[]> = {
-  NOT_STARTED: ['IN_PROGRESS'],
-  IN_PROGRESS: ['READY_FOR_REVIEW', 'BLOCKED'],
-  READY_FOR_REVIEW: ['APPROVED', 'IN_PROGRESS', 'BLOCKED'],
-  APPROVED: ['PROGRESSED'],
-  PROGRESSED: [],
-  EXCEPTION_APPROVED: ['IN_PROGRESS', 'PROGRESSED'],
-  BLOCKED: ['IN_PROGRESS', 'EXCEPTION_APPROVED'],
+  not_started: ['in_progress'],
+  in_progress: ['ready_for_review', 'blocked'],
+  ready_for_review: ['approved', 'in_progress', 'blocked'],
+  approved: ['progressed'],
+  progressed: [],
+  exception_approved: ['in_progress', 'progressed'],
+  blocked: ['in_progress', 'exception_approved'],
 };
 
 /**
@@ -33,14 +33,14 @@ export function canTransition(from: StageStatus, to: StageStatus, isAdmin: boole
 export function getValidNextStates(current: StageStatus, isAdmin: boolean): StageStatus[] {
   if (isAdmin) {
     // Admin can go to any non-current state
-    const all: StageStatus[] = ['NOT_STARTED', 'IN_PROGRESS', 'READY_FOR_REVIEW', 'APPROVED', 'PROGRESSED', 'EXCEPTION_APPROVED', 'BLOCKED'];
+    const all: StageStatus[] = ['not_started', 'in_progress', 'ready_for_review', 'approved', 'progressed', 'exception_approved', 'blocked'];
     return all.filter(s => s !== current);
   }
   return VALID_STAGE_TRANSITIONS[current] ?? [];
 }
 
 /** Statuses considered "done" for a requirement */
-const COMPLETED_STATUSES: RequirementStatus[] = ['COMPLETE', 'NOT_APPLICABLE', 'WAIVED'];
+const COMPLETED_STATUSES: RequirementStatus[] = ['complete', 'not_applicable', 'waived'];
 
 /**
  * Compute readiness percentage from requirement statuses.
@@ -85,26 +85,26 @@ export interface StatusSentenceInput {
 export function generateStatusSentence(input: StatusSentenceInput): string {
   const { stageStatus, readinessPct, waitingOnDepartment, waitingOnUserName, unsatisfiedBlockers, openExceptionCount } = input;
 
-  if (stageStatus === 'PROGRESSED') {
+  if (stageStatus === 'progressed') {
     return 'Stage complete — progressed to next stage.';
   }
 
-  if (stageStatus === 'BLOCKED') {
+  if (stageStatus === 'blocked') {
     if (unsatisfiedBlockers.length > 0) {
       return `Blocked: ${unsatisfiedBlockers.slice(0, 3).join(', ')}${unsatisfiedBlockers.length > 3 ? ` (+${unsatisfiedBlockers.length - 3} more)` : ''}`;
     }
     return 'Blocked — requires resolution before progression.';
   }
 
-  if (stageStatus === 'EXCEPTION_APPROVED') {
+  if (stageStatus === 'exception_approved') {
     return `Progressed under approved exception${openExceptionCount > 1 ? ` (${openExceptionCount} open)` : ''}.`;
   }
 
-  if (stageStatus === 'READY_FOR_REVIEW') {
+  if (stageStatus === 'ready_for_review') {
     return 'Ready for approval.';
   }
 
-  if (stageStatus === 'APPROVED') {
+  if (stageStatus === 'approved') {
     return 'Approved — ready to progress.';
   }
 

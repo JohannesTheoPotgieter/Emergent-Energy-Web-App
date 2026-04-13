@@ -9,9 +9,10 @@ import { workItems } from "./tasks";
 
 // ===================== ENGINEERING DELIVERABLES =====================
 
+// C6: canonical lowercase_underscore.
 export const DELIVERABLE_STATUSES = [
-  "TO DO", "IN PROGRESS", "NEEDS APPROVAL", "PROVIDE FEEDBACK",
-  "QC APPROVED", "OPERATIONAL APPROVAL", "COMPLETE"
+  "to_do", "in_progress", "needs_approval", "provide_feedback",
+  "qc_approved", "operational_approval", "complete"
 ] as const;
 export type DeliverableStatus = typeof DELIVERABLE_STATUSES[number];
 
@@ -27,7 +28,7 @@ export const deliverables = pgTable("deliverables", {
   ownerUserId: integer("owner_user_id").references(() => users.id, { onDelete: "set null" }),
   reviewerUserId: integer("reviewer_user_id").references(() => users.id, { onDelete: "set null" }),
   qcReviewerUserId: integer("qc_reviewer_user_id").references(() => users.id, { onDelete: "set null" }),
-  status: text("status").notNull().default("TO DO"),
+  status: text("status").notNull().default("to_do"),
   currentVersion: integer("current_version").notNull().default(1),
   sharepointFolderSiteId: text("sharepoint_folder_site_id"),
   sharepointFolderDriveId: text("sharepoint_folder_drive_id"),
@@ -50,7 +51,7 @@ export const deliverableVersions = pgTable("deliverable_versions", {
   versionNumber: integer("version_number").notNull(),
   changeReason: text("change_reason"),
   impactJson: jsonb("impact_json"),
-  status: text("status").notNull().default("IN PROGRESS"),
+  status: text("status").notNull().default("in_progress"),
   createdByUserId: integer("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

@@ -175,7 +175,7 @@ async function checkLatestImportForJcatFailure(projectId: number): Promise<boole
     .from(smartImportRuns)
     .where(and(
       eq(smartImportRuns.projectId, projectId),
-      eq(smartImportRuns.status, "COMMITTED"),
+      eq(smartImportRuns.status, "committed"),
     ))
     .orderBy(desc(smartImportRuns.committedAt))
     .limit(1);

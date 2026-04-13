@@ -2506,7 +2506,7 @@ export function ProjectKanbanView({
     }
   }, [searchTerm]);
 
-  const STATUS_MINI = getVisibleStatusesForView("board").filter((s) => s !== "PROJECTS ASSISTANCE" && s !== "OPERATIONAL APPROVAL");
+  const STATUS_MINI = getVisibleStatusesForView("board").filter((s) => s !== "projects_assistance" && s !== "operational_approval");
 
   return (
     <div className="space-y-4" data-testid="projects-view">
@@ -2591,10 +2591,10 @@ export function ProjectKanbanView({
                           <div className="flex gap-2 overflow-x-auto pb-2 pt-1" style={{ minHeight: "120px" }}>
                             {STATUS_MINI.map(status => {
                               const statusTasks = group.tasks.filter(t => {
-                                if (status === "COMPLETE") return isTaskCompleteForReporting(t.status);
+                                if (status === "complete") return isTaskCompleteForReporting(t.status);
                                 return t.status === status;
                               });
-                              if (status !== "TO DO" && status !== "IN PROGRESS" && statusTasks.length === 0) return null;
+                              if (status !== "to_do" && status !== "in_progress" && statusTasks.length === 0) return null;
 
                               return (
                                 <div

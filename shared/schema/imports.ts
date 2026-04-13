@@ -6,7 +6,7 @@ import { users } from "./users";
 import { projectInfo } from "./projects";
 import { counterparties, counterpartyTypeEnum } from "./finance";
 
-export const smartImportStatusEnum = pgEnum('smart_import_status', ['PREVIEW', 'AWAITING_REVIEW', 'COMMITTED', 'ROLLED_BACK', 'FAILED', 'SUPERSEDED']);
+export const smartImportStatusEnum = pgEnum('smart_import_status', ['preview', 'awaiting_review', 'committed', 'rolled_back', 'failed', 'superseded']);
 export const importIssueSeverityEnum = pgEnum('import_issue_severity', ['INFO', 'WARNING', 'BLOCKER']);
 export const importSectionEnum = pgEnum('import_section', ['PLAN', 'REVENUE', 'EXPENDITURE', 'CASHFLOW', 'GENERAL']);
 export const importTriggerTypeEnum = pgEnum('import_trigger_type', ['schedule', 'manual', 'webhook']);
@@ -147,7 +147,7 @@ export const smartImportRuns = pgTable("smart_import_runs", {
   uploadedAt: timestamp("uploaded_at").notNull().defaultNow(),
   sourceFileName: text("source_file_name").notNull(),
   sourceFileHash: text("source_file_hash"),
-  status: smartImportStatusEnum("status").notNull().default('PREVIEW'),
+  status: smartImportStatusEnum("status").notNull().default('preview'),
   templateProfileId: integer("template_profile_id"),
   summaryJson: jsonb("summary_json"),
   committedAt: timestamp("committed_at"),
@@ -522,7 +522,7 @@ export const importLogs = pgTable("import_logs", {
   /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name"),
   projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
-  status: text("status").notNull(), // SUCCESS, PARTIAL, FAILED, REJECTED
+  status: text("status").notNull(), // C6 canonical: 'success' | 'partial' | 'failed' | 'rejected'
   rowsAttempted: integer("rows_attempted").default(0),
   rowsWritten: integer("rows_written").default(0),
   rowsSkipped: integer("rows_skipped").default(0),

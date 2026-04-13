@@ -22,22 +22,23 @@ export interface TaskWorkflowConfig {
 
 const ENGINEERING_DEFAULT_STATUSES = [...TASK_STATUSES] as readonly TaskStatus[];
 
+// C6: canonical lowercase_underscore.
 const ENGINEERING_ALLOWED_TRANSITIONS: Partial<Record<TaskStatus, readonly TaskStatus[]>> = {
-  "TO DO": ["IN PROGRESS", "HOLD", "PROJECTS ASSISTANCE", "NEEDS APPROVAL", "COMPLETE"],
-  "IN PROGRESS": ["TO DO", "HOLD", "PROJECTS ASSISTANCE", "NEEDS APPROVAL", "COMPLETE"],
-  "HOLD": ["TO DO", "IN PROGRESS", "PROJECTS ASSISTANCE", "NEEDS APPROVAL"],
-  "PROJECTS ASSISTANCE": ["TO DO", "IN PROGRESS", "HOLD", "NEEDS APPROVAL"],
-  "NEEDS APPROVAL": ["PROVIDE FEEDBACK", "QC APPROVED", "OPERATIONAL APPROVAL", "IN PROGRESS"],
-  "PROVIDE FEEDBACK": ["TO DO", "IN PROGRESS", "NEEDS APPROVAL", "HOLD"],
-  "QC APPROVED": ["COMPLETE", "IN PROGRESS", "OPERATIONAL APPROVAL"],
-  "OPERATIONAL APPROVAL": ["QC APPROVED", "PROVIDE FEEDBACK", "IN PROGRESS", "COMPLETE"],
-  "COMPLETE": ["TO DO", "IN PROGRESS", "HOLD"],
+  to_do: ["in_progress", "hold", "projects_assistance", "needs_approval", "complete"],
+  in_progress: ["to_do", "hold", "projects_assistance", "needs_approval", "complete"],
+  hold: ["to_do", "in_progress", "projects_assistance", "needs_approval"],
+  projects_assistance: ["to_do", "in_progress", "hold", "needs_approval"],
+  needs_approval: ["provide_feedback", "qc_approved", "operational_approval", "in_progress"],
+  provide_feedback: ["to_do", "in_progress", "needs_approval", "hold"],
+  qc_approved: ["complete", "in_progress", "operational_approval"],
+  operational_approval: ["qc_approved", "provide_feedback", "in_progress", "complete"],
+  complete: ["to_do", "in_progress", "hold"],
 };
 
 const ENGINEERING_WORKFLOW: TaskWorkflowConfig = {
   key: "engineering",
   label: "Engineering",
-  defaultStatus: "TO DO",
+  defaultStatus: "to_do",
   defaultStatuses: ENGINEERING_DEFAULT_STATUSES,
   allowedTransitions: ENGINEERING_ALLOWED_TRANSITIONS,
   requiredFields: ["title"],
