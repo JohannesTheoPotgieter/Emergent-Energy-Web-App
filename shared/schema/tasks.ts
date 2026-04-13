@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, real, boolean, date, time, jsonb, unique, index } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, real, boolean, date, time, jsonb, unique, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -169,7 +169,7 @@ export const workItems = pgTable("work_items", {
   ownerUserId: integer("owner_user_id").references(() => users.id, { onDelete: "set null" }),
   ownerName: text("owner_name"),
   isShared: boolean("is_shared").notNull().default(false),
-  externalRef: text("external_ref").unique(),
+  externalRef: text("external_ref"),
   legacyTable: text("legacy_table"),
   legacyId: integer("legacy_id"),
   sourceRow: integer("source_row"),
@@ -226,6 +226,9 @@ export const workItems = pgTable("work_items", {
   statusIdx: index("work_items_status_idx").on(table.status),
   endDateIdx: index("work_items_end_date_idx").on(table.endDate),
   parentIdIdx: index("work_items_parent_id_idx").on(table.parentId),
+  uqWorkItemsExternalRefActive: uniqueIndex("uq_work_items_external_ref_active")
+    .on(table.externalRef)
+    .where(sql`${table.deletedAt} IS NULL`),
 }));
 export const insertWorkItemSchema = createInsertSchema(workItems).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertWorkItem = z.infer<typeof insertWorkItemSchema>;

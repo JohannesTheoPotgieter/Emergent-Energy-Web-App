@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, real, boolean, date, time, jsonb, unique, index } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, real, boolean, date, time, jsonb, unique, uniqueIndex, index } from "drizzle-orm/pg-core";
 
 // ==================== STATUS ENUMS ====================
 export const archivedStatusEnum = pgEnum("archived_status_enum", ["ACTIVE", "ARCHIVED", "ARCHIVED_MERGED", "GONE"]);
@@ -105,7 +105,7 @@ export type Opportunity = typeof opportunities.$inferSelect;
 export const projectInfo = pgTable("project_info", {
   // === IDENTITY (stays here) ===
   id: serial("id").primaryKey(),
-  projectName: text("project_name").notNull().unique(),
+  projectName: text("project_name").notNull(),
   sizeKwp: decimal("size_kwp", { precision: 12, scale: 2 }),
   pd: text("pd"),
   pm: text("pm"),
@@ -121,7 +121,11 @@ export const projectInfo = pgTable("project_info", {
   opportunityId: integer("opportunity_id").references(() => opportunities.id),
   deliveryModel: text("delivery_model"),     // 'turnkey', 'design_build', 'epc', 'consulting'
   projectCode: text("project_code"),
-});
+}, (table) => ({
+  uqProjectInfoProjectNameActive: uniqueIndex("uq_project_info_project_name_active")
+    .on(table.projectName)
+    .where(sql`${table.deletedAt} IS NULL`),
+}));
 
 export const insertProjectInfoSchema = createInsertSchema(projectInfo).omit({ id: true, updatedAt: true } as any);
 export type InsertProjectInfo = z.infer<typeof insertProjectInfoSchema>;
