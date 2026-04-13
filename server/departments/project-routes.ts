@@ -1015,7 +1015,9 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
         size_kwp: sizeKwp,
         pd: info?.pd || null,
         pm: info?.pm || null,
-        cost_proposal_signed: editable?.costProposalSigned || null,
+        // C5 (audit closeout): cost_proposal_signed and epc_contract_signed
+        // legacy text columns were dropped. Read canonical signed state from
+        // projectExecutionState.cpSigned / signedStatus instead.
         cost_proposal_type: editable?.costProposalType || null,
         cost_proposal_link: editable?.costProposalLink || null,
         cost_proposal_na_reason: editable?.costProposalNaReason || null,
@@ -1023,7 +1025,6 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
         funding_type: editable?.fundingType || null,
         funding_link: editable?.fundingLink || null,
         funding_na_reason: editable?.fundingNaReason || null,
-        epc_contract_signed: editable?.epcContractSigned || null,
         epc_contract_type: editable?.epcContractType || null,
         epc_contract_link: editable?.epcContractLink || null,
         epc_contract_na_reason: editable?.epcContractNaReason || null,
@@ -1101,9 +1102,9 @@ router.post("/api/projects-summary/:projectName/edit", requireAuth, requireAdmin
   try {
     const projectName = decodeURIComponent(req.params.projectName as string);
     const editSchema = z.object({
-      costProposalSigned: z.string().nullable().optional(),
+      // C5 (audit closeout): costProposalSigned and epcContractSigned removed.
+      // Use projectExecutionState.cpSigned / signedStatus to mutate signed state.
       fundingSigned: z.string().nullable().optional(),
-      epcContractSigned: z.string().nullable().optional(),
       costProposalType: z.enum(["link", "na"]).nullable().optional(),
       costProposalLink: z.string().nullable().optional(),
       costProposalNaReason: z.string().nullable().optional(),

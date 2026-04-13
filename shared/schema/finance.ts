@@ -10,19 +10,22 @@ import { workItems } from "./tasks";
 
 // ===================== ENUMS =====================
 
+// C6: All workflow status enums normalized to lowercase_underscore.
+// Internal type/category enums (counterparty_type, pattern_type) stay
+// UPPER because they're domain abbreviations, not workflow states.
 export const counterpartyTypeEnum = pgEnum('counterparty_type', ['SUPPLIER', 'INSTALLER', 'OTHER']);
-export const revenueLineStatusEnum = pgEnum('revenue_line_status', ['PLANNED', 'INVOICED', 'PAID', 'IN_BANK', 'REALISED']);
-export const costLineStatusEnum = pgEnum('cost_line_status', ['PLANNED', 'INVOICED', 'APPROVED', 'PAID']);
+export const revenueLineStatusEnum = pgEnum('revenue_line_status', ['planned', 'invoiced', 'paid', 'in_bank', 'realised']);
+export const costLineStatusEnum = pgEnum('cost_line_status', ['planned', 'invoiced', 'approved', 'paid']);
 export const patternTypeEnum = pgEnum('pattern_type', ['PREFIX', 'REGEX', 'TOKEN_SHAPE']);
-export const patternMatchOutcomeEnum = pgEnum('pattern_match_outcome', ['AUTO_APPLIED', 'USER_CONFIRMED', 'USER_OVERRIDDEN', 'UNRESOLVED']);
+export const patternMatchOutcomeEnum = pgEnum('pattern_match_outcome', ['auto_applied', 'user_confirmed', 'user_overridden', 'unresolved']);
 export const invoiceCaptureStatusEnum = pgEnum('invoice_capture_status', ['captured', 'submitted', 'verified', 'approved', 'rejected']);
 export const procurementCategoryEnum = pgEnum('procurement_category', ['material', 'equipment', 'service', 'subcontract', 'other']);
 export const procurementStatusEnum = pgEnum('procurement_status', ['requested', 'quoted', 'approved', 'ordered', 'partially_received', 'received', 'invoiced', 'closed']);
 export const procurementPaymentStatusEnum = pgEnum('procurement_payment_status', ['not_applicable', 'pending_approval', 'approved', 'scheduled', 'paid', 'on_hold']);
-export const trRagStatusEnum = pgEnum("tr_rag_status", ["Red", "Amber", "Green"]);
-export const trStatusEnum = pgEnum("tr_status", ["Active", "Completed"]);
-export const trLinkStatusEnum = pgEnum("tr_link_status", ["Linked", "TaskCreated", "Done"]);
-export const trSuggestionDecisionEnum = pgEnum("tr_suggestion_decision", ["Suggested", "Accepted", "Rejected", "Suppressed"]);
+export const trRagStatusEnum = pgEnum("tr_rag_status", ["red", "amber", "green"]);
+export const trStatusEnum = pgEnum("tr_status", ["active", "completed"]);
+export const trLinkStatusEnum = pgEnum("tr_link_status", ["linked", "task_created", "done"]);
+export const trSuggestionDecisionEnum = pgEnum("tr_suggestion_decision", ["suggested", "accepted", "rejected", "suppressed"]);
 export const rowSourceEnum = pgEnum("row_source", ["imported", "manual", "imported_edited"]);
 
 // ===================== PROGRAM EXPENSE =====================
@@ -470,7 +473,7 @@ export const normalizedRevenueLines = pgTable("normalized_revenue_lines", {
   paidDateFontColor: text("paid_date_font_color"),
   paidDateConfirmed: boolean("paid_date_confirmed"),
   inBankDate: date("in_bank_date"),
-  status: revenueLineStatusEnum("status").notNull().default('PLANNED'),
+  status: revenueLineStatusEnum("status").notNull().default('planned'),
   sourceSheet: text("source_sheet"),
   sourceRow: integer("source_row"),
   importRunId: integer("import_run_id").notNull().references(() => smartImportRuns.id),
@@ -493,7 +496,7 @@ export type NormalizedRevenueLine = typeof normalizedRevenueLines.$inferSelect;
 
 // ===================== CATEGORY REVENUE ALLOCATIONS =====================
 
-export const allocationConfidenceEnum = pgEnum('allocation_confidence', ['DIRECT', 'HEADER_ERROR_POSITIONAL', 'PROVISIONAL', 'MANUAL']);
+export const allocationConfidenceEnum = pgEnum('allocation_confidence', ['direct', 'header_error_positional', 'provisional', 'manual']);
 
 export const categoryRevenueAllocations = pgTable("category_revenue_allocations", {
   id: serial("id").primaryKey(),
@@ -504,7 +507,7 @@ export const categoryRevenueAllocations = pgTable("category_revenue_allocations"
   categoryKey: text("category_key").notNull(),
   categorySortOrder: integer("category_sort_order").notNull(),
   revenueAllocation: decimal("revenue_allocation", { precision: 15, scale: 2 }),
-  allocationConfidence: allocationConfidenceEnum("allocation_confidence").notNull().default('PROVISIONAL'),
+  allocationConfidence: allocationConfidenceEnum("allocation_confidence").notNull().default('provisional'),
   budgetTotal: decimal("budget_total", { precision: 15, scale: 2 }),
   budgetCos: decimal("budget_cos", { precision: 15, scale: 2 }),
   importRunId: integer("import_run_id").references(() => smartImportRuns.id),
@@ -546,7 +549,7 @@ export const normalizedCostLines = pgTable("normalized_cost_lines", {
   poNumber: text("po_number"),
   cosRealised: boolean("cos_realised"),
   cashflowConfirmed: boolean("cashflow_confirmed"),
-  status: costLineStatusEnum("cost_line_status").notNull().default('PLANNED'),
+  status: costLineStatusEnum("cost_line_status").notNull().default('planned'),
   sourceSheet: text("source_sheet"),
   sourceRow: integer("source_row"),
   importRunId: integer("import_run_id").notNull().references(() => smartImportRuns.id),
@@ -624,7 +627,7 @@ export const invoicePatternMatches = pgTable("invoice_pattern_matches", {
   inferredType: counterpartyTypeEnum("inferred_type").notNull().default('OTHER'),
   inferredCounterpartyId: integer("inferred_counterparty_id").references(() => counterparties.id),
   confidenceScore: integer("confidence_score").notNull().default(0),
-  outcome: patternMatchOutcomeEnum("outcome").notNull().default('UNRESOLVED'),
+  outcome: patternMatchOutcomeEnum("outcome").notNull().default('unresolved'),
   sourceRow: integer("source_row"),
   overrideReason: text("override_reason"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -687,13 +690,13 @@ export const trItems = pgTable("tr_items", {
   trId: text("tr_id").notNull().unique(),
   department: text("department").notNull(),
   actionDescription: text("action_description").notNull(),
-  ragStatus: trRagStatusEnum("rag_status").notNull().default("Green"),
+  ragStatus: trRagStatusEnum("rag_status").notNull().default("green"),
   owners: text("owners").array().notNull().default([]),
   ownerUserIds: integer("owner_user_ids").array(),
   support: text("support").array().notNull().default([]),
   dateRaised: timestamp("date_raised"),
   dueDate: timestamp("due_date"),
-  status: trStatusEnum("status").notNull().default("Active"),
+  status: trStatusEnum("status").notNull().default("active"),
   dateCompleted: timestamp("date_completed"),
   outcomeComments: text("outcome_comments"),
   supportingInfo: text("supporting_info"),
@@ -714,7 +717,7 @@ export const trItemProjectLinks = pgTable("tr_item_project_links", {
   trItemId: integer("tr_item_id").notNull().references(() => trItems.id, { onDelete: "cascade" }),
   projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   autoCreatedPmTaskId: integer("auto_created_pm_task_id").references(() => projectPlan.id, { onDelete: "set null" }),
-  linkStatus: trLinkStatusEnum("link_status").notNull().default("Linked"),
+  linkStatus: trLinkStatusEnum("link_status").notNull().default("linked"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   createdBy: text("created_by"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -728,7 +731,7 @@ export const trItemSuggestionDecisions = pgTable("tr_item_suggestion_decisions",
   id: serial("id").primaryKey(),
   trItemId: integer("tr_item_id").notNull().references(() => trItems.id, { onDelete: "cascade" }),
   projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
-  decision: trSuggestionDecisionEnum("decision").notNull().default("Suggested"),
+  decision: trSuggestionDecisionEnum("decision").notNull().default("suggested"),
   score: integer("score").notNull().default(0),
   rationale: text("rationale"),
   decidedAt: timestamp("decided_at"),
@@ -869,8 +872,10 @@ export const invoiceCaptures = pgTable("invoice_captures", {
   supplierId: integer("supplier_id").references(() => counterparties.id),
   invoiceNumber: text("invoice_number"),
   invoiceDate: date("invoice_date"),
-  amount: real("amount"),
-  vatAmount: real("vat_amount"),
+  // C4 (audit closeout): converted from real() to decimal(15,2) for exact ZAR storage.
+  // Migration: 20260412_financial_columns_to_numeric.sql
+  amount: decimal("amount", { precision: 15, scale: 2 }),
+  vatAmount: decimal("vat_amount", { precision: 15, scale: 2 }),
   linkedPoId: integer("linked_po_id"),  // FK added via migration to purchase_orders
   linkedProcurementItemId: integer("linked_procurement_item_id"),  // FK to procurement_items managed via migration
   status: invoiceCaptureStatusEnum("status").notNull().default('captured'),
@@ -896,10 +901,13 @@ export const procurementItems = pgTable("procurement_items", {
   title: text("title").notNull(),
   description: text("description"),
   category: procurementCategoryEnum("category").notNull().default('other'),
-  quantity: real("quantity"),
+  // C4 (audit closeout): quantities and costs converted from real() to decimal()
+  // for exact storage (no float rounding errors). Migration:
+  // 20260412_financial_columns_to_numeric.sql
+  quantity: decimal("quantity", { precision: 15, scale: 3 }),
   unit: text("unit"),
-  expectedCost: real("expected_cost"),
-  actualCost: real("actual_cost"),
+  expectedCost: decimal("expected_cost", { precision: 15, scale: 2 }),
+  actualCost: decimal("actual_cost", { precision: 15, scale: 2 }),
   supplierId: integer("supplier_id").references(() => counterparties.id),
   requestedByUserId: integer("requested_by_user_id").references(() => users.id, { onDelete: "set null" }),
   ownerUserId: integer("owner_user_id").references(() => users.id, { onDelete: "set null" }),
@@ -1133,6 +1141,16 @@ export const poReviewAssignments = pgTable("po_review_assignments", {
   decision: poReviewDecisionEnum("decision").notNull().default("pending"),
   decidedAt: timestamp("decided_at"),
   notes: text("notes"),
+  // B2 (audit closeout): manual delegation columns. When a reviewer cannot
+  // respond, either they themselves or an admin can reassign the approval
+  // via POST /api/po/:poId/delegate. The original assignment row is marked
+  // by setting delegatedToUserId to the new reviewer's user_id (the self-FK
+  // chain lets us reconstruct the full delegation history for audit). An
+  // active assignment is one where decision='pending' AND delegatedToUserId
+  // IS NULL.
+  delegatedToUserId: integer("delegated_to_user_id").references(() => users.id, { onDelete: "set null" }),
+  delegatedAt: timestamp("delegated_at"),
+  delegationReason: text("delegation_reason"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
@@ -1232,3 +1250,47 @@ export const proofOfPayment = pgTable("proof_of_payment", {
 export const insertProofOfPaymentSchema = createInsertSchema(proofOfPayment).omit({ id: true, createdAt: true } as any);
 export type InsertProofOfPayment = z.infer<typeof insertProofOfPaymentSchema>;
 export type ProofOfPayment = typeof proofOfPayment.$inferSelect;
+
+// ===================== COS PERIOD LOCKS (B5 audit closeout) =====================
+//
+// One row per month that has been locked for COS edits. The presence of a
+// row (with unlocked_at IS NULL) means "this month is locked — only COO or
+// CFO can modify cost-line data dated in this month". Unlock is logged by
+// setting unlocked_at, unlocked_by_user_id and unlock_reason — the row is
+// never deleted so the audit trail survives re-lock cycles.
+//
+// Lock lifecycle:
+//   1. Auto-lock: the scheduled job in server/bootstrap/cos-period-lock-
+//      scheduler.ts runs daily and inserts a row with auto_locked=true on
+//      the 3rd business day of the following month.
+//   2. Manual lock: POST /api/cos-periods/:yyyy-mm/lock inserts a row with
+//      auto_locked=false.
+//   3. Unlock: POST /api/cos-periods/:yyyy-mm/unlock sets unlocked_at,
+//      unlocked_by_user_id and unlock_reason. The lock check treats this
+//      as "unlocked".
+//   4. Re-lock: another POST /lock (or the next daily job) creates a new
+//      row for the same period_month.
+
+export const cosPeriodLocks = pgTable("cos_period_locks", {
+  id: serial("id").primaryKey(),
+  periodMonth: date("period_month").notNull(),      // First-of-month (e.g. 2026-03-01)
+  lockedAt: timestamp("locked_at").notNull().defaultNow(),
+  lockedByUserId: integer("locked_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  autoLocked: boolean("auto_locked").notNull().default(false),
+  // Unlock fields — soft-delete. When unlocked_at is set, this row is
+  // considered "no longer active".
+  unlockedAt: timestamp("unlocked_at"),
+  unlockedByUserId: integer("unlocked_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  unlockReason: text("unlock_reason"),
+  notes: text("notes"),
+}, (table) => ({
+  periodIdx: index("idx_cos_period_locks_period").on(table.periodMonth),
+  // Partial index for the hot "is this period currently locked?" query.
+  activeLockIdx: index("idx_cos_period_locks_active")
+    .on(table.periodMonth)
+    .where(sql`${table.unlockedAt} IS NULL`),
+}));
+
+export const insertCosPeriodLockSchema = createInsertSchema(cosPeriodLocks).omit({ id: true, lockedAt: true } as any);
+export type InsertCosPeriodLock = z.infer<typeof insertCosPeriodLockSchema>;
+export type CosPeriodLock = typeof cosPeriodLocks.$inferSelect;

@@ -35,6 +35,7 @@ interface GpItem {
   supplier: string | null;
   isRealised: boolean;
   noRevenueLinked: boolean;
+  canonicalLineKey?: string | null;
 }
 
 interface GpMonthData {

@@ -42,7 +42,7 @@ export default function FinancialReviewQueuePage() {
   const items = data?.items || [];
 
   return (
-    <PageShell title="Financial Review Queue" icon={DollarSign}>
+    <PageShell>
       <div className="space-y-3">
         {isLoading && (
           <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">

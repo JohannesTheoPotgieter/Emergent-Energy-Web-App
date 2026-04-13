@@ -423,8 +423,8 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
   }, [tasks, criticalPath]);
 
   // Initialize gantt date range when project stats change
-  const projectStartTime = projectStats?.projectStart ? projectStats.projectStart.getTime() : undefined;
-  const projectEndTime = projectStats?.projectEnd ? projectStats.projectEnd.getTime() : undefined;
+  const projectStartTime = projectStats?.projectStart ? (projectStats.projectStart as Date).getTime() : undefined;
+  const projectEndTime = projectStats?.projectEnd ? (projectStats.projectEnd as Date).getTime() : undefined;
   
   useEffect(() => {
     if (projectStats?.projectStart && projectStats?.projectEnd) {

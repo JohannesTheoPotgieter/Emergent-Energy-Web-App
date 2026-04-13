@@ -43,7 +43,8 @@ interface ChangeRequest {
   requested_by_name: string;
   owner_name: string;
   impact_summary: string;
-  cost_impact: number;
+  // C4 (audit closeout): server now returns cost_impact as decimal string
+  cost_impact: string | number | null;
   schedule_impact_days: number;
   status: string;
   approval_id: number | null;
@@ -116,9 +117,13 @@ function formatDate(d: string | null): string {
   }
 }
 
-function formatCurrency(n: number | null | undefined): string {
-  if (n == null || isNaN(n)) return "R0";
-  return "R" + Math.round(n).toLocaleString("en-ZA");
+function formatCurrency(n: string | number | null | undefined): string {
+  // C4 (audit closeout): cost columns are now decimal(15,2) in DB, returned as
+  // strings by Drizzle. Coerce to number defensively.
+  if (n == null) return "R0";
+  const num = typeof n === "string" ? parseFloat(n) : n;
+  if (Number.isNaN(num)) return "R0";
+  return "R" + Math.round(num).toLocaleString("en-ZA");
 }
 
 function statusLabel(s: string): string {
@@ -307,7 +312,11 @@ function ExpandedChangeRequest({ cr }: { cr: ChangeRequest }) {
           title: editTitle,
           description: editDescription,
           impactSummary: editImpact,
-          costImpact: parseFloat(editCost) || 0,
+          // C4 (audit closeout): server schema is z.string().optional() because
+          // cost_impact is a decimal(15,2) column. Send the trimmed string so
+          // Zod accepts it and PG can cast it to numeric. Empty input -> undefined
+          // (server writes null).
+          costImpact: editCost.trim() || undefined,
           scheduleImpactDays: parseInt(editDays) || 0,
         }),
       });
@@ -517,7 +526,8 @@ function CreateChangeRequestDialog({
           changeType,
           ownerUserId: ownerUserId ? parseInt(ownerUserId) : undefined,
           impactSummary,
-          costImpact: parseFloat(costImpact) || 0,
+          // C4 (audit closeout): see ProjectChangeControlTab.tsx ~line 315.
+          costImpact: costImpact.trim() || undefined,
           scheduleImpactDays: parseInt(scheduleImpactDays) || 0,
         }),
       });

@@ -980,7 +980,7 @@ export default function SubcontractorDashboardPage() {
             <AlertCircle className="w-8 h-8 mx-auto mb-2" />
             <p className="text-sm font-semibold">Procurement data could not be loaded.</p>
             <p className="text-xs mt-1 text-red-600/90">{(error as Error)?.message || "Please retry."}</p>
-            <Button variant="outline" size="sm" className="mt-4" onClick={() => refetch()} data-testid="btn-retry-procurement-summary">
+            <Button variant="outline" size="sm" className="mt-4" onClick={() => { (refetch as any)(); }} data-testid="btn-retry-procurement-summary">
               Retry
             </Button>
           </CardContent>

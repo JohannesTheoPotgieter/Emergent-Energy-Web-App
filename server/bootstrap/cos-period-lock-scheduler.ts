@@ -1,0 +1,150 @@
+/**
+ * B5 (audit closeout) — COS period auto-lock scheduler.
+ *
+ * Runs a daily check. When today (in SAST) is the 3rd business day of
+ * the current month, the previous month is automatically locked.
+ * Business days = Monday..Friday MINUS South African public holidays
+ * from the calendar_holiday table.
+ *
+ * Resilience:
+ *   - Idempotent: if the previous month is already locked (auto or
+ *     manual), the scheduler is a no-op.
+ *   - Fault-tolerant: a failure in one run does not take down the
+ *     server; errors are logged and the next run tries again.
+ *   - Catch-up: if the scheduler missed a day (e.g. the server was
+ *     down on the 3rd business day), the next run re-checks the same
+ *     calendar logic and will still lock if the target day has passed.
+ *     Specifically: when today >= 3rd business day of this month AND
+ *     the previous month has no active lock, auto-lock now.
+ *
+ * Startup wiring:
+ *   server/bootstrap/startup-orchestrator.ts imports
+ *   scheduleCosPeriodAutoLock() and calls it after DB init.
+ */
+
+import { db } from "../db";
+import { cosPeriodLocks } from "@shared/schema";
+import { and, eq, isNull } from "drizzle-orm";
+import {
+  loadZaHolidays,
+  nthBusinessDayOfMonth,
+  previousMonthFirst,
+  toIsoDateSast,
+} from "../lib/finance/period-lock";
+
+const DAILY_MS = 24 * 60 * 60 * 1000;
+const JITTER_MS = 60 * 1000; // ±60s jitter so multiple instances do not all fire at once
+
+let scheduledInterval: ReturnType<typeof setInterval> | null = null;
+let lastRunDate: string | null = null;
+
+/**
+ * Run one pass of the auto-lock check. Exported for manual trigger
+ * (e.g. admin debug endpoint, unit tests, catch-up run after a
+ * schema migration).
+ */
+export async function runCosPeriodAutoLockCheck(opts?: { now?: Date }): Promise<{
+  ranAt: string;
+  targetMonth: string | null;
+  autoLocked: boolean;
+  reason: string;
+}> {
+  const now = opts?.now ?? new Date();
+  const today = toIsoDateSast(now);
+  const y = Number(today.slice(0, 4));
+  const m = Number(today.slice(5, 7));
+
+  const holidays = await loadZaHolidays();
+  const thirdBusinessDay = nthBusinessDayOfMonth(y, m, 3, holidays);
+
+  // Catch-up rule: if today is AT OR AFTER the 3rd business day of the
+  // current month, we want to make sure the previous month is locked.
+  if (today < thirdBusinessDay) {
+    return {
+      ranAt: today,
+      targetMonth: null,
+      autoLocked: false,
+      reason: `Today (${today}) is before the 3rd business day of the month (${thirdBusinessDay}). No auto-lock yet.`,
+    };
+  }
+
+  const prevMonth = previousMonthFirst(now);
+
+  // Already locked? No-op.
+  const existing = await db
+    .select()
+    .from(cosPeriodLocks)
+    .where(
+      and(
+        eq(cosPeriodLocks.periodMonth, prevMonth as any),
+        isNull(cosPeriodLocks.unlockedAt),
+      ),
+    )
+    .limit(1);
+  if (existing.length > 0) {
+    return {
+      ranAt: today,
+      targetMonth: prevMonth,
+      autoLocked: false,
+      reason: `Period ${prevMonth} already has an active lock — no action needed.`,
+    };
+  }
+
+  await db.insert(cosPeriodLocks).values({
+    periodMonth: prevMonth as any,
+    lockedByUserId: null,
+    autoLocked: true,
+    notes: `Auto-locked by scheduled job on ${today} (3rd business day of ${today.slice(0, 7)}).`,
+  });
+
+  console.log(`[cos-period-lock] Auto-locked ${prevMonth} at ${today}.`);
+  return {
+    ranAt: today,
+    targetMonth: prevMonth,
+    autoLocked: true,
+    reason: `Locked ${prevMonth} because today (${today}) is the 3rd business day of ${today.slice(0, 7)}.`,
+  };
+}
+
+/**
+ * Wire the scheduler into the server lifecycle. Call this once at
+ * boot time. The scheduler:
+ *   - Runs one check immediately (covers the case where the server
+ *     was down on the 3rd business day).
+ *   - Then runs every 24 hours with a small jitter.
+ *   - Is a no-op on any run where the target month is already locked.
+ */
+export function scheduleCosPeriodAutoLock(): void {
+  if (scheduledInterval) return;
+
+  const safeRun = async () => {
+    try {
+      const today = toIsoDateSast(new Date());
+      if (lastRunDate === today) return; // already ran today
+      lastRunDate = today;
+      await runCosPeriodAutoLockCheck();
+    } catch (err) {
+      console.error("[cos-period-lock] Scheduler run failed:", err);
+    }
+  };
+
+  // Fire once at startup.
+  void safeRun();
+
+  // Then every 24 hours ±60s jitter.
+  const jitter = Math.floor((Math.random() - 0.5) * 2 * JITTER_MS);
+  scheduledInterval = setInterval(safeRun, DAILY_MS + jitter);
+  if (typeof scheduledInterval.unref === "function") {
+    scheduledInterval.unref();
+  }
+  console.log("[cos-period-lock] Auto-lock scheduler registered (daily + 1 immediate run).");
+}
+
+/** Testing hook — stop the scheduler and reset state. */
+export function stopCosPeriodAutoLockForTests(): void {
+  if (scheduledInterval) {
+    clearInterval(scheduledInterval);
+    scheduledInterval = null;
+  }
+  lastRunDate = null;
+}

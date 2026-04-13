@@ -2,7 +2,17 @@
 // Fix guide: use queryStr/queryInt from server/lib/req-parse for query params,
 // add explicit ': any' to .map/.filter callback params on db result rows.
 import { Router, type Express, type Request, type Response, type NextFunction } from "express";
-import { requireAuth, requireAdmin } from './shared-middleware';
+import { requireAuth, requireAdmin, requireCosOverrideRole } from './shared-middleware';
+import { PLACEHOLDER_INVOICES } from '../lib/finance/cos-realisation';
+import {
+  checkCosPeriodLock,
+  lockCosPeriod,
+  unlockCosPeriod,
+  getCosPeriodLockStatuses,
+  PERIOD_LOCK_OVERRIDE_ROLES,
+  firstOfMonthSast,
+} from '../lib/finance/period-lock';
+import { logAuditFromReq } from '../audit-logger';
 import { storage } from "../storage";
 import { db } from "../db";
 import { paramStr } from "../lib/req-params";
@@ -1967,12 +1977,74 @@ router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, 
     const expense = allExpenses.find(e => e.id === id);
     if (!expense) return res.status(404).json({ error: "Expense not found" });
 
-    if (realised && !expense.expenseInvoiceNumber) {
-      return res.status(400).json({ error: "Cannot mark as realised without an invoice number" });
+    // B5 (audit closeout): COS period lock check. Before we touch any
+    // recognition flag we must confirm the affected period is not locked.
+    // The effective month for a cost line is derived from the invoice
+    // date (preferred) or the payment date. If the row falls into a
+    // locked month:
+    //   - COO / CFO / CEO callers may proceed (bypass logged to audit)
+    //   - Everyone else gets 423 Locked with the period details
+    const effectiveDateForLock =
+      expense.expenseInvoicedDate || (expense as any).expensePaymentDate || null;
+    const lockStatus = await checkCosPeriodLock({
+      effectiveDate: effectiveDateForLock,
+      role: req.user?.role,
+    });
+    if (lockStatus?.locked && !lockStatus.canOverride) {
+      return res.status(423).json({
+        error: "period_locked",
+        period: lockStatus.period,
+        lockedAt: lockStatus.lockedAt,
+        message: `COS period ${lockStatus.period} is locked. Only COO / CFO / CEO can modify cost lines dated in this month. Either wait for a manager to unlock the period or ask them to make the change.`,
+      });
+    }
+    if (lockStatus?.locked && lockStatus.canOverride) {
+      logAuditFromReq(req, {
+        entityType: "normalized_cost_line",
+        entityId: String(id),
+        action: "cos.locked_period_override",
+        projectName: (expense as any).projectName ?? null,
+        changesJson: {
+          period: lockStatus.period,
+          reason: "realised flag toggled under locked-period override",
+          effectiveDate: effectiveDateForLock,
+          lockedAt: lockStatus.lockedAt,
+          overriddenByUserId: req.user?.id ?? null,
+          overriddenByRole: req.user?.role ?? null,
+        },
+      });
     }
 
-    if (realised && !expense.expenseInvoicedDate) {
-      return res.status(400).json({ error: "Cannot mark as realised without an invoice date" });
+    // B4 (audit closeout): COS recognition requires linked invoice evidence.
+    // The normal path enforces THREE things:
+    //   1. invoice number must be present
+    //   2. invoice number must NOT be a placeholder (TBC, pending, n/a, etc.)
+    //   3. invoice date must be present
+    // If any of these are missing the caller must go through the override
+    // endpoint /api/cos-tracker/override-status/:id which requires a
+    // mandatory reason and the broader role whitelist (COO/CFO/PFM/CEO).
+    if (realised) {
+      const invoiceNumber = String(expense.expenseInvoiceNumber || "").trim();
+      if (!invoiceNumber) {
+        return res.status(400).json({
+          error: "missing_invoice_number",
+          message:
+            "Cannot mark as realised without a linked invoice number. If you need to recognise without evidence, use POST /api/cos-tracker/override-status/:id with a reason (COO / CFO / PFM / CEO only).",
+        });
+      }
+      if (PLACEHOLDER_INVOICES.has(invoiceNumber.toLowerCase())) {
+        return res.status(400).json({
+          error: "placeholder_invoice_number",
+          message: `Invoice number "${invoiceNumber}" is a placeholder. Replace it with the real supplier invoice number before marking as realised, or use the override path with a reason.`,
+          placeholder: invoiceNumber,
+        });
+      }
+      if (!expense.expenseInvoicedDate) {
+        return res.status(400).json({
+          error: "missing_invoice_date",
+          message: "Cannot mark as realised without an invoice date.",
+        });
+      }
     }
 
     const updated = await updateExpenseFieldsDualTable(id, {
@@ -1983,6 +2055,20 @@ router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, 
       return res.status(500).json({ error: "Failed to update expense fields" });
     }
 
+    // B4: audit the realisation action so there's a per-line paper trail.
+    logAuditFromReq(req, {
+      entityType: "normalized_cost_line",
+      entityId: String(id),
+      action: realised ? "cos.realised_with_invoice" : "cos.unrealised",
+      projectName: (expense as any).projectName ?? null,
+      changesJson: {
+        realised,
+        invoiceNumber: expense.expenseInvoiceNumber ?? null,
+        invoiceDate: expense.expenseInvoicedDate ?? null,
+        projectId: (expense as any).projectId ?? null,
+      },
+    });
+
     res.json({ success: true, id, realised });
 
     if (expense.projectId) refreshProjectMetricsAsync(expense.projectId);
@@ -1992,9 +2078,15 @@ router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, 
   }
 });
 
-// ==================== ADMIN COS STATUS OVERRIDE ====================
+// ==================== COS STATUS OVERRIDE (B4: broadened role whitelist) ====================
+// Per B4 direction: "Admin override with reason — COO / CFO / PFM can
+// force-recognise with a mandatory reason field, logged in the audit trail."
+// Previously this endpoint was requireAdmin (COO_ADMIN / CEO_ADMIN only),
+// which excluded the CFO and the Program Finance Manager who should both
+// be empowered to override. The whitelist is now:
+//   COO_ADMIN, CEO_ADMIN, CFO, PROGRAM_FINANCE_MANAGER
 
-router.patch("/api/cos-tracker/override-status/:id", requireAuth, requireAdmin, async (req, res) => {
+router.patch("/api/cos-tracker/override-status/:id", requireAuth, requireCosOverrideRole, async (req, res) => {
   try {
     const id = parseInt(String(req.params.id || ""), 10);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid expense id" });
@@ -2012,13 +2104,57 @@ router.patch("/api/cos-tracker/override-status/:id", requireAuth, requireAdmin, 
       return res.status(400).json({ error: "cosStatus must be 'Planned', 'Committed', 'COS Realised', or null (to clear override)" });
     }
 
+    // B4: mandatory reason — the whole point of the override path is that
+    // it writes an audit trail explaining WHY recognition diverged from
+    // the evidence. A blank reason defeats the control.
     if (cosStatus !== null && (!reason || !reason.trim())) {
-      return res.status(400).json({ error: "A reason is required when setting an override" });
+      return res.status(400).json({
+        error: "missing_override_reason",
+        message: "A reason is required when setting a COS override. This is a financial control — the audit trail must explain why recognition is diverging from the linked invoice evidence.",
+      });
     }
 
     const allExpenses = await storage.getAllCostLinesForCashflow();
     const expense = allExpenses.find(e => e.id === id);
     if (!expense) return res.status(404).json({ error: "Expense not found" });
+
+    // B5: period lock check also applies to the override path. The B4
+    // whitelist (COO/CFO/PFM) is wider than the B5 bypass whitelist
+    // (COO/CFO/CEO) — so a PFM attempting an override on a locked period
+    // will be rejected with 423, not 403. They need a COO or CFO to
+    // unlock the period first.
+    const effectiveDateForLock =
+      expense.expenseInvoicedDate || (expense as any).expensePaymentDate || null;
+    const overrideLockStatus = await checkCosPeriodLock({
+      effectiveDate: effectiveDateForLock,
+      role: req.user?.role,
+    });
+    if (overrideLockStatus?.locked && !overrideLockStatus.canOverride) {
+      return res.status(423).json({
+        error: "period_locked",
+        period: overrideLockStatus.period,
+        lockedAt: overrideLockStatus.lockedAt,
+        message: `COS period ${overrideLockStatus.period} is locked. The B4 override path is gated to COO / CFO / CEO when the period is locked (PFM cannot bypass a period lock). Ask a COO or CFO to unlock the period or make the change.`,
+      });
+    }
+    if (overrideLockStatus?.locked && overrideLockStatus.canOverride) {
+      logAuditFromReq(req, {
+        entityType: "normalized_cost_line",
+        entityId: String(id),
+        action: "cos.locked_period_override",
+        projectName: (expense as any).projectName ?? null,
+        changesJson: {
+          period: overrideLockStatus.period,
+          reason: "cos status override applied under locked-period override",
+          effectiveDate: effectiveDateForLock,
+          lockedAt: overrideLockStatus.lockedAt,
+          overriddenByUserId: req.user?.id ?? null,
+          overriddenByRole: req.user?.role ?? null,
+        },
+      });
+    }
+
+    const previousOverride = (expense as any).cosStatusOverride ?? null;
 
     const overrideFields: Record<string, any> = {
       cosStatusOverride: cosStatus,
@@ -2039,6 +2175,25 @@ router.patch("/api/cos-tracker/override-status/:id", requireAuth, requireAdmin, 
       return res.status(500).json({ error: "Failed to update expense fields" });
     }
 
+    // B4: explicit audit-log entry tagged as override so downstream
+    // monitoring can flag the "recognition without evidence" events.
+    logAuditFromReq(req, {
+      entityType: "normalized_cost_line",
+      entityId: String(id),
+      action: cosStatus === null ? "cos.override_cleared" : "cos.override_applied",
+      projectName: (expense as any).projectName ?? null,
+      changesJson: {
+        previousOverride,
+        newOverride: cosStatus,
+        reason: cosStatus !== null ? reason : null,
+        invoiceNumber: expense.expenseInvoiceNumber ?? null,
+        invoiceDate: expense.expenseInvoicedDate ?? null,
+        overriddenByUserId: req.user?.id ?? null,
+        overriddenByRole: req.user?.role ?? null,
+        projectId: (expense as any).projectId ?? null,
+      },
+    });
+
     res.json({ success: true, id, cosStatus, overrideCleared: cosStatus === null });
 
     if (expense.projectId) refreshProjectMetricsAsync(expense.projectId);
@@ -2046,6 +2201,147 @@ router.patch("/api/cos-tracker/override-status/:id", requireAuth, requireAdmin, 
     if (error.status === 409) return res.status(409).json({ error: error.message });
     console.error("COS status override error:", error);
     res.status(500).json({ error: "Failed to override COS status" });
+  }
+});
+
+// ==================== COS PERIOD LOCKS (B5) ====================
+//
+// Three endpoints:
+//   GET  /api/cos-periods/status                     — lock state for a range
+//        of months, drives the padlock badges on the finance dashboards.
+//   POST /api/cos-periods/:yyyyMm/lock                — manual lock. Gated
+//        to PERIOD_LOCK_OVERRIDE_ROLES (COO_ADMIN, CEO_ADMIN, CFO).
+//   POST /api/cos-periods/:yyyyMm/unlock              — manual unlock. Same
+//        role whitelist. Requires a mandatory reason.
+//
+// Auto-lock happens via server/bootstrap/cos-period-lock-scheduler.ts on
+// the 3rd business day of the following month. That path creates rows
+// with auto_locked=true; these endpoints create/manipulate rows with
+// auto_locked=false.
+
+function requirePeriodLockRole(req: Request, res: Response, next: NextFunction) {
+  const role = req.user?.role ?? "";
+  if (PERIOD_LOCK_OVERRIDE_ROLES.has(role)) return next();
+  return res.status(403).json({
+    error: "forbidden",
+    reason:
+      "Only COO_ADMIN, CEO_ADMIN, or CFO can lock or unlock a COS period. PFM can override individual recognitions (B4) but cannot unlock a whole month.",
+    eligibleRoles: Array.from(PERIOD_LOCK_OVERRIDE_ROLES),
+  });
+}
+
+function parsePeriodParam(raw: string): string | null {
+  // Accept YYYY-MM or YYYY-MM-DD; normalize to YYYY-MM-01.
+  const trimmed = String(raw || "").trim();
+  const m = /^(\d{4})-(\d{2})(?:-\d{2})?$/.exec(trimmed);
+  if (!m) return null;
+  const [, y, mm] = m;
+  const mNum = Number(mm);
+  if (mNum < 1 || mNum > 12) return null;
+  return `${y}-${mm}-01`;
+}
+
+router.get("/api/cos-periods/status", requireAuth, async (req, res) => {
+  try {
+    const fromRaw = typeof req.query.from === "string" ? req.query.from : null;
+    const toRaw = typeof req.query.to === "string" ? req.query.to : null;
+    // Default: last 12 months through current month.
+    const now = new Date();
+    const thisMonth = firstOfMonthSast(now);
+    const fallbackFrom = (() => {
+      const y = Number(thisMonth.slice(0, 4));
+      const m = Number(thisMonth.slice(5, 7));
+      const prevY = m <= 12 ? (m === 1 ? y - 1 : y) : y;
+      // 12 months back
+      let fy = y;
+      let fm = m - 11;
+      while (fm < 1) { fm += 12; fy -= 1; }
+      return `${fy}-${String(fm).padStart(2, "0")}-01`;
+    })();
+
+    const fromMonth = parsePeriodParam(fromRaw ?? fallbackFrom) ?? fallbackFrom;
+    const toMonth = parsePeriodParam(toRaw ?? thisMonth) ?? thisMonth;
+
+    const statuses = await getCosPeriodLockStatuses({ fromMonth, toMonth });
+    res.json({ fromMonth, toMonth, periods: statuses });
+  } catch (error: any) {
+    console.error("COS period status error:", error);
+    res.status(500).json({ error: "Failed to load COS period lock statuses" });
+  }
+});
+
+router.post("/api/cos-periods/:yyyyMm/lock", requireAuth, requirePeriodLockRole, async (req, res) => {
+  try {
+    const period = parsePeriodParam(String(req.params.yyyyMm));
+    if (!period) return res.status(400).json({ error: "Invalid period. Expected YYYY-MM." });
+    const notes = typeof req.body?.notes === "string" ? req.body.notes.trim() : null;
+
+    // Idempotent: if there's already an active lock for this period,
+    // return it without inserting a second row.
+    const existing = await getCosPeriodLockStatuses({ fromMonth: period, toMonth: period });
+    if (existing[0]?.locked) {
+      return res.json({
+        success: true,
+        alreadyLocked: true,
+        period,
+        lockedAt: existing[0].lockedAt,
+      });
+    }
+
+    const id = await lockCosPeriod({
+      periodMonth: period,
+      lockedByUserId: req.user?.id ?? null,
+      autoLocked: false,
+      notes,
+    });
+
+    logAuditFromReq(req, {
+      entityType: "cos_period_lock",
+      entityId: String(id),
+      action: "cos_period.locked",
+      changesJson: { period, autoLocked: false, notes, lockedByRole: req.user?.role ?? null },
+    });
+
+    res.json({ success: true, alreadyLocked: false, period, id });
+  } catch (error: any) {
+    console.error("COS period lock error:", error);
+    res.status(500).json({ error: "Failed to lock COS period" });
+  }
+});
+
+router.post("/api/cos-periods/:yyyyMm/unlock", requireAuth, requirePeriodLockRole, async (req, res) => {
+  try {
+    const period = parsePeriodParam(String(req.params.yyyyMm));
+    if (!period) return res.status(400).json({ error: "Invalid period. Expected YYYY-MM." });
+
+    const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+    if (!reason) {
+      return res.status(400).json({
+        error: "missing_unlock_reason",
+        message: "A reason is required to unlock a COS period. This is a financial control — the audit trail must explain why the month is being reopened.",
+      });
+    }
+
+    const id = await unlockCosPeriod({
+      periodMonth: period,
+      unlockedByUserId: req.user?.id ?? null,
+      reason,
+    });
+    if (!id) {
+      return res.status(404).json({ error: "no_active_lock", period });
+    }
+
+    logAuditFromReq(req, {
+      entityType: "cos_period_lock",
+      entityId: String(id),
+      action: "cos_period.unlocked",
+      changesJson: { period, reason, unlockedByRole: req.user?.role ?? null },
+    });
+
+    res.json({ success: true, period, id });
+  } catch (error: any) {
+    console.error("COS period unlock error:", error);
+    res.status(500).json({ error: "Failed to unlock COS period" });
   }
 });
 

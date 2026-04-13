@@ -957,7 +957,7 @@ export default function PortfolioDetailPage() {
 
         <TabsContent value="cashflow" className="space-y-4">
           <CashflowTab
-            projectNames={Array.from(portfolioProjectNames)}
+            projectNames={Array.from(portfolioProjectNames) as string[]}
             title={`Cashflow — ${portfolio?.name || "Portfolio"}`}
           />
         </TabsContent>

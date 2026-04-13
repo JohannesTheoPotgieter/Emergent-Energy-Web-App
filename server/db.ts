@@ -571,9 +571,7 @@ async function ensureSqliteSchema() {
       CREATE TABLE IF NOT EXISTS project_editable_fields (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         project_name TEXT NOT NULL UNIQUE,
-        cost_proposal_signed TEXT,
         funding_signed TEXT,
-        epc_contract_signed TEXT,
         cost_proposal_type TEXT,
         cost_proposal_link TEXT,
         cost_proposal_na_reason TEXT,

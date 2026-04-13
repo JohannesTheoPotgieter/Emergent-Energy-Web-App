@@ -1,16 +1,94 @@
 /**
  * C3: HSE module routes
  * CRUD for hse_incidents and corrective_actions
+ *
+ * B3 (audit closeout) — Create vs Approve permission split:
+ *   - Any authenticated user can CREATE an incident or corrective action.
+ *     This is intentional: site workers, PMs, and engineers should all
+ *     be able to log safety events the moment they happen.
+ *   - Only HSE-approved roles (HSE_MANAGER, COO_ADMIN, CEO_ADMIN per the
+ *     hse.approve_roles entry in shared/schema/users.ts) can CHANGE THE
+ *     STATUS of an existing record (e.g. open -> investigating -> closed,
+ *     or a corrective action -> completed -> verified).
+ *   - All other field edits (description, location, root_cause, immediate
+ *     actions, evidence link, assignee, due date, etc.) remain open to
+ *     any authenticated user, so anyone can continue to enrich a record
+ *     with context after it is created.
  */
 import { Router, type Express, type Request, type Response } from "express";
 import { requireAuth } from "./shared-middleware";
+import { evaluatePermissionForRequest } from "../permission-middleware";
 import { db } from "../db";
 import { parseBody } from "../lib/input-validation";
 import { eq, desc, and, isNull } from "drizzle-orm";
 import { DEFAULT_QUERY_LIMIT } from "../lib/safe-query";
-import { hseIncidents, correctiveActions } from "@shared/schema/hse";
+import { hseIncidents, correctiveActions, insertHseIncidentSchema, insertCorrectiveActionSchema } from "@shared/schema/hse";
 
 const router = Router();
+
+/**
+ * Returns true if the incoming PATCH body attempts to change `status`
+ * from the current persisted value. Approvers are still allowed to send
+ * a status that matches the current one (it's a no-op) without being
+ * gated.
+ */
+async function approveGateForIncidentStatus(req: Request, res: Response, incidentId: number): Promise<boolean> {
+  if (!("status" in req.body)) return true;
+  const newStatus = req.body.status;
+  const [current] = await db
+    .select({ status: hseIncidents.status })
+    .from(hseIncidents)
+    .where(eq(hseIncidents.id, incidentId))
+    .limit(1);
+  if (!current) {
+    res.status(404).json({ error: "hse_incident_not_found" });
+    return false;
+  }
+  if (current.status === newStatus) return true;
+
+  const approval = await evaluatePermissionForRequest(req, "hse", "approve");
+  if (!approval.allowed) {
+    res.status(403).json({
+      error: "forbidden",
+      entity: "hse",
+      action: "approve",
+      reason: "Only HSE Manager, COO, or CEO can change an HSE incident's status.",
+      currentStatus: current.status,
+      attemptedStatus: newStatus,
+    });
+    return false;
+  }
+  return true;
+}
+
+async function approveGateForCorrectiveActionStatus(req: Request, res: Response, actionId: number): Promise<boolean> {
+  if (!("status" in req.body)) return true;
+  const newStatus = req.body.status;
+  const [current] = await db
+    .select({ status: correctiveActions.status })
+    .from(correctiveActions)
+    .where(eq(correctiveActions.id, actionId))
+    .limit(1);
+  if (!current) {
+    res.status(404).json({ error: "corrective_action_not_found" });
+    return false;
+  }
+  if (current.status === newStatus) return true;
+
+  const approval = await evaluatePermissionForRequest(req, "hse", "approve");
+  if (!approval.allowed) {
+    res.status(403).json({
+      error: "forbidden",
+      entity: "hse",
+      action: "approve",
+      reason: "Only HSE Manager, COO, or CEO can change a corrective action's status.",
+      currentStatus: current.status,
+      attemptedStatus: newStatus,
+    });
+    return false;
+  }
+  return true;
+}
 
 // ===================== HSE INCIDENTS =====================
 
@@ -48,10 +126,15 @@ router.post("/api/hse/incidents", requireAuth, async (req: Request, res: Respons
 
 router.patch("/api/hse/incidents/:id", requireAuth, async (req: Request, res: Response) => {
   try {
+    const id = Number(req.params.id);
+    // B3: gate status transitions behind hse.approve permission.
+    const allowed = await approveGateForIncidentStatus(req, res, id);
+    if (!allowed) return;
+
     const [row] = await db
       .update(hseIncidents)
       .set({ ...req.body, updatedAt: new Date() })
-      .where(eq(hseIncidents.id, Number(req.params.id)))
+      .where(eq(hseIncidents.id, id))
       .returning();
     res.json(row);
   } catch (err) {
@@ -113,10 +196,15 @@ router.post("/api/hse/corrective-actions", requireAuth, async (req: Request, res
 
 router.patch("/api/hse/corrective-actions/:id", requireAuth, async (req: Request, res: Response) => {
   try {
+    const id = Number(req.params.id);
+    // B3: gate status transitions behind hse.approve permission.
+    const allowed = await approveGateForCorrectiveActionStatus(req, res, id);
+    if (!allowed) return;
+
     const [row] = await db
       .update(correctiveActions)
       .set({ ...req.body, updatedAt: new Date() })
-      .where(eq(correctiveActions.id, Number(req.params.id)))
+      .where(eq(correctiveActions.id, id))
       .returning();
     res.json(row);
   } catch (err) {

@@ -2,7 +2,7 @@
 // STAGE LIFECYCLE SERVICE — Core CRUD + business logic
 // ============================================================
 
-import { and, eq, sql, isNull } from "drizzle-orm";
+import { and, desc, eq, sql, isNull } from "drizzle-orm";
 import {
   projectStageInstances,
   projectStageRequirements,
@@ -11,6 +11,7 @@ import {
   projectStageExceptions,
   stageDefinitions,
   stageChecklistTemplates,
+  stageGateEvidenceSnapshots,
   projectExecutionState,
   STAGE_CODES,
   type StageCode,
@@ -19,6 +20,9 @@ import {
   type InsertProjectStageRequirement,
   type ProjectStageInstance,
   type ProjectStageRequirement,
+  type StageGateEvidenceSnapshot,
+  type StageGateTransitionType,
+  type TrafficLight,
 } from "@shared/schema";
 import { db } from "../db";
 import {
@@ -31,18 +35,210 @@ import {
   STAGE_SEQUENCE,
 } from "../../shared/utils/stage-state-machine";
 
+// ── B1: Stage Gate Evidence Snapshots — audit trail helpers ──
+
+/**
+ * Pure helper: convert a readiness percentage (0..100) to a traffic-light
+ * classification. Thresholds match the B1 design:
+ *   100       -> green   (all gate requirements met)
+ *    80..99   -> amber   (most but not all)
+ *     0..79   -> red     (significant gaps)
+ */
+export function computeTrafficLight(readinessScore: number): TrafficLight {
+  if (readinessScore >= 100) return "green";
+  if (readinessScore >= 80) return "amber";
+  return "red";
+}
+
+type RequirementLike = {
+  itemCode: string;
+  itemName: string;
+  department: string;
+  status: string;
+  blocksGate: boolean;
+  evidenceAttached: boolean;
+  notes?: string | null;
+};
+
+function summarizeRequirements(reqs: ProjectStageRequirement[]): {
+  gatesTotal: number;
+  gatesPassed: number;
+  gatesMissing: number;
+  requirementsSnapshot: RequirementLike[];
+  missingItems: Array<{ itemCode: string; itemName: string; department: string; reason: string }>;
+} {
+  const gatesTotal = reqs.length;
+  let gatesPassed = 0;
+  const missingItems: Array<{ itemCode: string; itemName: string; department: string; reason: string }> = [];
+  const requirementsSnapshot: RequirementLike[] = reqs.map((r) => {
+    const isComplete = r.status === "COMPLETE";
+    if (isComplete) gatesPassed += 1;
+    else {
+      missingItems.push({
+        itemCode: r.itemCode,
+        itemName: r.itemName,
+        department: r.department,
+        reason: r.blocksGate
+          ? `Blocker not satisfied (status=${r.status}${r.evidenceAttached ? "" : ", no evidence attached"})`
+          : `Optional item not complete (status=${r.status})`,
+      });
+    }
+    return {
+      itemCode: r.itemCode,
+      itemName: r.itemName,
+      department: r.department,
+      status: r.status,
+      blocksGate: r.blocksGate,
+      evidenceAttached: r.evidenceAttached,
+      notes: r.notes ?? null,
+    };
+  });
+
+  return {
+    gatesTotal,
+    gatesPassed,
+    gatesMissing: gatesTotal - gatesPassed,
+    requirementsSnapshot,
+    missingItems,
+  };
+}
+
+/**
+ * Capture a stage-gate evidence snapshot at the moment of a transition.
+ * This NEVER blocks the transition — it is pure observability.
+ *
+ * Callers should invoke this after updating the stage instance but before
+ * returning to the caller, so the transition result and the snapshot are
+ * consistent with each other.
+ *
+ * Swallows all errors and logs them: a transient snapshot failure must
+ * never take down a stage transition.
+ */
+export async function captureStageGateSnapshot(params: {
+  projectId: number;
+  fromStageCode: string;
+  toStageCode: string;
+  stageInstanceId: number;
+  transitionType: StageGateTransitionType;
+  actorUserId: number;
+  reason?: string;
+  notes?: string;
+}): Promise<StageGateEvidenceSnapshot | null> {
+  try {
+    const reqs = await db
+      .select()
+      .from(projectStageRequirements)
+      .where(eq(projectStageRequirements.stageInstanceId, params.stageInstanceId));
+
+    const summary = summarizeRequirements(reqs);
+    const readinessScore = computeReadinessPct(reqs);
+    const blockersSatisfied = areGateBlockersSatisfied(reqs);
+    const trafficLight = computeTrafficLight(readinessScore);
+
+    // If the caller said "gate_approved" but blockers aren't satisfied,
+    // downgrade to "gate_fail_audit" so the history is honest about why
+    // the transition still proceeded.
+    const effectiveTransitionType: StageGateTransitionType =
+      params.transitionType === "gate_approved" && !blockersSatisfied
+        ? "gate_fail_audit"
+        : params.transitionType;
+
+    const [row] = await db
+      .insert(stageGateEvidenceSnapshots)
+      .values({
+        projectId: params.projectId,
+        fromStageCode: params.fromStageCode,
+        toStageCode: params.toStageCode,
+        transitionType: effectiveTransitionType,
+        advancedByUserId: params.actorUserId,
+        readinessScore,
+        gatesTotal: summary.gatesTotal,
+        gatesPassed: summary.gatesPassed,
+        gatesMissing: summary.gatesMissing,
+        blockersSatisfied,
+        trafficLight,
+        requirementsSnapshot: summary.requirementsSnapshot as any,
+        missingItems: summary.missingItems as any,
+        reason: params.reason ?? null,
+        notes: params.notes ?? null,
+      })
+      .returning();
+
+    return row;
+  } catch (err) {
+    console.error("[StageGateSnapshot] Failed to capture snapshot (transition continues):", err);
+    return null;
+  }
+}
+
+/**
+ * Return the evidence-snapshot history for a project in reverse chronological
+ * order. Used by the Stage Gate History tab and project-level post-mortem views.
+ */
+export async function getStageGateHistory(projectId: number, limit = 200): Promise<StageGateEvidenceSnapshot[]> {
+  return db
+    .select()
+    .from(stageGateEvidenceSnapshots)
+    .where(eq(stageGateEvidenceSnapshots.projectId, projectId))
+    .orderBy(desc(stageGateEvidenceSnapshots.advancedAt))
+    .limit(limit);
+}
+
+/**
+ * Compute the *current* (not historical) readiness of a stage for a project.
+ * Reads live from projectStageRequirements. Used by project headers and
+ * dashboards to show "Stage Gate Readiness" as a badge before any transition.
+ */
+export async function computeCurrentStageGateReadiness(projectId: number, stageCode: string): Promise<{
+  stageCode: string;
+  readinessScore: number;
+  trafficLight: TrafficLight;
+  gatesTotal: number;
+  gatesPassed: number;
+  gatesMissing: number;
+  blockersSatisfied: boolean;
+  missing: Array<{ itemCode: string; itemName: string; department: string; reason: string }>;
+} | null> {
+  const [instance] = await db
+    .select()
+    .from(projectStageInstances)
+    .where(and(
+      eq(projectStageInstances.projectId, projectId),
+      eq(projectStageInstances.stageCode, stageCode),
+    ));
+  if (!instance) return null;
+
+  const reqs = await db
+    .select()
+    .from(projectStageRequirements)
+    .where(eq(projectStageRequirements.stageInstanceId, instance.id));
+
+  const summary = summarizeRequirements(reqs);
+  const readinessScore = computeReadinessPct(reqs);
+  return {
+    stageCode,
+    readinessScore,
+    trafficLight: computeTrafficLight(readinessScore),
+    gatesTotal: summary.gatesTotal,
+    gatesPassed: summary.gatesPassed,
+    gatesMissing: summary.gatesMissing,
+    blockersSatisfied: areGateBlockersSatisfied(reqs),
+    missing: summary.missingItems,
+  };
+}
+
 // ── Initialize ──────────────────────────────────────────────
 
 /**
  * Create all 10 stage instances for a project.
  * Skips any that already exist (idempotent).
  */
+// Post-merge (migration 20260413_stage_lifecycle_merge): 8 active stages.
+// S04_PD_PM_HANDOVER folded into S03, S05_FINANCIAL_REVIEW folded into S02.
 const DEFAULT_STAGE_DEFS = [
   { stageCode: 'S01_FIRST_ASSESSMENT', stageName: 'First Assessment', stageSequence: 1, description: 'Initial site and feasibility assessment', defaultOwnerRole: 'PD', defaultApproverRole: 'COO' },
-  { stageCode: 'S02_DESIGN_COST_PROPOSAL', stageName: 'Design & Cost Proposal', stageSequence: 2, description: 'Engineering design and costing', defaultOwnerRole: 'ENGINEERING', defaultApproverRole: 'COO' },
-  { stageCode: 'S03_SIGNATURE_FINANCIAL_CLOSE', stageName: 'Financial Close', stageSequence: 3, description: 'Contract signature and financial close', defaultOwnerRole: 'PD', defaultApproverRole: 'CFO' },
-  { stageCode: 'S04_PD_PM_HANDOVER', stageName: 'PD to PM Handover', stageSequence: 4, description: 'Handover from project development to project management', defaultOwnerRole: 'PM', defaultApproverRole: 'COO' },
-  { stageCode: 'S05_FINANCIAL_REVIEW', stageName: 'Financial Review', stageSequence: 5, description: 'Pre-construction financial review', defaultOwnerRole: 'FINANCE', defaultApproverRole: 'CFO' },
+  { stageCode: 'S02_DESIGN_COST_PROPOSAL', stageName: 'Design & Cost Proposal', stageSequence: 2, description: 'Engineering design, costing, and pre-construction financial review (absorbed from former S05).', defaultOwnerRole: 'ENGINEERING', defaultApproverRole: 'COO' },
+  { stageCode: 'S03_SIGNATURE_FINANCIAL_CLOSE', stageName: 'Financial Close', stageSequence: 3, description: 'Contract signature, financial close, and PD-to-PM handover (absorbed from former S04).', defaultOwnerRole: 'PD', defaultApproverRole: 'CFO' },
   { stageCode: 'S06_CONSTRUCTION', stageName: 'Construction', stageSequence: 6, description: 'On-site construction phase', defaultOwnerRole: 'PM', defaultApproverRole: 'COO' },
   { stageCode: 'S07_COMMISSIONING', stageName: 'Commissioning', stageSequence: 7, description: 'System testing and commissioning', defaultOwnerRole: 'ENGINEERING', defaultApproverRole: 'COO' },
   { stageCode: 'S08_OM_HANDOVER', stageName: 'O&M Handover', stageSequence: 8, description: 'Handover to operations and maintenance', defaultOwnerRole: 'PM', defaultApproverRole: 'COO' },
@@ -52,7 +248,9 @@ const DEFAULT_STAGE_DEFS = [
 
 async function ensureStageDefinitions() {
   const existing = await db.select().from(stageDefinitions).where(eq(stageDefinitions.isActive, true));
-  if (existing.length >= 10) return;
+  // Post-merge there are 8 active stages. The check is ">=" so a future
+  // addition still triggers re-seed.
+  if (existing.length >= DEFAULT_STAGE_DEFS.length) return;
   const existingCodes = new Set(existing.map((e: any) => e.stageCode));
   const toSeed = DEFAULT_STAGE_DEFS.filter(d => !existingCodes.has(d.stageCode));
   if (toSeed.length > 0) {
@@ -235,28 +433,23 @@ export async function transitionStageStatus(params: TransitionParams): Promise<P
     throw new Error(`Invalid transition from ${currentStatus} to ${newStatus}${isAdmin ? '' : ' (not admin)'}`);
   }
 
-  // If transitioning to APPROVED or PROGRESSED, check gate blockers
-  if ((newStatus === 'APPROVED' || newStatus === 'PROGRESSED') && !isAdmin) {
-    const requirements = await db
-      .select()
-      .from(projectStageRequirements)
-      .where(eq(projectStageRequirements.stageInstanceId, instance.id));
-
-    if (!areGateBlockersSatisfied(requirements)) {
-      const missing = getUnsatisfiedBlockers(requirements as any);
-      throw new Error(`Gate blockers not satisfied: ${missing.join(', ')}`);
-    }
-  }
+  // B1 (audit closeout): stage gates NEVER block a transition. We record
+  // what evidence was captured at this moment in stage_gate_evidence_snapshots
+  // and proceed regardless of blocker state. Post-mortems can query the
+  // snapshot history to explain why a project failed six months later.
+  //
+  // The snapshot write happens after the status update below so that the
+  // captured `to_stage_code` is the effective new status.
 
   const updateData: Record<string, any> = {
     stageStatus: newStatus,
     updatedAt: new Date(),
   };
 
-  if (newStatus === 'IN_PROGRESS' && !instance.startedAt) {
+  if (newStatus === 'in_progress' && !instance.startedAt) {
     updateData.startedAt = new Date();
   }
-  if (newStatus === 'PROGRESSED' || newStatus === 'APPROVED') {
+  if (newStatus === 'progressed' || newStatus === 'approved') {
     updateData.completedAt = new Date();
   }
 
@@ -269,12 +462,28 @@ export async function transitionStageStatus(params: TransitionParams): Promise<P
   await db.insert(projectStageDecisions).values({
     projectId,
     stageCode,
-    decisionType: isAdmin ? 'STAGE_OVERRIDE' : (newStatus === 'APPROVED' ? 'GATE_PASS' : 'GATE_FAIL'),
+    decisionType: isAdmin ? 'stage_override' : (newStatus === 'approved' ? 'gate_pass' : 'gate_fail'),
     decisionSummary: `Stage ${stageCode} transitioned from ${currentStatus} to ${newStatus}${reason ? ': ' + reason : ''}`,
     decidedByUserId: actorUserId,
     decidedDate: new Date(),
     rationale: reason || null,
   });
+
+  // B1: capture stage gate evidence snapshot for post-mortem. Non-blocking.
+  if (newStatus === 'approved' || newStatus === 'progressed') {
+    const transitionType = isAdmin
+      ? 'admin_advance'
+      : (newStatus === 'approved' ? 'gate_approved' : 'gate_progressed');
+    await captureStageGateSnapshot({
+      projectId,
+      fromStageCode: stageCode,
+      toStageCode: stageCode,    // same stage transitioning status; from/to refer to the stage being closed out
+      stageInstanceId: instance.id,
+      transitionType,
+      actorUserId,
+      reason,
+    });
+  }
 
   // Sync to project_execution_state
   await syncCurrentStage(projectId);
@@ -601,6 +810,19 @@ export async function advanceToStage(params: {
         decidedByUserId: actorUserId,
         decidedDate: now,
         rationale: reason || 'Admin bulk advance — aligning project with current reality',
+      });
+
+      // B1: snapshot evidence BEFORE the instance was marked PROGRESSED so
+      // the history reflects what was really captured at the moment of skip.
+      // We fetch requirements again to preserve the original state.
+      await captureStageGateSnapshot({
+        projectId,
+        fromStageCode: inst.stageCode,
+        toStageCode: targetStageCode,
+        stageInstanceId: inst.id,
+        transitionType: 'admin_advance',
+        actorUserId,
+        reason: reason || 'Admin bulk advance — aligning project with current reality',
       });
 
       skipped.push(inst.stageCode);

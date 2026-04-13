@@ -491,7 +491,7 @@ export function WeeklyReviewWizard({ projectName, snapshotMetrics }: WeeklyRevie
                     />
                     <SearchableSelect
                       value={action.priority}
-                      onValueChange={(v) => { const n = [...actions]; n[idx] = { ...n[idx], priority: v }; setActions(n); }}
+                      onValueChange={(v) => { const n = [...actions]; n[idx] = { ...n[idx], priority: v as "high" | "low" | "medium" }; setActions(n); }}
                       triggerClassName="h-7 text-xs"
                       options={[
                         { value: "high", label: "High" },

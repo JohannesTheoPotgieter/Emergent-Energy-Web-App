@@ -1906,7 +1906,7 @@ function CaptureInvoiceDialog({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["invoice-captures", projectId] });
       onOpenChange(false);
-      setForm({ invoiceNumber: "", invoiceDate: "", amount: "", vatAmount: "", supplierId: "", linkedPoId: "", linkedProcurementItemId: "", notes: "" });
+      setForm({ invoiceNumber: "", invoiceDate: "", amount: "", vatAmount: "", supplierId: "", linkedPoId: "", linkedProcurementItemId: "", notes: "", budgetLine: "", linkedDeliverableId: "", linkedMilestone: "" });
       setFile(null);
     },
   });

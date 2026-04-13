@@ -38,6 +38,7 @@ interface MonthItem {
   isRealised: boolean;
   cosStatus: string;
   paymentDate: string | null;
+  canonicalLineKey?: string | null;
 }
 
 interface ProjectMonthData {
@@ -108,7 +109,7 @@ const ROW_DEFS: {
 
 function MonthDetailDrawer({ month, onClose, defaultFilter = "all" }: { month: ProjectMonthData; onClose: () => void; defaultFilter?: "all" | "realised" | "committed" | "unrealised" }) {
   const [search, setSearch] = useState("");
-  const [stateFilter, setStateFilter] = useState<"all" | "realised" | "unrealised">(defaultFilter);
+  const [stateFilter, setStateFilter] = useState<"all" | "realised" | "committed" | "unrealised">(defaultFilter);
 
   const filtered = useMemo(() => {
     let items = month.items || [];

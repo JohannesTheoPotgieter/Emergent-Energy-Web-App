@@ -104,7 +104,7 @@ function FinanceCharts({ portfolio }: { portfolio: any }) {
     GP: Math.round(p.grossProfit / 1000),
   }));
 
-  const fin = portfolio.finance || {};
+  const fin: any = portfolio.finance || {};
   const gp = (fin.actualRevenue || 0) - (fin.actualExpenses || 0);
   const gpMargin = (fin.actualRevenue || 0) > 0 ? (gp / (fin.actualRevenue || 1)) * 100 : 0;
 
@@ -220,7 +220,7 @@ function ProjectDrillTable({ portfolio }: { portfolio: any }) {
         </thead>
         <tbody>
           {schedule.map((s: any) => {
-            const fin = financeByName.get(s.projectName) || {};
+            const fin: any = financeByName.get(s.projectName) || {};
             const delta = s.delta || 0;
             return (
               <tr key={s.projectName} className="border-t border-border/30 hover:bg-muted/20 transition-colors">

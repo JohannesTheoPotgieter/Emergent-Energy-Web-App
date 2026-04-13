@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { engFetch } from "@/lib/eng-fetch";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
@@ -76,7 +77,8 @@ interface ProjectSummary {
   size_kwp: number | null;
   pd: string | null;
   pm: string | null;
-  cost_proposal_signed: string | null;
+  // C5 (audit closeout): cost_proposal_signed and epc_contract_signed removed.
+  // Canonical signed state lives on projectExecutionState (cpSigned, signedStatus).
   cost_proposal_type: string | null;
   cost_proposal_link: string | null;
   cost_proposal_na_reason: string | null;
@@ -84,7 +86,6 @@ interface ProjectSummary {
   funding_type: string | null;
   funding_link: string | null;
   funding_na_reason: string | null;
-  epc_contract_signed: string | null;
   epc_contract_type: string | null;
   epc_contract_link: string | null;
   epc_contract_na_reason: string | null;
@@ -841,9 +842,9 @@ const COLUMN_WIDTHS: Record<string, string> = {
   size_kwp: "42px",
   pd: "78px",
   pm: "78px",
-  cost_proposal_signed: "62px",
+  cost_proposal_type: "62px",
   funding_signed: "62px",
-  epc_contract_signed: "62px",
+  epc_contract_type: "62px",
   financial_close: "52px",
   phase: "90px",
   escalation_level: "58px",
@@ -868,7 +869,7 @@ const COLUMN_WIDTHS: Record<string, string> = {
 const COLUMN_GROUPS_META: { label: string; keys: string[]; color: string; stickyFirst?: boolean }[] = [
   { label: "Project Info", keys: ["project_name", "client_name", "size_kwp", "pd", "pm"], color: "bg-muted text-muted-foreground", stickyFirst: true },
   { label: "Execution", keys: ["rag_status", "pd_pm_handover_status", "execution_attention"], color: "bg-blue-50 text-blue-700" },
-  { label: "Financial Close", keys: ["cost_proposal_signed", "funding_signed", "epc_contract_signed", "financial_close"], color: "bg-emerald-50 text-emerald-700" },
+  { label: "Financial Close", keys: ["cost_proposal_type", "funding_signed", "epc_contract_type", "financial_close"], color: "bg-emerald-50 text-emerald-700" },
   { label: "Phase & Schedule", keys: ["phase", "escalation_level", "pd_handover_date", "construction_start_date", "commissioning_date", "om_handover_date", "client_handover_date", "duration", "kw_per_week"], color: "bg-blue-50 text-blue-700" },
   { label: "Progress", keys: ["project_pct_complete", "expected_pct_complete", "delta_vs_expected"], color: "bg-violet-50 text-violet-700" },
   { label: "Financials", keys: ["actual_revenue", "actual_expenses", "cashflow_delta", "gp_percent", "tracking_gp_percent", "cos_realised_pct", "revenue_outstanding", "expenses_due", "financial_summary"], color: "bg-green-50 text-green-700" },
@@ -1073,6 +1074,18 @@ function EditProjectInfoModal({
 }) {
   const qc = useQueryClient();
   const rawName = project.project_name.replace(/_Tracker.*$/i, "");
+
+  // PM selector data — fetched inline because this modal is a separate
+  // component from ProjectsSummary.
+  const { data: pmUsers = [] } = useQuery<{ id: number; name: string; username?: string; role: string }[]>({
+    queryKey: ["/api/pm-assignable-users"],
+    queryFn: async () => {
+      const res = await engFetch("/api/pm-assignable-users");
+      if (!res || !res.ok) return [];
+      return res.json();
+    },
+    enabled: open,
+  });
 
   const [formData, setFormData] = useState({
     projectName: rawName,
@@ -1801,7 +1814,7 @@ export default function ProjectsSummary() {
       header: "PM",
       render: (p) => isAdmin && p.project_info_id ? (
         <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-0.5">
-          <SpreadsheetIcon className="w-2.5 h-2.5 text-muted-foreground/40 shrink-0" title="PM is managed via Excel import. Manual changes may be overwritten on next import." />
+          <span title="PM is managed via Excel import. Manual changes may be overwritten on next import."><SpreadsheetIcon className="w-2.5 h-2.5 text-muted-foreground/40 shrink-0" /></span>
           <SearchableSelect
           value={p.pm || "__unassigned"}
           placeholder={!p.pm ? "No PM" : undefined}
@@ -1831,7 +1844,7 @@ export default function ProjectsSummary() {
       ),
     },
     {
-      key: "cost_proposal_signed",
+      key: "cost_proposal_type",
       header: "Cost Prop.",
       render: (p) => (
         <FinancialCloseCell
@@ -1859,7 +1872,7 @@ export default function ProjectsSummary() {
       ),
     },
     {
-      key: "epc_contract_signed",
+      key: "epc_contract_type",
       header: "EPC",
       render: (p) => (
         <FinancialCloseCell
@@ -2246,7 +2259,7 @@ export default function ProjectsSummary() {
         description={`${sorted.length} of ${currentProjects.length} ${viewTab === "active" ? "active" : "archived"} projects${(pmFilter !== "all" || excludedPhases.size > 0 || searchTerm) ? " (filtered)" : ""}`}
         actions={
           <div className="flex items-center gap-2">
-            {canAccessEntityAction("project_create", "create") && (
+            {canAccessEntityAction("project_create" as any, "create") && (
               <Link href="/project-create">
                 <Button
                   size="sm"

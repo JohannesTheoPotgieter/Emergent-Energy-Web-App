@@ -159,7 +159,7 @@ export function registerTrRegisterRoutes(app: Express) {
       if (owner) conditions.push(sql`${owner} = ANY(${trItems.owners})`);
       if (overdue === "true") {
         conditions.push(sql`${trItems.dueDate} < NOW()`);
-        conditions.push(ne(trItems.status, "Completed"));
+        conditions.push(ne(trItems.status, "completed"));
       }
 
       const query = db
@@ -528,8 +528,8 @@ export function registerTrRegisterRoutes(app: Express) {
       const decisions: TrSuggestionDecision[] = await db.select()
         .from(trItemSuggestionDecisions)
         .where(eq(trItemSuggestionDecisions.trItemId, id));
-      const rejectedIds = new Set(decisions.filter((d: TrSuggestionDecision) => d.decision === "Rejected").map((d: TrSuggestionDecision) => d.projectId));
-      const suppressedIds = new Set(decisions.filter((d: TrSuggestionDecision) => d.decision === "Suppressed").map((d: TrSuggestionDecision) => d.projectId));
+      const rejectedIds = new Set(decisions.filter((d: TrSuggestionDecision) => d.decision === "rejected").map((d: TrSuggestionDecision) => d.projectId));
+      const suppressedIds = new Set(decisions.filter((d: TrSuggestionDecision) => d.decision === "suppressed").map((d: TrSuggestionDecision) => d.projectId));
 
       type ScoredProject = { projectId: number; projectName: string; score: number; rationale: string[] };
       const scored: ScoredProject[] = allProjects.map((project: ProjectInfo) => {

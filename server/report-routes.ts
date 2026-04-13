@@ -475,7 +475,7 @@ export function registerReportRoutes(app: Express) {
         sourceFileName: smartImportRuns.sourceFileName,
       })
       .from(smartImportRuns)
-      .where(eq(smartImportRuns.status, "COMMITTED"))
+      .where(eq(smartImportRuns.status, "committed"))
       .orderBy(desc(smartImportRuns.committedAt));
 
     const allRuns = await query;

@@ -84,6 +84,38 @@ export async function registerDepartmentRoutes(app: Express) {
     console.error("[Routes] Failed to register hse-routes:", err);
   }
 
+  // B7: Safety File (OHSA)
+  try {
+    const { registerSafetyFileRoutes } = await import("../departments/safety-file-routes");
+    registerSafetyFileRoutes(app);
+  } catch (err) {
+    console.error("[Routes] Failed to register safety-file-routes:", err);
+  }
+
+  // B8: O&M Handover tracker + dashboard
+  try {
+    const { registerOmHandoverRoutes } = await import("../departments/om-handover-routes");
+    registerOmHandoverRoutes(app);
+  } catch (err) {
+    console.error("[Routes] Failed to register om-handover-routes:", err);
+  }
+
+  // C1: Integration health dashboard
+  try {
+    const { registerIntegrationHealthRoutes } = await import("../departments/integration-health-routes");
+    registerIntegrationHealthRoutes(app);
+  } catch (err) {
+    console.error("[Routes] Failed to register integration-health-routes:", err);
+  }
+
+  // C2: Dashboard snapshot read + freshness panel
+  try {
+    const { registerDashboardRefreshRoutes } = await import("../departments/dashboard-refresh-routes");
+    registerDashboardRefreshRoutes(app);
+  } catch (err) {
+    console.error("[Routes] Failed to register dashboard-refresh-routes:", err);
+  }
+
   // C4: Handover Packs
   try {
     const { registerHandoverRoutes } = await import("../departments/handover-routes");

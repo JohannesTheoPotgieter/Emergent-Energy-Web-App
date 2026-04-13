@@ -570,7 +570,7 @@ function TaskDetailContent({
             </Badge>
             <Badge
               data-testid="badge-priority"
-              className={priorityColor[task.priority] ?? ""}
+              className={(task.priority && priorityColor[task.priority]) ?? ""}
               variant="secondary"
             >
               <Flag className="h-3 w-3 mr-1" />
@@ -795,7 +795,7 @@ function TaskDetailContent({
             <Flag className="h-3 w-3" /> Priority
           </label>
           <SearchableSelect
-            value={task.priority}
+            value={task.priority ?? undefined}
             onValueChange={(v) => updateTask({ priority: v })}
             data-testid="select-priority"
             triggerClassName="h-8 text-xs"

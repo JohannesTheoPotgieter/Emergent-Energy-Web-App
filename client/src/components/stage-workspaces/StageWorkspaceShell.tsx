@@ -99,7 +99,7 @@ export function StageWorkspaceShell({
               <Button
                 key={next}
                 size="sm"
-                variant={next === "APPROVED" || next === "PROGRESSED" ? "default" : "outline"}
+                variant={next === "approved" || next === "progressed" ? "default" : "outline"}
                 onClick={() => handleTransition(next)}
                 disabled={transitionMutation.isPending}
               >

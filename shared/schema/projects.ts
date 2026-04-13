@@ -342,9 +342,13 @@ export const projectEditableFields = pgTable("project_editable_fields", {
   /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull().unique(),
   projectId: integer("project_id").references(() => projectInfo.id),
-  costProposalSigned: text("cost_proposal_signed"),
+  // C5 (audit closeout): legacy `cost_proposal_signed` and `epc_contract_signed`
+  // text columns were dropped by migration 20260412_drop_legacy_signed_text_fields.sql.
+  // The canonical source of truth for contract-signed state is now:
+  //   - projectExecutionState.cpSigned (boolean) for cost proposal
+  //   - projectExecutionState.signedStatus (NONE/PENDING/SIGNED) for the EPC contract
+  // The remaining fields below are document-storage metadata, not signed-status.
   fundingSigned: text("funding_signed"),
-  epcContractSigned: text("epc_contract_signed"),
   costProposalType: text("cost_proposal_type"),
   costProposalLink: text("cost_proposal_link"),
   costProposalNaReason: text("cost_proposal_na_reason"),
@@ -897,7 +901,9 @@ export const changeRequests = pgTable("change_requests", {
   requestedByUserId: integer("requested_by_user_id").references(() => users.id),
   ownerUserId: integer("owner_user_id").references(() => users.id),
   impactSummary: text("impact_summary"),
-  costImpact: real("cost_impact"),
+  // C4 (audit closeout): converted from real() to decimal(15,2) for exact ZAR storage.
+  // Migration: 20260412_financial_columns_to_numeric.sql
+  costImpact: decimal("cost_impact", { precision: 15, scale: 2 }),
   scheduleImpact: integer("schedule_impact_days"),
   status: changeRequestStatusEnum("status").notNull().default('draft'),
   approvalId: integer("approval_id"),

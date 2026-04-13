@@ -15,6 +15,9 @@ import { projectInfo } from "./projects";
 
 // ===================== CONSTANTS =====================
 
+// All stage codes that have ever existed. Kept stable for back-references
+// in historical data (stage_gate_evidence_snapshots, project_stage_decisions
+// for closed projects, etc.). New code should iterate ACTIVE_STAGE_CODES.
 export const STAGE_CODES = [
   'S01_FIRST_ASSESSMENT',
   'S02_DESIGN_COST_PROPOSAL',
@@ -29,14 +32,56 @@ export const STAGE_CODES = [
 ] as const;
 export type StageCode = typeof STAGE_CODES[number];
 
+/**
+ * Stage codes that are deprecated and merged into another stage. Kept in
+ * STAGE_CODES for backward-compat reads but excluded from ACTIVE_STAGE_CODES
+ * so iteration / next-stage / progression logic skips them.
+ *
+ * Migration 20260413_stage_lifecycle_merge:
+ *   S04_PD_PM_HANDOVER  -> merged into S03_SIGNATURE_FINANCIAL_CLOSE
+ *   S05_FINANCIAL_REVIEW -> merged into S02_DESIGN_COST_PROPOSAL
+ */
+export const DEPRECATED_STAGE_CODES = new Set<StageCode>([
+  'S04_PD_PM_HANDOVER',
+  'S05_FINANCIAL_REVIEW',
+]);
+
+/**
+ * Map from deprecated stage codes to their replacement. Used by phase
+ * resolution and any service that needs to translate a legacy stage
+ * reference into the active equivalent.
+ */
+export const DEPRECATED_STAGE_REPLACEMENTS: Record<string, StageCode> = {
+  S04_PD_PM_HANDOVER: 'S03_SIGNATURE_FINANCIAL_CLOSE',
+  S05_FINANCIAL_REVIEW: 'S02_DESIGN_COST_PROPOSAL',
+};
+
+/**
+ * The 8 active stages — what every new code path should iterate.
+ * Order matches STAGE_CODES so sequence-based logic still works.
+ */
+export const ACTIVE_STAGE_CODES = STAGE_CODES.filter(
+  (c) => !DEPRECATED_STAGE_CODES.has(c),
+) as readonly StageCode[];
+
+/**
+ * Translate a stage code to its active equivalent. Returns the input
+ * unchanged if it's already active.
+ */
+export function resolveActiveStageCode(code: string): StageCode {
+  return (DEPRECATED_STAGE_REPLACEMENTS[code] ?? (code as StageCode));
+}
+
+// C6: canonical lowercase_underscore. Migration 20260413_status_casing
+// rewrites every existing stage_status row.
 export const STAGE_STATUSES = [
-  'NOT_STARTED',
-  'IN_PROGRESS',
-  'READY_FOR_REVIEW',
-  'APPROVED',
-  'PROGRESSED',
-  'EXCEPTION_APPROVED',
-  'BLOCKED',
+  'not_started',
+  'in_progress',
+  'ready_for_review',
+  'approved',
+  'progressed',
+  'exception_approved',
+  'blocked',
 ] as const;
 export type StageStatus = typeof STAGE_STATUSES[number];
 
@@ -56,43 +101,44 @@ export const LIFECYCLE_DEPARTMENTS = [
 ] as const;
 export type LifecycleDepartment = typeof LIFECYCLE_DEPARTMENTS[number];
 
+// C6: canonical lowercase_underscore.
 export const REQUIREMENT_STATUSES = [
-  'NOT_STARTED',
-  'IN_PROGRESS',
-  'COMPLETE',
-  'NOT_APPLICABLE',
-  'WAIVED',
+  'not_started',
+  'in_progress',
+  'complete',
+  'not_applicable',
+  'waived',
 ] as const;
 export type RequirementStatus = typeof REQUIREMENT_STATUSES[number];
 
 export const EXCEPTION_STATUSES = [
-  'REQUESTED',
-  'APPROVED',
-  'APPROVED_WITH_CONDITIONS',
-  'REJECTED',
-  'CLOSED',
-  'RE_OPENED',
+  'requested',
+  'approved',
+  'approved_with_conditions',
+  'rejected',
+  'closed',
+  're_opened',
 ] as const;
 export type ExceptionStatus = typeof EXCEPTION_STATUSES[number];
 
-export const RISK_LEVELS = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const;
+export const RISK_LEVELS = ['low', 'medium', 'high', 'critical'] as const;
 export type RiskLevel = typeof RISK_LEVELS[number];
 
 export const DECISION_TYPES = [
-  'GATE_PASS',
-  'GATE_FAIL',
-  'EXCEPTION_GRANTED',
-  'EXCEPTION_DENIED',
-  'STAGE_OVERRIDE',
-  'STAGE_ROLLBACK',
+  'gate_pass',
+  'gate_fail',
+  'exception_granted',
+  'exception_denied',
+  'stage_override',
+  'stage_rollback',
 ] as const;
 export type DecisionType = typeof DECISION_TYPES[number];
 
 export const DEPENDENCY_STATUSES = [
-  'WAITING',
-  'RESOLVED',
-  'ESCALATED',
-  'BYPASSED',
+  'waiting',
+  'resolved',
+  'escalated',
+  'bypassed',
 ] as const;
 export type DependencyStatus = typeof DEPENDENCY_STATUSES[number];
 
@@ -155,7 +201,7 @@ export const projectStageInstances = pgTable("project_stage_instances", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   stageCode: text("stage_code").notNull(),
-  stageStatus: text("stage_status").notNull().default("NOT_STARTED"),
+  stageStatus: text("stage_status").notNull().default("not_started"),
   stageOwnerUserId: integer("stage_owner_user_id").references(() => users.id, { onDelete: "set null" }),
   approverUserId: integer("approver_user_id").references(() => users.id, { onDelete: "set null" }),
   readinessPct: integer("readiness_pct").notNull().default(0),
@@ -191,7 +237,7 @@ export const projectStageRequirements = pgTable("project_stage_requirements", {
   itemCode: text("item_code").notNull(),
   ownerUserId: integer("owner_user_id").references(() => users.id, { onDelete: "set null" }),
   dueDate: date("due_date"),
-  status: text("status").notNull().default("NOT_STARTED"),
+  status: text("status").notNull().default("not_started"),
   blocksGate: boolean("blocks_gate").notNull().default(false),
   evidenceUrl: text("evidence_url"),
   evidenceAttached: boolean("evidence_attached").notNull().default(false),
@@ -267,11 +313,11 @@ export const projectStageExceptions = pgTable("project_stage_exceptions", {
   stageCode: text("stage_code").notNull(),
   requirementCode: text("requirement_code"),
   reasonText: text("reason_text").notNull(),
-  riskLevel: text("risk_level").notNull().default("MEDIUM"),
+  riskLevel: text("risk_level").notNull().default("medium"),
   mitigationText: text("mitigation_text"),
   ownerUserId: integer("owner_user_id").references(() => users.id, { onDelete: "set null" }),
   approverUserId: integer("approver_user_id").references(() => users.id, { onDelete: "set null" }),
-  status: text("status").notNull().default("REQUESTED"),
+  status: text("status").notNull().default("requested"),
   conditionsText: text("conditions_text"),
   closeoutDueDate: date("closeout_due_date"),
   downstreamBlockingStage: text("downstream_blocking_stage"),
@@ -301,7 +347,7 @@ export const projectStageDependencies = pgTable("project_stage_dependencies", {
   toUserId: integer("to_user_id").references(() => users.id, { onDelete: "set null" }),
   description: text("description").notNull(),
   dueDate: date("due_date"),
-  status: text("status").notNull().default("WAITING"),
+  status: text("status").notNull().default("waiting"),
   escalated: boolean("escalated").notNull().default(false),
   escalationReason: text("escalation_reason"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -314,6 +360,58 @@ export const projectStageDependencies = pgTable("project_stage_dependencies", {
 export const insertProjectStageDependencySchema = createInsertSchema(projectStageDependencies).omit({ id: true, createdAt: true } as any);
 export type InsertProjectStageDependency = z.infer<typeof insertProjectStageDependencySchema>;
 export type ProjectStageDependency = typeof projectStageDependencies.$inferSelect;
+
+// ===================== STAGE GATE EVIDENCE SNAPSHOTS =====================
+// B1 (audit closeout) — Audit-only capture of what was present at the moment
+// of every stage transition. NOT a blocker. Stage transitions always proceed;
+// this table records what evidence was captured vs missing so post-mortems can
+// explain why a project went sideways.
+//
+// Population sources:
+//   - transitionStageStatus() — writes one row per transition (approved,
+//     progressed, gate_fail). Even when blockers are missing, the transition
+//     proceeds and this row records the gap.
+//   - advanceToStage() — writes one row per stage the admin bulk-advances so
+//     the "why was this advanced without evidence" trail is preserved.
+
+export const TRAFFIC_LIGHTS = ['green', 'amber', 'red'] as const;
+export type TrafficLight = typeof TRAFFIC_LIGHTS[number];
+
+export const STAGE_GATE_TRANSITION_TYPES = ['gate_approved', 'gate_progressed', 'admin_advance', 'gate_fail_audit'] as const;
+export type StageGateTransitionType = typeof STAGE_GATE_TRANSITION_TYPES[number];
+
+export const stageGateEvidenceSnapshots = pgTable("stage_gate_evidence_snapshots", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
+  fromStageCode: text("from_stage_code").notNull(),
+  toStageCode: text("to_stage_code").notNull(),
+  transitionType: text("transition_type").notNull(),         // 'gate_approved' | 'gate_progressed' | 'admin_advance' | 'gate_fail_audit'
+  advancedByUserId: integer("advanced_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  advancedAt: timestamp("advanced_at").notNull().defaultNow(),
+  // Quantitative readiness
+  readinessScore: integer("readiness_score").notNull(),      // 0..100 integer
+  gatesTotal: integer("gates_total").notNull(),
+  gatesPassed: integer("gates_passed").notNull(),
+  gatesMissing: integer("gates_missing").notNull(),
+  blockersSatisfied: boolean("blockers_satisfied").notNull(),
+  trafficLight: text("traffic_light").notNull(),             // 'green' | 'amber' | 'red'
+  // Detailed evidence snapshot
+  requirementsSnapshot: jsonb("requirements_snapshot").notNull().default([]),
+  // Shape: [{itemCode, itemName, department, status, blocksGate, evidenceAttached, notes?}]
+  missingItems: jsonb("missing_items").notNull().default([]),
+  // Shape: [{itemCode, itemName, department, reason}]
+  reason: text("reason"),                                    // Free-text why advanced
+  notes: text("notes"),                                      // Optional context
+}, (table) => ({
+  projectIdIdx: index("sges_project_id_idx").on(table.projectId),
+  advancedAtIdx: index("sges_advanced_at_idx").on(table.advancedAt),
+  fromStageIdx: index("sges_from_stage_idx").on(table.fromStageCode),
+  trafficLightIdx: index("sges_traffic_light_idx").on(table.trafficLight),
+}));
+
+export const insertStageGateEvidenceSnapshotSchema = createInsertSchema(stageGateEvidenceSnapshots).omit({ id: true, advancedAt: true } as any);
+export type InsertStageGateEvidenceSnapshot = z.infer<typeof insertStageGateEvidenceSnapshotSchema>;
+export type StageGateEvidenceSnapshot = typeof stageGateEvidenceSnapshots.$inferSelect;
 
 // ===================== PROJECT ACCESS =====================
 // Project-level access control (Layer 2 of 3-layer permission model)

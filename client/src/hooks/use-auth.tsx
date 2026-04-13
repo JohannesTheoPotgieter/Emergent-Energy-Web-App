@@ -25,6 +25,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
 
   useEffect(() => {
+    // A3 (audit closeout): browser auth uses the httpOnly session cookie.
+    // Eagerly purge any legacy `auth_token` that may still be in localStorage
+    // so that XSS cannot exfiltrate it from a long-lived browser session.
+    try {
+      if (localStorage.getItem("auth_token")) {
+        localStorage.removeItem("auth_token");
+      }
+    } catch {
+      // localStorage unavailable — nothing to clean up.
+    }
     checkBuildVersion().then(() => checkAuth());
   }, []);
 

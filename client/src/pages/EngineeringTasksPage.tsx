@@ -1087,7 +1087,7 @@ export function TaskDetailDrawer({
   const projectPhaseInfo = useMemo(() => {
     if (!task.projectName) return null;
     const proj = drawerProjects.find((p: any) => p.raw === task.projectName || p.project_name === task.projectName);
-    const phase = proj?.phase as ProjectPhase | undefined;
+    const phase = (proj as any)?.phase as ProjectPhase | undefined;
     const slug = task.projectName.replace(/ /g, "_");
     return {
       phaseLabel: phase ? PROJECT_PHASE_LABELS[phase as keyof typeof PROJECT_PHASE_LABELS] || phase : null,
@@ -1754,7 +1754,7 @@ export function TaskDetailDrawer({
                         <div className="flex gap-2 pt-2">
                           <Button
                             className="flex-1 h-9 text-sm bg-amber-600 hover:bg-amber-700 gap-1.5"
-                            disabled={sendingForApproval || (approvalProjectSuggestion && approvalProjectFinal && approvalProjectSuggestion !== approvalProjectFinal && !approvalProjectOverrideReason.trim()) || (approvalRouteSuggestion && approvalRouteFinal && approvalRouteSuggestion !== approvalRouteFinal && !approvalRouteOverrideReason.trim())}
+                            disabled={sendingForApproval || !!(approvalProjectSuggestion && approvalProjectFinal && approvalProjectSuggestion !== approvalProjectFinal && !approvalProjectOverrideReason.trim()) || !!(approvalRouteSuggestion && approvalRouteFinal && approvalRouteSuggestion !== approvalRouteFinal && !approvalRouteOverrideReason.trim())}
                             onClick={async () => {
                               setSendingForApproval(true);
                               try {
@@ -1956,7 +1956,7 @@ export function TaskDetailDrawer({
                         triggerClassName="h-9 text-sm"
                         options={teamMembers.filter(m => m.id !== user?.id).map(m => ({
                           value: String(m.id),
-                          label: m.name,
+                          label: m.fullName,
                         }))}
                         data-testid="select-deliverable-recipient"
                       />
@@ -2022,7 +2022,7 @@ export function TaskDetailDrawer({
                     <div className="flex gap-2 pt-2">
                       <Button
                         className="flex-1 h-9 text-sm bg-blue-600 hover:bg-blue-700 gap-1.5"
-                        disabled={!deliverableRecipient || !deliverableFile || sendingDeliverable || (recipientSuggestion && deliverableRecipient && recipientSuggestion !== deliverableRecipient && !recipientOverrideReason.trim()) || (linkedProjectSuggestion && linkedProjectFinal && linkedProjectSuggestion !== linkedProjectFinal && !linkedProjectOverrideReason.trim())}
+                        disabled={!deliverableRecipient || !deliverableFile || sendingDeliverable || !!(recipientSuggestion && deliverableRecipient && recipientSuggestion !== deliverableRecipient && !recipientOverrideReason.trim()) || !!(linkedProjectSuggestion && linkedProjectFinal && linkedProjectSuggestion !== linkedProjectFinal && !linkedProjectOverrideReason.trim())}
                         onClick={async () => {
                           setSendingDeliverable(true);
                           try {
@@ -2506,7 +2506,7 @@ export function ProjectKanbanView({
     }
   }, [searchTerm]);
 
-  const STATUS_MINI = getVisibleStatusesForView("board").filter((s) => s !== "PROJECTS ASSISTANCE" && s !== "OPERATIONAL APPROVAL");
+  const STATUS_MINI = getVisibleStatusesForView("board").filter((s) => s !== "projects_assistance" && s !== "operational_approval");
 
   return (
     <div className="space-y-4" data-testid="projects-view">
@@ -2591,10 +2591,10 @@ export function ProjectKanbanView({
                           <div className="flex gap-2 overflow-x-auto pb-2 pt-1" style={{ minHeight: "120px" }}>
                             {STATUS_MINI.map(status => {
                               const statusTasks = group.tasks.filter(t => {
-                                if (status === "COMPLETE") return isTaskCompleteForReporting(t.status);
+                                if (status === "complete") return isTaskCompleteForReporting(t.status);
                                 return t.status === status;
                               });
-                              if (status !== "TO DO" && status !== "IN PROGRESS" && statusTasks.length === 0) return null;
+                              if (status !== "to_do" && status !== "in_progress" && statusTasks.length === 0) return null;
 
                               return (
                                 <div
@@ -3305,7 +3305,7 @@ export function MyTasksView({
             triggerClassName="w-[140px] h-8 text-xs"
             options={[
               { value: "all", label: "All Projects" },
-              ...uniqueProjects.map(p => ({ value: p, label: p.replace(/_Tracker.*$/i, "").replace(/_/g, " ") })),
+              ...uniqueProjects.filter((p): p is string => !!p).map(p => ({ value: p, label: p.replace(/_Tracker.*$/i, "").replace(/_/g, " ") })),
             ]}
             data-testid="my-tasks-filter-project"
           />
@@ -4340,7 +4340,7 @@ export default function EngineeringTasksPage() {
                           return;
                         }
                         const matchedMember = pageTeamMembers.find((m: any) => String(m.id) === v);
-                        const displayName = matchedMember?.fullName || matchedMember?.name || "";
+                        const displayName = matchedMember?.fullName || (matchedMember as any)?.name || "";
                         setNewTask(p => ({ ...p, assignees: displayName ? [displayName] : [], ownerUserId: Number(v), ownerDisplayName: displayName }));
                       }}
                       placeholder="Select assignee"

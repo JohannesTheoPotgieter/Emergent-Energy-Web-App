@@ -5,16 +5,17 @@
 // Every gate is a soft gate — admin can always override.
 
 import type { StageStatus, RequirementStatus, StageCode } from "../schema/stage-lifecycle";
+import { ACTIVE_STAGE_CODES, DEPRECATED_STAGE_CODES } from "../schema/stage-lifecycle";
 
-// Valid state transitions (non-admin)
+// Valid state transitions (non-admin) — C6 canonical lowercase_underscore
 export const VALID_STAGE_TRANSITIONS: Record<StageStatus, StageStatus[]> = {
-  NOT_STARTED: ['IN_PROGRESS'],
-  IN_PROGRESS: ['READY_FOR_REVIEW', 'BLOCKED'],
-  READY_FOR_REVIEW: ['APPROVED', 'IN_PROGRESS', 'BLOCKED'],
-  APPROVED: ['PROGRESSED'],
-  PROGRESSED: [],
-  EXCEPTION_APPROVED: ['IN_PROGRESS', 'PROGRESSED'],
-  BLOCKED: ['IN_PROGRESS', 'EXCEPTION_APPROVED'],
+  not_started: ['in_progress'],
+  in_progress: ['ready_for_review', 'blocked'],
+  ready_for_review: ['approved', 'in_progress', 'blocked'],
+  approved: ['progressed'],
+  progressed: [],
+  exception_approved: ['in_progress', 'progressed'],
+  blocked: ['in_progress', 'exception_approved'],
 };
 
 /**
@@ -32,14 +33,14 @@ export function canTransition(from: StageStatus, to: StageStatus, isAdmin: boole
 export function getValidNextStates(current: StageStatus, isAdmin: boolean): StageStatus[] {
   if (isAdmin) {
     // Admin can go to any non-current state
-    const all: StageStatus[] = ['NOT_STARTED', 'IN_PROGRESS', 'READY_FOR_REVIEW', 'APPROVED', 'PROGRESSED', 'EXCEPTION_APPROVED', 'BLOCKED'];
+    const all: StageStatus[] = ['not_started', 'in_progress', 'ready_for_review', 'approved', 'progressed', 'exception_approved', 'blocked'];
     return all.filter(s => s !== current);
   }
   return VALID_STAGE_TRANSITIONS[current] ?? [];
 }
 
 /** Statuses considered "done" for a requirement */
-const COMPLETED_STATUSES: RequirementStatus[] = ['COMPLETE', 'NOT_APPLICABLE', 'WAIVED'];
+const COMPLETED_STATUSES: RequirementStatus[] = ['complete', 'not_applicable', 'waived'];
 
 /**
  * Compute readiness percentage from requirement statuses.
@@ -84,26 +85,26 @@ export interface StatusSentenceInput {
 export function generateStatusSentence(input: StatusSentenceInput): string {
   const { stageStatus, readinessPct, waitingOnDepartment, waitingOnUserName, unsatisfiedBlockers, openExceptionCount } = input;
 
-  if (stageStatus === 'PROGRESSED') {
+  if (stageStatus === 'progressed') {
     return 'Stage complete — progressed to next stage.';
   }
 
-  if (stageStatus === 'BLOCKED') {
+  if (stageStatus === 'blocked') {
     if (unsatisfiedBlockers.length > 0) {
       return `Blocked: ${unsatisfiedBlockers.slice(0, 3).join(', ')}${unsatisfiedBlockers.length > 3 ? ` (+${unsatisfiedBlockers.length - 3} more)` : ''}`;
     }
     return 'Blocked — requires resolution before progression.';
   }
 
-  if (stageStatus === 'EXCEPTION_APPROVED') {
+  if (stageStatus === 'exception_approved') {
     return `Progressed under approved exception${openExceptionCount > 1 ? ` (${openExceptionCount} open)` : ''}.`;
   }
 
-  if (stageStatus === 'READY_FOR_REVIEW') {
+  if (stageStatus === 'ready_for_review') {
     return 'Ready for approval.';
   }
 
-  if (stageStatus === 'APPROVED') {
+  if (stageStatus === 'approved') {
     return 'Approved — ready to progress.';
   }
 
@@ -135,27 +136,49 @@ export function computeDaysInStage(startedAt: Date | string | null): number {
 
 /**
  * Stage sequence map for ordering.
+ *
+ * Deprecated stages (S04, S05) are kept in this map so legacy data
+ * still resolves to a number, but they share the sequence of their
+ * replacement stage. New iteration / next-stage logic uses
+ * ACTIVE_STAGE_SEQUENCE which excludes them.
  */
 export const STAGE_SEQUENCE: Record<StageCode, number> = {
   S01_FIRST_ASSESSMENT: 1,
   S02_DESIGN_COST_PROPOSAL: 2,
   S03_SIGNATURE_FINANCIAL_CLOSE: 3,
-  S04_PD_PM_HANDOVER: 4,
-  S05_FINANCIAL_REVIEW: 5,
-  S06_CONSTRUCTION: 6,
-  S07_COMMISSIONING: 7,
-  S08_OM_HANDOVER: 8,
-  S09_CLIENT_HANDOVER: 9,
-  S10_POST_HANDOVER_REVIEW: 10,
+  S04_PD_PM_HANDOVER: 3,             // merged into S03
+  S05_FINANCIAL_REVIEW: 2,           // merged into S02
+  S06_CONSTRUCTION: 4,
+  S07_COMMISSIONING: 5,
+  S08_OM_HANDOVER: 6,
+  S09_CLIENT_HANDOVER: 7,
+  S10_POST_HANDOVER_REVIEW: 8,
 };
 
 /**
- * Get the next stage code given the current one.
+ * Active-only sequence (8 stages after the S03/S04 + S02/S05 merge).
+ */
+export const ACTIVE_STAGE_SEQUENCE: ReadonlyArray<StageCode> = ACTIVE_STAGE_CODES;
+
+/**
+ * Get the next ACTIVE stage code given the current one. Deprecated
+ * stages are first translated to their active replacement before the
+ * lookup, so a stale reference to S04 still finds the correct next
+ * stage (S06_CONSTRUCTION).
+ *
  * Returns null if at the final stage.
  */
 export function getNextStageCode(current: StageCode): StageCode | null {
-  const seq = STAGE_SEQUENCE[current];
-  const codes = Object.entries(STAGE_SEQUENCE) as [StageCode, number][];
-  const next = codes.find(([, s]) => s === seq + 1);
-  return next ? next[0] : null;
+  const active = DEPRECATED_STAGE_CODES.has(current)
+    ? // S04 -> S03, S05 -> S02 mapping lives in stage-lifecycle.ts but
+      // we don't import the runtime helper here to keep this file
+      // tree-shake-friendly. Inline the two cases.
+      current === 'S04_PD_PM_HANDOVER'
+        ? 'S03_SIGNATURE_FINANCIAL_CLOSE'
+        : 'S02_DESIGN_COST_PROPOSAL'
+    : current;
+  const idx = ACTIVE_STAGE_SEQUENCE.indexOf(active);
+  if (idx === -1) return null;
+  if (idx === ACTIVE_STAGE_SEQUENCE.length - 1) return null;
+  return ACTIVE_STAGE_SEQUENCE[idx + 1] ?? null;
 }

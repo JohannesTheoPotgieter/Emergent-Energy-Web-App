@@ -17,17 +17,19 @@ import { db } from "../db";
 import { isRevenueSettled } from "../lib/finance/revenue-ar-status";
 import { computeMarginPct } from "../lib/finance/margin";
 import { isCanonicalCosRealised, OVERRIDE_REALISED, OVERRIDE_NOT_REALISED } from "../lib/finance/cos-realisation";
+// Post-merge sequence — S04/S05 share the index of their replacement
+// so legacy stage references still order correctly.
 const STAGE_ORDER = new Map([
   ["S01_FIRST_ASSESSMENT", 1],
   ["S02_DESIGN_COST_PROPOSAL", 2],
   ["S03_SIGNATURE_FINANCIAL_CLOSE", 3],
-  ["S04_PD_PM_HANDOVER", 4],
-  ["S05_FINANCIAL_REVIEW", 5],
-  ["S06_CONSTRUCTION", 6],
-  ["S07_COMMISSIONING", 7],
-  ["S08_OM_HANDOVER", 8],
-  ["S09_CLIENT_HANDOVER", 9],
-  ["S10_POST_HANDOVER_REVIEW", 10],
+  ["S04_PD_PM_HANDOVER", 3],
+  ["S05_FINANCIAL_REVIEW", 2],
+  ["S06_CONSTRUCTION", 4],
+  ["S07_COMMISSIONING", 5],
+  ["S08_OM_HANDOVER", 6],
+  ["S09_CLIENT_HANDOVER", 7],
+  ["S10_POST_HANDOVER_REVIEW", 8],
 ]);
 
 function toNumber(value: unknown): number {

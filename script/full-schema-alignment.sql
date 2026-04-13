@@ -4804,14 +4804,11 @@ DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_editable_fields') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_editable_fields' AND column_name='project_id') THEN
     ALTER TABLE "project_editable_fields" ADD COLUMN "project_id" INTEGER;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_editable_fields') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_editable_fields' AND column_name='cost_proposal_signed') THEN
-    ALTER TABLE "project_editable_fields" ADD COLUMN "cost_proposal_signed" TEXT;
-  END IF;
+  -- C5 (audit closeout): cost_proposal_signed and epc_contract_signed legacy text
+  -- columns dropped by migration 20260412_drop_legacy_signed_text_fields.sql.
+  -- Canonical source of truth is project_execution_state.cp_signed and signed_status.
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_editable_fields') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_editable_fields' AND column_name='funding_signed') THEN
     ALTER TABLE "project_editable_fields" ADD COLUMN "funding_signed" TEXT;
-  END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_editable_fields') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_editable_fields' AND column_name='epc_contract_signed') THEN
-    ALTER TABLE "project_editable_fields" ADD COLUMN "epc_contract_signed" TEXT;
   END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_editable_fields') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_editable_fields' AND column_name='cost_proposal_type') THEN
     ALTER TABLE "project_editable_fields" ADD COLUMN "cost_proposal_type" TEXT;
