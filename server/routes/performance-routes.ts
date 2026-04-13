@@ -211,7 +211,7 @@ app.get("/api/reports/operational", jwtAuth, requireAuth, requirePermission("per
         JOIN project_execution_state pes ON pes.project_id = pi.id
         LEFT JOIN (
           SELECT project_id, MAX(created_at) AS last_review_date
-          FROM weekly_project_reviews
+          FROM weekly_reviews
           GROUP BY project_id
         ) wr ON wr.project_id = pi.id
         WHERE pes.is_active = true
@@ -229,7 +229,8 @@ app.get("/api/reports/operational", jwtAuth, requireAuth, requirePermission("per
       weeklyCompliance: (weeklyCompliance as any).rows ?? [],
     });
   } catch (err: any) {
-    if (err.code === "42P01" || err.code === "42703") {
+    const pgCode = err?.code ?? err?.cause?.code;
+    if (pgCode === "42P01" || pgCode === "42703") {
       return res.json({ commissioningQueue: [], handoverQueue: [], weeklyCompliance: [] });
     }
     console.error("Operational reports error:", err);
