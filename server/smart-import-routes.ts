@@ -608,7 +608,7 @@ router.get("/api/smart-import/pending-runs", requireAuth, requirePermission("sma
     const latestByProject = new Map<string, typeof runs[0]>();
     const duplicateIds: number[] = [];
     for (const run of runs) {
-      const key = `${run.projectName}::${run.sourceFileName}`;
+      const key = `${run.projectName ?? "unknown"}::${run.sourceFileName}`;
       const existing = latestByProject.get(key);
       if (!existing) {
         latestByProject.set(key, run);
@@ -651,7 +651,7 @@ router.get("/api/smart-import/pending-runs", requireAuth, requirePermission("sma
       };
     }));
 
-    runsWithIssues.sort((a, b) => a.projectName.localeCompare(b.projectName));
+    runsWithIssues.sort((a, b) => (a.projectName ?? "").localeCompare(b.projectName ?? ""));
     res.json(runsWithIssues);
   } catch (err: unknown) {
     console.error("[smart-import] GET pending-runs error:", err);
