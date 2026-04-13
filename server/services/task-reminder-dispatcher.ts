@@ -167,7 +167,7 @@ export async function runTaskReminderPass(params: { now?: Date } = {}): Promise<
       and(
         isNull(workItems.deletedAt),
         sql`${workItems.endDate} IS NOT NULL`,
-        sql`${workItems.endDate} < ${horizon.toISOString().slice(0, 10)}::date`,
+        sql`${workItems.endDate}::date < ${horizon.toISOString().slice(0, 10)}::date`,
       ),
     )
     .limit(2000);
