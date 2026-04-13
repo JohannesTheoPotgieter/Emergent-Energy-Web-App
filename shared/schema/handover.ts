@@ -115,3 +115,91 @@ export const handoverStakeholders = pgTable("handover_stakeholders", {
 export const insertHandoverStakeholderSchema = createInsertSchema(handoverStakeholders).omit({ id: true, createdAt: true, deletedAt: true, deletedBy: true } as any);
 export type InsertHandoverStakeholder = z.infer<typeof insertHandoverStakeholderSchema>;
 export type HandoverStakeholder = typeof handoverStakeholders.$inferSelect;
+
+// ===================== B8: O&M HANDOVER TRACKER =====================
+//
+// One row per project tracking the O&M handover lifecycle from
+// "scheduled" through "completed". The readiness checklist mirrors the
+// canonical 7-item list from stage8DataSchema so the front-end stays
+// in sync with the existing Stage 8 workspace.
+//
+// Scope (per user direction): "just build out the functionality to
+// track a successful handover and a dashboard close to handover to
+// track progress." Explicitly NOT in scope for this table:
+//   - asset register (separate, future)
+//   - Matriarch external integration
+//   - warranty matrix (a separate enrichment)
+//   - monitoring credential vault
+//
+// Permission model:
+//   - Any authenticated user can create / upsert / update fields
+//   - Only COO_ADMIN, CEO_ADMIN, PROGRAM_MANAGER, CONSTRUCTION_MANAGER
+//     can mark the handover COMPLETE (see POST /api/om-handovers/:id/
+//     mark-complete). This mirrors "ceremonial sign-off" gating seen
+//     in other closeout steps.
+
+export const OM_HANDOVER_STATUSES = [
+  "not_scheduled",
+  "scheduled",
+  "in_progress",
+  "completed",
+  "on_hold",
+] as const;
+export type OmHandoverStatus = typeof OM_HANDOVER_STATUSES[number];
+
+export const omHandovers = pgTable("om_handovers", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
+  status: text("status").notNull().default("not_scheduled"),
+
+  // Lifecycle dates
+  plannedHandoverDate: date("planned_handover_date"),
+  actualHandoverDate: date("actual_handover_date"),
+
+  // Readiness checklist — matches stage8DataSchema (source of truth for
+  // the commissioning→O&M handover field list). Boolean columns (not
+  // jsonb) so the "close to handover" dashboard can compute completeness
+  // with a single SELECT and so we can index specific items for reports.
+  asBuiltsUploaded: boolean("as_builts_uploaded").notNull().default(false),
+  warrantiesUploaded: boolean("warranties_uploaded").notNull().default(false),
+  omManualUploaded: boolean("om_manual_uploaded").notNull().default(false),
+  serialNumbersUploaded: boolean("serial_numbers_uploaded").notNull().default(false),
+  targetsConfirmed: boolean("targets_confirmed").notNull().default(false),
+  monitoringAccessConfirmed: boolean("monitoring_access_confirmed").notNull().default(false),
+  trainingComplete: boolean("training_complete").notNull().default(false),
+
+  // Ceremonial hand-off fields
+  handedOverByUserId: integer("handed_over_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  acceptedByUserId: integer("accepted_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  acceptedAt: timestamp("accepted_at"),
+  handoverPackLink: text("handover_pack_link"),
+  notes: text("notes"),
+
+  // Mark-complete audit columns (set by mark-complete endpoint)
+  markedCompleteByUserId: integer("marked_complete_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  markedCompleteByRole: text("marked_complete_by_role"),
+  markedCompleteAt: timestamp("marked_complete_at"),
+
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
+});
+
+export const insertOmHandoverSchema = createInsertSchema(omHandovers).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export type InsertOmHandover = z.infer<typeof insertOmHandoverSchema>;
+export type OmHandover = typeof omHandovers.$inferSelect;
+
+/**
+ * The canonical readiness checklist keys and their human-readable labels.
+ * Mirrors stage8DataSchema exactly so the O&M handover module and the
+ * Stage 8 workspace surface the same items.
+ */
+export const OM_HANDOVER_CHECKLIST: Array<{ key: keyof OmHandover; label: string }> = [
+  { key: "asBuiltsUploaded",           label: "As-built drawings uploaded" },
+  { key: "warrantiesUploaded",         label: "Warranties uploaded" },
+  { key: "omManualUploaded",           label: "O&M manual uploaded" },
+  { key: "serialNumbersUploaded",      label: "Serial numbers uploaded" },
+  { key: "targetsConfirmed",           label: "Performance targets confirmed" },
+  { key: "monitoringAccessConfirmed",  label: "Monitoring access confirmed" },
+  { key: "trainingComplete",           label: "Training complete" },
+];
