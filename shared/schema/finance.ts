@@ -1247,3 +1247,47 @@ export const proofOfPayment = pgTable("proof_of_payment", {
 export const insertProofOfPaymentSchema = createInsertSchema(proofOfPayment).omit({ id: true, createdAt: true } as any);
 export type InsertProofOfPayment = z.infer<typeof insertProofOfPaymentSchema>;
 export type ProofOfPayment = typeof proofOfPayment.$inferSelect;
+
+// ===================== COS PERIOD LOCKS (B5 audit closeout) =====================
+//
+// One row per month that has been locked for COS edits. The presence of a
+// row (with unlocked_at IS NULL) means "this month is locked — only COO or
+// CFO can modify cost-line data dated in this month". Unlock is logged by
+// setting unlocked_at, unlocked_by_user_id and unlock_reason — the row is
+// never deleted so the audit trail survives re-lock cycles.
+//
+// Lock lifecycle:
+//   1. Auto-lock: the scheduled job in server/bootstrap/cos-period-lock-
+//      scheduler.ts runs daily and inserts a row with auto_locked=true on
+//      the 3rd business day of the following month.
+//   2. Manual lock: POST /api/cos-periods/:yyyy-mm/lock inserts a row with
+//      auto_locked=false.
+//   3. Unlock: POST /api/cos-periods/:yyyy-mm/unlock sets unlocked_at,
+//      unlocked_by_user_id and unlock_reason. The lock check treats this
+//      as "unlocked".
+//   4. Re-lock: another POST /lock (or the next daily job) creates a new
+//      row for the same period_month.
+
+export const cosPeriodLocks = pgTable("cos_period_locks", {
+  id: serial("id").primaryKey(),
+  periodMonth: date("period_month").notNull(),      // First-of-month (e.g. 2026-03-01)
+  lockedAt: timestamp("locked_at").notNull().defaultNow(),
+  lockedByUserId: integer("locked_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  autoLocked: boolean("auto_locked").notNull().default(false),
+  // Unlock fields — soft-delete. When unlocked_at is set, this row is
+  // considered "no longer active".
+  unlockedAt: timestamp("unlocked_at"),
+  unlockedByUserId: integer("unlocked_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  unlockReason: text("unlock_reason"),
+  notes: text("notes"),
+}, (table) => ({
+  periodIdx: index("idx_cos_period_locks_period").on(table.periodMonth),
+  // Partial index for the hot "is this period currently locked?" query.
+  activeLockIdx: index("idx_cos_period_locks_active")
+    .on(table.periodMonth)
+    .where(sql`${table.unlockedAt} IS NULL`),
+}));
+
+export const insertCosPeriodLockSchema = createInsertSchema(cosPeriodLocks).omit({ id: true, lockedAt: true } as any);
+export type InsertCosPeriodLock = z.infer<typeof insertCosPeriodLockSchema>;
+export type CosPeriodLock = typeof cosPeriodLocks.$inferSelect;

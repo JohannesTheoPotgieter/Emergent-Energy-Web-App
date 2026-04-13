@@ -38,6 +38,14 @@ export async function startRuntimeServices(options: {
   }
 
   try {
+    const { scheduleCosPeriodAutoLock } = await import("./cos-period-lock-scheduler");
+    scheduleCosPeriodAutoLock();
+    started.push("cos-period-lock-scheduler");
+  } catch (err) {
+    log(`[COS Period Lock Scheduler] Failed to start: ${err}`, "Startup:Runtime");
+  }
+
+  try {
     const { startPeriodicSync } = await import("../ms-sync-service");
     if (startupSyncEnabled) {
       startPeriodicSync();
