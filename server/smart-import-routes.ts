@@ -1804,9 +1804,9 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       // status=PREVIEW outside the transaction and both proceed to commit.
       const claimResult = await tx.execute(sql`
         UPDATE smart_import_runs
-        SET status = 'AWAITING_REVIEW'
+        SET status = 'awaiting_review'
         WHERE id = ${runId}
-          AND status IN ('PREVIEW', 'AWAITING_REVIEW')
+          AND status IN ('preview', 'awaiting_review')
         RETURNING id
       `);
       const claimed = (claimResult.rows ?? claimResult);
@@ -3749,8 +3749,8 @@ router.post("/api/import-control-tower/retry/:runId", requireAuth, requirePermis
     const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));
     if (!run) return res.status(404).json({ error: "Import run not found" });
 
-    if (run.status !== "FAILED" && run.status !== "rolled_back" && run.status !== "preview") {
-      return res.status(400).json({ error: `Cannot retry import with status "${run.status}". Only FAILED, ROLLED_BACK, or PREVIEW runs can be retried.` });
+    if (run.status !== "failed" && run.status !== "rolled_back" && run.status !== "preview") {
+      return res.status(400).json({ error: `Cannot retry import with status "${run.status}". Only failed, rolled_back, or preview runs can be retried.` });
     }
 
     await db.update(smartImportRuns)
