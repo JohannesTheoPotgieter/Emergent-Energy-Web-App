@@ -1194,7 +1194,7 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
       // 3. Import runs baseline - Check DB import history (no disk files)
       try {
         const importRuns = await db.execute(sql`
-          SELECT COUNT(*) as count FROM smart_import_runs WHERE status = 'COMMITTED'
+          SELECT COUNT(*) as count FROM smart_import_runs WHERE status = 'committed'
         `);
         const rows = Array.isArray(importRuns) ? importRuns : (importRuns.rows || []);
         const count = Number(rows[0]?.count || 0);
