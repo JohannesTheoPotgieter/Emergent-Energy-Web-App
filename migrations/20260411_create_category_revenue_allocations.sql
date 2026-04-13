@@ -7,7 +7,7 @@
 -- Allocation confidence classification
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'allocation_confidence') THEN
-    CREATE TYPE allocation_confidence AS ENUM ('DIRECT', 'HEADER_ERROR_POSITIONAL', 'PROVISIONAL', 'MANUAL');
+    CREATE TYPE allocation_confidence AS ENUM ('direct', 'header_error_positional', 'provisional', 'manual');
   END IF;
 END $$;
 
@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS category_revenue_allocations (
   category_key          TEXT NOT NULL,
   category_sort_order   INTEGER NOT NULL,
   revenue_allocation    NUMERIC(15,2),
-  allocation_confidence allocation_confidence NOT NULL DEFAULT 'PROVISIONAL',
+  allocation_confidence allocation_confidence NOT NULL DEFAULT 'provisional',
   budget_total          NUMERIC(15,2),
   budget_cos            NUMERIC(15,2),
   import_run_id         INTEGER REFERENCES smart_import_runs(id),
