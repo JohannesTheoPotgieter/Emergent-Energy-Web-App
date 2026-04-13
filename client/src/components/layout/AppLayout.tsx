@@ -13,7 +13,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { Menu, Search, Plus, Calendar, Mail, MessageSquare, CalendarClock, ChevronRight, ChevronDown, Building2, UserCircle2, LogOut, X, Sun, Moon, Monitor, Home, MoreHorizontal } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { buildVisibleTopSections, getAllowedSectionKeysForLens, getBreadcrumbs, linkIsActive } from "@/config/app-navigation";
+import { buildVisibleTopSections, getBreadcrumbs, linkIsActive } from "@/config/app-navigation";
 import { getAvailableQuickCreateActions } from "@/lib/action-access";
 import { useAccessMatrix } from "@/hooks/use-access-matrix";
 import { useNavPreferences } from "@/hooks/use-nav-preferences";
@@ -80,21 +80,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     }
   }, [location]);
 
-  const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
-  const effectiveCompanyRole = companyRole || user?.role || null;
-
-  // Derive allowed section keys from lens profile when simulating
-  const lensAllowedSectionKeys = useMemo(() => {
-    if (!lens.simulation) return null;
-    const profile = lens.getActiveLensProfile();
-    return getAllowedSectionKeysForLens(profile.allowedModules);
-  }, [lens.simulation, lens.activeLens, lens.getActiveLensProfile]);
-
   const visibleSections = useMemo(() => {
     const sections = buildVisibleTopSections({
       canViewPath,
-      companyRole: lens.simulation ? null : effectiveCompanyRole,
-      allowedSectionKeys: lensAllowedSectionKeys,
       disabledSubPages: disabledSubPages,
     });
     // Apply user's custom section order if set
@@ -109,7 +97,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       });
     }
     return sections;
-  }, [canViewPath, sectionOrder, effectiveCompanyRole, lensAllowedSectionKeys, lens.simulation, disabledSubPages]);
+  }, [canViewPath, sectionOrder, disabledSubPages]);
 
   // Redirect to the active lens's landing page on lens switch
   const prevLensRef = useRef(lens.activeLens);
