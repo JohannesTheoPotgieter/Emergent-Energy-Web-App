@@ -92,6 +92,14 @@ export async function registerDepartmentRoutes(app: Express) {
     console.error("[Routes] Failed to register safety-file-routes:", err);
   }
 
+  // B8: O&M Handover tracker + dashboard
+  try {
+    const { registerOmHandoverRoutes } = await import("../departments/om-handover-routes");
+    registerOmHandoverRoutes(app);
+  } catch (err) {
+    console.error("[Routes] Failed to register om-handover-routes:", err);
+  }
+
   // C4: Handover Packs
   try {
     const { registerHandoverRoutes } = await import("../departments/handover-routes");
