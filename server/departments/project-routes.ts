@@ -660,7 +660,7 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
       storage.getAllMilestoneTaskLinks().catch((e: any) => { console.warn("[dept-projects] allTaskLinks failed:", e.message); return []; }),
       storage.getAllOperationalTasks().catch((e: any) => { console.warn("[dept-projects] allOpTasks failed:", e.message); return []; }),
       db.execute(sql`SELECT DISTINCT file_name FROM upload_metadata`).catch((e: any) => { console.warn("[dept-projects] uploadMetadata failed:", e.message); return { rows: [] }; }),
-      db.execute(sql`SELECT DISTINCT project_name FROM smart_import_runs WHERE status = 'COMMITTED'`).catch((e: any) => { console.warn("[dept-projects] smartImportRuns failed:", e.message); return { rows: [] }; }),
+      db.execute(sql`SELECT DISTINCT project_name FROM smart_import_runs WHERE status = 'committed'`).catch((e: any) => { console.warn("[dept-projects] smartImportRuns failed:", e.message); return { rows: [] }; }),
       db.execute(sql`SELECT wi.project_id, pi.project_name, wi.percent_complete, wi.duration, wi.wbs_code, wi.start_date, wi.end_date, wi.title, wi.type FROM work_items wi JOIN project_info pi ON wi.project_id = pi.id WHERE wi.workstream = 'PM' AND wi.source = 'SMART_IMPORT' AND wi.deleted_at IS NULL`).catch((e: any) => { console.warn("[dept-projects] workItems failed:", e.message); return { rows: [] }; }),
       db.execute(sql`SELECT project_id, status, rejection_reason FROM project_pd_pm_handover`).catch(() => ({ rows: [] })),
       db.execute(sql`SELECT DISTINCT ON (project_id) project_id, phase_name FROM normalized_execution_phases ORDER BY project_id, created_at DESC`).catch((e: any) => { console.warn("[dept-projects] phaseRows failed:", e.message); return { rows: [] }; }),

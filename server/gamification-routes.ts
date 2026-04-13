@@ -109,7 +109,7 @@ async function computeUserActivities(): Promise<UserActivityCounts[]> {
       sql`SELECT COUNT(*)::int as cnt FROM weekly_reviews WHERE reviewed_by = ${uid} AND status = 'completed'`
     );
     const importsCompleted = await execCount(
-      sql`SELECT COUNT(*)::int as cnt FROM smart_import_runs WHERE committed_by = ${uid} AND status = 'COMMITTED'`
+      sql`SELECT COUNT(*)::int as cnt FROM smart_import_runs WHERE committed_by = ${uid} AND status = 'committed'`
     );
     const projectUpdates = await execCount(
       sql`SELECT COUNT(*)::int as cnt FROM change_sets WHERE actor_user_id = ${uid}`
@@ -577,7 +577,7 @@ export function registerGamificationRoutes(app: Express) {
         execItems(sql`SELECT COALESCE(wi.title, '') as name, pi.project_name as project, COALESCE(wi.end_date, '') as date FROM work_items wi LEFT JOIN project_info pi ON wi.project_id = pi.id LEFT JOIN users u ON wi.owner_user_id = u.id WHERE wi.workstream = 'PM' AND wi.deleted_at IS NULL AND wi.percent_complete >= 1 AND (wi.owner_user_id = ${userId} OR LOWER(TRIM(u.name)) = LOWER(TRIM(${userName}))) ORDER BY wi.end_date DESC NULLS LAST LIMIT 100`),
         execItems(sql`SELECT COALESCE(a.notes, s.stage_name, 'Approval') as name, pi.project_name as project, a.approved_at::text as date FROM project_eng_approvals a LEFT JOIN project_eng_stages s ON a.stage_id = s.id LEFT JOIN project_info pi ON s.project_id = pi.id WHERE a.approver_user_id = ${userId} AND a.status = 'approved' ORDER BY a.approved_at DESC NULLS LAST LIMIT 100`),
         execItems(sql`SELECT COALESCE(pi.project_name, 'Review') as name, pi.project_name as project, wr.reviewed_at::text as date FROM weekly_reviews wr LEFT JOIN project_info pi ON wr.project_id = pi.id WHERE wr.reviewed_by = ${userId} AND wr.status = 'completed' ORDER BY wr.reviewed_at DESC NULLS LAST LIMIT 100`),
-        execItems(sql`SELECT COALESCE(file_name, 'Import') as name, project_name as project, committed_at::text as date FROM smart_import_runs WHERE committed_by = ${userId} AND status = 'COMMITTED' ORDER BY committed_at DESC NULLS LAST LIMIT 100`),
+        execItems(sql`SELECT COALESCE(file_name, 'Import') as name, project_name as project, committed_at::text as date FROM smart_import_runs WHERE committed_by = ${userId} AND status = 'committed' ORDER BY committed_at DESC NULLS LAST LIMIT 100`),
         execItems(sql`SELECT COALESCE(entity_type, 'Update') || ': ' || COALESCE(field_name, '') as name, project_name as project, changed_at::text as date FROM change_sets WHERE actor_user_id = ${userId} ORDER BY changed_at DESC NULLS LAST LIMIT 100`),
         execItems(sql`SELECT COALESCE(qi.item_name, 'QC Item') as name, qc.project_name as project, qi.updated_at::text as date FROM qc_item_instance qi JOIN qc_checklist qc ON qi.checklist_id = qc.id WHERE qi.approved_by_user_id = ${userId} AND qi.approved = true ORDER BY qi.updated_at DESC NULLS LAST LIMIT 100`),
         execItems(sql`SELECT COALESCE(s.stage_name, 'Stage') as name, pi.project_name as project, s.completed_at::text as date FROM project_eng_stages s LEFT JOIN project_info pi ON s.project_id = pi.id WHERE s.created_by = ${userId} AND s.status = 'complete' ORDER BY s.completed_at DESC NULLS LAST LIMIT 100`),
