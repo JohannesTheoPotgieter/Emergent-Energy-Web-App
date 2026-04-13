@@ -315,6 +315,58 @@ export const insertProjectStageDependencySchema = createInsertSchema(projectStag
 export type InsertProjectStageDependency = z.infer<typeof insertProjectStageDependencySchema>;
 export type ProjectStageDependency = typeof projectStageDependencies.$inferSelect;
 
+// ===================== STAGE GATE EVIDENCE SNAPSHOTS =====================
+// B1 (audit closeout) — Audit-only capture of what was present at the moment
+// of every stage transition. NOT a blocker. Stage transitions always proceed;
+// this table records what evidence was captured vs missing so post-mortems can
+// explain why a project went sideways.
+//
+// Population sources:
+//   - transitionStageStatus() — writes one row per transition (approved,
+//     progressed, gate_fail). Even when blockers are missing, the transition
+//     proceeds and this row records the gap.
+//   - advanceToStage() — writes one row per stage the admin bulk-advances so
+//     the "why was this advanced without evidence" trail is preserved.
+
+export const TRAFFIC_LIGHTS = ['green', 'amber', 'red'] as const;
+export type TrafficLight = typeof TRAFFIC_LIGHTS[number];
+
+export const STAGE_GATE_TRANSITION_TYPES = ['gate_approved', 'gate_progressed', 'admin_advance', 'gate_fail_audit'] as const;
+export type StageGateTransitionType = typeof STAGE_GATE_TRANSITION_TYPES[number];
+
+export const stageGateEvidenceSnapshots = pgTable("stage_gate_evidence_snapshots", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
+  fromStageCode: text("from_stage_code").notNull(),
+  toStageCode: text("to_stage_code").notNull(),
+  transitionType: text("transition_type").notNull(),         // 'gate_approved' | 'gate_progressed' | 'admin_advance' | 'gate_fail_audit'
+  advancedByUserId: integer("advanced_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  advancedAt: timestamp("advanced_at").notNull().defaultNow(),
+  // Quantitative readiness
+  readinessScore: integer("readiness_score").notNull(),      // 0..100 integer
+  gatesTotal: integer("gates_total").notNull(),
+  gatesPassed: integer("gates_passed").notNull(),
+  gatesMissing: integer("gates_missing").notNull(),
+  blockersSatisfied: boolean("blockers_satisfied").notNull(),
+  trafficLight: text("traffic_light").notNull(),             // 'green' | 'amber' | 'red'
+  // Detailed evidence snapshot
+  requirementsSnapshot: jsonb("requirements_snapshot").notNull().default([]),
+  // Shape: [{itemCode, itemName, department, status, blocksGate, evidenceAttached, notes?}]
+  missingItems: jsonb("missing_items").notNull().default([]),
+  // Shape: [{itemCode, itemName, department, reason}]
+  reason: text("reason"),                                    // Free-text why advanced
+  notes: text("notes"),                                      // Optional context
+}, (table) => ({
+  projectIdIdx: index("sges_project_id_idx").on(table.projectId),
+  advancedAtIdx: index("sges_advanced_at_idx").on(table.advancedAt),
+  fromStageIdx: index("sges_from_stage_idx").on(table.fromStageCode),
+  trafficLightIdx: index("sges_traffic_light_idx").on(table.trafficLight),
+}));
+
+export const insertStageGateEvidenceSnapshotSchema = createInsertSchema(stageGateEvidenceSnapshots).omit({ id: true, advancedAt: true } as any);
+export type InsertStageGateEvidenceSnapshot = z.infer<typeof insertStageGateEvidenceSnapshotSchema>;
+export type StageGateEvidenceSnapshot = typeof stageGateEvidenceSnapshots.$inferSelect;
+
 // ===================== PROJECT ACCESS =====================
 // Project-level access control (Layer 2 of 3-layer permission model)
 

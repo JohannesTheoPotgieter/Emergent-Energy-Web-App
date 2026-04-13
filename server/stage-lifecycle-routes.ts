@@ -15,6 +15,8 @@ import {
   getStageEvidence,
   getStageDecisions,
   advanceToStage,
+  getStageGateHistory,
+  computeCurrentStageGateReadiness,
 } from "./services/stage-lifecycle-service";
 import {
   createException,
@@ -760,6 +762,58 @@ export function registerStageLifecycleRoutes(app: Express): void {
         await db.update(stageChecklistTemplates).set(updateData).where(eq(stageChecklistTemplates.id, id));
         const [updated] = await db.select().from(stageChecklistTemplates).where(eq(stageChecklistTemplates.id, id));
         res.json({ template: updated });
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        res.status(500).json({ error: msg });
+      }
+    },
+  );
+
+  // ── B1: Stage Gate Evidence History (audit trail, not blocker) ──
+  // Returns the per-transition evidence snapshots for a project so post-
+  // mortems can see which gate requirements were captured (and which were
+  // missing) at the moment of every transition.
+  app.get(
+    "/api/projects/:projectId/stage-gate-history",
+    jwtAuth,
+    requireAuth,
+    async (req: Request, res: Response) => {
+      try {
+        const projectId = parseInt(p(req.params.projectId), 10);
+        if (Number.isNaN(projectId)) {
+          return res.status(400).json({ error: "Invalid projectId" });
+        }
+        const limitParam = parseInt(p(req.query.limit as any), 10);
+        const limit = Number.isNaN(limitParam) ? 200 : Math.min(Math.max(limitParam, 1), 1000);
+        const history = await getStageGateHistory(projectId, limit);
+        res.json({ projectId, count: history.length, snapshots: history });
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        res.status(500).json({ error: msg });
+      }
+    },
+  );
+
+  // ── B1: Stage Gate Readiness badge (live, not historical) ──
+  // Returns the current readiness score and traffic-light classification
+  // for the specified stage. Used by project headers and dashboards to
+  // render the "Stage Gate Readiness" badge without requiring a transition.
+  app.get(
+    "/api/projects/:projectId/stage-gate-readiness/:stageCode",
+    jwtAuth,
+    requireAuth,
+    async (req: Request, res: Response) => {
+      try {
+        const projectId = parseInt(p(req.params.projectId), 10);
+        const stageCode = p(req.params.stageCode);
+        if (Number.isNaN(projectId) || !stageCode) {
+          return res.status(400).json({ error: "Invalid projectId or stageCode" });
+        }
+        const readiness = await computeCurrentStageGateReadiness(projectId, stageCode);
+        if (!readiness) {
+          return res.status(404).json({ error: "Stage instance not found", projectId, stageCode });
+        }
+        res.json(readiness);
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
         res.status(500).json({ error: msg });
