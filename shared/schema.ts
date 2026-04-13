@@ -28,3 +28,4 @@ export * from "./schema/stage-lifecycle";
 export * from "./schema/stage-data";
 export * from "./schema/stage-collaboration";
 export * from "./schema/collaboration-workflow";
+export * from "./schema/integrations";

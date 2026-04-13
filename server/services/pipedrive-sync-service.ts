@@ -94,9 +94,18 @@ class PipedriveClient {
 // ===================== SYNC ENGINE =====================
 
 export async function syncPipedriveDeals(): Promise<PipedriveSyncResult> {
+  const startedAt = new Date();
   const token = process.env.PIPEDRIVE_API_TOKEN;
   if (!token) {
-    return { dealsProcessed: 0, dealsCreated: 0, dealsUpdated: 0, errors: ["PIPEDRIVE_API_TOKEN not configured"] };
+    const result = { dealsProcessed: 0, dealsCreated: 0, dealsUpdated: 0, errors: ["PIPEDRIVE_API_TOKEN not configured"] };
+    await safeRecordRun({
+      startedAt,
+      status: "failure",
+      errorCode: "missing_token",
+      errorDetail: "PIPEDRIVE_API_TOKEN not configured",
+      result,
+    });
+    return result;
   }
 
   const client = new PipedriveClient(token);
@@ -117,7 +126,56 @@ export async function syncPipedriveDeals(): Promise<PipedriveSyncResult> {
     result.errors.push(`Fetch failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 
+  const status: "success" | "failure" | "partial" =
+    result.errors.length === 0
+      ? "success"
+      : result.dealsProcessed > 0
+        ? "partial"
+        : "failure";
+
+  await safeRecordRun({
+    startedAt,
+    status,
+    errorCode: result.errors.length > 0 ? "deal_sync_errors" : null,
+    errorDetail: result.errors.length > 0 ? result.errors.slice(0, 5).join(" | ") : null,
+    result,
+  });
+
   return result;
+}
+
+/**
+ * C1: log every Pipedrive sync to the integration health registry.
+ * Wrapped in its own try/catch so a logging failure never blocks the
+ * sync itself.
+ */
+async function safeRecordRun(params: {
+  startedAt: Date;
+  status: "success" | "failure" | "partial";
+  errorCode: string | null;
+  errorDetail: string | null;
+  result: PipedriveSyncResult;
+}): Promise<void> {
+  try {
+    const { recordIntegrationRun } = await import("./integration-health-service");
+    await recordIntegrationRun({
+      name: "pipedrive",
+      runType: "sync_all_deals",
+      startedAt: params.startedAt,
+      finishedAt: new Date(),
+      status: params.status,
+      recordsProcessed: params.result.dealsProcessed,
+      errorCode: params.errorCode,
+      errorDetail: params.errorDetail,
+      metadata: {
+        dealsCreated: params.result.dealsCreated,
+        dealsUpdated: params.result.dealsUpdated,
+        errorCount: params.result.errors.length,
+      },
+    });
+  } catch (err) {
+    console.error("[PipedriveSync] Failed to record integration health event:", err);
+  }
 }
 
 async function syncSingleDeal(deal: PipedriveDeal, result: PipedriveSyncResult) {
