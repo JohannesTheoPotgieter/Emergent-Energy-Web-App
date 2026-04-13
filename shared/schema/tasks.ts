@@ -8,10 +8,14 @@ import { projectInfo, clients, pdTickets } from "./projects";
 
 // ===================== TASK CONSTANTS =====================
 
+// C6: canonical lowercase_underscore. Migration 20260413_status_casing
+// rewrites every existing work_items.status row. "not_started" was
+// historically the default but missing from the union — added now so
+// the default matches the type.
 export const TASK_STATUSES = [
-  "TO DO", "IN PROGRESS", "HOLD", "PROJECTS ASSISTANCE",
-  "NEEDS APPROVAL", "QC APPROVED", "PROVIDE FEEDBACK",
-  "OPERATIONAL APPROVAL", "COMPLETE"
+  "not_started", "to_do", "in_progress", "hold", "projects_assistance",
+  "needs_approval", "qc_approved", "provide_feedback",
+  "operational_approval", "complete"
 ] as const;
 export type TaskStatus = typeof TASK_STATUSES[number];
 
@@ -149,7 +153,7 @@ export const workItems = pgTable("work_items", {
   source: workItemSourceEnum("source").notNull().default("UI"),
   title: text("title").notNull(),
   description: text("description"),
-  status: text("status").notNull().default("Not Started"),
+  status: text("status").notNull().default("not_started"),
   priority: text("priority"),
   startDate: date("start_date"),
   endDate: date("end_date"),

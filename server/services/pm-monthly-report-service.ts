@@ -141,7 +141,7 @@ export async function generatePmReportData(month: string) {
     db.select().from(cashflowPoints).where(isNull(cashflowPoints.effectiveTo)),
     db.select({ id: users.id, name: users.name }).from(users),
     db.select({ committedAt: smartImportRuns.committedAt }).from(smartImportRuns)
-      .where(eq(smartImportRuns.status, "COMMITTED"))
+      .where(eq(smartImportRuns.status, "committed"))
       .orderBy(desc(smartImportRuns.committedAt))
       .limit(1),
   ]);

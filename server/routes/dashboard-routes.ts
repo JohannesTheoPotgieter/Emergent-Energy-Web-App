@@ -149,7 +149,7 @@ export function registerDashboardRoutes(app: Express) {
         storage.getAllProjectInfo(),
         db.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
         db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
-        db.select().from(smartImportRuns).where(eq(smartImportRuns.status, 'COMMITTED')),
+        db.select().from(smartImportRuns).where(eq(smartImportRuns.status, 'committed')),
         // Read ENG work_items
         db.select().from(workItems).where(and(eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt))),
         db.execute(sql`SELECT id, project_id, status, title, due_date, assigned_approver FROM approvals`).catch(() => ({ rows: [] })),

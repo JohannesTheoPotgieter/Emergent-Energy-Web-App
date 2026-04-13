@@ -40,7 +40,7 @@ export async function detectImportMode(projectId: number): Promise<BaselineInfo>
     .where(
       and(
         eq(smartImportRuns.projectId, projectId),
-        eq(smartImportRuns.status, "COMMITTED"),
+        eq(smartImportRuns.status, "committed"),
       ),
     )
     .orderBy(desc(smartImportRuns.committedAt))
@@ -193,7 +193,7 @@ export async function loadBaselineNormalization(
     .where(
       and(
         eq(smartImportRuns.projectId, projectId),
-        eq(smartImportRuns.status, "COMMITTED"),
+        eq(smartImportRuns.status, "committed"),
       ),
     )
     .orderBy(desc(smartImportRuns.committedAt))
