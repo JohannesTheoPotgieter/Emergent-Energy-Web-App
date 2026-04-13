@@ -651,7 +651,7 @@ router.get("/api/smart-import/pending-runs", requireAuth, requirePermission("sma
       };
     }));
 
-    runsWithIssues.sort((a, b) => a.projectName.localeCompare(b.projectName));
+    runsWithIssues.sort((a, b) => (a.projectName || "").localeCompare(b.projectName || ""));
     res.json(runsWithIssues);
   } catch (err: unknown) {
     console.error("[smart-import] GET pending-runs error:", err);
