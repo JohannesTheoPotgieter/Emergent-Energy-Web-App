@@ -47,6 +47,7 @@ import {
   categoryRevenueAllocations,
 } from "@shared/schema";
 import { normalizeCategoryKey } from "./lib/import/normalizer";
+import { normalizeCostLineStatus } from "./lib/import/utils";
 import { materializeDerivatives } from "./lib/import/derivative-materializer";
 import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { softCloseByProjectId, softCloseByProjectName, softCloseByImportRunId, addTemporalColumns } from "./lib/temporal-helpers";
@@ -2759,7 +2760,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
               poNumber: merged.poNumber,
               cosRealised: merged.cosRealised || false,
               cashflowConfirmed: merged.cashflowConfirmed || false,
-              status: merged.status,
+              status: normalizeCostLineStatus(merged.status),
               sourceSheet: c.sourceSheet,
               sourceRow: c.sourceRow,
               importRunId: runId,
