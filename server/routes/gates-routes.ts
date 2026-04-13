@@ -433,7 +433,10 @@ app.get("/api/gates/client-updates", jwtAuth, requireAuth, requirePermission("st
       WHERE pes.is_active = true
         AND COALESCE(pes.archived_status, 'ACTIVE') = 'ACTIVE'
         AND pes.current_stage_code IN (
-          'S04_PD_PM_HANDOVER', 'S05_FINANCIAL_REVIEW', 'S06_CONSTRUCTION',
+          -- Post-merge: S04 and S05 are deprecated. Kept here so any
+          -- still-stale row resolves; new rows land on S03 / S02.
+          'S03_SIGNATURE_FINANCIAL_CLOSE', 'S04_PD_PM_HANDOVER',
+          'S05_FINANCIAL_REVIEW', 'S06_CONSTRUCTION',
           'S07_COMMISSIONING', 'S08_OM_HANDOVER', 'S09_CLIENT_HANDOVER'
         )
       ORDER BY wr.last_review_date ASC NULLS FIRST

@@ -53,9 +53,11 @@ export const QUERY_ROUTING: Record<string, string> = {
   design: 'ENGINEERING',
 };
 
-// Handover stages that require acceptance workflow
+// Handover stages that require acceptance workflow.
+// Post-merge: PD-PM handover lives inside S03 Financial Close; the
+// acceptance workflow now triggers off the merged S03 stage.
 export const ACCEPTANCE_STAGE_CODES = [
-  'S04_PD_PM_HANDOVER',
+  'S03_SIGNATURE_FINANCIAL_CLOSE',
   'S08_OM_HANDOVER',
   'S09_CLIENT_HANDOVER',
   'S10_POST_HANDOVER_REVIEW',

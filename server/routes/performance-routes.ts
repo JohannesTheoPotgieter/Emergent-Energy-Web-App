@@ -216,7 +216,9 @@ app.get("/api/reports/operational", jwtAuth, requireAuth, requirePermission("per
         ) wr ON wr.project_id = pi.id
         WHERE pes.is_active = true
           AND COALESCE(pes.archived_status, 'ACTIVE') = 'ACTIVE'
-          AND pes.current_stage_code IN ('S04_PD_PM_HANDOVER','S05_FINANCIAL_REVIEW','S06_CONSTRUCTION','S07_COMMISSIONING','S08_OM_HANDOVER','S09_CLIENT_HANDOVER')
+          -- Post-merge: include S03 (the merged Financial Close) and keep
+          -- S04/S05 in the IN-list for any rows that haven't been migrated.
+          AND pes.current_stage_code IN ('S03_SIGNATURE_FINANCIAL_CLOSE','S04_PD_PM_HANDOVER','S05_FINANCIAL_REVIEW','S06_CONSTRUCTION','S07_COMMISSIONING','S08_OM_HANDOVER','S09_CLIENT_HANDOVER')
         ORDER BY wr.last_review_date ASC NULLS FIRST
       `),
     ]);
