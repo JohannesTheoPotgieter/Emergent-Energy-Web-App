@@ -2346,66 +2346,119 @@ export async function runStartupOrchestrator(options: {
     log,
   } = options;
 
-  await runDrizzleSchemaSync(log);
-  await runAdditiveSchemaAlignments();
+  // ---------------------------------------------------------------------------
+  // PRODUCTION SAFETY GATE
+  // ---------------------------------------------------------------------------
+  // Schema sync (CREATE TABLE / ALTER TABLE), import cleanup UPDATEs, and data
+  // seeding must NEVER run on production without explicit opt-in. In production
+  // all schema changes go through SQL migration files under ./migrations — the
+  // runtime orchestrator is strictly read-only unless the operator explicitly
+  // opts in via env flags. This prevents dev/prod drift and guarantees that
+  // republishing the app will not mutate or recreate production data.
+  //
+  // Dev keeps working as-is because .replit sets ENABLE_STARTUP_SCHEMA_REPAIR
+  // in its [env] block (workspace only). Deployment env does NOT inherit that
+  // flag, so production defaults to the safe read-only path.
+  // ---------------------------------------------------------------------------
+  const isProduction = process.env.NODE_ENV === "production";
+  const explicitProductionSchemaSync =
+    process.env.ALLOW_PRODUCTION_SCHEMA_SYNC === "true";
+  const schemaSyncAllowed =
+    startupSchemaRepairEnabled && (!isProduction || explicitProductionSchemaSync);
+
+  if (schemaSyncAllowed) {
+    await runDrizzleSchemaSync(log);
+    await runAdditiveSchemaAlignments();
+  } else {
+    log(
+      `Schema sync skipped (production=${isProduction}, schemaRepairEnabled=${startupSchemaRepairEnabled}, explicitOverride=${explicitProductionSchemaSync}). Use SQL migrations in ./migrations for production schema changes.`,
+      "Startup:Schema",
+    );
+  }
 
   await runStartupMaintenanceOrchestrator({ runtimeMaintenanceEnabled, startupSchemaRepairEnabled, log });
   report.maintenance.push(runtimeMaintenanceEnabled && startupSchemaRepairEnabled ? "completed" : "skipped");
 
-  try {
-    const clearResult = await db.execute(sql.raw(`
-      UPDATE smart_import_runs
-      SET status = (CASE WHEN status::text = 'PREVIEW' THEN 'SUPERSEDED' ELSE 'superseded' END)::smart_import_status
-      WHERE status::text IN ('PREVIEW', 'preview', 'AWAITING_REVIEW', 'awaiting_review')
-    `));
-    const cleared = (clearResult as any).rowCount ?? (clearResult as any).rows?.length ?? 0;
-    if (cleared > 0) log(`Cleared ${cleared} staged import runs`, "Startup:ImportCleanup");
-  } catch (err: unknown) {
-    log(`Import cleanup skipped: ${(err instanceof Error ? err.message : String(err))}`, "Startup:ImportCleanup");
+  // Import cleanup writes to production tables. Only run when startup
+  // mutations are explicitly allowed (dev, or admin/migration modes).
+  if (schemaSyncAllowed || allowStartupMutations) {
+    try {
+      const clearResult = await db.execute(sql.raw(`
+        UPDATE smart_import_runs
+        SET status = (CASE WHEN status::text = 'PREVIEW' THEN 'SUPERSEDED' ELSE 'superseded' END)::smart_import_status
+        WHERE status::text IN ('PREVIEW', 'preview', 'AWAITING_REVIEW', 'awaiting_review')
+      `));
+      const cleared = (clearResult as any).rowCount ?? (clearResult as any).rows?.length ?? 0;
+      if (cleared > 0) log(`Cleared ${cleared} staged import runs`, "Startup:ImportCleanup");
+    } catch (err: unknown) {
+      log(`Import cleanup skipped: ${(err instanceof Error ? err.message : String(err))}`, "Startup:ImportCleanup");
+    }
+  } else {
+    log("Import cleanup skipped (production read-only mode)", "Startup:ImportCleanup");
   }
 
-  // Auto-enable data seeding if PostgreSQL is detected and project_info is empty
+  // Auto-enable data seeding ONLY in non-production when project_info is empty.
+  // In production this must stay opt-in — an empty table or a transient error
+  // must never trigger a full reseed against live data.
   let effectiveDataSeedEnabled = startupDataSeedEnabled;
-  if (!effectiveDataSeedEnabled && getDbMode() === "postgres") {
+  if (!effectiveDataSeedEnabled && !isProduction && getDbMode() === "postgres") {
     try {
       const countResult = await db.execute(sql.raw(`SELECT COUNT(*) as cnt FROM project_info`));
       const count = parseInt(String((countResult as any).rows?.[0]?.cnt ?? "0"), 10);
       if (count === 0) {
-        log("PostgreSQL project_info is empty — auto-enabling data seed migration", "Startup:DataSeed");
+        log("PostgreSQL project_info is empty — auto-enabling data seed migration (dev only)", "Startup:DataSeed");
         effectiveDataSeedEnabled = true;
       }
     } catch (err: unknown) {
-      log(`Could not check project_info count (${(err instanceof Error ? err.message : String(err))}) — auto-enabling data seed`, "Startup:DataSeed");
+      // In dev we still auto-enable on error (table may not exist yet).
+      // In production we never reach this branch because isProduction guards it.
+      log(`Could not check project_info count (${(err instanceof Error ? err.message : String(err))}) — auto-enabling data seed (dev only)`, "Startup:DataSeed");
       effectiveDataSeedEnabled = true;
     }
+  } else if (!effectiveDataSeedEnabled && isProduction) {
+    log("Data seed auto-enable skipped (production read-only mode)", "Startup:DataSeed");
   }
   await runStartupSeeds({ startupDataSeedEnabled: effectiveDataSeedEnabled, allowStartupMutations: effectiveDataSeedEnabled || allowStartupMutations, log });
   report.seeds.push(effectiveDataSeedEnabled ? "completed" : "skipped");
 
-  // Integrity guard always runs (idempotent safety net for 1:1 relationships)
-  try {
-    const { runIntegrityGuard } = await import("./backfills/integrity-guard");
-    await runIntegrityGuard(log);
-  } catch (err: unknown) {
-    log(`Integrity guard error (non-fatal): ${(err instanceof Error ? err.message : String(err))}`, "Startup:IntegrityGuard");
-  }
+  // Safety-net backfills (integrity guard, stage instances, gate evaluation)
+  // are write-paths and must respect the production read-only default.
+  // They only run when explicit startup mutations are allowed (dev, admin
+  // migration mode, or when the operator has turned on startup backfills).
+  const mutationBackfillsAllowed =
+    startupBackfillEnabled || allowStartupMutations || !isProduction;
 
-  // Stage instance backfill — ensures all projects have stage instances,
-  // marks historical projects' prior stages as PROGRESSED (not forced through gates)
-  try {
-    const { runStageInstanceBackfill } = await import("./backfills/stage-instance-backfill");
-    await runStageInstanceBackfill(log);
-  } catch (err: unknown) {
-    log(`Stage instance backfill error (non-fatal): ${(err instanceof Error ? err.message : String(err))}`, "Startup:StageInstanceBackfill");
-  }
+  if (mutationBackfillsAllowed) {
+    // Integrity guard (idempotent safety net for 1:1 relationships)
+    try {
+      const { runIntegrityGuard } = await import("./backfills/integrity-guard");
+      await runIntegrityGuard(log);
+    } catch (err: unknown) {
+      log(`Integrity guard error (non-fatal): ${(err instanceof Error ? err.message : String(err))}`, "Startup:IntegrityGuard");
+    }
 
-  // Gate evaluation backfill — one-time: evaluates stage gates for all existing
-  // projects so that gate_status and project_gate_evaluations are populated
-  try {
-    const { runGateEvaluationBackfill } = await import("./backfills/gate-evaluation-backfill");
-    await runGateEvaluationBackfill(log);
-  } catch (err: unknown) {
-    log(`Gate evaluation backfill error (non-fatal): ${(err instanceof Error ? err.message : String(err))}`, "Startup:GateEvaluationBackfill");
+    // Stage instance backfill — ensures all projects have stage instances,
+    // marks historical projects' prior stages as PROGRESSED (not forced through gates)
+    try {
+      const { runStageInstanceBackfill } = await import("./backfills/stage-instance-backfill");
+      await runStageInstanceBackfill(log);
+    } catch (err: unknown) {
+      log(`Stage instance backfill error (non-fatal): ${(err instanceof Error ? err.message : String(err))}`, "Startup:StageInstanceBackfill");
+    }
+
+    // Gate evaluation backfill — one-time: evaluates stage gates for all existing
+    // projects so that gate_status and project_gate_evaluations are populated
+    try {
+      const { runGateEvaluationBackfill } = await import("./backfills/gate-evaluation-backfill");
+      await runGateEvaluationBackfill(log);
+    } catch (err: unknown) {
+      log(`Gate evaluation backfill error (non-fatal): ${(err instanceof Error ? err.message : String(err))}`, "Startup:GateEvaluationBackfill");
+    }
+  } else {
+    log(
+      "Safety-net backfills skipped (production read-only mode). Enable ENABLE_STARTUP_BACKFILL or ADMIN_MIGRATION_MODE to run them.",
+      "Startup:Backfill",
+    );
   }
 
   await runStartupBackfills({
