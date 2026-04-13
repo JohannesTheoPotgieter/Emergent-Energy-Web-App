@@ -17,7 +17,7 @@ import type { MatchedRow, SectionType } from "./row-matcher";
 import type { RowMergeResult, FieldMerge, MergeCase } from "./conflict-engine";
 import type { PlannerResult } from "./planner";
 import { CANONICAL_SOURCES } from "./planner";
-import { normalizeCostLineStatus } from "./utils";
+import { normalizeCostLineStatus, normalizeRevenueLineStatus } from "./utils";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -320,7 +320,7 @@ export async function writeRevenueIncremental(ctx: TemporalWriteContext): Promis
         paidDateFontColor: f.paidDateFontColor || null,
         paidDateConfirmed: f.paidDateConfirmed || false,
         inBankDate: f.inBankDate,
-        status: f.status,
+        status: normalizeRevenueLineStatus(f.status),
         sourceSheet: f.sourceSheet,
         sourceRow: f.sourceRow,
         importRunId: runId,
@@ -356,6 +356,7 @@ export async function writeRevenueIncremental(ctx: TemporalWriteContext): Promis
         .set({ effectiveTo: commitTimestamp })
         .where(eq(normalizedRevenueLines.id, existingId));
 
+
       const existingRow = mr.existingRow as any;
       const [inserted] = await tx.insert(normalizedRevenueLines).values({
         projectId,
@@ -375,7 +376,7 @@ export async function writeRevenueIncremental(ctx: TemporalWriteContext): Promis
         paidDateFontColor: fileRow.paidDateFontColor ?? existingRow.paidDateFontColor,
         paidDateConfirmed: fileRow.paidDateConfirmed ?? existingRow.paidDateConfirmed,
         inBankDate: fieldUpdates.inBankDate ?? existingRow.inBankDate,
-        status: fieldUpdates.status ?? existingRow.status,
+        status: normalizeRevenueLineStatus(fieldUpdates.status ?? existingRow.status),
         sourceSheet: existingRow.sourceSheet || fileRow.sourceSheet,
         sourceRow: existingRow.sourceRow || fileRow.sourceRow,
         importRunId: runId,
@@ -448,7 +449,7 @@ export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Pr
         poNumber: f.poNumber,
         cosRealised: f.cosRealised || false,
         cashflowConfirmed: f.cashflowConfirmed || false,
-        status: f.status,
+        status: normalizeCostLineStatus(f.status),
         sourceSheet: f.sourceSheet,
         sourceRow: f.sourceRow,
         importRunId: runId,
