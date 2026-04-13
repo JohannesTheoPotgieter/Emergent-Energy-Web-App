@@ -2292,7 +2292,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       const manualOverrideMap = new Map<number, Map<string, string>>();
 
       const existingWorkItemsForImport = await tx
-        .select({ id: workItems.id })
+        .select({ id: workItems.id, externalRef: workItems.externalRef })
         .from(workItems)
         .where(and(
           eq(workItems.source, "SMART_IMPORT"),
@@ -2301,17 +2301,11 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
             ? eq(workItems.projectId, projectId)
             : sql`${workItems.externalRef} LIKE ${projectName + '::PLAN::%'}`,
         ));
-      if (existingWorkItemsForImport.length > 0) {
-        const wiIds = existingWorkItemsForImport.map((w: { id: number }) => w.id);
-        await tx.delete(workItemDependencies).where(
-          or(
-            inArray(workItemDependencies.predecessorId, wiIds),
-            inArray(workItemDependencies.successorId, wiIds),
-          )
-        );
-        await tx.delete(workItemAssignments).where(inArray(workItemAssignments.workItemId, wiIds));
-        await tx.delete(workItems).where(inArray(workItems.id, wiIds));
-      }
+      const existingWorkItemIdByExternalRef = new Map<string, number>(
+        existingWorkItemsForImport
+          .filter((w: { externalRef: string | null }) => !!w.externalRef)
+          .map((w: { id: number; externalRef: string | null }) => [w.externalRef as string, w.id])
+      );
 
       const OVERRIDE_FIELD_MAP: Record<string, string> = {
         actualStart: 'startDate', actualEnd: 'endDate', actualPctComplete: 'pctComplete',
@@ -2351,6 +2345,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
               sourceRow: t.sourceRow,
               importRunId: runId,
               subProjectName: merged.subProjectName || null,
+              assigneeUserId: merged.assigneeUserId ?? null,
             };
             const rowOverrides = manualOverrideMap.get(t.sourceRow);
             if (rowOverrides) {
@@ -2368,6 +2363,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         if (planValues.length > 0) {
           const workItemByTaskNo = new Map<string, number>();
           const workItemByIdx = new Map<number, number>();
+          const incomingExternalRefs = new Set<string>();
 
           for (let idx = 0; idx < planValues.length; idx++) {
             const pv = planValues[idx] as any;
@@ -2375,8 +2371,9 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
             const rowRef = pv.sourceRow != null ? `ROW-${pv.sourceRow}` : `IDX-${idx}`;
             const projectRef = projectId ? `PID-${projectId}` : projectName;
             const externalRef = `${projectRef}::PLAN::${rowRef}::${wbsCode || ''}`;
+            incomingExternalRefs.add(externalRef);
 
-            const [insertedWi] = await tx.insert(workItems).values({
+            const workItemPayload = {
               clientId: null,
               projectId: projectId || null,
               workstream: "PM" as any,
@@ -2409,13 +2406,42 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
               sourceRow: pv.sourceRow || null,
               sourceSheet: pv.sourceSheet || null,
               importRunId: runId,
-              createdBy: userId,
-            }).returning();
+            };
+
+            const existingWorkItemId = existingWorkItemIdByExternalRef.get(externalRef);
+            let workItemId: number;
+            if (existingWorkItemId) {
+              await tx.update(workItems)
+                .set(workItemPayload)
+                .where(eq(workItems.id, existingWorkItemId));
+              workItemId = existingWorkItemId;
+            } else {
+              const [insertedWi] = await tx.insert(workItems).values({
+                ...workItemPayload,
+                createdBy: userId,
+              }).returning({ id: workItems.id });
+              workItemId = insertedWi.id;
+              existingWorkItemIdByExternalRef.set(externalRef, workItemId);
+            }
 
             if (wbsCode) {
-              workItemByTaskNo.set(wbsCode, insertedWi.id);
+              workItemByTaskNo.set(wbsCode, workItemId);
             }
-            workItemByIdx.set(idx, insertedWi.id);
+            workItemByIdx.set(idx, workItemId);
+          }
+
+          const staleWorkItemIds = existingWorkItemsForImport
+            .filter((w: { id: number; externalRef: string | null }) => !w.externalRef || !incomingExternalRefs.has(w.externalRef))
+            .map((w: { id: number }) => w.id);
+          if (staleWorkItemIds.length > 0) {
+            await tx.delete(workItemDependencies).where(
+              or(
+                inArray(workItemDependencies.predecessorId, staleWorkItemIds),
+                inArray(workItemDependencies.successorId, staleWorkItemIds),
+              )
+            );
+            await tx.delete(workItemAssignments).where(inArray(workItemAssignments.workItemId, staleWorkItemIds));
+            await tx.delete(workItems).where(inArray(workItems.id, staleWorkItemIds));
           }
 
           for (let idx = 0; idx < planValues.length; idx++) {
@@ -2432,17 +2458,32 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           }
 
           if (userId) {
+            const touchedWorkItemIds = Array.from(workItemByIdx.values());
+            const existingOwnerAssignments = touchedWorkItemIds.length > 0
+              ? await tx.select({ workItemId: workItemAssignments.workItemId, userId: workItemAssignments.userId })
+                  .from(workItemAssignments)
+                  .where(and(
+                    inArray(workItemAssignments.workItemId, touchedWorkItemIds),
+                    eq(workItemAssignments.role, "OWNER" as any),
+                  ))
+              : [];
+            const existingOwnerKey = new Set(existingOwnerAssignments.map((a: { workItemId: number; userId: string }) => `${a.workItemId}::${a.userId}`));
+
             for (let idx = 0; idx < planValues.length; idx++) {
               const pv = planValues[idx] as any;
               if (pv.owner && pv.owner.trim()) {
                 const wiId = workItemByIdx.get(idx);
                 if (wiId && pv.assigneeUserId) {
-                  await tx.insert(workItemAssignments).values({
-                    workItemId: wiId,
-                    userId: pv.assigneeUserId,
-                    role: "OWNER" as any,
-                    allocationPct: null,
-                  });
+                  const assignmentKey = `${wiId}::${pv.assigneeUserId}`;
+                  if (!existingOwnerKey.has(assignmentKey)) {
+                    await tx.insert(workItemAssignments).values({
+                      workItemId: wiId,
+                      userId: pv.assigneeUserId,
+                      role: "OWNER" as any,
+                      allocationPct: null,
+                    });
+                    existingOwnerKey.add(assignmentKey);
+                  }
                 }
               }
             }
