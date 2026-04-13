@@ -194,8 +194,10 @@ describe("Commit route v2 incremental path", () => {
     expect(v2Section).toContain('matchRows("EXPENDITURE"');
   });
 
-  it("v2 path still marks run as COMMITTED", () => {
-    expect(routesCode).toContain('status: "COMMITTED"');
+  it("v2 path still marks run as committed (canonical lowercase enum literal)", () => {
+    expect(routesCode).toContain('status: "committed"');
+    // Guard against drift back to the old UPPERCASE literal.
+    expect(routesCode).not.toContain('status: "COMMITTED"');
   });
 });
 

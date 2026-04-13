@@ -8,6 +8,7 @@ import { normalizedCostLines, counterparties, projectInfo, invoicePatternRules }
 import { encryptField, decryptField } from "./lib/field-encryption";
 import { eq, sql, and, isNull } from "drizzle-orm";
 import { softCloseRows, addTemporalColumns } from "./lib/temporal-helpers";
+import { normalizeCostLineStatus } from "./lib/import/utils";
 import { extractSupplierName } from "./lib/calculations/supplierExtractor";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
@@ -414,22 +415,26 @@ router.post("/api/procurement-analysis/run", requireAuth, requirePermission('pro
         const projId = projectMap.get(exp.projectName) || null;
         if (exp.projectName) projectsProcessed.add(exp.projectName);
 
-        let status: string | null = null;
+        // Derive the raw status label, then route it through the canonical
+        // normalizer so the value that lands in normalized_cost_lines is
+        // always a valid cost_line_status enum literal. Historical uppercase
+        // labels are kept here for readability in the business rules; the
+        // normalizer maps them to the lowercase DB values.
+        let rawStatus: string = "PLANNED";
         const now = new Date();
         if (exp.expensePaymentDate) {
           const paidD = new Date(exp.expensePaymentDate);
           if (paidD <= now) {
-            status = "PAID";
+            rawStatus = "PAID";
           } else {
-            status = exp.expenseInvoicedDate ? "INVOICED" : "APPROVED";
+            rawStatus = exp.expenseInvoicedDate ? "INVOICED" : "APPROVED";
           }
         } else if (exp.expenseInvoicedDate) {
-          status = "INVOICED";
+          rawStatus = "INVOICED";
         } else if (exp.expensePoNumber) {
-          status = "APPROVED";
-        } else {
-          status = "PLANNED";
+          rawStatus = "APPROVED";
         }
+        const status = normalizeCostLineStatus(rawStatus);
 
         let turnaroundDays: number | null = null;
         if (exp.expensePaymentDate && exp.expenseInvoicedDate) {

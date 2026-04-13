@@ -496,7 +496,14 @@ export type NormalizedRevenueLine = typeof normalizedRevenueLines.$inferSelect;
 
 // ===================== CATEGORY REVENUE ALLOCATIONS =====================
 
-export const allocationConfidenceEnum = pgEnum('allocation_confidence', ['DIRECT', 'HEADER_ERROR_POSITIONAL', 'PROVISIONAL', 'MANUAL']);
+// Canonical lowercase values matching the live DB enum created by
+// migrations/20260411_create_category_revenue_allocations.sql and hardened
+// by migrations/20260413_status_casing_normalization.sql. Do NOT change the
+// casing here without a paired ALTER TYPE migration — the normalizer in
+// server/lib/import/utils.ts (normalizeAllocationConfidence) is the one
+// authoritative path that maps incoming UPPERCASE / mixed-case values to
+// these canonical literals at write time.
+export const allocationConfidenceEnum = pgEnum('allocation_confidence', ['direct', 'header_error_positional', 'provisional', 'manual']);
 
 export const categoryRevenueAllocations = pgTable("category_revenue_allocations", {
   id: serial("id").primaryKey(),
@@ -507,7 +514,7 @@ export const categoryRevenueAllocations = pgTable("category_revenue_allocations"
   categoryKey: text("category_key").notNull(),
   categorySortOrder: integer("category_sort_order").notNull(),
   revenueAllocation: decimal("revenue_allocation", { precision: 15, scale: 2 }),
-  allocationConfidence: allocationConfidenceEnum("allocation_confidence").notNull().default('PROVISIONAL'),
+  allocationConfidence: allocationConfidenceEnum("allocation_confidence").notNull().default('provisional'),
   budgetTotal: decimal("budget_total", { precision: 15, scale: 2 }),
   budgetCos: decimal("budget_cos", { precision: 15, scale: 2 }),
   importRunId: integer("import_run_id").references(() => smartImportRuns.id),

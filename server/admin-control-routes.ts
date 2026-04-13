@@ -10,6 +10,7 @@ import {
   auditEvents,
   importIssues,
 } from "@shared/schema";
+import type { SmartImportStatus } from "./lib/import/utils";
 import { getFeatureFlag, getRolloutFeatureFlags, setFeatureFlag } from "./lib/feature-flags";
 import { ROLLOUT_FEATURE_FLAGS } from "@shared/feature-flags";
 import { logAuditFromReq } from "./audit-logger";
@@ -487,18 +488,31 @@ router.delete("/api/admin/control-center/sessions/:sid", requireAuth, requireAdm
 
 router.get("/api/admin/control-center/recent-import-failures", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
+    // The smart_import_status enum was normalized to lowercase by
+    // migrations/20260413_status_casing_normalization.sql. The canonical
+    // literal for a failed run is 'failed' — imported from the shared
+    // import-enums helper so it stays in lock-step with the pgEnum.
+    // We compare against the enum by casting the literal to text so the
+    // query is robust to future enum additions and can't fail with 22P02.
+    const failedStatus: SmartImportStatus = "failed";
     const rows: any[] = await db.execute(sql`
       SELECT sir.id, sir.project_name, sir.source_file_name, sir.uploaded_at,
              sir.records_attempted, sir.records_failed,
              u.name as uploaded_by_name
       FROM smart_import_runs sir
       LEFT JOIN users u ON sir.uploaded_by = u.id
-      WHERE sir.status = 'FAILED'
+      WHERE LOWER(sir.status::text) = ${failedStatus}
       ORDER BY sir.uploaded_at DESC
       LIMIT 10
     `).then((r: any) => r.rows || r).catch((err: unknown) => {
       const details = getPgErrorDetails(err);
-      console.error("[admin-control] recent-import-failures base query failed", details);
+      console.error("[admin-control] recent-import-failures base query failed", {
+        route: "/api/admin/control-center/recent-import-failures",
+        targetTable: "smart_import_runs",
+        field: "status",
+        attemptedValue: failedStatus,
+        ...details,
+      });
       if (isMissingDbObjectError(err)) return [];
       throw err;
     });

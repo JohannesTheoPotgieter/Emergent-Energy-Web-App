@@ -47,7 +47,7 @@ import {
   categoryRevenueAllocations,
 } from "@shared/schema";
 import { normalizeCategoryKey } from "./lib/import/normalizer";
-import { normalizeCostLineStatus } from "./lib/import/utils";
+import { normalizeCostLineStatus, normalizeAllocationConfidence } from "./lib/import/utils";
 import { materializeDerivatives } from "./lib/import/derivative-materializer";
 import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { softCloseByProjectId, softCloseByProjectName, softCloseByImportRunId, addTemporalColumns } from "./lib/temporal-helpers";
@@ -1943,9 +1943,10 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
 
           // Insert new allocations
           for (const ca of catAllocs) {
-            const confidence = ca.allocationSource === "DIRECT_EXTRACTION" ? "DIRECT" as const
-              : ca.allocationSource === "HEADER_ERROR_POSITIONAL" ? "HEADER_ERROR_POSITIONAL" as const
-              : "PROVISIONAL" as const;
+            // Use the centralized normalizer so any future allocationSource
+            // value (upper-case, mixed-case, legacy shorthand) still lands on
+            // the canonical lowercase enum literal that the DB expects.
+            const confidence = normalizeAllocationConfidence(ca.allocationSource);
 
             const [inserted] = await tx.insert(categoryRevenueAllocations).values({
               projectId,

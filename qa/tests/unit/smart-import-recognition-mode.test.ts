@@ -55,22 +55,25 @@ describe("S14: recognition-mode-service structure", () => {
 describe("S14: trust classification", () => {
   const serviceCode = read("server/services/recognition-mode-service.ts");
 
-  it("TRUSTED_CONFIDENCES includes DIRECT, HEADER_ERROR_POSITIONAL, MANUAL", () => {
+  it("TRUSTED_CONFIDENCES includes direct, header_error_positional, manual (canonical lowercase)", () => {
     const trustedBlock = serviceCode.slice(
       serviceCode.indexOf("TRUSTED_CONFIDENCES = new Set"),
       serviceCode.indexOf("TRUSTED_CONFIDENCES = new Set") + 200,
     );
-    expect(trustedBlock).toContain('"DIRECT"');
-    expect(trustedBlock).toContain('"HEADER_ERROR_POSITIONAL"');
-    expect(trustedBlock).toContain('"MANUAL"');
+    expect(trustedBlock).toContain('"direct"');
+    expect(trustedBlock).toContain('"header_error_positional"');
+    expect(trustedBlock).toContain('"manual"');
   });
 
-  it("TRUSTED_CONFIDENCES does NOT include PROVISIONAL", () => {
+  it("TRUSTED_CONFIDENCES does NOT include provisional", () => {
     const trustedBlock = serviceCode.slice(
       serviceCode.indexOf("TRUSTED_CONFIDENCES = new Set"),
       serviceCode.indexOf("TRUSTED_CONFIDENCES = new Set") + 200,
     );
+    expect(trustedBlock).not.toContain('"provisional"');
+    // Guard: must not regress to the old UPPERCASE literals either.
     expect(trustedBlock).not.toContain('"PROVISIONAL"');
+    expect(trustedBlock).not.toContain('"DIRECT"');
   });
 
   it("JCAT_FAILURE_ISSUE_TYPES only includes JCAT_COLUMN_MISSING", () => {
@@ -125,8 +128,10 @@ describe("S14: recognition mode classification", () => {
     expect(serviceCode).not.toContain('.startsWith("JCAT_")');
   });
 
-  it("checks the latest COMMITTED import run for failure issues", () => {
-    expect(serviceCode).toContain('eq(smartImportRuns.status, "COMMITTED")');
+  it("checks the latest committed import run for failure issues", () => {
+    // Canonical lowercase enum literal — matches the live smart_import_status
+    // enum after migration 20260413_status_casing_normalization.sql.
+    expect(serviceCode).toContain('eq(smartImportRuns.status, "committed")');
     expect(serviceCode).toContain("desc(smartImportRuns.committedAt)");
   });
 
