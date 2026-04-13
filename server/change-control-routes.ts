@@ -1,7 +1,7 @@
 import { Express, Request, Response } from "express";
 import { db } from "./db";
-import { eq, sql, isNull } from "drizzle-orm";
-import { changeRequests, approvals } from "@shared/schema";
+import { eq, sql, isNull, and } from "drizzle-orm";
+import { changeRequests, approvals, projectAccess } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
 import { jwtAuth, requireAuth, getEffectiveUser } from "./auth-context";
