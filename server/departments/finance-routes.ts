@@ -2,7 +2,9 @@
 // Fix guide: use queryStr/queryInt from server/lib/req-parse for query params,
 // add explicit ': any' to .map/.filter callback params on db result rows.
 import { Router, type Express, type Request, type Response, type NextFunction } from "express";
-import { requireAuth, requireAdmin } from './shared-middleware';
+import { requireAuth, requireAdmin, requireCosOverrideRole } from './shared-middleware';
+import { PLACEHOLDER_INVOICES } from '../lib/finance/cos-realisation';
+import { logAuditFromReq } from '../audit-logger';
 import { storage } from "../storage";
 import { db } from "../db";
 import { paramStr } from "../lib/req-params";
@@ -1967,12 +1969,36 @@ router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, 
     const expense = allExpenses.find(e => e.id === id);
     if (!expense) return res.status(404).json({ error: "Expense not found" });
 
-    if (realised && !expense.expenseInvoiceNumber) {
-      return res.status(400).json({ error: "Cannot mark as realised without an invoice number" });
-    }
-
-    if (realised && !expense.expenseInvoicedDate) {
-      return res.status(400).json({ error: "Cannot mark as realised without an invoice date" });
+    // B4 (audit closeout): COS recognition requires linked invoice evidence.
+    // The normal path enforces THREE things:
+    //   1. invoice number must be present
+    //   2. invoice number must NOT be a placeholder (TBC, pending, n/a, etc.)
+    //   3. invoice date must be present
+    // If any of these are missing the caller must go through the override
+    // endpoint /api/cos-tracker/override-status/:id which requires a
+    // mandatory reason and the broader role whitelist (COO/CFO/PFM/CEO).
+    if (realised) {
+      const invoiceNumber = String(expense.expenseInvoiceNumber || "").trim();
+      if (!invoiceNumber) {
+        return res.status(400).json({
+          error: "missing_invoice_number",
+          message:
+            "Cannot mark as realised without a linked invoice number. If you need to recognise without evidence, use POST /api/cos-tracker/override-status/:id with a reason (COO / CFO / PFM / CEO only).",
+        });
+      }
+      if (PLACEHOLDER_INVOICES.has(invoiceNumber.toLowerCase())) {
+        return res.status(400).json({
+          error: "placeholder_invoice_number",
+          message: `Invoice number "${invoiceNumber}" is a placeholder. Replace it with the real supplier invoice number before marking as realised, or use the override path with a reason.`,
+          placeholder: invoiceNumber,
+        });
+      }
+      if (!expense.expenseInvoicedDate) {
+        return res.status(400).json({
+          error: "missing_invoice_date",
+          message: "Cannot mark as realised without an invoice date.",
+        });
+      }
     }
 
     const updated = await updateExpenseFieldsDualTable(id, {
@@ -1983,6 +2009,20 @@ router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, 
       return res.status(500).json({ error: "Failed to update expense fields" });
     }
 
+    // B4: audit the realisation action so there's a per-line paper trail.
+    logAuditFromReq(req, {
+      entityType: "normalized_cost_line",
+      entityId: String(id),
+      action: realised ? "cos.realised_with_invoice" : "cos.unrealised",
+      projectName: (expense as any).projectName ?? null,
+      changesJson: {
+        realised,
+        invoiceNumber: expense.expenseInvoiceNumber ?? null,
+        invoiceDate: expense.expenseInvoicedDate ?? null,
+        projectId: (expense as any).projectId ?? null,
+      },
+    });
+
     res.json({ success: true, id, realised });
 
     if (expense.projectId) refreshProjectMetricsAsync(expense.projectId);
@@ -1992,9 +2032,15 @@ router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, 
   }
 });
 
-// ==================== ADMIN COS STATUS OVERRIDE ====================
+// ==================== COS STATUS OVERRIDE (B4: broadened role whitelist) ====================
+// Per B4 direction: "Admin override with reason — COO / CFO / PFM can
+// force-recognise with a mandatory reason field, logged in the audit trail."
+// Previously this endpoint was requireAdmin (COO_ADMIN / CEO_ADMIN only),
+// which excluded the CFO and the Program Finance Manager who should both
+// be empowered to override. The whitelist is now:
+//   COO_ADMIN, CEO_ADMIN, CFO, PROGRAM_FINANCE_MANAGER
 
-router.patch("/api/cos-tracker/override-status/:id", requireAuth, requireAdmin, async (req, res) => {
+router.patch("/api/cos-tracker/override-status/:id", requireAuth, requireCosOverrideRole, async (req, res) => {
   try {
     const id = parseInt(String(req.params.id || ""), 10);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid expense id" });
@@ -2012,13 +2058,21 @@ router.patch("/api/cos-tracker/override-status/:id", requireAuth, requireAdmin, 
       return res.status(400).json({ error: "cosStatus must be 'Planned', 'Committed', 'COS Realised', or null (to clear override)" });
     }
 
+    // B4: mandatory reason — the whole point of the override path is that
+    // it writes an audit trail explaining WHY recognition diverged from
+    // the evidence. A blank reason defeats the control.
     if (cosStatus !== null && (!reason || !reason.trim())) {
-      return res.status(400).json({ error: "A reason is required when setting an override" });
+      return res.status(400).json({
+        error: "missing_override_reason",
+        message: "A reason is required when setting a COS override. This is a financial control — the audit trail must explain why recognition is diverging from the linked invoice evidence.",
+      });
     }
 
     const allExpenses = await storage.getAllCostLinesForCashflow();
     const expense = allExpenses.find(e => e.id === id);
     if (!expense) return res.status(404).json({ error: "Expense not found" });
+
+    const previousOverride = (expense as any).cosStatusOverride ?? null;
 
     const overrideFields: Record<string, any> = {
       cosStatusOverride: cosStatus,
@@ -2038,6 +2092,25 @@ router.patch("/api/cos-tracker/override-status/:id", requireAuth, requireAdmin, 
     if (!updated) {
       return res.status(500).json({ error: "Failed to update expense fields" });
     }
+
+    // B4: explicit audit-log entry tagged as override so downstream
+    // monitoring can flag the "recognition without evidence" events.
+    logAuditFromReq(req, {
+      entityType: "normalized_cost_line",
+      entityId: String(id),
+      action: cosStatus === null ? "cos.override_cleared" : "cos.override_applied",
+      projectName: (expense as any).projectName ?? null,
+      changesJson: {
+        previousOverride,
+        newOverride: cosStatus,
+        reason: cosStatus !== null ? reason : null,
+        invoiceNumber: expense.expenseInvoiceNumber ?? null,
+        invoiceDate: expense.expenseInvoicedDate ?? null,
+        overriddenByUserId: req.user?.id ?? null,
+        overriddenByRole: req.user?.role ?? null,
+        projectId: (expense as any).projectId ?? null,
+      },
+    });
 
     res.json({ success: true, id, cosStatus, overrideCleared: cosStatus === null });
 

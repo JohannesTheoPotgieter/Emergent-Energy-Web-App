@@ -1,9 +1,9 @@
 import type { Request, Response, NextFunction } from "express";
 import { getEffectiveUser, requireAuth as sharedRequireAuth } from "../auth-context";
-import { requireAdmin } from "../middleware/requireAdmin";
+import { requireAdmin, requireCosOverrideRole } from "../middleware/requireAdmin";
 import { PRIORITY_ADMIN_ROLES, DEPARTMENT_HEAD_ROLES } from "@shared/config/priorities";
 
-export { requireAdmin };
+export { requireAdmin, requireCosOverrideRole };
 
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
   return sharedRequireAuth(req, res, next);
