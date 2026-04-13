@@ -2352,6 +2352,18 @@ export async function runStartupOrchestrator(options: {
   await runStartupMaintenanceOrchestrator({ runtimeMaintenanceEnabled, startupSchemaRepairEnabled, log });
   report.maintenance.push(runtimeMaintenanceEnabled && startupSchemaRepairEnabled ? "completed" : "skipped");
 
+  try {
+    const clearResult = await db.execute(sql.raw(`
+      UPDATE smart_import_runs
+      SET status = (CASE WHEN status::text = 'PREVIEW' THEN 'SUPERSEDED' ELSE 'superseded' END)::smart_import_status
+      WHERE status::text IN ('PREVIEW', 'preview', 'AWAITING_REVIEW', 'awaiting_review')
+    `));
+    const cleared = (clearResult as any).rowCount ?? (clearResult as any).rows?.length ?? 0;
+    if (cleared > 0) log(`Cleared ${cleared} staged import runs`, "Startup:ImportCleanup");
+  } catch (err: unknown) {
+    log(`Import cleanup skipped: ${(err instanceof Error ? err.message : String(err))}`, "Startup:ImportCleanup");
+  }
+
   // Auto-enable data seeding if PostgreSQL is detected and project_info is empty
   let effectiveDataSeedEnabled = startupDataSeedEnabled;
   if (!effectiveDataSeedEnabled && getDbMode() === "postgres") {
