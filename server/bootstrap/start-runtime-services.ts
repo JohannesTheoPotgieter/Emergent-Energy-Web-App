@@ -64,6 +64,25 @@ export async function startRuntimeServices(options: {
     log(`[Dashboard Refresh Scheduler] Failed to start: ${err}`, "Startup:Runtime");
   }
 
+  // C3: BullMQ-backed alert dispatcher worker. Uses in-memory fallback
+  // when REDIS_URL is unset (see server/lib/job-queue.ts).
+  try {
+    const { startAlertDispatcherWorker } = await import("../services/alert-dispatcher-service");
+    await startAlertDispatcherWorker();
+    started.push("alert-dispatcher-worker");
+  } catch (err) {
+    log(`[Alert Dispatcher] Failed to start: ${err}`, "Startup:Runtime");
+  }
+
+  // C3: work-item due-date reminder scheduler.
+  try {
+    const { startTaskReminderScheduler } = await import("../services/task-reminder-dispatcher");
+    startTaskReminderScheduler();
+    started.push("task-reminder-scheduler");
+  } catch (err) {
+    log(`[Task Reminder Scheduler] Failed to start: ${err}`, "Startup:Runtime");
+  }
+
   try {
     const { startPeriodicSync } = await import("../ms-sync-service");
     if (startupSyncEnabled) {

@@ -41,6 +41,8 @@ export const dashboardSnapshots = pgTable("dashboard_snapshots", {
   lastSuccessAt: timestamp("last_success_at"),
   /** Duration of the most recent refresh attempt in ms. */
   computeMs: integer("compute_ms"),
+  /** C3: last freshness state we dispatched an alert for. Drives transition detection. */
+  lastAlertState: text("last_alert_state"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

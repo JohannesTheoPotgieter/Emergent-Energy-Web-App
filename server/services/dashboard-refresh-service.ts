@@ -97,6 +97,25 @@ export function deriveDashboardFreshness(params: {
 // ===================== REFRESH =====================
 
 /**
+ * After every refresh attempt, ask the C3 alert monitor to check for
+ * a freshness-state transition. Wrapped so a monitor failure never
+ * blocks the refresh.
+ */
+async function fireDashboardAlertHook(def: DashboardDefinition): Promise<void> {
+  try {
+    const { checkAndDispatchDashboardAlert } = await import("./dashboard-alert-monitor");
+    await checkAndDispatchDashboardAlert({
+      dashboardKey: def.key,
+      scopeKey: def.scopeKey,
+      freshWindowMs: def.freshWindowMs,
+      staleWindowMs: def.staleWindowMs,
+    });
+  } catch (err) {
+    console.warn("[DashboardRefresh] alert dispatch hook failed:", err);
+  }
+}
+
+/**
  * Run a single dashboard compute and upsert the resulting snapshot.
  * Never throws: failures are stored as status='failed' with the
  * previous payload preserved so the read path doesn't flicker to
@@ -108,6 +127,18 @@ export async function refreshDashboard(
   const def = REGISTRY.get(key);
   if (!def) return { ok: false, snapshot: null, error: `unknown_dashboard:${key}` };
 
+  const result = await refreshDashboardInner(def);
+  // C3: alert hook runs after every refresh attempt — success or
+  // failure. The monitor decides whether the freshness state actually
+  // transitioned and whether the transition is alert-worthy.
+  await fireDashboardAlertHook(def);
+  return result;
+}
+
+async function refreshDashboardInner(
+  def: DashboardDefinition,
+): Promise<{ ok: boolean; snapshot: DashboardSnapshot | null; error?: string }> {
+  const key = def.key;
   const scopeKey = def.scopeKey ?? "global";
   const startedAt = Date.now();
   try {
