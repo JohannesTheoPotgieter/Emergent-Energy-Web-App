@@ -1,7 +1,7 @@
 import { Express, Request, Response } from "express";
 import { db } from "./db";
-import { eq, sql, isNull } from "drizzle-orm";
-import { changeRequests, approvals } from "@shared/schema";
+import { eq, sql, isNull, and } from "drizzle-orm";
+import { changeRequests, approvals, projectAccess } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
 import { jwtAuth, requireAuth, getEffectiveUser } from "./auth-context";
@@ -210,15 +210,36 @@ export function registerChangeControlRoutes(app: Express): void {
           try {
             const user = getEffectiveUser(req);
             // B8: Use universal approval service with VO-specific metadata
-            const revImpact = Number(old.revenueImpact || parsed.data.revenueImpact || old.costImpact || 0);
-            const approval = await createVoApproval({
-              projectId: old.projectId,
-              changeRequestId: old.id,
-              requestedByUserId: user?.id ?? 0,
-              approverUserId: user?.id ?? 0, // TODO: resolve from project role assignments
-              title: `Change Request: ${old.title}`,
-              revenueImpact: revImpact || undefined,
-            });
+          const revImpact = Number(old.revenueImpact || parsed.data.revenueImpact || old.costImpact || 0);
+
+          // Resolve approver from project_access (canApprove = true) for this project
+          const [approverRow] = await db
+            .select({ userId: projectAccess.userId })
+            .from(projectAccess)
+            .where(
+              and(
+                eq(projectAccess.projectId, old.projectId),
+                eq(projectAccess.canApprove, true),
+                isNull(projectAccess.deletedAt),
+              ),
+            )
+            .limit(1);
+
+          const approverUserId = approverRow?.userId ?? null;
+          if (!approverUserId) {
+            console.warn(
+              `[ChangeControl] No approver with canApprove=true found for project ${old.projectId}, change request ${old.id}`,
+            );
+          }
+
+          const approval = await createVoApproval({
+            projectId: old.projectId,
+            changeRequestId: old.id,
+            requestedByUserId: user?.id ?? 0,
+            approverUserId,
+            title: `Change Request: ${old.title}`,
+            revenueImpact: revImpact || undefined,
+          });
             updates.approvalId = approval.id;
           } catch (approvalErr: unknown) {
             const msg = approvalErr instanceof Error ? approvalErr.message : String(approvalErr);
