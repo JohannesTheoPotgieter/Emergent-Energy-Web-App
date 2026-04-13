@@ -17,6 +17,7 @@ import type { MatchedRow, SectionType } from "./row-matcher";
 import type { RowMergeResult, FieldMerge, MergeCase } from "./conflict-engine";
 import type { PlannerResult } from "./planner";
 import { CANONICAL_SOURCES } from "./planner";
+import { normalizeCostLineStatus } from "./utils";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -510,7 +511,7 @@ export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Pr
         // Do NOT carry forward the old value — if the invoice number changed, realisation must update.
         cosRealised: !!((fieldUpdates.invoiceNumber ?? existing.invoiceNumber) && String(fieldUpdates.invoiceNumber ?? existing.invoiceNumber).trim()),
         cashflowConfirmed: existing.cashflowConfirmed,
-        status: fieldUpdates.status ?? existing.status,
+        status: normalizeCostLineStatus(fieldUpdates.status ?? existing.status),
         sourceSheet: existing.sourceSheet || fileRow.sourceSheet,
         sourceRow: existing.sourceRow || fileRow.sourceRow,
         importRunId: runId,

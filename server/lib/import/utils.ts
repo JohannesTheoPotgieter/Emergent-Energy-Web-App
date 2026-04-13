@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { normalizeWithLegacy } from "@shared/utils/status-normalization";
 
 // Excel formula error values — these should be treated as null
 const EXCEL_ERRORS = new Set(["#REF!", "#DIV/0!", "#VALUE!", "#N/A", "#NAME?", "#NULL!", "#NUM!"]);
@@ -92,6 +93,34 @@ export function parseStatus(value: any): number | null {
   }
 
   return null;
+}
+
+export type CostLineStatus = "planned" | "invoiced" | "approved" | "paid";
+
+const CANONICAL_COST_LINE_STATUSES = new Set<CostLineStatus>(["planned", "invoiced", "approved", "paid"]);
+
+/**
+ * Normalize imported Smart Import cost line status values to the canonical
+ * cost_line_status enum values. Unknown or blank values default to "planned".
+ */
+export function normalizeCostLineStatus(value: unknown): CostLineStatus {
+  const normalized = normalizeWithLegacy(value == null ? "" : String(value));
+  if (!normalized) return "planned";
+  if (CANONICAL_COST_LINE_STATUSES.has(normalized as CostLineStatus)) {
+    return normalized as CostLineStatus;
+  }
+
+  if (normalized === "invoice" || normalized === "invoices" || normalized === "billed") {
+    return "invoiced";
+  }
+  if (normalized === "approve" || normalized === "authorised" || normalized === "authorized") {
+    return "approved";
+  }
+  if (normalized === "pay" || normalized === "settled") {
+    return "paid";
+  }
+
+  return "planned";
 }
 
 export function getCellRawValue(cell: ExcelJS.Cell): any {
