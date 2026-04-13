@@ -68,8 +68,13 @@ export interface RecognitionModeResult {
 /**
  * Allocation confidence values that are trusted for category-level recognition.
  * PROVISIONAL is explicitly excluded — it is a diagnostic placeholder only.
+ *
+ * Values MUST match the canonical lowercase allocation_confidence enum
+ * literals stored in PostgreSQL (see
+ * shared/schema/finance.ts → allocationConfidenceEnum and
+ * server/lib/import/utils.ts → ALLOCATION_CONFIDENCE_VALUES).
  */
-const TRUSTED_CONFIDENCES = new Set(["DIRECT", "HEADER_ERROR_POSITIONAL", "MANUAL"]);
+const TRUSTED_CONFIDENCES = new Set(["direct", "header_error_positional", "manual"]);
 
 /**
  * Issue types that indicate J_cat extraction FAILED (column not found).

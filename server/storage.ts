@@ -571,7 +571,7 @@ export class DatabaseStorage implements IStorage {
       invoiceNumber: expense.invoiceNumber || null,
       invoiceDate: expense.date,
       counterpartyName: expense.vendor,
-      status: "PLANNED",
+      status: "planned",
       sourceSheet: expense.sourceSheet,
       sourceRow: expense.rowLocator,
     } as any).returning();
@@ -618,7 +618,7 @@ export class DatabaseStorage implements IStorage {
       milestoneName: revenue.type,
       amountExVat: String(revenue.amount),
       invoiceDate: revenue.date,
-      status: "PLANNED",
+      status: "planned",
       sourceSheet: revenue.sourceSheet,
       sourceRow: revenue.rowLocator,
       importRunId: 1,
