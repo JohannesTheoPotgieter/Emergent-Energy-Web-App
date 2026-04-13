@@ -18,7 +18,7 @@ export interface CreateApprovalParams {
   description?: string;
   projectId: number;
   requestedByUserId: number;
-  assignedApproverUserId?: number;
+  assignedApproverUserId?: number | null;
   relatedEntityType?: string;       // 'project', 'change_request', 'procurement_item', 'budget_baseline', 'deliverable', 'handover_pack'
   relatedEntityId?: number;
   urgency?: ApprovalUrgency;
@@ -57,7 +57,7 @@ export async function createBudgetApproval(params: {
   projectId: number;
   baselineId: number;
   requestedByUserId: number;
-  approverUserId: number;
+  approverUserId: number | null;
   title: string;
 }) {
   return createApproval({
@@ -81,7 +81,7 @@ export async function createVoApproval(params: {
   projectId: number;
   changeRequestId: number;
   requestedByUserId: number;
-  approverUserId: number;
+  approverUserId: number | null;
   title: string;
   revenueImpact?: number;
 }) {
@@ -108,7 +108,7 @@ export async function createHandoverPackApproval(params: {
   handoverPackId: number;
   packType: string;
   requestedByUserId: number;
-  approverUserId: number;
+  approverUserId: number | null;
 }) {
   return createApproval({
     approvalType: "handover_pack",
@@ -131,7 +131,7 @@ export async function createGateApproval(params: {
   projectId: number;
   gateName: string;
   requestedByUserId: number;
-  approverUserId: number;
+  approverUserId: number | null;
 }) {
   return createApproval({
     approvalType: "gate",
