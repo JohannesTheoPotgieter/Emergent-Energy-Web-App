@@ -15,6 +15,9 @@ import { projectInfo } from "./projects";
 
 // ===================== CONSTANTS =====================
 
+// All stage codes that have ever existed. Kept stable for back-references
+// in historical data (stage_gate_evidence_snapshots, project_stage_decisions
+// for closed projects, etc.). New code should iterate ACTIVE_STAGE_CODES.
 export const STAGE_CODES = [
   'S01_FIRST_ASSESSMENT',
   'S02_DESIGN_COST_PROPOSAL',
@@ -28,6 +31,46 @@ export const STAGE_CODES = [
   'S10_POST_HANDOVER_REVIEW',
 ] as const;
 export type StageCode = typeof STAGE_CODES[number];
+
+/**
+ * Stage codes that are deprecated and merged into another stage. Kept in
+ * STAGE_CODES for backward-compat reads but excluded from ACTIVE_STAGE_CODES
+ * so iteration / next-stage / progression logic skips them.
+ *
+ * Migration 20260413_stage_lifecycle_merge:
+ *   S04_PD_PM_HANDOVER  -> merged into S03_SIGNATURE_FINANCIAL_CLOSE
+ *   S05_FINANCIAL_REVIEW -> merged into S02_DESIGN_COST_PROPOSAL
+ */
+export const DEPRECATED_STAGE_CODES = new Set<StageCode>([
+  'S04_PD_PM_HANDOVER',
+  'S05_FINANCIAL_REVIEW',
+]);
+
+/**
+ * Map from deprecated stage codes to their replacement. Used by phase
+ * resolution and any service that needs to translate a legacy stage
+ * reference into the active equivalent.
+ */
+export const DEPRECATED_STAGE_REPLACEMENTS: Record<string, StageCode> = {
+  S04_PD_PM_HANDOVER: 'S03_SIGNATURE_FINANCIAL_CLOSE',
+  S05_FINANCIAL_REVIEW: 'S02_DESIGN_COST_PROPOSAL',
+};
+
+/**
+ * The 8 active stages — what every new code path should iterate.
+ * Order matches STAGE_CODES so sequence-based logic still works.
+ */
+export const ACTIVE_STAGE_CODES = STAGE_CODES.filter(
+  (c) => !DEPRECATED_STAGE_CODES.has(c),
+) as readonly StageCode[];
+
+/**
+ * Translate a stage code to its active equivalent. Returns the input
+ * unchanged if it's already active.
+ */
+export function resolveActiveStageCode(code: string): StageCode {
+  return (DEPRECATED_STAGE_REPLACEMENTS[code] ?? (code as StageCode));
+}
 
 export const STAGE_STATUSES = [
   'NOT_STARTED',

@@ -5,6 +5,7 @@
 // Every gate is a soft gate — admin can always override.
 
 import type { StageStatus, RequirementStatus, StageCode } from "../schema/stage-lifecycle";
+import { ACTIVE_STAGE_CODES, DEPRECATED_STAGE_CODES } from "../schema/stage-lifecycle";
 
 // Valid state transitions (non-admin)
 export const VALID_STAGE_TRANSITIONS: Record<StageStatus, StageStatus[]> = {
@@ -135,27 +136,49 @@ export function computeDaysInStage(startedAt: Date | string | null): number {
 
 /**
  * Stage sequence map for ordering.
+ *
+ * Deprecated stages (S04, S05) are kept in this map so legacy data
+ * still resolves to a number, but they share the sequence of their
+ * replacement stage. New iteration / next-stage logic uses
+ * ACTIVE_STAGE_SEQUENCE which excludes them.
  */
 export const STAGE_SEQUENCE: Record<StageCode, number> = {
   S01_FIRST_ASSESSMENT: 1,
   S02_DESIGN_COST_PROPOSAL: 2,
   S03_SIGNATURE_FINANCIAL_CLOSE: 3,
-  S04_PD_PM_HANDOVER: 4,
-  S05_FINANCIAL_REVIEW: 5,
-  S06_CONSTRUCTION: 6,
-  S07_COMMISSIONING: 7,
-  S08_OM_HANDOVER: 8,
-  S09_CLIENT_HANDOVER: 9,
-  S10_POST_HANDOVER_REVIEW: 10,
+  S04_PD_PM_HANDOVER: 3,             // merged into S03
+  S05_FINANCIAL_REVIEW: 2,           // merged into S02
+  S06_CONSTRUCTION: 4,
+  S07_COMMISSIONING: 5,
+  S08_OM_HANDOVER: 6,
+  S09_CLIENT_HANDOVER: 7,
+  S10_POST_HANDOVER_REVIEW: 8,
 };
 
 /**
- * Get the next stage code given the current one.
+ * Active-only sequence (8 stages after the S03/S04 + S02/S05 merge).
+ */
+export const ACTIVE_STAGE_SEQUENCE: ReadonlyArray<StageCode> = ACTIVE_STAGE_CODES;
+
+/**
+ * Get the next ACTIVE stage code given the current one. Deprecated
+ * stages are first translated to their active replacement before the
+ * lookup, so a stale reference to S04 still finds the correct next
+ * stage (S06_CONSTRUCTION).
+ *
  * Returns null if at the final stage.
  */
 export function getNextStageCode(current: StageCode): StageCode | null {
-  const seq = STAGE_SEQUENCE[current];
-  const codes = Object.entries(STAGE_SEQUENCE) as [StageCode, number][];
-  const next = codes.find(([, s]) => s === seq + 1);
-  return next ? next[0] : null;
+  const active = DEPRECATED_STAGE_CODES.has(current)
+    ? // S04 -> S03, S05 -> S02 mapping lives in stage-lifecycle.ts but
+      // we don't import the runtime helper here to keep this file
+      // tree-shake-friendly. Inline the two cases.
+      current === 'S04_PD_PM_HANDOVER'
+        ? 'S03_SIGNATURE_FINANCIAL_CLOSE'
+        : 'S02_DESIGN_COST_PROPOSAL'
+    : current;
+  const idx = ACTIVE_STAGE_SEQUENCE.indexOf(active);
+  if (idx === -1) return null;
+  if (idx === ACTIVE_STAGE_SEQUENCE.length - 1) return null;
+  return ACTIVE_STAGE_SEQUENCE[idx + 1] ?? null;
 }

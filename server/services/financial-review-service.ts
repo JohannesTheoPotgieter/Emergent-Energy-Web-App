@@ -303,7 +303,11 @@ const OUTCOME_TO_STAGE_STATUS: Record<ReviewOutcome, string> = {
   DEFERRED: "IN_PROGRESS",
 };
 
-const S05_STAGE_CODE = "S05_FINANCIAL_REVIEW";
+// Post-merge (migration 20260413_stage_lifecycle_merge): the financial
+// review checklist lives under S02 Design & Cost Proposal as its closing
+// step. The constant name is kept for backward compatibility with the
+// rest of this file; the value points at the active stage code.
+const S05_STAGE_CODE = "S02_DESIGN_COST_PROPOSAL";
 
 export async function decideReview(params: {
   reviewId: number;
@@ -339,8 +343,9 @@ export async function decideReview(params: {
 
   if (!s05Instance) {
     throw new Error(
-      `No S05_FINANCIAL_REVIEW stage instance found for project ${review.projectId}. ` +
-      `Cannot record financial review outcome without a matching stage instance.`
+      `No S02_DESIGN_COST_PROPOSAL stage instance found for project ${review.projectId}. ` +
+      `Cannot record financial review outcome without a matching stage instance ` +
+      `(S05_FINANCIAL_REVIEW was merged into S02 by migration 20260413_stage_lifecycle_merge).`
     );
   }
 

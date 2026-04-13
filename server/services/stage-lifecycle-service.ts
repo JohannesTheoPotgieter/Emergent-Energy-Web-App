@@ -233,12 +233,12 @@ export async function computeCurrentStageGateReadiness(projectId: number, stageC
  * Create all 10 stage instances for a project.
  * Skips any that already exist (idempotent).
  */
+// Post-merge (migration 20260413_stage_lifecycle_merge): 8 active stages.
+// S04_PD_PM_HANDOVER folded into S03, S05_FINANCIAL_REVIEW folded into S02.
 const DEFAULT_STAGE_DEFS = [
   { stageCode: 'S01_FIRST_ASSESSMENT', stageName: 'First Assessment', stageSequence: 1, description: 'Initial site and feasibility assessment', defaultOwnerRole: 'PD', defaultApproverRole: 'COO' },
-  { stageCode: 'S02_DESIGN_COST_PROPOSAL', stageName: 'Design & Cost Proposal', stageSequence: 2, description: 'Engineering design and costing', defaultOwnerRole: 'ENGINEERING', defaultApproverRole: 'COO' },
-  { stageCode: 'S03_SIGNATURE_FINANCIAL_CLOSE', stageName: 'Financial Close', stageSequence: 3, description: 'Contract signature and financial close', defaultOwnerRole: 'PD', defaultApproverRole: 'CFO' },
-  { stageCode: 'S04_PD_PM_HANDOVER', stageName: 'PD to PM Handover', stageSequence: 4, description: 'Handover from project development to project management', defaultOwnerRole: 'PM', defaultApproverRole: 'COO' },
-  { stageCode: 'S05_FINANCIAL_REVIEW', stageName: 'Financial Review', stageSequence: 5, description: 'Pre-construction financial review', defaultOwnerRole: 'FINANCE', defaultApproverRole: 'CFO' },
+  { stageCode: 'S02_DESIGN_COST_PROPOSAL', stageName: 'Design & Cost Proposal', stageSequence: 2, description: 'Engineering design, costing, and pre-construction financial review (absorbed from former S05).', defaultOwnerRole: 'ENGINEERING', defaultApproverRole: 'COO' },
+  { stageCode: 'S03_SIGNATURE_FINANCIAL_CLOSE', stageName: 'Financial Close', stageSequence: 3, description: 'Contract signature, financial close, and PD-to-PM handover (absorbed from former S04).', defaultOwnerRole: 'PD', defaultApproverRole: 'CFO' },
   { stageCode: 'S06_CONSTRUCTION', stageName: 'Construction', stageSequence: 6, description: 'On-site construction phase', defaultOwnerRole: 'PM', defaultApproverRole: 'COO' },
   { stageCode: 'S07_COMMISSIONING', stageName: 'Commissioning', stageSequence: 7, description: 'System testing and commissioning', defaultOwnerRole: 'ENGINEERING', defaultApproverRole: 'COO' },
   { stageCode: 'S08_OM_HANDOVER', stageName: 'O&M Handover', stageSequence: 8, description: 'Handover to operations and maintenance', defaultOwnerRole: 'PM', defaultApproverRole: 'COO' },
@@ -248,7 +248,9 @@ const DEFAULT_STAGE_DEFS = [
 
 async function ensureStageDefinitions() {
   const existing = await db.select().from(stageDefinitions).where(eq(stageDefinitions.isActive, true));
-  if (existing.length >= 10) return;
+  // Post-merge there are 8 active stages. The check is ">=" so a future
+  // addition still triggers re-seed.
+  if (existing.length >= DEFAULT_STAGE_DEFS.length) return;
   const existingCodes = new Set(existing.map((e: any) => e.stageCode));
   const toSeed = DEFAULT_STAGE_DEFS.filter(d => !existingCodes.has(d.stageCode));
   if (toSeed.length > 0) {

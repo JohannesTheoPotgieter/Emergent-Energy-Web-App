@@ -1791,8 +1791,16 @@ export function registerLifecycleRoutes(app: Express) {
         reason: `Phase changed from ${existing.phase || "unknown"} to ${phase.trim()}`,
       });
 
-      // Auto-create PD→PM handover DRAFT when project reaches the handover stage
-      const PD_PM_HANDOVER_PHASES = ["P2_PD_PM_HANDOVER", "S04_PD_PM_HANDOVER", "Planning"];
+      // Auto-create PD→PM handover DRAFT when project reaches the handover stage.
+      // Post-merge: the trigger phase set includes the legacy PD-PM codes plus the
+      // merged S03 Financial Close, since the handover is now a sub-step of S03.
+      const PD_PM_HANDOVER_PHASES = [
+        "P2_PD_PM_HANDOVER",
+        "S04_PD_PM_HANDOVER",
+        "S03_SIGNATURE_FINANCIAL_CLOSE",
+        "Signature & Financial Close",
+        "Planning",
+      ];
       if (PD_PM_HANDOVER_PHASES.includes(phase.trim())) {
         try {
           const existingHandover = await db.select({ id: projectPdPmHandover.id })
