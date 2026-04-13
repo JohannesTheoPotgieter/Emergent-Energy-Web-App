@@ -248,6 +248,7 @@ function initializeSqlite() {
   console.log(`[DB] Using SQLite file: ${sqliteFile}`);
   
   const sqlite = new BetterSqlite3(sqliteFile);
+  sqlite.function('now', () => new Date().toISOString());
   db = drizzleSqlite(sqlite, { schema });
   attachSqliteExecuteCompat(db);
   dbMode = 'sqlite';
@@ -517,6 +518,158 @@ async function ensureSqliteSchema() {
       WHERE active = 1
         AND entity_type IN ('personal_task', 'engineering_task', 'quality_item', 'deliverable', 'approval', 'project_eng_approval', 'procurement_item', 'raid_item', 'commissioning_item', 'change_request')
     `);
+
+    // Lifecycle execution state (SQLite fallback for Replit/dev)
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS project_execution_state (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL UNIQUE,
+        phase TEXT,
+        phase_updated_at TEXT,
+        phase_updated_by_user_id INTEGER,
+        phase_notes TEXT,
+        pd_handover_date TEXT,
+        construction_start_date TEXT,
+        commissioning_date TEXT,
+        om_handover_date TEXT,
+        client_handover_date TEXT,
+        construction_start_actual TEXT,
+        pd_handover_actual TEXT,
+        commissioning_actual TEXT,
+        client_handover_actual TEXT,
+        escalation_level TEXT,
+        rag_status TEXT,
+        rag_comment TEXT,
+        rag_updated_at TEXT,
+        rag_updated_by_user_id INTEGER,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        deleted_at TEXT,
+        archived_status TEXT NOT NULL DEFAULT 'ACTIVE',
+        execution_enabled INTEGER NOT NULL DEFAULT 0,
+        execution_gate_status TEXT NOT NULL DEFAULT 'NOT_ELIGIBLE',
+        execution_gate_reason TEXT,
+        execution_phase TEXT,
+        signed_status TEXT NOT NULL DEFAULT 'NONE',
+        signed_date TEXT,
+        signed_document_link TEXT,
+        cp_signed INTEGER NOT NULL DEFAULT 0,
+        cp_signed_date TEXT,
+        cp_signed_by_user_id INTEGER,
+        cp_evidence_type TEXT,
+        cp_evidence_ref TEXT,
+        pm_task_pack_created INTEGER NOT NULL DEFAULT 0,
+        eng_post_cp_task_pack_created INTEGER NOT NULL DEFAULT 0,
+        construction_manager_user_id INTEGER,
+        quality_lead_user_id INTEGER,
+        engineering_lead_user_id INTEGER,
+        program_manager_user_id INTEGER,
+        project_finance_user_id INTEGER,
+        matriarch_handover_target TEXT,
+        practical_completion_target TEXT,
+        practical_completion_actual TEXT,
+        cost_baseline REAL,
+        margin_baseline REAL,
+        current_stage_code TEXT,
+        gate_status TEXT,
+        gate_readiness_pct INTEGER,
+        waiting_on_department TEXT,
+        waiting_on_user_id INTEGER,
+        next_required_action TEXT,
+        stage_owner_user_id INTEGER,
+        stage_approver_user_id INTEGER,
+        kam_user_id INTEGER,
+        site_establishment_date TEXT,
+        site_establishment_actual TEXT,
+        financial_review_status TEXT NOT NULL DEFAULT 'NOT_STARTED',
+        financial_review_id INTEGER,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await db.run(sql`CREATE INDEX IF NOT EXISTS idx_project_execution_state_phase ON project_execution_state(phase)`);
+    await db.run(sql`CREATE INDEX IF NOT EXISTS idx_project_execution_state_archived_status ON project_execution_state(archived_status)`);
+
+    // Calendar holidays (used by COS period lock scheduler)
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS calendar_holiday (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT NOT NULL,
+        name TEXT NOT NULL,
+        country_code TEXT NOT NULL DEFAULT 'ZA'
+      )
+    `);
+    await db.run(sql`CREATE INDEX IF NOT EXISTS idx_calendar_holiday_country_date ON calendar_holiday(country_code, date)`);
+
+    // COS period lock ledger
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS cos_period_locks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        period_month TEXT NOT NULL,
+        locked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        locked_by_user_id INTEGER,
+        auto_locked INTEGER NOT NULL DEFAULT 0,
+        unlocked_at TEXT,
+        unlocked_by_user_id INTEGER,
+        unlock_reason TEXT,
+        notes TEXT
+      )
+    `);
+    await db.run(sql`CREATE INDEX IF NOT EXISTS idx_cos_period_locks_period ON cos_period_locks(period_month)`);
+    await db.run(sql`CREATE INDEX IF NOT EXISTS idx_cos_period_locks_active ON cos_period_locks(period_month, unlocked_at)`);
+
+    // Integration health registry
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS integrations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        display_name TEXT NOT NULL,
+        description TEXT,
+        auth_type TEXT NOT NULL DEFAULT 'api_key',
+        owner_process TEXT,
+        fallback_description TEXT,
+        alert_target TEXT,
+        metadata TEXT,
+        last_alert_state TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        deleted_at TEXT
+      )
+    `);
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS integration_run_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        integration_id INTEGER NOT NULL,
+        run_type TEXT,
+        started_at TEXT NOT NULL,
+        finished_at TEXT,
+        status TEXT NOT NULL,
+        records_processed INTEGER,
+        error_code TEXT,
+        error_detail TEXT,
+        metadata TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await db.run(sql`CREATE INDEX IF NOT EXISTS idx_integration_run_events_integration_id ON integration_run_events(integration_id)`);
+
+    // Dashboard snapshot cache
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS dashboard_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        dashboard_key TEXT NOT NULL,
+        scope_key TEXT NOT NULL DEFAULT 'global',
+        payload_json TEXT,
+        status TEXT NOT NULL DEFAULT 'ok',
+        error_detail TEXT,
+        computed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        last_success_at TEXT,
+        compute_ms INTEGER,
+        last_alert_state TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await db.run(sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_dashboard_snapshots_key_scope ON dashboard_snapshots(dashboard_key, scope_key)`);
     
     console.log('[DB] ✓ SQLite schema verified');
     await db.run(sql`
@@ -551,6 +704,16 @@ async function ensureSqliteSchema() {
         expires_at TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(user_id, entity, action)
+      )
+    `);
+
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS app_settings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        key TEXT NOT NULL UNIQUE,
+        value TEXT,
+        updated_by TEXT,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       )
     `);
 

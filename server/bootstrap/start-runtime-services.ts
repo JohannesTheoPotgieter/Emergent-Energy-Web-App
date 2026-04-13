@@ -1,5 +1,6 @@
 import { runBackfill } from "../lib/backfill";
 import { startScheduler } from "../importPipeline";
+import { getDbMode } from "../db";
 
 export async function startRuntimeServices(options: {
   startupBackfillEnabled: boolean;
@@ -8,6 +9,7 @@ export async function startRuntimeServices(options: {
 }) {
   const { startupBackfillEnabled, startupSyncEnabled, log } = options;
   const started: string[] = [];
+  const isSqlite = getDbMode() === "sqlite";
 
   if (startupBackfillEnabled) {
     runBackfill().catch((err) => log(`[Backfill] startup error: ${err}`, "Startup:Runtime"));
@@ -37,31 +39,43 @@ export async function startRuntimeServices(options: {
     log(`[Notification Trigger Scheduler] Failed to start: ${err}`, "Startup:Runtime");
   }
 
-  try {
-    const { scheduleCosPeriodAutoLock } = await import("./cos-period-lock-scheduler");
-    scheduleCosPeriodAutoLock();
-    started.push("cos-period-lock-scheduler");
-  } catch (err) {
-    log(`[COS Period Lock Scheduler] Failed to start: ${err}`, "Startup:Runtime");
+  if (!isSqlite) {
+    try {
+      const { scheduleCosPeriodAutoLock } = await import("./cos-period-lock-scheduler");
+      scheduleCosPeriodAutoLock();
+      started.push("cos-period-lock-scheduler");
+    } catch (err) {
+      log(`[COS Period Lock Scheduler] Failed to start: ${err}`, "Startup:Runtime");
+    }
+  } else {
+    log("Skipped COS period-lock scheduler in SQLite mode (Postgres-first feature).", "Startup:Runtime");
   }
 
   // C1: seed the integration registry so the health dashboard has tiles
   // from day 1 even before the first run has been logged. Idempotent.
-  try {
-    const { seedIntegrationRegistry } = await import("../services/integration-health-service");
-    const { inserted } = await seedIntegrationRegistry();
-    started.push(`integration-registry-seed(inserted=${inserted})`);
-  } catch (err) {
-    log(`[Integration Registry Seed] Failed: ${err}`, "Startup:Runtime");
+  if (!isSqlite) {
+    try {
+      const { seedIntegrationRegistry } = await import("../services/integration-health-service");
+      const { inserted } = await seedIntegrationRegistry();
+      started.push(`integration-registry-seed(inserted=${inserted})`);
+    } catch (err) {
+      log(`[Integration Registry Seed] Failed: ${err}`, "Startup:Runtime");
+    }
+  } else {
+    log("Skipped integration registry seed in SQLite mode (uses JSONB metadata).", "Startup:Runtime");
   }
 
   // C2: register org-wide dashboards and start the periodic refresh loop.
-  try {
-    const { scheduleDashboardRefresh } = await import("./dashboard-refresh-scheduler");
-    await scheduleDashboardRefresh();
-    started.push("dashboard-refresh-scheduler");
-  } catch (err) {
-    log(`[Dashboard Refresh Scheduler] Failed to start: ${err}`, "Startup:Runtime");
+  if (!isSqlite) {
+    try {
+      const { scheduleDashboardRefresh } = await import("./dashboard-refresh-scheduler");
+      await scheduleDashboardRefresh();
+      started.push("dashboard-refresh-scheduler");
+    } catch (err) {
+      log(`[Dashboard Refresh Scheduler] Failed to start: ${err}`, "Startup:Runtime");
+    }
+  } else {
+    log("Skipped dashboard refresh scheduler in SQLite mode (Postgres-first JSON cache tables).", "Startup:Runtime");
   }
 
   // C3: BullMQ-backed alert dispatcher worker. Uses in-memory fallback
