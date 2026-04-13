@@ -21,8 +21,26 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   cancelled: [],
 };
 
-// Roles that can review POs
-const PO_REVIEWER_ROLES = ["PROGRAM_MANAGER", "COO_ADMIN", "CEO_ADMIN"];
+// B2 (audit closeout): roles that are eligible to be ASSIGNED as a PO
+// approver. Per spec: "CFO can do any, Program finance manager, Program
+// manager, and COO can approve purchase orders." The submitter picks one
+// specific user from this whitelist at submission time.
+const PO_APPROVAL_ELIGIBLE_ROLES = [
+  "CFO",
+  "PROGRAM_FINANCE_MANAGER",
+  "PROGRAM_MANAGER",
+  "COO_ADMIN",
+];
+
+// B2: universal-override roles. These users can approve ANY pending PO
+// regardless of whether they were formally assigned — the approval path
+// creates a retroactive assignment row for audit purposes. CFO has this
+// per spec; CEO_ADMIN is kept as the ultimate admin override.
+const PO_UNIVERSAL_APPROVER_ROLES = ["CFO", "CEO_ADMIN"];
+
+// Legacy alias — kept for any existing references; now aligned with the
+// new eligible list. Deprecated: prefer PO_APPROVAL_ELIGIBLE_ROLES directly.
+const PO_REVIEWER_ROLES = PO_APPROVAL_ELIGIBLE_ROLES;
 
 const EMERGENT_HEADER = {
   tel: "+27 21 828 4202 / +27 11 028 8060",
@@ -407,6 +425,44 @@ export function registerPoRoutes(app: Express) {
       const projectId = Number(po.project_id) || 0;
       const total = Number(po.total) || 0;
 
+      // B2: submission requires the caller to explicitly pick ONE approver
+      // from the eligible list. No more "spray to every eligible user" —
+      // accountability is anchored to a single person per PO, with manual
+      // delegation available via POST /api/po/:poId/delegate.
+      const assignedApproverUserId = Number(req.body?.assignedApproverUserId);
+      if (!assignedApproverUserId || Number.isNaN(assignedApproverUserId)) {
+        return res.status(400).json({
+          error: "assignedApproverUserId is required",
+          message:
+            "Pick an approver from the eligible list (CFO, Program Finance Manager, Program Manager, or COO) before submitting.",
+        });
+      }
+
+      // Validate the chosen approver exists, is active, and holds an
+      // eligible role. Fail the submission if not — this is a formal
+      // assignment, so a bad target ID should be a clean 400, not a
+      // silently-orphaned assignment row.
+      const approverLookup = await db.execute(sql`
+        SELECT id, name, role FROM users
+        WHERE id = ${assignedApproverUserId}
+          AND is_active = true
+      `);
+      const approver = rowsFromResult(approverLookup)[0];
+      if (!approver) {
+        return res.status(400).json({
+          error: "assigned_approver_not_found",
+          message: `User ${assignedApproverUserId} does not exist or is inactive.`,
+        });
+      }
+      const approverRole = String(approver.role);
+      if (!PO_APPROVAL_ELIGIBLE_ROLES.includes(approverRole)) {
+        return res.status(400).json({
+          error: "assigned_approver_ineligible",
+          message: `Role '${approverRole}' is not allowed to approve POs. Eligible roles: ${PO_APPROVAL_ELIGIBLE_ROLES.join(", ")}.`,
+          eligibleRoles: PO_APPROVAL_ELIGIBLE_ROLES,
+        });
+      }
+
       // Create approval
       const approval = await createPoApproval({
         projectId,
@@ -416,21 +472,11 @@ export function registerPoRoutes(app: Express) {
         total,
       });
 
-      // Create reviewer assignments — find users with PO_REVIEWER_ROLES
-      const reviewerRows = await db.execute(sql`
-        SELECT id, name, role FROM users
-        WHERE role = ANY(${PO_REVIEWER_ROLES})
-          AND is_active = true
-        LIMIT 10
+      // B2: create exactly ONE assignment row for the chosen approver.
+      await db.execute(sql`
+        INSERT INTO po_review_assignments (purchase_order_id, reviewer_user_id, reviewer_role, decision)
+        VALUES (${poIdNum}, ${Number(approver.id)}, ${approverRole}, 'pending')
       `);
-      const reviewers = rowsFromResult(reviewerRows);
-
-      for (const reviewer of reviewers) {
-        await db.execute(sql`
-          INSERT INTO po_review_assignments (purchase_order_id, reviewer_user_id, reviewer_role, decision)
-          VALUES (${poIdNum}, ${Number(reviewer.id)}, ${String(reviewer.role)}, 'pending')
-        `);
-      }
 
       // Update PO status
       await db.execute(sql`
@@ -443,7 +489,12 @@ export function registerPoRoutes(app: Express) {
         entityType: "purchase_order",
         entityId: String(poIdNum),
         action: "submit_for_approval",
-        changesJson: { approvalId: approval.id, reviewerCount: reviewers.length },
+        changesJson: {
+          approvalId: approval.id,
+          assignedApproverUserId: Number(approver.id),
+          assignedApproverRole: approverRole,
+          assignedApproverName: String(approver.name || ""),
+        },
       });
 
       if (projectId) {
@@ -461,7 +512,13 @@ export function registerPoRoutes(app: Express) {
         });
       }
 
-      res.json({ success: true, approvalId: approval.id, reviewerCount: reviewers.length });
+      res.json({
+        success: true,
+        approvalId: approval.id,
+        assignedApproverUserId: Number(approver.id),
+        assignedApproverRole: approverRole,
+        assignedApproverName: String(approver.name || ""),
+      });
     } catch (err: unknown) {
       console.error("[PO] Submit error:", err instanceof Error ? err.message : String(err));
       res.status(500).json({ error: "Failed to submit PO for approval" });
@@ -474,6 +531,7 @@ export function registerPoRoutes(app: Express) {
     try {
       const user = getEffectiveUser(req);
       if (!user?.id) return res.status(401).json({ error: "Not authenticated" });
+      const userRole = String(user.role || "");
 
       const poIdNum = parseInt(String(req.params.poId));
       if (isNaN(poIdNum)) return res.status(400).json({ error: "Invalid PO ID" });
@@ -484,39 +542,58 @@ export function registerPoRoutes(app: Express) {
         return res.status(400).json({ error: `Invalid decision. Must be: ${validDecisions.join(", ")}` });
       }
 
-      // Find the reviewer's assignment
+      // B2: find the ACTIVE assignment (pending, not yet delegated). The
+      // partial index idx_po_review_active makes this fast.
       const assignmentResult = await db.execute(sql`
-        SELECT id FROM po_review_assignments
-        WHERE purchase_order_id = ${poIdNum} AND reviewer_user_id = ${user.id} AND decision = 'pending'
+        SELECT id, reviewer_user_id FROM po_review_assignments
+        WHERE purchase_order_id = ${poIdNum}
+          AND decision = 'pending'
+          AND delegated_to_user_id IS NULL
+        ORDER BY id DESC
+        LIMIT 1
       `);
-      const assignment = rowsFromResult(assignmentResult)[0];
-      if (!assignment) {
-        return res.status(403).json({ error: "You are not a pending reviewer for this PO" });
+      const activeAssignment = rowsFromResult(assignmentResult)[0];
+
+      let assignmentId: number;
+      let usedOverride = false;
+
+      if (activeAssignment && Number(activeAssignment.reviewer_user_id) === user.id) {
+        // Happy path: caller IS the assigned approver.
+        assignmentId = Number(activeAssignment.id);
+      } else if (PO_UNIVERSAL_APPROVER_ROLES.includes(userRole)) {
+        // B2: universal override for CFO and CEO_ADMIN. They can approve
+        // any PO regardless of formal assignment. Create a retroactive
+        // assignment row so the audit trail still shows WHO decided.
+        const insertResult = await db.execute(sql`
+          INSERT INTO po_review_assignments (purchase_order_id, reviewer_user_id, reviewer_role, decision)
+          VALUES (${poIdNum}, ${user.id}, ${userRole}, 'pending')
+          RETURNING id
+        `);
+        assignmentId = Number(rowsFromResult(insertResult)[0]?.id);
+        usedOverride = true;
+      } else {
+        return res.status(403).json({
+          error: "forbidden",
+          reason: "Only the assigned approver (or CFO / CEO_ADMIN universal override) can review this PO.",
+          activeAssignedUserId: activeAssignment ? Number(activeAssignment.reviewer_user_id) : null,
+        });
       }
 
       // Record decision
       await db.execute(sql`
         UPDATE po_review_assignments
         SET decision = ${decision}, decided_at = NOW(), notes = ${notes || null}, updated_at = NOW()
-        WHERE id = ${Number(assignment.id)}
+        WHERE id = ${assignmentId}
       `);
 
-      // Check all reviewer decisions to determine PO status
-      const allReviewsResult = await db.execute(sql`
-        SELECT decision FROM po_review_assignments WHERE purchase_order_id = ${poIdNum}
-      `);
-      const allReviews = rowsFromResult(allReviewsResult);
-
-      let newPoStatus = "in_review";
-      const decisions = allReviews.map(r => String(r.decision));
-
-      if (decisions.some(d => d === "blocked")) {
-        newPoStatus = "blocked";
-      } else if (decisions.some(d => d === "requires_info")) {
-        newPoStatus = "requires_info";
-      } else if (decisions.every(d => d === "approved")) {
-        newPoStatus = "approved";
-      }
+      // B2: single-approver model. The PO status moves immediately based
+      // on THIS decision alone. No aggregation across a reviewer pool —
+      // accountability is anchored to the one person who was assigned
+      // (or the CFO/CEO universal-override caller).
+      const newPoStatus =
+        decision === "approved" ? "approved" :
+        decision === "blocked" ? "blocked" :
+        "requires_info";
 
       await db.execute(sql`
         UPDATE purchase_orders SET status = ${newPoStatus}, updated_at = NOW() WHERE id = ${poIdNum}
@@ -525,8 +602,14 @@ export function registerPoRoutes(app: Express) {
       logAuditFromReq(req, {
         entityType: "purchase_order",
         entityId: String(poIdNum),
-        action: "review",
-        changesJson: { decision, reviewerUserId: user.id, resultingStatus: newPoStatus },
+        action: usedOverride ? "review_universal_override" : "review",
+        changesJson: {
+          decision,
+          reviewerUserId: user.id,
+          reviewerRole: userRole,
+          resultingStatus: newPoStatus,
+          usedUniversalOverride: usedOverride,
+        },
       });
 
       // Get project ID for event
@@ -547,10 +630,171 @@ export function registerPoRoutes(app: Express) {
         });
       }
 
-      res.json({ success: true, newStatus: newPoStatus, decision });
+      res.json({ success: true, newStatus: newPoStatus, decision, usedUniversalOverride: usedOverride });
     } catch (err: unknown) {
       console.error("[PO] Review error:", err instanceof Error ? err.message : String(err));
       res.status(500).json({ error: "Failed to review PO" });
+    }
+  });
+
+  // ===================== DELEGATE PO APPROVAL (B2) =====================
+  // Manually reassign the active approver for a PO. Non-blocking, always
+  // manual per user direction: no timeouts, no out-of-office auto-routing.
+  //
+  // Allowed callers:
+  //   - The currently-assigned reviewer (self-delegate when they can't act)
+  //   - COO_ADMIN, CFO, CEO_ADMIN (admin override / escalation)
+  // Target user must hold a role in PO_APPROVAL_ELIGIBLE_ROLES.
+  //
+  // Effect:
+  //   - The outgoing assignment row gets delegated_to_user_id, delegated_at,
+  //     delegation_reason set. The row is no longer "active" (the partial
+  //     index sges_active_assignment excludes it).
+  //   - A fresh assignment row is created for the new reviewer with
+  //     decision='pending'. This becomes the new active assignment.
+  //   - The PO status is unchanged (still 'submitted' or 'in_review').
+  app.post("/api/po/:poId/delegate", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = getEffectiveUser(req);
+      if (!user?.id) return res.status(401).json({ error: "Not authenticated" });
+      const userRole = String(user.role || "");
+
+      const poIdNum = parseInt(String(req.params.poId));
+      if (isNaN(poIdNum)) return res.status(400).json({ error: "Invalid PO ID" });
+
+      const toUserId = Number(req.body?.toUserId);
+      const reason = String(req.body?.reason || "").trim() || null;
+      if (!toUserId || Number.isNaN(toUserId)) {
+        return res.status(400).json({ error: "toUserId is required" });
+      }
+
+      // Find the current active assignment.
+      const activeResult = await db.execute(sql`
+        SELECT id, reviewer_user_id FROM po_review_assignments
+        WHERE purchase_order_id = ${poIdNum}
+          AND decision = 'pending'
+          AND delegated_to_user_id IS NULL
+        ORDER BY id DESC
+        LIMIT 1
+      `);
+      const active = rowsFromResult(activeResult)[0];
+      if (!active) {
+        return res.status(404).json({
+          error: "no_active_assignment",
+          message: "This PO has no active approver assignment to delegate.",
+        });
+      }
+
+      // Authorization: caller is either the current assignee OR an admin.
+      const adminDelegators = ["COO_ADMIN", "CFO", "CEO_ADMIN"];
+      const isCurrentAssignee = Number(active.reviewer_user_id) === user.id;
+      const isAdmin = adminDelegators.includes(userRole);
+      if (!isCurrentAssignee && !isAdmin) {
+        return res.status(403).json({
+          error: "forbidden",
+          reason: "Only the current assignee or an admin (COO_ADMIN / CFO / CEO_ADMIN) can delegate a PO approval.",
+        });
+      }
+
+      // Validate the target user exists, is active, and is eligible.
+      const targetResult = await db.execute(sql`
+        SELECT id, name, role FROM users
+        WHERE id = ${toUserId}
+          AND is_active = true
+      `);
+      const target = rowsFromResult(targetResult)[0];
+      if (!target) {
+        return res.status(400).json({
+          error: "target_user_not_found",
+          message: `User ${toUserId} does not exist or is inactive.`,
+        });
+      }
+      const targetRole = String(target.role);
+      if (!PO_APPROVAL_ELIGIBLE_ROLES.includes(targetRole)) {
+        return res.status(400).json({
+          error: "target_user_ineligible",
+          message: `Role '${targetRole}' is not allowed to approve POs. Eligible roles: ${PO_APPROVAL_ELIGIBLE_ROLES.join(", ")}.`,
+          eligibleRoles: PO_APPROVAL_ELIGIBLE_ROLES,
+        });
+      }
+      if (Number(target.id) === Number(active.reviewer_user_id)) {
+        return res.status(400).json({
+          error: "target_is_current_assignee",
+          message: "Delegation target is already the current assignee.",
+        });
+      }
+
+      // Mark the outgoing assignment as delegated, then insert the new row.
+      await db.execute(sql`
+        UPDATE po_review_assignments
+        SET delegated_to_user_id = ${Number(target.id)},
+            delegated_at = NOW(),
+            delegation_reason = ${reason},
+            updated_at = NOW()
+        WHERE id = ${Number(active.id)}
+      `);
+      const insertResult = await db.execute(sql`
+        INSERT INTO po_review_assignments (purchase_order_id, reviewer_user_id, reviewer_role, decision)
+        VALUES (${poIdNum}, ${Number(target.id)}, ${targetRole}, 'pending')
+        RETURNING id
+      `);
+      const newAssignmentId = Number(rowsFromResult(insertResult)[0]?.id);
+
+      logAuditFromReq(req, {
+        entityType: "purchase_order",
+        entityId: String(poIdNum),
+        action: "delegate_approval",
+        changesJson: {
+          fromAssignmentId: Number(active.id),
+          fromUserId: Number(active.reviewer_user_id),
+          toAssignmentId: newAssignmentId,
+          toUserId: Number(target.id),
+          toUserName: String(target.name || ""),
+          toUserRole: targetRole,
+          reason,
+          delegatedByUserId: user.id,
+          delegatedByRole: userRole,
+          delegatedAsAdmin: isAdmin && !isCurrentAssignee,
+        },
+      });
+
+      res.json({
+        success: true,
+        fromUserId: Number(active.reviewer_user_id),
+        toUserId: Number(target.id),
+        toUserName: String(target.name || ""),
+        toUserRole: targetRole,
+        newAssignmentId,
+      });
+    } catch (err: unknown) {
+      console.error("[PO] Delegate error:", err instanceof Error ? err.message : String(err));
+      res.status(500).json({ error: "Failed to delegate PO approval" });
+    }
+  });
+
+  // ===================== ELIGIBLE APPROVERS LIST (B2) =====================
+  // Returns the list of active users who can be assigned as a PO approver.
+  // Used by the UI to populate the "Assign approver" dropdown on the PO
+  // submit form and the "Delegate to" picker.
+  app.get("/api/po/eligible-approvers", jwtAuth, requireAuth, async (_req: Request, res: Response) => {
+    try {
+      const result = await db.execute(sql`
+        SELECT id, name, email, role
+        FROM users
+        WHERE role = ANY(${PO_APPROVAL_ELIGIBLE_ROLES}::text[])
+          AND is_active = true
+        ORDER BY role, name
+      `);
+      const approvers = rowsFromResult(result).map((u) => ({
+        id: Number(u.id),
+        name: String(u.name || ""),
+        email: String(u.email || ""),
+        role: String(u.role || ""),
+      }));
+      res.json({ eligibleRoles: PO_APPROVAL_ELIGIBLE_ROLES, approvers });
+    } catch (err: unknown) {
+      console.error("[PO] Eligible approvers error:", err instanceof Error ? err.message : String(err));
+      res.status(500).json({ error: "Failed to load eligible approvers" });
     }
   });
 

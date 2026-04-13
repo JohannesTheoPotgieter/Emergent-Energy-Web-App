@@ -1138,6 +1138,16 @@ export const poReviewAssignments = pgTable("po_review_assignments", {
   decision: poReviewDecisionEnum("decision").notNull().default("pending"),
   decidedAt: timestamp("decided_at"),
   notes: text("notes"),
+  // B2 (audit closeout): manual delegation columns. When a reviewer cannot
+  // respond, either they themselves or an admin can reassign the approval
+  // via POST /api/po/:poId/delegate. The original assignment row is marked
+  // by setting delegatedToUserId to the new reviewer's user_id (the self-FK
+  // chain lets us reconstruct the full delegation history for audit). An
+  // active assignment is one where decision='pending' AND delegatedToUserId
+  // IS NULL.
+  delegatedToUserId: integer("delegated_to_user_id").references(() => users.id, { onDelete: "set null" }),
+  delegatedAt: timestamp("delegated_at"),
+  delegationReason: text("delegation_reason"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
