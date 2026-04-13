@@ -895,7 +895,36 @@ export function registerHandoverRoutes(app: Express) {
         console.warn("[handover] acceptance notification failed (non-blocking):", notifyErr);
       }
 
-      res.json({ success: true, status: "ACCEPTED" });
+      // B7 (audit closeout): auto-seed the OHSA Safety File items with a
+      // 7-day due date from acceptance. Non-blocking — a failure here must
+      // not break handover acceptance, so errors are logged and swallowed.
+      let safetyFileSeeded = 0;
+      try {
+        const { seedDefaultSafetyFileItems } = await import("./services/safety-file-service");
+        const result = await seedDefaultSafetyFileItems({
+          projectId,
+          handoverAcceptedAt: new Date(),
+          createdByUserId: user?.id ?? null,
+        });
+        safetyFileSeeded = result.inserted;
+        if (result.inserted > 0) {
+          logAuditFromReq(req, {
+            entityType: "pd_pm_handover",
+            entityId: String(projectId),
+            action: "safety_file.seeded_on_handover",
+            projectName: project?.projectName,
+            changesJson: {
+              itemsSeeded: result.inserted,
+              dueDate: result.dueDate,
+              source: "pd_pm_handover_accepted",
+            },
+          });
+        }
+      } catch (seedErr) {
+        console.warn("[handover] Safety File auto-seed failed (non-blocking):", seedErr);
+      }
+
+      res.json({ success: true, status: "ACCEPTED", safetyFileSeeded });
     } catch (err: any) {
       console.error("[handover] accept error:", err);
       res.status(500).json({ error: "Could not accept handover. Likely reason: your PM permission is missing or the handover is incomplete. Refresh, verify access, and retry." });

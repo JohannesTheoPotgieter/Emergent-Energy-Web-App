@@ -84,6 +84,14 @@ export async function registerDepartmentRoutes(app: Express) {
     console.error("[Routes] Failed to register hse-routes:", err);
   }
 
+  // B7: Safety File (OHSA)
+  try {
+    const { registerSafetyFileRoutes } = await import("../departments/safety-file-routes");
+    registerSafetyFileRoutes(app);
+  } catch (err) {
+    console.error("[Routes] Failed to register safety-file-routes:", err);
+  }
+
   // C4: Handover Packs
   try {
     const { registerHandoverRoutes } = await import("../departments/handover-routes");
