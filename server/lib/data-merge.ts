@@ -14,14 +14,24 @@ export function mapCostToExpenseInput(cost: NormalizedCostLine) {
   };
 }
 
-export function createNameResolver(projectInfoNames: string[]) {
-  const piNames = new Set(projectInfoNames);
+export function createNameResolver(projectInfoNames: ReadonlyArray<string | null | undefined>) {
+  // Filter out null/undefined/empty names so downstream .replace calls never crash.
+  const safeNames: string[] = [];
+  for (const n of projectInfoNames) {
+    if (typeof n === "string" && n.length > 0) safeNames.push(n);
+  }
+  const piNames = new Set(safeNames);
   const normMap = new Map<string, string>();
-  projectInfoNames.forEach(n => {
+  safeNames.forEach(n => {
     normMap.set(n.replace(/_Tracker\d*$/i, "").replace(/[_ ]/g, " ").toLowerCase().trim(), n);
   });
 
-  return function resolve(name: string): string {
+  return function resolve(name: string | null | undefined): string {
+    // Guard against null/undefined/empty — upstream normalized rows may have
+    // project_name = NULL when the importer detected a section without being
+    // able to bind it to a project (e.g. relaxed-scan fallbacks).
+    if (typeof name !== "string" || name.length === 0) return "";
+
     if (piNames.has(name)) return name;
     const variants = [
       name.replace(/ /g, "_") + "_Tracker",
