@@ -47,6 +47,8 @@ export const integrations = pgTable("integrations", {
   alertTarget: text("alert_target"),
   /** Free-form config / mapping metadata. */
   metadata: jsonb("metadata"),
+  /** C3: last health state we dispatched an alert for. Drives transition detection. */
+  lastAlertState: text("last_alert_state"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   deletedAt: timestamp("deleted_at"),
