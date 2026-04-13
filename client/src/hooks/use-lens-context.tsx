@@ -57,6 +57,17 @@ export interface LensContextValue {
 
 const LensContext = createContext<LensContextValue | null>(null);
 
+export function resolveEffectivePermissionRole(options: {
+  dbRole?: string | null;
+  simulation?: LensSimulation | null;
+}) {
+  const { dbRole, simulation } = options;
+  if (simulation) {
+    return normalizeRoleForPermissions(simulation.simulatedLens);
+  }
+  return normalizeRoleForPermissions(dbRole);
+}
+
 export function LensProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
@@ -93,12 +104,10 @@ export function LensProvider({ children }: { children: ReactNode }) {
 
   // For permission checks: if simulating in full_power mode, use the simulated role's
   // permission equivalent. In read_only mode, keep the COO's own permissions.
-  const effectivePermissionRole = useMemo(() => {
-    if (simulation?.mode === "full_power") {
-      return normalizeRoleForPermissions(simulation.simulatedLens);
-    }
-    return normalizeRoleForPermissions(dbRole);
-  }, [simulation, dbRole]);
+  const effectivePermissionRole = useMemo(
+    () => resolveEffectivePermissionRole({ dbRole, simulation }),
+    [dbRole, simulation],
+  );
 
   const value = useMemo<LensContextValue>(() => ({
     naturalLens,
