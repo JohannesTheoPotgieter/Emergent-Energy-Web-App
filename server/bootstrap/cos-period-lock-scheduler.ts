@@ -25,6 +25,7 @@
 import { db } from "../db";
 import { cosPeriodLocks } from "@shared/schema";
 import { and, eq, isNull } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import {
   loadZaHolidays,
   nthBusinessDayOfMonth,
@@ -37,6 +38,47 @@ const JITTER_MS = 60 * 1000; // ±60s jitter so multiple instances do not all fi
 
 let scheduledInterval: ReturnType<typeof setInterval> | null = null;
 let lastRunDate: string | null = null;
+let schemaEnsured = false;
+
+async function ensureCosPeriodLocksTable(): Promise<void> {
+  if (schemaEnsured) return;
+
+  await db.execute(sql.raw(`
+    CREATE TABLE IF NOT EXISTS cos_period_locks (
+      id SERIAL PRIMARY KEY,
+      period_month DATE NOT NULL,
+      locked_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      locked_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      auto_locked BOOLEAN NOT NULL DEFAULT FALSE,
+      unlocked_at TIMESTAMP NULL,
+      unlocked_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      unlock_reason TEXT NULL,
+      notes TEXT NULL,
+      CONSTRAINT uq_cos_period_locks_period UNIQUE (period_month),
+      CONSTRAINT chk_cos_period_locks_month_is_first_of_month
+        CHECK (date_trunc('month', period_month::timestamp)::date = period_month),
+      CONSTRAINT chk_cos_period_locks_unlock_consistency
+        CHECK (
+          (unlocked_at IS NULL AND unlocked_by_user_id IS NULL AND unlock_reason IS NULL)
+          OR
+          (unlocked_at IS NOT NULL)
+        )
+    );
+  `));
+
+  await db.execute(sql.raw(`
+    CREATE INDEX IF NOT EXISTS idx_cos_period_locks_period
+      ON cos_period_locks(period_month);
+  `));
+
+  await db.execute(sql.raw(`
+    CREATE INDEX IF NOT EXISTS idx_cos_period_locks_active
+      ON cos_period_locks(period_month)
+      WHERE unlocked_at IS NULL;
+  `));
+
+  schemaEnsured = true;
+}
 
 /**
  * Run one pass of the auto-lock check. Exported for manual trigger
@@ -49,6 +91,8 @@ export async function runCosPeriodAutoLockCheck(opts?: { now?: Date }): Promise<
   autoLocked: boolean;
   reason: string;
 }> {
+  await ensureCosPeriodLocksTable();
+
   const now = opts?.now ?? new Date();
   const today = toIsoDateSast(now);
   const y = Number(today.slice(0, 4));

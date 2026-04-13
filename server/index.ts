@@ -87,7 +87,14 @@ async function bootstrap() {
 
   configurePassportAuth(storage);
   app.use(passport.initialize());
-  app.use(passport.session());
+  app.use((req, res, next) => {
+    // In some hosted dev environments, requests can reach passport.session()
+    // without an attached express-session object. Skip instead of throwing.
+    if (!("session" in req) || !req.session) {
+      return next();
+    }
+    return passport.session()(req, res, next);
+  });
   app.use(jwtAuth);
   app.use(csrfProtection);
   const csrfSummary = getCsrfExemptSummary();
