@@ -669,6 +669,22 @@ export function registerHandoverRoutes(app: Express) {
         executionEnabled: project.executionEnabled,
         handover,
       });
+      // B6 (audit closeout): PD->PM handover submission is a FORMAL PROCESS,
+      // NOT A BLOCKER. Per direction from the breakdown discussion, we no
+      // longer reject submissions that have missing DoR items or that fall
+      // below the evidence threshold. Instead:
+      //   1. We compute the completeness snapshot (missing items + evidence
+      //      score + traffic light) at the moment of submit.
+      //   2. The submission always proceeds — status moves to
+      //      SUBMITTED_FOR_PM_REVIEW regardless of gaps.
+      //   3. The full completeness state is recorded in the handover history
+      //      log so the post-mortem trail shows exactly what was present
+      //      when the PD team handed off to the PM team.
+      //   4. Action is PD_PM_HANDOVER_SUBMITTED_WITH_GAPS when items are
+      //      missing, PD_PM_HANDOVER_SUBMITTED when clean. Callers that
+      //      want the old "block and force override" behaviour should move
+      //      to a dedicated admin review endpoint — this path is designed
+      //      for formal handover, not gate enforcement.
       const missing = computePdPmSubmitBlockers({ project, handover, workspace });
       const user = (req as any).user as any;
       const evidence = await evaluateEvidence({
@@ -679,44 +695,18 @@ export function registerHandoverRoutes(app: Express) {
         evaluatorUserId: user?.id,
         evaluatorName: user?.name,
       });
-      const overrideReason = String(req.body?.evidenceOverrideReason || "").trim();
-      const wantsOverride = !!overrideReason;
-      if (missing.length > 0 || !evidence.pass) {
-        if (!evidence.pass && wantsOverride) {
-          if (!isEvidenceOverrideAuthorized(user?.role)) {
-            return res.status(403).json({ error: "Evidence override requires authorized role." });
-          }
-          await db.insert(evidenceOverrideRecords).values({
-            projectId,
-            completionType: "pd_pm_handover_submit",
-            sourceType: "pd_pm_handover",
-            sourceRef: String(projectId),
-            scorePercent: evidence.score,
-            thresholdPercent: evidence.threshold,
-            reason: overrideReason,
-            authorizedByUserId: user?.id,
-            authorizedByName: user?.name || null,
-            authorizedByRole: user?.role || null,
-          });
-        } else {
-          await insertPdPmHandoverHistory({
-            projectId,
-            req,
-            action: "PD_PM_HANDOVER_SUBMIT_BLOCKED",
-            details: {
-              missingItems: missing,
-              evidencePass: evidence.pass,
-              evidenceScore: evidence.score,
-              evidenceThreshold: evidence.threshold,
-            },
-          });
-          return res.status(400).json({
-            error: `Cannot submit handover. Missing items: ${missing.join(", ") || "Evidence threshold not met"}. Complete these fields/documents, then retry.`,
-            missingItems: missing,
-            evidence,
-          });
-        }
-      }
+
+      // B6: compute a simple completeness percentage driven by the same
+      // blocker list the UI shows. Thresholds match B1: 100 -> green,
+      // 80-99 -> amber, <80 -> red. Evidence-score shortfall is folded
+      // into the missing list for history purposes only.
+      const gatesTotal = Math.max(missing.length + 1, 1);   // +1 so a clean handover always reads as 1/1
+      const gatesPassed = missing.length === 0 ? gatesTotal : Math.max(gatesTotal - missing.length, 0);
+      const readinessPct = gatesTotal > 0 ? Math.round((gatesPassed / gatesTotal) * 100) : 100;
+      const trafficLight: "green" | "amber" | "red" =
+        readinessPct >= 100 ? "green" : readinessPct >= 80 ? "amber" : "red";
+      const hasGaps = missing.length > 0 || !evidence.pass;
+
       await db.update(projectPdPmHandover).set({
         status: "SUBMITTED_FOR_PM_REVIEW",
         handoverStatusText: "Submitted for PM Review",
@@ -727,21 +717,26 @@ export function registerHandoverRoutes(app: Express) {
       await insertPdPmHandoverHistory({
         projectId,
         req,
-        action: "PD_PM_HANDOVER_SUBMITTED",
+        action: hasGaps ? "PD_PM_HANDOVER_SUBMITTED_WITH_GAPS" : "PD_PM_HANDOVER_SUBMITTED",
         details: {
+          missingItems: missing,
           evidencePass: evidence.pass,
           evidenceScore: evidence.score,
           evidenceThreshold: evidence.threshold,
-          evidenceOverrideReason: wantsOverride ? overrideReason : null,
+          readinessPct,
+          trafficLight,
           readinessStatus: handover.handover_readiness_status || null,
         },
       });
       logAuditFromReq(req, {
         entityType: "project_timeline",
         entityId: String(projectId),
-        action: wantsOverride ? "evidence.override" : "evidence.completion_pass",
+        // B6: submissions always log as completion_pass or completion_with_gaps
+        // — no override path, no gate-block flag. The completeness state is
+        // in the handover history row.
+        action: hasGaps ? "evidence.completion_with_gaps" : "evidence.completion_pass",
         projectName: project.projectName,
-        changesJson: { sourceType: "pd_pm_handover", sourceRef: String(projectId), evidence, overrideReason: wantsOverride ? overrideReason : null },
+        changesJson: { sourceType: "pd_pm_handover", sourceRef: String(projectId), evidence, missingItems: missing, readinessPct, trafficLight },
       });
       logAuditFromReq(req, {
         entityType: "pd_pm_handover",
@@ -762,10 +757,75 @@ export function registerHandoverRoutes(app: Express) {
         console.warn("[handover] notification send failed (non-blocking):", notifyErr);
       }
 
-      res.json({ success: true, status: "SUBMITTED_FOR_PM_REVIEW" });
+      // B6: response includes the completeness snapshot so the UI can surface
+      // the amber/red badge on the success screen. The submission always
+      // succeeds — the readinessPct, trafficLight and missingItems fields
+      // are the formal audit trail, not an error payload.
+      res.json({
+        success: true,
+        status: "SUBMITTED_FOR_PM_REVIEW",
+        readinessPct,
+        trafficLight,
+        hasGaps,
+        missingItems: missing,
+        evidencePass: evidence.pass,
+      });
     } catch (err: any) {
       console.error("[handover] submit error:", err);
-      res.status(500).json({ error: "Could not submit handover. Likely reason: required deliverables are missing. Upload the missing files and retry." });
+      res.status(500).json({ error: "Could not submit handover — server error. Check server logs." });
+    }
+  });
+
+  // B6: live readiness endpoint used by the PD→PM handover workspace to
+  // show the traffic-light badge and checklist BEFORE the user clicks
+  // submit. Non-blocking — pure read of the current handover record.
+  app.get("/api/pd-pm-handover/:projectId/readiness", requireAuth, requirePermission("handover", "view"), async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(paramStr(req.params.projectId), 10);
+      if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
+      const [handoverRow] = await db.select().from(projectPdPmHandover).where(eq(projectPdPmHandover.projectId, projectId)).limit(1);
+      const handover = normalizeHandoverRow(handoverRow);
+      const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
+      if (!project || !handover) {
+        return res.status(404).json({
+          error: "Handover draft not found",
+          projectId,
+          readinessPct: 0,
+          trafficLight: "red",
+          missingItems: ["No handover draft exists — create one first"],
+        });
+      }
+      const workspace = await getProjectDevelopmentWorkspace({
+        projectId,
+        projectName: project.projectName,
+        canonicalProjectId: project.canonicalProjectId,
+        clientId: project.clientId,
+        phase: project.phase,
+        executionGateStatus: project.executionGateStatus,
+        executionEnabled: project.executionEnabled,
+        handover,
+      });
+      const missing = computePdPmSubmitBlockers({ project, handover, workspace });
+      const gatesTotal = Math.max(missing.length + 1, 1);
+      const gatesPassed = missing.length === 0 ? gatesTotal : Math.max(gatesTotal - missing.length, 0);
+      const readinessPct = gatesTotal > 0 ? Math.round((gatesPassed / gatesTotal) * 100) : 100;
+      const trafficLight: "green" | "amber" | "red" =
+        readinessPct >= 100 ? "green" : readinessPct >= 80 ? "amber" : "red";
+      res.json({
+        projectId,
+        projectName: project.projectName,
+        status: handover.status,
+        readinessPct,
+        trafficLight,
+        gatesTotal,
+        gatesPassed,
+        gatesMissing: missing.length,
+        hasGaps: missing.length > 0,
+        missingItems: missing,
+      });
+    } catch (err: any) {
+      console.error("[handover] readiness error:", err);
+      res.status(500).json({ error: "Could not compute handover readiness — server error. Check server logs." });
     }
   });
 
