@@ -168,6 +168,33 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
     isMilestone: "isMilestone", outlineNumber: "parentTaskNo",
   };
 
+  // Build a stable externalRef derived from the row's business key (not from
+  // the Excel source-row number). This keeps the ref stable when a row moves
+  // in the file and — crucially — aligns the identity used by the unique
+  // index `uq_work_items_external_ref_active` with the identity used by the
+  // row matcher, eliminating the collision that happens when an old row is
+  // kept as MISSING_FROM_UPLOAD while a new row lands on the same Excel row.
+  const buildExternalRef = (bkKey: string) => `PID-${projectId}::PLAN::BK::${bkKey}`;
+
+  // Disambiguate duplicate business keys within the same file (two plan rows
+  // with identical taskNo, or identical fallback identity). The matcher
+  // classifies both as NEW; without a suffix they would collide on insert.
+  const seenRefsInFile = new Set<string>();
+  const uniquifyRef = (ref: string, fileIndex: number | null): string => {
+    if (!seenRefsInFile.has(ref)) {
+      seenRefsInFile.add(ref);
+      return ref;
+    }
+    const base = fileIndex != null ? `${ref}#idx${fileIndex}` : `${ref}#dup${seenRefsInFile.size}`;
+    let candidate = base;
+    let n = 1;
+    while (seenRefsInFile.has(candidate)) {
+      candidate = `${base}#${n++}`;
+    }
+    seenRefsInFile.add(candidate);
+    return candidate;
+  };
+
   for (const mr of matchedRows) {
     if (mr.classification === "UNCHANGED") {
       counts.unchanged++;
@@ -180,12 +207,59 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
       continue;
     }
 
+    // Canonical externalRef for this row (shared by NEW and CHANGED paths).
+    const canonicalRef = uniquifyRef(buildExternalRef(mr.businessKey.key), mr.fileIndex);
+
     if (mr.classification === "NEW") {
       const fileRow = mr.fileRow!;
       const wbsCode = fileRow.taskNo || null;
-      const rowRef = fileRow.sourceRow != null ? `ROW-${fileRow.sourceRow}` : `IDX-${mr.fileIndex}`;
-      const projectRef = `PID-${projectId}`;
-      const externalRef = `${projectRef}::PLAN::${rowRef}::${wbsCode || ''}`;
+
+      // Defensive reclassification: if an active work_items row already
+      // carries this externalRef (legacy data with a drifted business key, a
+      // previous partial commit, or any other cause), UPDATE it in place
+      // instead of inserting. This prevents unique-index violations on
+      // `uq_work_items_external_ref_active` that used to fail the whole
+      // commit transaction.
+      const existingByRef = await tx
+        .select({ id: workItems.id })
+        .from(workItems)
+        .where(and(
+          eq(workItems.externalRef, canonicalRef),
+          sqlTag`${workItems.deletedAt} IS NULL`,
+        ))
+        .limit(1);
+
+      if (existingByRef.length > 0) {
+        const existingId = existingByRef[0].id;
+        await tx.update(workItems).set({
+          updatedAt: new Date(),
+          importRunId: runId,
+          title: fileRow.taskName,
+          description: fileRow.comment || null,
+          status: fileRow.status || "Not Started",
+          startDate: fileRow.startDate || fileRow.actualStartDate || null,
+          endDate: fileRow.endDate || fileRow.actualEndDate || null,
+          duration: fileRow.durationDays || fileRow.actualDurationDays || null,
+          actualStart: fileRow.actualStartDate || null,
+          actualEnd: fileRow.actualEndDate || null,
+          actualDuration: fileRow.actualDurationDays || null,
+          percentComplete: fileRow.pctComplete != null ? Number(fileRow.pctComplete) : 0,
+          expectedPctComplete: fileRow.expectedPctComplete != null ? Number(fileRow.expectedPctComplete) : null,
+          wbsCode,
+          outlineNumber: wbsCode,
+          indentLevel: fileRow.indentLevel ?? 0,
+          isMilestone: fileRow.isMilestone ?? false,
+          phase: fileRow.phase || null,
+          ownerName: fileRow.owner || null,
+          sourceRow: fileRow.sourceRow || null,
+          sourceSheet: fileRow.sourceSheet || null,
+          subProjectName: fileRow.subProjectName || null,
+          externalRef: canonicalRef,
+        }).where(eq(workItems.id, existingId));
+        updatedIds.push(existingId);
+        counts.updated++;
+        continue;
+      }
 
       const [inserted] = await tx.insert(workItems).values({
         clientId: null,
@@ -214,7 +288,7 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
         ownerUserId: null,
         ownerName: fileRow.owner || null,
         isShared: false,
-        externalRef,
+        externalRef: canonicalRef,
         sourceRow: fileRow.sourceRow || null,
         sourceSheet: fileRow.sourceSheet || null,
         importRunId: runId,
@@ -239,7 +313,14 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
         counts.conflictsResolved += resolvedConflicts.length;
       }
 
-      if (Object.keys(fieldUpdates).length === 0) {
+      // Lazily normalize legacy externalRefs (old `::PLAN::ROW-N::WBS` format
+      // or any drift from the canonical business-key form) so future
+      // commits remain collision-free. Safe to do unconditionally because the
+      // matcher has already verified this row is the same logical entity.
+      const existingRef = (mr.existingRow as any)?.externalRef ?? null;
+      const needsRefNormalize = existingRef !== canonicalRef;
+
+      if (Object.keys(fieldUpdates).length === 0 && !needsRefNormalize) {
         counts.unchanged++;
         continue;
       }
@@ -250,6 +331,9 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
         if (normField in fieldUpdates) {
           wiUpdates[wiCol] = fieldUpdates[normField];
         }
+      }
+      if (needsRefNormalize) {
+        wiUpdates.externalRef = canonicalRef;
       }
 
       await tx.update(workItems).set(wiUpdates).where(eq(workItems.id, existingId));

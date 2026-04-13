@@ -91,6 +91,7 @@ export async function loadCurrentPlanRows(projectId: number) {
       parentTaskNo: workItems.outlineNumber,
       subProjectName: workItems.subProjectName,
       importRunId: workItems.importRunId,
+      externalRef: workItems.externalRef,
     })
     .from(workItems)
     .where(
