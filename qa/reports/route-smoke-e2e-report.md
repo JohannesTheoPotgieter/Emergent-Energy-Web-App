@@ -1,6 +1,6 @@
 # Route Smoke E2E Report
 
-Generated: 2026-04-07T10:51:16.329Z
+Generated: 2026-04-14T15:48:59.689Z
 
 ## Coverage
 - Total checks: 0
