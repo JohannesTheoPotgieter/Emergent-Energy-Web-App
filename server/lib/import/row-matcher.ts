@@ -54,6 +54,29 @@ export interface MatchedRow<TFile = Record<string, any>, TExisting = Record<stri
   changedFields: ChangedField[];
   /** Planner warnings for this row */
   warnings: string[];
+  /**
+   * Unique-within-section identifier for this matched row. Stable across
+   * preview → commit calls for the same file/DB state. For singletons equals
+   * `businessKey.key`; for members of a duplicate-key group it is
+   * disambiguated with `#pk<existingId>` (paired rows) or
+   * `#new-<ordinal>` (unmatched NEW rows). Optional for backwards-compat
+   * with hand-built test literals — consumers should fall back to
+   * `businessKey.key` when absent.
+   */
+  rowUid?: string;
+  /**
+   * PLAN-only: the canonical external_ref value the executor should write to
+   * `work_items.external_ref` for this row. Encodes project, section and
+   * rowUid. Absent for REVENUE/EXPENDITURE (they are temporal and do not use
+   * external_ref) and for legacy test fixtures.
+   */
+  canonicalExternalRef?: string;
+  /**
+   * True when the matcher detected more than one row on the file side
+   * and/or DB side sharing the same business key. Surfaced to callers so
+   * previews can warn the user that similarity pairing was applied.
+   */
+  inDuplicateGroup?: boolean;
 }
 
 export interface ChangedField {
@@ -284,14 +307,140 @@ export const EXPENDITURE_COMPARE_FIELDS = [
 
 export type SectionType = "PLAN" | "REVENUE" | "EXPENDITURE";
 
+interface FileEntry {
+  row: Record<string, any>;
+  bk: BusinessKey;
+  fileIndex: number;
+  warnings: string[];
+}
+
+interface DbEntry {
+  row: Record<string, any> & { id: number };
+  bk: BusinessKey;
+}
+
+/**
+ * Similarity fields used when pairing members of a duplicate-business-key
+ * group. Each exact-equal field contributes one point to the pair score.
+ * The greedy pair-off picks highest-scoring pairs first, so the chosen
+ * pairing is the one that preserves as much content identity as possible.
+ */
+const SIMILARITY_FIELDS: Record<SectionType, string[]> = {
+  PLAN: ["taskName", "startDate", "endDate", "durationDays", "owner", "phase", "sourceRow"],
+  REVENUE: ["milestoneName", "description", "amountExVat", "invoiceNumber", "invoiceDate", "sourceRow"],
+  EXPENDITURE: ["description", "costCategory", "counterpartyName", "amountExVat", "invoiceNumber", "invoiceDate", "poNumber", "sourceRow"],
+};
+
+function similarityScore(
+  section: SectionType,
+  fileRow: Record<string, any>,
+  dbRow: Record<string, any>,
+): number {
+  let score = 0;
+  for (const field of SIMILARITY_FIELDS[section]) {
+    const a = normalizeForCompare(fileRow[field]);
+    const b = normalizeForCompare(dbRow[field]);
+    if (a !== "" && a === b) score += 1;
+  }
+  return score;
+}
+
+/**
+ * Extract the `#pk<id>` suffix from an existing external_ref, if any.
+ * Used as a strong identity hint: a DB row that already carries
+ * `...#pk123` should pair preferentially with the file row currently at
+ * that slot (even if pure content similarity ties with another).
+ */
+function extractPkSuffix(externalRef: string | null | undefined): number | null {
+  if (!externalRef) return null;
+  const m = /#pk(\d+)(?:#|$)/.exec(externalRef);
+  return m ? Number(m[1]) : null;
+}
+
+/**
+ * Deterministically pair N file entries with M DB entries that all share
+ * the same business key. Uses a greedy highest-score-first match:
+ *
+ *   1. Compute similarity score for every (file, db) pair.
+ *   2. Bonus-boost pairs whose DB row's existing external_ref already
+ *      encodes a `#pk<dbId>` matching its own id (these should remain
+ *      stable).
+ *   3. Repeatedly pick the highest-scoring pair, remove both from
+ *      consideration, until one side is exhausted.
+ *   4. Surplus file entries → NEW; surplus db entries → MISSING_FROM_UPLOAD.
+ *
+ * This is O((N*M)^2) which is fine for the duplicate-group sizes we see in
+ * real project trackers (typically 2–10 rows per group).
+ */
+function pairDuplicateGroup(
+  section: SectionType,
+  files: FileEntry[],
+  dbs: DbEntry[],
+): { pairs: Array<{ file: FileEntry; db: DbEntry }>; unpairedFiles: FileEntry[]; unpairedDbs: DbEntry[] } {
+  const pairs: Array<{ file: FileEntry; db: DbEntry }> = [];
+  const remainingFiles = [...files];
+  const remainingDbs = [...dbs];
+
+  while (remainingFiles.length > 0 && remainingDbs.length > 0) {
+    let bestScore = -1;
+    let bestFileIdx = -1;
+    let bestDbIdx = -1;
+
+    for (let i = 0; i < remainingFiles.length; i++) {
+      for (let j = 0; j < remainingDbs.length; j++) {
+        const f = remainingFiles[i];
+        const d = remainingDbs[j];
+        let score = similarityScore(section, f.row, d.row);
+        // Identity-preservation bonus: if the DB row's current external_ref
+        // already stamps it with a #pk suffix equal to its own id, prefer
+        // matching it to a file row in the same ordinal slot within the
+        // group. This preserves stable identity across commits.
+        const pkFromRef = extractPkSuffix((d.row as any).externalRef);
+        if (pkFromRef != null && pkFromRef === d.row.id) {
+          score += 0.5;
+        }
+        if (score > bestScore) {
+          bestScore = score;
+          bestFileIdx = i;
+          bestDbIdx = j;
+        }
+      }
+    }
+
+    // Tie-breaker when no field matched (bestScore === 0): pair by position
+    // within the remaining arrays so the result is still deterministic.
+    const [fileEntry] = remainingFiles.splice(bestFileIdx, 1);
+    const [dbEntry] = remainingDbs.splice(bestDbIdx, 1);
+    pairs.push({ file: fileEntry, db: dbEntry });
+  }
+
+  return { pairs, unpairedFiles: remainingFiles, unpairedDbs: remainingDbs };
+}
+
+function buildCanonicalExternalRef(
+  section: SectionType,
+  projectId: number,
+  rowUid: string,
+): string | undefined {
+  // Only PLAN uses work_items.external_ref for identity. REVENUE and
+  // EXPENDITURE are temporal tables with their own id columns.
+  if (section !== "PLAN") return undefined;
+  return `PID-${projectId}::PLAN::BK::${rowUid}`;
+}
+
 /**
  * Match incoming file rows against existing DB rows and classify each row.
+ *
+ * Duplicate-business-key rows on either side are paired via content
+ * similarity (see `pairDuplicateGroup`). Each emitted MatchedRow carries a
+ * unique-within-section `rowUid` used by the conflict engine and commit
+ * executor so duplicates stay addressable end-to-end.
  *
  * @param section - Which section we're matching
  * @param projectId - The target project ID
  * @param fileRows - Normalized rows from the uploaded file
  * @param existingRows - Current active rows from the DB (effectiveTo IS NULL)
- * @returns Array of matched rows with classifications
+ * @returns Array of matched rows with classifications, in a stable order
  */
 export function matchRows(
   section: SectionType,
@@ -299,93 +448,191 @@ export function matchRows(
   fileRows: Record<string, any>[],
   existingRows: Array<Record<string, any> & { id: number }>,
 ): MatchedRow[] {
-  const results: MatchedRow[] = [];
-
-  // Generate business keys for existing DB rows
-  const existingByKey = new Map<string, Record<string, any> & { id: number }>();
-  const existingKeyInfoMap = new Map<number, BusinessKey>();
-  for (const row of existingRows) {
+  // Bucket file entries by business key (preserves file order within group).
+  const fileEntries: FileEntry[] = new Array(fileRows.length);
+  const fileBuckets = new Map<string, FileEntry[]>();
+  for (let i = 0; i < fileRows.length; i++) {
+    const row = fileRows[i];
     const bk = generateBusinessKey(section, projectId, row);
-    existingByKey.set(bk.key, row);
-    existingKeyInfoMap.set(row.id, bk);
+    const warnings: string[] = [];
+    if (bk.matchConfidence === "LOW") {
+      warnings.push(`Row "${bk.rowLabel}": matched using ${bk.keyType} key with LOW confidence. Verify identity is correct.`);
+    }
+    const entry: FileEntry = { row, bk, fileIndex: i, warnings };
+    fileEntries[i] = entry;
+    if (!fileBuckets.has(bk.key)) fileBuckets.set(bk.key, []);
+    fileBuckets.get(bk.key)!.push(entry);
   }
 
-  // Track which existing rows were matched
-  const matchedExistingKeys = new Set<string>();
+  // Bucket DB entries by business key (preserves db id order within group).
+  const dbBuckets = new Map<string, DbEntry[]>();
+  const dbSorted = [...existingRows].sort((a, b) => a.id - b.id);
+  for (const row of dbSorted) {
+    const bk = generateBusinessKey(section, projectId, row);
+    const entry: DbEntry = { row, bk };
+    if (!dbBuckets.has(bk.key)) dbBuckets.set(bk.key, []);
+    dbBuckets.get(bk.key)!.push(entry);
+  }
 
-  // Pick the right compare fields for this section
   const compareFields_ = section === "PLAN" ? PLAN_COMPARE_FIELDS
     : section === "REVENUE" ? REVENUE_COMPARE_FIELDS
     : EXPENDITURE_COMPARE_FIELDS;
 
-  // Process each file row
-  for (let i = 0; i < fileRows.length; i++) {
-    const fileRow = fileRows[i];
-    const fileBk = generateBusinessKey(section, projectId, fileRow);
-    const warnings: string[] = [];
+  const results: MatchedRow[] = [];
 
-    if (fileBk.matchConfidence === "LOW") {
-      warnings.push(`Row "${fileBk.rowLabel}": matched using ${fileBk.keyType} key with LOW confidence. Verify identity is correct.`);
+  // Emit matches preserving file-order-first for incoming rows: we walk the
+  // original fileRows once and look up the entry within its bucket. This
+  // keeps the output stable and readable for debugging.
+  const emittedFileIdxs = new Set<number>();
+  const emittedDbIds = new Set<number>();
+  // Track the pairing decision for each (fileIndex → DbEntry|null) and
+  // for each (dbId → FileEntry|null).
+  const fileIdxToDb = new Map<number, DbEntry | null>();
+  const dbIdToFile = new Map<number, FileEntry | null>();
+  const groupSizeByKey = new Map<string, { files: number; dbs: number }>();
+
+  // Run pairing per key group up front so we can compute rowUids
+  // deterministically.
+  const allKeys = new Set<string>([...fileBuckets.keys(), ...dbBuckets.keys()]);
+  for (const key of allKeys) {
+    const files = fileBuckets.get(key) ?? [];
+    const dbs = dbBuckets.get(key) ?? [];
+    groupSizeByKey.set(key, { files: files.length, dbs: dbs.length });
+
+    if (files.length === 0 && dbs.length === 0) continue;
+
+    if (files.length <= 1 && dbs.length <= 1) {
+      // Trivial case: 0 or 1 on each side.
+      const f = files[0] ?? null;
+      const d = dbs[0] ?? null;
+      if (f) fileIdxToDb.set(f.fileIndex, d);
+      if (d) dbIdToFile.set(d.row.id, f);
+      continue;
     }
 
-    const existing = existingByKey.get(fileBk.key);
-    if (existing) {
-      matchedExistingKeys.add(fileBk.key);
-      // Matched — determine if CHANGED or UNCHANGED
-      const changed = compareFields(fileRow, existing, compareFields_);
-      if (changed.length > 0) {
-        results.push({
-          classification: "CHANGED",
-          businessKey: fileBk,
-          fileRow,
-          fileIndex: i,
-          existingRow: existing,
-          existingRowId: existing.id,
-          changedFields: changed,
-          warnings,
-        });
-      } else {
-        results.push({
-          classification: "UNCHANGED",
-          businessKey: fileBk,
-          fileRow,
-          fileIndex: i,
-          existingRow: existing,
-          existingRowId: existing.id,
-          changedFields: [],
-          warnings,
-        });
-      }
+    // Duplicate group — pair by similarity.
+    const { pairs, unpairedFiles, unpairedDbs } = pairDuplicateGroup(section, files, dbs);
+    for (const { file, db } of pairs) {
+      fileIdxToDb.set(file.fileIndex, db);
+      dbIdToFile.set(db.row.id, file);
+    }
+    for (const f of unpairedFiles) fileIdxToDb.set(f.fileIndex, null);
+    for (const d of unpairedDbs) dbIdToFile.set(d.row.id, null);
+  }
+
+  // Helper: build rowUid + canonicalExternalRef for a matched or new row.
+  // For singleton groups the rowUid equals the bare business key. For
+  // members of a duplicate group we suffix with `#pk<existingId>` (when
+  // paired to a DB row) or `#new-<fileIndex>` (when a NEW insert).
+  function assignRowUid(opts: {
+    bkKey: string;
+    existingId: number | null;
+    fileIndex: number | null;
+    inDuplicateGroup: boolean;
+  }): { rowUid: string; canonicalExternalRef: string | undefined } {
+    const { bkKey, existingId, fileIndex, inDuplicateGroup } = opts;
+    let rowUid: string;
+    if (!inDuplicateGroup) {
+      rowUid = bkKey;
+    } else if (existingId != null) {
+      rowUid = `${bkKey}#pk${existingId}`;
     } else {
-      // No match — NEW row
+      rowUid = `${bkKey}#new-${fileIndex ?? "x"}`;
+    }
+    return { rowUid, canonicalExternalRef: buildCanonicalExternalRef(section, projectId, rowUid) };
+  }
+
+  // Walk file rows in original order so output matches source ordering.
+  for (let i = 0; i < fileRows.length; i++) {
+    const entry = fileEntries[i];
+    if (!entry) continue; // defensive — should always exist
+    emittedFileIdxs.add(i);
+
+    const db = fileIdxToDb.get(i) ?? null;
+    const groupSize = groupSizeByKey.get(entry.bk.key) ?? { files: 0, dbs: 0 };
+    const inDuplicateGroup = groupSize.files > 1 || groupSize.dbs > 1;
+
+    if (db) {
+      emittedDbIds.add(db.row.id);
+      const changed = compareFields(entry.row, db.row, compareFields_);
+      const { rowUid, canonicalExternalRef } = assignRowUid({
+        bkKey: entry.bk.key,
+        existingId: db.row.id,
+        fileIndex: i,
+        inDuplicateGroup,
+      });
+      results.push({
+        classification: changed.length > 0 ? "CHANGED" : "UNCHANGED",
+        businessKey: entry.bk,
+        fileRow: entry.row,
+        fileIndex: i,
+        existingRow: db.row,
+        existingRowId: db.row.id,
+        changedFields: changed,
+        warnings: entry.warnings,
+        rowUid,
+        canonicalExternalRef,
+        inDuplicateGroup,
+      });
+    } else {
+      const { rowUid, canonicalExternalRef } = assignRowUid({
+        bkKey: entry.bk.key,
+        existingId: null,
+        fileIndex: i,
+        inDuplicateGroup,
+      });
       results.push({
         classification: "NEW",
-        businessKey: fileBk,
-        fileRow,
+        businessKey: entry.bk,
+        fileRow: entry.row,
         fileIndex: i,
         existingRow: null,
         existingRowId: null,
         changedFields: [],
-        warnings,
+        warnings: entry.warnings,
+        rowUid,
+        canonicalExternalRef,
+        inDuplicateGroup,
       });
     }
   }
 
-  // Find existing rows that were NOT matched → MISSING_FROM_UPLOAD
-  for (const row of existingRows) {
-    const bk = existingKeyInfoMap.get(row.id)!;
-    if (!matchedExistingKeys.has(bk.key)) {
-      results.push({
-        classification: "MISSING_FROM_UPLOAD",
-        businessKey: bk,
-        fileRow: null,
-        fileIndex: null,
-        existingRow: row,
-        existingRowId: row.id,
-        changedFields: [],
-        warnings: [],
-      });
-    }
+  // Emit DB-only rows (MISSING_FROM_UPLOAD) — preserve db id order for
+  // determinism.
+  for (const row of dbSorted) {
+    if (emittedDbIds.has(row.id)) continue;
+    // Skip if this DB row was paired to a file entry that we already
+    // emitted above (covered by emittedDbIds). If we got here the DB row
+    // was not paired.
+    const bk = generateBusinessKey(section, projectId, row);
+    const groupSize = groupSizeByKey.get(bk.key) ?? { files: 0, dbs: 0 };
+    const inDuplicateGroup = groupSize.files > 1 || groupSize.dbs > 1;
+    const { rowUid, canonicalExternalRef } = (function () {
+      if (!inDuplicateGroup) {
+        return {
+          rowUid: bk.key,
+          canonicalExternalRef: buildCanonicalExternalRef(section, projectId, bk.key),
+        };
+      }
+      const uid = `${bk.key}#pk${row.id}`;
+      return {
+        rowUid: uid,
+        canonicalExternalRef: buildCanonicalExternalRef(section, projectId, uid),
+      };
+    })();
+    results.push({
+      classification: "MISSING_FROM_UPLOAD",
+      businessKey: bk,
+      fileRow: null,
+      fileIndex: null,
+      existingRow: row,
+      existingRowId: row.id,
+      changedFields: [],
+      warnings: [],
+      rowUid,
+      canonicalExternalRef,
+      inDuplicateGroup,
+    });
   }
 
   return results;
