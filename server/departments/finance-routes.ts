@@ -2946,13 +2946,18 @@ async function revenueTrackerHandler(req: Request, res: Response) {
       const monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
 
       const pName = (exp.projectName || '').replace(/_Tracker$/i, '');
-      const projectTotalCOS = cosByProject.get(pName) || 0;
-      const projectTotalRevenue = revenueByProject.get(pName) || 0;
       const isNoRevLinked = !!(exp as any).noRevenueLinked;
 
-      const revenueAmount = (projectTotalCOS > 0 && !isNoRevLinked)
-        ? (amount / projectTotalCOS) * projectTotalRevenue
-        : 0;
+      // Per Revenue Recognition spec: amount = (this_line_actual / project_total_actual) × project_costed_revenue.
+      // This formula is computed by the smart-import normalizer at write time and persisted on
+      // normalized_cost_lines.revenue_recognition_amount (col U on the Expenditure Breakdown sheet).
+      // Read the pre-computed canonical value directly. The previous on-the-fly recomputation used
+      // sum(NRL.milestoneAmount) per project as the costed-revenue input, which under-counts every
+      // project that has incomplete NRL milestone data — producing ~7% of the correct YTD revenue
+      // figure (R 4.18M dashboard vs R 54.5M database vs R 57.6M management accounts).
+      const revenueAmount = isNoRevLinked
+        ? 0
+        : (parseFloat((exp as any).revenueRecognitionAmount as string) || 0);
 
       if (!revByMonth.has(monthKey)) revByMonth.set(monthKey, { total: 0, projects: new Map() });
       const revBucket = revByMonth.get(monthKey)!;
@@ -3094,13 +3099,18 @@ router.get("/api/revenue-tracker/month-detail", requireAuth, requirePermission("
       if (itemMonthKey !== monthKey) continue;
 
       const pName = (exp.projectName || '').replace(/_Tracker$/i, '');
-      const projectTotalCOS = cosByProject.get(pName) || 0;
-      const projectTotalRevenue = revenueByProject.get(pName) || 0;
       const isNoRevLinked = !!(exp as any).noRevenueLinked;
 
-      const revenueAmount = (projectTotalCOS > 0 && !isNoRevLinked)
-        ? (amount / projectTotalCOS) * projectTotalRevenue
-        : 0;
+      // Per Revenue Recognition spec: amount = (this_line_actual / project_total_actual) × project_costed_revenue.
+      // This formula is computed by the smart-import normalizer at write time and persisted on
+      // normalized_cost_lines.revenue_recognition_amount (col U on the Expenditure Breakdown sheet).
+      // Read the pre-computed canonical value directly. The previous on-the-fly recomputation used
+      // sum(NRL.milestoneAmount) per project as the costed-revenue input, which under-counts every
+      // project that has incomplete NRL milestone data — producing ~7% of the correct YTD revenue
+      // figure (R 4.18M dashboard vs R 54.5M database vs R 57.6M management accounts).
+      const revenueAmount = isNoRevLinked
+        ? 0
+        : (parseFloat((exp as any).revenueRecognitionAmount as string) || 0);
 
       const cosRealised = isEffectivelyRealised(exp, itemMonthKey, currentMonthKey);
       const revState = cosRealised ? 'Realised' : 'Unrealised';
