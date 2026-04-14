@@ -10,6 +10,7 @@ import {
 import { getEffectiveUser, requireAuth } from "./auth-context";
 import { requirePermission } from "./permission-middleware";
 import { attachWorkstreamVisibility, type WorkstreamVisibility } from "./workstream-visibility-middleware";
+import { blockInProduction } from "./middleware/production-safety";
 
 type AppUser = { id: number; email: string; name: string; role: string };
 
@@ -753,7 +754,7 @@ export function registerTaskManagementRoutes(app: Express) {
   // ── Seed Data ──────────────────────────────────────────────────────────────
 
   /** Seed identified bugs/improvements/features as work items */
-  app.post("/api/tasks/seed-identified-items", requireAuth, requirePermission("task_management", "create"), async (req: Request, res: Response) => {
+  app.post("/api/tasks/seed-identified-items", requireAuth, requirePermission("task_management", "create"), blockInProduction("Task seed route is disabled in production."), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
 

@@ -15,6 +15,7 @@ import { getFeatureFlag, getRolloutFeatureFlags, setFeatureFlag } from "./lib/fe
 import { ROLLOUT_FEATURE_FLAGS } from "@shared/feature-flags";
 import { logAuditFromReq } from "./audit-logger";
 import { getStartupFlags } from "./startup-flags";
+import { blockInProduction, requireDangerousActionConfirmation } from "./middleware/production-safety";
 const { rawEnv: startupRawFlags, modes: startupEffectiveModes } = getStartupFlags();
 
 const router = Router();
@@ -392,7 +393,12 @@ router.get("/api/admin/control-center/integrations", requireAuth, requireAdmin, 
   }
 });
 
-router.post("/api/admin/control-center/dangerous/clear-sessions", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+router.post(
+  "/api/admin/control-center/dangerous/clear-sessions",
+  requireAuth,
+  requireAdmin,
+  requireDangerousActionConfirmation("CLEAR_ALL_SESSIONS"),
+  async (req: Request, res: Response) => {
   try {
     // Canonical auth session state lives in the postgres "session" table (connect-pg-simple store).
     await db.execute(sql`DELETE FROM "session"`);
@@ -406,9 +412,16 @@ router.post("/api/admin/control-center/dangerous/clear-sessions", requireAuth, r
   } catch (err: unknown) {
     res.status(500).json({ error: "Failed to clear sessions", message: (err instanceof Error ? err.message : String(err)) });
   }
-});
+  },
+);
 
-router.post("/api/admin/control-center/dangerous/clear-audit-log", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+router.post(
+  "/api/admin/control-center/dangerous/clear-audit-log",
+  requireAuth,
+  requireAdmin,
+  blockInProduction("Audit log deletion is disabled in production to preserve immutable history."),
+  requireDangerousActionConfirmation("CLEAR_AUDIT_LOG_NON_PROD"),
+  async (req: Request, res: Response) => {
   try {
     const { olderThanDays } = req.body;
     const days = parseInt(olderThanDays) || 90;
@@ -423,7 +436,8 @@ router.post("/api/admin/control-center/dangerous/clear-audit-log", requireAuth, 
   } catch (err: unknown) {
     res.status(500).json({ error: "Failed to clear audit log", message: (err instanceof Error ? err.message : String(err)) });
   }
-});
+  },
+);
 
 router.get("/api/admin/control-center/active-sessions", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
