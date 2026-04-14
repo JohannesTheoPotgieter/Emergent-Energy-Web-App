@@ -215,7 +215,12 @@ export function mergeRow(
   const canonicalSource = CANONICAL_SOURCES[section];
 
   return {
-    rowKey: matchedRow.businessKey.key,
+    // rowKey must be unique-within-section so the mergeResults map and the
+    // commit executor's decision lookup can address each row independently,
+    // even inside a duplicate-business-key group. Prefer the matcher's
+    // rowUid; fall back to the business key for legacy test fixtures that
+    // construct MatchedRow literals without rowUid.
+    rowKey: matchedRow.rowUid ?? matchedRow.businessKey.key,
     displayLabel: matchedRow.businessKey.rowLabel,
     section,
     canonicalSource,
@@ -278,6 +283,14 @@ export function mergeSection(
       continue;
     }
 
+    // Baseline lookup is keyed by raw business key. For duplicate-key
+    // groups the map inevitably collapses to one baseline per group — the
+    // last row with that key from the previous committed import. This is
+    // a known limitation: 3-way merge precision degrades inside
+    // duplicate-key groups, but identity itself (the commit writes) is
+    // still correct because the executor consumes `rowUid`, not the
+    // baseline key. A future enhancement could store per-rowUid baselines
+    // in the snapshot.
     const baselineRow = baselineLookup.get(mr.businessKey.key) || null;
     const result = mergeRow(section, mr, baselineRow);
     rows.push(result);
