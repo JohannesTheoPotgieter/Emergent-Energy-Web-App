@@ -557,6 +557,23 @@ export async function getCompanyOverviewData() {
 
   const targetMarginPct = 20; // Target margin placeholder
 
+  const costRowsMissingLineage = costRows.filter((r) =>
+    activeProjectIds.has(r.projectId) &&
+    !r.effectiveTo &&
+    (!r.sourceSheet || r.sourceRow == null)
+  ).length;
+  const revenueRowsMissingLineage = revenueRows.filter((r) =>
+    activeProjectIds.has(r.projectId) &&
+    !r.effectiveTo &&
+    (!r.sourceSheet || r.sourceRow == null)
+  ).length;
+  const invoiceWithoutPoCount = costRows.filter((r) =>
+    activeProjectIds.has(r.projectId) &&
+    !r.effectiveTo &&
+    !!(r.invoiceNumber && String(r.invoiceNumber).trim()) &&
+    !(r.poNumber && String(r.poNumber).trim())
+  ).length;
+
   const finKpis = new Map<string, { actual: number | null; target?: number | null }>([
     ["fin_revenue_vs_target", { actual: realisedRevenueFytd, target: totalPlannedRevenue * 0.75 }], // Revenue realised (COS-ratio)
     ["fin_cash_collected_vs_target", { actual: cashReceivedFytd, target: totalPlannedRevenue * 0.7 }], // Cash received
@@ -732,6 +749,17 @@ export async function getCompanyOverviewData() {
       today,
       refreshedAt,
       period: "FYTD",
+      financeTrust: {
+        sourceLayer: {
+          canonical: ["normalized_revenue_lines", "normalized_cost_lines"],
+          derived: ["finance_cos_monthly", "finance_revenue_monthly"],
+          cache: ["database_storage_expense_cache_30s_compat"],
+        },
+        label: costRowsMissingLineage + revenueRowsMissingLineage > 0 ? "partial_lineage" : "lineage_verified",
+        uncertainty: costRowsMissingLineage + revenueRowsMissingLineage > 0
+          ? "Some active finance rows are missing source_sheet/source_row lineage metadata."
+          : null,
+      },
     },
     companyScore,
     departmentScores,
@@ -790,6 +818,12 @@ export async function getCompanyOverviewData() {
       collectionRate: totalRevenueFytd > 0 ? Math.round((cashReceivedFytd / totalRevenueFytd) * 100) : 0,
       overdueDebtors: overdueDebtorValue,
       overdueDebtorCount: overdueDebtors.length,
+      trust: {
+        invoiceWithoutPoCount,
+        costRowsMissingLineage,
+        revenueRowsMissingLineage,
+        sourceLayerVisibility: "explicit",
+      },
     },
     exceptions: exceptions.slice(0, 15),
     priorities: priorityData,
