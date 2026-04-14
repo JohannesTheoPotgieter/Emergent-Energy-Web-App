@@ -27,14 +27,22 @@ import {
 import {
   billRawToSummary,
   confirmCostLineLink,
+  confirmRevenueLineLink,
   createOrUpdateLink,
   fetchProjectLinks,
+  getCustomerMappingForProject,
+  invoiceRawToSummary,
   listAllLinks,
+  listProjectsWithMappings,
   markCostLineRealised,
   runProjectCostReconciliation,
+  runProjectRevenueReconciliation,
   searchCostLines,
+  softDeleteCustomerMapping,
   softDeleteLink,
+  upsertCustomerMapping,
   type QuickBooksBillSummary,
+  type QuickBooksInvoiceSummary,
 } from "./services/quickbooks-reconciliation-service";
 
 type SessionWithQbState = Request["session"] & { qbState?: string };
@@ -317,6 +325,142 @@ export function registerQuickBooksRoutes(app: Express): void {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to mark realised";
       res.status(500).json({ error: "quickbooks_mark_realised_failed", message });
+    }
+  });
+
+  // ---------- Customer mapping ----------
+
+  app.get("/api/quickbooks/customer-mappings", requireAuth, async (_req, res) => {
+    try {
+      const projects = await listProjectsWithMappings();
+      res.json({ projects });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to load mappings";
+      res.status(500).json({ error: "quickbooks_mappings_failed", message });
+    }
+  });
+
+  app.get(
+    "/api/quickbooks/projects/:projectId/customer-mapping",
+    requireAuth,
+    async (req, res) => {
+      try {
+        const projectId = Number(req.params.projectId);
+        if (!Number.isFinite(projectId) || projectId <= 0) {
+          res.status(400).json({ error: "bad_request", message: "Invalid projectId" });
+          return;
+        }
+        const mapping = await getCustomerMappingForProject(projectId);
+        res.json({ mapping });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to load mapping";
+        res.status(500).json({ error: "quickbooks_mapping_failed", message });
+      }
+    },
+  );
+
+  app.post("/api/quickbooks/customer-mappings", requireAuth, async (req, res) => {
+    try {
+      const body = req.body ?? {};
+      const projectId = Number(body.projectId);
+      if (!Number.isFinite(projectId) || projectId <= 0) {
+        res.status(400).json({ error: "bad_request", message: "projectId is required" });
+        return;
+      }
+      const qbCustomerId = typeof body.qbCustomerId === "string" ? body.qbCustomerId : "";
+      if (!qbCustomerId) {
+        res.status(400).json({ error: "bad_request", message: "qbCustomerId is required" });
+        return;
+      }
+      const user = getEffectiveUser(req);
+      const mapping = await upsertCustomerMapping({
+        projectId,
+        clientId: body.clientId !== undefined && body.clientId !== null ? Number(body.clientId) : null,
+        qbCustomerId,
+        qbCustomerName: body.qbCustomerName ?? null,
+        notes: body.notes ?? null,
+        createdBy: user?.id ?? null,
+      });
+      res.status(201).json({ mapping });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to save mapping";
+      res.status(500).json({ error: "quickbooks_mapping_save_failed", message });
+    }
+  });
+
+  app.delete("/api/quickbooks/customer-mappings/:id", requireAuth, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) {
+        res.status(400).json({ error: "bad_request", message: "Invalid mapping id" });
+        return;
+      }
+      await softDeleteCustomerMapping(id);
+      res.json({ ok: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to delete mapping";
+      res.status(500).json({ error: "quickbooks_mapping_delete_failed", message });
+    }
+  });
+
+  // ---------- Revenue reconciliation (Invoices ↔ revenue lines) ----------
+
+  app.get(
+    "/api/quickbooks/projects/:projectId/revenue-reconciliation",
+    requireAuth,
+    async (req, res) => {
+      try {
+        const projectId = Number(req.params.projectId);
+        if (!Number.isFinite(projectId) || projectId <= 0) {
+          res.status(400).json({ error: "bad_request", message: "Invalid projectId" });
+          return;
+        }
+        const startDate = typeof req.query.startDate === "string" ? req.query.startDate : undefined;
+        const endDate = typeof req.query.endDate === "string" ? req.query.endDate : undefined;
+        const result = await runProjectRevenueReconciliation(projectId, { startDate, endDate });
+        res.json(result);
+      } catch (err) {
+        notConnectedResponse(res, err);
+      }
+    },
+  );
+
+  app.post("/api/quickbooks/revenue-links", requireAuth, async (req, res) => {
+    try {
+      const body = req.body ?? {};
+      const revenueLineId = Number(body.revenueLineId ?? body.appEntityId);
+      const projectId = body.projectId !== undefined && body.projectId !== null ? Number(body.projectId) : null;
+      if (!Number.isFinite(revenueLineId) || revenueLineId <= 0) {
+        res.status(400).json({ error: "bad_request", message: "revenueLineId is required" });
+        return;
+      }
+
+      let invoiceSummary: QuickBooksInvoiceSummary | null = null;
+      if (body.invoice && typeof body.invoice === "object") {
+        invoiceSummary =
+          typeof body.invoice.Id !== "undefined"
+            ? invoiceRawToSummary(body.invoice)
+            : (body.invoice as QuickBooksInvoiceSummary);
+      }
+      if (!invoiceSummary || !invoiceSummary.id) {
+        res.status(400).json({ error: "bad_request", message: "invoice (with id) is required" });
+        return;
+      }
+
+      const user = getEffectiveUser(req);
+      const link = await confirmRevenueLineLink({
+        projectId,
+        revenueLineId,
+        invoice: invoiceSummary,
+        matchType: body.matchType ?? "manual",
+        notes: body.notes ?? null,
+        confirmedBy: user?.id ?? null,
+      });
+
+      res.status(201).json({ link });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to create link";
+      res.status(500).json({ error: "quickbooks_revenue_link_failed", message });
     }
   });
 

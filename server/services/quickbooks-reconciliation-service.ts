@@ -20,8 +20,13 @@
 import { and, desc, eq, ilike, isNull, inArray, or, sql } from "drizzle-orm";
 import {
   normalizedCostLines,
+  normalizedRevenueLines,
+  projectInfo,
+  quickbooksCustomerMappings,
   quickbooksInvoiceLinks,
   type NormalizedCostLine,
+  type NormalizedRevenueLine,
+  type QuickBooksCustomerMapping,
   type QuickBooksInvoiceLink,
 } from "@shared/schema";
 import { db } from "../db";
@@ -29,6 +34,7 @@ import {
   getBills,
   getValidAccessToken,
   loadQuickBooksMetadata,
+  queryQuickBooks,
 } from "./quickbooks-service";
 
 const AMOUNT_TOLERANCE = 1; // R1 — generous enough to absorb rounding.
@@ -135,12 +141,21 @@ function amountsWithinTolerance(a: number | null, b: number | null): boolean {
 export function billRawToSummary(raw: any): QuickBooksBillSummary {
   const vendorName = raw?.VendorRef?.name ?? null;
   const vendorId = raw?.VendorRef?.value ?? null;
+  // QB `TotalAmt` is tax-inclusive. App cost lines store ex-VAT. Prefer the
+  // ex-tax subtotal when QB provides it (TxnTaxDetail.TotalTax) so variance
+  // against `normalized_cost_lines.amount_ex_vat` is apples-to-apples.
+  const totalAmount = amountToNumber(raw?.TotalAmt);
+  const totalTax = amountToNumber(raw?.TxnTaxDetail?.TotalTax);
+  const totalExTax =
+    totalAmount !== null && totalTax !== null
+      ? Number((totalAmount - totalTax).toFixed(2))
+      : totalAmount;
   return {
     id: String(raw?.Id ?? ""),
     docNumber: raw?.DocNumber ?? null,
     txnDate: raw?.TxnDate ?? null,
     dueDate: raw?.DueDate ?? null,
-    totalAmount: amountToNumber(raw?.TotalAmt),
+    totalAmount: totalExTax,
     balance: amountToNumber(raw?.Balance),
     vendorName,
     vendorId,
@@ -283,7 +298,7 @@ export async function createOrUpdateLink(
     qbTxnDate: input.qbTxnDate ?? null,
     qbAmount:
       input.qbAmount !== null && input.qbAmount !== undefined
-        ? String(input.qbAmount)
+        ? Number(input.qbAmount).toFixed(2)
         : null,
     qbCounterpartyName: input.qbCounterpartyName ?? null,
     matchType: input.matchType ?? "manual",
@@ -588,4 +603,469 @@ export async function markCostLineRealised(costLineId: number): Promise<Normaliz
     .where(eq(normalizedCostLines.id, costLineId))
     .returning();
   return updated[0] ?? null;
+}
+
+// ===================== CUSTOMER MAPPING =====================
+
+export interface ProjectWithMapping {
+  projectId: number;
+  projectName: string;
+  clientId: number | null;
+  mapping: QuickBooksCustomerMapping | null;
+}
+
+export async function listProjectsWithMappings(): Promise<ProjectWithMapping[]> {
+  const [projects, mappings] = await Promise.all([
+    db
+      .select({
+        id: projectInfo.id,
+        projectName: projectInfo.projectName,
+        clientId: projectInfo.clientId,
+      })
+      .from(projectInfo)
+      .where(isNull(projectInfo.deletedAt)),
+    db
+      .select()
+      .from(quickbooksCustomerMappings)
+      .where(isNull(quickbooksCustomerMappings.deletedAt)),
+  ]);
+
+  const mappingByProject = new Map<number, QuickBooksCustomerMapping>();
+  for (const m of mappings) mappingByProject.set(m.projectId, m);
+
+  return (projects as Array<{ id: number; projectName: string; clientId: number | null }>).map(
+    (p) => ({
+      projectId: p.id,
+      projectName: p.projectName,
+      clientId: p.clientId ?? null,
+      mapping: mappingByProject.get(p.id) ?? null,
+    }),
+  );
+}
+
+export async function getCustomerMappingForProject(
+  projectId: number,
+): Promise<QuickBooksCustomerMapping | null> {
+  const rows = await db
+    .select()
+    .from(quickbooksCustomerMappings)
+    .where(
+      and(
+        eq(quickbooksCustomerMappings.projectId, projectId),
+        isNull(quickbooksCustomerMappings.deletedAt),
+      ),
+    )
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export interface UpsertCustomerMappingInput {
+  projectId: number;
+  clientId?: number | null;
+  qbCustomerId: string;
+  qbCustomerName?: string | null;
+  qbRealmId?: string;
+  notes?: string | null;
+  createdBy?: number | null;
+}
+
+export async function upsertCustomerMapping(
+  input: UpsertCustomerMappingInput,
+): Promise<QuickBooksCustomerMapping> {
+  const realmId =
+    input.qbRealmId ?? ((await loadQuickBooksMetadata()).realmId ?? "unknown");
+
+  const now = new Date();
+  const values = {
+    projectId: input.projectId,
+    clientId: input.clientId ?? null,
+    qbCustomerId: String(input.qbCustomerId),
+    qbCustomerName: input.qbCustomerName ?? null,
+    qbRealmId: realmId,
+    notes: input.notes ?? null,
+    createdBy: input.createdBy ?? null,
+    updatedAt: now,
+  };
+
+  const existing = await db
+    .select()
+    .from(quickbooksCustomerMappings)
+    .where(
+      and(
+        eq(quickbooksCustomerMappings.projectId, values.projectId),
+        eq(quickbooksCustomerMappings.qbRealmId, values.qbRealmId),
+      ),
+    )
+    .limit(1);
+
+  if (existing.length > 0) {
+    const row = existing[0]!;
+    const updated = await db
+      .update(quickbooksCustomerMappings)
+      .set({ ...values, deletedAt: null } as any)
+      .where(eq(quickbooksCustomerMappings.id, row.id))
+      .returning();
+    return updated[0]!;
+  }
+
+  const inserted = await db
+    .insert(quickbooksCustomerMappings)
+    .values(values as any)
+    .returning();
+  return inserted[0]!;
+}
+
+export async function softDeleteCustomerMapping(id: number): Promise<void> {
+  await db
+    .update(quickbooksCustomerMappings)
+    .set({ deletedAt: new Date(), updatedAt: new Date() } as any)
+    .where(eq(quickbooksCustomerMappings.id, id));
+}
+
+// ===================== REVENUE (INVOICES) RECONCILIATION =====================
+
+export interface QuickBooksInvoiceSummary {
+  id: string;
+  docNumber: string | null;
+  txnDate: string | null;
+  dueDate: string | null;
+  totalAmount: number | null;
+  balance: number | null;
+  customerName: string | null;
+  customerId: string | null;
+}
+
+export interface AppRevenueLineSummary {
+  id: number;
+  projectId: number;
+  projectName: string | null;
+  invoiceNumber: string | null;
+  invoiceDate: string | null;
+  paidDate: string | null;
+  amountExVat: number | null;
+  status: string | null;
+  milestoneName: string | null;
+  description: string | null;
+}
+
+export interface RevenueReconciliationRow {
+  matchType: ReconciliationMatchType;
+  revenueLine: AppRevenueLineSummary | null;
+  invoice: QuickBooksInvoiceSummary | null;
+  amountVariance: number | null;
+  hasWarning: boolean;
+  link: QuickBooksInvoiceLink | null;
+}
+
+export interface RevenueReconciliationResult {
+  projectId: number;
+  mapping: QuickBooksCustomerMapping | null;
+  summary: ReconciliationSummary;
+  rows: RevenueReconciliationRow[];
+  generatedAt: string;
+}
+
+export function invoiceRawToSummary(raw: any): QuickBooksInvoiceSummary {
+  const totalAmount = amountToNumber(raw?.TotalAmt);
+  const totalTax = amountToNumber(raw?.TxnTaxDetail?.TotalTax);
+  const totalExTax =
+    totalAmount !== null && totalTax !== null
+      ? Number((totalAmount - totalTax).toFixed(2))
+      : totalAmount;
+  return {
+    id: String(raw?.Id ?? ""),
+    docNumber: raw?.DocNumber ?? null,
+    txnDate: raw?.TxnDate ?? null,
+    dueDate: raw?.DueDate ?? null,
+    totalAmount: totalExTax,
+    balance: amountToNumber(raw?.Balance),
+    customerName: raw?.CustomerRef?.name ?? null,
+    customerId: raw?.CustomerRef?.value ?? null,
+  };
+}
+
+export function revenueLineToSummary(row: NormalizedRevenueLine): AppRevenueLineSummary {
+  return {
+    id: row.id,
+    projectId: row.projectId,
+    projectName: row.projectName ?? null,
+    invoiceNumber: row.invoiceNumber ?? null,
+    invoiceDate: row.invoiceDate ? String(row.invoiceDate) : null,
+    paidDate: row.paidDate ? String(row.paidDate) : null,
+    amountExVat: amountToNumber(row.amountExVat),
+    status: row.status ?? null,
+    milestoneName: row.milestoneName ?? null,
+    description: row.description ?? null,
+  };
+}
+
+async function fetchProjectRevenueLines(projectId: number): Promise<NormalizedRevenueLine[]> {
+  return db
+    .select()
+    .from(normalizedRevenueLines)
+    .where(
+      and(
+        eq(normalizedRevenueLines.projectId, projectId),
+        isNull(normalizedRevenueLines.effectiveTo),
+      ),
+    );
+}
+
+async function fetchLinksForRevenueLines(
+  revenueLineIds: number[],
+): Promise<QuickBooksInvoiceLink[]> {
+  if (revenueLineIds.length === 0) return [];
+  return db
+    .select()
+    .from(quickbooksInvoiceLinks)
+    .where(
+      and(
+        eq(quickbooksInvoiceLinks.appEntityType, "revenue_line"),
+        eq(quickbooksInvoiceLinks.qbEntityType, "invoice"),
+        isNull(quickbooksInvoiceLinks.deletedAt),
+        inArray(quickbooksInvoiceLinks.appEntityId, revenueLineIds),
+      ),
+    );
+}
+
+async function queryInvoicesForCustomer(
+  qbCustomerId: string,
+  options: { startDate?: string; endDate?: string } = {},
+): Promise<QuickBooksInvoiceSummary[]> {
+  // Escape single quotes for the QB query language.
+  const safeId = String(qbCustomerId).replace(/'/g, "''");
+  const parts: string[] = [`SELECT * FROM Invoice WHERE CustomerRef = '${safeId}'`];
+  if (options.startDate) parts.push(`AND TxnDate >= '${options.startDate}'`);
+  if (options.endDate) parts.push(`AND TxnDate <= '${options.endDate}'`);
+  parts.push("ORDERBY TxnDate DESC MAXRESULTS 500");
+  const query = parts.join(" ");
+  const result = await queryQuickBooks<any>("Invoice", query);
+  const invoices: any[] = result?.QueryResponse?.Invoice ?? [];
+  return invoices.map(invoiceRawToSummary);
+}
+
+function matchRevenueLinesToInvoices(
+  revenueLines: AppRevenueLineSummary[],
+  invoices: QuickBooksInvoiceSummary[],
+  links: QuickBooksInvoiceLink[],
+): RevenueReconciliationRow[] {
+  const rows: RevenueReconciliationRow[] = [];
+  const invoicesById = new Map<string, QuickBooksInvoiceSummary>();
+  for (const inv of invoices) invoicesById.set(inv.id, inv);
+  const revLinesById = new Map<number, AppRevenueLineSummary>();
+  for (const r of revenueLines) revLinesById.set(r.id, r);
+
+  const usedRevIds = new Set<number>();
+  const usedInvoiceIds = new Set<string>();
+
+  for (const link of links) {
+    if (link.appEntityType !== "revenue_line" || link.qbEntityType !== "invoice") continue;
+    const revLine = revLinesById.get(link.appEntityId) ?? null;
+    const invoice = invoicesById.get(link.qbEntityId) ?? null;
+    if (!revLine && !invoice) continue;
+
+    const variance =
+      revLine?.amountExVat !== null && revLine?.amountExVat !== undefined &&
+      invoice?.totalAmount !== null && invoice?.totalAmount !== undefined
+        ? Number((invoice!.totalAmount! - revLine!.amountExVat!).toFixed(2))
+        : null;
+
+    rows.push({
+      matchType: "linked",
+      revenueLine: revLine,
+      invoice,
+      amountVariance: variance,
+      hasWarning: variance !== null && Math.abs(variance) > AMOUNT_TOLERANCE,
+      link,
+    });
+    if (revLine) usedRevIds.add(revLine.id);
+    if (invoice) usedInvoiceIds.add(invoice.id);
+  }
+
+  // Exact: invoice number + amount tolerance
+  for (const rev of revenueLines) {
+    if (usedRevIds.has(rev.id)) continue;
+    const normRev = normalizeInvoiceNumber(rev.invoiceNumber);
+    if (!normRev) continue;
+    const match = invoices.find((inv) => {
+      if (usedInvoiceIds.has(inv.id)) return false;
+      const normInv = normalizeInvoiceNumber(inv.docNumber);
+      if (!normInv || normInv !== normRev) return false;
+      return amountsWithinTolerance(rev.amountExVat, inv.totalAmount);
+    });
+    if (match) {
+      const variance =
+        rev.amountExVat !== null && match.totalAmount !== null
+          ? Number((match.totalAmount - rev.amountExVat).toFixed(2))
+          : null;
+      rows.push({
+        matchType: "auto_exact",
+        revenueLine: rev,
+        invoice: match,
+        amountVariance: variance,
+        hasWarning: false,
+        link: null,
+      });
+      usedRevIds.add(rev.id);
+      usedInvoiceIds.add(match.id);
+    }
+  }
+
+  // Fuzzy: amount tolerance + same month (customer is already scoped by mapping)
+  for (const rev of revenueLines) {
+    if (usedRevIds.has(rev.id)) continue;
+    const match = invoices.find((inv) => {
+      if (usedInvoiceIds.has(inv.id)) return false;
+      if (!amountsWithinTolerance(rev.amountExVat, inv.totalAmount)) return false;
+      return sameMonth(rev.invoiceDate, inv.txnDate);
+    });
+    if (match) {
+      const variance =
+        rev.amountExVat !== null && match.totalAmount !== null
+          ? Number((match.totalAmount - rev.amountExVat).toFixed(2))
+          : null;
+      rows.push({
+        matchType: "auto_fuzzy",
+        revenueLine: rev,
+        invoice: match,
+        amountVariance: variance,
+        hasWarning: true,
+        link: null,
+      });
+      usedRevIds.add(rev.id);
+      usedInvoiceIds.add(match.id);
+    }
+  }
+
+  for (const rev of revenueLines) {
+    if (usedRevIds.has(rev.id)) continue;
+    rows.push({
+      matchType: "app_only",
+      revenueLine: rev,
+      invoice: null,
+      amountVariance: null,
+      hasWarning: true,
+      link: null,
+    });
+  }
+  for (const inv of invoices) {
+    if (usedInvoiceIds.has(inv.id)) continue;
+    rows.push({
+      matchType: "qb_only",
+      revenueLine: null,
+      invoice: inv,
+      amountVariance: null,
+      hasWarning: true,
+      link: null,
+    });
+  }
+  return rows;
+}
+
+function buildRevenueSummary(rows: RevenueReconciliationRow[]): ReconciliationSummary {
+  let linked = 0;
+  let exact = 0;
+  let fuzzy = 0;
+  let appOnly = 0;
+  let qbOnly = 0;
+  let totalApp = 0;
+  let totalQb = 0;
+  for (const row of rows) {
+    switch (row.matchType) {
+      case "linked": linked++; break;
+      case "auto_exact": exact++; break;
+      case "auto_fuzzy": fuzzy++; break;
+      case "app_only": appOnly++; break;
+      case "qb_only": qbOnly++; break;
+    }
+    if (row.revenueLine?.amountExVat !== null && row.revenueLine?.amountExVat !== undefined) {
+      totalApp += row.revenueLine.amountExVat;
+    }
+    if (row.invoice?.totalAmount !== null && row.invoice?.totalAmount !== undefined) {
+      totalQb += row.invoice.totalAmount;
+    }
+  }
+  return {
+    linkedCount: linked,
+    autoExactCount: exact,
+    autoFuzzyCount: fuzzy,
+    appOnlyCount: appOnly,
+    qbOnlyCount: qbOnly,
+    totalAppAmount: Number(totalApp.toFixed(2)),
+    totalQbAmount: Number(totalQb.toFixed(2)),
+    amountVariance: Number((totalQb - totalApp).toFixed(2)),
+  };
+}
+
+export async function runProjectRevenueReconciliation(
+  projectId: number,
+  options: { startDate?: string; endDate?: string } = {},
+): Promise<RevenueReconciliationResult> {
+  await getValidAccessToken();
+
+  const mapping = await getCustomerMappingForProject(projectId);
+
+  // No mapping → empty result with the mapping field null so the UI can
+  // surface a "Map a customer to reconcile invoices" CTA.
+  if (!mapping) {
+    const revLineRows = await fetchProjectRevenueLines(projectId);
+    const revenueLines = revLineRows.map(revenueLineToSummary);
+    const appOnlyRows: RevenueReconciliationRow[] = revenueLines.map((rev) => ({
+      matchType: "app_only",
+      revenueLine: rev,
+      invoice: null,
+      amountVariance: null,
+      hasWarning: true,
+      link: null,
+    }));
+    return {
+      projectId,
+      mapping: null,
+      summary: buildRevenueSummary(appOnlyRows),
+      rows: appOnlyRows,
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
+  const [invoices, revLineRows] = await Promise.all([
+    queryInvoicesForCustomer(mapping.qbCustomerId, options),
+    fetchProjectRevenueLines(projectId),
+  ]);
+
+  const revenueLines = revLineRows.map(revenueLineToSummary);
+  const links = await fetchLinksForRevenueLines(revenueLines.map((r) => r.id));
+  const rows = matchRevenueLinesToInvoices(revenueLines, invoices, links);
+  const summary = buildRevenueSummary(rows);
+
+  return {
+    projectId,
+    mapping,
+    summary,
+    rows,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+export async function confirmRevenueLineLink(params: {
+  projectId: number | null;
+  revenueLineId: number;
+  invoice: QuickBooksInvoiceSummary;
+  matchType?: "manual" | "auto_exact" | "auto_fuzzy";
+  confirmedBy?: number | null;
+  notes?: string | null;
+}): Promise<QuickBooksInvoiceLink> {
+  return createOrUpdateLink({
+    projectId: params.projectId,
+    appEntityType: "revenue_line",
+    appEntityId: params.revenueLineId,
+    qbEntityType: "invoice",
+    qbEntityId: params.invoice.id,
+    qbDocNumber: params.invoice.docNumber ?? null,
+    qbTxnDate: params.invoice.txnDate ?? null,
+    qbAmount: params.invoice.totalAmount ?? null,
+    qbCounterpartyName: params.invoice.customerName ?? null,
+    matchType: params.matchType ?? "manual",
+    notes: params.notes ?? null,
+    confirmedBy: params.confirmedBy ?? null,
+  });
 }

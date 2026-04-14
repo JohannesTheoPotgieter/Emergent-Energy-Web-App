@@ -60,19 +60,6 @@ function formatCurrency(value?: number | string | null): string {
   }).format(num);
 }
 
-function billToSummaryJson(bill: QbBillRaw) {
-  return {
-    id: bill.Id,
-    docNumber: bill.DocNumber ?? null,
-    txnDate: bill.TxnDate ?? null,
-    dueDate: null,
-    totalAmount: bill.TotalAmt ?? null,
-    balance: bill.Balance ?? null,
-    vendorName: bill.VendorRef?.name ?? null,
-    vendorId: bill.VendorRef?.value ?? null,
-  };
-}
-
 export default function FinanceQuickBooksLinksPage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -413,10 +400,6 @@ export default function FinanceQuickBooksLinksPage() {
         )}
       </section>
 
-      {/* Unused import ergonomic guard */}
-      <span className="hidden">
-        {billToSummaryJson.length /* keep helper reachable for future use */}
-      </span>
     </PageShell>
   );
 }

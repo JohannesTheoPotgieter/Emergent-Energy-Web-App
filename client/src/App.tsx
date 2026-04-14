@@ -157,6 +157,9 @@ const OpportunitiesPage = lazy(() => import("@/pages/opportunities"));
 const AdminPipedrivePage = lazy(() => import("@/pages/admin-pipedrive"));
 const AdminQuickBooksPage = lazy(() => import("@/pages/admin-quickbooks"));
 const FinanceQuickBooksLinksPage = lazy(() => import("@/pages/finance-quickbooks-links"));
+const FinanceQuickBooksCustomerMappingPage = lazy(
+  () => import("@/pages/finance-quickbooks-customer-mapping"),
+);
 const AdminBackfillPage = lazy(() => import("@/pages/admin-backfill"));
 const AdminWorkflowConfigPage = lazy(() => import("@/pages/admin-workflow-config"));
 
@@ -281,6 +284,7 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   AdminPipedrivePage,
   AdminQuickBooksPage,
   FinanceQuickBooksLinksPage,
+  FinanceQuickBooksCustomerMappingPage,
   AdminBackfillPage,
   AdminWorkflowConfigPage,
   MilestoneTrackerPage,
