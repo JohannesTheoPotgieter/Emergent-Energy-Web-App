@@ -840,7 +840,56 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
       storage.getAllProjectPlans(),
     ]);
 
+    // ── DIAGNOSTIC ── (claude/fix-finance-dashboards)
+    // Temporary logging to trace where inflows die between storage and response.
+    // Remove after the inflows-zero bug is identified and fixed.
+    console.log(`[CASHFLOW-DIAG-1] rawInflows.length=${rawInflows.length} allTaskLinks.length=${allTaskLinks.length}`);
+    if (rawInflows.length > 0) {
+      const sample = rawInflows.slice(0, 3).map((r: any) => ({
+        projectName: r.projectName,
+        rowNumber: r.rowNumber,
+        paymentReceivedDate: r.paymentReceivedDate,
+        paidDateFontColor: r.paidDateFontColor,
+        plannedPaymentDate: r.plannedPaymentDate,
+        effectiveDate: r.effectiveDate,
+        milestoneAmount: r.milestoneAmount,
+        inBank: r.inBank,
+      }));
+      console.log(`[CASHFLOW-DIAG-1] rawInflows sample:`, JSON.stringify(sample));
+    }
+
     const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlanTasks);
+
+    // ── DIAGNOSTIC ── after resolveInflowEffectiveDates
+    console.log(`[CASHFLOW-DIAG-2] allInflows.length=${allInflows.length}`);
+    if (allInflows.length > 0) {
+      const sample = allInflows.slice(0, 3).map((r: any) => ({
+        projectName: r.projectName,
+        effectiveDate: r.effectiveDate,
+        effectiveDateType: typeof r.effectiveDate,
+        milestoneAmount: r.milestoneAmount,
+      }));
+      console.log(`[CASHFLOW-DIAG-2] allInflows sample:`, JSON.stringify(sample));
+
+      // Count how many would pass the cashflow date+regex check across all of FY26
+      let regexPassed = 0;
+      let regexFailed = 0;
+      let nullDate = 0;
+      let inFyRange = 0;
+      for (const inf of allInflows) {
+        const d = (inf as any).effectiveDate;
+        if (!d) { nullDate++; continue; }
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(String(d))) {
+          regexFailed++;
+          if (regexFailed <= 3) console.log(`[CASHFLOW-DIAG-2] regex FAIL sample:`, JSON.stringify(d), typeof d);
+          continue;
+        }
+        regexPassed++;
+        const dStr = String(d);
+        if (dStr >= "2025-09-01" && dStr < "2026-09-01") inFyRange++;
+      }
+      console.log(`[CASHFLOW-DIAG-2] regexPassed=${regexPassed} regexFailed=${regexFailed} nullDate=${nullDate} inFyRange=${inFyRange}`);
+    }
 
     const manualMap = new Map(manualBalances.map(m => [m.weekStartDate, parseFloat(m.openingBalance || "0")]));
     const opexMonthlyMap = new Map(opexBudgets.map(o => [o.monthKey, parseFloat(o.amount || "0")]));
@@ -993,6 +1042,15 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
     const forecastOutflowsYtd = weeks.reduce((s: number, w: any) => s + (w.forecastOutflows || 0), 0);
     diagnostics.actualOutflowsYtd = actualOutflowsYtd;
     diagnostics.forecastOutflowsYtd = forecastOutflowsYtd;
+
+    // ── DIAGNOSTIC ── (claude/fix-finance-dashboards)
+    // Total inflows/outflows summed across the response. If totalInflowsAggregated
+    // is 0, the bug is in the inflow loop (line ~904-912). If it's non-zero, the
+    // bug is in the front-end or somewhere between the response and the page.
+    const totalInflowsAggregated = weeks.reduce((s: number, w: any) => s + (w.projectInflows || 0), 0);
+    const weeksWithInflows = weeks.filter((w: any) => (w.projectInflows || 0) > 0).length;
+    const weeksWithOutflows = weeks.filter((w: any) => (w.projectOutflows || 0) > 0).length;
+    console.log(`[CASHFLOW-DIAG-3] totalInflowsAggregated=${totalInflowsAggregated.toFixed(2)} weeksWithInflows=${weeksWithInflows} weeksWithOutflows=${weeksWithOutflows} totalWeeks=${weeks.length}`);
     console.log(`[Cashflow2026] Expenses: ${allExpenses.length} total (${normalizedCount} normalized, ${legacyCount} legacy), ${itemCount} items. Outflows YTD: ${totalOutflowsYtd.toFixed(0)} (actual ${actualOutflowsYtd.toFixed(0)}, forecast ${forecastOutflowsYtd.toFixed(0)})`);
 
     if (includeDebug) {
