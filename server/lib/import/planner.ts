@@ -24,9 +24,9 @@ import { runConflictEngine, type ConflictEngineResult, type ConflictSummary } fr
  * PLAN:        work_items (source=SMART_IMPORT, workstream=PM)
  *              — normalizedPlanTasks is a dead table (never written, never read).
  * REVENUE:     normalized_revenue_lines (effectiveTo IS NULL)
- *              — programInflows is a derivative for FYE tracking.
+ *              — canonical source for all revenue/inflow KPIs and dashboards.
  * EXPENDITURE: normalized_cost_lines (effectiveTo IS NULL)
- *              — programExpense is a derivative for FYE tracking.
+ *              — canonical source for all cost/COS KPIs and dashboards.
  */
 export const CANONICAL_SOURCES = {
   PLAN: "work_items",

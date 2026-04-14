@@ -22,7 +22,7 @@ import path from "path";
 import { storage } from "../storage";
 import { db } from "../db";
 import { eq, and, or, isNull } from "drizzle-orm";
-import { normalizedCostLines, normalizedRevenueLines, programExpense, financialEditRequests, projectInfo, OVERRIDE_CATEGORIES } from "@shared/schema";
+import { normalizedCostLines, normalizedRevenueLines, financialEditRequests, projectInfo, OVERRIDE_CATEGORIES } from "@shared/schema";
 import { requireAuth } from "../auth-context";
 import { requireAdmin } from "../middleware/requireAdmin";
 import { requirePermission } from "../permission-middleware";

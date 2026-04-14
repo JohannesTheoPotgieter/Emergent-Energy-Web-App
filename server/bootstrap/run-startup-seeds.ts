@@ -27,9 +27,6 @@ export async function runStartupSeeds(options: {
   const { seedTrRegisterData } = await import("../tr-register-routes");
   await seedTrRegisterData().catch((err) => log(`[Seed] TR Register error: ${err}`, "Startup"));
 
-  const { seedEngineeringData } = await import("../seed-engineering");
-  await seedEngineeringData().catch((err) => log(`[Seed] Engineering data error: ${err}`, "Startup"));
-
   const { seedIntakeTaskTemplates } = await import("../seed-intake-templates");
   await seedIntakeTaskTemplates().catch((err) => log(`[Seed] Intake templates error: ${err}`, "Startup"));
 
@@ -38,9 +35,6 @@ export async function runStartupSeeds(options: {
 
   const { seedRolePermissions } = await import("../role-management");
   await seedRolePermissions().catch((err) => log(`[Seed] Role permissions error: ${err}`, "Startup"));
-
-  const { runDataSeedMigration } = await import("../seed-data-migration");
-  await runDataSeedMigration().catch((err) => log(`[DataSeed] Migration error: ${err}`, "Startup"));
 
   try {
     const { setFeatureFlag, getFeatureFlag, ensureRolloutFeatureFlags } = await import("../lib/feature-flags");

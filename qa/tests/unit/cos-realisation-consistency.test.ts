@@ -391,7 +391,6 @@ describe("finance-policy.ts — module structure", () => {
     expect(policy).toHaveProperty("isCosRealised");
     expect(policy).toHaveProperty("isCanonicalCosRealised");
     expect(policy).toHaveProperty("requireProjectId");
-    expect(policy).toHaveProperty("blockProgramExpenseWrite");
     expect(policy).toHaveProperty("requireTransaction");
     expect(policy).toHaveProperty("hasFinanceModelChanges");
     expect(policy).toHaveProperty("FINANCE_MODEL_PATHS");

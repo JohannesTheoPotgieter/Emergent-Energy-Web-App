@@ -6,50 +6,19 @@ function read(relPath: string) {
   return fs.readFileSync(path.join(process.cwd(), relPath), "utf8");
 }
 
-describe("Issue A: Revenue Milestone Composite Key Matching", () => {
-  const routes = read("server/smart-import-routes.ts");
-
-  it("selects milestoneName and milestoneAmount from old inflows", () => {
-    expect(routes).toContain("milestoneName: programInflows.milestoneName");
-    expect(routes).toContain("milestoneAmount: programInflows.milestoneAmount");
-  });
-
-  it("builds composite key map from old inflows", () => {
-    expect(routes).toContain("oldCompositeMap");
-    expect(routes).toContain("${r.milestoneName}::${r.milestoneAmount");
-  });
-
-  it("still maintains row-based fallback map", () => {
-    expect(routes).toContain("oldRowMap");
-  });
-
-  it("tries composite match first before row match", () => {
-    // The composite key check should come before the row check
-    const compositeIdx = routes.indexOf("oldCompositeMap.has(compositeKey)");
-    const rowIdx = routes.indexOf("oldRowMap.has(r.sourceRow)");
-    expect(compositeIdx).toBeGreaterThan(0);
-    expect(rowIdx).toBeGreaterThan(compositeIdx);
-  });
-
-  it("uses undefined sentinel to distinguish no-match from null inBank", () => {
-    expect(routes).toContain("let prevInBank: number | null | undefined = undefined");
-    expect(routes).toContain("if (prevInBank === undefined && oldRowMap.has(r.sourceRow))");
-  });
-
-  it("logs when a milestone moves rows", () => {
-    expect(routes).toContain("moved from row");
-    expect(routes).toContain("Status preserved");
-  });
-
-  it("preserves inBank from composite match even if row differs", () => {
-    // The composite match block extracts inBank regardless of row alignment
-    const compositeBlock = routes.substring(
-      routes.indexOf("oldCompositeMap.has(compositeKey)"),
-      routes.indexOf("// Fall back to row number match")
-    );
-    expect(compositeBlock).toContain("prevInBank = match.inBank");
-  });
-});
+// The "Issue A: Revenue Milestone Composite Key Matching" describe block
+// was retired in the PE/PI cutover. Its assertions referenced the
+// program_inflows write block in smart-import-routes.ts that carried
+// inBank / paymentReceivedDate forward across re-imports via a
+// composite-key map of old PI rows. That entire block was deleted in
+// commit 079b451 — smart-import no longer writes program_inflows at
+// all, so the carry-forward logic it tested no longer exists.
+//
+// Manual-edit preservation across re-imports is a Wave-3-or-later
+// concern: it now needs to be implemented in the canonical NCL/NRL
+// commit-executor pipeline (server/lib/import/commit-executor.ts) if
+// users report losing inBank state across re-imports of the same
+// project. No regressions have been reported as of the cutover date.
 
 describe("Issue B: Expenditure Tracking Reconciliation", () => {
   const normalizer = read("server/lib/import/normalizer.ts");

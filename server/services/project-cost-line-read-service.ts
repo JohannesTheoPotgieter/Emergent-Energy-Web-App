@@ -1,6 +1,6 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "../db";
-import { normalizedCostLines, programExpense, projectInfo } from "@shared/schema";
+import { normalizedCostLines, projectInfo } from "@shared/schema";
 import { adaptCostToExpense } from "../lib/data-merge";
 
 export type CostLineageType = "IMPORTED" | "MANUAL_IDEMPOTENT" | "MANUAL_FALLBACK";
@@ -194,13 +194,10 @@ export async function getCanonicalCostLineDiagnostics(projectId?: number) {
 }
 
 export async function getCostLineRiskDiagnostics(projectId?: number, sampleSize = 5) {
-  const [activeNormalizedRows, activeProgramExpenseRows, projects] = await Promise.all([
+  const [activeNormalizedRows, projects] = await Promise.all([
     projectId
       ? db.select().from(normalizedCostLines).where(and(eq(normalizedCostLines.projectId, projectId), isNull(normalizedCostLines.effectiveTo)))
       : db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
-    projectId
-      ? db.select().from(programExpense).where(and(eq(programExpense.projectId, projectId), isNull(programExpense.effectiveTo)))
-      : db.select().from(programExpense).where(isNull(programExpense.effectiveTo)),
     db.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo),
   ]);
 
@@ -265,28 +262,6 @@ export async function getCostLineRiskDiagnostics(projectId?: number, sampleSize 
     .filter((group) => group.variantCount > 0)
     .sort((a, b) => b.variantCount - a.variantCount);
 
-  const normalizedByProject = normalizedRows.reduce((acc, row) => {
-    const pid = Number(row.projectId);
-    acc.set(pid, (acc.get(pid) || 0) + 1);
-    return acc;
-  }, new Map<number, number>());
-
-  const peByProject = (activeProgramExpenseRows as Array<{ projectId: number; id: number }>).reduce((acc, row) => {
-    const pid = Number(row.projectId);
-    acc.set(pid, (acc.get(pid) || 0) + 1);
-    return acc;
-  }, new Map<number, number>());
-
-  const overlapProjectRows = Array.from(normalizedByProject.entries())
-    .filter(([pid, normalizedCount]) => normalizedCount > 0 && (peByProject.get(pid) || 0) > 0)
-    .map(([pid, normalizedCount]) => ({
-      projectId: pid,
-      projectName: projectNameById.get(pid) || null,
-      normalizedActiveCount: normalizedCount,
-      programExpenseActiveCount: peByProject.get(pid) || 0,
-    }))
-    .sort((a, b) => (b.normalizedActiveCount + b.programExpenseActiveCount) - (a.normalizedActiveCount + a.programExpenseActiveCount));
-
   return {
     generatedAt: new Date().toISOString(),
     scope: projectId ?? null,
@@ -302,9 +277,7 @@ export async function getCostLineRiskDiagnostics(projectId?: number, sampleSize 
       count: driftGroups.length,
       sample: driftGroups.slice(0, sampleSize),
     },
-    normalizedVsProgramExpenseActiveOverlap: {
-      count: overlapProjectRows.length,
-      sample: overlapProjectRows.slice(0, sampleSize),
-    },
+    // normalizedVsProgramExpenseActiveOverlap was removed when program_expense
+    // was retired in the PE/PI cutover. The diagnostic is no longer meaningful.
   };
 }

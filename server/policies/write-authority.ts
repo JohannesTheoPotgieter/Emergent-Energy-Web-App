@@ -107,12 +107,10 @@ export function requiresBridgeSync(
 
 /**
  * Tables that are permanently blocked from direct writes.
- * These existed in the legacy model and have been superseded.
+ * Empty by default. Populate with a superseded table name if you need to
+ * block direct writes at runtime while an in-flight cutover is in progress.
  */
-export const BLOCKED_WRITE_TARGETS = [
-  "program_expense",
-  "program_inflow",
-] as const;
+export const BLOCKED_WRITE_TARGETS: readonly string[] = [] as const;
 
 /**
  * Check if a write target is blocked.

@@ -6,40 +6,15 @@ function read(relPath: string) {
   return fs.readFileSync(path.join(process.cwd(), relPath), "utf8");
 }
 
-describe("Phase 2: sub_project_name on program_expense and program_inflows", () => {
-  const schema = read("shared/schema/finance.ts");
-
-  it("program_expense has sub_project_name column", () => {
-    const peBlock = schema.substring(
-      schema.indexOf('pgTable("program_expense"'),
-      schema.indexOf("});", schema.indexOf('pgTable("program_expense"')) + 3
-    );
-    expect(peBlock).toContain("sub_project_name");
-  });
-
-  it("program_inflows has sub_project_name column", () => {
-    const piBlock = schema.substring(
-      schema.indexOf('pgTable("program_inflows"'),
-      schema.indexOf("});", schema.indexOf('pgTable("program_inflows"')) + 3
-    );
-    expect(piBlock).toContain("sub_project_name");
-  });
-
-  it("commit inserts sub_project_name into program_inflows", () => {
-    const routes = read("server/smart-import-routes.ts");
-    expect(routes).toContain("subProjectName: m.subProjectName || null,");
-  });
-
-  it("commit inserts sub_project_name into program_expense", () => {
-    const routes = read("server/smart-import-routes.ts");
-    // Look for the specific line in program_expense insert
-    const peInsertBlock = routes.substring(
-      routes.indexOf("budgetCosTotal: toStr(m.budgetCos)"),
-      routes.indexOf("await tx.insert(programExpense)")
-    );
-    expect(peInsertBlock).toContain("subProjectName: m.subProjectName || null");
-  });
-});
+// The "Phase 2: sub_project_name on program_expense and program_inflows"
+// describe block was removed when program_expense and program_inflows were
+// retired in the PE/PI cutover. The block asserted that those legacy
+// tables had a sub_project_name column and that smart-import wrote
+// subProjectName into them on commit. Both behaviours are gone:
+//   * The tables themselves are dropped (see migrations/20260414_drop_program_expense_and_program_inflows.sql).
+//   * Smart-import no longer writes PE/PI at all (commits 956ebe0, 079b451).
+// Sub-project on the canonical normalized_cost_lines / normalized_revenue_lines
+// is asserted by the Phase 1 / 4 / 5 / 6 blocks below.
 
 describe("Phase 3: API endpoints support sub-project filtering", () => {
   // Handlers were extracted from server/routes.ts to server/routes/finance-legacy-extracted-routes.ts
@@ -155,40 +130,11 @@ describe("Phase 6: Null safety for new fields", () => {
   });
 });
 
-describe("Schema safety: startup DDL prevents missing column errors", () => {
-  const routes = read("server/smart-import-routes.ts");
-
-  it("exports ensureSchemaReady for commit handlers to await", () => {
-    expect(routes).toContain("export function ensureSchemaReady()");
-  });
-
-  it("single-project commit handler awaits ensureSchemaReady", () => {
-    const commitBlock = routes.substring(routes.indexOf('"/api/smart-import/:runId/commit"'));
-    expect(commitBlock).toContain("await ensureSchemaReady()");
-  });
-
-  it("bulk-commit handler awaits ensureSchemaReady", () => {
-    const bulkBlock = routes.substring(routes.indexOf('"/api/smart-import/bulk-commit"'));
-    expect(bulkBlock).toContain("await ensureSchemaReady()");
-  });
-
-  it("startup DDL covers all program_expense columns from schema", () => {
-    expect(routes).toContain("ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS budget_qty");
-    expect(routes).toContain("ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS sub_project_name");
-    expect(routes).toContain("ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_actual_total");
-    expect(routes).toContain("ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS invoice_date_confirmed");
-  });
-
-  it("startup DDL covers all program_inflows columns from schema", () => {
-    expect(routes).toContain("ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS sub_project_name");
-    expect(routes).toContain("ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS project_id");
-    expect(routes).toContain("ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS import_run_id");
-  });
-
-  it("migration file exists for program_expense/program_inflows columns", () => {
-    const migration = read("migrations/20260319_add_sub_project_to_expense_inflows.sql");
-    expect(migration).toContain("program_expense ADD COLUMN IF NOT EXISTS sub_project_name");
-    expect(migration).toContain("program_expense ADD COLUMN IF NOT EXISTS budget_qty");
-    expect(migration).toContain("program_inflows ADD COLUMN IF NOT EXISTS sub_project_name");
-  });
-});
+// The "Schema safety: startup DDL prevents missing column errors" suite used
+// to assert that smart-import-routes.ts exported an ensureSchemaReady helper
+// and ran ALTER TABLE program_expense/program_inflows ADD COLUMN IF NOT EXISTS
+// on every boot. Both are now retired:
+//   * program_expense and program_inflows are retired in the PE/PI cutover.
+//   * Runtime ALTER TABLE is forbidden by the production safety policy
+//     (commit 952ef41). Schema evolution lives exclusively in ./migrations/*.sql.
+// The suite is intentionally removed.

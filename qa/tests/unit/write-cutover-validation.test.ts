@@ -9,9 +9,7 @@ import {
 } from "../../../server/policies/write-authority";
 import {
   requireProjectId,
-  blockProgramExpenseWrite,
   MissingProjectIdError,
-  ProgramExpenseWriteBlockedError,
 } from "../../../server/policies/finance-policy";
 import fs from "node:fs";
 import path from "node:path";
@@ -74,20 +72,18 @@ describe("Write Authority Policy", () => {
     }
   });
 
-  it("BLOCKED_WRITE_TARGETS includes program_expense", () => {
-    expect(BLOCKED_WRITE_TARGETS).toContain("program_expense");
+  it("BLOCKED_WRITE_TARGETS is an empty (or string-typed) list post PE/PI cutover", () => {
+    // program_expense and program_inflow were removed from the block list
+    // when the tables were retired. The array stays as infrastructure so
+    // future cutovers can add entries while in flight.
+    expect(Array.isArray(BLOCKED_WRITE_TARGETS)).toBe(true);
+    expect(BLOCKED_WRITE_TARGETS).not.toContain("program_expense");
+    expect(BLOCKED_WRITE_TARGETS).not.toContain("program_inflow");
   });
 
-  it("BLOCKED_WRITE_TARGETS includes program_inflow", () => {
-    expect(BLOCKED_WRITE_TARGETS).toContain("program_inflow");
-  });
-
-  it("isWriteBlocked returns true for blocked targets", () => {
-    expect(isWriteBlocked("program_expense")).toBe(true);
-    expect(isWriteBlocked("program_inflow")).toBe(true);
-  });
-
-  it("isWriteBlocked returns false for allowed targets", () => {
+  it("isWriteBlocked returns false for former legacy targets after cutover", () => {
+    expect(isWriteBlocked("program_expense")).toBe(false);
+    expect(isWriteBlocked("program_inflow")).toBe(false);
     expect(isWriteBlocked("normalized_cost_lines")).toBe(false);
     expect(isWriteBlocked("project_info")).toBe(false);
   });
@@ -248,15 +244,6 @@ describe("Finance Policy", () => {
     expect(() => requireProjectId(null)).toThrow(MissingProjectIdError);
   });
 
-  it("blockProgramExpenseWrite throws ProgramExpenseWriteBlockedError", () => {
-    expect(() => blockProgramExpenseWrite("test")).toThrow(
-      ProgramExpenseWriteBlockedError,
-    );
-  });
-
-  it("blockProgramExpenseWrite error message mentions program_expense", () => {
-    expect(() => blockProgramExpenseWrite("test")).toThrow(/program_expense/);
-  });
 });
 
 // ---------------------------------------------------------------------------
