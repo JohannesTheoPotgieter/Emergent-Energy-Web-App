@@ -61,6 +61,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { ActionBar } from "@/components/guidance/ActionBar";
 import { MicroWalkthrough, ReplayWalkthrough } from "@/components/guidance/MicroWalkthrough";
+import { useRolloutFlag } from "@/hooks/use-rollout-flag";
 import type { NextAction, BlockerInfo } from "@/hooks/use-guidance";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
@@ -213,6 +214,7 @@ function SortHeader({ label, sortKey, currentSort, currentDir, onSort, className
 }
 
 export default function QmDashboardPage() {
+  const { enabled: microWalkthroughEnabled } = useRolloutFlag("micro_walkthrough");
   const [, setLocation] = useLocation();
   const [searchTerm, setSearchTerm] = useState(() => {
     const params = new URLSearchParams(window.location.search);
@@ -522,7 +524,7 @@ export default function QmDashboardPage() {
         description="Monitor quality checklists, track items, and manage warnings across projects."
         actions={(
           <>
-            <ReplayWalkthrough screenId="qm-dashboard" />
+            {microWalkthroughEnabled ? <ReplayWalkthrough screenId="qm-dashboard" /> : null}
             <Button
               onClick={() => setStartQmOpen(true)}
               className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
@@ -535,7 +537,7 @@ export default function QmDashboardPage() {
         )}
       />
 
-      <MicroWalkthrough screenId="qm-dashboard" steps={qmWalkthroughSteps} />
+      {microWalkthroughEnabled ? <MicroWalkthrough screenId="qm-dashboard" steps={qmWalkthroughSteps} /> : null}
       <ActionBar nextAction={qmNextAction} blockers={qmBlockers} />
 
       <AttentionBadges items={qmAttentionItems} threshold={5} testId="qm-attention-needed" />

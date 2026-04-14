@@ -27,6 +27,7 @@ import { useTheme } from "@/hooks/use-theme";
 import { useBreakpoint } from "@/hooks/use-breakpoint";
 import { trackNavClick, trackPageView } from "@/lib/nav-analytics";
 import { usePrefetchRoute } from "@/hooks/use-prefetch-route";
+import { useRolloutFlag } from "@/hooks/use-rollout-flag";
 
 type SearchResult = { id: string; title: string; subtitle?: string; type: string; url?: string | null };
 
@@ -52,6 +53,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [microsoftMenuOpen, setMicrosoftMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const { canAccessEntityAction, canViewPath, disabledSubPages } = useAccessMatrix();
+  const { enabled: actionLaunchpadEnabled } = useRolloutFlag("action_launchpad");
+  const { enabled: onboardingTourEnabled } = useRolloutFlag("onboarding_tour");
   const { theme, setTheme } = useTheme();
   const { isMobile, isTablet } = useBreakpoint();
   const { sectionOrder } = useNavPreferences();
@@ -111,8 +114,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   const activeSection = useMemo(() => visibleSections.find((section) => section.match(location)) ?? visibleSections[0], [location, visibleSections]);
   const quickCreateActions = useMemo(() => {
+    if (!actionLaunchpadEnabled) return [];
     return getAvailableQuickCreateActions({ canAccessEntityAction, canViewPath });
-  }, [canAccessEntityAction, canViewPath]);
+  }, [actionLaunchpadEnabled, canAccessEntityAction, canViewPath]);
   const microsoftShortcuts = useMemo(() => {
     return MICROSOFT_SHORTCUTS.filter((shortcut) => canViewPath(shortcut.path));
   }, [canViewPath]);
@@ -551,7 +555,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       <main id="main-content" className={cn("px-4 lg:px-6 py-5", isTablet && "pb-24")}>{children}</main>
       <GlobalCommandPalette />
-      <NavOnboardingTour />
+      {onboardingTourEnabled ? <NavOnboardingTour /> : null}
     </div>
   );
 }
