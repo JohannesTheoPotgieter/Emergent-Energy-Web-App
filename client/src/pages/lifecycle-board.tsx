@@ -19,6 +19,7 @@ import { Loader2, Search, Zap, User, Wrench, FileSpreadsheet, GripVertical, Chec
 import { ActionBar } from "@/components/guidance/ActionBar";
 import { InlineTip } from "@/components/guidance/InlineTip";
 import { MicroWalkthrough, ReplayWalkthrough } from "@/components/guidance/MicroWalkthrough";
+import { useRolloutFlag } from "@/hooks/use-rollout-flag";
 import type { NextAction, BlockerInfo, OwnerInfo } from "@/hooks/use-guidance";
 import { usePermission } from "@/hooks/use-permissions";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
@@ -362,6 +363,7 @@ const ESCALATION_LEVELS = ["", "Low", "Medium", "High", "Highest"];
 const RAG_STATUSES = ["", "Green", "Amber", "Red"];
 
 export default function LifecycleBoardPage() {
+  const { enabled: microWalkthroughEnabled } = useRolloutFlag("micro_walkthrough");
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { data: projects = [], isLoading: loading, isError, error, refetch } = useQuery<ProjectInfo[]>({
@@ -1008,10 +1010,10 @@ export default function LifecycleBoardPage() {
             </span>
           </p>
         </div>
-        <ReplayWalkthrough screenId="lifecycle-board" label="Replay guide" />
+        {microWalkthroughEnabled ? <ReplayWalkthrough screenId="lifecycle-board" label="Replay guide" /> : null}
       </div>
 
-      <MicroWalkthrough screenId="lifecycle-board" steps={lifecycleWalkthroughSteps} />
+      {microWalkthroughEnabled ? <MicroWalkthrough screenId="lifecycle-board" steps={lifecycleWalkthroughSteps} /> : null}
       <ActionBar nextAction={lifecycleNextAction} blockers={lifecycleBlockers} />
 
       <div className="flex items-center gap-2.5 flex-wrap">
