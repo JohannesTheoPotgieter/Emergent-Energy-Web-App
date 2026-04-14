@@ -145,7 +145,7 @@ export interface PlanWriteContext {
 
 export async function writePlanIncremental(ctx: PlanWriteContext): Promise<SectionCommitResult> {
   const { tx, projectId, projectName, runId, userId, matchedRows, mergeResults, conflictDecisions } = ctx;
-  const { workItemsTable: workItems, workItemDependenciesTable: workItemDependencies, workItemAssignmentsTable: workItemAssignments } = ctx;
+  const { workItemsTable: workItems } = ctx;
   const { eq, and, sql: sqlTag } = await import("drizzle-orm");
 
   const counts: CommitCounts = { inserted: 0, updated: 0, unchanged: 0, missing: 0, conflictsResolved: 0 };
@@ -168,32 +168,46 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
     isMilestone: "isMilestone", outlineNumber: "parentTaskNo",
   };
 
-  // Build a stable externalRef derived from the row's business key (not from
-  // the Excel source-row number). This keeps the ref stable when a row moves
-  // in the file and — crucially — aligns the identity used by the unique
-  // index `uq_work_items_external_ref_active` with the identity used by the
-  // row matcher, eliminating the collision that happens when an old row is
-  // kept as MISSING_FROM_UPLOAD while a new row lands on the same Excel row.
-  const buildExternalRef = (bkKey: string) => `PID-${projectId}::PLAN::BK::${bkKey}`;
+  // Identity is owned by the row matcher. Every MatchedRow arrives with a
+  // stable `rowUid` (unique within this import's section) and — for PLAN —
+  // a `canonicalExternalRef` that the executor writes to
+  // `work_items.external_ref`. The executor never rewrites identity based
+  // on file position; it only writes what the matcher computed.
+  //
+  // NEW rows in a duplicate-key group arrive with a temporary
+  // `...#new-<fileIdx>` suffix that is unique-within-this-run but not yet
+  // tied to a DB row. After insert we fix those up to `#pk<id>` so the
+  // identity survives future commits deterministically.
+  const fallbackRef = (bkKey: string) => `PID-${projectId}::PLAN::BK::${bkKey}`;
+  const swapRowUidInRef = (ref: string, oldRowUid: string, newRowUid: string) =>
+    ref.endsWith(oldRowUid) ? `${ref.slice(0, ref.length - oldRowUid.length)}${newRowUid}` : ref;
 
-  // Disambiguate duplicate business keys within the same file (two plan rows
-  // with identical taskNo, or identical fallback identity). The matcher
-  // classifies both as NEW; without a suffix they would collide on insert.
-  const seenRefsInFile = new Set<string>();
-  const uniquifyRef = (ref: string, fileIndex: number | null): string => {
-    if (!seenRefsInFile.has(ref)) {
-      seenRefsInFile.add(ref);
-      return ref;
-    }
-    const base = fileIndex != null ? `${ref}#idx${fileIndex}` : `${ref}#dup${seenRefsInFile.size}`;
-    let candidate = base;
-    let n = 1;
-    while (seenRefsInFile.has(candidate)) {
-      candidate = `${base}#${n++}`;
-    }
-    seenRefsInFile.add(candidate);
-    return candidate;
-  };
+  /**
+   * Resolve a safe external_ref to write for a given row. If the preferred
+   * ref is already owned by a different active work_items row, fall back to
+   * a `#pk<ownId>` variant which is guaranteed unique (the row's own id
+   * cannot collide with anyone else's). Returns `null` if no safe ref
+   * could be computed without the caller's own id.
+   */
+  async function resolveSafeRef(preferred: string, ownId: number | null, bkKey: string): Promise<string> {
+    const rowsWithRef = await tx
+      .select({ id: workItems.id })
+      .from(workItems)
+      .where(and(eq(workItems.externalRef, preferred), sqlTag`${workItems.deletedAt} IS NULL`))
+      .limit(1);
+    if (rowsWithRef.length === 0) return preferred;
+    const holderId = rowsWithRef[0].id;
+    if (ownId != null && holderId === ownId) return preferred;
+    if (ownId != null) return `${fallbackRef(bkKey)}#pk${ownId}`;
+    // No own id yet (pre-insert) — we have no safe alternative to offer
+    // the caller, so surface an error. This path should only be reachable
+    // after a buggy matcher emits two NEW rows with identical rowUids.
+    throw Object.assign(new Error(`external_ref collision on ${preferred} with no self-id fallback`), {
+      code: "EXTREF_COLLISION",
+      preferred,
+      holderId,
+    });
+  }
 
   for (const mr of matchedRows) {
     if (mr.classification === "UNCHANGED") {
@@ -207,19 +221,17 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
       continue;
     }
 
-    // Canonical externalRef for this row (shared by NEW and CHANGED paths).
-    const canonicalRef = uniquifyRef(buildExternalRef(mr.businessKey.key), mr.fileIndex);
+    const rowUid = mr.rowUid ?? mr.businessKey.key;
+    const canonicalRef = mr.canonicalExternalRef ?? fallbackRef(rowUid);
 
     if (mr.classification === "NEW") {
       const fileRow = mr.fileRow!;
       const wbsCode = fileRow.taskNo || null;
 
-      // Defensive reclassification: if an active work_items row already
-      // carries this externalRef (legacy data with a drifted business key, a
-      // previous partial commit, or any other cause), UPDATE it in place
-      // instead of inserting. This prevents unique-index violations on
-      // `uq_work_items_external_ref_active` that used to fail the whole
-      // commit transaction.
+      // Defensive: if some other active row still carries the canonical ref
+      // (e.g. a race, or a legacy row not yet normalized), UPDATE-in-place
+      // rather than insert a colliding row. This should be a rare path
+      // now that the matcher owns identity.
       const existingByRef = await tx
         .select({ id: workItems.id })
         .from(workItems)
@@ -296,62 +308,32 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
         createdBy: userId || 1,
       };
 
-      // ON CONFLICT (external_ref) DO UPDATE — refresh content into the existing
-      // structural slot. We deliberately only touch file-driven content fields and
-      // leave app-owned / workflow fields (scheduledDate, pinnedToday, bucket, etc.)
-      // untouched.
-      const [upserted] = await tx
+      const [inserted] = await tx
         .insert(workItems)
         .values(insertValues)
-        .onConflictDoUpdate({
-          target: workItems.externalRef,
-          set: {
-            type: insertValues.type,
-            title: insertValues.title,
-            description: insertValues.description,
-            status: insertValues.status,
-            startDate: insertValues.startDate,
-            endDate: insertValues.endDate,
-            duration: insertValues.duration,
-            actualStart: insertValues.actualStart,
-            actualEnd: insertValues.actualEnd,
-            actualDuration: insertValues.actualDuration,
-            percentComplete: insertValues.percentComplete,
-            expectedPctComplete: insertValues.expectedPctComplete,
-            wbsCode: insertValues.wbsCode,
-            outlineNumber: insertValues.outlineNumber,
-            indentLevel: insertValues.indentLevel,
-            isMilestone: insertValues.isMilestone,
-            phase: insertValues.phase,
-            ownerName: insertValues.ownerName,
-            sourceRow: insertValues.sourceRow,
-            sourceSheet: insertValues.sourceSheet,
-            importRunId: runId,
-            subProjectName: insertValues.subProjectName,
-            updatedAt: new Date(),
-          },
-        })
-        .returning();
+        .returning({ id: workItems.id });
 
-      // Distinguish whether we actually inserted or updated so the counts stay accurate.
-      // The matcher classified this as NEW; if the row was reused via ON CONFLICT the
-      // importRunId on the old row would not equal the current runId prior to the upsert,
-      // so compare against that as a cheap heuristic.
-      if (upserted) {
-        // If importRunId == runId AFTER the upsert and there was no prior row, it's a fresh insert.
-        // In practice we can't distinguish perfectly without an extra query; track as inserted
-        // (matcher said NEW) — the resulting DB state is correct either way and commit audit
-        // still ties the row to this run via importRunId.
-        insertedIds.push(upserted.id);
-        counts.inserted++;
+      // Post-insert fixup: if this was a duplicate-group NEW, the matcher
+      // stamped a temporary `#new-<fileIdx>` rowUid. Rewrite the row's
+      // external_ref to the permanent `#pk<insertedId>` form so the
+      // identity survives future commits deterministically.
+      if (mr.inDuplicateGroup) {
+        const permanentRowUid = `${mr.businessKey.key}#pk${inserted.id}`;
+        const permanentRef = swapRowUidInRef(canonicalRef, rowUid, permanentRowUid);
+        await tx.update(workItems)
+          .set({ externalRef: permanentRef })
+          .where(eq(workItems.id, inserted.id));
       }
+
+      insertedIds.push(inserted.id);
+      counts.inserted++;
       continue;
     }
 
     if (mr.classification === "CHANGED" || mr.classification === "CONFLICT_PLACEHOLDER") {
       const existingId = mr.existingRowId!;
       const fileRow = mr.fileRow!;
-      const mergeResult = mergeResults.get(mr.businessKey.key) || null;
+      const mergeResult = mergeResults.get(rowUid) ?? mergeResults.get(mr.businessKey.key) ?? null;
 
       const fieldUpdates = resolveFieldValues(fileRow, mr.existingRow || {}, mergeResult, conflictDecisions, PLAN_UPDATE_FIELDS);
 
@@ -360,10 +342,9 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
         counts.conflictsResolved += resolvedConflicts.length;
       }
 
-      // Lazily normalize legacy externalRefs (old `::PLAN::ROW-N::WBS` format
-      // or any drift from the canonical business-key form) so future
-      // commits remain collision-free. Safe to do unconditionally because the
-      // matcher has already verified this row is the same logical entity.
+      // Normalize legacy externalRefs whenever the row's current value
+      // drifts from the canonical form (old `#idxN` suffix, missing
+      // suffix after a dup-group promotion, etc.).
       const existingRef = (mr.existingRow as any)?.externalRef ?? null;
       const needsRefNormalize = existingRef !== canonicalRef;
 
@@ -380,7 +361,11 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
         }
       }
       if (needsRefNormalize) {
-        wiUpdates.externalRef = canonicalRef;
+        // Self-id fallback: if the canonical ref would collide with
+        // another active row, fall back to `#pk<ownId>` which is
+        // guaranteed unique. Protects against buggy matcher output or
+        // unexpected legacy state.
+        wiUpdates.externalRef = await resolveSafeRef(canonicalRef, existingId, mr.businessKey.key);
       }
 
       await tx.update(workItems).set(wiUpdates).where(eq(workItems.id, existingId));
@@ -469,7 +454,8 @@ export async function writeRevenueIncremental(ctx: TemporalWriteContext): Promis
     if (mr.classification === "CHANGED" || mr.classification === "CONFLICT_PLACEHOLDER") {
       const existingId = mr.existingRowId!;
       const fileRow = mr.fileRow!;
-      const mergeResult = mergeResults.get(mr.businessKey.key) || null;
+      const rowUid = mr.rowUid ?? mr.businessKey.key;
+      const mergeResult = mergeResults.get(rowUid) ?? mergeResults.get(mr.businessKey.key) ?? null;
 
       const fieldUpdates = resolveFieldValues(fileRow, mr.existingRow || {}, mergeResult, conflictDecisions, COMPARE_FIELDS);
 
@@ -604,7 +590,8 @@ export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Pr
     if (mr.classification === "CHANGED" || mr.classification === "CONFLICT_PLACEHOLDER") {
       const existingId = mr.existingRowId!;
       const fileRow = mr.fileRow!;
-      const mergeResult = mergeResults.get(mr.businessKey.key) || null;
+      const rowUid = mr.rowUid ?? mr.businessKey.key;
+      const mergeResult = mergeResults.get(rowUid) ?? mergeResults.get(mr.businessKey.key) ?? null;
 
       const fieldUpdates = resolveFieldValues(fileRow, mr.existingRow || {}, mergeResult, conflictDecisions, COMPARE_FIELDS);
 
