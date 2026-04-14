@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { getAvailableQuickCreateActions, type QuickCreateActionId } from "@/lib/action-access";
 import { useAccessMatrix } from "@/hooks/use-access-matrix";
+import { useRolloutFlag } from "@/hooks/use-rollout-flag";
 
 type Project = { id: number; projectName: string };
 type LaunchAction = Exclude<QuickCreateActionId, "pd-ticket">;
@@ -32,6 +33,7 @@ export default function ActionLaunchpadPage() {
   const [location, navigate] = useLocation();
   const { toast } = useToast();
   const { canAccessEntityAction, canViewPath, loading: accessLoading } = useAccessMatrix();
+  const { enabled: actionLaunchpadEnabled } = useRolloutFlag("action_launchpad");
   const search = useMemo(() => new URLSearchParams(location.split("?")[1] || ""), [location]);
   const requested = (search.get("action") || "") as LaunchAction;
   const availableActions = useMemo(() => {
@@ -183,6 +185,11 @@ export default function ActionLaunchpadPage() {
 
   return (
     <div className="space-y-4 max-w-3xl">
+      {!actionLaunchpadEnabled ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          Quick Create is currently disabled by rollout flag (<code>action_launchpad</code>) pending production validation.
+        </div>
+      ) : null}
       <div>
         <h1 className="text-2xl font-semibold">Quick Create</h1>
         <p className="text-sm text-slate-600">Launch core operational actions from one reliable create flow.</p>
@@ -251,7 +258,7 @@ export default function ActionLaunchpadPage() {
             {activeAction === "handover" && <p className="text-sm text-slate-600">This launches the formal PD to PM handover workflow with mandatory validation and PM review.</p>}
 
             {!projectId ? <p className="text-xs text-amber-700">Select a project to continue.</p> : null}
-            <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700" disabled={submitting || projectsLoading || !!projectsError || !projectId || availableActions.length === 0}>{submitting ? "Submitting..." : ACTION_LABELS[activeAction]}</Button>
+            <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700" disabled={!actionLaunchpadEnabled || submitting || projectsLoading || !!projectsError || !projectId || availableActions.length === 0}>{submitting ? "Submitting..." : ACTION_LABELS[activeAction]}</Button>
           </form>
         </CardContent>
       </Card>

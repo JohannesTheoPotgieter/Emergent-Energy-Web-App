@@ -11,6 +11,7 @@ import {
 import { useProjectsSummary } from "@/hooks/use-projects-summary";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { format, startOfWeek, addDays, differenceInDays } from "date-fns";
+import { ReportTrustNotice } from "@/components/reports/ReportTrustNotice";
 
 interface ReviewRecord {
   id: number;
@@ -87,6 +88,12 @@ export default function WeeklyReviewsPage() {
   const pendingThisWeek = projects.filter((p) => !p.hasCurrentWeekReview).length;
   const totalReviews = allReviews.length;
   const completedReviews = allReviews.filter((r) => r.status === "completed").length;
+  const latestRefreshAt = allReviews.reduce<string | null>((latest, review) => {
+    const candidate = review.completedAt || review.createdAt;
+    if (!candidate) return latest;
+    if (!latest) return candidate;
+    return new Date(candidate).getTime() > new Date(latest).getTime() ? candidate : latest;
+  }, null);
 
   const handleRowClick = (projectName: string) => {
     setLocation(`/project/${encodeURIComponent(projectName)}?tab=history`);
@@ -114,6 +121,11 @@ export default function WeeklyReviewsPage() {
           Track weekly project review status across all active projects.
         </p>
       </div>
+      <ReportTrustNotice
+        lastUpdatedAt={latestRefreshAt}
+        sourceLabel="Weekly review records + active projects"
+        note="This page is a read-only trust tracker. Complete reviews from project workflows; status here reflects captured records."
+      />
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Card className="p-4" data-testid="card-stat-reviewed">

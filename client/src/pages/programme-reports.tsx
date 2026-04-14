@@ -10,6 +10,7 @@ import { Download, FileSpreadsheet, Search, Clock, ShieldAlert, CalendarDays, Bu
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { ReportCard } from "@/components/reports/ReportCard";
 import DrilldownDrawer from "@/components/reports/shared/DrilldownDrawer";
+import { ReportTrustNotice } from "@/components/reports/ReportTrustNotice";
 
 function getAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = {};
@@ -362,6 +363,13 @@ export default function ProgrammeReports() {
   }, [projectPlanQuery.data, costQuery.data, qualityQuery.data, resourceQuery.data, period]);
 
   const trendText = useMemo(() => `Margin at risk is ${formatCurrency(summary.financial.marginAtRisk)} with ${summary.risks.delivery} delivery exceptions and ${summary.risks.quality} quality exceptions in selected period.`, [summary]);
+  const reportFreshnessAt = [
+    projectPlanQuery.data?.meta?.generatedAt,
+    costQuery.data?.meta?.generatedAt,
+    qualityQuery.data?.meta?.generatedAt,
+    resourceQuery.data?.meta?.generatedAt,
+    summary.staleness.lastImportLabel !== "Never" ? summary.staleness.lastImportLabel : null,
+  ].filter((value): value is string => typeof value === "string" && value.length > 0).sort().at(-1);
 
   if (isLoading) return <PageSkeleton lines={5} />;
   if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load programme reports" message={firstError instanceof Error ? firstError.message : "Failed to fetch data"} onRetry={refetchAll} /></div>;
@@ -408,6 +416,11 @@ export default function ProgrammeReports() {
           Last import health: {summary.staleness.lastImportLabel} • {summary.staleness.staleRows} stale rows
         </div>
       </div>
+      <ReportTrustNotice
+        lastUpdatedAt={reportFreshnessAt}
+        sourceLabel="Programme reports APIs (/api/reports/*)"
+        note="Board and management views are generated from live report endpoints; stale rows are highlighted for trust transparency."
+      />
 
       <ProgrammeControlBar periodType={periodType} setPeriodType={setPeriodType} month={month} setMonth={setMonth} fromDate={fromDate} setFromDate={setFromDate} toDate={toDate} setToDate={setToDate} onBoardPdf={exportBoardPdf} />
 

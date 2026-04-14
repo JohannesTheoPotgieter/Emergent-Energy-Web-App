@@ -93,6 +93,7 @@ import { ActionBar } from "@/components/guidance/ActionBar";
 import UserAssignmentPicker from "@/components/UserAssignmentPicker";
 import { InlineTip } from "@/components/guidance/InlineTip";
 import { MicroWalkthrough, ReplayWalkthrough } from "@/components/guidance/MicroWalkthrough";
+import { useRolloutFlag } from "@/hooks/use-rollout-flag";
 import type { NextAction, BlockerInfo } from "@/hooks/use-guidance";
 import type { Task, Comment, ActivityEntry, TeamMember, EngDefaultView } from "@/components/tasks/types";
 import { formatDate, formatDateShort, isOverdue, isDueThisWeek, daysLabel, getAvatarColor, getInitials, sortTasksForColumn } from "@/lib/task-formatters";
@@ -3592,6 +3593,7 @@ export function MyTasksView({
 }
 
 export default function EngineeringTasksPage() {
+  const { enabled: microWalkthroughEnabled } = useRolloutFlag("micro_walkthrough");
   const { toast } = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -4170,7 +4172,7 @@ export default function EngineeringTasksPage() {
               {myTasksOnly ? `${myTasks.length} of your tasks` : `${tasks.length} tasks`} · {overdueTasks.length} overdue
             </p>
           </div>
-          <ReplayWalkthrough screenId="eng-tasks" />
+          {microWalkthroughEnabled ? <ReplayWalkthrough screenId="eng-tasks" /> : null}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex border rounded-md">
@@ -4527,7 +4529,7 @@ export default function EngineeringTasksPage() {
         </p>
       )}
 
-      <MicroWalkthrough screenId="eng-tasks" steps={engWalkthroughSteps} />
+      {microWalkthroughEnabled ? <MicroWalkthrough screenId="eng-tasks" steps={engWalkthroughSteps} /> : null}
       <ActionBar nextAction={engNextAction} blockers={engBlockers} />
       <EngineeringWorkloadStrip
         totalOpenWork={summaryMetrics.openTasks.length}

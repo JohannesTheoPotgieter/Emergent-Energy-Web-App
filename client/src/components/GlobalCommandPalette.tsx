@@ -5,6 +5,7 @@ import { PAGE_REGISTRY } from "@/config/page-registry";
 import { useAccessMatrix } from "@/hooks/use-access-matrix";
 import { getAvailableQuickCreateActions } from "@/lib/action-access";
 import { Navigation, Search, Plus, ArrowRight, Zap } from "lucide-react";
+import { useRolloutFlag } from "@/hooks/use-rollout-flag";
 
 const NAV_ITEMS = PAGE_REGISTRY.filter(
   (p) => p.showInSidebar && p.routeComponentKey && !p.redirectTo
@@ -19,10 +20,12 @@ export function GlobalCommandPalette() {
   const [recent, setRecent] = useState<Array<{ path: string; label: string }>>([]);
   const [, setLocation] = useLocation();
   const { canViewPath, canAccessEntityAction } = useAccessMatrix();
+  const { enabled: actionLaunchpadEnabled } = useRolloutFlag("action_launchpad");
 
   const quickActions = useMemo(() => {
+    if (!actionLaunchpadEnabled) return [];
     return getAvailableQuickCreateActions({ canAccessEntityAction, canViewPath });
-  }, [canAccessEntityAction, canViewPath]);
+  }, [actionLaunchpadEnabled, canAccessEntityAction, canViewPath]);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
