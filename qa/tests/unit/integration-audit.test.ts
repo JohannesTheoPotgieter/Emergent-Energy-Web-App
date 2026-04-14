@@ -6,40 +6,15 @@ function read(relPath: string) {
   return fs.readFileSync(path.join(process.cwd(), relPath), "utf8");
 }
 
-describe("Phase 2: sub_project_name on program_expense and program_inflows", () => {
-  const schema = read("shared/schema/finance.ts");
-
-  it("program_expense has sub_project_name column", () => {
-    const peBlock = schema.substring(
-      schema.indexOf('pgTable("program_expense"'),
-      schema.indexOf("});", schema.indexOf('pgTable("program_expense"')) + 3
-    );
-    expect(peBlock).toContain("sub_project_name");
-  });
-
-  it("program_inflows has sub_project_name column", () => {
-    const piBlock = schema.substring(
-      schema.indexOf('pgTable("program_inflows"'),
-      schema.indexOf("});", schema.indexOf('pgTable("program_inflows"')) + 3
-    );
-    expect(piBlock).toContain("sub_project_name");
-  });
-
-  it("commit inserts sub_project_name into program_inflows", () => {
-    const routes = read("server/smart-import-routes.ts");
-    expect(routes).toContain("subProjectName: m.subProjectName || null,");
-  });
-
-  it("commit inserts sub_project_name into program_expense", () => {
-    const routes = read("server/smart-import-routes.ts");
-    // Look for the specific line in program_expense insert
-    const peInsertBlock = routes.substring(
-      routes.indexOf("budgetCosTotal: toStr(m.budgetCos)"),
-      routes.indexOf("await tx.insert(programExpense)")
-    );
-    expect(peInsertBlock).toContain("subProjectName: m.subProjectName || null");
-  });
-});
+// The "Phase 2: sub_project_name on program_expense and program_inflows"
+// describe block was removed when program_expense and program_inflows were
+// retired in the PE/PI cutover. The block asserted that those legacy
+// tables had a sub_project_name column and that smart-import wrote
+// subProjectName into them on commit. Both behaviours are gone:
+//   * The tables themselves are dropped (see migrations/20260414_drop_program_expense_and_program_inflows.sql).
+//   * Smart-import no longer writes PE/PI at all (commits 956ebe0, 079b451).
+// Sub-project on the canonical normalized_cost_lines / normalized_revenue_lines
+// is asserted by the Phase 1 / 4 / 5 / 6 blocks below.
 
 describe("Phase 3: API endpoints support sub-project filtering", () => {
   // Handlers were extracted from server/routes.ts to server/routes/finance-legacy-extracted-routes.ts

@@ -1,15 +1,15 @@
 /**
- * Smart Import — Derivative Materializer + Link Re-Linking Tests (S12, S13)
+ * Smart Import — Post-Commit project_revenue_summary Refresh + Link Re-Linking Tests (S12, S13)
  *
  * Verifies:
- * 1. S12: derivative-materializer.ts exists with correct structure
+ * 1. S12: derivative-materializer.ts exists and only updates project_revenue_summary
+ *    (the program_expense / program_inflows materialization was retired in the PE/PI cutover)
  * 2. S12: v2 commit path calls materializeDerivatives
- * 3. S12: materializer reads from canonical tables (NRL/NCL), not normalization result directly
- * 4. S12: materialization is non-blocking (failure doesn't break commit)
- * 5. S12: materializer writes to program_inflows, program_expense, project_revenue_summary
- * 6. S13: v2 commit re-links canonical_expense_id after expenditure changes
- * 7. S13: re-linking uses old→new ID map from commit executor result
- * 8. S13: orphaned canonical IDs are cleared (set to null)
+ * 3. S12: refresh is non-blocking (failure doesn't break commit)
+ * 4. S12: file does not write to the retired program_expense / program_inflows tables
+ * 5. S13: v2 commit re-links canonical_expense_id after expenditure changes
+ * 6. S13: re-linking uses old→new ID map from commit executor result
+ * 7. S13: orphaned canonical IDs are cleared (set to null)
  */
 
 import { describe, expect, it } from "vitest";
@@ -21,12 +21,14 @@ function read(relPath: string) {
 }
 
 // ---------------------------------------------------------------------------
-// S12: Derivative materializer module
+// S12: Post-commit project_revenue_summary refresh module
+// (formerly the "derivative materializer" — gutted to PRS-only when
+//  program_expense / program_inflows were retired)
 // ---------------------------------------------------------------------------
-describe("S12: derivative-materializer module", () => {
+describe("S12: post-commit project_revenue_summary refresh module", () => {
   const matCode = read("server/lib/import/derivative-materializer.ts");
 
-  it("exports materializeDerivatives function", () => {
+  it("exports materializeDerivatives function (name kept for caller stability)", () => {
     expect(matCode).toContain("export async function materializeDerivatives");
   });
 
@@ -35,55 +37,34 @@ describe("S12: derivative-materializer module", () => {
     expect(matCode).toContain("export interface MaterializerResult");
   });
 
-  it("reads active NRL rows from canonical table for PI materialization", () => {
-    expect(matCode).toContain("normalizedRevenueLines");
-    expect(matCode).toContain("isNull(normalizedRevenueLines.effectiveTo)");
-  });
-
-  it("reads active NCL rows from canonical table for PE materialization", () => {
-    expect(matCode).toContain("normalizedCostLines");
-    expect(matCode).toContain("isNull(normalizedCostLines.effectiveTo)");
-  });
-
-  it("soft-closes existing PI rows before writing new ones", () => {
-    expect(matCode).toContain('softCloseByProjectName(tx, "program_inflows"');
-  });
-
-  it("soft-closes existing PE rows before writing new ones", () => {
-    expect(matCode).toContain('softCloseByProjectName(tx, "program_expense"');
-  });
-
-  it("writes to program_inflows using addTemporalColumns", () => {
-    expect(matCode).toContain("tx.insert(programInflows).values(addTemporalColumns(");
-  });
-
-  it("writes to program_expense using addTemporalColumns", () => {
-    expect(matCode).toContain("tx.insert(programExpense).values(addTemporalColumns(");
-  });
-
-  it("handles project_revenue_summary upsert", () => {
+  it("upserts project_revenue_summary from norm.costedSummary", () => {
+    expect(matCode).toContain("projectRevenueSummary");
+    expect(matCode).toContain("norm.costedSummary");
     expect(matCode).toContain("tx.update(projectRevenueSummary)");
     expect(matCode).toContain("tx.insert(projectRevenueSummary)");
   });
 
-  it("carries forward inBank status from old PI rows via composite key match", () => {
-    expect(matCode).toContain("oldCompositeMap");
-    expect(matCode).toContain("prevInBank");
-  });
-
-  it("carries forward payment date from old PE rows for imported_edited sources", () => {
-    expect(matCode).toContain('previous?.source === "imported_edited"');
-  });
-
-  it("returns counts for each derivative table", () => {
-    expect(matCode).toContain("programInflowsWritten");
-    expect(matCode).toContain("programExpenseWritten");
+  it("returns a result flag for project_revenue_summary updates", () => {
     expect(matCode).toContain("projectRevenueSummaryUpdated");
   });
 
-  it("is documented as COMPATIBILITY mechanism, not finance truth", () => {
-    expect(matCode).toContain("COMPATIBILITY mechanism");
-    expect(matCode).toContain("not a source of finance truth");
+  it("does NOT import or reference the retired program_expense table", () => {
+    expect(matCode).not.toContain("programExpense");
+    expect(matCode).not.toContain("program_expense");
+  });
+
+  it("does NOT import or reference the retired program_inflows table", () => {
+    expect(matCode).not.toContain("programInflows");
+    expect(matCode).not.toContain("program_inflows");
+  });
+
+  it("does NOT call softCloseByProjectName for the retired tables", () => {
+    expect(matCode).not.toContain('softCloseByProjectName(tx, "program_inflows"');
+    expect(matCode).not.toContain('softCloseByProjectName(tx, "program_expense"');
+  });
+
+  it("documents the historical scope and the post-cutover scope", () => {
+    expect(matCode).toContain("project_revenue_summary");
   });
 });
 
@@ -108,16 +89,16 @@ describe("S12: materializer wired into v2 commit", () => {
     expect(matCall).toBeLessThan(v2End);
   });
 
-  it("materializer failure is non-blocking", () => {
-    expect(routesCode).toContain("Derivative materialization failed (non-blocking)");
+  it("PRS refresh failure is non-blocking", () => {
+    expect(routesCode).toContain("project_revenue_summary refresh failed (non-blocking)");
   });
 
   it("passes correct context to materializer", () => {
     expect(routesCode).toContain("tx, projectId, projectName, runId, commitTimestamp, norm");
   });
 
-  it("logs materialization counts", () => {
-    expect(routesCode).toContain("v2 derivative materialization:");
+  it("logs project_revenue_summary refresh result", () => {
+    expect(routesCode).toContain("v2 project_revenue_summary refresh:");
   });
 });
 
