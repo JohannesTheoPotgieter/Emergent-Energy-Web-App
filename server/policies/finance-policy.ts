@@ -1,8 +1,8 @@
 /**
  * Finance Policy — Single source of truth for all finance business rules.
  *
- * Every finance write, COS realisation check, and programExpense gate
- * MUST go through this module. No duplicate finance rules elsewhere.
+ * Every finance write and COS realisation check MUST go through this module.
+ * No duplicate finance rules elsewhere.
  */
 
 // Re-export the canonical COS realisation from its implementation
