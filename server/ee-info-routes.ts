@@ -13,6 +13,7 @@ import { verifyToken } from "./jwt";
 import { sanitizeFilename, allowedFileFilter } from "./lib/upload-security";
 import { requireAuth } from "./auth-context";
 import { paramStr } from "./lib/req-params";
+import { blockInProduction } from "./middleware/production-safety";
 
 const SEED_ZIP_PATH = path.join(process.cwd(), "seed", "ee-info", "Emergent Energy.zip");
 const ASSETS_DIR = path.join(process.cwd(), "uploads", "ee-info-assets");
@@ -592,7 +593,7 @@ export function registerEeInfoRoutes(app: Express) {
     }
   });
 
-  app.post("/api/ee-info/post-seed-align", requireAuth, requireCOO, async (req, res) => {
+  app.post("/api/ee-info/post-seed-align", requireAuth, requireCOO, blockInProduction("Post-seed alignment route is disabled in production."), async (req, res) => {
     try {
       const userId = String((req.user as any)?.id || "system");
       const created: string[] = [];
@@ -978,7 +979,7 @@ export function registerEeInfoRoutes(app: Express) {
     { slug: "os-dept-hr", title: "HR", sortOrder: 42, description: "Human resources and people management", parent: "os-dept-project-development" },
   ];
 
-  app.post("/api/ee-info/os/seed", requireCOO, async (_req, res) => {
+  app.post("/api/ee-info/os/seed", requireCOO, blockInProduction("OS seed route is disabled in production."), async (_req, res) => {
     try {
       const existing = await db.select({ slug: eeInfoNodes.slug }).from(eeInfoNodes)
         .where(or(
@@ -1904,7 +1905,7 @@ export function registerEeInfoRoutes(app: Express) {
     }
   });
 
-  app.post("/api/ee-info/story/seed-demo", requireCOO, async (_req, res) => {
+  app.post("/api/ee-info/story/seed-demo", requireCOO, blockInProduction("Demo seed route is disabled in production."), async (_req, res) => {
     try {
       const existing = await db.select({ id: eeInfoNodes.id }).from(eeInfoNodes)
         .where(eq(eeInfoNodes.stageCode, "DEMO"));
@@ -1934,7 +1935,7 @@ export function registerEeInfoRoutes(app: Express) {
     }
   });
 
-  app.post("/api/ee-info/story/auto-seed", requireAuth, async (_req, res) => {
+  app.post("/api/ee-info/story/auto-seed", requireAuth, blockInProduction("Auto-seed route is disabled in production."), async (_req, res) => {
     try {
       const stageCount = await db.select({ id: eeInfoNodes.id }).from(eeInfoNodes)
         .where(and(
