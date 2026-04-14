@@ -329,12 +329,17 @@ describe("D. REMAINING AMBIGUITIES", () => {
     expect(bridgeWriter).toContain("finance.finance_records");
   });
 
-  it("AMBIGUITY 4: FYE revenue tracking is the sole blocker for PE/PI removal", () => {
+  it("RESOLVED: FYE revenue tracking now reads canonical NCL/NRL (was the last PE/PI blocker)", () => {
     const fye = read("server/departments/fye-revenue-tracking-routes.ts");
-    expect(fye).toContain(".from(programExpense)");
-    expect(fye).toContain(".from(programInflows)");
-    // Resolution: add computedForecastPaymentDate and computedForecastReceiptDate
-    // to NCL/NRL, populate during import, migrate FYE reads.
+    // Commit 3d3fb59 repointed FYE Revenue Tracker to normalizedCostLines
+    // and normalizedRevenueLines. The computedForecastPaymentDate /
+    // computedForecastReceiptDate fields that used to block this migration
+    // were intentionally dropped — they were v1-derived fields the v2
+    // pipeline does not compute.
+    expect(fye).not.toContain(".from(programExpense)");
+    expect(fye).not.toContain(".from(programInflows)");
+    expect(fye).toContain("normalizedCostLines");
+    expect(fye).toContain("normalizedRevenueLines");
   });
 });
 
