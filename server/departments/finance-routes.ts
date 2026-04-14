@@ -64,6 +64,7 @@ import {
   resolveProjectIdByName,
 } from "../services/project-cost-line-read-service";
 import { getFeatureFlag } from "../lib/feature-flags";
+import { buildFinanceCoreTrustReport } from "../services/finance-core-trust-service";
 
 const FINANCIAL_APPROVER_ROLES = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"];
 const CANONICAL_FINANCE_COSTLINE_READ_FLAG = "canonical_finance_costline_read_v1";
@@ -213,6 +214,23 @@ function getWeekStartDate(dateStr: string): string {
   const diff = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
   d.setUTCDate(d.getUTCDate() - diff);
   return d.toISOString().split('T')[0];
+}
+
+function setFinanceTrustHeaders(
+  res: Response,
+  params: {
+    sourceLayer: "canonical" | "derived" | "legacy" | "override";
+    canonicalTable?: string;
+    derivedTable?: string;
+    cacheLayer?: string;
+    uncertainty?: string | null;
+  },
+) {
+  res.setHeader("X-Finance-Source-Layer", params.sourceLayer);
+  if (params.canonicalTable) res.setHeader("X-Finance-Canonical-Table", params.canonicalTable);
+  if (params.derivedTable) res.setHeader("X-Finance-Derived-Table", params.derivedTable);
+  if (params.cacheLayer) res.setHeader("X-Finance-Cache-Layer", params.cacheLayer);
+  if (params.uncertainty) res.setHeader("X-Finance-Trust-Uncertainty", params.uncertainty);
 }
 
 function calculateRevenueRecognition(
@@ -3153,14 +3171,34 @@ router.get("/api/program-expenses", requireAuth, async (req, res) => {
     if (canonicalEnabled && projectName && typeof projectName === 'string') {
       const resolvedProjectId = await resolveProjectIdByName(projectName);
       expenses = resolvedProjectId ? await getCanonicalProjectCostLines(resolvedProjectId) : [];
+      setFinanceTrustHeaders(res, {
+        sourceLayer: "canonical",
+        canonicalTable: "normalized_cost_lines",
+      });
 
       // Override data now baked into base rows
     } else if (canonicalEnabled) {
       expenses = await getCanonicalAllCurrentCostLines();
+      setFinanceTrustHeaders(res, {
+        sourceLayer: "canonical",
+        canonicalTable: "normalized_cost_lines",
+      });
     } else if (projectName && typeof projectName === 'string') {
       expenses = await storage.getProgramExpensesByProject(projectName);
+      setFinanceTrustHeaders(res, {
+        sourceLayer: "legacy",
+        canonicalTable: "normalized_cost_lines",
+        cacheLayer: "database_storage_expense_cache_30s_compat",
+        uncertainty: "compatibility_route_legacy_fallback",
+      });
     } else {
       expenses = await storage.getAllProgramExpenses();
+      setFinanceTrustHeaders(res, {
+        sourceLayer: "legacy",
+        canonicalTable: "normalized_cost_lines",
+        cacheLayer: "database_storage_expense_cache_30s_compat",
+        uncertainty: "compatibility_route_legacy_fallback",
+      });
     }
 
     if (startDate && typeof startDate === 'string') {
@@ -3184,6 +3222,17 @@ router.get("/api/program-expenses/:projectName", requireAuth, async (req, res) =
     const expenses = canonicalEnabled
       ? await getCanonicalProjectCostLinesByName(projectName).then((r) => r.rows)
       : await storage.getProgramExpensesByProject(projectName);
+    setFinanceTrustHeaders(res, canonicalEnabled
+      ? {
+        sourceLayer: "canonical",
+        canonicalTable: "normalized_cost_lines",
+      }
+      : {
+        sourceLayer: "legacy",
+        canonicalTable: "normalized_cost_lines",
+        cacheLayer: "database_storage_expense_cache_30s_compat",
+        uncertainty: "compatibility_route_legacy_fallback",
+      });
 
     res.json(expenses);
   } catch (error) {
@@ -3214,6 +3263,21 @@ router.get("/api/finance/cost-lines/diagnostics", requireAuth, requireAdmin, asy
   }
 });
 
+router.get("/api/finance/trust-core-report", requireAuth, requireAdmin, async (_req, res) => {
+  try {
+    const report = await buildFinanceCoreTrustReport();
+    setFinanceTrustHeaders(res, {
+      sourceLayer: "derived",
+      canonicalTable: "normalized_cost_lines,normalized_revenue_lines",
+      derivedTable: "finance_cos_monthly,finance_revenue_monthly",
+    });
+    res.json(report);
+  } catch (error) {
+    console.error("Finance trust-core report error:", error);
+    res.status(500).json({ error: "Failed to build finance trust-core report" });
+  }
+});
+
 
 router.get("/api/program-inflows", requireAuth, async (req, res) => {
   try {
@@ -3222,10 +3286,19 @@ router.get("/api/program-inflows", requireAuth, async (req, res) => {
 
     if (projectName && typeof projectName === 'string') {
       inflows = await storage.getProgramInflowsByProject(projectName);
+      setFinanceTrustHeaders(res, {
+        sourceLayer: "legacy",
+        canonicalTable: "normalized_revenue_lines",
+        uncertainty: "compatibility_route_project_name_filter",
+      });
 
       // Override data now baked into base rows
     } else {
       inflows = await storage.getAllProgramInflows();
+      setFinanceTrustHeaders(res, {
+        sourceLayer: "legacy",
+        canonicalTable: "normalized_revenue_lines",
+      });
     }
 
     if (startDate && typeof startDate === 'string') {
@@ -5231,10 +5304,20 @@ router.get("/api/finance/revenue", requireAuth, async (req, res) => {
 
     if (projectName && typeof projectName === 'string') {
       data = await storage.getFinanceRevenueMonthlyByProject(projectName);
+      setFinanceTrustHeaders(res, {
+        sourceLayer: "derived",
+        derivedTable: "finance_revenue_monthly",
+        canonicalTable: "normalized_revenue_lines",
+      });
 
       // Override data now baked into base rows
     } else {
       data = await storage.getAllFinanceRevenueMonthly();
+      setFinanceTrustHeaders(res, {
+        sourceLayer: "derived",
+        derivedTable: "finance_revenue_monthly",
+        canonicalTable: "normalized_revenue_lines",
+      });
     }
 
     if (startDate && typeof startDate === 'string') {
@@ -5257,10 +5340,20 @@ router.get("/api/finance/cos", requireAuth, async (req, res) => {
 
     if (projectName && typeof projectName === 'string') {
       data = await storage.getFinanceCosMonthlyByProject(projectName);
+      setFinanceTrustHeaders(res, {
+        sourceLayer: "derived",
+        derivedTable: "finance_cos_monthly",
+        canonicalTable: "normalized_cost_lines",
+      });
 
       // Override data now baked into base rows
     } else {
       data = await storage.getAllFinanceCosMonthly();
+      setFinanceTrustHeaders(res, {
+        sourceLayer: "derived",
+        derivedTable: "finance_cos_monthly",
+        canonicalTable: "normalized_cost_lines",
+      });
     }
 
     if (startDate && typeof startDate === 'string') {
