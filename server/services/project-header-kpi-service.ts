@@ -5,8 +5,6 @@ import {
   derivedProjectKpis,
   normalizedCostLines,
   normalizedRevenueLines,
-  programExpense,
-  programInflows,
   projectExecutionState,
   projectInfo,
   projectRevenueSummary,
@@ -96,8 +94,8 @@ export interface ProjectHeaderKpis {
     allPaid: boolean;
   };
   source: {
-    revenue: "normalized_revenue_lines" | "program_inflows";
-    cost: "normalized_cost_lines" | "program_expense";
+    revenue: "normalized_revenue_lines";
+    cost: "normalized_cost_lines";
     baseline: "budget_baselines" | "project_execution_state" | "project_revenue_summary" | "none";
   };
   display: {
@@ -113,9 +111,7 @@ export function computeProjectHeaderKpis(input: {
   projectId: number;
   contractValue: number;
   canonicalRevenueRows: Array<{ amountExVat: unknown; status: string | null; paidDate: string | null; inBankDate: string | null }>;
-  inflowFallbackRows: Array<{ milestoneAmount: unknown; paymentReceivedDate: string | null; inBank: unknown }>;
   canonicalCostRows: Array<{ amountExVat: unknown; cosRealised: boolean | null; cosStatusOverride: string | null; invoiceNumber?: string | null }>;
-  expenseFallbackRows: Array<{ expenseActualTotal: unknown; actualCosTotal: unknown; expenseInvoiceNumber: string | null; expenseInvoicedDate: string | null; cosStatusOverride: string | null; rowType: string | null }>;
   derivedGrossMarginPct: number;
   budgetBaselineMarginPct?: number | null;
   executionBaselineMarginPct?: number | null;
@@ -127,39 +123,15 @@ export function computeProjectHeaderKpis(input: {
 }): ProjectHeaderKpis {
   const contractValue = toNumber(input.contractValue);
   const canonicalRevenueRows = input.canonicalRevenueRows;
-  const inflowFallbackRows = input.inflowFallbackRows;
   const canonicalCostRows = input.canonicalCostRows;
-  const expenseFallbackRows = input.expenseFallbackRows;
   const stageRows = input.stageRows;
   const stageDefRows = input.stageDefinitions;
-  const hasCanonicalRevenue = canonicalRevenueRows.length > 0;
-  const revenueRows = hasCanonicalRevenue
-    ? canonicalRevenueRows.map((row) => ({ amount: toNumber(row.amountExVat), realised: isRevenueRealised(row) }))
-    : inflowFallbackRows.map((row) => ({ amount: toNumber(row.milestoneAmount), realised: !!row.paymentReceivedDate || Number(row.inBank || 0) === 1 }));
+  const revenueRows = canonicalRevenueRows.map((row) => ({ amount: toNumber(row.amountExVat), realised: isRevenueRealised(row) }));
 
   const revenueTotal = revenueRows.reduce((sum, row) => sum + row.amount, 0);
   const revenueRealised = revenueRows.reduce((sum, row) => sum + (row.realised ? row.amount : 0), 0);
 
-  const hasCanonicalCost = canonicalCostRows.length > 0;
-  const costRows = hasCanonicalCost
-    ? canonicalCostRows.map((row) => ({ amount: toNumber(row.amountExVat), realised: isCosRealisedLine(row) }))
-    : expenseFallbackRows
-      .filter((row) => String(row.rowType ?? "item").toLowerCase() === "item")
-      .map((row) => {
-        const baseAmount = toNumber(row.actualCosTotal) || toNumber(row.expenseActualTotal);
-        // Use canonical check: invoice number is the hard gate
-        const realised = isCanonicalCosRealised({
-          status: null,
-          cosStatusOverride: row.cosStatusOverride,
-          cosRealised: null,
-          expenseInvoiceNumber: row.expenseInvoiceNumber,
-          expenseInvoicedDate: row.expenseInvoicedDate,
-          expensePoNumber: null,
-          paymentDate: null,
-          today: new Date().toISOString().slice(0, 10),
-        });
-        return { amount: baseAmount, realised };
-      });
+  const costRows = canonicalCostRows.map((row) => ({ amount: toNumber(row.amountExVat), realised: isCosRealisedLine(row) }));
 
   const costTotal = costRows.reduce((sum, row) => sum + row.amount, 0);
   const costRealised = costRows.reduce((sum, row) => sum + (row.realised ? row.amount : 0), 0);
@@ -238,8 +210,8 @@ export function computeProjectHeaderKpis(input: {
       allPaid: false,
     },
     source: {
-      revenue: hasCanonicalRevenue ? "normalized_revenue_lines" : "program_inflows",
-      cost: hasCanonicalCost ? "normalized_cost_lines" : "program_expense",
+      revenue: "normalized_revenue_lines",
+      cost: "normalized_cost_lines",
       baseline: baselineSource,
     },
     display: {
@@ -253,12 +225,10 @@ export function computeProjectHeaderKpis(input: {
 }
 
 export async function getProjectHeaderKpis(projectId: number): Promise<ProjectHeaderKpis> {
-  const [projectRows, canonicalRevenueRows, canonicalCostRows, inflowFallbackRows, expenseFallbackRows, derivedRows, baselineRows, executionRows, revenueSummaryRows, stageRows, stageDefRows] = await Promise.all([
+  const [projectRows, canonicalRevenueRows, canonicalCostRows, derivedRows, baselineRows, executionRows, revenueSummaryRows, stageRows, stageDefRows] = await Promise.all([
     db.select({ contractValue: projectInfo.contractValue }).from(projectInfo).where(and(eq(projectInfo.id, projectId), isNull(projectInfo.deletedAt))).limit(1),
     db.select({ amountExVat: normalizedRevenueLines.amountExVat, status: normalizedRevenueLines.status, paidDate: normalizedRevenueLines.paidDate, inBankDate: normalizedRevenueLines.inBankDate }).from(normalizedRevenueLines).where(and(eq(normalizedRevenueLines.projectId, projectId), isNull(normalizedRevenueLines.effectiveTo))),
     db.select({ amountExVat: normalizedCostLines.amountExVat, cosRealised: normalizedCostLines.cosRealised, cosStatusOverride: normalizedCostLines.cosStatusOverride, invoiceNumber: normalizedCostLines.invoiceNumber }).from(normalizedCostLines).where(and(eq(normalizedCostLines.projectId, projectId), isNull(normalizedCostLines.effectiveTo))),
-    db.select({ milestoneAmount: programInflows.milestoneAmount, paymentReceivedDate: programInflows.paymentReceivedDate, inBank: programInflows.inBank }).from(programInflows).where(and(eq(programInflows.projectId, projectId), isNull(programInflows.effectiveTo))),
-    db.select({ expenseActualTotal: programExpense.expenseActualTotal, actualCosTotal: programExpense.actualCosTotal, expenseInvoiceNumber: programExpense.expenseInvoiceNumber, expenseInvoicedDate: programExpense.expenseInvoicedDate, cosStatusOverride: programExpense.cosStatusOverride, rowType: programExpense.rowType }).from(programExpense).where(and(eq(programExpense.projectId, projectId), isNull(programExpense.effectiveTo), isNull(programExpense.deletedAt))),
     db.select({ grossMarginPct: derivedProjectKpis.grossMarginPct }).from(derivedProjectKpis).where(and(eq(derivedProjectKpis.projectId, projectId), isNull(derivedProjectKpis.deletedAt))).limit(1),
     db.select({ marginBaseline: budgetBaselines.marginBaseline, approvedDate: budgetBaselines.approvedDate, createdAt: budgetBaselines.createdAt, version: budgetBaselines.version }).from(budgetBaselines).where(eq(budgetBaselines.projectId, projectId)).orderBy(desc(budgetBaselines.approvedDate), desc(budgetBaselines.createdAt), desc(budgetBaselines.version)).limit(1),
     db.select({ marginBaseline: projectExecutionState.marginBaseline, currentStageCode: projectExecutionState.currentStageCode, nextRequiredAction: projectExecutionState.nextRequiredAction }).from(projectExecutionState).where(and(eq(projectExecutionState.projectId, projectId), isNull(projectExecutionState.deletedAt))).limit(1),
@@ -271,9 +241,7 @@ export async function getProjectHeaderKpis(projectId: number): Promise<ProjectHe
     projectId,
     contractValue: toNumber(projectRows[0]?.contractValue),
     canonicalRevenueRows: canonicalRevenueRows as any,
-    inflowFallbackRows: inflowFallbackRows as any,
     canonicalCostRows: canonicalCostRows as any,
-    expenseFallbackRows: expenseFallbackRows as any,
     derivedGrossMarginPct: toPercent(toNumber(derivedRows[0]?.grossMarginPct)),
     budgetBaselineMarginPct: baselineRows[0]?.marginBaseline as any,
     executionBaselineMarginPct: executionRows[0]?.marginBaseline as any,

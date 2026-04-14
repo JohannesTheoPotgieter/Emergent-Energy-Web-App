@@ -37,8 +37,6 @@ import {
   workItemDependencies,
   // planEditNotifications, // Notifications feature removed
   projectRevenueSummary,
-  programExpense,
-  programInflows,
   expenseTaskLinks,
   users,
   importLogs,
@@ -1349,8 +1347,6 @@ router.post("/api/smart-import/:runId/apply-prior-resolutions", requireAuth, req
 // POST /api/smart-import/:runId/commit
 router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("smart_import", "approve"), async (req: Request, res: Response) => {
   try {
-    // Ensure DB columns exist before attempting any inserts
-    await ensureSchemaReady();
     const runId = parseInt(req.params.runId as string);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
 
@@ -2063,19 +2059,20 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           }
         }
 
-        // ── S12: Post-commit derivative materializer ──
-        // Refresh program_expense, program_inflows, and project_revenue_summary
-        // from canonical data so legacy consumers see fresh data after v2 commit.
-        // This is a COMPATIBILITY mechanism — see derivative-materializer.ts.
+        // ── S12: Post-commit project_revenue_summary refresh ──
+        // Refreshes project_revenue_summary from the normalized costedSummary
+        // so the FYE Detail view sees fresh budget/actual revenue and COS
+        // figures after each v2 commit. (Previously this helper also wrote
+        // program_expense and program_inflows as back-compat derivatives;
+        // those writes were removed in the PE/PI retirement.)
         try {
           const matResult = await materializeDerivatives({
             tx, projectId, projectName, runId, commitTimestamp, norm,
           });
-          console.log(`[SmartImport] v2 derivative materialization: ${matResult.programInflowsWritten} PI, ${matResult.programExpenseWritten} PE, PRS=${matResult.projectRevenueSummaryUpdated}`);
+          console.log(`[SmartImport] v2 project_revenue_summary refresh: PRS=${matResult.projectRevenueSummaryUpdated}`);
         } catch (matErr: unknown) {
-          // Derivative materialization failure is non-blocking for the canonical commit.
-          // Log and continue — canonical data is committed successfully.
-          console.warn("[SmartImport] Derivative materialization failed (non-blocking):", (matErr instanceof Error ? matErr.message : String(matErr)));
+          // PRS refresh failure is non-blocking for the canonical commit.
+          console.warn("[SmartImport] project_revenue_summary refresh failed (non-blocking):", (matErr instanceof Error ? matErr.message : String(matErr)));
         }
 
         // ── S13: Canonical expense_task_links re-linking ──
@@ -2554,118 +2551,6 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         counts.revenueLines = revValues.length;
       }
 
-      if (Array.isArray(norm.revenueLines) && projectName) {
-        const oldInflows = await tx.select({
-          rowNumber: programInflows.rowNumber,
-          inBank: programInflows.inBank,
-          paymentReceivedDate: programInflows.paymentReceivedDate,
-          milestoneName: programInflows.milestoneName,
-          milestoneAmount: programInflows.milestoneAmount,
-          source: programInflows.source,
-        })
-          .from(programInflows)
-          .where(eq(programInflows.projectName, projectName));
-
-        // Conflict detection: warn about user-edited rows being overwritten (Prompt 4 — override collapse)
-        const editedInflowCount = oldInflows.filter((r: any) => r.source === 'imported_edited').length;
-        if (editedInflowCount > 0) {
-          const msg = `Re-import overwrote ${editedInflowCount} user-edited program_inflows row(s)`;
-          console.warn(`[SmartImport] ${msg} for "${projectName}"`);
-          overwriteWarnings.push(msg);
-        }
-
-        // Build composite key map: "milestoneName::amount" → previous inflow row
-        const oldCompositeMap = new Map<string, { inBank: number | null; rowNumber: number | null; paymentReceivedDate: string | null; source: string | null }>();
-        const oldRowMap = new Map<number, { inBank: number | null; paymentReceivedDate: string | null; source: string | null }>();
-        for (const r of oldInflows) {
-          if (r.rowNumber != null) {
-            oldRowMap.set(r.rowNumber, {
-              inBank: r.inBank,
-              paymentReceivedDate: r.paymentReceivedDate,
-              source: r.source || null,
-            });
-          }
-          if (r.milestoneName) {
-            const key = `${r.milestoneName}::${r.milestoneAmount || ""}`;
-            oldCompositeMap.set(key, {
-              inBank: r.inBank,
-              rowNumber: r.rowNumber,
-              paymentReceivedDate: r.paymentReceivedDate,
-              source: r.source || null,
-            });
-          }
-        }
-
-        // Temporal: soft-close existing program_inflows instead of hard delete (Prompt 10)
-        await softCloseByProjectName(tx, "program_inflows", projectName);
-        if (norm.revenueLines.length > 0) {
-          const revIgnored = ignoredRows.get("REVENUE") || new Set();
-          const revOverrides = overrideRows.get("REVENUE") || new Map();
-          let milestoneIdx = 0;
-          const piValues = norm.revenueLines
-            .filter((r: any) => !revIgnored.has(r.sourceRow))
-            .map((r: any) => {
-              const ov = revOverrides.get(r.sourceRow);
-              const m = ov ? { ...r, ...ov } : r;
-              milestoneIdx++;
-              const name = m.milestoneName || m.description || null;
-              const amount = m.amountExVat ? String(m.amountExVat) : null;
-
-              // Composite match first (name + amount), then fall back to row number
-              let prevInBank: number | null | undefined = undefined;
-              let prevPaymentReceivedDate: string | null | undefined = undefined;
-              let prevSource: string | null | undefined = undefined;
-              const compositeKey = name ? `${name}::${amount || ""}` : null;
-              if (compositeKey && oldCompositeMap.has(compositeKey)) {
-                const match = oldCompositeMap.get(compositeKey)!;
-                prevInBank = match.inBank;
-                prevPaymentReceivedDate = match.paymentReceivedDate;
-                prevSource = match.source;
-                // Warn if the milestone moved rows
-                if (match.rowNumber != null && match.rowNumber !== r.sourceRow) {
-                  console.log(`[SmartImport] Revenue milestone '${name}' moved from row ${match.rowNumber} to row ${r.sourceRow}. Status preserved.`);
-                }
-              }
-              // Fall back to row number match
-              if (prevInBank === undefined && oldRowMap.has(r.sourceRow)) {
-                const rowMatch = oldRowMap.get(r.sourceRow)!;
-                prevInBank = rowMatch.inBank ?? null;
-                prevPaymentReceivedDate = rowMatch.paymentReceivedDate ?? null;
-                prevSource = rowMatch.source;
-              }
-
-              const preserveManualRow = prevSource === "imported_edited";
-              const paymentReceivedDate = preserveManualRow
-                ? (prevPaymentReceivedDate ?? null)
-                : (m.paidDate || null);
-
-              const paidDateIsBlack = m.paidDateConfirmed === true || m.paidDateFontColor === 'black';
-              const derivedInBank = m.paidDate ? (paidDateIsBlack ? 1 : 0) : 0;
-
-              return {
-                projectName,
-                rowNumber: r.sourceRow,
-                milestoneNo: String(milestoneIdx),
-                milestoneName: name,
-                milestoneAmount: amount,
-                plannedPaymentDate: m.paidDate || null,
-                milestoneInvoiceNumber: m.invoiceNumber || null,
-                invoiceRaisedDate: m.invoiceDate || null,
-                paymentReceivedDate,
-                inBank: prevInBank != null ? prevInBank : derivedInBank,
-                subProjectName: m.subProjectName || null,
-                dataSource: "SMART_IMPORT",
-                projectId: projectId || null,
-                importRunId: runId,
-              };
-            });
-          if (piValues.length > 0) {
-            await tx.insert(programInflows).values(addTemporalColumns(piValues, runId, commitTimestamp) as any);
-            console.log(`[SmartImport] Wrote ${piValues.length} program_inflows rows for "${projectName}"`);
-          }
-        }
-      }
-
       const counterpartyMap = new Map<string, number>();
       if (norm.counterpartyNames && norm.counterpartyNames.length > 0) {
         for (const name of norm.counterpartyNames) {
@@ -2842,109 +2727,6 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
             }
           }
         }
-      }
-
-      if (Array.isArray(norm.costLines) && projectName) {
-        const oldPeRows = await tx.select({
-          id: programExpense.id,
-          rowNumber: programExpense.rowNumber,
-          source: programExpense.source,
-          expensePaymentDate: programExpense.expensePaymentDate,
-          paymentDateConfirmed: programExpense.paymentDateConfirmed,
-          paymentDateFontColor: programExpense.paymentDateFontColor,
-        })
-          .from(programExpense)
-          .where(eq(programExpense.projectName, projectName));
-
-        // Conflict detection: warn about user-edited rows being overwritten (Prompt 4 — override collapse)
-        const editedExpenseCount = oldPeRows.filter((r: any) => r.source === 'imported_edited').length;
-        if (editedExpenseCount > 0) {
-          const msg = `Re-import overwrote ${editedExpenseCount} user-edited program_expense row(s)`;
-          console.warn(`[SmartImport] ${msg} for "${projectName}"`);
-          overwriteWarnings.push(msg);
-        }
-
-        // Temporal: soft-close existing program_expense instead of hard delete (Prompt 10)
-        await softCloseByProjectName(tx, "program_expense", projectName);
-
-        const toStr = (v: any): string | null => v != null ? String(v) : null;
-        if (norm.costLines.length > 0) {
-          const costIgnored = ignoredRows.get("EXPENDITURE") || new Set();
-          const costOverrides = overrideRows.get("EXPENDITURE") || new Map();
-          const oldPeByRow = new Map<number, any>(
-            oldPeRows
-              .filter((r: any) => r.rowNumber != null)
-              .map((r: any) => [r.rowNumber as number, r]),
-          );
-          let currentCategory = "";
-          const peValues = norm.costLines
-            .filter((c: any) => !costIgnored.has(c.sourceRow))
-            .map((c: any) => {
-              const ov = costOverrides.get(c.sourceRow);
-              const m = ov ? { ...c, ...ov } : c;
-              const previous = oldPeByRow.get(c.sourceRow);
-              const preserveManualRow = previous?.source === "imported_edited";
-              const expensePaymentDate = preserveManualRow
-                ? (previous?.expensePaymentDate || null)
-                : (m.paidDate || null);
-              const paymentDateFontColor = preserveManualRow
-                ? (previous?.paymentDateFontColor || null)
-                : (m.paidDateFontColor || null);
-              if (m.costCategory && m.costCategory !== currentCategory) currentCategory = m.costCategory;
-              return {
-                projectName,
-                rowNumber: c.sourceRow,
-                rowType: "item" as const,
-                expenseCategory: currentCategory || m.costCategory || null,
-                expenseLineItem: m.description || null,
-                budgetQty: toStr(m.budgetQty),
-                budgetRateUnit: toStr(m.budgetRate),
-                budgetTotal: toStr(m.budgetTotal),
-                budgetCosTotal: toStr(m.budgetCos),
-                forecastPaymentDate: m.forecastPaymentDate || null,
-                expenseActualTotal: toStr(m.amountExVat),
-                expensePoNumber: m.poNumber || null,
-                expenseInvoiceNumber: m.invoiceNumber || null,
-                expenseInvoicedDate: m.invoiceDate || null,
-                invoiceDateFontColor: m.invoiceDateFontColor || null,
-                invoiceDateConfirmed: m.invoiceDateFontColor === "black",
-                expensePaymentDate,
-                paymentDateFontColor,
-                paymentDateConfirmed: m.paidDateFontColor === "black",
-                subProjectName: m.subProjectName || null,
-                dataSource: "SMART_IMPORT",
-                projectId: projectId || null,
-                importRunId: runId,
-              };
-            });
-          if (peValues.length > 0) {
-            await tx.insert(programExpense).values(addTemporalColumns(peValues, runId, commitTimestamp) as any);
-            console.log(`[SmartImport] Wrote ${peValues.length} program_expense rows for "${projectName}"`);
-          }
-        }
-
-        const newPeRows = await tx.select({ id: programExpense.id, rowNumber: programExpense.rowNumber })
-          .from(programExpense)
-          .where(and(eq(programExpense.projectName, projectName), isNull(programExpense.effectiveTo)));
-        const newIdByRow = new Map(newPeRows.filter((r: any) => r.rowNumber != null).map((r: any) => [r.rowNumber!, r.id]));
-        const newIdSet = new Set(newPeRows.map((r: any) => r.id));
-
-        const existingLinks = await tx.select().from(expenseTaskLinks)
-          .where(eq(expenseTaskLinks.projectName, projectName));
-        for (const link of existingLinks) {
-          const oldRow = oldPeRows.find((r: any) => r.id === link.expenseId);
-          if (oldRow && oldRow.rowNumber != null) {
-            const newId = newIdByRow.get(oldRow.rowNumber);
-            if (newId && newId !== link.expenseId) {
-              await tx.update(expenseTaskLinks).set({ expenseId: newId }).where(eq(expenseTaskLinks.id, link.id));
-            } else if (!newId) {
-              await tx.delete(expenseTaskLinks).where(eq(expenseTaskLinks.id, link.id));
-            }
-          } else if (!newIdSet.has(link.expenseId)) {
-            await tx.delete(expenseTaskLinks).where(eq(expenseTaskLinks.id, link.id));
-          }
-        }
-
       }
 
       if (norm.executionPhases && norm.executionPhases.length > 0) {
@@ -3302,9 +3084,6 @@ router.post("/api/smart-import/:runId/rollback", requireAuth, requireAdmin, asyn
     }
 
     await db.transaction(async (tx: any) => {
-      // Temporal: soft-close rows from this import run instead of hard delete (Prompt 10)
-      await softCloseByImportRunId(tx, "program_inflows", runId);
-      await softCloseByImportRunId(tx, "program_expense", runId);
       await tx.delete(invoicePatternMatches).where(eq(invoicePatternMatches.importRunId, runId));
 
       await softCloseByImportRunId(tx, "normalized_revenue_lines", runId);
@@ -3499,8 +3278,6 @@ router.get("/api/smart-import/normalized/:projectName/expenditure", requireAuth,
 // POST /api/smart-import/bulk-commit
 router.post("/api/smart-import/bulk-commit", requireAuth, requirePermission("smart_import", "approve"), async (req: Request, res: Response) => {
   try {
-    // Ensure DB columns exist before attempting any inserts
-    await ensureSchemaReady();
     const userId = (req as any).user?.id || null;
     const { runIds, acknowledgeManualEdits, forceCommit } = req.body || {};
 
@@ -3850,74 +3627,6 @@ router.get("/api/smart-import/audit-log", requireAuth, requireAdmin, async (req:
   }
 });
 
-// Promise that resolves once program_expense/program_inflows columns are verified.
-// Awaited by the commit handler to prevent race conditions on startup.
-let schemaReadyPromise: Promise<void> = Promise.resolve();
-
-export function ensureSchemaReady(): Promise<void> {
-  return schemaReadyPromise;
-}
-
 export function registerSmartImportRoutes(app: Express) {
   app.use(router);
-
-  // Ensure program_expense and program_inflows have all required columns.
-  // These are additive ALTER TABLE statements (safe to re-run).
-  schemaReadyPromise = (async () => {
-    try {
-      const { getDbMode } = await import("./db");
-      if (getDbMode() === "sqlite") return;
-      const { sql: rawSql } = await import("drizzle-orm");
-      const schemaStatements = [
-        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS sub_project_name TEXT`,
-        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS budget_qty NUMERIC(12,4)`,
-        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS budget_rate_unit NUMERIC(15,2)`,
-        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS budget_total NUMERIC(15,2)`,
-        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS budget_cos_total NUMERIC(15,2)`,
-        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS forecast_payment_date TEXT`,
-        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_qty NUMERIC(12,4)`,
-        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_rate_unit NUMERIC(15,2)`,
-        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_actual_total NUMERIC(15,2)`,
-        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_po_number TEXT`,
-        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_invoice_number TEXT`,
-        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_invoiced_date TEXT`,
-        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS invoice_date_confirmed BOOLEAN DEFAULT FALSE`,
-        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS invoice_date_font_color TEXT`,
-        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_payment_date TEXT`,
-        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS payment_date_confirmed BOOLEAN DEFAULT FALSE`,
-        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS payment_date_font_color TEXT`,
-        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS revenue_amount NUMERIC(15,2)`,
-        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS actual_cos_total NUMERIC(15,2)`,
-        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS line_status TEXT`,
-        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_line_hash TEXT`,
-        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS computed_state TEXT`,
-        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS computed_forecast_payment_date TEXT`,
-        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS supplier_name TEXT`,
-        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS is_manual BOOLEAN DEFAULT FALSE`,
-        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS data_source TEXT DEFAULT 'SMART_IMPORT'`,
-        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS project_id INTEGER`,
-        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS import_run_id INTEGER`,
-        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
-        `ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS sub_project_name TEXT`,
-        `ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS data_source TEXT DEFAULT 'SMART_IMPORT'`,
-        `ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS project_id INTEGER`,
-        `ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS import_run_id INTEGER`,
-        `ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
-        `ALTER TABLE work_items ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
-        `ALTER TABLE work_item_assignments ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
-        `ALTER TABLE normalized_revenue_lines ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
-        `ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
-        `ALTER TABLE invoice_pattern_matches ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
-        `ALTER TABLE normalized_execution_phases ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
-        `ALTER TABLE project_revenue_summary ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
-        `ALTER TABLE project_plan ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
-      ];
-      for (const statement of schemaStatements) {
-        await db.execute(rawSql.raw(statement));
-      }
-      console.log("[SmartImport] Ensured program_expense/program_inflows columns exist");
-    } catch (e: any) {
-      console.warn("[SmartImport] Column check skipped:", e?.message ?? String(e));
-    }
-  })();
 }

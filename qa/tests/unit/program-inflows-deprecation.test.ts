@@ -1,12 +1,14 @@
 /**
  * Program Inflows Deprecation Tests
  *
- * Documents the deprecation status of program_inflows:
- * - Storage layer already reads NRL only (no PI merge unlike PE)
- * - Cashflow now uses getAllRevenueLinesForCashflow (NRL only)
- * - Inflow date override PI sync writes removed
- * - FYE revenue tracking still reads PI directly (blocker)
- * - Smart import still dual-writes to PI (blocked by FYE)
+ * Anti-regression checks that program_inflows is fully retired:
+ *   - Storage layer reads NRL only (no PI merge).
+ *   - Cashflow uses getAllRevenueLinesForCashflow (NRL only).
+ *   - Inflow date override does not sync to PI.
+ *   - FYE Revenue Tracker reads NRL directly (no PI fallback).
+ *   - Smart import does not write PI (PE/PI cutover).
+ *   - adaptRevenueToInflow still produces the PI-shape view from NRL data
+ *     so existing UI consumers that expect inflow-shape rows keep working.
  */
 
 import { describe, expect, it } from "vitest";
@@ -85,51 +87,21 @@ describe("PI sync writes removed", () => {
   });
 });
 
-describe("Remaining PI consumers (NOT yet migrated)", () => {
-  it("FYE revenue tracking still reads PI directly", () => {
+describe("Anti-regression: FYE and smart-import are fully migrated off program_inflows", () => {
+  it("FYE revenue tracking reads from normalized_revenue_lines, not program_inflows", () => {
     const fye = read("server/departments/fye-revenue-tracking-routes.ts");
-    expect(fye).toContain(".from(programInflows)");
-    // BLOCKER: uses computedForecastReceiptDate which doesn't exist on NRL
+    expect(fye).not.toContain(".from(programInflows)");
+    expect(fye).toContain("normalizedRevenueLines");
   });
 
-  it("smart import still writes PI during commit", () => {
+  it("smart import does not write to program_inflows during commit", () => {
     const smartImport = read("server/smart-import-routes.ts");
-    expect(smartImport).toContain("tx.insert(programInflows)");
-  });
-});
-
-describe("Schema gaps blocking full deprecation", () => {
-  it("GAP: computedForecastReceiptDate exists on PI but not NRL", () => {
-    const schema = read("shared/schema/finance.ts");
-    const piBlock = schema.substring(
-      schema.indexOf('pgTable("program_inflows"'),
-      schema.indexOf("insertProgramInflowsSchema")
-    );
-    expect(piBlock).toContain("computed_forecast_receipt_date");
-
-    const nrlBlock = schema.substring(
-      schema.indexOf('pgTable("normalized_revenue_lines"'),
-      schema.indexOf("insertNormalizedRevenueLineSchema")
-    );
-    expect(nrlBlock).not.toContain("computed_forecast_receipt_date");
+    expect(smartImport).not.toContain("tx.insert(programInflows)");
   });
 
-  it("GAP: milestoneNo exists on PI but not NRL", () => {
-    const schema = read("shared/schema/finance.ts");
-    const piBlock = schema.substring(
-      schema.indexOf('pgTable("program_inflows"'),
-      schema.indexOf("insertProgramInflowsSchema")
-    );
-    expect(piBlock).toContain("milestone_no");
-  });
-
-  it("GAP: milestonePercent exists on PI but not NRL", () => {
-    const schema = read("shared/schema/finance.ts");
-    const piBlock = schema.substring(
-      schema.indexOf('pgTable("program_inflows"'),
-      schema.indexOf("insertProgramInflowsSchema")
-    );
-    expect(piBlock).toContain("milestone_percent");
+  it("smart import does not soft-close program_inflows during rollback", () => {
+    const smartImport = read("server/smart-import-routes.ts");
+    expect(smartImport).not.toContain('softCloseByImportRunId(tx, "program_inflows"');
   });
 });
 

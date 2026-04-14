@@ -1,8 +1,8 @@
 /**
  * Finance Policy — Single source of truth for all finance business rules.
  *
- * Every finance write, COS realisation check, and programExpense gate
- * MUST go through this module. No duplicate finance rules elsewhere.
+ * Every finance write and COS realisation check MUST go through this module.
+ * No duplicate finance rules elsewhere.
  */
 
 // Re-export the canonical COS realisation from its implementation
@@ -28,25 +28,6 @@ export function requireProjectId(projectId: number | null | undefined): asserts 
   if (projectId == null || projectId <= 0) {
     throw new MissingProjectIdError();
   }
-}
-
-// ---------------------------------------------------------------------------
-// Policy: programExpense writes are permanently blocked
-// ---------------------------------------------------------------------------
-
-export class ProgramExpenseWriteBlockedError extends Error {
-  constructor(operation: string) {
-    super(`Write to program_expense table is permanently blocked. Operation: ${operation}. Use normalized_cost_lines instead.`);
-    this.name = "ProgramExpenseWriteBlockedError";
-  }
-}
-
-/**
- * Guard that blocks any attempt to write to the legacy program_expense table.
- * Call this at the top of any legacy write path that previously touched program_expense.
- */
-export function blockProgramExpenseWrite(operation: string): never {
-  throw new ProgramExpenseWriteBlockedError(operation);
 }
 
 // ---------------------------------------------------------------------------

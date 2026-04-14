@@ -480,12 +480,12 @@ export function registerAdminRecoveryRoutes(app: Express) {
     try {
       const dryRun = req.query.dryRun === "true";
 
+      // program_expense / program_inflows were retired in the PE/PI cutover.
+      // This endpoint only purges tombstoned canonical rows now.
       const nclCount = await db.execute(sql`SELECT COUNT(*) as cnt FROM normalized_cost_lines WHERE effective_to IS NOT NULL`);
-      const peCount = await db.execute(sql`SELECT COUNT(*) as cnt FROM program_expense WHERE effective_to IS NOT NULL`);
       const nrlCount = await db.execute(sql`SELECT COUNT(*) as cnt FROM normalized_revenue_lines WHERE effective_to IS NOT NULL`);
 
       const nclRows = Number((nclCount.rows as any[])[0]?.cnt || 0);
-      const peRows = Number((peCount.rows as any[])[0]?.cnt || 0);
       const nrlRows = Number((nrlCount.rows as any[])[0]?.cnt || 0);
 
       if (dryRun) {
@@ -493,31 +493,28 @@ export function registerAdminRecoveryRoutes(app: Express) {
           dryRun: true,
           toDelete: {
             normalized_cost_lines: nclRows,
-            program_expense: peRows,
             normalized_revenue_lines: nrlRows,
-            total: nclRows + peRows + nrlRows,
+            total: nclRows + nrlRows,
           },
         });
       }
 
       await db.execute(sql`DELETE FROM normalized_cost_lines WHERE effective_to IS NOT NULL`);
-      await db.execute(sql`DELETE FROM program_expense WHERE effective_to IS NOT NULL`);
       await db.execute(sql`DELETE FROM normalized_revenue_lines WHERE effective_to IS NOT NULL`);
 
       logAuditFromReq(req, {
         action: "cleanup_old_snapshots",
         entityType: "system",
         entityId: "0",
-        changesJson: { deleted: { normalized_cost_lines: nclRows, program_expense: peRows, normalized_revenue_lines: nrlRows } },
+        changesJson: { deleted: { normalized_cost_lines: nclRows, normalized_revenue_lines: nrlRows } },
       });
 
       res.json({
         success: true,
         deleted: {
           normalized_cost_lines: nclRows,
-          program_expense: peRows,
           normalized_revenue_lines: nrlRows,
-          total: nclRows + peRows + nrlRows,
+          total: nclRows + nrlRows,
         },
       });
     } catch (err: unknown) {

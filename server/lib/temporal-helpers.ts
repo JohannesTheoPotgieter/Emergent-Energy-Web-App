@@ -17,8 +17,6 @@ import type { PgTable } from "drizzle-orm/pg-core";
  * Used for raw-SQL operations where Drizzle schema refs aren't practical.
  */
 export const TEMPORAL_TABLES = new Set([
-  "program_expense",
-  "program_inflows",
   "cashflow_points",
   "finance_revenue_monthly",
   "finance_cos_monthly",

@@ -25,11 +25,11 @@ export function registerKpiTraceabilityRoutes(app: Express) {
           FROM project_revenue_summary
         `).then(rows0),
         db.execute(sql`
-          SELECT 
+          SELECT
             COALESCE(SUM(CAST(budget_total AS NUMERIC)), 0) as total_budget_cos,
-            COALESCE(SUM(CAST(actual_cos_total AS NUMERIC)), 0) as total_actual_cos
-          FROM program_expense
-          WHERE (row_type = 'item' OR row_type IS NULL) AND effective_to IS NULL
+            COALESCE(SUM(CAST(amount_ex_vat AS NUMERIC)), 0) as total_actual_cos
+          FROM normalized_cost_lines
+          WHERE effective_to IS NULL
         `).then(rows0),
         db.execute(sql`
           SELECT 
@@ -60,11 +60,12 @@ export function registerKpiTraceabilityRoutes(app: Express) {
         db.execute(sql`SELECT COUNT(*) as c FROM work_items WHERE deleted_at IS NULL`).then(rows0).catch(() => ({ c: 0 })),
         db.execute(sql`SELECT COUNT(*) as c FROM portfolios`).then(rows0).catch(() => ({ c: 0 })),
         db.execute(sql`
-          SELECT 
-            COALESCE(SUM(CAST(milestone_amount AS NUMERIC)), 0) as total_milestone_value,
-            COUNT(CASE WHEN in_bank = 1 THEN 1 END) as in_bank_count,
+          SELECT
+            COALESCE(SUM(CAST(amount_ex_vat AS NUMERIC)), 0) as total_milestone_value,
+            COUNT(CASE WHEN paid_date IS NOT NULL AND paid_date_confirmed = true THEN 1 END) as in_bank_count,
             COUNT(*) as total_milestones
-          FROM program_inflows
+          FROM normalized_revenue_lines
+          WHERE effective_to IS NULL
         `).then(rows0),
       ]);
 
@@ -87,8 +88,8 @@ export function registerKpiTraceabilityRoutes(app: Express) {
       const kpis = [
         { id: "revenue_planned", name: "Total Planned Revenue", currentValue: Number(revSummary?.total_planned_revenue ?? 0), sourceTable: "project_revenue_summary", sourceFields: "planned_revenue", formula: "SUM(project_revenue_summary.planned_revenue)", apiEndpoint: "/api/revenue-summary", consumingComponent: "Dashboard SummaryCard, RevenueTrackerTab" },
         { id: "revenue_actual", name: "Total Actual Revenue", currentValue: Number(revSummary?.total_actual_revenue ?? 0), sourceTable: "project_revenue_summary", sourceFields: "actual_revenue", formula: "SUM(project_revenue_summary.actual_revenue)", apiEndpoint: "/api/revenue-summary", consumingComponent: "Dashboard SummaryCard, RevenueTrackerTab" },
-        { id: "cos_budget", name: "Total Budget COS", currentValue: Number(cosAgg?.total_budget_cos ?? 0), sourceTable: "program_expense", sourceFields: "budget_total", formula: "SUM(program_expense.budget_total) WHERE row_type='item'", apiEndpoint: "/api/expenses", consumingComponent: "COS Control, ExpenditureTab, Dashboard SummaryCard" },
-        { id: "cos_actual", name: "Total Actual COS", currentValue: Number(cosAgg?.total_actual_cos ?? 0), sourceTable: "program_expense", sourceFields: "actual_cos_total", formula: "SUM(program_expense.actual_cos_total) WHERE row_type='item'", apiEndpoint: "/api/expenses", consumingComponent: "COS Control, ExpenditureTab, Dashboard SummaryCard" },
+        { id: "cos_budget", name: "Total Budget COS", currentValue: Number(cosAgg?.total_budget_cos ?? 0), sourceTable: "normalized_cost_lines", sourceFields: "budget_total", formula: "SUM(normalized_cost_lines.budget_total) WHERE effective_to IS NULL", apiEndpoint: "/api/expenses", consumingComponent: "COS Control, ExpenditureTab, Dashboard SummaryCard" },
+        { id: "cos_actual", name: "Total Actual COS", currentValue: Number(cosAgg?.total_actual_cos ?? 0), sourceTable: "normalized_cost_lines", sourceFields: "amount_ex_vat", formula: "SUM(normalized_cost_lines.amount_ex_vat) WHERE effective_to IS NULL", apiEndpoint: "/api/expenses", consumingComponent: "COS Control, ExpenditureTab, Dashboard SummaryCard" },
         { id: "gp_planned", name: "Total Planned GP", currentValue: gpPlanned, sourceTable: "project_revenue_summary", sourceFields: "planned_profit", formula: "SUM(project_revenue_summary.planned_profit)", apiEndpoint: "/api/revenue-summary", consumingComponent: "GpTrackerTab, Dashboard SummaryCard" },
         { id: "gp_actual", name: "Total Actual GP", currentValue: gpActual, sourceTable: "project_revenue_summary", sourceFields: "actual_profit", formula: "SUM(project_revenue_summary.actual_profit)", apiEndpoint: "/api/revenue-summary", consumingComponent: "GpTrackerTab, Dashboard SummaryCard" },
         { id: "gp_margin_planned", name: "Planned GP Margin %", currentValue: plannedRev > 0 ? Math.round((gpPlanned / plannedRev) * 10000) / 100 : 0, sourceTable: "project_revenue_summary", sourceFields: "planned_profit, planned_revenue", formula: "(SUM(planned_profit) / SUM(planned_revenue)) × 100", apiEndpoint: "/api/revenue-summary", consumingComponent: "GpTrackerTab, Dashboard SummaryCard" },
@@ -108,8 +109,8 @@ export function registerKpiTraceabilityRoutes(app: Express) {
         { id: "mywork_personal_tasks", name: "Personal Tasks Count", currentValue: Number(ptCount?.c ?? 0), sourceTable: "work_items", sourceFields: "id", formula: "COUNT(work_items.*) WHERE workstream = 'PERSONAL'", apiEndpoint: "/api/mytool/tasks", consumingComponent: "MyWorkTasksPage, MyToolTodayPage" },
         { id: "mywork_work_items", name: "Work Items Count", currentValue: Number(wiCount?.c ?? 0), sourceTable: "work_items", sourceFields: "id", formula: "COUNT(work_items.*)", apiEndpoint: "/api/work-items", consumingComponent: "MyWorkTasksPage, MyWorkHomePage" },
         { id: "portfolio_total", name: "Portfolio Count", currentValue: Number(pCount?.c ?? 0), sourceTable: "portfolios", sourceFields: "id", formula: "COUNT(portfolios.*)", apiEndpoint: "/api/portfolios", consumingComponent: "PortfoliosPage, Dashboard" },
-        { id: "inflow_total_value", name: "Total Milestone/Inflow Value", currentValue: Number(inflowAgg?.total_milestone_value ?? 0), sourceTable: "program_inflows", sourceFields: "milestone_amount", formula: "SUM(program_inflows.milestone_amount)", apiEndpoint: "/api/inflows/:project", consumingComponent: "RevenueTrackingTab, CashflowTab" },
-        { id: "inflow_in_bank", name: "Milestones In Bank", currentValue: Number(inflowAgg?.in_bank_count ?? 0), sourceTable: "program_inflows", sourceFields: "in_bank", formula: "COUNT(program_inflows.*) WHERE in_bank = 1", apiEndpoint: "/api/inflows/:project", consumingComponent: "RevenueTrackingTab, Dashboard" },
+        { id: "inflow_total_value", name: "Total Milestone/Inflow Value", currentValue: Number(inflowAgg?.total_milestone_value ?? 0), sourceTable: "normalized_revenue_lines", sourceFields: "amount_ex_vat", formula: "SUM(normalized_revenue_lines.amount_ex_vat) WHERE effective_to IS NULL", apiEndpoint: "/api/inflows/:project", consumingComponent: "RevenueTrackingTab, CashflowTab" },
+        { id: "inflow_in_bank", name: "Milestones In Bank", currentValue: Number(inflowAgg?.in_bank_count ?? 0), sourceTable: "normalized_revenue_lines", sourceFields: "paid_date, paid_date_confirmed", formula: "COUNT(normalized_revenue_lines.*) WHERE paid_date IS NOT NULL AND paid_date_confirmed = true", apiEndpoint: "/api/inflows/:project", consumingComponent: "RevenueTrackingTab, Dashboard" },
       ];
 
       const enrichedKpis = kpis.map(withTraceability);
