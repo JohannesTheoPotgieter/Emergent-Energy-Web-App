@@ -1,10 +1,12 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, DollarSign, Loader2 } from "lucide-react";
 import { PageShell } from "@/components/layout/page-shell";
+import { useToast } from "@/hooks/use-toast";
+import { usePermission } from "@/hooks/use-permissions";
 
 function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem("auth_token");
@@ -33,10 +35,39 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export default function FinancialReviewQueuePage() {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { allowed: canApprove } = usePermission("pd_finance", "approve");
   const { data, isLoading, error, refetch, isRefetching } = useQuery<{ items: any[] }>({
     queryKey: ["financial-review-queue"],
     queryFn: loadQueue,
     retry: false,
+  });
+  const decisionMutation = useMutation({
+    mutationFn: async ({ projectId, reviewId, outcome, notes }: { projectId: number; reviewId: number; outcome: "GO" | "NO_GO"; notes?: string }) => {
+      const res = await fetch(`/api/projects/${projectId}/financial-review/${reviewId}/approve`, {
+        method: "POST",
+        headers: {
+          ...getAuthHeaders(),
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          outcome,
+          outcomeNotes: notes || undefined,
+        }),
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(body?.error || "Could not save financial review decision.");
+      return body;
+    },
+    onSuccess: (_data, vars) => {
+      toast({ title: vars.outcome === "GO" ? "Review approved" : "Review rejected" });
+      qc.invalidateQueries({ queryKey: ["financial-review-queue"] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Decision failed", description: err?.message || "Please retry.", variant: "destructive" });
+    },
   });
 
   const items = data?.items || [];
@@ -84,7 +115,10 @@ export default function FinancialReviewQueuePage() {
                     <span className="text-xs text-muted-foreground">v{review.version}</span>
                   </div>
                   <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                    <span>PM: {item.pm || "—"}</span>
+                    <span className="inline-flex items-center gap-1">
+                      <DollarSign className="h-3 w-3" />
+                      PM: {item.pm || "—"}
+                    </span>
                     {review.reviewDate && <span>Review: {review.reviewDate}</span>}
                     <span>
                       Variance: <span className={Math.abs(variance) > 10 ? "text-red-600 font-medium" : ""}>
@@ -94,11 +128,45 @@ export default function FinancialReviewQueuePage() {
                     <span>Procurement: {((Number(review.snapshotProcurementReadiness || 0)) * 100).toFixed(0)}%</span>
                   </div>
                 </div>
-                <Link href={`/project/${encodeURIComponent(item.projectName || "")}?tab=readiness-gate`}>
-                  <Button size="sm" variant="outline" className="text-xs shrink-0">
-                    Review
-                  </Button>
-                </Link>
+                <div className="flex items-center gap-2 shrink-0">
+                  {canApprove && review.status === "IN_REVIEW" && (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="default"
+                        className="text-xs"
+                        disabled={decisionMutation.isPending}
+                        onClick={() => decisionMutation.mutate({ projectId: review.projectId, reviewId: review.id, outcome: "GO" })}
+                        data-testid={`btn-approve-financial-${review.id}`}
+                      >
+                        Approve
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        className="text-xs"
+                        disabled={decisionMutation.isPending}
+                        onClick={() => {
+                          const reason = window.prompt("Reason for NO GO / rejection:", "");
+                          if (reason === null) return;
+                          if (!reason.trim()) {
+                            toast({ title: "Reason required", description: "Please provide a rejection reason.", variant: "destructive" });
+                            return;
+                          }
+                          decisionMutation.mutate({ projectId: review.projectId, reviewId: review.id, outcome: "NO_GO", notes: reason.trim() });
+                        }}
+                        data-testid={`btn-reject-financial-${review.id}`}
+                      >
+                        Reject
+                      </Button>
+                    </>
+                  )}
+                  <Link href={`/project/${encodeURIComponent(item.projectName || "")}?tab=readiness-gate`}>
+                    <Button size="sm" variant="outline" className="text-xs">
+                      Review
+                    </Button>
+                  </Link>
+                </div>
               </CardContent>
             </Card>
           );
