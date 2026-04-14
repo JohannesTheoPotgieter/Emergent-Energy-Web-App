@@ -29,8 +29,6 @@ import {
   normalizedCostLines,
   normalizedRevenueLines,
   OVERRIDE_CATEGORIES,
-  programExpense,
-  programInflows,
   projectInfo,
   users,
 } from "@shared/schema";
@@ -3206,47 +3204,6 @@ router.get("/api/finance/cost-lines/diagnostics", requireAuth, requireAdmin, asy
   }
 });
 
-router.get("/api/finance/cost-lines/rollout-report", requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const projectIds = String(req.query.projectIds || "")
-      .split(",")
-      .map((v) => parseInt(v.trim(), 10))
-      .filter((v) => Number.isFinite(v));
-
-    if (projectIds.length === 0) {
-      return res.status(400).json({ error: "projectIds query param is required (comma-separated integers)" });
-    }
-
-    const report = await Promise.all(projectIds.map(async (projectId) => {
-      const [canonicalRows, legacyRows] = await Promise.all([
-        getCanonicalProjectCostLines(projectId),
-        db.select().from(programExpense).where(and(eq(programExpense.projectId, projectId), isNull(programExpense.effectiveTo))),
-      ]);
-
-      const canonicalTotal = canonicalRows.reduce((sum: number, row: any) => sum + (parseFloat(String(row.expenseActualTotal || "0")) || 0), 0);
-      const legacyTotal = (legacyRows as any[]).reduce((sum: number, row: any) => sum + (parseFloat(String(row.expenseActualTotal || "0")) || 0), 0);
-
-      return {
-        projectId,
-        canonical: { rowCount: canonicalRows.length, totalExpenseActual: canonicalTotal },
-        legacy: { rowCount: legacyRows.length, totalExpenseActual: legacyTotal },
-        delta: {
-          rowCount: canonicalRows.length - legacyRows.length,
-          totalExpenseActual: canonicalTotal - legacyTotal,
-        },
-      };
-    }));
-
-    res.json({
-      generatedAt: new Date().toISOString(),
-      projectIds,
-      report,
-    });
-  } catch (error) {
-    console.error("Cost-line rollout report error:", error);
-    res.status(500).json({ error: "Failed to generate rollout report" });
-  }
-});
 
 router.get("/api/program-inflows", requireAuth, async (req, res) => {
   try {
