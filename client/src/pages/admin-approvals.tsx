@@ -102,6 +102,7 @@ function getAuthHeaders(): Record<string, string> {
 
 export default function AdminApprovalsPage() {
   const { allowed: canView } = usePermission('approvals', 'view');
+  const { allowed: canApprove } = usePermission('approvals', 'approve');
   const [location, navigate] = useLocation();
   const [filter, setFilter] = useState<ApprovalType>("all");
   const [showAll, setShowAll] = useState(false);
@@ -251,6 +252,10 @@ export default function AdminApprovalsPage() {
   }
 
   function submitAction() {
+    if (!canApprove) {
+      toast({ title: "Permission required", description: "You do not have approval permission for this queue.", variant: "destructive" });
+      return;
+    }
     if (!actionDialog) return;
     if (actionDialog.action === "reject" && !reason.trim()) {
       toast({ title: "Reason required", description: "Please provide a reason for rejection.", variant: "destructive" });
@@ -463,23 +468,27 @@ export default function AdminApprovalsPage() {
                               </span>
                             </div>
                           </div>
-                          <div className="flex gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-                            <Button
-                              variant="outline" size="sm" className="h-7 text-xs gap-1 text-emerald-600 hover:text-emerald-700"
-                              onClick={(e) => openAction(item, "approve", e)}
-                              data-testid={`btn-approve-${item.id}`}
-                            >
-                              <ThumbsUp className="w-3 h-3" />
-                              Approve
-                            </Button>
-                            <Button
-                              variant="outline" size="sm" className="h-7 text-xs gap-1 text-red-600 hover:text-red-700"
-                              onClick={(e) => openAction(item, "reject", e)}
-                              data-testid={`btn-reject-${item.id}`}
-                            >
-                              <ThumbsDown className="w-3 h-3" />
-                            </Button>
-                          </div>
+                          {canApprove ? (
+                            <div className="flex gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                              <Button
+                                variant="outline" size="sm" className="h-7 text-xs gap-1 text-emerald-600 hover:text-emerald-700"
+                                onClick={(e) => openAction(item, "approve", e)}
+                                data-testid={`btn-approve-${item.id}`}
+                              >
+                                <ThumbsUp className="w-3 h-3" />
+                                Approve
+                              </Button>
+                              <Button
+                                variant="outline" size="sm" className="h-7 text-xs gap-1 text-red-600 hover:text-red-700"
+                                onClick={(e) => openAction(item, "reject", e)}
+                                data-testid={`btn-reject-${item.id}`}
+                              >
+                                <ThumbsDown className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          ) : (
+                            <Badge variant="outline" className="text-[10px]">View only</Badge>
+                          )}
                         </div>
                       </CardContent>
                     </Card>
@@ -531,26 +540,32 @@ export default function AdminApprovalsPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
-                        <Button
-                          variant="default"
-                          size="sm"
-                          className="h-7 text-xs bg-green-600 hover:bg-green-700 gap-1"
-                          onClick={(e) => openAction(item, "approve", e)}
-                          data-testid={`btn-approve-${item.id}`}
-                        >
-                          <ThumbsUp className="w-3 h-3" />
-                          Approve
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700 gap-1"
-                          onClick={(e) => openAction(item, "reject", e)}
-                          data-testid={`btn-reject-${item.id}`}
-                        >
-                          <ThumbsDown className="w-3 h-3" />
-                          Reject
-                        </Button>
+                        {canApprove ? (
+                          <>
+                            <Button
+                              variant="default"
+                              size="sm"
+                              className="h-7 text-xs bg-green-600 hover:bg-green-700 gap-1"
+                              onClick={(e) => openAction(item, "approve", e)}
+                              data-testid={`btn-approve-${item.id}`}
+                            >
+                              <ThumbsUp className="w-3 h-3" />
+                              Approve
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700 gap-1"
+                              onClick={(e) => openAction(item, "reject", e)}
+                              data-testid={`btn-reject-${item.id}`}
+                            >
+                              <ThumbsDown className="w-3 h-3" />
+                              Reject
+                            </Button>
+                          </>
+                        ) : (
+                          <Badge variant="outline" className="text-[10px]">View only</Badge>
+                        )}
                         <Button
                           variant="ghost"
                           size="sm"
