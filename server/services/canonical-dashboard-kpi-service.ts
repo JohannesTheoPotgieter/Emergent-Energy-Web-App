@@ -89,7 +89,7 @@ export async function getCanonicalFinanceByProjectIds(projectIds: number[]): Pro
       } else {
         current.outstandingCost += amount;
       }
-      // COS realised via canonical check (invoice-only hard rule + overrides)
+      // COS realised via canonical check (invoice + invoice-date confirmed = black font)
       if (isCanonicalCosRealised({
         status: null,
         cosStatusOverride: (row as any).cosStatusOverride ?? null,
@@ -99,6 +99,8 @@ export async function getCanonicalFinanceByProjectIds(projectIds: number[]): Pro
         expensePoNumber: (row as any).poNumber ?? null,
         paymentDate: (row as any).paidDate ?? null,
         today: new Date().toISOString().slice(0, 10),
+        invoiceDateFontColor: (row as any).invoiceDateFontColor ?? null,
+        invoiceDateConfirmed: (row as any).invoiceDateConfirmed ?? null,
       })) {
         current.realisedCost += amount;
       }

@@ -9,6 +9,17 @@ export interface CosLineInput {
   today: string;
   /** Actual cost amount. When provided, zero-amount lines are not considered realised. */
   amountExVat?: string | number | null;
+  /**
+   * Invoice-date confirmation signal from the source sheet.
+   *   - 'black' = finance has confirmed the invoice date (realised gate satisfied)
+   *   - 'red'   = invoice date captured but not yet confirmed (NOT realised)
+   * When the column is missing entirely, callers may also pass
+   * invoiceDateConfirmed instead. If neither field is supplied the function
+   * falls back to the legacy invoice-only behaviour for backward compatibility.
+   */
+  invoiceDateFontColor?: string | null;
+  /** Boolean equivalent of black-font confirmation. */
+  invoiceDateConfirmed?: boolean | null;
 }
 
 /**
@@ -32,20 +43,31 @@ export const OVERRIDE_NOT_REALISED = new Set(["PLANNED", "COMMITTED", "INVOICED"
  *
  * Business rules (do not reinterpret):
  *   1. Admin override takes absolute precedence.
- *   2. Invoice number is the ONLY hard check.
- *      If a supplier invoice is captured under actuals, COS is realised.
- *   3. PO is NOT the gate for realisation.
- *   4. Invoice without PO is a red flag but does NOT block realisation.
- *   5. Status labels alone do NOT determine realisation.
- *   6. "Committed from prior month" does NOT silently become realised
- *      unless it has an invoice (rule 2 handles that case already).
- *   7. cosRealised boolean flag is respected as backward-compatible signal
+ *   2. Invoice number must be a valid (non-placeholder) supplier invoice.
+ *   3. Invoice date must be CONFIRMED. Confirmation comes from one of:
+ *        - invoiceDateFontColor === 'black' (finance team's manual signal),
+ *        - invoiceDateConfirmed === true.
+ *      Red font means the date is captured but not yet confirmed → NOT
+ *      realised. This is the gate that prevents the COS Tracker / Revenue
+ *      Tracker / dashboards from over-counting unconfirmed lines.
+ *   4. PO is NOT the gate for realisation.
+ *   5. Invoice without PO is a red flag but does NOT block realisation.
+ *   6. Status labels alone do NOT determine realisation.
+ *   7. "Committed from prior month" does NOT silently become realised
+ *      unless it has an invoice + black-font date.
+ *   8. cosRealised boolean flag is respected as backward-compatible signal
  *      for legacy rows that were correctly marked during import.
  *
+ * Backward compat: if the caller does NOT supply ANY confirmation signal
+ * (invoiceDateFontColor === undefined AND invoiceDateConfirmed === undefined)
+ * the function falls back to the legacy invoice-only behaviour. Once a
+ * caller starts providing either field the strict gate engages. New callers
+ * should always pass the confirmation fields.
+ *
  * The `today` parameter is accepted for interface stability but is no longer
- * used in the core check — the invoice-only rule does not depend on date
- * comparison. Month bucketing for period reporting is a separate concern
- * handled by getCosEffectiveDateAndSource().
+ * used in the core check — the rule does not depend on date comparison.
+ * Month bucketing for period reporting is a separate concern handled by
+ * getCosEffectiveDateAndSource().
  */
 export function isCanonicalCosRealised(input: CosLineInput): boolean {
   // 1. Admin override takes absolute precedence
@@ -60,13 +82,24 @@ export function isCanonicalCosRealised(input: CosLineInput): boolean {
   const isPlaceholder = hasInvoice && PLACEHOLDER_INVOICES.has(invoiceTrimmed.toLowerCase());
 
   if (hasInvoice && !isPlaceholder) {
-    // 2a. If amountExVat is provided and is zero, the line is not realised
-    //     (no actual cost = nothing to realise). When amountExVat is not provided
-    //     (undefined/null), we skip this check for backward compatibility.
+    // 2a. Zero-amount lines are not realised (no actual cost = nothing to
+    //     realise). Skipped when amountExVat is not provided.
     if (input.amountExVat !== undefined && input.amountExVat !== null) {
       const amount = typeof input.amountExVat === "number" ? input.amountExVat : parseFloat(String(input.amountExVat));
       if (!isNaN(amount) && amount === 0) return false;
     }
+
+    // 2b. NEW: invoice-date-confirmed gate. Black font OR confirmed=true.
+    //     If neither field is supplied the caller is on the legacy contract
+    //     and we fall through to the old "invoice alone = realised" rule.
+    const fontColorProvided = input.invoiceDateFontColor !== undefined;
+    const confirmedProvided = input.invoiceDateConfirmed !== undefined;
+    if (fontColorProvided || confirmedProvided) {
+      const blackFont = String(input.invoiceDateFontColor ?? "").toLowerCase() === "black";
+      const confirmedFlag = input.invoiceDateConfirmed === true;
+      return blackFont || confirmedFlag;
+    }
+
     return true;
   }
 

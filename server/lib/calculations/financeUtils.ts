@@ -136,6 +136,11 @@ export function isCosRealised(exp: {
     expensePoNumber: exp.expensePoNumber ?? null,
     paymentDate: null,
     today: new Date().toISOString().slice(0, 10),
+    // Forward the invoice-date-confirmed signals so the canonical check can
+    // enforce the black-font gate. When both are nullish the canonical
+    // function falls back to the legacy invoice-only rule for safety.
+    invoiceDateFontColor: exp.invoiceDateFontColor ?? null,
+    invoiceDateConfirmed: exp.invoiceDateConfirmed ?? null,
   });
 }
 

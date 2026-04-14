@@ -133,26 +133,43 @@ export function getCosEffectiveDateAndSource(expense: ExpenseLikeRow): { date: s
   return { date: null, source: null };
 }
 
+/**
+ * Cash Outflow amount + bucket per the canonical business spec:
+ *
+ *   - Source amount: ALWAYS NCL.amount_ex_vat (= expenseActualTotal).
+ *     The legacy budget_total fallback was over-counting cashflow outflows
+ *     by ~R 47M because budget figures on un-approved lines were materially
+ *     larger than the actual cost line value. Cashflow tracks money flowing
+ *     out of the bank; budget is a planning artefact, not an outflow.
+ *
+ *   - Bucket type:
+ *       - "actual"   = the line has a paid_date AND that paid_date is
+ *                      confirmed (paymentDateConfirmed === true OR
+ *                      paymentDateFontColor === 'black'). Black font is the
+ *                      finance team's signal that the payment has actually
+ *                      cleared.
+ *       - "forecast" = everything else (paid_date present but red font, or
+ *                      only a forecast_payment_date / invoice date).
+ *
+ *   - amountSource is preserved on the type signature for downstream
+ *     diagnostics, but it now always reports "expenseActualTotal".
+ */
 export function getOutflowAmountBreakdown(expense: ExpenseLikeRow): {
   amount: number;
   type: "actual" | "forecast";
   amountSource: "expenseActualTotal" | "budgetTotal";
 } {
   const actualAmount = Number.parseFloat(expense.expenseActualTotal ?? "");
-  const budgetAmount = Number.parseFloat(expense.budgetTotal ?? "");
-  const approved = isApprovedExpenseRow(expense);
+  const amount = Number.isFinite(actualAmount) ? actualAmount : 0;
 
-  if (approved && Number.isFinite(actualAmount)) {
-    return { amount: actualAmount, type: "actual", amountSource: "expenseActualTotal" };
-  }
+  const hasPaidDate = !!(expense.expensePaymentDate && String(expense.expensePaymentDate).trim());
+  const paidDateConfirmed = expense.paymentDateConfirmed === true
+    || String(expense.paymentDateFontColor ?? "").toLowerCase() === "black";
+  const isActual = hasPaidDate && paidDateConfirmed;
 
-  if (Number.isFinite(budgetAmount)) {
-    return { amount: budgetAmount, type: "forecast", amountSource: "budgetTotal" };
-  }
-
-  if (Number.isFinite(actualAmount)) {
-    return { amount: actualAmount, type: approved ? "actual" : "forecast", amountSource: "expenseActualTotal" };
-  }
-
-  return { amount: 0, type: approved ? "actual" : "forecast", amountSource: "budgetTotal" };
+  return {
+    amount,
+    type: isActual ? "actual" : "forecast",
+    amountSource: "expenseActualTotal",
+  };
 }

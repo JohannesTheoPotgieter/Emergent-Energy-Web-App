@@ -74,6 +74,8 @@ export function isCosRealised(line: {
   expenseInvoicedDate: string | null;
   expensePoNumber?: string | null;
   paymentDate?: string | null;
+  invoiceDateFontColor?: string | null;
+  invoiceDateConfirmed?: boolean | null;
 }, today: string): boolean {
   return _isCanonical({
     status: line.status,
@@ -84,6 +86,8 @@ export function isCosRealised(line: {
     expensePoNumber: line.expensePoNumber ?? null,
     paymentDate: line.paymentDate ?? null,
     today,
+    invoiceDateFontColor: line.invoiceDateFontColor ?? null,
+    invoiceDateConfirmed: line.invoiceDateConfirmed ?? null,
   });
 }
 

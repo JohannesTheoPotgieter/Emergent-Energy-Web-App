@@ -29,6 +29,8 @@ function isCosRealisedCheck(exp: any): boolean {
     expensePoNumber: exp.expensePoNumber ?? exp.poNumber ?? null,
     paymentDate: exp.expensePaymentDate ?? exp.paymentDate ?? exp.paidDate ?? null,
     today: new Date().toISOString().slice(0, 10),
+    invoiceDateFontColor: exp.invoiceDateFontColor ?? null,
+    invoiceDateConfirmed: exp.invoiceDateConfirmed ?? null,
   });
 }
 
@@ -42,6 +44,8 @@ function isEffectivelyRealisedLocal(exp: any, monthKey: string | null, currentMo
     expensePoNumber: exp.expensePoNumber ?? exp.poNumber ?? null,
     paymentDate: exp.expensePaymentDate ?? exp.paymentDate ?? exp.paidDate ?? null,
     today: new Date().toISOString().slice(0, 10),
+    invoiceDateFontColor: exp.invoiceDateFontColor ?? null,
+    invoiceDateConfirmed: exp.invoiceDateConfirmed ?? null,
   });
 }
 

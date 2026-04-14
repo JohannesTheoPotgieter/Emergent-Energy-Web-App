@@ -244,7 +244,7 @@ export async function generatePmReportData(month: string) {
     const lines = costByProject.get(p.id) || [];
     const budgetTotal = lines.reduce((s: any, c: any) => s + toNum(c.budgetTotal), 0);
     const actualCost = lines.reduce((s: any, c: any) => s + toNum(c.amountExVat), 0);
-    // COS realised: canonical invoice-only rule
+    // COS realised: invoice + invoice-date confirmed (black font) per canonical check
     const cosRealised = lines.filter((c: any) => isCanonicalCosRealised({
       status: null,
       cosStatusOverride: c.cosStatusOverride ?? null,
@@ -254,6 +254,8 @@ export async function generatePmReportData(month: string) {
       expensePoNumber: c.poNumber ?? null,
       paymentDate: c.paidDate ?? null,
       today: monthEndStr,
+      invoiceDateFontColor: c.invoiceDateFontColor ?? null,
+      invoiceDateConfirmed: c.invoiceDateConfirmed ?? null,
     })).reduce((s: any, c: any) => s + toNum(c.amountExVat), 0);
     // Cash paid: confirmed payment date
     const paid = lines.filter((c: any) => c.paidDateConfirmed).reduce((s: any, c: any) => s + toNum(c.amountExVat), 0);
@@ -267,6 +269,8 @@ export async function generatePmReportData(month: string) {
       expensePoNumber: c.poNumber ?? null,
       paymentDate: c.paidDate ?? null,
       today: monthEndStr,
+      invoiceDateFontColor: c.invoiceDateFontColor ?? null,
+      invoiceDateConfirmed: c.invoiceDateConfirmed ?? null,
     })).reduce((s: any, c: any) => s + toNum(c.amountExVat), 0);
     const costsThisMonth = lines.filter((c: any) => isDateStrInMonth(c.invoiceDate, monthStartStr, monthEndStr)).reduce((s: any, c: any) => s + toNum(c.amountExVat), 0);
     return {
