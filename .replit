@@ -9,6 +9,10 @@ channel = "stable-24_05"
 localPort = 5000
 externalPort = 80
 
+[[ports]]
+localPort = 8888
+externalPort = 3000
+
 [env]
 # IMPORTANT: Do NOT add secret values to this file. .replit is committed to git.
 # All secrets (SESSION_SECRET, JWT_SECRET, TOKEN_ENCRYPTION_KEY, AZURE_CLIENT_SECRET,
