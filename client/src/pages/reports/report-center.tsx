@@ -14,6 +14,7 @@ import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { GateReports } from "@/components/reports/gate-reports";
 import { OperationalReports } from "@/components/reports/operational-reports";
 import { QualityComplianceReports } from "@/components/reports/quality-compliance-reports";
+import { ReportTrustNotice } from "@/components/reports/ReportTrustNotice";
 
 type ReportType = {
   key: string;
@@ -98,6 +99,7 @@ export default function ReportCenterPage() {
   });
 
   const cron = scheduleType === "daily" ? `0 ${scheduleTime.split(":")[1]} ${scheduleTime.split(":")[0]} * * *` : scheduleType === "weekly" ? `0 ${scheduleTime.split(":")[1]} ${scheduleTime.split(":")[0]} * * 1` : `0 ${scheduleTime.split(":")[1]} ${scheduleTime.split(":")[0]} 1 * *`;
+  const lastHistoryAt = (history?.items || []).map((item) => item.created_at).filter(Boolean).sort().at(-1);
 
   return (
     <PageShell>
@@ -106,8 +108,12 @@ export default function ReportCenterPage() {
         title="Report Centre"
         description="Generate, schedule, and download advanced reports across all departments."
       />
+      <ReportTrustNotice
+        lastUpdatedAt={lastHistoryAt}
+        sourceLabel="Report catalog + report history APIs"
+        note="Use this centre for real generation and scheduling actions. Summary cards are navigation shortcuts, not KPI values."
+      />
 
-      {/* Wireframe: Report Centre overview dashboard */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card className="border-emerald-200">
           <CardContent className="px-4 py-3 flex items-center gap-3">
