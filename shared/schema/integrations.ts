@@ -10,7 +10,7 @@
  * transitions (healthy -> failing) to the notification engine.
  */
 
-import { pgTable, text, integer, timestamp, serial, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, timestamp, serial, jsonb, decimal, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -90,6 +90,94 @@ export const insertIntegrationRunEventSchema = createInsertSchema(integrationRun
 } as any);
 export type InsertIntegrationRunEvent = z.infer<typeof insertIntegrationRunEventSchema>;
 export type IntegrationRunEvent = typeof integrationRunEvents.$inferSelect;
+
+// ===================== QUICKBOOKS INVOICE LINKS =====================
+
+/**
+ * Link table between app financial rows (normalized cost lines / revenue
+ * lines) and QuickBooks entities (Bill / Invoice). One row = one
+ * confirmed link. Used by the COS reconciliation tab on project detail
+ * and by the global QuickBooks invoice linking page under Finance.
+ *
+ * Snapshot columns (qb_*) store the QB values at link time so the
+ * reconciliation view still renders if QuickBooks is briefly
+ * unreachable.
+ */
+export const QUICKBOOKS_APP_ENTITY_TYPES = ["cost_line", "revenue_line"] as const;
+export type QuickBooksAppEntityType = (typeof QUICKBOOKS_APP_ENTITY_TYPES)[number];
+
+export const QUICKBOOKS_QB_ENTITY_TYPES = ["bill", "invoice"] as const;
+export type QuickBooksQbEntityType = (typeof QUICKBOOKS_QB_ENTITY_TYPES)[number];
+
+export const QUICKBOOKS_LINK_MATCH_TYPES = [
+  "manual",
+  "auto_exact",
+  "auto_fuzzy",
+] as const;
+export type QuickBooksLinkMatchType = (typeof QUICKBOOKS_LINK_MATCH_TYPES)[number];
+
+export const quickbooksInvoiceLinks = pgTable(
+  "quickbooks_invoice_links",
+  {
+    id: serial("id").primaryKey(),
+    /** Optional project scope — denormalised for fast per-project lookup. */
+    projectId: integer("project_id"),
+    /** 'cost_line' | 'revenue_line' */
+    appEntityType: text("app_entity_type").notNull(),
+    /** FK to normalized_cost_lines.id or normalized_revenue_lines.id */
+    appEntityId: integer("app_entity_id").notNull(),
+    /** 'bill' | 'invoice' */
+    qbEntityType: text("qb_entity_type").notNull(),
+    /** QuickBooks entity ID (e.g. Bill.Id or Invoice.Id). */
+    qbEntityId: text("qb_entity_id").notNull(),
+    /** QuickBooks realmId this link belongs to. */
+    qbRealmId: text("qb_realm_id").notNull(),
+    /** Denormalised snapshot — QB doc number at link time. */
+    qbDocNumber: text("qb_doc_number"),
+    /** Denormalised snapshot — QB transaction date at link time. */
+    qbTxnDate: text("qb_txn_date"),
+    /** Denormalised snapshot — QB total amount at link time. */
+    qbAmount: decimal("qb_amount", { precision: 15, scale: 2 }),
+    /** Denormalised snapshot — QB counterparty (vendor / customer) name. */
+    qbCounterpartyName: text("qb_counterparty_name"),
+    /** 'manual' | 'auto_exact' | 'auto_fuzzy' */
+    matchType: text("match_type").notNull().default("manual"),
+    /** Free-form note the confirming user can leave. */
+    notes: text("notes"),
+    /** User who confirmed / created the link. */
+    confirmedBy: integer("confirmed_by"),
+    confirmedAt: timestamp("confirmed_at").notNull().defaultNow(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at"),
+  },
+  (table) => ({
+    // Prevent duplicate links between the same app row and the same QB entity.
+    uniqueLink: uniqueIndex("quickbooks_invoice_links_unique_idx").on(
+      table.appEntityType,
+      table.appEntityId,
+      table.qbEntityType,
+      table.qbEntityId,
+      table.qbRealmId,
+    ),
+    projectIdx: index("quickbooks_invoice_links_project_idx").on(table.projectId),
+    appEntityIdx: index("quickbooks_invoice_links_app_entity_idx").on(
+      table.appEntityType,
+      table.appEntityId,
+    ),
+  }),
+);
+
+export const insertQuickBooksInvoiceLinkSchema = createInsertSchema(
+  quickbooksInvoiceLinks,
+).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  deletedAt: true,
+} as any);
+export type InsertQuickBooksInvoiceLink = z.infer<typeof insertQuickBooksInvoiceLinkSchema>;
+export type QuickBooksInvoiceLink = typeof quickbooksInvoiceLinks.$inferSelect;
 
 // ===================== SEED LIST =====================
 
