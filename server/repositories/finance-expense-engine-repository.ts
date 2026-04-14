@@ -1,8 +1,8 @@
 import { eq, and, isNotNull, isNull } from "drizzle-orm";
 import { softCloseByProjectName } from "../lib/temporal-helpers";
-import { getExpenseBusinessKey, selectWinningExpenseRows } from "../lib/expense-row-selector";
+import { selectWinningExpenseRows } from "../lib/expense-row-selector";
 import {
-  normalizedCostLines, programExpense, projectInfo,
+  normalizedCostLines, projectInfo,
   type ProgramExpense, type InsertProgramExpense,
 } from "@shared/schema";
 import { db } from "../db";
@@ -22,56 +22,26 @@ export class FinanceExpenseEngineRepository {
    * Core implementation for getAllProgramExpenses — called by DatabaseStorage
    * through the cache wrapper. DO NOT call this directly from routes.
    *
-   * Reads normalized_cost_lines + program_expense, adapts NCL rows,
-   * overlays 10 budget/date fields from PE winners onto adapted NCL rows,
-   * then runs deterministic winner selection across the combined set.
+   * Reads normalized_cost_lines only. The legacy program_expense overlay
+   * was retired in the PE/PI cutover; every budget/admin-override value
+   * lives on NCL directly after migration 20260414_backfill_ncl_budget_from_pe.sql.
    */
   async fetchAllProgramExpenses(): Promise<any[]> {
     const { adaptCostToExpense, createNameResolver } = await import("../lib/data-merge");
-    const [costLines, piRows, peRows] = await Promise.all([
+    const [costLines, piRows] = await Promise.all([
       this.dbInstance.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
       this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo),
-      this.dbInstance.select().from(programExpense).where(isNull(programExpense.effectiveTo)),
     ]);
     const resolve = createNameResolver(piRows.map((r: any) => r.projectName));
 
     const adaptedNormalized = costLines.map((c: any) => adaptCostToExpense(c, resolve(c.projectName)));
-    const legacyAdapted = peRows.map((pe: any) => ({
-      ...pe,
-      projectName: resolve(pe.projectName),
-      _cosOverrideStatus: (pe as any).cosStatusOverride ?? null,
-      _cosOverrideBy: (pe as any).cosStatusOverrideBy ?? null,
-      _cosOverrideAt: (pe as any).cosStatusOverrideAt ?? null,
-      _cosOverrideReason: (pe as any).cosStatusOverrideReason ?? null,
-      _isNormalized: false,
-    }));
 
-    // Preserve budget/date override overlays from legacy table where present.
-    // 10-field overlay: budget (4) + forecast dates (2) + admin date overrides (4).
-    const legacySelection = selectWinningExpenseRows(legacyAdapted);
-    const legacyByKey = new Map<string, any>(
-      legacySelection.winners.map((pe: any) => [getExpenseBusinessKey(pe), pe]),
-    );
-    for (const item of adaptedNormalized) {
-      const pe = legacyByKey.get(getExpenseBusinessKey(item));
-      if (!pe) continue;
-      if (pe.budgetTotal != null) item.budgetTotal = String(pe.budgetTotal);
-      if (pe.budgetQty != null) item.budgetQty = String(pe.budgetQty);
-      if (pe.budgetRateUnit != null) item.budgetRateUnit = String(pe.budgetRateUnit);
-      if (pe.budgetCosTotal != null) item.budgetCosTotal = String(pe.budgetCosTotal);
-      if (pe.forecastPaymentDate != null) item.forecastPaymentDate = pe.forecastPaymentDate;
-      if (pe.computedForecastPaymentDate != null) item.computedForecastPaymentDate = pe.computedForecastPaymentDate;
-      if (pe.adminDateOverride != null) item.adminDateOverride = pe.adminDateOverride;
-      if (pe.adminDateOverrideReason != null) item.adminDateOverrideReason = pe.adminDateOverrideReason;
-      if (pe.adminDateOverrideBy != null) item.adminDateOverrideBy = pe.adminDateOverrideBy;
-      if (pe.adminDateOverrideAt != null) item.adminDateOverrideAt = pe.adminDateOverrideAt;
-    }
-
-    // One deterministic winner per business line across normalized + legacy rows.
-    const selected = selectWinningExpenseRows([...adaptedNormalized, ...legacyAdapted]);
+    // Deterministic winner per business line across normalized rows (handles
+    // any residual duplicates from temporal history or re-imports).
+    const selected = selectWinningExpenseRows(adaptedNormalized);
     console.log(
       `[getAllProgramExpenses] Selected winners: ${selected.diagnostics.totalInput} → ${selected.diagnostics.winners}` +
-      ` (removed ${selected.diagnostics.duplicatesRemoved} duplicates, normalized winners ${selected.diagnostics.normalizedWinners}, legacy winners ${selected.diagnostics.legacyWinners})`,
+      ` (removed ${selected.diagnostics.duplicatesRemoved} duplicates)`,
     );
     return selected.winners;
   }
@@ -101,17 +71,14 @@ export class FinanceExpenseEngineRepository {
   }
 
   /**
-   * Per-project expense read with carry-forward and 6-field PE overlay.
-   * DIFFERS from fetchAllProgramExpenses: only 6 overlay fields (no adminDateOverride*),
-   * plus carry-forward from closed NCL rows.
+   * Per-project expense read with carry-forward from closed NCL rows.
+   * The legacy program_expense overlay was retired in the PE/PI cutover;
+   * budget columns now come directly from normalized_cost_lines.
    */
   async getProgramExpensesByProject(projectName: string): Promise<any[]> {
     const { adaptCostToExpense } = await import("../lib/data-merge");
     const costLines = await this.dbInstance.select().from(normalizedCostLines)
       .where(and(eq(normalizedCostLines.projectName, projectName), isNull(normalizedCostLines.effectiveTo)));
-
-    const peRows = await this.dbInstance.select().from(programExpense)
-      .where(and(eq(programExpense.projectName, projectName), isNull(programExpense.effectiveTo)));
 
     const adapted = costLines.map((c: any) => adaptCostToExpense(c, projectName));
 
@@ -150,33 +117,7 @@ export class FinanceExpenseEngineRepository {
       }
     }
 
-    const legacyAdapted = peRows.map((pe: any) => ({
-      ...pe,
-      _cosOverrideStatus: (pe as any).cosStatusOverride ?? null,
-      _cosOverrideBy: (pe as any).cosStatusOverrideBy ?? null,
-      _cosOverrideAt: (pe as any).cosStatusOverrideAt ?? null,
-      _cosOverrideReason: (pe as any).cosStatusOverrideReason ?? null,
-      _isNormalized: false,
-    }));
-    const legacySelection = selectWinningExpenseRows(legacyAdapted);
-    const budgetByKey = new Map<string, any>(
-      legacySelection.winners.map((pe: any) => [getExpenseBusinessKey(pe), pe]),
-    );
-
-    // 6-field overlay only — NO adminDateOverride* fields (differs from fetchAllProgramExpenses).
-    for (const item of adapted) {
-      const pe = budgetByKey.get(getExpenseBusinessKey(item));
-      if (pe) {
-        if (pe.budgetTotal != null) item.budgetTotal = String(pe.budgetTotal);
-        if (pe.budgetQty != null) item.budgetQty = String(pe.budgetQty);
-        if (pe.budgetRateUnit != null) item.budgetRateUnit = String(pe.budgetRateUnit);
-        if (pe.budgetCosTotal != null) item.budgetCosTotal = String(pe.budgetCosTotal);
-        if (pe.forecastPaymentDate != null) item.forecastPaymentDate = pe.forecastPaymentDate;
-        if (pe.computedForecastPaymentDate != null) item.computedForecastPaymentDate = pe.computedForecastPaymentDate;
-      }
-    }
-
-    const selected = selectWinningExpenseRows([...adapted, ...legacyAdapted]);
+    const selected = selectWinningExpenseRows(adapted);
     return selected.winners;
   }
 
