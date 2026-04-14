@@ -11,7 +11,7 @@
 
 import crypto from "crypto";
 import type { Express, Request, Response } from "express";
-import { requireAuth } from "./auth-context";
+import { requireAuth, getEffectiveUser } from "./auth-context";
 import {
   disconnectQuickBooks,
   exchangeCodeForTokens,
@@ -24,6 +24,18 @@ import {
   getQuickBooksConnectionStatus,
   getVendors,
 } from "./services/quickbooks-service";
+import {
+  billRawToSummary,
+  confirmCostLineLink,
+  createOrUpdateLink,
+  fetchProjectLinks,
+  listAllLinks,
+  markCostLineRealised,
+  runProjectCostReconciliation,
+  searchCostLines,
+  softDeleteLink,
+  type QuickBooksBillSummary,
+} from "./services/quickbooks-reconciliation-service";
 
 type SessionWithQbState = Request["session"] & { qbState?: string };
 
@@ -182,4 +194,145 @@ export function registerQuickBooksRoutes(app: Express): void {
       notConnectedResponse(res, err);
     }
   });
+
+  // ---------- Reconciliation (COS: QB Bills ↔ normalized_cost_lines) ----------
+
+  app.get(
+    "/api/quickbooks/projects/:projectId/cos-reconciliation",
+    requireAuth,
+    async (req, res) => {
+      try {
+        const projectId = Number(req.params.projectId);
+        if (!Number.isFinite(projectId) || projectId <= 0) {
+          res.status(400).json({ error: "bad_request", message: "Invalid projectId" });
+          return;
+        }
+        const startDate = typeof req.query.startDate === "string" ? req.query.startDate : undefined;
+        const endDate = typeof req.query.endDate === "string" ? req.query.endDate : undefined;
+        const result = await runProjectCostReconciliation(projectId, { startDate, endDate });
+        res.json(result);
+      } catch (err) {
+        notConnectedResponse(res, err);
+      }
+    },
+  );
+
+  app.get("/api/quickbooks/projects/:projectId/links", requireAuth, async (req, res) => {
+    try {
+      const projectId = Number(req.params.projectId);
+      if (!Number.isFinite(projectId) || projectId <= 0) {
+        res.status(400).json({ error: "bad_request", message: "Invalid projectId" });
+        return;
+      }
+      const links = await fetchProjectLinks(projectId);
+      res.json({ links });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to fetch links";
+      res.status(500).json({ error: "quickbooks_links_failed", message });
+    }
+  });
+
+  // ---------- Global links (cross-project) ----------
+
+  app.get("/api/quickbooks/links", requireAuth, async (req, res) => {
+    try {
+      const limit = req.query.limit ? Math.min(Number(req.query.limit), 1000) : 500;
+      const links = await listAllLinks(Number.isFinite(limit) ? limit : 500);
+      res.json({ links });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to list links";
+      res.status(500).json({ error: "quickbooks_links_failed", message });
+    }
+  });
+
+  app.post("/api/quickbooks/links", requireAuth, async (req, res) => {
+    try {
+      const body = req.body ?? {};
+      const costLineId = Number(body.costLineId ?? body.appEntityId);
+      const projectId = body.projectId !== undefined && body.projectId !== null ? Number(body.projectId) : null;
+      if (!Number.isFinite(costLineId) || costLineId <= 0) {
+        res.status(400).json({ error: "bad_request", message: "costLineId is required" });
+        return;
+      }
+
+      // Accept either a raw QB bill object, or a pre-summarised snapshot.
+      let billSummary: QuickBooksBillSummary | null = null;
+      if (body.bill && typeof body.bill === "object") {
+        billSummary =
+          typeof body.bill.Id !== "undefined"
+            ? billRawToSummary(body.bill)
+            : (body.bill as QuickBooksBillSummary);
+      }
+
+      if (!billSummary || !billSummary.id) {
+        res.status(400).json({ error: "bad_request", message: "bill (with id) is required" });
+        return;
+      }
+
+      const user = getEffectiveUser(req);
+      const link = await confirmCostLineLink({
+        projectId,
+        costLineId,
+        bill: billSummary,
+        matchType: body.matchType ?? "manual",
+        notes: body.notes ?? null,
+        confirmedBy: user?.id ?? null,
+      });
+
+      res.status(201).json({ link });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to create link";
+      res.status(500).json({ error: "quickbooks_link_failed", message });
+    }
+  });
+
+  app.delete("/api/quickbooks/links/:id", requireAuth, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) {
+        res.status(400).json({ error: "bad_request", message: "Invalid link id" });
+        return;
+      }
+      await softDeleteLink(id);
+      res.json({ ok: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to delete link";
+      res.status(500).json({ error: "quickbooks_link_delete_failed", message });
+    }
+  });
+
+  app.post("/api/quickbooks/cost-lines/:id/mark-realised", requireAuth, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) {
+        res.status(400).json({ error: "bad_request", message: "Invalid cost line id" });
+        return;
+      }
+      const updated = await markCostLineRealised(id);
+      if (!updated) {
+        res.status(404).json({ error: "not_found", message: "Cost line not found" });
+        return;
+      }
+      res.json({ costLine: updated });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to mark realised";
+      res.status(500).json({ error: "quickbooks_mark_realised_failed", message });
+    }
+  });
+
+  app.get("/api/quickbooks/cost-lines/search", requireAuth, async (req, res) => {
+    try {
+      const q = typeof req.query.q === "string" ? req.query.q : "";
+      const limit = req.query.limit ? Math.min(Number(req.query.limit), 200) : 50;
+      const costLines = await searchCostLines(q, Number.isFinite(limit) ? limit : 50);
+      res.json({ costLines });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Search failed";
+      res.status(500).json({ error: "quickbooks_search_failed", message });
+    }
+  });
+
+  // Suppress unused-import false-positives — createOrUpdateLink is the shared
+  // helper used by future endpoints (revenue-line reconciliation).
+  void createOrUpdateLink;
 }

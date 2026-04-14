@@ -173,6 +173,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "adminBackfill", path: "/admin/data-migration-status", label: "Data Migration Status", iconKey: "Database", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminBackfillPage" },
   { id: "adminPipedrive", path: "/admin/pipedrive", label: "Pipedrive Integration", iconKey: "Plug", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminPipedrivePage" },
   { id: "adminQuickBooks", path: "/admin/quickbooks", label: "QuickBooks Integration", iconKey: "Plug", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminQuickBooksPage" },
+  { id: "financeQuickBooksLinks", path: "/finance/quickbooks-links", label: "QB Invoice Linking", iconKey: "Plug", navGroup: "SYSTEM", permissionEntity: "financials", showInSidebar: false, routeComponentKey: "FinanceQuickBooksLinksPage" },
   // Gates workspace (Prompt 2)
   { id: "gatesPipeline", path: "/gates", label: "Gates Pipeline", iconKey: "Milestone", navGroup: "GATES", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "GatesPipelinePage" },
   { id: "gatesBlocked", path: "/gates/blocked", label: "Blocked Gates", iconKey: "ShieldAlert", navGroup: "GATES", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "GatesBlockedPage" },
