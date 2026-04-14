@@ -651,20 +651,6 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
   // REMOVED: /api/expenditure/overrides, /api/expense-task-links, /api/expenses duplicates.
   // Canonical routes now in finance-routes.ts
 
-  // ==================== EXPENDITURE BREAKDOWN COMPOSITE API ====================
-
-  app.patch("/api/expenditure/font-color-toggle", requireAuth, async (req, res) => {
-    try {
-      const { projectName } = req.query;
-      if (!projectName || typeof projectName !== 'string') {
-        return res.status(400).json({ error: "Project name required", message: "Project name is required" });
-      }
-      res.json([]);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch revenue tracking overrides", message: "Failed to fetch revenue tracking overrides" });
-    }
-  });
-
   app.post("/api/revenue-tracking/overrides", requireAuth, requireAdmin, requirePermission('financials', 'edit'), async (req, res) => {
     try {
       const { overrides, overrideCategory, overrideComment } = req.body;

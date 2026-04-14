@@ -169,39 +169,5 @@ export function registerQualityNcrRoutes(app: Express) {
     }
   });
 
-  app.get("/api/quality/dashboard", requireAuth, async (req: Request, res: Response, next) => {
-    if (!req.query.project_id) return next();
-    try {
-      await ensureNcrTables();
-      const projectId = Number(req.query.project_id);
-      const isPostgres = getDbMode() === "postgres";
-      const daysDiffExpr = isPostgres
-        ? "EXTRACT(EPOCH FROM (closed_at::timestamp - created_at::timestamp)) / 86400"
-        : "julianday(closed_at) - julianday(created_at)";
-      const nowDiffExpr = isPostgres
-        ? "EXTRACT(EPOCH FROM (NOW() - created_at::timestamp)) / 86400"
-        : "julianday('now') - julianday(created_at)";
-      const monthExpr = isPostgres
-        ? "TO_CHAR(created_at::timestamp, 'YYYY-MM')"
-        : "substr(created_at,1,7)";
-
-      const bySeverity = await db.execute(sql`SELECT severity, COUNT(*) as count FROM ncr_reports WHERE project_id = ${projectId} AND status <> 'closed' GROUP BY severity`);
-      const avgClose = await db.execute(sql`SELECT AVG(${sql.raw(daysDiffExpr)}) as avg_days FROM ncr_reports WHERE project_id = ${projectId} AND closed_at IS NOT NULL`);
-      const trend = await db.execute(sql`SELECT ${sql.raw(monthExpr)} as month, COUNT(*) as opened, SUM(CASE WHEN status='closed' THEN 1 ELSE 0 END) as closed FROM ncr_reports WHERE project_id = ${projectId} GROUP BY ${sql.raw(monthExpr)} ORDER BY month ASC`);
-      const openCount = Number(((bySeverity as any).rows || []).reduce((sum: number, r: any) => sum + Number(r.count || 0), 0));
-      const slaCompliant = await db.execute(sql`SELECT COUNT(*) as total, SUM(CASE WHEN (status='closed' AND (${sql.raw(daysDiffExpr)}) <= 30) OR (status<>'closed' AND (${sql.raw(nowDiffExpr)}) <= 30) THEN 1 ELSE 0 END) as compliant FROM ncr_reports WHERE project_id = ${projectId}`);
-      const total = Number((slaCompliant as any).rows?.[0]?.total || 0);
-      const compliant = Number((slaCompliant as any).rows?.[0]?.compliant || 0);
-      res.json({
-        openNcrsBySeverity: (bySeverity as any).rows || [],
-        averageTimeToCloseDays: Number((avgClose as any).rows?.[0]?.avg_days || 0),
-        ncrTrend: (trend as any).rows || [],
-        inspectionPassRate: Math.max(60, 100 - openCount * 3),
-        slaCompliancePercentage: total > 0 ? Math.round((compliant / total) * 100) : 100,
-      });
-    } catch (err) {
-      console.error("[QualityNCR] Failed to fetch dashboard:", err);
-      res.status(500).json({ error: "Failed to fetch quality dashboard" });
-    }
-  });
+  // /api/quality/dashboard is owned by quality-routes.ts.
 }

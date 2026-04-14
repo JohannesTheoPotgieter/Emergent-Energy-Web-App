@@ -30,6 +30,7 @@
     "encrypt-bank-details": "tsx scripts/encrypt-existing-bank-details.ts",
     "check:redirects": "tsx scripts/check-redirect-chains.ts",
     "check:routes-migration": "tsx scripts/check-routes-migration.ts",
+    "check:duplicate-routes": "tsx scripts/check-duplicate-routes.ts",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
