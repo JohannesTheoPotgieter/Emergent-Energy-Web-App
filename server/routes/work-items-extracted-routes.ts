@@ -1,8 +1,7 @@
 /**
  * Work Items Routes — Extracted from server/routes.ts (Phase 4a)
  *
- * 7 handlers:
- *   GET    /api/tasks
+ * 6 handlers:
  *   POST   /api/work-items/delete
  *   POST   /api/work-items/restore
  *   GET    /api/work-items/deleted
@@ -13,7 +12,6 @@
 
 import type { Express } from "express";
 import { paramStr } from "../lib/req-params";
-import { storage } from "../storage";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { requireAuth } from "../auth-context";
@@ -21,43 +19,6 @@ import { requireAdmin } from "../middleware/requireAdmin";
 import { logAuditFromReq } from "../audit-logger";
 
 export function registerWorkItemsExtractedRoutes(app: Express): void {
-
-  // ==================== TASKS (LEGACY READ) ====================
-
-  app.get("/api/tasks", requireAuth, async (req, res) => {
-    try {
-      // Strip internal fields from task responses
-      const stripTask = ({ sourceSheet, rowLocator, ...rest }: any) => rest;
-
-      const { projectId } = req.query;
-      if (projectId && typeof projectId === 'string') {
-        const tasks = await storage.getTasksByProject(parseInt(projectId));
-        return res.json(tasks.map(stripTask));
-      }
-      const tasks = await storage.getAllTasks();
-
-      const user = (req as any).user;
-      const role = user?.role || "";
-      const FULL_ACCESS_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "ENGINEERING_MANAGER", "QUALITY_MANAGER", "CONSTRUCTION_MANAGER"];
-      if (FULL_ACCESS_ROLES.includes(role)) {
-        return res.json(tasks.map(stripTask));
-      }
-
-      const userId = user?.id || user?.userId;
-      const userName = (user?.name || "").toLowerCase();
-      const scopedTasks = tasks.filter((t: any) => {
-        if (t.ownerUserId === userId || t.createdBy === userId) return true;
-        const assignees = (t.assignees || "").toLowerCase();
-        if (userName && assignees.includes(userName)) return true;
-        const assigneeIds = t.assigneeUserIds || [];
-        if (Array.isArray(assigneeIds) && assigneeIds.includes(userId)) return true;
-        return false;
-      });
-      res.json(scopedTasks.map(stripTask));
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch tasks", message: "Failed to fetch tasks" });
-    }
-  });
 
   // ==================== WORK ITEMS ADMIN ====================
 

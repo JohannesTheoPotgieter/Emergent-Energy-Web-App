@@ -34,8 +34,6 @@ import {
 import { db } from "./db";
 import { eq } from "drizzle-orm";
 import {
-  stageDefinitions,
-  stageChecklistTemplates,
   projectStageInstances,
   projectStageRequirements,
   projectStageDecisions,
@@ -640,134 +638,8 @@ export function registerStageLifecycleRoutes(app: Express): void {
     },
   );
 
-  // ── Admin: Stage Definitions ────────────────────────────────
-
-  // GET /api/admin/stage-definitions
-  app.get(
-    "/api/admin/stage-definitions",
-    jwtAuth,
-    requireAuth,
-    requirePermission("stage_lifecycle", "view"),
-    async (_req: Request, res: Response) => {
-      try {
-        const definitions = await db
-          .select()
-          .from(stageDefinitions)
-          .orderBy(stageDefinitions.stageSequence);
-        res.json({ definitions });
-      } catch (error: unknown) {
-        const msg = error instanceof Error ? error.message : String(error);
-        res.status(500).json({ error: msg });
-      }
-    },
-  );
-
-  // PATCH /api/admin/stage-definitions/:id
-  app.patch(
-    "/api/admin/stage-definitions/:id",
-    jwtAuth,
-    requireAuth,
-    requirePermission("stage_lifecycle", "edit"),
-    async (req: Request, res: Response) => {
-      try {
-        const id = parseInt(p(req.params.id), 10);
-        if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
-        const { stageName, description, defaultOwnerRole, defaultApproverRole, isActive } = req.body;
-        const updateData: Record<string, any> = { updatedAt: new Date() };
-        if (stageName !== undefined) updateData.stageName = stageName;
-        if (description !== undefined) updateData.description = description;
-        if (defaultOwnerRole !== undefined) updateData.defaultOwnerRole = defaultOwnerRole;
-        if (defaultApproverRole !== undefined) updateData.defaultApproverRole = defaultApproverRole;
-        if (isActive !== undefined) updateData.isActive = isActive;
-
-        await db.update(stageDefinitions).set(updateData).where(eq(stageDefinitions.id, id));
-        const [updated] = await db.select().from(stageDefinitions).where(eq(stageDefinitions.id, id));
-        res.json({ definition: updated });
-      } catch (error: unknown) {
-        const msg = error instanceof Error ? error.message : String(error);
-        res.status(500).json({ error: msg });
-      }
-    },
-  );
-
-  // ── Admin: Checklist Templates ──────────────────────────────
-
-  // GET /api/admin/stage-checklist-templates
-  app.get(
-    "/api/admin/stage-checklist-templates",
-    jwtAuth,
-    requireAuth,
-    requirePermission("stage_lifecycle", "view"),
-    async (req: Request, res: Response) => {
-      try {
-        const stageCode = req.query.stageCode as string | undefined;
-        let query = db.select().from(stageChecklistTemplates);
-        if (stageCode) {
-          query = query.where(eq(stageChecklistTemplates.stageCode, stageCode)) as any;
-        }
-        const templates = await (query as any).orderBy(stageChecklistTemplates.stageCode, stageChecklistTemplates.sortOrder);
-        res.json({ templates });
-      } catch (error: unknown) {
-        const msg = error instanceof Error ? error.message : String(error);
-        res.status(500).json({ error: msg });
-      }
-    },
-  );
-
-  // POST /api/admin/stage-checklist-templates
-  app.post(
-    "/api/admin/stage-checklist-templates",
-    jwtAuth,
-    requireAuth,
-    requirePermission("stage_lifecycle", "create"),
-    async (req: Request, res: Response) => {
-      try {
-        const { stageCode, department, itemName, itemCode, blocksGate, sortOrder } = req.body;
-        if (!stageCode || !department || !itemName || !itemCode) {
-          return res.status(400).json({ error: "stageCode, department, itemName, itemCode required" });
-        }
-        const [template] = await db.insert(stageChecklistTemplates).values({
-          stageCode,
-          department,
-          itemName,
-          itemCode,
-          blocksGate: blocksGate ?? false,
-          sortOrder: sortOrder ?? 0,
-        }).returning();
-        res.status(201).json({ template });
-      } catch (error: unknown) {
-        const msg = error instanceof Error ? error.message : String(error);
-        res.status(500).json({ error: msg });
-      }
-    },
-  );
-
-  // PATCH /api/admin/stage-checklist-templates/:id
-  app.patch(
-    "/api/admin/stage-checklist-templates/:id",
-    jwtAuth,
-    requireAuth,
-    requirePermission("stage_lifecycle", "edit"),
-    async (req: Request, res: Response) => {
-      try {
-        const id = parseInt(p(req.params.id), 10);
-        if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
-        const { itemName, blocksGate, isActive, sortOrder } = req.body;
-        const updateData: Record<string, any> = { updatedAt: new Date() };
-        if (itemName !== undefined) updateData.itemName = itemName;
-        if (blocksGate !== undefined) updateData.blocksGate = blocksGate;
-        if (isActive !== undefined) updateData.isActive = isActive;
-        if (sortOrder !== undefined) updateData.sortOrder = sortOrder;
-
-        await db.update(stageChecklistTemplates).set(updateData).where(eq(stageChecklistTemplates.id, id));
-        const [updated] = await db.select().from(stageChecklistTemplates).where(eq(stageChecklistTemplates.id, id));
-        res.json({ template: updated });
-      } catch (error: unknown) {
-        const msg = error instanceof Error ? error.message : String(error);
-        res.status(500).json({ error: msg });
-      }
-    },
-  );
+  // Admin stage-definition and checklist-template endpoints are owned by
+  // server/routes/stage-admin-routes.ts to avoid duplicate registrations.
 
   // ── B1: Stage Gate Evidence History (audit trail, not blocker) ──
   // Returns the per-transition evidence snapshots for a project so post-

@@ -3,15 +3,10 @@
 //   Evidence Requests, Queries, Client Updates
 // ============================================================
 //
-// ⚠️  DEPRECATION NOTICE (2026-03-31):
-//   This route file is NOT registered in the application.
-//   registerCollaborationWorkflowRoutes() is never called.
-//   All active traffic uses registerStageCollaborationRoutes()
-//   from stage-collaboration-routes.ts.
-//
-//   The client commitment/update service functions have been
-//   cut over to canonical tables (project_client_*).
-//   This file is retained during the 90-day observation window.
+// Active module note (2026-04-14):
+//   This module owns client commitments, client updates, and project queries.
+//   stage-collaboration-routes.ts now only serves non-overlapping access and
+//   financial-close endpoints.
 // ============================================================
 
 import type { Express, Request, Response } from "express";
