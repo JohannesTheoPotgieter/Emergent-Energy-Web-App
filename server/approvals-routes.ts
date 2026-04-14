@@ -25,6 +25,59 @@ import { badRequest, forbidden, notFound, sendError } from "./lib/api-error";
 
 const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
 
+type ApprovalDomain = "finance" | "delivery" | "quality" | "engineering" | "hse";
+type CategoryPolicy = { domain: ApprovalDomain; approverRoles: string[] };
+
+const DOMAIN_DEFAULT_APPROVER_ROLES: Record<ApprovalDomain, string[]> = {
+  finance: ["COO_ADMIN", "CEO_ADMIN", "CFO", "PROGRAM_FINANCE_MANAGER"],
+  delivery: ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "PROJECT_MANAGER_SITE", "CONSTRUCTION_MANAGER"],
+  quality: ["COO_ADMIN", "CEO_ADMIN", "QUALITY_MANAGER"],
+  engineering: ["COO_ADMIN", "CEO_ADMIN", "ENGINEERING_MANAGER"],
+  hse: ["COO_ADMIN", "CEO_ADMIN", "HSE_MANAGER"],
+};
+
+const APPROVAL_CATEGORY_POLICY: Record<string, CategoryPolicy> = {
+  financial_review: { domain: "finance", approverRoles: ["COO_ADMIN", "CEO_ADMIN", "CFO", "PROGRAM_FINANCE_MANAGER"] },
+  budget: { domain: "finance", approverRoles: ["COO_ADMIN", "CEO_ADMIN", "CFO", "PROGRAM_FINANCE_MANAGER"] },
+  payment_release: { domain: "finance", approverRoles: ["COO_ADMIN", "CEO_ADMIN", "CFO", "PROGRAM_FINANCE_MANAGER"] },
+  procurement: { domain: "finance", approverRoles: ["COO_ADMIN", "CEO_ADMIN", "CFO", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"] },
+  po_approval: { domain: "finance", approverRoles: ["COO_ADMIN", "CEO_ADMIN", "CFO", "PROGRAM_FINANCE_MANAGER"] },
+  vo: { domain: "finance", approverRoles: ["COO_ADMIN", "CEO_ADMIN", "CFO", "PROGRAM_FINANCE_MANAGER", "PROGRAM_MANAGER"] },
+  gate: { domain: "delivery", approverRoles: ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "PROJECT_MANAGER_SITE", "CONSTRUCTION_MANAGER"] },
+  handover: { domain: "delivery", approverRoles: ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "PROJECT_MANAGER_SITE", "CONSTRUCTION_MANAGER"] },
+  handover_pack: { domain: "delivery", approverRoles: ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "PROJECT_MANAGER_SITE", "CONSTRUCTION_MANAGER"] },
+  quality_ncr: { domain: "quality", approverRoles: ["COO_ADMIN", "CEO_ADMIN", "QUALITY_MANAGER"] },
+  quality_inspection: { domain: "quality", approverRoles: ["COO_ADMIN", "CEO_ADMIN", "QUALITY_MANAGER"] },
+  technical_signoff: { domain: "engineering", approverRoles: ["COO_ADMIN", "CEO_ADMIN", "ENGINEERING_MANAGER"] },
+  engineering_review: { domain: "engineering", approverRoles: ["COO_ADMIN", "CEO_ADMIN", "ENGINEERING_MANAGER"] },
+  hse_incident: { domain: "hse", approverRoles: ["COO_ADMIN", "CEO_ADMIN", "HSE_MANAGER"] },
+  hse_corrective_action: { domain: "hse", approverRoles: ["COO_ADMIN", "CEO_ADMIN", "HSE_MANAGER"] },
+  sseg_application: { domain: "hse", approverRoles: ["COO_ADMIN", "CEO_ADMIN", "HSE_MANAGER", "SSEG_MANAGER"] },
+  sseg_document: { domain: "hse", approverRoles: ["COO_ADMIN", "CEO_ADMIN", "HSE_MANAGER", "SSEG_MANAGER"] },
+};
+
+function resolveApprovalPolicy(approval: { approvalCategory?: string | null; type?: string | null }): CategoryPolicy | null {
+  const categoryKey = String(approval.approvalCategory || "").trim().toLowerCase();
+  if (categoryKey && APPROVAL_CATEGORY_POLICY[categoryKey]) {
+    return APPROVAL_CATEGORY_POLICY[categoryKey];
+  }
+
+  const typeKey = String(approval.type || "").trim().toLowerCase();
+  if (typeKey && APPROVAL_CATEGORY_POLICY[typeKey]) {
+    return APPROVAL_CATEGORY_POLICY[typeKey];
+  }
+
+  if (!categoryKey && typeKey) {
+    if (typeKey.includes("quality")) return { domain: "quality", approverRoles: DOMAIN_DEFAULT_APPROVER_ROLES.quality };
+    if (typeKey.includes("engineering") || typeKey.includes("technical")) return { domain: "engineering", approverRoles: DOMAIN_DEFAULT_APPROVER_ROLES.engineering };
+    if (typeKey.includes("hse") || typeKey.includes("sseg")) return { domain: "hse", approverRoles: DOMAIN_DEFAULT_APPROVER_ROLES.hse };
+    if (typeKey.includes("budget") || typeKey.includes("payment") || typeKey.includes("procurement") || typeKey.includes("po")) return { domain: "finance", approverRoles: DOMAIN_DEFAULT_APPROVER_ROLES.finance };
+    if (typeKey.includes("gate") || typeKey.includes("handover") || typeKey.includes("delivery")) return { domain: "delivery", approverRoles: DOMAIN_DEFAULT_APPROVER_ROLES.delivery };
+  }
+
+  return null;
+}
+
 const APPROVAL_ROLE_TO_USER_ROLES: Record<string, string[]> = {
   QA_REVIEW: ["QUALITY_MANAGER"],
   TECHNICAL_SIGNOFF: ["ENGINEERING_MANAGER", "COO_ADMIN", "CEO_ADMIN"],
@@ -58,16 +111,45 @@ async function canCurrentUserDecideGeneralApproval(req: Request, approvalId: num
   if (!currentUser?.id) {
     return false;
   }
+  if (ADMIN_ROLES.includes(currentUser.role || "")) {
+    return true;
+  }
 
-  const authority = await evaluateAuthorityForRequest(req, "approvals", "approve");
-  if (authority.allowed) {
+  const [approvalRecord] = await db.select({
+    id: approvals.id,
+    assignedApprover: approvals.assignedApprover,
+    approvalCategory: approvals.approvalCategory,
+    type: approvals.type,
+  }).from(approvals).where(eq(approvals.id, approvalId)).limit(1);
+  if (!approvalRecord) {
+    return false;
+  }
+
+  if (approvalRecord.assignedApprover && approvalRecord.assignedApprover === currentUser.id) {
     return true;
   }
 
   const assignments = await getGeneralApprovalAssignments(approvalId);
-  return assignments.some((assignment) =>
-    assignment.assigneeType === "internal_user" && assignment.assigneeId === currentUser.id,
+  const explicitlyAssigned = assignments.some((assignment) =>
+    assignment.assigneeType === "internal_user" && assignment.assigneeId === currentUser.id
   );
+  if (explicitlyAssigned) {
+    return true;
+  }
+
+  const authority = await evaluateAuthorityForRequest(req, "approvals", "approve");
+  if (!authority.allowed) {
+    return false;
+  }
+
+  const policy = resolveApprovalPolicy(approvalRecord);
+  if (!policy) {
+    // Unknown / unmapped categories require explicit assignment for non-admins.
+    return false;
+  }
+
+  const allowedRoles = policy.approverRoles || DOMAIN_DEFAULT_APPROVER_ROLES[policy.domain] || [];
+  return allowedRoles.includes(currentUser.role || "");
 }
 
 export function registerApprovalsRoutes(app: Express) {

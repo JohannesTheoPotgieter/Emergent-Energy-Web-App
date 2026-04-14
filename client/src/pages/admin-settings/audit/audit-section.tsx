@@ -8,7 +8,7 @@ import * as api from "../settings-api";
 import type { AuditLogEntry } from "../settings-types";
 import { summarizeChangeDetail } from "../settings-types";
 
-const EVENT_TYPES = ["role_created", "role_updated", "role_deleted", "role_cloned", "role_archived", "user_role_changed", "user_override_added", "user_override_removed"];
+const EVENT_TYPES = ["role_created", "role_updated", "role_deleted", "role_cloned", "role_archived", "user_role_changed", "user_override_added", "user_override_updated", "user_override_removed"];
 
 function formatEventType(type: string) {
   return type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());

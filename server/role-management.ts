@@ -818,8 +818,19 @@ export function registerRoleManagementRoutes(app: Express) {
       if (!userId || !entity || !action) {
         return res.status(400).json({ error: "userId, entity, and action are required" });
       }
+      const normalizedReason = typeof reason === "string" ? reason.trim() : "";
+      if (normalizedReason.length < 5) {
+        return res.status(400).json({ error: "A clear reason (min 5 characters) is required for permission exceptions" });
+      }
 
       // Upsert: soft-delete existing then insert
+      const existingActive = await db.select().from(userPermissionOverrides).where(and(
+        eq(userPermissionOverrides.userId, userId),
+        eq(userPermissionOverrides.entity, entity),
+        eq(userPermissionOverrides.action, action),
+        isNull(userPermissionOverrides.deletedAt),
+      ));
+
       await db.update(userPermissionOverrides)
         .set({ deletedAt: new Date(), deletedBy: getEffectiveUser(req)?.id ?? null })
         .where(and(
@@ -836,15 +847,15 @@ export function registerRoleManagementRoutes(app: Express) {
         allowed: allowed !== false,
         scope: scope || null,
         grantedBy: getEffectiveUser(req)?.id || null,
-        reason: reason || null,
+        reason: normalizedReason,
         expiresAt: expiresAt ? new Date(expiresAt) : null,
       }).returning();
 
       invalidateUserOverrideCache(userId);
       logPermissionAudit(req, {
-        eventType: "user_override_added",
+        eventType: existingActive.length > 0 ? "user_override_updated" : "user_override_added",
         targetUserId: userId,
-        changeDetail: { entity, action, allowed: allowed !== false, scope, reason, expiresAt },
+        changeDetail: { entity, action, allowed: allowed !== false, scope, reason: normalizedReason, expiresAt },
       });
 
       res.json(created);
