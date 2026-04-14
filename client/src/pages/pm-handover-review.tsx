@@ -1,7 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { AlertTriangle } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { usePermission } from "@/hooks/use-permissions";
 
 async function loadQueue() {
   const res = await fetch("/api/pd-pm-handover/submitted", { credentials: "include" });
@@ -16,10 +19,32 @@ async function loadQueue() {
 }
 
 export default function PmHandoverReviewPage() {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { allowed: canApprove } = usePermission("handover", "approve");
   const { data, isLoading, error, refetch, isRefetching } = useQuery<{ items: any[] }>({
     queryKey: ["pm-handover-review"],
     queryFn: loadQueue,
     retry: false,
+  });
+  const actionMutation = useMutation({
+    mutationFn: async ({ projectId, action, reason }: { projectId: number; action: "accept" | "reject"; reason?: string }) => {
+      const res = await fetch(`/api/pd-pm-handover/${projectId}/${action}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: action === "reject" ? JSON.stringify({ reason }) : undefined,
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(body?.error || `Could not ${action} handover.`);
+      return body;
+    },
+    onSuccess: (_data, vars) => {
+      toast({ title: vars.action === "accept" ? "Handover accepted" : "Handover rejected" });
+      qc.invalidateQueries({ queryKey: ["pm-handover-review"] });
+      qc.invalidateQueries({ queryKey: ["/api/pd-pm-handover/control"] });
+    },
+    onError: (err: any) => toast({ title: "Action failed", description: err?.message || "Please retry.", variant: "destructive" }),
   });
 
   return (
@@ -49,7 +74,38 @@ export default function PmHandoverReviewPage() {
             <p className="font-medium">{i.project_name}</p>
             <p className="text-xs text-muted-foreground">Status: {i.status} · PD: {i.pd || "—"} · PM: {i.pm || "—"}</p>
           </div>
-          <Link href={`/pd/handover/${i.project_id}`} className="text-blue-600 underline">Review handover</Link>
+          <div className="flex items-center gap-2">
+            {canApprove && i.status === "SUBMITTED_FOR_PM_REVIEW" && (
+              <>
+                <Button
+                  size="sm"
+                  onClick={() => actionMutation.mutate({ projectId: i.project_id, action: "accept" })}
+                  disabled={actionMutation.isPending}
+                  data-testid={`btn-accept-handover-${i.project_id}`}
+                >
+                  Accept
+                </Button>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => {
+                    const reason = window.prompt("Reason for rejection:", "");
+                    if (reason === null) return;
+                    if (!reason.trim()) {
+                      toast({ title: "Reason required", description: "Please provide a rejection reason.", variant: "destructive" });
+                      return;
+                    }
+                    actionMutation.mutate({ projectId: i.project_id, action: "reject", reason: reason.trim() });
+                  }}
+                  disabled={actionMutation.isPending}
+                  data-testid={`btn-reject-handover-${i.project_id}`}
+                >
+                  Reject
+                </Button>
+              </>
+            )}
+            <Link href={`/pd/handover/${i.project_id}`} className="text-blue-600 underline">Review handover</Link>
+          </div>
         </div>
       ))}
 
