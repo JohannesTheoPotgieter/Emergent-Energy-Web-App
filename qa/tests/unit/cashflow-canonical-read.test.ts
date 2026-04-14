@@ -215,13 +215,17 @@ describe("Cashflow amount logic works with adapted NCL rows", () => {
     expect(breakdown.amount).toBe(50000);
   });
 
-  it("unapproved row with budget falls back to forecast", () => {
+  it("row without confirmed paid date buckets as forecast at the actual amount (never budgetTotal)", () => {
+    // Per the corrected spec, getOutflowAmountBreakdown always returns
+    // amount_ex_vat. The legacy budgetTotal fallback was over-counting
+    // cashflow outflows, so this test asserts the new behaviour.
     const adapted = adaptCostToExpense({
       id: 2, amountExVat: "50000", budgetTotal: "45000",
     } as any, "X");
     const breakdown = getOutflowAmountBreakdown(adapted);
     expect(breakdown.type).toBe("forecast");
-    expect(breakdown.amount).toBe(45000);
+    expect(breakdown.amount).toBe(50000);
+    expect(breakdown.amountSource).toBe("expenseActualTotal");
   });
 });
 

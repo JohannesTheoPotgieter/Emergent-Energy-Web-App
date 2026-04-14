@@ -210,7 +210,7 @@ function buildOverdueFinanceLedger(params: {
     const keyDate = dueDate || invoiceDate;
     if (!isDateInRange(keyDate, fyStart, fyEnd)) continue;
 
-    // Use canonical COS realisation check (invoice-only hard rule)
+    // Use canonical COS realisation check (invoice + black-font confirmed gate)
     const settled = isCanonicalCosRealised({
       status: null,
       cosStatusOverride: row.cosStatusOverride ?? null,
@@ -220,6 +220,8 @@ function buildOverdueFinanceLedger(params: {
       expensePoNumber: (row as any).poNumber ?? null,
       paymentDate: row.paidDate ?? null,
       today,
+      invoiceDateFontColor: (row as any).invoiceDateFontColor ?? null,
+      invoiceDateConfirmed: (row as any).invoiceDateConfirmed ?? null,
     });
     if (settled) continue;
     if (!dueDate) {
