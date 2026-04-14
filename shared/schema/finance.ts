@@ -28,135 +28,145 @@ export const trLinkStatusEnum = pgEnum("tr_link_status", ["linked", "task_create
 export const trSuggestionDecisionEnum = pgEnum("tr_suggestion_decision", ["suggested", "accepted", "rejected", "suppressed"]);
 export const rowSourceEnum = pgEnum("row_source", ["imported", "manual", "imported_edited"]);
 
-// ===================== PROGRAM EXPENSE (LEGACY) =====================
+// ============================================================================
+// PROGRAM EXPENSE / PROGRAM INFLOWS — RETIRED LEGACY TABLES
+// ============================================================================
+//
+// program_expense and program_inflows are physically dropped from the database
+// (migrations/20260414_drop_program_expense_and_program_inflows.sql). The
+// pgTable definitions are removed.
+//
+// The TypeScript type names ProgramExpense / InsertProgramExpense /
+// ProgramInflows / InsertProgramInflows are preserved as standalone interfaces
+// because ~48 files across the repo still use them as method-signature types
+// for the PE-shape compatibility view served by storage.getAllProgramExpenses
+// and friends. Those methods now read from normalized_cost_lines /
+// normalized_revenue_lines internally and return objects with the legacy
+// PE/PI field shape (via adaptCostToExpense / adaptRevenueToInflow).
+//
+// The interfaces below mirror the field shapes the old pgTable-derived types
+// produced, so callers compile unchanged. A cosmetic follow-up can rename
+// these to `ExpenseLine` / `InflowLine` and update call sites in a single
+// mechanical pass — that's optional Wave 4 work.
+//
+// NEW CODE SHOULD NOT USE THESE TYPES. Use NormalizedCostLine /
+// NormalizedRevenueLine from below instead.
+// ============================================================================
 
 /**
- * @deprecated LEGACY derivative table. Do not read from user-facing code.
- *
- * Canonical source: `normalizedCostLines`. This table is maintained only as a
- * back-compat mirror by `server/lib/import/derivative-materializer.ts` after
- * each v2 smart-import commit. All user-facing dashboards, KPIs, and reports
- * must read from `normalizedCostLines` instead.
- *
- * Scheduled removal: after Wave 2 (smart-import rewrite + materializer delete).
- * Any new code that writes to this table will fail the write-authority policy
- * (`server/policies/write-authority.ts` → BLOCKED_WRITE_TARGETS) and the
- * `blockProgramExpenseWrite` guard in `server/policies/finance-policy.ts`.
+ * @deprecated PE-shape compatibility view over normalized_cost_lines.
+ * Use NormalizedCostLine for new code.
  */
-export const programExpense = pgTable("program_expense", {
-  id: serial("id").primaryKey(),
-  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
-  projectName: text("project_name").notNull(),
-  rowNumber: integer("row_number"),
-  rowType: text("row_type").default("item"),
-  expenseCategory: text("expense_category"),
-  expenseLineItem: text("expense_line_item"),
-  budgetQty: decimal("budget_qty", { precision: 12, scale: 4 }),
-  budgetRateUnit: decimal("budget_rate_unit", { precision: 15, scale: 2 }),
-  budgetTotal: decimal("budget_total", { precision: 15, scale: 2 }),
-  forecastPaymentDate: date("forecast_payment_date"),
-  budgetCosTotal: decimal("budget_cos_total", { precision: 15, scale: 2 }),
-  expenseQty: decimal("expense_qty", { precision: 12, scale: 4 }),
-  expenseRateUnit: decimal("expense_rate_unit", { precision: 15, scale: 2 }),
-  expenseActualTotal: decimal("expense_actual_total", { precision: 15, scale: 2 }),
-  expensePoNumber: text("expense_po_number"),
-  expenseInvoiceNumber: text("expense_invoice_number"),
-  expenseInvoicedDate: date("expense_invoiced_date"),
-  invoiceDateConfirmed: boolean("invoice_date_confirmed").default(false),
-  invoiceDateFontColor: text("invoice_date_font_color"),
-  expensePaymentDate: date("expense_payment_date"),
-  paymentDateConfirmed: boolean("payment_date_confirmed").default(false),
-  paymentDateFontColor: text("payment_date_font_color"),
-  revenueAmount: decimal("revenue_amount", { precision: 15, scale: 2 }),
-  actualCosTotal: decimal("actual_cos_total", { precision: 15, scale: 2 }),
-  lineStatus: text("line_status"),
-  expenseLineHash: text("expense_line_hash"),
-  computedState: text("computed_state"),
-  computedForecastPaymentDate: date("computed_forecast_payment_date"),
-  adminDateOverride: date("admin_date_override"),
-  adminDateOverrideReason: text("admin_date_override_reason"),
-  adminDateOverrideBy: integer("admin_date_override_by").references(() => users.id, { onDelete: "set null" }),
-  adminDateOverrideAt: timestamp("admin_date_override_at"),
-  supplierName: text("supplier_name"),
-  isManual: boolean("is_manual").default(false),
-  subProjectName: text("sub_project_name"),
-  cosStatusOverride: text("cos_status_override"),
-  cosStatusOverrideBy: integer("cos_status_override_by").references(() => users.id, { onDelete: "set null" }),
-  cosStatusOverrideAt: timestamp("cos_status_override_at"),
-  cosStatusOverrideReason: text("cos_status_override_reason"),
-  dataSource: text("data_source").default("SMART_IMPORT"),
-  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
-  importRunId: integer("import_run_id").references(() => smartImportRuns.id, { onDelete: "set null" }),
-  source: rowSourceEnum("source").notNull().default("imported"),
-  importSnapshot: jsonb("import_snapshot"),
-  lastEditedBy: integer("last_edited_by").references(() => users.id, { onDelete: "set null" }),
-  lastEditedAt: timestamp("last_edited_at"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  // Temporal columns (Prompt 9)
-  effectiveFrom: timestamp("effective_from").notNull().defaultNow(),
-  effectiveTo: timestamp("effective_to"),
-  snapshotRunId: integer("snapshot_run_id").references(() => smartImportRuns.id, { onDelete: "set null" }),
-  deletedAt: timestamp("deleted_at"),
-}, (table) => ({
-  projectForecastPaymentIdx: index("program_expense_project_forecast_payment_idx").on(table.projectId, table.forecastPaymentDate),
-}));
-export const insertProgramExpenseSchema = createInsertSchema(programExpense).omit({ id: true, createdAt: true, effectiveFrom: true, effectiveTo: true } as any);
-export type InsertProgramExpense = z.infer<typeof insertProgramExpenseSchema>;
-export type ProgramExpense = typeof programExpense.$inferSelect;
-
-// ===================== PROGRAM INFLOWS (LEGACY) =====================
+export interface ProgramExpense {
+  id: number;
+  projectName: string;
+  rowNumber: number | null;
+  rowType: string | null;
+  expenseCategory: string | null;
+  expenseLineItem: string | null;
+  budgetQty: string | null;
+  budgetRateUnit: string | null;
+  budgetTotal: string | null;
+  forecastPaymentDate: string | null;
+  budgetCosTotal: string | null;
+  expenseQty: string | null;
+  expenseRateUnit: string | null;
+  expenseActualTotal: string | null;
+  expensePoNumber: string | null;
+  expenseInvoiceNumber: string | null;
+  expenseInvoicedDate: string | null;
+  invoiceDateConfirmed: boolean | null;
+  invoiceDateFontColor: string | null;
+  expensePaymentDate: string | null;
+  paymentDateConfirmed: boolean | null;
+  paymentDateFontColor: string | null;
+  revenueAmount: string | null;
+  actualCosTotal: string | null;
+  lineStatus: string | null;
+  expenseLineHash: string | null;
+  computedState: string | null;
+  computedForecastPaymentDate: string | null;
+  adminDateOverride: string | null;
+  adminDateOverrideReason: string | null;
+  adminDateOverrideBy: number | null;
+  adminDateOverrideAt: Date | null;
+  supplierName: string | null;
+  isManual: boolean | null;
+  subProjectName: string | null;
+  cosStatusOverride: string | null;
+  cosStatusOverrideBy: number | null;
+  cosStatusOverrideAt: Date | null;
+  cosStatusOverrideReason: string | null;
+  dataSource: string | null;
+  projectId: number;
+  importRunId: number | null;
+  source: "imported" | "manual" | "imported_edited";
+  importSnapshot: unknown | null;
+  lastEditedBy: number | null;
+  lastEditedAt: Date | null;
+  createdAt: Date;
+  effectiveFrom: Date;
+  effectiveTo: Date | null;
+  snapshotRunId: number | null;
+  deletedAt: Date | null;
+}
 
 /**
- * @deprecated LEGACY derivative table. Do not read from user-facing code.
- *
- * Canonical source: `normalizedRevenueLines`. This table is maintained only as
- * a back-compat mirror by `server/lib/import/derivative-materializer.ts` after
- * each v2 smart-import commit. All user-facing dashboards, KPIs, and reports
- * must read from `normalizedRevenueLines` instead.
- *
- * Scheduled removal: after Wave 2 (smart-import rewrite + materializer delete).
- * Any new code that writes to this table will fail the write-authority policy
- * (`server/policies/write-authority.ts` → BLOCKED_WRITE_TARGETS).
+ * @deprecated PE-shape insert payload.
+ * Use InsertNormalizedCostLine for new code.
  */
-export const programInflows = pgTable("program_inflows", {
-  id: serial("id").primaryKey(),
-  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
-  projectName: text("project_name").notNull(),
-  rowNumber: integer("row_number"),
-  milestoneNo: text("milestone_no"),
-  milestoneName: text("milestone_name"),
-  milestonePercent: decimal("milestone_percent", { precision: 6, scale: 4 }),
-  milestoneAmount: decimal("milestone_amount", { precision: 15, scale: 2 }),
-  plannedPaymentDate: date("planned_payment_date"),
-  milestoneInvoiceNumber: text("milestone_invoice_number"),
-  invoiceRaisedDate: date("invoice_raised_date"),
-  paymentReceivedDate: date("payment_received_date"),
-  milestoneNotes: text("milestone_notes"),
-  documentsReceived: text("documents_received"),
-  inBank: integer("in_bank").default(0),
-  inflowLineHash: text("inflow_line_hash"),
-  computedForecastReceiptDate: date("computed_forecast_receipt_date"),
-  adminDateOverride: date("admin_date_override"),
-  adminDateOverrideReason: text("admin_date_override_reason"),
-  adminDateOverrideBy: integer("admin_date_override_by").references(() => users.id, { onDelete: "set null" }),
-  adminDateOverrideAt: timestamp("admin_date_override_at"),
-  subProjectName: text("sub_project_name"),
-  dataSource: text("data_source").default("SMART_IMPORT"),
-  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
-  importRunId: integer("import_run_id").references(() => smartImportRuns.id, { onDelete: "set null" }),
-  source: rowSourceEnum("source").notNull().default("imported"),
-  importSnapshot: jsonb("import_snapshot"),
-  lastEditedBy: integer("last_edited_by").references(() => users.id, { onDelete: "set null" }),
-  lastEditedAt: timestamp("last_edited_at"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  // Temporal columns (Prompt 9)
-  effectiveFrom: timestamp("effective_from").notNull().defaultNow(),
-  effectiveTo: timestamp("effective_to"),
-  snapshotRunId: integer("snapshot_run_id").references(() => smartImportRuns.id, { onDelete: "set null" }),
-});
-export const insertProgramInflowsSchema = createInsertSchema(programInflows).omit({ id: true, createdAt: true, effectiveFrom: true, effectiveTo: true } as any);
-export type InsertProgramInflows = z.infer<typeof insertProgramInflowsSchema>;
-export type ProgramInflows = typeof programInflows.$inferSelect;
+export type InsertProgramExpense = Partial<Omit<ProgramExpense, "id" | "createdAt" | "effectiveFrom" | "effectiveTo">> & {
+  projectName: string;
+  projectId: number;
+};
+
+/**
+ * @deprecated PI-shape compatibility view over normalized_revenue_lines.
+ * Use NormalizedRevenueLine for new code.
+ */
+export interface ProgramInflows {
+  id: number;
+  projectName: string;
+  rowNumber: number | null;
+  milestoneNo: string | null;
+  milestoneName: string | null;
+  milestonePercent: string | null;
+  milestoneAmount: string | null;
+  plannedPaymentDate: string | null;
+  milestoneInvoiceNumber: string | null;
+  invoiceRaisedDate: string | null;
+  paymentReceivedDate: string | null;
+  milestoneNotes: string | null;
+  documentsReceived: string | null;
+  inBank: number | null;
+  inflowLineHash: string | null;
+  computedForecastReceiptDate: string | null;
+  adminDateOverride: string | null;
+  adminDateOverrideReason: string | null;
+  adminDateOverrideBy: number | null;
+  adminDateOverrideAt: Date | null;
+  subProjectName: string | null;
+  dataSource: string | null;
+  projectId: number;
+  importRunId: number | null;
+  source: "imported" | "manual" | "imported_edited";
+  importSnapshot: unknown | null;
+  lastEditedBy: number | null;
+  lastEditedAt: Date | null;
+  createdAt: Date;
+  effectiveFrom: Date;
+  effectiveTo: Date | null;
+  snapshotRunId: number | null;
+}
+
+/**
+ * @deprecated PI-shape insert payload.
+ * Use InsertNormalizedRevenueLine for new code.
+ */
+export type InsertProgramInflows = Partial<Omit<ProgramInflows, "id" | "createdAt" | "effectiveFrom" | "effectiveTo">> & {
+  projectName: string;
+  projectId: number;
+};
 
 // ===================== PROJECT PLAN =====================
 
@@ -795,7 +805,16 @@ export const expenseTaskLinks = pgTable("expense_task_links", {
   /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
-  expenseId: integer("expense_id").notNull().references(() => programExpense.id, { onDelete: "cascade" }),
+  /**
+   * @deprecated Vestigial legacy FK column. Originally referenced
+   * program_expense.id. The program_expense table was dropped in
+   * migrations/20260414_drop_program_expense_and_program_inflows.sql, and
+   * the CASCADE clause swept this column's pointers away at the same
+   * time. The column itself is retained as a vestigial INTEGER until a
+   * future cleanup removes it from the table. New links should use
+   * canonicalExpenseId (FK to normalized_cost_lines) below.
+   */
+  expenseId: integer("expense_id").notNull(),
   taskId: integer("task_id").notNull().references(() => projectPlan.id, { onDelete: "cascade" }),
   dateOverride: date("date_override"),
   dateOverrideReason: text("date_override_reason"),
