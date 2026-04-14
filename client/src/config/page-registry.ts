@@ -174,6 +174,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "adminPipedrive", path: "/admin/pipedrive", label: "Pipedrive Integration", iconKey: "Plug", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminPipedrivePage" },
   { id: "adminQuickBooks", path: "/admin/quickbooks", label: "QuickBooks Integration", iconKey: "Plug", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminQuickBooksPage" },
   { id: "financeQuickBooksLinks", path: "/finance/quickbooks-links", label: "QB Invoice Linking", iconKey: "Plug", navGroup: "SYSTEM", permissionEntity: "financials", showInSidebar: false, routeComponentKey: "FinanceQuickBooksLinksPage" },
+  { id: "financeQuickBooksCustomerMapping", path: "/finance/quickbooks-customer-mapping", label: "QB Customer Mapping", iconKey: "Users", navGroup: "SYSTEM", permissionEntity: "financials", showInSidebar: false, routeComponentKey: "FinanceQuickBooksCustomerMappingPage" },
   // Gates workspace (Prompt 2)
   { id: "gatesPipeline", path: "/gates", label: "Gates Pipeline", iconKey: "Milestone", navGroup: "GATES", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "GatesPipelinePage" },
   { id: "gatesBlocked", path: "/gates/blocked", label: "Blocked Gates", iconKey: "ShieldAlert", navGroup: "GATES", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "GatesBlockedPage" },

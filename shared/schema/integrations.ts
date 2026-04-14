@@ -179,6 +179,62 @@ export const insertQuickBooksInvoiceLinkSchema = createInsertSchema(
 export type InsertQuickBooksInvoiceLink = z.infer<typeof insertQuickBooksInvoiceLinkSchema>;
 export type QuickBooksInvoiceLink = typeof quickbooksInvoiceLinks.$inferSelect;
 
+// ===================== QUICKBOOKS CUSTOMER MAPPINGS =====================
+
+/**
+ * Project ↔ QuickBooks customer mapping. One row per app project that is
+ * linked to a QB customer. Multiple projects can share a QB customer when
+ * a client is billed as a single entity across several engagements.
+ *
+ * Used by the revenue-side reconciliation (QB `Invoice` ↔ app revenue
+ * lines): once a project is mapped, we can filter QB invoices by
+ * `CustomerRef.value = qbCustomerId` so the per-project view only
+ * shows invoices that belong to that project's client.
+ */
+export const quickbooksCustomerMappings = pgTable(
+  "quickbooks_customer_mappings",
+  {
+    id: serial("id").primaryKey(),
+    /** FK to project_info.id. One mapping per project. */
+    projectId: integer("project_id").notNull(),
+    /** Optional FK to clients.id for client-level audit / lookup. */
+    clientId: integer("client_id"),
+    /** QuickBooks customer id (CustomerRef.value). */
+    qbCustomerId: text("qb_customer_id").notNull(),
+    /** Snapshot of the QB display name at mapping time. */
+    qbCustomerName: text("qb_customer_name"),
+    /** QuickBooks realmId this mapping belongs to. */
+    qbRealmId: text("qb_realm_id").notNull(),
+    /** Free-form note. */
+    notes: text("notes"),
+    createdBy: integer("created_by"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at"),
+  },
+  (table) => ({
+    // One active mapping per (project, realm).
+    uniqueProject: uniqueIndex("quickbooks_customer_mappings_project_idx").on(
+      table.projectId,
+      table.qbRealmId,
+    ),
+    customerIdx: index("quickbooks_customer_mappings_customer_idx").on(
+      table.qbCustomerId,
+    ),
+  }),
+);
+
+export const insertQuickBooksCustomerMappingSchema = createInsertSchema(
+  quickbooksCustomerMappings,
+).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  deletedAt: true,
+} as any);
+export type InsertQuickBooksCustomerMapping = z.infer<typeof insertQuickBooksCustomerMappingSchema>;
+export type QuickBooksCustomerMapping = typeof quickbooksCustomerMappings.$inferSelect;
+
 // ===================== SEED LIST =====================
 
 /**
