@@ -2063,19 +2063,20 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           }
         }
 
-        // ── S12: Post-commit derivative materializer ──
-        // Refresh program_expense, program_inflows, and project_revenue_summary
-        // from canonical data so legacy consumers see fresh data after v2 commit.
-        // This is a COMPATIBILITY mechanism — see derivative-materializer.ts.
+        // ── S12: Post-commit project_revenue_summary refresh ──
+        // Refreshes project_revenue_summary from the normalized costedSummary
+        // so the FYE Detail view sees fresh budget/actual revenue and COS
+        // figures after each v2 commit. (Previously this helper also wrote
+        // program_expense and program_inflows as back-compat derivatives;
+        // those writes were removed in the PE/PI retirement.)
         try {
           const matResult = await materializeDerivatives({
             tx, projectId, projectName, runId, commitTimestamp, norm,
           });
-          console.log(`[SmartImport] v2 derivative materialization: ${matResult.programInflowsWritten} PI, ${matResult.programExpenseWritten} PE, PRS=${matResult.projectRevenueSummaryUpdated}`);
+          console.log(`[SmartImport] v2 project_revenue_summary refresh: PRS=${matResult.projectRevenueSummaryUpdated}`);
         } catch (matErr: unknown) {
-          // Derivative materialization failure is non-blocking for the canonical commit.
-          // Log and continue — canonical data is committed successfully.
-          console.warn("[SmartImport] Derivative materialization failed (non-blocking):", (matErr instanceof Error ? matErr.message : String(matErr)));
+          // PRS refresh failure is non-blocking for the canonical commit.
+          console.warn("[SmartImport] project_revenue_summary refresh failed (non-blocking):", (matErr instanceof Error ? matErr.message : String(matErr)));
         }
 
         // ── S13: Canonical expense_task_links re-linking ──
