@@ -465,6 +465,17 @@ router.post("/api/procurement-analysis/run", requireAuth, requirePermission('pro
           sourceRow: exp.rowNumber || exp.id,
           importRunId: null,
           turnaroundDays,
+          // Preserve budget columns across the procurement-analysis rebuild.
+          // The rebuild reads NCL, adapts each row via adaptCostToExpense
+          // (server/lib/data-merge.ts:56 — maps NCL.budgetQty/Rate/Total/Cos
+          // onto PE-shape field names), then soft-closes and re-inserts.
+          // Without these four lines the budget values silently disappear
+          // on every re-run. See migrations/20260414_backfill_ncl_budget_from_pe.sql
+          // for the one-time backfill that closed the historical gap.
+          budgetQty:   exp.budgetQty       ? String(exp.budgetQty)       : null,
+          budgetRate:  exp.budgetRateUnit  ? String(exp.budgetRateUnit)  : null,
+          budgetTotal: exp.budgetTotal     ? String(exp.budgetTotal)     : null,
+          budgetCos:   exp.budgetCosTotal  ? String(exp.budgetCosTotal)  : null,
         });
       }
 
