@@ -12,6 +12,7 @@ import {
   type CompanyRole,
 } from "@shared/schema";
 import { ApiError, sendError, badRequest, unauthorized, forbidden, serverError, logApiError } from "./lib/api-error";
+import { blockInProduction } from "./middleware/production-safety";
 
 function isValidCompanyRole(role: string): role is CompanyRole {
   return (COMPANY_ROLES as readonly string[]).includes(role);
@@ -160,7 +161,7 @@ export function registerRoleAuthRoutes(app: Express) {
     }
   });
 
-  app.post("/api/role-auth/seed", requireCompanyRole("COO_ADMIN" as CompanyRole), async (_req: Request, res: Response) => {
+  app.post("/api/role-auth/seed", blockInProduction("Role credential seed route is disabled in production."), requireCompanyRole("COO_ADMIN" as CompanyRole), async (_req: Request, res: Response) => {
     try {
       const existing = await db.select().from(roleCredentials);
       if (existing.length > 0) {
