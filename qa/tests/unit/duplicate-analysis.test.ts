@@ -251,13 +251,13 @@ describe("CAT 6: Duplicate aggregation (same amount counted twice)", () => {
     expect(metrics).not.toContain("programExpense");
   });
 
-  it("RESIDUAL RISK: FYE revenue tracking reads PE and NCL separately", () => {
+  it("RESOLVED: FYE revenue tracking now reads canonical NCL (PE retired in cutover)", () => {
     const fye = read("server/departments/fye-revenue-tracking-routes.ts");
-    // FYE reads programExpense directly — this is the same data as NCL
-    // But it reads PE INSTEAD of NCL (not both), so no double-counting
-    expect(fye).toContain(".from(programExpense)");
-    // The risk is inconsistency, not duplication — FYE sees PE-based totals
-    // while other screens see NCL-based totals
+    // The PE/NCL inconsistency that existed before the PE/PI cutover was
+    // resolved when commit 3d3fb59 repointed FYE to normalizedCostLines /
+    // normalizedRevenueLines. PE was retired entirely.
+    expect(fye).not.toContain(".from(programExpense)");
+    expect(fye).toContain("normalizedCostLines");
   });
 
   it("SEVERITY: NONE for double-counting; MEDIUM for inconsistency", () => {
