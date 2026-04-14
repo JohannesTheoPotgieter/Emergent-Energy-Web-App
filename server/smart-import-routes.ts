@@ -37,8 +37,6 @@ import {
   workItemDependencies,
   // planEditNotifications, // Notifications feature removed
   projectRevenueSummary,
-  programExpense,
-  programInflows,
   expenseTaskLinks,
   users,
   importLogs,
@@ -2555,118 +2553,6 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         counts.revenueLines = revValues.length;
       }
 
-      if (Array.isArray(norm.revenueLines) && projectName) {
-        const oldInflows = await tx.select({
-          rowNumber: programInflows.rowNumber,
-          inBank: programInflows.inBank,
-          paymentReceivedDate: programInflows.paymentReceivedDate,
-          milestoneName: programInflows.milestoneName,
-          milestoneAmount: programInflows.milestoneAmount,
-          source: programInflows.source,
-        })
-          .from(programInflows)
-          .where(eq(programInflows.projectName, projectName));
-
-        // Conflict detection: warn about user-edited rows being overwritten (Prompt 4 — override collapse)
-        const editedInflowCount = oldInflows.filter((r: any) => r.source === 'imported_edited').length;
-        if (editedInflowCount > 0) {
-          const msg = `Re-import overwrote ${editedInflowCount} user-edited program_inflows row(s)`;
-          console.warn(`[SmartImport] ${msg} for "${projectName}"`);
-          overwriteWarnings.push(msg);
-        }
-
-        // Build composite key map: "milestoneName::amount" → previous inflow row
-        const oldCompositeMap = new Map<string, { inBank: number | null; rowNumber: number | null; paymentReceivedDate: string | null; source: string | null }>();
-        const oldRowMap = new Map<number, { inBank: number | null; paymentReceivedDate: string | null; source: string | null }>();
-        for (const r of oldInflows) {
-          if (r.rowNumber != null) {
-            oldRowMap.set(r.rowNumber, {
-              inBank: r.inBank,
-              paymentReceivedDate: r.paymentReceivedDate,
-              source: r.source || null,
-            });
-          }
-          if (r.milestoneName) {
-            const key = `${r.milestoneName}::${r.milestoneAmount || ""}`;
-            oldCompositeMap.set(key, {
-              inBank: r.inBank,
-              rowNumber: r.rowNumber,
-              paymentReceivedDate: r.paymentReceivedDate,
-              source: r.source || null,
-            });
-          }
-        }
-
-        // Temporal: soft-close existing program_inflows instead of hard delete (Prompt 10)
-        await softCloseByProjectName(tx, "program_inflows", projectName);
-        if (norm.revenueLines.length > 0) {
-          const revIgnored = ignoredRows.get("REVENUE") || new Set();
-          const revOverrides = overrideRows.get("REVENUE") || new Map();
-          let milestoneIdx = 0;
-          const piValues = norm.revenueLines
-            .filter((r: any) => !revIgnored.has(r.sourceRow))
-            .map((r: any) => {
-              const ov = revOverrides.get(r.sourceRow);
-              const m = ov ? { ...r, ...ov } : r;
-              milestoneIdx++;
-              const name = m.milestoneName || m.description || null;
-              const amount = m.amountExVat ? String(m.amountExVat) : null;
-
-              // Composite match first (name + amount), then fall back to row number
-              let prevInBank: number | null | undefined = undefined;
-              let prevPaymentReceivedDate: string | null | undefined = undefined;
-              let prevSource: string | null | undefined = undefined;
-              const compositeKey = name ? `${name}::${amount || ""}` : null;
-              if (compositeKey && oldCompositeMap.has(compositeKey)) {
-                const match = oldCompositeMap.get(compositeKey)!;
-                prevInBank = match.inBank;
-                prevPaymentReceivedDate = match.paymentReceivedDate;
-                prevSource = match.source;
-                // Warn if the milestone moved rows
-                if (match.rowNumber != null && match.rowNumber !== r.sourceRow) {
-                  console.log(`[SmartImport] Revenue milestone '${name}' moved from row ${match.rowNumber} to row ${r.sourceRow}. Status preserved.`);
-                }
-              }
-              // Fall back to row number match
-              if (prevInBank === undefined && oldRowMap.has(r.sourceRow)) {
-                const rowMatch = oldRowMap.get(r.sourceRow)!;
-                prevInBank = rowMatch.inBank ?? null;
-                prevPaymentReceivedDate = rowMatch.paymentReceivedDate ?? null;
-                prevSource = rowMatch.source;
-              }
-
-              const preserveManualRow = prevSource === "imported_edited";
-              const paymentReceivedDate = preserveManualRow
-                ? (prevPaymentReceivedDate ?? null)
-                : (m.paidDate || null);
-
-              const paidDateIsBlack = m.paidDateConfirmed === true || m.paidDateFontColor === 'black';
-              const derivedInBank = m.paidDate ? (paidDateIsBlack ? 1 : 0) : 0;
-
-              return {
-                projectName,
-                rowNumber: r.sourceRow,
-                milestoneNo: String(milestoneIdx),
-                milestoneName: name,
-                milestoneAmount: amount,
-                plannedPaymentDate: m.paidDate || null,
-                milestoneInvoiceNumber: m.invoiceNumber || null,
-                invoiceRaisedDate: m.invoiceDate || null,
-                paymentReceivedDate,
-                inBank: prevInBank != null ? prevInBank : derivedInBank,
-                subProjectName: m.subProjectName || null,
-                dataSource: "SMART_IMPORT",
-                projectId: projectId || null,
-                importRunId: runId,
-              };
-            });
-          if (piValues.length > 0) {
-            await tx.insert(programInflows).values(addTemporalColumns(piValues, runId, commitTimestamp) as any);
-            console.log(`[SmartImport] Wrote ${piValues.length} program_inflows rows for "${projectName}"`);
-          }
-        }
-      }
-
       const counterpartyMap = new Map<string, number>();
       if (norm.counterpartyNames && norm.counterpartyNames.length > 0) {
         for (const name of norm.counterpartyNames) {
@@ -2843,109 +2729,6 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
             }
           }
         }
-      }
-
-      if (Array.isArray(norm.costLines) && projectName) {
-        const oldPeRows = await tx.select({
-          id: programExpense.id,
-          rowNumber: programExpense.rowNumber,
-          source: programExpense.source,
-          expensePaymentDate: programExpense.expensePaymentDate,
-          paymentDateConfirmed: programExpense.paymentDateConfirmed,
-          paymentDateFontColor: programExpense.paymentDateFontColor,
-        })
-          .from(programExpense)
-          .where(eq(programExpense.projectName, projectName));
-
-        // Conflict detection: warn about user-edited rows being overwritten (Prompt 4 — override collapse)
-        const editedExpenseCount = oldPeRows.filter((r: any) => r.source === 'imported_edited').length;
-        if (editedExpenseCount > 0) {
-          const msg = `Re-import overwrote ${editedExpenseCount} user-edited program_expense row(s)`;
-          console.warn(`[SmartImport] ${msg} for "${projectName}"`);
-          overwriteWarnings.push(msg);
-        }
-
-        // Temporal: soft-close existing program_expense instead of hard delete (Prompt 10)
-        await softCloseByProjectName(tx, "program_expense", projectName);
-
-        const toStr = (v: any): string | null => v != null ? String(v) : null;
-        if (norm.costLines.length > 0) {
-          const costIgnored = ignoredRows.get("EXPENDITURE") || new Set();
-          const costOverrides = overrideRows.get("EXPENDITURE") || new Map();
-          const oldPeByRow = new Map<number, any>(
-            oldPeRows
-              .filter((r: any) => r.rowNumber != null)
-              .map((r: any) => [r.rowNumber as number, r]),
-          );
-          let currentCategory = "";
-          const peValues = norm.costLines
-            .filter((c: any) => !costIgnored.has(c.sourceRow))
-            .map((c: any) => {
-              const ov = costOverrides.get(c.sourceRow);
-              const m = ov ? { ...c, ...ov } : c;
-              const previous = oldPeByRow.get(c.sourceRow);
-              const preserveManualRow = previous?.source === "imported_edited";
-              const expensePaymentDate = preserveManualRow
-                ? (previous?.expensePaymentDate || null)
-                : (m.paidDate || null);
-              const paymentDateFontColor = preserveManualRow
-                ? (previous?.paymentDateFontColor || null)
-                : (m.paidDateFontColor || null);
-              if (m.costCategory && m.costCategory !== currentCategory) currentCategory = m.costCategory;
-              return {
-                projectName,
-                rowNumber: c.sourceRow,
-                rowType: "item" as const,
-                expenseCategory: currentCategory || m.costCategory || null,
-                expenseLineItem: m.description || null,
-                budgetQty: toStr(m.budgetQty),
-                budgetRateUnit: toStr(m.budgetRate),
-                budgetTotal: toStr(m.budgetTotal),
-                budgetCosTotal: toStr(m.budgetCos),
-                forecastPaymentDate: m.forecastPaymentDate || null,
-                expenseActualTotal: toStr(m.amountExVat),
-                expensePoNumber: m.poNumber || null,
-                expenseInvoiceNumber: m.invoiceNumber || null,
-                expenseInvoicedDate: m.invoiceDate || null,
-                invoiceDateFontColor: m.invoiceDateFontColor || null,
-                invoiceDateConfirmed: m.invoiceDateFontColor === "black",
-                expensePaymentDate,
-                paymentDateFontColor,
-                paymentDateConfirmed: m.paidDateFontColor === "black",
-                subProjectName: m.subProjectName || null,
-                dataSource: "SMART_IMPORT",
-                projectId: projectId || null,
-                importRunId: runId,
-              };
-            });
-          if (peValues.length > 0) {
-            await tx.insert(programExpense).values(addTemporalColumns(peValues, runId, commitTimestamp) as any);
-            console.log(`[SmartImport] Wrote ${peValues.length} program_expense rows for "${projectName}"`);
-          }
-        }
-
-        const newPeRows = await tx.select({ id: programExpense.id, rowNumber: programExpense.rowNumber })
-          .from(programExpense)
-          .where(and(eq(programExpense.projectName, projectName), isNull(programExpense.effectiveTo)));
-        const newIdByRow = new Map(newPeRows.filter((r: any) => r.rowNumber != null).map((r: any) => [r.rowNumber!, r.id]));
-        const newIdSet = new Set(newPeRows.map((r: any) => r.id));
-
-        const existingLinks = await tx.select().from(expenseTaskLinks)
-          .where(eq(expenseTaskLinks.projectName, projectName));
-        for (const link of existingLinks) {
-          const oldRow = oldPeRows.find((r: any) => r.id === link.expenseId);
-          if (oldRow && oldRow.rowNumber != null) {
-            const newId = newIdByRow.get(oldRow.rowNumber);
-            if (newId && newId !== link.expenseId) {
-              await tx.update(expenseTaskLinks).set({ expenseId: newId }).where(eq(expenseTaskLinks.id, link.id));
-            } else if (!newId) {
-              await tx.delete(expenseTaskLinks).where(eq(expenseTaskLinks.id, link.id));
-            }
-          } else if (!newIdSet.has(link.expenseId)) {
-            await tx.delete(expenseTaskLinks).where(eq(expenseTaskLinks.id, link.id));
-          }
-        }
-
       }
 
       if (norm.executionPhases && norm.executionPhases.length > 0) {
@@ -3303,9 +3086,6 @@ router.post("/api/smart-import/:runId/rollback", requireAuth, requireAdmin, asyn
     }
 
     await db.transaction(async (tx: any) => {
-      // Temporal: soft-close rows from this import run instead of hard delete (Prompt 10)
-      await softCloseByImportRunId(tx, "program_inflows", runId);
-      await softCloseByImportRunId(tx, "program_expense", runId);
       await tx.delete(invoicePatternMatches).where(eq(invoicePatternMatches.importRunId, runId));
 
       await softCloseByImportRunId(tx, "normalized_revenue_lines", runId);
