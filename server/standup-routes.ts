@@ -9,6 +9,7 @@ import {
 } from "@shared/schema";
 import { getEffectiveUser, requireAuth } from "./auth-context";
 import { requirePermission } from "./permission-middleware";
+import { blockInProduction } from "./middleware/production-safety";
 
 type AppUser = { id: number; email: string; name: string; role: string };
 
@@ -1252,7 +1253,7 @@ export function registerStandupRoutes(app: Express) {
   });
 
   // ── Auto-seed default standup schedule (Mon/Wed/Fri) ──────────────────────
-  app.post("/api/standups/seed-default", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/standups/seed-default", requireAuth, blockInProduction("Standup seed route is disabled in production."), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       // Check if a default project standup already exists (ignore soft-deleted)
