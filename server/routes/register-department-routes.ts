@@ -1,10 +1,22 @@
 import type { Express } from "express";
 import { registerAdminRoutes } from "../departments/admin-routes";
 import { registerExcoRoutes } from "../departments/exco-routes";
+import { registerRouteGroupOnce } from "./route-registration-guard";
 
 export async function registerDepartmentRoutes(app: Express) {
-  registerAdminRoutes(app);
-  registerExcoRoutes(app);
+  registerRouteGroupOnce({
+    key: "admin-routes",
+    owner: "department-admin",
+    register: () => registerAdminRoutes(app),
+    onSkip: (message) => console.warn(message),
+  });
+
+  registerRouteGroupOnce({
+    key: "exco-routes",
+    owner: "department-exco",
+    register: () => registerExcoRoutes(app),
+    onSkip: (message) => console.warn(message),
+  });
 
   // Each dynamic import is wrapped individually so one module failing
   // doesn't prevent the remaining department routes from registering.
@@ -32,7 +44,12 @@ export async function registerDepartmentRoutes(app: Express) {
 
   try {
     const { registerFinanceRoutes } = await import("../departments/finance-routes");
-    registerFinanceRoutes(app);
+    registerRouteGroupOnce({
+      key: "finance-routes",
+      owner: "department-finance",
+      register: () => registerFinanceRoutes(app),
+      onSkip: (message) => console.warn(message),
+    });
   } catch (err) {
     console.error("[Routes] Failed to register finance-routes:", err);
   }
