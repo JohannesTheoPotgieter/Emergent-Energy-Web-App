@@ -314,47 +314,6 @@ async function ensureSqliteSchema() {
       )
     `);
     
-    // Program Expense table (matches Drizzle schema)
-    await db.run(sql`
-      CREATE TABLE IF NOT EXISTS program_expense (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        project_name TEXT NOT NULL,
-        row_number INTEGER,
-        expense_category TEXT,
-        expense_line_item TEXT,
-        expense_qty REAL,
-        expense_rate_unit REAL,
-        expense_actual_total REAL,
-        expense_po_number TEXT,
-        expense_invoice_number TEXT,
-        expense_invoiced_date TEXT,
-        revenue_amount REAL,
-        expense_payment_date TEXT,
-        cos_amount REAL,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    
-    // Program Inflows table (matches Drizzle schema)
-    await db.run(sql`
-      CREATE TABLE IF NOT EXISTS program_inflows (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        project_name TEXT NOT NULL,
-        row_number INTEGER,
-        milestone_no TEXT,
-        milestone_name TEXT,
-        milestone_percent REAL,
-        milestone_amount REAL,
-        planned_payment_date TEXT,
-        milestone_invoice_number TEXT,
-        invoice_raised_date TEXT,
-        payment_received_date TEXT,
-        milestone_notes TEXT,
-        documents_received TEXT,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    
     // Project Plan table (matches Drizzle schema)
     await db.run(sql`
       CREATE TABLE IF NOT EXISTS project_plan (
@@ -1370,39 +1329,6 @@ async function ensureSqliteSchema() {
     try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN opportunity_id INTEGER`)); } catch {}
     try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN delivery_model TEXT`)); } catch {}
     try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN project_code TEXT`)); } catch {}
-
-    // Add missing columns to program_expense (safe ALTERs)
-    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN row_type TEXT DEFAULT 'item'`)); } catch {}
-    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN actual_cos_total REAL`)); } catch {}
-    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN budget_qty REAL`)); } catch {}
-    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN budget_rate_unit REAL`)); } catch {}
-    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN budget_total REAL`)); } catch {}
-    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN budget_cos_total REAL`)); } catch {}
-    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN supplier_name TEXT`)); } catch {}
-    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN project_id INTEGER`)); } catch {}
-
-    // Add missing columns to program_expense (more columns from Drizzle schema)
-    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN forecast_payment_date TEXT`)); } catch {}
-    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN invoice_date_confirmed INTEGER DEFAULT 0`)); } catch {}
-    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN invoice_date_font_color TEXT`)); } catch {}
-    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN expense_payment_date TEXT`)); } catch {}
-    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN payment_date_confirmed INTEGER DEFAULT 0`)); } catch {}
-    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN payment_date_font_color TEXT`)); } catch {}
-    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN line_status TEXT`)); } catch {}
-    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN expense_line_hash TEXT`)); } catch {}
-    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN computed_state TEXT`)); } catch {}
-    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN computed_forecast_payment_date TEXT`)); } catch {}
-    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN is_manual INTEGER DEFAULT 0`)); } catch {}
-    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN data_source TEXT DEFAULT 'SMART_IMPORT'`)); } catch {}
-    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN import_run_id INTEGER`)); } catch {}
-
-    // Add missing columns to program_inflows (safe ALTERs)
-    try { await db.run(sql.raw(`ALTER TABLE program_inflows ADD COLUMN in_bank INTEGER DEFAULT 0`)); } catch {}
-    try { await db.run(sql.raw(`ALTER TABLE program_inflows ADD COLUMN project_id INTEGER`)); } catch {}
-    try { await db.run(sql.raw(`ALTER TABLE program_inflows ADD COLUMN inflow_line_hash TEXT`)); } catch {}
-    try { await db.run(sql.raw(`ALTER TABLE program_inflows ADD COLUMN computed_forecast_receipt_date TEXT`)); } catch {}
-    try { await db.run(sql.raw(`ALTER TABLE program_inflows ADD COLUMN data_source TEXT DEFAULT 'SMART_IMPORT'`)); } catch {}
-    try { await db.run(sql.raw(`ALTER TABLE program_inflows ADD COLUMN import_run_id INTEGER`)); } catch {}
 
     console.log('[DB] SQLite schema verified');
   } catch (err: unknown) {
