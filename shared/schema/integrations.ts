@@ -31,7 +31,7 @@ export type IntegrationHealthState = (typeof INTEGRATION_HEALTH_STATES)[number];
 
 export const integrations = pgTable("integrations", {
   id: serial("id").primaryKey(),
-  /** Machine key: 'pipedrive', 'microsoft_365', 'clickup', 'xero', 'iauditor', 'sseg'. */
+  /** Machine key: 'pipedrive', 'microsoft_365', 'clickup', 'xero', 'iauditor', 'sseg', 'quickbooks'. */
   name: text("name").notNull().unique(),
   /** Human-readable display name for the dashboard tile. */
   displayName: text("display_name").notNull(),
@@ -139,5 +139,16 @@ export const INTEGRATION_SEED: Array<{
     fallbackDescription:
       "Tasks continue to work inside the app. ClickUp mirror gets stale and back-fills on the next successful ingest.",
     alertTarget: "PROGRAM_MANAGER",
+  },
+  {
+    name: "quickbooks",
+    displayName: "QuickBooks Online",
+    description:
+      "OAuth2 integration with QuickBooks Online Accounting. Syncs invoices, customers, and financial data for COS tracking and invoice reconciliation.",
+    authType: "oauth2",
+    ownerProcess: "quickbooks-sync-service",
+    fallbackDescription:
+      "Financial data can still be managed manually. QuickBooks data will sync on the next successful connection.",
+    alertTarget: "COO_ADMIN",
   },
 ];
