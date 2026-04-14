@@ -280,8 +280,8 @@ export function UsersSection() {
                           <div className="space-y-3">
                             <div className="flex items-center justify-between">
                               <div>
-                                <h4 className="text-sm font-semibold text-gray-800">Permission Overrides</h4>
-                                <p className="text-xs text-muted-foreground">Grant or revoke specific permissions for this user, overriding role defaults.</p>
+                                <h4 className="text-sm font-semibold text-gray-800">Permission Exceptions</h4>
+                                <p className="text-xs text-muted-foreground">Use sparingly: user-level exceptions override role defaults and should include a clear reason.</p>
                               </div>
                               <Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={() => setShowAddOverride(true)}>
                                 <Plus className="h-4 w-4 mr-1" /> Add Override
@@ -323,7 +323,7 @@ export function UsersSection() {
                                 </table>
                               </div>
                             ) : (
-                              <div className="text-center py-6 text-gray-400 text-sm">No user-specific overrides. This user uses their role defaults only.</div>
+                              <div className="text-center py-6 text-gray-400 text-sm">No user-specific exceptions. This user follows role defaults only.</div>
                             )}
                           </div>
                         )}
@@ -403,11 +403,11 @@ export function UsersSection() {
             <div><Label className="text-xs">Entity</Label><SearchableSelect options={entityOptions.map((e) => ({ value: e, label: `${e} — ${ENTITY_DESCRIPTIONS[e] || e}` }))} value={newEntity} onValueChange={setNewEntity} placeholder="Select entity..." /></div>
             <div><Label className="text-xs">Action</Label><SearchableSelect options={ACTIONS.map((a) => ({ value: a, label: a }))} value={newAction} onValueChange={setNewAction} placeholder="Select action..." /></div>
             <div className="flex items-center gap-3"><Label className="text-xs">Access</Label><Switch checked={newAllowed} onCheckedChange={setNewAllowed} /><span className="text-sm">{newAllowed ? "Grant" : "Deny"}</span></div>
-            <div><Label className="text-xs">Reason (optional)</Label><Input value={newReason} onChange={(e) => setNewReason(e.target.value)} placeholder="Why this override exists..." /></div>
+            <div><Label className="text-xs">Reason (required)</Label><Input value={newReason} onChange={(e) => setNewReason(e.target.value)} placeholder="Why this exception exists..." /></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAddOverride(false)}>Cancel</Button>
-            <Button onClick={handleAddOverride} disabled={!newEntity || !newAction} className="bg-blue-600 hover:bg-blue-700">Add Override</Button>
+            <Button onClick={handleAddOverride} disabled={!newEntity || !newAction || newReason.trim().length < 5} className="bg-blue-600 hover:bg-blue-700">Add Override</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

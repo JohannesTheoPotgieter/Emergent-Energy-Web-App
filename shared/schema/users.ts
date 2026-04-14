@@ -731,7 +731,9 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'HSE_MANAGER', 'SSEG_MANAGER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE'],
-    approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'CFO'],
+    // Keep generic approvals broad enough for migration compatibility, then
+    // enforce domain-level ownership in server/approvals-routes.ts.
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'PROJECT_MANAGER_SITE', 'CONSTRUCTION_MANAGER'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
