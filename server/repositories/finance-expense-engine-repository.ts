@@ -7,6 +7,62 @@ import {
 } from "@shared/schema";
 import { db } from "../db";
 
+/**
+ * Resolve a project name for every cost-line row, falling back from the row's
+ * own project_name TEXT column to a project_id → project_info lookup.
+ *
+ * Background: the database has a large population of legacy NCL rows imported
+ * before normalized_cost_lines.project_name was tightened to NOT NULL. Those
+ * rows carry a valid project_id FK but a NULL project_name text value. The
+ * previous filter dropped them entirely, which made cashflow Total Outflows
+ * miss ~60% of the real cost data on the dev environment.
+ *
+ * Returns an array of { row, name } pairs ready for adaptCostToExpense.
+ * Truly orphan rows (no project_name AND no project_id match) are still
+ * skipped because they can't be attributed to any project at all.
+ */
+function resolveCostRowProjectNames(
+  costLines: any[],
+  piRows: Array<{ id: number; projectName: string | null }>,
+  logTag: string,
+): Array<{ row: any; name: string }> {
+  const idToName = new Map<number, string>();
+  for (const p of piRows) {
+    if (p.id != null && typeof p.projectName === "string" && p.projectName.length > 0) {
+      idToName.set(p.id, p.projectName);
+    }
+  }
+
+  const out: Array<{ row: any; name: string }> = [];
+  let resolvedFromId = 0;
+  let trulyOrphan = 0;
+  for (const c of costLines) {
+    let name: string | null = null;
+    if (typeof c.projectName === "string" && c.projectName.length > 0) {
+      name = c.projectName;
+    } else if (c.projectId != null) {
+      const fallback = idToName.get(c.projectId);
+      if (fallback) {
+        name = fallback;
+        resolvedFromId++;
+      }
+    }
+    if (!name) {
+      trulyOrphan++;
+      continue;
+    }
+    out.push({ row: c, name });
+  }
+
+  if (trulyOrphan > 0 || resolvedFromId > 0) {
+    console.warn(
+      `${logTag} processed ${costLines.length} cost rows: ${out.length} attributed (${resolvedFromId} resolved via project_id fallback), ${trulyOrphan} truly orphan (no project_name and no project_id match)`,
+    );
+  }
+
+  return out;
+}
+
 export class FinanceExpenseEngineRepository {
   private _dbInstance?: typeof db;
 
@@ -30,11 +86,12 @@ export class FinanceExpenseEngineRepository {
     const { adaptCostToExpense, createNameResolver } = await import("../lib/data-merge");
     const [costLines, piRows] = await Promise.all([
       this.dbInstance.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
-      this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo),
+      this.dbInstance.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo),
     ]);
     const resolve = createNameResolver(piRows.map((r: any) => r.projectName));
 
-    const adaptedNormalized = costLines.map((c: any) => adaptCostToExpense(c, resolve(c.projectName)));
+    const attributed = resolveCostRowProjectNames(costLines as any[], piRows as any[], "[fetchAllProgramExpenses]");
+    const adaptedNormalized = attributed.map(({ row, name }) => adaptCostToExpense(row, resolve(name)));
 
     // Deterministic winner per business line across normalized rows (handles
     // any residual duplicates from temporal history or re-imports).
@@ -54,17 +111,12 @@ export class FinanceExpenseEngineRepository {
     const { adaptCostToExpense, createNameResolver } = await import("../lib/data-merge");
     const [costLines, piRows] = await Promise.all([
       this.dbInstance.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
-      this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo),
+      this.dbInstance.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo),
     ]);
     const resolve = createNameResolver(piRows.map((r: any) => r.projectName));
-    // Skip orphan rows with NULL project_name — they cannot be attributed to a
-    // project and would otherwise break name-resolution and downstream joins.
-    const attributedCostLines = costLines.filter((c: any) => typeof c.projectName === "string" && c.projectName.length > 0);
-    const skipped = costLines.length - attributedCostLines.length;
-    if (skipped > 0) {
-      console.warn(`[getAllCostLinesForCashflow] Skipped ${skipped} cost line(s) with NULL project_name`);
-    }
-    const adapted = attributedCostLines.map((c: any) => adaptCostToExpense(c, resolve(c.projectName)));
+
+    const attributed = resolveCostRowProjectNames(costLines as any[], piRows as any[], "[getAllCostLinesForCashflow]");
+    const adapted = attributed.map(({ row, name }) => adaptCostToExpense(row, resolve(name)));
     const { winners, diagnostics } = selectWinningExpenseRows(adapted);
     console.log(`[getAllCostLinesForCashflow] ${costLines.length} active NCL → ${adapted.length} adapted → ${winners.length} after dedup (removed ${diagnostics.duplicatesRemoved})`);
     return winners;
@@ -77,8 +129,25 @@ export class FinanceExpenseEngineRepository {
    */
   async getProgramExpensesByProject(projectName: string): Promise<any[]> {
     const { adaptCostToExpense } = await import("../lib/data-merge");
-    const costLines = await this.dbInstance.select().from(normalizedCostLines)
-      .where(and(eq(normalizedCostLines.projectName, projectName), isNull(normalizedCostLines.effectiveTo)));
+    // Resolve project_id for the requested name so we also catch legacy rows
+    // where project_name is NULL but project_id is set.
+    const projectMatches = await this.dbInstance.select({ id: projectInfo.id })
+      .from(projectInfo)
+      .where(eq(projectInfo.projectName, projectName));
+    const projectIds = projectMatches.map((p: { id: number }) => p.id);
+
+    const allActive = await this.dbInstance.select().from(normalizedCostLines)
+      .where(isNull(normalizedCostLines.effectiveTo));
+
+    const costLines = (allActive as any[]).filter((c: any) => {
+      if (typeof c.projectName === "string" && c.projectName.length > 0 && c.projectName === projectName) {
+        return true;
+      }
+      if (c.projectId != null && projectIds.includes(c.projectId)) {
+        return true;
+      }
+      return false;
+    });
 
     const adapted = costLines.map((c: any) => adaptCostToExpense(c, projectName));
 

@@ -188,7 +188,7 @@ export async function getCompanyOverviewData() {
       if ((row as any).paidDate) {
         cashPaidFytd += amount;
       }
-      // COS realised = canonical invoice-only check
+      // COS realised = invoice + invoice-date confirmed (black font) per canonical check
       if (isCanonicalCosRealised({
         status: null,
         cosStatusOverride: (row as any).cosStatusOverride ?? null,
@@ -198,6 +198,8 @@ export async function getCompanyOverviewData() {
         expensePoNumber: (row as any).poNumber ?? null,
         paymentDate: (row as any).paidDate ?? null,
         today,
+        invoiceDateFontColor: (row as any).invoiceDateFontColor ?? null,
+        invoiceDateConfirmed: (row as any).invoiceDateConfirmed ?? null,
       })) {
         realisedCostFytd += amount;
         projectRealisedCos.set(row.projectId, (projectRealisedCos.get(row.projectId) || 0) + amount);

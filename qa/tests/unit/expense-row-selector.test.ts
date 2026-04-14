@@ -43,16 +43,21 @@ describe("expense row selector", () => {
     expect(selected.winners[0].id).toBe(300);
   });
 
-  it("negative row offsets reduce outflow", () => {
-    const expense = { lineStatus: "Approved", expenseActualTotal: "-1250.50", budgetTotal: "1000.00" };
+  it("negative row offsets reduce outflow (confirmed paid date = actual)", () => {
+    const expense = {
+      expenseActualTotal: "-1250.50",
+      expensePaymentDate: "2026-03-15",
+      paymentDateFontColor: "black",
+    };
     const outflow = getOutflowAmountBreakdown(expense);
     expect(outflow.type).toBe("actual");
     expect(outflow.amount).toBe(-1250.5);
+    expect(outflow.amountSource).toBe("expenseActualTotal");
   });
 
   it("project and cashflow consumers can share the same winning row", () => {
     const rows = [
-      { id: 500, _isNormalized: true, projectId: 4, _sourceRow: 9, approvedDate: "2026-02-01", updatedAt: "2026-02-01T00:00:00Z", budgetTotal: "900", expenseActualTotal: "750", lineStatus: "Approved" },
+      { id: 500, _isNormalized: true, projectId: 4, _sourceRow: 9, approvedDate: "2026-02-01", updatedAt: "2026-02-01T00:00:00Z", budgetTotal: "900", expenseActualTotal: "750", lineStatus: "Approved", expensePaymentDate: "2026-02-10", paymentDateFontColor: "black" },
       { id: 499, _isNormalized: false, projectId: 4, rowNumber: 9, updatedAt: "2026-02-02T00:00:00Z", budgetTotal: "800", lineStatus: "Planned" },
     ];
 
@@ -61,5 +66,29 @@ describe("expense row selector", () => {
     const outflow = getOutflowAmountBreakdown(selected);
     expect(outflow.amount).toBe(750);
     expect(outflow.type).toBe("actual");
+  });
+
+  it("unconfirmed paid date (red font) buckets as forecast", () => {
+    const expense = {
+      expenseActualTotal: "1000",
+      expensePaymentDate: "2026-03-15",
+      paymentDateFontColor: "red",
+    };
+    const outflow = getOutflowAmountBreakdown(expense);
+    expect(outflow.type).toBe("forecast");
+    expect(outflow.amount).toBe(1000);
+  });
+
+  it("never falls back to budgetTotal — overcounting fix", () => {
+    // Row with NO paid date but a large budget figure: previously this would
+    // emit budgetTotal as the cashflow outflow amount, doubling the real spend.
+    const expense = {
+      expenseActualTotal: "500",
+      budgetTotal: "9999",
+    };
+    const outflow = getOutflowAmountBreakdown(expense);
+    expect(outflow.amount).toBe(500);
+    expect(outflow.type).toBe("forecast");
+    expect(outflow.amountSource).toBe("expenseActualTotal");
   });
 });

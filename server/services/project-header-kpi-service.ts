@@ -55,7 +55,13 @@ function isRevenueRealised(line: { status: string | null; paidDate: string | nul
   return isRevenueSettled({ status: line.status, paidDate: line.paidDate, inBankDate: line.inBankDate });
 }
 
-function isCosRealisedLine(line: { cosRealised: boolean | null; cosStatusOverride: string | null; invoiceNumber?: string | null }): boolean {
+function isCosRealisedLine(line: {
+  cosRealised: boolean | null;
+  cosStatusOverride: string | null;
+  invoiceNumber?: string | null;
+  invoiceDateFontColor?: string | null;
+  invoiceDateConfirmed?: boolean | null;
+}): boolean {
   return isCanonicalCosRealised({
     status: null,
     cosStatusOverride: line.cosStatusOverride,
@@ -65,6 +71,8 @@ function isCosRealisedLine(line: { cosRealised: boolean | null; cosStatusOverrid
     expensePoNumber: null,
     paymentDate: null,
     today: new Date().toISOString().slice(0, 10),
+    invoiceDateFontColor: line.invoiceDateFontColor ?? null,
+    invoiceDateConfirmed: line.invoiceDateConfirmed ?? null,
   });
 }
 
@@ -111,7 +119,7 @@ export function computeProjectHeaderKpis(input: {
   projectId: number;
   contractValue: number;
   canonicalRevenueRows: Array<{ amountExVat: unknown; status: string | null; paidDate: string | null; inBankDate: string | null }>;
-  canonicalCostRows: Array<{ amountExVat: unknown; cosRealised: boolean | null; cosStatusOverride: string | null; invoiceNumber?: string | null }>;
+  canonicalCostRows: Array<{ amountExVat: unknown; cosRealised: boolean | null; cosStatusOverride: string | null; invoiceNumber?: string | null; invoiceDateFontColor?: string | null; invoiceDateConfirmed?: boolean | null }>;
   derivedGrossMarginPct: number;
   budgetBaselineMarginPct?: number | null;
   executionBaselineMarginPct?: number | null;
@@ -228,7 +236,7 @@ export async function getProjectHeaderKpis(projectId: number): Promise<ProjectHe
   const [projectRows, canonicalRevenueRows, canonicalCostRows, derivedRows, baselineRows, executionRows, revenueSummaryRows, stageRows, stageDefRows] = await Promise.all([
     db.select({ contractValue: projectInfo.contractValue }).from(projectInfo).where(and(eq(projectInfo.id, projectId), isNull(projectInfo.deletedAt))).limit(1),
     db.select({ amountExVat: normalizedRevenueLines.amountExVat, status: normalizedRevenueLines.status, paidDate: normalizedRevenueLines.paidDate, inBankDate: normalizedRevenueLines.inBankDate }).from(normalizedRevenueLines).where(and(eq(normalizedRevenueLines.projectId, projectId), isNull(normalizedRevenueLines.effectiveTo))),
-    db.select({ amountExVat: normalizedCostLines.amountExVat, cosRealised: normalizedCostLines.cosRealised, cosStatusOverride: normalizedCostLines.cosStatusOverride, invoiceNumber: normalizedCostLines.invoiceNumber }).from(normalizedCostLines).where(and(eq(normalizedCostLines.projectId, projectId), isNull(normalizedCostLines.effectiveTo))),
+    db.select({ amountExVat: normalizedCostLines.amountExVat, cosRealised: normalizedCostLines.cosRealised, cosStatusOverride: normalizedCostLines.cosStatusOverride, invoiceNumber: normalizedCostLines.invoiceNumber, invoiceDateFontColor: normalizedCostLines.invoiceDateFontColor, invoiceDateConfirmed: normalizedCostLines.invoiceDateConfirmed }).from(normalizedCostLines).where(and(eq(normalizedCostLines.projectId, projectId), isNull(normalizedCostLines.effectiveTo))),
     db.select({ grossMarginPct: derivedProjectKpis.grossMarginPct }).from(derivedProjectKpis).where(and(eq(derivedProjectKpis.projectId, projectId), isNull(derivedProjectKpis.deletedAt))).limit(1),
     db.select({ marginBaseline: budgetBaselines.marginBaseline, approvedDate: budgetBaselines.approvedDate, createdAt: budgetBaselines.createdAt, version: budgetBaselines.version }).from(budgetBaselines).where(eq(budgetBaselines.projectId, projectId)).orderBy(desc(budgetBaselines.approvedDate), desc(budgetBaselines.createdAt), desc(budgetBaselines.version)).limit(1),
     db.select({ marginBaseline: projectExecutionState.marginBaseline, currentStageCode: projectExecutionState.currentStageCode, nextRequiredAction: projectExecutionState.nextRequiredAction }).from(projectExecutionState).where(and(eq(projectExecutionState.projectId, projectId), isNull(projectExecutionState.deletedAt))).limit(1),
