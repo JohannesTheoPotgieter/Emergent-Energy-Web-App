@@ -31,25 +31,6 @@ export function requireProjectId(projectId: number | null | undefined): asserts 
 }
 
 // ---------------------------------------------------------------------------
-// Policy: programExpense writes are permanently blocked
-// ---------------------------------------------------------------------------
-
-export class ProgramExpenseWriteBlockedError extends Error {
-  constructor(operation: string) {
-    super(`Write to program_expense table is permanently blocked. Operation: ${operation}. Use normalized_cost_lines instead.`);
-    this.name = "ProgramExpenseWriteBlockedError";
-  }
-}
-
-/**
- * Guard that blocks any attempt to write to the legacy program_expense table.
- * Call this at the top of any legacy write path that previously touched program_expense.
- */
-export function blockProgramExpenseWrite(operation: string): never {
-  throw new ProgramExpenseWriteBlockedError(operation);
-}
-
-// ---------------------------------------------------------------------------
 // Policy: Finance writes require transaction boundaries
 // ---------------------------------------------------------------------------
 

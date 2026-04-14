@@ -281,12 +281,11 @@ describe("Expected number changes from canonical migration", () => {
     expect(adapted.computedForecastPaymentDate).toBeNull();
   });
 
-  it("DOCUMENTED: legacy-only program_expense rows no longer contribute to cashflow totals", () => {
-    // If program_expense had rows that do NOT exist in normalized_cost_lines
-    // (e.g., very old imports before the NCL table existed), those rows are
-    // now excluded from cashflow. This is intentional — normalized_cost_lines
-    // is the canonical source, and dashboards already exclude PE-only rows.
-    // This makes cashflow totals consistent with dashboard totals.
+  it("getAllCostLinesForCashflow does not reference the retired programExpense table", () => {
+    // program_expense was retired in the PE/PI cutover. The canonical
+    // cashflow read is normalized_cost_lines only. This is an
+    // anti-regression check to prevent anyone from re-introducing a
+    // PE read path to the cashflow code.
     const storage = read("server/storage.ts");
     const implBlock = storage.substring(
       storage.indexOf("async getAllCostLinesForCashflow"),
