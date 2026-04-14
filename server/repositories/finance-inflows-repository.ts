@@ -6,6 +6,68 @@ import {
 } from "@shared/schema";
 import { db } from "../db";
 
+/**
+ * Resolve a project name for every revenue-line row, falling back from the
+ * row's own project_name TEXT column to a project_id → project_info lookup.
+ *
+ * Background: the database has a large population of legacy NRL rows
+ * imported before normalized_revenue_lines.project_name was tightened to
+ * NOT NULL. Those rows carry a valid project_id FK but a NULL project_name
+ * text value. The previous filter dropped them entirely, which made the
+ * cashflow Total Inflows card show only ~5% of the real value.
+ *
+ * This helper:
+ *   1. Builds a Map<id, name> from project_info
+ *   2. For each NRL row: prefer row.projectName, fall back to map lookup by
+ *      row.projectId
+ *   3. Skips only the rows that are TRULY orphan (no name AND no id match)
+ *   4. Logs both the orphan count and the count of rows resolved via the
+ *      project_id fallback so we can monitor the legacy-data footprint
+ *
+ * Returns an array of { row, name } pairs ready for adaptRevenueToInflow.
+ */
+function resolveRevenueRowProjectNames(
+  revLines: any[],
+  piRows: Array<{ id: number; projectName: string | null }>,
+  logTag: string,
+): Array<{ row: any; name: string }> {
+  const idToName = new Map<number, string>();
+  for (const p of piRows) {
+    if (p.id != null && typeof p.projectName === "string" && p.projectName.length > 0) {
+      idToName.set(p.id, p.projectName);
+    }
+  }
+
+  const out: Array<{ row: any; name: string }> = [];
+  let resolvedFromId = 0;
+  let trulyOrphan = 0;
+  for (const r of revLines) {
+    let name: string | null = null;
+    if (typeof r.projectName === "string" && r.projectName.length > 0) {
+      name = r.projectName;
+    } else if (r.projectId != null) {
+      const fallback = idToName.get(r.projectId);
+      if (fallback) {
+        name = fallback;
+        resolvedFromId++;
+      }
+    }
+    if (!name) {
+      trulyOrphan++;
+      continue;
+    }
+    out.push({ row: r, name });
+  }
+
+  if (trulyOrphan > 0 || resolvedFromId > 0) {
+    console.warn(
+      `${logTag} processed ${revLines.length} rev rows: ${out.length} attributed (${resolvedFromId} resolved via project_id fallback), ${trulyOrphan} truly orphan (no project_name and no project_id match)`,
+    );
+  }
+
+  return out;
+}
+
 export class FinanceInflowsRepository {
   private _dbInstance?: typeof db;
 
@@ -21,16 +83,11 @@ export class FinanceInflowsRepository {
     const { adaptRevenueToInflow, createNameResolver } = await import("../lib/data-merge");
     const [revLines, piRows] = await Promise.all([
       this.dbInstance.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
-      this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo),
+      this.dbInstance.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo),
     ]);
     const resolve = createNameResolver(piRows.map((r: any) => r.projectName));
-    // Skip orphan rows with NULL project_name — they cannot be attributed.
-    const attributed = revLines.filter((r: any) => typeof r.projectName === "string" && r.projectName.length > 0);
-    const skipped = revLines.length - attributed.length;
-    if (skipped > 0) {
-      console.warn(`[getAllProgramInflows] Skipped ${skipped} revenue line(s) with NULL project_name`);
-    }
-    return attributed.map((r: any) => adaptRevenueToInflow(r, resolve(r.projectName)));
+    return resolveRevenueRowProjectNames(revLines as any[], piRows as any[], "[getAllProgramInflows]")
+      .map(({ row, name }) => adaptRevenueToInflow(row, resolve(name)));
   }
 
   async getAllRevenueLinesForCashflow(): Promise<any[]> {
@@ -39,24 +96,36 @@ export class FinanceInflowsRepository {
     const { adaptRevenueToInflow, createNameResolver } = await import("../lib/data-merge");
     const [revLines, piRows] = await Promise.all([
       this.dbInstance.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
-      this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo),
+      this.dbInstance.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo),
     ]);
     const resolve = createNameResolver(piRows.map((r: any) => r.projectName));
-    // Skip orphan rows with NULL project_name — they cannot be attributed and
-    // would otherwise crash resolve() or contaminate cashflow totals.
-    const attributed = revLines.filter((r: any) => typeof r.projectName === "string" && r.projectName.length > 0);
-    const skipped = revLines.length - attributed.length;
-    if (skipped > 0) {
-      console.warn(`[getAllRevenueLinesForCashflow] Skipped ${skipped} revenue line(s) with NULL project_name`);
-    }
-    return attributed.map((r: any) => adaptRevenueToInflow(r, resolve(r.projectName)));
+    return resolveRevenueRowProjectNames(revLines as any[], piRows as any[], "[getAllRevenueLinesForCashflow]")
+      .map(({ row, name }) => adaptRevenueToInflow(row, resolve(name)));
   }
 
   async getProgramInflowsByProject(projectName: string): Promise<any[]> {
     const { adaptRevenueToInflow } = await import("../lib/data-merge");
-    const revLines = await this.dbInstance.select().from(normalizedRevenueLines)
-      .where(and(eq(normalizedRevenueLines.projectName, projectName), isNull(normalizedRevenueLines.effectiveTo)));
-    return revLines.map((r: any) => adaptRevenueToInflow(r, projectName));
+    // Resolve project_id for the requested name so we also catch legacy rows
+    // where project_name is NULL but project_id is set.
+    const projectMatches = await this.dbInstance.select({ id: projectInfo.id })
+      .from(projectInfo)
+      .where(eq(projectInfo.projectName, projectName));
+    const projectIds = projectMatches.map((p: { id: number }) => p.id);
+
+    const allActive = await this.dbInstance.select().from(normalizedRevenueLines)
+      .where(isNull(normalizedRevenueLines.effectiveTo));
+
+    const matched = (allActive as any[]).filter((r: any) => {
+      if (typeof r.projectName === "string" && r.projectName.length > 0 && r.projectName === projectName) {
+        return true;
+      }
+      if (r.projectId != null && projectIds.includes(r.projectId)) {
+        return true;
+      }
+      return false;
+    });
+
+    return matched.map((r: any) => adaptRevenueToInflow(r, projectName));
   }
 
   async updateProgramInflowFields(id: number, fields: Record<string, any>): Promise<any | undefined> {
