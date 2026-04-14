@@ -201,60 +201,48 @@ describe("B. DECOMMISSION MATRIX: Items safe to remove", () => {
   });
 });
 
-describe("B. DECOMMISSION MATRIX: Items NOT safe to remove yet", () => {
-  it("BLOCKED: program_expense table — FYE revenue tracking reads it directly", () => {
+describe("B. PE/PI cutover: anti-regression checks (cutover complete)", () => {
+  // The "Items NOT safe to remove yet" and "Schema gaps preventing full PE/PI
+  // deprecation" describe blocks were retired in the PE/PI cutover. Every
+  // item listed there as "BLOCKED" or "GAP" has been resolved:
+  //   * FYE Revenue Tracker reads normalized_revenue_lines / normalized_cost_lines
+  //     (commit 3d3fb59).
+  //   * Smart-import no longer writes program_expense / program_inflows
+  //     (commits 956ebe0, 079b451).
+  //   * The legacy program_expense / program_inflows tables are dropped
+  //     (migration 20260414_drop_program_expense_and_program_inflows.sql).
+  //   * The "schema gaps" for computedForecastPaymentDate, expenseQty,
+  //     etc. are no longer relevant — the legacy tables that those fields
+  //     lived on are gone, and FYE forecast logic now uses
+  //     normalized_cost_lines.forecast_payment_date directly.
+  // Anti-regression checks for the cutover live in
+  // qa/tests/unit/program-expense-deprecation.test.ts and
+  // qa/tests/unit/program-inflows-deprecation.test.ts.
+
+  it("FYE revenue tracker reads canonical normalized_revenue_lines (not program_inflows)", () => {
     const fye = read("server/departments/fye-revenue-tracking-routes.ts");
-    expect(fye).toContain(".from(programExpense)");
+    expect(fye).not.toContain(".from(programInflows)");
+    expect(fye).toContain("normalizedRevenueLines");
   });
 
-  it("BLOCKED: program_inflows table — FYE revenue tracking reads it directly", () => {
+  it("FYE revenue tracker reads canonical normalized_cost_lines (not program_expense)", () => {
     const fye = read("server/departments/fye-revenue-tracking-routes.ts");
-    expect(fye).toContain(".from(programInflows)");
+    expect(fye).not.toContain(".from(programExpense)");
+    expect(fye).toContain("normalizedCostLines");
   });
 
-  it("BLOCKED: smart import PE/PI dual-write — FYE reads still need the data", () => {
+  it("smart-import does not write program_expense or program_inflows", () => {
     const smartImport = read("server/smart-import-routes.ts");
-    expect(smartImport).toContain("tx.insert(programExpense)");
-    expect(smartImport).toContain("tx.insert(programInflows)");
+    expect(smartImport).not.toContain("tx.insert(programExpense)");
+    expect(smartImport).not.toContain("tx.insert(programInflows)");
   });
 
-  it("BLOCKED: getAllProgramExpenses — expenditure tabs need PE-specific fields", () => {
+  it("storage.getAllProgramExpenses still exists as PE-shape compatibility view over normalized_cost_lines", () => {
+    // The method name is preserved for caller stability. Internally it now
+    // reads from normalized_cost_lines via FinanceExpenseEngineRepository
+    // (commit 4d08868) — no PE table read.
     const storage = read("server/storage.ts");
     expect(storage).toContain("async getAllProgramExpenses");
-  });
-
-  it("BLOCKED: cos-control-routes.ts getAllProgramExpenses — scenario/forecast views", () => {
-    const cosControl = read("server/routes/cos-control-routes.ts");
-    expect(cosControl).toContain("storage.getAllProgramExpenses()");
-  });
-});
-
-describe("B. DECOMMISSION MATRIX: Schema gaps preventing full PE/PI deprecation", () => {
-  it("GAP: computedForecastPaymentDate not on normalized_cost_lines", () => {
-    const schema = read("shared/schema/finance.ts");
-    const nclBlock = schema.substring(
-      schema.indexOf('pgTable("normalized_cost_lines"'),
-      schema.indexOf("insertNormalizedCostLineSchema")
-    );
-    expect(nclBlock).not.toContain("computed_forecast_payment_date");
-  });
-
-  it("GAP: computedForecastReceiptDate not on normalized_revenue_lines", () => {
-    const schema = read("shared/schema/finance.ts");
-    const nrlBlock = schema.substring(
-      schema.indexOf('pgTable("normalized_revenue_lines"'),
-      schema.indexOf("insertNormalizedRevenueLineSchema")
-    );
-    expect(nrlBlock).not.toContain("computed_forecast_receipt_date");
-  });
-
-  it("GAP: expenseQty / expenseRateUnit not on normalized_cost_lines", () => {
-    const schema = read("shared/schema/finance.ts");
-    const nclBlock = schema.substring(
-      schema.indexOf('pgTable("normalized_cost_lines"'),
-      schema.indexOf("insertNormalizedCostLineSchema")
-    );
-    expect(nclBlock).not.toContain("expense_qty");
   });
 });
 

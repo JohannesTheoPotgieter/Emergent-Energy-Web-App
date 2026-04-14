@@ -90,18 +90,18 @@ describe("CAT 1: True duplicate DB rows in normalized_cost_lines", () => {
 // CATEGORY 2: Same Business Cost in Multiple Tables
 // =========================================================================
 
-describe("CAT 2: Same business cost in multiple tables", () => {
-  it("MECHANISM: smart import writes same data to NCL and PE", () => {
+describe("CAT 2: Same business cost in multiple tables (resolved by PE/PI cutover)", () => {
+  it("RESOLVED: smart import writes only to normalized_cost_lines (no program_expense dual-write)", () => {
     const smartImport = read("server/smart-import-routes.ts");
-    // Same import commit writes to both tables
     expect(smartImport).toContain("tx.insert(normalizedCostLines)");
-    expect(smartImport).toContain("tx.insert(programExpense)");
+    expect(smartImport).not.toContain("tx.insert(programExpense)");
   });
 
   it("PROTECTION: merge path deduplicates via business key", () => {
     const storage = read("server/storage.ts");
     expect(storage).toContain("selectWinningExpenseRows");
-    // The dedup uses projectId + sourceRow as business key
+    // The dedup uses projectId + sourceRow as business key. Still useful
+    // for guarding against duplicates from temporal history / re-imports.
   });
 
   it("PROTECTION: canonical read paths skip PE entirely", () => {
@@ -114,10 +114,10 @@ describe("CAT 2: Same business cost in multiple tables", () => {
     // All tracker endpoints now use this path
   });
 
-  it("SEVERITY: MEDIUM — dual-table storage is the root cause of complexity", () => {
-    // The smart import still dual-writes (blocked by FYE reads).
-    // But since most screens now read NCL only, the PE copy is
-    // increasingly irrelevant. When FYE migrates, PE can be removed.
+  it("SEVERITY: RESOLVED — program_expense and program_inflows dropped (Wave 2 cutover)", () => {
+    // The dual-write was removed in commits 956ebe0 and 079b451.
+    // The legacy tables themselves were dropped via
+    // migrations/20260414_drop_program_expense_and_program_inflows.sql.
   });
 });
 
