@@ -26,6 +26,7 @@
     "test:db-api-readiness": "vitest run -c qa/vitest.config.ts qa/tests/unit/api-v2-business-flows.test.ts qa/tests/unit/api-v2-policy-and-validation.test.ts",
     "qa:full-proof": "npm run check && npm run test:api && npm run test:smoke && npm run test:routes && npm run test:workflows && npm run reconciliation:report && npm run release:gate",
     "test:coverage": "vitest run -c qa/vitest.config.ts --coverage",
+    "drift:report": "tsx scripts/find-drift.ts",
     "encrypt-bank-details": "tsx scripts/encrypt-existing-bank-details.ts",
     "check:redirects": "tsx scripts/check-redirect-chains.ts",
     "check:routes-migration": "tsx scripts/check-routes-migration.ts",
