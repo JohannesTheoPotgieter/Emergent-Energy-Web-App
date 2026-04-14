@@ -18,11 +18,12 @@ import {
   Wrench, PlusCircle, Circle, Calendar, PauseCircle, AlertTriangle,
   ChevronDown, ChevronUp, Eye, Play, Zap, Target, Users, Trash2, Plus,
   MessageSquare, FolderOpen, FileCheck, Search, X,
-  Handshake, MapPin, LayoutDashboard, FileText, ClipboardList,
+  Handshake, MapPin, LayoutDashboard, FileText, ClipboardList, Plug,
 } from "lucide-react";
 import { EnergyLoader } from "@/components/ui/energy-loader";
 import { RevenueTrackingTab } from "@/components/tabs/RevenueTrackingTab";
 import { ExpenditureEditableTab } from "@/components/tabs/ExpenditureEditableTab";
+import { QuickBooksReconciliationTab } from "@/components/tabs/QuickBooksReconciliationTab";
 // Legacy finance tab imports removed — revenue/GP/COS now under PD department
 import { CashflowTab } from "@/components/tabs/CashflowTab";
 import { MonthlyRealisationTab } from "@/components/tabs/MonthlyRealisationTab";
@@ -1724,6 +1725,7 @@ export default function ProjectDetailPage() {
               { key: "cashflow", label: "Cashflow", icon: Activity, visible: canViewSubTab.cashflow },
               { key: "procurement", label: "Procurement", icon: CreditCard, visible: true },
               { key: "subcontractors", label: "Subs", icon: Users, visible: canViewSubTab.subcontractors },
+              { key: "qb-recon", label: "QB Recon", icon: Plug, visible: canViewSubTab.expenditure },
             ].filter(st => st.visible).map(st => (
               <Button key={st.key} size="sm" variant={activeSubTab === st.key ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab(st.key)} data-testid={`subtab-${st.key}`}>
                 <st.icon className="h-3 w-3 mr-1" /> {st.label}
@@ -1743,6 +1745,9 @@ export default function ProjectDetailPage() {
           {activeSubTab === "cashflow" && canViewSubTab.cashflow && <CashflowTab projectName={projectName} canOverrideFinance={v2Perms?.canOverrideFinance ?? false} />}
           {activeSubTab === "procurement" && projectInfoId && <ProjectProcurementTab projectId={projectInfoId} projectName={projectName} initialFilter={procurementFilter || undefined} />}
           {activeSubTab === "subcontractors" && canViewSubTab.subcontractors && <ProjectSubcontractorsTab projectName={projectName} />}
+          {activeSubTab === "qb-recon" && canViewSubTab.expenditure && projectInfoId && (
+            <QuickBooksReconciliationTab projectId={projectInfoId} projectName={projectName} />
+          )}
         </div>
       )}
 
