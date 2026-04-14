@@ -28,8 +28,21 @@ export const trLinkStatusEnum = pgEnum("tr_link_status", ["linked", "task_create
 export const trSuggestionDecisionEnum = pgEnum("tr_suggestion_decision", ["suggested", "accepted", "rejected", "suppressed"]);
 export const rowSourceEnum = pgEnum("row_source", ["imported", "manual", "imported_edited"]);
 
-// ===================== PROGRAM EXPENSE =====================
+// ===================== PROGRAM EXPENSE (LEGACY) =====================
 
+/**
+ * @deprecated LEGACY derivative table. Do not read from user-facing code.
+ *
+ * Canonical source: `normalizedCostLines`. This table is maintained only as a
+ * back-compat mirror by `server/lib/import/derivative-materializer.ts` after
+ * each v2 smart-import commit. All user-facing dashboards, KPIs, and reports
+ * must read from `normalizedCostLines` instead.
+ *
+ * Scheduled removal: after Wave 2 (smart-import rewrite + materializer delete).
+ * Any new code that writes to this table will fail the write-authority policy
+ * (`server/policies/write-authority.ts` → BLOCKED_WRITE_TARGETS) and the
+ * `blockProgramExpenseWrite` guard in `server/policies/finance-policy.ts`.
+ */
 export const programExpense = pgTable("program_expense", {
   id: serial("id").primaryKey(),
   /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
@@ -91,8 +104,20 @@ export const insertProgramExpenseSchema = createInsertSchema(programExpense).omi
 export type InsertProgramExpense = z.infer<typeof insertProgramExpenseSchema>;
 export type ProgramExpense = typeof programExpense.$inferSelect;
 
-// ===================== PROGRAM INFLOWS =====================
+// ===================== PROGRAM INFLOWS (LEGACY) =====================
 
+/**
+ * @deprecated LEGACY derivative table. Do not read from user-facing code.
+ *
+ * Canonical source: `normalizedRevenueLines`. This table is maintained only as
+ * a back-compat mirror by `server/lib/import/derivative-materializer.ts` after
+ * each v2 smart-import commit. All user-facing dashboards, KPIs, and reports
+ * must read from `normalizedRevenueLines` instead.
+ *
+ * Scheduled removal: after Wave 2 (smart-import rewrite + materializer delete).
+ * Any new code that writes to this table will fail the write-authority policy
+ * (`server/policies/write-authority.ts` → BLOCKED_WRITE_TARGETS).
+ */
 export const programInflows = pgTable("program_inflows", {
   id: serial("id").primaryKey(),
   /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
