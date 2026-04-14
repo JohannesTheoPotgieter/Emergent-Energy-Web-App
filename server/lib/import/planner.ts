@@ -72,6 +72,12 @@ export interface SectionPlan {
 export interface PlannedRow {
   classification: RowClassification;
   businessKey: string;
+  /**
+   * Unique-within-section row identifier surfaced to clients for conflict
+   * resolution keying. For singletons equals `businessKey`; for members of
+   * a duplicate-key group it is suffixed (`#pk<id>` / `#new-<idx>`).
+   */
+  rowUid: string;
   keyType: "PRIMARY" | "FALLBACK";
   matchConfidence: MatchConfidence;
   rowLabel: string;
@@ -79,6 +85,8 @@ export interface PlannedRow {
   existingRowId: number | null;
   changedFields: ChangedField[];
   warnings: string[];
+  /** True when this row belongs to a duplicate-business-key group. */
+  inDuplicateGroup: boolean;
 }
 
 export interface PlannerResult {
@@ -130,6 +138,7 @@ function buildSectionPlan(
     rows.push({
       classification: mr.classification,
       businessKey: mr.businessKey.key,
+      rowUid: mr.rowUid ?? mr.businessKey.key,
       keyType: mr.businessKey.keyType,
       matchConfidence: mr.businessKey.matchConfidence,
       rowLabel: mr.businessKey.rowLabel,
@@ -137,6 +146,7 @@ function buildSectionPlan(
       existingRowId: mr.existingRowId,
       changedFields: mr.changedFields,
       warnings: mr.warnings,
+      inDuplicateGroup: mr.inDuplicateGroup ?? false,
     });
   }
 
@@ -266,6 +276,7 @@ function buildBaselinePlan(
       rows: rows.map((r, i) => ({
         classification: "NEW" as const,
         businessKey: "",
+        rowUid: `baseline#${i}`,
         keyType: "PRIMARY" as const,
         matchConfidence: "HIGH" as const,
         rowLabel: (r as any).taskName || (r as any).milestoneName || (r as any).description || `Row ${i + 1}`,
@@ -273,6 +284,7 @@ function buildBaselinePlan(
         existingRowId: null,
         changedFields: [],
         warnings: [],
+        inDuplicateGroup: false,
       })),
       fileRowCount: rows.length,
       existingRowCount: 0,

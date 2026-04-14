@@ -1792,6 +1792,70 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
 
     let preservedManualEditsCount = 0;
 
+    // ── Preflight: external_ref collision check ──
+    // Before opening the commit transaction, run the PLAN matcher and
+    // verify every canonical external_ref the commit will write is either
+    // unclaimed or already held by the row the matcher says should own it.
+    // Any mismatch is a strong signal that the matcher and DB state have
+    // drifted (legacy `#idxN` refs, concurrent modification, etc.). We do
+    // NOT abort here — the executor's self-id fallback (`#pk<ownId>`) will
+    // still resolve the write safely — but we log a diagnostic so ops can
+    // see the drift without trawling failed commits.
+    if (!skipV2ConflictCheck && projectId) {
+      try {
+        const norm = (run.summaryJson as any)?.normalization;
+        if (norm?.planTasks?.length) {
+          const existingPlanRows = await loadCurrentPlanRows(projectId);
+          const preflightMatches = matchRows("PLAN" as SectionType, projectId, norm.planTasks, existingPlanRows as any);
+          const writeTargets: Array<{ row: typeof preflightMatches[number]; ref: string }> = [];
+          for (const m of preflightMatches) {
+            if (m.classification === "UNCHANGED" || m.classification === "MISSING_FROM_UPLOAD") continue;
+            if (!m.canonicalExternalRef) continue;
+            writeTargets.push({ row: m, ref: m.canonicalExternalRef });
+          }
+          if (writeTargets.length > 0) {
+            const refSet = Array.from(new Set(writeTargets.map(w => w.ref)));
+            // Batch-fetch all rows whose external_ref is in the target set.
+            const held = await db
+              .select({ id: workItems.id, externalRef: workItems.externalRef })
+              .from(workItems)
+              .where(and(
+                inArray(workItems.externalRef, refSet),
+                isNull(workItems.deletedAt),
+              ));
+            const holderByRef = new Map<string, number>();
+            for (const h of held) {
+              if (h.externalRef) holderByRef.set(h.externalRef, h.id);
+            }
+            const collisions: Array<{ ref: string; expectedId: number | null; holderId: number }> = [];
+            for (const wt of writeTargets) {
+              const holderId = holderByRef.get(wt.ref);
+              if (holderId == null) continue;
+              // Expected owner is the existing matched DB id (for CHANGED)
+              // or null (for NEW — it should be unowned).
+              const expected = wt.row.existingRowId;
+              if (expected !== holderId) {
+                collisions.push({ ref: wt.ref, expectedId: expected, holderId });
+              }
+            }
+            if (collisions.length > 0) {
+              console.warn(
+                `[SmartImport] Preflight: ${collisions.length} PLAN external_ref collision(s) detected on run ${runId}. ` +
+                `The executor self-id fallback will rewrite to #pk<ownId> form. Drift details:`,
+                collisions.slice(0, 10),
+              );
+            }
+          }
+        }
+      } catch (preflightErr) {
+        // Preflight is purely diagnostic; never block a commit because of it.
+        console.warn(
+          "[SmartImport] Preflight collision check failed (non-blocking):",
+          preflightErr instanceof Error ? preflightErr.message : String(preflightErr),
+        );
+      }
+    }
+
     await db.transaction(async (tx: any) => {
       // ── Atomic commit guard ──
       // Claim this run for commit by atomically transitioning from a committable
