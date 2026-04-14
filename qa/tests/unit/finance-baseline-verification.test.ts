@@ -304,24 +304,39 @@ describe("Effective date resolution baseline", () => {
 // ---------------------------------------------------------------------------
 
 describe("Outflow amount breakdown baseline", () => {
-  it("BASELINE: approved row with actualTotal returns actual type", () => {
-    const row = { lineStatus: "Approved", expenseActualTotal: "5000.00", budgetTotal: "4500.00" };
+  // NOTE: per the corrected business spec, the cashflow outflow amount ALWAYS
+  // comes from expenseActualTotal (= NCL.amount_ex_vat). The legacy
+  // budgetTotal fallback was over-counting by ~R 47M because budget figures
+  // on un-approved lines were materially larger than the actual cost line
+  // value. The bucket type is now driven by paid-date confirmation
+  // (paymentDateFontColor === 'black' or paymentDateConfirmed === true),
+  // not by isApprovedExpenseRow.
+  it("BASELINE: confirmed paid date returns actual type", () => {
+    const row = {
+      expenseActualTotal: "5000.00",
+      expensePaymentDate: "2026-03-15",
+      paymentDateFontColor: "black",
+    };
     const result = getOutflowAmountBreakdown(row);
     expect(result.type).toBe("actual");
     expect(result.amount).toBe(5000);
     expect(result.amountSource).toBe("expenseActualTotal");
   });
 
-  it("BASELINE: unapproved row with budget falls back to forecast", () => {
-    const row = { lineStatus: "Planned", expenseActualTotal: "5000.00", budgetTotal: "4500.00" };
+  it("BASELINE: unconfirmed paid date (red font) returns forecast type", () => {
+    const row = {
+      expenseActualTotal: "5000.00",
+      expensePaymentDate: "2026-03-15",
+      paymentDateFontColor: "red",
+    };
     const result = getOutflowAmountBreakdown(row);
     expect(result.type).toBe("forecast");
-    expect(result.amount).toBe(4500);
-    expect(result.amountSource).toBe("budgetTotal");
+    expect(result.amount).toBe(5000);
+    expect(result.amountSource).toBe("expenseActualTotal");
   });
 
-  it("BASELINE: missing budget uses actual even when unapproved", () => {
-    const row = { lineStatus: "Planned", expenseActualTotal: "5000.00" };
+  it("BASELINE: no paid date with budget IGNORES budget (uses actual or 0)", () => {
+    const row = { expenseActualTotal: "5000.00", budgetTotal: "4500.00" };
     const result = getOutflowAmountBreakdown(row);
     expect(result.type).toBe("forecast");
     expect(result.amount).toBe(5000);

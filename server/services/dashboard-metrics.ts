@@ -91,7 +91,7 @@ export async function refreshProjectMetrics(projectId: number): Promise<void> {
     } else {
       outstandingCost += amt;
     }
-    // COS realised = canonical invoice-only check (separate from cash paid)
+    // COS realised = invoice + invoice-date confirmed (black font) per canonical check
     if (isCanonicalCosRealised({
       status: null,
       cosStatusOverride: (row as any).cosStatusOverride ?? null,
@@ -101,6 +101,8 @@ export async function refreshProjectMetrics(projectId: number): Promise<void> {
       expensePoNumber: (row as any).poNumber ?? null,
       paymentDate: (row as any).paidDate ?? null,
       today: new Date().toISOString().slice(0, 10),
+      invoiceDateFontColor: (row as any).invoiceDateFontColor ?? null,
+      invoiceDateConfirmed: (row as any).invoiceDateConfirmed ?? null,
     })) {
       realisedCost += amt;
     }

@@ -92,6 +92,57 @@ describe("isCanonicalCosRealised — invoice is the ONLY hard check", () => {
 });
 
 // ---------------------------------------------------------------------------
+// A2. INVOICE-DATE-CONFIRMED (BLACK FONT) GATE
+// ---------------------------------------------------------------------------
+
+describe("isCanonicalCosRealised — black-font invoice-date confirmation gate", () => {
+  it("invoice + black font color = realised", () => {
+    expect(isCanonicalCosRealised(makeLine({
+      expenseInvoiceNumber: "INV-001",
+      invoiceDateFontColor: "black",
+    }))).toBe(true);
+  });
+
+  it("invoice + invoiceDateConfirmed=true = realised", () => {
+    expect(isCanonicalCosRealised(makeLine({
+      expenseInvoiceNumber: "INV-001",
+      invoiceDateConfirmed: true,
+    }))).toBe(true);
+  });
+
+  it("invoice + RED font color = NOT realised (the over-counting fix)", () => {
+    expect(isCanonicalCosRealised(makeLine({
+      expenseInvoiceNumber: "INV-001",
+      invoiceDateFontColor: "red",
+    }))).toBe(false);
+  });
+
+  it("invoice + invoiceDateConfirmed=false = NOT realised", () => {
+    expect(isCanonicalCosRealised(makeLine({
+      expenseInvoiceNumber: "INV-001",
+      invoiceDateConfirmed: false,
+    }))).toBe(false);
+  });
+
+  it("invoice with NO font/confirmed signal at all = legacy fallback (still realised)", () => {
+    // Backward compat: if the caller doesn't provide either signal we keep
+    // the old invoice-only behaviour. New callers should always pass at
+    // least one of invoiceDateFontColor or invoiceDateConfirmed.
+    expect(isCanonicalCosRealised(makeLine({
+      expenseInvoiceNumber: "INV-001",
+    }))).toBe(true);
+  });
+
+  it("admin override REALISED still wins even with red font", () => {
+    expect(isCanonicalCosRealised(makeLine({
+      cosStatusOverride: "COS REALISED",
+      expenseInvoiceNumber: "INV-001",
+      invoiceDateFontColor: "red",
+    }))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // B. STATUS LABELS DO NOT DETERMINE REALISATION
 // ---------------------------------------------------------------------------
 
