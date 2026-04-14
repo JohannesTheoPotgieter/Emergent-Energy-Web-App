@@ -353,15 +353,6 @@ export async function registerAuthRoutes(app: Express): Promise<void> {
     res.json({ token: entry.token, user: entry.user });
   });
 
-  app.get("/api/pm-assignable-users", requireAuth, async (_req, res) => {
-    try {
-      const pmUsers = await db.select({ id: users.id, name: users.name, username: users.username, role: users.role }).from(users).where(eq(users.role, "PROJECT_MANAGER_SITE"));
-      res.json(pmUsers);
-    } catch {
-      res.status(500).json({ error: "Failed to fetch PM users" });
-    }
-  });
-
   app.get("/api/pd-assignable-users", requireAuth, async (_req, res) => {
     try {
       const pdUsers = await db.select({ id: users.id, name: users.name, username: users.username, role: users.role, microsoft_id: users.microsoft_id }).from(users).where(eq(users.role, "PROJECT_DEVELOPER"));
