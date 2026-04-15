@@ -220,7 +220,12 @@ async function syncSingleDeal(deal: PipedriveDeal, result: PipedriveSyncResult) 
 
   const stage = DEAL_STATUS_TO_STAGE[deal.status] ?? "prospect";
   const dealTitle = deal.title || `Deal ${deal.id}`;
-  const opportunityData = {
+
+  // Fields owned by Pipedrive (CRM truth). Safe to overwrite on every sync.
+  // NOTE: `notes` is intentionally NOT in here — it is user-editable app-side
+  //   content and must not be clobbered by repeated syncs. See create branch
+  //   below for the initial seed value.
+  const crmOwnedFields = {
     pipedriveDealId: dealIdStr,
     clientId,
     stage,
@@ -228,18 +233,23 @@ async function syncSingleDeal(deal: PipedriveDeal, result: PipedriveSyncResult) 
     expectedCloseDate: deal.expected_close_date ?? null,
     signedDate: deal.won_time ? deal.won_time.split(" ")[0] : null,
     status: deal.status === "open" ? "active" : deal.status === "won" ? "won" : "lost",
-    notes: `Pipedrive: ${dealTitle}`,
     updatedAt: new Date(),
   };
 
   if (existing) {
+    // Preserve user-owned `notes`. Only CRM-owned fields are overwritten.
     await db
       .update(opportunities)
-      .set(opportunityData)
+      .set(crmOwnedFields)
       .where(eq(opportunities.id, existing.id));
     result.dealsUpdated++;
   } else {
-    await db.insert(opportunities).values(opportunityData);
+    // On create, seed notes with the Pipedrive deal title so the record is
+    // recognisable. Subsequent syncs will not touch this field again.
+    await db.insert(opportunities).values({
+      ...crmOwnedFields,
+      notes: `Pipedrive: ${dealTitle}`,
+    });
     result.dealsCreated++;
   }
 }
