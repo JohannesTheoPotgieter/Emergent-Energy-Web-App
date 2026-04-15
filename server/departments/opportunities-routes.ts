@@ -9,16 +9,31 @@ import { eq, desc, isNull, and } from "drizzle-orm";
 import { opportunities } from "@shared/schema/projects";
 import { z, ZodError } from "zod";
 
+// Validation for user-driven opportunity create/update. Intentionally
+// narrower than the raw table schema:
+//   - `pipedriveDealId` is NOT accepted — only the Pipedrive sync engine
+//     writes that column.
+//   - `source` is accepted but restricted to 'internal' on the create
+//     path; flipping a row to 'pipedrive' is reserved for the sync engine.
+//   - The old `name` field that this schema used to accept has been
+//     dropped because the `opportunities` table has no `name` column.
+//     It was being silently ignored by drizzle and leaking validation
+//     errors when clients guessed at the shape.
 const opportunityCreateSchema = z.object({
-  name: z.string().min(1).optional(),
   clientId: z.number().int().optional(),
+  siteId: z.number().int().optional(),
   stage: z.string().optional(),
+  status: z.string().optional(),
   contractType: z.string().optional(),
   estimatedValue: z.union([z.string(), z.number()]).optional(),
   estimatedKwp: z.union([z.string(), z.number()]).optional(),
+  estimatedKwh: z.union([z.string(), z.number()]).optional(),
   expectedCloseDate: z.string().optional(),
+  signedDate: z.string().optional(),
   notes: z.string().optional(),
   fundingType: z.string().optional(),
+  commercialRisks: z.string().optional(),
+  source: z.literal("internal").optional(),
 });
 
 const router = Router();
@@ -62,7 +77,12 @@ router.get("/api/opportunities/:id", requireAuth, requirePermission("pd_dashboar
 router.post("/api/opportunities", requireAuth, requirePermission("pd_tickets", "create"), async (req: Request, res: Response) => {
   try {
     const parsed = opportunityCreateSchema.parse(req.body);
-    const [row] = await db.insert(opportunities).values(parsed).returning();
+    // Force `source` to 'internal' on the manual create path — the
+    // Pipedrive sync engine is the only writer allowed to set 'pipedrive'.
+    const [row] = await db
+      .insert(opportunities)
+      .values({ ...parsed, source: "internal" })
+      .returning();
     res.status(201).json(row);
   } catch (err) {
     if (err instanceof ZodError) {
@@ -76,12 +96,42 @@ router.post("/api/opportunities", requireAuth, requirePermission("pd_tickets", "
 router.patch("/api/opportunities/:id", requireAuth, requirePermission("pd_tickets", "edit"), async (req: Request, res: Response) => {
   try {
     const parsed = opportunityCreateSchema.partial().parse(req.body);
+
+    // Guard: if this opportunity is Pipedrive-sourced, the CRM-owned
+    // fields will be overwritten by the next sync. We still allow the
+    // update so the user can unblock themselves, but we warn on the
+    // response so the UI can surface it. App-only fields (notes,
+    // commercialRisks, fundingType) are always safe to edit.
+    const [existing] = await db
+      .select()
+      .from(opportunities)
+      .where(eq(opportunities.id, Number(req.params.id)));
+    if (!existing) {
+      return res.status(404).json({ error: "Opportunity not found" });
+    }
+
+    // Never allow the PATCH path to mutate `source` or `pipedriveDealId`.
+    // Both identify the row's origin and must only be written by the
+    // sync engine.
+    const { source: _source, ...safeFields } = parsed as typeof parsed & { source?: unknown };
+    void _source;
+
     const [row] = await db
       .update(opportunities)
-      .set({ ...parsed, updatedAt: new Date() })
+      .set({ ...safeFields, updatedAt: new Date() })
       .where(eq(opportunities.id, Number(req.params.id)))
       .returning();
-    res.json(row);
+
+    const crmOverwriteFields = ["stage", "status", "estimatedValue", "expectedCloseDate", "signedDate", "clientId"] as const;
+    const touchesCrmField = existing.source === "pipedrive"
+      && crmOverwriteFields.some(f => (safeFields as Record<string, unknown>)[f] !== undefined);
+
+    res.json({
+      ...row,
+      _warning: touchesCrmField
+        ? "This opportunity is synced from Pipedrive. The next sync run will overwrite stage, status, estimated value, expected close date, signed date, and clientId with the Pipedrive values. App-only fields (notes, commercial risks, funding type) will be preserved."
+        : undefined,
+    });
   } catch (err) {
     if (err instanceof ZodError) {
       return res.status(400).json({ error: "Validation failed", details: err.errors });
