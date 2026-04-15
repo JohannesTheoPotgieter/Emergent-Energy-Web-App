@@ -31,6 +31,8 @@ function read(relPath: string): string {
 const RECON_TAB = "client/src/components/tabs/QuickBooksReconciliationTab.tsx";
 const LINKS_PAGE = "client/src/pages/finance-quickbooks-links.tsx";
 const ADMIN_PAGE = "client/src/pages/admin-quickbooks.tsx";
+const CUSTOMER_MAPPING_PAGE = "client/src/pages/finance-quickbooks-customer-mapping.tsx";
+const CASHFLOW_PAGE = "client/src/pages/cashflow.tsx";
 const PAGE_REGISTRY = "client/src/config/page-registry.ts";
 const APP_NAV = "client/src/config/app-navigation.ts";
 
@@ -188,5 +190,79 @@ describe("QB UI clarity — trust cues surfaced", () => {
   it("surfaces a stale-QB-data warning badge in the recon tab filter card", () => {
     const recon = read(RECON_TAB);
     expect(recon).toContain("stale QB data");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 5. Cashflow page — cost-side label clarity + freshness trust card
+// ---------------------------------------------------------------------------
+
+describe("Cashflow UI clarity — cost-side labels and freshness", () => {
+  const cashflow = read(CASHFLOW_PAGE);
+
+  it("renames the outflow detail column header from 'Invoice #' to 'Supplier invoice #'", () => {
+    // The outflow row carries `expenseInvoiceNumber`, which represents the
+    // supplier-issued document number (i.e. what becomes a QuickBooks Bill in
+    // our books). Calling it just "Invoice #" was ambiguous because the
+    // inflow detail table also has a column called "Invoice #" that refers to
+    // OUR customer-facing AR invoices.
+    expect(cashflow).toContain(">Supplier invoice #</th>");
+  });
+
+  it("does not call the outflow column 'Invoice #' (cost-side label hygiene)", () => {
+    // The inflow table is allowed to use 'Invoice #' (those are our AR
+    // invoices). We assert here that the outflow table's surrounding context
+    // ('Line Item' header followed by the supplier doc column) uses the new
+    // label, which guarantees we did not accidentally leave the old one in
+    // the cost-side path.
+    const inflowMatched = cashflow.match(
+      /Line Item<\/th>\s*<th[^>]*>Supplier invoice #<\/th>/,
+    );
+    expect(inflowMatched).not.toBeNull();
+  });
+
+  it("rewrites the 'Risk' badge tooltip so users do not read it as a credit-risk score", () => {
+    // The badge label still says "Risk" because it comes from the backend
+    // status enum, but the tooltip must spell out that this means "no
+    // supplier invoice on file yet" — i.e. an unbilled commitment, not a
+    // counterparty / credit risk score.
+    expect(cashflow).toContain("No supplier invoice on file yet");
+    expect(cashflow).toContain("not a credit-risk score");
+    // The old, ambiguous tooltip must be gone.
+    expect(cashflow).not.toContain('title="Risk (no invoice)"');
+  });
+
+  it("surfaces a freshness trust card on the cashflow header", () => {
+    expect(cashflow).toContain('data-testid="cashflow-trust-freshness"');
+    // Last-refreshed wiring must use react-query's dataUpdatedAt — that's
+    // the only timestamp the cashflow API surface gives us today, so use it
+    // rather than fabricating a server-side generatedAt.
+    expect(cashflow).toContain("dataUpdatedAt: cashflowUpdatedAt");
+    expect(cashflow).toMatch(/new Date\(cashflowUpdatedAt\)\.toLocaleString\(\)/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6. Customer-mapping page — trust cue surfaced
+// ---------------------------------------------------------------------------
+
+describe("QB Customer Mapping UI clarity — trust cue surfaced", () => {
+  const page = read(CUSTOMER_MAPPING_PAGE);
+
+  it("imports and renders the shared ReportTrustNotice", () => {
+    expect(page).toContain("ReportTrustNotice");
+    expect(page).toContain('from "@/components/reports/ReportTrustNotice"');
+  });
+
+  it("declares mapping is metadata-only (no money movement, no revenue recognition)", () => {
+    // The whole point of the trust note is to disarm the worry that mapping
+    // a project to a QB customer might silently affect the books.
+    expect(page).toContain("metadata only");
+    expect(page).toMatch(/does not move money/);
+  });
+
+  it("threads the QB lastSuccessfulSyncAt timestamp into the trust notice", () => {
+    expect(page).toContain("lastSuccessfulSyncAt");
+    expect(page).toMatch(/lastUpdatedAt=\{status\.lastSuccessfulSyncAt/);
   });
 });
