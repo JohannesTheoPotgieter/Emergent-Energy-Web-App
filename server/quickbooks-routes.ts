@@ -3,15 +3,35 @@
  *
  * Exposes the OAuth2 flow (auth + callback), connection status,
  * and read-only data endpoints (company, invoices, customers,
- * vendors, bills, P&L). Data endpoints are gated by `requireAuth`;
- * the OAuth callback is intentionally NOT gated (Intuit redirects
- * the browser here after consent — verification is done via the
- * CSRF `state` param stored on the session).
+ * vendors, bills, P&L).
+ *
+ * Authorization model (hardened):
+ *   - OAuth start + disconnect          → requireAuth + requireAdmin
+ *   - OAuth callback                    → NOT gated. Intuit redirects the
+ *                                         browser here after consent; we
+ *                                         verify via the CSRF `state` param
+ *                                         stored on the session.
+ *   - Status + read-only data + recon   → requireAuth + requirePermission(
+ *                                            "financial_integration", "view")
+ *   - Customer-mapping / link READS     → requireAuth + requirePermission(
+ *                                            "financials", "view")
+ *   - Customer-mapping / link WRITES    → requireAuth + requirePermission(
+ *                                            "financials", "edit")
+ *
+ * Canonical-control boundary:
+ *   QuickBooks routes MUST NOT mutate COS realisation state. The single
+ *   canonical path for marking a cost line as realised is the finance
+ *   tracker endpoint `/api/cos-tracker/toggle-realised/:id` (period-lock,
+ *   invoice + invoice-date + placeholder validation, audit trail, metric
+ *   refresh). The previous POST /api/quickbooks/cost-lines/:id/mark-realised
+ *   route bypassed that control and has been disabled (HTTP 410 Gone).
  */
 
 import crypto from "crypto";
 import type { Express, Request, Response } from "express";
 import { requireAuth, getEffectiveUser } from "./auth-context";
+import { requireAdmin } from "./middleware/requireAdmin";
+import { requirePermission } from "./permission-middleware";
 import {
   disconnectQuickBooks,
   exchangeCodeForTokens,
@@ -34,7 +54,6 @@ import {
   invoiceRawToSummary,
   listAllLinks,
   listProjectsWithMappings,
-  markCostLineRealised,
   runProjectCostReconciliation,
   runProjectRevenueReconciliation,
   searchCostLines,
@@ -59,7 +78,7 @@ function notConnectedResponse(res: Response, err: unknown): void {
 export function registerQuickBooksRoutes(app: Express): void {
   // ---------- OAuth flow ----------
 
-  app.get("/api/quickbooks/auth", requireAuth, async (req, res) => {
+  app.get("/api/quickbooks/auth", requireAuth, requireAdmin, async (req, res) => {
     try {
       const state = crypto.randomBytes(24).toString("hex");
       (req.session as SessionWithQbState).qbState = state;
@@ -117,7 +136,7 @@ export function registerQuickBooksRoutes(app: Express): void {
 
   // ---------- Connection status ----------
 
-  app.get("/api/quickbooks/status", requireAuth, async (_req, res) => {
+  app.get("/api/quickbooks/status", requireAuth, requirePermission("financial_integration", "view"), async (_req, res) => {
     try {
       const status = await getQuickBooksConnectionStatus();
       res.json(status);
@@ -127,7 +146,7 @@ export function registerQuickBooksRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/quickbooks/disconnect", requireAuth, async (_req, res) => {
+  app.post("/api/quickbooks/disconnect", requireAuth, requireAdmin, async (_req, res) => {
     try {
       await disconnectQuickBooks();
       res.json({ connected: false });
@@ -139,7 +158,7 @@ export function registerQuickBooksRoutes(app: Express): void {
 
   // ---------- Data endpoints ----------
 
-  app.get("/api/quickbooks/company", requireAuth, async (_req, res) => {
+  app.get("/api/quickbooks/company", requireAuth, requirePermission("financial_integration", "view"), async (_req, res) => {
     try {
       const info = await getCompanyInfo();
       res.json(info);
@@ -148,7 +167,7 @@ export function registerQuickBooksRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/quickbooks/invoices", requireAuth, async (req, res) => {
+  app.get("/api/quickbooks/invoices", requireAuth, requirePermission("financial_integration", "view"), async (req, res) => {
     try {
       const startDate = typeof req.query.startDate === "string" ? req.query.startDate : undefined;
       const endDate = typeof req.query.endDate === "string" ? req.query.endDate : undefined;
@@ -159,7 +178,7 @@ export function registerQuickBooksRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/quickbooks/customers", requireAuth, async (_req, res) => {
+  app.get("/api/quickbooks/customers", requireAuth, requirePermission("financial_integration", "view"), async (_req, res) => {
     try {
       const data = await getCustomers();
       res.json(data);
@@ -168,7 +187,7 @@ export function registerQuickBooksRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/quickbooks/vendors", requireAuth, async (_req, res) => {
+  app.get("/api/quickbooks/vendors", requireAuth, requirePermission("financial_integration", "view"), async (_req, res) => {
     try {
       const data = await getVendors();
       res.json(data);
@@ -177,7 +196,7 @@ export function registerQuickBooksRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/quickbooks/bills", requireAuth, async (req, res) => {
+  app.get("/api/quickbooks/bills", requireAuth, requirePermission("financial_integration", "view"), async (req, res) => {
     try {
       const startDate = typeof req.query.startDate === "string" ? req.query.startDate : undefined;
       const endDate = typeof req.query.endDate === "string" ? req.query.endDate : undefined;
@@ -188,7 +207,7 @@ export function registerQuickBooksRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/quickbooks/reports/pnl", requireAuth, async (req, res) => {
+  app.get("/api/quickbooks/reports/pnl", requireAuth, requirePermission("financial_integration", "view"), async (req, res) => {
     try {
       const startDate = typeof req.query.startDate === "string" ? req.query.startDate : "";
       const endDate = typeof req.query.endDate === "string" ? req.query.endDate : "";
@@ -208,6 +227,7 @@ export function registerQuickBooksRoutes(app: Express): void {
   app.get(
     "/api/quickbooks/projects/:projectId/cos-reconciliation",
     requireAuth,
+    requirePermission("financial_integration", "view"),
     async (req, res) => {
       try {
         const projectId = Number(req.params.projectId);
@@ -225,7 +245,7 @@ export function registerQuickBooksRoutes(app: Express): void {
     },
   );
 
-  app.get("/api/quickbooks/projects/:projectId/links", requireAuth, async (req, res) => {
+  app.get("/api/quickbooks/projects/:projectId/links", requireAuth, requirePermission("financials", "view"), async (req, res) => {
     try {
       const projectId = Number(req.params.projectId);
       if (!Number.isFinite(projectId) || projectId <= 0) {
@@ -242,7 +262,7 @@ export function registerQuickBooksRoutes(app: Express): void {
 
   // ---------- Global links (cross-project) ----------
 
-  app.get("/api/quickbooks/links", requireAuth, async (req, res) => {
+  app.get("/api/quickbooks/links", requireAuth, requirePermission("financials", "view"), async (req, res) => {
     try {
       const limit = req.query.limit ? Math.min(Number(req.query.limit), 1000) : 500;
       const links = await listAllLinks(Number.isFinite(limit) ? limit : 500);
@@ -253,7 +273,7 @@ export function registerQuickBooksRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/quickbooks/links", requireAuth, async (req, res) => {
+  app.post("/api/quickbooks/links", requireAuth, requirePermission("financials", "edit"), async (req, res) => {
     try {
       const body = req.body ?? {};
       const costLineId = Number(body.costLineId ?? body.appEntityId);
@@ -294,7 +314,7 @@ export function registerQuickBooksRoutes(app: Express): void {
     }
   });
 
-  app.delete("/api/quickbooks/links/:id", requireAuth, async (req, res) => {
+  app.delete("/api/quickbooks/links/:id", requireAuth, requirePermission("financials", "edit"), async (req, res) => {
     try {
       const id = Number(req.params.id);
       if (!Number.isFinite(id) || id <= 0) {
@@ -309,28 +329,36 @@ export function registerQuickBooksRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/quickbooks/cost-lines/:id/mark-realised", requireAuth, async (req, res) => {
-    try {
-      const id = Number(req.params.id);
-      if (!Number.isFinite(id) || id <= 0) {
-        res.status(400).json({ error: "bad_request", message: "Invalid cost line id" });
-        return;
-      }
-      const updated = await markCostLineRealised(id);
-      if (!updated) {
-        res.status(404).json({ error: "not_found", message: "Cost line not found" });
-        return;
-      }
-      res.json({ costLine: updated });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to mark realised";
-      res.status(500).json({ error: "quickbooks_mark_realised_failed", message });
-    }
+  // ---- DISABLED: QuickBooks mark-realised bypass (hardening) ----
+  //
+  // This endpoint previously wrote `cos_realised = true` and
+  // `paid_date_confirmed = true` directly on normalized_cost_lines from the
+  // QuickBooks reconciliation tab. That bypassed every canonical finance
+  // control:
+  //   - no admin gate
+  //   - no COS period lock check
+  //   - no invoice-number presence / placeholder check
+  //   - no invoice-date presence check
+  //   - no audit-trail entry
+  //   - no project metric refresh
+  //
+  // Marking a cost line as realised is now ONLY permitted via the canonical
+  // finance control path: PATCH /api/cos-tracker/toggle-realised/:id (which
+  // enforces all of the above). This endpoint is retained as HTTP 410 Gone
+  // so any stale client gets a clear signal instead of silently writing.
+  app.post("/api/quickbooks/cost-lines/:id/mark-realised", requireAuth, requireAdmin, (_req, res) => {
+    res.status(410).json({
+      error: "gone",
+      code: "quickbooks_mark_realised_disabled",
+      message:
+        "Marking a cost line as COS-realised from the QuickBooks reconciliation view is disabled. Use the canonical finance control path: PATCH /api/cos-tracker/toggle-realised/:id (admin-only, period-lock + invoice-evidence enforced, audited).",
+      canonicalPath: "/api/cos-tracker/toggle-realised/:id",
+    });
   });
 
   // ---------- Customer mapping ----------
 
-  app.get("/api/quickbooks/customer-mappings", requireAuth, async (_req, res) => {
+  app.get("/api/quickbooks/customer-mappings", requireAuth, requirePermission("financials", "view"), async (_req, res) => {
     try {
       const projects = await listProjectsWithMappings();
       res.json({ projects });
@@ -343,6 +371,7 @@ export function registerQuickBooksRoutes(app: Express): void {
   app.get(
     "/api/quickbooks/projects/:projectId/customer-mapping",
     requireAuth,
+    requirePermission("financials", "view"),
     async (req, res) => {
       try {
         const projectId = Number(req.params.projectId);
@@ -359,7 +388,7 @@ export function registerQuickBooksRoutes(app: Express): void {
     },
   );
 
-  app.post("/api/quickbooks/customer-mappings", requireAuth, async (req, res) => {
+  app.post("/api/quickbooks/customer-mappings", requireAuth, requirePermission("financials", "edit"), async (req, res) => {
     try {
       const body = req.body ?? {};
       const projectId = Number(body.projectId);
@@ -388,7 +417,7 @@ export function registerQuickBooksRoutes(app: Express): void {
     }
   });
 
-  app.delete("/api/quickbooks/customer-mappings/:id", requireAuth, async (req, res) => {
+  app.delete("/api/quickbooks/customer-mappings/:id", requireAuth, requirePermission("financials", "edit"), async (req, res) => {
     try {
       const id = Number(req.params.id);
       if (!Number.isFinite(id) || id <= 0) {
@@ -408,6 +437,7 @@ export function registerQuickBooksRoutes(app: Express): void {
   app.get(
     "/api/quickbooks/projects/:projectId/revenue-reconciliation",
     requireAuth,
+    requirePermission("financial_integration", "view"),
     async (req, res) => {
       try {
         const projectId = Number(req.params.projectId);
@@ -425,7 +455,7 @@ export function registerQuickBooksRoutes(app: Express): void {
     },
   );
 
-  app.post("/api/quickbooks/revenue-links", requireAuth, async (req, res) => {
+  app.post("/api/quickbooks/revenue-links", requireAuth, requirePermission("financials", "edit"), async (req, res) => {
     try {
       const body = req.body ?? {};
       const revenueLineId = Number(body.revenueLineId ?? body.appEntityId);
@@ -464,7 +494,7 @@ export function registerQuickBooksRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/quickbooks/cost-lines/search", requireAuth, async (req, res) => {
+  app.get("/api/quickbooks/cost-lines/search", requireAuth, requirePermission("financials", "view"), async (req, res) => {
     try {
       const q = typeof req.query.q === "string" ? req.query.q : "";
       const limit = req.query.limit ? Math.min(Number(req.query.limit), 200) : 50;

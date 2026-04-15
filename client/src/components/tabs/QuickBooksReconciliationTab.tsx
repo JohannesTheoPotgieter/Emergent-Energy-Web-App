@@ -319,23 +319,11 @@ export function QuickBooksReconciliationTab({ projectId, projectName }: Props) {
     },
   });
 
-  const markRealisedMutation = useMutation({
-    mutationFn: async (costLineId: number) => {
-      const res = await apiRequest(
-        "POST",
-        `/api/quickbooks/cost-lines/${costLineId}/mark-realised`,
-      );
-      return res.json();
-    },
-    onSuccess: () => {
-      invalidateRecon();
-      queryClient.invalidateQueries({ queryKey: ["normalized-cost-lines"] });
-      toast({ title: "Cost line marked as COS-realised" });
-    },
-    onError: (err: Error) => {
-      toast({ title: "Action failed", description: err.message, variant: "destructive" });
-    },
-  });
+  // NOTE: the "Mark COS Realised" affordance used to call
+  // POST /api/quickbooks/cost-lines/:id/mark-realised. That endpoint
+  // bypassed the canonical finance control path (COS period lock,
+  // invoice-evidence checks, audit trail, metric refresh) and has been
+  // disabled. Use the COS Tracker page to realise a cost line.
 
   const rows = reconQuery.data?.rows ?? [];
   const summary = reconQuery.data?.summary;
@@ -598,18 +586,16 @@ export function QuickBooksReconciliationTab({ projectId, projectName }: Props) {
                             </Button>
                           )}
                           {row.costLine && !row.costLine.cosRealised && row.bill && (
-                            <Button
-                              size="sm"
-                              className="h-6 text-[10px] gap-1"
-                              onClick={() => markRealisedMutation.mutate(row.costLine!.id)}
-                              disabled={markRealisedMutation.isPending}
+                            <span
+                              className="text-[10px] text-muted-foreground italic"
+                              title="Marking a cost line as COS-realised is only allowed through the COS Tracker (canonical finance control path)."
                             >
-                              <CheckCircle2 className="h-3 w-3" /> Mark COS
-                            </Button>
+                              Mark in COS Tracker
+                            </span>
                           )}
                           {row.costLine?.cosRealised && (
                             <Badge className="text-[9px] bg-emerald-100 text-emerald-700">
-                              Realised
+                              <CheckCircle2 className="h-2.5 w-2.5 mr-0.5" /> Realised
                             </Badge>
                           )}
                         </div>
