@@ -462,7 +462,7 @@ function DetailRow({ weekStart, project, colSpan = 8 }: { weekStart: string; pro
                         <th className="text-left px-3 py-2 font-medium text-muted-foreground">Project</th>
                         <th className="text-left px-3 py-2 font-medium text-muted-foreground">Category</th>
                         <th className="text-left px-3 py-2 font-medium text-muted-foreground">Line Item</th>
-                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">Invoice #</th>
+                        <th className="text-left px-3 py-2 font-medium text-muted-foreground" title="Supplier-issued document number — becomes a QuickBooks Bill in our books.">Supplier invoice #</th>
                         <th className="text-left px-3 py-2 font-medium text-muted-foreground">Date</th>
                         <th className="text-center px-3 py-2 font-medium text-muted-foreground">Status</th>
                         <th className="text-right px-3 py-2 font-medium text-muted-foreground">Amount</th>
@@ -667,7 +667,15 @@ export default function CashflowPage() {
 
   const projectParam = selectedProjects.length > 0 ? selectedProjects.join(",") : undefined;
 
-  const { data: cashflowData = [], isLoading, isError, error, refetch } = useQuery<CashflowWeek[]>({
+  const {
+    data: cashflowData = [],
+    isLoading,
+    isError,
+    error,
+    refetch,
+    isFetching: isCashflowFetching,
+    dataUpdatedAt: cashflowUpdatedAt,
+  } = useQuery<CashflowWeek[]>({
     queryKey: [CASHFLOW_API_BASE, projectParam],
     queryFn: async () => {
       const url = projectParam
@@ -928,6 +936,15 @@ export default function CashflowPage() {
         <div className="ee-data-trust-card" data-testid="cashflow-trust-sources">
           <span className="ee-data-trust-label">Source</span>
           <span className="ee-data-trust-value">{isProjectFiltered ? "Filtered project inflows and outflows" : "Portfolio inflows with OPEX and project outflows"}</span>
+        </div>
+        <div className="ee-data-trust-card" data-testid="cashflow-trust-freshness">
+          <span className="ee-data-trust-label">Freshness</span>
+          <span className="ee-data-trust-value">
+            {cashflowUpdatedAt
+              ? `Refreshed ${new Date(cashflowUpdatedAt).toLocaleString()}`
+              : "Live query — not yet returned"}
+            {isCashflowFetching ? " · refreshing…" : ""}
+          </span>
         </div>
         <div className="ee-data-trust-card" data-testid="cashflow-trust-change">
           <span className="ee-data-trust-label">Change</span>
@@ -1410,8 +1427,8 @@ export default function CashflowPage() {
                                 {week.outflowByStatus && week.projectOutflows > 0 && (
                                   <div className="flex justify-end gap-1 mt-0.5">
                                     {week.outflowByStatus.outOfBank > 0 && <span className="text-[8px] px-1 py-0 rounded bg-emerald-50 text-emerald-700 border border-emerald-300" title="Out of Bank (Paid)">Paid {formatRand(week.outflowByStatus.outOfBank)}</span>}
-                                    {week.outflowByStatus.outstanding > 0 && <span className="text-[8px] px-1 py-0 rounded bg-amber-50 text-amber-700 border border-amber-300" title="Outstanding (invoiced, not yet paid)">Outstd {formatRand(week.outflowByStatus.outstanding)}</span>}
-                                    {week.outflowByStatus.risk > 0 && <span className="text-[8px] px-1 py-0 rounded bg-red-50 text-red-700 border border-red-300" title="Risk (no invoice)">Risk {formatRand(week.outflowByStatus.risk)}</span>}
+                                    {week.outflowByStatus.outstanding > 0 && <span className="text-[8px] px-1 py-0 rounded bg-amber-50 text-amber-700 border border-amber-300" title="Outstanding — supplier invoice captured, payment not yet released.">Outstd {formatRand(week.outflowByStatus.outstanding)}</span>}
+                                    {week.outflowByStatus.risk > 0 && <span className="text-[8px] px-1 py-0 rounded bg-red-50 text-red-700 border border-red-300" title="No supplier invoice on file yet — this is an unbilled commitment that has not flowed through QuickBooks. It is a cashflow blind-spot, not a credit-risk score.">Risk {formatRand(week.outflowByStatus.risk)}</span>}
                                     {week.outflowByStatus.planned > 0 && <span className="text-[8px] px-1 py-0 rounded bg-muted text-muted-foreground border border-border" title="Planned">Plan {formatRand(week.outflowByStatus.planned)}</span>}
                                   </div>
                                 )}
