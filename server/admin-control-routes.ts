@@ -15,7 +15,7 @@ import { getFeatureFlag, getRolloutFeatureFlags, setFeatureFlag } from "./lib/fe
 import { ROLLOUT_FEATURE_FLAGS } from "@shared/feature-flags";
 import { logAuditFromReq } from "./audit-logger";
 import { getStartupFlags } from "./startup-flags";
-import { blockInProduction, requireDangerousActionConfirmation } from "./middleware/production-safety";
+import { requireDangerousActionConfirmation } from "./middleware/production-safety";
 const { rawEnv: startupRawFlags, modes: startupEffectiveModes } = getStartupFlags();
 
 const router = Router();
@@ -415,29 +415,12 @@ router.post(
   },
 );
 
-router.post(
-  "/api/admin/control-center/dangerous/clear-audit-log",
-  requireAuth,
-  requireAdmin,
-  blockInProduction("Audit log deletion is disabled in production to preserve immutable history."),
-  requireDangerousActionConfirmation("CLEAR_AUDIT_LOG_NON_PROD"),
-  async (req: Request, res: Response) => {
-  try {
-    const { olderThanDays } = req.body;
-    const days = parseInt(olderThanDays) || 90;
-    await db.execute(sql`DELETE FROM audit_events WHERE created_at < NOW() - ${days}::int * INTERVAL '1 day'`);
-    logAuditFromReq(req, {
-      entityType: "system",
-      action: "clear_audit_log",
-      source: "SETTINGS",
-      changesJson: { olderThanDays: days },
-    });
-    res.json({ success: true, message: `Audit events older than ${days} days cleared` });
-  } catch (err: unknown) {
-    res.status(500).json({ error: "Failed to clear audit log", message: (err instanceof Error ? err.message : String(err)) });
-  }
-  },
-);
+// NOTE: The `/api/admin/control-center/dangerous/clear-audit-log` endpoint has
+// been removed permanently. The audit log is append-only — there is no
+// supported path for deleting audit events from the application. Existing
+// audit_events rows and the audit_events table itself are intentionally
+// untouched; only the HTTP handler has been deleted so governance records
+// cannot be destroyed via the API.
 
 router.get("/api/admin/control-center/active-sessions", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {

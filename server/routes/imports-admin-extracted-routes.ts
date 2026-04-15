@@ -775,10 +775,23 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
     }
   });
 
-  // Clear all data
+  // Clear all data — wipes every project, cost line, revenue line, and task.
+  // Double-gated: (1) never reachable in production, (2) requires an explicit
+  // ALLOW_DESTRUCTIVE_OPS=true environment flag even in non-production so that
+  // an accidental NODE_ENV misconfiguration cannot expose this endpoint.
   app.post("/api/admin/clear-all-data", requireAuth, requireAdmin, requirePermission('admin', 'edit'), async (req, res) => {
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(403).json({ error: 'Blocked in production' });
+    }
+    if (process.env.ALLOW_DESTRUCTIVE_OPS !== 'true') {
+      return res.status(403).json({
+        error: 'Blocked: destructive ops disabled',
+        message: 'Set ALLOW_DESTRUCTIVE_OPS=true to enable this endpoint.',
+      });
+    }
+
     const startTime = Date.now();
-    
+
     try {
       const result = await storage.clearAllData();
       logAuditFromReq(req, { entityType: "admin", action: "clear_all_data", changesJson: { description: "All data cleared", tablesCleared: result.tablesCleared.length, filesDeleted: result.filesDeleted } });
