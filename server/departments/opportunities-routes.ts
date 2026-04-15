@@ -8,6 +8,7 @@ import { db } from "../db";
 import { eq, desc, isNull, and } from "drizzle-orm";
 import { opportunities } from "@shared/schema/projects";
 import { z, ZodError } from "zod";
+import { logAuditFromReq } from "../audit-logger";
 
 // Validation for user-driven opportunity create/update. Intentionally
 // narrower than the raw table schema:
@@ -83,6 +84,20 @@ router.post("/api/opportunities", requireAuth, requirePermission("pd_tickets", "
       .insert(opportunities)
       .values({ ...parsed, source: "internal" })
       .returning();
+
+    logAuditFromReq(req, {
+      entityType: "opportunity",
+      entityId: String(row.id),
+      action: "create",
+      changesJson: {
+        source: "internal",
+        clientId: row.clientId ?? null,
+        stage: row.stage,
+        status: row.status,
+        estimatedValue: row.estimatedValue ?? null,
+      },
+    });
+
     res.status(201).json(row);
   } catch (err) {
     if (err instanceof ZodError) {
@@ -126,6 +141,28 @@ router.patch("/api/opportunities/:id", requireAuth, requirePermission("pd_ticket
     const touchesCrmField = existing.source === "pipedrive"
       && crmOverwriteFields.some(f => (safeFields as Record<string, unknown>)[f] !== undefined);
 
+    // Only log the fields the user actually sent. `safeFields` already
+    // excludes `source` and `pipedriveDealId` so the audit trail cannot
+    // claim the user changed origin when they couldn't.
+    const changedKeys = Object.keys(safeFields).filter(
+      k => (safeFields as Record<string, unknown>)[k] !== undefined,
+    );
+    if (changedKeys.length > 0) {
+      logAuditFromReq(req, {
+        entityType: "opportunity",
+        entityId: String(row.id),
+        action: touchesCrmField ? "update_crm_field_on_synced_row" : "update",
+        changesJson: {
+          source: existing.source,
+          changed: changedKeys,
+          values: changedKeys.reduce<Record<string, unknown>>((acc, k) => {
+            acc[k] = (safeFields as Record<string, unknown>)[k];
+            return acc;
+          }, {}),
+        },
+      });
+    }
+
     res.json({
       ...row,
       _warning: touchesCrmField
@@ -149,6 +186,14 @@ router.delete("/api/opportunities/:id", requireAuth, requirePermission("pd_ticke
       .where(eq(opportunities.id, Number(req.params.id)))
       .returning();
     if (!row) return res.status(404).json({ error: "Opportunity not found" });
+
+    logAuditFromReq(req, {
+      entityType: "opportunity",
+      entityId: String(row.id),
+      action: "soft_delete",
+      changesJson: { source: row.source, pipedriveDealId: row.pipedriveDealId ?? null },
+    });
+
     res.json(row);
   } catch (err) {
     console.error("[Opportunities] Failed to delete:", err);

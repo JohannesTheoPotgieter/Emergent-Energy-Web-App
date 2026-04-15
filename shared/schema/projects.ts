@@ -85,13 +85,32 @@ export const opportunities = pgTable("opportunities", {
   source: text("source").notNull().default("internal"),  // 'internal' | 'pipedrive'
   clientId: integer("client_id").references(() => clients.id),
   siteId: integer("site_id").references(() => sites.id, { onDelete: "set null" }),
+  /**
+   * @deprecated Not populated by any code path today. The Pipedrive
+   * sync parses `deal.owner_id` from the API response but never writes
+   * it into this column (see `server/services/pipedrive-sync-service.ts`),
+   * and the in-app opportunity form does not expose an owner picker.
+   * Kept for schema stability; do not rely on it for reporting.
+   * Tracked as "structural fix #2" in docs/runbooks/pipedrive-integration-review-2026-04-15.md.
+   */
   dealOwnerUserId: integer("deal_owner_user_id").references(() => users.id, { onDelete: "set null" }),
   stage: text("stage").default("prospect"),              // 'prospect', 'qualification', 'proposal', 'negotiation', 'won', 'lost'
   contractType: text("contract_type"),                   // 'PPA', 'EPC', 'lease', 'hybrid'
   fundingType: text("funding_type"),                     // 'self_funded', 'third_party', 'blended'
   estimatedValue: decimal("estimated_value", { precision: 15, scale: 2 }),
   estimatedKwp: decimal("estimated_kwp", { precision: 12, scale: 2 }),
+  /**
+   * @deprecated Not populated by any code path today. No UI field; not
+   * written by the Pipedrive sync. Retained only so drizzle types stay
+   * aligned with the physical column. Tracked in
+   * docs/runbooks/pd-data-trust-review-2026-04-15.md.
+   */
   estimatedKwh: decimal("estimated_kwh", { precision: 15, scale: 2 }),
+  /**
+   * @deprecated Not populated by any code path today. No UI field; not
+   * written by the Pipedrive sync. Retained only so drizzle types stay
+   * aligned with the physical column.
+   */
   proposalIssuedDate: date("proposal_issued_date"),
   expectedCloseDate: date("expected_close_date"),
   signedDate: date("signed_date"),

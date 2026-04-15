@@ -4,7 +4,7 @@
 import type { Express, Request, Response } from "express";
 import { db } from "./db";
 import { clients, pdTickets, workItems, workItemAssignments, projectInfo, users, taskActivityLog, PD_REQUEST_TYPE_TASK_TEMPLATES, projectExecutionState, projectPdPmHandover, projectHandoverHistory, pdVisibilityConfig, workstreamVisibilityConfig } from "@shared/schema";
-import { eq, ilike, sql, and, desc, asc, or, count, isNull, inArray } from "drizzle-orm";
+import { eq, ilike, sql, and, desc, asc, or, isNull, inArray } from "drizzle-orm";
 import { getFeatureFlag } from "./lib/feature-flags";
 import { requirePermission } from "./permission-middleware";
 import { getEffectiveWorkstreamVisibility } from "./workstream-visibility-middleware";
@@ -12,6 +12,8 @@ import { getEffectiveWorkstreamVisibility } from "./workstream-visibility-middle
 import { requireAuth } from "./auth-context";
 import { isPdRole, canCreatePdTicket, canViewAllTickets, ENGINEERING_REQUEST_TYPES } from "@shared/roles/pd-roles";
 import { paramStr } from "./lib/req-params";
+import { insertClientWithGeneratedId } from "./lib/client-id-generator";
+import { logAuditFromReq } from "./audit-logger";
 
 /**
  * Resolve the effective PD visibility config for a user.
@@ -176,13 +178,21 @@ export function registerPdRoutes(app: Express) {
         return res.status(409).json({ error: "Client with this name already exists", client: existing[0] });
       }
 
-      const clientId = await generateClientId();
-
-      const [created] = await db.insert(clients).values({
-        clientId,
+      // Race-safe insert: helper holds a Postgres advisory lock around
+      // the MAX+INSERT so concurrent create requests cannot collide on
+      // the `EE-Cxxxx` sequence. See server/lib/client-id-generator.ts.
+      const created = await insertClientWithGeneratedId({
         name: name.trim(),
         createdBy: user?.id || null,
-      }).returning();
+      });
+      const clientId = created.clientId;
+
+      logAuditFromReq(req, {
+        entityType: "client",
+        entityId: String(created.id),
+        action: "create",
+        changesJson: { name: created.name, clientId: created.clientId },
+      });
 
       const dualWriteEnabled = await getFeatureFlag("promoted_core_clients_dual_write");
       const promotedMirror = { attempted: false, success: false, error: null as string | null };
@@ -449,6 +459,21 @@ export function registerPdRoutes(app: Express) {
       const selectedTasks: string[] | undefined = body.selectedTasks;
       await spawnTasksForTicket(ticket, user, selectedTasks);
 
+      logAuditFromReq(req, {
+        entityType: "pd_ticket",
+        entityId: String(ticket.id),
+        action: "create",
+        changesJson: {
+          requestType: ticket.requestType,
+          projectId: ticket.projectId,
+          opportunityId: ticket.opportunityId ?? null,
+          clientId: ticket.clientId ?? null,
+          projectSiteName: ticket.projectSiteName,
+          priority: ticket.priority,
+          status: ticket.status,
+        },
+      });
+
       res.status(201).json(ticket);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -489,6 +514,22 @@ export function registerPdRoutes(app: Express) {
       }
 
       const [updated] = await db.update(pdTickets).set(updates).where(eq(pdTickets.id, id)).returning();
+
+      // Log only the fields that actually changed so the audit trail is
+      // useful for debugging stale data complaints.
+      const changedFields = Object.keys(updates).filter(k => k !== "updatedAt");
+      if (changedFields.length > 0) {
+        logAuditFromReq(req, {
+          entityType: "pd_ticket",
+          entityId: String(id),
+          action: "update",
+          changesJson: changedFields.reduce<Record<string, unknown>>((acc, k) => {
+            acc[k] = (updates as Record<string, unknown>)[k];
+            return acc;
+          }, {}),
+        });
+      }
+
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -953,12 +994,8 @@ export function registerPdRoutes(app: Express) {
   });
 }
 
-async function generateClientId(): Promise<string> {
-  const [result] = await db.select({ cnt: count() }).from(clients);
-  const num = (result?.cnt || 0) as number;
-  const nextNum = num + 1;
-  return `EE-C${String(nextNum).padStart(4, "0")}`;
-}
+// Client-id generation lives in server/lib/client-id-generator.ts so both
+// /api/pd/clients and /api/clients share a single race-safe implementation.
 
 async function spawnTasksForTicket(ticket: any, user: any, selectedTasks?: string[], customTasks?: { title: string; priority: string }[]): Promise<any[]> {
   if (ticket.tasksSpawnedAt) return [];
