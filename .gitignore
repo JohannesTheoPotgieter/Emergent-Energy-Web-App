@@ -21,7 +21,11 @@ data/
 server/data-seed/.migrated
 server/.pd-seed-done
 backups/
-.claude/
+
+# Claude Code: share operational config (skills, commands, agents, hooks,
+# settings.json) with the team. Keep per-developer overrides and caches local.
+.claude/settings.local.json
+.claude/cache/
 
 # ── Logs (operational artifacts, never source) ───────────────
 *.log
