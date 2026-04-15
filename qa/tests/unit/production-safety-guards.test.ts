@@ -27,10 +27,28 @@ describe("dangerous route guard coverage", () => {
     expect(invoiceRoutes).toContain("blockInProduction(\"Reset tags is disabled in production pending dual-control approval flow.\")");
   });
 
-  it("prevents audit history deletion in production", () => {
+  it("has permanently removed the clear-audit-log endpoint", () => {
+    // The audit log is append-only. There must be NO HTTP handler anywhere
+    // in the server codebase that deletes audit_events rows.
     const adminControlRoutes = read("server/admin-control-routes.ts");
-    expect(adminControlRoutes).toContain('"/api/admin/control-center/dangerous/clear-audit-log"');
-    expect(adminControlRoutes).toContain("Audit log deletion is disabled in production to preserve immutable history.");
+    expect(adminControlRoutes).not.toContain('"/api/admin/control-center/dangerous/clear-audit-log"');
+    expect(adminControlRoutes).not.toMatch(/DELETE FROM audit_events/i);
+  });
+
+  it("double-gates clear-all-data with NODE_ENV and ALLOW_DESTRUCTIVE_OPS", () => {
+    const importsAdmin = read("server/routes/imports-admin-extracted-routes.ts");
+    expect(importsAdmin).toContain('"/api/admin/clear-all-data"');
+    expect(importsAdmin).toContain("process.env.NODE_ENV === 'production'");
+    expect(importsAdmin).toContain("ALLOW_DESTRUCTIVE_OPS");
+  });
+
+  it("blocks the dev-login auth bypass in production", () => {
+    const authRoutes = read("server/routes/auth-routes.ts");
+    expect(authRoutes).toContain('"/api/auth/dev-login"');
+    // Registration guard prevents wiring in production.
+    expect(authRoutes).toContain('process.env.NODE_ENV !== "production"');
+    // Defence-in-depth: handler itself also 403s if NODE_ENV is production.
+    expect(authRoutes).toMatch(/Blocked in production/);
   });
 
   it("guards seed/debug-style write routes in production", () => {

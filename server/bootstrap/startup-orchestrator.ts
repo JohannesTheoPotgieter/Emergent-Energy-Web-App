@@ -8,6 +8,7 @@ import { startRuntimeServices } from "./start-runtime-services";
 import type { StartupReport } from "./startup-report";
 import { db, getDbMode } from "../db";
 import { sql } from "drizzle-orm";
+import { warnOnDangerousRoutesInNonDev } from "../middleware/production-safety";
 
 export async function runStartupOrchestrator(options: {
   app: Express;
@@ -155,6 +156,12 @@ export async function runStartupOrchestrator(options: {
     log,
   });
   report.routes.push("registered");
+
+  // Emit a loud warning for every dangerous route that is wired into the
+  // app whenever the server boots in any non-development runtime. Each of
+  // these routes is gated with a 403 at request time, but flagging them on
+  // boot makes accidental prod exposure extremely obvious in the logs.
+  warnOnDangerousRoutesInNonDev(log);
 
   const runtimeServices = await startRuntimeServices({ startupBackfillEnabled, startupSyncEnabled, log });
   report.runtimeServices.push(...runtimeServices);

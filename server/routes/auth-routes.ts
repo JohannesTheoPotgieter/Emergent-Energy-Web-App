@@ -224,8 +224,15 @@ export async function registerAuthRoutes(app: Express): Promise<void> {
     return res.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role } });
   });
 
-  if (process.env.NODE_ENV === "development") {
+  // /api/auth/dev-login is a development-only auth bypass. It is doubly
+  // guarded: (1) the route is only registered when NODE_ENV !== "production",
+  // and (2) the handler itself returns 403 if NODE_ENV === "production" so a
+  // late env flip or a startup race cannot expose the bypass.
+  if (process.env.NODE_ENV !== "production") {
     app.get("/api/auth/dev-login", async (_req, res) => {
+      if (process.env.NODE_ENV === "production") {
+        return res.status(403).json({ error: "Blocked in production" });
+      }
       try {
         const [adminUser] = await db.select().from(users).where(eq(users.username, "johannes"));
         if (!adminUser) return res.status(404).send("Dev user not found");
