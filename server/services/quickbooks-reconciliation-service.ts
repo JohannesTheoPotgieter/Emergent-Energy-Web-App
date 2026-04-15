@@ -588,22 +588,24 @@ export async function confirmCostLineLink(params: {
 }
 
 /**
- * Set `cos_realised = true` (and paid confirmation flags) on the cost line
- * after the recon tab has validated the QB bill is paid / captured.
- * Called after a link is confirmed + the user clicks "Mark COS Realised".
+ * REMOVED: markCostLineRealised()
+ *
+ * This helper previously wrote `cos_realised = true` and
+ * `paid_date_confirmed = true` directly on normalized_cost_lines from the
+ * QuickBooks reconciliation view. It bypassed every canonical finance
+ * control (period lock, invoice-number presence check, placeholder check,
+ * invoice-date check, admin gate, audit trail, metric refresh).
+ *
+ * Marking a cost line as realised is now ONLY permitted through the
+ * canonical finance control path:
+ *   PATCH /api/cos-tracker/toggle-realised/:id
+ * which is defined in server/departments/finance-routes.ts and enforces the
+ * full realisation policy documented in
+ * server/lib/finance/cos-realisation.ts (invoice + invoice-date confirmed).
+ *
+ * Do NOT reintroduce a QB-side realisation write. Reconciliation should
+ * surface discrepancies, not mutate recognition state.
  */
-export async function markCostLineRealised(costLineId: number): Promise<NormalizedCostLine | null> {
-  const updated = await db
-    .update(normalizedCostLines)
-    .set({
-      cosRealised: true,
-      paidDateConfirmed: true,
-      updatedAt: new Date(),
-    } as any)
-    .where(eq(normalizedCostLines.id, costLineId))
-    .returning();
-  return updated[0] ?? null;
-}
 
 // ===================== CUSTOMER MAPPING =====================
 
