@@ -23,6 +23,11 @@ import {
   notifications,
   projectTeamMembers,
 } from "@shared/schema";
+import {
+  RELEASED_FOR_STATES,
+  RELEASED_FOR_TRANSITIONS,
+  type ReleasedForState,
+} from "@shared/schema/engineering";
 import { logAuditFromReq } from "./audit-logger";
 import { sendError } from "./lib/api-error";
 import { createEngineeringWorkItem, updateEngineeringWorkItem } from "./work-items-adapter";
@@ -709,8 +714,159 @@ export function registerEngStageRoutes(app: Express) {
         approvedAt: new Date(),
       }).where(eq(projectEngDeliverables.id, id));
 
-      logAuditFromReq(req, { entityType: "eng_stage_item", entityId: String(id), action: status === "approved" ? "approve" : "reject", changesJson: { description: `Deliverable ${status}`, fileName: deliverable.fileName } });
-      res.json({ success: true, status });
+      logAuditFromReq(req, {
+        entityType: "eng_stage_item",
+        entityId: String(id),
+        action: status === "approved" ? "approve" : "reject",
+        changesJson: {
+          description: `Deliverable ${status}`,
+          fileName: deliverable.fileName,
+          // Explicit disclaimer in the audit trail: review/QA approval is
+          // NOT the same as release for construction. Use
+          // POST /api/eng-stages/deliverables/:id/issue-for-construction
+          // to cross the IFC boundary.
+          note: status === "approved" ? "Approval is for review only; NOT an issue for construction" : undefined,
+          releasedForAfter: "approved_for_review",
+        },
+      });
+
+      // Promote the controlled-document lifecycle — approval moves the
+      // deliverable to `approved_for_review`, NOT `issued_for_construction`.
+      if (status === "approved") {
+        await db.update(projectEngDeliverables)
+          .set({ releasedFor: "approved_for_review" })
+          .where(eq(projectEngDeliverables.id, id));
+      } else if (status === "rejected") {
+        await db.update(projectEngDeliverables)
+          .set({ releasedFor: "under_review" })
+          .where(eq(projectEngDeliverables.id, id));
+      }
+
+      res.json({ success: true, status, releasedFor: status === "approved" ? "approved_for_review" : "under_review" });
+    } catch (err: any) {
+      console.error("[EngStages] Error:", err);
+      sendError(res, err);
+    }
+  });
+
+  // ===== Controlled-document release endpoints =====
+  // Approval alone does NOT imply Issued For Construction. A separate,
+  // explicit, role-gated action is required so the audit trail distinguishes
+  // "this has been reviewed" from "this is safe to build from".
+
+  app.post("/api/eng-stages/deliverables/:id/issue-for-construction", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(paramStr(req.params.id));
+      const user = getUser(req);
+      const { notes } = req.body || {};
+
+      // Only engineers / COO can release for construction. PM alone is not
+      // enough — construction release crosses a safety-of-life boundary.
+      if (!isEngineer(user.role) && !isCoo(user.role)) {
+        return res.status(403).json({
+          error: "forbidden",
+          message: "Only engineers or COO can issue a deliverable for construction",
+        });
+      }
+
+      const [deliverable] = await db.select().from(projectEngDeliverables).where(eq(projectEngDeliverables.id, id));
+      if (!deliverable) return res.status(404).json({ error: "Deliverable not found" });
+
+      const current = (deliverable.releasedFor ?? "draft") as ReleasedForState;
+      if (!RELEASED_FOR_TRANSITIONS[current].includes("issued_for_construction")) {
+        return res.status(409).json({
+          error: "invalid_transition",
+          message: `Cannot issue for construction from state "${current}". Deliverable must be approved for review first.`,
+          currentState: current,
+          allowedNext: RELEASED_FOR_TRANSITIONS[current],
+        });
+      }
+
+      // Segregation of duties: issuer must not be the same person who
+      // uploaded the file. (Approved-by is allowed to be the issuer — the
+      // reviewer is typically the senior engineer and also signs off.)
+      if (deliverable.uploadedBy === user.id) {
+        return res.status(403).json({
+          error: "forbidden",
+          message: "You cannot issue your own uploaded deliverable for construction",
+        });
+      }
+
+      await db.update(projectEngDeliverables).set({
+        releasedFor: "issued_for_construction",
+        issuedForConstructionAt: new Date(),
+        issuedForConstructionBy: user.id,
+      }).where(eq(projectEngDeliverables.id, id));
+
+      logAuditFromReq(req, {
+        entityType: "eng_stage_item",
+        entityId: String(id),
+        action: "issue_for_construction",
+        changesJson: {
+          description: "Deliverable issued for construction (IFC)",
+          fileName: deliverable.fileName,
+          versionTag: deliverable.versionTag,
+          notes,
+          releasedForBefore: current,
+          releasedForAfter: "issued_for_construction",
+        },
+      });
+
+      res.json({ success: true, releasedFor: "issued_for_construction" });
+    } catch (err: any) {
+      console.error("[EngStages] Error:", err);
+      sendError(res, err);
+    }
+  });
+
+  app.post("/api/eng-stages/deliverables/:id/mark-as-built", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(paramStr(req.params.id));
+      const user = getUser(req);
+      const { notes } = req.body || {};
+
+      // Construction manager, engineers, and COO can mark as-built.
+      const allowed = isEngineer(user.role) || isCoo(user.role) || user.role === "CONSTRUCTION_MANAGER";
+      if (!allowed) {
+        return res.status(403).json({
+          error: "forbidden",
+          message: "Only engineers, construction manager, or COO can mark a deliverable as-built",
+        });
+      }
+
+      const [deliverable] = await db.select().from(projectEngDeliverables).where(eq(projectEngDeliverables.id, id));
+      if (!deliverable) return res.status(404).json({ error: "Deliverable not found" });
+
+      const current = (deliverable.releasedFor ?? "draft") as ReleasedForState;
+      if (!RELEASED_FOR_TRANSITIONS[current].includes("as_built")) {
+        return res.status(409).json({
+          error: "invalid_transition",
+          message: `Cannot mark as-built from state "${current}". Deliverable must be issued for construction first.`,
+          currentState: current,
+          allowedNext: RELEASED_FOR_TRANSITIONS[current],
+        });
+      }
+
+      await db.update(projectEngDeliverables).set({
+        releasedFor: "as_built",
+        asBuiltAt: new Date(),
+        asBuiltBy: user.id,
+      }).where(eq(projectEngDeliverables.id, id));
+
+      logAuditFromReq(req, {
+        entityType: "eng_stage_item",
+        entityId: String(id),
+        action: "mark_as_built",
+        changesJson: {
+          description: "Deliverable marked as-built",
+          fileName: deliverable.fileName,
+          notes,
+          releasedForBefore: current,
+          releasedForAfter: "as_built",
+        },
+      });
+
+      res.json({ success: true, releasedFor: "as_built" });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
       sendError(res, err);
@@ -908,11 +1064,70 @@ export function registerEngStageRoutes(app: Express) {
         }
       }
 
+      // Optional IFC-issuance gate: when a stage template opts in via
+      // `requireIfcIssuance: true`, every required deliverable template in
+      // this stage must have at least one uploaded row with
+      // releasedFor='issued_for_construction'. Default off — existing
+      // templates are unaffected.
+      if (rules.requireIfcIssuance) {
+        const delTemplates = await db.select().from(engDeliverableTemplates)
+          .where(eq(engDeliverableTemplates.stageTemplateId, stage.stageTemplateId));
+        const uploadedIfc = await db.select({
+          deliverableTemplateId: projectEngDeliverables.deliverableTemplateId,
+          releasedFor: projectEngDeliverables.releasedFor,
+        })
+          .from(projectEngDeliverables)
+          .where(eq(projectEngDeliverables.projectEngStageId, stageId));
+        for (const dt of delTemplates) {
+          if (!dt.isRequired) continue;
+          const ifcCount = uploadedIfc.filter(
+            (u: any) => u.deliverableTemplateId === dt.id &&
+              (u.releasedFor === "issued_for_construction" || u.releasedFor === "as_built"),
+          ).length;
+          if (ifcCount < dt.requiredCount) {
+            missing.push(
+              `Not Issued For Construction: ${dt.name} (${ifcCount}/${dt.requiredCount} IFC-released). ` +
+              `Approval alone is not sufficient; use the "Issue for Construction" action.`,
+            );
+          }
+        }
+      }
+
+      // Optional as-built gate for handover readiness. When a stage template
+      // opts in via `requireAsBuilt: true`, required deliverables must be in
+      // state `as_built` (not just IFC) for the stage to be marked complete.
+      if (rules.requireAsBuilt) {
+        const delTemplates = await db.select().from(engDeliverableTemplates)
+          .where(eq(engDeliverableTemplates.stageTemplateId, stage.stageTemplateId));
+        const uploadedAb = await db.select({
+          deliverableTemplateId: projectEngDeliverables.deliverableTemplateId,
+          releasedFor: projectEngDeliverables.releasedFor,
+        })
+          .from(projectEngDeliverables)
+          .where(eq(projectEngDeliverables.projectEngStageId, stageId));
+        for (const dt of delTemplates) {
+          if (!dt.isRequired) continue;
+          const abCount = uploadedAb.filter(
+            (u: any) => u.deliverableTemplateId === dt.id && u.releasedFor === "as_built",
+          ).length;
+          if (abCount < dt.requiredCount) {
+            missing.push(`Not marked As-Built: ${dt.name} (${abCount}/${dt.requiredCount} as-built)`);
+          }
+        }
+      }
+
       if (missing.length > 0) {
         return res.json({ success: false, missing });
       }
 
-      await db.update(projectEngStages).set({ status: "complete", completedAt: new Date() })
+      // Record audit-grade timestamps for downstream reporting. These are
+      // set in addition to the status change so that reports can distinguish
+      // "stage complete" from "stage complete with IFC release" and
+      // "stage complete with handover readiness".
+      const stageUpdates: any = { status: "complete", completedAt: new Date() };
+      if (rules.requireIfcIssuance) stageUpdates.ifcIssuedAt = new Date();
+      if (rules.requireAsBuilt) stageUpdates.handoverReadyAt = new Date();
+      await db.update(projectEngStages).set(stageUpdates)
         .where(eq(projectEngStages.id, stageId));
 
       // Sync all linked work_items to COMPLETE
