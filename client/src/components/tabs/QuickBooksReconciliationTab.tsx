@@ -15,6 +15,14 @@ import {
   Loader2,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { isApiError } from "@/lib/api-error";
+import { formatRand } from "@/lib/safeMoney";
+import { ReportTrustNotice } from "@/components/reports/ReportTrustNotice";
+
+function toastTitleForLinkError(err: Error): string {
+  if (isApiError(err) && err.status === 409) return "Link conflict";
+  return "Link failed";
+}
 
 // ===== Types (mirror server/services/quickbooks-reconciliation-service.ts) =====
 
@@ -81,18 +89,18 @@ interface QuickBooksStatus {
   connected: boolean;
   companyName: string | null;
   sandbox: boolean;
+  lastSuccessfulSyncAt?: string | null;
+  lastFailedSyncAt?: string | null;
+  lastFailureReason?: string | null;
+  isStale?: boolean;
+  health?: "healthy" | "stale" | "failing" | "unknown";
 }
 
 // ===== Helpers =====
 
-function formatCurrency(value?: number | null): string {
-  if (value === null || value === undefined || Number.isNaN(value)) return "—";
-  return new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency: "ZAR",
-    maximumFractionDigits: 2,
-  }).format(value);
-}
+// All amounts in this view are rendered in ZAR for the SA finance context.
+// Delegates to the shared formatter so there's one source of truth.
+const formatCurrency = (value?: number | null) => formatRand(value);
 
 function formatDate(value?: string | null): string {
   if (!value) return "—";
@@ -281,7 +289,7 @@ export function QuickBooksReconciliationTab({ projectId, projectName }: Props) {
       toast({ title: "Linked to QuickBooks invoice" });
     },
     onError: (err: Error) => {
-      toast({ title: "Link failed", description: err.message, variant: "destructive" });
+      toast({ title: toastTitleForLinkError(err), description: err.message, variant: "destructive" });
     },
   });
 
@@ -301,7 +309,7 @@ export function QuickBooksReconciliationTab({ projectId, projectName }: Props) {
       toast({ title: "Linked to QuickBooks bill" });
     },
     onError: (err: Error) => {
-      toast({ title: "Link failed", description: err.message, variant: "destructive" });
+      toast({ title: toastTitleForLinkError(err), description: err.message, variant: "destructive" });
     },
   });
 
@@ -352,13 +360,24 @@ export function QuickBooksReconciliationTab({ projectId, projectName }: Props) {
               <a href="/admin/quickbooks" className="underline font-medium">
                 Admin → QuickBooks
               </a>
-              {" "}to reconcile invoices against this project's cost lines.
+              {" "}to reconcile QB bills against this project's cost lines
+              (and, with a mapped customer, QB invoices against revenue lines).
             </p>
           </div>
         </CardContent>
       </Card>
     );
   }
+
+  // Active query used by the refresh button AND the loading/error UI so
+  // whichever mode is open is the one that actually refetches. Previously
+  // the refresh button always called reconQuery.refetch() regardless of
+  // the active mode, so clicking Refresh in Revenue mode did nothing.
+  const activeQuery = mode === "cost" ? reconQuery : revenueReconQuery;
+  const activeGeneratedAt =
+    mode === "cost"
+      ? reconQuery.data?.generatedAt ?? null
+      : revenueReconQuery.data?.generatedAt ?? null;
 
   return (
     <div className="space-y-3" data-testid="qb-recon-tab">
@@ -389,6 +408,22 @@ export function QuickBooksReconciliationTab({ projectId, projectName }: Props) {
         </a>
       </div>
 
+      {/* Trust cue: one-liner for the active mode so users never forget
+          that QuickBooks is evidence, the app is truth. */}
+      <ReportTrustNotice
+        sourceLabel={
+          mode === "cost"
+            ? "QB bills (evidence) ↔ normalized_cost_lines (truth)"
+            : "QB invoices (evidence) ↔ normalized_revenue_lines (truth)"
+        }
+        lastUpdatedAt={activeGeneratedAt ?? status?.lastSuccessfulSyncAt ?? null}
+        note={
+          mode === "cost"
+            ? "Cost-side matches a QuickBooks 'Bill' (a supplier invoice the company owes) to an app cost line. Linking does NOT realise COS — use the COS Tracker for that."
+            : "Revenue-side matches a QuickBooks 'Invoice' (a customer invoice the company issues) to an app revenue line. The project must be mapped to a QB customer first."
+        }
+      />
+
       {/* Filters */}
       <Card>
         <CardContent className="p-3 flex flex-wrap items-end gap-3">
@@ -413,16 +448,17 @@ export function QuickBooksReconciliationTab({ projectId, projectName }: Props) {
           <Button
             size="sm"
             variant="outline"
-            onClick={() => reconQuery.refetch()}
-            disabled={reconQuery.isFetching}
+            onClick={() => activeQuery.refetch()}
+            disabled={activeQuery.isFetching}
             className="gap-1.5"
+            data-testid="qb-recon-refresh"
           >
-            {reconQuery.isFetching ? (
+            {activeQuery.isFetching ? (
               <Loader2 className="h-3 w-3 animate-spin" />
             ) : (
               <RefreshCw className="h-3 w-3" />
             )}
-            Refresh
+            Refresh {mode === "cost" ? "bills" : "invoices"}
           </Button>
           <div className="flex-1" />
           <div className="text-xs text-muted-foreground">
@@ -435,12 +471,18 @@ export function QuickBooksReconciliationTab({ projectId, projectName }: Props) {
                 )}
               </>
             )}
+            {status?.isStale && (
+              <Badge variant="outline" className="ml-2 text-[9px] bg-amber-50 text-amber-700 border-amber-200">
+                stale QB data
+              </Badge>
+            )}
           </div>
         </CardContent>
       </Card>
 
-      {/* Summary strip */}
-      {summary && (
+      {/* Cost-mode summary strip. Revenue mode renders its own summary
+          inside RevenueReconView so the two don't bleed into each other. */}
+      {mode === "cost" && summary && (
         <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
           <SummaryCard label="Linked" value={summary.linkedCount} tone="emerald" />
           <SummaryCard label="Auto exact" value={summary.autoExactCount} tone="green" />
@@ -484,7 +526,7 @@ export function QuickBooksReconciliationTab({ projectId, projectName }: Props) {
           <CardContent className="p-3 text-xs flex items-center gap-2">
             <Link2 className="h-4 w-4 text-sky-600" />
             <span>
-              Select a QB-only bill below to link to cost line{" "}
+              Select a QB-only supplier bill below to link to cost line{" "}
               <span className="font-mono font-semibold">#{pendingLinkCostLineId}</span>.
             </span>
             <div className="flex-1" />
@@ -515,10 +557,10 @@ export function QuickBooksReconciliationTab({ projectId, projectName }: Props) {
                 <thead className="bg-muted/50 text-[10px] text-muted-foreground uppercase">
                   <tr>
                     <th className="px-2 py-1.5 text-left">Match</th>
-                    <th className="px-2 py-1.5 text-left">App invoice</th>
+                    <th className="px-2 py-1.5 text-left">Supplier invoice (app)</th>
                     <th className="px-2 py-1.5 text-left">Supplier</th>
                     <th className="px-2 py-1.5 text-right">App amount</th>
-                    <th className="px-2 py-1.5 text-left">QB invoice</th>
+                    <th className="px-2 py-1.5 text-left">QB bill</th>
                     <th className="px-2 py-1.5 text-right">QB amount</th>
                     <th className="px-2 py-1.5 text-right">Variance</th>
                     <th className="px-2 py-1.5 text-left">Actions</th>
@@ -625,7 +667,7 @@ export function QuickBooksReconciliationTab({ projectId, projectName }: Props) {
               <table className="w-full text-xs">
                 <thead className="bg-muted/50 text-[10px] text-muted-foreground uppercase">
                   <tr>
-                    <th className="px-2 py-1.5 text-left">Invoice</th>
+                    <th className="px-2 py-1.5 text-left">Supplier invoice #</th>
                     <th className="px-2 py-1.5 text-left">Date</th>
                     <th className="px-2 py-1.5 text-left">Supplier</th>
                     <th className="px-2 py-1.5 text-left">Description</th>

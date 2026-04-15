@@ -11,6 +11,7 @@
  */
 
 import { pgTable, text, integer, timestamp, serial, jsonb, decimal, uniqueIndex, index } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -153,6 +154,9 @@ export const quickbooksInvoiceLinks = pgTable(
   },
   (table) => ({
     // Prevent duplicate links between the same app row and the same QB entity.
+    // This is the base 5-tuple uniqueness — it still allows the same app row
+    // to be linked to multiple different QB docs (and vice versa). The two
+    // partial unique indexes below enforce the 1:1 invariant on top of it.
     uniqueLink: uniqueIndex("quickbooks_invoice_links_unique_idx").on(
       table.appEntityType,
       table.appEntityId,
@@ -160,6 +164,15 @@ export const quickbooksInvoiceLinks = pgTable(
       table.qbEntityId,
       table.qbRealmId,
     ),
+    // 1:1 enforcement — one ACTIVE QB doc per (app line, realm).
+    // Partial index so soft-deleted rows don't block re-linking.
+    appEntityOneToOne: uniqueIndex("uq_qb_links_app_entity_active")
+      .on(table.appEntityType, table.appEntityId, table.qbRealmId)
+      .where(sql`${table.deletedAt} IS NULL`),
+    // 1:1 enforcement — one ACTIVE app line per (QB doc, realm).
+    qbEntityOneToOne: uniqueIndex("uq_qb_links_qb_entity_active")
+      .on(table.qbEntityType, table.qbEntityId, table.qbRealmId)
+      .where(sql`${table.deletedAt} IS NULL`),
     projectIdx: index("quickbooks_invoice_links_project_idx").on(table.projectId),
     appEntityIdx: index("quickbooks_invoice_links_app_entity_idx").on(
       table.appEntityType,
