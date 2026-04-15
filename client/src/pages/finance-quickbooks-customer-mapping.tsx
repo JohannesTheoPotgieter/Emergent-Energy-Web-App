@@ -10,6 +10,7 @@ import { FinanceLimitedBetaBanner } from "@/components/reports/FinanceLimitedBet
 import { useToast } from "@/hooks/use-toast";
 import { Link2, Link2Off, Plug, Search, Users } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { ReportTrustNotice } from "@/components/reports/ReportTrustNotice";
 
 interface ProjectMapping {
   projectId: number;
@@ -37,6 +38,8 @@ interface QuickBooksStatus {
   connected: boolean;
   companyName: string | null;
   sandbox: boolean;
+  lastSuccessfulSyncAt?: string | null;
+  isStale?: boolean;
 }
 
 export default function FinanceQuickBooksCustomerMappingPage() {
