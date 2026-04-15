@@ -1,5 +1,5 @@
 import { useMemo, useState, Suspense } from "react";
-import { lazyWithRetry } from "@/App";
+import { lazyWithRetry } from "@/lib/lazy-with-retry";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent } from "@/components/ui/card";
