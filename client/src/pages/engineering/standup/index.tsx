@@ -9,6 +9,7 @@ import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { PageSkeleton, PageError } from "@/components/ui/page-states";
 import { useToast } from "@/hooks/use-toast";
 import { invalidateAllTaskCaches } from "@/lib/task-cache";
+import { standupLaneToCanonicalStatus, toStandupLaneStatus } from "@/lib/task-status-compat";
 import {
   Users, Play, Pause, Square, CheckCircle2, Timer, Rocket,
 } from "lucide-react";
@@ -129,8 +130,12 @@ export default function EngineeringStandupPage() {
 
   // Filter to only the 4 standup lanes and add project name
   const speakerTasks = useMemo(() => {
-    const validStatuses = ["TO DO", "IN PROGRESS", "HOLD", "COMPLETE"];
-    return speakerTasksRaw.filter(t => validStatuses.includes(t.status));
+    return speakerTasksRaw
+      .map((t) => ({
+        ...t,
+        status: toStandupLaneStatus(t.status) || t.status,
+      }))
+      .filter((t) => ["TO DO", "IN PROGRESS", "HOLD", "COMPLETE"].includes(t.status));
   }, [speakerTasksRaw]);
 
   // ── Timer logic ───────────────────────────────────────────────────────
@@ -300,7 +305,7 @@ export default function EngineeringStandupPage() {
     mutationFn: async ({ taskId, status, holdReason, blockedType }: {
       taskId: number; status: string; holdReason?: string; blockedType?: string;
     }) => {
-      const body: Record<string, unknown> = { status };
+      const body: Record<string, unknown> = { status: standupLaneToCanonicalStatus(status) };
       if (holdReason) body.holdReason = holdReason;
       if (blockedType) body.blockedType = blockedType;
       return api(`/api/eng/tasks/${taskId}`, {
@@ -371,7 +376,11 @@ export default function EngineeringStandupPage() {
         }]);
       }
     }
-    await editTaskMutation.mutateAsync({ taskId, updates });
+    const normalizedUpdates = { ...updates } as Partial<EngTask>;
+    if (normalizedUpdates.status) {
+      normalizedUpdates.status = standupLaneToCanonicalStatus(normalizedUpdates.status);
+    }
+    await editTaskMutation.mutateAsync({ taskId, updates: normalizedUpdates as Record<string, unknown> });
   }
 
   // ── Mood selection ────────────────────────────────────────────────────
