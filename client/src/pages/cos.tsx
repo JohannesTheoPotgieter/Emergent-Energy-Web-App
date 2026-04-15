@@ -1,16 +1,12 @@
 import React, { useState, useMemo, useCallback } from "react";
 import { FinanceShell } from "@/components/layout/FinanceShell";
-import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip as UiTooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { apiRequest, getQueryFn, fetchQueryFn, invalidateDashboardQueries } from "@/lib/queryClient";
+import { apiRequest, fetchQueryFn, invalidateDashboardQueries } from "@/lib/queryClient";
 import {
   Bar,
   XAxis,
@@ -30,9 +26,6 @@ import {
   ChevronDown,
   ChevronRight,
   X,
-  Search,
-  Loader2,
-  AlertCircle,
   HelpCircle,
 } from "lucide-react";
 
@@ -47,44 +40,45 @@ interface MonthData {
   totalCOS: number;
   realisedCOS: number;
   committedCOS: number;
-  unrealisedCOS: number;
+  plannedCOS: number;
+  qbOnlyActual: number;
+  appOnlyPending: number;
   budget: number;
   variance: number;
   variancePct: number;
-  cashReceived: number;
   ytdCOS: number;
   ytdRealised: number;
   ytdCommitted: number;
-  ytdUnrealised: number;
+  ytdPlanned: number;
+  ytdQbOnly: number;
+  ytdAppOnlyPending: number;
   ytdBudget: number;
   ytdVariance: number;
   ytdVariancePct: number;
-  ytdCashReceived: number;
   cosProjects: ProjectBreakdown[];
   realisedProjects: ProjectBreakdown[];
   committedProjects: ProjectBreakdown[];
-  unrealisedProjects: ProjectBreakdown[];
+  plannedProjects: ProjectBreakdown[];
+  qbOnlyProjects: ProjectBreakdown[];
+  appOnlyPendingProjects: ProjectBreakdown[];
 }
 
 interface MonthDetailItem {
-  id: number;
-  projectName: string;
+  id: string;
+  projectName: string | null;
   category: string | null;
   lineItem: string | null;
-  amount: number;
+  appAmount: number | null;
+  qbAmount: number | null;
   invoiceNumber: string | null;
-  poNumber: string | null;
+  qbBillNumber: string | null;
   invoiceDate: string | null;
   invoiceDateConfirmed: boolean;
-  paymentDate: string | null;
-  paymentDateConfirmed: boolean;
   supplier: string | null;
-  isRealised: boolean;
-  realisedMonth: string | null;
-  cosState: string;
-  hasOverride?: boolean;
-  overrideStatus?: string | null;
-  overrideReason?: string | null;
+  month: string;
+  matchStatus: "matched" | "qb_only" | "app_only";
+  cosState: "realised" | "committed" | "planned";
+  reasonBucket: "matched realised" | "matched committed" | "QB-only actual" | "app-only pending";
 }
 
 interface MonthDetail {
@@ -92,9 +86,13 @@ interface MonthDetail {
   lineCount: number;
   totalAmount: number;
   realisedTotal: number;
-  unrealisedTotal: number;
+  committedTotal: number;
+  plannedTotal: number;
+  qbOnlyTotal: number;
+  appOnlyPendingTotal: number;
   realisedCount: number;
-  unrealisedCount: number;
+  committedCount: number;
+  plannedCount: number;
   items: MonthDetailItem[];
 }
 
@@ -124,404 +122,120 @@ const ROW_DEFS: {
   group: "monthly" | "ytd";
   colorCoded?: boolean;
   expandable?: boolean;
-  projectsKey?: "cosProjects" | "realisedProjects" | "committedProjects" | "unrealisedProjects";
+  projectsKey?: "cosProjects" | "realisedProjects" | "committedProjects" | "plannedProjects" | "qbOnlyProjects" | "appOnlyPendingProjects";
 }[] = [
-  { key: "totalCOS", label: "COS (Finance)", dataKey: "totalCOS", editable: false, colorClass: "text-foreground font-bold", group: "monthly", expandable: true, projectsKey: "cosProjects" },
+  { key: "totalCOS", label: "COS - App Actual", dataKey: "totalCOS", editable: false, colorClass: "text-foreground font-bold", group: "monthly", expandable: true, projectsKey: "cosProjects" },
   { key: "realisedCOS", label: "Realised COS", dataKey: "realisedCOS", editable: false, colorClass: "text-foreground font-bold", group: "monthly", expandable: true, projectsKey: "realisedProjects" },
   { key: "committedCOS", label: "Committed COS", dataKey: "committedCOS", editable: false, colorClass: "text-amber-600 font-semibold", group: "monthly", expandable: true, projectsKey: "committedProjects" },
-  { key: "unrealisedCOS", label: "Unrealised COS", dataKey: "unrealisedCOS", editable: false, colorClass: "text-red-600 font-semibold", group: "monthly", expandable: true, projectsKey: "unrealisedProjects" },
+  { key: "plannedCOS", label: "Planned COS", dataKey: "plannedCOS", editable: false, colorClass: "text-red-600 font-semibold", group: "monthly", expandable: true, projectsKey: "plannedProjects" },
+  { key: "qbOnlyActual", label: "QB-only Actual", dataKey: "qbOnlyActual", editable: false, colorClass: "text-blue-600 font-semibold", group: "monthly", expandable: true, projectsKey: "qbOnlyProjects" },
+  { key: "appOnlyPending", label: "App-only Pending", dataKey: "appOnlyPending", editable: false, colorClass: "text-orange-600 font-semibold", group: "monthly", expandable: true, projectsKey: "appOnlyPendingProjects" },
   { key: "budget", label: "Costed", dataKey: "budget", editable: true, colorClass: "text-purple-600", group: "monthly" },
   { key: "variance", label: "Variance", dataKey: "variance", editable: false, colorClass: "", group: "monthly", colorCoded: true },
   { key: "variancePct", label: "Variance %", dataKey: "variancePct", editable: false, colorClass: "", group: "monthly", colorCoded: true },
   { key: "ytdCOS", label: "YTD COS", dataKey: "ytdCOS", editable: false, colorClass: "text-foreground font-bold", group: "ytd" },
   { key: "ytdRealised", label: "YTD Realised", dataKey: "ytdRealised", editable: false, colorClass: "text-foreground font-bold", group: "ytd" },
   { key: "ytdCommitted", label: "YTD Committed", dataKey: "ytdCommitted", editable: false, colorClass: "text-amber-600", group: "ytd" },
-  { key: "ytdUnrealised", label: "YTD Unrealised", dataKey: "ytdUnrealised", editable: false, colorClass: "text-red-600", group: "ytd" },
+  { key: "ytdPlanned", label: "YTD Planned", dataKey: "ytdPlanned", editable: false, colorClass: "text-red-600", group: "ytd" },
+  { key: "ytdQbOnly", label: "YTD QB-only Actual", dataKey: "ytdQbOnly", editable: false, colorClass: "text-blue-600", group: "ytd" },
+  { key: "ytdAppOnlyPending", label: "YTD App-only Pending", dataKey: "ytdAppOnlyPending", editable: false, colorClass: "text-orange-600", group: "ytd" },
   { key: "ytdBudget", label: "YTD Costed", dataKey: "ytdBudget", editable: false, colorClass: "text-purple-600", group: "ytd" },
   { key: "ytdVariance", label: "YTD Variance", dataKey: "ytdVariance", editable: false, colorClass: "", group: "ytd", colorCoded: true },
   { key: "ytdVariancePct", label: "YTD Variance %", dataKey: "ytdVariancePct", editable: false, colorClass: "", group: "ytd", colorCoded: true },
 ];
 
-function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all", defaultProject = "all" }: { monthKey: string; monthLabel: string; onClose: () => void; defaultFilter?: "all" | "realised" | "committed" | "unrealised"; defaultProject?: string }) {
+function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all", defaultProject = "all" }: { monthKey: string; monthLabel: string; onClose: () => void; defaultFilter?: "all" | "realised" | "committed" | "planned"; defaultProject?: string }) {
   const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
-  const [stateFilter, setStateFilter] = useState<"all" | "realised" | "committed" | "unrealised">(defaultFilter);
+  const [stateFilter, setStateFilter] = useState<"all" | "realised" | "committed" | "planned">(defaultFilter);
   const [projectFilter, setProjectFilter] = useState<string>(defaultProject);
-  const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [overrideItemId, setOverrideItemId] = useState<number | null>(null);
-  const [overrideStatus, setOverrideStatus] = useState<string>("");
-  const [overrideDate, setOverrideDate] = useState<string>("");
-  const [overrideReason, setOverrideReason] = useState<string>("");
-  const queryClient = useQueryClient();
-  const { isAdmin } = useAuth();
 
   const { data, isLoading } = useQuery<MonthDetail>({
     queryKey: ["/api/cos-tracker/month-detail", monthKey],
     queryFn: fetchQueryFn(`/api/cos-tracker/month-detail?monthKey=${monthKey}`),
   });
 
-  const toggleRealisedMutation = useMutation({
-    mutationFn: async ({ id, realised }: { id: number; realised: boolean }) => {
-      await apiRequest("PATCH", `/api/cos-tracker/toggle-realised/${id}`, { realised });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/cos-tracker/month-detail", monthKey] });
-      queryClient.invalidateQueries({ queryKey: ["/api/cos-tracker"] });
-      invalidateDashboardQueries(queryClient);
-    },
-  });
-
-  const overrideStatusMutation = useMutation({
-    mutationFn: async ({ id, cosStatus, invoiceDate, reason }: { id: number; cosStatus: string | null; invoiceDate?: string; reason: string }) => {
-      await apiRequest("PATCH", `/api/cos-tracker/override-status/${id}`, { cosStatus, invoiceDate: invoiceDate || undefined, reason });
-    },
-    onSuccess: () => {
-      setOverrideItemId(null);
-      setOverrideStatus("");
-      setOverrideDate("");
-      setOverrideReason("");
-      queryClient.invalidateQueries({ queryKey: ["/api/cos-tracker/month-detail", monthKey] });
-      queryClient.invalidateQueries({ queryKey: ["/api/cos-tracker"] });
-      invalidateDashboardQueries(queryClient);
-    },
-  });
-
-  const allProjects = useMemo(() => {
-    if (!data?.items) return [];
-    const names = new Set(data.items.map(i => i.projectName));
-    return Array.from(names).sort();
-  }, [data]);
-
   const filtered = useMemo(() => {
     if (!data?.items) return [];
     let items = data.items;
-    if (stateFilter === "realised") items = items.filter(i => i.isRealised);
-    if (stateFilter === "unrealised") items = items.filter(i => !i.isRealised);
+    if (stateFilter !== "all") items = items.filter(i => i.cosState === stateFilter);
     if (projectFilter !== "all") items = items.filter(i => i.projectName === projectFilter);
     if (search.trim()) {
       const q = search.toLowerCase();
       items = items.filter(i =>
-        i.projectName.toLowerCase().includes(q) ||
+        (i.projectName || "").toLowerCase().includes(q) ||
         (i.category || "").toLowerCase().includes(q) ||
         (i.lineItem || "").toLowerCase().includes(q) ||
         (i.invoiceNumber || "").toLowerCase().includes(q) ||
-        (i.poNumber || "").toLowerCase().includes(q) ||
+        (i.qbBillNumber || "").toLowerCase().includes(q) ||
         (i.supplier || "").toLowerCase().includes(q)
       );
     }
     return items;
   }, [data, search, stateFilter, projectFilter]);
 
-  const filteredTotal = useMemo(() => filtered.reduce((s, i) => s + i.amount, 0), [filtered]);
-  const filteredRealised = useMemo(() => filtered.filter(i => i.isRealised).reduce((s, i) => s + i.amount, 0), [filtered]);
-  const filteredUnrealised = useMemo(() => filtered.filter(i => !i.isRealised).reduce((s, i) => s + i.amount, 0), [filtered]);
-
-  const stateBadgeColor = (state: string) => {
-    switch (state) {
-      case 'Paid': return 'bg-slate-200 text-foreground ring-1 ring-slate-400 font-bold';
-      case 'Invoiced':
-      case 'Realised': return 'bg-muted text-foreground ring-1 ring-slate-300';
-      case 'Committed': return 'bg-red-50 text-red-600 ring-1 ring-red-200';
-      default: return 'bg-red-100 text-red-700 ring-1 ring-red-200';
-    }
-  };
+  const allProjects = useMemo(() => {
+    const names = new Set((data?.items || []).map(i => i.projectName).filter(Boolean) as string[]);
+    return Array.from(names).sort();
+  }, [data]);
 
   return (
-    <div className="fixed inset-0 z-50 flex" data-testid="drawer-month-detail" role="dialog" aria-modal="true" aria-label={`COS detail for ${monthLabel}`}>
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={onClose} aria-hidden="true" />
-      <div className="ml-auto relative w-full max-w-5xl bg-background shadow-2xl flex flex-col h-full animate-in slide-in-from-right duration-300">
-        <div className="px-3 sm:px-6 py-4 sm:py-5 border-b bg-gradient-to-r from-slate-50 to-white flex items-center justify-between">
+    <div className="fixed inset-0 z-50 flex" role="dialog" aria-modal="true" aria-label={`COS detail for ${monthLabel}`}>
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} aria-hidden="true" />
+      <div className="ml-auto relative w-full max-w-6xl bg-background shadow-2xl flex flex-col h-full">
+        <div className="px-6 py-4 border-b flex items-center justify-between">
           <div>
-            <h3 className="font-bold text-xl tracking-tight" data-testid="text-drawer-title">{monthLabel}</h3>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              COS Line Item Detail · {data?.lineCount ?? 0} items · {formatRand(data?.totalAmount ?? 0)}
-            </p>
+            <h3 className="font-bold text-xl">{monthLabel}</h3>
+            <p className="text-sm text-muted-foreground">COS drill-down with QB/App reconciliation buckets</p>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-muted rounded-full transition-colors" data-testid="button-close-drawer" aria-label="Close detail drawer">
-            <X className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
-          </button>
+          <button onClick={onClose} className="p-2 hover:bg-muted rounded-full"><X className="h-5 w-5" /></button>
         </div>
 
-        <div className="px-3 sm:px-6 py-3 sm:py-4 border-b bg-gradient-to-b from-slate-50/50 to-transparent">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
-            <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-slate-50 to-slate-100/50 border border-border/60 px-4 py-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">COS Realised (Invoice + Date Confirmed)</p>
-                  <p className="font-mono font-black text-foreground text-lg mt-0.5" data-testid="text-realised-total">{formatRand(data?.realisedTotal ?? 0)}</p>
-                </div>
-                <Badge variant="secondary" className="bg-slate-200/60 text-foreground text-xs font-semibold">{data?.realisedCount ?? 0}</Badge>
-              </div>
-              <div className="absolute -right-3 -bottom-3 w-16 h-16 rounded-full bg-slate-200/20" />
-            </div>
-            <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-red-50 to-red-100/50 border border-red-200/60 px-4 py-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-medium text-red-600 uppercase tracking-wider">Unrealised (No Invoice / Date Unconfirmed)</p>
-                  <p className="font-mono font-bold text-red-700 text-lg mt-0.5" data-testid="text-unrealised-total">{formatRand(data?.unrealisedTotal ?? 0)}</p>
-                </div>
-                <Badge variant="secondary" className="bg-red-200/60 text-red-600 text-xs font-semibold">{data?.unrealisedCount ?? 0}</Badge>
-              </div>
-              <div className="absolute -right-3 -bottom-3 w-16 h-16 rounded-full bg-red-200/20" />
-            </div>
-            <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-slate-50 to-slate-100/50 border border-border/60 px-4 py-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Total</p>
-                  <p className="font-mono font-bold text-foreground text-lg mt-0.5">{formatRand(data?.totalAmount ?? 0)}</p>
-                </div>
-                <Badge variant="secondary" className="bg-slate-200/60 text-muted-foreground text-xs font-semibold">{data?.lineCount ?? 0}</Badge>
-              </div>
-              <div className="absolute -right-3 -bottom-3 w-16 h-16 rounded-full bg-slate-200/20" />
-            </div>
-          </div>
+        <div className="px-6 py-3 border-b flex gap-2">
+          <Input placeholder="Search project, supplier, invoice, bill..." value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-md" />
+          <select value={stateFilter} onChange={(e) => setStateFilter(e.target.value as any)} className="h-9 px-3 border rounded-lg bg-muted/50">
+            <option value="all">All statuses</option>
+            <option value="realised">Realised</option>
+            <option value="committed">Committed</option>
+            <option value="planned">Planned</option>
+          </select>
+          <select value={projectFilter} onChange={(e) => setProjectFilter(e.target.value)} className="h-9 px-3 border rounded-lg bg-muted/50">
+            <option value="all">All projects</option>
+            {allProjects.map(p => <option key={p} value={p}>{p}</option>)}
+          </select>
         </div>
 
-        <div className="px-3 sm:px-6 py-3 border-b flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
-          <div className="relative flex-1 min-w-0 sm:min-w-[220px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search project, category, invoice, PO, supplier…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 h-9 bg-muted/50 border-border focus:bg-card transition-colors"
-              data-testid="input-search-detail"
-            />
-          </div>
-          <div className="flex gap-2">
-            <select
-              value={stateFilter}
-              onChange={(e) => setStateFilter(e.target.value as any)}
-              className="h-9 px-3 text-sm border border-border rounded-lg bg-muted/50 hover:bg-card transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-slate-300 flex-1 sm:flex-none"
-              data-testid="select-state-filter"
-            >
-              <option value="all">All States</option>
-              <option value="realised">Realised Only</option>
-              <option value="committed">Committed Only</option>
-              <option value="unrealised">Unrealised Only</option>
-            </select>
-            <select
-              value={projectFilter}
-              onChange={(e) => setProjectFilter(e.target.value)}
-              className="h-9 px-3 text-sm border border-border rounded-lg bg-muted/50 hover:bg-card transition-colors cursor-pointer max-w-[50vw] sm:max-w-[220px] focus:outline-none focus:ring-2 focus:ring-slate-300 flex-1 sm:flex-none"
-              data-testid="select-project-filter"
-            >
-              <option value="all">All Projects</option>
-              {allProjects.map(p => (
-                <option key={p} value={p}>{p}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div className="px-3 sm:px-6 py-2.5 border-b bg-muted/80 flex items-center justify-between text-sm">
-          <span className="font-medium text-muted-foreground">
-            <span className="text-foreground font-semibold">{filtered.length}</span> items
-          </span>
-          <div className="flex items-center gap-5">
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-slate-800" />
-              <span className="text-foreground font-mono text-xs font-bold">{formatRand(filteredRealised)}</span>
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-red-500" />
-              <span className="text-red-600 font-mono text-xs font-medium">{formatRand(filteredUnrealised)}</span>
-            </span>
-            <span className="font-mono font-bold text-foreground">{formatRand(filteredTotal)}</span>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto">
-          {isLoading ? (
-            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
-              <Loader2 className="h-6 w-6 animate-spin text-slate-500" />
-              <span className="text-sm">Loading line items…</span>
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-2">
-              <Search className="h-8 w-8 text-slate-600" />
-              <span className="text-sm">No line items found</span>
-            </div>
-          ) : (
+        <div className="flex-1 overflow-auto">
+          {isLoading ? <div className="p-6 text-sm text-muted-foreground">Loading...</div> : (
             <table className="w-full text-xs">
-              <thead className="sticky top-0 bg-card/95 backdrop-blur-md z-10 border-b">
+              <thead className="sticky top-0 bg-card border-b">
                 <tr>
-                  <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px] w-8"></th>
-                  <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">Project</th>
-                  <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">Category</th>
-                  <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">Line Item</th>
-                  <th className="text-center px-3 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">Status</th>
-                  <th className="text-center px-3 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">Realised</th>
-                  <th className="text-right px-3 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">Amount</th>
+                  <th className="text-left px-3 py-2">Project</th>
+                  <th className="text-left px-3 py-2">Supplier/Vendor</th>
+                  <th className="text-left px-3 py-2">App Invoice #</th>
+                  <th className="text-left px-3 py-2">QuickBooks Bill #</th>
+                  <th className="text-right px-3 py-2">App Amount</th>
+                  <th className="text-right px-3 py-2">QB Amount</th>
+                  <th className="text-left px-3 py-2">Month</th>
+                  <th className="text-left px-3 py-2">Match Status</th>
+                  <th className="text-left px-3 py-2">Realised/Committed/Planned</th>
+                  <th className="text-left px-3 py-2">Reason Bucket</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filtered.slice(0, 500).map((item, i) => (
-                  <React.Fragment key={item.id}>
-                    <tr
-                      className={`group cursor-pointer transition-colors ${expandedId === item.id ? 'bg-blue-50/60' : 'hover:bg-muted/80'}`}
-                      onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}
-                      data-testid={`row-detail-${i}`}
-                    >
-                      <td className="px-3 py-2.5 text-slate-500 group-hover:text-muted-foreground transition-colors">
-                        {expandedId === item.id ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                      </td>
-                      <td className="px-3 py-2.5 max-w-[150px] truncate font-medium" title={item.projectName}>
-                        <button
-                          type="button"
-                          className="text-blue-600 hover:text-blue-800 hover:underline transition-colors text-left truncate max-w-full"
-                          onClick={(e) => { e.stopPropagation(); navigate(`/project/${encodeURIComponent(item.projectName)}?tab=expenditure`); }}
-                        >
-                          {item.projectName}
-                        </button>
-                      </td>
-                      <td className="px-3 py-2.5 text-muted-foreground max-w-[110px] truncate" title={item.category || ""}>{item.category || "—"}</td>
-                      <td className="px-3 py-2.5 max-w-[200px] truncate text-foreground" title={item.lineItem || ""}>{item.lineItem || "—"}</td>
-                      <td className="px-3 py-2.5 text-center">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${stateBadgeColor(item.cosState)}`}>
-                          {item.cosState}
-                          {item.hasOverride && (
-                            <span className="text-purple-500 cursor-help" title={`Admin override: ${item.overrideReason || 'No reason'}`}>*</span>
-                          )}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
-                        {isAdmin ? (
-                          overrideItemId === item.id ? (
-                            <div className="flex flex-col gap-1.5 min-w-[180px]" onClick={(e) => e.stopPropagation()}>
-                              <select
-                                className="text-[10px] border rounded px-1.5 py-1 bg-white"
-                                value={overrideStatus}
-                                onChange={(e) => setOverrideStatus(e.target.value)}
-                              >
-                                <option value="">Auto (clear override)</option>
-                                <option value="Planned">Planned</option>
-                                <option value="Committed">Committed</option>
-                                <option value="COS Realised">COS Realised</option>
-                              </select>
-                              <input
-                                type="date"
-                                className="text-[10px] border rounded px-1.5 py-1 bg-white"
-                                value={overrideDate}
-                                onChange={(e) => setOverrideDate(e.target.value)}
-                                placeholder="Invoice date (optional)"
-                              />
-                              <input
-                                type="text"
-                                className="text-[10px] border rounded px-1.5 py-1 bg-white"
-                                value={overrideReason}
-                                onChange={(e) => setOverrideReason(e.target.value)}
-                                placeholder="Reason (required)"
-                              />
-                              <div className="flex gap-1">
-                                <button
-                                  className="text-[10px] px-2 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-                                  disabled={overrideStatusMutation.isPending || (overrideStatus !== "" && !overrideReason.trim())}
-                                  onClick={() => overrideStatusMutation.mutate({
-                                    id: item.id,
-                                    cosStatus: overrideStatus || null,
-                                    invoiceDate: overrideDate || undefined,
-                                    reason: overrideReason,
-                                  })}
-                                >
-                                  Save
-                                </button>
-                                <button
-                                  className="text-[10px] px-2 py-0.5 bg-gray-200 rounded hover:bg-gray-300"
-                                  onClick={() => { setOverrideItemId(null); setOverrideStatus(""); setOverrideDate(""); setOverrideReason(""); }}
-                                >
-                                  Cancel
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
-                            <button
-                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold cursor-pointer transition-colors ${
-                                item.hasOverride
-                                  ? 'bg-purple-50 text-purple-700 ring-1 ring-purple-200 hover:bg-purple-100'
-                                  : item.isRealised
-                                    ? 'bg-muted text-foreground ring-1 ring-slate-300 font-bold hover:bg-blue-50 hover:text-blue-600'
-                                    : 'bg-red-50 text-red-600 ring-1 ring-red-200 hover:bg-blue-50 hover:text-blue-600'
-                              }`}
-                              title="Click to override COS status"
-                              onClick={() => {
-                                setOverrideItemId(item.id);
-                                setOverrideStatus(item.overrideStatus || "");
-                                setOverrideDate(item.invoiceDate || "");
-                                setOverrideReason(item.overrideReason || "");
-                              }}
-                              data-testid={`button-override-${item.id}`}
-                            >
-                              {item.hasOverride ? 'Override' : (item.isRealised ? 'Realised' : 'Not Realised')}
-                            </button>
-                          )
-                        ) : (
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                            item.isRealised ? 'bg-muted text-foreground ring-1 ring-slate-300' : 'bg-red-50 text-red-600 ring-1 ring-red-200'
-                          }`}>
-                            {item.isRealised
-                              ? (item.invoiceNumber ? `INV: ${item.invoiceNumber.substring(0, 12)}` : 'Realised')
-                              : 'Not Realised'}
-                          </span>
-                        )}
-                      </td>
-                      <td className={`px-3 py-2.5 text-right font-mono font-semibold ${item.isRealised ? 'text-foreground' : 'text-red-600'}`}>{formatRand(item.amount)}</td>
-                    </tr>
-                    {expandedId === item.id && (
-                      <tr className="bg-gradient-to-r from-blue-50/40 to-slate-50/40">
-                        <td colSpan={7} className="px-6 py-4">
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-3 text-xs">
-                            <div>
-                              <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">Invoice #</p>
-                              <p className="font-medium text-foreground">{item.invoiceNumber || "—"}</p>
-                            </div>
-                            <div>
-                              <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">PO #</p>
-                              <p className="font-medium text-foreground">{item.poNumber || "—"}</p>
-                            </div>
-                            <div>
-                              <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">Invoice Date</p>
-                              <p className="font-medium text-red-600 flex items-center gap-1.5">
-                                {item.invoiceDate || "—"}
-                                {item.invoiceDate && (
-                                  <span className={`inline-block w-2 h-2 rounded-full ${item.invoiceDateConfirmed ? 'bg-green-500 ring-2 ring-green-200' : 'bg-red-400 ring-2 ring-red-200'}`}
-                                    title={item.invoiceDateConfirmed ? 'Confirmed' : 'Forecast'} />
-                                )}
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">Payment Date</p>
-                              <p className="font-medium text-foreground flex items-center gap-1.5">
-                                {item.paymentDate || "—"}
-                                {item.paymentDate && (
-                                  <span className={`inline-block w-2 h-2 rounded-full ${item.paymentDateConfirmed ? 'bg-green-500 ring-2 ring-green-200' : 'bg-red-400 ring-2 ring-red-200'}`}
-                                    title={item.paymentDateConfirmed ? 'Confirmed' : 'Forecast'} />
-                                )}
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">Supplier</p>
-                              <p className="font-medium text-foreground">{item.supplier || "—"}</p>
-                            </div>
-                            <div>
-                              <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">Realised Month</p>
-                              <p className="font-medium text-foreground">{item.realisedMonth || "Not realised"}</p>
-                            </div>
-                            <div>
-                              <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">COS State</p>
-                              <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold ${stateBadgeColor(item.cosState)}`}>
-                                {item.cosState}
-                              </span>
-                            </div>
-                            <div>
-                              <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">Amount</p>
-                              <p className="font-mono font-bold text-foreground">{formatRand(item.amount)}</p>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </React.Fragment>
+              <tbody>
+                {filtered.map((item) => (
+                  <tr key={item.id} className="border-b hover:bg-muted/30">
+                    <td className="px-3 py-2">{item.projectName ? <button className="text-blue-600 hover:underline" onClick={() => navigate(`/project/${encodeURIComponent(item.projectName || "")}?tab=expenditure`)}>{item.projectName}</button> : "—"}</td>
+                    <td className="px-3 py-2">{item.supplier || "—"}</td>
+                    <td className="px-3 py-2">{item.invoiceNumber || "—"}</td>
+                    <td className="px-3 py-2">{item.qbBillNumber || "—"}</td>
+                    <td className="px-3 py-2 text-right font-mono">{item.appAmount == null ? "—" : formatRand(item.appAmount)}</td>
+                    <td className="px-3 py-2 text-right font-mono">{item.qbAmount == null ? "—" : formatRand(item.qbAmount)}</td>
+                    <td className="px-3 py-2">{item.month}</td>
+                    <td className="px-3 py-2">{item.matchStatus}</td>
+                    <td className="px-3 py-2">{item.cosState}</td>
+                    <td className="px-3 py-2">{item.reasonBucket}</td>
+                  </tr>
                 ))}
               </tbody>
             </table>
@@ -537,7 +251,7 @@ export default function CosTracker() {
   const qc = useQueryClient();
   const [editing, setEditing] = useState<EditingCell | null>(null);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
-  const [drawerMonth, setDrawerMonth] = useState<{ monthKey: string; monthLabel: string; defaultFilter?: "all" | "realised" | "committed" | "unrealised"; defaultProject?: string } | null>(null);
+  const [drawerMonth, setDrawerMonth] = useState<{ monthKey: string; monthLabel: string; defaultFilter?: "all" | "realised" | "committed" | "planned"; defaultProject?: string } | null>(null);
 
   const { data: months = [], isLoading, isError, error, refetch } = useQuery<MonthData[]>({
     queryKey: ["/api/cos-tracker"],
@@ -561,7 +275,7 @@ export default function CosTracker() {
 
   const projectNamesByRow = useMemo(() => {
     const result: Record<string, string[]> = {};
-    for (const key of ["cosProjects", "realisedProjects", "committedProjects", "unrealisedProjects"] as const) {
+    for (const key of ["cosProjects", "realisedProjects", "committedProjects", "plannedProjects", "qbOnlyProjects", "appOnlyPendingProjects"] as const) {
       const names = new Set<string>();
       for (const m of months) {
         for (const p of m[key] || []) {
@@ -611,7 +325,9 @@ export default function CosTracker() {
         month: m.monthLabel,
         "Realised": m.realisedCOS,
         "Committed": m.committedCOS,
-        "Unrealised": m.unrealisedCOS,
+        "Planned": m.plannedCOS,
+        "QB-only Actual": m.qbOnlyActual,
+        "App-only Pending": m.appOnlyPending,
         Costed: m.budget,
         "YTD Variance": m.ytdVariance,
       })),
@@ -623,10 +339,11 @@ export default function CosTracker() {
       months.map((m) => ({
         month: m.monthLabel,
         "Costed COS": m.budget,
-        "Planned COS": m.totalCOS,
+        "Planned COS": m.plannedCOS,
         "Realised COS": m.realisedCOS,
         "Committed COS": m.committedCOS,
-        "Outstanding COS": m.unrealisedCOS,
+        "QB-only Actual": m.qbOnlyActual,
+        "App-only Pending": m.appOnlyPending,
       })),
     [months],
   );
@@ -652,9 +369,9 @@ export default function CosTracker() {
   if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load COS Tracker" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
   const kpiCards = [
-    { id: "ytd-total-cos", label: "YTD COS (Total)", value: formatRand(lastMonth?.ytdCOS ?? 0), icon: DollarSign, iconBg: "bg-muted", iconColor: "text-muted-foreground", valueColor: "text-foreground", borderColor: "", tooltip: "Year-to-date total COS from all line items (realised + unrealised). Realised = supplier invoice captured AND invoice date confirmed (black font). Unrealised = the remaining balance still at risk of change." },
+    { id: "ytd-total-cos", label: "YTD COS (Total)", value: formatRand(lastMonth?.ytdCOS ?? 0), icon: DollarSign, iconBg: "bg-muted", iconColor: "text-muted-foreground", valueColor: "text-foreground", borderColor: "", tooltip: "Year-to-date total COS from all line items (realised + committed + planned). Realised = supplier invoice captured AND invoice date confirmed (black font). Planned and pending lines are shown separately from QuickBooks actuals." },
     { id: "ytd-realised", label: "YTD COS Realised", value: formatRand(lastMonth?.ytdRealised ?? 0), icon: TrendingDown, iconBg: "bg-muted", iconColor: "text-foreground", valueColor: "text-foreground font-black", borderColor: "border-border", tooltip: "COS realised = supplier invoice number captured AND invoice date confirmed (black font, or invoice_date_confirmed = true). Both gates are required per the canonical business spec." },
-    { id: "ytd-unrealised", label: "YTD COS Unrealised", value: formatRand(lastMonth?.ytdUnrealised ?? 0), icon: Activity, iconBg: "bg-red-100", iconColor: "text-red-600", valueColor: "text-red-600", borderColor: "border-red-200", tooltip: "COS that does NOT yet meet both realisation gates — either no supplier invoice captured, or the invoice date is still red (unconfirmed). Forecast costs at risk of change." },
+    { id: "ytd-planned", label: "YTD Planned COS", value: formatRand(lastMonth?.ytdPlanned ?? 0), icon: Activity, iconBg: "bg-red-100", iconColor: "text-red-600", valueColor: "text-red-600", borderColor: "border-red-200", tooltip: "App cost lines not yet represented in QuickBooks bills." },
     { id: "ytd-budget", label: "YTD Costed", value: formatRand(lastMonth?.ytdBudget ?? 0), icon: Target, iconBg: "bg-purple-100", iconColor: "text-purple-600", valueColor: "text-purple-700", borderColor: "", tooltip: "The manually entered costed budget for COS. Editable in the grid below. Used to calculate variance." },
     {
       id: "ytd-variance", label: "YTD Variance", value: formatRand(lastMonth?.ytdVariance ?? 0),
@@ -759,7 +476,9 @@ export default function CosTracker() {
                   <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '12px' }} />
                   <Bar dataKey="Realised" stackId="cos" fill="#1e293b" radius={[0, 0, 0, 0]} />
                   <Bar dataKey="Committed" stackId="cos" fill="#f59e0b" radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="Unrealised" stackId="cos" fill="#dc2626" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Planned" stackId="cos" fill="#dc2626" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="QB-only Actual" stackId="cos" fill="#2563eb" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="App-only Pending" stackId="cos" fill="#f97316" radius={[4, 4, 0, 0]} />
                   <Bar dataKey="Costed" fill="#a855f7" opacity={0.3} radius={[4, 4, 0, 0]} />
                   <Line
                     type="monotone"
@@ -795,7 +514,8 @@ export default function CosTracker() {
                   <Bar dataKey="Planned COS" fill="#4472C4" radius={[2, 2, 0, 0]} />
                   <Bar dataKey="Realised COS" fill="#ED7D31" radius={[2, 2, 0, 0]} />
                   <Bar dataKey="Committed COS" fill="#f59e0b" radius={[2, 2, 0, 0]} />
-                  <Bar dataKey="Outstanding COS" fill="#FFC000" radius={[2, 2, 0, 0]} />
+                  <Bar dataKey="QB-only Actual" fill="#2563eb" radius={[2, 2, 0, 0]} />
+                  <Bar dataKey="App-only Pending" fill="#f97316" radius={[2, 2, 0, 0]} />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
@@ -825,7 +545,7 @@ export default function CosTracker() {
                   {ROW_DEFS.map((row, rowIdx) => {
                     const isYtd = row.group === "ytd";
                     const isExpanded = expandedRows.has(row.key);
-                    const isClickable = ["totalCOS", "realisedCOS", "committedCOS", "unrealisedCOS"].includes(row.key);
+                    const isClickable = ["totalCOS", "realisedCOS", "committedCOS", "plannedCOS", "qbOnlyActual", "appOnlyPending"].includes(row.key);
                     const isFirstYtd = isYtd && rowIdx > 0 && ROW_DEFS[rowIdx - 1].group !== "ytd";
                     return (
                       <React.Fragment key={row.key}>
@@ -899,7 +619,7 @@ export default function CosTracker() {
                                 onClick={isClickable ? () => setDrawerMonth({
                                   monthKey: m.monthKey,
                                   monthLabel: m.monthLabel,
-                                  defaultFilter: row.key === 'realisedCOS' ? 'realised' : row.key === 'committedCOS' ? 'committed' : row.key === 'unrealisedCOS' ? 'unrealised' : 'all'
+                                  defaultFilter: row.key === 'realisedCOS' ? 'realised' : row.key === 'committedCOS' ? 'committed' : row.key === 'plannedCOS' || row.key === 'appOnlyPending' ? 'planned' : 'all'
                                 }) : undefined}
                                 data-testid={`cell-${row.key}-${m.monthKey}`}
                               >
@@ -928,7 +648,7 @@ export default function CosTracker() {
                               const projArr = row.projectsKey ? (m as any)[row.projectsKey] as ProjectBreakdown[] : [];
                               const proj = projArr?.find((p: ProjectBreakdown) => p.projectName === pName);
                               const val = proj?.value ?? 0;
-                              const drillFilter = row.key === 'realisedCOS' ? 'realised' as const : row.key === 'committedCOS' ? 'committed' as const : row.key === 'unrealisedCOS' ? 'unrealised' as const : 'all' as const;
+                              const drillFilter = row.key === 'realisedCOS' ? 'realised' as const : row.key === 'committedCOS' ? 'committed' as const : row.key === 'plannedCOS' || row.key === 'appOnlyPending' ? 'planned' as const : 'all' as const;
                               return (
                                 <td
                                   key={m.monthKey}
