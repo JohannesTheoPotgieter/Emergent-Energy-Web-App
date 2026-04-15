@@ -11,7 +11,12 @@ describe("finance core trust report wiring", () => {
     const source = read("server/departments/finance-routes.ts");
     expect(source).toContain('"/api/finance/trust-core-report"');
     expect(source).toContain("buildFinanceCoreTrustReport");
-    expect(source).toContain("X-Finance-Source-Layer");
+    // After the trust-envelope refactor, header emission lives in the
+    // shared helper. Pin both: finance-routes must import it, and the
+    // helper must still emit the X-Finance-Source-Layer header.
+    expect(source).toContain("finance-trust/envelope");
+    const envelope = read("server/lib/finance-trust/envelope.ts");
+    expect(envelope).toContain("X-Finance-Source-Layer");
   });
 
   it("classifies finance layers and preserves core business rules", () => {
