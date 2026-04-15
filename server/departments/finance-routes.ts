@@ -66,6 +66,8 @@ import {
 } from "../services/project-cost-line-read-service";
 import { getFeatureFlag } from "../lib/feature-flags";
 import { buildFinanceCoreTrustReport } from "../services/finance-core-trust-service";
+import { setFinanceTrustHeaders as setFinanceTrustHeadersShared } from "../lib/finance-trust/envelope";
+import type { FinanceTrustHeaderParams } from "../lib/finance-trust/envelope";
 import { getBills } from "../services/quickbooks-service";
 import { billRawToSummary } from "../services/quickbooks-reconciliation-service";
 
@@ -219,21 +221,17 @@ function getWeekStartDate(dateStr: string): string {
   return d.toISOString().split('T')[0];
 }
 
+/**
+ * Thin wrapper over the shared finance-trust envelope so existing call
+ * sites in this large route file keep working without touching each one.
+ * The shared helper adds refreshedAt + staleAfter + exception metadata.
+ * See server/lib/finance-trust/envelope.ts for the canonical definition.
+ */
 function setFinanceTrustHeaders(
   res: Response,
-  params: {
-    sourceLayer: "canonical" | "derived" | "legacy" | "override";
-    canonicalTable?: string;
-    derivedTable?: string;
-    cacheLayer?: string;
-    uncertainty?: string | null;
-  },
+  params: FinanceTrustHeaderParams,
 ) {
-  res.setHeader("X-Finance-Source-Layer", params.sourceLayer);
-  if (params.canonicalTable) res.setHeader("X-Finance-Canonical-Table", params.canonicalTable);
-  if (params.derivedTable) res.setHeader("X-Finance-Derived-Table", params.derivedTable);
-  if (params.cacheLayer) res.setHeader("X-Finance-Cache-Layer", params.cacheLayer);
-  if (params.uncertainty) res.setHeader("X-Finance-Trust-Uncertainty", params.uncertainty);
+  setFinanceTrustHeadersShared(res, params);
 }
 
 function calculateRevenueRecognition(
