@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2, BarChart3, ArrowLeft, TrendingUp, Users, AlertTriangle, CheckCircle2, XCircle, Copy } from "lucide-react";
 import { useLocation } from "wouter";
 import { usePermission } from "@/hooks/use-permissions";
+import { MaturityBadge } from "@/components/ui/maturity-badge";
 
 function pdFetch(url: string) {
   return fetch(url, { credentials: "include" }).then(r => { if (!r.ok) throw new Error("Failed"); return r.json(); });
@@ -111,8 +112,12 @@ export default function PdReportsPage() {
             <h1 className="text-xl font-bold flex items-center gap-2">
               <BarChart3 className="h-5 w-5 text-violet-600" />
               PD Reports
+              <MaturityBadge level="internal" />
             </h1>
-            <p className="text-xs text-muted-foreground">{report.fyLabel}</p>
+            <p className="text-xs text-muted-foreground">
+              {report.fyLabel} · Internal view — metrics here are computed on-the-fly and not yet part of the
+              governed reporting surface. Not shown in the sidebar.
+            </p>
           </div>
         </div>
         <Button variant="outline" size="sm" onClick={copyMetrics} className="gap-1.5">

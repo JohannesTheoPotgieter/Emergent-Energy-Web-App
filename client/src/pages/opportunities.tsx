@@ -27,6 +27,13 @@ interface OpportunityRow {
   status: string;
   notes: string | null;
   createdAt: string;
+  /**
+   * Origin flag. `'pipedrive'` means the row is managed by the sync engine
+   * and CRM-owned fields will be overwritten on the next sync run.
+   * `'internal'` means the row is app-owned.
+   */
+  source?: string | null;
+  pipedriveDealId?: string | null;
 }
 
 const STAGES = [
@@ -172,10 +179,10 @@ export default function OpportunitiesPage() {
   return (
     <PageShell className="p-4 md:p-6" data-testid="page-opportunities">
       <SectionHeader
-        icon={<Sun className="h-5 w-5" />}
+        icon={<TrendingUp className="h-5 w-5" />}
         eyebrow="Project Development"
         title="Opportunities"
-        description={`${opportunities.length} opportunities in pipeline`}
+        description={`Commercial pipeline. ${opportunities.length} row${opportunities.length === 1 ? "" : "s"} total — rows marked "Pipedrive" are synced from the CRM and will be overwritten on the next sync run. "Internal" rows are app-owned.`}
         actions={
           <Button size="sm" className="gap-1.5" onClick={() => { setForm(emptyForm); setShowForm(true); }}>
             <Plus className="h-4 w-4" /> New Opportunity
@@ -241,35 +248,57 @@ export default function OpportunitiesPage() {
       )}
 
       <div className="space-y-2">
-        {filtered.map(opp => (
-          <Card key={opp.id} className="hover:shadow-sm transition-shadow">
-            <CardContent className="p-3">
-              <div className="flex items-center gap-2 flex-wrap">
-                <Badge className={`text-[10px] ${stageBadge(opp.stage)}`}>{opp.stage}</Badge>
-                {opp.contractType && <Badge variant="outline" className="text-[10px]">{opp.contractType}</Badge>}
-                <span className="flex-1" />
-                {opp.estimatedValue && (
-                  <span className="text-xs font-medium">
-                    <DollarSign className="h-3 w-3 inline" />
-                    {Number(opp.estimatedValue).toLocaleString()}
-                  </span>
-                )}
-                {opp.estimatedKwp && (
-                  <span className="text-xs text-muted-foreground">{Number(opp.estimatedKwp).toFixed(0)} kWp</span>
-                )}
-                {opp.expectedCloseDate && (
-                  <span className="text-xs text-muted-foreground">
-                    <Calendar className="h-3 w-3 inline mr-0.5" />{opp.expectedCloseDate}
-                  </span>
-                )}
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditDialog(opp)}>
-                  <Pencil className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-              {opp.notes && <p className="text-xs text-muted-foreground mt-1 truncate">{opp.notes}</p>}
-            </CardContent>
-          </Card>
-        ))}
+        {filtered.map(opp => {
+          const isPipedrive = opp.source === "pipedrive";
+          return (
+            <Card key={opp.id} className="hover:shadow-sm transition-shadow">
+              <CardContent className="p-3">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Badge className={`text-[10px] ${stageBadge(opp.stage)}`}>{opp.stage}</Badge>
+                  {opp.contractType && <Badge variant="outline" className="text-[10px]">{opp.contractType}</Badge>}
+                  {isPipedrive ? (
+                    <Badge
+                      variant="info"
+                      className="text-[10px]"
+                      title="Synced from Pipedrive. Stage, status, estimated value, expected close date, signed date and client will be overwritten on the next sync. Notes and commercial risks are app-owned and are preserved."
+                      data-testid={`opp-source-pipedrive-${opp.id}`}
+                    >
+                      Pipedrive
+                    </Badge>
+                  ) : (
+                    <Badge
+                      variant="secondary"
+                      className="text-[10px]"
+                      title="Internal opportunity. Not synced from Pipedrive — app-owned."
+                      data-testid={`opp-source-internal-${opp.id}`}
+                    >
+                      Internal
+                    </Badge>
+                  )}
+                  <span className="flex-1" />
+                  {opp.estimatedValue && (
+                    <span className="text-xs font-medium">
+                      <DollarSign className="h-3 w-3 inline" />
+                      {Number(opp.estimatedValue).toLocaleString()}
+                    </span>
+                  )}
+                  {opp.estimatedKwp && (
+                    <span className="text-xs text-muted-foreground">{Number(opp.estimatedKwp).toFixed(0)} kWp</span>
+                  )}
+                  {opp.expectedCloseDate && (
+                    <span className="text-xs text-muted-foreground">
+                      <Calendar className="h-3 w-3 inline mr-0.5" />{opp.expectedCloseDate}
+                    </span>
+                  )}
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditDialog(opp)}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+                {opp.notes && <p className="text-xs text-muted-foreground mt-1 truncate">{opp.notes}</p>}
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
 
       {/* Create dialog */}

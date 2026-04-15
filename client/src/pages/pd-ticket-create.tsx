@@ -14,6 +14,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
 import { Checkbox } from "@/components/ui/checkbox";
 import { PD_REQUEST_TYPE_TASK_TEMPLATES } from "@shared/schema";
+import { PD_REQUEST_TYPES_ACTIVE } from "@/lib/pd/request-types";
 import {
   Loader2, Plus, ArrowLeft, Search, CheckCircle2, Building2, FolderKanban, FileEdit,
   ChevronRight, MapPin, Zap, Battery, HardHat, CalendarIcon, ListTodo, AlertTriangle,
@@ -33,7 +34,9 @@ function pdFetch(url: string, opts?: RequestInit) {
   });
 }
 
-const REQUEST_TYPES = ["Cost Proposal", "IFC Planning", "Site Assessment", "Feasibility Study", "Grid Application", "Design Review", "Battery Assessment", "Full EPC"];
+// Create form only exposes currently-allowed request types. Historical
+// legacy types are not selectable for new work — see client/src/lib/pd/request-types.ts.
+const REQUEST_TYPES = PD_REQUEST_TYPES_ACTIVE;
 const PRIORITIES = ["Critical", "High", "Medium", "Low"];
 const FUNDING_TYPES = ["PPA", "Cash", "Lease", "Hybrid", "Other"];
 const PROVINCES = ["Eastern Cape", "Free State", "Gauteng", "KwaZulu-Natal", "Limpopo", "Mpumalanga", "Northern Cape", "North West", "Western Cape"];
