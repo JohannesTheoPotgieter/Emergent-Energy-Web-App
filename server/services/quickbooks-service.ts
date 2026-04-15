@@ -320,8 +320,27 @@ export async function getVendors(): Promise<any> {
 
 export async function getBills(startDate?: string, endDate?: string): Promise<any> {
   const where = buildDateClause("TxnDate", startDate, endDate);
-  const query = `SELECT * FROM Bill${where} ORDERBY TxnDate DESC MAXRESULTS 500`;
-  return queryQuickBooks("Bill", query);
+  const maxResults = 500;
+  let startPosition = 1;
+  const allBills: any[] = [];
+
+  while (true) {
+    const query = `SELECT * FROM Bill${where} ORDERBY TxnDate DESC STARTPOSITION ${startPosition} MAXRESULTS ${maxResults}`;
+    const page = await queryQuickBooks<any>("Bill", query);
+    const bills = page?.QueryResponse?.Bill ?? [];
+    allBills.push(...bills);
+    if (bills.length < maxResults) break;
+    startPosition += maxResults;
+  }
+
+  return {
+    QueryResponse: {
+      ...(allBills.length > 0 ? { Bill: allBills } : {}),
+      startPosition: 1,
+      maxResults: allBills.length,
+    },
+    time: new Date().toISOString(),
+  };
 }
 
 export async function getProfitAndLossReport(startDate: string, endDate: string): Promise<any> {
