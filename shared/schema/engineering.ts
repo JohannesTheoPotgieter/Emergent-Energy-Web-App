@@ -124,6 +124,12 @@ export const engStageTemplates = pgTable("eng_stage_templates", {
   raciInformed: text("raci_informed"),
   failureModes: text("failure_modes").array(),
   stageGateRules: jsonb("stage_gate_rules"),
+  /**
+   * Human-readable definition of done for the stage. Shown in UI next to the
+   * gate; consulted by engineers to know what "complete" means. Additive —
+   * legacy rows stay null.
+   */
+  definitionOfDone: text("definition_of_done").array(),
   sortOrder: integer("sort_order").notNull().default(0),
   version: integer("version").notNull().default(1),
   isActive: boolean("is_active").notNull().default(true), // TODO: migrate to deletedAt pattern
@@ -168,6 +174,10 @@ export const projectEngStages = pgTable("project_eng_stages", {
   status: engStageStatusEnum("status").notNull().default('not_started'),
   startedAt: timestamp("started_at"),
   completedAt: timestamp("completed_at"),
+  /** Set when the stage passes the IFC-issuance gate (rules.requireIfcIssuance). */
+  ifcIssuedAt: timestamp("ifc_issued_at"),
+  /** Set when the handover pack is marked handover-ready. */
+  handoverReadyAt: timestamp("handover_ready_at"),
   overrideReason: text("override_reason"),
   createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -194,6 +204,40 @@ export const insertProjectEngTaskSchema = createInsertSchema(projectEngTasks).om
 export type InsertProjectEngTask = z.infer<typeof insertProjectEngTaskSchema>;
 export type ProjectEngTask = typeof projectEngTasks.$inferSelect;
 
+/**
+ * Controlled-document lifecycle for engineering deliverables.
+ *
+ * NOTE: this is intentionally distinct from `approvalStatus`. `approvalStatus`
+ * is the QA/gate field ("has a reviewer signed this off?"). `releasedFor` is
+ * the controlled-document field ("what is this drawing allowed to be used
+ * for?"). A deliverable can be `approvalStatus='approved'` and still be
+ * `releasedFor='under_review'`; **approval alone never implies issue for
+ * construction**.
+ *
+ * Allowed transitions (enforced in server/eng-stage-routes.ts):
+ *   draft → under_review → approved_for_review → issued_for_construction
+ *                                                       ↓
+ *                                                  as_built | superseded
+ */
+export const RELEASED_FOR_STATES = [
+  "draft",
+  "under_review",
+  "approved_for_review",
+  "issued_for_construction",
+  "as_built",
+  "superseded",
+] as const;
+export type ReleasedForState = typeof RELEASED_FOR_STATES[number];
+
+export const RELEASED_FOR_TRANSITIONS: Record<ReleasedForState, ReleasedForState[]> = {
+  draft: ["under_review", "superseded"],
+  under_review: ["draft", "approved_for_review", "superseded"],
+  approved_for_review: ["under_review", "issued_for_construction", "superseded"],
+  issued_for_construction: ["as_built", "superseded"],
+  as_built: ["superseded"],
+  superseded: [],
+};
+
 export const projectEngDeliverables = pgTable("project_eng_deliverables", {
   id: serial("id").primaryKey(),
   projectEngStageId: integer("project_eng_stage_id").notNull().references(() => projectEngStages.id, { onDelete: 'cascade' }),
@@ -211,6 +255,13 @@ export const projectEngDeliverables = pgTable("project_eng_deliverables", {
   approvalStatus: text("approval_status").default("pending"),
   approvedBy: integer("approved_by").references(() => users.id, { onDelete: "set null" }),
   approvedAt: timestamp("approved_at"),
+  // Controlled-document lifecycle (see RELEASED_FOR_STATES above).
+  releasedFor: text("released_for").notNull().default("draft"),
+  issuedForConstructionAt: timestamp("issued_for_construction_at"),
+  issuedForConstructionBy: integer("issued_for_construction_by").references(() => users.id, { onDelete: "set null" }),
+  asBuiltAt: timestamp("as_built_at"),
+  asBuiltBy: integer("as_built_by").references(() => users.id, { onDelete: "set null" }),
+  supersededById: integer("superseded_by_id"),
 });
 export const insertProjectEngDeliverableSchema = createInsertSchema(projectEngDeliverables).omit({ id: true, uploadedAt: true } as any);
 export type InsertProjectEngDeliverable = z.infer<typeof insertProjectEngDeliverableSchema>;
@@ -235,6 +286,33 @@ export type ProjectEngApproval = typeof projectEngApprovals.$inferSelect;
 
 // ===================== DRAWING REGISTER =====================
 
+export const DRAWING_STATUSES = [
+  "draft",
+  "for_review",
+  "for_approval",
+  "approved",
+  "ifc",
+  "as_built",
+  "superseded",
+] as const;
+export type DrawingStatus = typeof DRAWING_STATUSES[number];
+
+/**
+ * Allowed transitions for drawing_register.status. Enforced in
+ * server/departments/drawing-register-routes.ts. "approved" is intentionally
+ * NOT the same as "ifc" — approval is a review signoff, ifc is a controlled
+ * release for construction use.
+ */
+export const DRAWING_STATUS_TRANSITIONS: Record<DrawingStatus, DrawingStatus[]> = {
+  draft: ["for_review", "superseded"],
+  for_review: ["draft", "for_approval", "superseded"],
+  for_approval: ["for_review", "approved", "superseded"],
+  approved: ["ifc", "for_review", "superseded"],
+  ifc: ["as_built", "superseded"],
+  as_built: ["superseded"],
+  superseded: [],
+};
+
 export const drawingRegister = pgTable("drawing_register", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
@@ -243,13 +321,17 @@ export const drawingRegister = pgTable("drawing_register", {
   discipline: text("discipline"),           // 'electrical', 'structural', 'mechanical', 'civil', 'architectural'
   currentRevision: text("current_revision").default("A"),
   revisionDate: date("revision_date"),
-  status: text("status").default("draft"),  // 'draft', 'for_review', 'for_approval', 'approved', 'ifc', 'as_built', 'superseded'
+  status: text("status").default("draft"),  // see DRAWING_STATUSES
   authorUserId: integer("author_user_id").references(() => users.id, { onDelete: "set null" }),
   reviewerUserId: integer("reviewer_user_id").references(() => users.id, { onDelete: "set null" }),
   approverUserId: integer("approver_user_id").references(() => users.id, { onDelete: "set null" }),
   sharepointLink: text("sharepoint_link"),
   sheetSize: text("sheet_size"),
   notes: text("notes"),
+  issuedForConstructionAt: timestamp("issued_for_construction_at"),
+  issuedForConstructionBy: integer("issued_for_construction_by").references(() => users.id, { onDelete: "set null" }),
+  asBuiltAt: timestamp("as_built_at"),
+  asBuiltBy: integer("as_built_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   deletedAt: timestamp("deleted_at"),
