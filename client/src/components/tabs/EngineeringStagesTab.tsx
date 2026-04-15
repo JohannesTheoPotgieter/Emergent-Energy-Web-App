@@ -36,6 +36,13 @@ import {
 } from "lucide-react";
 import { exportStagePack, exportAllStagesPack } from "@/lib/stage-export";
 import { engFetchRaw as engFetch } from "@/lib/eng-fetch";
+import { useAuth } from "@/hooks/use-auth";
+import {
+  DocumentControlBadge,
+  NotForConstructionHint,
+} from "@/components/engineering/DocumentControlBadge";
+import { DeliverableControlActions } from "@/components/engineering/DeliverableControlActions";
+import { deriveControlState, CONTROL_STATE_META } from "@/lib/engineering-control-state";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
   not_started: { label: "Not Started", color: "bg-muted text-foreground", icon: Circle },
@@ -408,6 +415,23 @@ function StageDetail({ stageId, projectId, projectName, isCoo, userRole }: {
   const { stage, tasks, deliverableTemplates, uploadedDeliverables, approvals } = data;
   const statusCfg = STATUS_CONFIG[stage.status] || STATUS_CONFIG.not_started;
 
+  // Document-control roll-up: count uploaded deliverables by control
+  // state so the reviewer can tell at a glance whether the stage has
+  // anything actually released for construction, not just "approved".
+  const controlRollup = uploadedDeliverables.reduce(
+    (acc: Record<string, number>, d: any) => {
+      const s = deriveControlState(d);
+      acc[s] = (acc[s] ?? 0) + 1;
+      return acc;
+    },
+    {},
+  );
+  const ifcCount = (controlRollup.issued_for_construction ?? 0) + (controlRollup.as_built ?? 0);
+  const approvedForReviewCount = controlRollup.approved_for_review ?? 0;
+  const stageRules = (stage.stageGateRules ?? {}) as Record<string, unknown>;
+  const requiresIfc = Boolean(stageRules.requireIfcIssuance);
+  const requiresAsBuilt = Boolean(stageRules.requireAsBuilt);
+
   return (
     <div className="p-4 space-y-4" data-testid="stage-detail">
       <div className="flex items-center justify-between">
@@ -473,6 +497,76 @@ function StageDetail({ stageId, projectId, projectName, isCoo, userRole }: {
                   </div>
                 )}
               </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Document-control roll-up: makes visible what is actually
+          released for construction vs. merely QC-approved. Always
+          rendered when there are uploaded deliverables so operators
+          cannot miss it. */}
+      {uploadedDeliverables.length > 0 && (
+        <Card
+          className="border-l-4"
+          style={{ borderLeftColor: requiresIfc && ifcCount === 0 ? "#f59e0b" : "#3b82f6" }}
+          data-testid="document-control-rollup"
+        >
+          <CardContent className="p-3 space-y-2">
+            <div className="flex items-center gap-2 mb-1">
+              <FileSignature className="h-4 w-4 text-blue-600" />
+              <span className="text-xs font-semibold">Document Control</span>
+              {requiresIfc && (
+                <Badge className="bg-emerald-100 text-emerald-800 text-[9px] px-1">
+                  IFC required to complete
+                </Badge>
+              )}
+              {requiresAsBuilt && (
+                <Badge className="bg-emerald-100 text-emerald-800 text-[9px] px-1">
+                  As-built required to complete
+                </Badge>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+              {(Object.keys(controlRollup) as string[]).map((k) => {
+                const meta = CONTROL_STATE_META[k as keyof typeof CONTROL_STATE_META];
+                if (!meta) return null;
+                return (
+                  <span
+                    key={k}
+                    className="inline-flex items-center gap-1"
+                    data-testid={`rollup-${k}`}
+                  >
+                    <DocumentControlBadge state={k as any} compact />
+                    <span className="text-muted-foreground">× {controlRollup[k]}</span>
+                  </span>
+                );
+              })}
+            </div>
+            {requiresIfc && ifcCount === 0 && approvedForReviewCount > 0 && (
+              <div
+                className="flex items-start gap-1.5 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded p-2"
+                data-testid="missing-ifc-warning"
+              >
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                <span>
+                  {approvedForReviewCount} deliverable{approvedForReviewCount === 1 ? " has" : "s have"} passed QC review but
+                  none have been issued for construction. Use <strong>Issue for Construction</strong> on the approved
+                  row(s) before completing this stage.
+                </span>
+              </div>
+            )}
+            {stage.definitionOfDone && Array.isArray(stage.definitionOfDone) && stage.definitionOfDone.length > 0 && (
+              <details className="text-[11px]">
+                <summary className="cursor-pointer font-medium text-foreground hover:text-blue-700">
+                  Definition of Done
+                </summary>
+                <ul className="list-disc list-inside mt-1 text-muted-foreground space-y-0.5">
+                  {stage.definitionOfDone.map((line: string, i: number) => (
+                    <li key={i}>{line}</li>
+                  ))}
+                </ul>
+              </details>
             )}
           </CardContent>
         </Card>
@@ -579,11 +673,20 @@ function TaskRow({ task, projectId, stageId, allDeliverables, isCoo, userRole }:
   const fileRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const qc = useQueryClient();
+  const { user } = useAuth();
+  const currentUserId = user?.id ?? 0;
 
   const cfg = TASK_STATUS_CONFIG[task.status] || TASK_STATUS_CONFIG.pending;
   const taskDeliverables = allDeliverables.filter((d: any) => d.projectEngTaskId === task.id);
+  // `hasApprovedDeliverable` here means "has passed QC review" — not
+  // "has been issued for construction". Keep the variable name locally
+  // stable but the user-facing copy says "QC review".
   const hasApprovedDeliverable = taskDeliverables.some((d: any) => d.approvalStatus === "approved");
   const hasPendingDeliverable = taskDeliverables.some((d: any) => d.approvalStatus === "pending");
+  const hasIfcDeliverable = taskDeliverables.some((d: any) => {
+    const s = deriveControlState(d);
+    return s === "issued_for_construction" || s === "as_built";
+  });
   const completionBlocked = task.hasDeliverable && !hasApprovedDeliverable && task.status !== "complete";
 
   async function toggleStatus() {
@@ -593,7 +696,11 @@ function TaskRow({ task, projectId, stageId, allDeliverables, isCoo, userRole }:
       if (taskDeliverables.length === 0) {
         toast({ title: "Deliverable required", description: "Upload a deliverable before completing this task.", variant: "destructive" });
       } else {
-        toast({ title: "Approval required", description: "The deliverable must be approved before this task can be completed.", variant: "destructive" });
+        toast({
+          title: "QC review required",
+          description: "The deliverable must pass QC review before this task can be completed. (This is a review gate — a separate step is required before the document can be issued for construction.)",
+          variant: "destructive",
+        });
       }
       return;
     }
@@ -715,10 +822,16 @@ function TaskRow({ task, projectId, stageId, allDeliverables, isCoo, userRole }:
     }
   }
 
-  const approvalBadge = (status: string) => {
-    if (status === "approved") return <Badge className="bg-green-100 text-green-700 text-[9px] px-1">Approved</Badge>;
-    if (status === "rejected") return <Badge className="bg-red-100 text-red-700 text-[9px] px-1">Rejected</Badge>;
-    return <Badge className="bg-amber-100 text-amber-700 text-[9px] px-1">Pending Approval</Badge>;
+  // NOTE: Review/QC badge only — intentionally does NOT say a bare
+  // "Approved" because that was being conflated with "issued for
+  // construction". The document-control state is rendered separately via
+  // <DocumentControlBadge />.
+  const reviewBadge = (status: string) => {
+    if (status === "approved")
+      return <Badge className="bg-blue-100 text-blue-700 text-[9px] px-1">QC passed (review)</Badge>;
+    if (status === "rejected")
+      return <Badge className="bg-red-100 text-red-700 text-[9px] px-1">QC rejected</Badge>;
+    return <Badge className="bg-amber-100 text-amber-700 text-[9px] px-1">Awaiting QC review</Badge>;
   };
 
   return (
@@ -726,7 +839,7 @@ function TaskRow({ task, projectId, stageId, allDeliverables, isCoo, userRole }:
       <CardContent className="p-2">
         <div className="flex items-center gap-2">
           <button onClick={toggleStatus} disabled={saving || (completionBlocked && task.status !== "complete")} className="shrink-0" data-testid={`task-check-${task.id}`}
-            title={completionBlocked ? "Deliverable must be approved first" : undefined}>
+            title={completionBlocked ? "Deliverable must pass QC review first" : undefined}>
             {saving ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : task.status === "complete" ? (
@@ -745,13 +858,31 @@ function TaskRow({ task, projectId, stageId, allDeliverables, isCoo, userRole }:
               {!task.isRequired && <span className="ml-1 text-[10px] text-muted-foreground">(optional)</span>}
             </button>
             {task.hasDeliverable && (
-              <div className="flex items-center gap-1 mt-0.5">
+              <div
+                className="flex items-center gap-1 mt-0.5"
+                data-testid={`task-deliverable-indicator-${task.id}`}
+              >
                 <FileText className="h-3 w-3 text-blue-500" />
                 <span className="text-[10px] text-blue-600 font-medium">Deliverable required</span>
-                {hasApprovedDeliverable && <CheckCircle2 className="h-3 w-3 text-green-500" />}
-                {!hasApprovedDeliverable && hasPendingDeliverable && <Clock className="h-3 w-3 text-amber-500" />}
+                {hasIfcDeliverable && (
+                  <span className="inline-flex items-center gap-0.5 text-[9px] text-emerald-700 font-semibold" title="Deliverable is Issued For Construction">
+                    <Shield className="h-3 w-3" /> IFC
+                  </span>
+                )}
+                {!hasIfcDeliverable && hasApprovedDeliverable && (
+                  <span className="inline-flex items-center gap-0.5 text-[9px] text-blue-700 font-semibold" title="Deliverable passed QC review but is NOT yet issued for construction">
+                    <CheckCircle2 className="h-3 w-3" /> QC
+                  </span>
+                )}
+                {!hasApprovedDeliverable && hasPendingDeliverable && (
+                  <span className="inline-flex items-center gap-0.5 text-[9px] text-amber-700" title="Deliverable uploaded, awaiting QC review">
+                    <Clock className="h-3 w-3" /> Review
+                  </span>
+                )}
                 {!hasApprovedDeliverable && !hasPendingDeliverable && taskDeliverables.length === 0 && (
-                  <AlertTriangle className="h-3 w-3 text-red-600" />
+                  <span className="inline-flex items-center gap-0.5 text-[9px] text-red-700 font-semibold" title="No deliverable uploaded for this task">
+                    <AlertTriangle className="h-3 w-3" /> Missing
+                  </span>
                 )}
               </div>
             )}
@@ -795,7 +926,7 @@ function TaskRow({ task, projectId, stageId, allDeliverables, isCoo, userRole }:
               </label>
               {task.hasDeliverable && (
                 <span className="text-[10px] text-amber-600">
-                  Task cannot be completed until deliverable is approved
+                  Task cannot be completed until the deliverable passes QC review (separate step: issue for construction)
                 </span>
               )}
             </div>
@@ -820,46 +951,68 @@ function TaskRow({ task, projectId, stageId, allDeliverables, isCoo, userRole }:
                   <p className="text-[10px] text-muted-foreground italic">No deliverables uploaded yet. Upload a file to proceed.</p>
                 )}
 
-                {taskDeliverables.map((d: any) => (
-                  <div key={d.id} className="border rounded p-2 bg-card space-y-1">
-                    <div className="flex items-center gap-2 text-xs">
-                      <FileText className="h-3 w-3 text-blue-500 shrink-0" />
-                      <span className="flex-1 truncate font-medium">{d.fileName}</span>
-                      {approvalBadge(d.approvalStatus)}
-                      <Button size="sm" variant="ghost" className="h-5 w-5 p-0"
-                        onClick={() => window.open(`/api/eng-stages/deliverables/${d.id}/download`, "_blank")}
-                        data-testid={`btn-dl-task-del-${d.id}`}>
-                        <Download className="h-3 w-3" />
-                      </Button>
+                {taskDeliverables.map((d: any) => {
+                  const controlState = deriveControlState(d);
+                  const controlMeta = CONTROL_STATE_META[controlState];
+                  return (
+                    <div key={d.id} className="border rounded p-2 bg-card space-y-1">
+                      <div className="flex items-center gap-2 text-xs">
+                        <FileText className="h-3 w-3 text-blue-500 shrink-0" />
+                        <span className="flex-1 truncate font-medium">{d.fileName}</span>
+                        {reviewBadge(d.approvalStatus)}
+                        <DocumentControlBadge
+                          row={d}
+                          compact
+                          data-testid={`doc-control-${d.id}`}
+                        />
+                        <Button size="sm" variant="ghost" className="h-5 w-5 p-0"
+                          onClick={() => window.open(`/api/eng-stages/deliverables/${d.id}/download`, "_blank")}
+                          data-testid={`btn-dl-task-del-${d.id}`}>
+                          <Download className="h-3 w-3" />
+                        </Button>
+                      </div>
+                      {d.sharepointFolderPath && (
+                        <div className="flex items-center gap-1 text-[10px] text-blue-600">
+                          <FolderOpen className="h-2.5 w-2.5" />
+                          <span className="truncate">{d.sharepointFolderPath}</span>
+                        </div>
+                      )}
+                      {d.approvalStatus === "pending" && (isCoo || userRole === "PROGRAM_MANAGER" || userRole === "ENGINEER") && (
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <Button size="sm" variant="outline" className="h-6 text-[10px] gap-1 text-blue-700 border-blue-300 hover:bg-blue-50"
+                            onClick={() => handleApprove(d.id, "approved")}
+                            data-testid={`btn-approve-${d.id}`}
+                            title="Approve for review. This is QC signoff only — it does NOT issue the document for construction.">
+                            <CheckCircle2 className="h-3 w-3" /> Pass QC review
+                          </Button>
+                          <Button size="sm" variant="outline" className="h-6 text-[10px] gap-1 text-red-700 border-red-300 hover:bg-red-50"
+                            onClick={() => handleApprove(d.id, "rejected")}
+                            data-testid={`btn-reject-${d.id}`}>
+                            <AlertTriangle className="h-3 w-3" /> Reject
+                          </Button>
+                        </div>
+                      )}
+                      {d.approvalStatus === "approved" && (
+                        <div className="space-y-1">
+                          <p className="text-[10px] text-blue-700" data-testid={`qc-passed-note-${d.id}`}>
+                            QC-approved for review. NOT yet issued for construction — a separate action is required.
+                          </p>
+                          {!controlMeta.isConstructionSafe && <NotForConstructionHint state={controlState} />}
+                          <DeliverableControlActions
+                            deliverable={d}
+                            userRole={userRole}
+                            userId={currentUserId}
+                            invalidateKeys={[["eng-stage-detail", stageId], ["eng-stages", projectId]]}
+                            testIdPrefix={`deliverable-${d.id}`}
+                          />
+                        </div>
+                      )}
+                      {d.approvalStatus === "rejected" && (
+                        <p className="text-[10px] text-red-500">QC rejected — upload a revised version.</p>
+                      )}
                     </div>
-                    {d.sharepointFolderPath && (
-                      <div className="flex items-center gap-1 text-[10px] text-blue-600">
-                        <FolderOpen className="h-2.5 w-2.5" />
-                        <span className="truncate">{d.sharepointFolderPath}</span>
-                      </div>
-                    )}
-                    {d.approvalStatus === "pending" && (isCoo || userRole === "PROGRAM_MANAGER" || userRole === "ENGINEER") && (
-                      <div className="flex items-center gap-1.5 mt-1">
-                        <Button size="sm" variant="outline" className="h-6 text-[10px] gap-1 text-green-700 border-green-300 hover:bg-green-50"
-                          onClick={() => handleApprove(d.id, "approved")}
-                          data-testid={`btn-approve-${d.id}`}>
-                          <CheckCircle2 className="h-3 w-3" /> Approve
-                        </Button>
-                        <Button size="sm" variant="outline" className="h-6 text-[10px] gap-1 text-red-700 border-red-300 hover:bg-red-50"
-                          onClick={() => handleApprove(d.id, "rejected")}
-                          data-testid={`btn-reject-${d.id}`}>
-                          <AlertTriangle className="h-3 w-3" /> Reject
-                        </Button>
-                      </div>
-                    )}
-                    {d.approvalStatus === "approved" && (
-                      <p className="text-[10px] text-green-600">Approved — task can now be completed</p>
-                    )}
-                    {d.approvalStatus === "rejected" && (
-                      <p className="text-[10px] text-red-500">Rejected — upload a new version</p>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
                 <input ref={fileRef} type="file" className="hidden" onChange={handleFileSelect} />
               </div>
             )}
@@ -1072,6 +1225,7 @@ function DeliverablesSection({ stageId, projectId, templates, uploaded }: {
                     <FileText className="h-3 w-3 text-muted-foreground shrink-0" />
                     <span className="flex-1 truncate font-medium">{f.fileName}</span>
                     {f.versionTag && <Badge variant="outline" className="text-[10px]">{f.versionTag}</Badge>}
+                    <DocumentControlBadge row={f} compact data-testid={`stage-doc-control-${f.id}`} />
                     <Button
                       size="sm"
                       variant="ghost"
