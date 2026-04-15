@@ -9,6 +9,8 @@ import { useToast } from "@/hooks/use-toast";
 import { AlertTriangle, CheckCircle2, Loader2, Plug, RefreshCw } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 
+type IntegrationHealthState = "healthy" | "stale" | "failing" | "unknown";
+
 interface QuickBooksStatus {
   connected: boolean;
   realmId: string | null;
@@ -16,6 +18,38 @@ interface QuickBooksStatus {
   tokenExpiry: string | null;
   refreshTokenExpiry: string | null;
   sandbox: boolean;
+  health: IntegrationHealthState;
+  lastSuccessfulSyncAt: string | null;
+  lastFailedSyncAt: string | null;
+  lastFailureCode: string | null;
+  lastFailureReason: string | null;
+  isStale: boolean;
+  ageMs: number | null;
+  staleAfterMs: number;
+}
+
+function formatRelativeAge(ageMs: number | null): string {
+  if (ageMs === null || ageMs < 0) return "—";
+  const minutes = Math.floor(ageMs / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} d ago`;
+}
+
+function healthBadgeClass(state: IntegrationHealthState): string {
+  switch (state) {
+    case "healthy":
+      return "bg-emerald-100 text-emerald-700 border-emerald-200";
+    case "stale":
+      return "bg-amber-100 text-amber-700 border-amber-200";
+    case "failing":
+      return "bg-rose-100 text-rose-700 border-rose-200";
+    default:
+      return "bg-slate-100 text-slate-600 border-slate-200";
+  }
 }
 
 interface QuickBooksQueryResponse<T> {
@@ -206,6 +240,75 @@ export default function AdminQuickBooksPage() {
         }
       />
 
+      {status && isConnected && (
+        <Card
+          className={
+            status.health === "failing"
+              ? "border-rose-200 bg-rose-50/40"
+              : status.isStale || status.health === "stale"
+                ? "border-amber-200 bg-amber-50/40"
+                : "border-emerald-200 bg-emerald-50/40"
+          }
+          data-testid="qb-health-summary"
+        >
+          <CardContent className="p-4">
+            <div className="flex items-start gap-3">
+              {status.health === "failing" ? (
+                <AlertTriangle className="h-5 w-5 text-rose-500 shrink-0 mt-0.5" />
+              ) : status.isStale || status.health === "stale" ? (
+                <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+              ) : (
+                <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0 mt-0.5" />
+              )}
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">Integration health</span>
+                  <Badge variant="outline" className={`text-[10px] ${healthBadgeClass(status.health)}`}>
+                    {status.health}
+                  </Badge>
+                  {status.isStale && status.health !== "failing" && (
+                    <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">
+                      stale data
+                    </Badge>
+                  )}
+                </div>
+                <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+                  <div>
+                    <div className="text-muted-foreground">Last successful sync</div>
+                    <div className="font-medium" data-testid="qb-last-success">
+                      {status.lastSuccessfulSyncAt
+                        ? `${formatDateTime(status.lastSuccessfulSyncAt)} (${formatRelativeAge(status.ageMs)})`
+                        : "never"}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Last failed sync</div>
+                    <div className="font-medium" data-testid="qb-last-failure">
+                      {status.lastFailedSyncAt ? formatDateTime(status.lastFailedSyncAt) : "—"}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Last failure reason</div>
+                    <div className="font-medium truncate" title={status.lastFailureReason ?? undefined}>
+                      {status.lastFailureCode
+                        ? `${status.lastFailureCode}${status.lastFailureReason ? ` — ${status.lastFailureReason}` : ""}`
+                        : "—"}
+                    </div>
+                  </div>
+                </div>
+                {status.isStale && (
+                  <p className="mt-2 text-xs text-amber-700">
+                    QuickBooks data shown below may be stale (no successful sync in{" "}
+                    {Math.round(status.staleAfterMs / 60_000)} minutes). Refresh or re-connect if the
+                    reconciliation view looks wrong.
+                  </p>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Card>
           <CardContent className="p-3">
@@ -255,9 +358,12 @@ export default function AdminQuickBooksPage() {
                   be redirected to Intuit to approve access to the Accounting scope.
                 </p>
                 <p className="text-xs text-amber-600 mt-2">
-                  Required env vars: <code className="px-1 py-0.5 bg-amber-100 rounded text-[11px]">QUICKBOOKS_CLIENT_ID</code>,
-                  {" "}
-                  <code className="px-1 py-0.5 bg-amber-100 rounded text-[11px]">QUICKBOOKS_CLIENT_SECRET</code>.
+                  Required env vars (set these in Replit → Tools → Secrets):{" "}
+                  <code className="px-1 py-0.5 bg-amber-100 rounded text-[11px]">QUICKBOOKS_CLIENT_ID</code>,{" "}
+                  <code className="px-1 py-0.5 bg-amber-100 rounded text-[11px]">QUICKBOOKS_CLIENT_SECRET</code>,{" "}
+                  <code className="px-1 py-0.5 bg-amber-100 rounded text-[11px]">QUICKBOOKS_REDIRECT_URI</code>,{" "}
+                  <code className="px-1 py-0.5 bg-amber-100 rounded text-[11px]">QUICKBOOKS_SANDBOX</code>
+                  {" "}(<code className="text-[11px]">true</code> while the Intuit app is in development).
                 </p>
               </div>
             </div>

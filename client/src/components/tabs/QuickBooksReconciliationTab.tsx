@@ -15,6 +15,12 @@ import {
   Loader2,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { isApiError } from "@/lib/api-error";
+
+function toastTitleForLinkError(err: Error): string {
+  if (isApiError(err) && err.status === 409) return "Link conflict";
+  return "Link failed";
+}
 
 // ===== Types (mirror server/services/quickbooks-reconciliation-service.ts) =====
 
@@ -281,7 +287,7 @@ export function QuickBooksReconciliationTab({ projectId, projectName }: Props) {
       toast({ title: "Linked to QuickBooks invoice" });
     },
     onError: (err: Error) => {
-      toast({ title: "Link failed", description: err.message, variant: "destructive" });
+      toast({ title: toastTitleForLinkError(err), description: err.message, variant: "destructive" });
     },
   });
 
@@ -301,7 +307,7 @@ export function QuickBooksReconciliationTab({ projectId, projectName }: Props) {
       toast({ title: "Linked to QuickBooks bill" });
     },
     onError: (err: Error) => {
-      toast({ title: "Link failed", description: err.message, variant: "destructive" });
+      toast({ title: toastTitleForLinkError(err), description: err.message, variant: "destructive" });
     },
   });
 

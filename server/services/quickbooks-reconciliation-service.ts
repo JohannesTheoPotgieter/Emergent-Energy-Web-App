@@ -280,6 +280,55 @@ export interface CreateLinkInput {
   confirmedBy?: number | null;
 }
 
+/**
+ * Raised by `createOrUpdateLink` when the requested link would violate the
+ * 1:1 invariant enforced by the partial unique indexes on
+ * `quickbooks_invoice_links`. The HTTP layer maps this to a 409 Conflict
+ * with the full set of conflicting rows so the caller can decide whether
+ * to unlink the existing link first.
+ */
+export class QuickBooksLinkConflictError extends Error {
+  readonly code = "quickbooks_link_conflict";
+  readonly conflicts: QuickBooksInvoiceLink[];
+  readonly reason: "app_entity_already_linked" | "qb_entity_already_linked" | "both";
+
+  constructor(params: {
+    reason: QuickBooksLinkConflictError["reason"];
+    conflicts: QuickBooksInvoiceLink[];
+    message?: string;
+  }) {
+    super(
+      params.message ??
+        (params.reason === "app_entity_already_linked"
+          ? "This app line is already linked to a different QuickBooks document. Unlink the existing link first."
+          : params.reason === "qb_entity_already_linked"
+            ? "This QuickBooks document is already linked to a different app line. Unlink the existing link first."
+            : "This app line and QuickBooks document are both already linked elsewhere. Unlink the existing links first."),
+    );
+    this.name = "QuickBooksLinkConflictError";
+    this.conflicts = params.conflicts;
+    this.reason = params.reason;
+  }
+}
+
+/**
+ * Create or refresh a link row between an app finance line and a QuickBooks
+ * document. Enforces the 1:1 invariant:
+ *
+ *   - If the exact pair already exists (same app line + same QB doc),
+ *     refresh its snapshot fields and return it — this is the "click
+ *     Confirm twice" idempotent path.
+ *   - If the app line is already linked to a DIFFERENT QB doc in the same
+ *     realm → throw QuickBooksLinkConflictError. Caller must unlink first.
+ *   - If the QB doc is already linked to a DIFFERENT app line in the same
+ *     realm → throw QuickBooksLinkConflictError. Caller must unlink first.
+ *
+ * This function never force-supersedes an existing link; that is a policy
+ * decision and belongs in an explicit admin flow (not implemented in this
+ * pass). The DB-level partial unique indexes are the belt-and-braces
+ * backstop — this function is the suspenders that return a clean error
+ * instead of a raw unique-violation exception.
+ */
 export async function createOrUpdateLink(
   input: CreateLinkInput,
 ): Promise<QuickBooksInvoiceLink> {
@@ -308,7 +357,70 @@ export async function createOrUpdateLink(
     updatedAt: now,
   };
 
-  const existing = await db
+  // --- 1. Conflict detection on the app-entity side. ---
+  // Active links for this app line in this realm. More than one here would
+  // already be a historical corruption; we surface ALL of them to the caller
+  // so they can resolve.
+  const activeAppLinks = await db
+    .select()
+    .from(quickbooksInvoiceLinks)
+    .where(
+      and(
+        eq(quickbooksInvoiceLinks.appEntityType, values.appEntityType),
+        eq(quickbooksInvoiceLinks.appEntityId, values.appEntityId),
+        eq(quickbooksInvoiceLinks.qbRealmId, values.qbRealmId),
+        isNull(quickbooksInvoiceLinks.deletedAt),
+      ),
+    );
+
+  // --- 2. Conflict detection on the QB-entity side. ---
+  const activeQbLinks = await db
+    .select()
+    .from(quickbooksInvoiceLinks)
+    .where(
+      and(
+        eq(quickbooksInvoiceLinks.qbEntityType, values.qbEntityType),
+        eq(quickbooksInvoiceLinks.qbEntityId, values.qbEntityId),
+        eq(quickbooksInvoiceLinks.qbRealmId, values.qbRealmId),
+        isNull(quickbooksInvoiceLinks.deletedAt),
+      ),
+    );
+
+  // --- 3. Idempotent refresh path: the exact same pair already exists. ---
+  const idempotent = activeAppLinks.find(
+    (l) =>
+      l.qbEntityType === values.qbEntityType &&
+      l.qbEntityId === values.qbEntityId,
+  );
+  if (idempotent) {
+    const updated = await db
+      .update(quickbooksInvoiceLinks)
+      .set({ ...values, deletedAt: null } as any)
+      .where(eq(quickbooksInvoiceLinks.id, idempotent.id))
+      .returning();
+    return updated[0]!;
+  }
+
+  // --- 4. Real conflict: app line or QB doc already linked elsewhere. ---
+  const appConflicts = activeAppLinks; // all of these are "different QB doc"
+  const qbConflicts = activeQbLinks;   // all of these are "different app line"
+  if (appConflicts.length > 0 || qbConflicts.length > 0) {
+    const reason: QuickBooksLinkConflictError["reason"] =
+      appConflicts.length > 0 && qbConflicts.length > 0
+        ? "both"
+        : appConflicts.length > 0
+          ? "app_entity_already_linked"
+          : "qb_entity_already_linked";
+    throw new QuickBooksLinkConflictError({
+      reason,
+      conflicts: [...appConflicts, ...qbConflicts],
+    });
+  }
+
+  // --- 5. Clean insert. If a soft-deleted row exists for the exact 5-tuple
+  // (which the base unique index would otherwise hit), revive it instead of
+  // inserting a new one so the base unique index stays consistent.
+  const softDeletedExact = await db
     .select()
     .from(quickbooksInvoiceLinks)
     .where(
@@ -322,8 +434,8 @@ export async function createOrUpdateLink(
     )
     .limit(1);
 
-  if (existing.length > 0) {
-    const row = existing[0]!;
+  if (softDeletedExact.length > 0) {
+    const row = softDeletedExact[0]!;
     const updated = await db
       .update(quickbooksInvoiceLinks)
       .set({ ...values, deletedAt: null } as any)
@@ -339,11 +451,27 @@ export async function createOrUpdateLink(
   return inserted[0]!;
 }
 
-export async function softDeleteLink(linkId: number): Promise<void> {
+/**
+ * Soft-delete a link. Returns the previous row so callers can log exactly
+ * what was unlinked in the audit trail. Returns null if the link was
+ * already deleted or does not exist.
+ */
+export async function softDeleteLink(
+  linkId: number,
+): Promise<QuickBooksInvoiceLink | null> {
+  const existing = await db
+    .select()
+    .from(quickbooksInvoiceLinks)
+    .where(eq(quickbooksInvoiceLinks.id, linkId))
+    .limit(1);
+  if (existing.length === 0) return null;
+  const row = existing[0]!;
+  if (row.deletedAt) return row;
   await db
     .update(quickbooksInvoiceLinks)
     .set({ deletedAt: new Date(), updatedAt: new Date() } as any)
     .where(eq(quickbooksInvoiceLinks.id, linkId));
+  return row;
 }
 
 // ===================== MATCHING CORE =====================
@@ -717,11 +845,27 @@ export async function upsertCustomerMapping(
   return inserted[0]!;
 }
 
-export async function softDeleteCustomerMapping(id: number): Promise<void> {
+/**
+ * Soft-delete a project ↔ customer mapping. Returns the previous row so
+ * callers can log exactly what was unmapped in the audit trail. Returns
+ * null if the mapping was already deleted or does not exist.
+ */
+export async function softDeleteCustomerMapping(
+  id: number,
+): Promise<QuickBooksCustomerMapping | null> {
+  const existing = await db
+    .select()
+    .from(quickbooksCustomerMappings)
+    .where(eq(quickbooksCustomerMappings.id, id))
+    .limit(1);
+  if (existing.length === 0) return null;
+  const row = existing[0]!;
+  if (row.deletedAt) return row;
   await db
     .update(quickbooksCustomerMappings)
     .set({ deletedAt: new Date(), updatedAt: new Date() } as any)
     .where(eq(quickbooksCustomerMappings.id, id));
+  return row;
 }
 
 // ===================== REVENUE (INVOICES) RECONCILIATION =====================
