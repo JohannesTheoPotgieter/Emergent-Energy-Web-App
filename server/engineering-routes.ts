@@ -591,8 +591,9 @@ export function registerEngineeringRoutes(app: Express) {
       const rawProjectId = data?.projectId;
       const parsedProjectId = Number(rawProjectId);
       const requestedProjectId = Number.isInteger(parsedProjectId) && parsedProjectId > 0 ? parsedProjectId : null;
+      // Prompt 0.9: canonical lowercase_snake default post-migration 20260413.
       if (!TASK_STATUSES.includes(data.status)) {
-        data.status = "TO DO";
+        data.status = "to_do";
       }
 
       // Primary path: projectId from client. Fallback: projectName for backwards compatibility.
@@ -654,7 +655,7 @@ export function registerEngineeringRoutes(app: Express) {
         projectId: resolvedProjectId,
         title: data.title,
         description: data.description || null,
-        status: data.status || "TO DO",
+        status: data.status || "to_do",
         priority: data.priority || null,
         phase: data.phase || null,
         startDate: data.startDate || null,
@@ -675,7 +676,7 @@ export function registerEngineeringRoutes(app: Express) {
         workItemId: task.id,
         title: task.title,
         description: task.description,
-        status: "TO DO",
+        status: "to_do",
         priority: task.priority || "Med",
         phase: task.phase,
         startDate: task.startDate,
@@ -724,20 +725,21 @@ export function registerEngineeringRoutes(app: Express) {
       }
 
       // Validate parent completion: can't mark complete if children are still open
-      if (updates.status && ["Complete", "COMPLETE"].includes(updates.status)) {
+      // Prompt 0.9: canonical lowercase "complete" post-migration 20260413.
+      if (updates.status === "complete") {
         const blockMsg = await validateParentCompletion(id);
         if (blockMsg) {
           return sendError(res, badRequest(blockMsg));
         }
       }
 
-      if (updates.status === "HOLD" && !updates.holdReason) {
-        return sendError(res, badRequest("Hold reason required when setting status to HOLD"));
+      if (updates.status === "hold" && !updates.holdReason) {
+        return sendError(res, badRequest("Hold reason required when setting status to hold"));
       }
-      if (updates.status === "HOLD") {
+      if (updates.status === "hold") {
         const bt = updates.blockedType;
         if (!bt || !["Internal", "External"].includes(bt)) {
-          return sendError(res, badRequest("Blocked type (Internal or External) required when setting status to HOLD"));
+          return sendError(res, badRequest("Blocked type (Internal or External) required when setting status to hold"));
         }
       }
 
@@ -768,7 +770,7 @@ export function registerEngineeringRoutes(app: Express) {
         projectId: resolvedProjectId,
         holdReason: updates.holdReason,
         blockedType: updates.blockedType,
-        completedAt: updates.status === "COMPLETE" ? new Date() : undefined,
+        completedAt: updates.status === "complete" ? new Date() : undefined,
         linkedPlanItemId: updates.linkedPlanItemId,
         linkedDeliverableId: updates.linkedDeliverableId,
         linkedQualityItemInstanceId: updates.linkedQualityItemInstanceId,
@@ -1734,7 +1736,7 @@ export function registerEngineeringRoutes(app: Express) {
       const subtaskWorkItem = await createEngineeringWorkItem({
         title: data.title,
         description: data.description || null,
-        status: data.status || "TO DO",
+        status: data.status || "to_do",
         priority: data.priority || "Med",
         projectId: parent.projectId || null,
         phase: data.phase || parent.phase || null,
