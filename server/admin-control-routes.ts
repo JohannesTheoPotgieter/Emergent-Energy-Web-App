@@ -15,7 +15,7 @@ import { getFeatureFlag, getRolloutFeatureFlags, setFeatureFlag } from "./lib/fe
 import { ROLLOUT_FEATURE_FLAGS } from "@shared/feature-flags";
 import { logAuditFromReq } from "./audit-logger";
 import { getStartupFlags } from "./startup-flags";
-import { requireDangerousActionConfirmation } from "./middleware/production-safety";
+import { requireDangerousActionConfirmation, blockInProduction, requireDestructiveOpsFlag } from "./middleware/production-safety";
 const { rawEnv: startupRawFlags, modes: startupEffectiveModes } = getStartupFlags();
 
 const router = Router();
@@ -395,6 +395,13 @@ router.get("/api/admin/control-center/integrations", requireAuth, requireAdmin, 
 
 router.post(
   "/api/admin/control-center/dangerous/clear-sessions",
+  // Prompt 0.1 follow-up: wiping the session table invalidates every logged-in
+  // user and is functionally equivalent to a mass logout. Dual-gate behind
+  // both NODE_ENV (block in production) and ALLOW_DESTRUCTIVE_OPS=true so a
+  // single misconfiguration can't expose it. Confirmation string still
+  // required as a third layer.
+  blockInProduction("clear-sessions is a destructive operation blocked in production"),
+  requireDestructiveOpsFlag("clear-sessions requires ALLOW_DESTRUCTIVE_OPS=true"),
   requireAuth,
   requireAdmin,
   requireDangerousActionConfirmation("CLEAR_ALL_SESSIONS"),

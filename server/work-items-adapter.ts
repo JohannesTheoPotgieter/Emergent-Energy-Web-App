@@ -481,7 +481,7 @@ const LEGACY_STATUS_TO_CANONICAL: Record<string, string> = {
 
 const CANONICAL_STATUS_SET: Set<string> = new Set(TASK_STATUSES as readonly string[]);
 
-function toCanonicalStatus(input?: string | null): string {
+export function toCanonicalStatus(input?: string | null): string {
   if (!input) return "not_started";
   if (CANONICAL_STATUS_SET.has(input)) return input;
   const legacy = LEGACY_STATUS_TO_CANONICAL[input];
@@ -932,7 +932,7 @@ export async function generateDefaultEngineeringWorkItemsForProject(projectId: n
       type: "task",
       source: "SYSTEM",
       title: t.title,
-      status: "Not Started",
+      status: "not_started",
       priority: t.priority,
       phase: t.phase,
       createdBy,

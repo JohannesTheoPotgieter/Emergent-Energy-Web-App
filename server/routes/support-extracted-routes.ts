@@ -189,8 +189,17 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
       } catch (e) { console.warn("[support-extracted-routes] non-critical error:", e instanceof Error ? e.message : e); }
       return res.json({ version, buildTime: data.lastUpdated, buildId: null, buildNumber, releaseNotes });
     } catch (error) {
+      // Prompt 0.12 follow-up: the client version-check polls /api/version
+      // every 5 minutes and treats a changed payload as "new build
+      // available". Returning a synthetic "0.0.001" fallback on read error
+      // would flip the signature from real → fallback → real on a
+      // transient fs failure and spuriously trigger the banner. Instead,
+      // return a 503 with an explicit error so useVersionCheck keeps
+      // the previously-known signature and simply retries on the next
+      // poll. The catch here exists for visibility only; the client
+      // treats a 503 as "no update yet".
       logApiError("GET /api/version", error);
-      return res.json({ version: "0.0.001", buildTime: null, buildId: null, buildNumber: null, releaseNotes: [] });
+      return res.status(503).json({ error: "version_unavailable" });
     }
   });
 

@@ -156,26 +156,27 @@ export function registerPmRoutes(app: Express) {
         };
       });
 
-      // Prompt 0.11 / BUG-04: raw sum can go negative when credit notes /
+      // Prompt 0.11 / BUG-04: outstanding_cost is SUM(amount_ex_vat WHERE
+      // paid_date IS NULL). A negative aggregate means credit notes /
       // reversals on normalized_cost_lines exceed the unpaid positive
-      // commitments. The underlying SUM(amount_ex_vat WHERE paid_date IS NULL)
-      // in canonical-dashboard-kpi-service is correct — the input data just
-      // includes legitimate signed adjustments. A negative "committed cost"
-      // total is semantically meaningless to surface on a KPI tile, so we
-      // clamp the aggregate to zero and log a warning that carries the raw
-      // figure and affected project ids so finance can investigate the
-      // source rows without modifying them here.
+      // commitments for the PM's portfolio — this is a real (if unusual)
+      // finance state, typically from a credit note imported with
+      // paid_date=NULL. We surface the value honestly (signed) and attach
+      // a `dataQualityWarnings` block that the client can use to flag the
+      // affected projects to finance. We do not clamp, do not hide, and
+      // do not modify source data.
       const cosCommittedRawTotal = enrichedProjects.reduce((s, p) => s + p.financials.cosCommitted, 0);
-      if (cosCommittedRawTotal < 0) {
-        const negativeProjects = enrichedProjects
-          .filter((p) => p.financials.cosCommitted < 0)
-          .map((p) => ({ id: p.id, projectName: p.projectName, cosCommitted: p.financials.cosCommitted }));
+      const negativeCosCommittedProjects = enrichedProjects
+        .filter((p) => p.financials.cosCommitted < 0)
+        .map((p) => ({ id: p.id, projectName: p.projectName, cosCommitted: p.financials.cosCommitted }));
+      if (negativeCosCommittedProjects.length > 0) {
         console.warn(
-          "[PM Dashboard] cosCommittedTotal aggregate is negative — clamping to 0 for display. " +
-            "Investigate signed adjustments / credit notes on these projects:",
-          { raw: cosCommittedRawTotal, negativeProjects },
+          "[PM Dashboard] Negative cosCommitted detected on one or more projects " +
+            "(credit notes / reversals with paid_date IS NULL). Flagging to client for finance review.",
+          { rawTotal: cosCommittedRawTotal, negativeProjects: negativeCosCommittedProjects },
         );
       }
+      const cosRealisedRawTotal = enrichedProjects.reduce((s, p) => s + p.financials.cosRealised, 0);
 
       const summary = {
         totalProjects: enrichedProjects.length,
@@ -195,11 +196,15 @@ export function registerPmRoutes(app: Express) {
           if (withBudget.length === 0) return 0;
           return Math.round(withBudget.reduce((s, p) => s + p.financials.spendPercent, 0) / withBudget.length);
         })(),
-        cosRealisedTotal: enrichedProjects.reduce((s, p) => s + p.financials.cosRealised, 0),
-        cosCommittedTotal: Math.max(0, cosCommittedRawTotal),
+        cosRealisedTotal: cosRealisedRawTotal,
+        cosCommittedTotal: cosCommittedRawTotal,
       };
 
-      res.json({ projects: enrichedProjects, summary });
+      const dataQualityWarnings = {
+        negativeCosCommittedProjects,
+      };
+
+      res.json({ projects: enrichedProjects, summary, dataQualityWarnings });
     } catch (err: unknown) {
       console.error("[PM Dashboard] Error:", (err instanceof Error ? err.message : String(err)));
       res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });

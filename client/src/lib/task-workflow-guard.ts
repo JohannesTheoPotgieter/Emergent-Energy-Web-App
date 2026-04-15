@@ -1,7 +1,14 @@
 import { hasDeliverableRequirementFlag } from "@shared/task-deliverable-requirement";
+import { canonicalizeTaskStatus } from "@/lib/task-status-compat";
 
-const COMPLETE_STATUSES = new Set(["COMPLETE", "DONE", "CLOSED"]);
-const APPROVAL_STATUSES = new Set(["NEEDS APPROVAL", "QC APPROVED", "PROVIDE FEEDBACK", "OPERATIONAL APPROVAL"]);
+// Canonical lowercase_underscore status keys (post migration 20260413).
+const COMPLETE_STATUSES = new Set(["complete"]);
+const APPROVAL_STATUSES = new Set([
+  "needs_approval",
+  "qc_approved",
+  "provide_feedback",
+  "operational_approval",
+]);
 
 export type WorkflowTaskLike = {
   status?: string | null;
@@ -13,8 +20,8 @@ export type WorkflowTaskLike = {
 };
 
 export function getTaskWorkflowBlockReason(task: WorkflowTaskLike, requestedStatus: string): string | null {
-  const next = String(requestedStatus || "").toUpperCase();
-  const current = String(task.status || "").toUpperCase();
+  const next = canonicalizeTaskStatus(requestedStatus);
+  const current = canonicalizeTaskStatus(task.status || "");
   const movingToComplete = COMPLETE_STATUSES.has(next);
   const movingToApproval = APPROVAL_STATUSES.has(next);
   const currentlyInApprovalFlow = APPROVAL_STATUSES.has(current);

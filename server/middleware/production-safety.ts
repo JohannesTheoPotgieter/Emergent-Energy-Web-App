@@ -16,6 +16,27 @@ export function blockInProduction(reason: string) {
   };
 }
 
+/**
+ * Second-line dual gate for the most destructive routes (full data wipe,
+ * audit-log-adjacent operations, etc.). Requires the operator to explicitly
+ * set ALLOW_DESTRUCTIVE_OPS="true" in the environment. Safer than
+ * blockInProduction alone because a single NODE_ENV misconfiguration can't
+ * silently expose the route — the env flag must also be flipped on purpose.
+ * Uses strict string comparison so values like "1" / "yes" / boolean true
+ * fail closed.
+ */
+export function requireDestructiveOpsFlag(reason: string) {
+  return (_req: Request, res: Response, next: NextFunction) => {
+    if (process.env.ALLOW_DESTRUCTIVE_OPS !== "true") {
+      return res.status(403).json({
+        error: "destructive_ops_disabled",
+        message: reason,
+      });
+    }
+    return next();
+  };
+}
+
 export function requireDangerousActionConfirmation(expected: string) {
   return (req: Request, res: Response, next: NextFunction) => {
     const provided = typeof req.body?.confirm === "string" ? req.body.confirm : "";
@@ -39,7 +60,9 @@ export function requireDangerousActionConfirmation(expected: string) {
  */
 export const DANGEROUS_ROUTES: ReadonlyArray<{ method: string; path: string; note: string }> = [
   { method: "POST", path: "/api/admin/clear-all-data", note: "Wipes all projects, cost lines, revenue lines, tasks. Gated by NODE_ENV + ALLOW_DESTRUCTIVE_OPS." },
-  { method: "POST", path: "/api/admin/wipe-all-data", note: "Full database wipe. blockInProduction." },
+  { method: "POST", path: "/api/admin/wipe-all-data", note: "Full database wipe. Gated by NODE_ENV + ALLOW_DESTRUCTIVE_OPS." },
+  { method: "POST", path: "/api/admin/control-center/dangerous/clear-sessions", note: "Wipes the postgres session store — equivalent to mass logout. Gated by NODE_ENV + ALLOW_DESTRUCTIVE_OPS + CLEAR_ALL_SESSIONS confirmation." },
+  { method: "POST", path: "/api/admin/migration/drop-archived", note: "Permanently drops legacy migration-archived tables with no restore path. Gated by NODE_ENV + ALLOW_DESTRUCTIVE_OPS + DROP_LEGACY_TABLES confirmation." },
   { method: "POST", path: "/api/procurement-analysis/reset-tags", note: "Destructive tag reset. blockInProduction." },
   { method: "GET",  path: "/api/auth/dev-login", note: "Dev-only auth bypass. Not registered in production + runtime 403 guard." },
   { method: "POST", path: "/api/role-auth/seed", note: "Seeds role credentials. blockInProduction." },

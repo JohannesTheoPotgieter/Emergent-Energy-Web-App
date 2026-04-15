@@ -66,7 +66,12 @@ function retryingImport<T>(importFn: () => Promise<T>, retries: number): Promise
   });
 }
 
-function lazyWithRetry(importFn: () => Promise<{ default: ComponentType<any> }>, retries = 3): ReturnType<typeof lazy> {
+// Prompt 0.12 follow-up: one retry attempt only, not three. A stale chunk
+// reference either recovers on the first retry or the app should surface
+// the "New version available" ErrorBoundary screen — infinite retries
+// just delay the banner. Exported so other pages (e.g. home.tsx) can
+// reuse the same retry policy instead of calling raw lazy().
+export function lazyWithRetry(importFn: () => Promise<{ default: ComponentType<any> }>, retries = 1): ReturnType<typeof lazy> {
   return lazy(() => retryingImport(importFn, retries));
 }
 
@@ -457,12 +462,31 @@ function Router() {
 function VersionUpdateBanner() {
   const { hasUpdate, latestBuild } = useVersionCheck();
   const [dismissedBuild, setDismissedBuild] = useState<string | null>(null);
+  // Prompt 0.12 follow-up: NetworkStatus's offline banner uses z-[100] and
+  // also position: fixed top-0. If both rendered simultaneously the version
+  // banner would be obscured. Suppress the version banner while the tab is
+  // offline — the user can't reload the bundle over a dead connection, so
+  // offering the action is actively misleading. It will reappear once the
+  // tab reconnects and the next useVersionCheck poll confirms the update.
+  const [isOnline, setIsOnline] = useState<boolean>(
+    typeof navigator === "undefined" ? true : navigator.onLine,
+  );
+  useEffect(() => {
+    const on = () => setIsOnline(true);
+    const off = () => setIsOnline(false);
+    window.addEventListener("online", on);
+    window.addEventListener("offline", off);
+    return () => {
+      window.removeEventListener("online", on);
+      window.removeEventListener("offline", off);
+    };
+  }, []);
 
-  if (!hasUpdate || !latestBuild || dismissedBuild === latestBuild) return null;
+  if (!hasUpdate || !latestBuild || dismissedBuild === latestBuild || !isOnline) return null;
 
   return (
     <div
-      className="fixed top-0 left-0 right-0 z-[60] bg-blue-600 text-white shadow-md"
+      className="fixed top-0 left-0 right-0 z-[90] bg-blue-600 text-white shadow-md"
       role="status"
       aria-live="polite"
       data-testid="version-update-banner"
