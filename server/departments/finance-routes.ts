@@ -30,6 +30,7 @@ import {
   normalizedRevenueLines,
   OVERRIDE_CATEGORIES,
   projectInfo,
+  quickbooksInvoiceLinks,
   users,
 } from "@shared/schema";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
@@ -65,6 +66,8 @@ import {
 } from "../services/project-cost-line-read-service";
 import { getFeatureFlag } from "../lib/feature-flags";
 import { buildFinanceCoreTrustReport } from "../services/finance-core-trust-service";
+import { getBills } from "../services/quickbooks-service";
+import { billRawToSummary } from "../services/quickbooks-reconciliation-service";
 
 const FINANCIAL_APPROVER_ROLES = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"];
 const CANONICAL_FINANCE_COSTLINE_READ_FLAG = "canonical_finance_costline_read_v1";
@@ -1531,95 +1534,102 @@ router.get("/api/rev-tracker", requireAuth, requirePermission("revenue_tracker",
 
 router.get("/api/cos-tracker", requireAuth, async (req, res) => {
   try {
-    const [allProgramExpenses, manualEntries, rawInflows, allTaskLinks, allOpTasks, allPlans, cosOverrideMap] = await Promise.all([
-      getHighRiskAllCostReadRows(),
+    const [manualEntries, rawCostLines, links, rawBills] = await Promise.all([
       storage.getTrackerMonthlyManual('COS'),
-      storage.getAllRevenueLinesForCashflow(),
-      storage.getAllMilestoneTaskLinks(),
-      storage.getAllOperationalTasks(),
-      storage.getAllProjectPlans(),
-      Promise.resolve(new Map()),
+      db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
+      db.select().from(quickbooksInvoiceLinks).where(and(
+        eq(quickbooksInvoiceLinks.appEntityType, "cost_line"),
+        eq(quickbooksInvoiceLinks.qbEntityType, "bill"),
+        isNull(quickbooksInvoiceLinks.deletedAt),
+      )),
+      getBills("2025-09-01", "2026-08-31"),
     ]);
 
-    const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
-
-    // Cash received from clients: inflows with invoice + payment received date.
-    // This is a CASH concept (money in bank), NOT revenue realised.
-    // Revenue realised is computed separately via COS-ratio allocation.
-    const cashReceivedByMonth = new Map<string, number>();
-    for (const inflow of allInflows) {
-      if (!inflow.milestoneAmount) continue;
-      const amt = parseFloat(inflow.milestoneAmount as string);
-      if (isNaN(amt) || amt === 0) continue;
-      const hasInvoice = !!inflow.milestoneInvoiceNumber && inflow.milestoneInvoiceNumber.trim() !== '';
-      const hasPayment = !!inflow.paymentReceivedDate && /^\d{4}-\d{2}-\d{2}/.test(inflow.paymentReceivedDate);
-      if (hasInvoice && hasPayment) {
-        const dateMatch = inflow.paymentReceivedDate!.match(/^(\d{4})-(\d{2})/);
-        if (dateMatch) {
-          const mk = `${dateMatch[1]}-${dateMatch[2]}`;
-          cashReceivedByMonth.set(mk, (cashReceivedByMonth.get(mk) || 0) + amt);
-        }
-      }
+    const manualMap = new Map(manualEntries.map((e: any) => [e.monthKey, e]));
+    const linksByCostLineId = new Map<number, any>();
+    const linkedBillIds = new Set<string>();
+    for (const link of links) {
+      linksByCostLineId.set(link.appEntityId, link);
+      linkedBillIds.add(String(link.qbEntityId));
     }
 
-    const manualMap = new Map(manualEntries.map(e => [e.monthKey, e]));
+    const rawBillsList: any[] = rawBills?.QueryResponse?.Bill ?? [];
+    const billSummaries = rawBillsList.map(billRawToSummary);
+    const billById = new Map<string, any>();
+    for (const bill of billSummaries) billById.set(String(bill.id), bill);
 
-    const cosByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
+    const appActualByMonth = new Map<string, number>();
+    const qbOnlyByMonth = new Map<string, number>();
     const realisedByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
     const committedByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
+    const plannedByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
+    const appOnlyPendingByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
 
-    const nowDate = new Date();
-    const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, '0')}`;
+    const addProjectAmount = (
+      map: Map<string, { total: number; projects: Map<string, number> }>,
+      monthKey: string,
+      projectName: string,
+      amount: number,
+    ) => {
+      if (!map.has(monthKey)) map.set(monthKey, { total: 0, projects: new Map() });
+      const bucket = map.get(monthKey)!;
+      bucket.total += amount;
+      bucket.projects.set(projectName, (bucket.projects.get(projectName) || 0) + amount);
+    };
 
-    for (const exp of allProgramExpenses) {
-      if (exp.rowType !== 'item') continue;
-      const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
-      if (isNaN(amount) || amount === 0) continue;
-
-      const { date: dateSource } = getCosEffectiveDateAndSource(exp);
-      if (!dateSource) continue;
-      const dateMatch = String(dateSource).match(/^(\d{4})-(\d{2})/);
-      if (!dateMatch) continue;
-      const monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
-
-      const pName = (exp.projectName || '').replace(/_Tracker$/i, '');
-
-      if (!cosByMonth.has(monthKey)) {
-        cosByMonth.set(monthKey, { total: 0, projects: new Map() });
-      }
-      const cosBucket = cosByMonth.get(monthKey)!;
-      cosBucket.total += amount;
-      cosBucket.projects.set(pName, (cosBucket.projects.get(pName) || 0) + amount);
-
-      const isRealised = isEffectivelyRealised(exp, monthKey, currentMonthKey);
-      const isCommitted = isEffectivelyCommitted(exp, monthKey, currentMonthKey);
-
-      if (isRealised) {
-        if (!realisedByMonth.has(monthKey)) {
-          realisedByMonth.set(monthKey, { total: 0, projects: new Map() });
-        }
-        const realBucket = realisedByMonth.get(monthKey)!;
-        realBucket.total += amount;
-        realBucket.projects.set(pName, (realBucket.projects.get(pName) || 0) + amount);
-      }
-
-      if (isCommitted) {
-        if (!committedByMonth.has(monthKey)) {
-          committedByMonth.set(monthKey, { total: 0, projects: new Map() });
-        }
-        const commitBucket = committedByMonth.get(monthKey)!;
-        commitBucket.total += amount;
-        commitBucket.projects.set(pName, (commitBucket.projects.get(pName) || 0) + amount);
+    for (const bill of billSummaries) {
+      if (!bill.txnDate || bill.totalAmount == null) continue;
+      const dm = String(bill.txnDate).match(/^(\d{4})-(\d{2})/);
+      if (!dm) continue;
+      const monthKey = `${dm[1]}-${dm[2]}`;
+      appActualByMonth.set(monthKey, (appActualByMonth.get(monthKey) || 0) + bill.totalAmount);
+      if (!linkedBillIds.has(String(bill.id))) {
+        qbOnlyByMonth.set(monthKey, (qbOnlyByMonth.get(monthKey) || 0) + bill.totalAmount);
       }
     }
 
-    // Uses shared static COS budget from financeUtils.ts (single source of truth)
+    const costLineById = new Map<number, any>();
+    for (const row of rawCostLines) costLineById.set(row.id, row);
+
+    for (const link of links) {
+      const line = costLineById.get(link.appEntityId);
+      const bill = billById.get(String(link.qbEntityId));
+      if (!line || !bill || !bill.txnDate || bill.totalAmount == null) continue;
+      const dm = String(bill.txnDate).match(/^(\d{4})-(\d{2})/);
+      if (!dm) continue;
+      const monthKey = `${dm[1]}-${dm[2]}`;
+      const projectName = (line.projectName || '').replace(/_Tracker$/i, '') || 'Unknown Project';
+      const hasInvoice = !!(line.invoiceNumber && String(line.invoiceNumber).trim());
+      const invoiceDateConfirmed =
+        !!line.invoiceDate && (line.invoiceDateFontColor === 'black' || line.invoiceDateConfirmed === true);
+      if (hasInvoice && invoiceDateConfirmed) addProjectAmount(realisedByMonth, monthKey, projectName, bill.totalAmount);
+      else addProjectAmount(committedByMonth, monthKey, projectName, bill.totalAmount);
+    }
+
+    for (const row of rawCostLines) {
+      if (linksByCostLineId.has(row.id)) continue;
+      const amount = row.amountExVat ? Number(row.amountExVat) : 0;
+      if (!Number.isFinite(amount) || amount === 0) continue;
+      const lineMonthDate = row.invoiceDate || row.paidDate;
+      if (!lineMonthDate) continue;
+      const dm = String(lineMonthDate).match(/^(\d{4})-(\d{2})/);
+      if (!dm) continue;
+      const monthKey = `${dm[1]}-${dm[2]}`;
+      const projectName = (row.projectName || '').replace(/_Tracker$/i, '') || 'Unknown Project';
+      const hasInvoice = !!(row.invoiceNumber && String(row.invoiceNumber).trim());
+      const invoiceDateConfirmed =
+        !!row.invoiceDate && (row.invoiceDateFontColor === 'black' || row.invoiceDateConfirmed === true);
+      addProjectAmount(plannedByMonth, monthKey, projectName, amount);
+      if (hasInvoice && !invoiceDateConfirmed) {
+        addProjectAmount(appOnlyPendingByMonth, monthKey, projectName, amount);
+      }
+    }
+
     const staticCosBudget = STATIC_COS_BUDGET_FY26;
 
     const months: any[] = [];
     const startMonth = new Date(Date.UTC(2025, 8, 1));
-
-    let ytdCOS = 0, ytdBudget = 0, ytdRealised = 0, ytdCommitted = 0, ytdRevRealised = 0;
+    let ytdCOS = 0, ytdBudget = 0, ytdRealised = 0, ytdCommitted = 0, ytdPlanned = 0, ytdQbOnly = 0, ytdAppOnlyPending = 0;
 
     for (let i = 0; i < 12; i++) {
       const monthDate = new Date(startMonth);
@@ -1628,14 +1638,16 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       const mo = monthDate.getUTCMonth();
       const monthKey = `${yr}-${String(mo + 1).padStart(2, '0')}`;
 
-      const bucket = cosByMonth.get(monthKey);
-      const totalCOS = bucket?.total ?? 0;
-
+      const totalCOS = appActualByMonth.get(monthKey) ?? 0;
       const realisedBucket = realisedByMonth.get(monthKey);
       const realisedCOS = realisedBucket?.total ?? 0;
       const committedBucket = committedByMonth.get(monthKey);
       const committedCOS = committedBucket?.total ?? 0;
-      const unrealisedCOS = totalCOS - realisedCOS;
+      const plannedBucket = plannedByMonth.get(monthKey);
+      const plannedCOS = plannedBucket?.total ?? 0;
+      const qbOnlyActual = qbOnlyByMonth.get(monthKey) ?? 0;
+      const appOnlyPendingBucket = appOnlyPendingByMonth.get(monthKey);
+      const appOnlyPending = appOnlyPendingBucket?.total ?? 0;
 
       const manual = manualMap.get(monthKey);
       const budget = manual?.budget ? parseFloat(manual.budget) : (staticCosBudget[monthKey] ?? 0);
@@ -1643,13 +1655,13 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       const variance = totalCOS - budget;
       const variancePct = budget !== 0 ? (variance / budget) * 100 : 0;
 
-      const cashReceived = cashReceivedByMonth.get(monthKey) ?? 0;
       ytdCOS += totalCOS;
       ytdRealised += realisedCOS;
       ytdCommitted += committedCOS;
+      ytdPlanned += plannedCOS;
+      ytdQbOnly += qbOnlyActual;
+      ytdAppOnlyPending += appOnlyPending;
       ytdBudget += budget;
-      ytdRevRealised += cashReceived;
-      const ytdUnrealised = ytdCOS - ytdRealised;
       const ytdVariance = ytdCOS - ytdBudget;
       const ytdVariancePct = ytdBudget !== 0 ? (ytdVariance / ytdBudget) * 100 : 0;
 
@@ -1659,32 +1671,27 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
         totalCOS,
         realisedCOS,
         committedCOS,
-        unrealisedCOS,
+        plannedCOS,
+        qbOnlyActual,
+        appOnlyPending,
         budget,
         variance,
         variancePct,
-        cashReceived,
         ytdCOS,
         ytdRealised,
         ytdCommitted,
-        ytdUnrealised,
+        ytdPlanned,
+        ytdQbOnly,
+        ytdAppOnlyPending,
         ytdBudget,
         ytdVariance,
         ytdVariancePct,
-        ytdCashReceived: ytdRevRealised,
-        cosProjects: mapToSortedArray(bucket?.projects ?? new Map()),
+        cosProjects: [],
         realisedProjects: mapToSortedArray(realisedBucket?.projects ?? new Map()),
         committedProjects: mapToSortedArray(committedBucket?.projects ?? new Map()),
-        unrealisedProjects: (() => {
-          const cosPs = bucket?.projects ?? new Map<string, number>();
-          const realPs = realisedBucket?.projects ?? new Map<string, number>();
-          const unrealMap = new Map<string, number>();
-          cosPs.forEach((v, k) => {
-            const diff = v - (realPs.get(k) || 0);
-            if (diff !== 0) unrealMap.set(k, diff);
-          });
-          return mapToSortedArray(unrealMap);
-        })(),
+        plannedProjects: mapToSortedArray(plannedBucket?.projects ?? new Map()),
+        qbOnlyProjects: [],
+        appOnlyPendingProjects: mapToSortedArray(appOnlyPendingBucket?.projects ?? new Map()),
       });
     }
 
@@ -1828,132 +1835,154 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
     const match = monthKey.match(/^(\d{4})-(\d{2})$/);
     if (!match) return res.status(400).json({ error: "Invalid monthKey format" });
 
-    const [allExpenses, cosOverrideMapMD] = await Promise.all([
-      getHighRiskAllCostReadRows(),
-      Promise.resolve(new Map()),
+    const monthStart = `${monthKey}-01`;
+    const monthEnd = `${monthKey}-31`;
+    const [allCostLines, links, rawBills] = await Promise.all([
+      db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
+      db.select().from(quickbooksInvoiceLinks).where(and(
+        eq(quickbooksInvoiceLinks.appEntityType, "cost_line"),
+        eq(quickbooksInvoiceLinks.qbEntityType, "bill"),
+        isNull(quickbooksInvoiceLinks.deletedAt),
+      )),
+      getBills(monthStart, monthEnd),
     ]);
 
-
     interface LineItem {
-      id: number;
-      canonicalLineKey: string | null;
-      projectName: string;
+      id: string;
+      projectName: string | null;
       category: string | null;
       lineItem: string | null;
-      amount: number;
+      appAmount: number | null;
+      qbAmount: number | null;
       invoiceNumber: string | null;
-      poNumber: string | null;
+      qbBillNumber: string | null;
       invoiceDate: string | null;
       invoiceDateConfirmed: boolean;
-      paymentDate: string | null;
-      paymentDateConfirmed: boolean;
       supplier: string | null;
-      isRealised: boolean;
-      realisedMonth: string | null;
-      cosState: string;
-      paymentStatus: string;
-      hasOverride: boolean;
-      overrideStatus: string | null;
-      overrideReason: string | null;
+      month: string;
+      matchStatus: "matched" | "qb_only" | "app_only";
+      cosState: "realised" | "committed" | "planned";
+      reasonBucket: "matched realised" | "matched committed" | "QB-only actual" | "app-only pending";
     }
 
     const items: LineItem[] = [];
+    const linksByCostLineId = new Map<number, any>();
+    const linkedBillIds = new Set<string>();
+    for (const link of links) {
+      linksByCostLineId.set(link.appEntityId, link);
+      linkedBillIds.add(String(link.qbEntityId));
+    }
 
-    for (const exp of allExpenses) {
-      if (exp.rowType !== 'item') continue;
-      const cosTotal = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
-      if (isNaN(cosTotal) || cosTotal === 0) continue;
+    const bills: any[] = (rawBills?.QueryResponse?.Bill ?? []).map(billRawToSummary);
+    const billById = new Map<string, any>();
+    for (const bill of bills) billById.set(String(bill.id), bill);
 
-      const invDate = exp.expenseInvoicedDate as string | null;
-      const payDate = exp.expensePaymentDate as string | null;
+    for (const row of allCostLines) {
+      const appAmount = row.amountExVat ? Number(row.amountExVat) : 0;
+      if (!Number.isFinite(appAmount) || appAmount === 0) continue;
+      const projectName = (row.projectName || '').replace(/_Tracker$/i, '') || null;
+      const hasInvoice = !!(row.invoiceNumber && String(row.invoiceNumber).trim());
+      const invoiceDateConfirmed =
+        !!row.invoiceDate && (row.invoiceDateFontColor === 'black' || row.invoiceDateConfirmed === true);
+      const link = linksByCostLineId.get(row.id);
+      const linkedBill = link ? billById.get(String(link.qbEntityId)) : null;
+      const linkedBillMonth = linkedBill?.txnDate?.slice(0, 7) ?? null;
+      const appMonth = String(row.invoiceDate || row.paidDate || '').slice(0, 7) || null;
+      const inTargetMonth = linkedBillMonth === monthKey || (!linkedBill && appMonth === monthKey);
+      if (!inTargetMonth) continue;
+      if (project && projectName !== project) continue;
 
-      const { date: dateForMonth } = getCosEffectiveDateAndSource(exp);
-      let itemMonthKey: string | null = null;
-      if (dateForMonth) {
-        const dm = String(dateForMonth).match(/^(\d{4})-(\d{2})/);
-        if (dm) itemMonthKey = `${dm[1]}-${dm[2]}`;
-      }
-
-      const nowD = new Date();
-      const currentMonthKey = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, '0')}`;
-
-      const isRealised = isEffectivelyRealised(exp, itemMonthKey, currentMonthKey);
-      const isCommitted = isEffectivelyCommitted(exp, itemMonthKey, currentMonthKey);
-
-      // COS state derived from effective realisation
-      const fullCosStatus = classifyCosStatusFull(exp);
-      const cosState = isRealised ? 'COS Realised' : fullCosStatus;
-
-      // Cashflow payment status (4-state model)
-      const hasInv = !!(exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim());
-      const hasPayD = !!(payDate && String(payDate).trim());
-      const payDBlack = hasPayD && isDateConfirmed(exp.paymentDateConfirmed, exp.paymentDateFontColor);
-      let paymentStatus = 'Planned';
-      if (payDBlack && hasInv) {
-        paymentStatus = 'Out of Bank';
-      } else if (payDBlack && !hasInv) {
-        paymentStatus = 'Risk';
-      } else if (hasPayD && !payDBlack && hasInv) {
-        paymentStatus = 'Outstanding';
-      }
-
-      if (itemMonthKey !== monthKey) continue;
-
-      let realisedMonth: string | null = null;
-      if (isRealised && invDate) {
-        const dm = invDate.match(/^(\d{4})-(\d{2})/);
-        if (dm) {
-          const d = new Date(Date.UTC(parseInt(dm[1]), parseInt(dm[2]) - 1, 1));
-          realisedMonth = d.toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+      let matchStatus: "matched" | "qb_only" | "app_only" = "app_only";
+      let cosState: "realised" | "committed" | "planned" = "planned";
+      let reasonBucket: "matched realised" | "matched committed" | "QB-only actual" | "app-only pending" = "app-only pending";
+      if (linkedBill) {
+        matchStatus = "matched";
+        if (hasInvoice && invoiceDateConfirmed) {
+          cosState = "realised";
+          reasonBucket = "matched realised";
+        } else {
+          cosState = "committed";
+          reasonBucket = "matched committed";
         }
+      } else {
+        cosState = "planned";
+        reasonBucket = "app-only pending";
       }
 
-      const pName = (exp.projectName || '').replace(/_Tracker$/i, '');
-      if (project && pName !== project) continue;
-      if (stateFilter === 'realised' && !isRealised) continue;
-      if (stateFilter === 'committed' && !isCommitted) continue;
-      if (stateFilter === 'unrealised' && isRealised) continue;
+      if (stateFilter === "realised" && cosState !== "realised") continue;
+      if (stateFilter === "committed" && cosState !== "committed") continue;
+      if (stateFilter === "planned" && cosState !== "planned") continue;
 
       items.push({
-        id: exp.id,
-        canonicalLineKey: (exp as any).canonicalLineKey || null,
-        projectName: pName,
-        category: exp.expenseCategory || null,
-        lineItem: exp.expenseLineItem || null,
-        amount: cosTotal,
-        invoiceNumber: exp.expenseInvoiceNumber || null,
-        poNumber: exp.expensePoNumber || null,
-        invoiceDate: invDate,
-        invoiceDateConfirmed: isRealised,
-        paymentDate: payDate,
-        paymentDateConfirmed: !!(payDate && String(payDate).trim()) && isDateConfirmed(exp.paymentDateConfirmed, exp.paymentDateFontColor),
-        supplier: exp.supplierName || null,
-        isRealised,
-        realisedMonth,
+        id: `app-${row.id}`,
+        projectName,
+        category: row.category || null,
+        lineItem: row.description || null,
+        appAmount,
+        qbAmount: linkedBill?.totalAmount ?? null,
+        invoiceNumber: row.invoiceNumber || null,
+        qbBillNumber: linkedBill?.docNumber ?? null,
+        invoiceDate: row.invoiceDate ? String(row.invoiceDate) : null,
+        invoiceDateConfirmed,
+        supplier: row.counterpartyName || linkedBill?.vendorName || null,
+        month: linkedBillMonth || appMonth || monthKey,
+        matchStatus,
         cosState,
-        paymentStatus,
-        hasOverride: !!(exp as any)._cosOverrideStatus,
-        overrideStatus: (exp as any)._cosOverrideStatus || null,
-        overrideReason: (exp as any)._cosOverrideReason || null,
+        reasonBucket,
       });
     }
 
-    items.sort((a, b) => b.amount - a.amount);
+    for (const bill of bills) {
+      if (linkedBillIds.has(String(bill.id))) continue;
+      const billMonth = bill.txnDate?.slice(0, 7);
+      if (billMonth !== monthKey) continue;
+      items.push({
+        id: `qb-${bill.id}`,
+        projectName: null,
+        category: null,
+        lineItem: null,
+        appAmount: null,
+        qbAmount: bill.totalAmount ?? 0,
+        invoiceNumber: null,
+        qbBillNumber: bill.docNumber,
+        invoiceDate: bill.txnDate,
+        invoiceDateConfirmed: true,
+        supplier: bill.vendorName || null,
+        month: billMonth,
+        matchStatus: "qb_only",
+        cosState: "realised",
+        reasonBucket: "QB-only actual",
+      });
+    }
 
-    const realisedTotal = items.filter(i => i.isRealised).reduce((s, i) => s + i.amount, 0);
-    const committedTotal = items.filter(i => i.cosState === 'Committed').reduce((s, i) => s + i.amount, 0);
-    const unrealisedTotal = items.filter(i => !i.isRealised).reduce((s, i) => s + i.amount, 0);
+    items.sort((a, b) => (b.qbAmount ?? b.appAmount ?? 0) - (a.qbAmount ?? a.appAmount ?? 0));
+
+    const realisedTotal = items
+      .filter(i => i.reasonBucket === "matched realised")
+      .reduce((s, i) => s + (i.qbAmount ?? 0), 0);
+    const committedTotal = items
+      .filter(i => i.reasonBucket === "matched committed")
+      .reduce((s, i) => s + (i.qbAmount ?? 0), 0);
+    const plannedTotal = items
+      .filter(i => i.reasonBucket === "app-only pending")
+      .reduce((s, i) => s + (i.appAmount ?? 0), 0);
+    const qbOnlyTotal = items
+      .filter(i => i.reasonBucket === "QB-only actual")
+      .reduce((s, i) => s + (i.qbAmount ?? 0), 0);
+    const totalActual = items.reduce((s, i) => s + (i.qbAmount ?? 0), 0);
 
     res.json({
       monthKey,
       lineCount: items.length,
-      totalAmount: items.reduce((s, i) => s + i.amount, 0),
+      totalAmount: totalActual,
       realisedTotal,
       committedTotal,
-      unrealisedTotal,
-      realisedCount: items.filter(i => i.isRealised).length,
-      committedCount: items.filter(i => i.cosState === 'Committed').length,
-      unrealisedCount: items.filter(i => !i.isRealised).length,
+      plannedTotal,
+      qbOnlyTotal,
+      appOnlyPendingTotal: plannedTotal,
+      realisedCount: items.filter(i => i.reasonBucket === "matched realised").length,
+      committedCount: items.filter(i => i.reasonBucket === "matched committed").length,
+      plannedCount: items.filter(i => i.reasonBucket === "app-only pending").length,
       items,
     });
   } catch (error) {
