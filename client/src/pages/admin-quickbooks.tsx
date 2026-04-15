@@ -8,6 +8,8 @@ import { PageSkeleton } from "@/components/ui/page-states";
 import { useToast } from "@/hooks/use-toast";
 import { AlertTriangle, CheckCircle2, Loader2, Plug, RefreshCw } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { formatRand } from "@/lib/safeMoney";
+import { ReportTrustNotice } from "@/components/reports/ReportTrustNotice";
 
 type IntegrationHealthState = "healthy" | "stale" | "failing" | "unknown";
 
@@ -79,9 +81,15 @@ interface QbCustomer {
   Active?: boolean;
 }
 
-function formatCurrency(value?: number): string {
-  if (typeof value !== "number" || Number.isNaN(value)) return "—";
-  return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(value);
+/**
+ * All amounts on this page are rendered in ZAR (South African Rand).
+ * The Emergent Energy finance context is ZA-domiciled, and mixing USD with
+ * the rest of the finance pages (all ZAR) was actively misleading.
+ * If a future multi-currency QB company is onboarded, read the home
+ * currency from QB CompanyInfo and switch on that instead.
+ */
+function formatCurrency(value?: number | null): string {
+  return formatRand(value);
 }
 
 function formatDateTime(iso: string | null | undefined): string {
@@ -369,6 +377,14 @@ export default function AdminQuickBooksPage() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {isConnected && status && (
+        <ReportTrustNotice
+          sourceLabel="QuickBooks Online (read-only view)"
+          lastUpdatedAt={status.lastSuccessfulSyncAt}
+          note="QuickBooks is reconciliation evidence, not operational truth. Cost lines and revenue lines in this app are the source of truth. Amounts shown on this page are rendered in ZAR for the SA finance context."
+        />
       )}
 
       {isConnected && (

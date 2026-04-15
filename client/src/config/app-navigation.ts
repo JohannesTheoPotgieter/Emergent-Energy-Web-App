@@ -141,7 +141,7 @@ export const TOP_SECTIONS: TopSection[] = [
       { label: "Subcontractors", path: "/subcontractor-dashboard" },
       { label: "Invoice Patterns", path: "/invoice-patterns" },
       { label: "QB Customer Mapping", path: "/finance/quickbooks-customer-mapping" },
-      { label: "QB Invoice Linking", path: "/finance/quickbooks-links" },
+      { label: "QB Bill Linking", path: "/finance/quickbooks-links" },
     ],
   },
   {

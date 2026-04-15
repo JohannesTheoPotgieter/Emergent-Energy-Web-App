@@ -10,6 +10,8 @@ import { useToast } from "@/hooks/use-toast";
 import { Link2, Link2Off, Plug, Search, X } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { isApiError } from "@/lib/api-error";
+import { formatRand } from "@/lib/safeMoney";
+import { ReportTrustNotice } from "@/components/reports/ReportTrustNotice";
 
 interface QbBillRaw {
   Id: string;
@@ -42,24 +44,22 @@ interface QuickBooksLinkRow {
   qbCounterpartyName: string | null;
   matchType: string;
   confirmedAt: string;
+  confirmedBy: number | null;
 }
 
 interface QuickBooksStatus {
   connected: boolean;
   companyName: string | null;
   sandbox: boolean;
+  lastSuccessfulSyncAt?: string | null;
+  lastFailedSyncAt?: string | null;
+  lastFailureReason?: string | null;
+  isStale?: boolean;
 }
 
-function formatCurrency(value?: number | string | null): string {
-  if (value === null || value === undefined || value === "") return "—";
-  const num = typeof value === "number" ? value : Number(value);
-  if (Number.isNaN(num)) return "—";
-  return new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency: "ZAR",
-    maximumFractionDigits: 2,
-  }).format(num);
-}
+// Delegate to the shared ZAR formatter so every QB/finance page renders
+// amounts consistently for the SA finance context.
+const formatCurrency = (value?: number | string | null) => formatRand(value);
 
 export default function FinanceQuickBooksLinksPage() {
   const queryClient = useQueryClient();
@@ -150,8 +150,8 @@ export default function FinanceQuickBooksLinksPage() {
         <SectionHeader
           icon={<Plug className="h-5 w-5" />}
           eyebrow="Finance"
-          title="QuickBooks Invoice Linking"
-          description="Link QuickBooks bills to project cost lines across the portfolio"
+          title="QuickBooks Bill Linking"
+          description="Link QuickBooks supplier bills to project cost lines across the portfolio"
         />
         <Card className="border-amber-200 bg-amber-50/40">
           <CardContent className="p-4 text-xs text-amber-800">
@@ -171,8 +171,14 @@ export default function FinanceQuickBooksLinksPage() {
       <SectionHeader
         icon={<Plug className="h-5 w-5" />}
         eyebrow="Finance"
-        title="QuickBooks Invoice Linking"
-        description="Link QuickBooks bills to project cost lines across the portfolio"
+        title="QuickBooks Bill Linking"
+        description="Link QuickBooks supplier bills to project cost lines across the portfolio"
+      />
+
+      <ReportTrustNotice
+        sourceLabel="QuickBooks bills (evidence) ↔ normalized_cost_lines (truth)"
+        lastUpdatedAt={status.lastSuccessfulSyncAt ?? null}
+        note="A QuickBooks 'bill' is a supplier invoice the company owes. App cost lines remain the source of truth for COS recognition — linking only attaches QB bill evidence to a cost line, it does not move money or realise COS."
       />
 
       {/* Step 1: pick a bill */}
@@ -352,6 +358,7 @@ export default function FinanceQuickBooksLinksPage() {
                     <th className="px-2 py-1.5 text-left">Vendor</th>
                     <th className="px-2 py-1.5 text-right">QB amount</th>
                     <th className="px-2 py-1.5 text-left">Confirmed</th>
+                    <th className="px-2 py-1.5 text-left">By</th>
                     <th className="px-2 py-1.5 text-left"></th>
                   </tr>
                 </thead>
@@ -379,8 +386,14 @@ export default function FinanceQuickBooksLinksPage() {
                       <td className="px-2 py-1.5 text-right">
                         {formatCurrency(link.qbAmount)}
                       </td>
-                      <td className="px-2 py-1.5">
+                      <td
+                        className="px-2 py-1.5"
+                        title={new Date(link.confirmedAt).toLocaleString()}
+                      >
                         {new Date(link.confirmedAt).toLocaleDateString()}
+                      </td>
+                      <td className="px-2 py-1.5 text-muted-foreground">
+                        {link.confirmedBy !== null ? `user #${link.confirmedBy}` : "—"}
                       </td>
                       <td className="px-2 py-1.5">
                         <Button
