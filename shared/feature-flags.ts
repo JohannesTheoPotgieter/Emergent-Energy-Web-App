@@ -63,7 +63,7 @@ export const ROLLOUT_FEATURE_FLAGS: FeatureFlagDefinition[] = [
     key: "role_aware_ux",
     label: "Role-aware UX",
     description: "Controls role-aware landing and UX enhancements for phased rollout.",
-    defaultValue: false,
+    defaultValue: true,
   },
   {
     key: "contextual_ms_surfaces",
@@ -87,7 +87,7 @@ export const ROLLOUT_FEATURE_FLAGS: FeatureFlagDefinition[] = [
     key: "cleaned_admin_visibility",
     label: "Cleaned admin visibility",
     description: "Controls progressive visibility cleanup in admin/settings areas.",
-    defaultValue: false,
+    defaultValue: true,
   },
 
   {
@@ -265,13 +265,13 @@ export const ROLLOUT_FEATURE_FLAGS: FeatureFlagDefinition[] = [
     key: "onboarding_tour",
     label: "Onboarding tour",
     description: "Controls the nav onboarding tour overlay. De-emphasized until nav is stable.",
-    defaultValue: false,
+    defaultValue: true,
   },
   {
     key: "micro_walkthrough",
     label: "Micro walkthroughs",
     description: "Controls contextual micro-walkthrough guidance overlays.",
-    defaultValue: false,
+    defaultValue: true,
   },
   {
     key: "gamification",
@@ -295,7 +295,7 @@ export const ROLLOUT_FEATURE_FLAGS: FeatureFlagDefinition[] = [
     key: "action_launchpad",
     label: "Action launchpad",
     description: "Controls the standalone action launchpad page. Content available via normal navigation.",
-    defaultValue: false,
+    defaultValue: true,
   },
   {
     key: "phone_templates",
