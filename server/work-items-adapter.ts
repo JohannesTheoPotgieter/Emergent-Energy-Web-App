@@ -1,6 +1,6 @@
 import { db } from "./db";
 import { eq, and, isNull, sql, asc, desc, inArray } from "drizzle-orm";
-import { workItems, workItemAssignments, projectInfo, type WorkItem, type WorkItemAssignment } from "@shared/schema";
+import { workItems, workItemAssignments, projectInfo, TASK_STATUSES, type WorkItem, type WorkItemAssignment } from "@shared/schema";
 import { getFeatureFlag } from "./lib/feature-flags";
 import { queryWorkItems, getAssignmentsByWorkItemIds } from "./lib/work-item-queries";
 import type { UnifiedTask } from "@shared/types/unified-task";
@@ -440,31 +440,64 @@ export async function getAllPMWorkItemsAsProjectPlan(): Promise<any[]> {
   });
 }
 
+// Prompt 0.9 / BUG-02: After migration 20260413_status_casing_normalization,
+// work_items.status stores canonical lowercase_snake_case values
+// ("not_started", "to_do", "in_progress", "hold", ...). The pre-migration
+// versions of these helpers only recognized legacy Title Case ("Not Started",
+// "In Progress") and UPPER CASE ("TO DO", "HOLD") and fell through to a
+// default for every canonical value. That made every task status collapse
+// to "TO DO" on the API response, emptying the kanban columns and the
+// list view even though the header count was correct.
+//
+// Both helpers now normalize any legacy input to the canonical form and
+// pass canonical inputs through unchanged. They remain symmetrical so
+// callers on either side of the adapter get a consistent value.
+
+const LEGACY_STATUS_TO_CANONICAL: Record<string, string> = {
+  // Legacy Title Case (pre-migration DB values)
+  "Not Started": "not_started",
+  "To Do": "to_do",
+  "In Progress": "in_progress",
+  "On Hold": "hold",
+  "Blocked": "hold",
+  "Complete": "complete",
+  "Completed": "complete",
+  "Done": "complete",
+  // Legacy UPPER CASE (frontend/legacy API callers)
+  "NOT STARTED": "not_started",
+  "TO DO": "to_do",
+  "IN PROGRESS": "in_progress",
+  "HOLD": "hold",
+  "ON HOLD": "hold",
+  "COMPLETE": "complete",
+  "COMPLETED": "complete",
+  "DONE": "complete",
+  "NEEDS APPROVAL": "needs_approval",
+  "QC APPROVED": "qc_approved",
+  "PROVIDE FEEDBACK": "provide_feedback",
+  "OPERATIONAL APPROVAL": "operational_approval",
+  "PROJECTS ASSISTANCE": "projects_assistance",
+};
+
+const CANONICAL_STATUS_SET: Set<string> = new Set(TASK_STATUSES as readonly string[]);
+
+function toCanonicalStatus(input?: string | null): string {
+  if (!input) return "not_started";
+  if (CANONICAL_STATUS_SET.has(input)) return input;
+  const legacy = LEGACY_STATUS_TO_CANONICAL[input];
+  if (legacy) return legacy;
+  // Last-resort normalization: lowercase, underscore-separated
+  const normalized = input.trim().toLowerCase().replace(/\s+/g, "_");
+  if (CANONICAL_STATUS_SET.has(normalized)) return normalized;
+  return "not_started";
+}
+
 export function mapFromOpsStatus(opsStatus: string): string {
-  const map: Record<string, string> = {
-    "TO DO": "Not Started",
-    "IN PROGRESS": "In Progress",
-    "COMPLETE": "Complete",
-    "HOLD": "On Hold",
-    "NEEDS APPROVAL": "In Progress",
-    "QC APPROVED": "Complete",
-    "PROVIDE FEEDBACK": "In Progress",
-    "OPERATIONAL APPROVAL": "In Progress",
-    "PROJECTS ASSISTANCE": "In Progress",
-  };
-  return map[opsStatus] || "Not Started";
+  return toCanonicalStatus(opsStatus);
 }
 
 export function mapToOpsStatus(wiStatus: string): string {
-  const map: Record<string, string> = {
-    "Not Started": "TO DO",
-    "In Progress": "IN PROGRESS",
-    "Complete": "COMPLETE",
-    "Done": "COMPLETE",
-    "On Hold": "HOLD",
-    "Blocked": "HOLD",
-  };
-  return map[wiStatus] || "TO DO";
+  return toCanonicalStatus(wiStatus);
 }
 
 export async function createWorkItem(data: {
@@ -488,7 +521,8 @@ export async function createWorkItem(data: {
     projectId: data.projectId ?? null,
     title: data.title,
     description: data.description ?? null,
-    status: data.status || "Not Started",
+    // Prompt 0.9: normalize any legacy input and default to canonical "not_started".
+    status: toCanonicalStatus(data.status),
     priority: data.priority || null,
     workstream: (data.workstream as any) || "PM",
     type: data.type || "task",
@@ -712,7 +746,9 @@ export async function listEngineeringWorkItems(options: EngineeringListOptions =
     actualStartDate: wi.actualStart,
     actualEndDate: wi.actualEnd,
     actualDurationDays: wi.actualDuration,
-    completedAt: wi.completedAt || (wi.status === "Complete" ? wi.updatedAt : null),
+    // Prompt 0.9: check canonical lowercase "complete" (migration 20260413);
+    // the legacy Title Case comparison never matched post-migration.
+    completedAt: wi.completedAt || (wi.status === "complete" ? wi.updatedAt : null),
     percentComplete: wi.percentComplete != null ? Math.round(wi.percentComplete) : 0,
     expectedPercentComplete: null,
     comment: wi.description,

@@ -32,10 +32,12 @@ export const TOP_SECTIONS: TopSection[] = [
     key: "HOME",
     path: "/",
     match: (pathname) => pathname === "/" || startsWithAny(pathname, ["/my-work", "/inbox"]),
+    // Prompt 0.7: "Approvals" removed — duplicate of Project Delivery →
+    // PM Approvals which points at the canonical /pm/approvals page.
+    // /my-work/approvals remains as a redirect alias for bookmarks.
     secondary: [
       { label: "My Dashboard", path: "/" },
       { label: "My Tasks", path: "/my-work/tasks" },
-      { label: "Approvals", path: "/my-work/approvals" },
       { label: "Calendar", path: "/my-work/calendar" },
       { label: "Meetings", path: "/my-work/meetings" },
     ],
