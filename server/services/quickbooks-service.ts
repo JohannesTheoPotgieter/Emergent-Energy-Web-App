@@ -7,11 +7,25 @@
  * for the row where `name = 'quickbooks'`.
  */
 
-import { and, eq, isNull } from "drizzle-orm";
-import { integrations } from "@shared/schema";
+import { and, desc, eq, isNull } from "drizzle-orm";
+import { integrations, integrationRunEvents } from "@shared/schema";
 import { db } from "../db";
+import {
+  deriveIntegrationHealth,
+  recordIntegrationRun,
+  type IntegrationHealthTile,
+} from "./integration-health-service";
 
-const QB_INTEGRATION_NAME = "quickbooks";
+export const QB_INTEGRATION_NAME = "quickbooks";
+
+/**
+ * How long a successful QB sync stays "fresh" before the status endpoint
+ * surfaces a stale warning. The integration-health-service has its own
+ * 25h healthy window for the global dashboard; here we use a tighter 2h
+ * window because QB data feeds the live reconciliation UI and users need
+ * to know when they're looking at a cached answer.
+ */
+export const QB_STALE_AFTER_MS = 2 * 60 * 60 * 1000;
 const QB_AUTH_BASE = "https://appcenter.intuit.com/connect/oauth2";
 const QB_TOKEN_ENDPOINT = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer";
 const QB_SCOPE = "com.intuit.quickbooks.accounting";
@@ -159,58 +173,103 @@ export async function exchangeCodeForTokens(
   code: string,
   realmId: string,
 ): Promise<QuickBooksTokenMetadata> {
-  const body = new URLSearchParams({
-    grant_type: "authorization_code",
-    code,
-    redirect_uri: QB_REDIRECT_URI,
-  });
+  const startedAt = new Date();
+  try {
+    const body = new URLSearchParams({
+      grant_type: "authorization_code",
+      code,
+      redirect_uri: QB_REDIRECT_URI,
+    });
 
-  const tokenResponse = await postToTokenEndpoint(body);
+    const tokenResponse = await postToTokenEndpoint(body);
 
-  const now = Date.now();
-  const metadata: QuickBooksTokenMetadata = {
-    realmId,
-    accessToken: tokenResponse.access_token,
-    refreshToken: tokenResponse.refresh_token,
-    tokenExpiry: new Date(now + (tokenResponse.expires_in ?? 3600) * 1000).toISOString(),
-    refreshTokenExpiry: tokenResponse.x_refresh_token_expires_in
-      ? new Date(now + tokenResponse.x_refresh_token_expires_in * 1000).toISOString()
-      : undefined,
-    updatedAt: new Date(now).toISOString(),
-  };
+    const now = Date.now();
+    const metadata: QuickBooksTokenMetadata = {
+      realmId,
+      accessToken: tokenResponse.access_token,
+      refreshToken: tokenResponse.refresh_token,
+      tokenExpiry: new Date(now + (tokenResponse.expires_in ?? 3600) * 1000).toISOString(),
+      refreshTokenExpiry: tokenResponse.x_refresh_token_expires_in
+        ? new Date(now + tokenResponse.x_refresh_token_expires_in * 1000).toISOString()
+        : undefined,
+      updatedAt: new Date(now).toISOString(),
+    };
 
-  await saveQuickBooksMetadata(metadata);
-  return metadata;
+    await saveQuickBooksMetadata(metadata);
+    await recordQbRun({
+      runType: "oauth:exchange_code",
+      startedAt,
+      ok: true,
+      metadata: { realmId },
+    });
+    return metadata;
+  } catch (err) {
+    const { code, detail } = classifyQbError(err);
+    await recordQbRun({
+      runType: "oauth:exchange_code",
+      startedAt,
+      ok: false,
+      errorCode: code,
+      errorDetail: detail,
+    });
+    throw err;
+  }
 }
 
 export async function refreshAccessToken(): Promise<QuickBooksTokenMetadata> {
+  const startedAt = new Date();
   const existing = await loadQuickBooksMetadata();
   if (!existing.refreshToken) {
-    throw new Error("QuickBooks is not connected: no refresh token stored.");
+    const err = new Error("QuickBooks is not connected: no refresh token stored.");
+    await recordQbRun({
+      runType: "oauth:refresh",
+      startedAt,
+      ok: false,
+      errorCode: "not_connected",
+      errorDetail: err.message,
+    });
+    throw err;
   }
 
-  const body = new URLSearchParams({
-    grant_type: "refresh_token",
-    refresh_token: existing.refreshToken,
-  });
+  try {
+    const body = new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: existing.refreshToken,
+    });
 
-  const tokenResponse = await postToTokenEndpoint(body);
+    const tokenResponse = await postToTokenEndpoint(body);
 
-  const now = Date.now();
-  const metadata: QuickBooksTokenMetadata = {
-    ...existing,
-    accessToken: tokenResponse.access_token,
-    // Intuit rotates refresh tokens periodically; fall back to the existing one when absent.
-    refreshToken: tokenResponse.refresh_token || existing.refreshToken,
-    tokenExpiry: new Date(now + (tokenResponse.expires_in ?? 3600) * 1000).toISOString(),
-    refreshTokenExpiry: tokenResponse.x_refresh_token_expires_in
-      ? new Date(now + tokenResponse.x_refresh_token_expires_in * 1000).toISOString()
-      : existing.refreshTokenExpiry,
-    updatedAt: new Date(now).toISOString(),
-  };
+    const now = Date.now();
+    const metadata: QuickBooksTokenMetadata = {
+      ...existing,
+      accessToken: tokenResponse.access_token,
+      // Intuit rotates refresh tokens periodically; fall back to the existing one when absent.
+      refreshToken: tokenResponse.refresh_token || existing.refreshToken,
+      tokenExpiry: new Date(now + (tokenResponse.expires_in ?? 3600) * 1000).toISOString(),
+      refreshTokenExpiry: tokenResponse.x_refresh_token_expires_in
+        ? new Date(now + tokenResponse.x_refresh_token_expires_in * 1000).toISOString()
+        : existing.refreshTokenExpiry,
+      updatedAt: new Date(now).toISOString(),
+    };
 
-  await saveQuickBooksMetadata(metadata);
-  return metadata;
+    await saveQuickBooksMetadata(metadata);
+    await recordQbRun({
+      runType: "oauth:refresh",
+      startedAt,
+      ok: true,
+    });
+    return metadata;
+  } catch (err) {
+    const { code, detail } = classifyQbError(err);
+    await recordQbRun({
+      runType: "oauth:refresh",
+      startedAt,
+      ok: false,
+      errorCode: code,
+      errorDetail: detail,
+    });
+    throw err;
+  }
 }
 
 export async function getValidAccessToken(): Promise<{ accessToken: string; realmId: string }> {
@@ -235,34 +294,131 @@ export async function getValidAccessToken(): Promise<{ accessToken: string; real
 }
 
 export async function disconnectQuickBooks(): Promise<void> {
+  const startedAt = new Date();
   await saveQuickBooksMetadata({});
+  await recordQbRun({
+    runType: "oauth:disconnect",
+    startedAt,
+    ok: true,
+    metadata: { reason: "manual_disconnect" },
+  });
 }
 
 // ===================== API HELPERS =====================
 
-async function qbGet<T = any>(path: string): Promise<T> {
-  const { accessToken, realmId } = await getValidAccessToken();
-  const url = `${getApiBase(realmId)}${path}`;
+/**
+ * Classify an outbound-call error into an `errorCode` for the integration
+ * run event. Kept intentionally coarse so the dashboard can group them.
+ */
+function classifyQbError(err: unknown): { code: string; detail: string } {
+  const detail = err instanceof Error ? err.message : String(err);
+  if (/not connected/i.test(detail)) return { code: "not_connected", detail };
+  if (/401|unauthorized/i.test(detail)) return { code: "auth_expired", detail };
+  if (/403|forbidden/i.test(detail)) return { code: "forbidden", detail };
+  if (/429|rate ?limit/i.test(detail)) return { code: "rate_limited", detail };
+  if (/5\d\d|server error|timeout|ECONN|fetch failed/i.test(detail))
+    return { code: "upstream_error", detail };
+  return { code: "unknown", detail };
+}
 
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      Accept: "application/json",
-    },
-  });
-
-  const text = await response.text();
-  if (!response.ok) {
-    throw new Error(
-      `QuickBooks API ${path} returned ${response.status}: ${text || response.statusText}`,
-    );
-  }
-
+/**
+ * Internal helper — records a run event against the `quickbooks`
+ * integration. Wrapped in try/catch so a run-log failure never takes down
+ * the outbound QB call.
+ */
+async function recordQbRun(params: {
+  runType: string;
+  startedAt: Date;
+  ok: boolean;
+  errorCode?: string | null;
+  errorDetail?: string | null;
+  metadata?: Record<string, unknown> | null;
+}): Promise<void> {
   try {
-    return JSON.parse(text) as T;
-  } catch {
-    throw new Error(`QuickBooks API ${path} returned invalid JSON`);
+    await recordIntegrationRun({
+      name: QB_INTEGRATION_NAME,
+      runType: params.runType,
+      startedAt: params.startedAt,
+      finishedAt: new Date(),
+      status: params.ok ? "success" : "failure",
+      errorCode: params.errorCode ?? null,
+      errorDetail: params.errorDetail ?? null,
+      metadata: params.metadata ?? null,
+    });
+  } catch (err) {
+    console.warn("[QuickBooks] recordIntegrationRun failed:", err);
+  }
+}
+
+async function qbGet<T = any>(path: string): Promise<T> {
+  const startedAt = new Date();
+  try {
+    const { accessToken, realmId } = await getValidAccessToken();
+    const url = `${getApiBase(realmId)}${path}`;
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json",
+      },
+    });
+
+    const text = await response.text();
+    if (!response.ok) {
+      const err = new Error(
+        `QuickBooks API ${path} returned ${response.status}: ${text || response.statusText}`,
+      );
+      const { code, detail } = classifyQbError(err);
+      await recordQbRun({
+        runType: `qbGet:${path.split("?")[0]}`,
+        startedAt,
+        ok: false,
+        errorCode: code,
+        errorDetail: detail,
+        metadata: { path, httpStatus: response.status },
+      });
+      throw err;
+    }
+
+    let parsed: T;
+    try {
+      parsed = JSON.parse(text) as T;
+    } catch {
+      const err = new Error(`QuickBooks API ${path} returned invalid JSON`);
+      await recordQbRun({
+        runType: `qbGet:${path.split("?")[0]}`,
+        startedAt,
+        ok: false,
+        errorCode: "invalid_json",
+        errorDetail: err.message,
+        metadata: { path },
+      });
+      throw err;
+    }
+
+    await recordQbRun({
+      runType: `qbGet:${path.split("?")[0]}`,
+      startedAt,
+      ok: true,
+      metadata: { path },
+    });
+    return parsed;
+  } catch (err) {
+    // Only log here if we haven't already logged above (e.g. token-refresh
+    // failure before the HTTP call even fired).
+    if (err instanceof Error && !/returned \d{3}:/.test(err.message) && !/returned invalid JSON/.test(err.message)) {
+      const { code, detail } = classifyQbError(err);
+      await recordQbRun({
+        runType: `qbGet:${path.split("?")[0]}`,
+        startedAt,
+        ok: false,
+        errorCode: code,
+        errorDetail: detail,
+        metadata: { path },
+      });
+    }
+    throw err;
   }
 }
 
@@ -352,16 +508,113 @@ export async function getProfitAndLossReport(startDate: string, endDate: string)
   return qbGet<any>(`/reports/ProfitAndLoss?${params.toString()}`);
 }
 
-export async function getQuickBooksConnectionStatus(): Promise<{
+export interface QuickBooksConnectionStatus {
   connected: boolean;
   realmId: string | null;
   companyName: string | null;
   tokenExpiry: string | null;
   refreshTokenExpiry: string | null;
   sandbox: boolean;
+  /** Derived health tile — 'healthy' | 'stale' | 'failing' | 'unknown'. */
+  health: IntegrationHealthTile["health"];
+  /** ISO of the most recent successful QB run event. */
+  lastSuccessfulSyncAt: string | null;
+  /** ISO of the most recent failed QB run event. */
+  lastFailedSyncAt: string | null;
+  /** Short code on the most recent failure. Null when no failure. */
+  lastFailureCode: string | null;
+  /** Free-form detail on the most recent failure. */
+  lastFailureReason: string | null;
+  /** True when no successful run has happened within QB_STALE_AFTER_MS. */
+  isStale: boolean;
+  /** ms since the last successful sync. Null when never synced. */
+  ageMs: number | null;
+  /** Window (ms) after which we flag data as stale. Exposed for the UI. */
+  staleAfterMs: number;
+}
+
+/**
+ * Load the most recent success / most recent failure / most recent run
+ * from `integration_run_events` for the QB integration row. Used by the
+ * status endpoint to render the health summary card.
+ */
+async function loadQuickBooksRunHealth(): Promise<{
+  lastRunAt: Date | null;
+  lastRunStatus: "success" | "failure" | "partial" | null;
+  lastSuccessAt: Date | null;
+  lastFailureAt: Date | null;
+  lastFailureCode: string | null;
+  lastFailureDetail: string | null;
 }> {
+  const row = await loadQuickBooksIntegrationRow();
+  if (!row) {
+    return {
+      lastRunAt: null,
+      lastRunStatus: null,
+      lastSuccessAt: null,
+      lastFailureAt: null,
+      lastFailureCode: null,
+      lastFailureDetail: null,
+    };
+  }
+
+  const [lastRun] = await db
+    .select()
+    .from(integrationRunEvents)
+    .where(eq(integrationRunEvents.integrationId, row.id))
+    .orderBy(desc(integrationRunEvents.startedAt))
+    .limit(1);
+
+  const [lastSuccess] = await db
+    .select()
+    .from(integrationRunEvents)
+    .where(
+      and(
+        eq(integrationRunEvents.integrationId, row.id),
+        eq(integrationRunEvents.status, "success"),
+      ),
+    )
+    .orderBy(desc(integrationRunEvents.startedAt))
+    .limit(1);
+
+  const [lastFailure] = await db
+    .select()
+    .from(integrationRunEvents)
+    .where(
+      and(
+        eq(integrationRunEvents.integrationId, row.id),
+        eq(integrationRunEvents.status, "failure"),
+      ),
+    )
+    .orderBy(desc(integrationRunEvents.startedAt))
+    .limit(1);
+
+  return {
+    lastRunAt: lastRun?.startedAt ?? null,
+    lastRunStatus: (lastRun?.status as "success" | "failure" | "partial" | undefined) ?? null,
+    lastSuccessAt: lastSuccess?.startedAt ?? null,
+    lastFailureAt: lastFailure?.startedAt ?? null,
+    lastFailureCode: lastFailure?.errorCode ?? null,
+    lastFailureDetail: lastFailure?.errorDetail ?? null,
+  };
+}
+
+export async function getQuickBooksConnectionStatus(): Promise<QuickBooksConnectionStatus> {
   const metadata = await loadQuickBooksMetadata();
   const connected = Boolean(metadata.accessToken && metadata.refreshToken && metadata.realmId);
+
+  const run = await loadQuickBooksRunHealth();
+  const now = new Date();
+  const health = deriveIntegrationHealth({
+    lastSuccessAt: run.lastSuccessAt,
+    lastRunAt: run.lastRunAt,
+    lastRunStatus: run.lastRunStatus,
+    now,
+  });
+
+  const ageMs = run.lastSuccessAt ? now.getTime() - run.lastSuccessAt.getTime() : null;
+  const isStale = ageMs === null ? connected : ageMs > QB_STALE_AFTER_MS;
+
   return {
     connected,
     realmId: metadata.realmId ?? null,
@@ -369,5 +622,13 @@ export async function getQuickBooksConnectionStatus(): Promise<{
     tokenExpiry: metadata.tokenExpiry ?? null,
     refreshTokenExpiry: metadata.refreshTokenExpiry ?? null,
     sandbox: isSandbox(),
+    health,
+    lastSuccessfulSyncAt: run.lastSuccessAt ? run.lastSuccessAt.toISOString() : null,
+    lastFailedSyncAt: run.lastFailureAt ? run.lastFailureAt.toISOString() : null,
+    lastFailureCode: run.lastFailureCode,
+    lastFailureReason: run.lastFailureDetail,
+    isStale,
+    ageMs,
+    staleAfterMs: QB_STALE_AFTER_MS,
   };
 }

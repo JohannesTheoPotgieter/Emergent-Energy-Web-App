@@ -9,6 +9,7 @@ import { PageSkeleton } from "@/components/ui/page-states";
 import { useToast } from "@/hooks/use-toast";
 import { Link2, Link2Off, Plug, Search, X } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { isApiError } from "@/lib/api-error";
 
 interface QbBillRaw {
   Id: string;
@@ -115,7 +116,8 @@ export default function FinanceQuickBooksLinksPage() {
       toast({ title: "Link created" });
     },
     onError: (err: Error) => {
-      toast({ title: "Link failed", description: err.message, variant: "destructive" });
+      const title = isApiError(err) && err.status === 409 ? "Link conflict" : "Link failed";
+      toast({ title, description: err.message, variant: "destructive" });
     },
   });
 
