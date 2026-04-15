@@ -4,6 +4,7 @@ import { verifyToken } from "./jwt";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 import { runMigrationVerification } from "./migration-verify";
+import { blockInProduction, requireDestructiveOpsFlag } from "./middleware/production-safety";
 
 const router = Router();
 
@@ -361,7 +362,15 @@ router.post("/api/admin/migration/restore", jwtAuth, requireAuth, requireAdmin, 
   }
 });
 
-router.post("/api/admin/migration/drop-archived", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
+// Prompt 0.1 follow-up: drop-archived is as destructive as wipe-all-data —
+// it permanently removes legacy tables with no restore path. Dual-gate
+// behind NODE_ENV and ALLOW_DESTRUCTIVE_OPS=true on top of the admin role
+// check and explicit DROP_LEGACY_TABLES confirmation string.
+router.post(
+  "/api/admin/migration/drop-archived",
+  blockInProduction("drop-archived is blocked in production — archived tables can only be dropped from a dev environment."),
+  requireDestructiveOpsFlag("drop-archived requires ALLOW_DESTRUCTIVE_OPS=true"),
+  jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
     const { confirmation } = req.body;
     if (confirmation !== "DROP_LEGACY_TABLES") {

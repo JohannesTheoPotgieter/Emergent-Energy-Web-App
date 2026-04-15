@@ -46,13 +46,18 @@ async function approveGateForIncidentStatus(req: Request, res: Response, inciden
   }
   if (current.status === newStatus) return true;
 
-  const approval = await evaluatePermissionForRequest(req, "hse", "approve");
+  // Prompt 0.5 follow-up: use the specific hse_incidents entity so the
+  // role matrix (CONSTRUCTION_MANAGER approve permission added in commit
+  // 260cee8) actually takes effect at request time. Previously this
+  // gated on the broader "hse" entity, leaving hse_incidents.approve_roles
+  // dead.
+  const approval = await evaluatePermissionForRequest(req, "hse_incidents", "approve");
   if (!approval.allowed) {
     res.status(403).json({
       error: "forbidden",
-      entity: "hse",
+      entity: "hse_incidents",
       action: "approve",
-      reason: "Only HSE Manager, COO, or CEO can change an HSE incident's status.",
+      reason: "Only HSE Manager, Construction Manager, COO, or CEO can change an HSE incident's status.",
       currentStatus: current.status,
       attemptedStatus: newStatus,
     });

@@ -28,7 +28,7 @@ import { syncProjectSplitTables } from "./lib/project-info-sync";
 import { requireAuthority, requirePermission, evaluateAuthorityForRequest } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
 import { ApiError, sendError, badRequest, notFound, forbidden, serverError } from "./lib/api-error";
-import { listEngineeringWorkItems, getEngineeringWorkItemById, createEngineeringWorkItem, updateEngineeringWorkItem, deleteEngineeringWorkItem, generateDefaultEngineeringWorkItemsForProject, mapToOpsStatus } from "./work-items-adapter";
+import { listEngineeringWorkItems, getEngineeringWorkItemById, createEngineeringWorkItem, updateEngineeringWorkItem, deleteEngineeringWorkItem, generateDefaultEngineeringWorkItemsForProject, mapToOpsStatus, toCanonicalStatus } from "./work-items-adapter";
 import { generateWorkItemReconciliationReport } from "./lib/reconciliation/work-item-reconciliation";
 import { assertTaskWorkflowTransition, buildTaskWorkflowContext, TaskWorkflowGuardError } from "./lib/task-workflow-guard";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
@@ -706,16 +706,24 @@ export function registerEngineeringRoutes(app: Express) {
       const [existing] = await db.select().from(workItems).where(and(eq(workItems.id, id), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)));
       if (!existing) return sendError(res, notFound("Task"));
 
-      const updates = { ...req.body, updatedAt: new Date() };
+      // Prompt 0.9 follow-up: the inline kanban-card buttons in
+      // EngineeringTasksPage still POST legacy UPPER CASE status values
+      // like "COMPLETE" / "HOLD" / "IN PROGRESS". Normalize the incoming
+      // status ONCE here so every downstream guard (completion, hold,
+      // workflow transitions, completedAt stamping) compares against the
+      // canonical lowercase form and nothing is silently skipped.
+      const rawStatus: string | undefined = req.body?.status;
+      const canonicalStatus = rawStatus ? toCanonicalStatus(rawStatus) : undefined;
+      const updates = { ...req.body, status: canonicalStatus, updatedAt: new Date() };
 
-      if (updates.status && !TASK_STATUSES.includes(updates.status)) {
+      if (canonicalStatus && !(TASK_STATUSES as readonly string[]).includes(canonicalStatus)) {
         return sendError(res, badRequest(`Invalid status. Must be one of: ${TASK_STATUSES.join(", ")}`));
       }
 
-      if (updates.status) {
+      if (canonicalStatus) {
         try {
           const context = await buildTaskWorkflowContext(id, existing.status as string);
-          assertTaskWorkflowTransition(context, updates.status, "status_update");
+          assertTaskWorkflowTransition(context, canonicalStatus, "status_update");
         } catch (err: any) {
           if (err instanceof TaskWorkflowGuardError) {
             return sendError(res, new ApiError(err.statusCode, "WORKFLOW_ERROR", err.message));
@@ -725,18 +733,17 @@ export function registerEngineeringRoutes(app: Express) {
       }
 
       // Validate parent completion: can't mark complete if children are still open
-      // Prompt 0.9: canonical lowercase "complete" post-migration 20260413.
-      if (updates.status === "complete") {
+      if (canonicalStatus === "complete") {
         const blockMsg = await validateParentCompletion(id);
         if (blockMsg) {
           return sendError(res, badRequest(blockMsg));
         }
       }
 
-      if (updates.status === "hold" && !updates.holdReason) {
+      if (canonicalStatus === "hold" && !updates.holdReason) {
         return sendError(res, badRequest("Hold reason required when setting status to hold"));
       }
-      if (updates.status === "hold") {
+      if (canonicalStatus === "hold") {
         const bt = updates.blockedType;
         if (!bt || !["Internal", "External"].includes(bt)) {
           return sendError(res, badRequest("Blocked type (Internal or External) required when setting status to hold"));
@@ -760,7 +767,7 @@ export function registerEngineeringRoutes(app: Express) {
       const updated = await updateEngineeringWorkItem(id, {
         title: updates.title,
         description: updates.description,
-        status: updates.status,
+        status: canonicalStatus,
         priority: updates.priority,
         phase: updates.phase,
         startDate: updates.startDate,
@@ -770,7 +777,7 @@ export function registerEngineeringRoutes(app: Express) {
         projectId: resolvedProjectId,
         holdReason: updates.holdReason,
         blockedType: updates.blockedType,
-        completedAt: updates.status === "complete" ? new Date() : undefined,
+        completedAt: canonicalStatus === "complete" ? new Date() : undefined,
         linkedPlanItemId: updates.linkedPlanItemId,
         linkedDeliverableId: updates.linkedDeliverableId,
         linkedQualityItemInstanceId: updates.linkedQualityItemInstanceId,
@@ -900,7 +907,7 @@ export function registerEngineeringRoutes(app: Express) {
         projectName: existing.projectName || undefined,
       });
 
-      const updated = await updateEngineeringWorkItem(id, { status: "NEEDS APPROVAL" });
+      const updated = await updateEngineeringWorkItem(id, { status: "needs_approval" });
       if (!updated) return sendError(res, notFound("Task"));
 
       await db.insert(taskActivityLog).values({
@@ -909,7 +916,7 @@ export function registerEngineeringRoutes(app: Express) {
         actionType: "field_changed",
         fieldName: "status",
         oldValue: existing.status,
-        newValue: "NEEDS APPROVAL",
+        newValue: "needs_approval",
       });
 
       if (note.trim()) {
@@ -1432,20 +1439,26 @@ export function registerEngineeringRoutes(app: Express) {
       if (!Array.isArray(taskIds) || taskIds.length === 0) {
         return sendError(res, badRequest("taskIds array required"));
       }
-      if (updates.status === "HOLD" && !updates.holdReason) {
-        return sendError(res, badRequest("Hold reason required when setting status to HOLD"));
+      // Prompt 0.9 follow-up: normalize incoming bulk status once so the
+      // HOLD / COMPLETE guards below compare against the canonical form.
+      const canonicalBulkStatus: string | undefined = updates.status
+        ? toCanonicalStatus(updates.status)
+        : undefined;
+
+      if (canonicalBulkStatus === "hold" && !updates.holdReason) {
+        return sendError(res, badRequest("Hold reason required when setting status to hold"));
       }
-      if (updates.status === "HOLD" && !updates.blockedType) {
-        return sendError(res, badRequest("Blocked type (Internal or External) required when setting status to HOLD"));
+      if (canonicalBulkStatus === "hold" && !updates.blockedType) {
+        return sendError(res, badRequest("Blocked type (Internal or External) required when setting status to hold"));
       }
       // Validate ALL tasks before updating any (fail-fast)
-      if (updates.status) {
+      if (canonicalBulkStatus) {
         for (const taskId of taskIds) {
           const task = await getEngineeringWorkItemById(taskId);
           if (!task) continue;
           try {
             const context = await buildTaskWorkflowContext(taskId, task.status);
-            assertTaskWorkflowTransition(context, updates.status, "bulk_status_update");
+            assertTaskWorkflowTransition(context, canonicalBulkStatus, "bulk_status_update");
           } catch (err: any) {
             if (err instanceof TaskWorkflowGuardError) {
               return sendError(res, new ApiError(err.statusCode, "WORKFLOW_ERROR", err.message, { taskId: String(taskId) }));
@@ -1460,12 +1473,12 @@ export function registerEngineeringRoutes(app: Express) {
       await db.transaction(async (tx: any) => {
         for (const taskId of taskIds) {
           const adapterUpdates: any = {};
-          if (updates.status) adapterUpdates.status = updates.status;
+          if (canonicalBulkStatus) adapterUpdates.status = canonicalBulkStatus;
           if (updates.holdReason !== undefined) adapterUpdates.holdReason = updates.holdReason;
           if (updates.blockedType !== undefined) adapterUpdates.blockedType = updates.blockedType;
           if (updates.priority !== undefined) adapterUpdates.priority = updates.priority;
           if (updates.ownerUserId !== undefined) adapterUpdates.ownerUserId = updates.ownerUserId;
-          if (updates.status === "COMPLETE") adapterUpdates.completedAt = new Date();
+          if (canonicalBulkStatus === "complete") adapterUpdates.completedAt = new Date();
 
           const setData: any = { updatedAt: new Date() };
           if (adapterUpdates.status !== undefined) setData.status = adapterUpdates.status;
@@ -1761,7 +1774,7 @@ export function registerEngineeringRoutes(app: Express) {
       });
 
       const mapped = await getEngineeringWorkItemById(subtaskWorkItem.id);
-      res.json(mapped || { id: subtaskWorkItem.id, title: data.title, status: "TO DO" });
+      res.json(mapped || { id: subtaskWorkItem.id, title: data.title, status: "to_do" });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
@@ -1836,21 +1849,21 @@ export function registerEngineeringRoutes(app: Express) {
       const [del] = await db.insert(deliverables).values({
         ...data,
         projectId,
-        status: "TO DO",
+        status: "to_do",
         currentVersion: 1,
       }).returning();
 
       await db.insert(deliverableVersions).values({
         deliverableId: del.id,
         versionNumber: 1,
-        status: "TO DO",
+        status: "to_do",
         createdByUserId: getUser(req).id,
       });
 
       await db.insert(deliverableEvents).values({
         deliverableId: del.id,
         eventType: "created",
-        toStatus: "TO DO",
+        toStatus: "to_do",
         actorUserId: getUser(req).id,
       });
 
@@ -1868,9 +1881,15 @@ export function registerEngineeringRoutes(app: Express) {
       const [existing] = await db.select().from(deliverables).where(eq(deliverables.id, id));
       if (!existing) return sendError(res, notFound("Deliverable"));
 
-      const nextStatus = req.body?.status;
-      const approvalStatuses = new Set(["COMPLETE", "QC APPROVED", "OPERATIONAL APPROVAL", "PROVIDE FEEDBACK"]);
-      const authority = nextStatus && approvalStatuses.has(nextStatus)
+      // Prompt 0.9 follow-up: normalize incoming deliverable status — same
+      // migration 20260413 applies to deliverables (DELIVERABLE_STATUSES is
+      // canonical lowercase). Legacy UPPER CASE payloads from older UI
+      // paths must map to the canonical form before guards run.
+      const rawDeliverableStatus: string | undefined = req.body?.status;
+      const canonicalDeliverableStatus = rawDeliverableStatus ? toCanonicalStatus(rawDeliverableStatus) : undefined;
+
+      const approvalStatuses = new Set(["complete", "qc_approved", "operational_approval", "provide_feedback"]);
+      const authority = canonicalDeliverableStatus && approvalStatuses.has(canonicalDeliverableStatus)
         ? await evaluateAuthorityForRequest(req, "deliverables", "approve")
         : await evaluateAuthorityForRequest(req, "deliverables", "edit");
 
@@ -1878,24 +1897,24 @@ export function registerEngineeringRoutes(app: Express) {
         return res.status(403).json({ error: "forbidden", reason: authority.reason, scope: authority.scope });
       }
 
-      const updates = { ...req.body, updatedAt: new Date() };
+      const updates = { ...req.body, status: canonicalDeliverableStatus, updatedAt: new Date() };
       const [updated] = await db.update(deliverables).set(updates).where(eq(deliverables.id, id)).returning();
 
-      if (updates.status && updates.status !== existing.status) {
+      if (canonicalDeliverableStatus && canonicalDeliverableStatus !== existing.status) {
         await db.insert(deliverableEvents).values({
           deliverableId: id,
           eventType: "status_changed",
           fromStatus: existing.status,
-          toStatus: updates.status,
+          toStatus: canonicalDeliverableStatus,
           actorUserId: getUser(req).id,
         });
 
-        if (updates.status === "NEEDS APPROVAL" && updated.reviewerUserId) {
+        if (canonicalDeliverableStatus === "needs_approval" && updated.reviewerUserId) {
           await createNotification(updated.reviewerUserId, "deliverable.submitted_for_approval",
             `Review needed: ${updated.title}`, `Deliverable "${updated.title}" v${updated.currentVersion} needs review`,
             { projectName: updated.projectName, linkedDeliverableId: id });
         }
-        if (updates.status === "QC APPROVED" && updated.ownerUserId) {
+        if (canonicalDeliverableStatus === "qc_approved" && updated.ownerUserId) {
           await createNotification(updated.ownerUserId, "deliverable.qc_approved",
             `QC Approved: ${updated.title}`, `Deliverable "${updated.title}" has been QC approved`,
             { projectName: updated.projectName, linkedDeliverableId: id });
@@ -1917,14 +1936,14 @@ export function registerEngineeringRoutes(app: Express) {
       const { feedbackText } = req.body;
 
       const [updated] = await db.update(deliverables)
-        .set({ status: "PROVIDE FEEDBACK", updatedAt: new Date() })
+        .set({ status: "provide_feedback", updatedAt: new Date() })
         .where(eq(deliverables.id, id)).returning();
 
       await db.insert(deliverableEvents).values({
         deliverableId: id,
         eventType: "feedback_provided",
-        fromStatus: "NEEDS APPROVAL",
-        toStatus: "PROVIDE FEEDBACK",
+        fromStatus: "needs_approval",
+        toStatus: "provide_feedback",
         feedbackText,
         actorUserId: getUser(req).id,
       });
@@ -1958,19 +1977,19 @@ export function registerEngineeringRoutes(app: Express) {
         versionNumber: newVersion,
         changeReason: changeReason || null,
         impactJson: impactJson || null,
-        status: "IN PROGRESS",
+        status: "in_progress",
         createdByUserId: getUser(req).id,
       }).returning();
 
       const [updated] = await db.update(deliverables)
-        .set({ currentVersion: newVersion, status: "IN PROGRESS", updatedAt: new Date() })
+        .set({ currentVersion: newVersion, status: "in_progress", updatedAt: new Date() })
         .where(eq(deliverables.id, id)).returning();
 
       await db.insert(deliverableEvents).values({
         deliverableId: id,
         eventType: "revised",
         fromStatus: existing.status,
-        toStatus: "IN PROGRESS",
+        toStatus: "in_progress",
         feedbackText: changeReason,
         actorUserId: getUser(req).id,
       });
@@ -2904,7 +2923,7 @@ export function registerEngineeringRoutes(app: Express) {
           await createEngineeringWorkItem({
             projectId,
             title: `[PM] ${t.title}`,
-            status: "TO DO",
+            status: "to_do",
             priority: t.priority,
             phase: t.phase,
             createdBy: user.id,
@@ -2922,7 +2941,7 @@ export function registerEngineeringRoutes(app: Express) {
           await createEngineeringWorkItem({
             projectId,
             title: `[Eng Post-CP] ${t.title}`,
-            status: "TO DO",
+            status: "to_do",
             priority: t.priority,
             phase: t.phase,
             createdBy: user.id,

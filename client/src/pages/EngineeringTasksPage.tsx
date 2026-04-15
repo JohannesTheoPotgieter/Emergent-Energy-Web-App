@@ -635,25 +635,28 @@ export function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDu
       )}
 
       {/* Inline quick actions - appear on hover */}
-      {onStatusChange && (
-        <div className="opacity-0 group-hover:opacity-100 transition-opacity mt-1.5 pt-1.5 border-t border-dashed flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-          {task.status !== "IN PROGRESS" && (
-            <button className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 font-medium" onClick={() => onStatusChange(task.id, "IN PROGRESS")}>
-              Start
-            </button>
-          )}
-          {task.status !== "COMPLETE" && task.status !== "NEEDS APPROVAL" && (
-            <button className="text-[9px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 hover:bg-purple-100 font-medium" onClick={() => onStatusChange(task.id, "NEEDS APPROVAL")}>
-              Submit
-            </button>
-          )}
-          {task.status !== "COMPLETE" && (
-            <button className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-medium" onClick={() => onStatusChange(task.id, "COMPLETE")}>
-              Done
-            </button>
-          )}
-        </div>
-      )}
+      {onStatusChange && (() => {
+        const canonical = canonicalizeTaskStatus(task.status);
+        return (
+          <div className="opacity-0 group-hover:opacity-100 transition-opacity mt-1.5 pt-1.5 border-t border-dashed flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+            {canonical !== "in_progress" && (
+              <button className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 font-medium" onClick={() => onStatusChange(task.id, "in_progress")}>
+                Start
+              </button>
+            )}
+            {canonical !== "complete" && canonical !== "needs_approval" && (
+              <button className="text-[9px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 hover:bg-purple-100 font-medium" onClick={() => onStatusChange(task.id, "needs_approval")}>
+                Submit
+              </button>
+            )}
+            {canonical !== "complete" && (
+              <button className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-medium" onClick={() => onStatusChange(task.id, "complete")}>
+                Done
+              </button>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -741,7 +744,7 @@ export function KanbanColumn({
           </div>
         </div>
         <div className="h-1 bg-muted rounded-full overflow-hidden">
-          <div className={`h-full rounded-full transition-all duration-500 ${isTaskComplete(status) ? "bg-emerald-500" : status === "HOLD" ? "bg-red-400" : "bg-primary/40"}`} style={{ width: `${Math.max(pct, 1)}%` }} />
+          <div className={`h-full rounded-full transition-all duration-500 ${isTaskComplete(status) ? "bg-emerald-500" : status === "hold" ? "bg-red-400" : "bg-primary/40"}`} style={{ width: `${Math.max(pct, 1)}%` }} />
         </div>
       </div>
       <ScrollArea className="flex-1 px-1.5 pb-2" style={{ maxHeight: "calc(100vh - 280px)" }}>
@@ -770,7 +773,7 @@ export function PostUpdateForm({ taskId, currentStatus, hasProject, onDone }: { 
   const [blockedType, setBlockedType] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const needsHoldReason = newStatus === "HOLD" && newStatus !== currentStatus;
+  const needsHoldReason = newStatus === "hold" && newStatus !== currentStatus;
 
   const handleSubmit = async () => {
     if (!updateText.trim() && newStatus === currentStatus) return;
@@ -782,7 +785,7 @@ export function PostUpdateForm({ taskId, currentStatus, hasProject, onDone }: { 
       toast({ title: "Select blocked type (Internal or External)", variant: "destructive" });
       return;
     }
-    if (newStatus === "PROJECTS ASSISTANCE" && newStatus !== currentStatus && !hasProject) {
+    if (newStatus === "projects_assistance" && newStatus !== currentStatus && !hasProject) {
       toast({ title: "Project required", description: "Link a project to this task before setting Projects Assistance status.", variant: "destructive" });
       return;
     }
@@ -837,7 +840,7 @@ export function PostUpdateForm({ taskId, currentStatus, hasProject, onDone }: { 
           <span className="text-[10px] text-muted-foreground">Move to:</span>
           <SearchableSelect
             value={newStatus}
-            onValueChange={(v) => { setNewStatus(v); if (v !== "HOLD") { setHoldReason(""); setBlockedType(""); } }}
+            onValueChange={(v) => { setNewStatus(v); if (v !== "hold") { setHoldReason(""); setBlockedType(""); } }}
             placeholder="Status"
             triggerClassName="h-7 text-[10px] w-[140px]"
             options={TASK_STATUSES.map(s => ({ value: s, label: getTaskStatusLabel(s) }))}
@@ -1204,17 +1207,17 @@ export function TaskDetailDrawer({
       toast({ title: "Status change blocked", description: blockedReason, variant: "destructive" });
       return;
     }
-    if (newStatus === "HOLD") {
+    if (newStatus === "hold") {
       setDrawerHoldDialog(true);
       setDrawerHoldReason("");
       setDrawerBlockedType("");
       return;
     }
-    if (newStatus === "PROJECTS ASSISTANCE" && !task.projectName) {
+    if (newStatus === "projects_assistance" && !task.projectName) {
       toast({ title: "Project required", description: "Link a project to this task before setting Projects Assistance status.", variant: "destructive" });
       return;
     }
-    if (newStatus === "COMPLETE") {
+    if (newStatus === "complete") {
       const hasHighWarnings = task.trackingRag === "Red" || task.priority === "Critical";
       if (hasHighWarnings) {
         if (!window.confirm("This task has high-severity warnings. Proceed with completion anyway?")) {
@@ -1348,7 +1351,7 @@ export function TaskDetailDrawer({
                 />
               </div>
 
-              {(task.status === "HOLD" && (task.holdReason || task.blockedType)) && (
+              {(canonicalizeTaskStatus(task.status) === "hold" && (task.holdReason || task.blockedType)) && (
                 <div className="bg-red-50 border border-red-200 rounded-md p-2.5 space-y-1">
                   <div className="flex items-center gap-1.5">
                     <AlertTriangle className="h-3.5 w-3.5 text-red-600" />
@@ -1588,90 +1591,94 @@ export function TaskDetailDrawer({
                 </Label>
               </div>
 
-              {(task.status === "NEEDS APPROVAL" || task.status === "OPERATIONAL APPROVAL") && (
-                <div className="space-y-2 pt-1">
-                  <div className="p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700 flex items-center gap-2">
-                    <Clock className="h-3.5 w-3.5 shrink-0" />
-                    Awaiting approval
-                  </div>
-                  <Textarea
-                    value={approvalComment}
-                    onChange={(e) => setApprovalComment(e.target.value)}
-                    placeholder="Add approval comment (optional)..."
-                    className="min-h-[60px] text-xs"
-                    data-testid="textarea-approval-comment"
-                  />
-                  <div className="flex gap-2 flex-wrap">
-                    <Button
-                      size="sm"
-                      className="h-7 text-xs bg-green-600 hover:bg-green-700 gap-1"
-                      onClick={() => {
-                        if (approvalComment.trim()) {
-                          addCommentMutation.mutate(`[Approved] ${approvalComment.trim()}`);
-                        }
-                        updateMutation.mutate({ status: "QC APPROVED" });
-                        setApprovalComment("");
-                        toast({ title: "Task approved", description: "Status set to QC Approved" });
-                      }}
-                      data-testid="btn-approve-task"
-                    >
-                      <ThumbsUp className="h-3.5 w-3.5" /> Approve
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 text-xs text-purple-600 border-purple-200 hover:bg-purple-50 gap-1"
-                      onClick={() => {
-                        if (!approvalComment.trim()) {
-                          toast({ title: "Feedback required", description: "Please add a comment explaining what needs to change", variant: "destructive" });
-                          return;
-                        }
-                        addCommentMutation.mutate(`[Feedback] ${approvalComment.trim()}`);
-                        updateMutation.mutate({ status: "PROVIDE FEEDBACK" });
-                        setApprovalComment("");
-                        toast({ title: "Feedback sent", description: "Task returned to assignee for changes" });
-                      }}
-                      data-testid="btn-request-changes"
-                    >
-                      <RotateCcw className="h-3.5 w-3.5" /> Request Changes
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50 gap-1"
-                      onClick={() => {
-                        if (!approvalComment.trim()) {
-                          toast({ title: "Reason required", description: "Please add a comment explaining the rejection", variant: "destructive" });
-                          return;
-                        }
-                        addCommentMutation.mutate(`[Rejected] ${approvalComment.trim()}`);
-                        updateMutation.mutate({ status: "TO DO" });
-                        setApprovalComment("");
-                        toast({ title: "Task rejected", description: "Task sent back to the queue" });
-                      }}
-                      data-testid="btn-reject-task"
-                    >
-                      <ThumbsDown className="h-3.5 w-3.5" /> Reject
-                    </Button>
-                  </div>
-                </div>
-              )}
+              {(() => {
+                const canonicalTaskStatus = canonicalizeTaskStatus(task.status);
+                return (
+                  <>
+                    {(canonicalTaskStatus === "needs_approval" || canonicalTaskStatus === "operational_approval") && (
+                      <div className="space-y-2 pt-1">
+                        <div className="p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700 flex items-center gap-2">
+                          <Clock className="h-3.5 w-3.5 shrink-0" />
+                          Awaiting approval
+                        </div>
+                        <Textarea
+                          value={approvalComment}
+                          onChange={(e) => setApprovalComment(e.target.value)}
+                          placeholder="Add approval comment (optional)..."
+                          className="min-h-[60px] text-xs"
+                          data-testid="textarea-approval-comment"
+                        />
+                        <div className="flex gap-2 flex-wrap">
+                          <Button
+                            size="sm"
+                            className="h-7 text-xs bg-green-600 hover:bg-green-700 gap-1"
+                            onClick={() => {
+                              if (approvalComment.trim()) {
+                                addCommentMutation.mutate(`[Approved] ${approvalComment.trim()}`);
+                              }
+                              updateMutation.mutate({ status: "qc_approved" });
+                              setApprovalComment("");
+                              toast({ title: "Task approved", description: "Status set to QC Approved" });
+                            }}
+                            data-testid="btn-approve-task"
+                          >
+                            <ThumbsUp className="h-3.5 w-3.5" /> Approve
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs text-purple-600 border-purple-200 hover:bg-purple-50 gap-1"
+                            onClick={() => {
+                              if (!approvalComment.trim()) {
+                                toast({ title: "Feedback required", description: "Please add a comment explaining what needs to change", variant: "destructive" });
+                                return;
+                              }
+                              addCommentMutation.mutate(`[Feedback] ${approvalComment.trim()}`);
+                              updateMutation.mutate({ status: "provide_feedback" });
+                              setApprovalComment("");
+                              toast({ title: "Feedback sent", description: "Task returned to assignee for changes" });
+                            }}
+                            data-testid="btn-request-changes"
+                          >
+                            <RotateCcw className="h-3.5 w-3.5" /> Request Changes
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50 gap-1"
+                            onClick={() => {
+                              if (!approvalComment.trim()) {
+                                toast({ title: "Reason required", description: "Please add a comment explaining the rejection", variant: "destructive" });
+                                return;
+                              }
+                              addCommentMutation.mutate(`[Rejected] ${approvalComment.trim()}`);
+                              updateMutation.mutate({ status: "to_do" });
+                              setApprovalComment("");
+                              toast({ title: "Task rejected", description: "Task sent back to the queue" });
+                            }}
+                            data-testid="btn-reject-task"
+                          >
+                            <ThumbsDown className="h-3.5 w-3.5" /> Reject
+                          </Button>
+                        </div>
+                      </div>
+                    )}
 
-              {task.status === "PROVIDE FEEDBACK" && (
-                <div className="p-2 bg-purple-50 border border-purple-200 rounded text-xs text-purple-700 flex items-center gap-2">
-                  <RotateCcw className="h-3.5 w-3.5 shrink-0" />
-                  Changes requested — address feedback and resubmit for approval
-                </div>
-              )}
+                    {canonicalTaskStatus === "provide_feedback" && (
+                      <div className="p-2 bg-purple-50 border border-purple-200 rounded text-xs text-purple-700 flex items-center gap-2">
+                        <RotateCcw className="h-3.5 w-3.5 shrink-0" />
+                        Changes requested — address feedback and resubmit for approval
+                      </div>
+                    )}
 
-              {task.status === "QC APPROVED" && (
-                <div className="p-2 bg-emerald-50 border border-emerald-200 rounded text-xs text-emerald-700 flex items-center gap-2">
-                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                  QC Approved — ready for operational sign-off or completion
-                </div>
-              )}
+                    {canonicalTaskStatus === "qc_approved" && (
+                      <div className="p-2 bg-emerald-50 border border-emerald-200 rounded text-xs text-emerald-700 flex items-center gap-2">
+                        <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                        QC Approved — ready for operational sign-off or completion
+                      </div>
+                    )}
 
-              {task.status !== "NEEDS APPROVAL" && task.status !== "OPERATIONAL APPROVAL" && task.status !== "QC APPROVED" && task.status !== "COMPLETE" && (
+                    {canonicalTaskStatus !== "needs_approval" && canonicalTaskStatus !== "operational_approval" && canonicalTaskStatus !== "qc_approved" && canonicalTaskStatus !== "complete" && (
                 <>
                   <Button
                     size="sm"
@@ -1815,6 +1822,9 @@ export function TaskDetailDrawer({
                   </Dialog>
                 </>
               )}
+                  </>
+                );
+              })()}
             </div>
 
             {localSyncedSaveEnabled && (
@@ -2313,7 +2323,8 @@ export function TaskDetailDrawer({
                         className="shrink-0"
                         data-testid={`subtask-toggle-${st.id}`}
                         onClick={async () => {
-                          const newStatus = st.status === "COMPLETE" ? "TO DO" : "COMPLETE";
+                          const isComplete = canonicalizeTaskStatus(st.status) === "complete";
+                          const newStatus = isComplete ? "to_do" : "complete";
                           try {
                             await engFetch(`/api/eng/tasks/${st.id}`, {
                               method: "PATCH",
@@ -2323,13 +2334,13 @@ export function TaskDetailDrawer({
                           } catch {}
                         }}
                       >
-                        {st.status === "COMPLETE" ? (
+                        {canonicalizeTaskStatus(st.status) === "complete" ? (
                           <CheckCircle2 className="h-4 w-4 text-green-500" />
                         ) : (
                           <Circle className="h-4 w-4 text-muted-foreground hover:text-primary" />
                         )}
                       </button>
-                      <span className={`flex-1 truncate ${st.status === "COMPLETE" ? "line-through text-muted-foreground" : ""}`}>{st.title}</span>
+                      <span className={`flex-1 truncate ${canonicalizeTaskStatus(st.status) === "complete" ? "line-through text-muted-foreground" : ""}`}>{st.title}</span>
                       <Badge className={`text-[9px] ${getTaskStatusBadgeClass(st.status)}`}>{st.status}</Badge>
                     </div>
                   ))
@@ -2372,7 +2383,7 @@ export function TaskDetailDrawer({
         open={drawerHoldDialog}
         onOpenChange={setDrawerHoldDialog}
         onConfirm={(reason, blockedType) => {
-          updateMutation.mutate({ status: "HOLD", holdReason: reason, blockedType });
+          updateMutation.mutate({ status: "hold", holdReason: reason, blockedType });
         }}
         testIdPrefix="drawer-hold"
       />
@@ -2686,8 +2697,8 @@ export function PersonalKpiStrip({ tasks, myTasks }: { tasks: Task[]; myTasks: T
   const myActive = myTasks.filter(t => !isTaskComplete(t.status)).length;
   const myOverdue = myTasks.filter(t => isOverdue(t.dueDate, t.status)).length;
   const myDueThisWeek = myTasks.filter(t => isDueThisWeek(t.dueDate, t.status)).length;
-  const myHold = myTasks.filter(t => t.status === "HOLD").length;
-  const myInProgress = myTasks.filter(t => t.status === "IN PROGRESS").length;
+  const myHold = myTasks.filter(t => canonicalizeTaskStatus(t.status) === "hold").length;
+  const myInProgress = myTasks.filter(t => canonicalizeTaskStatus(t.status) === "in_progress").length;
 
   const stats = [
     { label: "My Active", value: myActive, icon: <ListTodo className="w-3.5 h-3.5" />, color: "text-blue-600", bg: "bg-blue-50" },
@@ -2783,8 +2794,9 @@ export function TimelineView({ tasks, onCardClick }: { tasks: Task[]; onCardClic
 
   const getBarColor = (task: Task) => {
     if (isOverdue(task.dueDate, task.status)) return "bg-red-400";
-    if (task.status === "IN PROGRESS") return "bg-blue-400";
-    if (task.status === "HOLD") return "bg-amber-400";
+    const canonical = canonicalizeTaskStatus(task.status);
+    if (canonical === "in_progress") return "bg-blue-400";
+    if (canonical === "hold") return "bg-amber-400";
     return "bg-emerald-400";
   };
 
@@ -3187,13 +3199,14 @@ export function MyTasksView({
     const rest: Task[] = [];
 
     for (const t of filteredMyTasks) {
+      const canonical = canonicalizeTaskStatus(t.status);
       if (isOverdue(t.dueDate, t.status)) {
         overdue.push(t);
       } else if (isDueThisWeek(t.dueDate, t.status) || (t.dueDate && new Date(t.dueDate).toDateString() === new Date().toDateString())) {
         dueSoon.push(t);
-      } else if (t.status === "HOLD") {
+      } else if (canonical === "hold") {
         hold.push(t);
-      } else if (t.status === "IN PROGRESS") {
+      } else if (canonical === "in_progress") {
         inProgress.push(t);
       } else if (!isTaskComplete(t.status)) {
         rest.push(t);
@@ -3332,7 +3345,7 @@ export function MyTasksView({
           if (isTaskComplete(t.status)) return false;
           if (isOverdue(t.dueDate, t.status)) return true;
           if (t.dueDate && new Date(t.dueDate).toDateString() === new Date().toDateString()) return true;
-          if (t.status === "IN PROGRESS" && (t.priority === "Critical" || t.priority === "Urgent")) return true;
+          if (canonicalizeTaskStatus(t.status) === "in_progress" && (t.priority === "Critical" || t.priority === "Urgent")) return true;
           return false;
         }).slice(0, 7);
         if (todayFocus.length === 0) return null;
@@ -3655,8 +3668,8 @@ export default function EngineeringTasksPage() {
     projectName: "",
     title: "",
     description: "",
-    status: "TO DO",
-    priority: "Medium",
+    status: "to_do",
+    priority: "Med",
     phase: "",
     primaryWorkstream: "",
     dueDate: "",
@@ -3774,7 +3787,7 @@ export default function EngineeringTasksPage() {
         projectName: "",
         title: "",
         description: "",
-        status: "TO DO",
+        status: "to_do",
         priority: "Medium",
         phase: "",
         primaryWorkstream: "",
@@ -3820,11 +3833,11 @@ export default function EngineeringTasksPage() {
       toast({ title: "Status change blocked", description: blockedReason, variant: "destructive" });
       return;
     }
-    if (newStatus === "HOLD") {
+    if (newStatus === "hold") {
       setHoldDialog({ taskId, reason: "", blockedType: "" });
       return;
     }
-    if (newStatus === "PROJECTS ASSISTANCE" && !task.projectName) {
+    if (newStatus === "projects_assistance" && !task.projectName) {
       setSelectedTask(task);
       toast({ title: "Project required", description: "Link a project to this task before setting Projects Assistance status.", variant: "destructive" });
       return;
@@ -3834,14 +3847,14 @@ export default function EngineeringTasksPage() {
 
   const handleDrop = useCallback((taskId: number, newStatus: string) => {
     const task = tasks.find(t => t.id === taskId);
-    if (!task || task.status === newStatus) return;
+    if (!task || canonicalizeTaskStatus(task.status) === newStatus) return;
     requestStatusChange(taskId, newStatus);
   }, [tasks, requestStatusChange]);
 
   const handleStatusChange = useCallback((taskId: number, newStatus: string) => {
     const task = tasks.find(t => t.id === taskId);
-    if (!task || task.status === newStatus) return;
-    if (newStatus === "COMPLETE" && (task.trackingRag === "Red" || task.priority === "Critical")) {
+    if (!task || canonicalizeTaskStatus(task.status) === newStatus) return;
+    if (newStatus === "complete" && (task.trackingRag === "Red" || task.priority === "Critical")) {
       if (!window.confirm("This task has high-severity warnings. Proceed with completion?")) return;
     }
     requestStatusChange(taskId, newStatus);
@@ -4779,7 +4792,7 @@ export default function EngineeringTasksPage() {
         onOpenChange={(open) => { if (!open) setHoldDialog(null); }}
         onConfirm={(reason, blockedType) => {
           if (holdDialog) {
-            updateStatusMutation.mutate({ taskId: holdDialog.taskId, status: "HOLD", holdReason: reason, blockedType });
+            updateStatusMutation.mutate({ taskId: holdDialog.taskId, status: "hold", holdReason: reason, blockedType });
             setHoldDialog(null);
           }
         }}

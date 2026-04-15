@@ -19,7 +19,7 @@ import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
 import { badRequest, notFound, sendError } from "./lib/api-error";
 import { logAuditFromReq } from "./audit-logger";
 import { paramStr } from "./lib/req-params";
-import { blockInProduction } from "./middleware/production-safety";
+import { blockInProduction, requireDestructiveOpsFlag } from "./middleware/production-safety";
 
 const router = Router();
 
@@ -772,7 +772,10 @@ router.post("/api/procurement-analysis/reset-tags", requireAuth, requirePermissi
   }
 });
 
-router.post("/api/admin/wipe-all-data", requireAuth, requirePermission('admin', 'delete'), blockInProduction("Full database wipe is disabled in production."), async (req: Request, res: Response) => {
+// Prompt 0.1 follow-up: wipe-all-data is strictly larger than clear-all-data
+// in blast radius — symmetrise its gating so a single NODE_ENV misconfiguration
+// can't expose it. Requires both production block AND ALLOW_DESTRUCTIVE_OPS=true.
+router.post("/api/admin/wipe-all-data", requireAuth, requirePermission('admin', 'delete'), blockInProduction("Full database wipe is disabled in production."), requireDestructiveOpsFlag("wipe-all-data requires ALLOW_DESTRUCTIVE_OPS=true"), async (req: Request, res: Response) => {
   try {
     const user = getEffectiveUser(req);
     const userRole = user?.role || "";
