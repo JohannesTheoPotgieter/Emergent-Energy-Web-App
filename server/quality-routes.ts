@@ -172,7 +172,11 @@ async function loadProjectQualityGovernanceContext(projectName: string, userId: 
   const rawRows = await db.select().from(projectInfo)
     .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
     .where(eq(projectInfo.projectName, projectName));
-  const projectRows = rawRows.map((r: any) => ({ ...r.project_info, ...r.project_execution_state, id: r.project_info.id, updatedAt: r.project_info.updatedAt })) as any[];
+  // Prompt 0.8: projectExecutionState is a leftJoin — the row is null when a
+  // project has no execution state record yet. Spreading null throws a
+  // TypeError that surfaces as a 500 on the Quality Dashboard. Coalesce to
+  // an empty object so the spread is safe for projects without execution state.
+  const projectRows = rawRows.map((r: any) => ({ ...r.project_info, ...(r.project_execution_state || {}), id: r.project_info.id, updatedAt: r.project_info.updatedAt })) as any[];
   const [project] = projectRows;
   const checklistRows: QcChecklistRow[] = await db.select().from(qcChecklist).where(eq(qcChecklist.projectName, projectName));
   const [checklist] = checklistRows;
@@ -1607,7 +1611,8 @@ export function registerQualityRoutes(app: Express) {
       const allChecklists = await db.select().from(qcChecklist);
       const allProjectRows = await db.select().from(projectInfo)
         .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
-      const allProjects: ProjectInfoRow[] = allProjectRows.map((r: any) => ({ ...r.project_info, ...r.project_execution_state, id: r.project_info.id }));
+      // Prompt 0.8: safe spread for null leftJoin rows (see loadProjectQualityGovernanceContext).
+      const allProjects: ProjectInfoRow[] = allProjectRows.map((r: any) => ({ ...r.project_info, ...(r.project_execution_state || {}), id: r.project_info.id }));
       const projectMap = new Map<number, ProjectInfoRow>(allProjects.map((project: any) => [project.id, project]));
       const projectNameMap = new Map<string, ProjectInfoRow>();
       for (const project of allProjects) {
@@ -1838,7 +1843,8 @@ export function registerQualityRoutes(app: Express) {
             .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
             .where(inArray(projectInfo.id, projectIds))
         : [];
-      const allProjects: ProjectInfoRow[] = allProjectRows.map((r: any) => ({ ...r.project_info, ...r.project_execution_state, id: r.project_info.id }));
+      // Prompt 0.8: safe spread for null leftJoin rows (see loadProjectQualityGovernanceContext).
+      const allProjects: ProjectInfoRow[] = allProjectRows.map((r: any) => ({ ...r.project_info, ...(r.project_execution_state || {}), id: r.project_info.id }));
       const projectMap = new Map<number, ProjectInfoRow>(allProjects.map((project: any) => [project.id, project]));
       const projectNameMap = new Map<string, ProjectInfoRow>();
       for (const project of allProjects) {
