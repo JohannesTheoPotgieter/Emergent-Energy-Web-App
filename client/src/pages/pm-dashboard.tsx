@@ -246,7 +246,11 @@ function OverviewTab({ data, navigate }: { data: PMDashboardData; navigate: (pat
         <Card className="border-amber-200 bg-amber-50/50">
           <CardContent className="p-3">
             <div className="text-[10px] text-amber-700 font-medium uppercase">COS Committed</div>
-            <p className="text-xl font-bold text-amber-800">{summary.cosCommittedTotal || 0}</p>
+            {/* Prompt 0.11: apply formatCurrencyCompact. The server clamps
+                the aggregate to Math.max(0, raw) so this always renders a
+                non-negative Rand value even if credit-note adjustments on
+                normalized_cost_lines push the raw sum below zero. */}
+            <p className="text-xl font-bold text-amber-800">{formatCurrencyCompact(summary.cosCommittedTotal || 0)}</p>
           </CardContent>
         </Card>
         <Card className="border-blue-200 bg-blue-50/50">
