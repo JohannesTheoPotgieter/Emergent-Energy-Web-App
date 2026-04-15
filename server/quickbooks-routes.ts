@@ -32,6 +32,7 @@ import type { Express, Request, Response } from "express";
 import { requireAuth, getEffectiveUser } from "./auth-context";
 import { requireAdmin } from "./middleware/requireAdmin";
 import { requirePermission } from "./permission-middleware";
+import { logAuditFromReq } from "./audit-logger";
 import {
   disconnectQuickBooks,
   exchangeCodeForTokens,
@@ -54,6 +55,7 @@ import {
   invoiceRawToSummary,
   listAllLinks,
   listProjectsWithMappings,
+  QuickBooksLinkConflictError,
   runProjectCostReconciliation,
   runProjectRevenueReconciliation,
   searchCostLines,
@@ -63,6 +65,37 @@ import {
   type QuickBooksBillSummary,
   type QuickBooksInvoiceSummary,
 } from "./services/quickbooks-reconciliation-service";
+
+/**
+ * Map a QB link-write exception to an HTTP response. Returns true if the
+ * error was a conflict and has been handled by writing a 409 response;
+ * false if the caller should fall through to the generic 500.
+ */
+function handleLinkConflict(res: Response, err: unknown): boolean {
+  if (err instanceof QuickBooksLinkConflictError) {
+    res.status(409).json({
+      error: "conflict",
+      code: err.code,
+      reason: err.reason,
+      message: err.message,
+      conflicts: err.conflicts.map((c) => ({
+        id: c.id,
+        appEntityType: c.appEntityType,
+        appEntityId: c.appEntityId,
+        qbEntityType: c.qbEntityType,
+        qbEntityId: c.qbEntityId,
+        qbDocNumber: c.qbDocNumber,
+        qbCounterpartyName: c.qbCounterpartyName,
+        qbAmount: c.qbAmount,
+        qbTxnDate: c.qbTxnDate,
+        projectId: c.projectId,
+        confirmedAt: c.confirmedAt,
+      })),
+    });
+    return true;
+  }
+  return false;
+}
 
 type SessionWithQbState = Request["session"] & { qbState?: string };
 
@@ -107,17 +140,38 @@ export function registerQuickBooksRoutes(app: Express): void {
       const error = typeof req.query.error === "string" ? req.query.error : "";
 
       if (error) {
+        logAuditFromReq(req, {
+          entityType: "quickbooks_integration",
+          entityId: "quickbooks",
+          action: "quickbooks.oauth.failed",
+          source: "SETTINGS",
+          changesJson: { reason: "intuit_error", message: error },
+        });
         res.redirect(`/admin/quickbooks?quickbooks=error&message=${encodeURIComponent(error)}`);
         return;
       }
 
       if (!code || !realmId || !state) {
+        logAuditFromReq(req, {
+          entityType: "quickbooks_integration",
+          entityId: "quickbooks",
+          action: "quickbooks.oauth.failed",
+          source: "SETTINGS",
+          changesJson: { reason: "missing_params" },
+        });
         res.redirect(`/admin/quickbooks?quickbooks=error&message=${encodeURIComponent("Missing code, realmId, or state")}`);
         return;
       }
 
       const expectedState = (req.session as SessionWithQbState)?.qbState;
       if (!expectedState || expectedState !== state) {
+        logAuditFromReq(req, {
+          entityType: "quickbooks_integration",
+          entityId: "quickbooks",
+          action: "quickbooks.oauth.failed",
+          source: "SETTINGS",
+          changesJson: { reason: "csrf_mismatch" },
+        });
         res.redirect(`/admin/quickbooks?quickbooks=error&message=${encodeURIComponent("Invalid CSRF state")}`);
         return;
       }
@@ -127,9 +181,23 @@ export function registerQuickBooksRoutes(app: Express): void {
 
       await exchangeCodeForTokens(code, realmId);
 
+      logAuditFromReq(req, {
+        entityType: "quickbooks_integration",
+        entityId: "quickbooks",
+        action: "quickbooks.oauth.connected",
+        source: "SETTINGS",
+        changesJson: { realmId },
+      });
       res.redirect(`/admin/quickbooks?quickbooks=connected`);
     } catch (err) {
       const message = err instanceof Error ? err.message : "QuickBooks callback failed";
+      logAuditFromReq(req, {
+        entityType: "quickbooks_integration",
+        entityId: "quickbooks",
+        action: "quickbooks.oauth.failed",
+        source: "SETTINGS",
+        changesJson: { reason: "exchange_failed", message },
+      });
       res.redirect(`/admin/quickbooks?quickbooks=error&message=${encodeURIComponent(message)}`);
     }
   });
@@ -146,12 +214,26 @@ export function registerQuickBooksRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/quickbooks/disconnect", requireAuth, requireAdmin, async (_req, res) => {
+  app.post("/api/quickbooks/disconnect", requireAuth, requireAdmin, async (req, res) => {
     try {
       await disconnectQuickBooks();
+      logAuditFromReq(req, {
+        entityType: "quickbooks_integration",
+        entityId: "quickbooks",
+        action: "quickbooks.disconnect",
+        source: "SETTINGS",
+        changesJson: { reason: "manual_disconnect" },
+      });
       res.json({ connected: false });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to disconnect";
+      logAuditFromReq(req, {
+        entityType: "quickbooks_integration",
+        entityId: "quickbooks",
+        action: "quickbooks.disconnect_failed",
+        source: "SETTINGS",
+        changesJson: { error: message },
+      });
       res.status(500).json({ error: "quickbooks_disconnect_failed", message });
     }
   });
@@ -298,16 +380,50 @@ export function registerQuickBooksRoutes(app: Express): void {
       }
 
       const user = getEffectiveUser(req);
-      const link = await confirmCostLineLink({
-        projectId,
-        costLineId,
-        bill: billSummary,
-        matchType: body.matchType ?? "manual",
-        notes: body.notes ?? null,
-        confirmedBy: user?.id ?? null,
-      });
-
-      res.status(201).json({ link });
+      try {
+        const link = await confirmCostLineLink({
+          projectId,
+          costLineId,
+          bill: billSummary,
+          matchType: body.matchType ?? "manual",
+          notes: body.notes ?? null,
+          confirmedBy: user?.id ?? null,
+        });
+        logAuditFromReq(req, {
+          entityType: "quickbooks_invoice_link",
+          entityId: String(link.id),
+          action: "quickbooks.link.confirm",
+          source: "UI",
+          changesJson: {
+            appEntityType: "cost_line",
+            appEntityId: costLineId,
+            qbEntityType: "bill",
+            qbEntityId: billSummary.id,
+            qbDocNumber: billSummary.docNumber,
+            qbAmount: billSummary.totalAmount,
+            projectId,
+            matchType: body.matchType ?? "manual",
+          },
+        });
+        res.status(201).json({ link });
+      } catch (inner) {
+        if (handleLinkConflict(res, inner)) {
+          logAuditFromReq(req, {
+            entityType: "quickbooks_invoice_link",
+            entityId: `cost_line:${costLineId}`,
+            action: "quickbooks.link.conflict",
+            source: "UI",
+            changesJson: {
+              appEntityType: "cost_line",
+              appEntityId: costLineId,
+              qbEntityId: billSummary.id,
+              reason: (inner as QuickBooksLinkConflictError).reason,
+            },
+          });
+          return;
+        }
+        throw inner;
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to create link";
       res.status(500).json({ error: "quickbooks_link_failed", message });
@@ -321,7 +437,26 @@ export function registerQuickBooksRoutes(app: Express): void {
         res.status(400).json({ error: "bad_request", message: "Invalid link id" });
         return;
       }
-      await softDeleteLink(id);
+      const previous = await softDeleteLink(id);
+      if (!previous) {
+        res.status(404).json({ error: "not_found", message: "Link not found" });
+        return;
+      }
+      logAuditFromReq(req, {
+        entityType: "quickbooks_invoice_link",
+        entityId: String(id),
+        action: "quickbooks.link.unlink",
+        source: "UI",
+        changesJson: {
+          appEntityType: previous.appEntityType,
+          appEntityId: previous.appEntityId,
+          qbEntityType: previous.qbEntityType,
+          qbEntityId: previous.qbEntityId,
+          projectId: previous.projectId,
+          qbDocNumber: previous.qbDocNumber,
+          qbAmount: previous.qbAmount,
+        },
+      });
       res.json({ ok: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to delete link";
@@ -410,6 +545,19 @@ export function registerQuickBooksRoutes(app: Express): void {
         notes: body.notes ?? null,
         createdBy: user?.id ?? null,
       });
+      logAuditFromReq(req, {
+        entityType: "quickbooks_customer_mapping",
+        entityId: String(mapping.id),
+        action: "quickbooks.mapping.upsert",
+        source: "UI",
+        changesJson: {
+          projectId,
+          clientId: mapping.clientId,
+          qbCustomerId: mapping.qbCustomerId,
+          qbCustomerName: mapping.qbCustomerName,
+          qbRealmId: mapping.qbRealmId,
+        },
+      });
       res.status(201).json({ mapping });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to save mapping";
@@ -424,7 +572,24 @@ export function registerQuickBooksRoutes(app: Express): void {
         res.status(400).json({ error: "bad_request", message: "Invalid mapping id" });
         return;
       }
-      await softDeleteCustomerMapping(id);
+      const previous = await softDeleteCustomerMapping(id);
+      if (!previous) {
+        res.status(404).json({ error: "not_found", message: "Mapping not found" });
+        return;
+      }
+      logAuditFromReq(req, {
+        entityType: "quickbooks_customer_mapping",
+        entityId: String(id),
+        action: "quickbooks.mapping.unmap",
+        source: "UI",
+        changesJson: {
+          projectId: previous.projectId,
+          clientId: previous.clientId,
+          qbCustomerId: previous.qbCustomerId,
+          qbCustomerName: previous.qbCustomerName,
+          qbRealmId: previous.qbRealmId,
+        },
+      });
       res.json({ ok: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to delete mapping";
@@ -478,16 +643,50 @@ export function registerQuickBooksRoutes(app: Express): void {
       }
 
       const user = getEffectiveUser(req);
-      const link = await confirmRevenueLineLink({
-        projectId,
-        revenueLineId,
-        invoice: invoiceSummary,
-        matchType: body.matchType ?? "manual",
-        notes: body.notes ?? null,
-        confirmedBy: user?.id ?? null,
-      });
-
-      res.status(201).json({ link });
+      try {
+        const link = await confirmRevenueLineLink({
+          projectId,
+          revenueLineId,
+          invoice: invoiceSummary,
+          matchType: body.matchType ?? "manual",
+          notes: body.notes ?? null,
+          confirmedBy: user?.id ?? null,
+        });
+        logAuditFromReq(req, {
+          entityType: "quickbooks_invoice_link",
+          entityId: String(link.id),
+          action: "quickbooks.link.confirm",
+          source: "UI",
+          changesJson: {
+            appEntityType: "revenue_line",
+            appEntityId: revenueLineId,
+            qbEntityType: "invoice",
+            qbEntityId: invoiceSummary.id,
+            qbDocNumber: invoiceSummary.docNumber,
+            qbAmount: invoiceSummary.totalAmount,
+            projectId,
+            matchType: body.matchType ?? "manual",
+          },
+        });
+        res.status(201).json({ link });
+      } catch (inner) {
+        if (handleLinkConflict(res, inner)) {
+          logAuditFromReq(req, {
+            entityType: "quickbooks_invoice_link",
+            entityId: `revenue_line:${revenueLineId}`,
+            action: "quickbooks.link.conflict",
+            source: "UI",
+            changesJson: {
+              appEntityType: "revenue_line",
+              appEntityId: revenueLineId,
+              qbEntityId: invoiceSummary.id,
+              reason: (inner as QuickBooksLinkConflictError).reason,
+            },
+          });
+          return;
+        }
+        throw inner;
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to create link";
       res.status(500).json({ error: "quickbooks_revenue_link_failed", message });

@@ -179,7 +179,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "adminPipedrive", path: "/admin/pipedrive", label: "Pipedrive Integration", iconKey: "Plug", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminPipedrivePage" },
   { id: "adminQuickBooks", path: "/admin/quickbooks", label: "QuickBooks Integration", iconKey: "Plug", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminQuickBooksPage" },
   { id: "financeQuickBooksCustomerMapping", path: "/finance/quickbooks-customer-mapping", label: "QB Customer Mapping", iconKey: "Users", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: true, routeComponentKey: "FinanceQuickBooksCustomerMappingPage" },
-  { id: "financeQuickBooksLinks", path: "/finance/quickbooks-links", label: "QB Invoice Linking", iconKey: "Plug", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: true, routeComponentKey: "FinanceQuickBooksLinksPage" },
+  { id: "financeQuickBooksLinks", path: "/finance/quickbooks-links", label: "QB Bill Linking", iconKey: "Plug", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: true, routeComponentKey: "FinanceQuickBooksLinksPage" },
   // Gates workspace (Prompt 2)
   { id: "gatesPipeline", path: "/gates", label: "Gates Pipeline", iconKey: "Milestone", navGroup: "GATES", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "GatesPipelinePage" },
   { id: "gatesBlocked", path: "/gates/blocked", label: "Blocked Gates", iconKey: "ShieldAlert", navGroup: "GATES", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "GatesBlockedPage" },
