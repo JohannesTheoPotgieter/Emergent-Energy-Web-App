@@ -9,6 +9,7 @@ import { PageSkeleton } from "@/components/ui/page-states";
 import { useToast } from "@/hooks/use-toast";
 import { Link2, Link2Off, Plug, Search, Users } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { ReportTrustNotice } from "@/components/reports/ReportTrustNotice";
 
 interface ProjectMapping {
   projectId: number;
@@ -36,6 +37,8 @@ interface QuickBooksStatus {
   connected: boolean;
   companyName: string | null;
   sandbox: boolean;
+  lastSuccessfulSyncAt?: string | null;
+  isStale?: boolean;
 }
 
 export default function FinanceQuickBooksCustomerMappingPage() {
@@ -155,6 +158,12 @@ export default function FinanceQuickBooksCustomerMappingPage() {
         eyebrow="Finance"
         title="QuickBooks Customer Mapping"
         description="Map each app project to its QuickBooks customer so invoices reconcile cleanly per project"
+      />
+
+      <ReportTrustNotice
+        sourceLabel="QB customers (evidence) ↔ app projects (truth)"
+        lastUpdatedAt={status.lastSuccessfulSyncAt ?? null}
+        note="Mapping a project to a QB customer scopes revenue-side reconciliation to that customer's QuickBooks invoices. The mapping itself is metadata only — it does not move money, recognise revenue, or alter cost lines."
       />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
