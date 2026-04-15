@@ -74,6 +74,15 @@ export type Site = typeof sites.$inferSelect;
 export const opportunities = pgTable("opportunities", {
   id: serial("id").primaryKey(),
   pipedriveDealId: text("pipedrive_deal_id"),
+  /**
+   * Origin of this row. `'pipedrive'` means it was created / is maintained
+   * by the Pipedrive sync engine and most CRM-owned fields get overwritten
+   * on every sync run. `'internal'` means it was created through the
+   * in-app opportunity form and is app-owned end-to-end.
+   *
+   * See migration 20260415_pd_workflow_separation.sql.
+   */
+  source: text("source").notNull().default("internal"),  // 'internal' | 'pipedrive'
   clientId: integer("client_id").references(() => clients.id),
   siteId: integer("site_id").references(() => sites.id, { onDelete: "set null" }),
   dealOwnerUserId: integer("deal_owner_user_id").references(() => users.id, { onDelete: "set null" }),
@@ -86,6 +95,14 @@ export const opportunities = pgTable("opportunities", {
   proposalIssuedDate: date("proposal_issued_date"),
   expectedCloseDate: date("expected_close_date"),
   signedDate: date("signed_date"),
+  /**
+   * @deprecated Use `projectPdPmHandover.status` as the authoritative
+   * handover readiness signal. This column is kept for backward
+   * compatibility with existing reads but is NOT maintained by any of
+   * the handover code paths. New code must read handover state from
+   * the `project_pd_pm_handover` table scoped to the related
+   * `project_info.id`. See docs/runbooks/pd-workflow-review-2026-04-15.md.
+   */
   handoverReadiness: text("handover_readiness").default("not_ready"), // 'not_ready', 'in_preparation', 'awaiting_approval', 'ready', 'submitted', 'accepted', 'returned'
   commercialRisks: text("commercial_risks"),
   notes: text("notes"),
@@ -502,6 +519,14 @@ export const pdTickets = pgTable("pd_tickets", {
   clientId: integer("client_id").references(() => clients.id),
   clientNameSnapshot: text("client_name_snapshot"),
   projectId: integer("project_id").references(() => projectInfo.id),
+  /**
+   * Optional link to the commercial opportunity that triggered this PD
+   * work. Nullable because PD tickets can exist without a matching CRM
+   * deal (internal R&D, retrofits, etc.) and because we do not want to
+   * break the existing `projectId`-based workflow. Added by migration
+   * 20260415_pd_workflow_separation.sql.
+   */
+  opportunityId: integer("opportunity_id").references(() => opportunities.id, { onDelete: "set null" }),
   projectSiteName: text("project_site_name").notNull(),
   dueDate: text("due_date"),
   requestType: text("request_type").notNull(),

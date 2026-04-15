@@ -412,6 +412,9 @@ export function registerPdRoutes(app: Express) {
         clientId: body.clientId || null,
         clientNameSnapshot: body.clientNameSnapshot || null,
         projectId: body.projectId || null,
+        // Optional link to the commercial opportunity that triggered this
+        // PD work. Added by migration 20260415_pd_workflow_separation.sql.
+        opportunityId: body.opportunityId ? Number(body.opportunityId) : null,
         projectSiteName: body.projectSiteName.trim(),
         dueDate: body.dueDate || null,
         requestType: body.requestType,
@@ -468,7 +471,7 @@ export function registerPdRoutes(app: Express) {
 
       const updates: Record<string, any> = { updatedAt: new Date() };
       const allowedFields = [
-        "clientId", "clientNameSnapshot", "projectId", "projectSiteName",
+        "clientId", "clientNameSnapshot", "projectId", "opportunityId", "projectSiteName",
         "dueDate", "requestType", "priority", "status", "numberOfReworks",
         "projectDeveloperUserId", "designerUserId", "fundingType", "sizeKwp",
         "province", "gpsCoordinates", "billsOrTariffData", "meteringDataAvailable",

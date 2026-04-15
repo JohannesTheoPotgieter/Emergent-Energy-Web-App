@@ -225,8 +225,12 @@ async function syncSingleDeal(deal: PipedriveDeal, result: PipedriveSyncResult) 
   // NOTE: `notes` is intentionally NOT in here — it is user-editable app-side
   //   content and must not be clobbered by repeated syncs. See create branch
   //   below for the initial seed value.
+  // `source` is always reset to 'pipedrive' here so that the origin flag
+  //   stays in sync with the presence of pipedrive_deal_id even if an
+  //   admin flipped it manually in the DB.
   const crmOwnedFields = {
     pipedriveDealId: dealIdStr,
+    source: "pipedrive" as const,
     clientId,
     stage,
     estimatedValue: deal.value ? String(deal.value) : null,
