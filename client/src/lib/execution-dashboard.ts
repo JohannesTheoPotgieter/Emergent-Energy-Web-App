@@ -102,15 +102,20 @@ export interface ExecutionFilters {
 }
 
 export function formatCurrencyCompact(value: number): string {
-  const abs = Math.abs(value);
-  if (abs >= 1_000_000_000) return `R${(value / 1_000_000_000).toFixed(1)}B`;
-  if (abs >= 1_000_000) return `R${(value / 1_000_000).toFixed(1)}M`;
-  if (abs >= 1_000) return `R${(value / 1_000).toFixed(0)}K`;
-  return `R${value.toFixed(0)}`;
+  const safe = Number.isFinite(value) ? value : 0;
+  const sign = safe < 0 ? "-" : "";
+  const abs = Math.abs(safe);
+  if (abs >= 1_000_000_000) return `${sign}R${(abs / 1_000_000_000).toFixed(1)}B`;
+  if (abs >= 1_000_000) return `${sign}R${(abs / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `${sign}R${(abs / 1_000).toFixed(0)}K`;
+  return `${sign}R${abs.toFixed(0)}`;
 }
 
 export function formatCurrencyFull(value: number): string {
-  return `R${value.toLocaleString("en-ZA", { maximumFractionDigits: 0 })}`;
+  const safe = Number.isFinite(value) ? value : 0;
+  const sign = safe < 0 ? "-" : "";
+  const abs = Math.abs(safe);
+  return `${sign}R${abs.toLocaleString("en-ZA", { maximumFractionDigits: 0 })}`;
 }
 
 export function formatDate(value: string | null): string {

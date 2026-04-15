@@ -74,4 +74,40 @@ describe("dangerous route guard coverage", () => {
     expect(sessionSource).toContain("const SESSION_MAX_AGE = 8 * 60 * 60 * 1000");
     expect(sessionSource).toContain("const IDLE_TIMEOUT = 2 * 60 * 60 * 1000");
   });
+
+  it("dual-gates clear-sessions with NODE_ENV + ALLOW_DESTRUCTIVE_OPS", () => {
+    const adminControlRoutes = read("server/admin-control-routes.ts");
+    expect(adminControlRoutes).toContain('"/api/admin/control-center/dangerous/clear-sessions"');
+    expect(adminControlRoutes).toContain('blockInProduction("clear-sessions is a destructive operation blocked in production")');
+    expect(adminControlRoutes).toContain('requireDestructiveOpsFlag("clear-sessions requires ALLOW_DESTRUCTIVE_OPS=true")');
+    // Confirmation string still required as a third layer.
+    expect(adminControlRoutes).toContain('requireDangerousActionConfirmation("CLEAR_ALL_SESSIONS")');
+  });
+
+  it("dual-gates wipe-all-data with NODE_ENV + ALLOW_DESTRUCTIVE_OPS", () => {
+    const invoiceRoutes = read("server/invoice-pattern-routes.ts");
+    expect(invoiceRoutes).toContain('"/api/admin/wipe-all-data"');
+    expect(invoiceRoutes).toContain('blockInProduction("Full database wipe is disabled in production.")');
+    expect(invoiceRoutes).toContain('requireDestructiveOpsFlag("wipe-all-data requires ALLOW_DESTRUCTIVE_OPS=true")');
+  });
+
+  it("dual-gates migration drop-archived with NODE_ENV + ALLOW_DESTRUCTIVE_OPS", () => {
+    const migrationRoutes = read("server/migration-finalize-routes.ts");
+    expect(migrationRoutes).toContain('"/api/admin/migration/drop-archived"');
+    expect(migrationRoutes).toContain('blockInProduction(');
+    expect(migrationRoutes).toContain('requireDestructiveOpsFlag("drop-archived requires ALLOW_DESTRUCTIVE_OPS=true")');
+  });
+
+  it("exposes requireDestructiveOpsFlag helper that strictly checks 'true'", () => {
+    const safety = read("server/middleware/production-safety.ts");
+    expect(safety).toContain("export function requireDestructiveOpsFlag");
+    // Must strictly compare against the string "true" — not boolean coerced.
+    expect(safety).toContain('process.env.ALLOW_DESTRUCTIVE_OPS !== "true"');
+  });
+
+  it("catalogues clear-sessions and migration drop-archived in DANGEROUS_ROUTES", () => {
+    const safety = read("server/middleware/production-safety.ts");
+    expect(safety).toContain("/api/admin/control-center/dangerous/clear-sessions");
+    expect(safety).toContain("/api/admin/migration/drop-archived");
+  });
 });

@@ -1281,7 +1281,13 @@ export function registerQualityRoutes(app: Express) {
       const [projectRow] = await db.select().from(projectInfo)
         .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
         .where(eq(projectInfo.projectName, projectName));
-      const project = projectRow ? { ...projectRow.project_info, ...projectRow.project_execution_state, id: projectRow.project_info.id } : undefined;
+      // BUG-01 follow-up: the leftJoin returns a row for every project_info match,
+      // but project_execution_state may be null for projects without a state row.
+      // Spreading null throws TypeError → generic 500 on every project without
+      // execution state. Coalesce to {} before spreading.
+      const project = projectRow
+        ? { ...projectRow.project_info, ...(projectRow.project_execution_state || {}), id: projectRow.project_info.id }
+        : undefined;
       const [checklist] = await db.select().from(qcChecklist).where(eq(qcChecklist.projectName, projectName));
       if (!checklist) {
         return res.json({

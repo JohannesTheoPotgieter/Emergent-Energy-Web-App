@@ -2512,7 +2512,7 @@ router.get("/api/revenue-tracker/project/:projectName", requireAuth, requirePerm
   }
 });
 
-router.get("/api/gp-tracker", requireAuth, async (req, res) => {
+router.get("/api/gp-tracker", requireAuth, requirePermission("gp_tracker", "view"), async (req, res) => {
   try {
     const [allExpenses, allInflowsRaw, revManualEntries, cosManualEntries, cosOverrideMap] = await Promise.all([
       getHighRiskAllCostReadRows(),
@@ -2677,7 +2677,7 @@ router.get("/api/gp-tracker", requireAuth, async (req, res) => {
   }
 });
 
-router.get("/api/gp-tracker/project/:projectName", requireAuth, async (req, res) => {
+router.get("/api/gp-tracker/project/:projectName", requireAuth, requirePermission("gp_tracker", "view"), async (req, res) => {
   try {
     const projectName = decodeURIComponent(String(req.params.projectName || ""));
     const projectIdParam = req.query.projectId ? parseInt(String(req.query.projectId), 10) : null;
@@ -2820,7 +2820,7 @@ router.get("/api/gp-tracker/project/:projectName", requireAuth, async (req, res)
 });
 
 // GP Tracker — month detail drill-down (line-item level)
-router.get("/api/gp-tracker/month-detail", requireAuth, async (req, res) => {
+router.get("/api/gp-tracker/month-detail", requireAuth, requirePermission("gp_tracker", "view"), async (req, res) => {
   try {
     const { monthKey, project, state: stateFilter } = req.query as { monthKey?: string; project?: string; state?: string };
     if (!monthKey) return res.status(400).json({ error: "monthKey required" });

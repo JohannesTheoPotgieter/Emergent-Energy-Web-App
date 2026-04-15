@@ -106,6 +106,12 @@ interface PMProject {
   tasks: ProjectTasks;
 }
 
+interface NegativeCosCommittedProject {
+  id: number;
+  projectName: string;
+  cosCommitted: number;
+}
+
 interface PMDashboardData {
   projects: PMProject[];
   summary: {
@@ -120,6 +126,9 @@ interface PMDashboardData {
     avgSpendPercent: number;
     cosRealisedTotal: number;
     cosCommittedTotal: number;
+  };
+  dataQualityWarnings?: {
+    negativeCosCommittedProjects: NegativeCosCommittedProject[];
   };
 }
 
@@ -223,9 +232,31 @@ function KpiCard({ icon: Icon, label, value, sub, color }: {
 
 function OverviewTab({ data, navigate }: { data: PMDashboardData; navigate: (path: string) => void }) {
   const { projects, summary } = data;
+  const negativeCosProjects = data.dataQualityWarnings?.negativeCosCommittedProjects ?? [];
 
   return (
     <div className="space-y-6">
+      {negativeCosProjects.length > 0 && (
+        <Card className="border-amber-300 bg-amber-50" data-testid="pm-data-quality-warning">
+          <CardContent className="p-3 text-xs flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <div className="font-semibold text-amber-900">
+                Credit-note review needed — negative committed cost on {negativeCosProjects.length}{" "}
+                project{negativeCosProjects.length === 1 ? "" : "s"}
+              </div>
+              <div className="text-amber-800 mt-0.5">
+                {negativeCosProjects
+                  .map((p) => `${p.projectName} (${formatCurrencyFull(p.cosCommitted)})`)
+                  .join(", ")}
+                . These are credit notes / reversals on normalized cost lines with{" "}
+                <code>paid_date IS NULL</code> exceeding positive commitments. Ask finance to review and apply.
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3" data-testid="pm-kpi-strip">
         <KpiCard icon={Briefcase} label="Projects" value={summary.totalProjects} />
         <KpiCard icon={DollarSign} label="Contract Value" value={formatCurrencyCompact(summary.totalContractValue)} />
@@ -243,14 +274,22 @@ function OverviewTab({ data, navigate }: { data: PMDashboardData; navigate: (pat
             <p className="text-xl font-bold text-green-800">{formatCurrencyCompact(summary.cosRealisedTotal || 0)}</p>
           </CardContent>
         </Card>
-        <Card className="border-amber-200 bg-amber-50/50">
+        <Card className={`${summary.cosCommittedTotal < 0 ? "border-red-300 bg-red-50/60" : "border-amber-200 bg-amber-50/50"}`}>
           <CardContent className="p-3">
-            <div className="text-[10px] text-amber-700 font-medium uppercase">COS Committed</div>
-            {/* Prompt 0.11: apply formatCurrencyCompact. The server clamps
-                the aggregate to Math.max(0, raw) so this always renders a
-                non-negative Rand value even if credit-note adjustments on
-                normalized_cost_lines push the raw sum below zero. */}
-            <p className="text-xl font-bold text-amber-800">{formatCurrencyCompact(summary.cosCommittedTotal || 0)}</p>
+            <div className={`text-[10px] font-medium uppercase ${summary.cosCommittedTotal < 0 ? "text-red-700" : "text-amber-700"}`}>
+              COS Committed
+            </div>
+            {/* Prompt 0.11: render the honest (possibly negative) aggregate.
+                A negative value means credit notes / reversals on
+                normalized_cost_lines with paid_date IS NULL exceed the
+                unpaid positive commitments — the surrounding banner and
+                the negativeCosCommittedProjects list tell finance which
+                projects to investigate. formatCurrencyCompact handles the
+                sign prefix. */}
+            <p className={`text-xl font-bold ${summary.cosCommittedTotal < 0 ? "text-red-700" : "text-amber-800"}`}
+               title={summary.cosCommittedTotal < 0 ? "Credit notes / reversals exceed positive commitments — see banner above" : undefined}>
+              {formatCurrencyCompact(summary.cosCommittedTotal || 0)}
+            </p>
           </CardContent>
         </Card>
         <Card className="border-blue-200 bg-blue-50/50">
@@ -343,12 +382,22 @@ function OverviewTab({ data, navigate }: { data: PMDashboardData; navigate: (pat
                     ZAR with comma grouping) and move the semantic label
                     ("Real", "Com", "Plan") in front so the R in "R1,543,651"
                     is unambiguously the currency symbol. */}
-                <div className="flex gap-1.5" data-testid={`cos-${project.id}`}>
-                  {project.financials.cosRealised > 0 && (
-                    <Badge className="text-[9px] bg-green-100 text-green-800 hover:bg-green-100" title="Cost of Sales — Realised">Real {formatCurrencyFull(project.financials.cosRealised)}</Badge>
+                <div className="flex gap-1.5 flex-wrap" data-testid={`cos-${project.id}`}>
+                  {project.financials.cosRealised !== 0 && (
+                    <Badge
+                      className={`text-[9px] ${project.financials.cosRealised < 0 ? "bg-red-100 text-red-800 hover:bg-red-100" : "bg-green-100 text-green-800 hover:bg-green-100"}`}
+                      title="Cost of Sales — Realised"
+                    >
+                      Real {formatCurrencyFull(project.financials.cosRealised)}
+                    </Badge>
                   )}
-                  {(project.financials.cosCommitted || 0) > 0 && (
-                    <Badge className="text-[9px] bg-amber-100 text-amber-800 hover:bg-amber-100" title="Cost of Sales — Committed">Com {formatCurrencyFull(project.financials.cosCommitted || 0)}</Badge>
+                  {(project.financials.cosCommitted || 0) !== 0 && (
+                    <Badge
+                      className={`text-[9px] ${project.financials.cosCommitted < 0 ? "bg-red-100 text-red-800 hover:bg-red-100" : "bg-amber-100 text-amber-800 hover:bg-amber-100"}`}
+                      title={project.financials.cosCommitted < 0 ? "Cost of Sales — Committed (credit notes exceed positive commitments)" : "Cost of Sales — Committed"}
+                    >
+                      Com {formatCurrencyFull(project.financials.cosCommitted || 0)}
+                    </Badge>
                   )}
                   {project.financials.cosPlanned > 0 && (
                     <Badge className="text-[9px] bg-muted text-muted-foreground hover:bg-muted" title="Cost of Sales — Planned">Plan {formatCurrencyFull(project.financials.cosPlanned)}</Badge>

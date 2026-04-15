@@ -37,9 +37,36 @@ export async function runStartupSeeds(options: {
   await seedRolePermissions().catch((err) => log(`[Seed] Role permissions error: ${err}`, "Startup"));
 
   try {
-    const { setFeatureFlag, getFeatureFlag, ensureRolloutFeatureFlags } = await import("../lib/feature-flags");
+    const {
+      setFeatureFlag,
+      getFeatureFlag,
+      ensureRolloutFeatureFlags,
+      applyOneShotFeatureFlagEnablements,
+    } = await import("../lib/feature-flags");
     if (allowStartupMutations) {
       await ensureRolloutFeatureFlags("system");
+
+      // Prompt 0.4 follow-up: apply the 20260415 ready-flag enablement to
+      // existing environments whose app_settings rows were seeded `false`
+      // before the enablement migration shipped. One-shot and idempotent —
+      // a deliberate post-enablement opt-out is preserved (not re-enabled).
+      const result = await applyOneShotFeatureFlagEnablements(
+        "20260415-ready-flags",
+        [
+          "onboarding_tour",
+          "action_launchpad",
+          "cleaned_admin_visibility",
+          "micro_walkthrough",
+          "role_aware_ux",
+        ],
+        "system:20260415_enable_ready_feature_flags",
+      );
+      if (result.applied && result.enabled.length > 0) {
+        log(
+          `[FeatureFlags] Enabled ready flags on this environment: ${result.enabled.join(", ")}`,
+          "Startup",
+        );
+      }
     }
     const existing = await getFeatureFlag("unified_work_v1");
     if (!existing) {
