@@ -156,6 +156,27 @@ export function registerPmRoutes(app: Express) {
         };
       });
 
+      // Prompt 0.11 / BUG-04: raw sum can go negative when credit notes /
+      // reversals on normalized_cost_lines exceed the unpaid positive
+      // commitments. The underlying SUM(amount_ex_vat WHERE paid_date IS NULL)
+      // in canonical-dashboard-kpi-service is correct — the input data just
+      // includes legitimate signed adjustments. A negative "committed cost"
+      // total is semantically meaningless to surface on a KPI tile, so we
+      // clamp the aggregate to zero and log a warning that carries the raw
+      // figure and affected project ids so finance can investigate the
+      // source rows without modifying them here.
+      const cosCommittedRawTotal = enrichedProjects.reduce((s, p) => s + p.financials.cosCommitted, 0);
+      if (cosCommittedRawTotal < 0) {
+        const negativeProjects = enrichedProjects
+          .filter((p) => p.financials.cosCommitted < 0)
+          .map((p) => ({ id: p.id, projectName: p.projectName, cosCommitted: p.financials.cosCommitted }));
+        console.warn(
+          "[PM Dashboard] cosCommittedTotal aggregate is negative — clamping to 0 for display. " +
+            "Investigate signed adjustments / credit notes on these projects:",
+          { raw: cosCommittedRawTotal, negativeProjects },
+        );
+      }
+
       const summary = {
         totalProjects: enrichedProjects.length,
         totalContractValue: enrichedProjects.reduce((s, p) => s + p.contractValue, 0),
@@ -175,7 +196,7 @@ export function registerPmRoutes(app: Express) {
           return Math.round(withBudget.reduce((s, p) => s + p.financials.spendPercent, 0) / withBudget.length);
         })(),
         cosRealisedTotal: enrichedProjects.reduce((s, p) => s + p.financials.cosRealised, 0),
-        cosCommittedTotal: enrichedProjects.reduce((s, p) => s + p.financials.cosCommitted, 0),
+        cosCommittedTotal: Math.max(0, cosCommittedRawTotal),
       };
 
       res.json({ projects: enrichedProjects, summary });

@@ -1,7 +1,7 @@
 import React from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, ArrowLeft, RefreshCw, Home } from "lucide-react";
+import { AlertCircle, ArrowLeft, RefreshCw, Home, Download } from "lucide-react";
 import { getErrorMessage } from "@/lib/errors";
 
 interface Props {
@@ -12,6 +12,21 @@ interface State {
   hasError: boolean;
   error?: Error;
   errorPath?: string;
+}
+
+// Prompt 0.12: detect dynamic-import failures so the boundary can render
+// a dedicated "new version available" screen instead of the generic
+// "Something Went Wrong" fallback. We surface the reload prompt but do
+// NOT reload silently — the user must click the button so real bugs
+// stay visible and we never end up in a refresh loop.
+function isChunkLoadError(error: Error | undefined | null): boolean {
+  if (!error) return false;
+  return (
+    error.name === "ChunkLoadError" ||
+    (error.message?.includes("Failed to fetch dynamically imported module") ?? false) ||
+    (error.message?.includes("Loading chunk") ?? false) ||
+    (error.message?.includes("Loading CSS chunk") ?? false)
+  );
 }
 
 export class ErrorBoundary extends React.Component<Props, State> {
@@ -38,17 +53,20 @@ export class ErrorBoundary extends React.Component<Props, State> {
   render() {
     if (this.state.hasError) {
       const errorMessage = getErrorMessage(this.state.error, "An unexpected error occurred");
+      const chunkError = isChunkLoadError(this.state.error);
 
       return (
         <div className="min-h-screen flex items-center justify-center bg-background p-4" data-testid="error-boundary-page">
           <Card className="w-full max-w-md">
             <CardHeader>
-              <div className="flex items-center gap-2 text-destructive">
-                <AlertCircle className="w-6 h-6" />
-                <CardTitle>Something Went Wrong</CardTitle>
+              <div className={`flex items-center gap-2 ${chunkError ? "text-blue-600" : "text-destructive"}`}>
+                {chunkError ? <Download className="w-6 h-6" /> : <AlertCircle className="w-6 h-6" />}
+                <CardTitle>{chunkError ? "New Version Available" : "Something Went Wrong"}</CardTitle>
               </div>
               <CardDescription>
-                This page ran into a problem. You can try going back or refreshing.
+                {chunkError
+                  ? "This page couldn't load part of the app, usually because a new build has been deployed while your tab was open. Click Reload to pick up the latest version."
+                  : "This page ran into a problem. You can try going back or refreshing."}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
