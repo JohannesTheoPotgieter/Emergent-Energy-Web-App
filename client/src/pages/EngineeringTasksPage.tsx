@@ -110,6 +110,7 @@ import { getTaskWorkflowBlockReason } from "@/lib/task-workflow-guard";
 import { engFetch } from "@/lib/eng-fetch";
 import { PHASE_COLORS } from "@/lib/phase-colors";
 import { invalidateAllTaskCaches } from "@/lib/task-cache";
+import { canonicalizeTaskStatus } from "@/lib/task-status-compat";
 
 export const PRIORITIES = ["Critical", "Urgent", "High", "Medium", "Low"];
 export const DUE_DATE_FILTER_OPTIONS: { value: EngineeringDueDateFilter; label: string }[] = [
@@ -4037,7 +4038,7 @@ export default function EngineeringTasksPage() {
   const filterStatuses = getVisibleStatusesForView("list");
 
   const tasksByStatus = TASK_STATUSES.reduce((acc, status) => {
-    acc[status] = filtered.filter(t => t.status === status);
+    acc[status] = filtered.filter((t) => canonicalizeTaskStatus(t.status) === status);
     return acc;
   }, {} as Record<string, Task[]>);
 
