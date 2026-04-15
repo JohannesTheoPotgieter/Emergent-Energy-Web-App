@@ -16,41 +16,58 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { PAGE_REGISTRY, LEGACY_REDIRECTS, ROLE_LANDING_PAGE } from "@/config/page-registry";
 import { useScrollRestoration } from "@/hooks/use-scroll-restoration";
 import { LensProvider } from "@/hooks/use-lens-context";
-import { lazy, Suspense, useEffect, ComponentType } from "react";
+import { lazy, Suspense, useEffect, useState, ComponentType } from "react";
+import { useVersionCheck } from "@/hooks/use-version-check";
+import { Download, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 /**
- * Retry wrapper for dynamic imports — handles ChunkLoadError on deployment
- * race conditions or CDN failures. Retries up to 3 times with cache-busting
- * query parameter before giving up.
+ * Retry wrapper for dynamic imports — handles ChunkLoadError that happens
+ * when a user's session straddles a new deployment and the old chunk
+ * manifest references filenames that no longer exist on the server.
+ *
+ * Prompt 0.12: the previous version of this helper silently called
+ * window.location.reload() once per path after retries exhausted. That
+ * hides real bugs (a chunk that genuinely fails because of an
+ * application error becomes a mysterious refresh loop). The long-term
+ * fix pushes the retry-then-surface contract instead:
+ *
+ *   1. Retry the dynamic import up to `retries` times with a 1 s gap.
+ *      This absorbs transient CDN misses and deployment races without
+ *      user interaction.
+ *   2. On final failure, re-throw the error so it propagates to the
+ *      surrounding React ErrorBoundary. The ErrorBoundary detects
+ *      ChunkLoadError and renders a dedicated "New version available"
+ *      message with an explicit Reload button — bugs stay visible and
+ *      reloads are user-initiated.
+ *
+ * The proactive version-check hook (useVersionCheck) surfaces a banner
+ * *before* users hit a chunk error so the error path is the rare
+ * fallback, not the main mitigation.
  */
-function lazyWithRetry(importFn: () => Promise<{ default: ComponentType<any> }>, retries = 3): ReturnType<typeof lazy> {
-  return lazy(() =>
-    importFn().catch((error: Error) => {
-      // Detect ChunkLoadError (stale deployment, CDN cache miss)
-      const isChunkError = error.name === "ChunkLoadError" ||
-        error.message?.includes("Failed to fetch dynamically imported module") ||
-        error.message?.includes("Loading chunk") ||
-        error.message?.includes("Loading CSS chunk");
-
-      if (isChunkError && retries > 0) {
-        return new Promise<{ default: ComponentType<any> }>((resolve) =>
-          setTimeout(resolve, 1000)
-        ).then(() => lazyWithRetry(importFn, retries - 1) as unknown as Promise<{ default: ComponentType<any> }>);
-      }
-
-      // After retries exhausted for chunk errors, force a full page reload
-      // so the browser fetches fresh HTML with updated chunk hashes.
-      if (isChunkError) {
-        const reloadKey = `chunk-reload-${window.location.pathname}`;
-        if (!sessionStorage.getItem(reloadKey)) {
-          sessionStorage.setItem(reloadKey, "1");
-          window.location.reload();
-        }
-      }
-
-      throw error;
-    })
+function isChunkLoadError(error: Error | undefined | null): boolean {
+  if (!error) return false;
+  return (
+    error.name === "ChunkLoadError" ||
+    (error.message?.includes("Failed to fetch dynamically imported module") ?? false) ||
+    (error.message?.includes("Loading chunk") ?? false) ||
+    (error.message?.includes("Loading CSS chunk") ?? false)
   );
+}
+
+function retryingImport<T>(importFn: () => Promise<T>, retries: number): Promise<T> {
+  return importFn().catch((error: Error) => {
+    if (isChunkLoadError(error) && retries > 0) {
+      return new Promise<T>((resolve) => setTimeout(resolve, 1000)).then(() =>
+        retryingImport(importFn, retries - 1),
+      );
+    }
+    throw error;
+  });
+}
+
+function lazyWithRetry(importFn: () => Promise<{ default: ComponentType<any> }>, retries = 3): ReturnType<typeof lazy> {
+  return lazy(() => retryingImport(importFn, retries));
 }
 
 // Eagerly loaded pages (critical path — login, home, not-found)
@@ -60,123 +77,123 @@ import NotFound from "@/pages/not-found";
 import MsCallbackPage from "@/pages/ms-callback";
 
 // Lazy-loaded pages (code-split into separate chunks)
-const CompanyOverviewPage = lazy(() => import("@/pages/company-overview"));
-const Dashboard = lazy(() => import("@/pages/dashboard"));
-const ProjectLifecyclePage = lazy(() => import("@/pages/project-lifecycle"));
-const ProjectsSummary = lazy(() => import("@/pages/projects"));
-const CashflowPage = lazy(() => import("@/pages/cashflow"));
-const RevenueTrackerPage = lazy(() => import("@/pages/revenue-tracker"));
-const CostTracker = lazy(() => import("@/pages/cos"));
-const GpTrackerPage = lazy(() => import("@/pages/gp-tracker"));
-const ProjectDetailPage = lazy(() => import("@/pages/project-detail"));
-const ProjectStageGatePage = lazy(() => import("@/pages/project-stage-gate"));
-const MyWorkAdminSettingsPage = lazy(() => import("@/pages/my-work-admin-settings"));
-const MyWorkPrioritiesPage = lazy(() => import("@/pages/my-work-priorities"));
-const MyWorkMeetingsPage = lazy(() => import("@/pages/my-work-meetings"));
-const MyWorkSettingsPage = lazy(() => import("@/pages/my-work-settings"));
-const QmDashboardPage = lazy(() => import("@/pages/qm-dashboard"));
-const EngineeringDashboardPage = lazy(() => import("@/pages/engineering-dashboard"));
-const EngineeringTasksPage = lazy(() => import("@/pages/engineering-tasks"));
-const EngineeringAuditPage = lazy(() => import("@/pages/engineering-audit"));
-const RoleSettingsPage = lazy(() => import("@/pages/role-settings"));
-const LifecycleBoardPage = lazy(() => import("@/pages/lifecycle-board"));
-const ExecutionBoardPage = lazy(() => import("@/pages/execution-board"));
-const SmartImportPage = lazy(() => import("@/pages/smart-import"));
-const SharePointIntakePage = lazy(() => import("@/pages/SharePointIntakePage"));
-const InvoicePatternsPage = lazy(() => import("@/pages/invoice-patterns"));
-const SubcontractorDashboardPage = lazy(() => import("@/pages/subcontractor-dashboard"));
-const CounterpartiesPage = lazy(() => import("@/pages/counterparties"));
-const SystemActivityLogPage = lazy(() => import("@/pages/system-activity-log"));
-const WeeklyReviewsPage = lazy(() => import("@/pages/weekly-reviews"));
-const AdminRolesPage = lazy(() => import("@/pages/admin-roles"));
-const AdminSettingsPage = lazy(() => import("@/pages/admin-settings"));
-const LeaderboardPage = lazy(() => import("@/pages/leaderboard"));
-const FeedbackPage = lazy(() => import("@/pages/feedback"));
-const EeInfoPage = lazy(() => import("@/pages/ee-info"));
-const TrainingPage = lazy(() => import("@/pages/training"));
-const PMDashboard = lazy(() => import("@/pages/pm-dashboard"));
-const PortfoliosPage = lazy(() => import("@/pages/portfolios"));
-const PortfolioDetailPage = lazy(() => import("@/pages/portfolio-detail"));
-const PdDashboardPage = lazy(() => import("@/pages/pd-dashboard"));
-const PdTicketsPage = lazy(() => import("@/pages/pd-tickets"));
-const PdTicketCreatePage = lazy(() => import("@/pages/pd-ticket-create"));
-const PdTicketDetailPage = lazy(() => import("@/pages/pd-ticket-detail"));
-const PdReportsPage = lazy(() => import("@/pages/pd-reports"));
-const TeamsChatsPage = lazy(() => import("@/pages/teams-chats"));
-const CollabEmailPage = lazy(() => import("@/pages/collab-email"));
-const FinancialLinkingPage = lazy(() => import("@/pages/financial-linking"));
-const PMOnTheGoHome = lazy(() => import("@/pages/pm-on-the-go-home"));
-const PMOnTheGoProject = lazy(() => import("@/pages/pm-on-the-go-project"));
-const MyWorkHomePage = lazy(() => import("@/pages/my-work-home"));
-const MyWorkTasksPage = lazy(() => import("@/pages/my-work-tasks"));
-const MyWorkCalendarPage = lazy(() => import("@/pages/my-work-calendar"));
-const InboxPage = lazy(() => import("@/pages/inbox"));
-const ApprovalsPage = lazy(() => import("@/pages/admin-approvals"));
-const DatabaseMigrationPage = lazy(() => import("@/pages/database-migration"));
-const ClientsPage = lazy(() => import("@/pages/clients"));
-const ClientDetailPage = lazy(() => import("@/pages/client-detail"));
-const ClientProjectDepartmentsPage = lazy(() => import("@/pages/client-project-departments"));
-const ImportControlTowerPage = lazy(() => import("@/pages/import-control-tower"));
-const ProgrammeReportsPage = lazy(() => import("@/pages/programme-reports"));
-const KpiTraceabilityPage = lazy(() => import("@/pages/kpi-traceability"));
-const AdminRecoveryPage = lazy(() => import("@/pages/admin-recovery"));
-const StageAdminPage = lazy(() => import("@/components/stage-lifecycle/StageAdminPanel"));
-const AdminControlCenterPage = lazy(() => import("@/pages/admin-control-center"));
-const ActionLaunchpadPage = lazy(() => import("@/pages/action-launchpad"));
-const PdPmHandoverPage = lazy(() => import("@/pages/pd-pm-handover-v2"));
-const PmHandoverReviewPage = lazy(() => import("@/pages/pm-handover-review"));
-const FinancialReviewQueuePage = lazy(() => import("@/pages/financial-review-queue"));
-const HandoverControlPage = lazy(() => import("@/pages/handover-control"));
-const FyeRevenueTrackingPage = lazy(() => import("@/pages/fye-revenue-tracking"));
-const ExceptionsPage = lazy(() => import("@/pages/exceptions"));
-const PhaseTemplatesPage = lazy(() => import("@/pages/phase-templates"));
-const ProjectCreatePage = lazy(() => import("@/pages/project-create"));
-const DepartmentScoresPage = lazy(() => import("@/pages/department-scores"));
-const EngTemplateAdminPage = lazy(() => import("@/pages/eng-template-admin"));
-const PrioritiesPage = lazy(() => import("@/pages/priorities"));
-const PriorityDetailPage = lazy(() => import("@/pages/priority-detail"));
-const PmMonthlyReportPage = lazy(() => import("@/pages/pm-monthly-report"));
-const PmMonthlyReportHistoryPage = lazy(() => import("@/pages/pm-monthly-report-history"));
-const PmMonthlyReportComparePage = lazy(() => import("@/pages/pm-monthly-report-compare"));
-const PmMonthlyReportProjectPage = lazy(() => import("@/pages/pm-monthly-report-project"));
-const EngMonthlyReportPage = lazy(() => import("@/pages/engineering-monthly-report"));
-const EngMonthlyReportHistoryPage = lazy(() => import("@/pages/engineering-monthly-report-history"));
-const EngMonthlyReportComparePage = lazy(() => import("@/pages/engineering-monthly-report-compare"));
-const EngMonthlyReportProjectPage = lazy(() => import("@/pages/engineering-monthly-report-project"));
-const ReportCenterPage = lazy(() => import("@/pages/reports/report-center"));
-const PerformancePage = lazy(() => import("@/pages/reports/performance"));
-const EngineeringStandupPage = lazy(() => import("@/pages/engineering/standup"));
-const POApprovalBoardPage = lazy(() => import("@/pages/po-approval-board"));
-const PaymentRequestBoardPage = lazy(() => import("@/pages/payment-request-board"));
-const PaymentBatchManagerPage = lazy(() => import("@/pages/payment-batch-manager"));
-const HseDashboardPage = lazy(() => import("@/pages/hse-dashboard"));
-const HandoverDashboardPage = lazy(() => import("@/pages/handover-dashboard"));
-const LessonsLearntPage = lazy(() => import("@/pages/lessons-learnt"));
-const SitesPage = lazy(() => import("@/pages/sites"));
-const OpportunitiesPage = lazy(() => import("@/pages/opportunities"));
-const AdminPipedrivePage = lazy(() => import("@/pages/admin-pipedrive"));
-const AdminQuickBooksPage = lazy(() => import("@/pages/admin-quickbooks"));
-const FinanceQuickBooksLinksPage = lazy(() => import("@/pages/finance-quickbooks-links"));
-const FinanceQuickBooksCustomerMappingPage = lazy(
+const CompanyOverviewPage = lazyWithRetry(() => import("@/pages/company-overview"));
+const Dashboard = lazyWithRetry(() => import("@/pages/dashboard"));
+const ProjectLifecyclePage = lazyWithRetry(() => import("@/pages/project-lifecycle"));
+const ProjectsSummary = lazyWithRetry(() => import("@/pages/projects"));
+const CashflowPage = lazyWithRetry(() => import("@/pages/cashflow"));
+const RevenueTrackerPage = lazyWithRetry(() => import("@/pages/revenue-tracker"));
+const CostTracker = lazyWithRetry(() => import("@/pages/cos"));
+const GpTrackerPage = lazyWithRetry(() => import("@/pages/gp-tracker"));
+const ProjectDetailPage = lazyWithRetry(() => import("@/pages/project-detail"));
+const ProjectStageGatePage = lazyWithRetry(() => import("@/pages/project-stage-gate"));
+const MyWorkAdminSettingsPage = lazyWithRetry(() => import("@/pages/my-work-admin-settings"));
+const MyWorkPrioritiesPage = lazyWithRetry(() => import("@/pages/my-work-priorities"));
+const MyWorkMeetingsPage = lazyWithRetry(() => import("@/pages/my-work-meetings"));
+const MyWorkSettingsPage = lazyWithRetry(() => import("@/pages/my-work-settings"));
+const QmDashboardPage = lazyWithRetry(() => import("@/pages/qm-dashboard"));
+const EngineeringDashboardPage = lazyWithRetry(() => import("@/pages/engineering-dashboard"));
+const EngineeringTasksPage = lazyWithRetry(() => import("@/pages/engineering-tasks"));
+const EngineeringAuditPage = lazyWithRetry(() => import("@/pages/engineering-audit"));
+const RoleSettingsPage = lazyWithRetry(() => import("@/pages/role-settings"));
+const LifecycleBoardPage = lazyWithRetry(() => import("@/pages/lifecycle-board"));
+const ExecutionBoardPage = lazyWithRetry(() => import("@/pages/execution-board"));
+const SmartImportPage = lazyWithRetry(() => import("@/pages/smart-import"));
+const SharePointIntakePage = lazyWithRetry(() => import("@/pages/SharePointIntakePage"));
+const InvoicePatternsPage = lazyWithRetry(() => import("@/pages/invoice-patterns"));
+const SubcontractorDashboardPage = lazyWithRetry(() => import("@/pages/subcontractor-dashboard"));
+const CounterpartiesPage = lazyWithRetry(() => import("@/pages/counterparties"));
+const SystemActivityLogPage = lazyWithRetry(() => import("@/pages/system-activity-log"));
+const WeeklyReviewsPage = lazyWithRetry(() => import("@/pages/weekly-reviews"));
+const AdminRolesPage = lazyWithRetry(() => import("@/pages/admin-roles"));
+const AdminSettingsPage = lazyWithRetry(() => import("@/pages/admin-settings"));
+const LeaderboardPage = lazyWithRetry(() => import("@/pages/leaderboard"));
+const FeedbackPage = lazyWithRetry(() => import("@/pages/feedback"));
+const EeInfoPage = lazyWithRetry(() => import("@/pages/ee-info"));
+const TrainingPage = lazyWithRetry(() => import("@/pages/training"));
+const PMDashboard = lazyWithRetry(() => import("@/pages/pm-dashboard"));
+const PortfoliosPage = lazyWithRetry(() => import("@/pages/portfolios"));
+const PortfolioDetailPage = lazyWithRetry(() => import("@/pages/portfolio-detail"));
+const PdDashboardPage = lazyWithRetry(() => import("@/pages/pd-dashboard"));
+const PdTicketsPage = lazyWithRetry(() => import("@/pages/pd-tickets"));
+const PdTicketCreatePage = lazyWithRetry(() => import("@/pages/pd-ticket-create"));
+const PdTicketDetailPage = lazyWithRetry(() => import("@/pages/pd-ticket-detail"));
+const PdReportsPage = lazyWithRetry(() => import("@/pages/pd-reports"));
+const TeamsChatsPage = lazyWithRetry(() => import("@/pages/teams-chats"));
+const CollabEmailPage = lazyWithRetry(() => import("@/pages/collab-email"));
+const FinancialLinkingPage = lazyWithRetry(() => import("@/pages/financial-linking"));
+const PMOnTheGoHome = lazyWithRetry(() => import("@/pages/pm-on-the-go-home"));
+const PMOnTheGoProject = lazyWithRetry(() => import("@/pages/pm-on-the-go-project"));
+const MyWorkHomePage = lazyWithRetry(() => import("@/pages/my-work-home"));
+const MyWorkTasksPage = lazyWithRetry(() => import("@/pages/my-work-tasks"));
+const MyWorkCalendarPage = lazyWithRetry(() => import("@/pages/my-work-calendar"));
+const InboxPage = lazyWithRetry(() => import("@/pages/inbox"));
+const ApprovalsPage = lazyWithRetry(() => import("@/pages/admin-approvals"));
+const DatabaseMigrationPage = lazyWithRetry(() => import("@/pages/database-migration"));
+const ClientsPage = lazyWithRetry(() => import("@/pages/clients"));
+const ClientDetailPage = lazyWithRetry(() => import("@/pages/client-detail"));
+const ClientProjectDepartmentsPage = lazyWithRetry(() => import("@/pages/client-project-departments"));
+const ImportControlTowerPage = lazyWithRetry(() => import("@/pages/import-control-tower"));
+const ProgrammeReportsPage = lazyWithRetry(() => import("@/pages/programme-reports"));
+const KpiTraceabilityPage = lazyWithRetry(() => import("@/pages/kpi-traceability"));
+const AdminRecoveryPage = lazyWithRetry(() => import("@/pages/admin-recovery"));
+const StageAdminPage = lazyWithRetry(() => import("@/components/stage-lifecycle/StageAdminPanel"));
+const AdminControlCenterPage = lazyWithRetry(() => import("@/pages/admin-control-center"));
+const ActionLaunchpadPage = lazyWithRetry(() => import("@/pages/action-launchpad"));
+const PdPmHandoverPage = lazyWithRetry(() => import("@/pages/pd-pm-handover-v2"));
+const PmHandoverReviewPage = lazyWithRetry(() => import("@/pages/pm-handover-review"));
+const FinancialReviewQueuePage = lazyWithRetry(() => import("@/pages/financial-review-queue"));
+const HandoverControlPage = lazyWithRetry(() => import("@/pages/handover-control"));
+const FyeRevenueTrackingPage = lazyWithRetry(() => import("@/pages/fye-revenue-tracking"));
+const ExceptionsPage = lazyWithRetry(() => import("@/pages/exceptions"));
+const PhaseTemplatesPage = lazyWithRetry(() => import("@/pages/phase-templates"));
+const ProjectCreatePage = lazyWithRetry(() => import("@/pages/project-create"));
+const DepartmentScoresPage = lazyWithRetry(() => import("@/pages/department-scores"));
+const EngTemplateAdminPage = lazyWithRetry(() => import("@/pages/eng-template-admin"));
+const PrioritiesPage = lazyWithRetry(() => import("@/pages/priorities"));
+const PriorityDetailPage = lazyWithRetry(() => import("@/pages/priority-detail"));
+const PmMonthlyReportPage = lazyWithRetry(() => import("@/pages/pm-monthly-report"));
+const PmMonthlyReportHistoryPage = lazyWithRetry(() => import("@/pages/pm-monthly-report-history"));
+const PmMonthlyReportComparePage = lazyWithRetry(() => import("@/pages/pm-monthly-report-compare"));
+const PmMonthlyReportProjectPage = lazyWithRetry(() => import("@/pages/pm-monthly-report-project"));
+const EngMonthlyReportPage = lazyWithRetry(() => import("@/pages/engineering-monthly-report"));
+const EngMonthlyReportHistoryPage = lazyWithRetry(() => import("@/pages/engineering-monthly-report-history"));
+const EngMonthlyReportComparePage = lazyWithRetry(() => import("@/pages/engineering-monthly-report-compare"));
+const EngMonthlyReportProjectPage = lazyWithRetry(() => import("@/pages/engineering-monthly-report-project"));
+const ReportCenterPage = lazyWithRetry(() => import("@/pages/reports/report-center"));
+const PerformancePage = lazyWithRetry(() => import("@/pages/reports/performance"));
+const EngineeringStandupPage = lazyWithRetry(() => import("@/pages/engineering/standup"));
+const POApprovalBoardPage = lazyWithRetry(() => import("@/pages/po-approval-board"));
+const PaymentRequestBoardPage = lazyWithRetry(() => import("@/pages/payment-request-board"));
+const PaymentBatchManagerPage = lazyWithRetry(() => import("@/pages/payment-batch-manager"));
+const HseDashboardPage = lazyWithRetry(() => import("@/pages/hse-dashboard"));
+const HandoverDashboardPage = lazyWithRetry(() => import("@/pages/handover-dashboard"));
+const LessonsLearntPage = lazyWithRetry(() => import("@/pages/lessons-learnt"));
+const SitesPage = lazyWithRetry(() => import("@/pages/sites"));
+const OpportunitiesPage = lazyWithRetry(() => import("@/pages/opportunities"));
+const AdminPipedrivePage = lazyWithRetry(() => import("@/pages/admin-pipedrive"));
+const AdminQuickBooksPage = lazyWithRetry(() => import("@/pages/admin-quickbooks"));
+const FinanceQuickBooksLinksPage = lazyWithRetry(() => import("@/pages/finance-quickbooks-links"));
+const FinanceQuickBooksCustomerMappingPage = lazyWithRetry(
   () => import("@/pages/finance-quickbooks-customer-mapping"),
 );
-const AdminBackfillPage = lazy(() => import("@/pages/admin-backfill"));
-const AdminWorkflowConfigPage = lazy(() => import("@/pages/admin-workflow-config"));
+const AdminBackfillPage = lazyWithRetry(() => import("@/pages/admin-backfill"));
+const AdminWorkflowConfigPage = lazyWithRetry(() => import("@/pages/admin-workflow-config"));
 
 // Commissioning Control Tower
-const CommissioningDashboardPage = lazy(() => import("@/pages/commissioning-dashboard"));
+const CommissioningDashboardPage = lazyWithRetry(() => import("@/pages/commissioning-dashboard"));
 
 // Gates workspace (Prompt 2)
-const MilestoneTrackerPage = lazy(() => import("@/pages/milestone-tracker"));
+const MilestoneTrackerPage = lazyWithRetry(() => import("@/pages/milestone-tracker"));
 
-const GatesPipelinePage = lazy(() => import("@/pages/gates/gates-pipeline"));
-const GatesBlockedPage = lazy(() => import("@/pages/gates/gates-blocked"));
-const GatesReadyPage = lazy(() => import("@/pages/gates/gates-ready"));
-const GatesExceptionsPage = lazy(() => import("@/pages/gates/gates-exceptions"));
-const GatesClientUpdatesPage = lazy(() => import("@/pages/gates/gates-client-updates"));
-const GatesHandoversPage = lazy(() => import("@/pages/gates/gates-handovers"));
-const GatesQueriesPage = lazy(() => import("@/pages/gates/gates-queries"));
-const GatesCommitmentsPage = lazy(() => import("@/pages/gates/gates-commitments"));
+const GatesPipelinePage = lazyWithRetry(() => import("@/pages/gates/gates-pipeline"));
+const GatesBlockedPage = lazyWithRetry(() => import("@/pages/gates/gates-blocked"));
+const GatesReadyPage = lazyWithRetry(() => import("@/pages/gates/gates-ready"));
+const GatesExceptionsPage = lazyWithRetry(() => import("@/pages/gates/gates-exceptions"));
+const GatesClientUpdatesPage = lazyWithRetry(() => import("@/pages/gates/gates-client-updates"));
+const GatesHandoversPage = lazyWithRetry(() => import("@/pages/gates/gates-handovers"));
+const GatesQueriesPage = lazyWithRetry(() => import("@/pages/gates/gates-queries"));
+const GatesCommitmentsPage = lazyWithRetry(() => import("@/pages/gates/gates-commitments"));
 
 
 type RouteConfig = { path: string; component?: React.ComponentType<any>; redirectTo?: string };
@@ -428,11 +445,62 @@ function Router() {
   );
 }
 
+/**
+ * Prompt 0.12: proactive "new version available" banner.
+ *
+ * Renders above all page content when useVersionCheck detects that the
+ * server's /api/version has moved on from the build the tab bootstrapped
+ * with. The user clicks Reload to pick up the new bundle — we never
+ * auto-reload. They can also dismiss the banner, in which case it stays
+ * hidden until the next polling cycle detects yet another newer build.
+ */
+function VersionUpdateBanner() {
+  const { hasUpdate, latestBuild } = useVersionCheck();
+  const [dismissedBuild, setDismissedBuild] = useState<string | null>(null);
+
+  if (!hasUpdate || !latestBuild || dismissedBuild === latestBuild) return null;
+
+  return (
+    <div
+      className="fixed top-0 left-0 right-0 z-[60] bg-blue-600 text-white shadow-md"
+      role="status"
+      aria-live="polite"
+      data-testid="version-update-banner"
+    >
+      <div className="max-w-5xl mx-auto px-4 py-2 flex items-center gap-3">
+        <Download className="h-4 w-4 shrink-0" />
+        <p className="text-sm flex-1">
+          A new version of Emergent Energy is available. Reload to pick up the latest updates.
+        </p>
+        <Button
+          size="sm"
+          variant="secondary"
+          className="h-7 text-xs"
+          onClick={() => window.location.reload()}
+          data-testid="button-version-reload"
+        >
+          Reload
+        </Button>
+        <button
+          type="button"
+          onClick={() => setDismissedBuild(latestBuild)}
+          className="text-white/80 hover:text-white"
+          aria-label="Dismiss update notification"
+          data-testid="button-version-dismiss"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
+          <VersionUpdateBanner />
           <NetworkStatus />
           <Router />
           <Toaster />
