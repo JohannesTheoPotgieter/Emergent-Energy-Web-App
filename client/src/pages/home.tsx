@@ -1,4 +1,5 @@
-import { useMemo, useState, lazy, Suspense } from "react";
+import { useMemo, useState, Suspense } from "react";
+import { lazyWithRetry } from "@/App";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent } from "@/components/ui/card";
@@ -54,12 +55,13 @@ import {
   Info,
 } from "lucide-react";
 
-// Lazy-load tab content from My Work pages
-const MyWorkTasksPage = lazy(() => import("@/pages/my-work-tasks"));
-const MyWorkCalendarPage = lazy(() => import("@/pages/my-work-calendar"));
-const MyWorkMeetingsPage = lazy(() => import("@/pages/my-work-meetings"));
-const InboxPage = lazy(() => import("@/pages/inbox"));
-const UnifiedApprovalsQueue = lazy(() =>
+// Lazy-load tab content from My Work pages (with the same ChunkLoadError
+// retry wrapper App.tsx uses for all other lazy routes — Prompt 0.12 follow-up).
+const MyWorkTasksPage = lazyWithRetry(() => import("@/pages/my-work-tasks"));
+const MyWorkCalendarPage = lazyWithRetry(() => import("@/pages/my-work-calendar"));
+const MyWorkMeetingsPage = lazyWithRetry(() => import("@/pages/my-work-meetings"));
+const InboxPage = lazyWithRetry(() => import("@/pages/inbox"));
+const UnifiedApprovalsQueue = lazyWithRetry(() =>
   import("@/components/approvals/unified-approvals-queue").then((m) => ({ default: m.UnifiedApprovalsQueue }))
 );
 

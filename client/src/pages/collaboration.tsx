@@ -1,4 +1,5 @@
-import { useState, useMemo, useEffect, useRef, useCallback, lazy, Suspense } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback, Suspense } from "react";
+import { lazyWithRetry } from "@/App";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,7 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { usePermission } from "@/hooks/use-permissions";
 import { useLocation } from "wouter";
-const CreateTaskFromSourceDialog = lazy(() => import("@/components/CreateTaskFromSourceDialog"));
+const CreateTaskFromSourceDialog = lazyWithRetry(() => import("@/components/CreateTaskFromSourceDialog"));
 import { format, startOfWeek, endOfWeek, addDays, addWeeks, subWeeks, isToday, isSameDay, parseISO } from "date-fns";
 import {
   Calendar, Mail, MessageSquare, FolderOpen, Bell,

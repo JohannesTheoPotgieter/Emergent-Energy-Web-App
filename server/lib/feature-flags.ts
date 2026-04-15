@@ -79,6 +79,77 @@ export async function ensureRolloutFeatureFlags(updatedBy = "system"): Promise<v
   }
 }
 
+/**
+ * Prompt 0.4 follow-up: one-shot enablement for flags that were previously
+ * seeded as `false` in existing environments and need to flip on during
+ * the next deploy. `ensureRolloutFeatureFlags` only inserts when a row
+ * is missing, so it never upgrades environments whose rows already hold
+ * the stale `false`. This function applies a targeted upgrade for a
+ * specific set of flag keys, and records a marker row so repeat runs
+ * are idempotent — operators who deliberately disable a flag AFTER the
+ * enablement has been marked done are NOT overridden on subsequent
+ * startups. If the marker is already present, the function is a no-op.
+ *
+ * The marker key namespace is `system:flag-enablement:<group-id>` and
+ * its value is the ISO timestamp of the first successful run.
+ */
+export async function applyOneShotFeatureFlagEnablements(
+  groupId: string,
+  keysToEnable: readonly string[],
+  updatedBy = "system",
+): Promise<{ applied: boolean; enabled: string[] }> {
+  const markerKey = `system:flag-enablement:${groupId}`;
+  try {
+    const markerRows = await db
+      .select({ key: appSettings.key })
+      .from(appSettings)
+      .where(eq(appSettings.key, markerKey))
+      .limit(1);
+    if (markerRows.length > 0) {
+      return { applied: false, enabled: [] };
+    }
+
+    const enabled: string[] = [];
+    for (const key of keysToEnable) {
+      const existing = await db
+        .select({ value: appSettings.value })
+        .from(appSettings)
+        .where(eq(appSettings.key, key))
+        .limit(1);
+      if (existing.length === 0) {
+        await db.insert(appSettings).values({
+          key,
+          value: "true",
+          updatedBy,
+          updatedAt: new Date(),
+        });
+        enabled.push(key);
+      } else if (!parseFlagValue(existing[0].value)) {
+        await db
+          .update(appSettings)
+          .set({ value: "true", updatedBy, updatedAt: new Date() })
+          .where(eq(appSettings.key, key));
+        enabled.push(key);
+      }
+    }
+
+    // Record the marker AFTER the writes so a crash mid-way re-runs next boot.
+    await db.insert(appSettings).values({
+      key: markerKey,
+      value: new Date().toISOString(),
+      updatedBy,
+      updatedAt: new Date(),
+    });
+
+    return { applied: true, enabled };
+  } catch (error) {
+    if (isMissingAppSettingsTableError(error)) {
+      return { applied: false, enabled: [] };
+    }
+    throw error;
+  }
+}
+
 export async function getRolloutFeatureFlags(): Promise<Record<RolloutFeatureFlagKey, boolean>> {
   const values = await getFeatureFlags(ROLLOUT_FEATURE_FLAGS.map((flag) => flag.key));
   return ROLLOUT_FEATURE_FLAGS.reduce((acc, flag) => {

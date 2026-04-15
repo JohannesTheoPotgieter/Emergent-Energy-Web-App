@@ -112,7 +112,9 @@ async function calculateKPIs(month: string): Promise<KPIPayload> {
 
   const allProjectRows = await db.select().from(projectInfo)
     .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
-  const allProjects = allProjectRows.map((r: any) => ({ ...r.project_info, ...r.project_execution_state, id: r.project_info.id }));
+  // BUG-01 follow-up: project_execution_state can be null for projects without
+  // an execution state row; spreading null throws TypeError. Coalesce to {}.
+  const allProjects = allProjectRows.map((r: any) => ({ ...r.project_info, ...(r.project_execution_state || {}), id: r.project_info.id }));
 
   const activeProjects = allProjects.filter((p: any) => isPmExecutionWindowProject(p, monthEndStr));
 
