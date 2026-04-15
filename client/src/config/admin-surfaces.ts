@@ -165,13 +165,11 @@ const ADMIN_NAV_IDS: AdminSurfaceId[] = [
 
 // Reports items absorbed into Admin (Prompt 2 — Reports moves under Admin)
 const REPORTS_NAV_ITEMS: Array<{ label: string; path: string }> = [
-  { label: "Report Center", path: "/reports/center" },
   { label: "PM Monthly", path: "/reports/pm/monthly" },
   { label: "Eng Monthly", path: "/reports/engineering/monthly" },
   { label: "Programme", path: "/reports/programme" },
   { label: "Priorities", path: "/priorities" },
   { label: "Processes & SOPs", path: "/ee-info" },
-  { label: "Training", path: "/training" },
   { label: "Feedback", path: "/feedback" },
 ];
 

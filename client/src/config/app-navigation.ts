@@ -38,7 +38,6 @@ export const TOP_SECTIONS: TopSection[] = [
       { label: "Approvals", path: "/my-work/approvals" },
       { label: "Calendar", path: "/my-work/calendar" },
       { label: "Meetings", path: "/my-work/meetings" },
-      { label: "Inbox", path: "/inbox" },
     ],
   },
   {
@@ -84,7 +83,6 @@ export const TOP_SECTIONS: TopSection[] = [
       { label: "PD Tickets", path: "/pd/tickets" },
       { label: "Clients", path: "/clients" },
       { label: "Handover Queue", path: "/handover-control" },
-      { label: "PD Reports", path: "/pd/reports" },
     ],
   },
   {
@@ -114,7 +112,6 @@ export const TOP_SECTIONS: TopSection[] = [
       { label: "Payment Requests", path: "/payment-request-board" },
       { label: "Payment Batches", path: "/payment-batch-manager" },
       { label: "Milestone Tracker", path: "/milestone-tracker" },
-      { label: "Weekly Reviews", path: "/weekly-reviews" },
       { label: "Standups", path: "/standups" },
       { label: "PM Approvals", path: "/pm/approvals" },
       { label: "PM On-The-Go", path: "/pm/on-the-go" },
@@ -178,14 +175,12 @@ export const TOP_SECTIONS: TopSection[] = [
   {
     label: "Reports",
     key: "REPORTS",
-    path: "/reports/center",
+    path: "/reports/pm/monthly",
     match: (pathname) => startsWithAny(pathname, ["/reports"]),
     secondary: [
-      { label: "Report Center", path: "/reports/center" },
       { label: "Programme Reports", path: "/reports/programme" },
       { label: "PM Monthly", path: "/reports/pm/monthly" },
       { label: "Engineering Monthly", path: "/reports/engineering/monthly" },
-      { label: "Performance", path: "/reports/performance" },
     ],
   },
   {
