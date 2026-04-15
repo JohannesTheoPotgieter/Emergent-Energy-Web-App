@@ -12,6 +12,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { isApiError } from "@/lib/api-error";
 import { formatRand } from "@/lib/safeMoney";
 import { ReportTrustNotice } from "@/components/reports/ReportTrustNotice";
+import { FinanceLimitedBetaBanner } from "@/components/reports/FinanceLimitedBetaBanner";
 
 interface QbBillRaw {
   Id: string;
@@ -173,6 +174,11 @@ export default function FinanceQuickBooksLinksPage() {
         eyebrow="Finance"
         title="QuickBooks Bill Linking"
         description="Link QuickBooks supplier bills to project cost lines across the portfolio"
+      />
+
+      <FinanceLimitedBetaBanner
+        title="Limited beta — QuickBooks bill linking"
+        body="Reconciliation actions here are audited and gated (financials:edit), but COS realisation is NOT performed from this page. Use the COS Tracker to mark a cost line as realised. A QuickBooks 'bill' is evidence only; normalized_cost_lines remains the source of truth."
       />
 
       <ReportTrustNotice
