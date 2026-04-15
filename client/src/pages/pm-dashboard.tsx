@@ -53,6 +53,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import DataSourceDebug from "@/components/DataSourceDebug";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { apiRequest } from "@/lib/queryClient";
+import { formatCurrencyCompact, formatCurrencyFull } from "@/lib/execution-dashboard";
 import { formatForDisplayZA, parseIsoDateStrict } from "@shared/utils/dates";
 
 async function pmFetch<T>(url: string): Promise<T> {
@@ -156,11 +157,12 @@ const ragColors: Record<string, string> = {
   grey: "bg-gray-400",
 };
 
-function formatCurrency(val: number): string {
-  if (val >= 1_000_000) return `R${(val / 1_000_000).toFixed(1)}M`;
-  if (val >= 1_000) return `R${(val / 1_000).toFixed(0)}K`;
-  return `R${val.toFixed(0)}`;
-}
+// Prompt 0.10: removed local formatCurrency in favour of the shared
+// helpers from @/lib/execution-dashboard. The local version lacked
+// Math.abs handling which caused negative COS values to render
+// incorrectly and it never applied commas or locale grouping.
+// formatCurrencyCompact — compact "R25.9M" for summary KPI tiles.
+// formatCurrencyFull    — detailed "R1,543,651" for project-card badges.
 
 function formatDate(d: string | null): string {
   if (!d) return "\u2014";
@@ -226,7 +228,7 @@ function OverviewTab({ data, navigate }: { data: PMDashboardData; navigate: (pat
     <div className="space-y-6">
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3" data-testid="pm-kpi-strip">
         <KpiCard icon={Briefcase} label="Projects" value={summary.totalProjects} />
-        <KpiCard icon={DollarSign} label="Contract Value" value={formatCurrency(summary.totalContractValue)} />
+        <KpiCard icon={DollarSign} label="Contract Value" value={formatCurrencyCompact(summary.totalContractValue)} />
         <KpiCard icon={Gauge} label="Avg Spend" value={`${summary.avgSpendPercent}%`} sub="costed utilisation" />
         <KpiCard icon={Percent} label="Gross Profit" value={`${summary.grossProfit}%`} sub="across portfolio" color={summary.grossProfit < 15 ? "text-red-500" : "text-green-500"} />
         <KpiCard icon={Zap} label="Active Tasks" value={summary.activeTasks} />
@@ -237,7 +239,8 @@ function OverviewTab({ data, navigate }: { data: PMDashboardData; navigate: (pat
         <Card className="border-green-200 bg-green-50/50">
           <CardContent className="p-3">
             <div className="text-[10px] text-green-700 font-medium uppercase">COS Realised</div>
-            <p className="text-xl font-bold text-green-800">{summary.cosRealisedTotal}</p>
+            {/* Prompt 0.10: apply formatCurrencyCompact to match the header tiles. */}
+            <p className="text-xl font-bold text-green-800">{formatCurrencyCompact(summary.cosRealisedTotal || 0)}</p>
           </CardContent>
         </Card>
         <Card className="border-amber-200 bg-amber-50/50">
@@ -255,7 +258,7 @@ function OverviewTab({ data, navigate }: { data: PMDashboardData; navigate: (pat
         <Card className="border-purple-200 bg-purple-50/50">
           <CardContent className="p-3">
             <div className="text-[10px] text-purple-700 font-medium uppercase">Total Costed</div>
-            <p className="text-xl font-bold text-purple-800">{formatCurrency(summary.totalBudget)}</p>
+            <p className="text-xl font-bold text-purple-800">{formatCurrencyCompact(summary.totalBudget)}</p>
           </CardContent>
         </Card>
       </div>
@@ -324,20 +327,27 @@ function OverviewTab({ data, navigate }: { data: PMDashboardData; navigate: (pat
                     />
                   </div>
                   <div className="flex justify-between text-[10px] text-muted-foreground mt-0.5">
-                    <span>{formatCurrency(project.financials.totalActual)} spent</span>
-                    <span>{formatCurrency(project.financials.totalBudget)} costed</span>
+                    <span>{formatCurrencyCompact(project.financials.totalActual)} spent</span>
+                    <span>{formatCurrencyCompact(project.financials.totalBudget)} costed</span>
                   </div>
                 </div>
 
+                {/* Prompt 0.10: project-card COS badges previously rendered
+                    raw floats with "R:" / "C:" / "P:" prefixes that
+                    collided visually with the Rand currency symbol. Now
+                    use formatCurrencyFull for the value (detailed R-prefixed
+                    ZAR with comma grouping) and move the semantic label
+                    ("Real", "Com", "Plan") in front so the R in "R1,543,651"
+                    is unambiguously the currency symbol. */}
                 <div className="flex gap-1.5" data-testid={`cos-${project.id}`}>
                   {project.financials.cosRealised > 0 && (
-                    <Badge className="text-[9px] bg-green-100 text-green-800 hover:bg-green-100">R:{project.financials.cosRealised}</Badge>
+                    <Badge className="text-[9px] bg-green-100 text-green-800 hover:bg-green-100" title="Cost of Sales — Realised">Real {formatCurrencyFull(project.financials.cosRealised)}</Badge>
                   )}
                   {(project.financials.cosCommitted || 0) > 0 && (
-                    <Badge className="text-[9px] bg-amber-100 text-amber-800 hover:bg-amber-100">C:{project.financials.cosCommitted}</Badge>
+                    <Badge className="text-[9px] bg-amber-100 text-amber-800 hover:bg-amber-100" title="Cost of Sales — Committed">Com {formatCurrencyFull(project.financials.cosCommitted || 0)}</Badge>
                   )}
                   {project.financials.cosPlanned > 0 && (
-                    <Badge className="text-[9px] bg-muted text-muted-foreground hover:bg-muted">P:{project.financials.cosPlanned}</Badge>
+                    <Badge className="text-[9px] bg-muted text-muted-foreground hover:bg-muted" title="Cost of Sales — Planned">Plan {formatCurrencyFull(project.financials.cosPlanned)}</Badge>
                   )}
                 </div>
 
