@@ -38,7 +38,34 @@ export default function PdDashboardPage() {
     queryFn: () => pdFetch("/api/pd/tickets"),
   });
 
-  const recentTickets = tickets.slice(0, 8);
+  const recentTicketRows = tickets.slice(0, 8);
+  const dedupedRecentTickets = (() => {
+    const seen = new Set<string>();
+    const uniqueRows: any[] = [];
+    let hiddenDuplicateCount = 0;
+
+    for (const row of recentTicketRows) {
+      const t = row.ticket;
+      const signature = [
+        row.clientName || t.clientNameSnapshot || "",
+        row.projectName || t.projectSiteName || "",
+        t.projectSiteName || "",
+        t.requestType || "",
+        t.status || "",
+        t.priority || "",
+      ].join("|");
+
+      if (seen.has(signature)) {
+        hiddenDuplicateCount += 1;
+        continue;
+      }
+
+      seen.add(signature);
+      uniqueRows.push(row);
+    }
+
+    return { uniqueRows, hiddenDuplicateCount };
+  })();
 
   const { data: pipeline, isLoading: pipelineLoading } = useQuery<{
     tickets: any[];
@@ -280,7 +307,7 @@ export default function PdDashboardPage() {
           </div>
         ) : (
           <>
-            {recentTickets.length === 0 ? (
+            {dedupedRecentTickets.uniqueRows.length === 0 ? (
               <Card>
                 <CardContent className="p-8 text-center text-muted-foreground">
                   <FileEdit className="h-10 w-10 mx-auto mb-2 opacity-30" />
@@ -290,10 +317,20 @@ export default function PdDashboardPage() {
               </Card>
             ) : (
               <div className="grid gap-2">
-                {recentTickets.map((row: any) => {
+                {dedupedRecentTickets.hiddenDuplicateCount > 0 && (
+                  <div className="text-[11px] text-muted-foreground px-1">
+                    Showing latest unique tickets ({dedupedRecentTickets.hiddenDuplicateCount} duplicate
+                    {dedupedRecentTickets.hiddenDuplicateCount !== 1 ? "s" : ""} hidden).
+                  </div>
+                )}
+                {dedupedRecentTickets.uniqueRows.map((row: any) => {
                   const t = row.ticket;
                   const today = new Date().toISOString().split("T")[0];
                   const overdue = t.dueDate && t.dueDate < today && t.status !== "Completed" && t.status !== "Cancelled";
+                  const createdAt = t.createdAt ? new Date(t.createdAt) : null;
+                  const createdAtLabel = createdAt && !isNaN(createdAt.getTime())
+                    ? createdAt.toLocaleDateString()
+                    : "—";
                   return (
                     <Card key={t.id} className="hover:shadow-sm cursor-pointer transition-shadow" onClick={() => navigate(`/pd/tickets/${t.id}`)} data-testid={`pd-ticket-row-${t.id}`}>
                       <CardContent className="p-3 flex items-center gap-3">
@@ -307,6 +344,8 @@ export default function PdDashboardPage() {
                             {row.clientName && <span>{row.clientName}</span>}
                             {row.projectName && <span>· {row.projectName}</span>}
                             {row.developerName && <span>· {row.developerName}</span>}
+                            <span>· #{t.id}</span>
+                            <span>· Created {createdAtLabel}</span>
                           </div>
                         </div>
                         {row.taskTotal > 0 && (
