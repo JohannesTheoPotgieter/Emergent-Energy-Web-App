@@ -108,6 +108,8 @@ import {
 import { fetchRolloutFeatureFlags } from "@/lib/feature-flags";
 import { getTaskWorkflowBlockReason } from "@/lib/task-workflow-guard";
 import { engFetch } from "@/lib/eng-fetch";
+import { TaskDependenciesPanel } from "./engineering/panels/TaskDependenciesPanel";
+import { DocumentControlBadge } from "@/components/engineering/DocumentControlBadge";
 import { PHASE_COLORS } from "@/lib/phase-colors";
 import { invalidateAllTaskCaches } from "@/lib/task-cache";
 import { canonicalizeTaskStatus } from "@/lib/task-status-compat";
@@ -125,7 +127,7 @@ export const WORKLOAD_STATE_OPTIONS: { value: EngineeringWorkloadStateFilter; la
   { value: "unassigned", label: "Unassigned" },
   { value: "blocked", label: "Blocked" },
   { value: "review", label: "Review Needed" },
-  { value: "approval", label: "Approval Pending" },
+  { value: "approval", label: "QC Review Pending" },
   { value: "deliverable", label: "Project Deliverables" },
   { value: "microsoft_action", label: "Microsoft Actions" },
 ];
@@ -166,7 +168,7 @@ export const SAVED_FILTERS: {
   { label: "Unassigned", filter: { workloadStateFilter: "unassigned" } },
   { label: "Blocked", filter: { workloadStateFilter: "blocked" } },
   { label: "Review Needed", filter: { workloadStateFilter: "review" } },
-  { label: "Approval Pending", filter: { workloadStateFilter: "approval" } },
+  { label: "QC Review Pending", filter: { workloadStateFilter: "approval" } },
   { label: "Deliverables", filter: { workloadStateFilter: "deliverable" } },
   { label: "Microsoft Linked", filter: { linkedSourceFilter: "microsoft_linked" } },
 ];
@@ -887,112 +889,12 @@ export function PostUpdateForm({ taskId, currentStatus, hasProject, onDone }: { 
   );
 }
 
-export function DependenciesTab({ task, allTasks }: { task: Task; allTasks?: Task[] }) {
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
-  const [search, setSearch] = useState("");
-  const [depType, setDepType] = useState<"blocked_by" | "blocks">("blocked_by");
-
-  // Store dependencies in task description metadata (pragmatic approach without new table)
-  const deps = useMemo(() => {
-    try {
-      const meta = task.description?.match(/<!--deps:(.*?)-->/);
-      if (meta) return JSON.parse(meta[1]) as { id: number; type: string; title: string }[];
-    } catch {}
-    return [] as { id: number; type: string; title: string }[];
-  }, [task.description]);
-
-  const addDep = async (depTask: Task) => {
-    const existing = deps.filter(d => d.id !== depTask.id);
-    const newDeps = [...existing, { id: depTask.id, type: depType, title: depTask.title }];
-    const depsTag = `<!--deps:${JSON.stringify(newDeps)}-->`;
-    const cleanDesc = (task.description || "").replace(/<!--deps:.*?-->/g, "").trim();
-    const newDesc = cleanDesc + "\n" + depsTag;
-    try {
-      await engFetch(`/api/eng/tasks/${task.id}`, { method: "PATCH", body: JSON.stringify({ description: newDesc }) });
-      invalidateAllTaskCaches(queryClient);
-      toast({ title: `Dependency added: ${depType === "blocked_by" ? "blocked by" : "blocks"} ${depTask.title.slice(0, 30)}` });
-    } catch (e: any) {
-      toast({ title: "Error", description: e.message, variant: "destructive" });
-    }
-  };
-
-  const removeDep = async (depId: number) => {
-    const newDeps = deps.filter(d => d.id !== depId);
-    const depsTag = newDeps.length > 0 ? `<!--deps:${JSON.stringify(newDeps)}-->` : "";
-    const cleanDesc = (task.description || "").replace(/<!--deps:.*?-->/g, "").trim();
-    const newDesc = (cleanDesc + "\n" + depsTag).trim();
-    try {
-      await engFetch(`/api/eng/tasks/${task.id}`, { method: "PATCH", body: JSON.stringify({ description: newDesc }) });
-      invalidateAllTaskCaches(queryClient);
-      toast({ title: "Dependency removed" });
-    } catch (e: any) {
-      toast({ title: "Error", description: e.message, variant: "destructive" });
-    }
-  };
-
-  const { data: fetchedTasks = [] } = useQuery<Task[]>({
-    queryKey: ["eng-tasks"],
-    queryFn: () => engFetch("/api/eng/tasks"),
-    enabled: !allTasks,
-  });
-  const pool = allTasks || fetchedTasks;
-
-  const filtered = useMemo(() => {
-    if (!search.trim()) return [];
-    const term = search.toLowerCase();
-    return pool.filter(t => t.id !== task.id && t.title.toLowerCase().includes(term)).slice(0, 8);
-  }, [pool, search, task.id]);
-
-  const blockedBy = deps.filter(d => d.type === "blocked_by");
-  const blocks = deps.filter(d => d.type === "blocks");
-
-  return (
-    <div className="space-y-3" data-testid="dependencies-tab">
-      {blockedBy.length > 0 && (
-        <div>
-          <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">Blocked by</p>
-          {blockedBy.map(d => (
-            <div key={d.id} className="flex items-center gap-2 text-xs p-1.5 border rounded mb-1 bg-red-50/50">
-              <AlertTriangle className="h-3 w-3 text-red-500 shrink-0" />
-              <span className="flex-1 truncate">{d.title}</span>
-              <button className="text-muted-foreground hover:text-red-500" onClick={() => removeDep(d.id)}><X className="h-3 w-3" /></button>
-            </div>
-          ))}
-        </div>
-      )}
-      {blocks.length > 0 && (
-        <div>
-          <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">Blocks</p>
-          {blocks.map(d => (
-            <div key={d.id} className="flex items-center gap-2 text-xs p-1.5 border rounded mb-1 bg-amber-50/50">
-              <ArrowRight className="h-3 w-3 text-amber-500 shrink-0" />
-              <span className="flex-1 truncate">{d.title}</span>
-              <button className="text-muted-foreground hover:text-red-500" onClick={() => removeDep(d.id)}><X className="h-3 w-3" /></button>
-            </div>
-          ))}
-        </div>
-      )}
-      <div className="space-y-2">
-        <div className="flex gap-1">
-          <button className={`text-[10px] px-2 py-1 rounded font-medium ${depType === "blocked_by" ? "bg-red-100 text-red-700" : "bg-muted text-muted-foreground"}`} onClick={() => setDepType("blocked_by")}>Blocked by</button>
-          <button className={`text-[10px] px-2 py-1 rounded font-medium ${depType === "blocks" ? "bg-amber-100 text-amber-700" : "bg-muted text-muted-foreground"}`} onClick={() => setDepType("blocks")}>Blocks</button>
-        </div>
-        <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search tasks to link..." className="h-8 text-xs" data-testid="dep-search-input" />
-        {filtered.map(t => (
-          <button key={t.id} className="w-full text-left p-2 text-xs border rounded hover:bg-muted/50 transition-colors flex items-center gap-2" onClick={() => { addDep(t); setSearch(""); }}>
-            <Plus className="h-3 w-3 text-muted-foreground shrink-0" />
-            <span className="truncate flex-1">{t.title}</span>
-            <Badge className={`text-[8px] ${getTaskStatusBadgeClass(t.status)}`}>{getTaskStatusLabel(t.status)}</Badge>
-          </button>
-        ))}
-      </div>
-      {deps.length === 0 && !search && (
-        <p className="text-xs text-muted-foreground text-center py-4">No dependencies. Search for a task above to add one.</p>
-      )}
-    </div>
-  );
-}
+/**
+ * DependenciesTab — thin wrapper around TaskDependenciesPanel.
+ * Kept as a named export for backward compat with the barrel.
+ * @deprecated Use TaskDependenciesPanel directly.
+ */
+export { TaskDependenciesPanel as DependenciesTab } from "./engineering/panels/TaskDependenciesPanel";
 
 export function TaskDetailDrawer({
   task, onClose, onUpdate
@@ -1509,7 +1411,7 @@ export function TaskDetailDrawer({
                 {task.isUnassigned ? <Badge variant="outline" className="text-[10px] bg-slate-50 text-slate-700 border-slate-200">Unassigned</Badge> : null}
                 {task.isBlocked ? <Badge variant="outline" className="text-[10px] bg-red-50 text-red-700 border-red-200">Blocked</Badge> : null}
                 {task.isReviewNeeded ? <Badge variant="outline" className="text-[10px] bg-violet-50 text-violet-700 border-violet-200">Review Needed</Badge> : null}
-                {task.isApprovalPending ? <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">Approval Pending</Badge> : null}
+                {task.isApprovalPending ? <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">QC Review Pending</Badge> : null}
                 {task.projectName ? <Badge variant="outline" className="text-[10px] bg-blue-50 text-blue-700 border-blue-200">Project Linked</Badge> : <Badge variant="outline" className="text-[10px] bg-slate-50 text-slate-700 border-slate-200">No Project</Badge>}
               </div>
 
@@ -1520,7 +1422,7 @@ export function TaskDetailDrawer({
                       <p className="text-xs font-medium text-foreground">Project-linked deliverables</p>
                       <p className="text-[10px] text-muted-foreground">
                         {task.projectLinkedDeliverableCount} linked to this project
-                        {task.approvalPendingDeliverableCount ? ` · ${task.approvalPendingDeliverableCount} pending approval` : ""}
+                        {task.approvalPendingDeliverableCount ? ` · ${task.approvalPendingDeliverableCount} awaiting QC review` : ""}
                       </p>
                     </div>
                     {task.deliverableContextHref && (
@@ -1532,10 +1434,10 @@ export function TaskDetailDrawer({
                       </Button>
                     )}
                   </div>
-                  {(task.projectLinkedDeliverables || []).map((item) => (
+                  {(task.projectLinkedDeliverables || []).map((item: any) => (
                     <div key={item.id} className="flex items-center justify-between gap-2 text-xs">
                       <span className="truncate text-foreground">{item.title}</span>
-                      <Badge variant="outline" className="text-[9px] px-1.5 py-0">{item.status}</Badge>
+                      <DocumentControlBadge row={item} compact data-testid={`drawer-doc-control-${item.id}`} />
                     </div>
                   ))}
                 </div>
@@ -1686,7 +1588,7 @@ export function TaskDetailDrawer({
                     onClick={() => setShowSendForApproval(true)}
                     data-testid="btn-send-for-approval"
                   >
-                    <Send className="h-3.5 w-3.5" /> Send for Approval
+                    <Send className="h-3.5 w-3.5" /> Submit for QC Review
                   </Button>
 
                   <Dialog open={showSendForApproval} onOpenChange={(open) => {
@@ -1696,7 +1598,7 @@ export function TaskDetailDrawer({
                     <DialogContent className="max-w-md">
                       <DialogHeader>
                         <DialogTitle className="flex items-center gap-2 text-base">
-                          <Send className="h-4 w-4 text-amber-600" /> Send for Approval
+                          <Send className="h-4 w-4 text-amber-600" /> Submit for QC Review
                         </DialogTitle>
                       </DialogHeader>
                       <div className="space-y-4 pt-2">
@@ -1811,7 +1713,7 @@ export function TaskDetailDrawer({
                             data-testid="btn-confirm-send-approval"
                           >
                             {sendingForApproval ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                            {sendingForApproval ? "Sending..." : "Send for Approval"}
+                            {sendingForApproval ? "Submitting..." : "Submit for QC Review"}
                           </Button>
                           <Button variant="outline" className="h-9 text-sm" onClick={() => setShowSendForApproval(false)}>
                             Cancel
@@ -1860,7 +1762,7 @@ export function TaskDetailDrawer({
                 onClick={() => setShowSendDeliverable(true)}
                 data-testid="btn-send-deliverable"
               >
-                <Send className="h-3.5 w-3.5" /> Send Deliverable
+                <Send className="h-3.5 w-3.5" /> Send Document
               </Button>
 
               {taskDeliverables.length > 0 && (
@@ -1955,7 +1857,7 @@ export function TaskDetailDrawer({
                 <DialogContent className="max-w-md">
                   <DialogHeader>
                     <DialogTitle className="flex items-center gap-2 text-base">
-                      <Send className="h-4 w-4 text-blue-600" /> Send Deliverable
+                      <Send className="h-4 w-4 text-blue-600" /> Send Document
                     </DialogTitle>
                   </DialogHeader>
                   <div className="space-y-4 pt-2">
@@ -2083,7 +1985,7 @@ export function TaskDetailDrawer({
                         data-testid="btn-confirm-send-deliverable"
                       >
                         {sendingDeliverable ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                        {sendingDeliverable ? "Sending..." : "Send Deliverable"}
+                        {sendingDeliverable ? "Sending..." : "Send Document"}
                       </Button>
                       <Button variant="outline" className="h-9 text-sm" onClick={() => setShowSendDeliverable(false)}>Cancel</Button>
                     </div>
@@ -2349,7 +2251,7 @@ export function TaskDetailDrawer({
             )}
 
             {activeTab === "dependencies" && (
-              <DependenciesTab task={task} />
+              <TaskDependenciesPanel task={task} />
             )}
 
             {(task.linkedPlanItemId || task.linkedDeliverableId || task.linkedQualityItemInstanceId) && (

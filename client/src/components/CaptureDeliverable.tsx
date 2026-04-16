@@ -30,7 +30,48 @@ interface CaptureDeliverableProps {
   onComplete?: () => void;
 }
 
+/**
+ * CONTAINMENT: This component posts to the legacy `deliverables` table,
+ * NOT the controlled `projectEngDeliverables` table. Documents captured
+ * here do NOT get the IFC lifecycle. Gated behind the
+ * `legacy_capture_deliverable` feature flag (default: off). Use the
+ * Engineering Stages tab for controlled document uploads.
+ */
 export default function CaptureDeliverable({
+  projectId: propProjectId,
+  projectName: propProjectName,
+  preselectedLinkType,
+  preselectedLinkId,
+  trigger,
+  onComplete,
+}: CaptureDeliverableProps) {
+  const { data: rolloutFlags = [] } = useQuery({
+    queryKey: ["rollout-feature-flags"],
+    queryFn: async () => {
+      const res = await fetch("/api/feature-flags/rollout", { credentials: "include" });
+      if (!res.ok) return [];
+      const payload = await res.json();
+      return Array.isArray(payload?.flags) ? payload.flags : [];
+    },
+  });
+  const isEnabled = rolloutFlags.find((f: any) => f.key === "legacy_capture_deliverable")?.value === true;
+
+  // When feature flag is off, render nothing. The component is mounted
+  // in ProjectCommandHeader and ProjectProcurementTab; this gate prevents
+  // the dialog trigger from appearing without having to edit every call site.
+  if (!isEnabled) return null;
+
+  return <CaptureDeliverableInner
+    projectId={propProjectId}
+    projectName={propProjectName}
+    preselectedLinkType={preselectedLinkType}
+    preselectedLinkId={preselectedLinkId}
+    trigger={trigger}
+    onComplete={onComplete}
+  />;
+}
+
+function CaptureDeliverableInner({
   projectId: propProjectId,
   projectName: propProjectName,
   preselectedLinkType,
