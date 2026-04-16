@@ -329,9 +329,6 @@ export default function AdminQuickBooksPage() {
               <span className="text-xs text-muted-foreground">Connection</span>
             </div>
             <div className="text-sm font-medium">{isConnected ? "Connected" : "Not connected"}</div>
-            {status?.sandbox && (
-              <Badge variant="outline" className="mt-1 text-[10px]">Sandbox</Badge>
-            )}
           </CardContent>
         </Card>
         <Card>
@@ -369,9 +366,7 @@ export default function AdminQuickBooksPage() {
                   Required env vars (set these in Replit → Tools → Secrets):{" "}
                   <code className="px-1 py-0.5 bg-amber-100 rounded text-[11px]">QUICKBOOKS_CLIENT_ID</code>,{" "}
                   <code className="px-1 py-0.5 bg-amber-100 rounded text-[11px]">QUICKBOOKS_CLIENT_SECRET</code>,{" "}
-                  <code className="px-1 py-0.5 bg-amber-100 rounded text-[11px]">QUICKBOOKS_REDIRECT_URI</code>,{" "}
-                  <code className="px-1 py-0.5 bg-amber-100 rounded text-[11px]">QUICKBOOKS_SANDBOX</code>
-                  {" "}(<code className="text-[11px]">true</code> while the Intuit app is in development).
+                  <code className="px-1 py-0.5 bg-amber-100 rounded text-[11px]">QUICKBOOKS_REDIRECT_URI</code>.
                 </p>
               </div>
             </div>
