@@ -16,6 +16,7 @@ import {
 } from "@shared/schema/engineering";
 import { logAuditFromReq } from "../audit-logger";
 import { getEffectiveUser } from "../auth-context";
+import { requireRole } from "./shared-middleware";
 
 const ENGINEER_ROLES = new Set<string>([
   "ENGINEER",
@@ -63,7 +64,13 @@ router.get("/api/drawings", requireAuth, async (req: Request, res: Response) => 
   }
 });
 
-router.post("/api/drawings", requireAuth, async (req: Request, res: Response) => {
+// Permission: creating a drawing requires an engineering role.
+const DRAWING_WRITE_ROLES = [
+  "ENGINEER", "ENGINEERING_MANAGER", "COO_ADMIN", "CEO_ADMIN",
+  "PROGRAM_MANAGER", "CONSTRUCTION_MANAGER", "QUALITY_MANAGER",
+];
+
+router.post("/api/drawings", requireAuth, requireRole(...DRAWING_WRITE_ROLES), async (req: Request, res: Response) => {
   try {
     const [parsed, validationError] = parseBody(req.body, insertDrawingRegisterSchema);
     if (validationError) return res.status(400).json(validationError);
@@ -75,7 +82,7 @@ router.post("/api/drawings", requireAuth, async (req: Request, res: Response) =>
   }
 });
 
-router.patch("/api/drawings/:id", requireAuth, async (req: Request, res: Response) => {
+router.patch("/api/drawings/:id", requireAuth, requireRole(...DRAWING_WRITE_ROLES), async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
     const user = getEffectiveUser(req);
@@ -175,7 +182,7 @@ router.get("/api/drawings/:drawingId/revisions", requireAuth, async (req: Reques
   }
 });
 
-router.post("/api/drawings/:drawingId/revisions", requireAuth, async (req: Request, res: Response) => {
+router.post("/api/drawings/:drawingId/revisions", requireAuth, requireRole(...DRAWING_WRITE_ROLES), async (req: Request, res: Response) => {
   try {
     const drawingId = Number(req.params.drawingId);
     const [rev] = await db.insert(drawingRevisions).values({ ...req.body, drawingId }).returning();

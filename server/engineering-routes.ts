@@ -400,7 +400,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.put("/api/eng/local-synced-save/config", requireAuth, async (req, res) => {
+  app.put("/api/eng/local-synced-save/config", requireAuth, requirePermission("engineering", "edit"), async (req, res) => {
     try {
       const user = getUser(req);
       const mappedPath = typeof req.body?.mappedPath === "string" ? req.body.mappedPath.trim() : "";
@@ -822,7 +822,8 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng/tasks/:id/send-for-approval", requireAuth, approvalUpload.single("file"), async (req, res) => {
+  // Permission: submitting for approval requires edit on eng_tasks.
+  app.post("/api/eng/tasks/:id/send-for-approval", requireAuth, requirePermission("eng_tasks", "edit"), approvalUpload.single("file"), async (req, res) => {
     const id = parseInt(paramStr(req.params.id));
     const user = getUser(req);
     const note = req.body.note || "";
@@ -1076,7 +1077,8 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng/tasks/:id/send-deliverable", requireAuth, approvalUpload.single("file"), async (req, res) => {
+  // Permission: sending a deliverable requires edit on eng_tasks.
+  app.post("/api/eng/tasks/:id/send-deliverable", requireAuth, requirePermission("eng_tasks", "edit"), approvalUpload.single("file"), async (req, res) => {
     const id = parseInt(paramStr(req.params.id));
     const user = getUser(req);
 
