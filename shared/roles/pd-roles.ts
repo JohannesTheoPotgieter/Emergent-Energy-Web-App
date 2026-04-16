@@ -43,6 +43,14 @@ export const PM_REVIEW_ROLES = [
   "CCO",
 ] as const;
 
+/** Roles that can view and act on the Opportunities intake working list */
+export const OPPORTUNITY_INTAKE_VIEW_ROLES = [
+  "PROJECT_DEVELOPER",
+  "COO_ADMIN",
+  "CEO_ADMIN",
+  "CCO",
+] as const;
+
 /** Admin roles with full access */
 export const ADMIN_ROLES = [
   "COO_ADMIN",
@@ -88,4 +96,8 @@ export function isAdmin(role: string): boolean {
 
 export function isEngineeringRequestType(type: string): boolean {
   return (ENGINEERING_REQUEST_TYPES as readonly string[]).includes(type);
+}
+
+export function canViewOpportunityIntake(role: string): boolean {
+  return (OPPORTUNITY_INTAKE_VIEW_ROLES as readonly string[]).includes(role);
 }
