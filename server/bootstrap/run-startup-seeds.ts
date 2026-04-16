@@ -18,6 +18,9 @@ export async function runStartupSeeds(options: {
   const { seedQualityTemplate } = await import("../seed-quality-template");
   await seedQualityTemplate().catch((err) => log(`[Seed] Quality template error: ${err}`, "Startup"));
 
+  const { ensureNcrTables } = await import("../quality-ncr-routes");
+  await ensureNcrTables().catch((err) => log(`[Seed] NCR tables error: ${err}`, "Startup"));
+
   const { seedEngStageTemplates } = await import("../seed-eng-templates");
   await seedEngStageTemplates().catch((err) => log(`[Seed] Eng stage templates error: ${err}`, "Startup"));
 

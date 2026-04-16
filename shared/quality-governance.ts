@@ -103,6 +103,7 @@ export interface QualityRiskSummary {
     blockedHandover: boolean;
     handoverReasonCount: number;
     linkedMicrosoftCount: number;
+    openNcrCount: number;
     unansweredRiskCount: number;
     triggeredRiskCount: number;
     highTriggeredRiskCount: number;
@@ -242,6 +243,7 @@ export function computeQualityRiskSummary(params: {
   warnings?: QualityWarningLike[] | null;
   handover?: QualityHandoverLike | null;
   linkedMicrosoftCount?: number;
+  openNcrCount?: number;
   now?: Date;
 }): QualityRiskSummary {
   const now = params.now ?? new Date();
@@ -251,6 +253,7 @@ export function computeQualityRiskSummary(params: {
   const handoverReasons = getQualityHandoverReasons(params.handover);
   const blockedHandover = isHandoverQualityBlocked(params.handover);
   const linkedMicrosoftCount = Math.max(0, Number(params.linkedMicrosoftCount ?? 0));
+  const openNcrCount = Math.max(0, Number(params.openNcrCount ?? 0));
 
   const overdueCount = evaluations.filter((item) => item.overdue).length;
   const resubmissionCount = evaluations.filter((item) => item.resubmissionNeeded).length;
@@ -287,14 +290,15 @@ export function computeQualityRiskSummary(params: {
     triggeredRiskCount * 2 +
     highTriggeredRiskCount * 2 +
     (blockedHandover ? 4 : 0) +
-    Math.min(linkedMicrosoftCount, 2);
+    Math.min(linkedMicrosoftCount, 2) +
+    openNcrCount * 2;
 
   let level: QualityRiskLevel = "low";
   if (blockedHandover || score >= 12 || highWarningCount >= 2) {
     level = "critical";
   } else if (score >= 7 || highWarningCount >= 1 || resubmissionCount >= 1 || overdueCount >= 2) {
     level = "high";
-  } else if (score >= 3 || evidenceGapCount >= 1 || pendingReviewCount >= 1 || openWarningCount >= 1) {
+  } else if (score >= 3 || evidenceGapCount >= 1 || pendingReviewCount >= 1 || openWarningCount >= 1 || openNcrCount >= 1) {
     level = "medium";
   }
 
@@ -304,6 +308,7 @@ export function computeQualityRiskSummary(params: {
     resubmissionCount > 0 ? `${resubmissionCount} resubmission` : null,
     evidenceGapCount > 0 ? `${evidenceGapCount} evidence gap` : null,
     highWarningCount > 0 ? `${highWarningCount} high warning` : null,
+    openNcrCount > 0 ? `${openNcrCount} open NCR` : null,
     triggeredRiskCount > 0 ? `${triggeredRiskCount} risk trigger` : null,
     unansweredRiskCount > 0 ? `${unansweredRiskCount} unanswered risk question` : null,
     linkedMicrosoftCount > 0 ? `${linkedMicrosoftCount} linked Microsoft item` : null,
@@ -323,6 +328,7 @@ export function computeQualityRiskSummary(params: {
       blockedHandover,
       handoverReasonCount: handoverReasons.length,
       linkedMicrosoftCount,
+      openNcrCount,
       unansweredRiskCount,
       triggeredRiskCount,
       highTriggeredRiskCount,
