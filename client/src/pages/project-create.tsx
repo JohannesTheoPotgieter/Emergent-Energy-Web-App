@@ -204,10 +204,26 @@ export default function ProjectCreatePage() {
                 ) : null}
               </div>
             )}
+            {result._earlyStageAdvisory && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800 flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                <span>{result._earlyStageAdvisory}</span>
+              </div>
+            )}
             {result._duplicateConversionWarning && (
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800 flex items-start gap-2">
                 <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
                 <span>{result._duplicateConversionWarning}</span>
+              </div>
+            )}
+            {result._opportunitySource === "pipedrive" && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800 flex items-start gap-2">
+                <TrendingUp className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
+                <span>
+                  This project was created from a Pipedrive-synced opportunity. The opportunity's CRM-owned
+                  fields (stage, value, close date) will continue to be updated by the next Pipedrive sync,
+                  but the project itself is app-owned and will not be overwritten.
+                </span>
               </div>
             )}
             <div className="flex gap-3 justify-center pt-4">
@@ -256,6 +272,16 @@ export default function ProjectCreatePage() {
                   The project will be linked to this opportunity. Client will be inherited unless you override below.
                 </p>
               </div>
+            </div>
+          )}
+          {sourceOpportunity && (sourceOpportunity.stage === "prospect" || sourceOpportunity.stage === "qualification") && (
+            <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+              <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-800">
+                This opportunity is in the <strong>{sourceOpportunity.stage}</strong> stage. Projects are
+                usually created from opportunities at "proposal" stage or later. You can still proceed — EE
+                sometimes starts preliminary PD work before the deal progresses — but check that this is intentional.
+              </p>
             </div>
           )}
           <div>

@@ -332,6 +332,20 @@ export default function PdTicketDetailPage() {
             <InfoItem label="Project" value={data.projectName || "Not linked"} icon={<FolderKanban className="h-3.5 w-3.5" />}
               action={data.projectName ? <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => navigate(`/project/${encodeURIComponent(data.projectName)}`)} data-testid="link-to-project"><ExternalLink className="h-3 w-3" /></Button> : undefined}
             />
+            {data.opportunityInfo && (
+              <InfoItem
+                label="Opportunity"
+                value={data.opportunityInfo.notes || `#${data.opportunityInfo.id}`}
+                sub={
+                  [
+                    data.opportunityInfo.stage,
+                    data.opportunityInfo.source === "pipedrive" ? "Pipedrive" : "Internal",
+                    data.opportunityInfo.estimatedValue ? `R ${Number(data.opportunityInfo.estimatedValue).toLocaleString()}` : null,
+                  ].filter(Boolean).join(" · ")
+                }
+                icon={<Activity className="h-3.5 w-3.5" />}
+              />
+            )}
             <InfoItem label="Days in Progress" value={`${daysInProgress}d`} icon={<Clock className="h-3.5 w-3.5" />} />
             <InfoItem label="Days Given" value={daysGiven !== null ? `${daysGiven}d` : "—"} icon={<Clock className="h-3.5 w-3.5" />} />
             <InfoItem label="Developer" value={data.developerName || "—"} />

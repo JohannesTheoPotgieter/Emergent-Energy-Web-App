@@ -378,6 +378,22 @@ export function registerPdRoutes(app: Express) {
         ? await db.select({ id: users.id, name: users.name }).from(users).where(eq(users.id, ticket.ticket.designerUserId)).limit(1)
         : [];
 
+      // Enrich with opportunity data if the ticket is linked to one.
+      let opportunityInfo: { id: number; source: string | null; stage: string | null; notes: string | null; estimatedValue: string | null } | null = null;
+      if (ticket.ticket.opportunityId) {
+        const [opp] = await db
+          .select({
+            id: opportunities.id,
+            source: opportunities.source,
+            stage: opportunities.stage,
+            notes: opportunities.notes,
+            estimatedValue: opportunities.estimatedValue,
+          })
+          .from(opportunities)
+          .where(eq(opportunities.id, ticket.ticket.opportunityId));
+        if (opp) opportunityInfo = opp as typeof opportunityInfo;
+      }
+
       res.json({
         ...ticket,
         clientName: ticket.clientName || ticket.ticket.clientNameSnapshot || null,
@@ -386,6 +402,8 @@ export function registerPdRoutes(app: Express) {
         recentActivity,
         developerName: developerUser[0]?.name || null,
         designerName: designerUser[0]?.name || null,
+        // Opportunity enrichment for CRM boundary cues on the detail page.
+        opportunityInfo,
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
