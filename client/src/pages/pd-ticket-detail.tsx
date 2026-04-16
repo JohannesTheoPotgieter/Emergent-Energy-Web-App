@@ -486,6 +486,34 @@ export default function PdTicketDetailPage() {
           </CardContent>
         </Card>
       )}
+
+      <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-red-600">Delete PD Ticket</DialogTitle>
+          </DialogHeader>
+          <div className="py-3 space-y-2">
+            <p className="text-sm">Are you sure you want to permanently delete this ticket?</p>
+            <p className="text-sm font-medium">{t.projectSiteName || `Ticket #${t.id}`}</p>
+            {tasks.length > 0 && (
+              <p className="text-sm text-amber-600">This will also delete {tasks.length} linked task{tasks.length !== 1 ? "s" : ""}.</p>
+            )}
+            <p className="text-xs text-muted-foreground">This action cannot be undone.</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteConfirm(false)} data-testid="btn-cancel-delete">Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={() => deleteMutation.mutate()}
+              disabled={deleteMutation.isPending}
+              data-testid="btn-confirm-delete"
+            >
+              {deleteMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />}
+              Delete Ticket
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -954,33 +982,6 @@ function SpawnedTasksCard({ tasks, ticket, spawnMutation, createEngTaskMutation,
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-red-600">Delete PD Ticket</DialogTitle>
-          </DialogHeader>
-          <div className="py-3 space-y-2">
-            <p className="text-sm">Are you sure you want to permanently delete this ticket?</p>
-            <p className="text-sm font-medium">{t.projectSiteName || `Ticket #${t.id}`}</p>
-            {tasks.length > 0 && (
-              <p className="text-sm text-amber-600">This will also delete {tasks.length} linked task{tasks.length !== 1 ? "s" : ""}.</p>
-            )}
-            <p className="text-xs text-muted-foreground">This action cannot be undone.</p>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowDeleteConfirm(false)} data-testid="btn-cancel-delete">Cancel</Button>
-            <Button
-              variant="destructive"
-              onClick={() => deleteMutation.mutate()}
-              disabled={deleteMutation.isPending}
-              data-testid="btn-confirm-delete"
-            >
-              {deleteMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />}
-              Delete Ticket
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </Card>
   );
 }
