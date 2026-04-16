@@ -22,7 +22,7 @@ import { cacheGet, cacheSet, cacheDelete, cacheClear } from "../lib/cache";
 import { enqueueJob, registerWorker, QUEUE_NAMES } from "../lib/job-queue";
 import { isRevenueSettled } from "../lib/finance/revenue-ar-status";
 import { computeMarginPct } from "../lib/finance/margin";
-import { getCosRealisedAmountExVat } from "../lib/calculations/financeUtils";
+import { getCosRealisedAmountForNclRow } from "../lib/calculations/financeUtils";
 import { getAssignedEvidenceByCostLineIds } from "../lib/finance/qb-allocation-read";
 
 const REFRESH_COOLDOWN_MS = 5 * 60 * 1000; // Skip projects refreshed within 5 minutes
@@ -94,10 +94,10 @@ export async function refreshProjectMetrics(projectId: number): Promise<void> {
     } else {
       outstandingCost += amt;
     }
-    realisedCost += getCosRealisedAmountExVat({
-      amountExVat: row.amountExVat,
-      lineAssignedQbExVat: assignedByCostLineId.get(row.id) ?? null,
-    });
+    realisedCost += getCosRealisedAmountForNclRow(
+      row as any,
+      assignedByCostLineId.get(row.id) ?? null,
+    );
   }
 
   // D-04 fix: store margin as percentage (0–100) consistent with all other views

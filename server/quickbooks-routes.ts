@@ -488,7 +488,7 @@ export function registerQuickBooksRoutes(app: Express): void {
         entityType: "quickbooks_cost_allocations",
         entityId: String(result.documentId),
         action: "quickbooks.cost_allocation.bulk_assign",
-        source: "FINANCE",
+        source: "UI",
         changesJson: {
           projectId,
           qbEntityId: bill.id,
