@@ -12,12 +12,15 @@ import { usePermission } from "@/hooks/use-permissions";
 import { useTablePagination } from "@/hooks/use-table-pagination";
 import { TablePagination } from "@/components/ui/table-pagination";
 import { ExportDropdown } from "@/components/ui/export-dropdown";
+import { PD_REQUEST_TYPES_FILTERABLE } from "@/lib/pd/request-types";
 
 function pdFetch(url: string) {
   return fetch(url, { credentials: "include" }).then(r => { if (!r.ok) throw new Error("Failed"); return r.json(); });
 }
 
-const REQUEST_TYPES = ["Cost Proposal", "IFC Planning", "Site Assessment", "Feasibility Study", "Grid Application", "Design Review", "Battery Assessment", "Full EPC", "Data Analysis Request", "Meter installation", "Site visit Report", "CP - PVSOL", "First Assessment - PowerPoint Template", "Sizing Rational Request"];
+// Filter list uses the superset (active + legacy) so historical tickets
+// with retired request types remain findable. See client/src/lib/pd/request-types.ts.
+const REQUEST_TYPES = PD_REQUEST_TYPES_FILTERABLE;
 const STATUSES = ["Draft", "In Progress", "On Hold", "Completed", "Cancelled"];
 const PRIORITIES = ["Critical", "High", "Medium", "Low"];
 
@@ -172,7 +175,7 @@ export default function PdTicketsPage() {
                 <th scope="col" className="text-left p-2.5">Due Date</th>
                 <th scope="col" className="text-left p-2.5">Days In Progress</th>
                 <th scope="col" className="text-left p-2.5">Developer</th>
-                <th scope="col" className="text-left p-2.5">Tasks</th>
+                <th scope="col" className="text-left p-2.5" title="Sub-tasks spawned from the ticket's request-type template">Sub-tasks</th>
                 <th scope="col" className="text-left p-2.5">Next Action</th>
                 <th scope="col" className="text-left p-2.5">Designer</th>
               </tr>

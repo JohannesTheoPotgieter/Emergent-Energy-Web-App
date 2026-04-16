@@ -85,13 +85,32 @@ export const opportunities = pgTable("opportunities", {
   source: text("source").notNull().default("internal"),  // 'internal' | 'pipedrive'
   clientId: integer("client_id").references(() => clients.id),
   siteId: integer("site_id").references(() => sites.id, { onDelete: "set null" }),
+  /**
+   * @deprecated Not populated by any code path today. The Pipedrive
+   * sync parses `deal.owner_id` from the API response but never writes
+   * it into this column (see `server/services/pipedrive-sync-service.ts`),
+   * and the in-app opportunity form does not expose an owner picker.
+   * Kept for schema stability; do not rely on it for reporting.
+   * Tracked as "structural fix #2" in docs/runbooks/pipedrive-integration-review-2026-04-15.md.
+   */
   dealOwnerUserId: integer("deal_owner_user_id").references(() => users.id, { onDelete: "set null" }),
   stage: text("stage").default("prospect"),              // 'prospect', 'qualification', 'proposal', 'negotiation', 'won', 'lost'
   contractType: text("contract_type"),                   // 'PPA', 'EPC', 'lease', 'hybrid'
   fundingType: text("funding_type"),                     // 'self_funded', 'third_party', 'blended'
   estimatedValue: decimal("estimated_value", { precision: 15, scale: 2 }),
   estimatedKwp: decimal("estimated_kwp", { precision: 12, scale: 2 }),
+  /**
+   * @deprecated Not populated by any code path today. No UI field; not
+   * written by the Pipedrive sync. Retained only so drizzle types stay
+   * aligned with the physical column. Tracked in
+   * docs/runbooks/pd-data-trust-review-2026-04-15.md.
+   */
   estimatedKwh: decimal("estimated_kwh", { precision: 15, scale: 2 }),
+  /**
+   * @deprecated Not populated by any code path today. No UI field; not
+   * written by the Pipedrive sync. Retained only so drizzle types stay
+   * aligned with the physical column.
+   */
   proposalIssuedDate: date("proposal_issued_date"),
   expectedCloseDate: date("expected_close_date"),
   signedDate: date("signed_date"),
@@ -555,7 +574,23 @@ export const pdTickets = pgTable("pd_tickets", {
   estimatedMargin: decimal("estimated_margin", { precision: 14, scale: 2 }),
   estimatedMarginPercent: decimal("estimated_margin_percent", { precision: 6, scale: 2 }),
   financialNotes: text("financial_notes"),
+  /**
+   * @deprecated ClickUp integration was never completed. No ClickUp
+   * client, sync service, or lifecycle manager exists in the codebase.
+   * This column was part of an abandoned integration stub and is never
+   * read or written by any active code path. Retained for schema
+   * stability; do not rely on it.
+   */
   clickUpSynced: boolean("clickup_synced").default(false),
+  /**
+   * Timestamp set once when sub-tasks are spawned from the ticket's
+   * request-type template. Used as an idempotency guard by the spawn
+   * endpoint (`POST /api/pd/tickets/:id/spawn-tasks`) to prevent
+   * duplicate task creation. A null value means tasks have not been
+   * spawned yet. Note: there is no "force re-spawn" flow today — once
+   * set, the user cannot spawn again even if the tasks are deleted.
+   * A re-spawn workflow is tracked as future work.
+   */
   tasksSpawnedAt: timestamp("tasks_spawned_at"),
   createdBy: integer("created_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),

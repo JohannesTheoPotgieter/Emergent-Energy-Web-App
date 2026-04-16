@@ -3,11 +3,12 @@ import { useQuery } from "@tanstack/react-query";
 import { usePermission } from "@/hooks/use-permissions";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useToast } from "@/hooks/use-toast";
-import { AlertTriangle, Building2, CheckCircle, Loader2, Plus } from "lucide-react";
+import { AlertTriangle, Building2, CheckCircle, Loader2, Plus, TrendingUp } from "lucide-react";
 
 const authFetch = async (url: string, opts: RequestInit = {}) => {
   const token = localStorage.getItem("auth_token");
@@ -39,6 +40,41 @@ export default function ProjectCreatePage() {
   });
   const [result, setResult] = useState<any>(null);
   const [duplicateWarningDismissed, setDuplicateWarningDismissed] = useState(false);
+
+  // --- Opportunity-to-project conversion ---
+  // If the URL has ?opportunityId=X, load the opportunity and
+  // pre-fill clientId so the project inherits the commercial linkage.
+  const opportunityIdParam = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    const raw = params.get("opportunityId");
+    return raw ? Number(raw) : null;
+  }, []);
+
+  const { data: sourceOpportunity } = useQuery<{
+    id: number;
+    clientId: number | null;
+    stage: string;
+    status: string;
+    source: string | null;
+    estimatedValue: string | null;
+    notes: string | null;
+  }>({
+    queryKey: ["/api/opportunities", opportunityIdParam],
+    queryFn: async () => {
+      const res = await authFetch(`/api/opportunities/${opportunityIdParam}`);
+      if (!res.ok) throw new Error("Failed to load opportunity");
+      return res.json();
+    },
+    enabled: !!opportunityIdParam,
+    staleTime: 60_000,
+  });
+
+  // Auto-fill clientId from the opportunity when it loads (once).
+  useEffect(() => {
+    if (sourceOpportunity?.clientId && !form.clientId) {
+      setForm(f => ({ ...f, clientId: String(sourceOpportunity.clientId) }));
+    }
+  }, [sourceOpportunity]);
 
   const debouncedName = useMemo(() => form.projectName.trim(), [form.projectName]);
   const { data: similarProjects } = useQuery<{ matches: Array<{ id: number; projectName: string }> }>({
@@ -95,6 +131,9 @@ export default function ProjectCreatePage() {
         ...form,
         clientId: form.clientId ? Number(form.clientId) : null,
         clientName: selectedClient?.name || null,
+        // Pass the source opportunity so the server sets
+        // project_info.opportunity_id and logs the conversion.
+        opportunityId: opportunityIdParam || undefined,
       };
       const response = await authFetch("/api/projects", {
         method: "POST",
@@ -194,6 +233,25 @@ export default function ProjectCreatePage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Conversion banner — shown when the form is pre-filled from an opportunity */}
+          {sourceOpportunity && (
+            <div className="flex items-start gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <TrendingUp className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
+              <div className="text-sm text-blue-900">
+                <p className="font-medium">Creating project from opportunity #{sourceOpportunity.id}</p>
+                <p className="text-xs text-blue-700 mt-0.5">
+                  {sourceOpportunity.notes || "Untitled opportunity"}{" "}
+                  {sourceOpportunity.source === "pipedrive" && <Badge variant="info" className="text-[9px] ml-1">Pipedrive</Badge>}
+                  {sourceOpportunity.estimatedValue && (
+                    <span className="ml-2">· R {Number(sourceOpportunity.estimatedValue).toLocaleString()}</span>
+                  )}
+                </p>
+                <p className="text-[10px] text-blue-600 mt-1">
+                  The project will be linked to this opportunity. Client will be inherited unless you override below.
+                </p>
+              </div>
+            </div>
+          )}
           <div>
             <label className="text-sm font-medium">Project Name *</label>
             <Input

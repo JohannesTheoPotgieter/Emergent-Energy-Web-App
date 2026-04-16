@@ -150,7 +150,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "financialReviewQueue", path: "/governance/financial-reviews", label: "Financial Review Queue", iconKey: "DollarSign", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "approvals", showInSidebar: true, routeComponentKey: "FinancialReviewQueuePage" },
   { id: "pmApprovals", path: "/pm/approvals", label: "Approvals", iconKey: "ClipboardCheck", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "approvals", showInSidebar: true, routeComponentKey: "ApprovalsPage" },
   { id: "pmDeliverables", path: "/pm/deliverables", label: "PM Deliverables (Retired)", type: "alias", permissionEntity: "deliverables", redirectTo: "/pm/approvals" },
-  { id: "handoverControl", path: "/handover-control", label: "PD to PM Handover", iconKey: "Handshake", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "handover", showInSidebar: true, routeComponentKey: "HandoverControlPage" },
+  { id: "handoverControl", path: "/handover-control", label: "Handover Control", iconKey: "Handshake", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "handover", showInSidebar: true, routeComponentKey: "HandoverControlPage" },
   // Task Management removed from Project Delivery navigation
   { id: "fyeRevenueTracking", path: "/fye-revenue-tracking", label: "FYE Revenue Tracking", iconKey: "BarChart3", navGroup: "FINANCE", permissionEntity: "fye_revenue_tracking", showInSidebar: true, routeComponentKey: "FyeRevenueTrackingPage" },
   { id: "phaseTemplates", path: "/admin/phase-templates", label: "Phase Templates", iconKey: "ListChecks", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "PhaseTemplatesPage" },
@@ -160,7 +160,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "commandCenter", path: "/command-center", label: "Command Center", type: "alias", permissionEntity: "home", redirectTo: "/my-work" },
   // New entity pages (Phase B)
   { id: "sites", path: "/sites", label: "Sites", iconKey: "MapPin", navGroup: "PROJECTS", permissionEntity: "projects", showInSidebar: true, routeComponentKey: "SitesPage" },
-  { id: "opportunities", path: "/opportunities", label: "Opportunities", iconKey: "Sun", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_dashboard", showInSidebar: true, routeComponentKey: "OpportunitiesPage" },
+  { id: "opportunities", path: "/opportunities", label: "Opportunities", iconKey: "TrendingUp", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_dashboard", showInSidebar: true, routeComponentKey: "OpportunitiesPage" },
   { id: "procurementDashboard", path: "/procurement", label: "Procurement", type: "alias", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: false, redirectTo: "/execution-board" },
   // EPC Workflow Phase 1
   { id: "poApprovalBoard", path: "/po-approval-board", label: "PO Approvals", iconKey: "FileText", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "procurement", showInSidebar: true, routeComponentKey: "POApprovalBoardPage" },

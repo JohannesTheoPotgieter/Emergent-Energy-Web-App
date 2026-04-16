@@ -4,7 +4,7 @@ import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, FileEdit, Plus, AlertTriangle, Clock, CheckCircle2, PauseCircle, FileStack, Send, XCircle, LayoutGrid, List, BarChart3 } from "lucide-react";
+import { Loader2, FileEdit, Plus, AlertTriangle, Clock, CheckCircle2, PauseCircle, FileStack, Send, XCircle, LayoutGrid, List, BarChart3, TrendingUp, Handshake } from "lucide-react";
 import { statusColorClasses, priorityColorClasses } from "@/lib/status-colors";
 import { useLocation } from "wouter";
 import { usePermission } from "@/hooks/use-permissions";
@@ -87,6 +87,36 @@ export default function PdDashboardPage() {
     staleTime: 60_000,
   });
 
+  // Commercial pipeline summary (Opportunities). Additive fetch — failure
+  // here just hides the block, never blocks the rest of the dashboard.
+  const { data: opportunitiesData = [] } = useQuery<any[]>({
+    queryKey: ["/api/opportunities"],
+    queryFn: () => pdFetch("/api/opportunities"),
+    staleTime: 60_000,
+    // Surface errors in devtools but do not throw at the page level.
+    retry: 0,
+  });
+
+  const opportunityStats = (() => {
+    const rows = opportunitiesData || [];
+    const active = rows.filter((o: any) => o.status !== "won" && o.status !== "lost");
+    const won = rows.filter((o: any) => o.status === "won");
+    const pipedriveCount = rows.filter((o: any) => o.source === "pipedrive").length;
+    const internalCount = rows.length - pipedriveCount;
+    const pipelineValue = active.reduce(
+      (sum: number, o: any) => sum + (o.estimatedValue ? Number(o.estimatedValue) : 0),
+      0,
+    );
+    return {
+      total: rows.length,
+      active: active.length,
+      won: won.length,
+      pipelineValue,
+      pipedriveCount,
+      internalCount,
+    };
+  })();
+
   const handoverStats = (() => {
     const items = handoverControl?.items || [];
     const awaitingPmReview = items.filter(i => i.handover_status === "SUBMITTED_FOR_PM_REVIEW").length;
@@ -122,7 +152,9 @@ export default function PdDashboardPage() {
             <FileEdit className="h-6 w-6 text-violet-600" />
             Project Development
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">PD ticket overview and quick actions</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            Commercial pipeline, PD work queue, and PD→PM handover readiness.
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => navigate("/pd/reports")} className="gap-1.5">
@@ -161,14 +193,90 @@ export default function PdDashboardPage() {
         </div>
       )}
 
-      {/* Pipeline Summary */}
+      {/* Commercial pipeline (Opportunities) — first of the three PD concerns.
+          Block hidden automatically when the API has returned nothing yet. */}
+      {opportunityStats.total > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-emerald-600" />
+              Commercial pipeline (Opportunities)
+            </h2>
+            <div className="flex items-center gap-2">
+              {opportunityStats.pipelineValue > 0 && (
+                <Badge variant="outline" className="text-xs gap-1 font-semibold">
+                  R {opportunityStats.pipelineValue.toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} active
+                </Badge>
+              )}
+              <Button variant="link" size="sm" onClick={() => navigate("/opportunities")} data-testid="link-view-opportunities">
+                View all
+              </Button>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate("/opportunities")} data-testid="opp-stat-active">
+              <CardContent className="p-3 flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-emerald-700 bg-emerald-100">
+                  <TrendingUp className="h-4 w-4" />
+                </div>
+                <div>
+                  <span className="text-xl font-bold">{opportunityStats.active}</span>
+                  <p className="text-[10px] text-muted-foreground leading-tight">Active in pipeline</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate("/opportunities")} data-testid="opp-stat-won">
+              <CardContent className="p-3 flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-green-700 bg-green-100">
+                  <CheckCircle2 className="h-4 w-4" />
+                </div>
+                <div>
+                  <span className="text-xl font-bold">{opportunityStats.won}</span>
+                  <p className="text-[10px] text-muted-foreground leading-tight">Won (closed)</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate("/opportunities")} data-testid="opp-stat-pipedrive">
+              <CardContent className="p-3 flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-blue-700 bg-blue-100">
+                  <FileStack className="h-4 w-4" />
+                </div>
+                <div>
+                  <span className="text-xl font-bold">{opportunityStats.pipedriveCount}</span>
+                  <p className="text-[10px] text-muted-foreground leading-tight">Synced from Pipedrive</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate("/opportunities")} data-testid="opp-stat-internal">
+              <CardContent className="p-3 flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-slate-700 bg-slate-100">
+                  <FileEdit className="h-4 w-4" />
+                </div>
+                <div>
+                  <span className="text-xl font-bold">{opportunityStats.internalCount}</span>
+                  <p className="text-[10px] text-muted-foreground leading-tight">Internal (app-only)</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+          <p className="text-[10px] text-muted-foreground mt-2">
+            Pipedrive is the CRM source of truth for synced deals. Internal opportunities are app-only. See
+            <button onClick={() => navigate("/opportunities")} className="underline ml-1">Opportunities</button> for detail.
+          </p>
+        </div>
+      )}
+
+      {/* PD work queue — the ticket pipeline. Formerly "Pipeline Summary". */}
       {pipeline && !pipelineLoading && (
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold">Pipeline Summary</h2>
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <FileEdit className="h-4 w-4 text-violet-600" />
+              PD work queue
+            </h2>
             {pipeline.totalPipelineValue > 0 && (
               <Badge variant="outline" className="text-sm gap-1 font-semibold">
-                Pipeline Value: R {pipeline.totalPipelineValue.toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                Tickets value: R {pipeline.totalPipelineValue.toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
               </Badge>
             )}
           </div>
@@ -211,8 +319,13 @@ export default function PdDashboardPage() {
       {handoverStats.total > 0 && (
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold">Handover Readiness</h2>
-            <Button variant="link" size="sm" onClick={() => navigate("/handover-control")} data-testid="link-handover-control">View control center</Button>
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <Handshake className="h-4 w-4 text-amber-600" />
+              PD → PM handover readiness
+            </h2>
+            <Button variant="link" size="sm" onClick={() => navigate("/handover-control")} data-testid="link-handover-control">
+              View handover control
+            </Button>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
@@ -312,7 +425,7 @@ export default function PdDashboardPage() {
                 <CardContent className="p-8 text-center text-muted-foreground">
                   <FileEdit className="h-10 w-10 mx-auto mb-2 opacity-30" />
                   <p className="font-medium">No PD tickets yet</p>
-                  <p className="text-sm mt-1">Create your first PD ticket to get started</p>
+                  <p className="text-sm mt-1">PD tickets track engineering requests (cost proposals, site assessments, IFC planning, etc.) and require a linked project, due date, and request type.</p>
                 </CardContent>
               </Card>
             ) : (
