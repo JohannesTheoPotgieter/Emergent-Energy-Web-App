@@ -10,6 +10,7 @@
 
 import { classifyCosStatus, type CosStatus } from './stateClassifier';
 import { isCanonicalCosRealised, getCosRealisationWarnings, type CosLineInput } from '../finance/cos-realisation';
+import { computeCostEvidence } from '../finance/qb-allocation';
 
 // ─── Static fallback COS budget (FY2025-2026) ───
 // Used when no manual budget override has been entered for a month.
@@ -126,6 +127,8 @@ export function isCosRealised(exp: {
   _cosOverrideStatus?: string | null;
   cosRealised?: boolean | null;
   cosStatusOverride?: string | null;
+  lineAssignedQbExVat?: number | null;
+  lineAmountExVat?: number | null;
 }): boolean {
   return isCanonicalCosRealised({
     status: null, // status labels do NOT independently determine realisation
@@ -141,7 +144,21 @@ export function isCosRealised(exp: {
     // function falls back to the legacy invoice-only rule for safety.
     invoiceDateFontColor: exp.invoiceDateFontColor ?? null,
     invoiceDateConfirmed: exp.invoiceDateConfirmed ?? null,
+    lineAssignedQbExVat: exp.lineAssignedQbExVat ?? null,
+    lineAmountExVat: exp.lineAmountExVat ?? null,
   });
+}
+
+export function getCosRealisedAmountExVat(exp: {
+  expenseActualTotal?: string | number | null;
+  amountExVat?: string | number | null;
+  lineAssignedQbExVat?: number | null;
+}): number {
+  const lineAmount = Number(exp.amountExVat ?? exp.expenseActualTotal ?? 0);
+  const assigned = Number(exp.lineAssignedQbExVat ?? 0);
+  if (!Number.isFinite(lineAmount) || lineAmount <= 0) return 0;
+  if (!Number.isFinite(assigned) || assigned <= 0) return 0;
+  return computeCostEvidence(lineAmount, assigned).lineRealisedAmountExVat;
 }
 
 // ─── Project-name normalisation ───

@@ -42,7 +42,8 @@ import {
 import { computeQcProgress } from "@shared/quality-governance";
 import { evaluateRevenueArStatus, isRevenueSettled } from "../lib/finance/revenue-ar-status";
 import { computeMarginPct } from "../lib/finance/margin";
-import { isCanonicalCosRealised } from "../lib/finance/cos-realisation";
+import { getCosRealisedAmountExVat } from "../lib/calculations/financeUtils";
+import { getAssignedEvidenceByCostLineIds } from "../lib/finance/qb-allocation-read";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -134,6 +135,7 @@ export async function getCompanyOverviewData() {
   });
 
   const activeProjectIds = new Set(activeProjects.map((p) => p.id));
+  const assignedByCostLineId = await getAssignedEvidenceByCostLineIds(costRows.map((r: any) => r.id));
 
   // ── Finance FYTD aggregation ───────────────────────────────────────
   // Four distinct concepts (never blended):
@@ -189,21 +191,13 @@ export async function getCompanyOverviewData() {
       if ((row as any).paidDate) {
         cashPaidFytd += amount;
       }
-      // COS realised = invoice + invoice-date confirmed (black font) per canonical check
-      if (isCanonicalCosRealised({
-        status: null,
-        cosStatusOverride: (row as any).cosStatusOverride ?? null,
-        cosRealised: (row as any).cosRealised ?? null,
-        expenseInvoiceNumber: (row as any).invoiceNumber ?? null,
-        expenseInvoicedDate: (row as any).invoiceDate ?? null,
-        expensePoNumber: (row as any).poNumber ?? null,
-        paymentDate: (row as any).paidDate ?? null,
-        today,
-        invoiceDateFontColor: (row as any).invoiceDateFontColor ?? null,
-        invoiceDateConfirmed: (row as any).invoiceDateConfirmed ?? null,
-      })) {
-        realisedCostFytd += amount;
-        projectRealisedCos.set(row.projectId, (projectRealisedCos.get(row.projectId) || 0) + amount);
+      const realised = getCosRealisedAmountExVat({
+        amountExVat: row.amountExVat,
+        lineAssignedQbExVat: assignedByCostLineId.get(row.id) ?? null,
+      });
+      if (realised > 0) {
+        realisedCostFytd += realised;
+        projectRealisedCos.set(row.projectId, (projectRealisedCos.get(row.projectId) || 0) + realised);
       }
     }
   }

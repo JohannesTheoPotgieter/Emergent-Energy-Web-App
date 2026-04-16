@@ -58,6 +58,7 @@ import {
   QuickBooksLinkConflictError,
   runProjectCostReconciliation,
   runProjectRevenueReconciliation,
+  saveCostAllocationsForBill,
   searchCostLines,
   softDeleteCustomerMapping,
   softDeleteLink,
@@ -454,6 +455,59 @@ export function registerQuickBooksRoutes(app: Express): void {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to create link";
       res.status(500).json({ error: "quickbooks_link_failed", message });
+    }
+  });
+
+  app.post("/api/quickbooks/cost-allocations/bulk-assign", requireAuth, requirePermission("financials", "edit"), async (req, res) => {
+    try {
+      const projectId = Number(req.body?.projectId);
+      const bill = req.body?.bill as QuickBooksBillSummary | undefined;
+      const allocations = Array.isArray(req.body?.allocations) ? req.body.allocations : [];
+      if (!bill?.id) {
+        res.status(400).json({ error: "invalid_bill", message: "bill is required" });
+        return;
+      }
+      if (!Number.isFinite(projectId)) {
+        res.status(400).json({ error: "invalid_project", message: "projectId is required" });
+        return;
+      }
+      const normalized = allocations.map((a: any) => ({
+        projectId,
+        costLineId: Number(a.costLineId),
+        amountExVat: Number(a.amountExVat),
+      })).filter((a: any) => Number.isFinite(a.costLineId) && Number.isFinite(a.amountExVat) && a.amountExVat > 0);
+
+      const result = await saveCostAllocationsForBill({
+        projectId,
+        bill,
+        allocations: normalized,
+        actorId: getEffectiveUser(req)?.id ?? null,
+      });
+
+      logAuditFromReq(req, {
+        entityType: "quickbooks_cost_allocations",
+        entityId: String(result.documentId),
+        action: "quickbooks.cost_allocation.bulk_assign",
+        source: "FINANCE",
+        changesJson: {
+          projectId,
+          qbEntityId: bill.id,
+          allocationCount: normalized.length,
+          assignedExVat: result.assignedExVat,
+          remainingExVat: result.remainingExVat,
+          status: result.status,
+          taxUncertain: result.taxUncertain,
+        },
+      });
+
+      res.json({ success: true, ...result });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to save allocations";
+      if (/Over-assignment blocked/i.test(message)) {
+        res.status(409).json({ error: "over_assignment_blocked", message });
+        return;
+      }
+      res.status(500).json({ error: "quickbooks_allocation_failed", message });
     }
   });
 
