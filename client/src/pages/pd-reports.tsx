@@ -3,7 +3,7 @@ import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, BarChart3, ArrowLeft, TrendingUp, Users, AlertTriangle, CheckCircle2, XCircle, Copy } from "lucide-react";
+import { Loader2, BarChart3, ArrowLeft, TrendingUp, Users, AlertTriangle, CheckCircle2, XCircle, Copy, Handshake, FileEdit, DollarSign } from "lucide-react";
 import { useLocation } from "wouter";
 import { usePermission } from "@/hooks/use-permissions";
 import { MaturityBadge } from "@/components/ui/maturity-badge";
@@ -94,12 +94,14 @@ export default function PdReportsPage() {
 
   if (!report) return null;
 
+  const cf = report.commercialFunnel;
   const t = report.throughput;
   const p = report.pipelineHealth;
   const h = report.handover;
   const maxByStatus = Math.max(...Object.values(p.activeByStatus as Record<string, number>), 1);
   const maxByType = Math.max(...Object.values(p.activeByType as Record<string, number>), 1);
   const maxPerMember = Math.max(...Object.values(p.ticketsPerMember as Record<string, number>), 1);
+  const maxByStage = cf ? Math.max(...Object.values(cf.byStage as Record<string, number>), 1) : 1;
 
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
@@ -125,11 +127,57 @@ export default function PdReportsPage() {
         </Button>
       </div>
 
-      {/* Throughput */}
+      {/* Section 1: Commercial Funnel (Opportunities) */}
+      {cf && cf.total > 0 && (
+        <div>
+          <h2 className="text-lg font-semibold mb-1 flex items-center gap-2">
+            <DollarSign className="h-4 w-4 text-emerald-600" /> Commercial Funnel
+          </h2>
+          <p className="text-[10px] text-muted-foreground mb-3">
+            Source: <code className="px-1 py-0.5 bg-muted rounded">opportunities</code> table.
+            These are deal-level metrics, not PD ticket counts.
+            Values marked "FY" are scoped to the selected financial year.
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            <MetricCard label="Total Opportunities" value={cf.total} sub="all-time (non-deleted)" />
+            <MetricCard label="Active Pipeline" value={cf.active} sub="not won or lost" />
+            <MetricCard label="Won (FY)" value={cf.wonFy} color="text-green-600" sub="signed in FY" />
+            <MetricCard label="Lost (FY)" value={cf.lostFy} color={cf.lostFy > 0 ? "text-red-600" : ""} sub="lost in FY" />
+            <MetricCard
+              label="Pipeline Value"
+              value={cf.activePipelineValue > 0 ? `R ${(cf.activePipelineValue / 1_000_000).toFixed(1)}M` : "—"}
+              sub={cf.activePipelineKwp > 0 ? `${Math.round(cf.activePipelineKwp)} kWp capacity` : undefined}
+            />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+            <Card>
+              <CardContent className="p-4">
+                <p className="text-xs font-medium mb-2">Active Opportunities by Stage</p>
+                <div className="space-y-1.5">
+                  {Object.entries(cf.byStage as Record<string, number>).map(([stage, count]: [string, number]) => (
+                    <BarRow key={stage} label={stage} value={count} max={maxByStage} color="bg-emerald-500" />
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+            <div className="flex flex-col gap-3">
+              <MetricCard label="From Pipedrive" value={cf.pipedriveCount} sub="synced from CRM" />
+              <MetricCard label="Internal" value={cf.internalCount} sub="app-created (not CRM)" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Section 2: PD Work Queue — Throughput */}
       <div>
-        <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
-          <TrendingUp className="h-4 w-4" /> Throughput
+        <h2 className="text-lg font-semibold mb-1 flex items-center gap-2">
+          <FileEdit className="h-4 w-4 text-violet-600" /> PD Work Queue — Throughput
         </h2>
+        <p className="text-[10px] text-muted-foreground mb-3">
+          Source: <code className="px-1 py-0.5 bg-muted rounded">pd_tickets</code> table.
+          These are engineering request counts, not commercial deal counts.
+          All FY-scoped unless noted otherwise.
+        </p>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           <MetricCard label="Created This Month" value={t.createdThisMonth} />
           <MetricCard label="Created FY" value={t.createdFY} />
@@ -175,9 +223,15 @@ export default function PdReportsPage() {
         )}
       </div>
 
-      {/* Pipeline Health */}
+      {/* Section 2b: PD Work Queue — Active State */}
       <div>
-        <h2 className="text-lg font-semibold mb-3">Pipeline Health</h2>
+        <h2 className="text-lg font-semibold mb-1 flex items-center gap-2">
+          <FileEdit className="h-4 w-4 text-violet-600" /> PD Work Queue — Active State
+        </h2>
+        <p className="text-[10px] text-muted-foreground mb-3">
+          Status/type breakdowns are FY-scoped. Overdue count and workload distribution are all-time
+          (an overdue ticket is overdue regardless of when it was created).
+        </p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Card>
             <CardContent className="p-4">
@@ -215,9 +269,14 @@ export default function PdReportsPage() {
         </div>
       </div>
 
-      {/* Handover Metrics */}
+      {/* Section 3: PD → PM Handover */}
       <div>
-        <h2 className="text-lg font-semibold mb-3">Handover Metrics</h2>
+        <h2 className="text-lg font-semibold mb-1 flex items-center gap-2">
+          <Handshake className="h-4 w-4 text-amber-600" /> PD → PM Handover
+        </h2>
+        <p className="text-[10px] text-muted-foreground mb-3">
+          Source: <code className="px-1 py-0.5 bg-muted rounded">project_pd_pm_handover</code> table. All-time.
+        </p>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           <MetricCard label="Submitted" value={h.submitted} />
           <MetricCard label="Accepted" value={h.accepted} color="text-green-600" />

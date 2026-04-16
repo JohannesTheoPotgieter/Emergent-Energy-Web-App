@@ -3,7 +3,7 @@
 // add explicit ': any' to .map/.filter callback params on db result rows.
 import type { Express, Request, Response } from "express";
 import { db } from "./db";
-import { clients, pdTickets, workItems, workItemAssignments, projectInfo, users, taskActivityLog, PD_REQUEST_TYPE_TASK_TEMPLATES, projectExecutionState, projectPdPmHandover, projectHandoverHistory, pdVisibilityConfig, workstreamVisibilityConfig } from "@shared/schema";
+import { clients, pdTickets, workItems, workItemAssignments, projectInfo, users, taskActivityLog, PD_REQUEST_TYPE_TASK_TEMPLATES, projectExecutionState, projectPdPmHandover, projectHandoverHistory, pdVisibilityConfig, workstreamVisibilityConfig, opportunities } from "@shared/schema";
 import { eq, ilike, sql, and, desc, asc, or, isNull, inArray } from "drizzle-orm";
 import { getFeatureFlag } from "./lib/feature-flags";
 import { requirePermission } from "./permission-middleware";
@@ -809,6 +809,31 @@ export function registerPdRoutes(app: Express) {
     }
   });
 
+  /**
+   * PD Reports endpoint.
+   *
+   * Returns three distinct sections — each sourced from its own table
+   * and never mixed:
+   *
+   * 1. `commercialFunnel` — Opportunity-based metrics from the
+   *    `opportunities` table. Measures the commercial pipeline:
+   *    how many deals are in what stage, how much value is active,
+   *    and what the Pipedrive vs internal split looks like.
+   *
+   * 2. `throughput` + `pipelineHealth` — PD-work-queue metrics from
+   *    the `pdTickets` table. Measures engineering request throughput:
+   *    how many tickets were created vs completed, what the backlog
+   *    looks like by status/type/member, and what the overdue count
+   *    is. Pipeline-health metrics are now FY-scoped (fix: previously
+   *    used `allTickets` instead of `fyTickets`, leaking stale
+   *    system-wide state into FY reports).
+   *
+   * 3. `handover` — Handover-readiness metrics from the
+   *    `projectPdPmHandover` table. Measures the PD→PM gate:
+   *    submitted vs accepted vs rejected, cycle time, rejection rate.
+   *
+   * KPI definitions are documented inline with each computation.
+   */
   app.get("/api/pd/reports", requireAuth, requirePermission('pd_dashboard', 'view'), async (req: Request, res: Response) => {
     try {
       // FY boundaries: Sep-Aug. FY2026 = 1 Sep 2025 → 31 Aug 2026
@@ -828,29 +853,85 @@ export function registerPdRoutes(app: Express) {
       ];
 
       const currentMonth = now.toISOString().slice(0, 7); // YYYY-MM
+      const today = now.toISOString().split("T")[0];
 
-      // Get all tickets
+      // ===== DATA FETCH =====
       const allTickets = await db.select().from(pdTickets);
       const fyTickets = allTickets.filter((t: any) => t.createdAt >= fyStart && t.createdAt <= fyEnd);
 
-      // Get all handovers
       const allHandovers = await db.select().from(projectPdPmHandover);
       const fyHandovers = allHandovers.filter((h: any) => h.createdAt >= fyStart && h.createdAt <= fyEnd);
 
-      // Get handover history for rejection reasons
       const handoverHistory = await db.select().from(projectHandoverHistory)
         .where(sql`${projectHandoverHistory.gateId} = 'PD_PM_HANDOVER'`);
 
-      // Get users for workload
       const pdUsers = await db.select({ id: users.id, name: users.name }).from(users);
       const userMap = new Map(pdUsers.map((u: any) => [u.id, u.name]));
 
-      // --- Throughput Metrics ---
+      // Fetch opportunities for the commercial funnel section.
+      const allOpps = await db.select().from(opportunities).where(isNull(opportunities.deletedAt));
+
+      // ===== SECTION 1: COMMERCIAL FUNNEL =====
+      // Source: `opportunities` table (NOT mixed with pd_tickets).
+      const activeOpps = allOpps.filter((o: any) => o.status !== "won" && o.status !== "lost");
+      const wonFy = allOpps.filter((o: any) => o.status === "won" && o.signedDate && o.signedDate >= fyStart.toISOString().slice(0, 10) && o.signedDate <= fyEnd.toISOString().slice(0, 10));
+      const lostFy = allOpps.filter((o: any) => o.status === "lost" && o.updatedAt && o.updatedAt >= fyStart && o.updatedAt <= fyEnd);
+
+      /** KPI: Active pipeline value (R). Sum of estimatedValue for
+       *  opportunities with status not won or lost. Source: opportunities.estimated_value. */
+      const activePipelineValue = activeOpps.reduce(
+        (sum: number, o: any) => sum + (o.estimatedValue ? parseFloat(o.estimatedValue) : 0),
+        0,
+      );
+
+      /** KPI: Opportunity stage breakdown. Count of active (not won/lost)
+       *  opportunities grouped by stage. Source: opportunities.stage. */
+      const byStage: Record<string, number> = {};
+      for (const o of activeOpps) {
+        const stage = o.stage || "unknown";
+        byStage[stage] = (byStage[stage] || 0) + 1;
+      }
+
+      const commercialFunnel = {
+        /** KPI: Total non-deleted opportunities in the system. */
+        total: allOpps.length,
+        /** KPI: Active pipeline — opportunities that are neither won nor lost. */
+        active: activeOpps.length,
+        /** KPI: Won in FY — opportunities with status=won and signedDate within FY window. */
+        wonFy: wonFy.length,
+        /** KPI: Lost in FY — opportunities with status=lost and updatedAt within FY window. */
+        lostFy: lostFy.length,
+        /** KPI: Active pipeline value (R). */
+        activePipelineValue,
+        /** KPI: Active pipeline value (kWp). */
+        activePipelineKwp: activeOpps.reduce(
+          (sum: number, o: any) => sum + (o.estimatedKwp ? parseFloat(o.estimatedKwp) : 0),
+          0,
+        ),
+        byStage,
+        /** KPI: Pipedrive vs internal split. */
+        pipedriveCount: allOpps.filter((o: any) => o.source === "pipedrive").length,
+        internalCount: allOpps.filter((o: any) => o.source !== "pipedrive").length,
+      };
+
+      // ===== SECTION 2: PD WORK QUEUE — THROUGHPUT =====
+      // Source: `pdTickets` table (NOT mixed with opportunities).
+
+      /** KPI: Tickets created this month. Count of pd_tickets with
+       *  createdAt in the current calendar month. */
       const thisMonthTickets = fyTickets.filter((t: any) => t.createdAt.toISOString().slice(0, 7) === currentMonth);
+
+      /** KPI: Tickets completed in FY. Count of pd_tickets with
+       *  status="Completed" and createdAt within the FY window. */
       const completedFy = fyTickets.filter((t: any) => t.status === "Completed");
+
+      /** KPI: Tickets completed this month. Subset of completedFy where
+       *  updatedAt is in the current calendar month. */
       const completedThisMonth = completedFy.filter((t: any) => t.updatedAt.toISOString().slice(0, 7) === currentMonth);
 
-      // Average cycle time by request type
+      /** KPI: Average cycle time by request type (days). For completed
+       *  FY tickets, the number of days between createdAt and updatedAt,
+       *  averaged per request type. */
       const cycleTimeByType: Record<string, { total: number; count: number }> = {};
       for (const t of completedFy) {
         const days = Math.max(0, Math.floor((t.updatedAt.getTime() - t.createdAt.getTime()) / 86400000));
@@ -862,13 +943,16 @@ export function registerPdRoutes(app: Express) {
         Object.entries(cycleTimeByType).map(([k, v]) => [k, Math.round(v.total / v.count)])
       );
 
-      // Average handover cycle time (draft → accepted)
+      /** KPI: Average handover cycle time (days). For accepted handovers,
+       *  the number of days between handover createdAt and acceptedAt.
+       *  All-time, not FY-scoped, because handovers span FY boundaries. */
       const acceptedHandovers = allHandovers.filter((h: any) => h.status === "ACCEPTED" && h.acceptedAt && h.createdAt);
       const avgHandoverCycleTime = acceptedHandovers.length > 0
         ? Math.round(acceptedHandovers.reduce((sum: any, h: any) => sum + Math.max(0, Math.floor((h.acceptedAt!.getTime() - h.createdAt.getTime()) / 86400000)), 0) / acceptedHandovers.length)
         : null;
 
-      // Quarterly breakdown
+      /** KPI: Quarterly breakdown. Created/completed/submitted counts per
+       *  FY quarter (Sep-Nov, Dec-Feb, Mar-May, Jun-Aug). */
       const quarterlyData = quarters.map((q: any) => {
         const created = fyTickets.filter((t: any) => t.createdAt >= q.start && t.createdAt <= q.end).length;
         const completed = completedFy.filter((t: any) => t.updatedAt >= q.start && t.updatedAt <= q.end).length;
@@ -876,33 +960,50 @@ export function registerPdRoutes(app: Express) {
         return { quarter: q.label, created, completed, submitted };
       });
 
-      // --- Pipeline Health ---
+      // ===== SECTION 2b: PD WORK QUEUE — ACTIVE STATE =====
+      // FIX: These now use `fyTickets` — previously used `allTickets`,
+      // which leaked system-wide state into FY-specific reports.
+      // The overdue count and workload distribution intentionally remain
+      // all-time because an overdue ticket is overdue regardless of when
+      // it was created.
+
+      /** KPI: Active tickets by status (FY-scoped). Count of non-completed,
+       *  non-cancelled FY tickets grouped by status. */
       const activeByStatus: Record<string, number> = {};
+      /** KPI: Active tickets by request type (FY-scoped). */
       const activeByType: Record<string, number> = {};
-      for (const t of allTickets) {
-        if (t.status !== "Completed" && t.status !== "Cancelled") {
-          activeByStatus[t.status] = (activeByStatus[t.status] || 0) + 1;
-          activeByType[t.requestType] = (activeByType[t.requestType] || 0) + 1;
-        }
+      const fyActive = fyTickets.filter((t: any) => t.status !== "Completed" && t.status !== "Cancelled");
+      for (const t of fyActive) {
+        activeByStatus[t.status] = (activeByStatus[t.status] || 0) + 1;
+        activeByType[t.requestType] = (activeByType[t.requestType] || 0) + 1;
       }
 
-      const today = new Date().toISOString().split("T")[0];
+      /** KPI: Overdue tickets (all-time). Count of tickets with dueDate
+       *  before today and status not Completed/Cancelled. Not FY-scoped. */
       const overdueCount = allTickets.filter((t: any) => t.dueDate && t.dueDate < today && t.status !== "Completed" && t.status !== "Cancelled").length;
 
-      // Tickets per PD team member
+      /** KPI: Tickets per PD team member (all-time active). Count of
+       *  non-completed, non-cancelled tickets grouped by developer. */
       const ticketsPerMember: Record<string, number> = {};
       for (const t of allTickets.filter((t: any) => t.status !== "Completed" && t.status !== "Cancelled")) {
         const name = (t as any).projectDeveloperUserId ? (userMap.get((t as any).projectDeveloperUserId) || "Unassigned") : "Unassigned";
         ticketsPerMember[name as string] = (ticketsPerMember[name as string] || 0) + 1;
       }
 
-      // --- Handover Metrics ---
+      // ===== SECTION 3: HANDOVER READINESS =====
+      // Source: `projectPdPmHandover` table (NOT mixed with tickets).
+
+      /** KPI: Handovers submitted (all-time). Count of handovers with
+       *  a non-null submittedAt. */
       const submittedHandovers = allHandovers.filter((h: any) => h.submittedAt);
+      /** KPI: Handovers accepted / rejected (all-time). */
       const accepted = allHandovers.filter((h: any) => h.status === "ACCEPTED").length;
       const rejected = allHandovers.filter((h: any) => h.status === "REJECTED").length;
+      /** KPI: Rejection rate (%). rejected / (accepted + rejected) × 100. */
       const rejectionRate = (accepted + rejected) > 0 ? Math.round((rejected / (accepted + rejected)) * 100) : 0;
 
-      // Average time from submission to decision
+      /** KPI: Average decision time (days). Days from submittedAt to
+       *  acceptedAt or rejectedAt, whichever came first. All-time. */
       const decidedHandovers = allHandovers.filter((h: any) => h.submittedAt && (h.acceptedAt || h.rejectedAt));
       const avgDecisionTime = decidedHandovers.length > 0
         ? Math.round(decidedHandovers.reduce((sum: any, h: any) => {
@@ -928,6 +1029,7 @@ export function registerPdRoutes(app: Express) {
       res.json({
         fy,
         fyLabel: `FY${fy} (Sep ${fy - 1} – Aug ${fy})`,
+        commercialFunnel,
         throughput: {
           createdThisMonth: thisMonthTickets.length,
           createdFY: fyTickets.length,
