@@ -1,6 +1,6 @@
 export type QbMatchType =
   | "linked_txn_id"
-  | "invoice_project_counterparty_amount"
+  | "invoice_counterparty_amount"
   | "invoice_amount"
   | "unmatched";
 
@@ -60,12 +60,11 @@ export function resolveQbMatch(input: QbStatusResolutionInput): QbStatusResoluti
   }
 
   const invoice = norm(input.invoiceNumber);
-  const project = norm(input.projectName);
   const counterparty = norm(input.counterpartyName);
   const amount = input.amount ?? null;
 
   if (invoice) {
-    if (project && counterparty) {
+    if (counterparty) {
       const tier2 = input.candidates.find((c) => {
         if (norm(c.docNumber) !== invoice) return false;
         if (!amountMatches(c.totalAmount, amount)) return false;
@@ -75,7 +74,7 @@ export function resolveQbMatch(input: QbStatusResolutionInput): QbStatusResoluti
       if (tier2) {
         return {
           qbTransactionId: tier2.id,
-          qbMatchType: "invoice_project_counterparty_amount",
+          qbMatchType: "invoice_counterparty_amount",
           qbMatchConfidence: "high",
           matched: tier2,
         };
@@ -103,10 +102,15 @@ export function resolveQbMatch(input: QbStatusResolutionInput): QbStatusResoluti
   };
 }
 
-export function deriveInflowsQbStatus(balance: number | null, matched: boolean): InflowQbStatus {
+export function deriveInflowsQbStatus(
+  balance: number | null,
+  matched: boolean,
+  amount: number | null,
+): InflowQbStatus {
   if (!matched) return "Unknown";
   if (balance === null || balance === undefined) return "Unknown";
   if (balance <= AMOUNT_TOLERANCE) return "Received";
+  if (amount !== null && amount !== undefined && amountMatches(balance, amount)) return "Not received";
   return "Partially received";
 }
 

@@ -166,6 +166,9 @@ export function adaptRevenueToInflow(rev: NormalizedRevenueLine, resolvedName: s
     adminDateOverrideReason: (rev as any).adminDateOverrideReason ?? null,
     adminDateOverrideBy: (rev as any).adminDateOverrideBy ?? null,
     adminDateOverrideAt: (rev as any).adminDateOverrideAt ?? null,
+    // normalizedRevenueLines has no counterparty column; customer must come from
+    // project-level data or QB customer mappings. Placeholder for future enrichment.
+    customerName: null,
     _isNormalized: true,
   };
 }
