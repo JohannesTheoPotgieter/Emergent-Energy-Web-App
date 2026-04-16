@@ -182,10 +182,18 @@ async function postToTokenEndpoint(body: URLSearchParams): Promise<IntuitTokenRe
 
   const text = await response.text();
   if (!response.ok) {
-    // Diagnostic: log the full error response for debugging
-    console.error(`[QuickBooks] Token endpoint error ${response.status}: ${text}`);
+    // Diagnostic: include credential shape in error so it surfaces in the UI
+    const { clientId, clientSecret } = getClientCredentials();
+    const diag = [
+      `status=${response.status}`,
+      `response=${text || response.statusText}`,
+      `sandbox=${isSandbox()}`,
+      `clientId=${maskMiddle(clientId)}(len=${clientId.length})`,
+      `secret=${maskMiddle(clientSecret)}(len=${clientSecret.length})`,
+    ].join(" | ");
+    console.error(`[QuickBooks] Token exchange failed: ${diag}`);
     throw new Error(
-      `QuickBooks token endpoint returned ${response.status}: ${text || response.statusText}`,
+      `QuickBooks token endpoint returned ${response.status}: ${text || response.statusText}. Diagnostics: sandbox=${isSandbox()}, clientId=${maskMiddle(clientId)}(len=${clientId.length}), secret=${maskMiddle(clientSecret)}(len=${clientSecret.length})`,
     );
   }
 
