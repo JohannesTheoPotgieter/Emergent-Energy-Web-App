@@ -781,11 +781,11 @@ export function registerTemplateRoutes(app: Express) {
           .select({ id: projectInfo.id, projectName: projectInfo.projectName })
           .from(projectInfo)
           .where(and(
-            eq(projectInfo.opportunityId, resolvedOpportunityId),
+            eq(projectInfo.opportunityId, resolvedOpportunityId!),
             isNull(projectInfo.deletedAt),
           ));
         if (existingProjects.length > 0) {
-          duplicateConversionWarning = `Opportunity #${resolvedOpportunityId} is already linked to project(s): ${existingProjects.map(p => `${p.projectName} (#${p.id})`).join(", ")}. Creating another project from the same opportunity is allowed but may indicate a duplicate.`;
+          duplicateConversionWarning = `Opportunity #${resolvedOpportunityId} is already linked to project(s): ${existingProjects.map((p: { projectName: string | null; id: number }) => `${p.projectName} (#${p.id})`).join(", ")}. Creating another project from the same opportunity is allowed but may indicate a duplicate.`;
         }
       }
 

@@ -388,7 +388,7 @@ export async function createOrUpdateLink(
 
   // --- 3. Idempotent refresh path: the exact same pair already exists. ---
   const idempotent = activeAppLinks.find(
-    (l) =>
+    (l: QuickBooksInvoiceLink) =>
       l.qbEntityType === values.qbEntityType &&
       l.qbEntityId === values.qbEntityId,
   );

@@ -6,9 +6,7 @@ function baseInput() {
     projectId: 101,
     contractValue: 1_000_000,
     canonicalRevenueRows: [] as any[],
-    inflowFallbackRows: [] as any[],
     canonicalCostRows: [] as any[],
-    expenseFallbackRows: [] as any[],
     derivedGrossMarginPct: 0,
     budgetBaselineMarginPct: null,
     executionBaselineMarginPct: null,
@@ -44,32 +42,24 @@ describe("project header KPI canonical aggregator", () => {
     expect(result.cosRealisedPct).toBe(50);
   });
 
-  it("falls back to raw import tables when canonical rows are absent", () => {
+  it("returns zero percentages when canonical rows are empty", () => {
     const result = computeProjectHeaderKpis({
       ...baseInput(),
-      inflowFallbackRows: [
-        { milestoneAmount: 200, paymentReceivedDate: "2026-01-02", inBank: 0 },
-        { milestoneAmount: 300, paymentReceivedDate: null, inBank: 0 },
-      ],
-      expenseFallbackRows: [
-        { expenseActualTotal: 100, actualCosTotal: 80, expenseInvoiceNumber: "INV-1", expenseInvoicedDate: "2026-01-01", cosStatusOverride: null, rowType: "item" },
-        { expenseActualTotal: 100, actualCosTotal: 40, expenseInvoiceNumber: null, expenseInvoicedDate: null, cosStatusOverride: null, rowType: "item" },
-      ],
+      canonicalRevenueRows: [],
+      canonicalCostRows: [],
     });
 
-    expect(result.source.revenue).toBe("program_inflows");
-    expect(result.source.cost).toBe("program_expense");
-    expect(result.inflowsRealisedPct).toBe(40);
-    expect(result.cosRealisedPct).toBeCloseTo(66.7, 1);
+    expect(result.source.revenue).toBe("normalized_revenue_lines");
+    expect(result.source.cost).toBe("normalized_cost_lines");
+    expect(result.inflowsRealisedPct).toBe(0);
+    expect(result.cosRealisedPct).toBe(0);
   });
 
-  it("prefers canonical rows when both canonical and raw exist (no double count)", () => {
+  it("computes correct percentages from canonical rows only", () => {
     const result = computeProjectHeaderKpis({
       ...baseInput(),
       canonicalRevenueRows: [{ amountExVat: 100, status: "IN_BANK", paidDate: null, inBankDate: "2026-01-01" }],
-      inflowFallbackRows: [{ milestoneAmount: 9999, paymentReceivedDate: "2026-01-01", inBank: 1 }],
       canonicalCostRows: [{ amountExVat: 50, cosRealised: true, cosStatusOverride: null }],
-      expenseFallbackRows: [{ expenseActualTotal: 9999, actualCosTotal: 9999, expenseInvoiceNumber: "A", expenseInvoicedDate: "2026-01-01", cosStatusOverride: null, rowType: "item" }],
     });
 
     expect(result.inflowsRealisedPct).toBe(100);
