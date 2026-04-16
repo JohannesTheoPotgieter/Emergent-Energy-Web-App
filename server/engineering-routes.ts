@@ -2537,6 +2537,14 @@ export function registerEngineeringRoutes(app: Express) {
         workload,
         projectHealth,
         statusPipeline,
+        // Trust metadata: tells the client which sections are provisional
+        // so the UI can render appropriate caveats.
+        _trustMetadata: {
+          workload: { provisional: true, reason: "Name-based grouping — two people with the same first name will merge" },
+          projectHealthRag: { provisional: true, reason: "Automated thresholds (>0 overdue = RED) — may not reflect actual project risk" },
+          recentlyCompleted: { provisional: true, reason: "completedAt may be null for legacy tasks that were marked complete before timestamp tracking" },
+          warningEngine: { provisional: true, reason: "Warning scan is backend-only; no UI surfaces warnings to users yet" },
+        },
       });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
