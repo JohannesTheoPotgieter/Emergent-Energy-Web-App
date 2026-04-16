@@ -810,7 +810,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.post("/api/quality/project/:projectName/item/:itemInstanceId/approve", requireAuth, requireAdminOrQm, requirePermission('quality', 'approve'), async (req, res) => {
+  app.post("/api/quality/project/:projectName/item/:itemInstanceId/approve", requireAuth, requirePermission('quality', 'approve'), async (req, res) => {
     try {
       const itemId = parseInt(String(req.params.itemInstanceId), 10);
       const { approved, comment } = req.body;
@@ -821,7 +821,7 @@ export function registerQualityRoutes(app: Express) {
           const role = getUserRole(req);
           const isQmManager = isAdminRole(role) || role === "quality_manager" || role === "QUALITY_MANAGER";
           if (!isQmManager) {
-            return res.status(403).json({ error: "forbidden", message: "Only QM Manager can approve items in Review or Failed status" });
+            return res.status(403).json({ error: "forbidden", message: "Only Quality Manager or Admin can approve items in Review or Failed status" });
           }
         }
 
@@ -900,7 +900,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.post("/api/quality/project/:projectName/item/:itemInstanceId/evidence/upload", requireAuth, requireAdminOrQm, qmApprovalUpload.single("file"), async (req, res) => {
+  app.post("/api/quality/project/:projectName/item/:itemInstanceId/evidence/upload", requireAuth, requirePermission("quality", "edit"), qmApprovalUpload.single("file"), async (req, res) => {
     try {
       const itemId = parseInt(String(req.params.itemInstanceId), 10);
       const file = req.file;
@@ -925,7 +925,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.get("/api/quality/sp-browse", requireAuth, requireAdminOrQm, async (req, res) => {
+  app.get("/api/quality/sp-browse", requireAuth, requirePermission("quality", "edit"), async (req, res) => {
     try {
       const { browseFolders, isSharePointConfigured } = await import("./sharepoint");
       if (!isSharePointConfigured()) {
@@ -944,7 +944,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.get("/api/quality/sp-file-link", requireAuth, requireAdminOrQm, async (req, res) => {
+  app.get("/api/quality/sp-file-link", requireAuth, requirePermission("quality", "edit"), async (req, res) => {
     try {
       const { isSharePointConfigured } = await import("./sharepoint");
       if (!isSharePointConfigured()) return res.status(400).json({ error: "SharePoint not configured" });
@@ -966,7 +966,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.post("/api/quality/project/:projectName/item/:itemInstanceId/send-for-approval", requireAuth, requireAdminOrQm, qmApprovalUpload.single("file"), async (req, res) => {
+  app.post("/api/quality/project/:projectName/item/:itemInstanceId/send-for-approval", requireAuth, requirePermission("pd_quality", "edit"), qmApprovalUpload.single("file"), async (req, res) => {
     try {
       const itemId = parseInt(String(req.params.itemInstanceId), 10);
       const projectName = decodeURIComponent(String(req.params.projectName));
@@ -1233,7 +1233,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.post("/api/quality/warning/:warningId/acknowledge", requireAuth, requirePermission("quality", "edit"), async (req, res) => {
+  app.post("/api/quality/warning/:warningId/acknowledge", requireAuth, requirePermission("quality", "approve"), async (req, res) => {
     try {
       const warningId = parseInt(String(req.params.warningId), 10);
       const { note } = req.body;
@@ -1254,7 +1254,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.post("/api/quality/warning/:warningId/resolve", requireAuth, requirePermission("quality", "edit"), async (req, res) => {
+  app.post("/api/quality/warning/:warningId/resolve", requireAuth, requirePermission("quality", "approve"), async (req, res) => {
     try {
       const warningId = parseInt(String(req.params.warningId), 10);
       const { note } = req.body;
