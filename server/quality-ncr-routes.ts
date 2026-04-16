@@ -2,6 +2,8 @@ import type { Express, Request, Response } from "express";
 import { db, getDbMode } from "./db";
 import { sql } from "drizzle-orm";
 import { requireAuth, getEffectiveUser } from "./auth-context";
+import { requirePermission } from "./permission-middleware";
+import { logAuditFromReq } from "./audit-logger";
 
 const STATUS_ORDER = ["open", "investigating", "corrective_action", "verification", "closed"] as const;
 
@@ -52,7 +54,7 @@ async function ensureNcrTables() {
 }
 
 export function registerQualityNcrRoutes(app: Express) {
-  app.get("/api/quality/ncrs", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/quality/ncrs", requireAuth, requirePermission("quality", "view"), async (req: Request, res: Response) => {
     try {
       await ensureNcrTables();
       const status = req.query.status ? String(req.query.status) : null;
@@ -77,7 +79,7 @@ export function registerQualityNcrRoutes(app: Express) {
     }
   });
 
-  app.post("/api/quality/ncrs", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/quality/ncrs", requireAuth, requirePermission("quality", "create"), async (req: Request, res: Response) => {
     try {
       await ensureNcrTables();
       const user = getEffectiveUser(req);
@@ -87,6 +89,7 @@ export function registerQualityNcrRoutes(app: Express) {
         INSERT INTO ncr_reports (project_id, reported_by, assigned_to, title, description, severity, status, due_date, created_at, updated_at)
         VALUES (${project_id}, ${user?.id}, ${assigned_to ?? null}, ${title}, ${description ?? null}, ${severity}, 'open', ${due_date ?? null}, ${new Date().toISOString()}, ${new Date().toISOString()})
       `);
+      logAuditFromReq(req, { entityType: "ncr_report", entityId: "new", action: "create", changesJson: { title, severity, project_id } });
       res.status(201).json({ ok: true });
     } catch (err) {
       console.error("[QualityNCR] Failed to create NCR:", err);
@@ -94,7 +97,7 @@ export function registerQualityNcrRoutes(app: Express) {
     }
   });
 
-  app.get("/api/quality/ncrs/:id", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/quality/ncrs/:id", requireAuth, requirePermission("quality", "view"), async (req: Request, res: Response) => {
     try {
       await ensureNcrTables();
       const id = Number(req.params.id);
@@ -110,7 +113,7 @@ export function registerQualityNcrRoutes(app: Express) {
     }
   });
 
-  app.put("/api/quality/ncrs/:id", requireAuth, async (req: Request, res: Response) => {
+  app.put("/api/quality/ncrs/:id", requireAuth, requirePermission("quality", "edit"), async (req: Request, res: Response) => {
     try {
       await ensureNcrTables();
       const id = Number(req.params.id);
@@ -135,6 +138,7 @@ export function registerQualityNcrRoutes(app: Express) {
             updated_at = ${new Date().toISOString()}
         WHERE id = ${id}
       `);
+      logAuditFromReq(req, { entityType: "ncr_report", entityId: String(id), action: "update", changesJson: { statusTransition: current !== next ? `${current} -> ${next}` : undefined } });
       res.json({ ok: true });
     } catch (err) {
       console.error("[QualityNCR] Failed to update NCR:", err);
@@ -142,13 +146,14 @@ export function registerQualityNcrRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/quality/ncrs/:id", requireAuth, async (req: Request, res: Response) => {
+  app.delete("/api/quality/ncrs/:id", requireAuth, requirePermission("quality", "delete"), async (req: Request, res: Response) => {
     try {
       await ensureNcrTables();
       const id = Number(req.params.id);
       await db.execute(sql`DELETE FROM ncr_comments WHERE ncr_id = ${id}`);
       await db.execute(sql`DELETE FROM ncr_attachments WHERE ncr_id = ${id}`);
       await db.execute(sql`DELETE FROM ncr_reports WHERE id = ${id}`);
+      logAuditFromReq(req, { entityType: "ncr_report", entityId: String(id), action: "delete", changesJson: { description: "NCR deleted" } });
       res.json({ ok: true });
     } catch (err) {
       console.error("[QualityNCR] Failed to delete NCR:", err);
@@ -156,7 +161,7 @@ export function registerQualityNcrRoutes(app: Express) {
     }
   });
 
-  app.post("/api/quality/ncrs/:id/comments", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/quality/ncrs/:id/comments", requireAuth, requirePermission("quality", "edit"), async (req: Request, res: Response) => {
     try {
       await ensureNcrTables();
       const user = getEffectiveUser(req);
