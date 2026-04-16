@@ -30,18 +30,23 @@ app.get("/api/governance/quality", jwtAuth, requireAuth, async (req, res) => {
           AND pes.current_stage_code IN ('S07_COMMISSIONING', 'S06_CONSTRUCTION')
       `),
 
-      // Open quality items (snags, NCRs from QC system)
+      // Open quality items — uses canonical qc_item_instance table with correct columns
       db.execute(sql`
         SELECT
-          qi.id, qi.project_id, pi.project_name,
-          qi.status, qi.severity,
-          COALESCE(EXTRACT(DAY FROM NOW() - qi.created_at)::int, 0) AS age_days,
+          qi.id, cl.project_id, pi.project_name,
+          qi.qm_status, qi.approved, qi.is_applicable,
+          ti.item_name, ti.default_severity AS severity,
+          COALESCE(EXTRACT(DAY FROM NOW() - qi.last_updated_at)::int, 0) AS age_days,
           u.name AS owner_name
-        FROM qc_item_instances qi
-        JOIN project_info pi ON pi.id = qi.project_id
-        LEFT JOIN users u ON u.id = qi.assigned_to_user_id
-        WHERE qi.status NOT IN ('closed', 'complete', 'not_applicable')
-        ORDER BY qi.severity DESC NULLS LAST, qi.created_at ASC
+        FROM qc_item_instance qi
+        JOIN qc_checklist cl ON cl.id = qi.checklist_id
+        JOIN project_info pi ON pi.id = cl.project_id
+        JOIN qc_template_item ti ON ti.id = qi.template_item_id
+        LEFT JOIN users u ON u.id = qi.assignee_user_id
+        WHERE qi.is_applicable = true
+          AND qi.approved = false
+          AND qi.qm_status NOT IN ('na')
+        ORDER BY ti.default_severity DESC NULLS LAST, qi.last_updated_at ASC
         LIMIT 200
       `),
 
@@ -84,21 +89,22 @@ app.patch("/api/governance/quality/:id/action", jwtAuth, requireAuth, async (req
     const itemId = Number(req.params.id);
     const { action, assignToUserId, notes } = req.body;
 
+    // Use canonical qc_item_instance table with correct column names and status values
     if (action === "close") {
       await db.execute(sql`
-        UPDATE qc_item_instances SET status = 'closed', updated_at = NOW() WHERE id = ${itemId}
+        UPDATE qc_item_instance SET qm_status = 'na', is_applicable = false, approved = false, last_updated_at = NOW() WHERE id = ${itemId}
       `);
     } else if (action === "assign" && assignToUserId) {
       await db.execute(sql`
-        UPDATE qc_item_instances SET assigned_to_user_id = ${assignToUserId}, updated_at = NOW() WHERE id = ${itemId}
+        UPDATE qc_item_instance SET assignee_user_id = ${assignToUserId}, last_updated_at = NOW() WHERE id = ${itemId}
       `);
     } else if (action === "approve") {
       await db.execute(sql`
-        UPDATE qc_item_instances SET status = 'complete', updated_at = NOW() WHERE id = ${itemId}
+        UPDATE qc_item_instance SET qm_status = 'pass', approved = true, approved_at = NOW(), last_updated_at = NOW() WHERE id = ${itemId}
       `);
     } else if (action === "reject") {
       await db.execute(sql`
-        UPDATE qc_item_instances SET status = 'failed', updated_at = NOW() WHERE id = ${itemId}
+        UPDATE qc_item_instance SET qm_status = 'fail', approved = false, last_updated_at = NOW() WHERE id = ${itemId}
       `);
     }
 

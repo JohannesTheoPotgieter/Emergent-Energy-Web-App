@@ -467,3 +467,40 @@ export function evaluateChecklistHandoverReadiness(params: {
     blockers,
   };
 }
+
+// ===================== QC PROGRESS (shared helper) =====================
+
+export interface QcProgressResult {
+  totalApplicable: number;
+  totalApproved: number;
+  progressPercent: number;
+}
+
+/**
+ * Computes QC checklist progress from a list of item instances.
+ * This is the single source of truth for QC progress calculation.
+ * Used by dashboard-metrics, company-overview, pm-monthly-report, and quality-routes.
+ */
+export function computeQcProgress(
+  items: Array<{ isApplicable?: boolean | null; approved?: boolean | null; qmStatus?: string | null }>,
+): QcProgressResult {
+  const applicable = items.filter((i) => i.isApplicable !== false);
+  const approved = applicable.filter((i) => i.approved === true || i.qmStatus === "pass");
+  const totalApplicable = applicable.length;
+  const totalApproved = approved.length;
+  return {
+    totalApplicable,
+    totalApproved,
+    progressPercent: totalApplicable > 0 ? Math.round((totalApproved / totalApplicable) * 100) : 0,
+  };
+}
+
+/**
+ * Derives a dashboard-friendly quality status label from warning counts.
+ * Aligns with governance risk levels from computeQualityRiskSummary.
+ */
+export function deriveQualityStatusLabel(openWarnings: number, highWarnings: number): string {
+  if (highWarnings >= 2) return "Blocked";
+  if (openWarnings >= 3 || highWarnings >= 1) return "At Risk";
+  return "On Track";
+}
