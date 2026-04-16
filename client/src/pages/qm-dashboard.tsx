@@ -445,7 +445,7 @@ export default function QmDashboardPage() {
 
   const filteredProjects = useMemo(() => {
     let list = checklists.filter(c =>
-      c.projectName.toLowerCase().includes(searchTerm.toLowerCase())
+      (c.projectName || "").toLowerCase().includes(searchTerm.toLowerCase())
     );
     if (statusFilter === "active") list = list.filter(c => c.status === "active");
     if (warningFilter) list = list.filter(c => getProjectWarnings(c) > 0);
@@ -453,7 +453,7 @@ export default function QmDashboardPage() {
     list.sort((a, b) => {
       let cmp = 0;
       switch (projectSort) {
-        case "name": cmp = a.projectName.localeCompare(b.projectName); break;
+        case "name": cmp = (a.projectName || "").localeCompare(b.projectName || ""); break;
         case "completion": cmp = getProjectCompletion(a) - getProjectCompletion(b); break;
         case "warnings": cmp = getProjectWarnings(a) - getProjectWarnings(b); break;
         case "updated": cmp = getProjectUpdated(a).localeCompare(getProjectUpdated(b)); break;
