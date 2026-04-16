@@ -76,9 +76,15 @@ interface MonthDetailItem {
   invoiceDateConfirmed: boolean;
   supplier: string | null;
   month: string;
+  poNumber: string | null;
+  qbTransactionType: string | null;
+  qbTransactionDate: string | null;
+  recognitionDate: string | null;
+  syncSource: string | null;
+  sourceTraceId: string | null;
   matchStatus: "matched" | "qb_only" | "app_only";
-  cosState: "realised" | "committed" | "planned";
-  reasonBucket: "matched realised" | "matched committed" | "QB-only actual" | "app-only pending";
+  cosState: "realised" | "committed" | "planned" | "qb_actual";
+  reasonBucket: "matched realised" | "matched committed" | "QB-only actual" | "app-only pending" | "planned";
 }
 
 interface MonthDetail {
@@ -127,16 +133,14 @@ const ROW_DEFS: {
   { key: "totalCOS", label: "COS - App Actual", dataKey: "totalCOS", editable: false, colorClass: "text-foreground font-bold", group: "monthly", expandable: true, projectsKey: "cosProjects" },
   { key: "realisedCOS", label: "Realised COS", dataKey: "realisedCOS", editable: false, colorClass: "text-foreground font-bold", group: "monthly", expandable: true, projectsKey: "realisedProjects" },
   { key: "committedCOS", label: "Committed COS", dataKey: "committedCOS", editable: false, colorClass: "text-amber-600 font-semibold", group: "monthly", expandable: true, projectsKey: "committedProjects" },
-  { key: "plannedCOS", label: "Planned COS", dataKey: "plannedCOS", editable: false, colorClass: "text-red-600 font-semibold", group: "monthly", expandable: true, projectsKey: "plannedProjects" },
   { key: "qbOnlyActual", label: "QB Actual", dataKey: "qbOnlyActual", editable: false, colorClass: "text-blue-600 font-semibold", group: "monthly", expandable: true, projectsKey: "qbOnlyProjects" },
-  { key: "appOnlyPending", label: "App-only Pending", dataKey: "appOnlyPending", editable: false, colorClass: "text-orange-600 font-semibold", group: "monthly", expandable: true, projectsKey: "appOnlyPendingProjects" },
+  { key: "appOnlyPending", label: "App-only Pending Invoice (Unlinked)", dataKey: "appOnlyPending", editable: false, colorClass: "text-orange-600 font-semibold", group: "monthly", expandable: true, projectsKey: "appOnlyPendingProjects" },
   { key: "budget", label: "Costed", dataKey: "budget", editable: true, colorClass: "text-purple-600", group: "monthly" },
   { key: "variance", label: "Variance", dataKey: "variance", editable: false, colorClass: "", group: "monthly", colorCoded: true },
   { key: "variancePct", label: "Variance %", dataKey: "variancePct", editable: false, colorClass: "", group: "monthly", colorCoded: true },
   { key: "ytdCOS", label: "YTD COS", dataKey: "ytdCOS", editable: false, colorClass: "text-foreground font-bold", group: "ytd" },
   { key: "ytdRealised", label: "YTD Realised", dataKey: "ytdRealised", editable: false, colorClass: "text-foreground font-bold", group: "ytd" },
   { key: "ytdCommitted", label: "YTD Committed", dataKey: "ytdCommitted", editable: false, colorClass: "text-amber-600", group: "ytd" },
-  { key: "ytdPlanned", label: "YTD Planned", dataKey: "ytdPlanned", editable: false, colorClass: "text-red-600", group: "ytd" },
   { key: "ytdQbOnly", label: "YTD QB Actual", dataKey: "ytdQbOnly", editable: false, colorClass: "text-blue-600", group: "ytd" },
   { key: "ytdAppOnlyPending", label: "YTD App-only Pending", dataKey: "ytdAppOnlyPending", editable: false, colorClass: "text-orange-600", group: "ytd" },
   { key: "ytdBudget", label: "YTD Costed", dataKey: "ytdBudget", editable: false, colorClass: "text-purple-600", group: "ytd" },
@@ -144,22 +148,22 @@ const ROW_DEFS: {
   { key: "ytdVariancePct", label: "YTD Variance %", dataKey: "ytdVariancePct", editable: false, colorClass: "", group: "ytd", colorCoded: true },
 ];
 
-function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all", defaultProject = "all" }: { monthKey: string; monthLabel: string; onClose: () => void; defaultFilter?: "all" | "realised" | "committed" | "planned"; defaultProject?: string }) {
+function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all", defaultProject = "all" }: { monthKey: string; monthLabel: string; onClose: () => void; defaultFilter?: "all" | "realised" | "committed" | "planned" | "qb_actual"; defaultProject?: string }) {
   const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
-  const [stateFilter, setStateFilter] = useState<"all" | "realised" | "committed" | "planned">(defaultFilter);
+  const [stateFilter, setStateFilter] = useState<"all" | "realised" | "committed" | "planned" | "qb_actual">(defaultFilter);
   const [projectFilter, setProjectFilter] = useState<string>(defaultProject);
+  const stateParam = stateFilter !== "all" ? `&state=${stateFilter}` : "";
+  const projectParam = projectFilter !== "all" ? `&project=${encodeURIComponent(projectFilter)}` : "";
 
   const { data, isLoading } = useQuery<MonthDetail>({
-    queryKey: ["/api/cos-tracker/month-detail", monthKey],
-    queryFn: fetchQueryFn(`/api/cos-tracker/month-detail?monthKey=${monthKey}`),
+    queryKey: ["/api/cos-tracker/month-detail", monthKey, stateFilter, projectFilter],
+    queryFn: fetchQueryFn(`/api/cos-tracker/month-detail?monthKey=${monthKey}${stateParam}${projectParam}`),
   });
 
   const filtered = useMemo(() => {
     if (!data?.items) return [];
     let items = data.items;
-    if (stateFilter !== "all") items = items.filter(i => i.cosState === stateFilter);
-    if (projectFilter !== "all") items = items.filter(i => i.projectName === projectFilter);
     if (search.trim()) {
       const q = search.toLowerCase();
       items = items.filter(i =>
@@ -198,6 +202,7 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
             <option value="realised">Realised</option>
             <option value="committed">Committed</option>
             <option value="planned">Planned</option>
+            <option value="qb_actual">QB Actual</option>
           </select>
           <select value={projectFilter} onChange={(e) => setProjectFilter(e.target.value)} className="h-9 px-3 border rounded-lg bg-muted/50">
             <option value="all">All projects</option>
@@ -214,12 +219,16 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                   <th className="text-left px-3 py-2">Supplier/Vendor</th>
                   <th className="text-left px-3 py-2">App Invoice #</th>
                   <th className="text-left px-3 py-2">QuickBooks Bill #</th>
+                  <th className="text-left px-3 py-2">PO #</th>
                   <th className="text-right px-3 py-2">App Amount</th>
                   <th className="text-right px-3 py-2">QB Amount</th>
                   <th className="text-left px-3 py-2">Month</th>
+                  <th className="text-left px-3 py-2">Recognition Date</th>
+                  <th className="text-left px-3 py-2">QB Type</th>
                   <th className="text-left px-3 py-2">Match Status</th>
                   <th className="text-left px-3 py-2">Realised/Committed/Planned</th>
                   <th className="text-left px-3 py-2">Reason Bucket</th>
+                  <th className="text-left px-3 py-2">Trace ID</th>
                 </tr>
               </thead>
               <tbody>
@@ -229,12 +238,16 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                     <td className="px-3 py-2">{item.supplier || "—"}</td>
                     <td className="px-3 py-2">{item.invoiceNumber || "—"}</td>
                     <td className="px-3 py-2">{item.qbBillNumber || "—"}</td>
+                    <td className="px-3 py-2">{item.poNumber || "—"}</td>
                     <td className="px-3 py-2 text-right font-mono">{item.appAmount == null ? "—" : formatRand(item.appAmount)}</td>
                     <td className="px-3 py-2 text-right font-mono">{item.qbAmount == null ? "—" : formatRand(item.qbAmount)}</td>
                     <td className="px-3 py-2">{item.month}</td>
+                    <td className="px-3 py-2">{item.recognitionDate || "—"}</td>
+                    <td className="px-3 py-2">{item.qbTransactionType || "—"}</td>
                     <td className="px-3 py-2">{item.matchStatus}</td>
                     <td className="px-3 py-2">{item.cosState}</td>
                     <td className="px-3 py-2">{item.reasonBucket}</td>
+                    <td className="px-3 py-2">{item.sourceTraceId || "—"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -251,10 +264,16 @@ export default function CosTracker() {
   const qc = useQueryClient();
   const [editing, setEditing] = useState<EditingCell | null>(null);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
-  const [drawerMonth, setDrawerMonth] = useState<{ monthKey: string; monthLabel: string; defaultFilter?: "all" | "realised" | "committed" | "planned"; defaultProject?: string } | null>(null);
+  const [drawerMonth, setDrawerMonth] = useState<{ monthKey: string; monthLabel: string; defaultFilter?: "all" | "realised" | "committed" | "planned" | "qb_actual"; defaultProject?: string } | null>(null);
+  const [cosReconTab, setCosReconTab] = useState<"matched" | "appOnly" | "qbOnly" | "exceptions">("matched");
 
   const { data: months = [], isLoading, isError, error, refetch } = useQuery<MonthData[]>({
     queryKey: ["/api/cos-tracker"],
+    staleTime: 30_000,
+  });
+  const { data: cosRecon } = useQuery<any>({
+    queryKey: ["/api/cos-tracker/reconciliation"],
+    queryFn: fetchQueryFn("/api/cos-tracker/reconciliation"),
     staleTime: 30_000,
   });
 
@@ -545,7 +564,7 @@ export default function CosTracker() {
                   {ROW_DEFS.map((row, rowIdx) => {
                     const isYtd = row.group === "ytd";
                     const isExpanded = expandedRows.has(row.key);
-                    const isClickable = ["totalCOS", "realisedCOS", "committedCOS", "plannedCOS", "qbOnlyActual", "appOnlyPending"].includes(row.key);
+                    const isClickable = ["totalCOS", "realisedCOS", "committedCOS", "qbOnlyActual", "appOnlyPending"].includes(row.key);
                     const isFirstYtd = isYtd && rowIdx > 0 && ROW_DEFS[rowIdx - 1].group !== "ytd";
                     return (
                       <React.Fragment key={row.key}>
@@ -619,7 +638,7 @@ export default function CosTracker() {
                                 onClick={isClickable ? () => setDrawerMonth({
                                   monthKey: m.monthKey,
                                   monthLabel: m.monthLabel,
-                                  defaultFilter: row.key === 'realisedCOS' ? 'realised' : row.key === 'committedCOS' ? 'committed' : row.key === 'plannedCOS' || row.key === 'appOnlyPending' ? 'planned' : 'all'
+                                  defaultFilter: row.key === 'realisedCOS' ? 'realised' : row.key === 'committedCOS' ? 'committed' : row.key === 'appOnlyPending' ? 'planned' : row.key === 'qbOnlyActual' ? 'qb_actual' : 'all'
                                 }) : undefined}
                                 data-testid={`cell-${row.key}-${m.monthKey}`}
                               >
@@ -648,7 +667,7 @@ export default function CosTracker() {
                               const projArr = row.projectsKey ? (m as any)[row.projectsKey] as ProjectBreakdown[] : [];
                               const proj = projArr?.find((p: ProjectBreakdown) => p.projectName === pName);
                               const val = proj?.value ?? 0;
-                              const drillFilter = row.key === 'realisedCOS' ? 'realised' as const : row.key === 'committedCOS' ? 'committed' as const : row.key === 'plannedCOS' || row.key === 'appOnlyPending' ? 'planned' as const : 'all' as const;
+                              const drillFilter = row.key === 'realisedCOS' ? 'realised' as const : row.key === 'committedCOS' ? 'committed' as const : row.key === 'appOnlyPending' ? 'planned' as const : row.key === 'qbOnlyActual' ? 'qb_actual' as const : 'all' as const;
                               return (
                                 <td
                                   key={m.monthKey}
@@ -670,6 +689,47 @@ export default function CosTracker() {
                       </React.Fragment>
                     );
                   })}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-sm overflow-hidden">
+          <CardHeader className="bg-gradient-to-r from-slate-50 to-white border-b px-3 sm:px-6 py-3 sm:py-4">
+            <CardTitle className="text-base sm:text-lg font-semibold tracking-tight">COS Reconciliation Workbench</CardTitle>
+          </CardHeader>
+          <CardContent className="p-3 sm:p-6 space-y-4">
+            <div className="flex gap-2 text-xs">
+              {(["matched", "appOnly", "qbOnly", "exceptions"] as const).map((tab) => (
+                <button key={tab} className={`px-2 py-1 rounded border ${cosReconTab === tab ? "bg-blue-600 text-white" : "bg-white"}`} onClick={() => setCosReconTab(tab)}>
+                  {tab === "appOnly" ? "App only" : tab === "qbOnly" ? "QB only" : tab[0].toUpperCase() + tab.slice(1)}
+                </button>
+              ))}
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead><tr className="border-b bg-muted/50">
+                  <th className="text-left px-2 py-2">Month</th><th className="text-left px-2 py-2">Project</th><th className="text-right px-2 py-2">App Actual</th><th className="text-right px-2 py-2">QB Actual</th><th className="text-right px-2 py-2">Delta</th><th className="text-right px-2 py-2">Delta %</th><th className="text-right px-2 py-2">App-only</th><th className="text-right px-2 py-2">QB-only</th><th className="text-right px-2 py-2">Missing PO</th><th className="text-right px-2 py-2">Missing Invoice</th><th className="text-left px-2 py-2">Status</th>
+                </tr></thead>
+                <tbody>
+                  {(cosRecon?.summary || []).map((r: any) => (
+                    <tr key={`${r.month}-${r.project}`} className="border-b">
+                      <td className="px-2 py-1">{r.month}</td><td className="px-2 py-1">{r.project}</td><td className="px-2 py-1 text-right">{formatRand(r.appActual)}</td><td className="px-2 py-1 text-right">{formatRand(r.qbActual)}</td><td className="px-2 py-1 text-right">{formatRand(r.delta)}</td><td className="px-2 py-1 text-right">{Number(r.deltaPct || 0).toFixed(1)}%</td><td className="px-2 py-1 text-right">{r.appOnlyItemCount}</td><td className="px-2 py-1 text-right">{r.qbOnlyItemCount}</td><td className="px-2 py-1 text-right">{r.missingPoCount}</td><td className="px-2 py-1 text-right">{r.missingInvoiceCount}</td><td className="px-2 py-1">{r.status}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead><tr className="border-b bg-muted/30"><th className="text-left px-2 py-2">Month</th><th className="text-left px-2 py-2">Project</th><th className="text-left px-2 py-2">Match</th><th className="text-left px-2 py-2">Reason codes</th><th className="text-right px-2 py-2">App</th><th className="text-right px-2 py-2">QB</th></tr></thead>
+                <tbody>
+                  {(cosRecon?.tabs?.[cosReconTab] || []).slice(0, 200).map((r: any, idx: number) => (
+                    <tr key={`${r.month}-${r.project}-${idx}`} className="border-b">
+                      <td className="px-2 py-1">{r.month}</td><td className="px-2 py-1">{r.project}</td><td className="px-2 py-1">{r.matchStatus}</td><td className="px-2 py-1">{(r.reasonCodes || []).join(", ") || "—"}</td><td className="px-2 py-1 text-right">{formatRand(r.appAmount)}</td><td className="px-2 py-1 text-right">{formatRand(r.qbAmount)}</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
