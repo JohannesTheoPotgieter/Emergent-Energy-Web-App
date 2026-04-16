@@ -11,6 +11,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import {
   Loader2,
   DollarSign,
@@ -56,6 +57,14 @@ interface DetailInflow {
   milestoneAmount: number;
   invoiceRaisedDate: string;
   daysToReceipt: number;
+  qbStatus?: "Received" | "Partially received" | "Not received" | "Unknown";
+  qbStatusDate?: string | null;
+  qbTransactionId?: string | null;
+  qbLastSyncAt?: string | null;
+  qbMatchConfidence?: "high" | "medium" | "low";
+  qbMatchType?: string;
+  qbUncertain?: boolean;
+  qbUncertainReason?: "stale_sync" | "low_confidence" | null;
 }
 
 interface DetailOutflow {
@@ -72,11 +81,32 @@ interface DetailOutflow {
   adminDateOverrideAt: string | null;
   expenseActualTotal: number;
   paymentStatus?: string;
+  qbStatus?: "Paid" | "Partially paid" | "Not paid" | "Unknown";
+  qbStatusDate?: string | null;
+  qbTransactionId?: string | null;
+  qbLastSyncAt?: string | null;
+  qbMatchConfidence?: "high" | "medium" | "low";
+  qbMatchType?: string;
+  qbUncertain?: boolean;
+  qbUncertainReason?: "stale_sync" | "low_confidence" | null;
 }
 
 interface WeekDetail {
   inflows: DetailInflow[];
   outflows: DetailOutflow[];
+  qbMeta?: {
+    available: boolean;
+    degraded: boolean;
+    reason: "qb_unavailable" | "sync_stale" | "incomplete_data" | "low_confidence" | "ok";
+    message: string | null;
+    lastSyncAt: string | null;
+    uncertainCount: number;
+    totalRows: number;
+    qbCallsPerRequest?: {
+      quickbooksApi: number;
+      quickbooksHealth: number;
+    };
+  };
 }
 
 interface CashflowTabProps {
@@ -108,6 +138,37 @@ function isCurrentWeek(weekStart: string, weekEnd: string): boolean {
   const start = parseISO(weekStart);
   const end = parseISO(weekEnd);
   return now >= start && now < end;
+}
+
+
+function formatDateLabel(v?: string | null): string {
+  if (!v) return "—";
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return v;
+  return format(d, "dd MMM yyyy");
+}
+
+function qbBadgeClass(status?: string, uncertain?: boolean): string {
+  if (!status || status === "Unknown") return "bg-slate-100 text-slate-700 border-slate-200";
+  if (uncertain) return "bg-amber-100 text-amber-800 border-amber-300";
+  if (status === "Received" || status === "Paid") return "bg-emerald-100 text-emerald-800 border-emerald-300";
+  if (status === "Partially received" || status === "Partially paid") return "bg-blue-100 text-blue-800 border-blue-300";
+  return "bg-rose-100 text-rose-800 border-rose-300";
+}
+
+function formatMatchType(matchType?: string): string {
+  switch (matchType) {
+    case "linked_txn_id":
+      return "Linked QB transaction";
+    case "invoice_project_counterparty_amount":
+      return "Invoice + project/counterparty + amount";
+    case "invoice_amount":
+      return "Invoice + amount";
+    case "unmatched":
+      return "No QB match";
+    default:
+      return "Unknown match";
+  }
 }
 
 function WeekDetailPanel({
@@ -189,6 +250,14 @@ function WeekDetailPanel({
 
   return (
     <div className="bg-muted/30 border-t border-border px-4 py-3 space-y-3">
+      {data.qbMeta?.degraded && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2">
+          <p className="text-xs font-medium text-amber-900">{data.qbMeta.message || "QuickBooks status is degraded for this view."}</p>
+          <p className="text-[11px] text-amber-800 mt-0.5">
+            Weekly cashflow totals remain app-calculated; this only affects QB reconciliation visibility.
+          </p>
+        </div>
+      )}
       {data.inflows.length > 0 && (
         <div>
           <h5 className="text-xs font-semibold text-emerald-700 mb-1 flex items-center gap-1">
@@ -199,6 +268,8 @@ function WeekDetailPanel({
               <thead>
                 <tr className="border-b border-border bg-muted/50">
                   <th className="text-left px-2 py-1 font-medium text-muted-foreground">Milestone</th>
+                  <th className="text-left px-2 py-1 font-medium text-muted-foreground">Invoice #</th>
+                  <th className="text-left px-2 py-1 font-medium text-muted-foreground">QB Status</th>
                   <th className="text-left px-2 py-1 font-medium text-muted-foreground">Date</th>
                   <th className="text-right px-2 py-1 font-medium text-muted-foreground">Amount</th>
                 </tr>
@@ -207,6 +278,31 @@ function WeekDetailPanel({
                 {data.inflows.map((inf, i) => (
                   <tr key={i} className="border-b border-border/50 hover:bg-muted/40">
                     <td className="px-2 py-1 text-muted-foreground">{inf.milestoneName || "\u2014"}</td>
+                    <td className="px-2 py-1 font-mono text-muted-foreground">{inf.milestoneInvoiceNumber || "\u2014"}</td>
+                    <td className="px-2 py-1">
+                      <Badge
+                        variant="outline"
+                        className={`text-[10px] px-1.5 py-0 ${qbBadgeClass(inf.qbStatus, inf.qbUncertain)}`}
+                        title={
+                          `Match: ${formatMatchType(inf.qbMatchType)} | Confidence: ${inf.qbMatchConfidence || "low"}${
+                            inf.qbLastSyncAt ? ` | Last synced ${formatDateLabel(inf.qbLastSyncAt)}` : ""
+                          }${inf.qbTransactionId ? ` | QB Txn ID: ${inf.qbTransactionId}` : ""}`
+                        }
+                      >
+                        {inf.qbStatus || "Unknown"}
+                        {inf.qbUncertain ? " (Uncertain)" : ""}
+                      </Badge>
+                      {inf.qbStatusDate && (
+                        <p className="text-[10px] text-muted-foreground mt-0.5">as of {formatDateLabel(inf.qbStatusDate)}</p>
+                      )}
+                      <p className="text-[10px] text-muted-foreground">{formatMatchType(inf.qbMatchType)} · {(inf.qbMatchConfidence || "low").toUpperCase()}</p>
+                      {inf.qbTransactionId && <p className="text-[10px] text-muted-foreground">QB Txn: {inf.qbTransactionId}</p>}
+                      {inf.qbUncertain && (
+                        <p className="text-[10px] text-amber-700">
+                          {inf.qbUncertainReason === "stale_sync" ? "Sync stale — status may be outdated." : "Low confidence match."}
+                        </p>
+                      )}
+                    </td>
                     <td className="px-2 py-1">
                       <DateOverridePopover
                         currentDate={inf.paymentReceivedDate}
@@ -241,6 +337,8 @@ function WeekDetailPanel({
                 <tr className="border-b border-border bg-muted/50">
                   <th className="text-left px-2 py-1 font-medium text-muted-foreground">Category</th>
                   <th className="text-left px-2 py-1 font-medium text-muted-foreground">Line Item</th>
+                  <th className="text-left px-2 py-1 font-medium text-muted-foreground">Invoice #</th>
+                  <th className="text-left px-2 py-1 font-medium text-muted-foreground">QB Status</th>
                   <th className="text-left px-2 py-1 font-medium text-muted-foreground">Date</th>
                   <th className="text-right px-2 py-1 font-medium text-muted-foreground">Amount</th>
                 </tr>
@@ -250,6 +348,31 @@ function WeekDetailPanel({
                   <tr key={i} className="border-b border-border/50 hover:bg-muted/40">
                     <td className="px-2 py-1 text-muted-foreground">{out.expenseCategory || "\u2014"}</td>
                     <td className="px-2 py-1 text-muted-foreground">{out.expenseLineItem || "\u2014"}</td>
+                    <td className="px-2 py-1 font-mono text-muted-foreground">{out.expenseInvoiceNumber || "\u2014"}</td>
+                    <td className="px-2 py-1">
+                      <Badge
+                        variant="outline"
+                        className={`text-[10px] px-1.5 py-0 ${qbBadgeClass(out.qbStatus, out.qbUncertain)}`}
+                        title={
+                          `Match: ${formatMatchType(out.qbMatchType)} | Confidence: ${out.qbMatchConfidence || "low"}${
+                            out.qbLastSyncAt ? ` | Last synced ${formatDateLabel(out.qbLastSyncAt)}` : ""
+                          }${out.qbTransactionId ? ` | QB Txn ID: ${out.qbTransactionId}` : ""}`
+                        }
+                      >
+                        {out.qbStatus || "Unknown"}
+                        {out.qbUncertain ? " (Uncertain)" : ""}
+                      </Badge>
+                      {out.qbStatusDate && (
+                        <p className="text-[10px] text-muted-foreground mt-0.5">as of {formatDateLabel(out.qbStatusDate)}</p>
+                      )}
+                      <p className="text-[10px] text-muted-foreground">{formatMatchType(out.qbMatchType)} · {(out.qbMatchConfidence || "low").toUpperCase()}</p>
+                      {out.qbTransactionId && <p className="text-[10px] text-muted-foreground">QB Txn: {out.qbTransactionId}</p>}
+                      {out.qbUncertain && (
+                        <p className="text-[10px] text-amber-700">
+                          {out.qbUncertainReason === "stale_sync" ? "Sync stale — status may be outdated." : "Low confidence match."}
+                        </p>
+                      )}
+                    </td>
                     <td className="px-2 py-1">
                       <DateOverridePopover
                         currentDate={out.expensePaymentDate}
