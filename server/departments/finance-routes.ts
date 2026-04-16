@@ -75,6 +75,7 @@ import {
   deriveOutflowsQbStatus,
   resolveQbMatch,
 } from "../lib/quickbooks-status";
+import { QuickBooksLinksRepository } from "../repositories/quickbooks-links-repository";
 
 const FINANCIAL_APPROVER_ROLES = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"];
 const CANONICAL_FINANCE_COSTLINE_READ_FLAG = "canonical_finance_costline_read_v1";
@@ -1095,7 +1096,7 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
           amountSource: amountBreakdown.amountSource,
           dateSource: dateInfo.source,
           expenseActualTotal: amountBreakdown.amount,
-          supplierName: (e as any).supplierName || null,
+          supplierName: e.supplierName || null,
         };
       });
 
@@ -1131,7 +1132,7 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
           invoiceRaisedDate: inf.invoiceRaisedDate,
           daysToReceipt,
           isOverride: inf.effectiveDate !== inf.paymentReceivedDate,
-          customerName: (inf as any).customerName || null,
+          customerName: inf.customerName || null,
         };
       });
 
@@ -1141,14 +1142,21 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
     let qbEnrichmentError: string | null = null;
     let billCandidates: any[] = [];
     let invoiceCandidates: any[] = [];
-    let outflowLinks: any[] = [];
-    let inflowLinks: any[] = [];
+    let outflowLinks: { appEntityId: number; qbEntityId: string }[] = [];
+    let inflowLinks: { appEntityId: number; qbEntityId: string }[] = [];
 
     try {
+      // Scope QB queries to a generous window around the viewed week to avoid
+      // fetching the entire ledger. Bills/invoices may have been created well
+      // before the payment week, so use a 6-month lookback.
+      const qbLookbackDate = new Date(Date.UTC(y, m - 1, d));
+      qbLookbackDate.setUTCMonth(qbLookbackDate.getUTCMonth() - 6);
+      const qbStartDate = qbLookbackDate.toISOString().split("T")[0];
+
       const [connectionStatus, billsRaw, invoicesRaw] = await Promise.all([
         getQuickBooksConnectionStatus(),
-        getBills(),
-        getInvoices(),
+        getBills(qbStartDate, weekEnd),
+        getInvoices(qbStartDate, weekEnd),
       ]);
       qbEnrichmentAvailable = true;
       qbLastSyncAt = connectionStatus.lastSuccessfulSyncAt;
@@ -1175,34 +1183,27 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
       const outflowIds = outflows.map((o: any) => Number(o.expenseId)).filter((id: number) => Number.isFinite(id));
       const inflowIds = inflows.map((i: any) => Number(i.inflowId)).filter((id: number) => Number.isFinite(id));
 
-      if (outflowIds.length > 0) {
-        outflowLinks = await db.select().from(quickbooksInvoiceLinks).where(and(
-          eq(quickbooksInvoiceLinks.appEntityType, "cost_line"),
-          inArray(quickbooksInvoiceLinks.appEntityId, outflowIds),
-          isNull(quickbooksInvoiceLinks.deletedAt),
-        ));
-      }
-      if (inflowIds.length > 0) {
-        inflowLinks = await db.select().from(quickbooksInvoiceLinks).where(and(
-          eq(quickbooksInvoiceLinks.appEntityType, "revenue_line"),
-          inArray(quickbooksInvoiceLinks.appEntityId, inflowIds),
-          isNull(quickbooksInvoiceLinks.deletedAt),
-        ));
-      }
+      const qbLinksRepo = new QuickBooksLinksRepository();
+      const [costLinks, revenueLinks] = await Promise.all([
+        qbLinksRepo.getActiveCostLineLinks(outflowIds),
+        qbLinksRepo.getActiveRevenueLineLinks(inflowIds),
+      ]);
+      outflowLinks = costLinks;
+      inflowLinks = revenueLinks;
     } catch (error: any) {
       // Keep payload working even if QB is unavailable.
       qbEnrichmentError = error?.message ? String(error.message) : "QuickBooks enrichment failed";
     }
 
-    const outflowLinkById = new Map<number, any>();
-    for (const link of outflowLinks) outflowLinkById.set(Number(link.appEntityId), link);
-    const inflowLinkById = new Map<number, any>();
-    for (const link of inflowLinks) inflowLinkById.set(Number(link.appEntityId), link);
+    const outflowLinkById = new Map<number, string>();
+    for (const link of outflowLinks) outflowLinkById.set(link.appEntityId, link.qbEntityId);
+    const inflowLinkById = new Map<number, string>();
+    for (const link of inflowLinks) inflowLinkById.set(link.appEntityId, link.qbEntityId);
 
     const enrichedOutflows = outflows.map((row: any) => {
-      const link = outflowLinkById.get(Number(row.expenseId));
+      const linkedQbId = outflowLinkById.get(Number(row.expenseId));
       const match = resolveQbMatch({
-        linkedTransactionId: link?.qbEntityId ?? row.qbTransactionId ?? null,
+        linkedTransactionId: linkedQbId ?? row.qbTransactionId ?? null,
         invoiceNumber: row.expenseInvoiceNumber ?? null,
         projectName: row.projectName ?? null,
         counterpartyName: row.supplierName ?? null,
@@ -1230,19 +1231,16 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
     });
 
     const enrichedInflows = inflows.map((row: any) => {
-      const link = inflowLinkById.get(Number(row.inflowId));
+      const linkedQbId = inflowLinkById.get(Number(row.inflowId));
       const match = resolveQbMatch({
-        linkedTransactionId: link?.qbEntityId ?? row.qbTransactionId ?? null,
+        linkedTransactionId: linkedQbId ?? row.qbTransactionId ?? null,
         invoiceNumber: row.milestoneInvoiceNumber ?? null,
         projectName: row.projectName ?? null,
         counterpartyName: row.customerName ?? null,
         amount: row.milestoneAmount ?? null,
         candidates: invoiceCandidates,
       });
-      let qbStatus = deriveInflowsQbStatus(match.matched?.balance ?? null, !!match.matched);
-      if (match.matched?.balance !== null && match.matched?.balance !== undefined && (row.milestoneAmount ?? 0) > 0) {
-        if (Math.abs((match.matched?.balance ?? 0) - (row.milestoneAmount ?? 0)) <= 0.01) qbStatus = "Not received";
-      }
+      const qbStatus = deriveInflowsQbStatus(match.matched?.balance ?? null, !!match.matched, row.milestoneAmount ?? null);
       const qbUncertain = qbStatus !== "Unknown" && (qbIsStale || match.qbMatchConfidence === "low");
       const qbUncertainReason = qbIsStale
         ? "stale_sync"
@@ -1298,10 +1296,6 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
       lastSyncAt: qbLastSyncAt,
       uncertainCount,
       totalRows,
-      qbCallsPerRequest: {
-        quickbooksApi: 2,
-        quickbooksHealth: 1,
-      },
     };
 
     res.json({ outflows: enrichedOutflows, inflows: enrichedInflows, qbMeta });
