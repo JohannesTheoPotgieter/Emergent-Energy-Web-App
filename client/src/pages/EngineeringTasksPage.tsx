@@ -109,6 +109,7 @@ import { fetchRolloutFeatureFlags } from "@/lib/feature-flags";
 import { getTaskWorkflowBlockReason } from "@/lib/task-workflow-guard";
 import { engFetch } from "@/lib/eng-fetch";
 import { TaskDependenciesPanel } from "./engineering/panels/TaskDependenciesPanel";
+import { DocumentControlBadge } from "@/components/engineering/DocumentControlBadge";
 import { PHASE_COLORS } from "@/lib/phase-colors";
 import { invalidateAllTaskCaches } from "@/lib/task-cache";
 import { canonicalizeTaskStatus } from "@/lib/task-status-compat";
@@ -126,7 +127,7 @@ export const WORKLOAD_STATE_OPTIONS: { value: EngineeringWorkloadStateFilter; la
   { value: "unassigned", label: "Unassigned" },
   { value: "blocked", label: "Blocked" },
   { value: "review", label: "Review Needed" },
-  { value: "approval", label: "Approval Pending" },
+  { value: "approval", label: "QC Review Pending" },
   { value: "deliverable", label: "Project Deliverables" },
   { value: "microsoft_action", label: "Microsoft Actions" },
 ];
@@ -167,7 +168,7 @@ export const SAVED_FILTERS: {
   { label: "Unassigned", filter: { workloadStateFilter: "unassigned" } },
   { label: "Blocked", filter: { workloadStateFilter: "blocked" } },
   { label: "Review Needed", filter: { workloadStateFilter: "review" } },
-  { label: "Approval Pending", filter: { workloadStateFilter: "approval" } },
+  { label: "QC Review Pending", filter: { workloadStateFilter: "approval" } },
   { label: "Deliverables", filter: { workloadStateFilter: "deliverable" } },
   { label: "Microsoft Linked", filter: { linkedSourceFilter: "microsoft_linked" } },
 ];
@@ -1410,7 +1411,7 @@ export function TaskDetailDrawer({
                 {task.isUnassigned ? <Badge variant="outline" className="text-[10px] bg-slate-50 text-slate-700 border-slate-200">Unassigned</Badge> : null}
                 {task.isBlocked ? <Badge variant="outline" className="text-[10px] bg-red-50 text-red-700 border-red-200">Blocked</Badge> : null}
                 {task.isReviewNeeded ? <Badge variant="outline" className="text-[10px] bg-violet-50 text-violet-700 border-violet-200">Review Needed</Badge> : null}
-                {task.isApprovalPending ? <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">Approval Pending</Badge> : null}
+                {task.isApprovalPending ? <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">QC Review Pending</Badge> : null}
                 {task.projectName ? <Badge variant="outline" className="text-[10px] bg-blue-50 text-blue-700 border-blue-200">Project Linked</Badge> : <Badge variant="outline" className="text-[10px] bg-slate-50 text-slate-700 border-slate-200">No Project</Badge>}
               </div>
 
@@ -1421,7 +1422,7 @@ export function TaskDetailDrawer({
                       <p className="text-xs font-medium text-foreground">Project-linked deliverables</p>
                       <p className="text-[10px] text-muted-foreground">
                         {task.projectLinkedDeliverableCount} linked to this project
-                        {task.approvalPendingDeliverableCount ? ` · ${task.approvalPendingDeliverableCount} pending approval` : ""}
+                        {task.approvalPendingDeliverableCount ? ` · ${task.approvalPendingDeliverableCount} awaiting QC review` : ""}
                       </p>
                     </div>
                     {task.deliverableContextHref && (
@@ -1433,10 +1434,10 @@ export function TaskDetailDrawer({
                       </Button>
                     )}
                   </div>
-                  {(task.projectLinkedDeliverables || []).map((item) => (
+                  {(task.projectLinkedDeliverables || []).map((item: any) => (
                     <div key={item.id} className="flex items-center justify-between gap-2 text-xs">
                       <span className="truncate text-foreground">{item.title}</span>
-                      <Badge variant="outline" className="text-[9px] px-1.5 py-0">{item.status}</Badge>
+                      <DocumentControlBadge row={item} compact data-testid={`drawer-doc-control-${item.id}`} />
                     </div>
                   ))}
                 </div>
@@ -1587,7 +1588,7 @@ export function TaskDetailDrawer({
                     onClick={() => setShowSendForApproval(true)}
                     data-testid="btn-send-for-approval"
                   >
-                    <Send className="h-3.5 w-3.5" /> Send for Approval
+                    <Send className="h-3.5 w-3.5" /> Submit for QC Review
                   </Button>
 
                   <Dialog open={showSendForApproval} onOpenChange={(open) => {
@@ -1597,7 +1598,7 @@ export function TaskDetailDrawer({
                     <DialogContent className="max-w-md">
                       <DialogHeader>
                         <DialogTitle className="flex items-center gap-2 text-base">
-                          <Send className="h-4 w-4 text-amber-600" /> Send for Approval
+                          <Send className="h-4 w-4 text-amber-600" /> Submit for QC Review
                         </DialogTitle>
                       </DialogHeader>
                       <div className="space-y-4 pt-2">
@@ -1712,7 +1713,7 @@ export function TaskDetailDrawer({
                             data-testid="btn-confirm-send-approval"
                           >
                             {sendingForApproval ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                            {sendingForApproval ? "Sending..." : "Send for Approval"}
+                            {sendingForApproval ? "Submitting..." : "Submit for QC Review"}
                           </Button>
                           <Button variant="outline" className="h-9 text-sm" onClick={() => setShowSendForApproval(false)}>
                             Cancel
@@ -1761,7 +1762,7 @@ export function TaskDetailDrawer({
                 onClick={() => setShowSendDeliverable(true)}
                 data-testid="btn-send-deliverable"
               >
-                <Send className="h-3.5 w-3.5" /> Send Deliverable
+                <Send className="h-3.5 w-3.5" /> Send Document
               </Button>
 
               {taskDeliverables.length > 0 && (
@@ -1856,7 +1857,7 @@ export function TaskDetailDrawer({
                 <DialogContent className="max-w-md">
                   <DialogHeader>
                     <DialogTitle className="flex items-center gap-2 text-base">
-                      <Send className="h-4 w-4 text-blue-600" /> Send Deliverable
+                      <Send className="h-4 w-4 text-blue-600" /> Send Document
                     </DialogTitle>
                   </DialogHeader>
                   <div className="space-y-4 pt-2">
@@ -1984,7 +1985,7 @@ export function TaskDetailDrawer({
                         data-testid="btn-confirm-send-deliverable"
                       >
                         {sendingDeliverable ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                        {sendingDeliverable ? "Sending..." : "Send Deliverable"}
+                        {sendingDeliverable ? "Sending..." : "Send Document"}
                       </Button>
                       <Button variant="outline" className="h-9 text-sm" onClick={() => setShowSendDeliverable(false)}>Cancel</Button>
                     </div>

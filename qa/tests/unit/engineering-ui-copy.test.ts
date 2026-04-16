@@ -19,6 +19,38 @@ function read(relative: string): string {
   return fs.readFileSync(path.join(REPO_ROOT, relative), "utf8");
 }
 
+describe("EngineeringTasksPage copy", () => {
+  const source = read("client/src/pages/EngineeringTasksPage.tsx");
+
+  it("does not contain bare 'Send for Approval' button label", () => {
+    // Renamed to "Submit for QC Review" to disambiguate from deliverable send
+    expect(source).not.toMatch(/>.*Send for Approval.*</);
+  });
+
+  it("does not contain bare 'Send Deliverable' button label", () => {
+    // Renamed to "Send Document" to clarify it's a document transfer, not a QC action
+    expect(source).not.toMatch(/>.*Send Deliverable.*</);
+  });
+
+  it("workload filter uses 'QC Review Pending' not 'Approval Pending'", () => {
+    expect(source).toContain("QC Review Pending");
+    expect(source).not.toMatch(/label:\s*"Approval Pending"/);
+  });
+
+  it("imports DocumentControlBadge for the drawer", () => {
+    expect(source).toContain("DocumentControlBadge");
+  });
+
+  it("renders DocumentControlBadge in the drawer deliverable listing", () => {
+    expect(source).toContain("drawer-doc-control-");
+  });
+
+  it("uses 'awaiting QC review' instead of 'pending approval' for deliverable count", () => {
+    expect(source).not.toContain("pending approval");
+    expect(source).toContain("awaiting QC review");
+  });
+});
+
 describe("EngineeringStagesTab copy", () => {
   const source = read("client/src/components/tabs/EngineeringStagesTab.tsx");
   const lines = source.split("\n");
