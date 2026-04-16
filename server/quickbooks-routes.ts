@@ -164,13 +164,22 @@ export function registerQuickBooksRoutes(app: Express): void {
       }
 
       const expectedState = (req.session as SessionWithQbState)?.qbState;
+
+      // Diagnostic: understand why CSRF state check fails
+      console.log(`[QuickBooks callback] Session ID: ${req.sessionID ?? "NONE"}`);
+      console.log(`[QuickBooks callback] Session exists: ${!!req.session}`);
+      console.log(`[QuickBooks callback] qbState on session: ${expectedState ? `"${expectedState.slice(0, 8)}..."` : "UNDEFINED"}`);
+      console.log(`[QuickBooks callback] state from query:   ${state ? `"${state.slice(0, 8)}..."` : "EMPTY"}`);
+      console.log(`[QuickBooks callback] Match: ${expectedState === state}`);
+      console.log(`[QuickBooks callback] Session keys: ${Object.keys(req.session ?? {}).join(", ")}`);
+
       if (!expectedState || expectedState !== state) {
         logAuditFromReq(req, {
           entityType: "quickbooks_integration",
           entityId: "quickbooks",
           action: "quickbooks.oauth.failed",
           source: "SETTINGS",
-          changesJson: { reason: "csrf_mismatch" },
+          changesJson: { reason: "csrf_mismatch", hadSession: !!req.session, hadState: !!expectedState, stateFromQuery: !!state },
         });
         res.redirect(`/admin/quickbooks?quickbooks=error&message=${encodeURIComponent("Invalid CSRF state")}`);
         return;
