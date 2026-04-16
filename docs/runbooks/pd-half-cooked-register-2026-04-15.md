@@ -153,6 +153,57 @@ marked `[NEW]`.
 | 12 | Visibility config | Documented | Partial but not misleading |
 | 13 | siteId column | Documented | None — correct future-use |
 
+### 14. "Start Project" button visible without project creation permission `[NEW]`
+
+| Field | Value |
+|---|---|
+| Location | `client/src/pages/opportunities.tsx` |
+| Problem | The FolderPlus "Start Project" button on opportunity rows was rendered for all users who could see the opportunities page, including those without `create_project:edit` permission. Clicking it navigated to the project creation form which then showed "Access Denied" — confusing UX. |
+| Containment | **Gated by `usePermission("create_project", "edit")`** (this commit). Button is now hidden for users who cannot create projects. |
+| Status | Contained. |
+
+### 15. Duplicate opportunity-to-project conversion has no guard `[NEW]`
+
+| Field | Value |
+|---|---|
+| Location | `server/template-routes.ts` (`POST /api/projects`) |
+| Problem | Two projects could be created from the same opportunity with no signal to the user that the opportunity was already linked. This could produce duplicate projects from a single deal. |
+| Containment | **Server-side warning** (this commit). When `opportunityId` is provided and another non-deleted `project_info` row already has the same `opportunityId`, the response includes a `_duplicateConversionWarning` string. The client success screen renders it as an amber alert. **Not a block** — legitimate phased build-outs exist — but the user now sees the existing project names. |
+| Status | Contained. |
+
+### 16. PD ticket create form does not expose opportunityId picker
+
+| Field | Value |
+|---|---|
+| Location | `client/src/pages/pd-ticket-create.tsx` |
+| Problem | `POST /api/pd/tickets` accepts `opportunityId` in the body (added in the PD workflow commit), but the client-side form does not expose an "Opportunity" picker field. The field is wired server-side but invisible UI-side. |
+| Containment | **Not changed** — the field is optional and nullable. Ticket creation works without it. Exposing a picker is a UX addition tracked in the missing-functionality register (not a containment concern). |
+| Recommendation | Add an optional "Link to Opportunity" picker in a future PD ticket form enhancement. |
+| Status | Documented only. |
+
+---
+
+## Updated summary table
+
+| # | Surface | Action taken | Risk if left untouched |
+|---|---------|-------------|----------------------|
+| 1 | /pd/reports | Badged Internal | Users trust ungoverned metrics |
+| 2 | Opportunity permissions | Fixed entity | Wrong access control |
+| 3 | PD dashboard sections | Restructured | Mixed mental models |
+| 4 | PD reports FY bug | Fixed + funnel added | Stale/misleading numbers |
+| 5 | handoverReadiness | @deprecated | Shadow field confuses devs |
+| 6 | Unused opp columns | @deprecated | Devs build on dead schema |
+| 7 | clickUpSynced | @deprecated | False impression ClickUp works |
+| 8 | tasksSpawnedAt | Documented | Users stuck with no respawn |
+| 9 | Empty state copy | Relabelled | Users hit required-field wall |
+| 10 | Backfill routes | Admin-guarded | Any user triggers mass backfill |
+| 11 | Dual-write flag | Documented | Legacy indefinitely persists |
+| 12 | Visibility config | Documented | Partial but not misleading |
+| 13 | siteId column | Documented | None — correct future-use |
+| 14 | Start Project button | Permission-gated `[NEW]` | Users hit Access Denied wall |
+| 15 | Duplicate conversion | Warning added `[NEW]` | Silent duplicate projects |
+| 16 | Ticket opportunityId picker | Documented `[NEW]` | Low — field is optional |
+
 ---
 
 End of register.
