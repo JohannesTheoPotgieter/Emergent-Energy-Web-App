@@ -74,8 +74,8 @@ function isAdminRole(role: string) {
   return role === "COO_ADMIN" || role === "CEO_ADMIN";
 }
 
-function normalizeProjectName(projectName: string): string {
-  return projectName.trim().replace(/\s+/g, " ").toLowerCase();
+function normalizeProjectName(projectName: string | null | undefined): string {
+  return (projectName ?? "").trim().replace(/\s+/g, " ").toLowerCase();
 }
 
 
