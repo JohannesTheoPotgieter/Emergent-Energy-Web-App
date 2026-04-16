@@ -10,7 +10,7 @@ import { requirePermission } from "./permission-middleware";
 import { getEffectiveWorkstreamVisibility } from "./workstream-visibility-middleware";
 
 import { requireAuth } from "./auth-context";
-import { isPdRole, canCreatePdTicket, canViewAllTickets, ENGINEERING_REQUEST_TYPES } from "@shared/roles/pd-roles";
+import { canViewAllTickets, ENGINEERING_REQUEST_TYPES } from "@shared/roles/pd-roles";
 import { paramStr } from "./lib/req-params";
 import { insertClientWithGeneratedId } from "./lib/client-id-generator";
 import { logAuditFromReq } from "./audit-logger";
@@ -144,7 +144,7 @@ async function filterTicketsByRole<T extends Record<string, any>>(
 
 export function registerPdRoutes(app: Express) {
 
-  app.get("/api/pd/clients", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/pd/clients", requireAuth, requirePermission('pd_clients', 'view'), async (req: Request, res: Response) => {
     try {
       const search = (req.query.search as string) || "";
       let query;
@@ -163,11 +163,11 @@ export function registerPdRoutes(app: Express) {
   app.post("/api/pd/clients", requireAuth, requirePermission('pd_clients', 'create'), async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
-      const role = user?.companyRole || user?.role || "";
-      if (!isPdRole(role)) {
-        return res.status(403).json({ error: "Only Project Developers or Admins can create clients" });
-      }
-
+      // NOTE: the former `isPdRole(role)` double-gate was removed because
+      // `requirePermission('pd_clients', 'create')` above already enforces
+      // access via the authoritative ENTITY_PERMISSION_DEFAULTS table,
+      // which exactly matches the hardcoded PD_ROLES list. Keeping two
+      // sources of truth for the same decision led to silent drift.
       const { name } = req.body;
       if (!name?.trim()) {
         return res.status(400).json({ error: "Client name is required" });
@@ -227,11 +227,7 @@ export function registerPdRoutes(app: Express) {
   app.patch("/api/pd/clients/:id", requireAuth, requirePermission('pd_clients', 'edit'), async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
-      const role = user?.companyRole || user?.role || "";
-      if (!isPdRole(role)) {
-        return res.status(403).json({ error: "Only authorized roles can edit clients" });
-      }
-
+      // NOTE: hardcoded `isPdRole` double-gate removed — see POST above.
       const id = parseInt(paramStr(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid client ID" });
 
@@ -260,7 +256,7 @@ export function registerPdRoutes(app: Express) {
     }
   });
 
-  app.get("/api/pd/clients/project-counts", requireAuth, async (_req: Request, res: Response) => {
+  app.get("/api/pd/clients/project-counts", requireAuth, requirePermission('pd_clients', 'view'), async (_req: Request, res: Response) => {
     try {
       const rows = await db.select({
         clientId: projectInfo.clientId,
@@ -275,7 +271,7 @@ export function registerPdRoutes(app: Express) {
     }
   });
 
-  app.get("/api/pd/tickets", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/pd/tickets", requireAuth, requirePermission('pd_tickets', 'view'), async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
       const role = user?.companyRole || user?.role || "";
@@ -327,7 +323,7 @@ export function registerPdRoutes(app: Express) {
     }
   });
 
-  app.get("/api/pd/tickets/:id", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/pd/tickets/:id", requireAuth, requirePermission('pd_tickets', 'view'), async (req: Request, res: Response) => {
     try {
       const id = parseInt(paramStr(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ticket ID" });
@@ -399,10 +395,14 @@ export function registerPdRoutes(app: Express) {
   app.post("/api/pd/tickets", requireAuth, requirePermission('pd_tickets', 'create'), async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
-      const role = user?.companyRole || user?.role || "";
-      if (!canCreatePdTicket(role)) {
-        return res.status(403).json({ error: "Only Project Developers can create PD tickets" });
-      }
+      // NOTE: the former `canCreatePdTicket` double-gate is removed.
+      // `PD_CREATE_ROLES` in shared/roles/pd-roles.ts is a stricter list
+      // than the authoritative `pd_tickets.create_roles` default
+      // ([COO_ADMIN, CEO_ADMIN, CCO, PROJECT_DEVELOPER]), which meant a
+      // CCO could pass the central permission check and then be
+      // blocked by the local hardcoded check with a confusing 403.
+      // The authoritative permission table is now the only source of
+      // truth for this decision.
 
       const body = req.body;
       if (!body.projectSiteName?.trim()) {
@@ -536,7 +536,7 @@ export function registerPdRoutes(app: Express) {
     }
   });
 
-  app.get("/api/pd/tickets/:id/task-templates", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/pd/tickets/:id/task-templates", requireAuth, requirePermission('pd_tickets', 'view'), async (req: Request, res: Response) => {
     try {
       const id = parseInt(paramStr(req.params.id));
       const [ticket] = await db.select().from(pdTickets).where(eq(pdTickets.id, id));
@@ -551,11 +551,7 @@ export function registerPdRoutes(app: Express) {
   app.post("/api/pd/tickets/:id/spawn-tasks", requireAuth, requirePermission('pd_tickets', 'edit'), async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
-      const role = user?.companyRole || user?.role || "";
-      if (!canCreatePdTicket(role)) {
-        return res.status(403).json({ error: "Not authorized" });
-      }
-
+      // NOTE: `canCreatePdTicket` double-gate removed — see POST /api/pd/tickets.
       const id = parseInt(paramStr(req.params.id));
       const [ticket] = await db.select().from(pdTickets).where(eq(pdTickets.id, id));
       if (!ticket) return res.status(404).json({ error: "Ticket not found" });
@@ -575,11 +571,7 @@ export function registerPdRoutes(app: Express) {
   app.post("/api/pd/tickets/:id/engineering-tasks", requireAuth, requirePermission('pd_tickets', 'edit'), async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
-      const role = user?.companyRole || user?.role || "";
-      if (!canCreatePdTicket(role)) {
-        return res.status(403).json({ error: "Not authorized" });
-      }
-
+      // NOTE: `canCreatePdTicket` double-gate removed — see POST /api/pd/tickets.
       const id = parseInt(paramStr(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ticket ID" });
 
@@ -640,7 +632,7 @@ export function registerPdRoutes(app: Express) {
     }
   });
 
-  app.get("/api/pd/dashboard", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/pd/dashboard", requireAuth, requirePermission('pd_dashboard', 'view'), async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
       const role = user?.companyRole || user?.role || "";
@@ -669,7 +661,7 @@ export function registerPdRoutes(app: Express) {
     }
   });
 
-  app.get("/api/pd/pipeline", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/pd/pipeline", requireAuth, requirePermission('pd_dashboard', 'view'), async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
       const role = user?.companyRole || user?.role || "";
@@ -817,7 +809,7 @@ export function registerPdRoutes(app: Express) {
     }
   });
 
-  app.get("/api/pd/reports", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/pd/reports", requireAuth, requirePermission('pd_dashboard', 'view'), async (req: Request, res: Response) => {
     try {
       // FY boundaries: Sep-Aug. FY2026 = 1 Sep 2025 → 31 Aug 2026
       const fyParam = req.query.fy ? parseInt(req.query.fy as string) : null;

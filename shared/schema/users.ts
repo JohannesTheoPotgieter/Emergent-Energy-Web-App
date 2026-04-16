@@ -249,7 +249,7 @@ export type PermissionEntity = 'projects' | 'financials' | 'quality' | 'hse' | '
   | 'pd_overview' | 'pd_plan' | 'pd_finance' | 'pd_engineering' | 'pd_quality' | 'pd_history'
   | 'pd_revenue' | 'pd_expenditure' | 'pd_cos_tracker' | 'pd_cashflow' | 'pd_subcontractors'
   | 'pd_eng_tasks' | 'pd_eng_stages' | 'pd_gantt' | 'pd_key_dates'
-  | 'pd_tickets' | 'pd_dashboard' | 'pd_clients'
+  | 'pd_tickets' | 'pd_dashboard' | 'pd_clients' | 'opportunities'
   | 'portfolio_detail' | 'admin_roles' | 'revenue'
   | 'ee_info_lifecycle' | 'ee_info_departments' | 'ee_info_processes' | 'ee_info_templates'
   | 'teams_chat' | 'financial_integration' | 'pd_collaboration'
@@ -851,6 +851,34 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_DEVELOPER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_DEVELOPER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+  },
+  {
+    // Commercial pipeline entity. Previously the opportunity routes piggy-backed
+    // on `pd_tickets` permissions, which is a semantic mismatch — opportunity
+    // create/edit is a commercial action, not a PD work-queue action.
+    //
+    // The `create_roles` list intentionally matches (and slightly extends) the
+    // former allow-list derived from `pd_tickets.create_roles` so that no role
+    // currently able to create an opportunity loses that access:
+    //   - Previously (via pd_tickets:create): COO_ADMIN, CEO_ADMIN, CCO, PROJECT_DEVELOPER
+    //   - Now (explicit):                     + KEY_ACCOUNTS_MANAGER
+    // KEY_ACCOUNTS_MANAGER gains the ability because account management is the
+    // commercial pipeline owner at EE.
+    //
+    // `view_roles` keeps parity with the former `pd_dashboard:view` list plus
+    // the commercial-facing roles that need to see the pipeline even if they
+    // do not manage PD work queues (CFO, PROGRAM_FINANCE_MANAGER).
+    entity: 'opportunities',
+    view_roles: [
+      'COO_ADMIN', 'CEO_ADMIN', 'CCO',
+      'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER',
+      'KEY_ACCOUNTS_MANAGER', 'PROJECT_DEVELOPER',
+    ],
+    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_DEVELOPER'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_DEVELOPER'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },

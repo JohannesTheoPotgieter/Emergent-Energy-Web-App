@@ -39,7 +39,7 @@ const opportunityCreateSchema = z.object({
 
 const router = Router();
 
-router.get("/api/opportunities", requireAuth, requirePermission("pd_dashboard", "view"), async (req: Request, res: Response) => {
+router.get("/api/opportunities", requireAuth, requirePermission("opportunities", "view"), async (req: Request, res: Response) => {
   try {
     const clientId = req.query.clientId ? Number(req.query.clientId) : undefined;
     const stage = req.query.stage as string | undefined;
@@ -60,7 +60,7 @@ router.get("/api/opportunities", requireAuth, requirePermission("pd_dashboard", 
   }
 });
 
-router.get("/api/opportunities/:id", requireAuth, requirePermission("pd_dashboard", "view"), async (req: Request, res: Response) => {
+router.get("/api/opportunities/:id", requireAuth, requirePermission("opportunities", "view"), async (req: Request, res: Response) => {
   try {
     const [row] = await db
       .select()
@@ -75,7 +75,7 @@ router.get("/api/opportunities/:id", requireAuth, requirePermission("pd_dashboar
   }
 });
 
-router.post("/api/opportunities", requireAuth, requirePermission("pd_tickets", "create"), async (req: Request, res: Response) => {
+router.post("/api/opportunities", requireAuth, requirePermission("opportunities", "create"), async (req: Request, res: Response) => {
   try {
     const parsed = opportunityCreateSchema.parse(req.body);
     // Force `source` to 'internal' on the manual create path — the
@@ -108,7 +108,7 @@ router.post("/api/opportunities", requireAuth, requirePermission("pd_tickets", "
   }
 });
 
-router.patch("/api/opportunities/:id", requireAuth, requirePermission("pd_tickets", "edit"), async (req: Request, res: Response) => {
+router.patch("/api/opportunities/:id", requireAuth, requirePermission("opportunities", "edit"), async (req: Request, res: Response) => {
   try {
     const parsed = opportunityCreateSchema.partial().parse(req.body);
 
@@ -178,7 +178,7 @@ router.patch("/api/opportunities/:id", requireAuth, requirePermission("pd_ticket
   }
 });
 
-router.delete("/api/opportunities/:id", requireAuth, requirePermission("pd_tickets", "delete"), async (req: Request, res: Response) => {
+router.delete("/api/opportunities/:id", requireAuth, requirePermission("opportunities", "delete"), async (req: Request, res: Response) => {
   try {
     const [row] = await db
       .update(opportunities)
