@@ -14,7 +14,10 @@ function canTransition(from: string, to: string) {
   return toIdx <= fromIdx + 1;
 }
 
-async function ensureNcrTables() {
+let ncrTablesEnsured = false;
+
+export async function ensureNcrTables() {
+  if (ncrTablesEnsured) return;
   const isPostgres = getDbMode() === "postgres";
   const idCol = isPostgres ? "id SERIAL PRIMARY KEY" : "id INTEGER PRIMARY KEY AUTOINCREMENT";
   const timestampDefault = isPostgres ? "DEFAULT NOW()" : "DEFAULT CURRENT_TIMESTAMP";
@@ -33,9 +36,14 @@ async function ensureNcrTables() {
     preventive_action TEXT,
     due_date TEXT,
     closed_at TEXT,
+    related_checklist_item_id INTEGER,
     created_at TIMESTAMP NOT NULL ${timestampDefault},
     updated_at TIMESTAMP NOT NULL ${timestampDefault}
   )`));
+  // Add the linking column if the table already existed without it
+  if (isPostgres) {
+    await db.execute(sql.raw(`ALTER TABLE ncr_reports ADD COLUMN IF NOT EXISTS related_checklist_item_id INTEGER`)).catch(() => {});
+  }
   await db.execute(sql.raw(`CREATE TABLE IF NOT EXISTS ncr_attachments (
     ${idCol},
     ncr_id INTEGER NOT NULL,
@@ -51,6 +59,7 @@ async function ensureNcrTables() {
     comment TEXT NOT NULL,
     created_at TIMESTAMP NOT NULL ${timestampDefault}
   )`));
+  ncrTablesEnsured = true;
 }
 
 export function registerQualityNcrRoutes(app: Express) {
@@ -83,11 +92,11 @@ export function registerQualityNcrRoutes(app: Express) {
     try {
       await ensureNcrTables();
       const user = getEffectiveUser(req);
-      const { project_id, assigned_to, title, description, severity, due_date } = req.body || {};
+      const { project_id, assigned_to, title, description, severity, due_date, related_checklist_item_id } = req.body || {};
       if (!project_id || !title || !severity) return res.status(400).json({ error: "project_id, title, severity required" });
       await db.execute(sql`
-        INSERT INTO ncr_reports (project_id, reported_by, assigned_to, title, description, severity, status, due_date, created_at, updated_at)
-        VALUES (${project_id}, ${user?.id}, ${assigned_to ?? null}, ${title}, ${description ?? null}, ${severity}, 'open', ${due_date ?? null}, ${new Date().toISOString()}, ${new Date().toISOString()})
+        INSERT INTO ncr_reports (project_id, reported_by, assigned_to, title, description, severity, status, due_date, related_checklist_item_id, created_at, updated_at)
+        VALUES (${project_id}, ${user?.id}, ${assigned_to ?? null}, ${title}, ${description ?? null}, ${severity}, 'open', ${due_date ?? null}, ${related_checklist_item_id ?? null}, ${new Date().toISOString()}, ${new Date().toISOString()})
       `);
       logAuditFromReq(req, { entityType: "ncr_report", entityId: "new", action: "create", changesJson: { title, severity, project_id } });
       res.status(201).json({ ok: true });
