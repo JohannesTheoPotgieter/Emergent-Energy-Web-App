@@ -152,13 +152,61 @@ export function isCosRealised(exp: {
 export function getCosRealisedAmountExVat(exp: {
   expenseActualTotal?: string | number | null;
   amountExVat?: string | number | null;
+  expenseInvoiceNumber?: string | null;
+  expenseInvoicedDate?: string | null;
+  expensePoNumber?: string | null;
+  invoiceDateConfirmed?: boolean | null;
+  invoiceDateFontColor?: string | null;
+  cosRealised?: boolean | null;
+  cosStatusOverride?: string | null;
+  _cosOverrideStatus?: string | null;
   lineAssignedQbExVat?: number | null;
 }): number {
   const lineAmount = Number(exp.amountExVat ?? exp.expenseActualTotal ?? 0);
-  const assigned = Number(exp.lineAssignedQbExVat ?? 0);
   if (!Number.isFinite(lineAmount) || lineAmount <= 0) return 0;
-  if (!Number.isFinite(assigned) || assigned <= 0) return 0;
-  return computeCostEvidence(lineAmount, assigned).lineRealisedAmountExVat;
+
+  // The invoice-date-confirmed gate decides whether the line is realised.
+  // QB evidence refines the AMOUNT (capping at assigned) but never flips
+  // a non-gate-realised line into the realised set — that preserves PR
+  // #660's "strict finance controls" goal.
+  if (!isCosRealised(exp)) return 0;
+
+  const assigned = Number(exp.lineAssignedQbExVat ?? 0);
+  if (Number.isFinite(assigned) && assigned > 0) {
+    return computeCostEvidence(lineAmount, assigned).lineRealisedAmountExVat;
+  }
+  return Number(lineAmount.toFixed(2));
+}
+
+/**
+ * Convenience adapter for callers that hold raw `normalized_cost_lines` rows.
+ * Maps the NCL column names into the `getCosRealisedAmountExVat` input shape
+ * and folds in the QB evidence total for the row.
+ */
+export function getCosRealisedAmountForNclRow(
+  row: {
+    amountExVat?: string | number | null;
+    invoiceNumber?: string | null;
+    invoiceDate?: string | null;
+    poNumber?: string | null;
+    invoiceDateFontColor?: string | null;
+    invoiceDateConfirmed?: boolean | null;
+    cosStatusOverride?: string | null;
+    cosRealised?: boolean | null;
+  },
+  assignedQbExVat: number | null,
+): number {
+  return getCosRealisedAmountExVat({
+    amountExVat: row.amountExVat ?? null,
+    expenseInvoiceNumber: row.invoiceNumber ?? null,
+    expenseInvoicedDate: row.invoiceDate ?? null,
+    expensePoNumber: row.poNumber ?? null,
+    invoiceDateFontColor: row.invoiceDateFontColor ?? null,
+    invoiceDateConfirmed: row.invoiceDateConfirmed ?? null,
+    cosStatusOverride: row.cosStatusOverride ?? null,
+    cosRealised: row.cosRealised ?? null,
+    lineAssignedQbExVat: assignedQbExVat ?? null,
+  });
 }
 
 // ─── Project-name normalisation ───

@@ -1,7 +1,7 @@
 import { and, inArray, isNull, sql } from "drizzle-orm";
 import { normalizedCostLines, normalizedRevenueLines, workItems } from "@shared/schema";
 import { db, getDbMode } from "../db";
-import { getCosRealisedAmountExVat } from "../lib/calculations/financeUtils";
+import { getCosRealisedAmountForNclRow } from "../lib/calculations/financeUtils";
 import { getAssignedEvidenceByCostLineIds } from "../lib/finance/qb-allocation-read";
 
 function toNumber(value: unknown): number {
@@ -91,10 +91,10 @@ export async function getCanonicalFinanceByProjectIds(projectIds: number[]): Pro
       } else {
         current.outstandingCost += amount;
       }
-      current.realisedCost += getCosRealisedAmountExVat({
-        amountExVat: row.amountExVat,
-        lineAssignedQbExVat: assignedByCostLineId.get(row.id) ?? null,
-      });
+      current.realisedCost += getCosRealisedAmountForNclRow(
+        row as any,
+        assignedByCostLineId.get(row.id) ?? null,
+      );
     }
 
     return byProject;
@@ -138,10 +138,10 @@ export async function getCanonicalFinanceByProjectIds(projectIds: number[]): Pro
   const assignedByCostLineId = await getAssignedEvidenceByCostLineIds((rawCostRows as any[]).map((r: any) => r.id));
   const realisedByProject = new Map<number, number>();
   for (const row of rawCostRows as any[]) {
-    const realised = getCosRealisedAmountExVat({
-      amountExVat: row.amountExVat,
-      lineAssignedQbExVat: assignedByCostLineId.get(row.id) ?? null,
-    });
+    const realised = getCosRealisedAmountForNclRow(
+      row,
+      assignedByCostLineId.get(row.id) ?? null,
+    );
     realisedByProject.set(row.projectId, (realisedByProject.get(row.projectId) || 0) + realised);
   }
 

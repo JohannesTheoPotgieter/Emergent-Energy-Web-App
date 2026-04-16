@@ -30,7 +30,7 @@ import {
 import { computeQcProgress } from "@shared/quality-governance";
 import { desc } from "drizzle-orm";
 import { isDateBlack } from "../lib/calculations/stateClassifier";
-import { getCosRealisedAmountExVat } from "../lib/calculations/financeUtils";
+import { getCosRealisedAmountForNclRow } from "../lib/calculations/financeUtils";
 import { getAssignedEvidenceByCostLineIds } from "../lib/finance/qb-allocation-read";
 
 const COMPLETED_STATUSES = ["COMPLETE", "COMPLETED", "DONE"];
@@ -247,10 +247,10 @@ export async function generatePmReportData(month: string) {
     const lines = costByProject.get(p.id) || [];
     const budgetTotal = lines.reduce((s: any, c: any) => s + toNum(c.budgetTotal), 0);
     const actualCost = lines.reduce((s: any, c: any) => s + toNum(c.amountExVat), 0);
-    const cosRealised = lines.reduce((s: any, c: any) => s + getCosRealisedAmountExVat({
-      amountExVat: c.amountExVat,
-      lineAssignedQbExVat: assignedByCostLineId.get(c.id) ?? null,
-    }), 0);
+    const cosRealised = lines.reduce((s: any, c: any) => s + getCosRealisedAmountForNclRow(
+      c,
+      assignedByCostLineId.get(c.id) ?? null,
+    ), 0);
     // Cash paid: confirmed payment date
     const paid = lines.filter((c: any) => c.paidDateConfirmed).reduce((s: any, c: any) => s + toNum(c.amountExVat), 0);
     // Committed: has PO or invoice-in-progress but not yet realised per canonical check
@@ -258,10 +258,10 @@ export async function generatePmReportData(month: string) {
       .filter((c: any) => (c.poNumber || c.invoiceNumber))
       .reduce((s: any, c: any) => {
         const amount = toNum(c.amountExVat);
-        const realised = getCosRealisedAmountExVat({
-          amountExVat: c.amountExVat,
-          lineAssignedQbExVat: assignedByCostLineId.get(c.id) ?? null,
-        });
+        const realised = getCosRealisedAmountForNclRow(
+          c,
+          assignedByCostLineId.get(c.id) ?? null,
+        );
         return s + Math.max(0, amount - realised);
       }, 0);
     const costsThisMonth = lines.filter((c: any) => isDateStrInMonth(c.invoiceDate, monthStartStr, monthEndStr)).reduce((s: any, c: any) => s + toNum(c.amountExVat), 0);
