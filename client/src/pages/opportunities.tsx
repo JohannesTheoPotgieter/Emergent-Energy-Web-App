@@ -1,420 +1,577 @@
-import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent } from "@/components/ui/card";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { SearchableSelect } from "@/components/ui/searchable-select";
+import { Card, CardContent } from "@/components/ui/card";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { PageEmpty, PageError, PageSkeleton } from "@/components/ui/page-states";
-import { useToast } from "@/hooks/use-toast";
-import { usePermission } from "@/hooks/use-permissions";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from "@/components/ui/dialog";
-import { Sun, Plus, Search, DollarSign, Calendar, TrendingUp, Pencil, FolderPlus } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
+import { usePermission } from "@/hooks/use-permissions";
+import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { useLocation } from "wouter";
+import { AlertTriangle, CheckCircle2, CircleOff, Sun, TicketPlus, TrendingUp } from "lucide-react";
+const OPPORTUNITY_INTAKE_VIEW_ROLES = ["PROJECT_DEVELOPER", "COO_ADMIN", "CEO_ADMIN", "CCO"] as const;
 
-interface OpportunityRow {
+interface WorkingOpportunityRow {
   id: number;
-  clientId: number | null;
-  stage: string;
-  contractType: string | null;
-  estimatedValue: string | null;
-  estimatedKwp: string | null;
-  expectedCloseDate: string | null;
-  handoverReadiness: string;
-  status: string;
-  notes: string | null;
-  createdAt: string;
-  /**
-   * Origin flag. `'pipedrive'` means the row is managed by the sync engine
-   * and CRM-owned fields will be overwritten on the next sync run.
-   * `'internal'` means the row is app-owned.
-   */
-  source?: string | null;
-  pipedriveDealId?: string | null;
+  dealName: string;
+  pipedriveDealId: string | null;
+  orgClientName: string | null;
+  dealOwner: string | null;
+  stage: string | null;
+  status: string | null;
+  siteLocation: string | null;
+  hasLinkedClient: boolean;
+  hasLinkedProject: boolean;
+  linkedProjectCount: number;
+  existingEngineeringTicketCount: number;
+  lastUpdated: string | null;
+  signedDate?: string | null;
 }
 
-const STAGES = [
-  { value: "prospect", label: "Prospect" },
-  { value: "qualification", label: "Qualification" },
-  { value: "proposal", label: "Proposal" },
-  { value: "negotiation", label: "Negotiation" },
-  { value: "won", label: "Won" },
-  { value: "lost", label: "Lost" },
-];
+type MappingMode = "existing_existing" | "existing_new" | "new_new";
 
-const CONTRACT_TYPES = [
-  { value: "PPA", label: "PPA" },
-  { value: "EPC", label: "EPC" },
-  { value: "lease", label: "Lease" },
-  { value: "hybrid", label: "Hybrid" },
-];
-
-function stageBadge(s: string) {
-  const map: Record<string, string> = {
-    prospect: "bg-slate-100 text-slate-700",
-    qualification: "bg-blue-50 text-blue-700",
-    proposal: "bg-indigo-50 text-indigo-700",
-    negotiation: "bg-amber-50 text-amber-700",
-    won: "bg-green-50 text-green-700",
-    lost: "bg-red-50 text-red-700",
-  };
-  return map[s] || "bg-muted text-muted-foreground";
+interface MappingContextResponse {
+  opportunity: { id: number; dealName: string; pipedriveDealId: string | null; stage: string | null; status: string | null; clientId: number | null; clientName: string | null };
+  linkedClient: { id: number; name: string | null } | null;
+  linkedProject: { id: number; projectName: string; clientId: number | null } | null;
+  likelyClients: Array<{ id: number; name: string; clientId: string }>;
+  likelyProjects: Array<{ id: number; projectName: string; clientId: number | null }>;
+  existingEngineeringTicketCount: number;
 }
 
-const emptyForm = {
-  stage: "prospect",
-  contractType: "",
-  estimatedValue: "",
-  estimatedKwp: "",
-  expectedCloseDate: "",
-  clientId: "",
-  notes: "",
-};
+interface EngineeringPhaseTemplate {
+  id: number;
+  phase: string;
+  name: string;
+  version: number;
+  itemCount: number;
+}
+
+function normalized(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function hasTerminalMarker(value: unknown): boolean {
+  const v = normalized(value);
+  return ["lost", "won", "closed", "signed", "contracted", "deleted"].some((m) => v.includes(m));
+}
+
+function stageBadgeClass(stage: string | null): string {
+  const s = normalized(stage);
+  if (s.includes("prospect")) return "bg-slate-100 text-slate-700";
+  if (s.includes("qualification")) return "bg-blue-50 text-blue-700";
+  if (s.includes("proposal")) return "bg-indigo-50 text-indigo-700";
+  if (s.includes("negotiation")) return "bg-amber-50 text-amber-700";
+  return "bg-muted text-muted-foreground";
+}
+
+function statusBadgeClass(status: string | null): string {
+  const s = normalized(status);
+  if (s.includes("active") || s.includes("open")) return "bg-emerald-50 text-emerald-700";
+  if (s.includes("at risk")) return "bg-amber-50 text-amber-700";
+  return "bg-muted text-muted-foreground";
+}
 
 export default function OpportunitiesPage() {
+  const { user } = useAuth();
   const { toast } = useToast();
-  const queryClient = useQueryClient();
+  const { allowed: canViewEntity } = usePermission("opportunities", "view");
   const [, navigate] = useLocation();
-  const { allowed: canCreateProject } = usePermission("create_project", "edit");
-  const [search, setSearch] = useState("");
-  const [stageFilter, setStageFilter] = useState("all");
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState(emptyForm);
-  const [editingOpp, setEditingOpp] = useState<OpportunityRow | null>(null);
-  const [editForm, setEditForm] = useState(emptyForm);
 
-  const { data: opportunities = [], isLoading, isError, error, refetch } = useQuery<OpportunityRow[]>({
-    queryKey: ["/api/opportunities"],
-    queryFn: async () => { const res = await apiRequest("GET", "/api/opportunities"); if (!res.ok) throw new Error('Failed to fetch data (' + res.status + ')'); return res.json(); },
-  });
+  const role = String(user?.role || "");
+  const roleIsPdApproved = (OPPORTUNITY_INTAKE_VIEW_ROLES as readonly string[]).includes(role);
+  const canView = canViewEntity && roleIsPdApproved;
+  const [mappingTarget, setMappingTarget] = useState<WorkingOpportunityRow | null>(null);
+  const [mappingMode, setMappingMode] = useState<MappingMode>("existing_existing");
+  const [existingClientId, setExistingClientId] = useState<string>("");
+  const [existingProjectId, setExistingProjectId] = useState<string>("");
+  const [newClientName, setNewClientName] = useState("");
+  const [newProjectName, setNewProjectName] = useState("");
+  const [mappingWarnings, setMappingWarnings] = useState<string[]>([]);
+  const [resolvedClientId, setResolvedClientId] = useState<number | null>(null);
+  const [resolvedProjectId, setResolvedProjectId] = useState<number | null>(null);
+  const [ticketMode, setTicketMode] = useState<"phase_template" | "custom">("phase_template");
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
+  const [templateBaseDueDate, setTemplateBaseDueDate] = useState("");
+  const [customTitle, setCustomTitle] = useState("");
+  const [customPhase, setCustomPhase] = useState("");
+  const [customDescriptionScope, setCustomDescriptionScope] = useState("");
+  const [customDueDate, setCustomDueDate] = useState("");
+  const [customPriority, setCustomPriority] = useState("Medium");
+  const [customRequiredOutput, setCustomRequiredOutput] = useState("");
 
-  const { data: clients = [] } = useQuery<{ id: number; name: string }[]>({
-    queryKey: ["/api/clients-list-opp"],
+  const mappingResolved = resolvedClientId != null && resolvedProjectId != null;
+
+  const { data = [], isLoading, isError, error, refetch } = useQuery<WorkingOpportunityRow[]>({
+    queryKey: ["/api/opportunities/working"],
     queryFn: async () => {
-      const res = await apiRequest("GET", "/api/clients");
-      return (await res.json() || []).map((c: any) => ({ id: c.id, name: c.name }));
-    },
-  });
-
-  const createMutation = useMutation({
-    mutationFn: async (body: Record<string, unknown>) => {
-      const res = await apiRequest("POST", "/api/opportunities", body);
+      const res = await apiRequest("GET", "/api/opportunities/working");
+      if (!res.ok) throw new Error(`Failed to fetch opportunities (${res.status})`);
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/opportunities"] });
-      toast({ title: "Opportunity created" });
-      setShowForm(false);
-      setForm(emptyForm);
-    },
-    onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+    enabled: canView,
   });
 
-  const editMutation = useMutation({
-    mutationFn: async ({ id, body }: { id: number; body: Record<string, unknown> }) => {
-      const res = await apiRequest("PATCH", `/api/opportunities/${id}`, body);
+  const { data: mappingContext, isLoading: mappingLoading } = useQuery<MappingContextResponse>({
+    queryKey: ["/api/opportunities", mappingTarget?.id, "mapping-context"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/opportunities/${mappingTarget!.id}/mapping-context`);
+      if (!res.ok) throw new Error(`Failed to load mapping context (${res.status})`);
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/opportunities"] });
-      toast({ title: "Opportunity updated" });
-      setEditingOpp(null);
+    enabled: !!mappingTarget?.id,
+  });
+
+  const { data: phaseTemplates = [] } = useQuery<EngineeringPhaseTemplate[]>({
+    queryKey: ["/api/opportunities", mappingTarget?.id, "engineering-phase-templates"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/opportunities/${mappingTarget!.id}/engineering-phase-templates`);
+      if (!res.ok) throw new Error(`Failed to load phase templates (${res.status})`);
+      return res.json();
     },
-    onError: (err: Error) => toast({ title: "Update failed", description: err.message, variant: "destructive" }),
+    enabled: !!mappingTarget?.id,
   });
 
-  function openEditDialog(opp: OpportunityRow) {
-    setEditingOpp(opp);
-    setEditForm({
-      stage: opp.stage || "prospect",
-      contractType: opp.contractType || "",
-      estimatedValue: opp.estimatedValue || "",
-      estimatedKwp: opp.estimatedKwp || "",
-      expectedCloseDate: opp.expectedCloseDate || "",
-      clientId: opp.clientId ? String(opp.clientId) : "",
-      notes: opp.notes || "",
-    });
-  }
-
-  function handleEditSubmit() {
-    if (!editingOpp) return;
-    const body: Record<string, unknown> = {
-      stage: editForm.stage,
-      contractType: editForm.contractType || null,
-      estimatedValue: editForm.estimatedValue || null,
-      estimatedKwp: editForm.estimatedKwp || null,
-      expectedCloseDate: editForm.expectedCloseDate || null,
-      clientId: editForm.clientId ? Number(editForm.clientId) : null,
-      notes: editForm.notes || null,
-    };
-    editMutation.mutate({ id: editingOpp.id, body });
-  }
-
-  function handleSubmit() {
-    const body: Record<string, unknown> = {
-      stage: form.stage,
-      contractType: form.contractType || null,
-      estimatedValue: form.estimatedValue || null,
-      estimatedKwp: form.estimatedKwp || null,
-      expectedCloseDate: form.expectedCloseDate || null,
-      clientId: form.clientId ? Number(form.clientId) : null,
-      notes: form.notes || null,
-    };
-    createMutation.mutate(body);
-  }
-
-  const filtered = opportunities.filter(o => {
-    if (stageFilter !== "all" && o.stage !== stageFilter) return false;
-    if (search && !JSON.stringify(o).toLowerCase().includes(search.toLowerCase())) return false;
-    return true;
+  const resolveMappingMutation = useMutation({
+    mutationFn: async () => {
+      if (!mappingTarget?.id) throw new Error("No opportunity selected");
+      const body: any = {
+        mode: mappingMode,
+        existingClientId: existingClientId ? Number(existingClientId) : undefined,
+        existingProjectId: existingProjectId ? Number(existingProjectId) : undefined,
+        newClientName: newClientName.trim() || undefined,
+        newProjectName: newProjectName.trim() || undefined,
+      };
+      const res = await apiRequest("POST", `/api/opportunities/${mappingTarget.id}/resolve-mapping`, body);
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const warnings = Array.isArray(payload?.warnings) ? payload.warnings : [];
+        setMappingWarnings(warnings);
+        throw new Error(payload?.error || "Failed to resolve mapping");
+      }
+      return payload;
+    },
+    onSuccess: (payload: any) => {
+      setResolvedClientId(payload?.client?.id || null);
+      setResolvedProjectId(payload?.project?.id || null);
+      setMappingWarnings([]);
+    },
+    onError: (err: any) => {
+      toast({
+        title: "Mapping failed",
+        description: err?.message || "Unable to resolve opportunity mapping.",
+        variant: "destructive",
+      });
+    },
   });
 
-  const totalValue = filtered.reduce((sum, o) => sum + (o.estimatedValue ? Number(o.estimatedValue) : 0), 0);
-  const totalKwp = filtered.reduce((sum, o) => sum + (o.estimatedKwp ? Number(o.estimatedKwp) : 0), 0);
+  const createEngineeringTicketsMutation = useMutation({
+    mutationFn: async () => {
+      if (!mappingTarget?.id || !resolvedClientId || !resolvedProjectId) {
+        throw new Error("Resolve client/project mapping before creating tickets.");
+      }
+      const body: any = {
+        mode: ticketMode,
+        clientId: resolvedClientId,
+        projectId: resolvedProjectId,
+      };
+      if (ticketMode === "phase_template") {
+        body.phaseTemplateId = selectedTemplateId ? Number(selectedTemplateId) : undefined;
+        body.templateBaseDueDate = templateBaseDueDate || undefined;
+      } else {
+        body.customTicket = {
+          title: customTitle.trim(),
+          phase: customPhase.trim(),
+          descriptionScope: customDescriptionScope.trim(),
+          dueDate: customDueDate,
+          priority: customPriority,
+          requiredOutput: customRequiredOutput.trim(),
+        };
+      }
+      const res = await apiRequest("POST", `/api/opportunities/${mappingTarget.id}/create-engineering-tickets`, body);
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(payload?.error || "Failed to create engineering tickets");
+      return payload;
+    },
+    onSuccess: (payload: any) => {
+      const warnings = Array.isArray(payload?.warnings) ? payload.warnings : [];
+      if (warnings.length > 0) {
+        toast({
+          title: "Tickets created with duplicate warnings",
+          description: warnings.join(" "),
+          variant: "default",
+        });
+      } else {
+        toast({
+          title: "Engineering tickets created",
+          description: `${payload?.createdCount || 0} ticket(s) created with traceability links.`,
+        });
+      }
+      setMappingTarget(null);
+      setResolvedClientId(null);
+      setResolvedProjectId(null);
+      setSelectedTemplateId("");
+      setTemplateBaseDueDate("");
+      setCustomTitle("");
+      setCustomPhase("");
+      setCustomDescriptionScope("");
+      setCustomDueDate("");
+      setCustomPriority("Medium");
+      setCustomRequiredOutput("");
+      refetch();
+    },
+    onError: (err: any) => {
+      toast({
+        title: "Engineering ticket creation failed",
+        description: err?.message || "Unable to create engineering ticket(s).",
+        variant: "destructive",
+      });
+    },
+  });
 
-  if (isLoading) return <PageSkeleton lines={5} />;
-  if (isError) return <PageShell className="p-4 md:p-6"><PageError title="Unable to load Opportunities" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></PageShell>;
+  // Safety net: if upstream filtering drifts, never render terminal deals in
+  // this active working view.
+  const activeRows = useMemo(
+    () => data.filter((row) => !hasTerminalMarker(row.status) && !hasTerminalMarker(row.stage) && !row.signedDate),
+    [data],
+  );
+
+  const clientOptions = useMemo(() => {
+    const base = mappingContext?.likelyClients || [];
+    if (mappingContext?.linkedClient && !base.some((c) => c.id === mappingContext.linkedClient!.id)) {
+      return [{ id: mappingContext.linkedClient.id, name: mappingContext.linkedClient.name || "Linked client", clientId: "" }, ...base];
+    }
+    return base;
+  }, [mappingContext]);
+
+  const projectOptions = useMemo(() => {
+    const base = mappingContext?.likelyProjects || [];
+    if (mappingContext?.linkedProject && !base.some((p) => p.id === mappingContext.linkedProject!.id)) {
+      return [{ id: mappingContext.linkedProject.id, projectName: mappingContext.linkedProject.projectName, clientId: mappingContext.linkedProject.clientId }, ...base];
+    }
+    return base;
+  }, [mappingContext]);
+
+  function openMapping(row: WorkingOpportunityRow) {
+    setMappingTarget(row);
+    setMappingWarnings([]);
+    setMappingMode("existing_existing");
+    setExistingClientId("");
+    setExistingProjectId("");
+    setNewClientName(row.orgClientName || "");
+    setNewProjectName(row.dealName || "");
+    setResolvedClientId(null);
+    setResolvedProjectId(null);
+    setTicketMode("phase_template");
+    setSelectedTemplateId("");
+    setTemplateBaseDueDate(new Date().toISOString().slice(0, 10));
+    setCustomTitle(row.dealName || "");
+    setCustomPhase("First Assessment");
+    setCustomDescriptionScope("");
+    setCustomDueDate("");
+    setCustomPriority("Medium");
+    setCustomRequiredOutput("");
+  }
+
+  if (!canView) {
+    return (
+      <PageShell className="p-4 md:p-6">
+        <PageError
+          title="Access restricted"
+          message="This active Opportunities working view is limited to Project Development approved roles."
+        />
+      </PageShell>
+    );
+  }
+
+  if (isLoading) return <PageSkeleton lines={6} />;
+
+  if (isError) {
+    return (
+      <PageShell className="p-4 md:p-6">
+        <PageError
+          title="Unable to load active opportunities"
+          message={error instanceof Error ? error.message : "Failed to fetch active opportunities."}
+          onRetry={() => refetch()}
+        />
+      </PageShell>
+    );
+  }
 
   return (
-    <PageShell className="p-4 md:p-6" data-testid="page-opportunities">
+    <PageShell className="p-4 md:p-6" data-testid="page-opportunities-working">
       <SectionHeader
         icon={<TrendingUp className="h-5 w-5" />}
         eyebrow="Project Development"
-        title="Opportunities"
-        description={`Commercial pipeline. ${opportunities.length} row${opportunities.length === 1 ? "" : "s"} total — rows marked "Pipedrive" are synced from the CRM and will be overwritten on the next sync run. "Internal" rows are app-owned.`}
-        actions={
-          <Button size="sm" className="gap-1.5" onClick={() => { setForm(emptyForm); setShowForm(true); }}>
-            <Plus className="h-4 w-4" /> New Opportunity
-          </Button>
-        }
+        title="Opportunities (Active Working List)"
+        description="Only active Pipedrive opportunities are shown here. Lost, won/signed/closed, and converted deals are excluded."
       />
 
-      {/* KPI strip */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Card>
-          <CardContent className="p-3">
-            <div className="text-2xl font-bold">{opportunities.length}</div>
-            <div className="text-xs text-muted-foreground">Total Opportunities</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3">
-            <div className="text-2xl font-bold">{opportunities.filter(o => o.stage !== "won" && o.stage !== "lost").length}</div>
-            <div className="text-xs text-muted-foreground">Active Pipeline</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3">
-            <div className="text-2xl font-bold">
-              <DollarSign className="h-4 w-4 inline" />
-              {totalValue > 0 ? `${(totalValue / 1_000_000).toFixed(1)}M` : "—"}
-            </div>
-            <div className="text-xs text-muted-foreground">Pipeline Value</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3">
-            <div className="text-2xl font-bold">{totalKwp > 0 ? `${totalKwp.toFixed(0)} kWp` : "—"}</div>
-            <div className="text-xs text-muted-foreground">Pipeline Capacity</div>
-          </CardContent>
-        </Card>
-      </div>
+      <Card className="border-emerald-200 bg-emerald-50/50">
+        <CardContent className="p-3 text-sm flex items-start gap-2">
+          <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-0.5" />
+          <div>
+            <p className="font-medium text-emerald-800">Active-only engineering intake list</p>
+            <p className="text-emerald-700">{activeRows.length} active opportunity row{activeRows.length === 1 ? "" : "s"} ready for next-step action scaffolding.</p>
+          </div>
+        </CardContent>
+      </Card>
 
-      {/* Filters */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="relative max-w-xs flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 h-9" />
-        </div>
-        <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5">
-          <button onClick={() => setStageFilter("all")} className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${stageFilter === "all" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"}`}>All</button>
-          {STAGES.filter(s => s.value !== "lost").map(s => (
-            <button key={s.value} onClick={() => setStageFilter(s.value)} className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${stageFilter === s.value ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"}`}>{s.label}</button>
-          ))}
-        </div>
-      </div>
-
-      {isLoading && <p className="text-sm text-muted-foreground">Loading opportunities...</p>}
-
-      {!isLoading && filtered.length === 0 && (
+      {activeRows.length === 0 ? (
         <PageEmpty
           icon={Sun}
-          title="No opportunities yet"
-          description="Opportunities represent potential projects in the commercial pipeline. Create one to start tracking."
-          actionLabel="New Opportunity"
-          onAction={() => setShowForm(true)}
+          title="No active opportunities"
+          description="No active Pipedrive opportunities currently qualify for this working list."
         />
+      ) : (
+        <div className="overflow-x-auto border rounded-lg">
+          <table className="w-full text-sm" data-testid="table-opportunities-working">
+            <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th className="text-left px-3 py-2">Deal</th>
+                <th className="text-left px-3 py-2">Stage</th>
+                <th className="text-left px-3 py-2">Status</th>
+                <th className="text-left px-3 py-2">Client</th>
+                <th className="text-left px-3 py-2">Project</th>
+                <th className="text-left px-3 py-2">Eng tickets</th>
+                <th className="text-left px-3 py-2">Updated</th>
+                <th className="text-right px-3 py-2">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {activeRows.map((row) => (
+                <tr key={row.id} className="border-t hover:bg-muted/20" data-testid={`opportunity-row-${row.id}`}>
+                  <td className="px-3 py-2 align-top min-w-[260px]">
+                    <p className="font-medium text-foreground">{row.dealName || `Deal #${row.id}`}</p>
+                    <p className="text-xs text-muted-foreground">PD #{row.pipedriveDealId || "—"}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{row.orgClientName || "Unknown org"}{row.dealOwner ? ` • Owner: ${row.dealOwner}` : ""}</p>
+                    {row.siteLocation ? <p className="text-xs text-muted-foreground">{row.siteLocation}</p> : null}
+                  </td>
+                  <td className="px-3 py-2 align-top">
+                    <Badge className={`text-[10px] ${stageBadgeClass(row.stage)}`}>{row.stage || "—"}</Badge>
+                  </td>
+                  <td className="px-3 py-2 align-top">
+                    <Badge className={`text-[10px] ${statusBadgeClass(row.status)}`}>{row.status || "—"}</Badge>
+                  </td>
+                  <td className="px-3 py-2 align-top">
+                    {row.hasLinkedClient ? (
+                      <span className="inline-flex items-center gap-1 text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" /> Linked</span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-amber-700"><AlertTriangle className="h-3.5 w-3.5" /> Unlinked</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 align-top">
+                    {row.hasLinkedProject ? (
+                      <span className="inline-flex items-center gap-1 text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" /> {row.linkedProjectCount} linked</span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-slate-600"><CircleOff className="h-3.5 w-3.5" /> None</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 align-top">
+                    <Badge variant="outline">{row.existingEngineeringTicketCount || 0}</Badge>
+                  </td>
+                  <td className="px-3 py-2 align-top text-xs text-muted-foreground whitespace-nowrap">
+                    {row.lastUpdated ? new Date(row.lastUpdated).toLocaleString() : "—"}
+                  </td>
+                  <td className="px-3 py-2 align-top text-right">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1"
+                      data-testid={`btn-create-engineering-ticket-${row.id}`}
+                      onClick={() => openMapping(row)}
+                    >
+                      <TicketPlus className="h-3.5 w-3.5" />
+                      Create Engineering Ticket
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
-      <div className="space-y-2">
-        {filtered.map(opp => {
-          const isPipedrive = opp.source === "pipedrive";
-          return (
-            <Card key={opp.id} className="hover:shadow-sm transition-shadow">
-              <CardContent className="p-3">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <Badge className={`text-[10px] ${stageBadge(opp.stage)}`}>{opp.stage}</Badge>
-                  {opp.contractType && <Badge variant="outline" className="text-[10px]">{opp.contractType}</Badge>}
-                  {isPipedrive ? (
-                    <Badge
-                      variant="info"
-                      className="text-[10px]"
-                      title="Synced from Pipedrive. Stage, status, estimated value, expected close date, signed date and client will be overwritten on the next sync. Notes and commercial risks are app-owned and are preserved."
-                      data-testid={`opp-source-pipedrive-${opp.id}`}
-                    >
-                      Pipedrive
-                    </Badge>
-                  ) : (
-                    <Badge
-                      variant="secondary"
-                      className="text-[10px]"
-                      title="Internal opportunity. Not synced from Pipedrive — app-owned."
-                      data-testid={`opp-source-internal-${opp.id}`}
-                    >
-                      Internal
-                    </Badge>
-                  )}
-                  <span className="flex-1" />
-                  {opp.estimatedValue && (
-                    <span className="text-xs font-medium">
-                      <DollarSign className="h-3 w-3 inline" />
-                      {Number(opp.estimatedValue).toLocaleString()}
-                    </span>
-                  )}
-                  {opp.estimatedKwp && (
-                    <span className="text-xs text-muted-foreground">{Number(opp.estimatedKwp).toFixed(0)} kWp</span>
-                  )}
-                  {opp.expectedCloseDate && (
-                    <span className="text-xs text-muted-foreground">
-                      <Calendar className="h-3 w-3 inline mr-0.5" />{opp.expectedCloseDate}
-                    </span>
-                  )}
-                  {canCreateProject && opp.stage !== "won" && opp.stage !== "lost" && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      title="Start a project from this opportunity"
-                      onClick={(e) => { e.stopPropagation(); navigate(`/project-create?opportunityId=${opp.id}`); }}
-                      data-testid={`opp-start-project-${opp.id}`}
-                    >
-                      <FolderPlus className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditDialog(opp)}>
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
+      <Dialog open={!!mappingTarget} onOpenChange={(open) => { if (!open) { setMappingTarget(null); setResolvedClientId(null); setResolvedProjectId(null); } }}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Create Engineering Ticket — Mapping</DialogTitle>
+            <DialogDescription>
+              Project Developer is the mapping authority. Choose how this opportunity maps to client/project before ticket creation.
+            </DialogDescription>
+          </DialogHeader>
+
+          {mappingLoading ? (
+            <div className="text-sm text-muted-foreground">Loading mapping context…</div>
+          ) : (
+            <div className="space-y-4">
+              <div className="text-xs text-muted-foreground">
+                <p>Deal: <span className="font-medium text-foreground">{mappingContext?.opportunity?.dealName || mappingTarget?.dealName}</span></p>
+                <p>Linked client: {mappingContext?.linkedClient ? "Yes" : "No"} • Linked project: {mappingContext?.linkedProject ? "Yes" : "No"}</p>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs">Mapping mode</Label>
+                <div className="grid gap-1 text-sm">
+                  <label className="flex items-center gap-2"><input type="radio" checked={mappingMode === "existing_existing"} onChange={() => setMappingMode("existing_existing")} /> Existing client + existing project</label>
+                  <label className="flex items-center gap-2"><input type="radio" checked={mappingMode === "existing_new"} onChange={() => setMappingMode("existing_new")} /> Existing client + create new project shell</label>
+                  <label className="flex items-center gap-2"><input type="radio" checked={mappingMode === "new_new"} onChange={() => setMappingMode("new_new")} /> Create new client + new project shell</label>
                 </div>
-                {opp.notes && <p className="text-xs text-muted-foreground mt-1 truncate">{opp.notes}</p>}
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+              </div>
 
-      {/* Create dialog */}
-      <Dialog open={showForm} onOpenChange={(v) => { if (!v) { setShowForm(false); setForm(emptyForm); } else setShowForm(true); }}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>New Opportunity</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <Label className="text-xs">Client</Label>
-              <SearchableSelect
-                value={form.clientId || "__none__"}
-                onValueChange={(v) => setForm(f => ({ ...f, clientId: v === "__none__" ? "" : v }))}
-                options={[{ value: "__none__", label: "None" }, ...clients.map(c => ({ value: String(c.id), label: c.name }))]}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="text-xs">Stage</Label>
-                <SearchableSelect value={form.stage} onValueChange={(v) => setForm(f => ({ ...f, stage: v }))} options={STAGES} />
-              </div>
-              <div>
-                <Label className="text-xs">Contract Type</Label>
-                <SearchableSelect value={form.contractType || "__none__"} onValueChange={(v) => setForm(f => ({ ...f, contractType: v === "__none__" ? "" : v }))} options={[{ value: "__none__", label: "None" }, ...CONTRACT_TYPES]} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="text-xs">Estimated Value (R)</Label>
-                <Input type="number" value={form.estimatedValue} onChange={(e) => setForm(f => ({ ...f, estimatedValue: e.target.value }))} placeholder="0" />
-              </div>
-              <div>
-                <Label className="text-xs">Estimated kWp</Label>
-                <Input type="number" value={form.estimatedKwp} onChange={(e) => setForm(f => ({ ...f, estimatedKwp: e.target.value }))} placeholder="0" />
-              </div>
-            </div>
-            <div>
-              <Label className="text-xs">Expected Close Date</Label>
-              <Input type="date" value={form.expectedCloseDate} onChange={(e) => setForm(f => ({ ...f, expectedCloseDate: e.target.value }))} />
-            </div>
-            <div>
-              <Label className="text-xs">Notes</Label>
-              <Input value={form.notes} onChange={(e) => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Additional context..." />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowForm(false); setForm(emptyForm); }}>Cancel</Button>
-            <Button onClick={handleSubmit} disabled={createMutation.isPending}>Create</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+              {mappingMode !== "new_new" && (
+                <div className="space-y-1">
+                  <Label className="text-xs">Client</Label>
+                  <select className="w-full border rounded-md h-9 px-2 text-sm" value={existingClientId} onChange={(e) => setExistingClientId(e.target.value)}>
+                    <option value="">Select client…</option>
+                    {clientOptions.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+              )}
 
-      {/* Edit dialog */}
-      <Dialog open={!!editingOpp} onOpenChange={(v) => { if (!v) setEditingOpp(null); }}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Edit Opportunity</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <Label className="text-xs">Client</Label>
-              <SearchableSelect
-                value={editForm.clientId || "__none__"}
-                onValueChange={(v) => setEditForm(f => ({ ...f, clientId: v === "__none__" ? "" : v }))}
-                options={[{ value: "__none__", label: "None" }, ...clients.map(c => ({ value: String(c.id), label: c.name }))]}
-              />
+              {mappingMode === "existing_existing" && (
+                <div className="space-y-1">
+                  <Label className="text-xs">Project</Label>
+                  <select className="w-full border rounded-md h-9 px-2 text-sm" value={existingProjectId} onChange={(e) => setExistingProjectId(e.target.value)}>
+                    <option value="">Select project…</option>
+                    {projectOptions.map((p) => <option key={p.id} value={p.id}>{p.projectName}</option>)}
+                  </select>
+                </div>
+              )}
+
+              {mappingMode === "existing_new" && (
+                <div className="space-y-1">
+                  <Label className="text-xs">New project shell name</Label>
+                  <Input value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} placeholder="Enter project shell name" />
+                </div>
+              )}
+
+              {mappingMode === "new_new" && (
+                <div className="grid gap-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs">New client name</Label>
+                    <Input value={newClientName} onChange={(e) => setNewClientName(e.target.value)} placeholder="Enter client name" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">New project shell name</Label>
+                    <Input value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} placeholder="Enter project shell name" />
+                  </div>
+                </div>
+              )}
+
+              {mappingWarnings.length > 0 && (
+                <div className="text-xs rounded border border-amber-300 bg-amber-50 p-2 text-amber-800">
+                  {mappingWarnings.map((w, i) => <p key={i}>• {w}</p>)}
+                </div>
+              )}
+
+              {mappingResolved && (
+                <div className="space-y-3 border-t pt-3">
+                  <div className="text-xs text-muted-foreground">
+                    Mapping resolved • client #{resolvedClientId} • project #{resolvedProjectId}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-xs">Ticket creation mode</Label>
+                    <div className="grid gap-1 text-sm">
+                      <label className="flex items-center gap-2"><input type="radio" checked={ticketMode === "phase_template"} onChange={() => setTicketMode("phase_template")} /> Phase template</label>
+                      <label className="flex items-center gap-2"><input type="radio" checked={ticketMode === "custom"} onChange={() => setTicketMode("custom")} /> Custom ticket</label>
+                    </div>
+                  </div>
+
+                  {ticketMode === "phase_template" ? (
+                    <div className="grid gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Predefined phase template</Label>
+                        <select className="w-full border rounded-md h-9 px-2 text-sm" value={selectedTemplateId} onChange={(e) => setSelectedTemplateId(e.target.value)}>
+                          <option value="">Select template…</option>
+                          {phaseTemplates.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.phase} • {t.name} (v{t.version}, {t.itemCount} item{t.itemCount === 1 ? "" : "s"})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Template base due date</Label>
+                        <Input type="date" value={templateBaseDueDate} onChange={(e) => setTemplateBaseDueDate(e.target.value)} />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Title</Label>
+                        <Input value={customTitle} onChange={(e) => setCustomTitle(e.target.value)} />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Phase</Label>
+                        <Input value={customPhase} onChange={(e) => setCustomPhase(e.target.value)} placeholder="e.g. First Assessment" />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Description / Scope</Label>
+                        <Input value={customDescriptionScope} onChange={(e) => setCustomDescriptionScope(e.target.value)} />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-xs">Due date</Label>
+                          <Input type="date" value={customDueDate} onChange={(e) => setCustomDueDate(e.target.value)} />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Priority</Label>
+                          <select className="w-full border rounded-md h-9 px-2 text-sm" value={customPriority} onChange={(e) => setCustomPriority(e.target.value)}>
+                            {["Critical", "High", "Medium", "Low"].map((p) => <option key={p} value={p}>{p}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Required output</Label>
+                        <Input value={customRequiredOutput} onChange={(e) => setCustomRequiredOutput(e.target.value)} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="text-xs">Stage</Label>
-                <SearchableSelect value={editForm.stage} onValueChange={(v) => setEditForm(f => ({ ...f, stage: v }))} options={STAGES} />
-              </div>
-              <div>
-                <Label className="text-xs">Contract Type</Label>
-                <SearchableSelect value={editForm.contractType || "__none__"} onValueChange={(v) => setEditForm(f => ({ ...f, contractType: v === "__none__" ? "" : v }))} options={[{ value: "__none__", label: "None" }, ...CONTRACT_TYPES]} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="text-xs">Estimated Value (R)</Label>
-                <Input type="number" value={editForm.estimatedValue} onChange={(e) => setEditForm(f => ({ ...f, estimatedValue: e.target.value }))} placeholder="0" />
-              </div>
-              <div>
-                <Label className="text-xs">Estimated kWp</Label>
-                <Input type="number" value={editForm.estimatedKwp} onChange={(e) => setEditForm(f => ({ ...f, estimatedKwp: e.target.value }))} placeholder="0" />
-              </div>
-            </div>
-            <div>
-              <Label className="text-xs">Expected Close Date</Label>
-              <Input type="date" value={editForm.expectedCloseDate} onChange={(e) => setEditForm(f => ({ ...f, expectedCloseDate: e.target.value }))} />
-            </div>
-            <div>
-              <Label className="text-xs">Notes</Label>
-              <Input value={editForm.notes} onChange={(e) => setEditForm(f => ({ ...f, notes: e.target.value }))} placeholder="Additional context..." />
-            </div>
-          </div>
+          )}
+
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditingOpp(null)}>Cancel</Button>
-            <Button onClick={handleEditSubmit} disabled={editMutation.isPending}>Save Changes</Button>
+            <Button variant="outline" onClick={() => setMappingTarget(null)}>Cancel</Button>
+            {!mappingResolved ? (
+              <Button onClick={() => resolveMappingMutation.mutate()} disabled={resolveMappingMutation.isPending || mappingLoading}>
+                {resolveMappingMutation.isPending ? "Resolving…" : "Resolve Mapping"}
+              </Button>
+            ) : (
+              <Button onClick={() => createEngineeringTicketsMutation.mutate()} disabled={createEngineeringTicketsMutation.isPending}>
+                {createEngineeringTicketsMutation.isPending ? "Creating…" : ticketMode === "phase_template" ? "Generate Template Ticket(s)" : "Create Custom Ticket"}
+              </Button>
+            )}
+            {mappingResolved && (
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  const q = new URLSearchParams({
+                    opportunityId: String(mappingTarget!.id),
+                    clientId: String(resolvedClientId),
+                    projectId: String(resolvedProjectId),
+                  });
+                  navigate(`/pd/tickets/create?${q.toString()}`);
+                }}
+              >
+                Open full manual form
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
