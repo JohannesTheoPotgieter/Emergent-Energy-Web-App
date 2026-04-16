@@ -1,7 +1,10 @@
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permissions";
@@ -22,6 +25,8 @@ export default function PmHandoverReviewPage() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const { allowed: canApprove } = usePermission("handover", "approve");
+  const [rejectTarget, setRejectTarget] = useState<{ projectId: number; projectName: string } | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
   const { data, isLoading, error, refetch, isRefetching } = useQuery<{ items: any[] }>({
     queryKey: ["pm-handover-review"],
     queryFn: loadQueue,
@@ -89,13 +94,8 @@ export default function PmHandoverReviewPage() {
                   size="sm"
                   variant="destructive"
                   onClick={() => {
-                    const reason = window.prompt("Reason for rejection:", "");
-                    if (reason === null) return;
-                    if (!reason.trim()) {
-                      toast({ title: "Reason required", description: "Please provide a rejection reason.", variant: "destructive" });
-                      return;
-                    }
-                    actionMutation.mutate({ projectId: i.project_id, action: "reject", reason: reason.trim() });
+                    setRejectTarget({ projectId: i.project_id, projectName: i.project_name });
+                    setRejectReason("");
                   }}
                   disabled={actionMutation.isPending}
                   data-testid={`btn-reject-handover-${i.project_id}`}
@@ -112,6 +112,64 @@ export default function PmHandoverReviewPage() {
       {!error && !isLoading && (data?.items || []).length === 0 ? (
         <p className="text-sm text-muted-foreground">No submitted or recently returned handovers are waiting for PM review.</p>
       ) : null}
+
+      <Dialog
+        open={rejectTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRejectTarget(null);
+            setRejectReason("");
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reject handover</DialogTitle>
+            <DialogDescription>
+              {rejectTarget ? `Reject the PD→PM handover for "${rejectTarget.projectName}".` : ""} The reason is stored in
+              the handover history and shown to the PD team.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+            placeholder="What is missing or incorrect? Be specific enough for PD to act on it."
+            className="min-h-[120px]"
+            data-testid="textarea-reject-reason"
+          />
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setRejectTarget(null);
+                setRejectReason("");
+              }}
+              disabled={actionMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={actionMutation.isPending || !rejectReason.trim()}
+              onClick={() => {
+                if (!rejectTarget || !rejectReason.trim()) return;
+                actionMutation.mutate(
+                  { projectId: rejectTarget.projectId, action: "reject", reason: rejectReason.trim() },
+                  {
+                    onSuccess: () => {
+                      setRejectTarget(null);
+                      setRejectReason("");
+                    },
+                  },
+                );
+              }}
+              data-testid="btn-confirm-reject-handover"
+            >
+              {actionMutation.isPending ? "Submitting…" : "Reject handover"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
