@@ -31,6 +31,7 @@ import {
 import { getFinanceSyncHealth } from "../lib/finance-trust/sync-health";
 import { getFinanceRevalidationStatus } from "../lib/finance-trust/revalidation";
 import { buildFinanceIntegrityReport } from "../lib/finance-trust/integrity-audit";
+import { getIntegrationFreshnessReport } from "../services/integration-freshness-service";
 
 /**
  * Guard helper — normalises `?limit=` for the queue endpoint.
@@ -221,6 +222,48 @@ export function registerFinanceTrustRoutes(app: Express): void {
         console.error("[finance-trust] revalidation status failed:", err);
         res.status(500).json({
           error: "finance_revalidation_status_failed",
+          message,
+        });
+      }
+    },
+  );
+
+  /**
+   * GET /api/finance/trust/integration-freshness
+   *
+   * Unified freshness report across all integrations (Pipedrive,
+   * SharePoint, QuickBooks, Microsoft 365). Used by handover flows
+   * and reporting surfaces to flag stale external data.
+   */
+  app.get(
+    "/api/finance/trust/integration-freshness",
+    requireAuth,
+    requirePermission("financials", "view"),
+    async (_req: Request, res: Response) => {
+      try {
+        const report = await getIntegrationFreshnessReport();
+        const trust = buildTrustMeta({
+          sourceLayer: "derived",
+          canonicalTable: "integrations,integration_run_events,sp_list_config",
+          refreshedAt: report.generatedAt,
+          staleAfterSeconds: 60,
+          exceptionCount: report.staleCount + report.failingCount,
+          uncertainty: report.overallHealth !== "healthy" ? "integration_freshness_degraded" : null,
+        });
+        setFinanceTrustHeaders(res, {
+          sourceLayer: "derived",
+          canonicalTable: "integrations,integration_run_events,sp_list_config",
+          refreshedAt: report.generatedAt,
+          staleAfterSeconds: 60,
+          exceptionCount: report.staleCount + report.failingCount,
+          uncertainty: report.overallHealth !== "healthy" ? "integration_freshness_degraded" : null,
+        });
+        res.json({ ...report, trust });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to load integration freshness";
+        console.error("[finance-trust] integration freshness failed:", err);
+        res.status(500).json({
+          error: "integration_freshness_failed",
           message,
         });
       }
