@@ -108,6 +108,7 @@ import {
 import { fetchRolloutFeatureFlags } from "@/lib/feature-flags";
 import { getTaskWorkflowBlockReason } from "@/lib/task-workflow-guard";
 import { engFetch } from "@/lib/eng-fetch";
+import { TaskDependenciesPanel } from "./engineering/panels/TaskDependenciesPanel";
 import { PHASE_COLORS } from "@/lib/phase-colors";
 import { invalidateAllTaskCaches } from "@/lib/task-cache";
 import { canonicalizeTaskStatus } from "@/lib/task-status-compat";
@@ -887,112 +888,12 @@ export function PostUpdateForm({ taskId, currentStatus, hasProject, onDone }: { 
   );
 }
 
-export function DependenciesTab({ task, allTasks }: { task: Task; allTasks?: Task[] }) {
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
-  const [search, setSearch] = useState("");
-  const [depType, setDepType] = useState<"blocked_by" | "blocks">("blocked_by");
-
-  // Store dependencies in task description metadata (pragmatic approach without new table)
-  const deps = useMemo(() => {
-    try {
-      const meta = task.description?.match(/<!--deps:(.*?)-->/);
-      if (meta) return JSON.parse(meta[1]) as { id: number; type: string; title: string }[];
-    } catch {}
-    return [] as { id: number; type: string; title: string }[];
-  }, [task.description]);
-
-  const addDep = async (depTask: Task) => {
-    const existing = deps.filter(d => d.id !== depTask.id);
-    const newDeps = [...existing, { id: depTask.id, type: depType, title: depTask.title }];
-    const depsTag = `<!--deps:${JSON.stringify(newDeps)}-->`;
-    const cleanDesc = (task.description || "").replace(/<!--deps:.*?-->/g, "").trim();
-    const newDesc = cleanDesc + "\n" + depsTag;
-    try {
-      await engFetch(`/api/eng/tasks/${task.id}`, { method: "PATCH", body: JSON.stringify({ description: newDesc }) });
-      invalidateAllTaskCaches(queryClient);
-      toast({ title: `Dependency added: ${depType === "blocked_by" ? "blocked by" : "blocks"} ${depTask.title.slice(0, 30)}` });
-    } catch (e: any) {
-      toast({ title: "Error", description: e.message, variant: "destructive" });
-    }
-  };
-
-  const removeDep = async (depId: number) => {
-    const newDeps = deps.filter(d => d.id !== depId);
-    const depsTag = newDeps.length > 0 ? `<!--deps:${JSON.stringify(newDeps)}-->` : "";
-    const cleanDesc = (task.description || "").replace(/<!--deps:.*?-->/g, "").trim();
-    const newDesc = (cleanDesc + "\n" + depsTag).trim();
-    try {
-      await engFetch(`/api/eng/tasks/${task.id}`, { method: "PATCH", body: JSON.stringify({ description: newDesc }) });
-      invalidateAllTaskCaches(queryClient);
-      toast({ title: "Dependency removed" });
-    } catch (e: any) {
-      toast({ title: "Error", description: e.message, variant: "destructive" });
-    }
-  };
-
-  const { data: fetchedTasks = [] } = useQuery<Task[]>({
-    queryKey: ["eng-tasks"],
-    queryFn: () => engFetch("/api/eng/tasks"),
-    enabled: !allTasks,
-  });
-  const pool = allTasks || fetchedTasks;
-
-  const filtered = useMemo(() => {
-    if (!search.trim()) return [];
-    const term = search.toLowerCase();
-    return pool.filter(t => t.id !== task.id && t.title.toLowerCase().includes(term)).slice(0, 8);
-  }, [pool, search, task.id]);
-
-  const blockedBy = deps.filter(d => d.type === "blocked_by");
-  const blocks = deps.filter(d => d.type === "blocks");
-
-  return (
-    <div className="space-y-3" data-testid="dependencies-tab">
-      {blockedBy.length > 0 && (
-        <div>
-          <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">Blocked by</p>
-          {blockedBy.map(d => (
-            <div key={d.id} className="flex items-center gap-2 text-xs p-1.5 border rounded mb-1 bg-red-50/50">
-              <AlertTriangle className="h-3 w-3 text-red-500 shrink-0" />
-              <span className="flex-1 truncate">{d.title}</span>
-              <button className="text-muted-foreground hover:text-red-500" onClick={() => removeDep(d.id)}><X className="h-3 w-3" /></button>
-            </div>
-          ))}
-        </div>
-      )}
-      {blocks.length > 0 && (
-        <div>
-          <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">Blocks</p>
-          {blocks.map(d => (
-            <div key={d.id} className="flex items-center gap-2 text-xs p-1.5 border rounded mb-1 bg-amber-50/50">
-              <ArrowRight className="h-3 w-3 text-amber-500 shrink-0" />
-              <span className="flex-1 truncate">{d.title}</span>
-              <button className="text-muted-foreground hover:text-red-500" onClick={() => removeDep(d.id)}><X className="h-3 w-3" /></button>
-            </div>
-          ))}
-        </div>
-      )}
-      <div className="space-y-2">
-        <div className="flex gap-1">
-          <button className={`text-[10px] px-2 py-1 rounded font-medium ${depType === "blocked_by" ? "bg-red-100 text-red-700" : "bg-muted text-muted-foreground"}`} onClick={() => setDepType("blocked_by")}>Blocked by</button>
-          <button className={`text-[10px] px-2 py-1 rounded font-medium ${depType === "blocks" ? "bg-amber-100 text-amber-700" : "bg-muted text-muted-foreground"}`} onClick={() => setDepType("blocks")}>Blocks</button>
-        </div>
-        <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search tasks to link..." className="h-8 text-xs" data-testid="dep-search-input" />
-        {filtered.map(t => (
-          <button key={t.id} className="w-full text-left p-2 text-xs border rounded hover:bg-muted/50 transition-colors flex items-center gap-2" onClick={() => { addDep(t); setSearch(""); }}>
-            <Plus className="h-3 w-3 text-muted-foreground shrink-0" />
-            <span className="truncate flex-1">{t.title}</span>
-            <Badge className={`text-[8px] ${getTaskStatusBadgeClass(t.status)}`}>{getTaskStatusLabel(t.status)}</Badge>
-          </button>
-        ))}
-      </div>
-      {deps.length === 0 && !search && (
-        <p className="text-xs text-muted-foreground text-center py-4">No dependencies. Search for a task above to add one.</p>
-      )}
-    </div>
-  );
-}
+/**
+ * DependenciesTab — thin wrapper around TaskDependenciesPanel.
+ * Kept as a named export for backward compat with the barrel.
+ * @deprecated Use TaskDependenciesPanel directly.
+ */
+export { TaskDependenciesPanel as DependenciesTab } from "./engineering/panels/TaskDependenciesPanel";
 
 export function TaskDetailDrawer({
   task, onClose, onUpdate
@@ -2349,7 +2250,7 @@ export function TaskDetailDrawer({
             )}
 
             {activeTab === "dependencies" && (
-              <DependenciesTab task={task} />
+              <TaskDependenciesPanel task={task} />
             )}
 
             {(task.linkedPlanItemId || task.linkedDeliverableId || task.linkedQualityItemInstanceId) && (
