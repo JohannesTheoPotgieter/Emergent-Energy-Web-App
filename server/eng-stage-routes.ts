@@ -32,6 +32,7 @@ import { logAuditFromReq } from "./audit-logger";
 import { sendError } from "./lib/api-error";
 import { createEngineeringWorkItem, updateEngineeringWorkItem } from "./work-items-adapter";
 import { jwtAuth, requireAuth } from "./auth-context";
+import { requirePermission } from "./permission-middleware";
 
 const UPLOADS_DIR = path.join(process.cwd(), "uploads", "eng-deliverables");
 if (!fs.existsSync(UPLOADS_DIR)) {
@@ -329,7 +330,8 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.post("/api/projects/:projectId/eng-stages/generate", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  // Permission: generating stage packs is a write to eng_stages — require create.
+  app.post("/api/projects/:projectId/eng-stages/generate", jwtAuth, requireAuth, requirePermission("eng_stages", "create"), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       const projectId = parseInt(paramStr(req.params.projectId));
@@ -552,7 +554,8 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/eng-stages/tasks/:taskId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  // Permission: changing stage task status is an edit to eng_tasks.
+  app.patch("/api/eng-stages/tasks/:taskId", jwtAuth, requireAuth, requirePermission("eng_tasks", "edit"), async (req: Request, res: Response) => {
     try {
       const taskId = parseInt(paramStr(req.params.taskId));
       const user = getUser(req);
@@ -653,7 +656,8 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng-stages/tasks/:taskId/deliverables", jwtAuth, requireAuth, upload.single("file"), async (req: Request, res: Response) => {
+  // Permission: uploading a deliverable is a create on deliverables.
+  app.post("/api/eng-stages/tasks/:taskId/deliverables", jwtAuth, requireAuth, requirePermission("deliverables", "create"), upload.single("file"), async (req: Request, res: Response) => {
     try {
       const taskId = parseInt(paramStr(req.params.taskId));
       const user = getUser(req);
@@ -687,7 +691,9 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/eng-stages/deliverables/:id/approve", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  // Permission: approving a deliverable requires approve on deliverables (middleware)
+  // + inline role check (defense-in-depth) + self-review block.
+  app.patch("/api/eng-stages/deliverables/:id/approve", jwtAuth, requireAuth, requirePermission("deliverables", "approve"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(paramStr(req.params.id));
       const user = getUser(req);
@@ -754,7 +760,9 @@ export function registerEngStageRoutes(app: Express) {
   // explicit, role-gated action is required so the audit trail distinguishes
   // "this has been reviewed" from "this is safe to build from".
 
-  app.post("/api/eng-stages/deliverables/:id/issue-for-construction", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  // Permission: issuing for construction requires approve on deliverables (middleware)
+  // + inline engineer/COO check (defense-in-depth) + self-issue block.
+  app.post("/api/eng-stages/deliverables/:id/issue-for-construction", jwtAuth, requireAuth, requirePermission("deliverables", "approve"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(paramStr(req.params.id));
       const user = getUser(req);
@@ -819,7 +827,9 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng-stages/deliverables/:id/mark-as-built", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  // Permission: marking as-built requires approve on deliverables (middleware)
+  // + inline engineer/COO/construction_manager check.
+  app.post("/api/eng-stages/deliverables/:id/mark-as-built", jwtAuth, requireAuth, requirePermission("deliverables", "approve"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(paramStr(req.params.id));
       const user = getUser(req);
@@ -873,7 +883,8 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng-stages/stages/:stageId/deliverables", jwtAuth, requireAuth, upload.single("file"), async (req: Request, res: Response) => {
+  // Permission: uploading a stage-level deliverable is a create on deliverables.
+  app.post("/api/eng-stages/stages/:stageId/deliverables", jwtAuth, requireAuth, requirePermission("deliverables", "create"), upload.single("file"), async (req: Request, res: Response) => {
     try {
       const stageId = parseInt(paramStr(req.params.stageId));
       const user = getUser(req);
@@ -924,7 +935,8 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/eng-stages/deliverables/:id", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  // Permission: deleting a deliverable requires delete on deliverables. CRITICAL fix.
+  app.delete("/api/eng-stages/deliverables/:id", jwtAuth, requireAuth, requirePermission("deliverables", "delete"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(paramStr(req.params.id));
       const [deliverable] = await db.select().from(projectEngDeliverables).where(eq(projectEngDeliverables.id, id));
@@ -942,7 +954,9 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/eng-stages/approvals/:id", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  // Permission: stage gate approvals require approve on eng_stages (middleware)
+  // + inline QA/COO role check + self-approval block.
+  app.patch("/api/eng-stages/approvals/:id", jwtAuth, requireAuth, requirePermission("eng_stages", "approve"), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       const id = parseInt(paramStr(req.params.id));
@@ -995,7 +1009,8 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng-stages/stages/:stageId/complete", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  // Permission: completing a stage is an approve-level action on eng_stages.
+  app.post("/api/eng-stages/stages/:stageId/complete", jwtAuth, requireAuth, requirePermission("eng_stages", "approve"), async (req: Request, res: Response) => {
     try {
       const stageId = parseInt(paramStr(req.params.stageId));
 
@@ -1195,7 +1210,9 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng-stages/stages/:stageId/override-complete", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  // Permission: override-completing a stage requires override on eng_stages (middleware)
+  // + inline COO check.
+  app.post("/api/eng-stages/stages/:stageId/override-complete", jwtAuth, requireAuth, requirePermission("eng_stages", "override"), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required for override" });
@@ -1248,7 +1265,8 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/eng-stages/stages/:stageId/status", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  // Permission: changing stage status is an edit on eng_stages.
+  app.patch("/api/eng-stages/stages/:stageId/status", jwtAuth, requireAuth, requirePermission("eng_stages", "edit"), async (req: Request, res: Response) => {
     try {
       const stageId = parseInt(paramStr(req.params.stageId));
       const { status } = req.body;
