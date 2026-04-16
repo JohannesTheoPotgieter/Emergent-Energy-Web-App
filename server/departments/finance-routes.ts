@@ -68,8 +68,13 @@ import { getFeatureFlag } from "../lib/feature-flags";
 import { buildFinanceCoreTrustReport } from "../services/finance-core-trust-service";
 import { setFinanceTrustHeaders as setFinanceTrustHeadersShared } from "../lib/finance-trust/envelope";
 import type { FinanceTrustHeaderParams } from "../lib/finance-trust/envelope";
-import { getBills, getMonthlyPnLReport } from "../services/quickbooks-service";
-import { billRawToSummary, parsePnLCosMonthly } from "../services/quickbooks-reconciliation-service";
+import { getBills, getInvoices, getMonthlyPnLReport, getQuickBooksConnectionStatus } from "../services/quickbooks-service";
+import { billRawToSummary, invoiceRawToSummary, parsePnLCosMonthly } from "../services/quickbooks-reconciliation-service";
+import {
+  deriveInflowsQbStatus,
+  deriveOutflowsQbStatus,
+  resolveQbMatch,
+} from "../lib/quickbooks-status";
 
 const FINANCIAL_APPROVER_ROLES = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"];
 const CANONICAL_FINANCE_COSTLINE_READ_FLAG = "canonical_finance_costline_read_v1";
@@ -1062,7 +1067,6 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
 
     const outflows = allExpenses
       .filter(e => {
-        // Bottom-up: only leaf-node (item) rows, matching project-detail level logic
         if (e.rowType !== 'item') return false;
         if (projectFilters && !projectFilters.has(e.projectName || "")) return false;
         const pd = getExpenseEffectiveDateAndSource(e).date;
@@ -1074,7 +1078,6 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
         const originalDate = e.expensePaymentDate || (e as any).computedForecastPaymentDate || (e as any).forecastPaymentDate || (e as any).expenseInvoicedDate || null;
         const effectiveDate = (e as any).adminDateOverride || originalDate;
         const amountBreakdown = getOutflowAmountBreakdown(e);
-        // adaptCostToExpense uses negative IDs for normalizedCostLines rows; reverse to canonical
         const realId = e.id < 0 ? -e.id : (e.id >= 900000 ? e.id - 900000 : e.id);
         return {
           expenseId: realId,
@@ -1092,6 +1095,7 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
           amountSource: amountBreakdown.amountSource,
           dateSource: dateInfo.source,
           expenseActualTotal: amountBreakdown.amount,
+          supplierName: (e as any).supplierName || null,
         };
       });
 
@@ -1111,7 +1115,6 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
           const pay = new Date(inf.paymentReceivedDate);
           daysToReceipt = Math.round((pay.getTime() - inv.getTime()) / (1000 * 60 * 60 * 24));
         }
-        // adaptRevenueToInflow uses negative IDs for normalizedRevenueLines rows; reverse to canonical
         const realInflowId = inf.id < 0 ? -inf.id : (inf.id >= 900000 ? inf.id - 900000 : inf.id);
         return {
           inflowId: realInflowId,
@@ -1128,10 +1131,180 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
           invoiceRaisedDate: inf.invoiceRaisedDate,
           daysToReceipt,
           isOverride: inf.effectiveDate !== inf.paymentReceivedDate,
+          customerName: (inf as any).customerName || null,
         };
       });
 
-    res.json({ outflows, inflows });
+    let qbLastSyncAt: string | null = null;
+    let qbIsStale = false;
+    let qbEnrichmentAvailable = false;
+    let qbEnrichmentError: string | null = null;
+    let billCandidates: any[] = [];
+    let invoiceCandidates: any[] = [];
+    let outflowLinks: any[] = [];
+    let inflowLinks: any[] = [];
+
+    try {
+      const [connectionStatus, billsRaw, invoicesRaw] = await Promise.all([
+        getQuickBooksConnectionStatus(),
+        getBills(),
+        getInvoices(),
+      ]);
+      qbEnrichmentAvailable = true;
+      qbLastSyncAt = connectionStatus.lastSuccessfulSyncAt;
+      qbIsStale = !!connectionStatus.isStale;
+      billCandidates = (billsRaw?.QueryResponse?.Bill ?? []).map(billRawToSummary).map((b: any) => ({
+        id: String(b.id),
+        docNumber: b.docNumber ?? null,
+        totalAmount: b.totalAmount ?? null,
+        balance: b.balance ?? null,
+        counterpartyName: b.vendorName ?? null,
+        txnDate: b.txnDate ?? null,
+        statusDate: b.txnDate ?? null,
+      }));
+      invoiceCandidates = (invoicesRaw?.QueryResponse?.Invoice ?? []).map(invoiceRawToSummary).map((inv: any) => ({
+        id: String(inv.id),
+        docNumber: inv.docNumber ?? null,
+        totalAmount: inv.totalAmount ?? null,
+        balance: inv.balance ?? null,
+        counterpartyName: inv.customerName ?? null,
+        txnDate: inv.txnDate ?? null,
+        statusDate: inv.txnDate ?? null,
+      }));
+
+      const outflowIds = outflows.map((o: any) => Number(o.expenseId)).filter((id: number) => Number.isFinite(id));
+      const inflowIds = inflows.map((i: any) => Number(i.inflowId)).filter((id: number) => Number.isFinite(id));
+
+      if (outflowIds.length > 0) {
+        outflowLinks = await db.select().from(quickbooksInvoiceLinks).where(and(
+          eq(quickbooksInvoiceLinks.appEntityType, "cost_line"),
+          inArray(quickbooksInvoiceLinks.appEntityId, outflowIds),
+          isNull(quickbooksInvoiceLinks.deletedAt),
+        ));
+      }
+      if (inflowIds.length > 0) {
+        inflowLinks = await db.select().from(quickbooksInvoiceLinks).where(and(
+          eq(quickbooksInvoiceLinks.appEntityType, "revenue_line"),
+          inArray(quickbooksInvoiceLinks.appEntityId, inflowIds),
+          isNull(quickbooksInvoiceLinks.deletedAt),
+        ));
+      }
+    } catch (error: any) {
+      // Keep payload working even if QB is unavailable.
+      qbEnrichmentError = error?.message ? String(error.message) : "QuickBooks enrichment failed";
+    }
+
+    const outflowLinkById = new Map<number, any>();
+    for (const link of outflowLinks) outflowLinkById.set(Number(link.appEntityId), link);
+    const inflowLinkById = new Map<number, any>();
+    for (const link of inflowLinks) inflowLinkById.set(Number(link.appEntityId), link);
+
+    const enrichedOutflows = outflows.map((row: any) => {
+      const link = outflowLinkById.get(Number(row.expenseId));
+      const match = resolveQbMatch({
+        linkedTransactionId: link?.qbEntityId ?? row.qbTransactionId ?? null,
+        invoiceNumber: row.expenseInvoiceNumber ?? null,
+        projectName: row.projectName ?? null,
+        counterpartyName: row.supplierName ?? null,
+        amount: row.expenseActualTotal ?? null,
+        candidates: billCandidates,
+      });
+      const qbStatus = deriveOutflowsQbStatus(match.matched?.balance ?? null, !!match.matched, row.expenseActualTotal ?? null);
+      const qbUncertain = qbStatus !== "Unknown" && (qbIsStale || match.qbMatchConfidence === "low");
+      const qbUncertainReason = qbIsStale
+        ? "stale_sync"
+        : match.qbMatchConfidence === "low"
+          ? "low_confidence"
+          : null;
+      return {
+        ...row,
+        qbStatus,
+        qbStatusDate: match.matched?.statusDate ?? null,
+        qbTransactionId: match.qbTransactionId,
+        qbLastSyncAt,
+        qbMatchConfidence: match.qbMatchConfidence,
+        qbMatchType: match.qbMatchType,
+        qbUncertain,
+        qbUncertainReason,
+      };
+    });
+
+    const enrichedInflows = inflows.map((row: any) => {
+      const link = inflowLinkById.get(Number(row.inflowId));
+      const match = resolveQbMatch({
+        linkedTransactionId: link?.qbEntityId ?? row.qbTransactionId ?? null,
+        invoiceNumber: row.milestoneInvoiceNumber ?? null,
+        projectName: row.projectName ?? null,
+        counterpartyName: row.customerName ?? null,
+        amount: row.milestoneAmount ?? null,
+        candidates: invoiceCandidates,
+      });
+      let qbStatus = deriveInflowsQbStatus(match.matched?.balance ?? null, !!match.matched);
+      if (match.matched?.balance !== null && match.matched?.balance !== undefined && (row.milestoneAmount ?? 0) > 0) {
+        if (Math.abs((match.matched?.balance ?? 0) - (row.milestoneAmount ?? 0)) <= 0.01) qbStatus = "Not received";
+      }
+      const qbUncertain = qbStatus !== "Unknown" && (qbIsStale || match.qbMatchConfidence === "low");
+      const qbUncertainReason = qbIsStale
+        ? "stale_sync"
+        : match.qbMatchConfidence === "low"
+          ? "low_confidence"
+          : null;
+      return {
+        ...row,
+        qbStatus,
+        qbStatusDate: match.matched?.statusDate ?? null,
+        qbTransactionId: match.qbTransactionId,
+        qbLastSyncAt,
+        qbMatchConfidence: match.qbMatchConfidence,
+        qbMatchType: match.qbMatchType,
+        qbUncertain,
+        qbUncertainReason,
+      };
+    });
+
+    const uncertainCount = [...enrichedOutflows, ...enrichedInflows].filter((r: any) => !!r.qbUncertain).length;
+    const totalRows = enrichedOutflows.length + enrichedInflows.length;
+    const hasLowConfidence = [...enrichedOutflows, ...enrichedInflows].some(
+      (r: any) => r.qbMatchConfidence === "low" && r.qbStatus !== "Unknown",
+    );
+    const missingStatusData = qbEnrichmentAvailable && totalRows > 0 && billCandidates.length === 0 && invoiceCandidates.length === 0;
+
+    const qbMeta = {
+      available: qbEnrichmentAvailable,
+      degraded: !!(
+        qbEnrichmentError ||
+        qbIsStale ||
+        missingStatusData ||
+        (hasLowConfidence && uncertainCount > 0)
+      ),
+      reason: qbEnrichmentError
+        ? "qb_unavailable"
+        : qbIsStale
+          ? "sync_stale"
+          : missingStatusData
+            ? "incomplete_data"
+            : hasLowConfidence
+              ? "low_confidence"
+              : "ok",
+      message: qbEnrichmentError
+        ? "QuickBooks status unavailable. Showing app data only."
+        : qbIsStale
+          ? "QuickBooks sync unavailable. Statuses may be incomplete."
+          : missingStatusData
+            ? "QuickBooks status data is incomplete for this view."
+            : hasLowConfidence
+              ? "Some QuickBooks matches are low confidence."
+              : null,
+      lastSyncAt: qbLastSyncAt,
+      uncertainCount,
+      totalRows,
+      qbCallsPerRequest: {
+        quickbooksApi: 2,
+        quickbooksHealth: 1,
+      },
+    };
+
+    res.json({ outflows: enrichedOutflows, inflows: enrichedInflows, qbMeta });
   } catch (error) {
     console.error("Cashflow 2026 detail error:", error);
     res.status(500).json({ error: "Failed to fetch cashflow detail", message: "Failed to fetch cashflow detail" });
