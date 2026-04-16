@@ -124,6 +124,17 @@ export default function PdTicketDetailPage() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const deleteMutation = useMutation({
+    mutationFn: () => pdFetch(`/api/pd/tickets/${ticketId}`, { method: "DELETE" }),
+    onSuccess: (result: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/pd/tickets"] });
+      toast({ title: "Ticket deleted", description: `Ticket and ${result.deletedTaskCount || 0} linked task(s) removed.` });
+      navigate("/pd/tickets");
+    },
+    onError: (e: Error) => toast({ title: "Delete failed", description: e.message, variant: "destructive" }),
+  });
+
   if (isLoading) return <PageSkeleton lines={5} />;
   if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load PD Ticket" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
@@ -198,9 +209,14 @@ export default function PdTicketDetailPage() {
                 </Button>
               )}
               {!editing ? (
+                <>
                 <Button variant="outline" size="sm" onClick={startEdit} data-testid="btn-edit-ticket">
                   <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
                 </Button>
+                <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200" onClick={() => setShowDeleteConfirm(true)} data-testid="btn-delete-ticket">
+                  <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
+                </Button>
+                </>
               ) : (
                 <>
                   <Button variant="outline" size="sm" onClick={() => setEditing(false)} data-testid="btn-cancel-edit">
@@ -933,6 +949,34 @@ function SpawnedTasksCard({ tasks, ticket, spawnMutation, createEngTaskMutation,
             >
               {spawnMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />}
               Create {totalSelected} Task{totalSelected !== 1 ? "s" : ""}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-red-600">Delete PD Ticket</DialogTitle>
+          </DialogHeader>
+          <div className="py-3 space-y-2">
+            <p className="text-sm">Are you sure you want to permanently delete this ticket?</p>
+            <p className="text-sm font-medium">{t.projectSiteName || `Ticket #${t.id}`}</p>
+            {tasks.length > 0 && (
+              <p className="text-sm text-amber-600">This will also delete {tasks.length} linked task{tasks.length !== 1 ? "s" : ""}.</p>
+            )}
+            <p className="text-xs text-muted-foreground">This action cannot be undone.</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteConfirm(false)} data-testid="btn-cancel-delete">Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={() => deleteMutation.mutate()}
+              disabled={deleteMutation.isPending}
+              data-testid="btn-confirm-delete"
+            >
+              {deleteMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />}
+              Delete Ticket
             </Button>
           </DialogFooter>
         </DialogContent>
