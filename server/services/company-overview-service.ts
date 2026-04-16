@@ -39,6 +39,7 @@ import {
   type DepartmentScore,
   type KpiScore,
 } from "@shared/config/kpi-registry";
+import { computeQcProgress } from "@shared/quality-governance";
 import { evaluateRevenueArStatus, isRevenueSettled } from "../lib/finance/revenue-ar-status";
 import { computeMarginPct } from "../lib/finance/margin";
 import { isCanonicalCosRealised } from "../lib/finance/cos-realisation";
@@ -479,11 +480,8 @@ export async function getCompanyOverviewData() {
   ]);
 
   // --- Quality ---
-  const totalQcItems = qcItems.length;
-  const approvedQcItems = qcItems.filter(
-    (i) => (i as any).qmStatus === "approved" || (i as any).approved === true
-  ).length;
-  const qualityPassRate = totalQcItems > 0 ? (approvedQcItems / totalQcItems) * 100 : 0;
+  const qcProgressResult = computeQcProgress(qcItems as any[]);
+  const qualityPassRate = qcProgressResult.progressPercent;
 
   // Snag closeout ageing
   const openSnags = snagRows.filter(
