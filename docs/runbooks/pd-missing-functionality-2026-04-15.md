@@ -40,19 +40,26 @@ creation was invisible in the `audit_events` table.
 `projectName`, `clientId`, `opportunityId`, and `phase` in the
 `changesJson`.
 
-### P3 — Proposal readiness gate (FUTURE WORK)
+### P3 — Proposal readiness advisory on conversion (IMPLEMENTED — partial)
 
-**Gap**: No validation prevents creating a PD ticket for an opportunity
-that is still in `prospect` stage, or creating a project from an
-opportunity that has not been approved. The `handoverReadiness` field
-on opportunities is deprecated and the `project_pd_pm_handover` gate
-only applies after a project already exists.
+**Gap**: No validation prevented creating a project from an opportunity
+that was still in `prospect` or `qualification` stage.
 
-**Recommendation**: Add an optional `minStage` validation on
-`POST /api/pd/tickets` when `opportunityId` is provided — warn (not
-block) if the opportunity is below `qualification`. Do the same on
-`POST /api/projects` when `opportunityId` is provided. This is a
-business-rule decision and needs sign-off before implementation.
+**Fix** (this commit):
+- `POST /api/projects`: when `opportunityId` is provided and the
+  opportunity is in `prospect` or `qualification` stage, the response
+  includes an `_earlyStageAdvisory` string. This is a warning, not a
+  block — EE sometimes starts preliminary PD work before the deal
+  progresses.
+- `project-create.tsx`: the conversion form renders an amber advisory
+  banner when the source opportunity is in an early stage, explaining
+  that projects are usually created from "proposal" stage or later.
+- The success screen also renders the advisory and a CRM boundary cue
+  when the source opportunity is from Pipedrive.
+
+**Still open**: no stage advisory on PD ticket creation when
+`opportunityId` is provided. Tracked as future work — lower risk
+because PD tickets are work requests, not project spine creation.
 
 ### P4 — Owner/blocker visibility on opportunities (FUTURE WORK)
 
@@ -66,17 +73,24 @@ fix #2 in the Pipedrive review runbook). Add an `assignedToUserId` for
 internal opportunities. Then add a "Next Action" column to the
 opportunities list UI.
 
-### P5 — Explicit CRM boundary cues on detail pages (FUTURE WORK)
+### P5 — Explicit CRM boundary cues on detail pages (PARTIALLY IMPLEMENTED)
 
-**Gap**: Only the opportunities list page shows the Pipedrive/Internal
-badge. The PD ticket detail page does not show whether its linked
-opportunity (if any) is CRM-synced. The project lifecycle page does not
-show whether the project's source opportunity is from Pipedrive.
+**Gap**: Only the opportunities list page showed the Pipedrive/Internal
+badge. Detail pages did not surface the CRM boundary.
 
-**Recommendation**: On `pd-ticket-detail.tsx`, if `opportunityId` is set,
-fetch the opportunity's `source` and render a small info badge. On the
-project detail page, similarly fetch via `project_info.opportunityId`.
-Both are additive UI changes with no business-rule impact.
+**Fix** (this commit):
+- `GET /api/pd/tickets/:id`: enriched with `opportunityInfo` (id,
+  source, stage, notes, estimatedValue) when the ticket has an
+  `opportunityId` linked.
+- `pd-ticket-detail.tsx`: the info grid shows an "Opportunity" row
+  with the source (Pipedrive / Internal), stage, and estimated value.
+- `project-create.tsx` success screen: renders a Pipedrive CRM
+  boundary notice when the project was created from a CRM-synced
+  opportunity.
+
+**Still open**: the project lifecycle/detail page does not show CRM
+source for its linked opportunity. Lower priority — the project spine
+is app-owned regardless of the opportunity's source.
 
 ### P6 — Opportunity status update on conversion (FUTURE WORK)
 
