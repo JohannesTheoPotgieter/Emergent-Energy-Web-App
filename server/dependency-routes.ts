@@ -53,6 +53,77 @@ export function registerDependencyRoutes(app: Express): void {
     }
   });
 
+  // Task-level dependency fetch: returns all dependencies where the given
+  // task is either the predecessor or the successor. Used by the
+  // DependenciesTab in the engineering task detail drawer.
+  app.get("/api/dependencies/task/:taskId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const taskId = parseInt(req.params.taskId as string);
+      if (isNaN(taskId)) return res.status(400).json({ error: "Invalid task ID" });
+
+      const deps = await db.select({
+        id: workItemDependencies.id,
+        predecessorId: workItemDependencies.predecessorId,
+        successorId: workItemDependencies.successorId,
+        depType: workItemDependencies.depType,
+        lagDays: workItemDependencies.lagDays,
+      })
+        .from(workItemDependencies)
+        .where(
+          and(
+            or(
+              eq(workItemDependencies.predecessorId, taskId),
+              eq(workItemDependencies.successorId, taskId),
+            ),
+            isNull(workItemDependencies.deletedAt),
+          )
+        );
+
+      // Collect all linked task IDs to fetch titles in a single query
+      const linkedIds = new Set<number>();
+      for (const d of deps) {
+        linkedIds.add(d.predecessorId);
+        linkedIds.add(d.successorId);
+      }
+      linkedIds.delete(taskId);
+
+      const titleMap = new Map<number, { title: string; status: string }>();
+      if (linkedIds.size > 0) {
+        const rows = await db.select({
+          id: workItems.id,
+          title: workItems.title,
+          status: workItems.status,
+        })
+          .from(workItems)
+          .where(inArray(workItems.id, [...linkedIds]));
+        for (const r of rows) {
+          titleMap.set(r.id, { title: r.title, status: r.status || "not_started" });
+        }
+      }
+
+      const result = deps.map((d: any) => {
+        const isBlocking = d.predecessorId === taskId;
+        const linkedTaskId = isBlocking ? d.successorId : d.predecessorId;
+        const linked = titleMap.get(linkedTaskId);
+        return {
+          id: d.id,
+          type: isBlocking ? "blocks" : "blocked_by",
+          depType: d.depType,
+          lagDays: d.lagDays,
+          linkedTaskId,
+          linkedTaskTitle: linked?.title ?? `Task #${linkedTaskId}`,
+          linkedTaskStatus: linked?.status ?? "not_started",
+        };
+      });
+
+      res.json({ dependencies: result });
+    } catch (err: unknown) {
+      console.error("[Dependencies] GET task deps error:", err);
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  });
+
   app.get("/api/dependencies/project/:projectId", requireAuth, requirePermission("projects", "view"), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.projectId as string);

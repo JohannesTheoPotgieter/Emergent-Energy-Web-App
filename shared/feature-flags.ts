@@ -47,6 +47,14 @@ export const FEATURE_FLAG_KEYS = [
 
   // Handover V2: structured multi-tab PD→PM handover with readiness gating and dual sign-off
   "pd_pm_handover_v2",
+
+  // Engineering containment: legacy deliverable capture wizard. This component
+  // posts to the legacy `deliverables` table, NOT the controlled
+  // `projectEngDeliverables` table. Documents captured here do NOT get the
+  // IFC lifecycle (draft → under_review → approved → issued_for_construction →
+  // as_built). Gate it off by default until migration to the controlled table
+  // is complete.
+  "legacy_capture_deliverable",
 ] as const;
 
 export type RolloutFeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
@@ -319,6 +327,12 @@ export const ROLLOUT_FEATURE_FLAGS: FeatureFlagDefinition[] = [
     key: "pd_pm_handover_v2",
     label: "PD→PM Handover V2",
     description: "Enables the enhanced multi-tab PD→PM handover form with readiness gating, dual sign-off, lessons learnt, and COO health scoring.",
+    defaultValue: false,
+  },
+  {
+    key: "legacy_capture_deliverable",
+    label: "Legacy capture deliverable",
+    description: "Controls the legacy deliverable capture wizard that posts to the un-controlled deliverables table. Disabled by default — use Engineering Stages tab for controlled document uploads.",
     defaultValue: false,
   },
 ];

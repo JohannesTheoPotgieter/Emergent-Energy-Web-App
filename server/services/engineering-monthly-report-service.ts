@@ -19,10 +19,29 @@ import {
   users,
 } from "@shared/schema";
 import { parseMonth, getMonthLabel } from "./pm-monthly-report-service";
+import { isTaskComplete } from "@shared/task-status";
+import { toCanonicalStatus } from "../work-items-adapter";
 
 const INACTIVE_STATUSES = ["Cancelled", "Archived", "Complete", "Closed", "Handover Complete", "Completed"];
-const COMPLETED_STATUSES = ["COMPLETE", "COMPLETED", "DONE"];
-const CANCELLED_STATUSES = ["CANCELLED", "CANCELED"];
+
+/** Canonical check: is this work_items.status a terminal/complete state?
+ *  Uses toCanonicalStatus to normalize legacy DB values before checking. */
+function isComplete(rawStatus: string | null | undefined): boolean {
+  return isTaskComplete(toCanonicalStatus(rawStatus));
+}
+
+/** Canonical check: is this status a cancelled state? */
+function isCancelled(rawStatus: string | null | undefined): boolean {
+  const s = toCanonicalStatus(rawStatus);
+  // No canonical cancelled status exists in TASK_STATUSES, so treat as
+  // not-cancelled. If a "cancelled" status is added, this will pick it up.
+  return false;
+}
+
+/** Canonical check: is this an active (open, non-complete, non-cancelled) task? */
+function isActive(rawStatus: string | null | undefined): boolean {
+  return !isComplete(rawStatus) && !isCancelled(rawStatus);
+}
 
 function toNum(v: unknown): number {
   if (v === null || v === undefined || v === "") return 0;
@@ -91,20 +110,22 @@ export async function generateEngineeringReportData(month: string) {
   const engWorkItems = allWorkItemRows.filter((w: any) => activeProjectIds.has(w.projectId));
 
   // ===== SECTION 1: Engineering KPIs =====
+  // Metric definitions:
+  //   totalEngineeringTasks: count of all eng work items for active projects
+  //   tasksCompletedThisMonth: subset where completedAt falls in the report month
+  //   totalCompleted: subset in a terminal/complete canonical status
+  //   activeTasks: subset that are open (not complete, not cancelled)
+  //   tasksPlannedToCompleteThisMonth: subset where endDate falls in the report month
   const totalEngTasks = engWorkItems.length;
   const completedThisMonth = engWorkItems.filter((w: any) => w.completedAt && isTimestampInMonth(w.completedAt, monthStart, monthEnd)).length;
-  const totalCompleted = engWorkItems.filter((w: any) => COMPLETED_STATUSES.includes((w.status || "").toUpperCase())).length;
+  const totalCompleted = engWorkItems.filter((w: any) => isComplete(w.status)).length;
 
   const activeDeliverables = allDeliverables.filter((d: any) => activeProjectIds.has(d.projectId));
 
-  const activeTasks = engWorkItems.filter((w: any) => {
-    const status = (w.status || "").toUpperCase();
-    return !COMPLETED_STATUSES.includes(status) && !CANCELLED_STATUSES.includes(status);
-  }).length;
+  const activeTaskCount = engWorkItems.filter((w: any) => isActive(w.status)).length;
 
   const tasksPlannedToCompleteThisMonth = engWorkItems.filter((w: any) => {
-    const status = (w.status || "").toUpperCase();
-    if (CANCELLED_STATUSES.includes(status)) return false;
+    if (isCancelled(w.status)) return false;
     return isDateStrInMonth(w.endDate, monthStartStr, monthEndStr);
   }).length;
 
@@ -127,10 +148,9 @@ export async function generateEngineeringReportData(month: string) {
     deliverablesSubmitted: submittedEvents,
     deliverablesApproved: approvedEvents,
     deliverablesRejected: rejectedEvents,
-    openBlockers: engWorkItems.filter((w: any) => {
-      const status = (w.status || "").toUpperCase();
-      return w.endDate && w.endDate < monthEndStr && !COMPLETED_STATUSES.includes(status) && !CANCELLED_STATUSES.includes(status);
-    }).length,
+    openBlockers: engWorkItems.filter((w: any) =>
+      w.endDate && w.endDate < monthEndStr && isActive(w.status)
+    ).length,
   };
 
   // ===== SECTION 2: Per-project task completion =====
@@ -143,16 +163,15 @@ export async function generateEngineeringReportData(month: string) {
   const perProjectTasks = activeProjects.map((p: any) => {
     const tasks = tasksByProject.get(p.id) || [];
     const total = tasks.length;
-    const completed = tasks.filter((t: any) => COMPLETED_STATUSES.includes((t.status || "").toUpperCase())).length;
-    const inProgress = tasks.filter((t: any) => (t.status || "").toUpperCase() === "IN PROGRESS").length;
+    const completed = tasks.filter((t: any) => isComplete(t.status)).length;
+    const inProgress = tasks.filter((t: any) => toCanonicalStatus(t.status) === "in_progress").length;
     const notStarted = tasks.filter((t: any) => {
-      const s = (t.status || "").toUpperCase();
-      return s === "TO DO" || s === "NOT STARTED";
+      const s = toCanonicalStatus(t.status);
+      return s === "to_do" || s === "not_started";
     }).length;
-    const overdue = tasks.filter((t: any) => {
-      const status = (t.status || "").toUpperCase();
-      return t.endDate && t.endDate < monthEndStr && !COMPLETED_STATUSES.includes(status) && !CANCELLED_STATUSES.includes(status);
-    }).length;
+    const overdue = tasks.filter((t: any) =>
+      t.endDate && t.endDate < monthEndStr && isActive(t.status)
+    ).length;
     const completedThisMonth = tasks.filter((t: any) => t.completedAt && isTimestampInMonth(t.completedAt, monthStart, monthEnd)).length;
 
     return {
@@ -202,9 +221,10 @@ export async function generateEngineeringReportData(month: string) {
     submittedThisMonth: submittedEvents,
     approvedThisMonth: approvedEvents,
     rejectedThisMonth: rejectedEvents,
-    pendingReview: activeDeliverables.filter((d: any) => d.status === "NEEDS APPROVAL").length,
+    // Legacy deliverables table uses mixed-case status — normalize for comparison.
+    pendingReview: activeDeliverables.filter((d: any) => toCanonicalStatus(d.status) === "needs_approval").length,
     tasksPlannedToCompleteThisMonth,
-    activeTasks,
+    activeTasks: activeTaskCount,
   };
 
   // ===== SECTION 4: Stage/Gate progress =====
@@ -232,8 +252,7 @@ export async function generateEngineeringReportData(month: string) {
     const r = engResourceMap.get(name)!;
     r.assignedTasks++;
     if (t.completedAt && isTimestampInMonth(t.completedAt, monthStart, monthEnd)) r.completedThisMonth++;
-    const status = (t.status || "").toUpperCase();
-    if (t.endDate && t.endDate < monthEndStr && !COMPLETED_STATUSES.includes(status) && !CANCELLED_STATUSES.includes(status)) r.overdue++;
+    if (t.endDate && t.endDate < monthEndStr && isActive(t.status)) r.overdue++;
     const proj = projectMap.get(t.projectId);
     if (proj) r.projects.add(proj.projectName);
   }
@@ -276,6 +295,14 @@ export async function generateEngineeringReportData(month: string) {
       snapshotBehavior: "Values are fixed to the stored monthly report snapshot until regeneration.",
       generatedAt: new Date().toISOString(),
       activeProjectCount: activeProjects.length,
+      // Trust metadata: marks which KPIs are provisional until the
+      // underlying data source is fully migrated.
+      provisionalMetrics: {
+        deliverablesSubmitted: "Reads legacy deliverableVersions table — status values may be mixed-case",
+        deliverablesApproved: "Reads legacy deliverableVersions table — status values may be mixed-case",
+        deliverablesRejected: "Reads legacy deliverableVersions table — status values may be mixed-case",
+        monthlyCompletionRate: "Denominator uses endDate as a proxy for planned completion — not a canonical field",
+      },
     },
     kpis,
     tasks: {

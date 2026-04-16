@@ -3,7 +3,7 @@
 // add explicit ': any' to .map/.filter callback params on db result rows.
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { sql, eq, and, inArray } from "drizzle-orm";
+import { sql, eq, and, inArray, desc } from "drizzle-orm";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -17,16 +17,25 @@ import {
   projectEngTasks,
   projectEngDeliverables,
   projectEngApprovals,
+  engTransmittals,
+  engTransmittalItems,
+  drawingRegister,
   projectInfo,
   users,
   workItems,
   notifications,
   projectTeamMembers,
 } from "@shared/schema";
+import {
+  RELEASED_FOR_STATES,
+  RELEASED_FOR_TRANSITIONS,
+  type ReleasedForState,
+} from "@shared/schema/engineering";
 import { logAuditFromReq } from "./audit-logger";
 import { sendError } from "./lib/api-error";
 import { createEngineeringWorkItem, updateEngineeringWorkItem } from "./work-items-adapter";
 import { jwtAuth, requireAuth } from "./auth-context";
+import { requirePermission } from "./permission-middleware";
 
 const UPLOADS_DIR = path.join(process.cwd(), "uploads", "eng-deliverables");
 if (!fs.existsSync(UPLOADS_DIR)) {
@@ -324,7 +333,8 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.post("/api/projects/:projectId/eng-stages/generate", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  // Permission: generating stage packs is a write to eng_stages — require create.
+  app.post("/api/projects/:projectId/eng-stages/generate", jwtAuth, requireAuth, requirePermission("eng_stages", "create"), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       const projectId = parseInt(paramStr(req.params.projectId));
@@ -547,7 +557,8 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/eng-stages/tasks/:taskId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  // Permission: changing stage task status is an edit to eng_tasks.
+  app.patch("/api/eng-stages/tasks/:taskId", jwtAuth, requireAuth, requirePermission("eng_tasks", "edit"), async (req: Request, res: Response) => {
     try {
       const taskId = parseInt(paramStr(req.params.taskId));
       const user = getUser(req);
@@ -648,7 +659,8 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng-stages/tasks/:taskId/deliverables", jwtAuth, requireAuth, upload.single("file"), async (req: Request, res: Response) => {
+  // Permission: uploading a deliverable is a create on deliverables.
+  app.post("/api/eng-stages/tasks/:taskId/deliverables", jwtAuth, requireAuth, requirePermission("deliverables", "create"), upload.single("file"), async (req: Request, res: Response) => {
     try {
       const taskId = parseInt(paramStr(req.params.taskId));
       const user = getUser(req);
@@ -682,7 +694,9 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/eng-stages/deliverables/:id/approve", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  // Permission: approving a deliverable requires approve on deliverables (middleware)
+  // + inline role check (defense-in-depth) + self-review block.
+  app.patch("/api/eng-stages/deliverables/:id/approve", jwtAuth, requireAuth, requirePermission("deliverables", "approve"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(paramStr(req.params.id));
       const user = getUser(req);
@@ -709,15 +723,171 @@ export function registerEngStageRoutes(app: Express) {
         approvedAt: new Date(),
       }).where(eq(projectEngDeliverables.id, id));
 
-      logAuditFromReq(req, { entityType: "eng_stage_item", entityId: String(id), action: status === "approved" ? "approve" : "reject", changesJson: { description: `Deliverable ${status}`, fileName: deliverable.fileName } });
-      res.json({ success: true, status });
+      logAuditFromReq(req, {
+        entityType: "eng_stage_item",
+        entityId: String(id),
+        action: status === "approved" ? "approve" : "reject",
+        changesJson: {
+          description: `Deliverable ${status}`,
+          fileName: deliverable.fileName,
+          // Explicit disclaimer in the audit trail: review/QA approval is
+          // NOT the same as release for construction. Use
+          // POST /api/eng-stages/deliverables/:id/issue-for-construction
+          // to cross the IFC boundary.
+          note: status === "approved" ? "Approval is for review only; NOT an issue for construction" : undefined,
+          releasedForAfter: "approved_for_review",
+        },
+      });
+
+      // Promote the controlled-document lifecycle — approval moves the
+      // deliverable to `approved_for_review`, NOT `issued_for_construction`.
+      if (status === "approved") {
+        await db.update(projectEngDeliverables)
+          .set({ releasedFor: "approved_for_review" })
+          .where(eq(projectEngDeliverables.id, id));
+      } else if (status === "rejected") {
+        await db.update(projectEngDeliverables)
+          .set({ releasedFor: "under_review" })
+          .where(eq(projectEngDeliverables.id, id));
+      }
+
+      res.json({ success: true, status, releasedFor: status === "approved" ? "approved_for_review" : "under_review" });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
       sendError(res, err);
     }
   });
 
-  app.post("/api/eng-stages/stages/:stageId/deliverables", jwtAuth, requireAuth, upload.single("file"), async (req: Request, res: Response) => {
+  // ===== Controlled-document release endpoints =====
+  // Approval alone does NOT imply Issued For Construction. A separate,
+  // explicit, role-gated action is required so the audit trail distinguishes
+  // "this has been reviewed" from "this is safe to build from".
+
+  // Permission: issuing for construction requires approve on deliverables (middleware)
+  // + inline engineer/COO check (defense-in-depth) + self-issue block.
+  app.post("/api/eng-stages/deliverables/:id/issue-for-construction", jwtAuth, requireAuth, requirePermission("deliverables", "approve"), async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(paramStr(req.params.id));
+      const user = getUser(req);
+      const { notes } = req.body || {};
+
+      // Only engineers / COO can release for construction. PM alone is not
+      // enough — construction release crosses a safety-of-life boundary.
+      if (!isEngineer(user.role) && !isCoo(user.role)) {
+        return res.status(403).json({
+          error: "forbidden",
+          message: "Only engineers or COO can issue a deliverable for construction",
+        });
+      }
+
+      const [deliverable] = await db.select().from(projectEngDeliverables).where(eq(projectEngDeliverables.id, id));
+      if (!deliverable) return res.status(404).json({ error: "Deliverable not found" });
+
+      const current = (deliverable.releasedFor ?? "draft") as ReleasedForState;
+      if (!RELEASED_FOR_TRANSITIONS[current].includes("issued_for_construction")) {
+        return res.status(409).json({
+          error: "invalid_transition",
+          message: `Cannot issue for construction from state "${current}". Deliverable must be approved for review first.`,
+          currentState: current,
+          allowedNext: RELEASED_FOR_TRANSITIONS[current],
+        });
+      }
+
+      // Segregation of duties: issuer must not be the same person who
+      // uploaded the file. (Approved-by is allowed to be the issuer — the
+      // reviewer is typically the senior engineer and also signs off.)
+      if (deliverable.uploadedBy === user.id) {
+        return res.status(403).json({
+          error: "forbidden",
+          message: "You cannot issue your own uploaded deliverable for construction",
+        });
+      }
+
+      await db.update(projectEngDeliverables).set({
+        releasedFor: "issued_for_construction",
+        issuedForConstructionAt: new Date(),
+        issuedForConstructionBy: user.id,
+      }).where(eq(projectEngDeliverables.id, id));
+
+      logAuditFromReq(req, {
+        entityType: "eng_stage_item",
+        entityId: String(id),
+        action: "issue_for_construction",
+        changesJson: {
+          description: "Deliverable issued for construction (IFC)",
+          fileName: deliverable.fileName,
+          versionTag: deliverable.versionTag,
+          notes,
+          releasedForBefore: current,
+          releasedForAfter: "issued_for_construction",
+        },
+      });
+
+      res.json({ success: true, releasedFor: "issued_for_construction" });
+    } catch (err: any) {
+      console.error("[EngStages] Error:", err);
+      sendError(res, err);
+    }
+  });
+
+  // Permission: marking as-built requires approve on deliverables (middleware)
+  // + inline engineer/COO/construction_manager check.
+  app.post("/api/eng-stages/deliverables/:id/mark-as-built", jwtAuth, requireAuth, requirePermission("deliverables", "approve"), async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(paramStr(req.params.id));
+      const user = getUser(req);
+      const { notes } = req.body || {};
+
+      // Construction manager, engineers, and COO can mark as-built.
+      const allowed = isEngineer(user.role) || isCoo(user.role) || user.role === "CONSTRUCTION_MANAGER";
+      if (!allowed) {
+        return res.status(403).json({
+          error: "forbidden",
+          message: "Only engineers, construction manager, or COO can mark a deliverable as-built",
+        });
+      }
+
+      const [deliverable] = await db.select().from(projectEngDeliverables).where(eq(projectEngDeliverables.id, id));
+      if (!deliverable) return res.status(404).json({ error: "Deliverable not found" });
+
+      const current = (deliverable.releasedFor ?? "draft") as ReleasedForState;
+      if (!RELEASED_FOR_TRANSITIONS[current].includes("as_built")) {
+        return res.status(409).json({
+          error: "invalid_transition",
+          message: `Cannot mark as-built from state "${current}". Deliverable must be issued for construction first.`,
+          currentState: current,
+          allowedNext: RELEASED_FOR_TRANSITIONS[current],
+        });
+      }
+
+      await db.update(projectEngDeliverables).set({
+        releasedFor: "as_built",
+        asBuiltAt: new Date(),
+        asBuiltBy: user.id,
+      }).where(eq(projectEngDeliverables.id, id));
+
+      logAuditFromReq(req, {
+        entityType: "eng_stage_item",
+        entityId: String(id),
+        action: "mark_as_built",
+        changesJson: {
+          description: "Deliverable marked as-built",
+          fileName: deliverable.fileName,
+          notes,
+          releasedForBefore: current,
+          releasedForAfter: "as_built",
+        },
+      });
+
+      res.json({ success: true, releasedFor: "as_built" });
+    } catch (err: any) {
+      console.error("[EngStages] Error:", err);
+      sendError(res, err);
+    }
+  });
+
+  // Permission: uploading a stage-level deliverable is a create on deliverables.
+  app.post("/api/eng-stages/stages/:stageId/deliverables", jwtAuth, requireAuth, requirePermission("deliverables", "create"), upload.single("file"), async (req: Request, res: Response) => {
     try {
       const stageId = parseInt(paramStr(req.params.stageId));
       const user = getUser(req);
@@ -768,7 +938,8 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/eng-stages/deliverables/:id", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  // Permission: deleting a deliverable requires delete on deliverables. CRITICAL fix.
+  app.delete("/api/eng-stages/deliverables/:id", jwtAuth, requireAuth, requirePermission("deliverables", "delete"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(paramStr(req.params.id));
       const [deliverable] = await db.select().from(projectEngDeliverables).where(eq(projectEngDeliverables.id, id));
@@ -786,7 +957,9 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/eng-stages/approvals/:id", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  // Permission: stage gate approvals require approve on eng_stages (middleware)
+  // + inline QA/COO role check + self-approval block.
+  app.patch("/api/eng-stages/approvals/:id", jwtAuth, requireAuth, requirePermission("eng_stages", "approve"), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       const id = parseInt(paramStr(req.params.id));
@@ -839,7 +1012,8 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng-stages/stages/:stageId/complete", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  // Permission: completing a stage is an approve-level action on eng_stages.
+  app.post("/api/eng-stages/stages/:stageId/complete", jwtAuth, requireAuth, requirePermission("eng_stages", "approve"), async (req: Request, res: Response) => {
     try {
       const stageId = parseInt(paramStr(req.params.stageId));
 
@@ -908,11 +1082,85 @@ export function registerEngStageRoutes(app: Express) {
         }
       }
 
+      // Optional IFC-issuance gate: when a stage template opts in via
+      // `requireIfcIssuance: true`, every required deliverable template in
+      // this stage must have at least one uploaded row with
+      // releasedFor='issued_for_construction'. Default off — existing
+      // templates are unaffected.
+      if (rules.requireIfcIssuance) {
+        const delTemplates = await db.select().from(engDeliverableTemplates)
+          .where(eq(engDeliverableTemplates.stageTemplateId, stage.stageTemplateId));
+        const uploadedIfc = await db.select({
+          deliverableTemplateId: projectEngDeliverables.deliverableTemplateId,
+          releasedFor: projectEngDeliverables.releasedFor,
+        })
+          .from(projectEngDeliverables)
+          .where(eq(projectEngDeliverables.projectEngStageId, stageId));
+        for (const dt of delTemplates) {
+          if (!dt.isRequired) continue;
+          const ifcCount = uploadedIfc.filter(
+            (u: any) => u.deliverableTemplateId === dt.id &&
+              (u.releasedFor === "issued_for_construction" || u.releasedFor === "as_built"),
+          ).length;
+          if (ifcCount < dt.requiredCount) {
+            missing.push(
+              `Not Issued For Construction: ${dt.name} (${ifcCount}/${dt.requiredCount} IFC-released). ` +
+              `Approval alone is not sufficient; use the "Issue for Construction" action.`,
+            );
+          }
+        }
+      }
+
+      // Optional as-built gate for handover readiness. When a stage template
+      // opts in via `requireAsBuilt: true`, required deliverables must be in
+      // state `as_built` (not just IFC) for the stage to be marked complete.
+      if (rules.requireAsBuilt) {
+        const delTemplates = await db.select().from(engDeliverableTemplates)
+          .where(eq(engDeliverableTemplates.stageTemplateId, stage.stageTemplateId));
+        const uploadedAb = await db.select({
+          deliverableTemplateId: projectEngDeliverables.deliverableTemplateId,
+          releasedFor: projectEngDeliverables.releasedFor,
+        })
+          .from(projectEngDeliverables)
+          .where(eq(projectEngDeliverables.projectEngStageId, stageId));
+        for (const dt of delTemplates) {
+          if (!dt.isRequired) continue;
+          const abCount = uploadedAb.filter(
+            (u: any) => u.deliverableTemplateId === dt.id && u.releasedFor === "as_built",
+          ).length;
+          if (abCount < dt.requiredCount) {
+            missing.push(`Not marked As-Built: ${dt.name} (${abCount}/${dt.requiredCount} as-built)`);
+          }
+        }
+      }
+
+      // Optional procurement-readiness gate: when a stage template opts in
+      // via `requireProcurementReady: true`, at least one deliverable must
+      // have been transmitted with purpose "for_procurement". This ensures
+      // procurement specs were formally issued before the stage closes.
+      if (rules.requireProcurementReady) {
+        const stageTransmittals = await db.select({ purpose: engTransmittals.purpose })
+          .from(engTransmittals)
+          .innerJoin(engTransmittalItems, eq(engTransmittalItems.transmittalId, engTransmittals.id))
+          .where(eq(engTransmittals.projectEngStageId, stageId));
+        const hasProcurementTransmittal = stageTransmittals.some((t: any) => t.purpose === "for_procurement");
+        if (!hasProcurementTransmittal) {
+          missing.push("Procurement spec not issued: no transmittal with purpose 'for_procurement' found for this stage");
+        }
+      }
+
       if (missing.length > 0) {
         return res.json({ success: false, missing });
       }
 
-      await db.update(projectEngStages).set({ status: "complete", completedAt: new Date() })
+      // Record audit-grade timestamps for downstream reporting. These are
+      // set in addition to the status change so that reports can distinguish
+      // "stage complete" from "stage complete with IFC release" and
+      // "stage complete with handover readiness".
+      const stageUpdates: any = { status: "complete", completedAt: new Date() };
+      if (rules.requireIfcIssuance) stageUpdates.ifcIssuedAt = new Date();
+      if (rules.requireAsBuilt) stageUpdates.handoverReadyAt = new Date();
+      await db.update(projectEngStages).set(stageUpdates)
         .where(eq(projectEngStages.id, stageId));
 
       // Sync all linked work_items to COMPLETE
@@ -980,7 +1228,9 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng-stages/stages/:stageId/override-complete", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  // Permission: override-completing a stage requires override on eng_stages (middleware)
+  // + inline COO check.
+  app.post("/api/eng-stages/stages/:stageId/override-complete", jwtAuth, requireAuth, requirePermission("eng_stages", "override"), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required for override" });
@@ -1033,7 +1283,8 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/eng-stages/stages/:stageId/status", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  // Permission: changing stage status is an edit on eng_stages.
+  app.patch("/api/eng-stages/stages/:stageId/status", jwtAuth, requireAuth, requirePermission("eng_stages", "edit"), async (req: Request, res: Response) => {
     try {
       const stageId = parseInt(paramStr(req.params.stageId));
       const { status } = req.body;
@@ -1058,6 +1309,280 @@ export function registerEngStageRoutes(app: Express) {
       res.json({ success: true });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
+      sendError(res, err);
+    }
+  });
+
+  // ===== TRANSMITTAL REGISTER =====
+  // Formal issue events: "document X was issued to person Y for purpose Z".
+
+  app.post("/api/eng-stages/transmittals", jwtAuth, requireAuth, requirePermission("eng_stages", "create"), async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      const { projectId, title, purpose, recipientName, recipientOrg, recipientUserId, notes, projectEngStageId, items } = req.body;
+
+      if (!projectId || !title || !purpose || !recipientName) {
+        return res.status(400).json({ error: "projectId, title, purpose, and recipientName are required" });
+      }
+
+      // Generate transmittal number: T-{projectId}-{YYYYMMDD}-{seq}
+      const today = new Date().toISOString().split("T")[0].replace(/-/g, "");
+      const existingCount = await db.select({ id: engTransmittals.id })
+        .from(engTransmittals)
+        .where(eq(engTransmittals.projectId, projectId));
+      const seq = String(existingCount.length + 1).padStart(3, "0");
+      const transmittalNumber = `T-${projectId}-${today}-${seq}`;
+
+      const [transmittal] = await db.insert(engTransmittals).values({
+        projectId,
+        transmittalNumber,
+        title,
+        purpose,
+        recipientName,
+        recipientOrg: recipientOrg || null,
+        recipientUserId: recipientUserId || null,
+        issuedByUserId: user.id,
+        issuedAt: new Date(),
+        notes: notes || null,
+        projectEngStageId: projectEngStageId || null,
+      }).returning();
+
+      // Insert transmittal items (deliverables and/or drawings)
+      const insertedItems: any[] = [];
+      if (Array.isArray(items) && items.length > 0) {
+        for (const item of items) {
+          // Snapshot the current releasedFor state of the deliverable
+          let releasedForAtIssue: string | null = null;
+          let revision: string | null = item.revision || null;
+
+          if (item.deliverableId) {
+            const [del] = await db.select({ releasedFor: projectEngDeliverables.releasedFor, versionTag: projectEngDeliverables.versionTag })
+              .from(projectEngDeliverables).where(eq(projectEngDeliverables.id, item.deliverableId));
+            if (del) {
+              releasedForAtIssue = del.releasedFor;
+              if (!revision) revision = del.versionTag;
+            }
+          }
+          if (item.drawingId && !revision) {
+            const [dwg] = await db.select({ currentRevision: drawingRegister.currentRevision })
+              .from(drawingRegister).where(eq(drawingRegister.id, item.drawingId));
+            if (dwg) revision = dwg.currentRevision;
+          }
+
+          const [inserted] = await db.insert(engTransmittalItems).values({
+            transmittalId: transmittal.id,
+            deliverableId: item.deliverableId || null,
+            drawingId: item.drawingId || null,
+            revision,
+            releasedForAtIssue,
+            notes: item.notes || null,
+          }).returning();
+          insertedItems.push(inserted);
+        }
+      }
+
+      logAuditFromReq(req, {
+        entityType: "eng_transmittal",
+        entityId: String(transmittal.id),
+        action: "create",
+        changesJson: {
+          description: `Transmittal ${transmittalNumber} issued`,
+          purpose,
+          recipientName,
+          itemCount: insertedItems.length,
+        },
+      });
+
+      res.status(201).json({ transmittal, items: insertedItems });
+    } catch (err: any) {
+      console.error("[EngStages] Transmittal error:", err);
+      sendError(res, err);
+    }
+  });
+
+  app.get("/api/eng-stages/transmittals", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+    try {
+      const projectId = req.query.projectId ? parseInt(req.query.projectId as string) : undefined;
+      const conditions = projectId ? [eq(engTransmittals.projectId, projectId)] : [];
+
+      const rows = conditions.length > 0
+        ? await db.select().from(engTransmittals).where(and(...conditions)).orderBy(engTransmittals.issuedAt)
+        : await db.select().from(engTransmittals).orderBy(engTransmittals.issuedAt);
+
+      res.json({ transmittals: rows });
+    } catch (err: any) {
+      console.error("[EngStages] Transmittal list error:", err);
+      sendError(res, err);
+    }
+  });
+
+  app.get("/api/eng-stages/transmittals/:id", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(paramStr(req.params.id));
+      const [transmittal] = await db.select().from(engTransmittals).where(eq(engTransmittals.id, id));
+      if (!transmittal) return res.status(404).json({ error: "Transmittal not found" });
+
+      const items = await db.select().from(engTransmittalItems).where(eq(engTransmittalItems.transmittalId, id));
+
+      res.json({ transmittal, items });
+    } catch (err: any) {
+      console.error("[EngStages] Transmittal detail error:", err);
+      sendError(res, err);
+    }
+  });
+
+  // ===== SUPERSEDE DELIVERABLE =====
+  // Formally supersedes a deliverable by linking it to a replacement.
+
+  app.post("/api/eng-stages/deliverables/:id/supersede", jwtAuth, requireAuth, requirePermission("deliverables", "edit"), async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(paramStr(req.params.id));
+      const user = getUser(req);
+      const { supersededById, reason } = req.body;
+
+      if (!supersededById) {
+        return res.status(400).json({ error: "supersededById (the replacement deliverable ID) is required" });
+      }
+
+      const [old] = await db.select().from(projectEngDeliverables).where(eq(projectEngDeliverables.id, id));
+      if (!old) return res.status(404).json({ error: "Deliverable not found" });
+
+      const [replacement] = await db.select().from(projectEngDeliverables).where(eq(projectEngDeliverables.id, supersededById));
+      if (!replacement) return res.status(404).json({ error: "Replacement deliverable not found" });
+
+      if (old.releasedFor === "superseded") {
+        return res.status(409).json({ error: "Deliverable is already superseded" });
+      }
+
+      await db.update(projectEngDeliverables).set({
+        releasedFor: "superseded",
+        supersededById,
+      }).where(eq(projectEngDeliverables.id, id));
+
+      logAuditFromReq(req, {
+        entityType: "eng_stage_item",
+        entityId: String(id),
+        action: "supersede",
+        changesJson: {
+          description: `Deliverable superseded by #${supersededById}`,
+          fileName: old.fileName,
+          reason: reason || null,
+          supersededById,
+          releasedForBefore: old.releasedFor,
+        },
+      });
+
+      res.json({ success: true, releasedFor: "superseded", supersededById });
+    } catch (err: any) {
+      console.error("[EngStages] Supersede error:", err);
+      sendError(res, err);
+    }
+  });
+
+  // ===== HANDOVER READINESS COMPUTATION =====
+  // Aggregates engineering completeness for a project: all stages
+  // complete, all required deliverables in final state, all drawings
+  // at IFC or as-built.
+
+  app.get("/api/projects/:projectId/eng-handover-readiness", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(paramStr(req.params.projectId));
+
+      // 1. Stage completion
+      const stages = await db.select({
+        id: projectEngStages.id,
+        status: projectEngStages.status,
+        templateName: engStageTemplates.name,
+        completedAt: projectEngStages.completedAt,
+        ifcIssuedAt: projectEngStages.ifcIssuedAt,
+        handoverReadyAt: projectEngStages.handoverReadyAt,
+      })
+        .from(projectEngStages)
+        .innerJoin(engStageTemplates, eq(projectEngStages.stageTemplateId, engStageTemplates.id))
+        .where(eq(projectEngStages.projectId, projectId));
+
+      const totalStages = stages.length;
+      const completedStages = stages.filter((s: any) => s.status === "complete").length;
+      const stageItems = stages.map((s: any) => ({
+        name: s.templateName,
+        status: s.status,
+        complete: s.status === "complete",
+        ifcIssued: !!s.ifcIssuedAt,
+        handoverReady: !!s.handoverReadyAt,
+      }));
+
+      // 2. Deliverable state
+      const stageIds = stages.map((s: any) => s.id);
+      let deliverables: any[] = [];
+      if (stageIds.length > 0) {
+        deliverables = await db.select({
+          id: projectEngDeliverables.id,
+          releasedFor: projectEngDeliverables.releasedFor,
+          fileName: projectEngDeliverables.fileName,
+        })
+          .from(projectEngDeliverables)
+          .where(inArray(projectEngDeliverables.projectEngStageId, stageIds));
+      }
+
+      const totalDeliverables = deliverables.length;
+      const ifcOrAsBuilt = deliverables.filter((d: any) =>
+        d.releasedFor === "issued_for_construction" || d.releasedFor === "as_built"
+      ).length;
+      const asBuiltOnly = deliverables.filter((d: any) => d.releasedFor === "as_built").length;
+
+      // 3. Drawing state
+      const drawings = await db.select({
+        id: drawingRegister.id,
+        status: drawingRegister.status,
+        drawingNumber: drawingRegister.drawingNumber,
+      })
+        .from(drawingRegister)
+        .where(eq(drawingRegister.projectId, projectId));
+
+      const totalDrawings = drawings.length;
+      const drawingsIfc = drawings.filter((d: any) => d.status === "ifc" || d.status === "as_built").length;
+      const drawingsAsBuilt = drawings.filter((d: any) => d.status === "as_built").length;
+
+      // 4. Compute overall readiness
+      const allStagesComplete = totalStages > 0 && completedStages === totalStages;
+      const allDeliverablesIfc = totalDeliverables === 0 || ifcOrAsBuilt === totalDeliverables;
+      const allDrawingsIfc = totalDrawings === 0 || drawingsIfc === totalDrawings;
+      const allAsBuilt = (totalDeliverables === 0 || asBuiltOnly === totalDeliverables) &&
+                         (totalDrawings === 0 || drawingsAsBuilt === totalDrawings);
+
+      let readiness: "not_ready" | "ifc_complete" | "as_built_complete" | "fully_ready" = "not_ready";
+      if (allAsBuilt && allStagesComplete) readiness = "fully_ready";
+      else if (allDeliverablesIfc && allDrawingsIfc && allStagesComplete) readiness = "ifc_complete";
+      else if (allStagesComplete) readiness = "ifc_complete";
+
+      const missingItems: string[] = [];
+      if (!allStagesComplete) {
+        const incomplete = stages.filter((s: any) => s.status !== "complete");
+        for (const s of incomplete) missingItems.push(`Stage not complete: ${(s as any).templateName}`);
+      }
+      if (!allDeliverablesIfc) {
+        const notIfc = deliverables.filter((d: any) =>
+          d.releasedFor !== "issued_for_construction" && d.releasedFor !== "as_built"
+        );
+        for (const d of notIfc) missingItems.push(`Deliverable not IFC: ${(d as any).fileName}`);
+      }
+      if (!allDrawingsIfc) {
+        const notIfc = drawings.filter((d: any) => d.status !== "ifc" && d.status !== "as_built");
+        for (const d of notIfc) missingItems.push(`Drawing not IFC: ${(d as any).drawingNumber}`);
+      }
+
+      res.json({
+        readiness,
+        summary: {
+          stages: { total: totalStages, complete: completedStages },
+          deliverables: { total: totalDeliverables, ifcOrAsBuilt, asBuilt: asBuiltOnly },
+          drawings: { total: totalDrawings, ifc: drawingsIfc, asBuilt: drawingsAsBuilt },
+        },
+        stageItems,
+        missingItems,
+      });
+    } catch (err: any) {
+      console.error("[EngStages] Handover readiness error:", err);
       sendError(res, err);
     }
   });

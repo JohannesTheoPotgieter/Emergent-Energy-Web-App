@@ -10,3 +10,4 @@ export {
   DependenciesTab,
   TaskDetailDrawer,
 } from "../EngineeringTasksPage";
+export { TaskDependenciesPanel } from "./panels/TaskDependenciesPanel";
