@@ -68,8 +68,8 @@ import { getFeatureFlag } from "../lib/feature-flags";
 import { buildFinanceCoreTrustReport } from "../services/finance-core-trust-service";
 import { setFinanceTrustHeaders as setFinanceTrustHeadersShared } from "../lib/finance-trust/envelope";
 import type { FinanceTrustHeaderParams } from "../lib/finance-trust/envelope";
-import { getBills } from "../services/quickbooks-service";
-import { billRawToSummary } from "../services/quickbooks-reconciliation-service";
+import { getBills, getMonthlyPnLReport } from "../services/quickbooks-service";
+import { billRawToSummary, parsePnLCosMonthly } from "../services/quickbooks-reconciliation-service";
 
 const FINANCIAL_APPROVER_ROLES = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"];
 const CANONICAL_FINANCE_COSTLINE_READ_FLAG = "canonical_finance_costline_read_v1";
@@ -1532,7 +1532,7 @@ router.get("/api/rev-tracker", requireAuth, requirePermission("revenue_tracker",
 
 router.get("/api/cos-tracker", requireAuth, async (req, res) => {
   try {
-    const [manualEntries, rawCostLines, links, rawBills] = await Promise.all([
+    const [manualEntries, rawCostLines, links, pnlReport] = await Promise.all([
       storage.getTrackerMonthlyManual('COS'),
       db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
       db.select().from(quickbooksInvoiceLinks).where(and(
@@ -1540,24 +1540,18 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
         eq(quickbooksInvoiceLinks.qbEntityType, "bill"),
         isNull(quickbooksInvoiceLinks.deletedAt),
       )),
-      getBills("2025-09-01", "2026-08-31"),
+      getMonthlyPnLReport("2025-09-01", "2026-08-31").catch(() => null),
     ]);
 
     const manualMap = new Map(manualEntries.map((e: any) => [e.monthKey, e]));
     const linksByCostLineId = new Map<number, any>();
-    const linkedBillIds = new Set<string>();
     for (const link of links) {
       linksByCostLineId.set(link.appEntityId, link);
-      linkedBillIds.add(String(link.qbEntityId));
     }
 
-    const rawBillsList: any[] = rawBills?.QueryResponse?.Bill ?? [];
-    const billSummaries = rawBillsList.map(billRawToSummary);
-    const billById = new Map<string, any>();
-    for (const bill of billSummaries) billById.set(String(bill.id), bill);
+    // QB COS totals from the P&L report (matches the QB P&L / Excel view)
+    const qbCosByMonth = pnlReport ? parsePnLCosMonthly(pnlReport) : new Map<string, number>();
 
-    const appActualByMonth = new Map<string, number>();
-    const qbOnlyByMonth = new Map<string, number>();
     const realisedByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
     const committedByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
     const plannedByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
@@ -1575,33 +1569,29 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       bucket.projects.set(projectName, (bucket.projects.get(projectName) || 0) + amount);
     };
 
-    for (const bill of billSummaries) {
-      if (!bill.txnDate || bill.totalAmount == null) continue;
-      const dm = String(bill.txnDate).match(/^(\d{4})-(\d{2})/);
-      if (!dm) continue;
-      const monthKey = `${dm[1]}-${dm[2]}`;
-      appActualByMonth.set(monthKey, (appActualByMonth.get(monthKey) || 0) + bill.totalAmount);
-      if (!linkedBillIds.has(String(bill.id))) {
-        qbOnlyByMonth.set(monthKey, (qbOnlyByMonth.get(monthKey) || 0) + bill.totalAmount);
-      }
-    }
-
     const costLineById = new Map<number, any>();
     for (const row of rawCostLines) costLineById.set(row.id, row);
 
+    // Linked cost lines → use app amounts & dates (not QB bill values)
+    const processedLinkedCostLines = new Set<number>();
     for (const link of links) {
+      if (processedLinkedCostLines.has(link.appEntityId)) continue;
+      processedLinkedCostLines.add(link.appEntityId);
       const line = costLineById.get(link.appEntityId);
-      const bill = billById.get(String(link.qbEntityId));
-      if (!line || !bill || !bill.txnDate || bill.totalAmount == null) continue;
-      const dm = String(bill.txnDate).match(/^(\d{4})-(\d{2})/);
+      if (!line) continue;
+      const amount = line.amountExVat ? Number(line.amountExVat) : 0;
+      if (!Number.isFinite(amount) || amount === 0) continue;
+      const lineMonthDate = line.invoiceDate || line.paidDate;
+      if (!lineMonthDate) continue;
+      const dm = String(lineMonthDate).match(/^(\d{4})-(\d{2})/);
       if (!dm) continue;
       const monthKey = `${dm[1]}-${dm[2]}`;
       const projectName = (line.projectName || '').replace(/_Tracker$/i, '') || 'Unknown Project';
       const hasInvoice = !!(line.invoiceNumber && String(line.invoiceNumber).trim());
       const invoiceDateConfirmed =
         !!line.invoiceDate && (line.invoiceDateFontColor === 'black' || line.invoiceDateConfirmed === true);
-      if (hasInvoice && invoiceDateConfirmed) addProjectAmount(realisedByMonth, monthKey, projectName, bill.totalAmount);
-      else addProjectAmount(committedByMonth, monthKey, projectName, bill.totalAmount);
+      if (hasInvoice && invoiceDateConfirmed) addProjectAmount(realisedByMonth, monthKey, projectName, amount);
+      else addProjectAmount(committedByMonth, monthKey, projectName, amount);
     }
 
     for (const row of rawCostLines) {
@@ -1636,14 +1626,14 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       const mo = monthDate.getUTCMonth();
       const monthKey = `${yr}-${String(mo + 1).padStart(2, '0')}`;
 
-      const totalCOS = appActualByMonth.get(monthKey) ?? 0;
       const realisedBucket = realisedByMonth.get(monthKey);
       const realisedCOS = realisedBucket?.total ?? 0;
       const committedBucket = committedByMonth.get(monthKey);
       const committedCOS = committedBucket?.total ?? 0;
       const plannedBucket = plannedByMonth.get(monthKey);
       const plannedCOS = plannedBucket?.total ?? 0;
-      const qbOnlyActual = qbOnlyByMonth.get(monthKey) ?? 0;
+      const totalCOS = realisedCOS + committedCOS + plannedCOS;
+      const qbOnlyActual = qbCosByMonth.get(monthKey) ?? 0;
       const appOnlyPendingBucket = appOnlyPendingByMonth.get(monthKey);
       const appOnlyPending = appOnlyPendingBucket?.total ?? 0;
 

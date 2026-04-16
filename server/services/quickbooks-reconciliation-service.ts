@@ -162,6 +162,68 @@ export function billRawToSummary(raw: any): QuickBooksBillSummary {
   };
 }
 
+/**
+ * Parse a QB P&L report (with summarize_column_by=Month) and extract the
+ * "Cost of Goods Sold" (COGS) section totals per month.
+ * Returns a Map of monthKey ("YYYY-MM") → COS amount (number).
+ */
+export function parsePnLCosMonthly(report: any): Map<string, number> {
+  const result = new Map<string, number>();
+  if (!report?.Rows?.Row) return result;
+
+  // Build month-key array from column headers
+  const columns: any[] = report.Columns?.Column ?? [];
+  const monthKeys: (string | null)[] = [];
+  for (let i = 1; i < columns.length; i++) {
+    const col = columns[i];
+    // Try MetaData StartDate first
+    const startDate = col.MetaData?.find?.((m: any) => m.Name === "StartDate")?.Value;
+    if (startDate) {
+      const m = String(startDate).match(/^(\d{4})-(\d{2})/);
+      monthKeys.push(m ? `${m[1]}-${m[2]}` : null);
+    } else {
+      // Parse ColTitle like "Sep 2025"
+      const title = String(col.ColTitle || "");
+      const parsed = parseColTitleToMonthKey(title);
+      monthKeys.push(parsed);
+    }
+  }
+
+  // Find COGS section
+  const cogsSection = (report.Rows.Row as any[]).find(
+    (r: any) =>
+      r.group === "COGS" ||
+      r.group === "CostOfGoodsSold" ||
+      (r.Header?.ColData?.[0]?.value || "").toLowerCase().includes("cost of goods sold") ||
+      (r.Header?.ColData?.[0]?.value || "").toLowerCase().includes("cost of sales"),
+  );
+  if (!cogsSection?.Summary?.ColData) return result;
+
+  const colData: any[] = cogsSection.Summary.ColData;
+  for (let i = 1; i < colData.length && i - 1 < monthKeys.length; i++) {
+    const mk = monthKeys[i - 1];
+    if (!mk) continue;
+    const value = parseFloat(String(colData[i]?.value || "0"));
+    if (Number.isFinite(value) && value !== 0) result.set(mk, value);
+  }
+
+  return result;
+}
+
+const MONTH_ABBREVS: Record<string, string> = {
+  jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06",
+  jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12",
+};
+
+function parseColTitleToMonthKey(title: string): string | null {
+  // "Sep 2025" or "September 2025"
+  const m = title.match(/([A-Za-z]+)\s+(\d{4})/);
+  if (!m) return null;
+  const abbr = m[1].slice(0, 3).toLowerCase();
+  const moNum = MONTH_ABBREVS[abbr];
+  return moNum ? `${m[2]}-${moNum}` : null;
+}
+
 export function costLineToSummary(row: NormalizedCostLine): AppCostLineSummary {
   return {
     id: row.id,
