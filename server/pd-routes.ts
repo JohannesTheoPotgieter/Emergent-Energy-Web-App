@@ -572,6 +572,52 @@ export function registerPdRoutes(app: Express) {
     }
   });
 
+  app.delete("/api/pd/tickets/:id", requireAuth, requirePermission('pd_tickets', 'edit'), async (req: Request, res: Response) => {
+    try {
+      const user = req.user as any;
+      const role = user?.companyRole || user?.role || "";
+      const id = parseInt(paramStr(req.params.id));
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ticket ID" });
+
+      const [existing] = await db.select().from(pdTickets).where(eq(pdTickets.id, id));
+      if (!existing) return res.status(404).json({ error: "Ticket not found" });
+
+      if (!canViewAllTickets(role) && existing.createdBy !== user?.id && existing.projectDeveloperUserId !== user?.id) {
+        return res.status(403).json({ error: "Not authorized to delete this ticket" });
+      }
+
+      const linkedTasks = await db.select({ id: workItems.id }).from(workItems).where(eq(workItems.pdTicketId, id));
+      const deletedTaskIds = linkedTasks.map((t: any) => t.id);
+
+      await db.transaction(async (tx) => {
+        if (deletedTaskIds.length > 0) {
+          await tx.execute(sql`DELETE FROM expense_task_links WHERE canonical_task_id IN ${sql.raw(`(${deletedTaskIds.join(",")})`)}`);
+          await tx.execute(sql`DELETE FROM intake_tasks WHERE linked_work_item_id IN ${sql.raw(`(${deletedTaskIds.join(",")})`)}`);
+          await tx.execute(sql`DELETE FROM project_eng_tasks WHERE linked_work_item_id IN ${sql.raw(`(${deletedTaskIds.join(",")})`)}`);
+          await tx.execute(sql`DELETE FROM "_deliverables_legacy" WHERE linked_work_item_id IN ${sql.raw(`(${deletedTaskIds.join(",")})`)}`);
+          await tx.execute(sql`DELETE FROM documents WHERE linked_work_item_id IN ${sql.raw(`(${deletedTaskIds.join(",")})`)}`);
+          await tx.execute(sql`DELETE FROM qc_item_instances WHERE linked_work_item_id IN ${sql.raw(`(${deletedTaskIds.join(",")})`)}`);
+          await tx.execute(sql`UPDATE work_items SET parent_id = NULL WHERE parent_id IN ${sql.raw(`(${deletedTaskIds.join(",")})`)}`);
+          await tx.delete(taskActivityLog).where(inArray(taskActivityLog.workItemId, deletedTaskIds));
+          await tx.delete(workItems).where(inArray(workItems.id, deletedTaskIds));
+        }
+
+        await tx.delete(pdTickets).where(eq(pdTickets.id, id));
+      });
+
+      logAuditFromReq(req, {
+        entityType: "pd_ticket",
+        entityId: String(id),
+        action: "delete",
+        changesJson: { projectSiteName: existing.projectSiteName, deletedTaskCount: deletedTaskIds.length },
+      });
+
+      res.json({ success: true, deletedTaskCount: deletedTaskIds.length });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/api/pd/tickets/:id/task-templates", requireAuth, requirePermission('pd_tickets', 'view'), async (req: Request, res: Response) => {
     try {
       const id = parseInt(paramStr(req.params.id));
