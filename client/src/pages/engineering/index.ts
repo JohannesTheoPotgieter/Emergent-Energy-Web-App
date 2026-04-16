@@ -13,3 +13,4 @@ export { default } from "../EngineeringTasksPage";
 export * from "./EngineeringTaskFilters";
 export * from "./EngineeringTaskDialogs";
 export * from "./EngineeringTaskTable";
+export { TaskDependenciesPanel } from "./panels/TaskDependenciesPanel";
