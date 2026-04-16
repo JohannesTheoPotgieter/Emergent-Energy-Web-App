@@ -12,8 +12,9 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import { Sun, Plus, Search, DollarSign, Calendar, TrendingUp, Pencil } from "lucide-react";
+import { Sun, Plus, Search, DollarSign, Calendar, TrendingUp, Pencil, FolderPlus } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { useLocation } from "wouter";
 
 interface OpportunityRow {
   id: number;
@@ -77,6 +78,7 @@ const emptyForm = {
 export default function OpportunitiesPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState("all");
   const [showForm, setShowForm] = useState(false);
@@ -289,6 +291,18 @@ export default function OpportunitiesPage() {
                     <span className="text-xs text-muted-foreground">
                       <Calendar className="h-3 w-3 inline mr-0.5" />{opp.expectedCloseDate}
                     </span>
+                  )}
+                  {opp.stage !== "won" && opp.stage !== "lost" && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      title="Start a project from this opportunity"
+                      onClick={(e) => { e.stopPropagation(); navigate(`/project-create?opportunityId=${opp.id}`); }}
+                      data-testid={`opp-start-project-${opp.id}`}
+                    >
+                      <FolderPlus className="h-3.5 w-3.5" />
+                    </Button>
                   )}
                   <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditDialog(opp)}>
                     <Pencil className="h-3.5 w-3.5" />
