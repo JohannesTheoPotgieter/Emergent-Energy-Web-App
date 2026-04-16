@@ -182,7 +182,6 @@ export default function FinanceQuickBooksCustomerMappingPage() {
             onChange={(e) => setProjectFilter(e.target.value)}
             className="h-8 text-xs"
           />
-          {status.sandbox && <Badge variant="outline" className="text-[10px]">Sandbox</Badge>}
           {status.companyName && (
             <span className="text-[10px] text-muted-foreground whitespace-nowrap">
               QB: {status.companyName}

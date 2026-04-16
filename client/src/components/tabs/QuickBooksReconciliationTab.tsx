@@ -466,9 +466,6 @@ export function QuickBooksReconciliationTab({ projectId, projectName }: Props) {
             {status?.companyName && (
               <>
                 {" · "}QB company: <span className="font-medium">{status.companyName}</span>
-                {status.sandbox && (
-                  <Badge variant="outline" className="ml-1 text-[9px]">Sandbox</Badge>
-                )}
               </>
             )}
             {status?.isStale && (
