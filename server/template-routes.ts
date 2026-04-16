@@ -22,6 +22,7 @@ import { requirePermission } from "./permission-middleware";
 import { paramStr } from "./lib/req-params";
 import { generateEngStagesForProject } from "./eng-stage-routes";
 import { createHash } from "crypto";
+import { logAuditFromReq } from "./audit-logger";
 
 function getUser(req: Request) {
   return getEffectiveUser(req);
@@ -733,7 +734,7 @@ export function registerTemplateRoutes(app: Express) {
   app.post("/api/projects", jwtAuth, requireAuth, requirePermission('create_project', 'edit'), async (req, res) => {
     try {
       const user = getUser(req);
-      const { projectName, clientId, clientName, projectCode, location, initialPhase } = req.body;
+      const { projectName, clientId, clientName, projectCode, location, initialPhase, opportunityId } = req.body;
       if (!projectName || typeof projectName !== "string" || projectName.trim().length === 0) {
         return res.status(400).json({ error: "projectName is required" });
       }
@@ -746,18 +747,39 @@ export function registerTemplateRoutes(app: Express) {
       }
 
       const phase = initialPhase && PROJECT_PHASES.includes(initialPhase as any) ? initialPhase : "P0_FIRST_ASSESSMENT";
+
+      // If an opportunityId is supplied, validate it exists and optionally
+      // carry the client forward so the project inherits the commercial
+      // client linkage.
+      let resolvedOpportunityId: number | null = null;
+      let clientIdFromOpportunity: number | null = null;
+      if (opportunityId) {
+        const { opportunities } = await import("@shared/schema");
+        const [opp] = await db.select().from(opportunities).where(eq(opportunities.id, Number(opportunityId)));
+        if (!opp) {
+          return res.status(400).json({ error: "Linked opportunity not found" });
+        }
+        resolvedOpportunityId = opp.id;
+        clientIdFromOpportunity = opp.clientId ?? null;
+      }
+
       const resolvedClient = await resolveLinkedClient({
-        requestedClientId: typeof clientId === "number" ? clientId : null,
+        // Prefer the explicitly-passed clientId; fall back to the
+        // opportunity's client if the caller did not specify one.
+        requestedClientId: typeof clientId === "number" ? clientId : (clientIdFromOpportunity ?? null),
         requestedClientName: typeof clientName === "string" ? clientName : null,
       });
 
       const createProjectFields = {
         projectName: projectName.trim(),
         clientId: resolvedClient.client?.id ?? null,
+        opportunityId: resolvedOpportunityId,
         phase,
         phaseUpdatedAt: new Date(),
         phaseUpdatedByUserId: user!.id,
-        phaseNotes: `Project created at ${PROJECT_PHASE_LABELS[phase as ProjectPhase] || phase}`,
+        phaseNotes: resolvedOpportunityId
+          ? `Project created from opportunity #${resolvedOpportunityId} at ${PROJECT_PHASE_LABELS[phase as ProjectPhase] || phase}`
+          : `Project created at ${PROJECT_PHASE_LABELS[phase as ProjectPhase] || phase}`,
         pd: null,
       };
       const [created] = await db.insert(projectInfo).values(createProjectFields).returning();
@@ -768,7 +790,24 @@ export function registerTemplateRoutes(app: Express) {
         fromPhase: null,
         toPhase: phase,
         changedByUserId: user!.id,
-        reason: "Project created",
+        reason: resolvedOpportunityId
+          ? `Project created from opportunity #${resolvedOpportunityId}`
+          : "Project created",
+      });
+
+      // Audit trail for project creation — covers both direct and
+      // opportunity-conversion paths. Previously missing entirely.
+      logAuditFromReq(req, {
+        entityType: "project",
+        entityId: String(created.id),
+        action: resolvedOpportunityId ? "create_from_opportunity" : "create",
+        projectName: created.projectName,
+        changesJson: {
+          projectName: created.projectName,
+          clientId: resolvedClient.client?.id ?? null,
+          opportunityId: resolvedOpportunityId,
+          phase,
+        },
       });
 
       let applyResult = null;
