@@ -128,7 +128,7 @@ const ROW_DEFS: {
   { key: "realisedCOS", label: "Realised COS", dataKey: "realisedCOS", editable: false, colorClass: "text-foreground font-bold", group: "monthly", expandable: true, projectsKey: "realisedProjects" },
   { key: "committedCOS", label: "Committed COS", dataKey: "committedCOS", editable: false, colorClass: "text-amber-600 font-semibold", group: "monthly", expandable: true, projectsKey: "committedProjects" },
   { key: "plannedCOS", label: "Planned COS", dataKey: "plannedCOS", editable: false, colorClass: "text-red-600 font-semibold", group: "monthly", expandable: true, projectsKey: "plannedProjects" },
-  { key: "qbOnlyActual", label: "QB-only Actual", dataKey: "qbOnlyActual", editable: false, colorClass: "text-blue-600 font-semibold", group: "monthly", expandable: true, projectsKey: "qbOnlyProjects" },
+  { key: "qbOnlyActual", label: "QB Actual", dataKey: "qbOnlyActual", editable: false, colorClass: "text-blue-600 font-semibold", group: "monthly", expandable: true, projectsKey: "qbOnlyProjects" },
   { key: "appOnlyPending", label: "App-only Pending", dataKey: "appOnlyPending", editable: false, colorClass: "text-orange-600 font-semibold", group: "monthly", expandable: true, projectsKey: "appOnlyPendingProjects" },
   { key: "budget", label: "Costed", dataKey: "budget", editable: true, colorClass: "text-purple-600", group: "monthly" },
   { key: "variance", label: "Variance", dataKey: "variance", editable: false, colorClass: "", group: "monthly", colorCoded: true },
@@ -137,7 +137,7 @@ const ROW_DEFS: {
   { key: "ytdRealised", label: "YTD Realised", dataKey: "ytdRealised", editable: false, colorClass: "text-foreground font-bold", group: "ytd" },
   { key: "ytdCommitted", label: "YTD Committed", dataKey: "ytdCommitted", editable: false, colorClass: "text-amber-600", group: "ytd" },
   { key: "ytdPlanned", label: "YTD Planned", dataKey: "ytdPlanned", editable: false, colorClass: "text-red-600", group: "ytd" },
-  { key: "ytdQbOnly", label: "YTD QB-only Actual", dataKey: "ytdQbOnly", editable: false, colorClass: "text-blue-600", group: "ytd" },
+  { key: "ytdQbOnly", label: "YTD QB Actual", dataKey: "ytdQbOnly", editable: false, colorClass: "text-blue-600", group: "ytd" },
   { key: "ytdAppOnlyPending", label: "YTD App-only Pending", dataKey: "ytdAppOnlyPending", editable: false, colorClass: "text-orange-600", group: "ytd" },
   { key: "ytdBudget", label: "YTD Costed", dataKey: "ytdBudget", editable: false, colorClass: "text-purple-600", group: "ytd" },
   { key: "ytdVariance", label: "YTD Variance", dataKey: "ytdVariance", editable: false, colorClass: "", group: "ytd", colorCoded: true },
@@ -326,7 +326,7 @@ export default function CosTracker() {
         "Realised": m.realisedCOS,
         "Committed": m.committedCOS,
         "Planned": m.plannedCOS,
-        "QB-only Actual": m.qbOnlyActual,
+        "QB Actual": m.qbOnlyActual,
         "App-only Pending": m.appOnlyPending,
         Costed: m.budget,
         "YTD Variance": m.ytdVariance,
@@ -342,7 +342,7 @@ export default function CosTracker() {
         "Planned COS": m.plannedCOS,
         "Realised COS": m.realisedCOS,
         "Committed COS": m.committedCOS,
-        "QB-only Actual": m.qbOnlyActual,
+        "QB Actual": m.qbOnlyActual,
         "App-only Pending": m.appOnlyPending,
       })),
     [months],
@@ -477,7 +477,7 @@ export default function CosTracker() {
                   <Bar dataKey="Realised" stackId="cos" fill="#1e293b" radius={[0, 0, 0, 0]} />
                   <Bar dataKey="Committed" stackId="cos" fill="#f59e0b" radius={[0, 0, 0, 0]} />
                   <Bar dataKey="Planned" stackId="cos" fill="#dc2626" radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="QB-only Actual" stackId="cos" fill="#2563eb" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="QB Actual" stackId="cos" fill="#2563eb" radius={[0, 0, 0, 0]} />
                   <Bar dataKey="App-only Pending" stackId="cos" fill="#f97316" radius={[4, 4, 0, 0]} />
                   <Bar dataKey="Costed" fill="#a855f7" opacity={0.3} radius={[4, 4, 0, 0]} />
                   <Line
@@ -514,7 +514,7 @@ export default function CosTracker() {
                   <Bar dataKey="Planned COS" fill="#4472C4" radius={[2, 2, 0, 0]} />
                   <Bar dataKey="Realised COS" fill="#ED7D31" radius={[2, 2, 0, 0]} />
                   <Bar dataKey="Committed COS" fill="#f59e0b" radius={[2, 2, 0, 0]} />
-                  <Bar dataKey="QB-only Actual" fill="#2563eb" radius={[2, 2, 0, 0]} />
+                  <Bar dataKey="QB Actual" fill="#2563eb" radius={[2, 2, 0, 0]} />
                   <Bar dataKey="App-only Pending" fill="#f97316" radius={[2, 2, 0, 0]} />
                 </ComposedChart>
               </ResponsiveContainer>
