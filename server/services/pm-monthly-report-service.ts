@@ -27,6 +27,7 @@ import {
   users,
   smartImportRuns,
 } from "@shared/schema";
+import { computeQcProgress } from "@shared/quality-governance";
 import { desc } from "drizzle-orm";
 import { isDateBlack } from "../lib/calculations/stateClassifier";
 import { isCanonicalCosRealised } from "../lib/finance/cos-realisation";
@@ -474,17 +475,16 @@ export async function generatePmReportData(month: string) {
 
   const qcProgress = allQcChecklists.filter((c: any) => activeProjectIds.has(c.projectId)).map((c: any) => {
     const instances = instancesByChecklist.get(c.id) || [];
-    const applicable = instances.filter((i: any) => i.isApplicable).length;
-    const approved = instances.filter((i: any) => i.isApplicable && i.approved).length;
+    const progress = computeQcProgress(instances);
     const proj = projectMap.get(c.projectId);
     const warnings = allQcWarnings.filter((w: any) => w.projectId === c.projectId && w.status === "open").length;
     return {
       projectId: c.projectId,
       projectName: proj?.projectName || c.projectName,
       checklistStatus: c.status,
-      itemsApplicable: applicable,
-      itemsApproved: approved,
-      progressPct: applicable > 0 ? (approved / applicable) * 100 : 0,
+      itemsApplicable: progress.totalApplicable,
+      itemsApproved: progress.totalApproved,
+      progressPct: progress.progressPercent,
       openWarnings: warnings,
     };
   });

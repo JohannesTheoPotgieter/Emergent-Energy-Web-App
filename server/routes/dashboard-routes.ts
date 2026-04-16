@@ -154,7 +154,7 @@ export function registerDashboardRoutes(app: Express) {
         db.select().from(workItems).where(and(eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt))),
         db.execute(sql`SELECT id, project_id, status, title, due_date, assigned_approver FROM approvals`).catch(() => ({ rows: [] })),
         getAllPMWorkItemsAsProjectPlan(),
-        db.execute(sql`SELECT id, project_name, severity, status, title, owner_user_id, due_date FROM qc_warning`).catch(() => ({ rows: [] })),
+        db.execute(sql`SELECT id, project_id, project_name, severity, status, title, owner_user_id, due_date FROM qc_warning`).catch(() => ({ rows: [] })),
         db.execute(sql`SELECT id, name FROM users`),
         db.select().from(cashflowPoints).where(isNull(cashflowPoints.effectiveTo)),
         db.select().from(financeRevenueMonthly).where(isNull(financeRevenueMonthly.effectiveTo)),
@@ -222,7 +222,7 @@ export function registerDashboardRoutes(app: Express) {
           engineeringStatus: 'On Track', qualityStatus: 'On Track', importFreshness: 'Critical', importAgeDays: null,
           criticalActionCount: 0,
           _taskWeight: 0, _taskActual: 0, _taskExpected: 0, _expCount: 0,
-          _engOpen: 0, _qualityOpen: 0, _approvalsPending: 0,
+          _engOpen: 0, _qualityOpen: 0, _qualityHigh: 0, _approvalsPending: 0,
           _inflowRisk: 0, _outflowRisk: 0,
         });
         return rowsByProject.get(proj.id);
@@ -376,10 +376,14 @@ export function registerDashboardRoutes(app: Express) {
       }
 
       for (const q of qualityRows) {
-        const proj = q.project_name ? projectByName.get(String(q.project_name).toLowerCase()) : null;
+        const proj = q.project_id ? projectById.get(Number(q.project_id))
+          : q.project_name ? projectByName.get(String(q.project_name).toLowerCase()) : null;
         if (!proj) continue;
         const row = ensureRow(proj);
-        if (String(q.status || '').toLowerCase() === 'open') row._qualityOpen += 1;
+        if (String(q.status || '').toLowerCase() === 'open') {
+          row._qualityOpen += 1;
+          if (String(q.severity || '').toLowerCase() === 'high') row._qualityHigh += 1;
+        }
       }
 
       for (const a of approvalRows) {
@@ -410,7 +414,8 @@ export function registerDashboardRoutes(app: Express) {
         row.openExpenditureFy = row.plannedExpenditureFy - row.paidExpenditureFy;
         row.grossMarginPctFy = computeMarginPct(row.plannedRevenueFy, row.plannedExpenditureFy, { precision: 1 });
         row.engineeringStatus = row._engOpen >= 5 ? 'Blocked' : row._engOpen > 0 ? 'At Risk' : 'On Track';
-        row.qualityStatus = row._qualityOpen >= 5 ? 'Blocked' : row._qualityOpen > 0 ? 'At Risk' : 'On Track';
+        // Align quality status with governance risk levels (critical/high → Blocked, medium → At Risk)
+        row.qualityStatus = row._qualityHigh >= 2 ? 'Blocked' : row._qualityOpen >= 3 || row._qualityHigh >= 1 ? 'At Risk' : 'On Track';
         const latest = latestImportByProject.get(row.projectId);
         if (latest) {
           const age = Math.floor((Date.now() - new Date(latest).getTime()) / 86400000);
@@ -928,7 +933,7 @@ export function registerDashboardRoutes(app: Express) {
         return { ...p, issueTitle: `${fmtR(p.openExpenditureFy)} open of ${fmtR(p.plannedExpenditureFy)} planned (${openPct}% outstanding)`, severity: openPct > 60 ? 'Critical' : 'High', owner: p.pm };
       }));
       const eng = actionRows(projects.filter((p: any) => p._engOpen > 0).map((p: any) => ({ ...p, issueTitle: `${p._engOpen} open engineering blocker${p._engOpen !== 1 ? 's' : ''}`, severity: p._engOpen >= 5 ? 'Critical' : 'High', owner: p.pm })));
-      const qual = actionRows(projects.filter((p: any) => p._qualityOpen > 0).map((p: any) => ({ ...p, issueTitle: `${p._qualityOpen} open quality issue${p._qualityOpen !== 1 ? 's' : ''}`, severity: p._qualityOpen >= 5 ? 'Critical' : 'High', owner: p.pm })));
+      const qual = actionRows(projects.filter((p: any) => p._qualityOpen > 0).map((p: any) => ({ ...p, issueTitle: `${p._qualityOpen} open quality issue${p._qualityOpen !== 1 ? 's' : ''}${p._qualityHigh > 0 ? ` (${p._qualityHigh} high)` : ''}`, severity: p._qualityHigh >= 2 ? 'Critical' : p._qualityHigh >= 1 ? 'High' : 'Medium', owner: p.pm })));
       const pending = actionRows(projects.filter((p: any) => p._approvalsPending > 0).map((p: any) => ({ ...p, issueTitle: `${p._approvalsPending} pending approval${p._approvalsPending !== 1 ? 's' : ''}`, severity: p._approvalsPending >= 3 ? 'Critical' : 'High', owner: p.pm })));
 
       res.json({
@@ -962,7 +967,7 @@ export function registerDashboardRoutes(app: Express) {
           qualityIssues: qual,
           pendingApprovalsDecisions: pending,
         },
-        projects: projects.map(({ _taskWeight, _taskActual, _taskExpected, _expCount, _engOpen, _qualityOpen, _approvalsPending, _inflowRisk, _outflowRisk, __hasFyItem, ...rest }: any) => rest),
+        projects: projects.map(({ _taskWeight, _taskActual, _taskExpected, _expCount, _engOpen, _qualityOpen, _qualityHigh, _approvalsPending, _inflowRisk, _outflowRisk, __hasFyItem, ...rest }: any) => rest),
         charts: chartDatasets,
         options: {
           portfolios: Array.from(new Set(projects.map((p: any) => p.portfolio).filter(Boolean))).sort(),

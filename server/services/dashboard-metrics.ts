@@ -17,6 +17,7 @@ import {
 } from "@shared/schema";
 import { workItems } from "@shared/schema";
 import { qcWarning, qcChecklist, qcItemInstance } from "@shared/schema";
+import { computeQcProgress } from "@shared/quality-governance";
 import { cacheGet, cacheSet, cacheDelete, cacheClear } from "../lib/cache";
 import { enqueueJob, registerWorker, QUEUE_NAMES } from "../lib/job-queue";
 import { isRevenueSettled } from "../lib/finance/revenue-ar-status";
@@ -172,12 +173,9 @@ export async function refreshProjectMetrics(projectId: number): Promise<void> {
       .from(qcItemInstance)
       .where(inArray(qcItemInstance.checklistId, checklistIds));
 
-    const totalItems = instanceRows.filter((i: any) => i.isApplicable).length;
-    const approvedItems = instanceRows.filter(
-      (i: any) => i.isApplicable && i.approved,
-    ).length;
+    const progress = computeQcProgress(instanceRows);
     qcProgressPct =
-      totalItems > 0 ? (approvedItems / totalItems).toFixed(4) : null;
+      progress.totalApplicable > 0 ? (progress.totalApproved / progress.totalApplicable).toFixed(4) : null;
   }
 
   // Health score: simple composite (margin 40%, task completion 30%, QC 30%)
