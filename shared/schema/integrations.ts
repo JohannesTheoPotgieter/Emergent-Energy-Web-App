@@ -287,6 +287,17 @@ export const INTEGRATION_SEED: Array<{
     alertTarget: "COO_ADMIN",
   },
   {
+    name: "sharepoint",
+    displayName: "SharePoint Proposals Pipeline",
+    description:
+      "Bidirectional sync of the Engineering/Proposals Pipeline SharePoint list into the intake_requests table. SharePoint is the document truth for proposals and intake metadata.",
+    authType: "oauth2",
+    ownerProcess: "sync-routes (COO manual pull/push)",
+    fallbackDescription:
+      "Intake requests remain in the app with their last-known state. The next SharePoint pull will re-sync any updates.",
+    alertTarget: "COO_ADMIN",
+  },
+  {
     name: "clickup",
     displayName: "ClickUp",
     description:

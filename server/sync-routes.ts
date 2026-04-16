@@ -188,6 +188,7 @@ export function registerSyncRoutes(app: Express) {
 
   // ===== PULL from SharePoint =====
   app.post("/api/sp-sync/pull", jwtAuth, requireAuth, requireCOO, async (req, res) => {
+    const pullStartedAt = new Date();
     try {
       const config = await getConfig();
       if (!config) return res.status(400).json({ error: "SharePoint not configured" });
@@ -390,6 +391,24 @@ export function registerSyncRoutes(app: Express) {
 
       logAuditFromReq(req, { entityType: "sp_sync", action: "pull", changesJson: { totalItems: items.length, newProjects, newRequests, updatedRequests, conflicts, errors } });
 
+      // W7: Log SharePoint pull to integration_run_events for unified health tracking.
+      try {
+        const { recordIntegrationRun } = await import("./services/integration-health-service");
+        await recordIntegrationRun({
+          name: "sharepoint",
+          runType: "pull",
+          startedAt: pullStartedAt,
+          finishedAt: new Date(),
+          status: errors > 0 ? "partial" : "success",
+          recordsProcessed: items.length,
+          errorCode: errors > 0 ? "pull_item_errors" : null,
+          errorDetail: errors > 0 ? `${errors} item(s) failed during pull` : null,
+          metadata: { newProjects, newRequests, updatedRequests, conflicts, errors },
+        });
+      } catch (healthErr) {
+        console.warn("[sp-sync] integration health log failed (non-blocking):", healthErr);
+      }
+
       res.json({
         success: true,
         totalItems: items.length,
@@ -408,6 +427,7 @@ export function registerSyncRoutes(app: Express) {
 
   // ===== PUSH to SharePoint =====
   app.post("/api/sp-sync/push", jwtAuth, requireAuth, requireCOO, async (req, res) => {
+    const pushStartedAt = new Date();
     try {
       const config = await getConfig();
       if (!config) return res.status(400).json({ error: "SharePoint not configured" });
@@ -495,6 +515,25 @@ export function registerSyncRoutes(app: Express) {
       });
 
       logAuditFromReq(req, { entityType: "sp_sync", action: "push", changesJson: { pushed, errors } });
+
+      // W7: Log SharePoint push to integration_run_events for unified health tracking.
+      try {
+        const { recordIntegrationRun } = await import("./services/integration-health-service");
+        await recordIntegrationRun({
+          name: "sharepoint",
+          runType: "push",
+          startedAt: pushStartedAt,
+          finishedAt: new Date(),
+          status: errors > 0 ? "partial" : "success",
+          recordsProcessed: pushed,
+          errorCode: errors > 0 ? "push_item_errors" : null,
+          errorDetail: errors > 0 ? `${errors} item(s) failed during push` : null,
+          metadata: { pushed, errors },
+        });
+      } catch (healthErr) {
+        console.warn("[sp-sync] integration health log failed (non-blocking):", healthErr);
+      }
+
       res.json({ success: true, pushed, errors, errorList: errorList.length > 0 ? errorList : undefined });
     } catch (err: any) {
       res.status(500).json({ error: err.message });

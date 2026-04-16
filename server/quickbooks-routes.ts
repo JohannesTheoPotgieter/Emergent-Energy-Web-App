@@ -329,7 +329,22 @@ export function registerQuickBooksRoutes(app: Express): void {
         const startDate = typeof req.query.startDate === "string" ? req.query.startDate : undefined;
         const endDate = typeof req.query.endDate === "string" ? req.query.endDate : undefined;
         const result = await runProjectCostReconciliation(projectId, { startDate, endDate });
-        res.json(result);
+
+        // W6: Surface QB freshness in reconciliation response so the UI
+        // can warn when data is stale. Non-blocking — never fails the endpoint.
+        let _freshness: { isStale: boolean; ageMs: number | null; warning: string | null } | undefined;
+        try {
+          const status = await getQuickBooksConnectionStatus();
+          _freshness = {
+            isStale: status.isStale,
+            ageMs: status.ageMs,
+            warning: status.isStale
+              ? "QuickBooks data may be stale — reconciliation results could differ from current QuickBooks state."
+              : null,
+          };
+        } catch { /* non-blocking */ }
+
+        res.json({ ...result, _freshness });
       } catch (err) {
         notConnectedResponse(res, err);
       }
@@ -622,7 +637,21 @@ export function registerQuickBooksRoutes(app: Express): void {
         const startDate = typeof req.query.startDate === "string" ? req.query.startDate : undefined;
         const endDate = typeof req.query.endDate === "string" ? req.query.endDate : undefined;
         const result = await runProjectRevenueReconciliation(projectId, { startDate, endDate });
-        res.json(result);
+
+        // W6: Surface QB freshness in revenue reconciliation response.
+        let _freshness: { isStale: boolean; ageMs: number | null; warning: string | null } | undefined;
+        try {
+          const status = await getQuickBooksConnectionStatus();
+          _freshness = {
+            isStale: status.isStale,
+            ageMs: status.ageMs,
+            warning: status.isStale
+              ? "QuickBooks data may be stale — reconciliation results could differ from current QuickBooks state."
+              : null,
+          };
+        } catch { /* non-blocking */ }
+
+        res.json({ ...result, _freshness });
       } catch (err) {
         notConnectedResponse(res, err);
       }

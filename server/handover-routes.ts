@@ -696,6 +696,29 @@ export function registerHandoverRoutes(app: Express) {
         evaluatorName: user?.name,
       });
 
+      // W1/W5: Capture integration freshness at submission time. This is
+      // non-blocking — stale data does NOT prevent handover submission (B6
+      // principle), but warnings are recorded in the history and returned
+      // to the UI so the submitter sees the integration health posture.
+      let integrationFreshness: {
+        overallHealth: string;
+        warnings: string[];
+        staleIntegrations: string[];
+      } = { overallHealth: "unknown", warnings: [], staleIntegrations: [] };
+      try {
+        const { getIntegrationFreshnessReport } = await import("./services/integration-freshness-service");
+        const freshnessReport = await getIntegrationFreshnessReport();
+        integrationFreshness = {
+          overallHealth: freshnessReport.overallHealth,
+          warnings: freshnessReport.warnings,
+          staleIntegrations: freshnessReport.integrations
+            .filter(i => i.health !== "healthy")
+            .map(i => i.name),
+        };
+      } catch (freshnessErr) {
+        console.warn("[handover] integration freshness check failed (non-blocking):", freshnessErr);
+      }
+
       // B6: compute a simple completeness percentage driven by the same
       // blocker list the UI shows. Thresholds match B1: 100 -> green,
       // 80-99 -> amber, <80 -> red. Evidence-score shortfall is folded
@@ -726,6 +749,7 @@ export function registerHandoverRoutes(app: Express) {
           readinessPct,
           trafficLight,
           readinessStatus: handover.handover_readiness_status || null,
+          integrationFreshness,
         },
       });
       logAuditFromReq(req, {
@@ -736,7 +760,7 @@ export function registerHandoverRoutes(app: Express) {
         // in the handover history row.
         action: hasGaps ? "evidence.completion_with_gaps" : "evidence.completion_pass",
         projectName: project.projectName,
-        changesJson: { sourceType: "pd_pm_handover", sourceRef: String(projectId), evidence, missingItems: missing, readinessPct, trafficLight },
+        changesJson: { sourceType: "pd_pm_handover", sourceRef: String(projectId), evidence, missingItems: missing, readinessPct, trafficLight, integrationFreshness },
       });
       logAuditFromReq(req, {
         entityType: "pd_pm_handover",
@@ -769,6 +793,7 @@ export function registerHandoverRoutes(app: Express) {
         hasGaps,
         missingItems: missing,
         evidencePass: evidence.pass,
+        integrationFreshness,
       });
     } catch (err: any) {
       console.error("[handover] submit error:", err);
@@ -811,6 +836,28 @@ export function registerHandoverRoutes(app: Express) {
       const readinessPct = gatesTotal > 0 ? Math.round((gatesPassed / gatesTotal) * 100) : 100;
       const trafficLight: "green" | "amber" | "red" =
         readinessPct >= 100 ? "green" : readinessPct >= 80 ? "amber" : "red";
+
+      // W1/W5: Include integration freshness in the readiness response so
+      // the UI can show warnings before the user clicks submit.
+      let integrationFreshness: {
+        overallHealth: string;
+        warnings: string[];
+        staleIntegrations: string[];
+      } = { overallHealth: "unknown", warnings: [], staleIntegrations: [] };
+      try {
+        const { getIntegrationFreshnessReport } = await import("./services/integration-freshness-service");
+        const freshnessReport = await getIntegrationFreshnessReport();
+        integrationFreshness = {
+          overallHealth: freshnessReport.overallHealth,
+          warnings: freshnessReport.warnings,
+          staleIntegrations: freshnessReport.integrations
+            .filter(i => i.health !== "healthy")
+            .map(i => i.name),
+        };
+      } catch (freshnessErr) {
+        console.warn("[handover] integration freshness check failed (non-blocking):", freshnessErr);
+      }
+
       res.json({
         projectId,
         projectName: project.projectName,
@@ -822,6 +869,7 @@ export function registerHandoverRoutes(app: Express) {
         gatesMissing: missing.length,
         hasGaps: missing.length > 0,
         missingItems: missing,
+        integrationFreshness,
       });
     } catch (err: any) {
       console.error("[handover] readiness error:", err);
