@@ -68,8 +68,8 @@ import { getFeatureFlag } from "../lib/feature-flags";
 import { buildFinanceCoreTrustReport } from "../services/finance-core-trust-service";
 import { setFinanceTrustHeaders as setFinanceTrustHeadersShared } from "../lib/finance-trust/envelope";
 import type { FinanceTrustHeaderParams } from "../lib/finance-trust/envelope";
-import { getBills, getMonthlyPnLReport } from "../services/quickbooks-service";
-import { billRawToSummary, parsePnLCosMonthly } from "../services/quickbooks-reconciliation-service";
+import { getBills, getInvoices, getMonthlyPnLReport } from "../services/quickbooks-service";
+import { billRawToSummary, invoiceRawToSummary, parsePnLCosMonthly } from "../services/quickbooks-reconciliation-service";
 
 const FINANCIAL_APPROVER_ROLES = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"];
 const CANONICAL_FINANCE_COSTLINE_READ_FLAG = "canonical_finance_costline_read_v1";
@@ -1572,30 +1572,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
     const costLineById = new Map<number, any>();
     for (const row of rawCostLines) costLineById.set(row.id, row);
 
-    // Linked cost lines → use app amounts & dates (not QB bill values)
-    const processedLinkedCostLines = new Set<number>();
-    for (const link of links) {
-      if (processedLinkedCostLines.has(link.appEntityId)) continue;
-      processedLinkedCostLines.add(link.appEntityId);
-      const line = costLineById.get(link.appEntityId);
-      if (!line) continue;
-      const amount = line.amountExVat ? Number(line.amountExVat) : 0;
-      if (!Number.isFinite(amount) || amount === 0) continue;
-      const lineMonthDate = line.invoiceDate || line.paidDate;
-      if (!lineMonthDate) continue;
-      const dm = String(lineMonthDate).match(/^(\d{4})-(\d{2})/);
-      if (!dm) continue;
-      const monthKey = `${dm[1]}-${dm[2]}`;
-      const projectName = (line.projectName || '').replace(/_Tracker$/i, '') || 'Unknown Project';
-      const hasInvoice = !!(line.invoiceNumber && String(line.invoiceNumber).trim());
-      const invoiceDateConfirmed =
-        !!line.invoiceDate && (line.invoiceDateFontColor === 'black' || line.invoiceDateConfirmed === true);
-      if (hasInvoice && invoiceDateConfirmed) addProjectAmount(realisedByMonth, monthKey, projectName, amount);
-      else addProjectAmount(committedByMonth, monthKey, projectName, amount);
-    }
-
     for (const row of rawCostLines) {
-      if (linksByCostLineId.has(row.id)) continue;
       const amount = row.amountExVat ? Number(row.amountExVat) : 0;
       if (!Number.isFinite(amount) || amount === 0) continue;
       const lineMonthDate = row.invoiceDate || row.paidDate;
@@ -1605,12 +1582,30 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       const monthKey = `${dm[1]}-${dm[2]}`;
       const projectName = (row.projectName || '').replace(/_Tracker$/i, '') || 'Unknown Project';
       const hasInvoice = !!(row.invoiceNumber && String(row.invoiceNumber).trim());
+      const hasPo = !!(row.poNumber && String(row.poNumber).trim());
       const invoiceDateConfirmed =
         !!row.invoiceDate && (row.invoiceDateFontColor === 'black' || row.invoiceDateConfirmed === true);
-      addProjectAmount(plannedByMonth, monthKey, projectName, amount);
-      if (hasInvoice && !invoiceDateConfirmed) {
+
+      // COS classification must come from app-side recognition rules, not QB links.
+      if (hasInvoice && invoiceDateConfirmed) {
+        addProjectAmount(realisedByMonth, monthKey, projectName, amount);
+      } else if (hasInvoice || hasPo) {
+        addProjectAmount(committedByMonth, monthKey, projectName, amount);
+      } else {
+        addProjectAmount(plannedByMonth, monthKey, projectName, amount);
+      }
+
+      // App-only pending is explicitly "unlinked app rows with invoice captured but unconfirmed".
+      if (!linksByCostLineId.has(row.id) && hasInvoice && !invoiceDateConfirmed) {
         addProjectAmount(appOnlyPendingByMonth, monthKey, projectName, amount);
       }
+    }
+
+    if (
+      Array.from(realisedByMonth.values()).every((bucket) => bucket.total === 0) &&
+      rawCostLines.some((row: any) => !!row.invoiceNumber)
+    ) {
+      console.warn("[finance-trust][cos-tracker] realised COS is zero despite invoice-bearing cost lines; check invoiceDateConfirmed and month-bucketing fields.");
     }
 
     const staticCosBudget = STATIC_COS_BUDGET_FY26;
@@ -1848,9 +1843,15 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       invoiceDateConfirmed: boolean;
       supplier: string | null;
       month: string;
+      poNumber: string | null;
+      qbTransactionType: string | null;
+      qbTransactionDate: string | null;
+      recognitionDate: string | null;
+      syncSource: string | null;
+      sourceTraceId: string | null;
       matchStatus: "matched" | "qb_only" | "app_only";
-      cosState: "realised" | "committed" | "planned";
-      reasonBucket: "matched realised" | "matched committed" | "QB-only actual" | "app-only pending";
+      cosState: "realised" | "committed" | "planned" | "qb_actual";
+      reasonBucket: "matched realised" | "matched committed" | "QB-only actual" | "app-only pending" | "planned";
     }
 
     const items: LineItem[] = [];
@@ -1881,8 +1882,8 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       if (project && projectName !== project) continue;
 
       let matchStatus: "matched" | "qb_only" | "app_only" = "app_only";
-      let cosState: "realised" | "committed" | "planned" = "planned";
-      let reasonBucket: "matched realised" | "matched committed" | "QB-only actual" | "app-only pending" = "app-only pending";
+      let cosState: "realised" | "committed" | "planned" | "qb_actual" = "planned";
+      let reasonBucket: "matched realised" | "matched committed" | "QB-only actual" | "app-only pending" | "planned" = "planned";
       if (linkedBill) {
         matchStatus = "matched";
         if (hasInvoice && invoiceDateConfirmed) {
@@ -1893,13 +1894,14 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
           reasonBucket = "matched committed";
         }
       } else {
-        cosState = "planned";
-        reasonBucket = "app-only pending";
+        if (hasInvoice && !invoiceDateConfirmed) reasonBucket = "app-only pending";
+        else reasonBucket = "planned";
       }
 
       if (stateFilter === "realised" && cosState !== "realised") continue;
       if (stateFilter === "committed" && cosState !== "committed") continue;
       if (stateFilter === "planned" && cosState !== "planned") continue;
+      if (stateFilter === "qb_actual" && matchStatus === "app_only") continue;
 
       items.push({
         id: `app-${row.id}`,
@@ -1914,6 +1916,12 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
         invoiceDateConfirmed,
         supplier: row.counterpartyName || linkedBill?.vendorName || null,
         month: linkedBillMonth || appMonth || monthKey,
+        poNumber: row.poNumber || null,
+        qbTransactionType: linkedBill ? "Bill" : null,
+        qbTransactionDate: linkedBill?.txnDate ?? null,
+        recognitionDate: row.invoiceDate ? String(row.invoiceDate) : (linkedBill?.txnDate ?? null),
+        syncSource: linkedBill ? "quickbooks" : "app",
+        sourceTraceId: linkedBill ? `qb-bill:${linkedBill.id}` : `ncl:${row.id}`,
         matchStatus,
         cosState,
         reasonBucket,
@@ -1937,8 +1945,14 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
         invoiceDateConfirmed: true,
         supplier: bill.vendorName || null,
         month: billMonth,
+        poNumber: null,
+        qbTransactionType: "Bill",
+        qbTransactionDate: bill.txnDate,
+        recognitionDate: bill.txnDate,
+        syncSource: "quickbooks",
+        sourceTraceId: `qb-bill:${bill.id}`,
         matchStatus: "qb_only",
-        cosState: "realised",
+        cosState: "qb_actual",
         reasonBucket: "QB-only actual",
       });
     }
@@ -1976,6 +1990,132 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
   } catch (error) {
     console.error("COS month detail error:", error);
     res.status(500).json({ error: "Failed to fetch COS month detail" });
+  }
+});
+
+router.get("/api/cos-tracker/reconciliation", requireAuth, async (req, res) => {
+  try {
+    const { monthKey } = req.query as { monthKey?: string };
+    const [allCostLines, links, rawBills] = await Promise.all([
+      db.select().from(normalizedCostLines),
+      db.select().from(quickbooksInvoiceLinks).where(and(
+        eq(quickbooksInvoiceLinks.appEntityType, "cost_line"),
+        eq(quickbooksInvoiceLinks.qbEntityType, "bill"),
+        isNull(quickbooksInvoiceLinks.deletedAt),
+      )),
+      getBills("2025-09-01", "2026-08-31").catch(() => ({ QueryResponse: { Bill: [] } })),
+    ]);
+
+    const bills = (rawBills?.QueryResponse?.Bill ?? []).map(billRawToSummary);
+    const billById = new Map<string, any>(bills.map((b: any) => [String(b.id), b]));
+    const linkByCost = new Map<number, any>(links.map((l: any) => [l.appEntityId, l]));
+    const linkedBillIds = new Set<string>(links.map((l: any) => String(l.qbEntityId)));
+    const recRows: Array<any> = [];
+
+    const reasonCodesFor = (row: any, bill: any) => {
+      const codes: string[] = [];
+      if (!row?.poNumber) codes.push("Missing PO");
+      if (!row?.invoiceNumber) codes.push("Missing invoice number");
+      const rowProj = String(row?.projectName || "").trim();
+      if (!rowProj) codes.push("Project mapping missing");
+      const rowSupplier = String(row?.counterpartyName || "").trim().toLowerCase();
+      const billSupplier = String(bill?.vendorName || "").trim().toLowerCase();
+      if (rowSupplier && billSupplier && rowSupplier !== billSupplier) codes.push("Supplier mismatch");
+      const rowMonth = String(row?.invoiceDate || row?.paidDate || "").slice(0, 7);
+      const billMonth = String(bill?.txnDate || "").slice(0, 7);
+      if (rowMonth && billMonth && rowMonth !== billMonth) codes.push("Posted to wrong month");
+      const rowAmt = Number(row?.amountExVat ?? 0);
+      const billAmt = Number(bill?.totalAmount ?? 0);
+      if (rowAmt && billAmt && Math.abs(rowAmt - billAmt) > 1) codes.push("Amount mismatch");
+      return codes;
+    };
+
+    for (const row of allCostLines as any[]) {
+      const link = linkByCost.get(row.id);
+      const bill = link ? billById.get(String(link.qbEntityId)) : null;
+      const month = String(bill?.txnDate || row.invoiceDate || row.paidDate || "").slice(0, 7);
+      if (!month) continue;
+      if (monthKey && month !== monthKey) continue;
+      const reasons = link ? reasonCodesFor(row, bill) : reasonCodesFor(row, null);
+      const tab = link ? (reasons.length ? "exceptions" : "matched") : "app_only";
+      recRows.push({
+        month,
+        project: (row.projectName || "").replace(/_Tracker$/i, "") || "Unknown Project",
+        appAmount: Number(row.amountExVat || 0),
+        qbAmount: Number(bill?.totalAmount || 0),
+        appId: row.id,
+        qbId: bill?.id ?? null,
+        matchStatus: link ? "matched" : "app_only",
+        tab,
+        reasonCodes: link ? reasons : [...new Set(["Sync error", ...reasons])],
+        poNumber: row.poNumber || null,
+        invoiceNumber: row.invoiceNumber || null,
+      });
+    }
+
+    for (const bill of bills as any[]) {
+      if (linkedBillIds.has(String(bill.id))) continue;
+      const month = String(bill.txnDate || "").slice(0, 7);
+      if (!month) continue;
+      if (monthKey && month !== monthKey) continue;
+      recRows.push({
+        month,
+        project: "Unmapped QB Bill",
+        appAmount: 0,
+        qbAmount: Number(bill.totalAmount || 0),
+        appId: null,
+        qbId: bill.id,
+        matchStatus: "qb_only",
+        tab: "qb_only",
+        reasonCodes: ["Project mapping missing", "Sync error"],
+        poNumber: null,
+        invoiceNumber: bill.docNumber || null,
+      });
+    }
+
+    const summaryMap = new Map<string, any>();
+    for (const row of recRows) {
+      const key = `${row.month}::${row.project}`;
+      if (!summaryMap.has(key)) {
+        summaryMap.set(key, {
+          month: row.month,
+          project: row.project,
+          appActual: 0,
+          qbActual: 0,
+          appOnlyItemCount: 0,
+          qbOnlyItemCount: 0,
+          missingPoCount: 0,
+          missingInvoiceCount: 0,
+        });
+      }
+      const s = summaryMap.get(key)!;
+      s.appActual += row.appAmount;
+      s.qbActual += row.qbAmount;
+      if (row.matchStatus === "app_only") s.appOnlyItemCount++;
+      if (row.matchStatus === "qb_only") s.qbOnlyItemCount++;
+      if (row.reasonCodes.includes("Missing PO")) s.missingPoCount++;
+      if (row.reasonCodes.includes("Missing invoice number")) s.missingInvoiceCount++;
+    }
+
+    const summary = Array.from(summaryMap.values()).map((s: any) => {
+      const delta = s.appActual - s.qbActual;
+      const deltaPct = s.qbActual !== 0 ? (delta / s.qbActual) * 100 : 0;
+      const status = Math.abs(deltaPct) <= 2 ? "Matched" : Math.abs(deltaPct) <= 10 ? "Investigate" : "Exception";
+      return { ...s, delta, deltaPct, status };
+    });
+
+    res.json({
+      summary,
+      tabs: {
+        matched: recRows.filter((r) => r.tab === "matched"),
+        appOnly: recRows.filter((r) => r.tab === "app_only"),
+        qbOnly: recRows.filter((r) => r.tab === "qb_only"),
+        exceptions: recRows.filter((r) => r.tab === "exceptions"),
+      },
+    });
+  } catch (error) {
+    console.error("COS reconciliation error:", error);
+    res.status(500).json({ error: "Failed to fetch COS reconciliation" });
   }
 });
 
@@ -2942,6 +3082,14 @@ async function revenueTrackerHandler(req: Request, res: Response) {
       storage.getTrackerMonthlyManual('REV'),
       Promise.resolve(new Map()),
     ]);
+    const [revenueLinks, qbInvoicesRaw] = await Promise.all([
+      db.select().from(quickbooksInvoiceLinks).where(and(
+        eq(quickbooksInvoiceLinks.appEntityType, "revenue_line"),
+        eq(quickbooksInvoiceLinks.qbEntityType, "invoice"),
+        isNull(quickbooksInvoiceLinks.deletedAt),
+      )),
+      getInvoices("2025-09-01", "2026-08-31").catch(() => ({ QueryResponse: { Invoice: [] } })),
+    ]);
 
 
     const manualBudgetMap = new Map(manualEntries.map(e => [e.monthKey, e]));
@@ -3008,9 +3156,26 @@ async function revenueTrackerHandler(req: Request, res: Response) {
       }
     }
 
+    const qbInvoices = ((qbInvoicesRaw as any)?.QueryResponse?.Invoice ?? []).map(invoiceRawToSummary);
+    const linkedInvoiceIds = new Set(revenueLinks.map((l: any) => String(l.qbEntityId)));
+    const qbRevenueByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
+    for (const inv of qbInvoices) {
+      if (!linkedInvoiceIds.has(String(inv.id))) continue;
+      const recognitionDate = inv.txnDate;
+      const dm = String(recognitionDate || "").match(/^(\d{4})-(\d{2})/);
+      if (!dm) continue;
+      const monthKey = `${dm[1]}-${dm[2]}`;
+      const amount = Number(inv.totalAmount ?? 0);
+      if (!Number.isFinite(amount) || amount === 0) continue;
+      if (!qbRevenueByMonth.has(monthKey)) qbRevenueByMonth.set(monthKey, { total: 0, projects: new Map() });
+      const bucket = qbRevenueByMonth.get(monthKey)!;
+      bucket.total += amount;
+      bucket.projects.set("Mapped QB Revenue", (bucket.projects.get("Mapped QB Revenue") || 0) + amount);
+    }
+
     const months: any[] = [];
     const startMonth = new Date(Date.UTC(2025, 8, 1));
-    let ytdRevenue = 0, ytdRealised = 0, ytdBudget = 0;
+    let ytdRevenue = 0, ytdRealised = 0, ytdBudget = 0, ytdQbRevenueActual = 0;
 
     for (let i = 0; i < 12; i++) {
       const monthDate = new Date(startMonth);
@@ -3025,6 +3190,8 @@ async function revenueTrackerHandler(req: Request, res: Response) {
       const realisedBucket = realisedByMonth.get(monthKey);
       const realisedRevenue = realisedBucket?.total ?? 0;
       const unrealisedRevenue = totalRevenue - realisedRevenue;
+      const qbRevenueBucket = qbRevenueByMonth.get(monthKey);
+      const qbRevenueActual = qbRevenueBucket?.total ?? 0;
 
       const manual = manualBudgetMap.get(monthKey);
       const budget = manual?.budget ? parseFloat(manual.budget) : 0;
@@ -3033,6 +3200,7 @@ async function revenueTrackerHandler(req: Request, res: Response) {
 
       ytdRevenue += totalRevenue;
       ytdRealised += realisedRevenue;
+      ytdQbRevenueActual += qbRevenueActual;
       ytdBudget += budget;
       const ytdUnrealised = ytdRevenue - ytdRealised;
       const ytdVariance = ytdRevenue - ytdBudget;
@@ -3044,17 +3212,20 @@ async function revenueTrackerHandler(req: Request, res: Response) {
         totalRevenue,
         realisedRevenue,
         unrealisedRevenue,
+        qbRevenueActual,
         budget,
         variance,
         variancePct,
         ytdRevenue,
         ytdRealised,
         ytdUnrealised,
+        ytdQbRevenueActual,
         ytdBudget,
         ytdVariance,
         ytdVariancePct,
         revProjects: mapToSortedArray(bucket?.projects ?? new Map()),
         realisedProjects: mapToSortedArray(realisedBucket?.projects ?? new Map()),
+        qbRevenueProjects: mapToSortedArray(qbRevenueBucket?.projects ?? new Map()),
         unrealisedProjects: (() => {
           const revPs = bucket?.projects ?? new Map<string, number>();
           const realPs = realisedBucket?.projects ?? new Map<string, number>();
@@ -3093,6 +3264,14 @@ router.get("/api/revenue-tracker/month-detail", requireAuth, requirePermission("
     const [allExpenses, cosOverrideMapRMD] = await Promise.all([
       project ? getCanonicalProjectCostLinesByName(project).then((r) => r.rows) : getCanonicalAllCurrentCostLines(),
       Promise.resolve(new Map()),
+    ]);
+    const [revenueLinks, qbInvoicesRaw] = await Promise.all([
+      db.select().from(quickbooksInvoiceLinks).where(and(
+        eq(quickbooksInvoiceLinks.appEntityType, "revenue_line"),
+        eq(quickbooksInvoiceLinks.qbEntityType, "invoice"),
+        isNull(quickbooksInvoiceLinks.deletedAt),
+      )),
+      getInvoices(`${monthKey}-01`, `${monthKey}-31`).catch(() => ({ QueryResponse: { Invoice: [] } })),
     ]);
 
 
@@ -3167,6 +3346,47 @@ router.get("/api/revenue-tracker/month-detail", requireAuth, requirePermission("
         isRealised: cosRealised,
         noRevenueLinked: isNoRevLinked,
         revState,
+        dataSource: "app",
+        qbTransactionType: null,
+        qbDocNumber: null,
+        paymentReference: null,
+        transactionDate: null,
+        recognitionDate: exp.expenseInvoicedDate || null,
+        sourceTraceId: `ncl:${exp.id}`,
+        matchStatus: "app_only",
+      });
+    }
+
+    const qbInvoices = ((qbInvoicesRaw as any)?.QueryResponse?.Invoice ?? []).map(invoiceRawToSummary);
+    const linkedIds = new Set(revenueLinks.map((l: any) => String(l.qbEntityId)));
+    for (const inv of qbInvoices) {
+      if (!linkedIds.has(String(inv.id))) continue;
+      const invMonth = String(inv.txnDate || "").slice(0, 7);
+      if (invMonth !== monthKey) continue;
+      if (stateFilter && stateFilter.toLowerCase() !== "qb_actual") continue;
+      items.push({
+        id: Number(`9${String(inv.id).replace(/\D/g, "").slice(0, 8)}`) || 0,
+        canonicalLineKey: null,
+        projectName: project || "Mapped QB Revenue",
+        category: null,
+        lineItem: null,
+        costAmount: 0,
+        revenueAmount: Number(inv.totalAmount ?? 0),
+        invoiceNumber: inv.docNumber || null,
+        poNumber: null,
+        invoiceDate: inv.txnDate || null,
+        supplier: inv.customerName || null,
+        isRealised: true,
+        noRevenueLinked: false,
+        revState: "QB Actual",
+        dataSource: "quickbooks",
+        qbTransactionType: "Invoice",
+        qbDocNumber: inv.docNumber || null,
+        paymentReference: null,
+        transactionDate: inv.txnDate || null,
+        recognitionDate: inv.txnDate || null,
+        sourceTraceId: `qb-invoice:${inv.id}`,
+        matchStatus: "matched",
       });
     }
 
@@ -3174,6 +3394,134 @@ router.get("/api/revenue-tracker/month-detail", requireAuth, requirePermission("
   } catch (error) {
     console.error("Revenue tracker month-detail error:", error);
     res.status(500).json({ error: "Failed to fetch revenue tracker month detail" });
+  }
+});
+
+router.get("/api/revenue-tracker/reconciliation", requireAuth, requirePermission("revenue_tracker", "view"), async (req, res) => {
+  try {
+    const { monthKey } = req.query as { monthKey?: string };
+    const [revenueRows, links, qbInvoicesRaw] = await Promise.all([
+      db.select().from(normalizedRevenueLines),
+      db.select().from(quickbooksInvoiceLinks).where(and(
+        eq(quickbooksInvoiceLinks.appEntityType, "revenue_line"),
+        eq(quickbooksInvoiceLinks.qbEntityType, "invoice"),
+        isNull(quickbooksInvoiceLinks.deletedAt),
+      )),
+      getInvoices("2025-09-01", "2026-08-31").catch(() => ({ QueryResponse: { Invoice: [] } })),
+    ]);
+
+    const invoices = ((qbInvoicesRaw as any)?.QueryResponse?.Invoice ?? []).map(invoiceRawToSummary);
+    const invoiceById = new Map<string, any>(invoices.map((inv: any) => [String(inv.id), inv]));
+    const linkByRevenue = new Map<number, any>(links.map((l: any) => [l.appEntityId, l]));
+    const linkedInvoiceIds = new Set<string>(links.map((l: any) => String(l.qbEntityId)));
+    const recRows: Array<any> = [];
+
+    const revenueReasonsFor = (row: any, inv: any) => {
+      const reasons: string[] = [];
+      if (!row?.paidDate && !row?.inBankDate) reasons.push("Missing payment receipt date");
+      if (!row?.invoiceNumber) reasons.push("Missing invoice number");
+      if (!row?.projectName) reasons.push("Project mapping missing");
+      if (!inv?.customerName) reasons.push("Customer mapping missing");
+      const appAmt = Number(row?.amountExVat || 0);
+      const qbAmt = Number(inv?.totalAmount || 0);
+      if (appAmt && qbAmt && Math.abs(appAmt - qbAmt) > 1) reasons.push("Amount mismatch");
+      const appMonth = String(row?.paidDate || row?.inBankDate || row?.invoiceDate || "").slice(0, 7);
+      const qbMonth = String(inv?.txnDate || "").slice(0, 7);
+      if (appMonth && qbMonth && appMonth !== qbMonth) reasons.push("Posted to wrong month");
+      return reasons;
+    };
+
+    for (const row of revenueRows as any[]) {
+      const link = linkByRevenue.get(row.id);
+      const inv = link ? invoiceById.get(String(link.qbEntityId)) : null;
+      const month = String(row.paidDate || row.inBankDate || row.invoiceDate || inv?.txnDate || "").slice(0, 7);
+      if (!month) continue;
+      if (monthKey && month !== monthKey) continue;
+      const reasons = link ? revenueReasonsFor(row, inv) : revenueReasonsFor(row, null);
+      const tab = link ? (reasons.length ? "exceptions" : "matched") : "app_only";
+      recRows.push({
+        month,
+        project: (row.projectName || "").replace(/_Tracker$/i, "") || "Unknown Project",
+        appAmount: Number(row.amountExVat || 0),
+        qbAmount: Number(inv?.totalAmount || 0),
+        appId: row.id,
+        qbId: inv?.id ?? null,
+        matchStatus: link ? "matched" : "app_only",
+        tab,
+        reasonCodes: link ? reasons : [...new Set(["Excluded by business rule", ...reasons])],
+        invoiceNumber: row.invoiceNumber || null,
+      });
+    }
+
+    for (const inv of invoices as any[]) {
+      if (linkedInvoiceIds.has(String(inv.id))) continue;
+      const month = String(inv.txnDate || "").slice(0, 7);
+      if (!month) continue;
+      if (monthKey && month !== monthKey) continue;
+      recRows.push({
+        month,
+        project: "Unmapped QB Invoice",
+        appAmount: 0,
+        qbAmount: Number(inv.totalAmount || 0),
+        appId: null,
+        qbId: inv.id,
+        matchStatus: "qb_only",
+        tab: "qb_only",
+        reasonCodes: ["Customer mapping missing", "Project mapping missing", "Sync error"],
+        invoiceNumber: inv.docNumber || null,
+      });
+    }
+
+    const summaryMap = new Map<string, any>();
+    for (const row of recRows) {
+      const key = `${row.month}::${row.project}`;
+      if (!summaryMap.has(key)) {
+        summaryMap.set(key, {
+          month: row.month,
+          project: row.project,
+          appRevenue: 0,
+          qbRevenue: 0,
+          appOnlyItemCount: 0,
+          qbOnlyItemCount: 0,
+          missingPaymentReceiptDateCount: 0,
+          missingInvoiceCount: 0,
+          mappingIssueCount: 0,
+        });
+      }
+      const s = summaryMap.get(key)!;
+      s.appRevenue += row.appAmount;
+      s.qbRevenue += row.qbAmount;
+      if (row.matchStatus === "app_only") s.appOnlyItemCount++;
+      if (row.matchStatus === "qb_only") s.qbOnlyItemCount++;
+      if (row.reasonCodes.includes("Missing payment receipt date")) s.missingPaymentReceiptDateCount++;
+      if (row.reasonCodes.includes("Missing invoice number")) s.missingInvoiceCount++;
+      if (row.reasonCodes.includes("Project mapping missing") || row.reasonCodes.includes("Customer mapping missing")) s.mappingIssueCount++;
+    }
+
+    const summary = Array.from(summaryMap.values()).map((s: any) => {
+      const delta = s.appRevenue - s.qbRevenue;
+      const deltaPct = s.qbRevenue !== 0 ? (delta / s.qbRevenue) * 100 : 0;
+      const status = Math.abs(deltaPct) <= 2 ? "Matched" : Math.abs(deltaPct) <= 10 ? "Investigate" : "Exception";
+      return { ...s, delta, deltaPct, status };
+    });
+
+    res.json({
+      summary,
+      tabs: {
+        matched: recRows.filter((r) => r.tab === "matched"),
+        appOnly: recRows.filter((r) => r.tab === "app_only"),
+        qbOnly: recRows.filter((r) => r.tab === "qb_only"),
+        exceptions: recRows.filter((r) => r.tab === "exceptions"),
+      },
+      recognitionRule: {
+        preferredField: "paidDate|inBankDate",
+        qbFallbackField: "txnDate",
+        note: "QuickBooks invoice payload does not include settlement date in current integration query; txnDate fallback is used.",
+      },
+    });
+  } catch (error) {
+    console.error("Revenue reconciliation error:", error);
+    res.status(500).json({ error: "Failed to fetch revenue reconciliation" });
   }
 });
 

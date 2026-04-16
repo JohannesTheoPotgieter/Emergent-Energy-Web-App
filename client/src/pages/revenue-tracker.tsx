@@ -46,18 +46,21 @@ interface MonthData {
   totalRevenue: number;
   realisedRevenue: number;
   unrealisedRevenue: number;
+  qbRevenueActual: number;
   budget: number;
   variance: number;
   variancePct: number;
   ytdRevenue: number;
   ytdRealised: number;
   ytdUnrealised: number;
+  ytdQbRevenueActual: number;
   ytdBudget: number;
   ytdVariance: number;
   ytdVariancePct: number;
   revProjects: ProjectBreakdown[];
   realisedProjects: ProjectBreakdown[];
   unrealisedProjects: ProjectBreakdown[];
+  qbRevenueProjects: ProjectBreakdown[];
   budgetProjects: ProjectBreakdown[];
 }
 
@@ -81,6 +84,14 @@ interface MonthDetailItem {
   isRealised: boolean;
   noRevenueLinked: boolean;
   revState: string;
+  dataSource?: string;
+  qbTransactionType?: string | null;
+  qbDocNumber?: string | null;
+  paymentReference?: string | null;
+  transactionDate?: string | null;
+  recognitionDate?: string | null;
+  sourceTraceId?: string | null;
+  matchStatus?: string;
 }
 
 function formatRand(val: number | null | undefined): string {
@@ -100,12 +111,13 @@ const ROW_DEFS: {
   group: "monthly" | "ytd";
   expandable?: boolean;
   editable?: boolean;
-  projectsKey?: "revProjects" | "realisedProjects" | "unrealisedProjects";
+  projectsKey?: "revProjects" | "realisedProjects" | "unrealisedProjects" | "qbRevenueProjects";
   colorCoded?: boolean;
 }[] = [
   { key: "totalRevenue", label: "Revenue", dataKey: "totalRevenue", colorClass: "text-foreground font-bold", group: "monthly", expandable: true, projectsKey: "revProjects" },
   { key: "realisedRevenue", label: "Realised Revenue", dataKey: "realisedRevenue", colorClass: "text-emerald-700 font-bold", group: "monthly", expandable: true, projectsKey: "realisedProjects" },
   { key: "unrealisedRevenue", label: "Unrealised Revenue", dataKey: "unrealisedRevenue", colorClass: "text-amber-600 font-semibold", group: "monthly", expandable: true, projectsKey: "unrealisedProjects" },
+  { key: "qbRevenueActual", label: "Revenue - QB Actual", dataKey: "qbRevenueActual", colorClass: "text-blue-700 font-semibold", group: "monthly", expandable: true, projectsKey: "qbRevenueProjects" },
   { key: "budget", label: "Budget", dataKey: "budget", colorClass: "text-purple-600", group: "monthly", editable: true },
   { key: "variance", label: "Variance", dataKey: "variance", colorClass: "", group: "monthly", colorCoded: true },
   { key: "variancePct", label: "Variance %", dataKey: "variancePct", colorClass: "", group: "monthly", colorCoded: true },
@@ -117,14 +129,16 @@ const ROW_DEFS: {
   { key: "ytdVariancePct", label: "YTD Variance %", dataKey: "ytdVariancePct", colorClass: "", group: "ytd", colorCoded: true },
 ];
 
-function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all", defaultProject = "all" }: { monthKey: string; monthLabel: string; onClose: () => void; defaultFilter?: "all" | "realised" | "unrealised"; defaultProject?: string }) {
+function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all", defaultProject = "all" }: { monthKey: string; monthLabel: string; onClose: () => void; defaultFilter?: "all" | "realised" | "unrealised" | "qb_actual"; defaultProject?: string }) {
   const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
-  const [stateFilter, setStateFilter] = useState<"all" | "realised" | "unrealised">(defaultFilter);
+  const [stateFilter, setStateFilter] = useState<"all" | "realised" | "unrealised" | "qb_actual">(defaultFilter);
   const [projectFilter, setProjectFilter] = useState<string>(defaultProject);
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
-  const stateParam = stateFilter !== "all" ? `&state=${stateFilter === "realised" ? "Realised" : "Unrealised"}` : "";
+  const stateParam = stateFilter !== "all"
+    ? `&state=${stateFilter === "realised" ? "Realised" : stateFilter === "unrealised" ? "Unrealised" : "qb_actual"}`
+    : "";
   const projectParam = projectFilter !== "all" ? `&project=${encodeURIComponent(projectFilter)}` : "";
 
   const { data: rawItems, isLoading } = useQuery<MonthDetailItem[]>({
@@ -249,6 +263,7 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
             <option value="all">All States</option>
             <option value="realised">Realised Only</option>
             <option value="unrealised">Unrealised Only</option>
+            <option value="qb_actual">QB Actual Only</option>
           </select>
           <SearchableSelect
             value={projectFilter}
@@ -340,7 +355,7 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                     {expandedId === item.id && (
                       <tr className="bg-gradient-to-r from-emerald-50/40 to-slate-50/40">
                         <td colSpan={7} className="px-6 py-4">
-                          <div className="grid grid-cols-2 md:grid-cols-5 gap-x-6 gap-y-3 text-xs">
+                          <div className="grid grid-cols-2 md:grid-cols-6 gap-x-6 gap-y-3 text-xs">
                             <div>
                               <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">Invoice #</p>
                               <p className="font-medium text-foreground">{item.invoiceNumber || "—"}</p>
@@ -366,6 +381,10 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                                 <Badge variant="outline" className="ml-1 text-[9px] border-orange-300 text-orange-600">No Rev Linked</Badge>
                               )}
                             </div>
+                            <div>
+                              <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">QB Doc / Trace</p>
+                              <p className="font-medium text-foreground">{item.qbDocNumber || item.sourceTraceId || "—"}</p>
+                            </div>
                           </div>
                         </td>
                       </tr>
@@ -389,10 +408,16 @@ export default function RevenueTrackerPage() {
   const { allowed: canEditRevenueTracker } = usePermission("revenue_tracker", "edit");
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<EditingCell | null>(null);
-  const [drawerMonth, setDrawerMonth] = useState<{ monthKey: string; monthLabel: string; defaultFilter?: "all" | "realised" | "unrealised"; defaultProject?: string } | null>(null);
+  const [drawerMonth, setDrawerMonth] = useState<{ monthKey: string; monthLabel: string; defaultFilter?: "all" | "realised" | "unrealised" | "qb_actual"; defaultProject?: string } | null>(null);
+  const [revReconTab, setRevReconTab] = useState<"matched" | "appOnly" | "qbOnly" | "exceptions">("matched");
 
   const { data, isLoading, isError, error, refetch } = useQuery<RevenueTrackerResponse>({
     queryKey: ["/api/revenue-tracker"],
+    staleTime: 30_000,
+  });
+  const { data: revRecon } = useQuery<any>({
+    queryKey: ["/api/revenue-tracker/reconciliation"],
+    queryFn: fetchQueryFn("/api/revenue-tracker/reconciliation"),
     staleTime: 30_000,
   });
 
@@ -438,7 +463,7 @@ export default function RevenueTrackerPage() {
 
   const projectNamesByRow = useMemo(() => {
     const result: Record<string, string[]> = {};
-    for (const key of ["revProjects", "realisedProjects", "unrealisedProjects"] as const) {
+    for (const key of ["revProjects", "realisedProjects", "unrealisedProjects", "qbRevenueProjects"] as const) {
       const names = new Set<string>();
       for (const m of months) {
         for (const p of (m as any)[key] || []) {
@@ -465,6 +490,7 @@ export default function RevenueTrackerPage() {
         month: m.monthLabel,
         "Realised": m.realisedRevenue,
         "Unrealised": m.unrealisedRevenue,
+        "QB Revenue Actual": m.qbRevenueActual,
         "Budget": m.budget,
         "YTD Variance": m.ytdVariance,
       })),
@@ -645,6 +671,7 @@ export default function RevenueTrackerPage() {
                   <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '12px' }} />
                   <Bar dataKey="Realised" stackId="rev" fill="#059669" radius={[0, 0, 0, 0]} />
                   <Bar dataKey="Unrealised" stackId="rev" fill="#d97706" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="QB Revenue Actual" fill="#2563eb" opacity={0.4} radius={[4, 4, 0, 0]} />
                   <Bar dataKey="Budget" fill="#a855f7" opacity={0.3} radius={[4, 4, 0, 0]} />
                   <Line type="monotone" dataKey="YTD Variance" stroke="#ef4444" strokeWidth={2} strokeDasharray="5 5" dot={false} />
                 </ComposedChart>
@@ -676,7 +703,7 @@ export default function RevenueTrackerPage() {
                   {ROW_DEFS.map((row, rowIdx) => {
                     const isYtd = row.group === "ytd";
                     const isExpanded = expandedRows.has(row.key);
-                    const isClickable = ["totalRevenue", "realisedRevenue", "unrealisedRevenue"].includes(row.key);
+                    const isClickable = ["totalRevenue", "realisedRevenue", "unrealisedRevenue", "qbRevenueActual"].includes(row.key);
                     const isFirstYtd = isYtd && rowIdx > 0 && ROW_DEFS[rowIdx - 1].group !== "ytd";
                     return (
                       <React.Fragment key={row.key}>
@@ -752,7 +779,7 @@ export default function RevenueTrackerPage() {
                                 onClick={isClickable ? () => setDrawerMonth({
                                   monthKey: m.monthKey,
                                   monthLabel: m.monthLabel,
-                                  defaultFilter: row.key === 'realisedRevenue' ? 'realised' : row.key === 'unrealisedRevenue' ? 'unrealised' : 'all'
+                                  defaultFilter: row.key === 'realisedRevenue' ? 'realised' : row.key === 'unrealisedRevenue' ? 'unrealised' : row.key === 'qbRevenueActual' ? 'qb_actual' : 'all'
                                 }) : undefined}
                                 data-testid={`cell-${row.key}-${m.monthKey}`}
                               >
@@ -781,7 +808,7 @@ export default function RevenueTrackerPage() {
                               const projArr = row.projectsKey ? (m as any)[row.projectsKey] as ProjectBreakdown[] : [];
                               const proj = projArr?.find((p: ProjectBreakdown) => p.projectName === pName);
                               const val = proj?.value ?? 0;
-                              const drillFilter = row.key === 'realisedRevenue' ? 'realised' as const : row.key === 'unrealisedRevenue' ? 'unrealised' as const : 'all' as const;
+                              const drillFilter = row.key === 'realisedRevenue' ? 'realised' as const : row.key === 'unrealisedRevenue' ? 'unrealised' as const : row.key === 'qbRevenueActual' ? 'qb_actual' as const : 'all' as const;
                               return (
                                 <td
                                   key={m.monthKey}
@@ -803,6 +830,47 @@ export default function RevenueTrackerPage() {
                       </React.Fragment>
                     );
                   })}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-sm overflow-hidden">
+          <CardHeader className="bg-gradient-to-r from-emerald-50 to-white border-b px-6 py-4">
+            <CardTitle className="text-lg font-semibold tracking-tight">Revenue Reconciliation Workbench</CardTitle>
+          </CardHeader>
+          <CardContent className="p-6 space-y-4">
+            <div className="flex gap-2 text-xs">
+              {(["matched", "appOnly", "qbOnly", "exceptions"] as const).map((tab) => (
+                <button key={tab} className={`px-2 py-1 rounded border ${revReconTab === tab ? "bg-emerald-600 text-white" : "bg-white"}`} onClick={() => setRevReconTab(tab)}>
+                  {tab === "appOnly" ? "App only" : tab === "qbOnly" ? "QB only" : tab[0].toUpperCase() + tab.slice(1)}
+                </button>
+              ))}
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead><tr className="border-b bg-muted/40">
+                  <th className="text-left px-2 py-2">Month</th><th className="text-left px-2 py-2">Project</th><th className="text-right px-2 py-2">App Revenue</th><th className="text-right px-2 py-2">QB Revenue</th><th className="text-right px-2 py-2">Delta</th><th className="text-right px-2 py-2">Delta %</th><th className="text-right px-2 py-2">App-only</th><th className="text-right px-2 py-2">QB-only</th><th className="text-right px-2 py-2">Missing receipt date</th><th className="text-right px-2 py-2">Missing invoice</th><th className="text-right px-2 py-2">Mapping issues</th><th className="text-left px-2 py-2">Status</th>
+                </tr></thead>
+                <tbody>
+                  {(revRecon?.summary || []).map((r: any) => (
+                    <tr key={`${r.month}-${r.project}`} className="border-b">
+                      <td className="px-2 py-1">{r.month}</td><td className="px-2 py-1">{r.project}</td><td className="px-2 py-1 text-right">{formatRand(r.appRevenue)}</td><td className="px-2 py-1 text-right">{formatRand(r.qbRevenue)}</td><td className="px-2 py-1 text-right">{formatRand(r.delta)}</td><td className="px-2 py-1 text-right">{Number(r.deltaPct || 0).toFixed(1)}%</td><td className="px-2 py-1 text-right">{r.appOnlyItemCount}</td><td className="px-2 py-1 text-right">{r.qbOnlyItemCount}</td><td className="px-2 py-1 text-right">{r.missingPaymentReceiptDateCount}</td><td className="px-2 py-1 text-right">{r.missingInvoiceCount}</td><td className="px-2 py-1 text-right">{r.mappingIssueCount}</td><td className="px-2 py-1">{r.status}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead><tr className="border-b bg-muted/20"><th className="text-left px-2 py-2">Month</th><th className="text-left px-2 py-2">Project</th><th className="text-left px-2 py-2">Match</th><th className="text-left px-2 py-2">Reason codes</th><th className="text-right px-2 py-2">App</th><th className="text-right px-2 py-2">QB</th></tr></thead>
+                <tbody>
+                  {(revRecon?.tabs?.[revReconTab] || []).slice(0, 200).map((r: any, idx: number) => (
+                    <tr key={`${r.month}-${r.project}-${idx}`} className="border-b">
+                      <td className="px-2 py-1">{r.month}</td><td className="px-2 py-1">{r.project}</td><td className="px-2 py-1">{r.matchStatus}</td><td className="px-2 py-1">{(r.reasonCodes || []).join(", ") || "—"}</td><td className="px-2 py-1 text-right">{formatRand(r.appAmount)}</td><td className="px-2 py-1 text-right">{formatRand(r.qbAmount)}</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
