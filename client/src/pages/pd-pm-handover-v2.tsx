@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
+import { isPdRole as sharedIsPdRole, canReviewHandover as sharedIsPmRole } from "@shared/roles/pd-roles";
 import {
   AlertTriangle, CheckCircle2, ChevronDown, ChevronUp,
   Handshake, Loader2, Plus, Trash2, X,
@@ -29,8 +30,9 @@ const STATUS_LABELS: Record<string, string> = {
   HANDOVER_COMPLETE: "Handover Complete",
 };
 
-const PM_REVIEW_ROLES = ["PROJECT_MANAGER_SITE", "PROGRAM_MANAGER", "COO_ADMIN", "CEO_ADMIN", "CCO", "admin"];
-const PD_ROLES = ["PROJECT_DEVELOPER", "COO_ADMIN", "CEO_ADMIN", "CCO", "admin"];
+// PD_ROLES and PM_REVIEW_ROLES previously duplicated locally with "admin"
+// (not a real company role) and without KEY_ACCOUNTS_MANAGER. Now imported
+// as helper functions from the shared module. See shared/roles/pd-roles.ts.
 const PROJECT_TYPES = ["C&I", "Utility", "BESS", "Hybrid"];
 const SYSTEM_TYPES = ["Grid-tied", "Hybrid", "Off-grid", "BESS"];
 const FUNDING_MODELS = ["Self-funded", "Bank-financed", "PPA", "Lease", "Other"];
@@ -126,8 +128,8 @@ interface LessonRow {
 
 // ===================== HELPERS =====================
 
-const isPmRole = (role?: string) => PM_REVIEW_ROLES.includes(role || "");
-const isPdRole = (role?: string) => PD_ROLES.includes(role || "");
+const isPmRole = (role?: string) => sharedIsPmRole(role || "");
+const isPdRole = (role?: string) => sharedIsPdRole(role || "");
 
 function formatDateTime(value?: string | null) {
   if (!value) return "No date";
