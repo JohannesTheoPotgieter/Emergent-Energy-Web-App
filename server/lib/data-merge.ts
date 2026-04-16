@@ -131,6 +131,9 @@ export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: strin
     _cosRealisedFlag: (cost as any).cosRealised ?? false, // backward-compat alias
     _cosOverrideStatus: (cost as any).cosStatusOverride ?? null,
     cosStatusOverride: (cost as any).cosStatusOverride ?? null, // canonical field name
+    lineAssignedQbExVat: (cost as any).lineAssignedQbExVat ?? null,
+    lineRealisedAmountExVat: (cost as any).lineRealisedAmountExVat ?? null,
+    lineUnrealisedRemainderExVat: (cost as any).lineUnrealisedRemainderExVat ?? null,
     _cosOverrideBy: (cost as any).cosStatusOverrideBy ?? null,
     _cosOverrideAt: (cost as any).cosStatusOverrideAt ?? null,
     _cosOverrideReason: (cost as any).cosStatusOverrideReason ?? null,

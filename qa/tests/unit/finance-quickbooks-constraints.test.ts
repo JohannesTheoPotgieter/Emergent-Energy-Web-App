@@ -49,6 +49,32 @@ describe("QuickBooks link — partial unique indexes on active rows", () => {
   });
 });
 
+describe("QuickBooks allocation-aware evidence model", () => {
+  const schema = read("shared/schema/integrations.ts");
+  const allocationLib = read("server/lib/finance/qb-allocation.ts");
+
+  it("defines canonical quickbooks_documents and quickbooks_cost_allocations tables", () => {
+    expect(schema).toContain('pgTable(\n  "quickbooks_documents"');
+    expect(schema).toContain('pgTable(\n  "quickbooks_cost_allocations"');
+  });
+
+  it("stores VAT-decomposed document amounts (inc_vat, tax, ex_vat)", () => {
+    expect(schema).toContain("qb_amount_inc_vat");
+    expect(schema).toContain("qb_tax_amount");
+    expect(schema).toContain("qb_amount_ex_vat");
+  });
+
+  it("contains explicit over-assignment guard and tiny tolerance", () => {
+    expect(allocationLib).toContain("QB_ASSIGNMENT_TOLERANCE_EX_VAT = 0.01");
+    expect(allocationLib).toContain("Over-assignment blocked");
+  });
+
+  it("computes realised amount from min(line amount, assigned evidence)", () => {
+    expect(allocationLib).toContain("Math.min(lineAmountExVat, assignedQbExVat)");
+    expect(allocationLib).toContain("Math.max(0, lineAmountExVat - assignedQbExVat)");
+  });
+});
+
 describe("QuickBooks link — conflict handling", () => {
   const service = read("server/services/quickbooks-reconciliation-service.ts");
   const routes = read("server/quickbooks-routes.ts");
