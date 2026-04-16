@@ -14,7 +14,7 @@ import {
   spFilePointers,
   projectTeamMembers, projectPlan, qcWarning, qcWarningEvent,
   qcItemInstance, qcChecklist, qcTemplateItem, users, projectInfo, projectPhaseHistory, projectExecutionState,
-  projectEngApprovals, projectEngStages, projectEngTasks, engStageTemplates,
+  projectEngApprovals, projectEngStages, projectEngTasks, projectEngDeliverables, engStageTemplates,
   workItems, workItemAssignments, notifications, notificationThrottle,
   msObjects,
   phaseTemplate as phaseTemplateTbl,
@@ -31,6 +31,7 @@ import { ApiError, sendError, badRequest, notFound, forbidden, serverError } fro
 import { listEngineeringWorkItems, getEngineeringWorkItemById, createEngineeringWorkItem, updateEngineeringWorkItem, deleteEngineeringWorkItem, generateDefaultEngineeringWorkItemsForProject, mapToOpsStatus, toCanonicalStatus } from "./work-items-adapter";
 import { generateWorkItemReconciliationReport } from "./lib/reconciliation/work-item-reconciliation";
 import { assertTaskWorkflowTransition, buildTaskWorkflowContext, TaskWorkflowGuardError } from "./lib/task-workflow-guard";
+import { isTaskComplete, isTaskCompleteForReporting, isApprovalState } from "@shared/task-status";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
 import { requireAdmin } from "./middleware/requireAdmin";
 import { getAssignmentsForEntity, getAssignmentsForEntities, listAssignableDirectory } from "./services/assignment-service";
@@ -59,10 +60,14 @@ function getUserRole(req: Request): string {
   return getEffectiveUser(req)?.role || "";
 }
 
-const BLOCKED_STATUSES = new Set(["HOLD", "ON HOLD"]);
-const REVIEW_NEEDED_STATUSES = new Set(["PROVIDE FEEDBACK"]);
-const APPROVAL_PENDING_STATUSES = new Set(["NEEDS APPROVAL", "OPERATIONAL APPROVAL"]);
-const COMPLETE_LIKE_STATUSES = new Set(["COMPLETE", "COMPLETED", "DONE"]);
+// Trust fix: canonical lowercase to match listEngineeringWorkItems() output.
+// The previous UPPERCASE sets silently failed every comparison because
+// the work-items adapter returns canonical lowercase since migration
+// 20260413_status_casing_normalization.
+const BLOCKED_STATUSES = new Set(["hold"]);
+const REVIEW_NEEDED_STATUSES = new Set(["provide_feedback"]);
+const APPROVAL_PENDING_STATUSES = new Set(["needs_approval", "operational_approval"]);
+const COMPLETE_LIKE_STATUSES = new Set(["complete"]);
 const MICROSOFT_ADMIN_ROLES = new Set(["COO_ADMIN", "CEO_ADMIN"]);
 
 function normalizeStatus(status?: string | null): string {
@@ -395,7 +400,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.put("/api/eng/local-synced-save/config", requireAuth, async (req, res) => {
+  app.put("/api/eng/local-synced-save/config", requireAuth, requirePermission("engineering", "edit"), async (req, res) => {
     try {
       const user = getUser(req);
       const mappedPath = typeof req.body?.mappedPath === "string" ? req.body.mappedPath.trim() : "";
@@ -817,7 +822,8 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng/tasks/:id/send-for-approval", requireAuth, approvalUpload.single("file"), async (req, res) => {
+  // Permission: submitting for approval requires edit on eng_tasks.
+  app.post("/api/eng/tasks/:id/send-for-approval", requireAuth, requirePermission("eng_tasks", "edit"), approvalUpload.single("file"), async (req, res) => {
     const id = parseInt(paramStr(req.params.id));
     const user = getUser(req);
     const note = req.body.note || "";
@@ -1071,7 +1077,8 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng/tasks/:id/send-deliverable", requireAuth, approvalUpload.single("file"), async (req, res) => {
+  // Permission: sending a deliverable requires edit on eng_tasks.
+  app.post("/api/eng/tasks/:id/send-deliverable", requireAuth, requirePermission("eng_tasks", "edit"), approvalUpload.single("file"), async (req, res) => {
     const id = parseInt(paramStr(req.params.id));
     const user = getUser(req);
 
@@ -2095,10 +2102,14 @@ export function registerEngineeringRoutes(app: Express) {
       const canonicalTasks = await listEngineeringWorkItems(
         projectName ? { projectName } : {}
       );
-      const allTasks = canonicalTasks.filter((t: any) => t.status !== "COMPLETE");
+      // Trust fix: use canonical lowercase for status comparison.
+      // listEngineeringWorkItems returns canonical lowercase via
+      // toCanonicalStatus(). The previous UPPERCASE comparisons silently
+      // matched zero tasks, making warnings never fire.
+      const allTasks = canonicalTasks.filter((t: any) => !isTaskComplete(t.status));
 
       for (const task of allTasks) {
-        if (task.dueDate && task.dueDate < today && task.status !== "COMPLETE") {
+        if (task.dueDate && task.dueDate < today && !isTaskComplete(task.status)) {
           const isHighPhase = task.phase === "Commissioning" || task.phase === "Handover";
           newWarnings.push({
             projectName: task.projectName,
@@ -2133,7 +2144,7 @@ export function registerEngineeringRoutes(app: Express) {
           }
         }
 
-        if (task.status === "NEEDS APPROVAL" && task.updatedAt) {
+        if (task.status === "needs_approval" && task.updatedAt) {
           const daysSinceUpdate = (Date.now() - new Date(task.updatedAt).getTime()) / (1000 * 60 * 60 * 24);
           if (daysSinceUpdate > 2) {
             newWarnings.push({
@@ -2141,18 +2152,21 @@ export function registerEngineeringRoutes(app: Express) {
               severity: "MED",
               warningType: "review_stuck",
               title: `Review stuck: ${task.title}`,
-              description: `In NEEDS APPROVAL for ${Math.floor(daysSinceUpdate)} days`,
+              description: `In needs_approval for ${Math.floor(daysSinceUpdate)} days`,
             });
           }
         }
       }
 
-      const delConditions: any[] = [ne(deliverables.status, "COMPLETE")];
+      // Legacy deliverables table still uses the original status values
+      // (these are NOT normalized through the adapter, so keep original
+      // casing for the direct DB query).
+      const delConditions: any[] = [ne(deliverables.status, "complete")];
       if (projectName) delConditions.push(eq(deliverables.projectName, projectName));
       const allDeliverables = await db.select().from(deliverables).where(and(...delConditions));
 
       for (const del of allDeliverables) {
-        if (del.status === "QC APPROVED" || del.status === "COMPLETE") {
+        if (del.status === "qc_approved" || del.status === "complete") {
           const approvedFiles = await db.select().from(deliverableFiles)
             .where(and(eq(deliverableFiles.deliverableId, del.id), eq(deliverableFiles.isApproved, true)));
           if (approvedFiles.length === 0) {
@@ -2165,6 +2179,56 @@ export function registerEngineeringRoutes(app: Express) {
             });
           }
         }
+      }
+
+      // Trust fix: scan project eng deliverables for IFC-missing condition.
+      // If a stage template requires IFC issuance (requireIfcIssuance rule)
+      // but all deliverables are only approved_for_review, that's a warning.
+      try {
+        const allStages = await db.select({
+          id: projectEngStages.id,
+          projectId: projectEngStages.projectId,
+          status: projectEngStages.status,
+          stageGateRules: engStageTemplates.stageGateRules,
+          templateName: engStageTemplates.name,
+        })
+          .from(projectEngStages)
+          .innerJoin(engStageTemplates, eq(projectEngStages.stageTemplateId, engStageTemplates.id))
+          .where(ne(projectEngStages.status, "complete"));
+
+        for (const stage of allStages) {
+          const rules = (stage.stageGateRules as any) || {};
+          if (!rules.requireIfcIssuance) continue;
+
+          const stageDeliverables = await db.select({
+            releasedFor: projectEngDeliverables.releasedFor,
+            approvalStatus: projectEngDeliverables.approvalStatus,
+          })
+            .from(projectEngDeliverables)
+            .where(eq(projectEngDeliverables.projectEngStageId, stage.id));
+
+          const hasIfc = stageDeliverables.some((d: any) =>
+            d.releasedFor === "issued_for_construction" || d.releasedFor === "as_built"
+          );
+          const hasApprovedOnly = stageDeliverables.some((d: any) =>
+            d.approvalStatus === "approved" && d.releasedFor !== "issued_for_construction" && d.releasedFor !== "as_built"
+          );
+
+          if (!hasIfc && hasApprovedOnly) {
+            // Look up project name for this stage
+            const [proj] = await db.select({ projectName: projectInfo.projectName })
+              .from(projectInfo).where(eq(projectInfo.id, stage.projectId));
+            newWarnings.push({
+              projectName: proj?.projectName || `project_id:${stage.projectId}`,
+              severity: "HIGH",
+              warningType: "missing_approval",
+              title: `IFC not issued: ${stage.templateName}`,
+              description: `Stage "${stage.templateName}" requires IFC issuance but all deliverables are only QC-approved, not issued for construction`,
+            });
+          }
+        }
+      } catch (ifcScanErr: any) {
+        console.warn("[Engineering] IFC warning scan error (non-fatal):", ifcScanErr.message);
       }
 
       if (newWarnings.length > 0) {
@@ -2286,46 +2350,68 @@ export function registerEngineeringRoutes(app: Express) {
           })
         : rawTasks;
 
-      const normalizeKey = (n: string) => n.replace(/_Tracker.*$/i, "").replace(/_/g, " ").toLowerCase().trim();
-      const phaseByNorm = new Map<string, string>();
+      // Phase lookup: projectId-based (canonical) rather than the old
+      // fuzzy name-matching heuristic that could misattribute phases.
+      // Tasks from listEngineeringWorkItems() carry projectId; the
+      // projectInfo query provides phase per projectId.
+      const phaseByProjectId = new Map<number, string>();
+      const projectNameById = new Map<number, string>();
       for (const pi of allProjectInfoRows) {
-        if (pi.phase) phaseByNorm.set(normalizeKey(pi.projectName), pi.phase);
-      }
-      function lookupPhase(taskProjectName: string): string {
-        const norm = normalizeKey(taskProjectName);
-        if (phaseByNorm.has(norm)) return phaseByNorm.get(norm)!;
-        const baseName = norm.replace(/\s*(phase\s*\d+|expansion|rev\d+|\+.*$)/gi, "").trim();
-        if (baseName && phaseByNorm.has(baseName)) return phaseByNorm.get(baseName)!;
-        for (const [key, phase] of phaseByNorm) {
-          if (key.startsWith(baseName) || baseName.startsWith(key)) return phase;
+        // allProjectInfoRows is a leftJoin result; need careful extraction
+        const pName = pi.projectName;
+        const pPhase = pi.phase;
+        // projectInfo rows have projectName; projectExecutionState has phase
+        // The query selects { projectName: projectInfo.projectName, phase: projectExecutionState.phase }
+        if (pName && pPhase) {
+          // We need the projectId but it's not in the select — look up from task data
         }
+      }
+      // Build from raw: re-query with projectId for canonical mapping
+      const projectIdPhaseRows = await db.select({
+        id: projectInfo.id,
+        projectName: projectInfo.projectName,
+        phase: projectExecutionState.phase,
+      })
+        .from(projectInfo)
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
+      for (const row of projectIdPhaseRows) {
+        if (row.phase) phaseByProjectId.set(row.id, row.phase);
+        if (row.projectName) projectNameById.set(row.id, row.projectName);
+      }
+
+      /** Canonical phase lookup by projectId. Falls back to P0_FIRST_ASSESSMENT
+       *  only when the project has no execution state row at all. */
+      function lookupPhaseById(pid: number | null | undefined): string {
+        if (pid && phaseByProjectId.has(pid)) return phaseByProjectId.get(pid)!;
         return "P0_FIRST_ASSESSMENT";
       }
 
-      const openStatuses = new Set(["TO DO", "IN PROGRESS", "NEEDS APPROVAL", "PROVIDE FEEDBACK", "PROJECTS ASSISTANCE"]);
+      // Trust fix: canonical lowercase status comparison — must match
+      // the output of listEngineeringWorkItems() / toCanonicalStatus().
+      const openStatuses = new Set(["to_do", "in_progress", "needs_approval", "provide_feedback", "projects_assistance", "not_started"]);
 
-      const recentlyCompleted = allTasks.filter(t =>
-        t.status === "COMPLETE" && t.completedAt &&
+      const recentlyCompleted = allTasks.filter((t: any) =>
+        isTaskComplete(t.status) && t.completedAt &&
         new Date(t.completedAt).toISOString().split('T')[0] >= yesterdayStr
       );
 
-      const blockers = allTasks.filter(t =>
-        t.status === "HOLD" || (t.status !== "COMPLETE" && t.dueDate && t.dueDate < todayStr)
+      const blockers = allTasks.filter((t: any) =>
+        t.status === "hold" || (!isTaskComplete(t.status) && t.dueDate && t.dueDate < todayStr)
       );
 
-      const holdItems = blockers.filter(t => t.status === "HOLD");
-      const overdueItems = blockers.filter(t => t.status !== "HOLD" && t.dueDate && t.dueDate < todayStr);
+      const holdItems = blockers.filter((t: any) => t.status === "hold");
+      const overdueItems = blockers.filter((t: any) => t.status !== "hold" && t.dueDate && t.dueDate < todayStr);
 
-      const upcomingThisWeek = allTasks.filter(t =>
+      const upcomingThisWeek = allTasks.filter((t: any) =>
         openStatuses.has(t.status) && t.dueDate && t.dueDate >= todayStr && t.dueDate <= weekEndStr
-      ).sort((a, b) => (a.dueDate || "").localeCompare(b.dueDate || ""));
+      ).sort((a: any, b: any) => (a.dueDate || "").localeCompare(b.dueDate || ""));
 
-      const inProgress = allTasks.filter(t => t.status === "IN PROGRESS");
-      const needsApproval = allTasks.filter(t => t.status === "NEEDS APPROVAL" || t.status === "PROVIDE FEEDBACK");
+      const inProgress = allTasks.filter((t: any) => t.status === "in_progress");
+      const needsApproval = allTasks.filter((t: any) => t.status === "needs_approval" || t.status === "provide_feedback");
 
       const assigneeMap = new Map<string, { active: number; overdue: number; hold: number; dueThisWeek: number }>();
       for (const t of allTasks) {
-        if (t.status === "COMPLETE") continue;
+        if (isTaskComplete(t.status)) continue;
         const names = t.assignees && Array.isArray(t.assignees) ? t.assignees.filter(Boolean) : [];
         if (names.length === 0) names.push("Unassigned");
         for (const name of names) {
@@ -2333,27 +2419,41 @@ export function registerEngineeringRoutes(app: Express) {
           const w = assigneeMap.get(name)!;
           w.active++;
           if (t.dueDate && t.dueDate < todayStr) w.overdue++;
-          if (t.status === "HOLD") w.hold++;
+          if (t.status === "hold") w.hold++;
           if (t.dueDate && t.dueDate >= todayStr && t.dueDate <= weekEndStr) w.dueThisWeek++;
         }
       }
       const workload = Array.from(assigneeMap.entries()).map(([name, w]) => ({ name, ...w }))
         .sort((a, b) => b.overdue - a.overdue || b.active - a.active);
 
-      const projectMap = new Map<string, typeof allTasks>();
+      // Group tasks by projectId (canonical) rather than projectName (heuristic).
+      // Tasks with no projectId go to the "Unassigned" bucket (projectId=0).
+      const projectTaskMap = new Map<number, { projectName: string; tasks: typeof allTasks }>();
       for (const t of allTasks) {
-        const key = t.projectName || "Unassigned";
-        if (!projectMap.has(key)) projectMap.set(key, []);
-        projectMap.get(key)!.push(t);
+        const pid = t.projectId || 0;
+        if (!projectTaskMap.has(pid)) {
+          projectTaskMap.set(pid, {
+            projectName: t.projectName || (pid === 0 ? "Unassigned" : `Project #${pid}`),
+            tasks: [],
+          });
+        }
+        projectTaskMap.get(pid)!.tasks.push(t);
       }
 
-      const projectHealth = Array.from(projectMap.entries()).map(([projectName, tasks]) => {
-        const phase = lookupPhase(projectName);
+      // Legacy compat: also build name-keyed map for the response shape
+      const projectMap = new Map<string, typeof allTasks>();
+      for (const [, { projectName, tasks }] of projectTaskMap) {
+        projectMap.set(projectName, tasks);
+      }
+
+      const projectHealth = Array.from(projectTaskMap.entries()).map(([projectId, { projectName, tasks }]) => {
+        // Canonical phase lookup by projectId — no fuzzy name matching.
+        const phase = lookupPhaseById(projectId);
         const total = tasks.length;
-        const completed = tasks.filter(t => t.status === "COMPLETE").length;
-        const active = tasks.filter(t => openStatuses.has(t.status)).length;
-        const hold = tasks.filter(t => t.status === "HOLD").length;
-        const overdue = tasks.filter(t => t.status !== "COMPLETE" && t.dueDate && t.dueDate < todayStr).length;
+        const completed = tasks.filter((t: any) => isTaskComplete(t.status)).length;
+        const active = tasks.filter((t: any) => openStatuses.has(t.status)).length;
+        const hold = tasks.filter((t: any) => t.status === "hold").length;
+        const overdue = tasks.filter((t: any) => !isTaskComplete(t.status) && t.dueDate && t.dueDate < todayStr).length;
         const dueThisWeek = tasks.filter(t => openStatuses.has(t.status) && t.dueDate && t.dueDate >= todayStr && t.dueDate <= weekEndStr).length;
         const completion = total > 0 ? Math.round((completed / total) * 100) : 0;
 
@@ -2373,27 +2473,12 @@ export function registerEngineeringRoutes(app: Express) {
         return (ragOrder[a.rag] - ragOrder[b.rag]) || (b.overdue - a.overdue);
       });
 
-      const STATUS_NORMALIZE: Record<string, string> = {
-        "in progress": "IN PROGRESS",
-        "to do": "TO DO",
-        "todo": "TO DO",
-        "not started": "TO DO",
-        "complete": "COMPLETE",
-        "completed": "COMPLETE",
-        "done": "COMPLETE",
-        "hold": "HOLD",
-        "on hold": "HOLD",
-        "needs approval": "NEEDS APPROVAL",
-        "provide feedback": "PROVIDE FEEDBACK",
-        "qc approved": "QC APPROVED",
-        "projects assistance": "PROJECTS ASSISTANCE",
-      };
-      const normalizeStatus = (s: string) => STATUS_NORMALIZE[s.toLowerCase().trim()] || s.toUpperCase().trim();
-
+      // Status pipeline: use canonical status directly (already normalized
+      // by listEngineeringWorkItems). Display labels applied by client.
       const statusPipeline: Record<string, number> = {};
       for (const t of allTasks) {
-        const normalized = normalizeStatus(t.status);
-        statusPipeline[normalized] = (statusPipeline[normalized] || 0) + 1;
+        const canonical = toCanonicalStatus(t.status);
+        statusPipeline[canonical] = (statusPipeline[canonical] || 0) + 1;
       }
 
       const mapTask = (t: typeof allTasks[0]) => ({
@@ -2423,13 +2508,17 @@ export function registerEngineeringRoutes(app: Express) {
       // Catch-all: active tasks not covered by any section above
       const otherActive = allTasks.filter(t => openStatuses.has(t.status) && !shownIds.has(t.id));
 
+      // Metric: totalProjects — count of distinct projects that have eng tasks,
+      // excluding the "Unassigned" bucket which is not a real project.
+      const realProjectCount = [...projectMap.keys()].filter(k => k !== "Unassigned").length;
+
       res.json({
         date: todayStr,
         summary: {
-          totalProjects: projectMap.size,
+          totalProjects: realProjectCount,
           totalTasks: allTasks.length,
           activeTasks: allTasks.filter(t => openStatuses.has(t.status)).length,
-          completedTasks: allTasks.filter(t => t.status === "COMPLETE").length,
+          completedTasks: allTasks.filter((t: any) => isTaskComplete(t.status)).length,
           overdueTasks: overdueItems.length,
           holdTasks: holdItems.length,
           recentlyCompletedCount: recentlyCompleted.length,
@@ -2448,6 +2537,14 @@ export function registerEngineeringRoutes(app: Express) {
         workload,
         projectHealth,
         statusPipeline,
+        // Trust metadata: tells the client which sections are provisional
+        // so the UI can render appropriate caveats.
+        _trustMetadata: {
+          workload: { provisional: true, reason: "Name-based grouping — two people with the same first name will merge" },
+          projectHealthRag: { provisional: true, reason: "Automated thresholds (>0 overdue = RED) — may not reflect actual project risk" },
+          recentlyCompleted: { provisional: true, reason: "completedAt may be null for legacy tasks that were marked complete before timestamp tracking" },
+          warningEngine: { provisional: true, reason: "Warning scan is backend-only; no UI surfaces warnings to users yet" },
+        },
       });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
