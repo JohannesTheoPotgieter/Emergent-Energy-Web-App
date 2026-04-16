@@ -409,7 +409,7 @@ export default function QmDashboardPage() {
   const qmAttentionItems = useMemo((): AttentionItem[] => {
     const items: AttentionItem[] = [];
     if (governanceSummary?.overdueActions && governanceSummary.overdueActions > 0) items.push({ label: "Overdue Actions", value: governanceSummary.overdueActions, color: "text-red-600 bg-red-50 border-red-200", href: "/quality" });
-    if (governanceSummary?.resubmissionNeeded && governanceSummary.resubmissionNeeded > 0) items.push({ label: "Resubmission Needed", value: governanceSummary.resubmissionNeeded, color: "text-amber-700 bg-amber-50 border-amber-200", href: "/quality" });
+    if (governanceSummary?.resubmissionNeeded && governanceSummary.resubmissionNeeded > 0) items.push({ label: "Failed QC Items", value: governanceSummary.resubmissionNeeded, color: "text-amber-700 bg-amber-50 border-amber-200", href: "/quality" });
     if (governanceSummary?.evidenceRequired && governanceSummary.evidenceRequired > 0) items.push({ label: "Evidence Gaps", value: governanceSummary.evidenceRequired, color: "text-sky-700 bg-sky-50 border-sky-200", href: "/quality" });
     if (governanceSummary?.blockedHandovers && governanceSummary.blockedHandovers > 0) items.push({ label: "Blocked Handovers", value: governanceSummary.blockedHandovers, color: "text-violet-700 bg-violet-50 border-violet-200", href: "/quality" });
     if (activeWarnings > 0) items.push({ label: "Open Warnings", value: activeWarnings, color: "text-orange-700 bg-orange-50 border-orange-200", href: "/quality" });
@@ -477,7 +477,7 @@ export default function QmDashboardPage() {
     const overdueActions = governanceSummary?.overdueActions || 0;
     const resubmissions = governanceSummary?.resubmissionNeeded || 0;
     if (overdueActions > 0) return { label: `${overdueActions} overdue quality action${overdueActions !== 1 ? "s" : ""} need attention`, severity: "warning" };
-    if (resubmissions > 0) return { label: `${resubmissions} rejected item${resubmissions !== 1 ? "s" : ""} need resubmission`, severity: "warning" };
+    if (resubmissions > 0) return { label: `${resubmissions} item${resubmissions !== 1 ? "s" : ""} failed QC — fix and resubmit`, severity: "warning" };
     if (activeWarnings > 0) return { label: `${activeWarnings} quality warning${activeWarnings !== 1 ? "s" : ""} to review`, severity: "warning" };
     const incomplete = checklists.filter(c => c.status !== "completed").length;
     if (incomplete > 0) return { label: `${incomplete} checklist${incomplete !== 1 ? "s" : ""} still in progress`, severity: "info" };
@@ -490,7 +490,7 @@ export default function QmDashboardPage() {
       b.push({ label: "Quality-blocked handovers", count: governanceSummary?.blockedHandovers || 0, severity: "warning" });
     }
     if ((governanceSummary?.resubmissionNeeded || 0) > 0) {
-      b.push({ label: "Resubmission-needed items", count: governanceSummary?.resubmissionNeeded || 0, severity: "warning" });
+      b.push({ label: "Failed QC items needing rework", count: governanceSummary?.resubmissionNeeded || 0, severity: "warning" });
     }
     if (activeWarnings > 0) b.push({ label: "Active quality warnings", count: activeWarnings, severity: "warning" });
     return b;
@@ -552,9 +552,9 @@ export default function QmDashboardPage() {
         </Card>
         <Card className="border-amber-100 bg-amber-50/50">
           <CardContent className="p-3">
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Resubmission needed</p>
+            <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Failed QC</p>
             <p className="text-xl font-bold text-amber-600 tabular-nums mt-1">{governanceSummary?.resubmissionNeeded ?? 0}</p>
-            <p className="text-xs text-muted-foreground mt-1">Rejected items waiting for rework and re-approval.</p>
+            <p className="text-xs text-muted-foreground mt-1">Items that failed inspection — fix and resubmit.</p>
           </CardContent>
         </Card>
         <Card className="border-sky-100 bg-sky-50/50">

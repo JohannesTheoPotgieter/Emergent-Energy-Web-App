@@ -20,6 +20,8 @@ import { usePermission } from "@/hooks/use-permissions";
 import { useToast } from "@/hooks/use-toast";
 import UserAssignmentPicker from "@/components/UserAssignmentPicker";
 import { evaluateQualityGovernanceItem } from "@shared/quality-governance";
+import { QualityGovernanceSummary } from "./quality/QualityGovernanceSummary";
+import { QualityWarningsPanel } from "./quality/QualityWarningsPanel";
 
 function qFetch(url: string, options?: RequestInit) {
   const token = localStorage.getItem('auth_token');
@@ -70,19 +72,6 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; 
 
 function getStatusConfig(status: string) {
   return STATUS_CONFIG[status] || STATUS_CONFIG.not_started;
-}
-
-function getRiskLevelClass(level: string) {
-  switch ((level || "").toLowerCase()) {
-    case "critical":
-      return "bg-red-50 text-red-700 border-red-200";
-    case "high":
-      return "bg-amber-50 text-amber-700 border-amber-200";
-    case "medium":
-      return "bg-sky-50 text-sky-700 border-sky-200";
-    default:
-      return "bg-emerald-50 text-emerald-700 border-emerald-200";
-  }
 }
 
 interface QualityTabProps {
@@ -310,7 +299,7 @@ export function QualityTab({ projectName, initialStatusFilter }: QualityTabProps
       invalidateAll();
       setSendForApprovalItem(null);
       setSfaApprover("");
-      toast({ title: "Sent for approval", description: "The item is now in review for the selected approver." });
+      toast({ title: "Submitted for review", description: "The item is now in review. The reviewer will pass or fail it." });
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
@@ -683,80 +672,15 @@ export function QualityTab({ projectName, initialStatusFilter }: QualityTabProps
         </div>
       )}
 
-      <Card className="border-border/70" data-testid="quality-governance-summary">
-        <CardContent className="p-4 space-y-4">
-          <div className="flex items-start justify-between gap-3 flex-wrap">
-            <div>
-              <p className="text-sm font-semibold">Quality governance view</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                {workspaceData?.risk?.summary || "Quality actions, evidence, and handover signals stay visible here."}
-              </p>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <Badge variant="outline" className={getRiskLevelClass(workspaceData?.risk?.level || "low")}>
-                {(workspaceData?.risk?.level || "low").toUpperCase()} risk
-              </Badge>
-              {workspaceData?.handover?.blocked && (
-                <Badge variant="outline" className="bg-violet-50 text-violet-700 border-violet-200">
-                  Handover blocked
-                </Badge>
-              )}
-            </div>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-            <div className="rounded-lg border border-red-100 bg-red-50/50 px-3 py-3">
-              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Overdue</p>
-              <p className="text-lg font-bold text-red-600 mt-1">{governanceCounts.overdue}</p>
-              <p className="text-[11px] text-muted-foreground mt-1">Past due and unresolved</p>
-            </div>
-            <div className="rounded-lg border border-amber-100 bg-amber-50/50 px-3 py-3">
-              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Resubmission</p>
-              <p className="text-lg font-bold text-amber-600 mt-1">{governanceCounts.resubmissionNeeded}</p>
-              <p className="text-[11px] text-muted-foreground mt-1">Rejected items awaiting rework</p>
-            </div>
-            <div className="rounded-lg border border-sky-100 bg-sky-50/50 px-3 py-3">
-              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Evidence gaps</p>
-              <p className="text-lg font-bold text-sky-600 mt-1">{governanceCounts.evidenceRequired}</p>
-              <p className="text-[11px] text-muted-foreground mt-1">Required proof still missing</p>
-            </div>
-            <div className="rounded-lg border border-violet-100 bg-violet-50/50 px-3 py-3">
-              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Pending review</p>
-              <p className="text-lg font-bold text-violet-600 mt-1">{governanceCounts.pendingReview}</p>
-              <p className="text-[11px] text-muted-foreground mt-1">Items in approval flow</p>
-            </div>
-            <div className="rounded-lg border border-orange-100 bg-orange-50/50 px-3 py-3">
-              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Risk answers</p>
-              <p className="text-lg font-bold text-orange-600 mt-1">{governanceCounts.unansweredRisk} open / {governanceCounts.triggeredRisk} triggered</p>
-              <p className="text-[11px] text-muted-foreground mt-1">Questions now included in risk score</p>
-            </div>
-            <div className="rounded-lg border border-emerald-100 bg-emerald-50/50 px-3 py-3">
-              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Linked Microsoft</p>
-              <p className="text-lg font-bold text-emerald-600 mt-1">{governanceCounts.linkedMicrosoftItems}</p>
-              <p className="text-[11px] text-muted-foreground mt-1">Quality-linked comms and follow-ups</p>
-            </div>
-          </div>
-
-          {workspaceData?.handover?.blocked && (
-            <div className="rounded-lg border border-violet-200 bg-violet-50/60 px-4 py-3" data-testid="quality-handover-blocked">
-              <div className="flex items-center gap-2 text-violet-700">
-                <AlertTriangle className="w-4 h-4 shrink-0" />
-                <span className="text-sm font-semibold">Execution readiness is currently blocked by quality context</span>
-              </div>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {(workspaceData.handover.blockers || []).map((blocker) => (
-                  <Badge key={blocker} variant="outline" className="bg-white/80 text-violet-700 border-violet-200">
-                    {blocker}
-                  </Badge>
-                ))}
-              </div>
-              {workspaceData.handover.rejectionReason && (
-                <p className="text-xs text-violet-700/90 mt-2">{workspaceData.handover.rejectionReason}</p>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <QualityGovernanceSummary
+        counts={governanceCounts}
+        risk={{ level: workspaceData?.risk?.level || "low", summary: workspaceData?.risk?.summary || "" }}
+        handover={workspaceData?.handover ? {
+          blocked: workspaceData.handover.blocked,
+          blockers: workspaceData.handover.blockers || [],
+          rejectionReason: workspaceData.handover.rejectionReason,
+        } : null}
+      />
 
       {(governanceFocusItems.length > 0 || relevantMicrosoftItems.length > 0) && (
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
@@ -850,29 +774,7 @@ export function QualityTab({ projectName, initialStatusFilter }: QualityTabProps
         </div>
       )}
 
-      {activeWarnings.length > 0 && (
-        <Collapsible>
-          <CollapsibleTrigger asChild>
-            <div className="rounded-lg border border-red-200 bg-red-50/60 px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-red-100/60 transition-colors" data-testid="quality-warnings">
-              <AlertTriangle className="w-5 h-5 text-red-500 shrink-0" />
-              <p className="text-sm font-semibold text-red-700 flex-1">
-                {activeWarnings.length} Active Warning{activeWarnings.length !== 1 ? "s" : ""}
-              </p>
-              <ChevronDown className="w-4 h-4 text-red-600" />
-            </div>
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <div className="border border-t-0 border-red-200 rounded-b-lg px-4 py-3 space-y-2 bg-red-50/30">
-              {activeWarnings.map((w: any) => (
-                <div key={w.id} className="flex items-center gap-2 text-xs text-muted-foreground" data-testid={`warning-item-${w.id}`}>
-                  <Badge className={getRiskSeverityColor(w.severity)} variant="outline">{w.severity}</Badge>
-                  <span className="flex-1">{w.title || w.description || w.warningType}</span>
-                </div>
-              ))}
-            </div>
-          </CollapsibleContent>
-        </Collapsible>
-      )}
+      <QualityWarningsPanel warnings={activeWarnings} />
 
       <div className="bg-card rounded-lg border" data-testid="phase-tabs">
         <div className="flex items-stretch overflow-x-auto">
@@ -943,7 +845,7 @@ export function QualityTab({ projectName, initialStatusFilter }: QualityTabProps
                   </div>
                   <div className="text-center">
                     <p className="text-lg font-bold text-slate-500">{selectedPhaseProgress.applicable - selectedPhaseProgress.completed - selectedPhaseProgress.failed - selectedPhaseProgress.inReview}</p>
-                    <p className="text-[11px] text-muted-foreground">Pending</p>
+                    <p className="text-[11px] text-muted-foreground">Not Started</p>
                   </div>
                 </div>
               </div>
@@ -959,7 +861,7 @@ export function QualityTab({ projectName, initialStatusFilter }: QualityTabProps
               {[
                 { value: "all", label: "All", count: overallStats.total },
                 { value: "not_started", label: "Not Started", count: overallStats.notStarted },
-                { value: "review", label: "Review", count: overallStats.inReview },
+                { value: "review", label: "In Review", count: overallStats.inReview },
                 { value: "fail", label: "Failed", count: overallStats.failed },
                 { value: "pass", label: "Passed", count: overallStats.passed },
                 { value: "overdue", label: "Overdue", count: overallStats.overdue },
@@ -1154,9 +1056,9 @@ export function QualityTab({ projectName, initialStatusFilter }: QualityTabProps
                                             <Paperclip className="w-2.5 h-2.5" /> {itemEvidence.length}
                                           </Badge>
                                         )}
-                                        {instance.approved && (
+                                        {instance.approved && currentStatus !== "pass" && (
                                           <Badge className="text-[9px] gap-0.5 px-1.5 py-0 h-4 bg-emerald-100 text-emerald-700 border-emerald-200" variant="outline">
-                                            <CheckCircle2 className="w-2.5 h-2.5" /> Approved
+                                            <CheckCircle2 className="w-2.5 h-2.5" /> QC Passed
                                           </Badge>
                                         )}
                                         {governance.resubmissionNeeded && (
@@ -1291,7 +1193,7 @@ export function QualityTab({ projectName, initialStatusFilter }: QualityTabProps
                                     {instance.approved && (
                                       <div className="flex items-center gap-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-3" data-testid={`approval-info-${instance.id}`}>
                                         <CheckCircle2 className="w-4 h-4 shrink-0" />
-                                        <span className="font-medium">Approved{instance.approvedAt ? ` on ${new Date(instance.approvedAt).toLocaleDateString()}` : ""}</span>
+                                        <span className="font-medium">QC Passed{instance.approvedAt ? ` on ${new Date(instance.approvedAt).toLocaleDateString()}` : ""}</span>
                                         {instance.approvalComment && <span className="text-emerald-600/80 ml-1">- {instance.approvalComment}</span>}
                                       </div>
                                     )}
@@ -1299,7 +1201,7 @@ export function QualityTab({ projectName, initialStatusFilter }: QualityTabProps
                                     {governance.resubmissionNeeded && instance.approvalComment && (
                                       <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3" data-testid={`resubmission-info-${instance.id}`}>
                                         <AlertCircle className="w-4 h-4 shrink-0" />
-                                        <span className="font-medium">Resubmission required</span>
+                                        <span className="font-medium">Failed — fix and resubmit</span>
                                         <span className="text-amber-700/90">{instance.approvalComment}</span>
                                       </div>
                                     )}
@@ -1309,7 +1211,7 @@ export function QualityTab({ projectName, initialStatusFilter }: QualityTabProps
                                         {governance.evidenceMissing && (
                                           <div className="flex items-center gap-2 text-xs text-sky-700 bg-sky-50 border border-sky-200 rounded-lg p-2.5 mb-2" data-testid={`evidence-warning-${instance.id}`}>
                                             <Paperclip className="w-3.5 h-3.5 shrink-0" />
-                                            <span>Evidence is required before this item can be sent for approval.</span>
+                                            <span>Evidence is required before this item can be submitted for review.</span>
                                           </div>
                                         )}
                                         {sendForApprovalItem === instance.id ? (
@@ -1318,7 +1220,7 @@ export function QualityTab({ projectName, initialStatusFilter }: QualityTabProps
                                             <SearchableSelect
                                               value={sfaApprover}
                                               onValueChange={setSfaApprover}
-                                              placeholder="Select approver..."
+                                              placeholder="Select reviewer..."
                                               triggerClassName="h-8 text-xs flex-1"
                                               data-testid={`select-approver-${instance.id}`}
                                               options={teamMembers.map((m: any) => ({ value: String(m.id), label: m.name }))}
@@ -1348,7 +1250,7 @@ export function QualityTab({ projectName, initialStatusFilter }: QualityTabProps
                                             onClick={() => setSendForApprovalItem(instance.id)}
                                             data-testid={`btn-send-for-approval-${instance.id}`}
                                           >
-                                            <Send className="w-3.5 h-3.5" /> Send for Approval
+                                            <Send className="w-3.5 h-3.5" /> Submit for Review
                                           </Button>
                                         )}
                                       </div>
