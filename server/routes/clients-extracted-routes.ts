@@ -17,6 +17,7 @@ import { requireAuth } from "../auth-context";
 import { requireAdmin } from "../middleware/requireAdmin";
 import { logAuditFromReq } from "../audit-logger";
 import { getFeatureFlag } from "../lib/feature-flags";
+import { insertClientWithGeneratedId } from "../lib/client-id-generator";
 import {
   compareCoreClientsReadiness,
   listClientsFromPromotedCoreCompat,
@@ -56,15 +57,16 @@ export function registerClientsExtractedRoutes(app: Express): void {
         clientId: z.string().optional(),
       });
       const parsed = schema.parse(req.body);
-      const maxIdResult = await db.execute(sql`SELECT COALESCE(MAX(CAST(SUBSTRING(client_id FROM 5) AS INTEGER)), 0) as max_num FROM clients WHERE client_id LIKE 'EE-C%'`);
-      const nextNum = ((maxIdResult.rows[0] as any)?.max_num || 0) + 1;
-      const generatedClientId = parsed.clientId || `EE-C${String(nextNum).padStart(4, '0')}`;
-      const [created] = await db.insert(clients).values({
+      // Race-safe insert: helper holds a Postgres advisory lock around
+      // the MAX+INSERT so concurrent create requests cannot collide on
+      // the `EE-Cxxxx` sequence. See server/lib/client-id-generator.ts.
+      const created = await insertClientWithGeneratedId({
         name: parsed.name,
-        clientId: generatedClientId,
+        clientId: parsed.clientId,
         createdBy: req.user?.id,
         updatedBy: req.user?.id,
-      }).returning();
+      });
+      const generatedClientId = created.clientId;
 
       const dualWriteEnabled = await getFeatureFlag("promoted_core_clients_dual_write");
       let promotedMirror: { attempted: boolean; success: boolean; error: string | null } = { attempted: false, success: false, error: null };
@@ -101,18 +103,29 @@ export function registerClientsExtractedRoutes(app: Express): void {
     }
   });
 
+  // Schema tied to the real `clients` columns. The previous schema accepted
+  // `billingEmail`, `contactPerson`, `contactEmail`, `contactPhone`, `notes`
+  // — none of which exist on the `clients` table. Drizzle silently dropped
+  // them, so PATCH requests looked like they succeeded but wrote nothing.
+  // This schema intentionally only lists real columns so silent drops stop.
+  const clientUpdateSchema = z.object({
+    name: z.string().min(1).optional(),
+    legalEntityName: z.string().optional().nullable(),
+    tradingName: z.string().optional().nullable(),
+    clientType: z.enum(["commercial", "industrial", "residential", "government"]).optional().nullable(),
+    billingEntity: z.string().optional().nullable(),
+    primaryContactName: z.string().optional().nullable(),
+    primaryContactEmail: z.string().email().optional().nullable().or(z.literal("")),
+    primaryContactPhone: z.string().optional().nullable(),
+    secondaryContactName: z.string().optional().nullable(),
+    secondaryContactEmail: z.string().email().optional().nullable().or(z.literal("")),
+    industry: z.string().optional().nullable(),
+    status: z.enum(["active", "inactive", "prospect"]).optional(),
+  }).strict();
+
   app.patch("/api/clients/:id", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const schema = z.object({
-        name: z.string().min(1).optional(),
-        legalEntityName: z.string().optional(),
-        billingEmail: z.string().email().optional().or(z.literal('')),
-        contactPerson: z.string().optional(),
-        contactEmail: z.string().email().optional().or(z.literal('')),
-        contactPhone: z.string().optional(),
-        notes: z.string().optional(),
-      });
-      const parsed = schema.parse(req.body);
+      const parsed = clientUpdateSchema.parse(req.body);
       const [updated] = await db
         .update(clients)
         .set({ ...parsed, updatedAt: new Date(), updatedBy: req.user?.id })

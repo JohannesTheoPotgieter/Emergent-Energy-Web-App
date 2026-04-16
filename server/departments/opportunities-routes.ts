@@ -8,6 +8,7 @@ import { db } from "../db";
 import { eq, desc, isNull, and } from "drizzle-orm";
 import { opportunities } from "@shared/schema/projects";
 import { z, ZodError } from "zod";
+import { logAuditFromReq } from "../audit-logger";
 
 // Validation for user-driven opportunity create/update. Intentionally
 // narrower than the raw table schema:
@@ -38,7 +39,7 @@ const opportunityCreateSchema = z.object({
 
 const router = Router();
 
-router.get("/api/opportunities", requireAuth, requirePermission("pd_dashboard", "view"), async (req: Request, res: Response) => {
+router.get("/api/opportunities", requireAuth, requirePermission("opportunities", "view"), async (req: Request, res: Response) => {
   try {
     const clientId = req.query.clientId ? Number(req.query.clientId) : undefined;
     const stage = req.query.stage as string | undefined;
@@ -59,7 +60,7 @@ router.get("/api/opportunities", requireAuth, requirePermission("pd_dashboard", 
   }
 });
 
-router.get("/api/opportunities/:id", requireAuth, requirePermission("pd_dashboard", "view"), async (req: Request, res: Response) => {
+router.get("/api/opportunities/:id", requireAuth, requirePermission("opportunities", "view"), async (req: Request, res: Response) => {
   try {
     const [row] = await db
       .select()
@@ -74,7 +75,7 @@ router.get("/api/opportunities/:id", requireAuth, requirePermission("pd_dashboar
   }
 });
 
-router.post("/api/opportunities", requireAuth, requirePermission("pd_tickets", "create"), async (req: Request, res: Response) => {
+router.post("/api/opportunities", requireAuth, requirePermission("opportunities", "create"), async (req: Request, res: Response) => {
   try {
     const parsed = opportunityCreateSchema.parse(req.body);
     // Force `source` to 'internal' on the manual create path — the
@@ -83,6 +84,20 @@ router.post("/api/opportunities", requireAuth, requirePermission("pd_tickets", "
       .insert(opportunities)
       .values({ ...parsed, source: "internal" })
       .returning();
+
+    logAuditFromReq(req, {
+      entityType: "opportunity",
+      entityId: String(row.id),
+      action: "create",
+      changesJson: {
+        source: "internal",
+        clientId: row.clientId ?? null,
+        stage: row.stage,
+        status: row.status,
+        estimatedValue: row.estimatedValue ?? null,
+      },
+    });
+
     res.status(201).json(row);
   } catch (err) {
     if (err instanceof ZodError) {
@@ -93,7 +108,7 @@ router.post("/api/opportunities", requireAuth, requirePermission("pd_tickets", "
   }
 });
 
-router.patch("/api/opportunities/:id", requireAuth, requirePermission("pd_tickets", "edit"), async (req: Request, res: Response) => {
+router.patch("/api/opportunities/:id", requireAuth, requirePermission("opportunities", "edit"), async (req: Request, res: Response) => {
   try {
     const parsed = opportunityCreateSchema.partial().parse(req.body);
 
@@ -126,6 +141,28 @@ router.patch("/api/opportunities/:id", requireAuth, requirePermission("pd_ticket
     const touchesCrmField = existing.source === "pipedrive"
       && crmOverwriteFields.some(f => (safeFields as Record<string, unknown>)[f] !== undefined);
 
+    // Only log the fields the user actually sent. `safeFields` already
+    // excludes `source` and `pipedriveDealId` so the audit trail cannot
+    // claim the user changed origin when they couldn't.
+    const changedKeys = Object.keys(safeFields).filter(
+      k => (safeFields as Record<string, unknown>)[k] !== undefined,
+    );
+    if (changedKeys.length > 0) {
+      logAuditFromReq(req, {
+        entityType: "opportunity",
+        entityId: String(row.id),
+        action: touchesCrmField ? "update_crm_field_on_synced_row" : "update",
+        changesJson: {
+          source: existing.source,
+          changed: changedKeys,
+          values: changedKeys.reduce<Record<string, unknown>>((acc, k) => {
+            acc[k] = (safeFields as Record<string, unknown>)[k];
+            return acc;
+          }, {}),
+        },
+      });
+    }
+
     res.json({
       ...row,
       _warning: touchesCrmField
@@ -141,7 +178,7 @@ router.patch("/api/opportunities/:id", requireAuth, requirePermission("pd_ticket
   }
 });
 
-router.delete("/api/opportunities/:id", requireAuth, requirePermission("pd_tickets", "delete"), async (req: Request, res: Response) => {
+router.delete("/api/opportunities/:id", requireAuth, requirePermission("opportunities", "delete"), async (req: Request, res: Response) => {
   try {
     const [row] = await db
       .update(opportunities)
@@ -149,6 +186,14 @@ router.delete("/api/opportunities/:id", requireAuth, requirePermission("pd_ticke
       .where(eq(opportunities.id, Number(req.params.id)))
       .returning();
     if (!row) return res.status(404).json({ error: "Opportunity not found" });
+
+    logAuditFromReq(req, {
+      entityType: "opportunity",
+      entityId: String(row.id),
+      action: "soft_delete",
+      changesJson: { source: row.source, pipedriveDealId: row.pipedriveDealId ?? null },
+    });
+
     res.json(row);
   } catch (err) {
     console.error("[Opportunities] Failed to delete:", err);
