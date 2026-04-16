@@ -1,3 +1,40 @@
+// ===================== CANONICAL STATUSES =====================
+
+/**
+ * Canonical quality item statuses. Every qcItemInstance.qmStatus value
+ * MUST be one of these. The UI STATUS_CONFIG and backend ALLOWED_QM_STATUSES
+ * both derive from this single source of truth.
+ */
+export const QUALITY_ITEM_STATUSES = [
+  "not_started",
+  "review",
+  "pass",
+  "fail",
+  "na",
+] as const;
+
+export type QualityItemStatus = (typeof QUALITY_ITEM_STATUSES)[number];
+
+/**
+ * Valid status transitions. Key = current status, value = set of allowed next statuses.
+ * Enforced server-side on item update.
+ */
+export const VALID_QM_STATUS_TRANSITIONS: Record<QualityItemStatus, readonly QualityItemStatus[]> = {
+  not_started: ["review", "pass", "fail", "na"],
+  review: ["pass", "fail", "not_started", "na"],
+  pass: ["review", "fail", "not_started", "na"],
+  fail: ["review", "pass", "not_started", "na"],
+  na: ["not_started", "review", "pass", "fail"],
+} as const;
+
+export function isValidQmStatusTransition(from: string, to: string): boolean {
+  const allowed = VALID_QM_STATUS_TRANSITIONS[from as QualityItemStatus];
+  if (!allowed) return false;
+  return (allowed as readonly string[]).includes(to);
+}
+
+// ===================== INTERFACES =====================
+
 export interface QualityGovernanceItemLike {
   qmStatus?: string | null;
   approved?: boolean | null;
@@ -290,5 +327,143 @@ export function computeQualityRiskSummary(params: {
       triggeredRiskCount,
       highTriggeredRiskCount,
     },
+  };
+}
+
+// ===================== DEFINITION OF DONE =====================
+
+export interface QualityItemCompletionResult {
+  complete: boolean;
+  reasons: string[];
+}
+
+/**
+ * Evaluates whether a single quality item meets its Definition of Done.
+ * An item is complete when:
+ * 1. It is not applicable (N/A), OR
+ * 2. It is approved (qmStatus = pass) AND evidence is present if required.
+ */
+export function isQualityItemComplete(item: QualityGovernanceItemLike): QualityItemCompletionResult {
+  if (item.isApplicable === false) {
+    return { complete: true, reasons: [] };
+  }
+
+  const reasons: string[] = [];
+
+  if (!item.approved) {
+    const status = normalizeQualityItemStatus(item);
+    if (status === "fail") {
+      reasons.push("Item failed — resubmission required");
+    } else if (status === "review") {
+      reasons.push("Awaiting approval review");
+    } else {
+      reasons.push("Not yet approved");
+    }
+  }
+
+  if (item.isEvidenceRequired && Number(item.evidenceCount ?? 0) <= 0) {
+    reasons.push("Required evidence not uploaded");
+  }
+
+  return { complete: reasons.length === 0, reasons };
+}
+
+/**
+ * Checks whether a quality item with required evidence can be approved.
+ * Returns null if approval is allowed, or a reason string if blocked.
+ */
+export function getApprovalBlockReason(item: QualityGovernanceItemLike): string | null {
+  if (item.isApplicable === false) return null;
+  if (item.isEvidenceRequired && Number(item.evidenceCount ?? 0) <= 0) {
+    return "Cannot approve: required evidence has not been uploaded";
+  }
+  return null;
+}
+
+// ===================== HANDOVER READINESS =====================
+
+export interface QualityChecklistReadiness {
+  ready: boolean;
+  completionPercent: number;
+  totalApplicable: number;
+  totalComplete: number;
+  incompleteItems: Array<{
+    itemName?: string;
+    reasons: string[];
+  }>;
+  openHighWarnings: number;
+  blockers: string[];
+}
+
+/**
+ * Evaluates whether a project's quality checklist is complete enough for handover.
+ *
+ * Handover readiness requires:
+ * 1. All applicable quality items are complete (approved + evidence)
+ * 2. No open high-severity warnings
+ * 3. No unresolved high-severity risk triggers
+ */
+export function evaluateChecklistHandoverReadiness(params: {
+  items: QualityGovernanceItemLike[];
+  itemNames?: string[];
+  warnings?: QualityWarningLike[];
+  riskAnswers?: QualityRiskAnswerLike[];
+}): QualityChecklistReadiness {
+  const { items, itemNames, warnings, riskAnswers } = params;
+  const blockers: string[] = [];
+
+  const applicableItems = items.filter((item) => item.isApplicable !== false);
+  const completionResults = applicableItems.map((item, index) => ({
+    result: isQualityItemComplete(item),
+    itemName: itemNames?.[index],
+  }));
+
+  const completeCount = completionResults.filter((r) => r.result.complete).length;
+  const incompleteItems = completionResults
+    .filter((r) => !r.result.complete)
+    .map((r) => ({
+      itemName: r.itemName,
+      reasons: r.result.reasons,
+    }));
+
+  const completionPercent = applicableItems.length > 0
+    ? Math.round((completeCount / applicableItems.length) * 100)
+    : 100;
+
+  if (incompleteItems.length > 0) {
+    blockers.push(`${incompleteItems.length} quality item(s) not complete`);
+  }
+
+  const openHighWarnings = (warnings ?? []).filter(
+    (w) =>
+      String(w.status ?? "").toLowerCase() !== "resolved" &&
+      String(w.severity ?? "").toLowerCase() === "high",
+  ).length;
+
+  if (openHighWarnings > 0) {
+    blockers.push(`${openHighWarnings} open high-severity warning(s)`);
+  }
+
+  const highTriggeredRisks = (riskAnswers ?? []).filter((answer) => {
+    if (!answer.triggersWarning) return false;
+    if (String(answer.triggerSeverity ?? "").toLowerCase() !== "high") return false;
+    const condition = String(answer.triggerCondition ?? "").toLowerCase();
+    if (condition === "yes") return answer.answerYesno === true;
+    if (condition === "no") return answer.answerYesno === false;
+    return false;
+  }).length;
+
+  if (highTriggeredRisks > 0) {
+    blockers.push(`${highTriggeredRisks} high-severity risk trigger(s) active`);
+  }
+
+  return {
+    ready: blockers.length === 0,
+    completionPercent,
+    totalApplicable: applicableItems.length,
+    totalComplete: completeCount,
+    incompleteItems,
+    openHighWarnings,
+    blockers,
   };
 }

@@ -123,8 +123,10 @@ export const qcItemEvidence = pgTable("qc_item_evidence", {
   evidenceUrl: text("evidence_url").notNull(),
   evidenceNote: text("evidence_note"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
+  deletedBy: integer("deleted_by"),
 });
-export const insertQcItemEvidenceSchema = createInsertSchema(qcItemEvidence).omit({ id: true, createdAt: true } as any);
+export const insertQcItemEvidenceSchema = createInsertSchema(qcItemEvidence).omit({ id: true, createdAt: true, deletedAt: true, deletedBy: true } as any);
 export type InsertQcItemEvidence = z.infer<typeof insertQcItemEvidenceSchema>;
 export type QcItemEvidence = typeof qcItemEvidence.$inferSelect;
 
