@@ -6,6 +6,7 @@ import type { Express } from "express";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { jwtAuth, requireAuth } from "../auth-context";
+import { requirePermission } from "../permission-middleware";
 
 export function registerGovernanceViewsRoutes(app: Express) {
 
@@ -84,7 +85,7 @@ app.get("/api/governance/quality", jwtAuth, requireAuth, async (req, res) => {
 
 // ── Quality action ─────────────────────────────────────────
 
-app.patch("/api/governance/quality/:id/action", jwtAuth, requireAuth, async (req, res) => {
+app.patch("/api/governance/quality/:id/action", jwtAuth, requireAuth, requirePermission("quality", "approve"), async (req, res) => {
   try {
     const itemId = Number(req.params.id);
     const { action, assignToUserId, notes } = req.body;
