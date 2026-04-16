@@ -295,6 +295,14 @@ export async function generateEngineeringReportData(month: string) {
       snapshotBehavior: "Values are fixed to the stored monthly report snapshot until regeneration.",
       generatedAt: new Date().toISOString(),
       activeProjectCount: activeProjects.length,
+      // Trust metadata: marks which KPIs are provisional until the
+      // underlying data source is fully migrated.
+      provisionalMetrics: {
+        deliverablesSubmitted: "Reads legacy deliverableVersions table — status values may be mixed-case",
+        deliverablesApproved: "Reads legacy deliverableVersions table — status values may be mixed-case",
+        deliverablesRejected: "Reads legacy deliverableVersions table — status values may be mixed-case",
+        monthlyCompletionRate: "Denominator uses endDate as a proxy for planned completion — not a canonical field",
+      },
     },
     kpis,
     tasks: {
