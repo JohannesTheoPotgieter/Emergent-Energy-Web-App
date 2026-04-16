@@ -38,9 +38,15 @@
  * lightly.
  */
 
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import { db } from "../db";
 import { clients } from "@shared/schema";
+
+/** Minimal transaction handle — just the methods we use. */
+type TxHandle = {
+  execute(query: SQL): Promise<unknown>;
+  insert: typeof db.insert;
+};
 
 const CLIENT_ID_ADVISORY_LOCK_KEY = 0x4344_5047; // "CDPG" ≈ client-id pd gen
 const CLIENT_ID_PREFIX = "EE-C";
@@ -64,7 +70,7 @@ export interface GeneratedClient {
 export async function insertClientWithGeneratedId(
   values: Omit<typeof clients.$inferInsert, "clientId"> & { clientId?: string },
 ): Promise<GeneratedClient> {
-  return db.transaction(async (tx) => {
+  return db.transaction(async (tx: TxHandle) => {
     // Acquire the advisory lock for this transaction. Any other
     // transaction that calls pg_advisory_xact_lock with the same key
     // will wait here until we commit.
@@ -96,7 +102,7 @@ export async function insertClientWithGeneratedId(
  * `EE-C%` prefix so imported or Pipedrive-generated ids (`PD-<orgId>`)
  * do not pollute the sequence space.
  */
-async function nextClientIdInTx(tx: Parameters<Parameters<typeof db.transaction>[0]>[0]): Promise<string> {
+async function nextClientIdInTx(tx: TxHandle): Promise<string> {
   const result = (await tx.execute(sql`
     SELECT COALESCE(
       MAX(CAST(SUBSTRING(client_id FROM 5) AS INTEGER)),

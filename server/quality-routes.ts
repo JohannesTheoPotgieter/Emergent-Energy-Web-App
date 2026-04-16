@@ -1676,7 +1676,7 @@ export function registerQualityRoutes(app: Express) {
   app.get("/api/quality/checklists", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
       const allChecklistsRaw = await db.select().from(qcChecklist);
-      const allChecklists = allChecklistsRaw.filter(c => c.projectId != null || c.projectName != null);
+      const allChecklists = allChecklistsRaw.filter((c: typeof allChecklistsRaw[number]) => c.projectId != null || c.projectName != null);
       const allProjectRows = await db.select().from(projectInfo)
         .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
       // Prompt 0.8: safe spread for null leftJoin rows (see loadProjectQualityGovernanceContext).
@@ -1897,7 +1897,7 @@ export function registerQualityRoutes(app: Express) {
   app.get("/api/quality/dashboard", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
       const allChecklistsRaw = await db.select().from(qcChecklist);
-      const allChecklists = allChecklistsRaw.filter(c => c.projectId != null || c.projectName != null);
+      const allChecklists = allChecklistsRaw.filter((c: typeof allChecklistsRaw[number]) => c.projectId != null || c.projectName != null);
       const allWarnings = await db.select().from(qcWarning).where(sql`${qcWarning.status} != 'resolved'`);
       const allItems = await db.select().from(qcItemInstance);
       const allRiskAnswers = await db.select().from(qcRiskAnswer);
