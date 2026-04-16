@@ -4,6 +4,7 @@
  */
 import { Router, type Express, type Request, type Response } from "express";
 import { requireAuth } from "./shared-middleware";
+import { requirePermission } from "../permission-middleware";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 
@@ -12,8 +13,12 @@ const router = Router();
 /**
  * GET /api/admin/backfill/status
  * Check which tables have data and which are empty.
+ *
+ * Previously guarded by `requireAuth` only — any authenticated user
+ * could read backfill status. Now restricted to `admin:view` so
+ * non-admin roles cannot probe table row counts.
  */
-router.get("/api/admin/backfill/status", requireAuth, async (_req: Request, res: Response) => {
+router.get("/api/admin/backfill/status", requireAuth, requirePermission("admin", "view"), async (_req: Request, res: Response) => {
   try {
     // SAFETY: table names are from this hardcoded whitelist only — not user input
     const tables = [
@@ -62,7 +67,7 @@ router.get("/api/admin/backfill/status", requireAuth, async (_req: Request, res:
  * Creates site records from distinct project locations.
  * Non-destructive: only creates sites that don't already exist.
  */
-router.post("/api/admin/backfill/sites-from-projects", requireAuth, async (_req: Request, res: Response) => {
+router.post("/api/admin/backfill/sites-from-projects", requireAuth, requirePermission("admin", "edit"), async (_req: Request, res: Response) => {
   try {
     // Extract distinct client+location combinations from projects that have clients
     const result = await db.execute(sql`
@@ -118,7 +123,7 @@ router.post("/api/admin/backfill/sites-from-projects", requireAuth, async (_req:
  * Creates opportunity records from PD tickets that have handover data.
  * Non-destructive: only creates opportunities that don't already exist.
  */
-router.post("/api/admin/backfill/opportunities-from-pd-tickets", requireAuth, async (_req: Request, res: Response) => {
+router.post("/api/admin/backfill/opportunities-from-pd-tickets", requireAuth, requirePermission("admin", "edit"), async (_req: Request, res: Response) => {
   try {
     const result = await db.execute(sql`
       INSERT INTO opportunities (client_id, stage, notes, status, created_at, updated_at)
