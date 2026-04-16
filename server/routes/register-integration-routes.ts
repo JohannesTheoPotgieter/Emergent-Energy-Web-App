@@ -9,4 +9,8 @@ export async function registerIntegrationRoutes(app: Express) {
   registerInvoicePatternRoutes(app);
   const { registerMsSyncRoutes } = await import("../ms-sync-routes");
   registerMsSyncRoutes(app);
+  const { registerQuickBooksRoutes } = await import("../quickbooks-routes");
+  registerQuickBooksRoutes(app);
+  const { registerFinanceTrustRoutes } = await import("./finance-trust-routes");
+  registerFinanceTrustRoutes(app);
 }
