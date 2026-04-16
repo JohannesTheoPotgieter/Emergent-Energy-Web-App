@@ -1239,10 +1239,7 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
         amount: row.milestoneAmount ?? null,
         candidates: invoiceCandidates,
       });
-      let qbStatus = deriveInflowsQbStatus(match.matched?.balance ?? null, !!match.matched);
-      if (match.matched?.balance !== null && match.matched?.balance !== undefined && (row.milestoneAmount ?? 0) > 0) {
-        if (Math.abs((match.matched?.balance ?? 0) - (row.milestoneAmount ?? 0)) <= 0.01) qbStatus = "Not received";
-      }
+      const qbStatus = deriveInflowsQbStatus(match.matched?.balance ?? null, !!match.matched, row.milestoneAmount ?? null);
       const qbUncertain = qbStatus !== "Unknown" && (qbIsStale || match.qbMatchConfidence === "low");
       const qbUncertainReason = qbIsStale
         ? "stale_sync"
@@ -1298,10 +1295,6 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
       lastSyncAt: qbLastSyncAt,
       uncertainCount,
       totalRows,
-      qbCallsPerRequest: {
-        quickbooksApi: 2,
-        quickbooksHealth: 1,
-      },
     };
 
     res.json({ outflows: enrichedOutflows, inflows: enrichedInflows, qbMeta });

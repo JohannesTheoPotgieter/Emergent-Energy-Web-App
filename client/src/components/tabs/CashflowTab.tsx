@@ -102,10 +102,6 @@ interface WeekDetail {
     lastSyncAt: string | null;
     uncertainCount: number;
     totalRows: number;
-    qbCallsPerRequest?: {
-      quickbooksApi: number;
-      quickbooksHealth: number;
-    };
   };
 }
 
@@ -160,8 +156,8 @@ function formatMatchType(matchType?: string): string {
   switch (matchType) {
     case "linked_txn_id":
       return "Linked QB transaction";
-    case "invoice_project_counterparty_amount":
-      return "Invoice + project/counterparty + amount";
+    case "invoice_counterparty_amount":
+      return "Invoice + counterparty + amount";
     case "invoice_amount":
       return "Invoice + amount";
     case "unmatched":

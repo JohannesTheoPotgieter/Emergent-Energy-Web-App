@@ -68,7 +68,7 @@ describe("quickbooks status matching", () => {
       amount: 1000,
       candidates: billCandidates,
     });
-    expect(deriveInflowsQbStatus(match.matched?.balance ?? null, true)).toBe("Received");
+    expect(deriveInflowsQbStatus(match.matched?.balance ?? null, true, 1000)).toBe("Received");
   });
 
   it("unmatched inflow", () => {
@@ -78,7 +78,12 @@ describe("quickbooks status matching", () => {
       candidates: billCandidates,
     });
     expect(match.matched).toBeNull();
-    expect(deriveInflowsQbStatus(null, false)).toBe("Unknown");
+    expect(deriveInflowsQbStatus(null, false, 1000)).toBe("Unknown");
+  });
+
+  it("not received inflow (balance equals amount)", () => {
+    // balance === totalAmount means nothing has been received yet
+    expect(deriveInflowsQbStatus(1000, true, 1000)).toBe("Not received");
   });
 
   it("partial payment case", () => {
