@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useReducer } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { useLocation } from "wouter";
 import { AlertTriangle, CheckCircle2, CircleOff, Sun, TicketPlus, TrendingUp } from "lucide-react";
-const OPPORTUNITY_INTAKE_VIEW_ROLES = ["PROJECT_DEVELOPER", "COO_ADMIN", "CEO_ADMIN", "CCO"] as const;
+import { OPPORTUNITY_INTAKE_VIEW_ROLES } from "@shared/roles/pd-roles";
 
 interface WorkingOpportunityRow {
   id: number;
@@ -84,6 +84,48 @@ function statusBadgeClass(status: string | null): string {
   return "bg-muted text-muted-foreground";
 }
 
+interface DialogState {
+  target: WorkingOpportunityRow | null;
+  mappingMode: MappingMode;
+  existingClientId: string;
+  existingProjectId: string;
+  newClientName: string;
+  newProjectName: string;
+  mappingWarnings: string[];
+  resolvedClientId: number | null;
+  resolvedProjectId: number | null;
+  ticketMode: "phase_template" | "custom";
+  selectedTemplateId: string;
+  templateBaseDueDate: string;
+  customTitle: string;
+  customPhase: string;
+  customDescriptionScope: string;
+  customDueDate: string;
+  customPriority: string;
+  customRequiredOutput: string;
+}
+
+const DIALOG_INITIAL: DialogState = {
+  target: null,
+  mappingMode: "existing_existing",
+  existingClientId: "",
+  existingProjectId: "",
+  newClientName: "",
+  newProjectName: "",
+  mappingWarnings: [],
+  resolvedClientId: null,
+  resolvedProjectId: null,
+  ticketMode: "phase_template",
+  selectedTemplateId: "",
+  templateBaseDueDate: "",
+  customTitle: "",
+  customPhase: "",
+  customDescriptionScope: "",
+  customDueDate: "",
+  customPriority: "Medium",
+  customRequiredOutput: "",
+};
+
 export default function OpportunitiesPage() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -93,26 +135,13 @@ export default function OpportunitiesPage() {
   const role = String(user?.role || "");
   const roleIsPdApproved = (OPPORTUNITY_INTAKE_VIEW_ROLES as readonly string[]).includes(role);
   const canView = canViewEntity && roleIsPdApproved;
-  const [mappingTarget, setMappingTarget] = useState<WorkingOpportunityRow | null>(null);
-  const [mappingMode, setMappingMode] = useState<MappingMode>("existing_existing");
-  const [existingClientId, setExistingClientId] = useState<string>("");
-  const [existingProjectId, setExistingProjectId] = useState<string>("");
-  const [newClientName, setNewClientName] = useState("");
-  const [newProjectName, setNewProjectName] = useState("");
-  const [mappingWarnings, setMappingWarnings] = useState<string[]>([]);
-  const [resolvedClientId, setResolvedClientId] = useState<number | null>(null);
-  const [resolvedProjectId, setResolvedProjectId] = useState<number | null>(null);
-  const [ticketMode, setTicketMode] = useState<"phase_template" | "custom">("phase_template");
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
-  const [templateBaseDueDate, setTemplateBaseDueDate] = useState("");
-  const [customTitle, setCustomTitle] = useState("");
-  const [customPhase, setCustomPhase] = useState("");
-  const [customDescriptionScope, setCustomDescriptionScope] = useState("");
-  const [customDueDate, setCustomDueDate] = useState("");
-  const [customPriority, setCustomPriority] = useState("Medium");
-  const [customRequiredOutput, setCustomRequiredOutput] = useState("");
 
-  const mappingResolved = resolvedClientId != null && resolvedProjectId != null;
+  const [dlg, updateDlg] = useReducer(
+    (prev: DialogState, action: Partial<DialogState> | "reset") =>
+      action === "reset" ? DIALOG_INITIAL : { ...prev, ...action },
+    DIALOG_INITIAL,
+  );
+  const mappingResolved = dlg.resolvedClientId != null && dlg.resolvedProjectId != null;
 
   const { data = [], isLoading, isError, error, refetch } = useQuery<WorkingOpportunityRow[]>({
     queryKey: ["/api/opportunities/working"],
@@ -125,50 +154,50 @@ export default function OpportunitiesPage() {
   });
 
   const { data: mappingContext, isLoading: mappingLoading } = useQuery<MappingContextResponse>({
-    queryKey: ["/api/opportunities", mappingTarget?.id, "mapping-context"],
+    queryKey: ["/api/opportunities", dlg.target?.id, "mapping-context"],
     queryFn: async () => {
-      const res = await apiRequest("GET", `/api/opportunities/${mappingTarget!.id}/mapping-context`);
+      const res = await apiRequest("GET", `/api/opportunities/${dlg.target!.id}/mapping-context`);
       if (!res.ok) throw new Error(`Failed to load mapping context (${res.status})`);
       return res.json();
     },
-    enabled: !!mappingTarget?.id,
+    enabled: !!dlg.target?.id,
   });
 
   const { data: phaseTemplates = [] } = useQuery<EngineeringPhaseTemplate[]>({
-    queryKey: ["/api/opportunities", mappingTarget?.id, "engineering-phase-templates"],
+    queryKey: ["/api/opportunities/engineering-phase-templates"],
     queryFn: async () => {
-      const res = await apiRequest("GET", `/api/opportunities/${mappingTarget!.id}/engineering-phase-templates`);
+      const res = await apiRequest("GET", "/api/opportunities/engineering-phase-templates");
       if (!res.ok) throw new Error(`Failed to load phase templates (${res.status})`);
       return res.json();
     },
-    enabled: !!mappingTarget?.id,
+    enabled: !!dlg.target?.id,
   });
 
   const resolveMappingMutation = useMutation({
     mutationFn: async () => {
-      if (!mappingTarget?.id) throw new Error("No opportunity selected");
-      const body: any = {
-        mode: mappingMode,
-        existingClientId: existingClientId ? Number(existingClientId) : undefined,
-        existingProjectId: existingProjectId ? Number(existingProjectId) : undefined,
-        newClientName: newClientName.trim() || undefined,
-        newProjectName: newProjectName.trim() || undefined,
+      if (!dlg.target?.id) throw new Error("No opportunity selected");
+      const body = {
+        mode: dlg.mappingMode,
+        existingClientId: dlg.existingClientId ? Number(dlg.existingClientId) : undefined,
+        existingProjectId: dlg.existingProjectId ? Number(dlg.existingProjectId) : undefined,
+        newClientName: dlg.newClientName.trim() || undefined,
+        newProjectName: dlg.newProjectName.trim() || undefined,
       };
-      const res = await apiRequest("POST", `/api/opportunities/${mappingTarget.id}/resolve-mapping`, body);
+      const res = await apiRequest("POST", `/api/opportunities/${dlg.target.id}/resolve-mapping`, body);
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
         const warnings = Array.isArray(payload?.warnings) ? payload.warnings : [];
-        setMappingWarnings(warnings);
+        updateDlg({ mappingWarnings: warnings });
         throw new Error(payload?.error || "Failed to resolve mapping");
       }
       return payload;
     },
-    onSuccess: (payload: any) => {
-      setResolvedClientId(payload?.client?.id || null);
-      setResolvedProjectId(payload?.project?.id || null);
-      setMappingWarnings([]);
+    onSuccess: (payload: Record<string, unknown>) => {
+      const client = payload?.client as { id: number } | undefined;
+      const project = payload?.project as { id: number } | undefined;
+      updateDlg({ resolvedClientId: client?.id ?? null, resolvedProjectId: project?.id ?? null, mappingWarnings: [] });
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({
         title: "Mapping failed",
         description: err?.message || "Unable to resolve opportunity mapping.",
@@ -179,60 +208,43 @@ export default function OpportunitiesPage() {
 
   const createEngineeringTicketsMutation = useMutation({
     mutationFn: async () => {
-      if (!mappingTarget?.id || !resolvedClientId || !resolvedProjectId) {
+      if (!dlg.target?.id || !dlg.resolvedClientId || !dlg.resolvedProjectId) {
         throw new Error("Resolve client/project mapping before creating tickets.");
       }
-      const body: any = {
-        mode: ticketMode,
-        clientId: resolvedClientId,
-        projectId: resolvedProjectId,
+      const body: Record<string, unknown> = {
+        mode: dlg.ticketMode,
+        clientId: dlg.resolvedClientId,
+        projectId: dlg.resolvedProjectId,
       };
-      if (ticketMode === "phase_template") {
-        body.phaseTemplateId = selectedTemplateId ? Number(selectedTemplateId) : undefined;
-        body.templateBaseDueDate = templateBaseDueDate || undefined;
+      if (dlg.ticketMode === "phase_template") {
+        body.phaseTemplateId = dlg.selectedTemplateId ? Number(dlg.selectedTemplateId) : undefined;
+        body.templateBaseDueDate = dlg.templateBaseDueDate || undefined;
       } else {
         body.customTicket = {
-          title: customTitle.trim(),
-          phase: customPhase.trim(),
-          descriptionScope: customDescriptionScope.trim(),
-          dueDate: customDueDate,
-          priority: customPriority,
-          requiredOutput: customRequiredOutput.trim(),
+          title: dlg.customTitle.trim(),
+          phase: dlg.customPhase.trim(),
+          descriptionScope: dlg.customDescriptionScope.trim(),
+          dueDate: dlg.customDueDate,
+          priority: dlg.customPriority,
+          requiredOutput: dlg.customRequiredOutput.trim(),
         };
       }
-      const res = await apiRequest("POST", `/api/opportunities/${mappingTarget.id}/create-engineering-tickets`, body);
+      const res = await apiRequest("POST", `/api/opportunities/${dlg.target.id}/create-engineering-tickets`, body);
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(payload?.error || "Failed to create engineering tickets");
       return payload;
     },
-    onSuccess: (payload: any) => {
+    onSuccess: (payload: Record<string, unknown>) => {
       const warnings = Array.isArray(payload?.warnings) ? payload.warnings : [];
       if (warnings.length > 0) {
-        toast({
-          title: "Tickets created with duplicate warnings",
-          description: warnings.join(" "),
-          variant: "default",
-        });
+        toast({ title: "Tickets created with duplicate warnings", description: warnings.join(" "), variant: "default" });
       } else {
-        toast({
-          title: "Engineering tickets created",
-          description: `${payload?.createdCount || 0} ticket(s) created with traceability links.`,
-        });
+        toast({ title: "Engineering tickets created", description: `${payload?.createdCount || 0} ticket(s) created with traceability links.` });
       }
-      setMappingTarget(null);
-      setResolvedClientId(null);
-      setResolvedProjectId(null);
-      setSelectedTemplateId("");
-      setTemplateBaseDueDate("");
-      setCustomTitle("");
-      setCustomPhase("");
-      setCustomDescriptionScope("");
-      setCustomDueDate("");
-      setCustomPriority("Medium");
-      setCustomRequiredOutput("");
+      updateDlg("reset");
       refetch();
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({
         title: "Engineering ticket creation failed",
         description: err?.message || "Unable to create engineering ticket(s).",
@@ -265,24 +277,15 @@ export default function OpportunitiesPage() {
   }, [mappingContext]);
 
   function openMapping(row: WorkingOpportunityRow) {
-    setMappingTarget(row);
-    setMappingWarnings([]);
-    setMappingMode("existing_existing");
-    setExistingClientId("");
-    setExistingProjectId("");
-    setNewClientName(row.orgClientName || "");
-    setNewProjectName(row.dealName || "");
-    setResolvedClientId(null);
-    setResolvedProjectId(null);
-    setTicketMode("phase_template");
-    setSelectedTemplateId("");
-    setTemplateBaseDueDate(new Date().toISOString().slice(0, 10));
-    setCustomTitle(row.dealName || "");
-    setCustomPhase("First Assessment");
-    setCustomDescriptionScope("");
-    setCustomDueDate("");
-    setCustomPriority("Medium");
-    setCustomRequiredOutput("");
+    updateDlg({
+      ...DIALOG_INITIAL,
+      target: row,
+      newClientName: row.orgClientName || "",
+      newProjectName: row.dealName || "",
+      templateBaseDueDate: new Date().toISOString().slice(0, 10),
+      customTitle: row.dealName || "",
+      customPhase: "First Assessment",
+    });
   }
 
   if (!canView) {
@@ -404,7 +407,7 @@ export default function OpportunitiesPage() {
         </div>
       )}
 
-      <Dialog open={!!mappingTarget} onOpenChange={(open) => { if (!open) { setMappingTarget(null); setResolvedClientId(null); setResolvedProjectId(null); } }}>
+      <Dialog open={!!dlg.target} onOpenChange={(open) => { if (!open) updateDlg("reset"); }}>
         <DialogContent className="max-w-xl">
           <DialogHeader>
             <DialogTitle>Create Engineering Ticket — Mapping</DialogTitle>
@@ -418,84 +421,84 @@ export default function OpportunitiesPage() {
           ) : (
             <div className="space-y-4">
               <div className="text-xs text-muted-foreground">
-                <p>Deal: <span className="font-medium text-foreground">{mappingContext?.opportunity?.dealName || mappingTarget?.dealName}</span></p>
+                <p>Deal: <span className="font-medium text-foreground">{mappingContext?.opportunity?.dealName || dlg.target?.dealName}</span></p>
                 <p>Linked client: {mappingContext?.linkedClient ? "Yes" : "No"} • Linked project: {mappingContext?.linkedProject ? "Yes" : "No"}</p>
               </div>
 
               <div className="space-y-2">
                 <Label className="text-xs">Mapping mode</Label>
                 <div className="grid gap-1 text-sm">
-                  <label className="flex items-center gap-2"><input type="radio" checked={mappingMode === "existing_existing"} onChange={() => setMappingMode("existing_existing")} /> Existing client + existing project</label>
-                  <label className="flex items-center gap-2"><input type="radio" checked={mappingMode === "existing_new"} onChange={() => setMappingMode("existing_new")} /> Existing client + create new project shell</label>
-                  <label className="flex items-center gap-2"><input type="radio" checked={mappingMode === "new_new"} onChange={() => setMappingMode("new_new")} /> Create new client + new project shell</label>
+                  <label className="flex items-center gap-2"><input type="radio" checked={dlg.mappingMode === "existing_existing"} onChange={() => updateDlg({ mappingMode: "existing_existing" })} /> Existing client + existing project</label>
+                  <label className="flex items-center gap-2"><input type="radio" checked={dlg.mappingMode === "existing_new"} onChange={() => updateDlg({ mappingMode: "existing_new" })} /> Existing client + create new project shell</label>
+                  <label className="flex items-center gap-2"><input type="radio" checked={dlg.mappingMode === "new_new"} onChange={() => updateDlg({ mappingMode: "new_new" })} /> Create new client + new project shell</label>
                 </div>
               </div>
 
-              {mappingMode !== "new_new" && (
+              {dlg.mappingMode !== "new_new" && (
                 <div className="space-y-1">
                   <Label className="text-xs">Client</Label>
-                  <select className="w-full border rounded-md h-9 px-2 text-sm" value={existingClientId} onChange={(e) => setExistingClientId(e.target.value)}>
+                  <select className="w-full border rounded-md h-9 px-2 text-sm" value={dlg.existingClientId} onChange={(e) => updateDlg({ existingClientId: e.target.value })}>
                     <option value="">Select client…</option>
                     {clientOptions.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                 </div>
               )}
 
-              {mappingMode === "existing_existing" && (
+              {dlg.mappingMode === "existing_existing" && (
                 <div className="space-y-1">
                   <Label className="text-xs">Project</Label>
-                  <select className="w-full border rounded-md h-9 px-2 text-sm" value={existingProjectId} onChange={(e) => setExistingProjectId(e.target.value)}>
+                  <select className="w-full border rounded-md h-9 px-2 text-sm" value={dlg.existingProjectId} onChange={(e) => updateDlg({ existingProjectId: e.target.value })}>
                     <option value="">Select project…</option>
                     {projectOptions.map((p) => <option key={p.id} value={p.id}>{p.projectName}</option>)}
                   </select>
                 </div>
               )}
 
-              {mappingMode === "existing_new" && (
+              {dlg.mappingMode === "existing_new" && (
                 <div className="space-y-1">
                   <Label className="text-xs">New project shell name</Label>
-                  <Input value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} placeholder="Enter project shell name" />
+                  <Input value={dlg.newProjectName} onChange={(e) => updateDlg({ newProjectName: e.target.value })} placeholder="Enter project shell name" />
                 </div>
               )}
 
-              {mappingMode === "new_new" && (
+              {dlg.mappingMode === "new_new" && (
                 <div className="grid gap-2">
                   <div className="space-y-1">
                     <Label className="text-xs">New client name</Label>
-                    <Input value={newClientName} onChange={(e) => setNewClientName(e.target.value)} placeholder="Enter client name" />
+                    <Input value={dlg.newClientName} onChange={(e) => updateDlg({ newClientName: e.target.value })} placeholder="Enter client name" />
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">New project shell name</Label>
-                    <Input value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} placeholder="Enter project shell name" />
+                    <Input value={dlg.newProjectName} onChange={(e) => updateDlg({ newProjectName: e.target.value })} placeholder="Enter project shell name" />
                   </div>
                 </div>
               )}
 
-              {mappingWarnings.length > 0 && (
+              {dlg.mappingWarnings.length > 0 && (
                 <div className="text-xs rounded border border-amber-300 bg-amber-50 p-2 text-amber-800">
-                  {mappingWarnings.map((w, i) => <p key={i}>• {w}</p>)}
+                  {dlg.mappingWarnings.map((w, i) => <p key={i}>• {w}</p>)}
                 </div>
               )}
 
               {mappingResolved && (
                 <div className="space-y-3 border-t pt-3">
                   <div className="text-xs text-muted-foreground">
-                    Mapping resolved • client #{resolvedClientId} • project #{resolvedProjectId}
+                    Mapping resolved • client #{dlg.resolvedClientId} • project #{dlg.resolvedProjectId}
                   </div>
 
                   <div className="space-y-2">
                     <Label className="text-xs">Ticket creation mode</Label>
                     <div className="grid gap-1 text-sm">
-                      <label className="flex items-center gap-2"><input type="radio" checked={ticketMode === "phase_template"} onChange={() => setTicketMode("phase_template")} /> Phase template</label>
-                      <label className="flex items-center gap-2"><input type="radio" checked={ticketMode === "custom"} onChange={() => setTicketMode("custom")} /> Custom ticket</label>
+                      <label className="flex items-center gap-2"><input type="radio" checked={dlg.ticketMode === "phase_template"} onChange={() => updateDlg({ ticketMode: "phase_template" })} /> Phase template</label>
+                      <label className="flex items-center gap-2"><input type="radio" checked={dlg.ticketMode === "custom"} onChange={() => updateDlg({ ticketMode: "custom" })} /> Custom ticket</label>
                     </div>
                   </div>
 
-                  {ticketMode === "phase_template" ? (
+                  {dlg.ticketMode === "phase_template" ? (
                     <div className="grid gap-2">
                       <div className="space-y-1">
                         <Label className="text-xs">Predefined phase template</Label>
-                        <select className="w-full border rounded-md h-9 px-2 text-sm" value={selectedTemplateId} onChange={(e) => setSelectedTemplateId(e.target.value)}>
+                        <select className="w-full border rounded-md h-9 px-2 text-sm" value={dlg.selectedTemplateId} onChange={(e) => updateDlg({ selectedTemplateId: e.target.value })}>
                           <option value="">Select template…</option>
                           {phaseTemplates.map((t) => (
                             <option key={t.id} value={t.id}>
@@ -506,38 +509,38 @@ export default function OpportunitiesPage() {
                       </div>
                       <div className="space-y-1">
                         <Label className="text-xs">Template base due date</Label>
-                        <Input type="date" value={templateBaseDueDate} onChange={(e) => setTemplateBaseDueDate(e.target.value)} />
+                        <Input type="date" value={dlg.templateBaseDueDate} onChange={(e) => updateDlg({ templateBaseDueDate: e.target.value })} />
                       </div>
                     </div>
                   ) : (
                     <div className="grid gap-2">
                       <div className="space-y-1">
                         <Label className="text-xs">Title</Label>
-                        <Input value={customTitle} onChange={(e) => setCustomTitle(e.target.value)} />
+                        <Input value={dlg.customTitle} onChange={(e) => updateDlg({ customTitle: e.target.value })} />
                       </div>
                       <div className="space-y-1">
                         <Label className="text-xs">Phase</Label>
-                        <Input value={customPhase} onChange={(e) => setCustomPhase(e.target.value)} placeholder="e.g. First Assessment" />
+                        <Input value={dlg.customPhase} onChange={(e) => updateDlg({ customPhase: e.target.value })} placeholder="e.g. First Assessment" />
                       </div>
                       <div className="space-y-1">
                         <Label className="text-xs">Description / Scope</Label>
-                        <Input value={customDescriptionScope} onChange={(e) => setCustomDescriptionScope(e.target.value)} />
+                        <Input value={dlg.customDescriptionScope} onChange={(e) => updateDlg({ customDescriptionScope: e.target.value })} />
                       </div>
                       <div className="grid grid-cols-2 gap-2">
                         <div className="space-y-1">
                           <Label className="text-xs">Due date</Label>
-                          <Input type="date" value={customDueDate} onChange={(e) => setCustomDueDate(e.target.value)} />
+                          <Input type="date" value={dlg.customDueDate} onChange={(e) => updateDlg({ customDueDate: e.target.value })} />
                         </div>
                         <div className="space-y-1">
                           <Label className="text-xs">Priority</Label>
-                          <select className="w-full border rounded-md h-9 px-2 text-sm" value={customPriority} onChange={(e) => setCustomPriority(e.target.value)}>
+                          <select className="w-full border rounded-md h-9 px-2 text-sm" value={dlg.customPriority} onChange={(e) => updateDlg({ customPriority: e.target.value })}>
                             {["Critical", "High", "Medium", "Low"].map((p) => <option key={p} value={p}>{p}</option>)}
                           </select>
                         </div>
                       </div>
                       <div className="space-y-1">
                         <Label className="text-xs">Required output</Label>
-                        <Input value={customRequiredOutput} onChange={(e) => setCustomRequiredOutput(e.target.value)} />
+                        <Input value={dlg.customRequiredOutput} onChange={(e) => updateDlg({ customRequiredOutput: e.target.value })} />
                       </div>
                     </div>
                   )}
@@ -547,14 +550,14 @@ export default function OpportunitiesPage() {
           )}
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setMappingTarget(null)}>Cancel</Button>
+            <Button variant="outline" onClick={() => updateDlg("reset")}>Cancel</Button>
             {!mappingResolved ? (
               <Button onClick={() => resolveMappingMutation.mutate()} disabled={resolveMappingMutation.isPending || mappingLoading}>
                 {resolveMappingMutation.isPending ? "Resolving…" : "Resolve Mapping"}
               </Button>
             ) : (
               <Button onClick={() => createEngineeringTicketsMutation.mutate()} disabled={createEngineeringTicketsMutation.isPending}>
-                {createEngineeringTicketsMutation.isPending ? "Creating…" : ticketMode === "phase_template" ? "Generate Template Ticket(s)" : "Create Custom Ticket"}
+                {createEngineeringTicketsMutation.isPending ? "Creating…" : dlg.ticketMode === "phase_template" ? "Generate Template Ticket(s)" : "Create Custom Ticket"}
               </Button>
             )}
             {mappingResolved && (
@@ -562,9 +565,9 @@ export default function OpportunitiesPage() {
                 variant="secondary"
                 onClick={() => {
                   const q = new URLSearchParams({
-                    opportunityId: String(mappingTarget!.id),
-                    clientId: String(resolvedClientId),
-                    projectId: String(resolvedProjectId),
+                    opportunityId: String(dlg.target!.id),
+                    clientId: String(dlg.resolvedClientId),
+                    projectId: String(dlg.resolvedProjectId),
                   });
                   navigate(`/pd/tickets/create?${q.toString()}`);
                 }}
