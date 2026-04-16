@@ -8218,3 +8218,135 @@ CREATE TABLE IF NOT EXISTS cos_period_locks (
 );
 CREATE INDEX IF NOT EXISTS idx_cos_period_locks_period ON cos_period_locks(period_month);
 CREATE INDEX IF NOT EXISTS idx_cos_period_locks_active ON cos_period_locks(period_month) WHERE unlocked_at IS NULL;
+
+-- ═══════════════════════════════════════════════════════════════
+-- Missing columns detected by schema audit (2026-04-16)
+-- ═══════════════════════════════════════════════════════════════
+DO $$ BEGIN
+  -- eng_stage_templates
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='eng_stage_templates') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='eng_stage_templates' AND column_name='definition_of_done') THEN
+    ALTER TABLE "eng_stage_templates" ADD COLUMN "definition_of_done" TEXT[];
+  END IF;
+
+  -- project_eng_stages
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_eng_stages') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_eng_stages' AND column_name='ifc_issued_at') THEN
+    ALTER TABLE "project_eng_stages" ADD COLUMN "ifc_issued_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_eng_stages') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_eng_stages' AND column_name='handover_ready_at') THEN
+    ALTER TABLE "project_eng_stages" ADD COLUMN "handover_ready_at" TIMESTAMP;
+  END IF;
+
+  -- project_eng_deliverables
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_eng_deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_eng_deliverables' AND column_name='released_for') THEN
+    ALTER TABLE "project_eng_deliverables" ADD COLUMN "released_for" TEXT NOT NULL DEFAULT 'draft';
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_eng_deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_eng_deliverables' AND column_name='issued_for_construction_at') THEN
+    ALTER TABLE "project_eng_deliverables" ADD COLUMN "issued_for_construction_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_eng_deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_eng_deliverables' AND column_name='issued_for_construction_by') THEN
+    ALTER TABLE "project_eng_deliverables" ADD COLUMN "issued_for_construction_by" INTEGER;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_eng_deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_eng_deliverables' AND column_name='as_built_at') THEN
+    ALTER TABLE "project_eng_deliverables" ADD COLUMN "as_built_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_eng_deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_eng_deliverables' AND column_name='as_built_by') THEN
+    ALTER TABLE "project_eng_deliverables" ADD COLUMN "as_built_by" INTEGER;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_eng_deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_eng_deliverables' AND column_name='superseded_by_id') THEN
+    ALTER TABLE "project_eng_deliverables" ADD COLUMN "superseded_by_id" INTEGER;
+  END IF;
+
+  -- drawing_register
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='drawing_register') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='drawing_register' AND column_name='issued_for_construction_at') THEN
+    ALTER TABLE "drawing_register" ADD COLUMN "issued_for_construction_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='drawing_register') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='drawing_register' AND column_name='issued_for_construction_by') THEN
+    ALTER TABLE "drawing_register" ADD COLUMN "issued_for_construction_by" INTEGER;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='drawing_register') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='drawing_register' AND column_name='as_built_at') THEN
+    ALTER TABLE "drawing_register" ADD COLUMN "as_built_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='drawing_register') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='drawing_register' AND column_name='as_built_by') THEN
+    ALTER TABLE "drawing_register" ADD COLUMN "as_built_by" INTEGER;
+  END IF;
+
+  -- cashflow_points
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='cashflow_points') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='cashflow_points' AND column_name='project_name') THEN
+    ALTER TABLE "cashflow_points" ADD COLUMN "project_name" TEXT;
+  END IF;
+
+  -- invoice_captures
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='invoice_captures') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='invoice_captures' AND column_name='qb_sync_status') THEN
+    ALTER TABLE "invoice_captures" ADD COLUMN "qb_sync_status" TEXT DEFAULT 'not_synced';
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='invoice_captures') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='invoice_captures' AND column_name='document_drive_id') THEN
+    ALTER TABLE "invoice_captures" ADD COLUMN "document_drive_id" TEXT;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='invoice_captures') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='invoice_captures' AND column_name='document_item_id') THEN
+    ALTER TABLE "invoice_captures" ADD COLUMN "document_item_id" TEXT;
+  END IF;
+
+  -- purchase_orders
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='purchase_orders') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='purchase_orders' AND column_name='idempotency_key') THEN
+    ALTER TABLE "purchase_orders" ADD COLUMN "idempotency_key" TEXT;
+  END IF;
+
+  -- po_review_assignments
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='po_review_assignments') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='po_review_assignments' AND column_name='delegated_to_user_id') THEN
+    ALTER TABLE "po_review_assignments" ADD COLUMN "delegated_to_user_id" INTEGER;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='po_review_assignments') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='po_review_assignments' AND column_name='delegated_at') THEN
+    ALTER TABLE "po_review_assignments" ADD COLUMN "delegated_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='po_review_assignments') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='po_review_assignments' AND column_name='delegation_reason') THEN
+    ALTER TABLE "po_review_assignments" ADD COLUMN "delegation_reason" TEXT;
+  END IF;
+
+  -- sseg_items
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='sseg_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='sseg_items' AND column_name='techsitter_confirmed') THEN
+    ALTER TABLE "sseg_items" ADD COLUMN "techsitter_confirmed" BOOLEAN DEFAULT FALSE;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='sseg_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='sseg_items' AND column_name='metering_confirmed') THEN
+    ALTER TABLE "sseg_items" ADD COLUMN "metering_confirmed" BOOLEAN DEFAULT FALSE;
+  END IF;
+
+  -- opportunities
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='opportunities') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='opportunities' AND column_name='source') THEN
+    ALTER TABLE "opportunities" ADD COLUMN "source" TEXT NOT NULL DEFAULT 'internal';
+  END IF;
+
+  -- portfolio_rollout_plans
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='portfolio_rollout_plans') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='portfolio_rollout_plans' AND column_name='deleted_by') THEN
+    ALTER TABLE "portfolio_rollout_plans" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+
+  -- project_client_commitments
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_client_commitments') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_client_commitments' AND column_name='migrated_from_legacy') THEN
+    ALTER TABLE "project_client_commitments" ADD COLUMN "migrated_from_legacy" BOOLEAN NOT NULL DEFAULT FALSE;
+  END IF;
+
+  -- project_client_updates
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_client_updates') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_client_updates' AND column_name='migrated_from_legacy') THEN
+    ALTER TABLE "project_client_updates" ADD COLUMN "migrated_from_legacy" BOOLEAN NOT NULL DEFAULT FALSE;
+  END IF;
+
+  -- stage_checklist_templates
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='stage_checklist_templates') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='stage_checklist_templates' AND column_name='version') THEN
+    ALTER TABLE "stage_checklist_templates" ADD COLUMN "version" INTEGER NOT NULL DEFAULT 1;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='stage_checklist_templates') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='stage_checklist_templates' AND column_name='is_current_version') THEN
+    ALTER TABLE "stage_checklist_templates" ADD COLUMN "is_current_version" BOOLEAN NOT NULL DEFAULT TRUE;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='stage_checklist_templates') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='stage_checklist_templates' AND column_name='is_system_default') THEN
+    ALTER TABLE "stage_checklist_templates" ADD COLUMN "is_system_default" BOOLEAN NOT NULL DEFAULT FALSE;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='stage_checklist_templates') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='stage_checklist_templates' AND column_name='edited_by') THEN
+    ALTER TABLE "stage_checklist_templates" ADD COLUMN "edited_by" INTEGER;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='stage_checklist_templates') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='stage_checklist_templates' AND column_name='edited_at') THEN
+    ALTER TABLE "stage_checklist_templates" ADD COLUMN "edited_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='stage_checklist_templates') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='stage_checklist_templates' AND column_name='edit_reason') THEN
+    ALTER TABLE "stage_checklist_templates" ADD COLUMN "edit_reason" TEXT;
+  END IF;
+END $$;
