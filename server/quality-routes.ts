@@ -1,6 +1,6 @@
 import { Express, NextFunction, Request, Response } from "express";
 import { db } from "./db";
-import { eq, and, desc, sql, inArray } from "drizzle-orm";
+import { eq, and, desc, sql, inArray, isNull } from "drizzle-orm";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -26,6 +26,10 @@ import {
   getQualityHandoverReasons,
   isHandoverQualityBlocked,
   isQualityStatusRequired,
+  QUALITY_ITEM_STATUSES,
+  isValidQmStatusTransition,
+  getApprovalBlockReason,
+  evaluateChecklistHandoverReadiness,
 } from "@shared/quality-governance";
 import { getProjectLinkedItems } from "./project-linking-service";
 import { computePdPmSubmitBlockers, getProjectDevelopmentWorkspace } from "./services/project-development-workspace-service";
@@ -229,7 +233,7 @@ async function loadProjectQualityGovernanceContext(projectName: string, userId: 
   const phaseMap = new Map<number, QcTemplatePhaseRow>(phases.map((phase) => [phase.id, phase]));
 
   const evidence: QcItemEvidenceRow[] = itemInstances.length > 0
-    ? await db.select().from(qcItemEvidence).where(inArray(qcItemEvidence.itemInstanceId, itemInstances.map((item) => item.id)))
+    ? await db.select().from(qcItemEvidence).where(and(inArray(qcItemEvidence.itemInstanceId, itemInstances.map((item) => item.id)), isNull(qcItemEvidence.deletedAt)))
     : [];
   const riskAnswers = await db.select().from(qcRiskAnswer).where(eq(qcRiskAnswer.checklistId, checklist.id));
   const templateRiskQuestionIds = uniqueNumberList(riskAnswers.map((answer: any) => answer.templateRiskQuestionId));
@@ -628,7 +632,7 @@ export function registerQualityRoutes(app: Express) {
       const riskAnswers = await db.select().from(qcRiskAnswer).where(eq(qcRiskAnswer.checklistId, checklist.id));
 
       const itemIds = itemInstances.map((i: any) => i.id);
-      const evidence = itemIds.length ? await db.select().from(qcItemEvidence).where(inArray(qcItemEvidence.itemInstanceId, itemIds)) : [];
+      const evidence = itemIds.length ? await db.select().from(qcItemEvidence).where(and(inArray(qcItemEvidence.itemInstanceId, itemIds), isNull(qcItemEvidence.deletedAt))) : [];
       const assignmentMap = await getAssignmentsForEntities("quality_item", itemIds, "ASSIGNEE");
 
       const templateId = checklist.templateId;
@@ -684,17 +688,24 @@ export function registerQualityRoutes(app: Express) {
         assigneeId,
       } = req.body;
 
-      const ALLOWED_QM_STATUSES = ["pending", "pass", "fail", "review", "na"];
-      if (qmStatus !== undefined && !ALLOWED_QM_STATUSES.includes(qmStatus)) {
-        return res.status(400).json({ error: "invalid_input", message: `qmStatus must be one of: ${ALLOWED_QM_STATUSES.join(', ')}` });
+      if (qmStatus !== undefined && !(QUALITY_ITEM_STATUSES as readonly string[]).includes(qmStatus)) {
+        return res.status(400).json({ error: "invalid_input", message: `qmStatus must be one of: ${QUALITY_ITEM_STATUSES.join(', ')}` });
       }
 
       if (allowedWorkingDays !== undefined && (typeof allowedWorkingDays !== 'number' || allowedWorkingDays < 0)) {
         return res.status(400).json({ error: "invalid_input", message: "allowedWorkingDays must be a non-negative number" });
       }
 
+      const [existing] = await db.select().from(qcItemInstance).where(eq(qcItemInstance.id, itemId));
+
+      if (qmStatus !== undefined && existing) {
+        const currentStatus = existing.qmStatus || "not_started";
+        if (qmStatus !== currentStatus && !isValidQmStatusTransition(currentStatus, qmStatus)) {
+          return res.status(400).json({ error: "invalid_transition", message: `Cannot transition from '${currentStatus}' to '${qmStatus}'` });
+        }
+      }
+
       if (qmStatus === "pass") {
-        const [existing] = await db.select().from(qcItemInstance).where(eq(qcItemInstance.id, itemId));
         if (existing && (existing.qmStatus === "review" || existing.qmStatus === "fail")) {
           const role = getUserRole(req);
           const isQmManager = isAdminRole(role) || role === "quality_manager" || role === "QUALITY_MANAGER";
@@ -717,6 +728,23 @@ export function registerQualityRoutes(app: Express) {
       if (qmStatus !== undefined) {
         updates.qmStatus = qmStatus;
         if (qmStatus === "pass") {
+          // Evidence-required gate: prevent pass when required evidence is missing
+          if (existing) {
+            const [tmpl] = await db.select().from(qcTemplateItem).where(eq(qcTemplateItem.id, existing.templateItemId));
+            if (tmpl?.isEvidenceRequired) {
+              const evidenceRows = await db.select().from(qcItemEvidence).where(
+                and(eq(qcItemEvidence.itemInstanceId, itemId), isNull(qcItemEvidence.deletedAt))
+              );
+              const blockReason = getApprovalBlockReason({
+                isApplicable: existing.isApplicable,
+                isEvidenceRequired: true,
+                evidenceCount: evidenceRows.length,
+              });
+              if (blockReason) {
+                return res.status(400).json({ error: "evidence_required", message: blockReason });
+              }
+            }
+          }
           updates.approved = true;
           updates.isApplicable = true;
           updates.approvedByUserId = getUser(req).id;
@@ -794,6 +822,24 @@ export function registerQualityRoutes(app: Express) {
           const isQmManager = isAdminRole(role) || role === "quality_manager" || role === "QUALITY_MANAGER";
           if (!isQmManager) {
             return res.status(403).json({ error: "forbidden", message: "Only QM Manager can approve items in Review or Failed status" });
+          }
+        }
+
+        // Evidence-required gate: prevent approval when required evidence is missing
+        if (existing) {
+          const [tmpl] = await db.select().from(qcTemplateItem).where(eq(qcTemplateItem.id, existing.templateItemId));
+          if (tmpl?.isEvidenceRequired) {
+            const evidenceRows = await db.select().from(qcItemEvidence).where(
+              and(eq(qcItemEvidence.itemInstanceId, itemId), isNull(qcItemEvidence.deletedAt))
+            );
+            const blockReason = getApprovalBlockReason({
+              isApplicable: existing.isApplicable,
+              isEvidenceRequired: true,
+              evidenceCount: evidenceRows.length,
+            });
+            if (blockReason) {
+              return res.status(400).json({ error: "evidence_required", message: blockReason });
+            }
           }
         }
       }
@@ -974,7 +1020,7 @@ export function registerQualityRoutes(app: Express) {
 
   app.delete("/api/quality/evidence/:evidenceId", requireAuth, requirePermission("quality", "delete"), async (req, res) => {
     try {
-      await db.update(qcItemEvidence).set({ deletedAt: new Date(), deletedBy: req.user?.id }).where(eq(qcItemEvidence.id, parseInt(String(req.params.evidenceId), 10))).returning();
+      await db.update(qcItemEvidence).set({ deletedAt: new Date(), deletedBy: getUser(req).id }).where(eq(qcItemEvidence.id, parseInt(String(req.params.evidenceId), 10))).returning();
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(req.params.evidenceId), action: "delete", changesJson: { description: "Evidence deleted" } });
       res.json({ success: true });
     } catch (err: unknown) {
@@ -1326,7 +1372,7 @@ export function registerQualityRoutes(app: Express) {
       const groupMap = new Map<number, QcTemplateGroupRow>(groups.map((group) => [group.id, group]));
       const phases: QcTemplatePhaseRow[] = await db.select().from(qcTemplatePhase).where(eq(qcTemplatePhase.templateId, checklist.templateId));
       const evidenceRows: QcItemEvidenceRow[] = itemInstances.length > 0
-        ? await db.select().from(qcItemEvidence).where(inArray(qcItemEvidence.itemInstanceId, itemInstances.map((item: any) => item.id)))
+        ? await db.select().from(qcItemEvidence).where(and(inArray(qcItemEvidence.itemInstanceId, itemInstances.map((item: any) => item.id)), isNull(qcItemEvidence.deletedAt)))
         : [];
       const evidenceCountMap = new Map<number, number>();
       for (const evidence of evidenceRows) {
@@ -1489,6 +1535,21 @@ export function registerQualityRoutes(app: Express) {
           taskContext: item.taskContext,
           qualityContext: item.qualityContext,
         })),
+        checklistReadiness: evaluateChecklistHandoverReadiness({
+          items: context.governanceItems.map((item: any) => ({
+            qmStatus: item.qmStatus,
+            approved: item.approved,
+            isApplicable: item.isApplicable,
+            endDate: item.endDate,
+            scheduledDate: item.scheduledDate,
+            approvalComment: item.approvalComment,
+            isEvidenceRequired: item.isEvidenceRequired,
+            evidenceCount: item.evidenceCount,
+          })),
+          itemNames: context.governanceItems.map((item: any) => item.itemName),
+          warnings: context.warnings,
+          riskAnswers: context.riskSummary.exposures.triggeredRiskCount > 0 ? undefined : [],
+        }),
       });
     } catch (err: unknown) {
       console.error("[Quality] workspace error:", err);
@@ -1544,7 +1605,7 @@ export function registerQualityRoutes(app: Express) {
 
       const itemInstanceIds = filtered.map((i: any) => i.id);
       const allEvidence: QcItemEvidenceRow[] = itemInstanceIds.length
-        ? await db.select().from(qcItemEvidence).where(inArray(qcItemEvidence.itemInstanceId, itemInstanceIds))
+        ? await db.select().from(qcItemEvidence).where(and(inArray(qcItemEvidence.itemInstanceId, itemInstanceIds), isNull(qcItemEvidence.deletedAt)))
         : [];
       const evidenceCountMap = new Map<number, number>();
       for (const ev of allEvidence) {
@@ -1704,7 +1765,7 @@ export function registerQualityRoutes(app: Express) {
         : [];
       const groupMap = new Map<number, QcTemplateGroupRow>(groups.map((group) => [group.id, group]));
       const evidenceRows: QcItemEvidenceRow[] = allItems.length > 0
-        ? await db.select().from(qcItemEvidence).where(inArray(qcItemEvidence.itemInstanceId, allItems.map((item: any) => item.id)))
+        ? await db.select().from(qcItemEvidence).where(and(inArray(qcItemEvidence.itemInstanceId, allItems.map((item: any) => item.id)), isNull(qcItemEvidence.deletedAt)))
         : [];
       const evidenceCountMap = new Map<number, number>();
       for (const evidence of evidenceRows) {
@@ -1893,7 +1954,7 @@ export function registerQualityRoutes(app: Express) {
       const templateItemMap = new Map<number, QcTemplateItemRow>(templateItems.map((item: any) => [item.id, item]));
 
       const evidenceRows: QcItemEvidenceRow[] = allItems.length > 0
-        ? await db.select().from(qcItemEvidence).where(inArray(qcItemEvidence.itemInstanceId, allItems.map((item: any) => item.id)))
+        ? await db.select().from(qcItemEvidence).where(and(inArray(qcItemEvidence.itemInstanceId, allItems.map((item: any) => item.id)), isNull(qcItemEvidence.deletedAt)))
         : [];
       const evidenceCountMap = new Map<number, number>();
       for (const evidence of evidenceRows) {
@@ -2333,7 +2394,7 @@ export async function recalculateWarnings(projectName: string): Promise<number> 
     }
 
     if (item.approved && tmpl?.isEvidenceRequired) {
-      const evidence = await db.select().from(qcItemEvidence).where(eq(qcItemEvidence.itemInstanceId, item.id));
+      const evidence = await db.select().from(qcItemEvidence).where(and(eq(qcItemEvidence.itemInstanceId, item.id), isNull(qcItemEvidence.deletedAt)));
       if (!evidence.length) {
         newWarnings.push({
           projectName, severity: "High", warningType: "missing_evidence",

@@ -46,4 +46,44 @@ describe("quality governance execution surfaces", () => {
     expect(linkingService).toContain("linkedQualityItemInstanceId");
     expect(myWorkLinks).toContain("Open linked quality item");
   });
+
+  it("exports canonical status constants and governance functions from shared/quality-governance.ts", () => {
+    const governance = read("shared/quality-governance.ts");
+
+    expect(governance).toContain("QUALITY_ITEM_STATUSES");
+    expect(governance).toContain("VALID_QM_STATUS_TRANSITIONS");
+    expect(governance).toContain("isValidQmStatusTransition");
+    expect(governance).toContain("isQualityItemComplete");
+    expect(governance).toContain("getApprovalBlockReason");
+    expect(governance).toContain("evaluateChecklistHandoverReadiness");
+    expect(governance).toContain("QualityChecklistReadiness");
+  });
+
+  it("uses canonical statuses and evidence filtering in quality routes", () => {
+    const routes = read("server/quality-routes.ts");
+
+    // Evidence queries filter by deletedAt
+    expect(routes).toContain("isNull(qcItemEvidence.deletedAt)");
+    // Uses canonical status constants instead of hardcoded array
+    expect(routes).toContain("QUALITY_ITEM_STATUSES");
+    // Evidence-required gate on approval
+    expect(routes).toContain("evidence_required");
+    expect(routes).toContain("getApprovalBlockReason");
+    // Status transition validation
+    expect(routes).toContain("isValidQmStatusTransition");
+    // Workspace includes checklist readiness
+    expect(routes).toContain("checklistReadiness");
+  });
+
+  it("has soft-delete columns on qcItemEvidence schema", () => {
+    const schema = read("shared/schema/quality.ts");
+
+    // qcItemEvidence must have deletedAt and deletedBy
+    const evidenceTableStart = schema.indexOf('qcItemEvidence = pgTable("qc_item_evidence"');
+    expect(evidenceTableStart).toBeGreaterThan(-1);
+    const evidenceTableEnd = schema.indexOf("});", evidenceTableStart);
+    const evidenceTableDef = schema.slice(evidenceTableStart, evidenceTableEnd + 3);
+    expect(evidenceTableDef).toContain("deleted_at");
+    expect(evidenceTableDef).toContain("deleted_by");
+  });
 });
