@@ -55,6 +55,24 @@ async function getEffectiveVisibilityConfig(userId: number | undefined, role: st
 const engineeringRequestTypesSet = new Set<string>(ENGINEERING_REQUEST_TYPES as readonly string[]);
 
 /**
+ * Return today's date as a YYYY-MM-DD string in Africa/Johannesburg
+ * (SAST / UTC+2, no DST). The PD dashboard compares this value to
+ * `pd_tickets.due_date` which is stored as a calendar-day string. Using
+ * the raw UTC date (`new Date().toISOString().split("T")[0]`) produced a
+ * two-hour false-negative window every night between 00:00 and 02:00
+ * SAST, during which tickets due "today" and due "yesterday" were not
+ * correctly classified as overdue/upcoming. This helper eliminates that
+ * drift without pulling in a full timezone library.
+ */
+const SAST_OFFSET_MS = 2 * 60 * 60 * 1000;
+function todaySast(): string {
+  return new Date(Date.now() + SAST_OFFSET_MS).toISOString().split("T")[0];
+}
+function sastDateNDaysAgo(days: number): string {
+  return new Date(Date.now() - days * 86400000 + SAST_OFFSET_MS).toISOString().split("T")[0];
+}
+
+/**
  * Filter an array of PD ticket rows by the requesting user's role and
  * the configurable pdVisibilityConfig settings.
  *
@@ -657,7 +675,7 @@ export function registerPdRoutes(app: Express) {
 
       const allTicketsRaw = await db.select().from(pdTickets);
       const allTickets = await filterTicketsByRole(allTicketsRaw, user, role);
-      const today = new Date().toISOString().split("T")[0];
+      const today = todaySast();
 
       const total = allTickets.length;
       const active = allTickets.filter(t => t.status === "In Progress" || t.status === "Draft").length;
@@ -718,10 +736,10 @@ export function registerPdRoutes(app: Express) {
         .groupBy(workItems.pdTicketId);
       const taskCountMap: Map<any, any> = new Map(taskCountRows.map((r: any) => [r.pdTicketId!, { total: r.total, completed: r.completed }]));
 
-      const today = new Date().toISOString().split("T")[0];
-      const oneWeekAgo = new Date(Date.now() - 7 * 86400000).toISOString().split("T")[0];
-      const twoWeeksAgo = new Date(Date.now() - 14 * 86400000).toISOString().split("T")[0];
-      const oneMonthAgo = new Date(Date.now() - 30 * 86400000).toISOString().split("T")[0];
+      const today = todaySast();
+      const oneWeekAgo = sastDateNDaysAgo(7);
+      const twoWeeksAgo = sastDateNDaysAgo(14);
+      const oneMonthAgo = sastDateNDaysAgo(30);
 
       // By ticket status
       const byStatus: Record<string, { count: number; tickets: any[] }> = {};
@@ -818,7 +836,13 @@ export function registerPdRoutes(app: Express) {
 
   app.get("/api/pd/users", requireAuth, async (_req: Request, res: Response) => {
     try {
-      const allUsers = await db.select({ id: users.id, name: users.name, role: (users as any).companyRole })
+      // NOTE: the `users` table exposes its company role on the `role`
+      // column (text). A prior version of this read used
+      // `(users as any).companyRole`, which is NOT a column on the table
+      // — the alias resolved to `undefined` and every user came back
+      // with `role: null`. The PD ticket designer/developer pickers
+      // filter by role, so that bug silently emptied those dropdowns.
+      const allUsers = await db.select({ id: users.id, name: users.name, role: users.role })
         .from(users)
         .orderBy(asc(users.name));
       res.json(allUsers);
@@ -870,8 +894,8 @@ export function registerPdRoutes(app: Express) {
         { label: "Q4", start: new Date(`${fy}-06-01`), end: new Date(`${fy}-08-31`) },
       ];
 
-      const currentMonth = now.toISOString().slice(0, 7); // YYYY-MM
-      const today = now.toISOString().split("T")[0];
+      const today = todaySast();
+      const currentMonth = today.slice(0, 7); // YYYY-MM (SAST)
 
       // ===== DATA FETCH =====
       const allTickets = await db.select().from(pdTickets);
@@ -936,8 +960,9 @@ export function registerPdRoutes(app: Express) {
       // Source: `pdTickets` table (NOT mixed with opportunities).
 
       /** KPI: Tickets created this month. Count of pd_tickets with
-       *  createdAt in the current calendar month. */
-      const thisMonthTickets = fyTickets.filter((t: any) => t.createdAt.toISOString().slice(0, 7) === currentMonth);
+       *  createdAt in the current calendar month (SAST). */
+      const toSastYm = (d: Date) => new Date(d.getTime() + SAST_OFFSET_MS).toISOString().slice(0, 7);
+      const thisMonthTickets = fyTickets.filter((t: any) => toSastYm(t.createdAt) === currentMonth);
 
       /** KPI: Tickets completed in FY. Count of pd_tickets with
        *  status="Completed" and createdAt within the FY window. */
@@ -945,7 +970,7 @@ export function registerPdRoutes(app: Express) {
 
       /** KPI: Tickets completed this month. Subset of completedFy where
        *  updatedAt is in the current calendar month. */
-      const completedThisMonth = completedFy.filter((t: any) => t.updatedAt.toISOString().slice(0, 7) === currentMonth);
+      const completedThisMonth = completedFy.filter((t: any) => toSastYm(t.updatedAt) === currentMonth);
 
       /** KPI: Average cycle time by request type (days). For completed
        *  FY tickets, the number of days between createdAt and updatedAt,
@@ -1041,8 +1066,13 @@ export function registerPdRoutes(app: Express) {
       }
 
       // --- Cross-functional demand ---
-      const engineeringTypes = new Set(["Feasibility Study", "Design Review", "IFC Planning", "Grid Application", "Battery Assessment", "Site Assessment", "Full EPC"]);
-      const engineeringTickets = allTickets.filter((t: any) => engineeringTypes.has(t.requestType) && t.status !== "Cancelled").length;
+      // Use the shared engineering request-type set (already built at the
+      // top of this file from `ENGINEERING_REQUEST_TYPES`) instead of
+      // hand-inlining the list here — the hand-inlined copy had already
+      // drifted from the source constant.
+      const engineeringTickets = allTickets.filter(
+        (t: any) => engineeringRequestTypesSet.has(t.requestType) && t.status !== "Cancelled",
+      ).length;
 
       // W2: Surface Pipedrive sync freshness in the commercial funnel report
       // so users see a warning when CRM data is stale.

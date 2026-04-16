@@ -12,7 +12,7 @@ import { storage } from "./storage";
 import { computePdPmSubmitBlockers, getProjectDevelopmentWorkspace } from "./services/project-development-workspace-service";
 import { requirePermission } from "./permission-middleware";
 import { notifyHandoverSubmitted, notifyHandoverAccepted, notifyHandoverRejected } from "./services/notification-service";
-import { PM_REVIEW_ROLES, canReviewHandover } from "@shared/roles/pd-roles";
+import { PM_REVIEW_ROLES } from "@shared/roles/pd-roles";
 import { z } from "zod";
 import { jwtAuth, requireAuth } from "./auth-context";
 import { requireAdmin } from "./middleware/requireAdmin";
@@ -32,20 +32,11 @@ const deliverablesSchema = z.object({
 }).passthrough();
 const PD_PM_HANDOVER_GATE_ID = "PD_PM_HANDOVER";
 
-/** @deprecated Used only by legacy gate management routes. Migrate to Drizzle query builder. */
-function escapeSqlText(value: unknown): string {
-  if (value === null || value === undefined) return "NULL";
-  return `'${String(value).replace(/'/g, "''")}'`;
-}
-
-function escapeSqlJson(value: unknown): string {
-  return `'${JSON.stringify(value ?? {}).replace(/'/g, "''")}'::jsonb`;
-}
-
-function escapeSqlNumber(value: unknown): string {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? String(parsed) : "NULL";
-}
+// Removed legacy `escapeSqlText`/`escapeSqlJson`/`escapeSqlNumber` helpers.
+// They were string-concat SQL escapers left over from the pre-Drizzle era,
+// marked deprecated, and not referenced anywhere in this file. Keeping
+// them around risked someone reaching for them instead of the parameterized
+// Drizzle builder.
 
 function normalizeDeliverables(value: unknown) {
   if (!value) return {};
@@ -658,7 +649,12 @@ export function registerHandoverRoutes(app: Express) {
       const submitRows = await db.select().from(projectPdPmHandover).where(eq(projectPdPmHandover.projectId, projectId)).limit(1);
       const handover = normalizeHandoverRow(submitRows[0]);
       const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
-      if (!project || !handover) return res.status(400).json({ error: "Could not submit handover. Likely reason: no draft exists. Save a draft and retry." });
+      if (!project) {
+        return res.status(404).json({ error: "Project not found." });
+      }
+      if (!handover) {
+        return res.status(400).json({ error: "Could not submit handover. Likely reason: no draft exists. Save a draft and retry." });
+      }
       const workspace = await getProjectDevelopmentWorkspace({
         projectId,
         projectName: project.projectName,
@@ -748,7 +744,7 @@ export function registerHandoverRoutes(app: Express) {
           evidenceThreshold: evidence.threshold,
           readinessPct,
           trafficLight,
-          readinessStatus: handover.handover_readiness_status || null,
+          readinessStatus: handover.handoverReadinessStatus || null,
           integrationFreshness,
         },
       });
@@ -767,7 +763,7 @@ export function registerHandoverRoutes(app: Express) {
         entityId: String(projectId),
         action: "submitted",
         projectName: project.projectName,
-        changesJson: { submittedBy: user?.name || "Unknown", readinessStatus: handover.handover_readiness_status || null },
+        changesJson: { submittedBy: user?.name || "Unknown", readinessStatus: handover.handoverReadinessStatus || null },
       });
       // Notify PM reviewers
       try {
@@ -931,7 +927,7 @@ export function registerHandoverRoutes(app: Express) {
       });
       // Notify PD team about acceptance
       try {
-        const pdOwnerName = handover.pdOwner ?? handover.pd_owner;
+        const pdOwnerName = handover.pdOwner;
         if (pdOwnerName) {
           const pdOwnerUsers = await db.select({ id: users.id }).from(users)
             .where(sql`${users.name} = ${pdOwnerName}`);
@@ -1025,7 +1021,7 @@ export function registerHandoverRoutes(app: Express) {
 
       // Notify PD team about rejection
       try {
-        const pdOwnerName = handover.pdOwner ?? handover.pd_owner;
+        const pdOwnerName = handover.pdOwner;
         if (pdOwnerName) {
           const pdOwnerUsers = await db.select({ id: users.id }).from(users)
             .where(sql`${users.name} = ${pdOwnerName}`);
@@ -1212,8 +1208,12 @@ export function registerHandoverRoutes(app: Express) {
   }
 
   // ===================== LESSONS LEARNT =====================
+  // Lessons learnt are part of the handover knowledge base, so they gate
+  // on the `handover` permission entity. Without this, any authenticated
+  // user (including ENGINEERS and ACCOUNTANTS) could read/write the
+  // lessons table.
 
-  app.get("/api/lessons-learnt", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/lessons-learnt", requireAuth, requirePermission("handover", "view"), async (req: Request, res: Response) => {
     try {
       const projectType = String(req.query.projectType || "").trim();
       const search = String(req.query.search || "").trim();
@@ -1241,7 +1241,7 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.post("/api/lessons-learnt", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/lessons-learnt", requireAuth, requirePermission("handover", "create"), async (req: Request, res: Response) => {
     try {
       const user = (req as any).user as any;
       const body = req.body || {};
@@ -1264,7 +1264,7 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/lessons-learnt/:id", requireAuth, async (req: Request, res: Response) => {
+  app.patch("/api/lessons-learnt/:id", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(paramStr(req.params.id), 10);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
@@ -1284,7 +1284,7 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/lessons-learnt/:id", requireAuth, async (req: Request, res: Response) => {
+  app.delete("/api/lessons-learnt/:id", requireAuth, requirePermission("handover", "delete"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(paramStr(req.params.id), 10);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });

@@ -216,9 +216,10 @@ export default function PdTicketCreatePage() {
     createTicketMutation.mutate(body);
   };
 
-  const filteredClients = clientSearch.trim()
-    ? clientResults
-    : clientResults;
+  // Server `/api/pd/clients` already returns either the full list or a
+  // name-filtered list based on the `search` query param, so we just use
+  // the response as-is here.
+  const filteredClients = clientResults;
 
   return (
     <div className="p-4 md:p-6 max-w-3xl mx-auto space-y-4">

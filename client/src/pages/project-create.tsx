@@ -142,14 +142,22 @@ export default function ProjectCreatePage() {
       const data = await response.json();
 
       if (!response.ok) {
-        toast({ title: "Error", description: data.error, variant: "destructive" });
+        toast({
+          title: "Error",
+          description: data?.error || "Could not create project. Please retry and contact an admin if it persists.",
+          variant: "destructive",
+        });
         return;
       }
 
       setResult(data);
       toast({ title: "Project created successfully" });
     } catch (error: any) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      toast({
+        title: "Error",
+        description: error?.message || "Could not create project. Please retry.",
+        variant: "destructive",
+      });
     } finally {
       setSaving(false);
     }

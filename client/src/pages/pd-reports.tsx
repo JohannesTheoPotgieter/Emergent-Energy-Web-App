@@ -8,8 +8,13 @@ import { useLocation } from "wouter";
 import { usePermission } from "@/hooks/use-permissions";
 import { MaturityBadge } from "@/components/ui/maturity-badge";
 
-function pdFetch(url: string) {
-  return fetch(url, { credentials: "include" }).then(r => { if (!r.ok) throw new Error("Failed"); return r.json(); });
+async function pdFetch(url: string) {
+  const r = await fetch(url, { credentials: "include" });
+  const body = await r.json().catch(() => null);
+  if (!r.ok) {
+    throw new Error(body?.error || `Request to ${url} failed (${r.status}).`);
+  }
+  return body;
 }
 
 function MetricCard({ label, value, sub, color }: { label: string; value: string | number; sub?: string; color?: string }) {

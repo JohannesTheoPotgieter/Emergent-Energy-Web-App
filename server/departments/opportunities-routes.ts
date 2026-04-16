@@ -273,7 +273,7 @@ router.post("/api/opportunities/:id/create-engineering-tickets", requireAuth, re
     }
 
     // --- Insert all tickets inside a single transaction ---
-    const createdTickets = await db.transaction(async (tx) => {
+    const createdTickets = await db.transaction(async (tx: typeof db) => {
       const results: CreatedTicket[] = [];
       for (const values of ticketValues) {
         const { _templateItemId, _templateId, _templateName, _templateVersion, _templatePhase, ...insertValues } = values;
@@ -472,7 +472,7 @@ router.post("/api/opportunities/:id/resolve-mapping", requireAuth, requirePermis
         pd: "PROJECT_SHELL",
       };
 
-      const createdProject = await db.transaction(async (tx) => {
+      const createdProject = await db.transaction(async (tx: typeof db) => {
         const proj = await opportunitiesRepo.insertProjectShell(tx, shellProjectFields);
         await syncProjectSplitTablesAfterInsert(proj.id, shellProjectFields, tx);
         await opportunitiesRepo.insertPhaseHistory(tx, {
@@ -564,12 +564,42 @@ router.get("/api/opportunities/:id", requireAuth, requirePermission("opportuniti
   }
 });
 
+// Numeric fields on `opportunities` are stored as Drizzle `numeric` columns
+// which serialize as strings. The Zod schema accepts either string or number
+// for ergonomic payloads — coerce here so the repository receives the
+// string-or-null shape its insert/update types require.
+function normalizeOpportunityNumericFields<T extends {
+  estimatedValue?: string | number;
+  estimatedKwp?: string | number;
+  estimatedKwh?: string | number;
+}>(
+  input: T,
+): Omit<T, "estimatedValue" | "estimatedKwp" | "estimatedKwh"> & {
+  estimatedValue?: string;
+  estimatedKwp?: string;
+  estimatedKwh?: string;
+} {
+  const out: Record<string, unknown> = { ...input };
+  for (const key of ["estimatedValue", "estimatedKwp", "estimatedKwh"] as const) {
+    const v = out[key];
+    if (typeof v === "number") out[key] = String(v);
+  }
+  return out as Omit<T, "estimatedValue" | "estimatedKwp" | "estimatedKwh"> & {
+    estimatedValue?: string;
+    estimatedKwp?: string;
+    estimatedKwh?: string;
+  };
+}
+
 router.post("/api/opportunities", requireAuth, requirePermission("opportunities", "create"), validateBody(opportunityCreateSchema), async (req: Request, res: Response) => {
   try {
     const parsed = req.body as z.infer<typeof opportunityCreateSchema>;
     // Force `source` to 'internal' on the manual create path — the
     // Pipedrive sync engine is the only writer allowed to set 'pipedrive'.
-    const row = await opportunitiesRepo.createOpportunity({ ...parsed, source: "internal" });
+    const row = await opportunitiesRepo.createOpportunity({
+      ...normalizeOpportunityNumericFields(parsed),
+      source: "internal",
+    });
 
     logAuditFromReq(req, {
       entityType: "opportunity",
@@ -607,7 +637,10 @@ router.patch("/api/opportunities/:id", requireAuth, requirePermission("opportuni
     const { source: _source, ...safeFields } = parsed.data as typeof parsed.data & { source?: unknown };
     void _source;
 
-    const row = await opportunitiesRepo.updateOpportunity(Number(req.params.id), safeFields);
+    const row = await opportunitiesRepo.updateOpportunity(
+      Number(req.params.id),
+      normalizeOpportunityNumericFields(safeFields),
+    );
     if (!row) return res.status(404).json({ error: "Opportunity not found" });
 
     const crmOverwriteFields = ["stage", "status", "estimatedValue", "expectedCloseDate", "signedDate", "clientId"] as const;
