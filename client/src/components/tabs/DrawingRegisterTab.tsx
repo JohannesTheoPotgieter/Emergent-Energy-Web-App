@@ -20,7 +20,8 @@ interface Props { projectId: number; projectName: string; }
 interface DrawingRow { id: number; drawingNumber: string; title: string; discipline: string | null; currentRevision: string; status: string; sharepointLink: string | null; }
 
 const DISCIPLINES = ["electrical", "structural", "mechanical", "civil", "architectural"];
-const STATUSES = ["draft", "for_review", "for_approval", "approved", "ifc", "as_built", "superseded"];
+// Drawing statuses are enforced server-side via DRAWING_STATUS_TRANSITIONS.
+// Status changes are made through the Engineering Stages tab or API, not this tab.
 
 function statusColor(s: string) {
   if (s === "ifc" || s === "as_built") return "bg-green-50 text-green-700";
@@ -57,13 +58,11 @@ export function DrawingRegisterTab({ projectId, projectName }: Props) {
     },
   });
 
-  const statusMutation = useMutation({
-    mutationFn: async ({ id, status }: { id: number; status: string }) => {
-      const res = await apiRequest("PATCH", `/api/drawings/${id}`, { status });
-      return res.json();
-    },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/drawings", projectId] }),
-  });
+  // NOTE: Drawing status transitions are managed through the Engineering
+  // Stages tab or directly via the API with role-gated enforcement.
+  // This tab is view + create only — it does not surface a status dropdown
+  // because status changes require the DRAWING_STATUS_TRANSITIONS guard
+  // on the server (e.g. you cannot skip from "draft" to "ifc").
 
   return (
     <div className="space-y-4">
