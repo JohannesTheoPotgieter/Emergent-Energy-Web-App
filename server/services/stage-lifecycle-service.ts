@@ -143,6 +143,20 @@ export async function captureStageGateSnapshot(params: {
         ? "gate_fail_audit"
         : params.transitionType;
 
+    // W5: Capture integration freshness at stage gate transition time.
+    // Non-blocking — a freshness check failure never blocks a transition.
+    let integrationNotes = params.notes ?? null;
+    try {
+      const { getIntegrationFreshnessReport } = await import("./integration-freshness-service");
+      const freshness = await getIntegrationFreshnessReport();
+      if (freshness.warnings.length > 0) {
+        const prefix = integrationNotes ? `${integrationNotes}\n\n` : "";
+        integrationNotes = `${prefix}[Integration freshness at transition: ${freshness.overallHealth}] ${freshness.warnings.join(" | ")}`;
+      }
+    } catch {
+      // Integration freshness check is non-blocking
+    }
+
     const [row] = await db
       .insert(stageGateEvidenceSnapshots)
       .values({
@@ -160,7 +174,7 @@ export async function captureStageGateSnapshot(params: {
         requirementsSnapshot: summary.requirementsSnapshot as any,
         missingItems: summary.missingItems as any,
         reason: params.reason ?? null,
-        notes: params.notes ?? null,
+        notes: integrationNotes,
       })
       .returning();
 
