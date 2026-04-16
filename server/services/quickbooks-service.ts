@@ -533,6 +533,16 @@ export async function getProfitAndLossReport(startDate: string, endDate: string)
   return qbGet<any>(`/reports/ProfitAndLoss?${params.toString()}`);
 }
 
+export async function getMonthlyPnLReport(startDate: string, endDate: string): Promise<any> {
+  const params = new URLSearchParams({
+    start_date: startDate,
+    end_date: endDate,
+    summarize_column_by: "Month",
+    minorversion: "70",
+  });
+  return qbGet<any>(`/reports/ProfitAndLoss?${params.toString()}`);
+}
+
 export interface QuickBooksConnectionStatus {
   connected: boolean;
   realmId: string | null;
