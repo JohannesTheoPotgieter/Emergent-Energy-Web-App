@@ -1997,7 +1997,7 @@ router.get("/api/cos-tracker/reconciliation", requireAuth, async (req, res) => {
   try {
     const { monthKey } = req.query as { monthKey?: string };
     const [allCostLines, links, rawBills] = await Promise.all([
-      db.select().from(normalizedCostLines),
+      db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
       db.select().from(quickbooksInvoiceLinks).where(and(
         eq(quickbooksInvoiceLinks.appEntityType, "cost_line"),
         eq(quickbooksInvoiceLinks.qbEntityType, "bill"),
@@ -3401,7 +3401,7 @@ router.get("/api/revenue-tracker/reconciliation", requireAuth, requirePermission
   try {
     const { monthKey } = req.query as { monthKey?: string };
     const [revenueRows, links, qbInvoicesRaw] = await Promise.all([
-      db.select().from(normalizedRevenueLines),
+      db.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
       db.select().from(quickbooksInvoiceLinks).where(and(
         eq(quickbooksInvoiceLinks.appEntityType, "revenue_line"),
         eq(quickbooksInvoiceLinks.qbEntityType, "invoice"),
