@@ -3,7 +3,7 @@
 // add explicit ': any' to .map/.filter callback params on db result rows.
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { sql, eq, and, inArray } from "drizzle-orm";
+import { sql, eq, and, inArray, desc } from "drizzle-orm";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -17,6 +17,9 @@ import {
   projectEngTasks,
   projectEngDeliverables,
   projectEngApprovals,
+  engTransmittals,
+  engTransmittalItems,
+  drawingRegister,
   projectInfo,
   users,
   workItems,
@@ -1131,6 +1134,21 @@ export function registerEngStageRoutes(app: Express) {
         }
       }
 
+      // Optional procurement-readiness gate: when a stage template opts in
+      // via `requireProcurementReady: true`, at least one deliverable must
+      // have been transmitted with purpose "for_procurement". This ensures
+      // procurement specs were formally issued before the stage closes.
+      if (rules.requireProcurementReady) {
+        const stageTransmittals = await db.select({ purpose: engTransmittals.purpose })
+          .from(engTransmittals)
+          .innerJoin(engTransmittalItems, eq(engTransmittalItems.transmittalId, engTransmittals.id))
+          .where(eq(engTransmittals.projectEngStageId, stageId));
+        const hasProcurementTransmittal = stageTransmittals.some((t: any) => t.purpose === "for_procurement");
+        if (!hasProcurementTransmittal) {
+          missing.push("Procurement spec not issued: no transmittal with purpose 'for_procurement' found for this stage");
+        }
+      }
+
       if (missing.length > 0) {
         return res.json({ success: false, missing });
       }
@@ -1291,6 +1309,280 @@ export function registerEngStageRoutes(app: Express) {
       res.json({ success: true });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
+      sendError(res, err);
+    }
+  });
+
+  // ===== TRANSMITTAL REGISTER =====
+  // Formal issue events: "document X was issued to person Y for purpose Z".
+
+  app.post("/api/eng-stages/transmittals", jwtAuth, requireAuth, requirePermission("eng_stages", "create"), async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      const { projectId, title, purpose, recipientName, recipientOrg, recipientUserId, notes, projectEngStageId, items } = req.body;
+
+      if (!projectId || !title || !purpose || !recipientName) {
+        return res.status(400).json({ error: "projectId, title, purpose, and recipientName are required" });
+      }
+
+      // Generate transmittal number: T-{projectId}-{YYYYMMDD}-{seq}
+      const today = new Date().toISOString().split("T")[0].replace(/-/g, "");
+      const existingCount = await db.select({ id: engTransmittals.id })
+        .from(engTransmittals)
+        .where(eq(engTransmittals.projectId, projectId));
+      const seq = String(existingCount.length + 1).padStart(3, "0");
+      const transmittalNumber = `T-${projectId}-${today}-${seq}`;
+
+      const [transmittal] = await db.insert(engTransmittals).values({
+        projectId,
+        transmittalNumber,
+        title,
+        purpose,
+        recipientName,
+        recipientOrg: recipientOrg || null,
+        recipientUserId: recipientUserId || null,
+        issuedByUserId: user.id,
+        issuedAt: new Date(),
+        notes: notes || null,
+        projectEngStageId: projectEngStageId || null,
+      }).returning();
+
+      // Insert transmittal items (deliverables and/or drawings)
+      const insertedItems: any[] = [];
+      if (Array.isArray(items) && items.length > 0) {
+        for (const item of items) {
+          // Snapshot the current releasedFor state of the deliverable
+          let releasedForAtIssue: string | null = null;
+          let revision: string | null = item.revision || null;
+
+          if (item.deliverableId) {
+            const [del] = await db.select({ releasedFor: projectEngDeliverables.releasedFor, versionTag: projectEngDeliverables.versionTag })
+              .from(projectEngDeliverables).where(eq(projectEngDeliverables.id, item.deliverableId));
+            if (del) {
+              releasedForAtIssue = del.releasedFor;
+              if (!revision) revision = del.versionTag;
+            }
+          }
+          if (item.drawingId && !revision) {
+            const [dwg] = await db.select({ currentRevision: drawingRegister.currentRevision })
+              .from(drawingRegister).where(eq(drawingRegister.id, item.drawingId));
+            if (dwg) revision = dwg.currentRevision;
+          }
+
+          const [inserted] = await db.insert(engTransmittalItems).values({
+            transmittalId: transmittal.id,
+            deliverableId: item.deliverableId || null,
+            drawingId: item.drawingId || null,
+            revision,
+            releasedForAtIssue,
+            notes: item.notes || null,
+          }).returning();
+          insertedItems.push(inserted);
+        }
+      }
+
+      logAuditFromReq(req, {
+        entityType: "eng_transmittal",
+        entityId: String(transmittal.id),
+        action: "create",
+        changesJson: {
+          description: `Transmittal ${transmittalNumber} issued`,
+          purpose,
+          recipientName,
+          itemCount: insertedItems.length,
+        },
+      });
+
+      res.status(201).json({ transmittal, items: insertedItems });
+    } catch (err: any) {
+      console.error("[EngStages] Transmittal error:", err);
+      sendError(res, err);
+    }
+  });
+
+  app.get("/api/eng-stages/transmittals", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+    try {
+      const projectId = req.query.projectId ? parseInt(req.query.projectId as string) : undefined;
+      const conditions = projectId ? [eq(engTransmittals.projectId, projectId)] : [];
+
+      const rows = conditions.length > 0
+        ? await db.select().from(engTransmittals).where(and(...conditions)).orderBy(engTransmittals.issuedAt)
+        : await db.select().from(engTransmittals).orderBy(engTransmittals.issuedAt);
+
+      res.json({ transmittals: rows });
+    } catch (err: any) {
+      console.error("[EngStages] Transmittal list error:", err);
+      sendError(res, err);
+    }
+  });
+
+  app.get("/api/eng-stages/transmittals/:id", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(paramStr(req.params.id));
+      const [transmittal] = await db.select().from(engTransmittals).where(eq(engTransmittals.id, id));
+      if (!transmittal) return res.status(404).json({ error: "Transmittal not found" });
+
+      const items = await db.select().from(engTransmittalItems).where(eq(engTransmittalItems.transmittalId, id));
+
+      res.json({ transmittal, items });
+    } catch (err: any) {
+      console.error("[EngStages] Transmittal detail error:", err);
+      sendError(res, err);
+    }
+  });
+
+  // ===== SUPERSEDE DELIVERABLE =====
+  // Formally supersedes a deliverable by linking it to a replacement.
+
+  app.post("/api/eng-stages/deliverables/:id/supersede", jwtAuth, requireAuth, requirePermission("deliverables", "edit"), async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(paramStr(req.params.id));
+      const user = getUser(req);
+      const { supersededById, reason } = req.body;
+
+      if (!supersededById) {
+        return res.status(400).json({ error: "supersededById (the replacement deliverable ID) is required" });
+      }
+
+      const [old] = await db.select().from(projectEngDeliverables).where(eq(projectEngDeliverables.id, id));
+      if (!old) return res.status(404).json({ error: "Deliverable not found" });
+
+      const [replacement] = await db.select().from(projectEngDeliverables).where(eq(projectEngDeliverables.id, supersededById));
+      if (!replacement) return res.status(404).json({ error: "Replacement deliverable not found" });
+
+      if (old.releasedFor === "superseded") {
+        return res.status(409).json({ error: "Deliverable is already superseded" });
+      }
+
+      await db.update(projectEngDeliverables).set({
+        releasedFor: "superseded",
+        supersededById,
+      }).where(eq(projectEngDeliverables.id, id));
+
+      logAuditFromReq(req, {
+        entityType: "eng_stage_item",
+        entityId: String(id),
+        action: "supersede",
+        changesJson: {
+          description: `Deliverable superseded by #${supersededById}`,
+          fileName: old.fileName,
+          reason: reason || null,
+          supersededById,
+          releasedForBefore: old.releasedFor,
+        },
+      });
+
+      res.json({ success: true, releasedFor: "superseded", supersededById });
+    } catch (err: any) {
+      console.error("[EngStages] Supersede error:", err);
+      sendError(res, err);
+    }
+  });
+
+  // ===== HANDOVER READINESS COMPUTATION =====
+  // Aggregates engineering completeness for a project: all stages
+  // complete, all required deliverables in final state, all drawings
+  // at IFC or as-built.
+
+  app.get("/api/projects/:projectId/eng-handover-readiness", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(paramStr(req.params.projectId));
+
+      // 1. Stage completion
+      const stages = await db.select({
+        id: projectEngStages.id,
+        status: projectEngStages.status,
+        templateName: engStageTemplates.name,
+        completedAt: projectEngStages.completedAt,
+        ifcIssuedAt: projectEngStages.ifcIssuedAt,
+        handoverReadyAt: projectEngStages.handoverReadyAt,
+      })
+        .from(projectEngStages)
+        .innerJoin(engStageTemplates, eq(projectEngStages.stageTemplateId, engStageTemplates.id))
+        .where(eq(projectEngStages.projectId, projectId));
+
+      const totalStages = stages.length;
+      const completedStages = stages.filter((s: any) => s.status === "complete").length;
+      const stageItems = stages.map((s: any) => ({
+        name: s.templateName,
+        status: s.status,
+        complete: s.status === "complete",
+        ifcIssued: !!s.ifcIssuedAt,
+        handoverReady: !!s.handoverReadyAt,
+      }));
+
+      // 2. Deliverable state
+      const stageIds = stages.map((s: any) => s.id);
+      let deliverables: any[] = [];
+      if (stageIds.length > 0) {
+        deliverables = await db.select({
+          id: projectEngDeliverables.id,
+          releasedFor: projectEngDeliverables.releasedFor,
+          fileName: projectEngDeliverables.fileName,
+        })
+          .from(projectEngDeliverables)
+          .where(inArray(projectEngDeliverables.projectEngStageId, stageIds));
+      }
+
+      const totalDeliverables = deliverables.length;
+      const ifcOrAsBuilt = deliverables.filter((d: any) =>
+        d.releasedFor === "issued_for_construction" || d.releasedFor === "as_built"
+      ).length;
+      const asBuiltOnly = deliverables.filter((d: any) => d.releasedFor === "as_built").length;
+
+      // 3. Drawing state
+      const drawings = await db.select({
+        id: drawingRegister.id,
+        status: drawingRegister.status,
+        drawingNumber: drawingRegister.drawingNumber,
+      })
+        .from(drawingRegister)
+        .where(eq(drawingRegister.projectId, projectId));
+
+      const totalDrawings = drawings.length;
+      const drawingsIfc = drawings.filter((d: any) => d.status === "ifc" || d.status === "as_built").length;
+      const drawingsAsBuilt = drawings.filter((d: any) => d.status === "as_built").length;
+
+      // 4. Compute overall readiness
+      const allStagesComplete = totalStages > 0 && completedStages === totalStages;
+      const allDeliverablesIfc = totalDeliverables === 0 || ifcOrAsBuilt === totalDeliverables;
+      const allDrawingsIfc = totalDrawings === 0 || drawingsIfc === totalDrawings;
+      const allAsBuilt = (totalDeliverables === 0 || asBuiltOnly === totalDeliverables) &&
+                         (totalDrawings === 0 || drawingsAsBuilt === totalDrawings);
+
+      let readiness: "not_ready" | "ifc_complete" | "as_built_complete" | "fully_ready" = "not_ready";
+      if (allAsBuilt && allStagesComplete) readiness = "fully_ready";
+      else if (allDeliverablesIfc && allDrawingsIfc && allStagesComplete) readiness = "ifc_complete";
+      else if (allStagesComplete) readiness = "ifc_complete";
+
+      const missingItems: string[] = [];
+      if (!allStagesComplete) {
+        const incomplete = stages.filter((s: any) => s.status !== "complete");
+        for (const s of incomplete) missingItems.push(`Stage not complete: ${(s as any).templateName}`);
+      }
+      if (!allDeliverablesIfc) {
+        const notIfc = deliverables.filter((d: any) =>
+          d.releasedFor !== "issued_for_construction" && d.releasedFor !== "as_built"
+        );
+        for (const d of notIfc) missingItems.push(`Deliverable not IFC: ${(d as any).fileName}`);
+      }
+      if (!allDrawingsIfc) {
+        const notIfc = drawings.filter((d: any) => d.status !== "ifc" && d.status !== "as_built");
+        for (const d of notIfc) missingItems.push(`Drawing not IFC: ${(d as any).drawingNumber}`);
+      }
+
+      res.json({
+        readiness,
+        summary: {
+          stages: { total: totalStages, complete: completedStages },
+          deliverables: { total: totalDeliverables, ifcOrAsBuilt, asBuilt: asBuiltOnly },
+          drawings: { total: totalDrawings, ifc: drawingsIfc, asBuilt: drawingsAsBuilt },
+        },
+        stageItems,
+        missingItems,
+      });
+    } catch (err: any) {
+      console.error("[EngStages] Handover readiness error:", err);
       sendError(res, err);
     }
   });

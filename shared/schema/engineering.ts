@@ -353,3 +353,59 @@ export const drawingRevisions = pgTable("drawing_revisions", {
 });
 
 export type DrawingRevision = typeof drawingRevisions.$inferSelect;
+
+// ===================== TRANSMITTAL REGISTER =====================
+//
+// Records each formal issue event: "this document was issued to
+// recipient X for purpose Y on date Z with transmittal number N".
+// This is the engineering equivalent of a shipping manifest — it
+// proves that the right version of the right document reached the
+// right person for the right reason, with an audit trail.
+//
+// A single transmittal can cover multiple deliverables (e.g., "IFC
+// Drawing Pack for Solar Farm Phase 1" may contain 12 drawings).
+
+export const TRANSMITTAL_PURPOSES = [
+  "for_information",
+  "for_review",
+  "for_approval",
+  "for_construction",
+  "for_procurement",
+  "for_as_built_record",
+  "for_handover",
+] as const;
+export type TransmittalPurpose = typeof TRANSMITTAL_PURPOSES[number];
+
+export const engTransmittals = pgTable("eng_transmittals", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
+  transmittalNumber: text("transmittal_number").notNull(),
+  title: text("title").notNull(),
+  purpose: text("purpose").notNull(),           // see TRANSMITTAL_PURPOSES
+  recipientName: text("recipient_name").notNull(),
+  recipientOrg: text("recipient_org"),           // external org name if applicable
+  recipientUserId: integer("recipient_user_id").references(() => users.id, { onDelete: "set null" }),
+  issuedByUserId: integer("issued_by_user_id").notNull().references(() => users.id, { onDelete: "set null" }),
+  issuedAt: timestamp("issued_at").notNull().defaultNow(),
+  notes: text("notes"),
+  // Optional link to the stage this transmittal belongs to
+  projectEngStageId: integer("project_eng_stage_id").references(() => projectEngStages.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const insertEngTransmittalSchema = createInsertSchema(engTransmittals).omit({ id: true, createdAt: true } as any);
+export type InsertEngTransmittal = z.infer<typeof insertEngTransmittalSchema>;
+export type EngTransmittal = typeof engTransmittals.$inferSelect;
+
+/** Join table: which deliverables and/or drawings were included in a transmittal. */
+export const engTransmittalItems = pgTable("eng_transmittal_items", {
+  id: serial("id").primaryKey(),
+  transmittalId: integer("transmittal_id").notNull().references(() => engTransmittals.id, { onDelete: "cascade" }),
+  deliverableId: integer("deliverable_id").references(() => projectEngDeliverables.id, { onDelete: "set null" }),
+  drawingId: integer("drawing_id").references(() => drawingRegister.id, { onDelete: "set null" }),
+  revision: text("revision"),                    // revision at time of issue
+  releasedForAtIssue: text("released_for_at_issue"), // snapshot of releasedFor at time of transmittal
+  notes: text("notes"),
+});
+export const insertEngTransmittalItemSchema = createInsertSchema(engTransmittalItems).omit({ id: true } as any);
+export type InsertEngTransmittalItem = z.infer<typeof insertEngTransmittalItemSchema>;
+export type EngTransmittalItem = typeof engTransmittalItems.$inferSelect;
