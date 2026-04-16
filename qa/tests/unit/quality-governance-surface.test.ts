@@ -14,7 +14,7 @@ describe("quality governance execution surfaces", () => {
     expect(source).toContain("/api/quality/all-items");
     expect(source).toContain("/api/quality/dashboard");
     expect(source).toContain("Overdue actions");
-    expect(source).toContain("Resubmission needed");
+    expect(source).toContain("Failed QC");
     expect(source).toContain("Evidence gaps");
     expect(source).toContain("Blocked handover");
     expect(source).toContain("At-risk projects");
@@ -29,7 +29,8 @@ describe("quality governance execution surfaces", () => {
     expect(source).toContain("/api/quality/project/${encodeURIComponent(projectName)}/item/${itemInstanceId}/send-for-approval");
     expect(source).toContain("Priority quality queue");
     expect(source).toContain("Relevant Microsoft-linked quality items");
-    expect(source).toContain("Execution readiness is currently blocked by quality context");
+    // Handover blocked copy moved to extracted QualityGovernanceSummary component
+    expect(source).toContain("QualityGovernanceSummary");
   });
 
   it("keeps server quality routes additive with project-linked governance and microsoft context", () => {
