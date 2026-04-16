@@ -22,6 +22,8 @@ import {
   normalizedCostLines,
   normalizedRevenueLines,
   projectInfo,
+  quickbooksCostAllocations,
+  quickbooksDocuments,
   quickbooksCustomerMappings,
   quickbooksInvoiceLinks,
   type NormalizedCostLine,
@@ -36,6 +38,13 @@ import {
   loadQuickBooksMetadata,
   queryQuickBooks,
 } from "./quickbooks-service";
+import {
+  assertNoOverAssignment,
+  computeQbDocumentStatus,
+  deriveQbVatAmounts,
+  QB_ASSIGNMENT_TOLERANCE_EX_VAT,
+  toMoney,
+} from "../lib/finance/qb-allocation";
 
 const AMOUNT_TOLERANCE = 1; // R1 — generous enough to absorb rounding.
 
@@ -47,6 +56,10 @@ export interface QuickBooksBillSummary {
   txnDate: string | null;
   dueDate: string | null;
   totalAmount: number | null;
+  qbAmountIncVat: number | null;
+  qbTaxAmount: number | null;
+  qbAmountExVat: number | null;
+  taxUncertain: boolean;
   balance: number | null;
   vendorName: string | null;
   vendorId: string | null;
@@ -144,18 +157,20 @@ export function billRawToSummary(raw: any): QuickBooksBillSummary {
   // QB `TotalAmt` is tax-inclusive. App cost lines store ex-VAT. Prefer the
   // ex-tax subtotal when QB provides it (TxnTaxDetail.TotalTax) so variance
   // against `normalized_cost_lines.amount_ex_vat` is apples-to-apples.
-  const totalAmount = amountToNumber(raw?.TotalAmt);
-  const totalTax = amountToNumber(raw?.TxnTaxDetail?.TotalTax);
-  const totalExTax =
-    totalAmount !== null && totalTax !== null
-      ? Number((totalAmount - totalTax).toFixed(2))
-      : totalAmount;
+  const vat = deriveQbVatAmounts({
+    totalAmt: raw?.TotalAmt,
+    totalTax: raw?.TxnTaxDetail?.TotalTax,
+  });
   return {
     id: String(raw?.Id ?? ""),
     docNumber: raw?.DocNumber ?? null,
     txnDate: raw?.TxnDate ?? null,
     dueDate: raw?.DueDate ?? null,
-    totalAmount: totalExTax,
+    totalAmount: vat.qbAmountExVat,
+    qbAmountIncVat: vat.qbAmountIncVat,
+    qbTaxAmount: vat.qbTaxAmount,
+    qbAmountExVat: vat.qbAmountExVat,
+    taxUncertain: vat.taxUncertain,
     balance: amountToNumber(raw?.Balance),
     vendorName,
     vendorId,
@@ -534,6 +549,142 @@ export async function softDeleteLink(
     .set({ deletedAt: new Date(), updatedAt: new Date() } as any)
     .where(eq(quickbooksInvoiceLinks.id, linkId));
   return row;
+}
+
+export interface QuickBooksCostAllocationInput {
+  projectId: number | null;
+  costLineId: number;
+  amountExVat: number;
+}
+
+export interface BulkAssignPreviewRow {
+  qbEntityId: string;
+  qbDocNumber: string | null;
+  qbAmountExVat: number | null;
+  assignedExVat: number;
+  remainingExVat: number | null;
+  status: string;
+  taxUncertain: boolean;
+}
+
+async function upsertQuickBooksDocumentFromBill(
+  projectId: number | null,
+  bill: QuickBooksBillSummary,
+  qbRealmId: string,
+  actorId: number | null,
+) {
+  const existing = await db
+    .select()
+    .from(quickbooksDocuments)
+    .where(
+      and(
+        eq(quickbooksDocuments.qbEntityType, "bill"),
+        eq(quickbooksDocuments.qbEntityId, bill.id),
+        eq(quickbooksDocuments.qbRealmId, qbRealmId),
+        isNull(quickbooksDocuments.deletedAt),
+      ),
+    )
+    .limit(1);
+
+  const snapshot = {
+    projectId,
+    qbEntityType: "bill",
+    qbEntityId: bill.id,
+    qbRealmId,
+    qbDocNumber: bill.docNumber,
+    qbTxnDate: bill.txnDate,
+    qbCounterpartyName: bill.vendorName,
+    qbCounterpartyId: bill.vendorId,
+    qbAmountIncVat: toMoney(bill.qbAmountIncVat)?.toFixed(2) ?? null,
+    qbTaxAmount: toMoney(bill.qbTaxAmount)?.toFixed(2) ?? null,
+    qbAmountExVat: toMoney(bill.qbAmountExVat)?.toFixed(2) ?? null,
+    taxStatus: bill.taxUncertain ? "TAX_UNCERTAIN" : "KNOWN",
+    createdBy: actorId,
+    updatedAt: new Date(),
+  } as any;
+
+  if (existing.length > 0) {
+    const updated = await db
+      .update(quickbooksDocuments)
+      .set(snapshot)
+      .where(eq(quickbooksDocuments.id, existing[0]!.id))
+      .returning();
+    return updated[0]!;
+  }
+
+  const inserted = await db.insert(quickbooksDocuments).values(snapshot).returning();
+  return inserted[0]!;
+}
+
+export async function saveCostAllocationsForBill(params: {
+  projectId: number | null;
+  bill: QuickBooksBillSummary;
+  allocations: QuickBooksCostAllocationInput[];
+  actorId?: number | null;
+}) {
+  const realmId = (await loadQuickBooksMetadata()).realmId ?? "unknown";
+  const document = await upsertQuickBooksDocumentFromBill(params.projectId, params.bill, realmId, params.actorId ?? null);
+
+  const activeRows = await db
+    .select()
+    .from(quickbooksCostAllocations)
+    .where(
+      and(
+        eq(quickbooksCostAllocations.quickbooksDocumentId, document.id),
+        isNull(quickbooksCostAllocations.deletedAt),
+      ),
+    );
+
+  let assignedExVat = 0;
+  for (const row of params.allocations) assignedExVat += Math.max(0, Number(row.amountExVat || 0));
+  assertNoOverAssignment(toMoney(document.qbAmountExVat), assignedExVat);
+
+  // Soft-delete previous active rows for this document then insert fresh set.
+  if (activeRows.length > 0) {
+    await db
+      .update(quickbooksCostAllocations)
+      .set({ deletedAt: new Date(), status: "replaced", updatedAt: new Date() } as any)
+      .where(
+        and(
+          eq(quickbooksCostAllocations.quickbooksDocumentId, document.id),
+          isNull(quickbooksCostAllocations.deletedAt),
+        ),
+      );
+  }
+
+  if (params.allocations.length > 0) {
+    await db.insert(quickbooksCostAllocations).values(
+      params.allocations.map((a) => ({
+        quickbooksDocumentId: document.id,
+        projectId: params.projectId,
+        costLineId: a.costLineId,
+        amountExVat: Number(a.amountExVat).toFixed(2),
+        matchType: "manual",
+        status: "active",
+        createdBy: params.actorId ?? null,
+        approvedBy: params.actorId ?? null,
+        approvedAt: new Date(),
+      })) as any,
+    );
+  }
+
+  const qbAmountExVat = toMoney(document.qbAmountExVat);
+  const status = computeQbDocumentStatus(qbAmountExVat, assignedExVat, document.taxStatus === "TAX_UNCERTAIN");
+  const remaining = qbAmountExVat === null ? null : Number(Math.max(0, qbAmountExVat - assignedExVat).toFixed(2));
+  await db
+    .update(quickbooksDocuments)
+    .set({ assignmentStatus: status, updatedAt: new Date() } as any)
+    .where(eq(quickbooksDocuments.id, document.id));
+
+  return {
+    documentId: document.id,
+    assignedExVat: Number(assignedExVat.toFixed(2)),
+    qbAmountExVat,
+    remainingExVat: remaining,
+    status,
+    underAssigned: remaining !== null && remaining > QB_ASSIGNMENT_TOLERANCE_EX_VAT,
+    taxUncertain: document.taxStatus === "TAX_UNCERTAIN",
+  };
 }
 
 // ===================== MATCHING CORE =====================

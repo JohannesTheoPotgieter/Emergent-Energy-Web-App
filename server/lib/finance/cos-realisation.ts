@@ -20,6 +20,10 @@ export interface CosLineInput {
   invoiceDateFontColor?: string | null;
   /** Boolean equivalent of black-font confirmation. */
   invoiceDateConfirmed?: boolean | null;
+  /** Allocation-aware QB evidence total assigned to this line (ex-VAT). */
+  lineAssignedQbExVat?: number | null;
+  /** Optional precomputed line amount (ex-VAT). Falls back to amountExVat. */
+  lineAmountExVat?: number | null;
 }
 
 /**
@@ -70,6 +74,20 @@ export const OVERRIDE_NOT_REALISED = new Set(["PLANNED", "COMMITTED", "INVOICED"
  * getCosEffectiveDateAndSource().
  */
 export function isCanonicalCosRealised(input: CosLineInput): boolean {
+  // 0. Allocation-aware canonical path (new model): if assigned QB evidence is
+  // present, realisation is amount-aware and ex-VAT only.
+  if (input.lineAssignedQbExVat !== undefined && input.lineAssignedQbExVat !== null) {
+    const lineAmountRaw = input.lineAmountExVat ?? input.amountExVat ?? null;
+    const lineAmount = lineAmountRaw === null ? null : Number(lineAmountRaw);
+    const assigned = Number(input.lineAssignedQbExVat);
+    if (Number.isFinite(assigned) && assigned > 0) {
+      // Treated as realised when there is assigned evidence; downstream
+      // totals must use min(line_amount_ex_vat, line_assigned_qb_ex_vat).
+      return true;
+    }
+    if (lineAmount !== null && Number.isFinite(lineAmount) && lineAmount <= 0) return false;
+  }
+
   // 1. Admin override takes absolute precedence
   const override = (input.cosStatusOverride ?? "").toUpperCase().trim();
   if (OVERRIDE_REALISED.has(override)) return true;

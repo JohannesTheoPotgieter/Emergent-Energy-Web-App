@@ -19,6 +19,7 @@ interface QbBillRaw {
   DocNumber?: string | null;
   TxnDate?: string | null;
   TotalAmt?: number | null;
+  TxnTaxDetail?: { TotalTax?: number | null };
   Balance?: number | null;
   VendorRef?: { name?: string | null; value?: string | null };
 }
@@ -68,6 +69,7 @@ export default function FinanceQuickBooksLinksPage() {
 
   const [selectedBill, setSelectedBill] = useState<QbBillRaw | null>(null);
   const [costLineSearch, setCostLineSearch] = useState("");
+  const [allocationDraft, setAllocationDraft] = useState<Record<number, string>>({});
 
   const { data: status, isLoading: statusLoading } = useQuery<QuickBooksStatus>({
     queryKey: ["/api/quickbooks/status"],
@@ -101,12 +103,25 @@ export default function FinanceQuickBooksLinksPage() {
   });
 
   const linkMutation = useMutation({
-    mutationFn: async (input: { costLineId: number; projectId: number; bill: QbBillRaw }) => {
-      const res = await apiRequest("POST", "/api/quickbooks/links", {
+    mutationFn: async (input: { costLineId: number; projectId: number; bill: QbBillRaw; amountExVat: number }) => {
+      const exVat = Number(((input.bill.TotalAmt ?? 0) - (input.bill.TxnTaxDetail?.TotalTax ?? 0)).toFixed(2));
+      const res = await apiRequest("POST", "/api/quickbooks/cost-allocations/bulk-assign", {
         projectId: input.projectId,
-        costLineId: input.costLineId,
-        bill: input.bill,
-        matchType: "manual",
+        bill: {
+          id: input.bill.Id,
+          docNumber: input.bill.DocNumber ?? input.bill.Id,
+          txnDate: input.bill.TxnDate ?? null,
+          dueDate: null,
+          totalAmount: exVat,
+          balance: input.bill.Balance ?? null,
+          vendorName: input.bill.VendorRef?.name ?? null,
+          vendorId: input.bill.VendorRef?.value ?? null,
+          qbAmountIncVat: input.bill.TotalAmt ?? null,
+          qbTaxAmount: input.bill.TxnTaxDetail?.TotalTax ?? null,
+          qbAmountExVat: exVat,
+          taxUncertain: input.bill.TxnTaxDetail?.TotalTax == null,
+        },
+        allocations: [{ costLineId: input.costLineId, amountExVat: input.amountExVat }],
       });
       return res.json();
     },
@@ -114,10 +129,11 @@ export default function FinanceQuickBooksLinksPage() {
       setSelectedBill(null);
       setCostLineSearch("");
       queryClient.invalidateQueries({ queryKey: ["/api/quickbooks/links"] });
-      toast({ title: "Link created" });
+      setAllocationDraft({});
+      toast({ title: "Allocation saved" });
     },
     onError: (err: Error) => {
-      const title = isApiError(err) && err.status === 409 ? "Link conflict" : "Link failed";
+      const title = isApiError(err) && err.status === 409 ? "Over-assignment blocked" : "Save failed";
       toast({ title, description: err.message, variant: "destructive" });
     },
   });
@@ -203,7 +219,9 @@ export default function FinanceQuickBooksLinksPage() {
                     <th className="px-2 py-1.5 text-left">Bill #</th>
                     <th className="px-2 py-1.5 text-left">Date</th>
                     <th className="px-2 py-1.5 text-left">Vendor</th>
-                    <th className="px-2 py-1.5 text-right">Total</th>
+                    <th className="px-2 py-1.5 text-right">Inc VAT</th>
+                    <th className="px-2 py-1.5 text-right">Tax</th>
+                    <th className="px-2 py-1.5 text-right">Ex VAT</th>
                     <th className="px-2 py-1.5 text-right">Balance</th>
                     <th className="px-2 py-1.5 text-left"></th>
                   </tr>
@@ -221,6 +239,8 @@ export default function FinanceQuickBooksLinksPage() {
                         <td className="px-2 py-1.5">{bill.TxnDate ?? "—"}</td>
                         <td className="px-2 py-1.5">{bill.VendorRef?.name ?? "—"}</td>
                         <td className="px-2 py-1.5 text-right">{formatCurrency(bill.TotalAmt)}</td>
+                        <td className="px-2 py-1.5 text-right">{formatCurrency(bill.TxnTaxDetail?.TotalTax ?? null)}</td>
+                        <td className="px-2 py-1.5 text-right">{formatCurrency((bill.TotalAmt ?? 0) - (bill.TxnTaxDetail?.TotalTax ?? 0))}</td>
                         <td className="px-2 py-1.5 text-right">{formatCurrency(bill.Balance)}</td>
                         <td className="px-2 py-1.5">
                           {isSelected ? (
@@ -260,7 +280,7 @@ export default function FinanceQuickBooksLinksPage() {
               <div className="flex items-center gap-2">
                 <Search className="h-3 w-3 text-muted-foreground" />
                 <Input
-                  placeholder="Search by invoice #, supplier, project name, or description"
+                  placeholder="Search by project, invoice #, supplier, amount, description, alias"
                   value={costLineSearch}
                   onChange={(e) => setCostLineSearch(e.target.value)}
                   className="h-8 text-xs"
@@ -278,6 +298,7 @@ export default function FinanceQuickBooksLinksPage() {
                       <th className="px-2 py-1.5 text-left">Date</th>
                       <th className="px-2 py-1.5 text-left">Supplier</th>
                       <th className="px-2 py-1.5 text-right">Amount</th>
+                      <th className="px-2 py-1.5 text-right">Assign ex-VAT</th>
                       <th className="px-2 py-1.5 text-left"></th>
                     </tr>
                   </thead>
@@ -302,6 +323,14 @@ export default function FinanceQuickBooksLinksPage() {
                           <td className="px-2 py-1.5 text-right">
                             {formatCurrency(cost.amountExVat)}
                           </td>
+                          <td className="px-2 py-1.5 text-right">
+                            <Input
+                              className="h-6 text-[10px] w-24 ml-auto"
+                              value={allocationDraft[cost.id] ?? ""}
+                              placeholder={String(cost.amountExVat ?? "")}
+                              onChange={(e) => setAllocationDraft((d) => ({ ...d, [cost.id]: e.target.value }))}
+                            />
+                          </td>
                           <td className="px-2 py-1.5">
                             <Button
                               size="sm"
@@ -312,10 +341,11 @@ export default function FinanceQuickBooksLinksPage() {
                                   costLineId: cost.id,
                                   projectId: cost.projectId,
                                   bill: selectedBill,
+                                  amountExVat: Number(allocationDraft[cost.id] || cost.amountExVat || 0),
                                 })
                               }
                             >
-                              <Link2 className="h-3 w-3" /> Link
+                              <Link2 className="h-3 w-3" /> Assign
                             </Button>
                           </td>
                         </tr>
@@ -323,7 +353,7 @@ export default function FinanceQuickBooksLinksPage() {
                     })}
                     {!costLineSearching && (costLineSearchResp?.costLines.length ?? 0) === 0 && (
                       <tr>
-                        <td colSpan={6} className="px-2 py-3 text-center text-muted-foreground">
+                        <td colSpan={7} className="px-2 py-3 text-center text-muted-foreground">
                           {costLineSearch
                             ? "No cost lines match."
                             : "Type to search (or leave blank for most recent 50)."}
@@ -335,8 +365,8 @@ export default function FinanceQuickBooksLinksPage() {
               </div>
               <div className="text-[10px] text-muted-foreground border-t pt-2">
                 Linking <span className="font-medium">{selectedBill.DocNumber ?? selectedBill.Id}</span>
-                {" "}({formatCurrency(selectedBill.TotalAmt)} · {selectedBill.VendorRef?.name ?? "—"})
-                {" "}— snapshot will be stored on the link row.
+                {" "}({formatCurrency((selectedBill.TotalAmt ?? 0) - (selectedBill.TxnTaxDetail?.TotalTax ?? 0))} ex-VAT · {selectedBill.VendorRef?.name ?? "—"})
+                {" "}— allocation save blocks over-assignment and flags under-assignment.
               </div>
             </CardContent>
           </Card>

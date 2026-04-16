@@ -117,6 +117,17 @@ export const QUICKBOOKS_LINK_MATCH_TYPES = [
 ] as const;
 export type QuickBooksLinkMatchType = (typeof QUICKBOOKS_LINK_MATCH_TYPES)[number];
 
+export const QUICKBOOKS_DOCUMENT_TYPES = ["bill", "invoice"] as const;
+export type QuickBooksDocumentType = (typeof QUICKBOOKS_DOCUMENT_TYPES)[number];
+
+export const QUICKBOOKS_DOCUMENT_ASSIGNMENT_STATUS = [
+  "UNASSIGNED",
+  "PARTIALLY_ASSIGNED",
+  "FULLY_ASSIGNED",
+  "TAX_UNCERTAIN",
+] as const;
+export type QuickBooksDocumentAssignmentStatus = (typeof QUICKBOOKS_DOCUMENT_ASSIGNMENT_STATUS)[number];
+
 export const quickbooksInvoiceLinks = pgTable(
   "quickbooks_invoice_links",
   {
@@ -191,6 +202,113 @@ export const insertQuickBooksInvoiceLinkSchema = createInsertSchema(
 } as any);
 export type InsertQuickBooksInvoiceLink = z.infer<typeof insertQuickBooksInvoiceLinkSchema>;
 export type QuickBooksInvoiceLink = typeof quickbooksInvoiceLinks.$inferSelect;
+
+/**
+ * Canonical QuickBooks evidence document snapshot.
+ * One row per QB source document (Bill/Invoice) per realm.
+ *
+ * Amount fields are always stored with explicit VAT decomposition:
+ *  - qb_amount_inc_vat: TotalAmt from QB
+ *  - qb_tax_amount: TxnTaxDetail.TotalTax when provided
+ *  - qb_amount_ex_vat: qb_amount_inc_vat - qb_tax_amount when tax is available
+ *
+ * If tax decomposition is missing, mark TAX_UNCERTAIN and block bulk
+ * auto-approval in API flows.
+ */
+export const quickbooksDocuments = pgTable(
+  "quickbooks_documents",
+  {
+    id: serial("id").primaryKey(),
+    projectId: integer("project_id"),
+    qbEntityType: text("qb_entity_type").notNull().default("bill"),
+    qbEntityId: text("qb_entity_id").notNull(),
+    qbRealmId: text("qb_realm_id").notNull(),
+    qbDocNumber: text("qb_doc_number"),
+    qbTxnDate: text("qb_txn_date"),
+    qbCounterpartyName: text("qb_counterparty_name"),
+    qbCounterpartyId: text("qb_counterparty_id"),
+    qbAmountIncVat: decimal("qb_amount_inc_vat", { precision: 15, scale: 2 }),
+    qbTaxAmount: decimal("qb_tax_amount", { precision: 15, scale: 2 }),
+    qbAmountExVat: decimal("qb_amount_ex_vat", { precision: 15, scale: 2 }),
+    amountTolerance: decimal("amount_tolerance", { precision: 15, scale: 4 }).notNull().default("0.01"),
+    taxStatus: text("tax_status").notNull().default("KNOWN"),
+    assignmentStatus: text("assignment_status").notNull().default("UNASSIGNED"),
+    sourcePayload: jsonb("source_payload"),
+    createdBy: integer("created_by"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at"),
+  },
+  (table) => ({
+    uniqueDocPerRealm: uniqueIndex("uq_qb_documents_doc_realm_active")
+      .on(table.qbEntityType, table.qbEntityId, table.qbRealmId)
+      .where(sql`${table.deletedAt} IS NULL`),
+    projectIdx: index("quickbooks_documents_project_idx").on(table.projectId),
+    docNumIdx: index("quickbooks_documents_doc_num_idx").on(table.qbDocNumber),
+    counterpartyIdx: index("quickbooks_documents_counterparty_idx").on(table.qbCounterpartyName),
+  }),
+);
+
+export const insertQuickBooksDocumentSchema = createInsertSchema(
+  quickbooksDocuments,
+).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  deletedAt: true,
+} as any);
+export type InsertQuickBooksDocument = z.infer<typeof insertQuickBooksDocumentSchema>;
+export type QuickBooksDocument = typeof quickbooksDocuments.$inferSelect;
+
+/**
+ * Allocation rows from QuickBooks evidence document -> app cost line.
+ * Many-to-many, amount-aware, ex-VAT only.
+ *
+ * Governance:
+ *  - No hard deletes.
+ *  - Over-assignment is blocked in service-layer validations.
+ */
+export const quickbooksCostAllocations = pgTable(
+  "quickbooks_cost_allocations",
+  {
+    id: serial("id").primaryKey(),
+    quickbooksDocumentId: integer("quickbooks_document_id")
+      .notNull()
+      .references(() => quickbooksDocuments.id, { onDelete: "restrict" }),
+    projectId: integer("project_id"),
+    costLineId: integer("cost_line_id")
+      .notNull(),
+    amountExVat: decimal("amount_ex_vat", { precision: 15, scale: 2 }).notNull(),
+    matchType: text("match_type").notNull().default("manual"),
+    status: text("status").notNull().default("active"),
+    reason: text("reason"),
+    createdBy: integer("created_by"),
+    approvedBy: integer("approved_by"),
+    approvedAt: timestamp("approved_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at"),
+  },
+  (table) => ({
+    uniqueActiveDocCostLine: uniqueIndex("uq_qb_cost_alloc_doc_line_active")
+      .on(table.quickbooksDocumentId, table.costLineId)
+      .where(sql`${table.deletedAt} IS NULL`),
+    documentIdx: index("quickbooks_cost_alloc_document_idx").on(table.quickbooksDocumentId),
+    costLineIdx: index("quickbooks_cost_alloc_cost_line_idx").on(table.costLineId),
+    projectIdx: index("quickbooks_cost_alloc_project_idx").on(table.projectId),
+  }),
+);
+
+export const insertQuickBooksCostAllocationSchema = createInsertSchema(
+  quickbooksCostAllocations,
+).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  deletedAt: true,
+} as any);
+export type InsertQuickBooksCostAllocation = z.infer<typeof insertQuickBooksCostAllocationSchema>;
+export type QuickBooksCostAllocation = typeof quickbooksCostAllocations.$inferSelect;
 
 // ===================== QUICKBOOKS CUSTOMER MAPPINGS =====================
 
