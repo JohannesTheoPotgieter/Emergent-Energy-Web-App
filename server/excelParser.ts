@@ -648,6 +648,7 @@ export async function parseTrackerFile(buffer: Buffer, fileName: string): Promis
         
         expenses.push({
           projectName,
+          projectId: 0, // Placeholder — resolved by import pipeline after parsing
           rowNumber: rowIdx + 1,
           rowType,
           expenseCategory: expenseCategory || null,
@@ -761,6 +762,7 @@ export async function parseTrackerFile(buffer: Buffer, fileName: string): Promis
           
           inflows.push({
             projectName,
+            projectId: 0, // Placeholder — resolved by import pipeline after parsing
             rowNumber: rowIdx + 1,
             milestoneNo: milestoneNoCol >= 0 && row[milestoneNoCol] ? String(row[milestoneNoCol]) : null,
             milestoneName: String(milestoneDesc),
