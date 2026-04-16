@@ -30,7 +30,8 @@ import {
 import { computeQcProgress } from "@shared/quality-governance";
 import { desc } from "drizzle-orm";
 import { isDateBlack } from "../lib/calculations/stateClassifier";
-import { isCanonicalCosRealised } from "../lib/finance/cos-realisation";
+import { getCosRealisedAmountExVat } from "../lib/calculations/financeUtils";
+import { getAssignedEvidenceByCostLineIds } from "../lib/finance/qb-allocation-read";
 
 const COMPLETED_STATUSES = ["COMPLETE", "COMPLETED", "DONE"];
 const CANCELLED_STATUSES = ["CANCELLED", "CANCELED"];
@@ -240,39 +241,29 @@ export async function generatePmReportData(month: string) {
     if (!costByProject.has(c.projectId)) costByProject.set(c.projectId, []);
     costByProject.get(c.projectId)!.push(c);
   }
+  const assignedByCostLineId = await getAssignedEvidenceByCostLineIds((allCostLines as any[]).map((c: any) => c.id));
 
   const costSummary = activeProjects.map(p => {
     const lines = costByProject.get(p.id) || [];
     const budgetTotal = lines.reduce((s: any, c: any) => s + toNum(c.budgetTotal), 0);
     const actualCost = lines.reduce((s: any, c: any) => s + toNum(c.amountExVat), 0);
-    // COS realised: invoice + invoice-date confirmed (black font) per canonical check
-    const cosRealised = lines.filter((c: any) => isCanonicalCosRealised({
-      status: null,
-      cosStatusOverride: c.cosStatusOverride ?? null,
-      cosRealised: c.cosRealised ?? null,
-      expenseInvoiceNumber: c.invoiceNumber ?? null,
-      expenseInvoicedDate: c.invoiceDate ?? null,
-      expensePoNumber: c.poNumber ?? null,
-      paymentDate: c.paidDate ?? null,
-      today: monthEndStr,
-      invoiceDateFontColor: c.invoiceDateFontColor ?? null,
-      invoiceDateConfirmed: c.invoiceDateConfirmed ?? null,
-    })).reduce((s: any, c: any) => s + toNum(c.amountExVat), 0);
+    const cosRealised = lines.reduce((s: any, c: any) => s + getCosRealisedAmountExVat({
+      amountExVat: c.amountExVat,
+      lineAssignedQbExVat: assignedByCostLineId.get(c.id) ?? null,
+    }), 0);
     // Cash paid: confirmed payment date
     const paid = lines.filter((c: any) => c.paidDateConfirmed).reduce((s: any, c: any) => s + toNum(c.amountExVat), 0);
     // Committed: has PO or invoice-in-progress but not yet realised per canonical check
-    const committed = lines.filter((c: any) => (c.poNumber || c.invoiceNumber) && !isCanonicalCosRealised({
-      status: null,
-      cosStatusOverride: c.cosStatusOverride ?? null,
-      cosRealised: c.cosRealised ?? null,
-      expenseInvoiceNumber: c.invoiceNumber ?? null,
-      expenseInvoicedDate: c.invoiceDate ?? null,
-      expensePoNumber: c.poNumber ?? null,
-      paymentDate: c.paidDate ?? null,
-      today: monthEndStr,
-      invoiceDateFontColor: c.invoiceDateFontColor ?? null,
-      invoiceDateConfirmed: c.invoiceDateConfirmed ?? null,
-    })).reduce((s: any, c: any) => s + toNum(c.amountExVat), 0);
+    const committed = lines
+      .filter((c: any) => (c.poNumber || c.invoiceNumber))
+      .reduce((s: any, c: any) => {
+        const amount = toNum(c.amountExVat);
+        const realised = getCosRealisedAmountExVat({
+          amountExVat: c.amountExVat,
+          lineAssignedQbExVat: assignedByCostLineId.get(c.id) ?? null,
+        });
+        return s + Math.max(0, amount - realised);
+      }, 0);
     const costsThisMonth = lines.filter((c: any) => isDateStrInMonth(c.invoiceDate, monthStartStr, monthEndStr)).reduce((s: any, c: any) => s + toNum(c.amountExVat), 0);
     return {
       projectId: p.id,
