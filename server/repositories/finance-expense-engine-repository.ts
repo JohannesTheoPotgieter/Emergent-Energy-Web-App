@@ -1,6 +1,8 @@
 import { eq, and, isNotNull, isNull } from "drizzle-orm";
 import { softCloseByProjectName } from "../lib/temporal-helpers";
 import { selectWinningExpenseRows } from "../lib/expense-row-selector";
+import { computeCostEvidence } from "../lib/finance/qb-allocation";
+import { getAssignedEvidenceByCostLineIds } from "../lib/finance/qb-allocation-read";
 import {
   normalizedCostLines, projectInfo,
   type ProgramExpense, type InsertProgramExpense,
@@ -90,7 +92,8 @@ export class FinanceExpenseEngineRepository {
     ]);
     const resolve = createNameResolver(piRows.map((r: any) => r.projectName));
 
-    const attributed = resolveCostRowProjectNames(costLines as any[], piRows as any[], "[fetchAllProgramExpenses]");
+    const enrichedRows = await this.attachAllocationEvidence(costLines as any[]);
+    const attributed = resolveCostRowProjectNames(enrichedRows as any[], piRows as any[], "[fetchAllProgramExpenses]");
     const adaptedNormalized = attributed.map(({ row, name }) => adaptCostToExpense(row, resolve(name)));
 
     // Deterministic winner per business line across normalized rows (handles
@@ -115,7 +118,8 @@ export class FinanceExpenseEngineRepository {
     ]);
     const resolve = createNameResolver(piRows.map((r: any) => r.projectName));
 
-    const attributed = resolveCostRowProjectNames(costLines as any[], piRows as any[], "[getAllCostLinesForCashflow]");
+    const enrichedRows = await this.attachAllocationEvidence(costLines as any[]);
+    const attributed = resolveCostRowProjectNames(enrichedRows as any[], piRows as any[], "[getAllCostLinesForCashflow]");
     const adapted = attributed.map(({ row, name }) => adaptCostToExpense(row, resolve(name)));
     const { winners, diagnostics } = selectWinningExpenseRows(adapted);
     console.log(`[getAllCostLinesForCashflow] ${costLines.length} active NCL → ${adapted.length} adapted → ${winners.length} after dedup (removed ${diagnostics.duplicatesRemoved})`);
@@ -149,7 +153,8 @@ export class FinanceExpenseEngineRepository {
       return false;
     });
 
-    const adapted = costLines.map((c: any) => adaptCostToExpense(c, projectName));
+    const enrichedRows = await this.attachAllocationEvidence(costLines as any[]);
+    const adapted = enrichedRows.map((c: any) => adaptCostToExpense(c, projectName));
 
     const needsCarryForward = adapted.some((a: any) => !a.expensePaymentDate && !a.forecastPaymentDate);
     if (needsCarryForward) {
@@ -211,6 +216,25 @@ export class FinanceExpenseEngineRepository {
     const results = await this.dbInstance.insert(normalizedCostLines).values(mapped).returning();
     const { adaptCostToExpense } = await import("../lib/data-merge");
     return results.map((r: any) => adaptCostToExpense(r, r.projectName)) as any;
+  }
+
+  private async attachAllocationEvidence(costLines: any[]): Promise<any[]> {
+    if (!Array.isArray(costLines) || costLines.length === 0) return costLines;
+    const assignedByCostLineId = await getAssignedEvidenceByCostLineIds(costLines.map((c: any) => Number(c.id)));
+    return costLines.map((row: any) => {
+      const lineAmount = Number(row.amountExVat ?? 0);
+      const assigned = assignedByCostLineId.get(Number(row.id)) ?? 0;
+      const evidence = computeCostEvidence(
+        Number.isFinite(lineAmount) ? lineAmount : 0,
+        Number.isFinite(assigned) ? assigned : 0,
+      );
+      return {
+        ...row,
+        lineAssignedQbExVat: assigned,
+        lineRealisedAmountExVat: evidence.lineRealisedAmountExVat,
+        lineUnrealisedRemainderExVat: evidence.lineUnrealisedRemainderExVat,
+      };
+    });
   }
 
   async deleteProgramExpensesByProject(projectName: string): Promise<void> {

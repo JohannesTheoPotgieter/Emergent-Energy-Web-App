@@ -22,7 +22,8 @@ import { cacheGet, cacheSet, cacheDelete, cacheClear } from "../lib/cache";
 import { enqueueJob, registerWorker, QUEUE_NAMES } from "../lib/job-queue";
 import { isRevenueSettled } from "../lib/finance/revenue-ar-status";
 import { computeMarginPct } from "../lib/finance/margin";
-import { isCanonicalCosRealised } from "../lib/finance/cos-realisation";
+import { getCosRealisedAmountExVat } from "../lib/calculations/financeUtils";
+import { getAssignedEvidenceByCostLineIds } from "../lib/finance/qb-allocation-read";
 
 const REFRESH_COOLDOWN_MS = 5 * 60 * 1000; // Skip projects refreshed within 5 minutes
 const CONCURRENCY_LIMIT = 5; // Max parallel project refreshes
@@ -66,6 +67,7 @@ export async function refreshProjectMetrics(projectId: number): Promise<void> {
         ),
       ),
   ]);
+  const assignedByCostLineId = await getAssignedEvidenceByCostLineIds(costRows.map((r: any) => r.id));
 
   let totalRevenue = 0,
     receivedRevenue = 0,
@@ -92,21 +94,10 @@ export async function refreshProjectMetrics(projectId: number): Promise<void> {
     } else {
       outstandingCost += amt;
     }
-    // COS realised = invoice + invoice-date confirmed (black font) per canonical check
-    if (isCanonicalCosRealised({
-      status: null,
-      cosStatusOverride: (row as any).cosStatusOverride ?? null,
-      cosRealised: (row as any).cosRealised ?? null,
-      expenseInvoiceNumber: (row as any).invoiceNumber ?? null,
-      expenseInvoicedDate: (row as any).invoiceDate ?? null,
-      expensePoNumber: (row as any).poNumber ?? null,
-      paymentDate: (row as any).paidDate ?? null,
-      today: new Date().toISOString().slice(0, 10),
-      invoiceDateFontColor: (row as any).invoiceDateFontColor ?? null,
-      invoiceDateConfirmed: (row as any).invoiceDateConfirmed ?? null,
-    })) {
-      realisedCost += amt;
-    }
+    realisedCost += getCosRealisedAmountExVat({
+      amountExVat: row.amountExVat,
+      lineAssignedQbExVat: assignedByCostLineId.get(row.id) ?? null,
+    });
   }
 
   // D-04 fix: store margin as percentage (0–100) consistent with all other views
