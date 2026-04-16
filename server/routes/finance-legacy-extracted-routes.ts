@@ -75,7 +75,8 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
       const monthlyCategoryMap = new Map<string, Map<string, number>>();
 
       const _nowCos = new Date();
-      const _curMonthEnd = `${_nowCos.getFullYear()}-${String(_nowCos.getMonth() + 1).padStart(2, '0')}-31`;
+      const _curLastDay = new Date(_nowCos.getFullYear(), _nowCos.getMonth() + 1, 0).getDate();
+      const _curMonthEnd = `${_nowCos.getFullYear()}-${String(_nowCos.getMonth() + 1).padStart(2, '0')}-${String(_curLastDay).padStart(2, '0')}`;
 
       for (const exp of filtered) {
         const invoiceDate = exp.expenseInvoicedDate;

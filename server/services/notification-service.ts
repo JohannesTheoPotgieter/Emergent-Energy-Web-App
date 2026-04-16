@@ -36,11 +36,41 @@ export async function createNotification(params: CreateNotificationParams) {
     if (recent.length > 0) return null; // throttled
 
     // Upsert throttle record using the composite unique constraint
-    await db.execute(sql`
-      INSERT INTO notification_throttle (recipient_user_id, event_type, entity_type, entity_id, last_sent_at)
-      VALUES (${params.recipientUserId}, ${params.eventType}, ${params.relatedEntityType}, ${params.relatedEntityId}, NOW())
-      ON CONFLICT (recipient_user_id, event_type, entity_type, entity_id) DO UPDATE SET last_sent_at = NOW()
-    `);
+    try {
+      await db.insert(notificationThrottle)
+        .values({
+          recipientUserId: params.recipientUserId,
+          eventType: params.eventType,
+          entityType: params.relatedEntityType,
+          entityId: params.relatedEntityId,
+          lastSentAt: sql`NOW()`,
+        })
+        .onConflictDoUpdate({
+          target: [
+            notificationThrottle.recipientUserId,
+            notificationThrottle.eventType,
+            notificationThrottle.entityType,
+            notificationThrottle.entityId,
+          ],
+          set: { lastSentAt: sql`NOW()` },
+        });
+    } catch {
+      // Fallback if unique constraint hasn't been applied yet:
+      // delete stale row then insert fresh
+      await db.delete(notificationThrottle).where(and(
+        eq(notificationThrottle.recipientUserId, params.recipientUserId),
+        eq(notificationThrottle.eventType, params.eventType),
+        eq(notificationThrottle.entityType, params.relatedEntityType!),
+        eq(notificationThrottle.entityId, params.relatedEntityId!),
+      ));
+      await db.insert(notificationThrottle).values({
+        recipientUserId: params.recipientUserId,
+        eventType: params.eventType,
+        entityType: params.relatedEntityType!,
+        entityId: params.relatedEntityId!,
+        lastSentAt: sql`NOW()`,
+      });
+    }
   }
 
   const [notification] = await db.insert(notifications).values({
