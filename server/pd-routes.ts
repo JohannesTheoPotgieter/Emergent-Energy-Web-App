@@ -1044,9 +1044,26 @@ export function registerPdRoutes(app: Express) {
       const engineeringTypes = new Set(["Feasibility Study", "Design Review", "IFC Planning", "Grid Application", "Battery Assessment", "Site Assessment", "Full EPC"]);
       const engineeringTickets = allTickets.filter((t: any) => engineeringTypes.has(t.requestType) && t.status !== "Cancelled").length;
 
+      // W2: Surface Pipedrive sync freshness in the commercial funnel report
+      // so users see a warning when CRM data is stale.
+      let _integrationFreshness: { pipedrive: { isStale: boolean; warning: string | null } } | undefined;
+      try {
+        const { isIntegrationFresh } = await import("./services/integration-freshness-service");
+        const pdFresh = await isIntegrationFresh("pipedrive");
+        _integrationFreshness = {
+          pipedrive: {
+            isStale: !pdFresh,
+            warning: !pdFresh
+              ? "Pipedrive data may be stale — commercial funnel metrics could be outdated. Trigger a sync from Admin → Pipedrive."
+              : null,
+          },
+        };
+      } catch { /* non-blocking */ }
+
       res.json({
         fy,
         fyLabel: `FY${fy} (Sep ${fy - 1} – Aug ${fy})`,
+        _integrationFreshness,
         commercialFunnel,
         throughput: {
           createdThisMonth: thisMonthTickets.length,
