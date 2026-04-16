@@ -425,7 +425,7 @@ export default function PdDashboardPage() {
                 <CardContent className="p-8 text-center text-muted-foreground">
                   <FileEdit className="h-10 w-10 mx-auto mb-2 opacity-30" />
                   <p className="font-medium">No PD tickets yet</p>
-                  <p className="text-sm mt-1">Create your first PD ticket to get started</p>
+                  <p className="text-sm mt-1">PD tickets track engineering requests (cost proposals, site assessments, IFC planning, etc.) and require a linked project, due date, and request type.</p>
                 </CardContent>
               </Card>
             ) : (
