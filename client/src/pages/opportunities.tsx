@@ -9,6 +9,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { PageEmpty, PageError, PageSkeleton } from "@/components/ui/page-states";
 import { useToast } from "@/hooks/use-toast";
+import { usePermission } from "@/hooks/use-permissions";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -79,6 +80,7 @@ export default function OpportunitiesPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [, navigate] = useLocation();
+  const { allowed: canCreateProject } = usePermission("create_project", "edit");
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState("all");
   const [showForm, setShowForm] = useState(false);
@@ -292,7 +294,7 @@ export default function OpportunitiesPage() {
                       <Calendar className="h-3 w-3 inline mr-0.5" />{opp.expectedCloseDate}
                     </span>
                   )}
-                  {opp.stage !== "won" && opp.stage !== "lost" && (
+                  {canCreateProject && opp.stage !== "won" && opp.stage !== "lost" && (
                     <Button
                       variant="ghost"
                       size="icon"

@@ -753,6 +753,9 @@ export function registerTemplateRoutes(app: Express) {
       // client linkage.
       let resolvedOpportunityId: number | null = null;
       let clientIdFromOpportunity: number | null = null;
+      let duplicateConversionWarning: string | null = null;
+      let earlyStageAdvisory: string | null = null;
+      let opportunitySource: string | null = null;
       if (opportunityId) {
         const { opportunities } = await import("@shared/schema");
         const [opp] = await db.select().from(opportunities).where(eq(opportunities.id, Number(opportunityId)));
@@ -761,6 +764,29 @@ export function registerTemplateRoutes(app: Express) {
         }
         resolvedOpportunityId = opp.id;
         clientIdFromOpportunity = opp.clientId ?? null;
+        opportunitySource = opp.source ?? null;
+
+        // Advisory: warn (not block) if the opportunity is in an early
+        // stage that typically implies the deal is not yet ready for
+        // project execution. This is a readiness signal, not a gate.
+        const earlyStages = ["prospect", "qualification"];
+        if (opp.stage && earlyStages.includes(opp.stage)) {
+          earlyStageAdvisory = `This opportunity is still in the "${opp.stage}" stage. Projects are usually created from opportunities in "proposal" stage or later. You can proceed, but the deal may not be far enough along for project execution.`;
+        }
+
+        // Check whether another project is already linked to this
+        // opportunity. We warn rather than block because legitimate
+        // cases exist (e.g., phased build-out with a second project).
+        const existingProjects = await db
+          .select({ id: projectInfo.id, projectName: projectInfo.projectName })
+          .from(projectInfo)
+          .where(and(
+            eq(projectInfo.opportunityId, resolvedOpportunityId),
+            isNull(projectInfo.deletedAt),
+          ));
+        if (existingProjects.length > 0) {
+          duplicateConversionWarning = `Opportunity #${resolvedOpportunityId} is already linked to project(s): ${existingProjects.map(p => `${p.projectName} (#${p.id})`).join(", ")}. Creating another project from the same opportunity is allowed but may indicate a duplicate.`;
+        }
       }
 
       const resolvedClient = await resolveLinkedClient({
@@ -848,6 +874,14 @@ export function registerTemplateRoutes(app: Express) {
           linkedClientName: resolvedClient.client?.name ?? null,
           linkedClientCode: resolvedClient.client?.clientCode ?? null,
         },
+        // Surfaced when the same opportunity is already linked to
+        // another project. Warning only — not a block.
+        _duplicateConversionWarning: duplicateConversionWarning ?? undefined,
+        // Surfaced when converting an early-stage opportunity (prospect /
+        // qualification). Advisory only — not a block.
+        _earlyStageAdvisory: earlyStageAdvisory ?? undefined,
+        // Source of the linked opportunity (pipedrive / internal / null).
+        _opportunitySource: opportunitySource ?? undefined,
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
