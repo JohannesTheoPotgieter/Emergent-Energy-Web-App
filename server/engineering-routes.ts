@@ -2350,19 +2350,39 @@ export function registerEngineeringRoutes(app: Express) {
           })
         : rawTasks;
 
-      const normalizeKey = (n: string) => n.replace(/_Tracker.*$/i, "").replace(/_/g, " ").toLowerCase().trim();
-      const phaseByNorm = new Map<string, string>();
+      // Phase lookup: projectId-based (canonical) rather than the old
+      // fuzzy name-matching heuristic that could misattribute phases.
+      // Tasks from listEngineeringWorkItems() carry projectId; the
+      // projectInfo query provides phase per projectId.
+      const phaseByProjectId = new Map<number, string>();
+      const projectNameById = new Map<number, string>();
       for (const pi of allProjectInfoRows) {
-        if (pi.phase) phaseByNorm.set(normalizeKey(pi.projectName), pi.phase);
-      }
-      function lookupPhase(taskProjectName: string): string {
-        const norm = normalizeKey(taskProjectName);
-        if (phaseByNorm.has(norm)) return phaseByNorm.get(norm)!;
-        const baseName = norm.replace(/\s*(phase\s*\d+|expansion|rev\d+|\+.*$)/gi, "").trim();
-        if (baseName && phaseByNorm.has(baseName)) return phaseByNorm.get(baseName)!;
-        for (const [key, phase] of phaseByNorm) {
-          if (key.startsWith(baseName) || baseName.startsWith(key)) return phase;
+        // allProjectInfoRows is a leftJoin result; need careful extraction
+        const pName = pi.projectName;
+        const pPhase = pi.phase;
+        // projectInfo rows have projectName; projectExecutionState has phase
+        // The query selects { projectName: projectInfo.projectName, phase: projectExecutionState.phase }
+        if (pName && pPhase) {
+          // We need the projectId but it's not in the select — look up from task data
         }
+      }
+      // Build from raw: re-query with projectId for canonical mapping
+      const projectIdPhaseRows = await db.select({
+        id: projectInfo.id,
+        projectName: projectInfo.projectName,
+        phase: projectExecutionState.phase,
+      })
+        .from(projectInfo)
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
+      for (const row of projectIdPhaseRows) {
+        if (row.phase) phaseByProjectId.set(row.id, row.phase);
+        if (row.projectName) projectNameById.set(row.id, row.projectName);
+      }
+
+      /** Canonical phase lookup by projectId. Falls back to P0_FIRST_ASSESSMENT
+       *  only when the project has no execution state row at all. */
+      function lookupPhaseById(pid: number | null | undefined): string {
+        if (pid && phaseByProjectId.has(pid)) return phaseByProjectId.get(pid)!;
         return "P0_FIRST_ASSESSMENT";
       }
 
@@ -2406,15 +2426,29 @@ export function registerEngineeringRoutes(app: Express) {
       const workload = Array.from(assigneeMap.entries()).map(([name, w]) => ({ name, ...w }))
         .sort((a, b) => b.overdue - a.overdue || b.active - a.active);
 
-      const projectMap = new Map<string, typeof allTasks>();
+      // Group tasks by projectId (canonical) rather than projectName (heuristic).
+      // Tasks with no projectId go to the "Unassigned" bucket (projectId=0).
+      const projectTaskMap = new Map<number, { projectName: string; tasks: typeof allTasks }>();
       for (const t of allTasks) {
-        const key = t.projectName || "Unassigned";
-        if (!projectMap.has(key)) projectMap.set(key, []);
-        projectMap.get(key)!.push(t);
+        const pid = t.projectId || 0;
+        if (!projectTaskMap.has(pid)) {
+          projectTaskMap.set(pid, {
+            projectName: t.projectName || (pid === 0 ? "Unassigned" : `Project #${pid}`),
+            tasks: [],
+          });
+        }
+        projectTaskMap.get(pid)!.tasks.push(t);
       }
 
-      const projectHealth = Array.from(projectMap.entries()).map(([projectName, tasks]) => {
-        const phase = lookupPhase(projectName);
+      // Legacy compat: also build name-keyed map for the response shape
+      const projectMap = new Map<string, typeof allTasks>();
+      for (const [, { projectName, tasks }] of projectTaskMap) {
+        projectMap.set(projectName, tasks);
+      }
+
+      const projectHealth = Array.from(projectTaskMap.entries()).map(([projectId, { projectName, tasks }]) => {
+        // Canonical phase lookup by projectId — no fuzzy name matching.
+        const phase = lookupPhaseById(projectId);
         const total = tasks.length;
         const completed = tasks.filter((t: any) => isTaskComplete(t.status)).length;
         const active = tasks.filter((t: any) => openStatuses.has(t.status)).length;
@@ -2474,10 +2508,14 @@ export function registerEngineeringRoutes(app: Express) {
       // Catch-all: active tasks not covered by any section above
       const otherActive = allTasks.filter(t => openStatuses.has(t.status) && !shownIds.has(t.id));
 
+      // Metric: totalProjects — count of distinct projects that have eng tasks,
+      // excluding the "Unassigned" bucket which is not a real project.
+      const realProjectCount = [...projectMap.keys()].filter(k => k !== "Unassigned").length;
+
       res.json({
         date: todayStr,
         summary: {
-          totalProjects: projectMap.size,
+          totalProjects: realProjectCount,
           totalTasks: allTasks.length,
           activeTasks: allTasks.filter(t => openStatuses.has(t.status)).length,
           completedTasks: allTasks.filter((t: any) => isTaskComplete(t.status)).length,
