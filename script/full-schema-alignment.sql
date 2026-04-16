@@ -5671,6 +5671,12 @@ DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='qc_item_evidence') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='qc_item_evidence' AND column_name='created_at') THEN
     ALTER TABLE "qc_item_evidence" ADD COLUMN "created_at" TIMESTAMP;
   END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='qc_item_evidence') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='qc_item_evidence' AND column_name='deleted_at') THEN
+    ALTER TABLE "qc_item_evidence" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='qc_item_evidence') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='qc_item_evidence' AND column_name='deleted_by') THEN
+    ALTER TABLE "qc_item_evidence" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='qc_item_instance') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='qc_item_instance' AND column_name='checklist_id') THEN
     ALTER TABLE "qc_item_instance" ADD COLUMN "checklist_id" INTEGER;
   END IF;
