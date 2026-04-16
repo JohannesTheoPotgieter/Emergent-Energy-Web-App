@@ -1986,7 +1986,8 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
     if (!match) return res.status(400).json({ error: "Invalid monthKey format" });
 
     const monthStart = `${monthKey}-01`;
-    const monthEnd = `${monthKey}-31`;
+    const lastDay = new Date(Number(match[1]), Number(match[2]), 0).getDate();
+    const monthEnd = `${monthKey}-${String(lastDay).padStart(2, '0')}`;
     const [allCostLines, links, rawBills] = await Promise.all([
       db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
       db.select().from(quickbooksInvoiceLinks).where(and(
@@ -3428,6 +3429,12 @@ router.get("/api/revenue-tracker/month-detail", requireAuth, requirePermission("
     const { monthKey, project, state: stateFilter } = req.query as { monthKey?: string; project?: string; state?: string };
     if (!monthKey) return res.status(400).json({ error: "monthKey required" });
 
+    const matchRev = monthKey.match(/^(\d{4})-(\d{2})$/);
+    if (!matchRev) return res.status(400).json({ error: "Invalid monthKey format" });
+
+    const lastDayRev = new Date(Number(matchRev[1]), Number(matchRev[2]), 0).getDate();
+    const monthEndRev = `${monthKey}-${String(lastDayRev).padStart(2, '0')}`;
+
     const [allExpenses, cosOverrideMapRMD] = await Promise.all([
       project ? getCanonicalProjectCostLinesByName(project).then((r) => r.rows) : getCanonicalAllCurrentCostLines(),
       Promise.resolve(new Map()),
@@ -3438,7 +3445,7 @@ router.get("/api/revenue-tracker/month-detail", requireAuth, requirePermission("
         eq(quickbooksInvoiceLinks.qbEntityType, "invoice"),
         isNull(quickbooksInvoiceLinks.deletedAt),
       )),
-      getInvoices(`${monthKey}-01`, `${monthKey}-31`).catch(() => ({ QueryResponse: { Invoice: [] } })),
+      getInvoices(`${monthKey}-01`, monthEndRev).catch(() => ({ QueryResponse: { Invoice: [] } })),
     ]);
 
 
