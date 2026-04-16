@@ -191,7 +191,6 @@ export default function FinanceQuickBooksLinksPage() {
       <section>
         <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
           1. Pick a QuickBooks bill <Badge variant="outline">{unlinkedBills.length}</Badge>
-          {status.sandbox && <Badge variant="outline" className="text-[10px]">Sandbox</Badge>}
         </h3>
         {unlinkedBills.length === 0 ? (
           <p className="text-xs text-muted-foreground">No unlinked QB bills.</p>

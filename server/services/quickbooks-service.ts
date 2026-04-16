@@ -51,16 +51,8 @@ export type QuickBooksTokenMetadata = {
   companyName?: string;
 };
 
-function isSandbox(): boolean {
-  const raw = (process.env.QUICKBOOKS_SANDBOX ?? "true").toString().toLowerCase();
-  return raw !== "false" && raw !== "0";
-}
-
 function getApiBase(realmId: string): string {
-  const host = isSandbox()
-    ? "https://sandbox-quickbooks.api.intuit.com"
-    : "https://quickbooks.api.intuit.com";
-  return `${host}/v3/company/${encodeURIComponent(realmId)}`;
+  return `https://quickbooks.api.intuit.com/v3/company/${encodeURIComponent(realmId)}`;
 }
 
 function maskMiddle(value: string): string {
@@ -164,7 +156,6 @@ async function postToTokenEndpoint(body: URLSearchParams): Promise<IntuitTokenRe
   // Diagnostic: log token request details (mask the Base64 payload)
   const b64Part = authHeader.replace("Basic ", "");
   console.log(`[QuickBooks] Token endpoint: ${QB_TOKEN_ENDPOINT}`);
-  console.log(`[QuickBooks] Sandbox mode: ${isSandbox()}`);
   console.log(
     `[QuickBooks] Authorization header: Basic ${b64Part.slice(0, 6)}...${b64Part.slice(-6)} (base64 length=${b64Part.length})`,
   );
@@ -187,13 +178,12 @@ async function postToTokenEndpoint(body: URLSearchParams): Promise<IntuitTokenRe
     const diag = [
       `status=${response.status}`,
       `response=${text || response.statusText}`,
-      `sandbox=${isSandbox()}`,
       `clientId=${maskMiddle(clientId)}(len=${clientId.length})`,
       `secret=${maskMiddle(clientSecret)}(len=${clientSecret.length})`,
     ].join(" | ");
     console.error(`[QuickBooks] Token exchange failed: ${diag}`);
     throw new Error(
-      `QuickBooks token endpoint returned ${response.status}: ${text || response.statusText}. Diagnostics: sandbox=${isSandbox()}, clientId=${maskMiddle(clientId)}(len=${clientId.length}), secret=${maskMiddle(clientSecret)}(len=${clientSecret.length})`,
+      `QuickBooks token endpoint returned ${response.status}: ${text || response.statusText}. Diagnostics: clientId=${maskMiddle(clientId)}(len=${clientId.length}), secret=${maskMiddle(clientSecret)}(len=${clientSecret.length})`,
     );
   }
 
@@ -549,7 +539,6 @@ export interface QuickBooksConnectionStatus {
   companyName: string | null;
   tokenExpiry: string | null;
   refreshTokenExpiry: string | null;
-  sandbox: boolean;
   /** Derived health tile — 'healthy' | 'stale' | 'failing' | 'unknown'. */
   health: IntegrationHealthTile["health"];
   /** ISO of the most recent successful QB run event. */
@@ -656,7 +645,6 @@ export async function getQuickBooksConnectionStatus(): Promise<QuickBooksConnect
     companyName: metadata.companyName ?? null,
     tokenExpiry: metadata.tokenExpiry ?? null,
     refreshTokenExpiry: metadata.refreshTokenExpiry ?? null,
-    sandbox: isSandbox(),
     health,
     lastSuccessfulSyncAt: run.lastSuccessAt ? run.lastSuccessAt.toISOString() : null,
     lastFailedSyncAt: run.lastFailureAt ? run.lastFailureAt.toISOString() : null,
