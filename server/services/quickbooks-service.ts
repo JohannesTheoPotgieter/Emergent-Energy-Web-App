@@ -63,9 +63,23 @@ function getApiBase(realmId: string): string {
   return `${host}/v3/company/${encodeURIComponent(realmId)}`;
 }
 
+function maskMiddle(value: string): string {
+  if (value.length <= 8) return `${value.slice(0, 2)}***${value.slice(-2)}`;
+  return `${value.slice(0, 4)}...${value.slice(-4)}`;
+}
+
 function getClientCredentials(): { clientId: string; clientSecret: string } {
   const clientId = process.env.QUICKBOOKS_CLIENT_ID;
   const clientSecret = process.env.QUICKBOOKS_CLIENT_SECRET;
+
+  // Diagnostic: verify env vars are loaded (shows first/last 4 chars only)
+  console.log(
+    `[QuickBooks] QUICKBOOKS_CLIENT_ID: ${clientId ? `"${maskMiddle(clientId)}" (length=${clientId.length})` : "UNDEFINED/EMPTY"}`,
+  );
+  console.log(
+    `[QuickBooks] QUICKBOOKS_CLIENT_SECRET: ${clientSecret ? `"${maskMiddle(clientSecret)}" (length=${clientSecret.length})` : "UNDEFINED/EMPTY"}`,
+  );
+
   if (!clientId || !clientSecret) {
     throw new Error(
       "QuickBooks OAuth credentials missing. Set QUICKBOOKS_CLIENT_ID and QUICKBOOKS_CLIENT_SECRET.",
@@ -145,18 +159,31 @@ type IntuitTokenResponse = {
 };
 
 async function postToTokenEndpoint(body: URLSearchParams): Promise<IntuitTokenResponse> {
+  const authHeader = basicAuthHeader();
+
+  // Diagnostic: log token request details (mask the Base64 payload)
+  const b64Part = authHeader.replace("Basic ", "");
+  console.log(`[QuickBooks] Token endpoint: ${QB_TOKEN_ENDPOINT}`);
+  console.log(`[QuickBooks] Sandbox mode: ${isSandbox()}`);
+  console.log(
+    `[QuickBooks] Authorization header: Basic ${b64Part.slice(0, 6)}...${b64Part.slice(-6)} (base64 length=${b64Part.length})`,
+  );
+  console.log(`[QuickBooks] Token body params: ${[...body.keys()].join(", ")}`);
+
   const response = await fetch(QB_TOKEN_ENDPOINT, {
     method: "POST",
     headers: {
       Accept: "application/json",
       "Content-Type": "application/x-www-form-urlencoded",
-      Authorization: basicAuthHeader(),
+      Authorization: authHeader,
     },
     body: body.toString(),
   });
 
   const text = await response.text();
   if (!response.ok) {
+    // Diagnostic: log the full error response for debugging
+    console.error(`[QuickBooks] Token endpoint error ${response.status}: ${text}`);
     throw new Error(
       `QuickBooks token endpoint returned ${response.status}: ${text || response.statusText}`,
     );
