@@ -43,7 +43,8 @@ async function run() {
          AND ql.qb_entity_type = 'bill'
          AND ql.app_entity_id = ncl.id
          AND ql.deleted_at IS NULL
-        WHERE (COALESCE(ncl.invoice_date, ncl.paid_date) BETWEEN $1::date AND $2::date)
+        WHERE ncl.effective_to IS NULL
+          AND (COALESCE(ncl.invoice_date, ncl.paid_date) BETWEEN $1::date AND $2::date)
       )
       SELECT
         project,
@@ -105,7 +106,8 @@ async function run() {
          AND ql.qb_entity_type = 'invoice'
          AND ql.app_entity_id = nrl.id
          AND ql.deleted_at IS NULL
-        WHERE (COALESCE(nrl.paid_date, nrl.in_bank_date, nrl.invoice_date) BETWEEN $1::date AND $2::date)
+        WHERE nrl.effective_to IS NULL
+          AND (COALESCE(nrl.paid_date, nrl.in_bank_date, nrl.invoice_date) BETWEEN $1::date AND $2::date)
       )
       SELECT
         project,
