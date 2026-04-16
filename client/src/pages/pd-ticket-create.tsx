@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -49,6 +49,10 @@ export default function PdTicketCreatePage() {
   const queryClient = useQueryClient();
 
   const [step, setStep] = useState(1);
+  const queryParams = useMemo(() => new URLSearchParams(typeof window !== "undefined" ? window.location.search : ""), []);
+  const opportunityIdParam = queryParams.get("opportunityId");
+  const preselectedClientId = queryParams.get("clientId");
+  const preselectedProjectId = queryParams.get("projectId");
 
   const [clientSearch, setClientSearch] = useState("");
   const [selectedClient, setSelectedClient] = useState<any>(null);
@@ -106,6 +110,19 @@ export default function PdTicketCreatePage() {
   });
 
   const designers = useMemo(() => allUsers.filter((u: any) => u.role === "ENGINEER" || u.role === "PROJECT_DEVELOPER"), [allUsers]);
+
+  // Mapping flow handoff: if opportunities mapping resolved client/project
+  // before landing here, preselect them.
+  useEffect(() => {
+    if (preselectedClientId && !selectedClient && clientResults.length > 0) {
+      const match = clientResults.find((c: any) => String(c.id) === String(preselectedClientId));
+      if (match) setSelectedClient(match);
+    }
+    if (preselectedProjectId && !selectedProject && projectResults.length > 0) {
+      const match = projectResults.find((p: any) => String(p.id) === String(preselectedProjectId));
+      if (match) setSelectedProject(match);
+    }
+  }, [preselectedClientId, preselectedProjectId, clientResults, projectResults, selectedClient, selectedProject]);
 
   const { data: similarProjects } = useQuery<{ matches: Array<{ id: number; projectName: string }> }>({
     queryKey: ["/api/projects/similar-names", newProjectName.trim()],
@@ -193,6 +210,7 @@ export default function PdTicketCreatePage() {
         ? Math.round(((parseFloat(form.estimatedProjectValue) - parseFloat(form.estimatedCost)) / parseFloat(form.estimatedProjectValue)) * 10000) / 100 : null,
       financialNotes: form.financialNotes || null,
       selectedTasks: Array.from(selectedTasks),
+      opportunityId: opportunityIdParam ? Number(opportunityIdParam) : null,
     };
 
     createTicketMutation.mutate(body);
