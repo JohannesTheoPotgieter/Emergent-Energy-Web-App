@@ -134,6 +134,9 @@ export function registerQuickBooksRoutes(app: Express): void {
 
   app.get("/api/quickbooks/callback", async (req, res) => {
     try {
+      // Diagnostic: log all query params Intuit sent back
+      console.log(`[QuickBooks callback] Full query params:`, req.query);
+
       const code = typeof req.query.code === "string" ? req.query.code : "";
       const realmId = typeof req.query.realmId === "string" ? req.query.realmId : "";
       const state = typeof req.query.state === "string" ? req.query.state : "";
