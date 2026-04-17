@@ -55,7 +55,9 @@ import {
   invoiceRawToSummary,
   listAllLinks,
   listProjectsWithMappings,
+  QuickBooksBillNotFoundError,
   QuickBooksLinkConflictError,
+  QuickBooksUnavailableError,
   runProjectCostReconciliation,
   runProjectRevenueReconciliation,
   saveCostAllocationsForBill,
@@ -66,6 +68,9 @@ import {
   type QuickBooksBillSummary,
   type QuickBooksInvoiceSummary,
 } from "./services/quickbooks-reconciliation-service";
+import { z } from "zod";
+import { validateBody } from "./middleware/validateBody";
+import { ApiError, conflict, logApiError, sendError, serverError } from "./lib/api-error";
 
 /**
  * Map a QB link-write exception to an HTTP response. Returns true if the
@@ -458,58 +463,74 @@ export function registerQuickBooksRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/quickbooks/cost-allocations/bulk-assign", requireAuth, requirePermission("financials", "edit"), async (req, res) => {
-    try {
-      const projectId = Number(req.body?.projectId);
-      const bill = req.body?.bill as QuickBooksBillSummary | undefined;
-      const allocations = Array.isArray(req.body?.allocations) ? req.body.allocations : [];
-      if (!bill?.id) {
-        res.status(400).json({ error: "invalid_bill", message: "bill is required" });
-        return;
-      }
-      if (!Number.isFinite(projectId)) {
-        res.status(400).json({ error: "invalid_project", message: "projectId is required" });
-        return;
-      }
-      const normalized = allocations.map((a: any) => ({
-        projectId,
-        costLineId: Number(a.costLineId),
-        amountExVat: Number(a.amountExVat),
-      })).filter((a: any) => Number.isFinite(a.costLineId) && Number.isFinite(a.amountExVat) && a.amountExVat > 0);
-
-      const result = await saveCostAllocationsForBill({
-        projectId,
-        bill,
-        allocations: normalized,
-        actorId: getEffectiveUser(req)?.id ?? null,
-      });
-
-      logAuditFromReq(req, {
-        entityType: "quickbooks_cost_allocations",
-        entityId: String(result.documentId),
-        action: "quickbooks.cost_allocation.bulk_assign",
-        source: "FINANCE",
-        changesJson: {
-          projectId,
-          qbEntityId: bill.id,
-          allocationCount: normalized.length,
-          assignedExVat: result.assignedExVat,
-          remainingExVat: result.remainingExVat,
-          status: result.status,
-          taxUncertain: result.taxUncertain,
-        },
-      });
-
-      res.json({ success: true, ...result });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to save allocations";
-      if (/Over-assignment blocked/i.test(message)) {
-        res.status(409).json({ error: "over_assignment_blocked", message });
-        return;
-      }
-      res.status(500).json({ error: "quickbooks_allocation_failed", message });
-    }
+  const bulkAssignSchema = z.object({
+    projectId: z.number().int().positive(),
+    // Bill Id only — server re-fetches the Bill from QB to re-derive all
+    // VAT / amount / vendor fields. The client cannot influence stored
+    // evidence amounts.
+    billId: z.string().trim().min(1).max(64).regex(/^[A-Za-z0-9_-]+$/, "Invalid QuickBooks Bill Id"),
+    allocations: z
+      .array(
+        z.object({
+          costLineId: z.number().int().positive(),
+          amountExVat: z.number().positive().finite(),
+        }),
+      )
+      .max(500),
   });
+  type BulkAssignBody = z.infer<typeof bulkAssignSchema>;
+
+  app.post(
+    "/api/quickbooks/cost-allocations/bulk-assign",
+    requireAuth,
+    requirePermission("financials", "edit"),
+    validateBody(bulkAssignSchema),
+    async (req, res) => {
+      const body = req.body as BulkAssignBody;
+      try {
+        const result = await saveCostAllocationsForBill({
+          projectId: body.projectId,
+          billId: body.billId,
+          allocations: body.allocations.map((a) => ({
+            projectId: body.projectId,
+            costLineId: a.costLineId,
+            amountExVat: a.amountExVat,
+          })),
+          actorId: getEffectiveUser(req)?.id ?? null,
+        });
+
+        logAuditFromReq(req, {
+          entityType: "quickbooks_cost_allocations",
+          entityId: String(result.documentId),
+          action: "quickbooks.cost_allocation.bulk_assign",
+          source: "UI",
+          changesJson: {
+            projectId: body.projectId,
+            qbEntityId: body.billId,
+            allocationCount: body.allocations.length,
+            assignedExVat: result.assignedExVat,
+            remainingExVat: result.remainingExVat,
+            status: result.status,
+            taxUncertain: result.taxUncertain,
+          },
+        });
+
+        res.json({ success: true, ...result });
+      } catch (err) {
+        if (err instanceof QuickBooksUnavailableError) {
+          return sendError(res, new ApiError(503, "quickbooks_unavailable", err.message));
+        }
+        if (err instanceof QuickBooksBillNotFoundError) {
+          return sendError(res, new ApiError(404, "quickbooks_bill_not_found", err.message));
+        }
+        if (err instanceof Error && /Over-assignment blocked/i.test(err.message)) {
+          return sendError(res, conflict(err.message));
+        }
+        logApiError("quickbooks.cost_allocation.bulk_assign", err);
+        return sendError(res, serverError("Failed to save QuickBooks cost allocations."));
+      }
+    },
+  );
 
   app.delete("/api/quickbooks/links/:id", requireAuth, requirePermission("financials", "edit"), async (req, res) => {
     try {

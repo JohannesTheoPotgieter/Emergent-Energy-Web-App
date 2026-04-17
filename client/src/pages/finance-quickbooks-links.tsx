@@ -104,23 +104,9 @@ export default function FinanceQuickBooksLinksPage() {
 
   const linkMutation = useMutation({
     mutationFn: async (input: { costLineId: number; projectId: number; bill: QbBillRaw; amountExVat: number }) => {
-      const exVat = Number(((input.bill.TotalAmt ?? 0) - (input.bill.TxnTaxDetail?.TotalTax ?? 0)).toFixed(2));
       const res = await apiRequest("POST", "/api/quickbooks/cost-allocations/bulk-assign", {
         projectId: input.projectId,
-        bill: {
-          id: input.bill.Id,
-          docNumber: input.bill.DocNumber ?? input.bill.Id,
-          txnDate: input.bill.TxnDate ?? null,
-          dueDate: null,
-          totalAmount: exVat,
-          balance: input.bill.Balance ?? null,
-          vendorName: input.bill.VendorRef?.name ?? null,
-          vendorId: input.bill.VendorRef?.value ?? null,
-          qbAmountIncVat: input.bill.TotalAmt ?? null,
-          qbTaxAmount: input.bill.TxnTaxDetail?.TotalTax ?? null,
-          qbAmountExVat: exVat,
-          taxUncertain: input.bill.TxnTaxDetail?.TotalTax == null,
-        },
+        billId: input.bill.Id,
         allocations: [{ costLineId: input.costLineId, amountExVat: input.amountExVat }],
       });
       return res.json();
@@ -128,7 +114,12 @@ export default function FinanceQuickBooksLinksPage() {
     onSuccess: () => {
       setSelectedBill(null);
       setCostLineSearch("");
+      // The server re-fetches the Bill snapshot + writes to both the link
+      // list and the cost-line search surface. Invalidate all three so the
+      // UI reflects the new allocation without a hard refresh.
       queryClient.invalidateQueries({ queryKey: ["/api/quickbooks/links"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/quickbooks/bills"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/quickbooks/cost-lines/search"] });
       setAllocationDraft({});
       toast({ title: "Allocation saved" });
     },
