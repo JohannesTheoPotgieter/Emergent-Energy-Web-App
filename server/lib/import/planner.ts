@@ -219,14 +219,23 @@ export async function runImportPlanner(
     collectWarnings(matched, "PLAN", warnings);
   }
 
-  if (normalization.revenueLines.length > 0 || revenueRows.length > 0) {
+  // SAFETY GUARD — section presence: gate matcher on file-side row count.
+  // Prior failure mode: an upload that omitted the Cashflow / Finance-Revenue
+  // sheet would mass-classify existing active rows as MISSING_FROM_UPLOAD
+  // and wipe them. Trade-off: an upload whose section is present but
+  // intentionally empty leaves existing rows in place rather than clearing
+  // them. In the C&I solar tracker workflow this case effectively does not
+  // occur (projects always have ≥1 milestone / cost line), and the
+  // wipe-on-missing-sheet failure is far more damaging. Operators clear a
+  // section explicitly via the UI's soft-delete path.
+  if (normalization.revenueLines.length > 0) {
     const matched = matchRows("REVENUE", projectId, normalization.revenueLines, revenueRows as any);
     matchedRowsBySection.REVENUE = matched;
     revenueSection = buildSectionPlan(CANONICAL_SOURCES.REVENUE, matched, normalization.revenueLines.length, revenueRows.length);
     collectWarnings(matched, "REVENUE", warnings);
   }
 
-  if (normalization.costLines.length > 0 || costRows.length > 0) {
+  if (normalization.costLines.length > 0) {
     const matched = matchRows("EXPENDITURE", projectId, normalization.costLines, costRows as any);
     matchedRowsBySection.EXPENDITURE = matched;
     expenditureSection = buildSectionPlan(CANONICAL_SOURCES.EXPENDITURE, matched, normalization.costLines.length, costRows.length);
