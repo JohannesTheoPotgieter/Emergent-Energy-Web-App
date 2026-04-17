@@ -11,6 +11,7 @@ import {
   type Opportunity,
   type PdTicket,
 } from "@shared/schema/projects";
+import { workItems } from "@shared/schema/tasks";
 import { users } from "@shared/schema/users";
 import { db } from "../db";
 import { ENGINEERING_REQUEST_TYPES } from "@shared/roles/pd-roles";
@@ -91,6 +92,44 @@ interface ClientRow {
   id: number;
   name: string;
   clientId: string | null;
+}
+
+export interface IntakeOpportunityRow {
+  id: number;
+  pipedriveDealId: string | null;
+  source: string | null;
+  stage: string | null;
+  status: string | null;
+  estimatedValue: string | null;
+  expectedCloseDate: string | Date | null;
+  signedDate: string | Date | null;
+  notes: string | null;
+  updatedAt: Date | null;
+  createdAt: Date | null;
+  clientId: number | null;
+  clientName: string | null;
+}
+
+export interface IntakeTicketRow {
+  id: number;
+  opportunityId: number | null;
+  clientId: number | null;
+  projectId: number | null;
+  projectSiteName: string;
+  requestType: string;
+  priority: string;
+  status: string;
+  dueDate: string | Date | null;
+  tasksSpawnedAt: Date | null;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+  projectDeveloperUserId: number | null;
+  clientName: string | null;
+  projectName: string | null;
+  developerName: string | null;
+  subTasksTotal: number;
+  subTasksDone: number;
+  nextAction: string | null;
 }
 
 export class OpportunitiesRepository {
@@ -387,6 +426,117 @@ export class OpportunitiesRepository {
       .update(opportunities)
       .set({ clientId, updatedAt: new Date() })
       .where(eq(opportunities.id, opportunityId));
+  }
+
+  // ---- Intake page combined queries ----
+
+  async getIntakeOpportunities(): Promise<IntakeOpportunityRow[]> {
+    return db
+      .select({
+        id: opportunities.id,
+        pipedriveDealId: opportunities.pipedriveDealId,
+        source: opportunities.source,
+        stage: opportunities.stage,
+        status: opportunities.status,
+        estimatedValue: opportunities.estimatedValue,
+        expectedCloseDate: opportunities.expectedCloseDate,
+        signedDate: opportunities.signedDate,
+        notes: opportunities.notes,
+        updatedAt: opportunities.updatedAt,
+        createdAt: opportunities.createdAt,
+        clientId: opportunities.clientId,
+        clientName: clients.name,
+      })
+      .from(opportunities)
+      .leftJoin(clients, eq(clients.id, opportunities.clientId))
+      .where(and(
+        isNull(opportunities.deletedAt),
+        eq(opportunities.source, "pipedrive"),
+      ))
+      .orderBy(desc(opportunities.updatedAt));
+  }
+
+  async getIntakeTickets(): Promise<IntakeTicketRow[]> {
+    const rows = await db
+      .select({
+        id: pdTickets.id,
+        opportunityId: pdTickets.opportunityId,
+        clientId: pdTickets.clientId,
+        projectId: pdTickets.projectId,
+        projectSiteName: pdTickets.projectSiteName,
+        requestType: pdTickets.requestType,
+        priority: pdTickets.priority,
+        status: pdTickets.status,
+        dueDate: pdTickets.dueDate,
+        tasksSpawnedAt: pdTickets.tasksSpawnedAt,
+        createdAt: pdTickets.createdAt,
+        updatedAt: pdTickets.updatedAt,
+        projectDeveloperUserId: pdTickets.projectDeveloperUserId,
+        clientName: clients.name,
+        projectName: projectInfo.projectName,
+        developerName: users.name,
+        subTasksTotal: sql<number>`count(distinct ${workItems.id})`,
+        subTasksDone: sql<number>`count(distinct ${workItems.id}) filter (where ${workItems.status} in ('Completed', 'DONE', 'Done'))`,
+        nextAction: sql<string | null>`max(${workItems.nextStep})`,
+      })
+      .from(pdTickets)
+      .leftJoin(clients, eq(clients.id, pdTickets.clientId))
+      .leftJoin(projectInfo, eq(projectInfo.id, pdTickets.projectId))
+      .leftJoin(users, eq(users.id, pdTickets.projectDeveloperUserId))
+      .leftJoin(workItems, and(
+        eq(workItems.pdTicketId, pdTickets.id),
+        isNull(workItems.deletedAt),
+      ))
+      .groupBy(
+        pdTickets.id,
+        clients.name,
+        projectInfo.projectName,
+        users.name,
+      )
+      .orderBy(desc(pdTickets.updatedAt));
+    return rows.map((r: typeof rows[number]): IntakeTicketRow => ({
+      ...r,
+      subTasksTotal: Number(r.subTasksTotal || 0),
+      subTasksDone: Number(r.subTasksDone || 0),
+    }));
+  }
+
+  async getIntakeStats() {
+    const today = new Date().toISOString().split("T")[0];
+
+    const [oppStats] = await db
+      .select({
+        total: sql<number>`count(*)`,
+        unconverted: sql<number>`count(*) filter (where ${opportunities.status} not in ('won','lost') and ${opportunities.signedDate} is null)`,
+        won: sql<number>`count(*) filter (where ${opportunities.status} = 'won')`,
+        lost: sql<number>`count(*) filter (where ${opportunities.status} = 'lost')`,
+      })
+      .from(opportunities)
+      .where(and(isNull(opportunities.deletedAt), eq(opportunities.source, "pipedrive")));
+
+    const [ticketStats] = await db
+      .select({
+        total: sql<number>`count(*)`,
+        inProgress: sql<number>`count(*) filter (where ${pdTickets.status} = 'In Progress')`,
+        overdue: sql<number>`count(*) filter (where ${pdTickets.dueDate} < ${today} and ${pdTickets.status} not in ('Completed','Cancelled'))`,
+        completed: sql<number>`count(*) filter (where ${pdTickets.status} = 'Completed')`,
+      })
+      .from(pdTickets);
+
+    return {
+      opportunities: {
+        total: Number(oppStats?.total || 0),
+        unconverted: Number(oppStats?.unconverted || 0),
+        won: Number(oppStats?.won || 0),
+        lost: Number(oppStats?.lost || 0),
+      },
+      tickets: {
+        total: Number(ticketStats?.total || 0),
+        inProgress: Number(ticketStats?.inProgress || 0),
+        overdue: Number(ticketStats?.overdue || 0),
+        completed: Number(ticketStats?.completed || 0),
+      },
+    };
   }
 
   // ---- Legacy CRUD (unchanged) ----
