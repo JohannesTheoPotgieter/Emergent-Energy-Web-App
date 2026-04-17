@@ -120,7 +120,8 @@ const ROW_DEFS: {
 }[] = [
   // Mirrors the COS grid: Planned → Committed (unrealised/linked, not yet confirmed) → Realised → QB.
   // Realisation rule (server-side): invoice captured + invoice date confirmed (black font).
-  { key: "budget", label: "Revenue Planned (Budget)", dataKey: "budget", colorClass: "text-purple-600", group: "monthly", editable: true },
+  { key: "totalRevenue", label: "Revenue Planned", dataKey: "totalRevenue", colorClass: "text-purple-600 font-semibold", group: "monthly", expandable: true, projectsKey: "revProjects" },
+  { key: "budget", label: "Budget (Manual)", dataKey: "budget", editable: true, colorClass: "text-purple-600/60", group: "monthly" },
   // Committed = revenue line linked to an invoice but invoice date not yet confirmed
   { key: "unrealisedRevenue", label: "Revenue Committed", dataKey: "unrealisedRevenue", colorClass: "text-amber-600 font-semibold", group: "monthly", expandable: true, projectsKey: "unrealisedProjects" },
   { key: "realisedRevenue", label: "Revenue Realised", dataKey: "realisedRevenue", colorClass: "text-emerald-700 font-bold", group: "monthly", expandable: true, projectsKey: "realisedProjects" },
@@ -414,15 +415,8 @@ export default function RevenueTrackerPage() {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<EditingCell | null>(null);
   const [drawerMonth, setDrawerMonth] = useState<{ monthKey: string; monthLabel: string; defaultFilter?: "all" | "realised" | "unrealised" | "qb_actual"; defaultProject?: string } | null>(null);
-  const [revReconTab, setRevReconTab] = useState<"matched" | "appOnly" | "qbOnly" | "exceptions">("matched");
-
   const { data, isLoading, isError, error, refetch } = useQuery<RevenueTrackerResponse>({
     queryKey: ["/api/revenue-tracker"],
-    staleTime: 30_000,
-  });
-  const { data: revRecon } = useQuery<any>({
-    queryKey: ["/api/revenue-tracker/reconciliation"],
-    queryFn: fetchQueryFn("/api/revenue-tracker/reconciliation"),
     staleTime: 30_000,
   });
 
@@ -823,46 +817,6 @@ export default function RevenueTrackerPage() {
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm overflow-hidden">
-          <CardHeader className="bg-gradient-to-r from-emerald-50 to-white border-b px-6 py-4">
-            <CardTitle className="text-lg font-semibold tracking-tight">Revenue Reconciliation Workbench</CardTitle>
-          </CardHeader>
-          <CardContent className="p-6 space-y-4">
-            <div className="flex gap-2 text-xs">
-              {(["matched", "appOnly", "qbOnly", "exceptions"] as const).map((tab) => (
-                <button key={tab} className={`px-2 py-1 rounded border ${revReconTab === tab ? "bg-emerald-600 text-white" : "bg-white"}`} onClick={() => setRevReconTab(tab)}>
-                  {tab === "appOnly" ? "App only" : tab === "qbOnly" ? "QB only" : tab[0].toUpperCase() + tab.slice(1)}
-                </button>
-              ))}
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead><tr className="border-b bg-muted/40">
-                  <th className="text-left px-2 py-2">Month</th><th className="text-left px-2 py-2">Project</th><th className="text-right px-2 py-2">App Revenue</th><th className="text-right px-2 py-2">QB Revenue</th><th className="text-right px-2 py-2">Delta</th><th className="text-right px-2 py-2">Delta %</th><th className="text-right px-2 py-2">App-only</th><th className="text-right px-2 py-2">QB-only</th><th className="text-right px-2 py-2">Missing receipt date</th><th className="text-right px-2 py-2">Missing invoice</th><th className="text-right px-2 py-2">Mapping issues</th><th className="text-left px-2 py-2">Status</th>
-                </tr></thead>
-                <tbody>
-                  {(revRecon?.summary || []).map((r: any) => (
-                    <tr key={`${r.month}-${r.project}`} className="border-b">
-                      <td className="px-2 py-1">{r.month}</td><td className="px-2 py-1">{r.project}</td><td className="px-2 py-1 text-right">{formatRand(r.appRevenue)}</td><td className="px-2 py-1 text-right">{formatRand(r.qbRevenue)}</td><td className="px-2 py-1 text-right">{formatRand(r.delta)}</td><td className="px-2 py-1 text-right">{Number(r.deltaPct || 0).toFixed(1)}%</td><td className="px-2 py-1 text-right">{r.appOnlyItemCount}</td><td className="px-2 py-1 text-right">{r.qbOnlyItemCount}</td><td className="px-2 py-1 text-right">{r.missingPaymentReceiptDateCount}</td><td className="px-2 py-1 text-right">{r.missingInvoiceCount}</td><td className="px-2 py-1 text-right">{r.mappingIssueCount}</td><td className="px-2 py-1">{r.status}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead><tr className="border-b bg-muted/20"><th className="text-left px-2 py-2">Month</th><th className="text-left px-2 py-2">Project</th><th className="text-left px-2 py-2">Match</th><th className="text-left px-2 py-2">Reason codes</th><th className="text-right px-2 py-2">App</th><th className="text-right px-2 py-2">QB</th></tr></thead>
-                <tbody>
-                  {(revRecon?.tabs?.[revReconTab] || []).slice(0, 200).map((r: any, idx: number) => (
-                    <tr key={`${r.month}-${r.project}-${idx}`} className="border-b">
-                      <td className="px-2 py-1">{r.month}</td><td className="px-2 py-1">{r.project}</td><td className="px-2 py-1">{r.matchStatus}</td><td className="px-2 py-1">{(r.reasonCodes || []).join(", ") || "—"}</td><td className="px-2 py-1 text-right">{formatRand(r.appAmount)}</td><td className="px-2 py-1 text-right">{formatRand(r.qbAmount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
       </div>
 
       {drawerMonth && (

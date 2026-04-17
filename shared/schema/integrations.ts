@@ -234,6 +234,10 @@ export const quickbooksDocuments = pgTable(
     amountTolerance: decimal("amount_tolerance", { precision: 15, scale: 4 }).notNull().default("0.01"),
     taxStatus: text("tax_status").notNull().default("KNOWN"),
     assignmentStatus: text("assignment_status").notNull().default("UNASSIGNED"),
+    /** Remaining unpaid balance from QB (TotalAmt - sum of payments). 0 = fully settled. */
+    qbBalance: decimal("qb_balance", { precision: 15, scale: 2 }),
+    /** Derived settlement status: 'paid' | 'partial' | 'unpaid' | null (unknown) */
+    qbPaymentStatus: text("qb_payment_status"),
     sourcePayload: jsonb("source_payload"),
     createdBy: integer("created_by"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
