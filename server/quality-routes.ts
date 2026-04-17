@@ -628,8 +628,37 @@ export function registerQualityRoutes(app: Express) {
         }
       }
 
-      const itemInstances = await db.select().from(qcItemInstance).where(eq(qcItemInstance.checklistId, checklist.id));
-      const riskAnswers = await db.select().from(qcRiskAnswer).where(eq(qcRiskAnswer.checklistId, checklist.id));
+      let itemInstances = await db.select().from(qcItemInstance).where(eq(qcItemInstance.checklistId, checklist.id));
+      let riskAnswers = await db.select().from(qcRiskAnswer).where(eq(qcRiskAnswer.checklistId, checklist.id));
+
+      // Backfill: an existing checklist may have been created when its template
+      // had no items/risk-questions seeded. Re-create any missing rows so the
+      // dashboard shows the current template content rather than an empty list.
+      if (!wasCreated && checklist.templateId) {
+        const tplPhases = await db.select({ id: qcTemplatePhase.id }).from(qcTemplatePhase).where(eq(qcTemplatePhase.templateId, checklist.templateId));
+        const tplPhaseIds = tplPhases.map((p: any) => p.id);
+        const tplGroups = tplPhaseIds.length ? await db.select({ id: qcTemplateGroup.id }).from(qcTemplateGroup).where(inArray(qcTemplateGroup.templatePhaseId, tplPhaseIds)) : [];
+        const tplGroupIds = tplGroups.map((g: any) => g.id);
+        const tplItems = tplGroupIds.length ? await db.select({ id: qcTemplateItem.id }).from(qcTemplateItem).where(inArray(qcTemplateItem.templateGroupId, tplGroupIds)) : [];
+        const existingItemIds = new Set(itemInstances.map((i: any) => i.templateItemId));
+        const missingTplItems = tplItems.filter((ti: any) => !existingItemIds.has(ti.id));
+        if (missingTplItems.length > 0) {
+          await db.insert(qcItemInstance).values(
+            missingTplItems.map((ti: any) => ({ checklistId: checklist.id, templateItemId: ti.id }))
+          );
+          itemInstances = await db.select().from(qcItemInstance).where(eq(qcItemInstance.checklistId, checklist.id));
+        }
+
+        const tplRiskQs = tplPhaseIds.length ? await db.select({ id: qcTemplateRiskQuestion.id }).from(qcTemplateRiskQuestion).where(inArray(qcTemplateRiskQuestion.templatePhaseId, tplPhaseIds)) : [];
+        const existingRiskIds = new Set(riskAnswers.map((r: any) => r.templateRiskQuestionId));
+        const missingRiskQs = tplRiskQs.filter((rq: any) => !existingRiskIds.has(rq.id));
+        if (missingRiskQs.length > 0) {
+          await db.insert(qcRiskAnswer).values(
+            missingRiskQs.map((rq: any) => ({ checklistId: checklist.id, templateRiskQuestionId: rq.id }))
+          );
+          riskAnswers = await db.select().from(qcRiskAnswer).where(eq(qcRiskAnswer.checklistId, checklist.id));
+        }
+      }
 
       const itemIds = itemInstances.map((i: any) => i.id);
       const evidence = itemIds.length ? await db.select().from(qcItemEvidence).where(and(inArray(qcItemEvidence.itemInstanceId, itemIds), isNull(qcItemEvidence.deletedAt))) : [];
