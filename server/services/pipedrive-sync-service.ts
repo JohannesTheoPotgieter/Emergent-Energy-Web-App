@@ -16,6 +16,7 @@
 import { db } from "../db";
 import { eq, isNull } from "drizzle-orm";
 import { opportunities, clients } from "@shared/schema/projects";
+import { resolvePipedriveStageMapping } from "@shared/pipedrive-stage-map";
 
 // ===================== TYPES =====================
 
@@ -35,23 +36,20 @@ interface PipedriveDeal {
   update_time: string;
 }
 
+interface PipedriveStage {
+  id: number;
+  name: string;
+  pipeline_id: number;
+  active_flag: boolean;
+}
+
 interface PipedriveSyncResult {
   dealsProcessed: number;
   dealsCreated: number;
   dealsUpdated: number;
   errors: string[];
+  skipped: number;
 }
-
-// ===================== STAGE MAPPING =====================
-
-// Map Pipedrive deal status → opportunity stage
-// This is a default mapping; in production, configure via admin UI or env vars
-const DEAL_STATUS_TO_STAGE: Record<string, string> = {
-  open: "qualification",   // Default for open deals; refined by stage_id mapping
-  won: "won",
-  lost: "lost",
-  deleted: "lost",
-};
 
 // ===================== API CLIENT =====================
 
@@ -63,11 +61,21 @@ class PipedriveClient {
     this.token = token;
   }
 
-  async getDeals(start = 0, limit = 100): Promise<{ data: PipedriveDeal[] | null; additional_data?: { pagination?: { more_items_in_collection: boolean; next_start: number } } }> {
-    const url = `${this.baseUrl}/deals?start=${start}&limit=${limit}&api_token=${this.token}`;
+  private async apiGet(path: string): Promise<unknown> {
+    const sep = path.includes("?") ? "&" : "?";
+    const url = `${this.baseUrl}${path}${sep}api_token=${this.token}`;
     const response = await fetch(url);
     if (!response.ok) throw new Error(`Pipedrive API error: ${response.status} ${response.statusText}`);
     return response.json();
+  }
+
+  async getStages(): Promise<PipedriveStage[]> {
+    const result = await this.apiGet("/stages") as { data: PipedriveStage[] | null };
+    return result.data ?? [];
+  }
+
+  async getDeals(start = 0, limit = 100): Promise<{ data: PipedriveDeal[] | null; additional_data?: { pagination?: { more_items_in_collection: boolean; next_start: number } } }> {
+    return this.apiGet(`/deals?start=${start}&limit=${limit}`) as Promise<{ data: PipedriveDeal[] | null; additional_data?: { pagination?: { more_items_in_collection: boolean; next_start: number } } }>;
   }
 
   async getAllDeals(): Promise<PipedriveDeal[]> {
@@ -118,7 +126,7 @@ export async function syncPipedriveDeals(
   const startedAt = new Date();
   const token = process.env.PIPEDRIVE_API_TOKEN;
   if (!token) {
-    const result = { dealsProcessed: 0, dealsCreated: 0, dealsUpdated: 0, errors: ["PIPEDRIVE_API_TOKEN not configured"] };
+    const result = { dealsProcessed: 0, dealsCreated: 0, dealsUpdated: 0, errors: ["PIPEDRIVE_API_TOKEN not configured"], skipped: 0 };
     await safeRecordRun({
       startedAt,
       status: "failure",
@@ -131,12 +139,9 @@ export async function syncPipedriveDeals(
   }
 
   const client = new PipedriveClient(token);
-  const result: PipedriveSyncResult = { dealsProcessed: 0, dealsCreated: 0, dealsUpdated: 0, errors: [] };
+  const result: PipedriveSyncResult = { dealsProcessed: 0, dealsCreated: 0, dealsUpdated: 0, errors: [], skipped: 0 };
   const ownerEmailLower = scope.scope === "owner" ? scope.ownerEmail.trim().toLowerCase() : null;
   if (scope.scope === "owner" && !ownerEmailLower) {
-    // Defensive — an empty owner email would otherwise match every deal
-    // that Pipedrive returns with a blank owner, which is not what we
-    // want. Fail loudly instead.
     const msg = "Owner-scoped Pipedrive pull requires a non-empty email.";
     result.errors.push(msg);
     await safeRecordRun({
@@ -150,13 +155,24 @@ export async function syncPipedriveDeals(
     return result;
   }
 
+  // Fetch stage definitions once so we can resolve stage_id → stage name
+  // for every deal without an extra API call per deal.
+  let stageIdToName = new Map<number, string>();
+  try {
+    const stages = await client.getStages();
+    for (const s of stages) {
+      stageIdToName.set(s.id, s.name);
+    }
+  } catch (err) {
+    // Non-fatal: log warning, fall back to unknown-stage default mapping
+    console.warn("[PipedriveSync] Could not fetch stage definitions — stage names unavailable:", err);
+  }
+
   try {
     const deals = await client.getAllDeals();
 
     for (const deal of deals) {
       // Owner scope: skip deals that don't belong to the calling PD.
-      // Match on lowercased email; Pipedrive returns null owner on
-      // orphaned deals which we ignore in this mode.
       if (ownerEmailLower) {
         const dealOwnerEmail = deal.owner_id?.email?.trim().toLowerCase() ?? null;
         if (!dealOwnerEmail || dealOwnerEmail !== ownerEmailLower) {
@@ -164,9 +180,19 @@ export async function syncPipedriveDeals(
         }
       }
 
+      // Resolve the Pipedrive stage name and derive the app-side mapping.
+      const stageName = stageIdToName.get(deal.stage_id) ?? null;
+      const mapping = resolvePipedriveStageMapping(stageName, deal.status);
+
+      // "Dormant Opportunities" and any other skipSync stages are never imported.
+      if (mapping.skipSync) {
+        result.skipped++;
+        continue;
+      }
+
       result.dealsProcessed++;
       try {
-        await syncSingleDeal(deal, result);
+        await syncSingleDeal(deal, mapping.appStage, mapping.appStatus, result);
       } catch (err) {
         result.errors.push(`Deal ${deal.id}: ${err instanceof Error ? err.message : String(err)}`);
       }
@@ -221,6 +247,7 @@ async function safeRecordRun(params: {
       metadata: {
         dealsCreated: params.result.dealsCreated,
         dealsUpdated: params.result.dealsUpdated,
+        dealsSkipped: params.result.skipped,
         errorCount: params.result.errors.length,
         scope: params.scope.scope,
         ...(params.scope.scope === "owner" ? { ownerEmail: params.scope.ownerEmail } : {}),
@@ -231,7 +258,7 @@ async function safeRecordRun(params: {
   }
 }
 
-async function syncSingleDeal(deal: PipedriveDeal, result: PipedriveSyncResult) {
+async function syncSingleDeal(deal: PipedriveDeal, appStage: string, appStatus: string, result: PipedriveSyncResult) {
   const dealIdStr = String(deal.id);
 
   // Find existing opportunity by pipedrive_deal_id
@@ -271,25 +298,22 @@ async function syncSingleDeal(deal: PipedriveDeal, result: PipedriveSyncResult) 
     }
   }
 
-  const stage = DEAL_STATUS_TO_STAGE[deal.status] ?? "prospect";
   const dealTitle = deal.title || `Deal ${deal.id}`;
 
   // Fields owned by Pipedrive (CRM truth). Safe to overwrite on every sync.
-  // NOTE: `notes` is intentionally NOT in here — it is user-editable app-side
-  //   content and must not be clobbered by repeated syncs. See create branch
-  //   below for the initial seed value.
-  // `source` is always reset to 'pipedrive' here so that the origin flag
-  //   stays in sync with the presence of pipedrive_deal_id even if an
-  //   admin flipped it manually in the DB.
+  // `notes` is intentionally excluded — user-editable app-side content.
+  // `source` is always 'pipedrive' here to stay consistent with pipedrive_deal_id.
+  // `stage` and `status` come from the resolved MAIN_EE_PIPELINE_STAGE_MAP so
+  // that stage names (not just deal.status) drive the app-side representation.
   const crmOwnedFields = {
     pipedriveDealId: dealIdStr,
     source: "pipedrive" as const,
     clientId,
-    stage,
+    stage: appStage,
     estimatedValue: deal.value ? String(deal.value) : null,
     expectedCloseDate: deal.expected_close_date ?? null,
     signedDate: deal.won_time ? deal.won_time.split(" ")[0] : null,
-    status: deal.status === "open" ? "active" : deal.status === "won" ? "won" : "lost",
+    status: appStatus,
     updatedAt: new Date(),
   };
 
