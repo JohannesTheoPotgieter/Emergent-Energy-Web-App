@@ -1895,9 +1895,15 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         // Run row matching per section
         const matchedPlan = norm.planTasks?.length > 0 || planRows.length > 0
           ? matchRows("PLAN" as SectionType, projectId, norm.planTasks || [], planRows as any) : [];
-        const matchedRevenue = norm.revenueLines?.length > 0 || revenueRows.length > 0
+        // Workbook-is-truth guard: only run the matcher when the FILE has
+        // rows for the section. If the upload doesn't contain a Revenue or
+        // Expenditure sheet at all, we skip the section entirely so existing
+        // active rows are NOT classified as MISSING_FROM_UPLOAD and wiped.
+        // (The new MISSING soft-close policy in the executor only fires when
+        // the file legitimately drops a row from a populated section.)
+        const matchedRevenue = (norm.revenueLines?.length ?? 0) > 0
           ? matchRows("REVENUE" as SectionType, projectId, norm.revenueLines || [], revenueRows as any) : [];
-        const matchedCost = norm.costLines?.length > 0 || costRows.length > 0
+        const matchedCost = (norm.costLines?.length ?? 0) > 0
           ? matchRows("EXPENDITURE" as SectionType, projectId, norm.costLines || [], costRows as any) : [];
 
         // Run 3-way conflict engine for incremental imports

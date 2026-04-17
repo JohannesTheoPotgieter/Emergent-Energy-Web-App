@@ -407,17 +407,84 @@ export async function writeRevenueIncremental(ctx: TemporalWriteContext): Promis
     "expectedPaymentDate", "paidDate", "inBankDate", "status",
   ];
 
+  // Admin-override carry-forward: see expenditure section for rationale.
+  type RevPredecessor = {
+    milestoneName: string | null;
+    description: string | null;
+    amountExVat: any;
+    adminDateOverride: any;
+    adminDateOverrideReason: string | null;
+    adminDateOverrideBy: any;
+    adminDateOverrideAt: any;
+  };
+  const closedRevPreds: RevPredecessor[] = [];
+  const consumedRevIdxs = new Set<number>();
+  function normStrR(s: any): string {
+    return (s == null ? "" : String(s)).trim().toLowerCase();
+  }
+  function normAmtR(v: any): string {
+    if (v == null || v === "") return "";
+    const n = typeof v === "number" ? v : Number(v);
+    if (!Number.isFinite(n)) return String(v).trim();
+    return n.toFixed(2);
+  }
+  function findRevPredecessor(f: Record<string, any>): RevPredecessor | null {
+    const fa = normAmtR(f.amountExVat);
+    const fm = normStrR(f.milestoneName);
+    const fd = normStrR(f.description);
+    for (let i = 0; i < closedRevPreds.length; i++) {
+      if (consumedRevIdxs.has(i)) continue;
+      const p = closedRevPreds[i];
+      if (
+        normStrR(p.milestoneName) === fm &&
+        normStrR(p.description) === fd &&
+        normAmtR(p.amountExVat) === fa
+      ) {
+        consumedRevIdxs.add(i);
+        return p;
+      }
+    }
+    return null;
+  }
+
+  // PRE-PASS: process MISSING_FROM_UPLOAD rows first so the predecessor
+  // pool is fully populated before any NEW row is inserted. matchRows()
+  // emits NEW/CHANGED/UNCHANGED in file-row order and MISSING last, so
+  // without this pre-pass findRevPredecessor() would always come up empty
+  // for key-shift cases (the most common admin-override loss path).
+  for (const mr of matchedRows) {
+    if (mr.classification !== "MISSING_FROM_UPLOAD") continue;
+    counts.missing++;
+    if (mr.existingRowId == null) continue;
+    await tx.update(normalizedRevenueLines)
+      .set({ effectiveTo: commitTimestamp })
+      .where(eq(normalizedRevenueLines.id, mr.existingRowId));
+    const er = (mr.existingRow ?? {}) as any;
+    if (er.adminDateOverride) {
+      closedRevPreds.push({
+        milestoneName: er.milestoneName ?? null,
+        description: er.description ?? null,
+        amountExVat: er.amountExVat,
+        adminDateOverride: er.adminDateOverride ?? null,
+        adminDateOverrideReason: er.adminDateOverrideReason ?? null,
+        adminDateOverrideBy: er.adminDateOverrideBy ?? null,
+        adminDateOverrideAt: er.adminDateOverrideAt ?? null,
+      });
+    }
+  }
+
   for (const mr of matchedRows) {
     if (mr.classification === "UNCHANGED") {
       counts.unchanged++;
       continue;
     }
     if (mr.classification === "MISSING_FROM_UPLOAD") {
-      counts.missing++;
+      // Already handled in pre-pass above.
       continue;
     }
     if (mr.classification === "NEW") {
       const f = mr.fileRow!;
+      const carriedRev = findRevPredecessor(f);
       const [inserted] = await tx.insert(normalizedRevenueLines).values({
         projectId,
         projectName,
@@ -445,6 +512,12 @@ export async function writeRevenueIncremental(ctx: TemporalWriteContext): Promis
         effectiveFrom: commitTimestamp,
         effectiveTo: null,
         snapshotRunId: runId,
+        // Carry forward admin overrides from a soft-closed predecessor row
+        // (key-shift case — see expenditure section for full rationale).
+        adminDateOverride: carriedRev?.adminDateOverride ?? null,
+        adminDateOverrideReason: carriedRev?.adminDateOverrideReason ?? null,
+        adminDateOverrideBy: carriedRev?.adminDateOverrideBy ?? null,
+        adminDateOverrideAt: carriedRev?.adminDateOverrideAt ?? null,
       }).returning();
       insertedIds.push(inserted.id);
       counts.inserted++;
@@ -537,17 +610,99 @@ export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Pr
     "counterpartyName", "revenueRecognitionAmount",
   ];
 
+  // Admin-override carry-forward: when a row's business key shifts between
+  // imports (e.g. invoice_number filled in for the first time), the matcher
+  // classifies the old row as MISSING and the new row as NEW. To avoid
+  // losing user-applied overrides on that identity shift, we collect every
+  // soft-closed MISSING row up front and then, in the NEW insert path,
+  // look for a similarity match (counterparty + description + amount) and
+  // carry forward override fields from the closed predecessor.
+  type ClosedPredecessor = {
+    counterpartyName: string | null;
+    description: string | null;
+    amountExVat: any;
+    adminDateOverride: any;
+    adminDateOverrideReason: string | null;
+    adminDateOverrideBy: any;
+    adminDateOverrideAt: any;
+    cosStatusOverride: any;
+    cosStatusOverrideReason: string | null;
+    cosStatusOverrideBy: any;
+    cosStatusOverrideAt: any;
+  };
+  const closedPredecessors: ClosedPredecessor[] = [];
+  const consumedPredecessorIdxs = new Set<number>();
+
+  function normStr(s: any): string {
+    return (s == null ? "" : String(s)).trim().toLowerCase();
+  }
+  function normAmt(v: any): string {
+    if (v == null || v === "") return "";
+    const n = typeof v === "number" ? v : Number(v);
+    if (!Number.isFinite(n)) return String(v).trim();
+    return n.toFixed(2);
+  }
+  function findPredecessor(f: Record<string, any>): ClosedPredecessor | null {
+    const fa = normAmt(f.amountExVat);
+    const fc = normStr(f.counterpartyName);
+    const fd = normStr(f.description);
+    for (let i = 0; i < closedPredecessors.length; i++) {
+      if (consumedPredecessorIdxs.has(i)) continue;
+      const p = closedPredecessors[i];
+      if (
+        normStr(p.counterpartyName) === fc &&
+        normStr(p.description) === fd &&
+        normAmt(p.amountExVat) === fa
+      ) {
+        consumedPredecessorIdxs.add(i);
+        return p;
+      }
+    }
+    return null;
+  }
+
+  // PRE-PASS: process MISSING_FROM_UPLOAD rows first so the predecessor
+  // pool is fully populated before any NEW row is inserted. matchRows()
+  // emits NEW/CHANGED/UNCHANGED in file-row order and MISSING last, so
+  // without this pre-pass findPredecessor() would always come up empty
+  // for key-shift cases (the most common admin-override loss path).
+  for (const mr of matchedRows) {
+    if (mr.classification !== "MISSING_FROM_UPLOAD") continue;
+    counts.missing++;
+    if (mr.existingRowId == null) continue;
+    await tx.update(normalizedCostLines)
+      .set({ effectiveTo: commitTimestamp })
+      .where(eq(normalizedCostLines.id, mr.existingRowId));
+    const er = (mr.existingRow ?? {}) as any;
+    if (er.adminDateOverride || er.cosStatusOverride) {
+      closedPredecessors.push({
+        counterpartyName: er.counterpartyName ?? null,
+        description: er.description ?? null,
+        amountExVat: er.amountExVat,
+        adminDateOverride: er.adminDateOverride ?? null,
+        adminDateOverrideReason: er.adminDateOverrideReason ?? null,
+        adminDateOverrideBy: er.adminDateOverrideBy ?? null,
+        adminDateOverrideAt: er.adminDateOverrideAt ?? null,
+        cosStatusOverride: er.cosStatusOverride ?? null,
+        cosStatusOverrideReason: er.cosStatusOverrideReason ?? null,
+        cosStatusOverrideBy: er.cosStatusOverrideBy ?? null,
+        cosStatusOverrideAt: er.cosStatusOverrideAt ?? null,
+      });
+    }
+  }
+
   for (const mr of matchedRows) {
     if (mr.classification === "UNCHANGED") {
       counts.unchanged++;
       continue;
     }
     if (mr.classification === "MISSING_FROM_UPLOAD") {
-      counts.missing++;
+      // Already handled in pre-pass above.
       continue;
     }
     if (mr.classification === "NEW") {
       const f = mr.fileRow!;
+      const carried = findPredecessor(f);
       const [inserted] = await tx.insert(normalizedCostLines).values({
         projectId,
         projectName,
@@ -581,6 +736,16 @@ export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Pr
         effectiveFrom: commitTimestamp,
         effectiveTo: null,
         snapshotRunId: runId,
+        // Carry forward admin overrides from a soft-closed predecessor row
+        // when this NEW row is the same business entity under a shifted key.
+        adminDateOverride: carried?.adminDateOverride ?? null,
+        adminDateOverrideReason: carried?.adminDateOverrideReason ?? null,
+        adminDateOverrideBy: carried?.adminDateOverrideBy ?? null,
+        adminDateOverrideAt: carried?.adminDateOverrideAt ?? null,
+        cosStatusOverride: carried?.cosStatusOverride ?? null,
+        cosStatusOverrideReason: carried?.cosStatusOverrideReason ?? null,
+        cosStatusOverrideBy: carried?.cosStatusOverrideBy ?? null,
+        cosStatusOverrideAt: carried?.cosStatusOverrideAt ?? null,
       }).returning();
       insertedIds.push(inserted.id);
       counts.inserted++;
@@ -642,12 +807,17 @@ export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Pr
         revenueRecognitionAmount: fieldUpdates.revenueRecognitionAmount ?? existing.revenueRecognitionAmount,
         forecastPaymentDate: fieldUpdates.forecastPaymentDate ?? existing.forecastPaymentDate,
         subProjectName: existing.subProjectName,
-        // Carry forward app-owned fields
+        // Carry forward app-owned fields (admin overrides survive re-imports
+        // for CHANGED rows just as they do for the NEW key-shift path).
         noRevenueLinked: existing.noRevenueLinked,
         adminDateOverride: existing.adminDateOverride || null,
         adminDateOverrideReason: existing.adminDateOverrideReason || null,
         adminDateOverrideBy: existing.adminDateOverrideBy || null,
         adminDateOverrideAt: existing.adminDateOverrideAt || null,
+        cosStatusOverride: existing.cosStatusOverride || null,
+        cosStatusOverrideReason: existing.cosStatusOverrideReason || null,
+        cosStatusOverrideBy: existing.cosStatusOverrideBy || null,
+        cosStatusOverrideAt: existing.cosStatusOverrideAt || null,
         effectiveFrom: commitTimestamp,
         effectiveTo: null,
         snapshotRunId: runId,
