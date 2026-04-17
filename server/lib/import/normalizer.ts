@@ -1,7 +1,7 @@
 import type ExcelJS from "exceljs";
 import type { DetectionResult } from "./detector";
 import type { MappingResult } from "./mapper";
-import { worksheetToArray, parseDate, parseNumber, parsePercent, parseStatus, daysBetween } from "./utils";
+import { worksheetToArray, parseDate, parseNumber, parsePercent, parseStatus, daysBetween, lastDayOfMonthFromDate } from "./utils";
 
 export interface NormalizationResult {
   planTasks: Array<{
@@ -999,9 +999,16 @@ function extractCostLines(
     const category = currentCategoryKey || rawCategory;
     const categoryKey = currentCategoryKey;
     const invoiceNumber = cellStr(row, invoiceNumCol);
-    const invoiceDate = invoiceDateCol >= 0 ? parseDate(row[invoiceDateCol]) : null;
+    const rawInvoiceDate = invoiceDateCol >= 0 ? parseDate(row[invoiceDateCol]) : null;
     const approvedDate = approvedDateCol >= 0 ? parseDate(row[approvedDateCol]) : null;
     let paidDate = paidDateCol >= 0 ? parseDate(row[paidDateCol]) : null;
+    // Tracker workbooks define INVOICE RAISED DATE (col T) as the formula
+    //   IF(FINANCE_PAYMENT_DATE > 1, EOMONTH(FINANCE_PAYMENT_DATE, 0), "")
+    // When the workbook is saved without cached formula results that cell is
+    // empty and parseDate returns null. Replicating the formula in code keeps
+    // realised COS (and the col-U revenue recognition that buckets off it) in
+    // line with the Finance-COS / Finance-Revenue pivots.
+    const invoiceDate = rawInvoiceDate ?? lastDayOfMonthFromDate(paidDate);
     const poNumber = cellStr(row, poCol);
 
     const status = deriveCostStatus(invoiceNumber, invoiceDate, approvedDate, paidDate);

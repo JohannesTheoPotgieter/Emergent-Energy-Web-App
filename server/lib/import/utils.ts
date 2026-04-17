@@ -19,9 +19,25 @@ function excelSerialToDate(serial: number): { y: number; m: number; d: number } 
   return { y: date.getFullYear(), m: date.getMonth() + 1, d: date.getDate() };
 }
 
+function isDateLike(v: any): v is Date {
+  return v != null && Object.prototype.toString.call(v) === "[object Date]" && !isNaN((v as Date).getTime());
+}
+
 export function parseDate(value: any): string | null {
   if (!value) return null;
   if (isExcelError(value)) return null;
+
+  // ExcelJS returns formula cells as { formula, result } or { sharedFormula, result }.
+  // Unwrap to the cached result before any further checks. Cross-realm safe via toString.
+  if (typeof value === "object" && !isDateLike(value) && "result" in value) {
+    value = (value as any).result;
+    if (!value) return null;
+    if (isExcelError(value)) return null;
+  }
+
+  if (isDateLike(value)) {
+    return (value as Date).toISOString().split("T")[0];
+  }
 
   if (value instanceof Date) {
     if (isNaN(value.getTime())) return null;
@@ -40,12 +56,11 @@ export function parseDate(value: any): string | null {
   }
 
   if (typeof value === "string") {
-    const parsed = new Date(value);
-    if (!isNaN(parsed.getTime())) {
-      const year = parsed.getFullYear();
-      const month = String(parsed.getMonth() + 1).padStart(2, "0");
-      const day = String(parsed.getDate()).padStart(2, "0");
-      return `${year}-${month}-${day}`;
+    // Match canonical date-only forms first to avoid local-timezone drift
+    // from `new Date(...)` interpreting "YYYY-MM-DD" as UTC midnight.
+    const yyyymmdd = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (yyyymmdd) {
+      return value.substring(0, 10);
     }
 
     const ddmmyyyy = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
@@ -54,13 +69,34 @@ export function parseDate(value: any): string | null {
       return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
     }
 
-    const yyyymmdd = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (yyyymmdd) {
-      return value.substring(0, 10);
+    const parsed = new Date(value);
+    if (!isNaN(parsed.getTime())) {
+      const year = parsed.getUTCFullYear();
+      const month = String(parsed.getUTCMonth() + 1).padStart(2, "0");
+      const day = String(parsed.getUTCDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
     }
   }
 
   return null;
+}
+
+/**
+ * Replicates the workbook formula `IF(W>1, EOMONTH(W,0), "")` used for
+ * INVOICE RAISED DATE on the Expenditure Breakdown sheet. When a workbook is
+ * saved without cached formula results, the invoice date cell may be empty.
+ * This derives the same end-of-month value from the payment date so the
+ * importer matches the Finance-COS pivot regardless of cache state.
+ */
+export function lastDayOfMonthFromDate(dateStr: string | null): string | null {
+  if (!dateStr) return null;
+  const [y, m] = dateStr.split("-").map(Number);
+  if (!Number.isFinite(y) || !Number.isFinite(m)) return null;
+  if (y < 1900 || y > 2100) return null;
+  if (m < 1 || m > 12) return null;
+  const eom = new Date(Date.UTC(y, m, 0));
+  if (isNaN(eom.getTime())) return null;
+  return eom.toISOString().split("T")[0];
 }
 
 export function parseNumber(value: any): string | null {
