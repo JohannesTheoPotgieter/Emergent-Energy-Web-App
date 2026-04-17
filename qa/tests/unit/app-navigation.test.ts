@@ -22,6 +22,7 @@ import {
 } from "@/config/navigation-permissions";
 import { ROUTE_COMPONENT_KEYS } from "@/config/route-components";
 import { NAV_GROUP_KEYS } from "@/config/page-registry";
+import { ROLE_LANDING_PATHS } from "@shared/navigation/role-landing-paths";
 import { COMPANY_ROLES } from "@shared/schema/users";
 
 describe("app navigation visibility", () => {
@@ -435,6 +436,38 @@ describe("nav ↔ registry ↔ router parity", () => {
       }
     }
     expect(orphans, orphans.join("\n")).toEqual([]);
+  });
+});
+
+describe("shared ROLE_LANDING_PATHS (U6)", () => {
+  it("covers every COMPANY_ROLES entry", () => {
+    for (const role of COMPANY_ROLES) {
+      expect(ROLE_LANDING_PATHS[role], `missing ROLE_LANDING_PATHS[${role}]`).toBeDefined();
+      expect(ROLE_LANDING_PATHS[role].startsWith("/")).toBe(true);
+    }
+  });
+
+  it("every landing path resolves to a real route", () => {
+    const unresolved: string[] = [];
+    for (const role of COMPANY_ROLES) {
+      const path = ROLE_LANDING_PATHS[role];
+      if (!findPageByPath(path)) {
+        unresolved.push(`${role} → ${path}`);
+      }
+    }
+    expect(unresolved, unresolved.join("\n")).toEqual([]);
+  });
+
+  it("matches the PAGE_REGISTRY-derived ROLE_LANDING_PAGE exactly", () => {
+    const drift: string[] = [];
+    for (const role of COMPANY_ROLES) {
+      const derived = ROLE_LANDING_PAGE[role];
+      const shared = ROLE_LANDING_PATHS[role];
+      if (derived !== shared) {
+        drift.push(`${role}: registry=${derived ?? "∅"} shared=${shared}`);
+      }
+    }
+    expect(drift, drift.join("\n")).toEqual([]);
   });
 });
 
