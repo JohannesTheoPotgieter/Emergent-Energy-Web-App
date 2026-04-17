@@ -6,10 +6,22 @@ import { Router, type Express, type Request, type Response } from "express";
 import { requireAuth } from "./shared-middleware";
 import { requirePermission } from "../permission-middleware";
 import { db } from "../db";
-import { desc, sql } from "drizzle-orm";
-import { syncPipedriveDeals } from "../services/pipedrive-sync-service";
+import { sql } from "drizzle-orm";
+import { syncPipedriveDeals, type PipedrivePullScope } from "../services/pipedrive-sync-service";
+import { logAuditFromReq } from "../audit-logger";
 
 const router = Router();
+
+// Roles allowed to pull ALL Pipedrive deals. Everyone else can still
+// press the "Pull from Pipedrive" button, but the server filters the
+// sync to deals owned by their own Pipedrive user (matched by email).
+// Kept as a local constant — this is not a permission-table decision
+// but a policy ("COO/CEO/CCO see the whole pipeline; PDs see their own").
+const PIPEDRIVE_PULL_ALL_ROLES = new Set([
+  "COO_ADMIN",
+  "CEO_ADMIN",
+  "CCO",
+]);
 
 // Get sync log (admin only)
 router.get("/api/admin/pipedrive/sync-log", requireAuth, requirePermission("admin", "view"), async (_req: Request, res: Response) => {
@@ -132,6 +144,167 @@ router.post("/api/admin/pipedrive/sync", requireAuth, requirePermission("admin",
 router.get("/api/admin/pipedrive/status", requireAuth, requirePermission("admin", "view"), async (_req: Request, res: Response) => {
   const configured = !!process.env.PIPEDRIVE_API_TOKEN;
   res.json({ configured });
+});
+
+/**
+ * Unified "Pull from Pipedrive" endpoint.
+ *
+ * Both the COO-style admin pull and the per-PD pull share this route.
+ * The server decides the scope from the caller's role:
+ *
+ *   - `COO_ADMIN` / `CEO_ADMIN` / `CCO`  →  pulls every deal (scope=all)
+ *   - everyone else                      →  filters by `deal.owner_id.email
+ *                                             === caller.email`
+ *                                             (scope=owner)
+ *
+ * No duplicates are possible because the sync service upserts by
+ * `pipedrive_deal_id` — a PD pulling, then a COO pulling, still yields
+ * exactly one row per Pipedrive deal.
+ *
+ * Gated on `opportunities:view` so that any role who can see the
+ * Opportunities page can also refresh the data they are allowed to see.
+ */
+router.get("/api/pipedrive/pull/scope", requireAuth, requirePermission("opportunities", "view"), async (req: Request, res: Response) => {
+  const user = req.user;
+  const role = String(user?.role || "");
+  const isAdminScope = PIPEDRIVE_PULL_ALL_ROLES.has(role);
+  const email = (user?.email || "").trim();
+  const canPull = isAdminScope || Boolean(email);
+  res.json({
+    role,
+    scope: isAdminScope ? "all" : "owner",
+    ownerEmail: isAdminScope ? null : (email || null),
+    configured: !!process.env.PIPEDRIVE_API_TOKEN,
+    canPull,
+    blockedReason: canPull
+      ? null
+      : "Your account has no email on file, so we cannot match your Pipedrive deals. Ask an admin to set your work email.",
+  });
+});
+
+router.post("/api/pipedrive/pull", requireAuth, requirePermission("opportunities", "view"), async (req: Request, res: Response) => {
+  try {
+    const user = req.user;
+    const role = String(user?.role || "");
+    const email = (user?.email || "").trim();
+    const isAdminScope = PIPEDRIVE_PULL_ALL_ROLES.has(role);
+
+    if (!isAdminScope && !email) {
+      return res.status(400).json({
+        error: "missing_email",
+        message: "Your account has no email on file, so we cannot match your Pipedrive deals. Ask an admin to set your work email.",
+      });
+    }
+
+    const scope: PipedrivePullScope = isAdminScope
+      ? { scope: "all" }
+      : { scope: "owner", ownerEmail: email };
+
+    // Sweep stuck `running` rows so a crashed earlier pull does not
+    // block a new one forever. Same threshold as the admin route.
+    const staleErrorMsg = JSON.stringify([
+      `Sync abandoned — process did not finish within ${STUCK_RUNNING_THRESHOLD_MINUTES} minutes`,
+    ]);
+    await db.execute(sql`
+      UPDATE pipedrive_sync_log
+      SET status = 'failed',
+          completed_at = NOW(),
+          errors = COALESCE(errors, ${staleErrorMsg})
+      WHERE status = 'running'
+        AND started_at < NOW() - make_interval(mins => ${STUCK_RUNNING_THRESHOLD_MINUTES})
+    `);
+
+    // Concurrency guard: a single Pipedrive pull runs at a time. The
+    // admin endpoint uses the same guard, so a COO pull-all will
+    // block an individual PD pull and vice-versa — acceptable because
+    // syncs are short and the alternative is interleaved writes on
+    // the same `opportunities` rows.
+    const runningCheck = await db.execute(sql`
+      SELECT id, started_at FROM pipedrive_sync_log
+      WHERE status = 'running'
+      ORDER BY started_at DESC
+      LIMIT 1
+    `);
+    const runningRow = (runningCheck as any).rows?.[0];
+    if (runningRow) {
+      return res.status(409).json({
+        error: "sync_in_progress",
+        message: "Another Pipedrive pull is already running. Wait for it to finish before starting a new one.",
+        runningSyncId: runningRow.id,
+        runningSyncStartedAt: runningRow.started_at,
+      });
+    }
+
+    const syncType = isAdminScope ? "manual_all" : "manual_owner";
+    const insertResult = await db.execute(sql`
+      INSERT INTO pipedrive_sync_log (sync_type, started_at, status)
+      VALUES (${syncType}, NOW(), 'running')
+      RETURNING id
+    `);
+    const syncLogId = (insertResult as any).rows?.[0]?.id;
+
+    let result;
+    try {
+      result = await syncPipedriveDeals(scope);
+    } catch (err) {
+      if (syncLogId) {
+        const msg = err instanceof Error ? err.message : String(err);
+        await db.execute(sql`
+          UPDATE pipedrive_sync_log
+          SET completed_at = NOW(),
+              status = 'failed',
+              errors = ${JSON.stringify([msg])}
+          WHERE id = ${syncLogId}
+        `);
+      }
+      throw err;
+    }
+
+    const syncStatus =
+      result.errors.length === 0
+        ? "completed"
+        : result.dealsProcessed > 0
+          ? "partial"
+          : "failed";
+    const errorsJson = result.errors.length > 0 ? JSON.stringify(result.errors) : null;
+    if (syncLogId) {
+      await db.execute(sql`
+        UPDATE pipedrive_sync_log
+        SET completed_at = NOW(),
+            deals_processed = ${result.dealsProcessed},
+            deals_created = ${result.dealsCreated},
+            deals_updated = ${result.dealsUpdated},
+            errors = ${errorsJson},
+            status = ${syncStatus}
+        WHERE id = ${syncLogId}
+      `);
+    }
+
+    logAuditFromReq(req, {
+      entityType: "pipedrive_pull",
+      entityId: String(syncLogId ?? ""),
+      action: isAdminScope ? "pull_all" : "pull_owner",
+      changesJson: {
+        scope: scope.scope,
+        ownerEmail: scope.scope === "owner" ? scope.ownerEmail : null,
+        dealsProcessed: result.dealsProcessed,
+        dealsCreated: result.dealsCreated,
+        dealsUpdated: result.dealsUpdated,
+        errorCount: result.errors.length,
+        syncStatus,
+      },
+    });
+
+    res.json({
+      ...result,
+      syncStatus,
+      scope: scope.scope,
+      ownerEmail: scope.scope === "owner" ? scope.ownerEmail : null,
+    });
+  } catch (err) {
+    console.error("[Pipedrive] Pull failed:", err);
+    res.status(500).json({ error: "pull_failed", message: err instanceof Error ? err.message : String(err) });
+  }
 });
 
 export function registerPipedriveRoutes(app: Express) {

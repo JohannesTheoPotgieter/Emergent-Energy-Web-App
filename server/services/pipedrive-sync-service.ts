@@ -93,7 +93,28 @@ class PipedriveClient {
 
 // ===================== SYNC ENGINE =====================
 
-export async function syncPipedriveDeals(): Promise<PipedriveSyncResult> {
+/**
+ * Scope parameter for a Pipedrive pull.
+ *
+ *   - `{ scope: "all" }` — pulls every deal. Intended for the COO / CEO /
+ *     CCO "Pull all" admin flow.
+ *   - `{ scope: "owner", ownerEmail }` — only syncs deals whose Pipedrive
+ *     `owner_id.email` matches the supplied address (case-insensitive).
+ *     Intended for the Project Developer "Pull my deals" flow so each PD
+ *     can refresh their own pipeline without touching anyone else's.
+ *
+ * Both scopes share the same upsert-by-`pipedrive_deal_id` path, so
+ * running the same scope twice (or a PD pull followed by a COO pull)
+ * will never create duplicates — matching existing opportunities are
+ * updated in place.
+ */
+export type PipedrivePullScope =
+  | { scope: "all" }
+  | { scope: "owner"; ownerEmail: string };
+
+export async function syncPipedriveDeals(
+  scope: PipedrivePullScope = { scope: "all" },
+): Promise<PipedriveSyncResult> {
   const startedAt = new Date();
   const token = process.env.PIPEDRIVE_API_TOKEN;
   if (!token) {
@@ -104,17 +125,45 @@ export async function syncPipedriveDeals(): Promise<PipedriveSyncResult> {
       errorCode: "missing_token",
       errorDetail: "PIPEDRIVE_API_TOKEN not configured",
       result,
+      scope,
     });
     return result;
   }
 
   const client = new PipedriveClient(token);
   const result: PipedriveSyncResult = { dealsProcessed: 0, dealsCreated: 0, dealsUpdated: 0, errors: [] };
+  const ownerEmailLower = scope.scope === "owner" ? scope.ownerEmail.trim().toLowerCase() : null;
+  if (scope.scope === "owner" && !ownerEmailLower) {
+    // Defensive — an empty owner email would otherwise match every deal
+    // that Pipedrive returns with a blank owner, which is not what we
+    // want. Fail loudly instead.
+    const msg = "Owner-scoped Pipedrive pull requires a non-empty email.";
+    result.errors.push(msg);
+    await safeRecordRun({
+      startedAt,
+      status: "failure",
+      errorCode: "missing_owner_email",
+      errorDetail: msg,
+      result,
+      scope,
+    });
+    return result;
+  }
 
   try {
     const deals = await client.getAllDeals();
 
     for (const deal of deals) {
+      // Owner scope: skip deals that don't belong to the calling PD.
+      // Match on lowercased email; Pipedrive returns null owner on
+      // orphaned deals which we ignore in this mode.
+      if (ownerEmailLower) {
+        const dealOwnerEmail = deal.owner_id?.email?.trim().toLowerCase() ?? null;
+        if (!dealOwnerEmail || dealOwnerEmail !== ownerEmailLower) {
+          continue;
+        }
+      }
+
       result.dealsProcessed++;
       try {
         await syncSingleDeal(deal, result);
@@ -139,6 +188,7 @@ export async function syncPipedriveDeals(): Promise<PipedriveSyncResult> {
     errorCode: result.errors.length > 0 ? "deal_sync_errors" : null,
     errorDetail: result.errors.length > 0 ? result.errors.slice(0, 5).join(" | ") : null,
     result,
+    scope,
   });
 
   return result;
@@ -155,12 +205,13 @@ async function safeRecordRun(params: {
   errorCode: string | null;
   errorDetail: string | null;
   result: PipedriveSyncResult;
+  scope: PipedrivePullScope;
 }): Promise<void> {
   try {
     const { recordIntegrationRun } = await import("./integration-health-service");
     await recordIntegrationRun({
       name: "pipedrive",
-      runType: "sync_all_deals",
+      runType: params.scope.scope === "owner" ? "sync_owner_deals" : "sync_all_deals",
       startedAt: params.startedAt,
       finishedAt: new Date(),
       status: params.status,
@@ -171,6 +222,8 @@ async function safeRecordRun(params: {
         dealsCreated: params.result.dealsCreated,
         dealsUpdated: params.result.dealsUpdated,
         errorCount: params.result.errors.length,
+        scope: params.scope.scope,
+        ...(params.scope.scope === "owner" ? { ownerEmail: params.scope.ownerEmail } : {}),
       },
     });
   } catch (err) {
