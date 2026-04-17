@@ -1745,7 +1745,10 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
     for (const row of rawCostLines) {
       const amount = row.amountExVat ? Number(row.amountExVat) : 0;
       if (!Number.isFinite(amount) || amount === 0) continue;
-      const lineMonthDate = row.invoiceDate || row.paidDate;
+      // COS realisation is bucketed by invoice_date only (per finance rule).
+      // Cashflow uses payment dates separately. Rows without invoice_date are
+      // not realised yet and fall out of the tracker by design.
+      const lineMonthDate = row.invoiceDate;
       if (!lineMonthDate) continue;
       const dm = String(lineMonthDate).match(/^(\d{4})-(\d{2})/);
       if (!dm) continue;
@@ -2070,7 +2073,8 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       const link = linksByCostLineId.get(row.id);
       const linkedBill = link ? billById.get(String(link.qbEntityId)) : null;
       const linkedBillMonth = linkedBill?.txnDate?.slice(0, 7) ?? null;
-      const appMonth = String(row.invoiceDate || row.paidDate || '').slice(0, 7) || null;
+      // COS bucketing — invoice_date only (see /api/cos-tracker comment).
+      const appMonth = String(row.invoiceDate || '').slice(0, 7) || null;
       const inTargetMonth = linkedBillMonth === monthKey || (!linkedBill && appMonth === monthKey);
       if (!inTargetMonth) continue;
       if (project && projectName !== project) continue;
@@ -2215,7 +2219,7 @@ router.get("/api/cos-tracker/reconciliation", requireAuth, async (req, res) => {
       const rowSupplier = String(row?.counterpartyName || "").trim().toLowerCase();
       const billSupplier = String(bill?.vendorName || "").trim().toLowerCase();
       if (rowSupplier && billSupplier && rowSupplier !== billSupplier) codes.push("Supplier mismatch");
-      const rowMonth = String(row?.invoiceDate || row?.paidDate || "").slice(0, 7);
+      const rowMonth = String(row?.invoiceDate || "").slice(0, 7);
       const billMonth = String(bill?.txnDate || "").slice(0, 7);
       if (rowMonth && billMonth && rowMonth !== billMonth) codes.push("Posted to wrong month");
       const rowAmt = Number(row?.amountExVat ?? 0);
@@ -2227,7 +2231,7 @@ router.get("/api/cos-tracker/reconciliation", requireAuth, async (req, res) => {
     for (const row of allCostLines as any[]) {
       const link = linkByCost.get(row.id);
       const bill = link ? billById.get(String(link.qbEntityId)) : null;
-      const month = String(bill?.txnDate || row.invoiceDate || row.paidDate || "").slice(0, 7);
+      const month = String(bill?.txnDate || row.invoiceDate || "").slice(0, 7);
       if (!month) continue;
       if (monthKey && month !== monthKey) continue;
       const reasons = link ? reasonCodesFor(row, bill) : reasonCodesFor(row, null);
@@ -3641,7 +3645,8 @@ router.get("/api/revenue-tracker/reconciliation", requireAuth, requirePermission
       const appAmt = Number(row?.amountExVat || 0);
       const qbAmt = Number(inv?.totalAmount || 0);
       if (appAmt && qbAmt && Math.abs(appAmt - qbAmt) > 1) reasons.push("Amount mismatch");
-      const appMonth = String(row?.paidDate || row?.inBankDate || row?.invoiceDate || "").slice(0, 7);
+      // REV realisation is bucketed by invoice_date only (per finance rule).
+      const appMonth = String(row?.invoiceDate || "").slice(0, 7);
       const qbMonth = String(inv?.txnDate || "").slice(0, 7);
       if (appMonth && qbMonth && appMonth !== qbMonth) reasons.push("Posted to wrong month");
       return reasons;
@@ -3650,7 +3655,9 @@ router.get("/api/revenue-tracker/reconciliation", requireAuth, requirePermission
     for (const row of revenueRows as any[]) {
       const link = linkByRevenue.get(row.id);
       const inv = link ? invoiceById.get(String(link.qbEntityId)) : null;
-      const month = String(row.paidDate || row.inBankDate || row.invoiceDate || inv?.txnDate || "").slice(0, 7);
+      // REV bucketing — invoice_date first; fall back to QB invoice txn date if
+      // the app row has no invoice_date yet.
+      const month = String(row.invoiceDate || inv?.txnDate || "").slice(0, 7);
       if (!month) continue;
       if (monthKey && month !== monthKey) continue;
       const reasons = link ? revenueReasonsFor(row, inv) : revenueReasonsFor(row, null);

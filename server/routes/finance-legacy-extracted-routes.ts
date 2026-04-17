@@ -259,7 +259,8 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
 
       for (const rev of allNormRev) {
         if (!activeNames.has(rev.projectName.toLowerCase().trim())) continue;
-        const dateField = rev.invoiceDate || rev.paidDate || rev.expectedPaymentDate;
+        // REV realisation FY filter — invoice_date only (per finance rule).
+        const dateField = rev.invoiceDate;
         if (!dateInFY(dateField)) continue;
 
         const amt = parseFloat(rev.amountExVat || '0') || 0;
@@ -284,7 +285,8 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
 
       for (const cost of allNormCosts) {
         if (!activeNames.has(cost.projectName.toLowerCase().trim())) continue;
-        const dateField = cost.invoiceDate || cost.paidDate || cost.approvedDate;
+        // COS realisation FY filter — invoice_date only (per finance rule).
+        const dateField = cost.invoiceDate;
         if (!dateInFY(dateField)) continue;
 
         const amt = parseFloat(cost.amountExVat || '0') || 0;

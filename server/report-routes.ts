@@ -331,7 +331,8 @@ export function registerReportRoutes(app: Express) {
         return true;
       };
 
-      const filteredCost = costRows.filter((r: any) => inPeriod(r.paidDate || r.invoiceDate));
+      // COS reports filter by invoice_date only (per finance rule).
+      const filteredCost = costRows.filter((r: any) => inPeriod(r.invoiceDate));
       const filteredPlan = planRows.filter((r: any) => inPeriod(r.endDate || r.startDate));
 
       const totalCost = filteredCost.reduce((sum: any, row: any) => sum + (parseFloat(row.amountExVat || "0") || 0), 0);
