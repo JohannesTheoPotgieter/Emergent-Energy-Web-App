@@ -99,6 +99,51 @@ export function addTemporalColumns<T extends Record<string, any>>(
 }
 
 /**
+ * Deduplicate cost-line insert values before they hit the database.
+ *
+ * The Excel tracker importer creates one normalized_cost_lines row per
+ * "Expenditure Breakdown" sheet row, but the workbook repeats a single
+ * invoice on every forecast paid_date row. Without this dedupe, an
+ * invoice with a 12-month payment plan becomes 12 cost lines (each at
+ * the full invoice amount), inflating COS dashboards.
+ *
+ * Dedupe key: (projectName, invoiceNumber, invoiceDate, amountExVat).
+ * Rows missing invoiceNumber are kept as-is (cannot be safely merged).
+ * The first occurrence of each key is kept; later occurrences are dropped.
+ *
+ * Returns { kept, dropped } so callers can log and surface the dedup count.
+ */
+export function dedupeCostLineInserts<T extends {
+  projectName?: string | null;
+  invoiceNumber?: string | null;
+  invoiceDate?: string | null;
+  amountExVat?: string | number | null;
+}>(values: T[]): { kept: T[]; dropped: number } {
+  if (values.length < 2) return { kept: values, dropped: 0 };
+  const seen = new Set<string>();
+  const kept: T[] = [];
+  let dropped = 0;
+  for (const v of values) {
+    const proj = (v.projectName ?? "").toString().trim();
+    const inv = (v.invoiceNumber ?? "").toString().trim();
+    const date = (v.invoiceDate ?? "").toString().trim();
+    const amt = v.amountExVat == null ? "" : String(v.amountExVat).trim();
+    if (!proj || !inv || !date || !amt) {
+      kept.push(v);
+      continue;
+    }
+    const key = `${proj}\u0001${inv}\u0001${date}\u0001${amt}`;
+    if (seen.has(key)) {
+      dropped++;
+      continue;
+    }
+    seen.add(key);
+    kept.push(v);
+  }
+  return { kept, dropped };
+}
+
+/**
  * Soft-close by projectId column (common pattern in smart-import).
  */
 export async function softCloseByProjectId(
