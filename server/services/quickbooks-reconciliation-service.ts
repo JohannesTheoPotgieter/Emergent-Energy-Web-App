@@ -267,7 +267,7 @@ async function fetchProjectCostLines(projectId: number): Promise<NormalizedCostL
     .where(
       and(
         eq(normalizedCostLines.projectId, projectId),
-        isNull(normalizedCostLines.effectiveTo),
+        and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)),
       ),
     );
 }
@@ -317,7 +317,7 @@ export async function searchCostLines(
   const trimmed = query.trim();
   const where = trimmed
     ? and(
-        isNull(normalizedCostLines.effectiveTo),
+        and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)),
         or(
           ilike(normalizedCostLines.invoiceNumber, `%${trimmed}%`),
           ilike(normalizedCostLines.counterpartyName, `%${trimmed}%`),
@@ -325,7 +325,7 @@ export async function searchCostLines(
           ilike(normalizedCostLines.projectName, `%${trimmed}%`),
         ),
       )
-    : isNull(normalizedCostLines.effectiveTo);
+    : and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt));
 
   const rows = await db
     .select()
@@ -349,14 +349,14 @@ export async function searchRevenueLines(
   const trimmed = query.trim();
   const where = trimmed
     ? and(
-        isNull(normalizedRevenueLines.effectiveTo),
+        and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt)),
         or(
           ilike(normalizedRevenueLines.invoiceNumber, `%${trimmed}%`),
           ilike(normalizedRevenueLines.description, `%${trimmed}%`),
           ilike(normalizedRevenueLines.projectName, `%${trimmed}%`),
         ),
       )
-    : isNull(normalizedRevenueLines.effectiveTo);
+    : and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt));
 
   const rows: NormalizedRevenueLine[] = await db
     .select()
@@ -1316,7 +1316,7 @@ async function fetchProjectRevenueLines(projectId: number): Promise<NormalizedRe
     .where(
       and(
         eq(normalizedRevenueLines.projectId, projectId),
-        isNull(normalizedRevenueLines.effectiveTo),
+        and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt)),
       ),
     );
 }

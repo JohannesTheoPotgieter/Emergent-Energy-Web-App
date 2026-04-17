@@ -82,7 +82,7 @@ export class FinanceInflowsRepository {
   async getAllProgramInflows(): Promise<any[]> {
     const { adaptRevenueToInflow, createNameResolver } = await import("../lib/data-merge");
     const [revLines, piRows] = await Promise.all([
-      this.dbInstance.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
+      this.dbInstance.select().from(normalizedRevenueLines).where(and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt))),
       this.dbInstance.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo),
     ]);
     const resolve = createNameResolver(piRows.map((r: any) => r.projectName));
@@ -95,7 +95,7 @@ export class FinanceInflowsRepository {
     // Aligns cashflow inflow reads with the canonical source.
     const { adaptRevenueToInflow, createNameResolver } = await import("../lib/data-merge");
     const [revLines, piRows] = await Promise.all([
-      this.dbInstance.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
+      this.dbInstance.select().from(normalizedRevenueLines).where(and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt))),
       this.dbInstance.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo),
     ]);
     const resolve = createNameResolver(piRows.map((r: any) => r.projectName));
@@ -113,7 +113,7 @@ export class FinanceInflowsRepository {
     const projectIds = projectMatches.map((p: { id: number }) => p.id);
 
     const allActive = await this.dbInstance.select().from(normalizedRevenueLines)
-      .where(isNull(normalizedRevenueLines.effectiveTo));
+      .where(and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt)));
 
     const matched = (allActive as any[]).filter((r: any) => {
       if (typeof r.projectName === "string" && r.projectName.length > 0 && r.projectName === projectName) {

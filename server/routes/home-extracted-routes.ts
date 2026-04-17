@@ -12,7 +12,7 @@
 import type { Express } from "express";
 import { storage } from "../storage";
 import { db } from "../db";
-import { isNull } from "drizzle-orm";
+import { and, isNull } from "drizzle-orm";
 import { normalizedCostLines, normalizedRevenueLines } from "@shared/schema";
 import { requireAuth } from "../auth-context";
 import { requireAdmin } from "../middleware/requireAdmin";
@@ -456,7 +456,7 @@ export function registerHomeExtractedRoutes(app: Express): void {
         description: normalizedRevenueLines.description,
         milestoneName: normalizedRevenueLines.milestoneName,
         paidDate: normalizedRevenueLines.paidDate,
-      }).from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo));
+      }).from(normalizedRevenueLines).where(and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt)));
 
       for (const r of inflowRows) {
         if (r.paidDate) continue;
@@ -481,7 +481,7 @@ export function registerHomeExtractedRoutes(app: Express): void {
         description: normalizedCostLines.description,
         counterpartyName: normalizedCostLines.counterpartyName,
         paidDate: normalizedCostLines.paidDate,
-      }).from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
+      }).from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)));
 
       for (const c of outflowRows) {
         if (c.paidDate) continue;
@@ -534,7 +534,7 @@ export function registerHomeExtractedRoutes(app: Express): void {
         milestoneName: normalizedRevenueLines.milestoneName,
         invoiceNumber: normalizedRevenueLines.invoiceNumber,
         paidDate: normalizedRevenueLines.paidDate,
-      }).from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo));
+      }).from(normalizedRevenueLines).where(and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt)));
 
       for (const r of inflowRows) {
         if (r.paidDate) continue;
@@ -562,7 +562,7 @@ export function registerHomeExtractedRoutes(app: Express): void {
         counterpartyName: normalizedCostLines.counterpartyName,
         paidDate: normalizedCostLines.paidDate,
         invoiceNumber: normalizedCostLines.invoiceNumber,
-      }).from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
+      }).from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)));
 
       for (const c of outflowRows) {
         if (c.paidDate) continue;

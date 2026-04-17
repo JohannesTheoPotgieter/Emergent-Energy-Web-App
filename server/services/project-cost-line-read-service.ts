@@ -131,7 +131,7 @@ export async function resolveProjectIdByName(projectNameInput: string): Promise<
 export async function getCanonicalProjectCostLines(projectId: number): Promise<CanonicalCostLineRow[]> {
   const [projectMap, rows] = await Promise.all([
     projectNameMapById(),
-    db.select().from(normalizedCostLines).where(and(eq(normalizedCostLines.projectId, projectId), isNull(normalizedCostLines.effectiveTo))),
+    db.select().from(normalizedCostLines).where(and(eq(normalizedCostLines.projectId, projectId), and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)))),
   ]);
   const dedupedRows = dedupeCurrentLineage(rows as RawCostLineRow[]);
 
@@ -142,7 +142,7 @@ export async function getCanonicalProjectCostLines(projectId: number): Promise<C
 export async function getCanonicalAllCurrentCostLines(): Promise<CanonicalCostLineRow[]> {
   const [projectMap, rows] = await Promise.all([
     projectNameMapById(),
-    db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
+    db.select().from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
   ]);
   const dedupedRows = dedupeCurrentLineage(rows as RawCostLineRow[]);
   return dedupedRows.map((r) => toCanonicalUiRow(r, projectMap.get(r.projectId) || r.projectName || ""));
@@ -196,8 +196,8 @@ export async function getCanonicalCostLineDiagnostics(projectId?: number) {
 export async function getCostLineRiskDiagnostics(projectId?: number, sampleSize = 5) {
   const [activeNormalizedRows, projects] = await Promise.all([
     projectId
-      ? db.select().from(normalizedCostLines).where(and(eq(normalizedCostLines.projectId, projectId), isNull(normalizedCostLines.effectiveTo)))
-      : db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
+      ? db.select().from(normalizedCostLines).where(and(eq(normalizedCostLines.projectId, projectId), and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))))
+      : db.select().from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
     db.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo),
   ]);
 

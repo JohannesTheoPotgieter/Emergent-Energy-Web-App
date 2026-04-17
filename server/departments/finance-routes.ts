@@ -1702,7 +1702,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
     const [manualEntries, rawCostLines, links, pnlReport] = await Promise.all([
       storage.getTrackerMonthlyManual('COS'),
       db.select().from(normalizedCostLines).where(and(
-        isNull(normalizedCostLines.effectiveTo),
+        and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)),
         isNull(normalizedCostLines.deletedAt),
       )),
       db.select().from(quickbooksInvoiceLinks).where(and(
@@ -2009,7 +2009,7 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
     const lastDay = new Date(Number(match[1]), Number(match[2]), 0).getDate();
     const monthEnd = `${monthKey}-${String(lastDay).padStart(2, '0')}`;
     const [allCostLines, links, rawBills] = await Promise.all([
-      db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
+      db.select().from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
       db.select().from(quickbooksInvoiceLinks).where(and(
         eq(quickbooksInvoiceLinks.appEntityType, "cost_line"),
         eq(quickbooksInvoiceLinks.qbEntityType, "bill"),
@@ -2191,7 +2191,7 @@ router.get("/api/cos-tracker/reconciliation", requireAuth, async (req, res) => {
   try {
     const { monthKey } = req.query as { monthKey?: string };
     const [allCostLines, links, rawBills] = await Promise.all([
-      db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
+      db.select().from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
       db.select().from(quickbooksInvoiceLinks).where(and(
         eq(quickbooksInvoiceLinks.appEntityType, "cost_line"),
         eq(quickbooksInvoiceLinks.qbEntityType, "bill"),
@@ -3617,7 +3617,7 @@ router.get("/api/revenue-tracker/reconciliation", requireAuth, requirePermission
   try {
     const { monthKey } = req.query as { monthKey?: string };
     const [revenueRows, links, qbInvoicesRaw] = await Promise.all([
-      db.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
+      db.select().from(normalizedRevenueLines).where(and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt))),
       db.select().from(quickbooksInvoiceLinks).where(and(
         eq(quickbooksInvoiceLinks.appEntityType, "revenue_line"),
         eq(quickbooksInvoiceLinks.qbEntityType, "invoice"),

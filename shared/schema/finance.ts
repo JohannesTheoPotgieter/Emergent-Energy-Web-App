@@ -520,12 +520,15 @@ export const normalizedRevenueLines = pgTable("normalized_revenue_lines", {
   subProjectName: text("sub_project_name"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  // Soft-delete column (column already present in DB; mirroring it here
+  // so Drizzle queries can reference normalizedRevenueLines.deletedAt).
+  deletedAt: timestamp("deleted_at"),
   // Temporal columns (Prompt 9)
   effectiveFrom: timestamp("effective_from").notNull().defaultNow(),
   effectiveTo: timestamp("effective_to"),
   snapshotRunId: integer("snapshot_run_id").references(() => smartImportRuns.id, { onDelete: "set null" }),
 });
-export const insertNormalizedRevenueLineSchema = createInsertSchema(normalizedRevenueLines).omit({ id: true, createdAt: true, updatedAt: true, effectiveFrom: true, effectiveTo: true, amountExVatLegacy: true, vatLegacy: true } as any);
+export const insertNormalizedRevenueLineSchema = createInsertSchema(normalizedRevenueLines).omit({ id: true, createdAt: true, updatedAt: true, effectiveFrom: true, effectiveTo: true, amountExVatLegacy: true, vatLegacy: true, deletedAt: true } as any);
 export type InsertNormalizedRevenueLine = z.infer<typeof insertNormalizedRevenueLineSchema>;
 export type NormalizedRevenueLine = typeof normalizedRevenueLines.$inferSelect;
 
@@ -634,7 +637,7 @@ export const normalizedCostLines = pgTable("normalized_cost_lines", {
   categoryKey: text("category_key"),
   categoryAllocationId: integer("category_allocation_id").references(() => categoryRevenueAllocations.id),
 });
-export const insertNormalizedCostLineSchema = createInsertSchema(normalizedCostLines).omit({ id: true, createdAt: true, updatedAt: true, effectiveFrom: true, effectiveTo: true, amountExVatLegacy: true } as any);
+export const insertNormalizedCostLineSchema = createInsertSchema(normalizedCostLines).omit({ id: true, createdAt: true, updatedAt: true, effectiveFrom: true, effectiveTo: true, amountExVatLegacy: true, deletedAt: true } as any);
 export type InsertNormalizedCostLine = z.infer<typeof insertNormalizedCostLineSchema>;
 export type NormalizedCostLine = typeof normalizedCostLines.$inferSelect;
 

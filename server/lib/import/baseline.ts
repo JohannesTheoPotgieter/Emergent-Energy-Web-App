@@ -131,7 +131,7 @@ export async function loadCurrentRevenueRows(projectId: number) {
     .where(
       and(
         eq(normalizedRevenueLines.projectId, projectId),
-        isNull(normalizedRevenueLines.effectiveTo),
+        and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt)),
       ),
     );
 }
@@ -167,7 +167,7 @@ export async function loadCurrentCostRows(projectId: number) {
     .where(
       and(
         eq(normalizedCostLines.projectId, projectId),
-        isNull(normalizedCostLines.effectiveTo),
+        and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)),
       ),
     );
 }

@@ -56,7 +56,7 @@ async function buildCounterpartyUsageIndex() {
     status: normalizedCostLines.status,
   })
     .from(normalizedCostLines)
-    .where(and(isNotNull(normalizedCostLines.counterpartyId), isNull(normalizedCostLines.effectiveTo)));
+    .where(and(isNotNull(normalizedCostLines.counterpartyId), and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))));
 
   const usage = new Map<number, {
     usageCount: number;
@@ -523,7 +523,7 @@ router.post("/api/procurement-analysis/classify", requireAuth, requirePermission
   try {
     const userId = getUserId(req);
 
-    const allLines = await db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
+    const allLines = await db.select().from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)));
 
     const eligibleLines = allLines.filter((line: any) => {
       const amt = parseFloat(line.amountExVat || "0") || 0;
@@ -668,7 +668,7 @@ router.post("/api/procurement-analysis/classify", requireAuth, requirePermission
 
 router.get("/api/procurement-analysis/pattern-stats", requireAuth, async (_req: Request, res: Response) => {
   try {
-    const allLines = await db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
+    const allLines = await db.select().from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)));
 
     const eligible = allLines.filter((line: any) => {
       const amt = parseFloat(line.amountExVat || "0") || 0;
@@ -739,7 +739,7 @@ router.post("/api/procurement-analysis/reset-tags", requireAuth, requirePermissi
       return res.status(400).json({ error: "Must send confirm: true to execute this destructive action" });
     }
 
-    const taggedBefore = await db.select({ count: sql<number>`count(*)` }).from(normalizedCostLines).where(sql`pattern_rule_id IS NOT NULL AND effective_to IS NULL`);
+    const taggedBefore = await db.select({ count: sql<number>`count(*)` }).from(normalizedCostLines).where(sql`pattern_rule_id IS NOT NULL AND effective_to IS NULL AND deleted_at IS NULL`);
     const matchesBefore = await db.select({ count: sql<number>`count(*)` }).from(invoicePatternMatches);
 
     await db.transaction(async (tx: any) => {

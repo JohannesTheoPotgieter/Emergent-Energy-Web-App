@@ -405,7 +405,7 @@ router.get(
           computedForecastReceiptDate: sql<string | null>`NULL`,
           invoiceRaisedDate: normalizedRevenueLines.invoiceDate,
           paymentReceivedDate: normalizedRevenueLines.paidDate,
-        }).from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
+        }).from(normalizedRevenueLines).where(and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt))),
         db.select({
           projectName: normalizedCostLines.projectName,
           rowType: sql<string>`'item'`,
@@ -419,7 +419,7 @@ router.get(
           budgetTotal: normalizedCostLines.budgetTotal,
           forecastPaymentDate: normalizedCostLines.forecastPaymentDate,
           computedForecastPaymentDate: sql<string | null>`NULL`,
-        }).from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
+        }).from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
         loadCosOverrides(),
       ]);
       enrichWithOverrides(allExpenses, cosOverrideMap);
@@ -715,7 +715,7 @@ router.get(
           plannedPaymentDate: normalizedRevenueLines.expectedPaymentDate,
           paymentReceivedDate: normalizedRevenueLines.paidDate,
           invoiceRaisedDate: normalizedRevenueLines.invoiceDate,
-        }).from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
+        }).from(normalizedRevenueLines).where(and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt))),
         db.select({
           projectName: normalizedCostLines.projectName,
           rowType: sql<string>`'item'`,
@@ -728,7 +728,7 @@ router.get(
           expensePoNumber: normalizedCostLines.poNumber,
           invoiceDateConfirmed: normalizedCostLines.invoiceDateConfirmed,
           invoiceDateFontColor: normalizedCostLines.invoiceDateFontColor,
-        }).from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
+        }).from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
       ]);
 
       // ── Budget COS per project (FYE-specific) ──
@@ -1322,8 +1322,8 @@ async function collectSnapshotData(fye: number) {
   // Actual Revenue + COS via COS-ratio allocation (matches Revenue Tracker)
   // Canonical source: normalized_revenue_lines + normalized_cost_lines.
   const [allInflows, allExpenses, snapCosOverrides] = await Promise.all([
-    db.select({ projectName: normalizedRevenueLines.projectName, milestoneAmount: normalizedRevenueLines.amountExVat }).from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
-    db.select({ projectName: normalizedCostLines.projectName, rowType: sql<string>`'item'`, expenseActualTotal: normalizedCostLines.amountExVat, expenseInvoicedDate: normalizedCostLines.invoiceDate, expenseInvoiceNumber: normalizedCostLines.invoiceNumber, expensePoNumber: normalizedCostLines.poNumber, rowNumber: normalizedCostLines.sourceRow, budgetTotal: normalizedCostLines.budgetTotal, forecastPaymentDate: normalizedCostLines.forecastPaymentDate, computedForecastPaymentDate: sql<string | null>`NULL` }).from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
+    db.select({ projectName: normalizedRevenueLines.projectName, milestoneAmount: normalizedRevenueLines.amountExVat }).from(normalizedRevenueLines).where(and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt))),
+    db.select({ projectName: normalizedCostLines.projectName, rowType: sql<string>`'item'`, expenseActualTotal: normalizedCostLines.amountExVat, expenseInvoicedDate: normalizedCostLines.invoiceDate, expenseInvoiceNumber: normalizedCostLines.invoiceNumber, expensePoNumber: normalizedCostLines.poNumber, rowNumber: normalizedCostLines.sourceRow, budgetTotal: normalizedCostLines.budgetTotal, forecastPaymentDate: normalizedCostLines.forecastPaymentDate, computedForecastPaymentDate: sql<string | null>`NULL` }).from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
     loadCosOverrides(),
   ]);
   enrichWithOverrides(allExpenses, snapCosOverrides);

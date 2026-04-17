@@ -490,11 +490,11 @@ export function registerLifecycleRoutes(app: Express) {
       const allPlanTasks = rawPlanTasks;
 
       const trackerProjectNames = new Set<string>();
-      const expenseNames = await db.selectDistinct({ projectName: normalizedCostLines.projectName }).from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
+      const expenseNames = await db.selectDistinct({ projectName: normalizedCostLines.projectName }).from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)));
       for (const e of expenseNames) {
         if (e.projectName) trackerProjectNames.add(normalizeName(e.projectName));
       }
-      const inflowNames = await db.selectDistinct({ projectName: normalizedRevenueLines.projectName }).from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo));
+      const inflowNames = await db.selectDistinct({ projectName: normalizedRevenueLines.projectName }).from(normalizedRevenueLines).where(and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt)));
       for (const i of inflowNames) {
         if (i.projectName) trackerProjectNames.add(normalizeName(i.projectName));
       }
@@ -509,7 +509,7 @@ export function registerLifecycleRoutes(app: Express) {
         amountExVat: normalizedRevenueLines.amountExVat,
         invoiceNumber: normalizedRevenueLines.invoiceNumber,
         paidDateConfirmed: normalizedRevenueLines.paidDateConfirmed,
-      }).from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo));
+      }).from(normalizedRevenueLines).where(and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt)));
 
       const allCostLines = await db.select({
         projectId: normalizedCostLines.projectId,
@@ -519,7 +519,7 @@ export function registerLifecycleRoutes(app: Express) {
         invoiceDateConfirmed: normalizedCostLines.invoiceDateConfirmed,
         poNumber: normalizedCostLines.poNumber,
         paidDateConfirmed: normalizedCostLines.paidDateConfirmed,
-      }).from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
+      }).from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)));
 
       // Canonical reporting preference: aggregate finance by projectId first,
       // then use normalized projectName only as compatibility fallback.
@@ -937,7 +937,7 @@ export function registerLifecycleRoutes(app: Express) {
         invoiceDate: normalizedRevenueLines.invoiceDate,
         expectedPaymentDate: normalizedRevenueLines.expectedPaymentDate,
         sourceRow: normalizedRevenueLines.sourceRow,
-      })).from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo));
+      })).from(normalizedRevenueLines).where(and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt)));
 
       const costLines = await db.select(selectDefinedFields({
         projectId: normalizedCostLines.projectId,
@@ -956,7 +956,7 @@ export function registerLifecycleRoutes(app: Express) {
         invoiceDateFontColor: normalizedCostLines.invoiceDateFontColor,
         sourceRow: normalizedCostLines.sourceRow,
         cosStatusOverride: normalizedCostLines.cosStatusOverride,
-      })).from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
+      })).from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)));
 
       const overdueLedger = buildOverdueFinanceLedger({
         revenueLines,
@@ -1300,7 +1300,7 @@ export function registerLifecycleRoutes(app: Express) {
         inBankDate: normalizedRevenueLines.inBankDate,
         status: normalizedRevenueLines.status,
         sourceRow: normalizedRevenueLines.sourceRow,
-      }).from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo));
+      }).from(normalizedRevenueLines).where(and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt)));
 
       const costLines = await db.select({
         projectId: normalizedCostLines.projectId,
@@ -1315,7 +1315,7 @@ export function registerLifecycleRoutes(app: Express) {
         paidDateFontColor: normalizedCostLines.paidDateFontColor,
         cosRealised: normalizedCostLines.cosRealised,
         sourceRow: normalizedCostLines.sourceRow,
-      }).from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
+      }).from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)));
 
       const overdue = buildOverdueFinanceLedger({
         revenueLines,
