@@ -14,8 +14,13 @@ import { TablePagination } from "@/components/ui/table-pagination";
 import { ExportDropdown } from "@/components/ui/export-dropdown";
 import { PD_REQUEST_TYPES_FILTERABLE } from "@/lib/pd/request-types";
 
-function pdFetch(url: string) {
-  return fetch(url, { credentials: "include" }).then(r => { if (!r.ok) throw new Error("Failed"); return r.json(); });
+async function pdFetch(url: string) {
+  const r = await fetch(url, { credentials: "include" });
+  const body = await r.json().catch(() => null);
+  if (!r.ok) {
+    throw new Error(body?.error || `Request to ${url} failed (${r.status}).`);
+  }
+  return body;
 }
 
 // Filter list uses the superset (active + legacy) so historical tickets
