@@ -62,6 +62,7 @@ import {
   runProjectRevenueReconciliation,
   saveCostAllocationsForBill,
   searchCostLines,
+  searchRevenueLines,
   softDeleteCustomerMapping,
   softDeleteLink,
   upsertCustomerMapping,
@@ -71,7 +72,7 @@ import {
 import { recordIntegrationRun } from "./services/integration-health-service";
 import { db } from "./db";
 import { integrations, integrationRunEvents, type IntegrationRunEvent } from "@shared/schema";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { validateBody } from "./middleware/validateBody";
 import { ApiError, conflict, logApiError, sendError, serverError } from "./lib/api-error";
@@ -831,6 +832,166 @@ export function registerQuickBooksRoutes(app: Express): void {
     }
   });
 
+  // ---------- Vendor mappings (QB Vendor ↔ App Counterparty) ----------
+
+  app.get(
+    "/api/quickbooks/vendor-mappings",
+    requireAuth,
+    requirePermission("financials", "view"),
+    async (_req, res) => {
+      try {
+        const { quickbooksVendorMappings } = await import("@shared/schema");
+        const { counterparties } = await import("@shared/schema/finance");
+        const rows = await db
+          .select({
+            id: quickbooksVendorMappings.id,
+            qbVendorId: quickbooksVendorMappings.qbVendorId,
+            qbVendorName: quickbooksVendorMappings.qbVendorName,
+            qbRealmId: quickbooksVendorMappings.qbRealmId,
+            counterpartyId: quickbooksVendorMappings.counterpartyId,
+            counterpartyName: quickbooksVendorMappings.counterpartyName,
+            counterpartyCurrent: counterparties.nameCanonical,
+            updatedAt: quickbooksVendorMappings.updatedAt,
+          })
+          .from(quickbooksVendorMappings)
+          .leftJoin(counterparties, eq(quickbooksVendorMappings.counterpartyId, counterparties.id))
+          .where(isNull(quickbooksVendorMappings.deletedAt));
+        res.json({ mappings: rows });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to load vendor mappings";
+        res.status(500).json({ error: "quickbooks_vendor_mappings_failed", message });
+      }
+    },
+  );
+
+  app.post(
+    "/api/quickbooks/vendor-mappings",
+    requireAuth,
+    requirePermission("financials", "edit"),
+    async (req, res) => {
+      try {
+        const body = req.body ?? {};
+        const qbVendorId = String(body.qbVendorId ?? "").trim();
+        const counterpartyId = Number(body.counterpartyId);
+        const qbVendorName = body.qbVendorName ? String(body.qbVendorName) : null;
+        const counterpartyName = body.counterpartyName ? String(body.counterpartyName) : null;
+        if (!qbVendorId || !Number.isFinite(counterpartyId) || counterpartyId <= 0) {
+          res.status(400).json({
+            error: "bad_request",
+            message: "qbVendorId and counterpartyId are required",
+          });
+          return;
+        }
+
+        const status = await getQuickBooksConnectionStatus();
+        if (!status.connected || !status.realmId) {
+          res.status(409).json({ error: "not_connected", message: "QuickBooks is not connected" });
+          return;
+        }
+
+        const { quickbooksVendorMappings } = await import("@shared/schema");
+        const user = getEffectiveUser(req);
+
+        const [existing] = await db
+          .select()
+          .from(quickbooksVendorMappings)
+          .where(
+            and(
+              eq(quickbooksVendorMappings.qbVendorId, qbVendorId),
+              eq(quickbooksVendorMappings.qbRealmId, status.realmId),
+              isNull(quickbooksVendorMappings.deletedAt),
+            ),
+          )
+          .limit(1);
+
+        let row;
+        if (existing) {
+          const [updated] = await db
+            .update(quickbooksVendorMappings)
+            .set({
+              counterpartyId,
+              counterpartyName,
+              qbVendorName,
+              updatedAt: new Date(),
+            })
+            .where(eq(quickbooksVendorMappings.id, existing.id))
+            .returning();
+          row = updated;
+        } else {
+          const [created] = await db
+            .insert(quickbooksVendorMappings)
+            .values({
+              qbVendorId,
+              qbVendorName,
+              qbRealmId: status.realmId,
+              counterpartyId,
+              counterpartyName,
+              createdBy: user?.id ?? null,
+            })
+            .returning();
+          row = created;
+        }
+
+        logAuditFromReq(req, {
+          entityType: "quickbooks_vendor_mapping",
+          entityId: String(row.id),
+          action: existing ? "quickbooks.vendor_mapping.update" : "quickbooks.vendor_mapping.create",
+          source: "UI",
+          changesJson: {
+            qbVendorId,
+            qbVendorName,
+            counterpartyId,
+            counterpartyName,
+          },
+        });
+
+        res.json({ mapping: row });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to save vendor mapping";
+        res.status(500).json({ error: "quickbooks_vendor_mapping_save_failed", message });
+      }
+    },
+  );
+
+  app.delete(
+    "/api/quickbooks/vendor-mappings/:id",
+    requireAuth,
+    requirePermission("financials", "edit"),
+    async (req, res) => {
+      try {
+        const id = Number(req.params.id);
+        if (!Number.isFinite(id) || id <= 0) {
+          res.status(400).json({ error: "bad_request", message: "Invalid mapping id" });
+          return;
+        }
+        const { quickbooksVendorMappings } = await import("@shared/schema");
+        const [row] = await db
+          .update(quickbooksVendorMappings)
+          .set({ deletedAt: new Date(), updatedAt: new Date() })
+          .where(eq(quickbooksVendorMappings.id, id))
+          .returning();
+        if (!row) {
+          res.status(404).json({ error: "not_found", message: "Vendor mapping not found" });
+          return;
+        }
+        logAuditFromReq(req, {
+          entityType: "quickbooks_vendor_mapping",
+          entityId: String(id),
+          action: "quickbooks.vendor_mapping.unmap",
+          source: "UI",
+          changesJson: {
+            qbVendorId: row.qbVendorId,
+            counterpartyId: row.counterpartyId,
+          },
+        });
+        res.json({ ok: true });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to delete vendor mapping";
+        res.status(500).json({ error: "quickbooks_vendor_mapping_delete_failed", message });
+      }
+    },
+  );
+
   // ---------- Revenue reconciliation (Invoices ↔ revenue lines) ----------
 
   app.get(
@@ -947,6 +1108,18 @@ export function registerQuickBooksRoutes(app: Express): void {
       const limit = req.query.limit ? Math.min(Number(req.query.limit), 200) : 50;
       const costLines = await searchCostLines(q, Number.isFinite(limit) ? limit : 50);
       res.json({ costLines });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Search failed";
+      res.status(500).json({ error: "quickbooks_search_failed", message });
+    }
+  });
+
+  app.get("/api/quickbooks/revenue-lines/search", requireAuth, requirePermission("financials", "view"), async (req, res) => {
+    try {
+      const q = typeof req.query.q === "string" ? req.query.q : "";
+      const limit = req.query.limit ? Math.min(Number(req.query.limit), 200) : 50;
+      const revenueLines = await searchRevenueLines(q, Number.isFinite(limit) ? limit : 50);
+      res.json({ revenueLines });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Search failed";
       res.status(500).json({ error: "quickbooks_search_failed", message });
