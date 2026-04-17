@@ -21,6 +21,7 @@ import {
   validateNavigationPermissionModel,
 } from "@/config/navigation-permissions";
 import { ROUTE_COMPONENT_KEYS } from "@/config/route-components";
+import { NAV_GROUP_KEYS } from "@/config/page-registry";
 import { COMPANY_ROLES } from "@shared/schema/users";
 
 describe("app navigation visibility", () => {
@@ -410,6 +411,30 @@ describe("nav ↔ registry ↔ router parity", () => {
       }
     }
     expect(unresolved, unresolved.join("\n")).toEqual([]);
+  });
+
+  it("every PAGE_REGISTRY navGroup value is a declared NAV_GROUP_KEYS entry", () => {
+    const validGroups = new Set<string>(NAV_GROUP_KEYS);
+    const unknown: string[] = [];
+    for (const page of PAGE_REGISTRY) {
+      if (page.navGroup && !validGroups.has(page.navGroup)) {
+        unknown.push(`${page.id} (${page.path}) → ${page.navGroup}`);
+      }
+    }
+    expect(unknown, unknown.join("\n")).toEqual([]);
+  });
+
+  it("every sidebar-visible page with a navGroup resolves to a SectionKey", () => {
+    const topKeys = new Set(TOP_SECTIONS.map((s) => s.key));
+    const orphans: string[] = [];
+    for (const page of PAGE_REGISTRY) {
+      if (!page.showInSidebar || !page.navGroup) continue;
+      const section = getAppSectionForPath(page.path);
+      if (!section || !topKeys.has(section)) {
+        orphans.push(`${page.id} (${page.path}) → navGroup=${page.navGroup}`);
+      }
+    }
+    expect(orphans, orphans.join("\n")).toEqual([]);
   });
 });
 

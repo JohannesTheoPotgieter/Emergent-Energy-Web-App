@@ -276,8 +276,8 @@ const CANONICAL_MODULE_TO_SECTION_KEYS: Record<string, SectionKey[]> = {
 /**
  * Converts a lens profile's allowedModules into TopSection key values.
  */
-export function getAllowedSectionKeysForLens(allowedModules: string[]): string[] {
-  const keys = new Set<string>();
+export function getAllowedSectionKeysForLens(allowedModules: string[]): SectionKey[] {
+  const keys = new Set<SectionKey>();
   for (const mod of allowedModules) {
     const mapped = CANONICAL_MODULE_TO_SECTION_KEYS[mod];
     if (mapped) {
