@@ -55,23 +55,43 @@ export const NAVIGATION_PERMISSION_MODEL = TOP_SECTIONS.map((section) => {
   };
 });
 
-export function validateNavigationPermissionModel() {
-  const warnings: string[] = [];
+/**
+ * Paths that are intentionally allowed to have no permission entity.
+ * Examples: the root "/" (HOME is always visible), and query-param-only tabs
+ * whose base path is already gated by a separate entry.
+ */
+const MISSING_ENTITY_ALLOWLIST = new Set<string>([
+  "/",
+  "/priorities?tab=mine",
+  "/priorities?tab=department",
+  "/priorities?tab=company",
+]);
+
+export type NavigationPermissionIssue = {
+  severity: "error" | "warning";
+  message: string;
+};
+
+export function validateNavigationPermissionModel(): NavigationPermissionIssue[] {
+  const issues: NavigationPermissionIssue[] = [];
   const keySet = new Set<string>();
 
   for (const section of NAVIGATION_PERMISSION_MODEL) {
     for (const item of section.items) {
       const identity = `${section.key}:${item.path}`;
       if (keySet.has(identity)) {
-        warnings.push(`Duplicate navigation key detected: ${identity}`);
+        issues.push({ severity: "error", message: `Duplicate navigation key: ${identity}` });
       }
       keySet.add(identity);
 
-      if (!item.permissionEntity) {
-        warnings.push(`Navigation item "${item.itemLabel}" (${item.path}) has no permission entity mapping.`);
+      if (!item.permissionEntity && !MISSING_ENTITY_ALLOWLIST.has(item.path)) {
+        issues.push({
+          severity: "warning",
+          message: `Navigation item "${item.itemLabel}" (${item.path}) has no permission entity mapping.`,
+        });
       }
     }
   }
 
-  return warnings;
+  return issues;
 }

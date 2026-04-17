@@ -113,15 +113,10 @@ describe("commissioning dashboard — navigation", () => {
     expect(src).not.toContain("path: '/hse'");
   });
 
-  it("App.tsx has explicit selector route for /commissioning-dashboard", () => {
-    const src = readFileSync("client/src/App.tsx", "utf-8");
-    expect(src).toContain('path="/commissioning-dashboard"');
-    expect(src).toContain("CommissioningDashboardPage");
-  });
-
-  it("/commissioning-dashboard in EPM_ALLOWED_PATHS", () => {
-    const src = readFileSync("client/src/App.tsx", "utf-8");
-    expect(src).toContain('"/commissioning-dashboard"');
+  it("PAGE_REGISTRY exposes /commissioning-dashboard via CommissioningDashboardPage", () => {
+    const src = readFileSync("client/src/config/page-registry.ts", "utf-8");
+    expect(src).toContain('path: "/commissioning-dashboard"');
+    expect(src).toContain('routeComponentKey: "CommissioningDashboardPage"');
   });
 });
 
