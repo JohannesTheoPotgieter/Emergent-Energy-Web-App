@@ -164,13 +164,9 @@ describe("app navigation visibility", () => {
     const finance = sections.find((s) => s.label === "Finance");
     expect(finance?.secondary.map((item) => item.label)).toEqual([
       "Cashflow",
-      "Revenue",
       "COS",
-      "GP / Margin",
-      "FYE Revenue",
-      "Counterparties",
-      "Subcontractors",
-      "Invoice Patterns",
+      "Revenue",
+      "QB Throughput",
     ]);
   });
 
