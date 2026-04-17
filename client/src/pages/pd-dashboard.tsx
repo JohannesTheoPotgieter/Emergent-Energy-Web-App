@@ -138,14 +138,14 @@ export default function PdDashboardPage() {
         <Card className="max-w-md w-full"><CardContent className="py-12 text-center">
           <AlertTriangle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
           <h2 className="text-xl font-semibold mb-2">Access Denied</h2>
-          <p className="text-muted-foreground">You don't have permission to view the PD Dashboard.</p>
+          <p className="text-muted-foreground">You don't have permission to view the Project Development Dashboard.</p>
         </CardContent></Card>
       </div>
     );
   }
 
   if (isLoading) return <PageSkeleton lines={5} />;
-  if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load PD Dashboard" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
+  if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load Project Development Dashboard" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
   const totalOverdue = pipeline ? pipeline.overdue.week.length + pipeline.overdue.twoWeeks.length + pipeline.overdue.month.length : 0;
 
@@ -158,7 +158,7 @@ export default function PdDashboardPage() {
             Project Development
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Commercial pipeline, PD work queue, and PD→PM handover readiness.
+            Commercial pipeline, Project Development work queue, and Project Development → PM handover readiness.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -166,7 +166,7 @@ export default function PdDashboardPage() {
             <BarChart3 className="h-4 w-4" /> Reports
           </Button>
           <Button onClick={() => navigate("/pd/tickets/create")} className="gap-1.5" data-testid="btn-create-pd-ticket">
-            <Plus className="h-4 w-4" /> New PD Ticket
+            <Plus className="h-4 w-4" /> New Project Development Ticket
           </Button>
         </div>
       </div>
@@ -429,8 +429,8 @@ export default function PdDashboardPage() {
               <Card>
                 <CardContent className="p-8 text-center text-muted-foreground">
                   <FileEdit className="h-10 w-10 mx-auto mb-2 opacity-30" />
-                  <p className="font-medium">No PD tickets yet</p>
-                  <p className="text-sm mt-1">PD tickets track engineering requests (cost proposals, site assessments, IFC planning, etc.) and require a linked project, due date, and request type.</p>
+                  <p className="font-medium">No Project Development tickets yet</p>
+                  <p className="text-sm mt-1">Project Development tickets track engineering requests (cost proposals, site assessments, IFC planning, etc.) and require a linked project, due date, and request type.</p>
                 </CardContent>
               </Card>
             ) : (

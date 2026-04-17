@@ -177,7 +177,12 @@ export default function OpportunitiesPage() {
   // Scope metadata for the "Pull from Pipedrive" button. The server
   // derives `scope` from the caller's role — COO/CEO/CCO get the
   // whole pipeline, everyone else only their own deals.
-  const { data: pullScope } = useQuery<{
+  const {
+    data: pullScope,
+    isLoading: pullScopeLoading,
+    isError: pullScopeError,
+    error: pullScopeErrorObj,
+  } = useQuery<{
     role: string;
     scope: "all" | "owner";
     ownerEmail: string | null;
@@ -389,37 +394,89 @@ export default function OpportunitiesPage() {
         title="Opportunities (Active Working List)"
         description="Only active Pipedrive opportunities are shown here. Lost, won/signed/closed, and converted deals are excluded."
         actions={
-          pullScope ? (
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1.5"
-              disabled={
-                !pullScope.configured ||
-                !pullScope.canPull ||
-                pullPipedriveMutation.isPending
-              }
-              onClick={() => pullPipedriveMutation.mutate()}
-              title={
-                !pullScope.configured
-                  ? "Pipedrive is not configured. Ask an admin to set PIPEDRIVE_API_TOKEN."
-                  : pullScope.blockedReason ??
-                    (pullScope.scope === "all"
-                      ? "Pulls every deal from Pipedrive. Existing opportunities are updated in place — no duplicates."
-                      : `Pulls only deals owned by ${pullScope.ownerEmail ?? "you"} in Pipedrive. Existing opportunities are updated in place.`)
-              }
-              data-testid="btn-pull-from-pipedrive"
-            >
-              {pullPipedriveMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="h-4 w-4" />
-              )}
-              {pullScope.scope === "all" ? "Pull all from Pipedrive" : "Pull my Pipedrive deals"}
-            </Button>
-          ) : null
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1.5"
+            disabled={
+              pullScopeLoading ||
+              pullScopeError ||
+              !pullScope?.configured ||
+              !pullScope?.canPull ||
+              pullPipedriveMutation.isPending
+            }
+            onClick={() => pullPipedriveMutation.mutate()}
+            title={
+              pullScopeLoading
+                ? "Checking Pipedrive configuration…"
+                : pullScopeError
+                  ? `Unable to reach the Pipedrive endpoint: ${pullScopeErrorObj instanceof Error ? pullScopeErrorObj.message : "unknown error"}`
+                  : !pullScope?.configured
+                    ? "Pipedrive is not configured. Ask an admin to set PIPEDRIVE_API_TOKEN in the server environment."
+                    : pullScope.blockedReason ??
+                      (pullScope.scope === "all"
+                        ? "Pulls every deal from Pipedrive. Existing opportunities are updated in place — no duplicates."
+                        : `Pulls only deals owned by ${pullScope.ownerEmail ?? "you"} in Pipedrive. Existing opportunities are updated in place.`)
+            }
+            data-testid="btn-pull-from-pipedrive"
+          >
+            {pullPipedriveMutation.isPending || pullScopeLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4" />
+            )}
+            {pullScopeLoading
+              ? "Checking Pipedrive…"
+              : pullScopeError
+                ? "Pipedrive unavailable"
+                : !pullScope?.configured
+                  ? "Pipedrive not configured"
+                  : pullScope.scope === "all"
+                    ? "Pull all from Pipedrive"
+                    : "Pull my Pipedrive deals"}
+          </Button>
         }
       />
+
+      {pullScopeError && (
+        <Card className="border-red-200 bg-red-50/60">
+          <CardContent className="p-3 text-sm flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 text-red-600 mt-0.5" />
+            <div>
+              <p className="font-medium text-red-800">Pipedrive pull status unavailable</p>
+              <p className="text-red-700">
+                The server did not return Pipedrive pull scope. Reason: {pullScopeErrorObj instanceof Error ? pullScopeErrorObj.message : "unknown"}.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {pullScope && !pullScope.configured && (
+        <Card className="border-amber-200 bg-amber-50/60">
+          <CardContent className="p-3 text-sm flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5" />
+            <div>
+              <p className="font-medium text-amber-900">Pipedrive is not configured on this environment</p>
+              <p className="text-amber-800">
+                Set <code>PIPEDRIVE_API_TOKEN</code> in the server environment to enable pulls. Until then, this list only shows opportunities that were created manually or imported previously.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {pullScope?.configured && pullScope.blockedReason && (
+        <Card className="border-amber-200 bg-amber-50/60">
+          <CardContent className="p-3 text-sm flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5" />
+            <div>
+              <p className="font-medium text-amber-900">Pull is blocked for your account</p>
+              <p className="text-amber-800">{pullScope.blockedReason}</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="border-emerald-200 bg-emerald-50/50">
         <CardContent className="p-3 text-sm flex items-start gap-2">

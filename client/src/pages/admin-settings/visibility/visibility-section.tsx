@@ -14,7 +14,7 @@ import * as api from "../settings-api";
 import type { PdVisConfig, UserSummary, WorkstreamVisConfig } from "../settings-types";
 
 const PD_TICKET_TYPE_OPTIONS = [
-  { value: "pd", label: "PD Tickets", description: "Cost Proposals and other non-engineering tickets" },
+  { value: "pd", label: "Project Development Tickets", description: "Cost Proposals and other non-engineering tickets" },
   { value: "engineering", label: "Engineering Tickets", description: "Feasibility Study, Design Review, IFC Planning, Grid Application, Battery Assessment, Site Assessment, Full EPC" },
 ];
 

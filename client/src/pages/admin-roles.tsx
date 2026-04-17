@@ -43,8 +43,8 @@ const ENTITY_DESCRIPTIONS: Record<string, string> = {
   create_project: "Create new project from lifecycle",
   pd_clients: "Clients list & client overview",
 
-  pd_dashboard: "PD Dashboard — project development pipeline",
-  pd_tickets: "PD Tickets — development tickets & tracking",
+  pd_dashboard: "Project Development Dashboard — project development pipeline",
+  pd_tickets: "Project Development Tickets — development tickets & tracking",
 
   projects: "Project List — all projects summary table",
   project_normalized: "Project Normalized — standardized project view",
@@ -1666,7 +1666,7 @@ interface PdVisConfig {
 }
 
 const PD_TICKET_TYPE_OPTIONS = [
-  { value: "pd", label: "PD Tickets", description: "Cost Proposals and other non-engineering tickets" },
+  { value: "pd", label: "Project Development Tickets", description: "Cost Proposals and other non-engineering tickets" },
   { value: "engineering", label: "Engineering Tickets", description: "Feasibility Study, Design Review, IFC Planning, Grid Application, Battery Assessment, Site Assessment, Full EPC" },
 ];
 
