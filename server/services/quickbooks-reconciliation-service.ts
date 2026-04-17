@@ -33,6 +33,7 @@ import {
 } from "@shared/schema";
 import { db } from "../db";
 import {
+  getBillById,
   getBills,
   getValidAccessToken,
   loadQuickBooksMetadata,
@@ -364,6 +365,31 @@ export interface CreateLinkInput {
  * with the full set of conflicting rows so the caller can decide whether
  * to unlink the existing link first.
  */
+/**
+ * Raised when the QuickBooks realm is not available (connector offline or
+ * not yet linked). Callers should surface this as 503 so operators know to
+ * re-connect before retrying the write.
+ */
+export class QuickBooksUnavailableError extends Error {
+  readonly code = "quickbooks_unavailable";
+  constructor(message = "QuickBooks connection is not configured. Connect QuickBooks and retry.") {
+    super(message);
+    this.name = "QuickBooksUnavailableError";
+  }
+}
+
+/**
+ * Raised when the client references a Bill Id that QB doesn't return. Avoids
+ * writing evidence snapshots against a non-existent document.
+ */
+export class QuickBooksBillNotFoundError extends Error {
+  readonly code = "quickbooks_bill_not_found";
+  constructor(public readonly billId: string) {
+    super(`QuickBooks Bill ${billId} not found in the connected realm.`);
+    this.name = "QuickBooksBillNotFoundError";
+  }
+}
+
 export class QuickBooksLinkConflictError extends Error {
   readonly code = "quickbooks_link_conflict";
   readonly conflicts: QuickBooksInvoiceLink[];
@@ -567,6 +593,9 @@ export interface BulkAssignPreviewRow {
   taxUncertain: boolean;
 }
 
+type QuickBooksDocumentInsert = typeof quickbooksDocuments.$inferInsert;
+type QuickBooksCostAllocationInsert = typeof quickbooksCostAllocations.$inferInsert;
+
 async function upsertQuickBooksDocumentFromBill(
   projectId: number | null,
   bill: QuickBooksBillSummary,
@@ -586,7 +615,10 @@ async function upsertQuickBooksDocumentFromBill(
     )
     .limit(1);
 
-  const snapshot = {
+  const incVat = toMoney(bill.qbAmountIncVat);
+  const taxAmount = toMoney(bill.qbTaxAmount);
+  const exVat = toMoney(bill.qbAmountExVat);
+  const snapshot: QuickBooksDocumentInsert = {
     projectId,
     qbEntityType: "bill",
     qbEntityId: bill.id,
@@ -595,13 +627,13 @@ async function upsertQuickBooksDocumentFromBill(
     qbTxnDate: bill.txnDate,
     qbCounterpartyName: bill.vendorName,
     qbCounterpartyId: bill.vendorId,
-    qbAmountIncVat: toMoney(bill.qbAmountIncVat)?.toFixed(2) ?? null,
-    qbTaxAmount: toMoney(bill.qbTaxAmount)?.toFixed(2) ?? null,
-    qbAmountExVat: toMoney(bill.qbAmountExVat)?.toFixed(2) ?? null,
+    qbAmountIncVat: incVat === null ? null : incVat.toFixed(2),
+    qbTaxAmount: taxAmount === null ? null : taxAmount.toFixed(2),
+    qbAmountExVat: exVat === null ? null : exVat.toFixed(2),
     taxStatus: bill.taxUncertain ? "TAX_UNCERTAIN" : "KNOWN",
     createdBy: actorId,
     updatedAt: new Date(),
-  } as any;
+  };
 
   if (existing.length > 0) {
     const updated = await db
@@ -616,14 +648,41 @@ async function upsertQuickBooksDocumentFromBill(
   return inserted[0]!;
 }
 
+/**
+ * Persist an allocation set against a QuickBooks Bill.
+ *
+ * Takes the Bill `id` only — the VAT / amount / vendor snapshot is re-derived
+ * on the server via `getBillById` so the client cannot influence the stored
+ * evidence amounts. Throws:
+ *
+ *   - `QuickBooksUnavailableError` if the realm is not configured.
+ *   - `QuickBooksBillNotFoundError` if QB returns no Bill for the given Id.
+ *   - An over-assignment `Error` when the allocation sum exceeds the
+ *     ex-VAT amount plus tolerance (surface as 409 at the route boundary).
+ */
 export async function saveCostAllocationsForBill(params: {
   projectId: number | null;
-  bill: QuickBooksBillSummary;
+  billId: string;
   allocations: QuickBooksCostAllocationInput[];
   actorId?: number | null;
 }) {
-  const realmId = (await loadQuickBooksMetadata()).realmId ?? "unknown";
-  const document = await upsertQuickBooksDocumentFromBill(params.projectId, params.bill, realmId, params.actorId ?? null);
+  const realmId = (await loadQuickBooksMetadata()).realmId;
+  if (!realmId) {
+    throw new QuickBooksUnavailableError();
+  }
+
+  const rawBill = await getBillById(params.billId);
+  if (!rawBill) {
+    throw new QuickBooksBillNotFoundError(params.billId);
+  }
+  const bill = billRawToSummary(rawBill);
+
+  const document = await upsertQuickBooksDocumentFromBill(
+    params.projectId,
+    bill,
+    realmId,
+    params.actorId ?? null,
+  );
 
   const activeRows = await db
     .select()
@@ -643,7 +702,7 @@ export async function saveCostAllocationsForBill(params: {
   if (activeRows.length > 0) {
     await db
       .update(quickbooksCostAllocations)
-      .set({ deletedAt: new Date(), status: "replaced", updatedAt: new Date() } as any)
+      .set({ deletedAt: new Date(), status: "replaced", updatedAt: new Date() })
       .where(
         and(
           eq(quickbooksCostAllocations.quickbooksDocumentId, document.id),
@@ -653,19 +712,18 @@ export async function saveCostAllocationsForBill(params: {
   }
 
   if (params.allocations.length > 0) {
-    await db.insert(quickbooksCostAllocations).values(
-      params.allocations.map((a) => ({
-        quickbooksDocumentId: document.id,
-        projectId: params.projectId,
-        costLineId: a.costLineId,
-        amountExVat: Number(a.amountExVat).toFixed(2),
-        matchType: "manual",
-        status: "active",
-        createdBy: params.actorId ?? null,
-        approvedBy: params.actorId ?? null,
-        approvedAt: new Date(),
-      })) as any,
-    );
+    const inserts: QuickBooksCostAllocationInsert[] = params.allocations.map((a) => ({
+      quickbooksDocumentId: document.id,
+      projectId: params.projectId,
+      costLineId: a.costLineId,
+      amountExVat: Number(a.amountExVat).toFixed(2),
+      matchType: "manual",
+      status: "active",
+      createdBy: params.actorId ?? null,
+      approvedBy: params.actorId ?? null,
+      approvedAt: new Date(),
+    }));
+    await db.insert(quickbooksCostAllocations).values(inserts);
   }
 
   const qbAmountExVat = toMoney(document.qbAmountExVat);
@@ -673,11 +731,12 @@ export async function saveCostAllocationsForBill(params: {
   const remaining = qbAmountExVat === null ? null : Number(Math.max(0, qbAmountExVat - assignedExVat).toFixed(2));
   await db
     .update(quickbooksDocuments)
-    .set({ assignmentStatus: status, updatedAt: new Date() } as any)
+    .set({ assignmentStatus: status, updatedAt: new Date() })
     .where(eq(quickbooksDocuments.id, document.id));
 
   return {
     documentId: document.id,
+    bill,
     assignedExVat: Number(assignedExVat.toFixed(2)),
     qbAmountExVat,
     remainingExVat: remaining,
