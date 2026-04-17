@@ -1747,7 +1747,10 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       const dm = String(lineMonthDate).match(/^(\d{4})-(\d{2})/);
       if (!dm) continue;
       const monthKey = `${dm[1]}-${dm[2]}`;
-      const projectName = (row.projectName || '').replace(/_Tracker$/i, '') || 'Unknown Project';
+      // Skip rows without a project association — these are OPEX/admin lines imported
+      // without a project and should not inflate project-scoped COS aggregates.
+      const projectName = (row.projectName || '').replace(/_Tracker$/i, '');
+      if (!projectName) continue;
       const hasInvoice = !!(row.invoiceNumber && String(row.invoiceNumber).trim());
       const hasPo = !!(row.poNumber && String(row.poNumber).trim());
       const invoiceDateConfirmed =
@@ -2009,7 +2012,10 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
         eq(quickbooksInvoiceLinks.qbEntityType, "bill"),
         isNull(quickbooksInvoiceLinks.deletedAt),
       )),
-      getBills(monthStart, monthEnd),
+      getBills(monthStart, monthEnd).catch((err) => {
+        console.warn("[cos-month-detail] getBills failed — continuing with app-only data:", err instanceof Error ? err.message : err);
+        return { QueryResponse: { Bill: [] } };
+      }),
     ]);
 
     interface LineItem {
@@ -2052,6 +2058,9 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       const appAmount = row.amountExVat ? Number(row.amountExVat) : 0;
       if (!Number.isFinite(appAmount) || appAmount === 0) continue;
       const projectName = (row.projectName || '').replace(/_Tracker$/i, '') || null;
+      // Skip rows without a project association (OPEX / admin lines) to keep the
+      // drill-down project-scoped and consistent with the aggregate tracker.
+      if (!projectName) continue;
       const hasInvoice = !!(row.invoiceNumber && String(row.invoiceNumber).trim());
       const invoiceDateConfirmed =
         !!row.invoiceDate && (row.invoiceDateFontColor === 'black' || row.invoiceDateConfirmed === true);
@@ -3311,6 +3320,8 @@ async function revenueTrackerHandler(req: Request, res: Response) {
       const monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
 
       const pName = (exp.projectName || '').replace(/_Tracker$/i, '');
+      // Skip rows with no project association — keep revenue tracker project-scoped.
+      if (!pName) continue;
       const isNoRevLinked = !!(exp as any).noRevenueLinked;
 
       // Per Revenue Recognition spec: amount = (this_line_actual / project_total_actual) × project_costed_revenue.
@@ -3513,6 +3524,8 @@ router.get("/api/revenue-tracker/month-detail", requireAuth, requirePermission("
       if (itemMonthKey !== monthKey) continue;
 
       const pName = (exp.projectName || '').replace(/_Tracker$/i, '');
+      // Keep revenue drill-down project-scoped — skip lines with no project.
+      if (!pName) continue;
       const isNoRevLinked = !!(exp as any).noRevenueLinked;
 
       // Per Revenue Recognition spec: amount = (this_line_actual / project_total_actual) × project_costed_revenue.

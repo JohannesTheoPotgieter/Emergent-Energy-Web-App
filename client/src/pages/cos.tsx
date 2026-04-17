@@ -27,6 +27,13 @@ import {
   ChevronRight,
   X,
   HelpCircle,
+  Search,
+  Filter,
+  FileText,
+  AlertCircle,
+  Inbox,
+  Loader2,
+  ExternalLink,
 } from "lucide-react";
 
 interface ProjectBreakdown {
@@ -152,6 +159,44 @@ const ROW_DEFS: {
   { key: "ytdVariancePct", label: "YTD Variance %", dataKey: "ytdVariancePct", editable: false, colorClass: "", group: "ytd", colorCoded: true },
 ];
 
+function CosStateBadge({ state }: { state: "realised" | "committed" | "planned" | "qb_actual" }) {
+  const styles: Record<string, string> = {
+    realised: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    committed: "bg-amber-50 text-amber-700 border-amber-200",
+    planned: "bg-purple-50 text-purple-700 border-purple-200",
+    qb_actual: "bg-blue-50 text-blue-700 border-blue-200",
+  };
+  const labels: Record<string, string> = {
+    realised: "Realised",
+    committed: "Committed",
+    planned: "Planned",
+    qb_actual: "QB Actual",
+  };
+  return (
+    <span className={`inline-flex items-center text-[10px] font-medium px-2 py-0.5 rounded-full border ${styles[state]}`}>
+      {labels[state]}
+    </span>
+  );
+}
+
+function MatchStatusBadge({ status }: { status: "matched" | "qb_only" | "app_only" }) {
+  const styles: Record<string, string> = {
+    matched: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    qb_only: "bg-blue-50 text-blue-700 border-blue-200",
+    app_only: "bg-slate-50 text-slate-700 border-slate-200",
+  };
+  const labels: Record<string, string> = {
+    matched: "Matched",
+    qb_only: "QB only",
+    app_only: "App only",
+  };
+  return (
+    <span className={`inline-flex items-center text-[10px] font-medium px-2 py-0.5 rounded-full border ${styles[status]}`}>
+      {labels[status]}
+    </span>
+  );
+}
+
 function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all", defaultProject = "all" }: { monthKey: string; monthLabel: string; onClose: () => void; defaultFilter?: "all" | "realised" | "committed" | "planned" | "qb_actual"; defaultProject?: string }) {
   const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
@@ -160,9 +205,10 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
   const stateParam = stateFilter !== "all" ? `&state=${stateFilter}` : "";
   const projectParam = projectFilter !== "all" ? `&project=${encodeURIComponent(projectFilter)}` : "";
 
-  const { data, isLoading } = useQuery<MonthDetail>({
+  const { data, isLoading, isError, error, refetch } = useQuery<MonthDetail>({
     queryKey: ["/api/cos-tracker/month-detail", monthKey, stateFilter, projectFilter],
     queryFn: fetchQueryFn(`/api/cos-tracker/month-detail?monthKey=${monthKey}${stateParam}${projectParam}`),
+    retry: 1,
   });
 
   const filtered = useMemo(() => {
@@ -187,75 +233,225 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
     return Array.from(names).sort();
   }, [data]);
 
+  const totalAppAmount = useMemo(
+    () => filtered.reduce((sum, item) => sum + (item.appAmount ?? 0), 0),
+    [filtered],
+  );
+  const totalQbAmount = useMemo(
+    () => filtered.reduce((sum, item) => sum + (item.qbAmount ?? 0), 0),
+    [filtered],
+  );
+
   return (
     <div className="fixed inset-0 z-50 flex" role="dialog" aria-modal="true" aria-label={`COS detail for ${monthLabel}`}>
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} aria-hidden="true" />
-      <div className="ml-auto relative w-full max-w-6xl bg-background shadow-2xl flex flex-col h-full">
-        <div className="px-6 py-4 border-b flex items-center justify-between">
-          <div>
-            <h3 className="font-bold text-xl">{monthLabel}</h3>
-            <p className="text-sm text-muted-foreground">COS drill-down with QB/App reconciliation buckets</p>
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-in fade-in-0" onClick={onClose} aria-hidden="true" />
+      <div className="ml-auto relative w-full sm:max-w-3xl lg:max-w-5xl xl:max-w-6xl bg-background shadow-2xl flex flex-col h-full animate-in slide-in-from-right-4">
+        {/* Header */}
+        <div className="px-4 sm:px-6 py-4 border-b bg-gradient-to-r from-slate-50 to-white flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="h-8 w-8 rounded-lg bg-purple-100 flex items-center justify-center flex-shrink-0">
+                <FileText className="h-4 w-4 text-purple-600" />
+              </div>
+              <h3 className="font-bold text-lg sm:text-xl truncate">{monthLabel}</h3>
+            </div>
+            <p className="text-xs sm:text-sm text-muted-foreground">Cost-of-sales drill-down with QB / App reconciliation</p>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-muted rounded-full"><X className="h-5 w-5" /></button>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-muted rounded-full transition-colors flex-shrink-0"
+            aria-label="Close drawer"
+          >
+            <X className="h-5 w-5" />
+          </button>
         </div>
 
-        <div className="px-6 py-3 border-b flex gap-2">
-          <Input placeholder="Search project, supplier, invoice, bill..." value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-md" />
-          <select value={stateFilter} onChange={(e) => setStateFilter(e.target.value as any)} className="h-9 px-3 border rounded-lg bg-muted/50">
-            <option value="all">All statuses</option>
-            <option value="realised">Realised</option>
-            <option value="committed">Committed</option>
-            <option value="planned">Planned</option>
-            <option value="qb_actual">QB Actual</option>
-          </select>
-          <select value={projectFilter} onChange={(e) => setProjectFilter(e.target.value)} className="h-9 px-3 border rounded-lg bg-muted/50">
-            <option value="all">All projects</option>
-            {allProjects.map(p => <option key={p} value={p}>{p}</option>)}
-          </select>
+        {/* Summary chips */}
+        {!isLoading && !isError && data && (
+          <div className="px-4 sm:px-6 py-3 border-b bg-muted/20 flex flex-wrap gap-3 text-xs">
+            <div className="flex items-center gap-1.5">
+              <span className="text-muted-foreground">Lines:</span>
+              <span className="font-semibold">{filtered.length}</span>
+              {filtered.length !== (data.items?.length ?? 0) && (
+                <span className="text-muted-foreground">/ {data.items?.length ?? 0}</span>
+              )}
+            </div>
+            <div className="h-4 w-px bg-border" />
+            <div className="flex items-center gap-1.5">
+              <span className="text-muted-foreground">App total:</span>
+              <span className="font-semibold font-mono">{formatRand(totalAppAmount)}</span>
+            </div>
+            <div className="h-4 w-px bg-border" />
+            <div className="flex items-center gap-1.5">
+              <span className="text-muted-foreground">QB total:</span>
+              <span className="font-semibold font-mono text-blue-700">{formatRand(totalQbAmount)}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Filters */}
+        <div className="px-4 sm:px-6 py-3 border-b flex flex-col sm:flex-row gap-2">
+          <div className="relative flex-1 min-w-0">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+            <Input
+              placeholder="Search project, supplier, invoice, bill..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          <div className="flex gap-2">
+            <div className="relative flex-1 sm:flex-initial">
+              <Filter className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+              <select
+                value={stateFilter}
+                onChange={(e) => setStateFilter(e.target.value as any)}
+                className="h-9 pl-8 pr-3 border rounded-md bg-background text-xs sm:text-sm w-full"
+                aria-label="Filter by status"
+              >
+                <option value="all">All statuses</option>
+                <option value="realised">Realised</option>
+                <option value="committed">Committed</option>
+                <option value="planned">Planned</option>
+                <option value="qb_actual">QB Actual</option>
+              </select>
+            </div>
+            <select
+              value={projectFilter}
+              onChange={(e) => setProjectFilter(e.target.value)}
+              className="h-9 px-3 border rounded-md bg-background text-xs sm:text-sm flex-1 sm:flex-initial"
+              aria-label="Filter by project"
+            >
+              <option value="all">All projects</option>
+              {allProjects.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </div>
         </div>
 
+        {/* Body */}
         <div className="flex-1 overflow-auto">
-          {isLoading ? <div className="p-6 text-sm text-muted-foreground">Loading...</div> : (
-            <table className="w-full text-xs">
-              <thead className="sticky top-0 bg-card border-b">
-                <tr>
-                  <th className="text-left px-3 py-2">Project</th>
-                  <th className="text-left px-3 py-2">Supplier/Vendor</th>
-                  <th className="text-left px-3 py-2">App Invoice #</th>
-                  <th className="text-left px-3 py-2">QuickBooks Bill #</th>
-                  <th className="text-left px-3 py-2">PO #</th>
-                  <th className="text-right px-3 py-2">App Amount</th>
-                  <th className="text-right px-3 py-2">QB Amount</th>
-                  <th className="text-left px-3 py-2">Month</th>
-                  <th className="text-left px-3 py-2">Recognition Date</th>
-                  <th className="text-left px-3 py-2">QB Type</th>
-                  <th className="text-left px-3 py-2">Match Status</th>
-                  <th className="text-left px-3 py-2">Realised/Committed/Planned</th>
-                  <th className="text-left px-3 py-2">Reason Bucket</th>
-                  <th className="text-left px-3 py-2">Trace ID</th>
-                </tr>
-              </thead>
-              <tbody>
+          {isLoading ? (
+            <div className="p-12 flex flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-6 w-6 animate-spin" />
+              <span>Loading cost lines…</span>
+            </div>
+          ) : isError ? (
+            <div className="p-12 flex flex-col items-center justify-center gap-3 text-center">
+              <div className="h-12 w-12 rounded-full bg-red-50 flex items-center justify-center">
+                <AlertCircle className="h-6 w-6 text-red-600" />
+              </div>
+              <div>
+                <p className="font-medium text-sm">Unable to load detail</p>
+                <p className="text-xs text-muted-foreground mt-1 max-w-md">{error instanceof Error ? error.message : "An unexpected error occurred fetching the drill-down."}</p>
+              </div>
+              <button
+                onClick={() => refetch()}
+                className="text-xs font-medium px-3 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors"
+              >
+                Retry
+              </button>
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="p-12 flex flex-col items-center justify-center gap-2 text-center">
+              <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
+                <Inbox className="h-6 w-6 text-muted-foreground" />
+              </div>
+              <p className="text-sm font-medium">No cost lines</p>
+              <p className="text-xs text-muted-foreground max-w-md">
+                No rows match the current filters for {monthLabel}. Try clearing the search or switching the status filter.
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Desktop table */}
+              <div className="hidden md:block">
+                <table className="w-full text-xs">
+                  <thead className="sticky top-0 bg-card border-b z-10 shadow-sm">
+                    <tr>
+                      <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">Project</th>
+                      <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">Supplier</th>
+                      <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">App Invoice</th>
+                      <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">QB Bill</th>
+                      <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">PO</th>
+                      <th className="text-right px-3 py-2.5 font-semibold text-muted-foreground">App</th>
+                      <th className="text-right px-3 py-2.5 font-semibold text-muted-foreground">QB</th>
+                      <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">Recognised</th>
+                      <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">Match</th>
+                      <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map((item) => (
+                      <tr key={item.id} className="border-b hover:bg-muted/40 transition-colors">
+                        <td className="px-3 py-2">
+                          {item.projectName ? (
+                            <button
+                              className="text-blue-600 hover:underline inline-flex items-center gap-1 font-medium"
+                              onClick={() => navigate(`/project/${encodeURIComponent(item.projectName || "")}?tab=expenditure`)}
+                            >
+                              <span className="truncate max-w-[200px]">{item.projectName}</span>
+                              <ExternalLink className="h-3 w-3 flex-shrink-0 opacity-60" />
+                            </button>
+                          ) : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-muted-foreground truncate max-w-[160px]">{item.supplier || "—"}</td>
+                        <td className="px-3 py-2 font-mono text-[11px]">{item.invoiceNumber || "—"}</td>
+                        <td className="px-3 py-2 font-mono text-[11px] text-blue-700">{item.qbBillNumber || "—"}</td>
+                        <td className="px-3 py-2 font-mono text-[11px]">{item.poNumber || "—"}</td>
+                        <td className="px-3 py-2 text-right font-mono">{item.appAmount == null ? <span className="text-muted-foreground">—</span> : formatRand(item.appAmount)}</td>
+                        <td className="px-3 py-2 text-right font-mono text-blue-700">{item.qbAmount == null ? <span className="text-muted-foreground">—</span> : formatRand(item.qbAmount)}</td>
+                        <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">{item.recognitionDate || "—"}</td>
+                        <td className="px-3 py-2"><MatchStatusBadge status={item.matchStatus} /></td>
+                        <td className="px-3 py-2"><CosStateBadge state={item.cosState} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile card view */}
+              <div className="md:hidden divide-y">
                 {filtered.map((item) => (
-                  <tr key={item.id} className="border-b hover:bg-muted/30">
-                    <td className="px-3 py-2">{item.projectName ? <button className="text-blue-600 hover:underline" onClick={() => navigate(`/project/${encodeURIComponent(item.projectName || "")}?tab=expenditure`)}>{item.projectName}</button> : "—"}</td>
-                    <td className="px-3 py-2">{item.supplier || "—"}</td>
-                    <td className="px-3 py-2">{item.invoiceNumber || "—"}</td>
-                    <td className="px-3 py-2">{item.qbBillNumber || "—"}</td>
-                    <td className="px-3 py-2">{item.poNumber || "—"}</td>
-                    <td className="px-3 py-2 text-right font-mono">{item.appAmount == null ? "—" : formatRand(item.appAmount)}</td>
-                    <td className="px-3 py-2 text-right font-mono">{item.qbAmount == null ? "—" : formatRand(item.qbAmount)}</td>
-                    <td className="px-3 py-2">{item.month}</td>
-                    <td className="px-3 py-2">{item.recognitionDate || "—"}</td>
-                    <td className="px-3 py-2">{item.qbTransactionType || "—"}</td>
-                    <td className="px-3 py-2">{item.matchStatus}</td>
-                    <td className="px-3 py-2">{item.cosState}</td>
-                    <td className="px-3 py-2">{item.reasonBucket}</td>
-                    <td className="px-3 py-2">{item.sourceTraceId || "—"}</td>
-                  </tr>
+                  <div key={item.id} className="p-4 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        {item.projectName ? (
+                          <button
+                            className="text-blue-600 hover:underline font-medium text-sm truncate block"
+                            onClick={() => navigate(`/project/${encodeURIComponent(item.projectName || "")}?tab=expenditure`)}
+                          >
+                            {item.projectName}
+                          </button>
+                        ) : <span className="text-sm text-muted-foreground">Unassigned</span>}
+                        <p className="text-xs text-muted-foreground truncate">{item.supplier || "—"}</p>
+                      </div>
+                      <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                        <CosStateBadge state={item.cosState} />
+                        <MatchStatusBadge status={item.matchStatus} />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <span className="text-muted-foreground">App Inv:</span>{" "}
+                        <span className="font-mono">{item.invoiceNumber || "—"}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">QB Bill:</span>{" "}
+                        <span className="font-mono text-blue-700">{item.qbBillNumber || "—"}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">App:</span>{" "}
+                        <span className="font-mono font-medium">{item.appAmount == null ? "—" : formatRand(item.appAmount)}</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">QB:</span>{" "}
+                        <span className="font-mono font-medium text-blue-700">{item.qbAmount == null ? "—" : formatRand(item.qbAmount)}</span>
+                      </div>
+                    </div>
+                  </div>
                 ))}
-              </tbody>
-            </table>
+              </div>
+            </>
           )}
         </div>
       </div>
