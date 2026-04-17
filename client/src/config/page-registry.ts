@@ -1,4 +1,28 @@
 import type { PermissionEntity } from "@shared/schema";
+import type { SectionKey } from "@/config/app-navigation";
+
+/**
+ * Nav-group keys used by each PAGE_REGISTRY entry. These are a finer-grained
+ * bucket than SectionKey (e.g. GATES and PORTFOLIO both fold into the
+ * "Company" section); NAV_GROUP_TO_SECTION below is the mapping.
+ */
+export const NAV_GROUP_KEYS = [
+  "MY_WORK",
+  "PORTFOLIO",
+  "PRIORITIES",
+  "PROJECT_DEVELOPMENT",
+  "PROJECTS",
+  "PROJECT_MANAGEMENT",
+  "GATES",
+  "FINANCE",
+  "ENGINEERING",
+  "QUALITY",
+  "HSE",
+  "REPORTS",
+  "KNOWLEDGE",
+  "SYSTEM",
+] as const;
+export type NavGroupKey = typeof NAV_GROUP_KEYS[number];
 
 export interface PageRegistryEntry {
   id: string;
@@ -7,7 +31,7 @@ export interface PageRegistryEntry {
   /** 'page' = renders a component; 'alias' = redirects to another path */
   type?: "page" | "alias";
   iconKey?: string;
-  navGroup?: string;
+  navGroup?: NavGroupKey;
   permissionEntity?: PermissionEntity;
   showInSidebar?: boolean;
   routeComponentKey?: string;
@@ -243,9 +267,8 @@ export function getPermissionEntityForPath(pathname: string): PermissionEntity |
  * Maps navGroup from PAGE_REGISTRY entries to the 10-section keys.
  * Used by getAppSectionForPath to gate nav visibility via role_permissions.sections.
  */
-const NAV_GROUP_TO_SECTION: Record<string, string> = {
+const NAV_GROUP_TO_SECTION: Record<NavGroupKey, SectionKey> = {
   MY_WORK: "HOME",
-  EXCO: "EXCO",
   PROJECTS: "PROJECT_DELIVERY",
   PROJECT_DEVELOPMENT: "PROJECT_DEVELOPMENT",
   PROJECT_MANAGEMENT: "PROJECT_DELIVERY",
@@ -255,7 +278,6 @@ const NAV_GROUP_TO_SECTION: Record<string, string> = {
   GATES: "PORTFOLIO",
   FINANCE: "FINANCE",
   KNOWLEDGE: "ADMIN",
-  FEEDBACK: "ADMIN",
   PRIORITIES: "PRIORITIES",
   PORTFOLIO: "PORTFOLIO",
   REPORTS: "REPORTS",
@@ -265,7 +287,7 @@ const NAV_GROUP_TO_SECTION: Record<string, string> = {
 // Backward compatibility for older tests/modules.
 export const PAGES = PAGE_REGISTRY;
 
-export function getAppSectionForPath(pathname: string): string | undefined {
+export function getAppSectionForPath(pathname: string): SectionKey | undefined {
   const normalizedPath = normalizePathname(pathname);
   if (normalizedPath === "/") return "HOME";
 
