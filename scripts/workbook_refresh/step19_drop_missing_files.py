@@ -11,6 +11,8 @@ Special cases:
 - Background Jobs column 2 is formatted like 'server/foo.ts (L1090)' — we
   strip the suffix before checking.
 - Build Config filenames like 'package.json' are relative to repo root.
+- Click Handlers column 5 is the source file; any row pointing to a deleted
+  file is dropped.
 - Rows whose file column starts with `${` (template literal fragment) are
   considered noise and dropped.
 """
@@ -30,6 +32,7 @@ SHEET_FILE_COLS = {
     "Client Library":             [5],
     "Client Data & Tours":        [4],
     "Client Configs":             [6],
+    "Click Handlers":             [5],     # source file column
     "Server Lib & Helpers":       [6],
     "Server Policies & Infra":    [5],
     "Bootstrap & Schedulers":     [6],
