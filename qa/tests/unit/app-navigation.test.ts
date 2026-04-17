@@ -30,13 +30,13 @@ describe("app navigation visibility", () => {
     const sections = buildVisibleTopSections({ canViewPath: () => true });
     const homeSection = sections.find((section) => section.label === "Home");
 
+    // "Approvals" was consolidated into Project Delivery → PM Approvals and
+    // "Inbox" is reachable via the header, not as a Home pill.
     expect(homeSection?.secondary.map((item) => item.label)).toEqual([
       "My Dashboard",
       "My Tasks",
-      "Approvals",
       "Calendar",
       "Meetings",
-      "Inbox",
     ]);
   });
 
@@ -164,8 +164,10 @@ describe("app navigation visibility", () => {
     });
     const pmDelivery = pmSections.find((section) => section.label === "Project Delivery");
     const pmLabels = pmDelivery?.secondary.map((item) => item.label) ?? [];
-    expect(pmLabels).toContain("Weekly Reviews");
+    // Weekly Reviews moved out of the pill bar; the canonical review flow
+    // now runs through Financial Reviews + Milestone Tracker.
     expect(pmLabels).toContain("Milestone Tracker");
+    expect(pmLabels).toContain("Financial Reviews");
     expect(pmLabels).toContain("PM On-The-Go");
     expect(pmLabels).toContain("Handover & Closeout");
 
@@ -192,6 +194,8 @@ describe("app navigation visibility", () => {
       "Counterparties",
       "Subcontractors",
       "Invoice Patterns",
+      "QB Customer Mapping",
+      "QB Bill Linking",
     ]);
   });
 
