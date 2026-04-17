@@ -118,22 +118,18 @@ const ROW_DEFS: {
   projectsKey?: "revProjects" | "realisedProjects" | "unrealisedProjects" | "qbRevenueProjects";
   colorCoded?: boolean;
 }[] = [
-  // Grid rows match the COS tab shape: Planned (Budget) → Revenue → Realised →
-  // Unrealised → Quickbooks Revenue → QB/App Recon. Realisation business
-  // rule = invoice captured + date confirmed (applied server side in
-  // isEffectivelyRealised).
+  // Mirrors the COS grid: Planned → Committed (unrealised/linked, not yet confirmed) → Realised → QB.
+  // Realisation rule (server-side): invoice captured + invoice date confirmed (black font).
   { key: "budget", label: "Revenue Planned (Budget)", dataKey: "budget", colorClass: "text-purple-600", group: "monthly", editable: true },
-  { key: "totalRevenue", label: "Revenue Recognised", dataKey: "totalRevenue", colorClass: "text-foreground font-bold", group: "monthly", expandable: true, projectsKey: "revProjects" },
+  // Committed = revenue line linked to an invoice but invoice date not yet confirmed
+  { key: "unrealisedRevenue", label: "Revenue Committed", dataKey: "unrealisedRevenue", colorClass: "text-amber-600 font-semibold", group: "monthly", expandable: true, projectsKey: "unrealisedProjects" },
   { key: "realisedRevenue", label: "Revenue Realised", dataKey: "realisedRevenue", colorClass: "text-emerald-700 font-bold", group: "monthly", expandable: true, projectsKey: "realisedProjects" },
-  { key: "unrealisedRevenue", label: "Revenue Unrealised", dataKey: "unrealisedRevenue", colorClass: "text-amber-600 font-semibold", group: "monthly", expandable: true, projectsKey: "unrealisedProjects" },
   { key: "qbRevenueActual", label: "Quickbooks Revenue", dataKey: "qbRevenueActual", colorClass: "text-blue-700 font-semibold", group: "monthly", expandable: true, projectsKey: "qbRevenueProjects" },
-  { key: "qbVsAppVariance", label: "Quickbooks ↔ App Recon", dataKey: "qbVsAppVariance" as keyof MonthData, colorClass: "", group: "monthly" },
-  { key: "variance", label: "Variance", dataKey: "variance", colorClass: "", group: "monthly", colorCoded: true },
-  { key: "variancePct", label: "Variance %", dataKey: "variancePct", colorClass: "", group: "monthly", colorCoded: true },
-  { key: "ytdRevenue", label: "YTD Revenue", dataKey: "ytdRevenue", colorClass: "text-foreground font-bold", group: "ytd" },
+  { key: "variance", label: "Budget Variance", dataKey: "variance", colorClass: "", group: "monthly", colorCoded: true },
+  { key: "variancePct", label: "Budget Variance %", dataKey: "variancePct", colorClass: "", group: "monthly", colorCoded: true },
+  { key: "ytdBudget", label: "YTD Planned (Budget)", dataKey: "ytdBudget", colorClass: "text-purple-600", group: "ytd" },
+  { key: "ytdUnrealised", label: "YTD Committed", dataKey: "ytdUnrealised", colorClass: "text-amber-600", group: "ytd" },
   { key: "ytdRealised", label: "YTD Realised", dataKey: "ytdRealised", colorClass: "text-emerald-700 font-bold", group: "ytd" },
-  { key: "ytdUnrealised", label: "YTD Unrealised", dataKey: "ytdUnrealised", colorClass: "text-amber-600", group: "ytd" },
-  { key: "ytdBudget", label: "YTD Budget", dataKey: "ytdBudget", colorClass: "text-purple-600", group: "ytd" },
   { key: "ytdVariance", label: "YTD Variance", dataKey: "ytdVariance", colorClass: "", group: "ytd", colorCoded: true },
   { key: "ytdVariancePct", label: "YTD Variance %", dataKey: "ytdVariancePct", colorClass: "", group: "ytd", colorCoded: true },
 ];
@@ -497,11 +493,10 @@ export default function RevenueTrackerPage() {
     () =>
       months.map((m) => ({
         month: m.monthLabel,
-        "Revenue Realised": m.realisedRevenue,
-        "Revenue Unrealised": m.unrealisedRevenue,
-        "Quickbooks Revenue": m.qbRevenueActual,
         "Revenue Planned (Budget)": m.budget,
-        "QB ↔ App Variance": m.qbVsAppVariance ?? 0,
+        "Revenue Committed": m.unrealisedRevenue,
+        "Revenue Realised": m.realisedRevenue,
+        "Quickbooks Revenue": m.qbRevenueActual,
       })),
     [months],
   );
@@ -569,28 +564,16 @@ export default function RevenueTrackerPage() {
     );
   }
 
-  const ytdRevenue = lastMonth?.ytdRevenue ?? 0;
+  const ytdPlanned = lastMonth?.ytdBudget ?? 0;
+  const ytdCommitted = lastMonth?.ytdUnrealised ?? 0;
   const ytdRealised = lastMonth?.ytdRealised ?? 0;
   const ytdQbRev = lastMonth?.ytdQbRevenueActual ?? 0;
-  const ytdQbVsApp = ytdQbRev - ytdRealised;
-  const ytdQbVsAppPct = ytdRealised !== 0 ? (ytdQbVsApp / ytdRealised) * 100 : 0;
 
   const kpiCards = [
-    { id: "ytd-revenue", label: "Total Revenue (App)", value: formatRand(ytdRevenue), icon: DollarSign, iconBg: "bg-muted", iconColor: "text-muted-foreground", valueColor: "text-foreground font-black", borderColor: "", tooltip: "Year-to-date revenue recognised + unrealised in the app." },
-    { id: "ytd-planned", label: "Revenue Planned (Budget)", value: formatRand(lastMonth?.ytdBudget ?? 0), icon: Target, iconBg: "bg-purple-100", iconColor: "text-purple-600", valueColor: "text-purple-700", borderColor: "", tooltip: "Planned revenue budget from project imports + manual overrides." },
-    { id: "ytd-realised", label: "Revenue Realised", value: formatRand(ytdRealised), icon: TrendingUp, iconBg: "bg-emerald-100", iconColor: "text-emerald-600", valueColor: "text-emerald-700", borderColor: "border-emerald-200", tooltip: "Revenue recognised from COS-realised cost lines per the business rule (invoice captured AND invoice date confirmed)." },
-    { id: "ytd-unrealised", label: "Revenue Unrealised", value: formatRand(lastMonth?.ytdUnrealised ?? 0), icon: Activity, iconBg: "bg-amber-100", iconColor: "text-amber-600", valueColor: "text-amber-700", borderColor: "border-amber-200", tooltip: "Revenue allocated from cost lines not yet COS-realised. Still at risk of change." },
+    { id: "ytd-planned", label: "Revenue Planned (Budget)", value: formatRand(ytdPlanned), icon: Target, iconBg: "bg-purple-100", iconColor: "text-purple-600", valueColor: "text-purple-700", borderColor: "border-purple-200", tooltip: "Planned revenue from project imports and manual overrides — the budget baseline." },
+    { id: "ytd-committed", label: "Revenue Committed", value: formatRand(ytdCommitted), icon: Activity, iconBg: "bg-amber-100", iconColor: "text-amber-600", valueColor: "text-amber-700", borderColor: "border-amber-200", tooltip: "Revenue linked to an invoice but invoice date not yet confirmed (not black font). Committed, awaiting final sign-off." },
+    { id: "ytd-realised", label: "Revenue Realised", value: formatRand(ytdRealised), icon: TrendingUp, iconBg: "bg-emerald-100", iconColor: "text-emerald-600", valueColor: "text-emerald-700", borderColor: "border-emerald-200", tooltip: "Invoice captured AND invoice date confirmed (black font). Both gates are required." },
     { id: "ytd-qb-rev", label: "Quickbooks Revenue", value: formatRand(ytdQbRev), icon: DollarSign, iconBg: "bg-sky-100", iconColor: "text-sky-600", valueColor: "text-sky-700", borderColor: "border-sky-200", tooltip: "Revenue per QuickBooks invoices (YTD). Accounting source of truth." },
-    {
-      id: "ytd-qb-vs-app", label: "QB ↔ App Recon",
-      value: `${formatRand(ytdQbVsApp)} (${ytdQbVsAppPct.toFixed(1)}%)`,
-      icon: TrendingUp,
-      iconBg: Math.abs(ytdQbVsAppPct) <= 5 ? "bg-green-100" : "bg-red-100",
-      iconColor: Math.abs(ytdQbVsAppPct) <= 5 ? "text-green-600" : "text-red-600",
-      valueColor: Math.abs(ytdQbVsAppPct) <= 5 ? "text-green-700" : "text-red-700",
-      borderColor: Math.abs(ytdQbVsAppPct) <= 5 ? "border-green-200" : "border-red-200",
-      tooltip: "Quickbooks Revenue minus App Revenue Realised (YTD). Positive = QB has invoiced more than the app has recognised. Target is near zero.",
-    },
   ];
 
   return (
@@ -673,10 +656,10 @@ export default function RevenueTrackerPage() {
                     contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', fontSize: '12px' }}
                   />
                   <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '12px' }} />
-                  <Bar dataKey="Revenue Realised" stackId="rev" fill="#059669" radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="Revenue Unrealised" stackId="rev" fill="#d97706" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="Quickbooks Revenue" fill="#2563eb" radius={[4, 4, 0, 0]} />
                   <Bar dataKey="Revenue Planned (Budget)" fill="#a855f7" opacity={0.3} radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Revenue Committed" stackId="rev" fill="#d97706" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="Revenue Realised" stackId="rev" fill="#059669" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Quickbooks Revenue" fill="#2563eb" radius={[4, 4, 0, 0]} />
                   <Line type="monotone" dataKey="QB ↔ App Variance" stroke="#ef4444" strokeWidth={2} strokeDasharray="5 5" dot={false} />
                 </ComposedChart>
               </ResponsiveContainer>

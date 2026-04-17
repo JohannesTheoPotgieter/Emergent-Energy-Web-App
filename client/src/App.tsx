@@ -20,7 +20,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useVersionCheck } from "@/hooks/use-version-check";
 import { Download, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ROUTE_COMPONENTS } from "@/config/route-components";
+import { lazyWithRetry } from "@/lib/lazy-with-retry";
 
 // Eagerly loaded pages (critical path — login, home, not-found)
 import LoginPage from "@/pages/login";
