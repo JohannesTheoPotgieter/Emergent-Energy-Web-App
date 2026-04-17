@@ -140,9 +140,14 @@ export default function PdTicketDetailPage() {
   const tasks = data.tasks || [];
   const activity = data.recentActivity || [];
   const today = new Date();
-  const created = new Date(t.createdAt);
-  const daysInProgress = Math.max(0, Math.floor((today.getTime() - created.getTime()) / (1000 * 60 * 60 * 24)));
-  const daysGiven = t.dueDate ? Math.max(0, Math.floor((new Date(t.dueDate).getTime() - created.getTime()) / (1000 * 60 * 60 * 24))) : null;
+  const created = t.createdAt ? new Date(t.createdAt) : null;
+  const createdValid = created !== null && !Number.isNaN(created.getTime());
+  const daysInProgress = createdValid
+    ? Math.max(0, Math.floor((today.getTime() - created!.getTime()) / (1000 * 60 * 60 * 24)))
+    : null;
+  const daysGiven = t.dueDate && createdValid
+    ? Math.max(0, Math.floor((new Date(t.dueDate).getTime() - created!.getTime()) / (1000 * 60 * 60 * 24)))
+    : null;
   const overdue = t.dueDate && t.dueDate < today.toISOString().split("T")[0] && t.status !== "Completed" && t.status !== "Cancelled";
 
   const startEdit = () => {
@@ -346,7 +351,7 @@ export default function PdTicketDetailPage() {
                 icon={<Activity className="h-3.5 w-3.5" />}
               />
             )}
-            <InfoItem label="Days in Progress" value={`${daysInProgress}d`} icon={<Clock className="h-3.5 w-3.5" />} />
+            <InfoItem label="Days in Progress" value={daysInProgress !== null ? `${daysInProgress}d` : "—"} icon={<Clock className="h-3.5 w-3.5" />} />
             <InfoItem label="Days Given" value={daysGiven !== null ? `${daysGiven}d` : "—"} icon={<Clock className="h-3.5 w-3.5" />} />
             <InfoItem label="Developer" value={data.developerName || "—"} />
             <InfoItem label="Designer" value={data.designerName || "—"} />
