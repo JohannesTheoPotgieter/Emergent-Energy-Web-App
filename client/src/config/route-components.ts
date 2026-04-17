@@ -37,7 +37,6 @@ const TrainingPage = lazyWithRetry(() => import("@/pages/training"));
 const PMDashboard = lazyWithRetry(() => import("@/pages/pm-dashboard"));
 const PortfoliosPage = lazyWithRetry(() => import("@/pages/portfolios"));
 const PortfolioDetailPage = lazyWithRetry(() => import("@/pages/portfolio-detail"));
-const PdDashboardPage = lazyWithRetry(() => import("@/pages/pd-dashboard"));
 const PdTicketsPage = lazyWithRetry(() => import("@/pages/pd-tickets"));
 const PdTicketCreatePage = lazyWithRetry(() => import("@/pages/pd-ticket-create"));
 const PdTicketDetailPage = lazyWithRetry(() => import("@/pages/pd-ticket-detail"));
@@ -162,7 +161,6 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   PMDashboard,
   PortfoliosPage,
   PortfolioDetailPage,
-  PdDashboardPage,
   PdTicketsPage,
   PdTicketCreatePage,
   PdTicketDetailPage,
