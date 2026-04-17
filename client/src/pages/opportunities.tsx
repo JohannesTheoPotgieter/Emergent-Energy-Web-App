@@ -1,5 +1,5 @@
 import { useMemo, useReducer } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -20,7 +20,7 @@ import { usePermission } from "@/hooks/use-permissions";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { useLocation } from "wouter";
-import { AlertTriangle, CheckCircle2, CircleOff, Sun, TicketPlus, TrendingUp } from "lucide-react";
+import { AlertTriangle, CheckCircle2, CircleOff, Loader2, RefreshCw, Sun, TicketPlus, TrendingUp } from "lucide-react";
 import { OPPORTUNITY_INTAKE_VIEW_ROLES } from "@shared/roles/pd-roles";
 
 interface WorkingOpportunityRow {
@@ -129,6 +129,7 @@ const DIALOG_INITIAL: DialogState = {
 export default function OpportunitiesPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const { allowed: canViewEntity } = usePermission("opportunities", "view");
   const [, navigate] = useLocation();
 
@@ -171,6 +172,73 @@ export default function OpportunitiesPage() {
       return res.json();
     },
     enabled: !!dlg.target?.id,
+  });
+
+  // Scope metadata for the "Pull from Pipedrive" button. The server
+  // derives `scope` from the caller's role — COO/CEO/CCO get the
+  // whole pipeline, everyone else only their own deals.
+  const { data: pullScope } = useQuery<{
+    role: string;
+    scope: "all" | "owner";
+    ownerEmail: string | null;
+    configured: boolean;
+    canPull: boolean;
+    blockedReason: string | null;
+  }>({
+    queryKey: ["/api/pipedrive/pull/scope"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/pipedrive/pull/scope");
+      if (!res.ok) throw new Error(`Failed to load pipedrive pull scope (${res.status})`);
+      return res.json();
+    },
+    enabled: canView,
+    staleTime: 60_000,
+  });
+
+  const pullPipedriveMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/pipedrive/pull");
+      const body = await res.json().catch(() => null);
+      if (!res.ok) {
+        const message =
+          body?.message ||
+          body?.error ||
+          `Pipedrive pull failed (${res.status}).`;
+        throw new Error(message);
+      }
+      return body as {
+        dealsProcessed: number;
+        dealsCreated: number;
+        dealsUpdated: number;
+        errors: string[];
+        syncStatus: "completed" | "partial" | "failed";
+        scope: "all" | "owner";
+        ownerEmail: string | null;
+      };
+    },
+    onSuccess: (result) => {
+      const scopeLabel = result.scope === "all" ? "all Pipedrive deals" : "your Pipedrive deals";
+      const summary = `${result.dealsProcessed} processed · ${result.dealsCreated} new · ${result.dealsUpdated} updated`;
+      const variant = result.syncStatus === "completed" ? undefined : "destructive";
+      toast({
+        title:
+          result.syncStatus === "completed"
+            ? `Pulled ${scopeLabel}`
+            : result.syncStatus === "partial"
+              ? `Partial pull: ${scopeLabel}`
+              : `Pull failed: ${scopeLabel}`,
+        description:
+          result.errors.length > 0
+            ? `${summary}. ${result.errors.length} error${result.errors.length === 1 ? "" : "s"} — see Admin → Pipedrive for details.`
+            : summary,
+        variant,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/opportunities/working"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/opportunities"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Pipedrive pull failed", description: err.message, variant: "destructive" });
+    },
   });
 
   const resolveMappingMutation = useMutation({
@@ -320,6 +388,37 @@ export default function OpportunitiesPage() {
         eyebrow="Project Development"
         title="Opportunities (Active Working List)"
         description="Only active Pipedrive opportunities are shown here. Lost, won/signed/closed, and converted deals are excluded."
+        actions={
+          pullScope ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5"
+              disabled={
+                !pullScope.configured ||
+                !pullScope.canPull ||
+                pullPipedriveMutation.isPending
+              }
+              onClick={() => pullPipedriveMutation.mutate()}
+              title={
+                !pullScope.configured
+                  ? "Pipedrive is not configured. Ask an admin to set PIPEDRIVE_API_TOKEN."
+                  : pullScope.blockedReason ??
+                    (pullScope.scope === "all"
+                      ? "Pulls every deal from Pipedrive. Existing opportunities are updated in place — no duplicates."
+                      : `Pulls only deals owned by ${pullScope.ownerEmail ?? "you"} in Pipedrive. Existing opportunities are updated in place.`)
+              }
+              data-testid="btn-pull-from-pipedrive"
+            >
+              {pullPipedriveMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+              {pullScope.scope === "all" ? "Pull all from Pipedrive" : "Pull my Pipedrive deals"}
+            </Button>
+          ) : null
+        }
       />
 
       <Card className="border-emerald-200 bg-emerald-50/50">
