@@ -165,9 +165,6 @@ export default function PdDashboardPage() {
           <Button variant="outline" size="sm" onClick={() => navigate("/pd/reports")} className="gap-1.5">
             <BarChart3 className="h-4 w-4" /> Reports
           </Button>
-          <Button onClick={() => navigate("/pd/tickets/create")} className="gap-1.5" data-testid="btn-create-pd-ticket">
-            <Plus className="h-4 w-4" /> New Project Development Ticket
-          </Button>
         </div>
       </div>
 
