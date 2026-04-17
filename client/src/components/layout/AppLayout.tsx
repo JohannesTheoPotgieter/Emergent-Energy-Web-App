@@ -203,9 +203,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <div className="px-4 lg:px-6 py-2.5 flex items-center gap-3 mx-auto w-full max-w-[1440px]">
           <Sheet>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="lg:hidden"><Menu className="h-5 w-5" /></Button>
+              <Button variant="ghost" size="icon" className="lg:hidden" data-testid="button-mobile-menu" aria-label="Open navigation menu"><Menu className="h-5 w-5" /></Button>
             </SheetTrigger>
-            <SheetContent side="left" className="w-[300px] border-r border-border">
+            <SheetContent side="left" className="w-[300px] border-r border-border" data-testid="nav-mobile-sheet">
               <SheetHeader><SheetTitle>Emergent Energy</SheetTitle></SheetHeader>
               <div className="mt-6 space-y-2">
                 {visibleSections.map((section) => {
@@ -217,6 +217,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                         href={section.path}
                         className={cn("block rounded-md px-3 py-2 text-sm font-medium transition-colors", isActive ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground")}
                         onClick={() => trackNavClick(section.label)}
+                        data-testid={`mobile-nav-section-${section.key}`}
+                        data-active={isActive ? "true" : undefined}
                       >
                         {section.label}
                       </Link>
@@ -370,7 +372,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         <div className="hidden lg:block border-t border-border/50">
-          <nav className="flex px-6 py-1 gap-0.5 overflow-x-auto mx-auto w-full max-w-[1440px]">
+          <nav className="flex px-6 py-1 gap-0.5 overflow-x-auto mx-auto w-full max-w-[1440px]" data-testid="nav-top-sections">
             {visibleSections.map((section) => {
               const active = section.label === activeSection.label;
               return (
@@ -382,6 +384,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     active ? "text-primary" : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
                   )}
                   onClick={() => trackNavClick(section.label)}
+                  data-testid={`nav-section-${section.key}`}
+                  data-active={active ? "true" : undefined}
                   {...prefetch(section.path)}
                 >
                   {section.label}
@@ -470,6 +474,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   className={cn("flex gap-1.5 overflow-x-auto no-scrollbar pb-2", breadcrumbs.length > 0 ? "pt-0" : "pt-0.5")}
                   role="tablist"
                   aria-label={`${activeSection.label} navigation`}
+                  data-testid="nav-subnav-pills"
+                  data-section-key={activeSection.key}
                   onKeyDown={(e) => {
                     if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
                     const container = e.currentTarget;
@@ -483,13 +489,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     links[nextIdx]?.focus();
                   }}
                 >
-                  {activeSection.secondary.map((item) => (
-                    item.disabled ? (
+                  {activeSection.secondary.map((item) => {
+                    const active = linkIsActive(location, item.path);
+                    const testId = `subnav-pill-${item.path.replace(/\W+/g, "-").replace(/^-|-$/g, "") || "root"}`;
+                    return item.disabled ? (
                       <span
                         key={item.path}
                         className="ee-subnav-pill cursor-not-allowed whitespace-nowrap opacity-55"
                         aria-disabled="true"
                         role="tab"
+                        data-testid={testId}
+                        data-disabled="true"
                       >
                         {item.label}
                       </span>
@@ -499,18 +509,20 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                         href={item.path}
                         className={cn(
                           "ee-subnav-pill whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                          linkIsActive(location, item.path) ? "ee-subnav-pill-active" : "",
+                          active ? "ee-subnav-pill-active" : "",
                         )}
                         role="tab"
-                        aria-selected={linkIsActive(location, item.path)}
-                        tabIndex={linkIsActive(location, item.path) ? 0 : -1}
+                        aria-selected={active}
+                        tabIndex={active ? 0 : -1}
                         onClick={() => trackNavClick(activeSection.label, item.label)}
+                        data-testid={testId}
+                        data-active={active ? "true" : undefined}
                         {...prefetch(item.path)}
                       >
                         {item.label}
                       </Link>
-                    )
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
