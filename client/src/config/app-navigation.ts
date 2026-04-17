@@ -148,7 +148,7 @@ export const TOP_SECTIONS: TopSection[] = [
     key: "FINANCE",
     path: "/cashflow",
     match: (pathname) => startsWithAny(pathname, [
-      "/cashflow", "/cos", "/revenue-tracker", "/finance/",
+      "/cashflow", "/cos", "/revenue-tracker", "/finance",
     ]),
     secondary: [
       { label: "Cashflow", path: "/cashflow" },
