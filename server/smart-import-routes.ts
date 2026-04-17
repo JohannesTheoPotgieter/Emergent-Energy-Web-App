@@ -48,7 +48,7 @@ import { normalizeCategoryKey } from "./lib/import/normalizer";
 import { normalizeCostLineStatus, normalizeAllocationConfidence } from "./lib/import/utils";
 import { materializeDerivatives } from "./lib/import/derivative-materializer";
 import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
-import { softCloseByProjectId, softCloseByProjectName, softCloseByImportRunId, addTemporalColumns } from "./lib/temporal-helpers";
+import { softCloseByProjectId, softCloseByProjectName, softCloseByImportRunId, addTemporalColumns, dedupeCostLineInserts } from "./lib/temporal-helpers";
 import { recordImportChange, recordSystemEvent } from "./lib/audit/diff-engine";
 import { refreshProjectMetricsAsync } from "./services/dashboard-metrics";
 import { eq, desc, and, or, sql, inArray, isNull } from "drizzle-orm";
@@ -2730,7 +2730,14 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
             const { _actualCos, ...normalized } = c;
             return normalized;
           });
-          await tx.insert(normalizedCostLines).values(addTemporalColumns(normalizedInserts, runId, commitTimestamp) as any);
+          // Drop duplicate cost lines created by the workbook repeating an
+          // invoice across multiple forecast paid_date rows. See
+          // dedupeCostLineInserts() doc-comment for full rationale.
+          const { kept: dedupedInserts, dropped: dedupedCount } = dedupeCostLineInserts(normalizedInserts);
+          if (dedupedCount > 0) {
+            console.log(`[smart-import] Dropped ${dedupedCount} duplicate cost-line row(s) for project "${projectName}" before insert.`);
+          }
+          await tx.insert(normalizedCostLines).values(addTemporalColumns(dedupedInserts, runId, commitTimestamp) as any);
 
           if (manualEditsToPreserve.size > 0) {
             const insertedRows = projectId

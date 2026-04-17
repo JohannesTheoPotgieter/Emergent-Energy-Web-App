@@ -7,7 +7,7 @@ import { db } from "./db";
 import { normalizedCostLines, counterparties, projectInfo, invoicePatternRules } from "@shared/schema";
 import { encryptField, decryptField } from "./lib/field-encryption";
 import { eq, sql, and, isNull } from "drizzle-orm";
-import { softCloseRows, addTemporalColumns } from "./lib/temporal-helpers";
+import { softCloseRows, addTemporalColumns, dedupeCostLineInserts } from "./lib/temporal-helpers";
 import { normalizeCostLineStatus } from "./lib/import/utils";
 import { extractSupplierName } from "./lib/calculations/supplierExtractor";
 import { requirePermission } from "./permission-middleware";
@@ -479,13 +479,21 @@ router.post("/api/procurement-analysis/run", requireAuth, requirePermission('pro
         });
       }
 
+      // Drop duplicate cost lines created by the workbook repeating an
+      // invoice across multiple forecast paid_date rows. See
+      // dedupeCostLineInserts() doc-comment for full rationale.
+      const { kept: dedupedCostValues, dropped: dedupedCount } = dedupeCostLineInserts(costValues);
+      if (dedupedCount > 0) {
+        console.log(`[procurement-analysis] Dropped ${dedupedCount} duplicate cost-line row(s) before insert.`);
+      }
+
       const batchSize = 500;
-      for (let i = 0; i < costValues.length; i += batchSize) {
-        const batch = costValues.slice(i, i + batchSize);
+      for (let i = 0; i < dedupedCostValues.length; i += batchSize) {
+        const batch = dedupedCostValues.slice(i, i + batchSize);
         await tx.insert(normalizedCostLines).values(addTemporalColumns(batch) as any);
       }
 
-      console.log(`[procurement-analysis] Processed ${costValues.length} cost lines, ${counterpartiesCreated} new counterparties, ${projectsProcessed.size} projects`);
+      console.log(`[procurement-analysis] Processed ${dedupedCostValues.length} cost lines, ${counterpartiesCreated} new counterparties, ${projectsProcessed.size} projects`);
 
       res.json({
         success: true,

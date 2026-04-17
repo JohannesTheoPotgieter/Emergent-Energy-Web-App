@@ -1701,7 +1701,10 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
   try {
     const [manualEntries, rawCostLines, links, pnlReport] = await Promise.all([
       storage.getTrackerMonthlyManual('COS'),
-      db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
+      db.select().from(normalizedCostLines).where(and(
+        isNull(normalizedCostLines.effectiveTo),
+        isNull(normalizedCostLines.deletedAt),
+      )),
       db.select().from(quickbooksInvoiceLinks).where(and(
         eq(quickbooksInvoiceLinks.appEntityType, "cost_line"),
         eq(quickbooksInvoiceLinks.qbEntityType, "bill"),

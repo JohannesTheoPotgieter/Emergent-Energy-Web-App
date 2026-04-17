@@ -18,7 +18,7 @@
 
 import { toCanonicalEngineeringStageStatus } from "@shared/status-logic";
 import { assertTaskWorkflowTransition, buildTaskWorkflowContext, TaskWorkflowGuardError } from "../lib/task-workflow-guard";
-import { softCloseByProjectName, addTemporalColumns } from "../lib/temporal-helpers";
+import { softCloseByProjectName, addTemporalColumns, dedupeCostLineInserts } from "../lib/temporal-helpers";
 import type { Express, Request, Response, NextFunction } from "express";
 import multer from "multer";
 import fs from "fs";
@@ -378,7 +378,14 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
                 status: c.status, sourceSheet: c.sourceSheet, sourceRow: c.sourceRow,
                 importRunId, turnaroundDays: c.turnaroundDays,
               }));
-              await db.insert(normalizedCostLines).values(addTemporalColumns(costVals, importRunId, uploadTimestamp) as any);
+              // Drop duplicate cost lines created by the workbook repeating
+              // an invoice across multiple forecast paid_date rows. See
+              // dedupeCostLineInserts() doc-comment for full rationale.
+              const { kept: dedupedCostVals, dropped: dedupedCount } = dedupeCostLineInserts(costVals);
+              if (dedupedCount > 0) {
+                console.log(`[imports-admin] Dropped ${dedupedCount} duplicate cost-line row(s) for project "${resolvedProjectName}" before insert.`);
+              }
+              await db.insert(normalizedCostLines).values(addTemporalColumns(dedupedCostVals, importRunId, uploadTimestamp) as any);
             }
             if (norm.costedSummary) {
               try {
