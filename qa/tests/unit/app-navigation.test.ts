@@ -3,18 +3,24 @@ import {
   buildVisibleTopSections,
   getBreadcrumbs,
   parseDisabledSubPages,
+  validateDisabledSubPages,
   ROLE_VISIBLE_SECTIONS,
   SECTION_KEYS,
   TOP_SECTIONS,
 } from "@/config/app-navigation";
 import { ADMIN_SURFACES } from "@/config/admin-surfaces";
 import {
+  findPageByPath,
   getAppSectionForPath,
   LEGACY_REDIRECTS,
   PAGE_REGISTRY,
   ROLE_LANDING_PAGE,
 } from "@/config/page-registry";
-import { NAVIGATION_PERMISSION_MODEL } from "@/config/navigation-permissions";
+import {
+  NAVIGATION_PERMISSION_MODEL,
+  validateNavigationPermissionModel,
+} from "@/config/navigation-permissions";
+import { ROUTE_COMPONENT_KEYS } from "@/config/route-components";
 import { COMPANY_ROLES } from "@shared/schema/users";
 
 describe("app navigation visibility", () => {
@@ -277,6 +283,133 @@ describe("role / section completeness", () => {
         `role ${role} resolves to ${resolved} which is not in PAGE_REGISTRY`,
       ).toBe(true);
     }
+  });
+});
+
+describe("navigation permission model validator", () => {
+  it("reports zero errors (duplicate section:path keys)", () => {
+    const issues = validateNavigationPermissionModel();
+    const errors = issues.filter((i) => i.severity === "error");
+    expect(errors, errors.map((e) => e.message).join("\n")).toEqual([]);
+  });
+
+  it("reports zero warnings after allowlisted items are excluded", () => {
+    const issues = validateNavigationPermissionModel();
+    const warnings = issues.filter((i) => i.severity === "warning");
+    expect(warnings, warnings.map((w) => w.message).join("\n")).toEqual([]);
+  });
+});
+
+describe("disabled-subpage format", () => {
+  it("parses a valid '!SECTION:/path' entry", () => {
+    const map = parseDisabledSubPages(["!FINANCE:/cashflow", "!ADMIN:/admin/smart-import"]);
+    expect(map.get("FINANCE")?.has("/cashflow")).toBe(true);
+    expect(map.get("ADMIN")?.has("/admin/smart-import")).toBe(true);
+  });
+
+  it("ignores plain section-key entries (no '!' prefix)", () => {
+    const map = parseDisabledSubPages(["FINANCE", "ADMIN"]);
+    expect(map.size).toBe(0);
+  });
+
+  it("validateDisabledSubPages flags malformed entries", () => {
+    const issues = validateDisabledSubPages([
+      "!NOCOLON",
+      "!FINANCE/cashflow",
+      "!:/orphan",
+      "!:/",
+    ]);
+    expect(issues.every((i) => i.reason === "malformed")).toBe(true);
+    expect(issues.length).toBeGreaterThan(0);
+  });
+
+  it("validateDisabledSubPages flags unknown section keys", () => {
+    const issues = validateDisabledSubPages(["!UNKNOWN_SECTION:/path"]);
+    expect(issues.some((i) => i.reason === "unknown_section_key")).toBe(true);
+  });
+
+  it("validateDisabledSubPages flags invalid paths", () => {
+    const issues = validateDisabledSubPages(["!FINANCE:/"]);
+    expect(issues.some((i) => i.reason === "invalid_path")).toBe(true);
+  });
+
+  it("validateDisabledSubPages accepts well-formed entries", () => {
+    const issues = validateDisabledSubPages([
+      "!FINANCE:/cashflow",
+      "!ADMIN:/admin/smart-import",
+      "!PROJECT_DELIVERY:/weekly-reviews",
+      "HOME",
+      "FINANCE",
+    ]);
+    expect(issues).toEqual([]);
+  });
+});
+
+describe("nav ↔ registry ↔ router parity", () => {
+  it("every TOP_SECTIONS secondary path resolves to a PAGE_REGISTRY entry", () => {
+    const basePath = (path: string) => path.split("?")[0] || path;
+    const orphans: string[] = [];
+    for (const section of TOP_SECTIONS) {
+      for (const item of section.secondary) {
+        const path = basePath(item.path);
+        if (path === "/") continue;
+        if (!findPageByPath(path)) {
+          orphans.push(`${section.key} → ${item.label} (${path})`);
+        }
+      }
+    }
+    expect(orphans, orphans.join("\n")).toEqual([]);
+  });
+
+  it("every PAGE_REGISTRY routeComponentKey exists in ROUTE_COMPONENTS", () => {
+    // Entries with `redirectTo` never consult routeComponentKey at runtime
+    // (see App.tsx APP_ROUTES) — ignore their routeComponentKey metadata.
+    const missing: string[] = [];
+    for (const page of PAGE_REGISTRY) {
+      if (page.redirectTo) continue;
+      if (page.routeComponentKey && !ROUTE_COMPONENT_KEYS.has(page.routeComponentKey)) {
+        missing.push(`${page.id} (${page.path}) → ${page.routeComponentKey}`);
+      }
+    }
+    expect(missing, missing.join("\n")).toEqual([]);
+  });
+
+  it("every PAGE_REGISTRY entry declares either routeComponentKey or redirectTo", () => {
+    const orphans: string[] = [];
+    for (const page of PAGE_REGISTRY) {
+      if (!page.routeComponentKey && !page.redirectTo) {
+        orphans.push(`${page.id} (${page.path})`);
+      }
+    }
+    expect(orphans, orphans.join("\n")).toEqual([]);
+  });
+
+  it("every LEGACY_REDIRECTS target resolves to a real route", () => {
+    // "/" is routable via the top-level HomePage Route in App.tsx and has no
+    // PAGE_REGISTRY entry, so accept it as a valid redirect target.
+    const unresolved: string[] = [];
+    for (const redirect of LEGACY_REDIRECTS) {
+      const target = redirect.redirectTo.split("?")[0];
+      if (target === "/") continue;
+      if (!findPageByPath(target)) {
+        unresolved.push(`${redirect.path} → ${redirect.redirectTo}`);
+      }
+    }
+    expect(unresolved, unresolved.join("\n")).toEqual([]);
+  });
+
+  it("every PAGE_REGISTRY redirectTo resolves to a real route", () => {
+    const unresolved: string[] = [];
+    for (const page of PAGE_REGISTRY) {
+      if (page.redirectTo) {
+        const target = page.redirectTo.split("?")[0];
+        if (target === "/") continue;
+        if (!findPageByPath(target)) {
+          unresolved.push(`${page.id} (${page.path}) → ${page.redirectTo}`);
+        }
+      }
+    }
+    expect(unresolved, unresolved.join("\n")).toEqual([]);
   });
 });
 

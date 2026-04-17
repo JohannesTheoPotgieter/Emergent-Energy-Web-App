@@ -62,8 +62,9 @@ export function useAccessMatrix() {
 
   const canViewPath = useMemo(() => {
     if (import.meta.env.DEV) {
-      validateNavigationPermissionModel().forEach((warning) => {
-        console.warn(`[NavPermissions] ${warning}`);
+      validateNavigationPermissionModel().forEach((issue) => {
+        const log = issue.severity === "error" ? console.error : console.warn;
+        log(`[NavPermissions] ${issue.message}`);
       });
     }
     const knownNavPaths = new Set(
