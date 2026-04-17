@@ -21,6 +21,7 @@ import { useVersionCheck } from "@/hooks/use-version-check";
 import { Download, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { lazyWithRetry } from "@/lib/lazy-with-retry";
+import { ROUTE_COMPONENTS } from "@/config/route-components";
 
 // Eagerly loaded pages (critical path — login, home, not-found)
 import LoginPage from "@/pages/login";
