@@ -46,6 +46,9 @@ interface MonthData {
   budget: number;
   variance: number;
   variancePct: number;
+  /** QB COS actual minus (Realised + Committed) in app. Positive = QB has more than the app recognises. */
+  qbVsAppVariance?: number;
+  qbVsAppVariancePct?: number;
   ytdCOS: number;
   ytdRealised: number;
   ytdCommitted: number;
@@ -130,14 +133,19 @@ const ROW_DEFS: {
   expandable?: boolean;
   projectsKey?: "cosProjects" | "realisedProjects" | "committedProjects" | "plannedProjects" | "qbOnlyProjects" | "appOnlyPendingProjects";
 }[] = [
-  { key: "totalCOS", label: "COS - App Actual", dataKey: "totalCOS", editable: false, colorClass: "text-foreground font-bold", group: "monthly", expandable: true, projectsKey: "cosProjects" },
-  { key: "realisedCOS", label: "Realised COS", dataKey: "realisedCOS", editable: false, colorClass: "text-foreground font-bold", group: "monthly", expandable: true, projectsKey: "realisedProjects" },
-  { key: "committedCOS", label: "Committed COS", dataKey: "committedCOS", editable: false, colorClass: "text-amber-600 font-semibold", group: "monthly", expandable: true, projectsKey: "committedProjects" },
-  { key: "qbOnlyActual", label: "QB Actual", dataKey: "qbOnlyActual", editable: false, colorClass: "text-blue-600 font-semibold", group: "monthly", expandable: true, projectsKey: "qbOnlyProjects" },
-  { key: "appOnlyPending", label: "App-only Pending Invoice (Unlinked)", dataKey: "appOnlyPending", editable: false, colorClass: "text-orange-600 font-semibold", group: "monthly", expandable: true, projectsKey: "appOnlyPendingProjects" },
-  { key: "budget", label: "Costed", dataKey: "budget", editable: true, colorClass: "text-purple-600", group: "monthly" },
-  { key: "variance", label: "Variance", dataKey: "variance", editable: false, colorClass: "", group: "monthly", colorCoded: true },
-  { key: "variancePct", label: "Variance %", dataKey: "variancePct", editable: false, colorClass: "", group: "monthly", colorCoded: true },
+  // Grid rows per spec: COS Planned → COS Realised → COS Committed → QB COS → QB/App Recon.
+  // "Total COS" (Realised + Committed) is retained as the top row for quick reference,
+  // but the unrecognised-planned leakage has been stripped from the backend so the
+  // figure now reconciles to QB COGS within the variance row.
+  { key: "totalCOS", label: "Total COS (App)", dataKey: "totalCOS", editable: false, colorClass: "text-foreground font-bold", group: "monthly", expandable: true, projectsKey: "cosProjects" },
+  { key: "budget", label: "COS Planned (Budget)", dataKey: "budget", editable: true, colorClass: "text-purple-600", group: "monthly" },
+  { key: "realisedCOS", label: "COS Realised", dataKey: "realisedCOS", editable: false, colorClass: "text-foreground font-bold", group: "monthly", expandable: true, projectsKey: "realisedProjects" },
+  { key: "committedCOS", label: "COS Committed", dataKey: "committedCOS", editable: false, colorClass: "text-amber-600 font-semibold", group: "monthly", expandable: true, projectsKey: "committedProjects" },
+  { key: "qbOnlyActual", label: "Quickbooks COS", dataKey: "qbOnlyActual", editable: false, colorClass: "text-blue-600 font-semibold", group: "monthly", expandable: true, projectsKey: "qbOnlyProjects" },
+  { key: "qbVsAppVariance", label: "Quickbooks ↔ App Recon", dataKey: "qbVsAppVariance" as keyof MonthData, editable: false, colorClass: "", group: "monthly", colorCoded: true },
+  { key: "appOnlyPending", label: "App-only Pending (Unlinked)", dataKey: "appOnlyPending", editable: false, colorClass: "text-orange-600 font-semibold", group: "monthly", expandable: true, projectsKey: "appOnlyPendingProjects" },
+  { key: "variance", label: "Budget Variance", dataKey: "variance", editable: false, colorClass: "", group: "monthly", colorCoded: true },
+  { key: "variancePct", label: "Budget Variance %", dataKey: "variancePct", editable: false, colorClass: "", group: "monthly", colorCoded: true },
   { key: "ytdCOS", label: "YTD COS", dataKey: "ytdCOS", editable: false, colorClass: "text-foreground font-bold", group: "ytd" },
   { key: "ytdRealised", label: "YTD Realised", dataKey: "ytdRealised", editable: false, colorClass: "text-foreground font-bold", group: "ytd" },
   { key: "ytdCommitted", label: "YTD Committed", dataKey: "ytdCommitted", editable: false, colorClass: "text-amber-600", group: "ytd" },

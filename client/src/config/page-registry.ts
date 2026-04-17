@@ -64,7 +64,11 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "legacyRevenue", path: "/revenue", label: "Revenue (Legacy)", type: "alias", permissionEntity: "revenue_tracker", redirectTo: "/revenue-tracker" },
   { id: "legacyCosControl", path: "/cos-control", label: "COS Control (Legacy)", type: "alias", permissionEntity: "cos", redirectTo: "/cos" },
   { id: "legacyCashflowForecast", path: "/cashflow-forecast", label: "Cashflow Forecast (Legacy)", type: "alias", permissionEntity: "cashflow", redirectTo: "/cashflow" },
-  { id: "gpTracker", path: "/gp-tracker", label: "GP Tracker", iconKey: "Activity", navGroup: "FINANCE", permissionEntity: "gp_tracker", showInSidebar: true, routeComponentKey: "GpTrackerPage" },
+  { id: "gpTracker", path: "/gp-tracker", label: "GP Tracker", iconKey: "Activity", navGroup: "FINANCE", permissionEntity: "gp_tracker", showInSidebar: false, routeComponentKey: "GpTrackerPage" },
+  // QB Throughput — single source for all QuickBooks integration UI.
+  // Absorbs: QB Customer Mapping, QB Bill Linking, Counterparties,
+  // Subcontractor Dashboard, Invoice Patterns, Admin QB.
+  { id: "financeQuickBooksThroughput", path: "/finance/quickbooks", label: "QB Throughput", iconKey: "Plug", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: true, routeComponentKey: "FinanceQuickBooksThroughputPage" },
   { id: "priorities", path: "/priorities", label: "Priorities", iconKey: "Flag", navGroup: "PRIORITIES", permissionEntity: "company_priorities", showInSidebar: true, routeComponentKey: "PrioritiesPage" },
   { id: "priorityDetail", path: "/priorities/:id", label: "Priority Detail", permissionEntity: "company_priorities", routeComponentKey: "PriorityDetailPage" },
   { id: "companyPriorities", path: "/company-priorities", label: "Company Priorities", type: "alias", permissionEntity: "company_priorities", routeComponentKey: "MyToolPrioritiesPage", redirectTo: "/priorities" },
@@ -84,9 +88,11 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "executionBoardProgram", path: "/execution-board/program", label: "Program View", permissionEntity: "execution_board", showInSidebar: false, routeComponentKey: "ExecutionBoardPage" },
   { id: "executionBoardFinance", path: "/execution-board/finance", label: "Program Finance", permissionEntity: "execution_board", showInSidebar: false, routeComponentKey: "ExecutionBoardPage" },
   { id: "smartImport", path: "/admin/smart-import", label: "Smart Import", iconKey: "FileSpreadsheet", navGroup: "SYSTEM", permissionEntity: "smart_import", showInSidebar: false, routeComponentKey: "SmartImportPage" },
-  { id: "invoicePatterns", path: "/invoice-patterns", label: "Invoice Patterns", iconKey: "FileSpreadsheet", navGroup: "FINANCE", permissionEntity: "invoice_patterns", showInSidebar: true, routeComponentKey: "InvoicePatternsPage" },
-  { id: "counterparties", path: "/counterparties", label: "Counterparties", iconKey: "Building2", navGroup: "FINANCE", permissionEntity: "counterparties", showInSidebar: true, routeComponentKey: "CounterpartiesPage" },
-  { id: "subcontractor", path: "/subcontractor-dashboard", label: "Subcontractors", iconKey: "Users", navGroup: "FINANCE", permissionEntity: "subcontractors", showInSidebar: true, routeComponentKey: "SubcontractorDashboardPage" },
+  // Absorbed into QB Throughput > Suppliers tab — hidden from nav.
+  // Routes retained for direct-URL access and embedded rendering by the Throughput page.
+  { id: "invoicePatterns", path: "/invoice-patterns", label: "Invoice Patterns", iconKey: "FileSpreadsheet", navGroup: "FINANCE", permissionEntity: "invoice_patterns", showInSidebar: false, routeComponentKey: "InvoicePatternsPage" },
+  { id: "counterparties", path: "/counterparties", label: "Counterparties", iconKey: "Building2", navGroup: "FINANCE", permissionEntity: "counterparties", showInSidebar: false, routeComponentKey: "CounterpartiesPage" },
+  { id: "subcontractor", path: "/subcontractor-dashboard", label: "Subcontractors", iconKey: "Users", navGroup: "FINANCE", permissionEntity: "subcontractors", showInSidebar: false, routeComponentKey: "SubcontractorDashboardPage" },
   { id: "adminActivity", path: "/admin/activity-log", label: "Activity Log", iconKey: "Activity", navGroup: "SYSTEM", permissionEntity: "activity_log", showInSidebar: false, routeComponentKey: "SystemActivityLogPage" },
   { id: "weeklyReviews", path: "/weekly-reviews", label: "Weekly Reviews", iconKey: "CalendarCheck", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "weekly_review_wizard", showInSidebar: false, routeComponentKey: "WeeklyReviewsPage" },
   { id: "adminRoles", path: "/admin/roles", label: "Roles & Permissions", iconKey: "ShieldAlert", navGroup: "SYSTEM", permissionEntity: "admin_roles", showInSidebar: false, routeComponentKey: "AdminRolesPage" },
@@ -152,7 +158,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "pmDeliverables", path: "/pm/deliverables", label: "PM Deliverables (Retired)", type: "alias", permissionEntity: "deliverables", redirectTo: "/pm/approvals" },
   { id: "handoverControl", path: "/handover-control", label: "Handover Control", iconKey: "Handshake", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "handover", showInSidebar: true, routeComponentKey: "HandoverControlPage" },
   // Task Management removed from Project Delivery navigation
-  { id: "fyeRevenueTracking", path: "/fye-revenue-tracking", label: "FYE Revenue Tracking", iconKey: "BarChart3", navGroup: "FINANCE", permissionEntity: "fye_revenue_tracking", showInSidebar: true, routeComponentKey: "FyeRevenueTrackingPage" },
+  { id: "fyeRevenueTracking", path: "/fye-revenue-tracking", label: "FYE Revenue Tracking", iconKey: "BarChart3", navGroup: "FINANCE", permissionEntity: "fye_revenue_tracking", showInSidebar: false, routeComponentKey: "FyeRevenueTrackingPage" },
   { id: "phaseTemplates", path: "/admin/phase-templates", label: "Phase Templates", iconKey: "ListChecks", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "PhaseTemplatesPage" },
   { id: "projectCreate", path: "/project-create", label: "Create Project", permissionEntity: "project_creation", routeComponentKey: "ProjectCreatePage" },
   { id: "departmentScores", path: "/department-scores", label: "Department Scores", iconKey: "BarChart3", navGroup: "KNOWLEDGE", type: "alias", permissionEntity: "leaderboard", showInSidebar: false, routeComponentKey: "DepartmentScoresPage", redirectTo: "/leaderboard?tab=departments" },
@@ -178,8 +184,10 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "adminBackfill", path: "/admin/data-migration-status", label: "Data Migration Status", iconKey: "Database", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminBackfillPage" },
   { id: "adminPipedrive", path: "/admin/pipedrive", label: "Pipedrive Integration", iconKey: "Plug", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminPipedrivePage" },
   { id: "adminQuickBooks", path: "/admin/quickbooks", label: "QuickBooks Integration", iconKey: "Plug", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminQuickBooksPage" },
-  { id: "financeQuickBooksCustomerMapping", path: "/finance/quickbooks-customer-mapping", label: "QB Customer Mapping", iconKey: "Users", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: true, routeComponentKey: "FinanceQuickBooksCustomerMappingPage" },
-  { id: "financeQuickBooksLinks", path: "/finance/quickbooks-links", label: "QB Bill Linking", iconKey: "Plug", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: true, routeComponentKey: "FinanceQuickBooksLinksPage" },
+  // Absorbed into QB Throughput > Mapping / Reconciliation tabs — hidden from nav.
+  // Routes retained for direct-URL access and embedded rendering by the Throughput page.
+  { id: "financeQuickBooksCustomerMapping", path: "/finance/quickbooks-customer-mapping", label: "QB Customer Mapping", iconKey: "Users", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: false, routeComponentKey: "FinanceQuickBooksCustomerMappingPage" },
+  { id: "financeQuickBooksLinks", path: "/finance/quickbooks-links", label: "QB Bill Linking", iconKey: "Plug", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: false, routeComponentKey: "FinanceQuickBooksLinksPage" },
   // Gates workspace (Prompt 2)
   { id: "gatesPipeline", path: "/gates", label: "Gates Pipeline", iconKey: "Milestone", navGroup: "GATES", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "GatesPipelinePage" },
   { id: "gatesBlocked", path: "/gates/blocked", label: "Blocked Gates", iconKey: "ShieldAlert", navGroup: "GATES", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "GatesBlockedPage" },
