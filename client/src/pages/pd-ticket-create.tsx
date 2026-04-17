@@ -20,6 +20,16 @@ import {
   ChevronRight, MapPin, Zap, Battery, HardHat, CalendarIcon, ListTodo, AlertTriangle,
 } from "lucide-react";
 
+class PdFetchError extends Error {
+  status: number;
+  payload: any;
+  constructor(status: number, message: string, payload: any) {
+    super(message);
+    this.status = status;
+    this.payload = payload;
+  }
+}
+
 function pdFetch(url: string, opts?: RequestInit) {
   return fetch(url, {
     credentials: "include",
@@ -28,7 +38,7 @@ function pdFetch(url: string, opts?: RequestInit) {
   }).then(async r => {
     if (!r.ok) {
       const data = await r.json().catch(() => ({}));
-      throw new Error(data.error || "Request failed");
+      throw new PdFetchError(r.status, data.message || data.error || "Request failed", data);
     }
     return r.json();
   });
@@ -150,10 +160,22 @@ export default function PdTicketCreatePage() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/pd/tickets"] });
       queryClient.invalidateQueries({ queryKey: ["/api/pd/dashboard"] });
-      toast({ title: "PD Ticket created", description: `Ticket #${data.id} created successfully` });
+      toast({ title: "Project Development Ticket created", description: `Ticket #${data.id} created successfully` });
       navigate(`/pd/tickets/${data.id}`);
     },
-    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => {
+      // 409 duplicate — surface the existing ticket id so the user can
+      // review it before deciding to force a second one.
+      if (e instanceof PdFetchError && e.status === 409 && e.payload?.error === "duplicate_ticket") {
+        toast({
+          title: "Duplicate ticket detected",
+          description: e.message,
+          variant: "destructive",
+        });
+        return;
+      }
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    },
   });
 
   const createProjectMutation = useMutation({
@@ -229,7 +251,7 @@ export default function PdTicketCreatePage() {
         </Button>
         <h1 className="text-xl font-bold flex items-center gap-2" data-testid="pd-create-title">
           <FileEdit className="h-5 w-5 text-violet-600" />
-          Create PD Ticket
+          Create Project Development Ticket
         </h1>
       </div>
 
@@ -661,7 +683,7 @@ export default function PdTicketCreatePage() {
                 data-testid="btn-submit-ticket"
               >
                 {createTicketMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                Create PD Ticket
+                Create Project Development Ticket
               </Button>
             </div>
           </CardContent>

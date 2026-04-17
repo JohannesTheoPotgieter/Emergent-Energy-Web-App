@@ -136,7 +136,7 @@ export default function PdTicketDetailPage() {
   });
 
   if (isLoading) return <PageSkeleton lines={5} />;
-  if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load PD Ticket" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
+  if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load Project Development Ticket" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
   if (!data) {
     return (
@@ -490,7 +490,7 @@ export default function PdTicketDetailPage() {
       <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-red-600">Delete PD Ticket</DialogTitle>
+            <DialogTitle className="text-red-600">Delete Project Development Ticket</DialogTitle>
           </DialogHeader>
           <div className="py-3 space-y-2">
             <p className="text-sm">Are you sure you want to permanently delete this ticket?</p>
