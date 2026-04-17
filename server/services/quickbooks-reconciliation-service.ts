@@ -627,6 +627,13 @@ export interface BulkAssignPreviewRow {
 type QuickBooksDocumentInsert = typeof quickbooksDocuments.$inferInsert;
 type QuickBooksCostAllocationInsert = typeof quickbooksCostAllocations.$inferInsert;
 
+function derivePaymentStatus(balance: number | null, totalAmount: number | null): "paid" | "partial" | "unpaid" | null {
+  if (balance === null) return null;
+  if (balance <= 0) return "paid";
+  if (totalAmount !== null && balance < totalAmount) return "partial";
+  return "unpaid";
+}
+
 async function upsertQuickBooksDocumentFromBill(
   projectId: number | null,
   bill: QuickBooksBillSummary,
@@ -662,6 +669,60 @@ async function upsertQuickBooksDocumentFromBill(
     qbTaxAmount: taxAmount === null ? null : taxAmount.toFixed(2),
     qbAmountExVat: exVat === null ? null : exVat.toFixed(2),
     taxStatus: bill.taxUncertain ? "TAX_UNCERTAIN" : "KNOWN",
+    qbBalance: bill.balance !== null ? bill.balance.toFixed(2) : null,
+    qbPaymentStatus: derivePaymentStatus(bill.balance, toMoney(bill.qbAmountIncVat)),
+    createdBy: actorId,
+    updatedAt: new Date(),
+  };
+
+  if (existing.length > 0) {
+    const updated = await db
+      .update(quickbooksDocuments)
+      .set(snapshot)
+      .where(eq(quickbooksDocuments.id, existing[0]!.id))
+      .returning();
+    return updated[0]!;
+  }
+
+  const inserted = await db.insert(quickbooksDocuments).values(snapshot).returning();
+  return inserted[0]!;
+}
+
+async function upsertQuickBooksDocumentFromInvoice(
+  projectId: number | null,
+  invoice: QuickBooksInvoiceSummary,
+  qbRealmId: string,
+  actorId: number | null,
+) {
+  const existing = await db
+    .select()
+    .from(quickbooksDocuments)
+    .where(
+      and(
+        eq(quickbooksDocuments.qbEntityType, "invoice"),
+        eq(quickbooksDocuments.qbEntityId, invoice.id),
+        eq(quickbooksDocuments.qbRealmId, qbRealmId),
+        isNull(quickbooksDocuments.deletedAt),
+      ),
+    )
+    .limit(1);
+
+  const totalAmount = invoice.totalAmount;
+  const snapshot: QuickBooksDocumentInsert = {
+    projectId,
+    qbEntityType: "invoice",
+    qbEntityId: invoice.id,
+    qbRealmId,
+    qbDocNumber: invoice.docNumber,
+    qbTxnDate: invoice.txnDate,
+    qbCounterpartyName: invoice.customerName,
+    qbCounterpartyId: invoice.customerId,
+    qbAmountIncVat: totalAmount !== null ? totalAmount.toFixed(2) : null,
+    qbTaxAmount: null,
+    qbAmountExVat: totalAmount !== null ? totalAmount.toFixed(2) : null,
+    taxStatus: "KNOWN",
+    qbBalance: invoice.balance !== null ? invoice.balance.toFixed(2) : null,
+    qbPaymentStatus: derivePaymentStatus(invoice.balance, totalAmount),
     createdBy: actorId,
     updatedAt: new Date(),
   };
@@ -1503,7 +1564,7 @@ export async function confirmRevenueLineLink(params: {
   confirmedBy?: number | null;
   notes?: string | null;
 }): Promise<QuickBooksInvoiceLink> {
-  return createOrUpdateLink({
+  const link = await createOrUpdateLink({
     projectId: params.projectId,
     appEntityType: "revenue_line",
     appEntityId: params.revenueLineId,
@@ -1517,4 +1578,16 @@ export async function confirmRevenueLineLink(params: {
     notes: params.notes ?? null,
     confirmedBy: params.confirmedBy ?? null,
   });
+
+  const realmId = (await loadQuickBooksMetadata()).realmId;
+  if (realmId) {
+    await upsertQuickBooksDocumentFromInvoice(
+      params.projectId,
+      params.invoice,
+      realmId,
+      params.confirmedBy ?? null,
+    );
+  }
+
+  return link;
 }
