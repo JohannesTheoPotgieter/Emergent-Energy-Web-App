@@ -86,8 +86,17 @@ export function isCosRealised(line: {
     expensePoNumber: line.expensePoNumber ?? null,
     paymentDate: line.paymentDate ?? null,
     today,
-    invoiceDateFontColor: line.invoiceDateFontColor ?? null,
-    invoiceDateConfirmed: line.invoiceDateConfirmed ?? null,
+    // Forward the invoice-date-confirmed signals ONLY when the caller
+    // actually supplied them. The canonical function uses `undefined` as
+    // the "legacy caller — invoice-only rule" sentinel, so eagerly
+    // normalising `undefined → null` would incorrectly engage the strict
+    // black-font gate for callers that never opted in.
+    ...(line.invoiceDateFontColor !== undefined
+      ? { invoiceDateFontColor: line.invoiceDateFontColor }
+      : {}),
+    ...(line.invoiceDateConfirmed !== undefined
+      ? { invoiceDateConfirmed: line.invoiceDateConfirmed }
+      : {}),
   });
 }
 
