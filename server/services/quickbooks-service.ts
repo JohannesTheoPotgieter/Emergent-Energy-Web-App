@@ -499,6 +499,25 @@ export async function getVendors(): Promise<any> {
   return queryQuickBooks("Vendor", query);
 }
 
+/**
+ * Fetch a single Bill by its QuickBooks Id. Used by the allocation endpoint
+ * to re-derive VAT/amount/vendor on the server rather than trusting the
+ * client-supplied snapshot. Returns the raw Bill object or null if missing.
+ */
+export async function getBillById(id: string): Promise<any | null> {
+  if (!id) return null;
+  // QB QL is not SQL-safe for arbitrary IDs. Reject anything outside the
+  // documented Id alphabet so we can never smuggle a WHERE clause.
+  if (!/^[A-Za-z0-9_-]+$/.test(id)) {
+    throw new Error("Invalid QuickBooks Bill Id format");
+  }
+  const query = `SELECT * FROM Bill WHERE Id = '${id}'`;
+  const resp = await queryQuickBooks<any>("Bill", query);
+  const bills = resp?.QueryResponse?.Bill;
+  if (Array.isArray(bills) && bills.length > 0) return bills[0];
+  return null;
+}
+
 export async function getBills(startDate?: string, endDate?: string): Promise<any> {
   const where = buildDateClause("TxnDate", startDate, endDate);
   const maxResults = 500;

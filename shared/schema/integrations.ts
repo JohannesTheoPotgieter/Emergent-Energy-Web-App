@@ -124,6 +124,7 @@ export const QUICKBOOKS_DOCUMENT_ASSIGNMENT_STATUS = [
   "UNASSIGNED",
   "PARTIALLY_ASSIGNED",
   "FULLY_ASSIGNED",
+  "OVER_ASSIGNED_BLOCKED",
   "TAX_UNCERTAIN",
 ] as const;
 export type QuickBooksDocumentAssignmentStatus = (typeof QUICKBOOKS_DOCUMENT_ASSIGNMENT_STATUS)[number];
@@ -276,6 +277,13 @@ export const quickbooksCostAllocations = pgTable(
       .notNull()
       .references(() => quickbooksDocuments.id, { onDelete: "restrict" }),
     projectId: integer("project_id"),
+    /**
+     * Reference to normalized_cost_lines.id. Intentionally NOT an FK — the
+     * cost-lines table is temporally snapshotted (effective_to IS NULL gates
+     * current rows) and soft-closed rows would break a hard FK. Readers must
+     * join through the current-row guard (`isNull(effectiveTo)`) when
+     * reconciling back to a live cost line.
+     */
     costLineId: integer("cost_line_id")
       .notNull(),
     amountExVat: decimal("amount_ex_vat", { precision: 15, scale: 2 }).notNull(),
