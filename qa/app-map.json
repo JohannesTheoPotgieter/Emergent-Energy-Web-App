@@ -45,7 +45,7 @@
     { "path": "/notifications", "component": "NotificationCenterPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
     { "path": "/portfolios", "component": "PortfoliosPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
     { "path": "/portfolios/:id", "component": "PortfolioDetailPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
-    { "path": "/pd", "component": "PdDashboardPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
+    { "path": "/pd", "component": "PdTicketsPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
     { "path": "/pd/tickets", "component": "PdTicketsPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
     { "path": "/pd/tickets/create", "component": "PdTicketCreatePage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
     { "path": "/pd/tickets/:id", "component": "PdTicketDetailPage", "guards": ["ProtectedRoute", "RoleGuard"], "access": "admin_management" },
