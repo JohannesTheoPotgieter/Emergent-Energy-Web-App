@@ -1,4 +1,4 @@
-import { TOP_SECTIONS } from "@/config/app-navigation";
+import { TOP_SECTIONS, type SectionKey } from "@/config/app-navigation";
 import { getPermissionEntityForPath } from "@/config/page-registry";
 import { ENTITY_DESCRIPTIONS } from "@/pages/admin-settings/settings-types";
 import type { PermissionEntity } from "@shared/schema";
@@ -6,7 +6,7 @@ import type { PermissionEntity } from "@shared/schema";
 export type AccessLevel = "none" | "view" | "edit";
 
 export type NavigationPermissionItem = {
-  sectionKey: string;
+  sectionKey: SectionKey;
   sectionLabel: string;
   itemLabel: string;
   path: string;
@@ -15,7 +15,7 @@ export type NavigationPermissionItem = {
   supportsEdit: boolean;
 };
 
-const SECTION_HELP_TEXT: Record<string, string> = {
+const SECTION_HELP_TEXT: Partial<Record<SectionKey, string>> = {
   HOME: "Dashboard, My Tasks, Approvals, Calendar, Meetings, Inbox",
   PORTFOLIO: "Company Overview, Lifecycle Board, Gate Tracker, Blocked Gates, Exceptions",
   PRIORITIES: "My Priorities, Department, Company",
