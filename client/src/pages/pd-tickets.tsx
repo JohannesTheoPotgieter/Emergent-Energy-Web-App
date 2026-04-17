@@ -1,21 +1,27 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { statusColorClasses, priorityColorClasses } from "@/lib/status-colors";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { Loader2, Plus, Search, FileEdit, Filter, AlertTriangle, AlertCircle, ArrowRight } from "lucide-react";
+import { Loader2, Plus, Search, FileEdit, Filter, AlertTriangle, AlertCircle, ArrowRight, Trash2 } from "lucide-react";
 import { useLocation } from "wouter";
 import { usePermission } from "@/hooks/use-permissions";
 import { useTablePagination } from "@/hooks/use-table-pagination";
 import { TablePagination } from "@/components/ui/table-pagination";
 import { ExportDropdown } from "@/components/ui/export-dropdown";
 import { PD_REQUEST_TYPES_FILTERABLE } from "@/lib/pd/request-types";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useToast } from "@/hooks/use-toast";
 
-async function pdFetch(url: string) {
-  const r = await fetch(url, { credentials: "include" });
+async function pdFetch(url: string, opts?: RequestInit) {
+  const r = await fetch(url, {
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...(opts?.headers || {}) },
+    ...opts,
+  });
   const body = await r.json().catch(() => null);
   if (!r.ok) {
     throw new Error(body?.error || `Request to ${url} failed (${r.status}).`);
@@ -32,10 +38,28 @@ const PRIORITIES = ["Critical", "High", "Medium", "Low"];
 export default function PdTicketsPage() {
   const [, navigate] = useLocation();
   const { allowed: canView, loading: permLoading } = usePermission('pd_tickets', 'view');
+  const { allowed: canDelete } = usePermission('pd_tickets', 'edit');
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => pdFetch(`/api/pd/tickets/${id}`, { method: "DELETE" }),
+    onSuccess: (result: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/pd/tickets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/pd/dashboard"] });
+      toast({
+        title: "Ticket deleted",
+        description: `Ticket and ${result?.deletedTaskCount || 0} linked engineering task(s) removed. The linked project and client were kept.`,
+      });
+      setDeleteTarget(null);
+    },
+    onError: (e: Error) => toast({ title: "Delete failed", description: e.message, variant: "destructive" }),
+  });
 
   const { data: tickets = [], isLoading, isError, refetch, error } = useQuery<any[]>({
     queryKey: ["/api/pd/tickets"],
@@ -75,7 +99,7 @@ export default function PdTicketsPage() {
         <Card className="max-w-md w-full"><CardContent className="py-12 text-center">
           <AlertTriangle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
           <h2 className="text-xl font-semibold mb-2">Access Denied</h2>
-          <p className="text-muted-foreground">You don't have permission to view PD Tickets.</p>
+          <p className="text-muted-foreground">You don't have permission to view Project Development Tickets.</p>
         </CardContent></Card>
       </div>
     );
@@ -86,7 +110,7 @@ export default function PdTicketsPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold flex items-center gap-2" data-testid="pd-tickets-title">
           <FileEdit className="h-5 w-5 text-violet-600" />
-          PD Tickets
+          Project Development Tickets
         </h1>
         <div className="flex items-center gap-2">
           <ExportDropdown
@@ -155,7 +179,7 @@ export default function PdTicketsPage() {
         <Card>
           <CardContent className="p-8 text-center text-muted-foreground space-y-2">
             <AlertTriangle className="h-10 w-10 mx-auto text-amber-500" />
-            <p className="font-medium text-foreground">Could not load PD tickets</p>
+            <p className="font-medium text-foreground">Could not load Project Development tickets</p>
             <p className="text-xs">{error instanceof Error ? error.message : "Try again."}</p>
             <Button size="sm" variant="outline" onClick={() => refetch()} data-testid="btn-retry-pd-tickets">Retry</Button>
           </CardContent>
@@ -168,8 +192,8 @@ export default function PdTicketsPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="overflow-x-auto border rounded-lg" role="region" aria-label="PD Tickets table">
-          <table className="w-full text-sm min-w-[1100px]" aria-label="PD Tickets">
+        <div className="overflow-x-auto border rounded-lg" role="region" aria-label="Project Development Tickets table">
+          <table className="w-full text-sm min-w-[1100px]" aria-label="Project Development Tickets">
             <thead>
               <tr className="bg-muted/40 border-b text-[11px] text-muted-foreground">
                 <th scope="col" className="text-left p-2.5 pl-3">Project / Site</th>
@@ -183,6 +207,7 @@ export default function PdTicketsPage() {
                 <th scope="col" className="text-left p-2.5" title="Sub-tasks spawned from the ticket's request-type template">Sub-tasks</th>
                 <th scope="col" className="text-left p-2.5">Next Action</th>
                 <th scope="col" className="text-left p-2.5">Designer</th>
+                {canDelete && <th scope="col" className="text-right p-2.5 pr-3 w-[60px]">Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -241,6 +266,21 @@ export default function PdTicketsPage() {
                       })()}
                     </td>
                     <td className="p-2.5 text-muted-foreground">{row.designerName || "—"}</td>
+                    {canDelete && (
+                      <td className="p-2.5 pr-3 text-right" onClick={(e) => e.stopPropagation()}>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 text-muted-foreground hover:text-red-600 hover:bg-red-50"
+                          onClick={(e) => { e.stopPropagation(); setDeleteTarget(row); }}
+                          title="Delete ticket"
+                          aria-label={`Delete ticket ${t.projectSiteName || t.id}`}
+                          data-testid={`btn-delete-ticket-${t.id}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </td>
+                    )}
                   </tr>
                 );
               })}
@@ -249,6 +289,45 @@ export default function PdTicketsPage() {
           <TablePagination {...pagination} />
         </div>
       )}
+
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-red-600">Delete Project Development Ticket</DialogTitle>
+          </DialogHeader>
+          <div className="py-3 space-y-2 text-sm">
+            <p>Are you sure you want to permanently delete this ticket?</p>
+            {deleteTarget && (
+              <p className="font-medium">
+                {deleteTarget.ticket?.projectSiteName || `Ticket #${deleteTarget.ticket?.id}`}
+              </p>
+            )}
+            {deleteTarget?.taskTotal > 0 && (
+              <p className="text-amber-600">
+                This will also delete {deleteTarget.taskTotal} linked engineering task
+                {deleteTarget.taskTotal !== 1 ? "s" : ""}.
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              The linked project and client will <span className="font-semibold">not</span> be deleted. This action cannot be undone.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)} data-testid="btn-cancel-delete-ticket">
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.ticket.id)}
+              disabled={deleteMutation.isPending}
+              data-testid="btn-confirm-delete-ticket"
+            >
+              {deleteMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Trash2 className="h-4 w-4 mr-1" />}
+              Delete Ticket
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
