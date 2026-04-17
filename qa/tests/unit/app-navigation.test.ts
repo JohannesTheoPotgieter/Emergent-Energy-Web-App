@@ -366,7 +366,7 @@ describe("breadcrumb generation", () => {
     const crumbs = getBreadcrumbs("/pd/tickets/create", findSection("Project Development"));
     expect(crumbs).toEqual([
       { label: "Project Development", path: "/pd" },
-      { label: "PD Tickets", path: "/pd/tickets" },
+      { label: "Project Development Tickets", path: "/pd/tickets" },
       { label: "Create" },
     ]);
   });
@@ -375,7 +375,7 @@ describe("breadcrumb generation", () => {
     const crumbs = getBreadcrumbs("/pd/tickets/TKT-42", findSection("Project Development"));
     expect(crumbs).toEqual([
       { label: "Project Development", path: "/pd" },
-      { label: "PD Tickets", path: "/pd/tickets" },
+      { label: "Project Development Tickets", path: "/pd/tickets" },
       { label: "Ticket TKT-42" },
     ]);
   });

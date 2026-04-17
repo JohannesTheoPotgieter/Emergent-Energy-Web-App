@@ -454,6 +454,31 @@ export function registerPdRoutes(app: Express) {
         return res.status(400).json({ error: "Due date is required for SLA tracking." });
       }
 
+      // Duplicate-guard: refuse to create a second open ticket for the same
+      // (projectId, requestType) pair unless the caller explicitly opts in
+      // with `allowDuplicate: true`. Closed tickets (Completed / Cancelled)
+      // are ignored — it's legitimate to raise a new Cost Proposal after a
+      // previous one is closed. This is the root-cause fix for the
+      // duplicate PD tickets surfacing in the list view.
+      if (!body.allowDuplicate) {
+        const existingOpen = await db
+          .select({ id: pdTickets.id, status: pdTickets.status, createdAt: pdTickets.createdAt })
+          .from(pdTickets)
+          .where(and(
+            eq(pdTickets.projectId, Number(body.projectId)),
+            eq(pdTickets.requestType, body.requestType),
+            sql`${pdTickets.status} NOT IN ('Completed', 'Cancelled')`,
+          ))
+          .limit(1);
+        if (existingOpen.length > 0) {
+          return res.status(409).json({
+            error: "duplicate_ticket",
+            message: `An open ${body.requestType} ticket already exists for this project (ticket #${existingOpen[0].id}). Set allowDuplicate: true to create another anyway.`,
+            existingTicketId: existingOpen[0].id,
+          });
+        }
+      }
+
       const [ticket] = await db.insert(pdTickets).values({
         clientId: body.clientId || null,
         clientNameSnapshot: body.clientNameSnapshot || null,
@@ -589,7 +614,7 @@ export function registerPdRoutes(app: Express) {
       const linkedTasks = await db.select({ id: workItems.id }).from(workItems).where(eq(workItems.pdTicketId, id));
       const deletedTaskIds = linkedTasks.map((t: any) => t.id);
 
-      await db.transaction(async (tx) => {
+      await db.transaction(async (tx: typeof db) => {
         if (deletedTaskIds.length > 0) {
           await tx.execute(sql`DELETE FROM expense_task_links WHERE canonical_task_id IN ${sql.raw(`(${deletedTaskIds.join(",")})`)}`);
           await tx.execute(sql`DELETE FROM intake_tasks WHERE linked_work_item_id IN ${sql.raw(`(${deletedTaskIds.join(",")})`)}`);

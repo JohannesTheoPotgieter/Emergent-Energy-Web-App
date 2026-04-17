@@ -301,7 +301,7 @@ export default function ClientProjectDepartmentsPage() {
             metrics={[
               { label: "Contract", value: contractValue > 0 ? `R ${(contractValue / 1000000).toFixed(1)}M` : "—" },
               { label: "Revenue Realised", value: `${Math.round(revenueRealisedPct)}%` },
-              { label: "PD Tickets", value: `${pdTicketCount} open` },
+              { label: "Project Development Tickets", value: `${pdTicketCount} open` },
             ]}
             onClick={() => setLocation(`/project/${encodedName}?dept=pd`)}
           />

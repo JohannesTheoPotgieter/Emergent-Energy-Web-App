@@ -80,9 +80,9 @@ export const TOP_SECTIONS: TopSection[] = [
       "/handover-control",
     ]),
     secondary: [
-      { label: "PD Dashboard", path: "/pd" },
+      { label: "Project Development Dashboard", path: "/pd" },
       { label: "Pipeline / Opportunities", path: "/opportunities" },
-      { label: "PD Tickets", path: "/pd/tickets" },
+      { label: "Project Development Tickets", path: "/pd/tickets" },
       { label: "Clients", path: "/clients" },
       { label: "Handover Queue", path: "/handover-control" },
     ],
@@ -387,16 +387,16 @@ export function getBreadcrumbs(pathname: string, activeSection: TopSection): Bre
     { label: decodeURIComponent(portfolioMatch[1]) },
   ];
 
-  // --- PD Tickets ---
+  // --- Project Development Tickets ---
   if (pathname === "/pd/tickets/create") return [
     { label: "Project Development", path: "/pd" },
-    { label: "PD Tickets", path: "/pd/tickets" },
+    { label: "Project Development Tickets", path: "/pd/tickets" },
     { label: "Create" },
   ];
   const ticketMatch = pathname.match(/^\/pd\/tickets\/([^/]+)/);
   if (ticketMatch) return [
     { label: "Project Development", path: "/pd" },
-    { label: "PD Tickets", path: "/pd/tickets" },
+    { label: "Project Development Tickets", path: "/pd/tickets" },
     { label: `Ticket ${decodeURIComponent(ticketMatch[1])}` },
   ];
 

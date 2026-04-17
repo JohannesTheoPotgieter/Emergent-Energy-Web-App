@@ -26,7 +26,7 @@ type ActionDefinition = QuickCreateAction & {
 const QUICK_CREATE_ACTIONS: ActionDefinition[] = [
   {
     id: "pd-ticket",
-    label: "New PD Ticket",
+    label: "New Project Development Ticket",
     path: "/pd/tickets/create",
     isVisible: ({ canAccessEntityAction }) => canAccessEntityAction("pd_tickets", "create"),
   },
