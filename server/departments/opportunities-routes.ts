@@ -26,15 +26,23 @@ import { opportunitiesRepo } from "../repositories/opportunities-repository";
 //     dropped because the `opportunities` table has no `name` column.
 //     It was being silently ignored by drizzle and leaking validation
 //     errors when clients guessed at the shape.
+// Decimal columns in Drizzle serialize as `string`; the UI may submit numbers
+// for convenience. Coerce once at the boundary so the repository receives the
+// exact type Drizzle's $inferInsert expects (`string | null | undefined`).
+const decimalInput = z
+  .union([z.string(), z.number()])
+  .optional()
+  .transform((v) => (v === undefined ? undefined : String(v)));
+
 const opportunityCreateSchema = z.object({
   clientId: z.number().int().optional(),
   siteId: z.number().int().optional(),
   stage: z.string().optional(),
   status: z.string().optional(),
   contractType: z.string().optional(),
-  estimatedValue: z.union([z.string(), z.number()]).optional(),
-  estimatedKwp: z.union([z.string(), z.number()]).optional(),
-  estimatedKwh: z.union([z.string(), z.number()]).optional(),
+  estimatedValue: decimalInput,
+  estimatedKwp: decimalInput,
+  estimatedKwh: decimalInput,
   expectedCloseDate: z.string().optional(),
   signedDate: z.string().optional(),
   notes: z.string().optional(),
@@ -273,7 +281,7 @@ router.post("/api/opportunities/:id/create-engineering-tickets", requireAuth, re
     }
 
     // --- Insert all tickets inside a single transaction ---
-    const createdTickets = await db.transaction(async (tx) => {
+    const createdTickets = await db.transaction(async (tx: typeof db) => {
       const results: CreatedTicket[] = [];
       for (const values of ticketValues) {
         const { _templateItemId, _templateId, _templateName, _templateVersion, _templatePhase, ...insertValues } = values;
@@ -472,7 +480,7 @@ router.post("/api/opportunities/:id/resolve-mapping", requireAuth, requirePermis
         pd: "PROJECT_SHELL",
       };
 
-      const createdProject = await db.transaction(async (tx) => {
+      const createdProject = await db.transaction(async (tx: typeof db) => {
         const proj = await opportunitiesRepo.insertProjectShell(tx, shellProjectFields);
         await syncProjectSplitTablesAfterInsert(proj.id, shellProjectFields, tx);
         await opportunitiesRepo.insertPhaseHistory(tx, {
