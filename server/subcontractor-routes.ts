@@ -29,7 +29,7 @@ router.get("/api/subcontractor-dashboard/summary", requireAuth, async (req: Requ
     const coreOnly = req.query.coreOnly === "true";
 
     const [allLines, counterpartyList, patternRules] = await Promise.all([
-      db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
+      db.select().from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
       db.select().from(counterparties),
       db.select().from(invoicePatternRules),
     ]);
@@ -197,7 +197,7 @@ router.get("/api/subcontractor-dashboard/summary", requireAuth, async (req: Requ
 router.get("/api/subcontractor-dashboard/detail/:name", requireAuth, async (req: Request, res: Response) => {
   try {
     const name = decodeURIComponent(paramStr(req.params.name));
-    const allLines = await db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
+    const allLines = await db.select().from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)));
     const normalizedName = name.trim().toLowerCase();
     const lines = allLines.filter((l: any) => {
       const cpName = (l.counterpartyName || "").trim().toLowerCase();
@@ -337,7 +337,7 @@ router.post("/api/procurement-analysis/run", requireAuth, requirePermission('pro
 
     const { adaptCostToExpense, createNameResolver } = await import("./lib/data-merge");
     const [rawCosts, piRows] = await Promise.all([
-      db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
+      db.select().from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
       db.select({ projectName: projectInfo.projectName }).from(projectInfo),
     ]);
     const resolve = createNameResolver(piRows.map((p: any) => p.projectName));
@@ -512,7 +512,7 @@ router.post("/api/procurement-analysis/run", requireAuth, requirePermission('pro
 
 router.get("/api/procurement-analysis/status", requireAuth, async (_req: Request, res: Response) => {
   try {
-    const [costResult] = await db.select({ count: sql<number>`count(*)` }).from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
+    const [costResult] = await db.select({ count: sql<number>`count(*)` }).from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)));
     const [cpResult] = await db.select({ count: sql<number>`count(*)` }).from(counterparties);
     res.json({
       costLines: Number(costResult.count),
@@ -803,7 +803,7 @@ router.post("/api/subcontractor-dashboard/link-counterparty", requireAuth, requi
     let patternCreated = null;
     if (createPattern) {
       const lines = await db.select().from(normalizedCostLines).where(
-        and(sql`${normalizedCostLines.id} = ANY(${normalizedLineIds})`, isNull(normalizedCostLines.effectiveTo))
+        and(sql`${normalizedCostLines.id} = ANY(${normalizedLineIds})`, and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)))
       );
       const invoiceNumbers = lines.map((l: any) => l.invoiceNumber).filter(Boolean);
       if (invoiceNumbers.length > 0) {
@@ -839,7 +839,7 @@ router.post("/api/subcontractor-dashboard/link-counterparty", requireAuth, requi
 router.get("/api/subcontractor-dashboard/overdue", requireAuth, async (req: Request, res: Response) => {
   try {
     const [allLines, patternRules] = await Promise.all([
-      db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
+      db.select().from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
       db.select().from(invoicePatternRules),
     ]);
     const now = new Date();

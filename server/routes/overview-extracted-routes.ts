@@ -31,8 +31,8 @@ export function registerOverviewExtractedRoutes(app: Express): void {
         storage.getLatestRefresh(),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
-        db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
-        db.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
+        db.select().from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
+        db.select().from(normalizedRevenueLines).where(and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt))),
         useCanonicalOv
           ? (async () => {
               const [wiRows, piRows] = await Promise.all([

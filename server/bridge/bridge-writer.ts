@@ -531,7 +531,7 @@ export async function softClosePromotedCostLines(
     await db.execute(sql`
       UPDATE finance.cost_lines
       SET effective_to = NOW(), updated_at = NOW()
-      WHERE ${condition} AND effective_to IS NULL
+      WHERE ${condition} AND effective_to IS NULL AND deleted_at IS NULL
     `);
     return { success: true };
   } catch (err) {
@@ -552,7 +552,7 @@ export async function softClosePromotedRevenueLines(
     await db.execute(sql`
       UPDATE finance.revenue_lines
       SET effective_to = NOW(), updated_at = NOW()
-      WHERE ${condition} AND effective_to IS NULL
+      WHERE ${condition} AND effective_to IS NULL AND deleted_at IS NULL
     `);
     return { success: true };
   } catch (err) {
@@ -1123,7 +1123,7 @@ export async function batchSyncFinanceByProject(
     // Re-sync cost lines
     if (projectId) {
       const costRows = await db.execute(
-        sql`SELECT * FROM normalized_cost_lines WHERE project_id = ${projectId} AND effective_to IS NULL`
+        sql`SELECT * FROM normalized_cost_lines WHERE project_id = ${projectId} AND effective_to IS NULL AND deleted_at IS NULL`
       );
       if (costRows.rows?.length) {
         await syncCostLines(costRows.rows as any[]);
@@ -1131,7 +1131,7 @@ export async function batchSyncFinanceByProject(
       }
 
       const revRows = await db.execute(
-        sql`SELECT * FROM normalized_revenue_lines WHERE project_id = ${projectId} AND effective_to IS NULL`
+        sql`SELECT * FROM normalized_revenue_lines WHERE project_id = ${projectId} AND effective_to IS NULL AND deleted_at IS NULL`
       );
       if (revRows.rows?.length) {
         await syncRevenueLines(revRows.rows as any[]);
@@ -1139,7 +1139,7 @@ export async function batchSyncFinanceByProject(
       }
     } else if (projectName) {
       const costRows = await db.execute(
-        sql`SELECT * FROM normalized_cost_lines WHERE project_name = ${projectName} AND effective_to IS NULL`
+        sql`SELECT * FROM normalized_cost_lines WHERE project_name = ${projectName} AND effective_to IS NULL AND deleted_at IS NULL`
       );
       if (costRows.rows?.length) {
         await syncCostLines(costRows.rows as any[]);
@@ -1147,7 +1147,7 @@ export async function batchSyncFinanceByProject(
       }
 
       const revRows = await db.execute(
-        sql`SELECT * FROM normalized_revenue_lines WHERE project_name = ${projectName} AND effective_to IS NULL`
+        sql`SELECT * FROM normalized_revenue_lines WHERE project_name = ${projectName} AND effective_to IS NULL AND deleted_at IS NULL`
       );
       if (revRows.rows?.length) {
         await syncRevenueLines(revRows.rows as any[]);

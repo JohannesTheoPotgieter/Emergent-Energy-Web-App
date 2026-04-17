@@ -73,8 +73,8 @@ function computeAggregates(rows: any[]) {
 export async function getPmDrilldownRows(filters: DrillFilters) {
   const [projectRows, revenueRows, costRows, taskRows, raidRows, warningRows, checklistRows, qcItemRows, procurementRows, counterpartiesRows] = await Promise.all([
     db.select().from(projectInfo).leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id)),
-    db.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
-    db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
+    db.select().from(normalizedRevenueLines).where(and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt))),
+    db.select().from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
     db.select().from(workItems).where(and(isNull(workItems.deletedAt), or(eq(workItems.workstream, "PM"), isNull(workItems.workstream)))),
     db.select().from(raidItems),
     db.select().from(qcWarning),
@@ -341,7 +341,7 @@ export async function getEngineeringDrilldownRows(filters: DrillFilters) {
 
 export async function getProgrammeDrilldownRows(filters: DrillFilters) {
   const [costs, plans, warnings] = await Promise.all([
-    db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
+    db.select().from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
     db.select().from(workItems).where(isNull(workItems.deletedAt)),
     db.select().from(qcWarning),
   ]);

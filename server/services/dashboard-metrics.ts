@@ -54,7 +54,7 @@ export async function refreshProjectMetrics(projectId: number): Promise<void> {
       .where(
         and(
           eq(normalizedRevenueLines.projectId, projectId),
-          isNull(normalizedRevenueLines.effectiveTo),
+          and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt)),
         ),
       ),
     db
@@ -63,7 +63,7 @@ export async function refreshProjectMetrics(projectId: number): Promise<void> {
       .where(
         and(
           eq(normalizedCostLines.projectId, projectId),
-          isNull(normalizedCostLines.effectiveTo),
+          and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)),
         ),
       ),
   ]);

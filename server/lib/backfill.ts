@@ -1,6 +1,6 @@
 import { db } from "../db";
 import { normalizedCostLines, normalizedRevenueLines, projectInfo, type ProjectInfo } from "@shared/schema";
-import { eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { classifyExpenseState } from "./calculations/stateClassifier";
 import { computeExpenseLineHash, computeInflowLineHash } from "./calculations/hashing";
 import { forecastExpensePaymentDate, forecastInflowReceiptDate } from "./calculations/forecaster";
@@ -12,7 +12,7 @@ async function getProjectMap(): Promise<Map<string, ProjectInfo>> {
 }
 
 export async function backfillExpenseComputedFields(): Promise<{ updated: number }> {
-  const costLines = await db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
+  const costLines = await db.select().from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)));
   const projectMap = await getProjectMap();
 
   let updated = 0;

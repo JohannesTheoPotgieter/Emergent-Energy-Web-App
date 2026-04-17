@@ -317,7 +317,7 @@ export function registerReportRoutes(app: Express) {
       const dateTo = (req.query.dateTo as string | undefined) || null;
 
       const [costRows, planRows, qualityRows] = await Promise.all([
-        db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
+        db.select().from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
         db.select().from(workItems).where(and(eq(workItems.workstream, "PM"), sql`${workItems.deletedAt} IS NULL`)),
         db.select().from(projectInfo),
       ]);
@@ -615,7 +615,7 @@ export function registerReportRoutes(app: Express) {
       const projectFilter = req.query.projectName as string | undefined;
       const categoryFilter = req.query.costCategory as string | undefined;
 
-      let costLines = await db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
+      let costLines = await db.select().from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)));
 
       if (projectFilter) {
         costLines = costLines.filter((c: any) => c.projectName?.toLowerCase().includes(projectFilter.toLowerCase()));

@@ -129,8 +129,8 @@ export async function generatePmReportData(month: string) {
     lastImportRows,
   ] = await Promise.all([
     db.select().from(projectInfo).leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id)),
-    db.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
-    db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
+    db.select().from(normalizedRevenueLines).where(and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt))),
+    db.select().from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
     db.select().from(dashboardProjectMetrics),
     db.select().from(dashboardProgramMetrics).limit(1),
     db.select().from(workItems).where(isNull(workItems.deletedAt)),

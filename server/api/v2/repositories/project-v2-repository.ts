@@ -210,9 +210,9 @@ export async function createInvoice(projectId: number, payload: any, userId: num
 
 export async function getProjectFinanceSummary(projectId: number) {
   const [cos, revenue, budgetAgg, costedSummary] = await Promise.all([
-    db.select({ planned: sql<number>`coalesce(sum(cast(${normalizedCostLines.amountExVat} as numeric)),0)`, actual: sql<number>`coalesce(sum(case when ${normalizedCostLines.status} in ('APPROVED','PAID') then cast(${normalizedCostLines.amountExVat} as numeric) else 0 end),0)` }).from(normalizedCostLines).where(and(eq(normalizedCostLines.projectId, projectId), isNull(normalizedCostLines.effectiveTo))),
-    db.select({ planned: sql<number>`coalesce(sum(cast(${normalizedRevenueLines.amountExVat} as numeric)),0)`, actual: sql<number>`coalesce(sum(case when ${normalizedRevenueLines.status} in ('INVOICED','PAID','IN_BANK','REALISED') then cast(${normalizedRevenueLines.amountExVat} as numeric) else 0 end),0)` }).from(normalizedRevenueLines).where(and(eq(normalizedRevenueLines.projectId, projectId), isNull(normalizedRevenueLines.effectiveTo))),
-    db.select({ budgetTotal: sql<number>`coalesce(sum(cast(${normalizedCostLines.budgetTotal} as numeric)),0)` }).from(normalizedCostLines).where(and(eq(normalizedCostLines.projectId, projectId), isNull(normalizedCostLines.effectiveTo))),
+    db.select({ planned: sql<number>`coalesce(sum(cast(${normalizedCostLines.amountExVat} as numeric)),0)`, actual: sql<number>`coalesce(sum(case when ${normalizedCostLines.status} in ('APPROVED','PAID') then cast(${normalizedCostLines.amountExVat} as numeric) else 0 end),0)` }).from(normalizedCostLines).where(and(eq(normalizedCostLines.projectId, projectId), and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)))),
+    db.select({ planned: sql<number>`coalesce(sum(cast(${normalizedRevenueLines.amountExVat} as numeric)),0)`, actual: sql<number>`coalesce(sum(case when ${normalizedRevenueLines.status} in ('INVOICED','PAID','IN_BANK','REALISED') then cast(${normalizedRevenueLines.amountExVat} as numeric) else 0 end),0)` }).from(normalizedRevenueLines).where(and(eq(normalizedRevenueLines.projectId, projectId), and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt)))),
+    db.select({ budgetTotal: sql<number>`coalesce(sum(cast(${normalizedCostLines.budgetTotal} as numeric)),0)` }).from(normalizedCostLines).where(and(eq(normalizedCostLines.projectId, projectId), and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)))),
     db.select().from(projectRevenueSummary).where(and(eq(projectRevenueSummary.projectId, projectId), isNull(projectRevenueSummary.effectiveTo))).limit(1),
   ]);
   return {
@@ -226,14 +226,14 @@ export async function getProjectFinanceSummary(projectId: number) {
 export async function getFinanceCashflow(projectId: number) {
   return db.select({ status: normalizedCostLines.status, projected: sql<number>`coalesce(sum(cast(${normalizedCostLines.amountExVat} as numeric)),0)`, actual: sql<number>`coalesce(sum(case when ${normalizedCostLines.status} in ('APPROVED','PAID') then cast(${normalizedCostLines.amountExVat} as numeric) else 0 end),0)` })
     .from(normalizedCostLines)
-    .where(and(eq(normalizedCostLines.projectId, projectId), isNull(normalizedCostLines.effectiveTo)))
+    .where(and(eq(normalizedCostLines.projectId, projectId), and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))))
     .groupBy(normalizedCostLines.status);
 }
 
 export async function getFinanceRevenueLines(projectId: number) {
   return db.select({ id: normalizedRevenueLines.id, status: normalizedRevenueLines.status, amountExVat: normalizedRevenueLines.amountExVat, invoiceDate: normalizedRevenueLines.invoiceDate, paidDate: normalizedRevenueLines.paidDate, expectedPaymentDate: normalizedRevenueLines.expectedPaymentDate })
     .from(normalizedRevenueLines)
-    .where(and(eq(normalizedRevenueLines.projectId, projectId), isNull(normalizedRevenueLines.effectiveTo)))
+    .where(and(eq(normalizedRevenueLines.projectId, projectId), and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt))))
     .orderBy(desc(normalizedRevenueLines.id))
     .limit(100);
 }
@@ -241,7 +241,7 @@ export async function getFinanceRevenueLines(projectId: number) {
 export async function getFinanceCostLines(projectId: number) {
   return db.select({ id: normalizedCostLines.id, status: normalizedCostLines.status, amountExVat: normalizedCostLines.amountExVat, invoiceDate: normalizedCostLines.invoiceDate, paidDate: normalizedCostLines.paidDate, poNumber: normalizedCostLines.poNumber })
     .from(normalizedCostLines)
-    .where(and(eq(normalizedCostLines.projectId, projectId), isNull(normalizedCostLines.effectiveTo)))
+    .where(and(eq(normalizedCostLines.projectId, projectId), and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))))
     .orderBy(desc(normalizedCostLines.id))
     .limit(100);
 }

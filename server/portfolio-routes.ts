@@ -403,8 +403,8 @@ export function registerPortfolioRoutes(app: Express) {
       const projectNames = projects.map((p: any) => p.projectName);
 
       const { adaptCostToExpense, adaptRevenueToInflow } = await import("./lib/data-merge");
-      const rawCosts = await db.select().from(normalizedCostLines).where(and(inArray(normalizedCostLines.projectName, projectNames), isNull(normalizedCostLines.effectiveTo)));
-      const rawRev = await db.select().from(normalizedRevenueLines).where(and(inArray(normalizedRevenueLines.projectName, projectNames), isNull(normalizedRevenueLines.effectiveTo)));
+      const rawCosts = await db.select().from(normalizedCostLines).where(and(inArray(normalizedCostLines.projectName, projectNames), and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))));
+      const rawRev = await db.select().from(normalizedRevenueLines).where(and(inArray(normalizedRevenueLines.projectName, projectNames), and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt))));
       const rawExpenses = rawCosts.map((c: any) => adaptCostToExpense(c, c.projectName));
       const rawInflows = rawRev.map((r: any) => adaptRevenueToInflow(r, r.projectName));
       const allWorkItems = await getAllPMWorkItemsAsProjectPlan();
@@ -656,8 +656,8 @@ export function registerPortfolioRoutes(app: Express) {
 
       const { adaptCostToExpense, adaptRevenueToInflow, createNameResolver } = await import("./lib/data-merge");
       const [allCosts, allRev, piNames] = await Promise.all([
-        db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
-        db.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
+        db.select().from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
+        db.select().from(normalizedRevenueLines).where(and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt))),
         db.select({ projectName: projectInfo.projectName }).from(projectInfo),
       ]);
       const resolve = createNameResolver(piNames.map((p: any) => p.projectName));

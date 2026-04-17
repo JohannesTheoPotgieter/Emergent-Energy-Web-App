@@ -64,8 +64,8 @@ export async function getCanonicalFinanceByProjectIds(projectIds: number[]): Pro
 
   if (getDbMode() === "sqlite") {
     const [revenueRows, costRows] = await Promise.all([
-      db.select().from(normalizedRevenueLines).where(and(inArray(normalizedRevenueLines.projectId, projectIds), isNull(normalizedRevenueLines.effectiveTo))),
-      db.select().from(normalizedCostLines).where(and(inArray(normalizedCostLines.projectId, projectIds), isNull(normalizedCostLines.effectiveTo))),
+      db.select().from(normalizedRevenueLines).where(and(inArray(normalizedRevenueLines.projectId, projectIds), and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt)))),
+      db.select().from(normalizedCostLines).where(and(inArray(normalizedCostLines.projectId, projectIds), and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)))),
     ]);
 
     for (const row of revenueRows) {
@@ -129,7 +129,7 @@ export async function getCanonicalFinanceByProjectIds(projectIds: number[]): Pro
   const rawCostRows = await db
     .select()
     .from(normalizedCostLines)
-    .where(and(inArray(normalizedCostLines.projectId, projectIds), isNull(normalizedCostLines.effectiveTo)));
+    .where(and(inArray(normalizedCostLines.projectId, projectIds), and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))));
   const assignedByCostLineId = await getAssignedEvidenceByCostLineIds(
     (rawCostRows as any[]).map((r: any) => r.id),
   );

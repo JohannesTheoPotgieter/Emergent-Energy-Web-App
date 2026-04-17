@@ -801,7 +801,7 @@ router.get("/api/smart-import/:runId/diff", requireAuth, async (req: Request, re
       const existingRevenue = projectId
         ? await db.select({ milestoneName: normalizedRevenueLines.milestoneName, amountExVat: normalizedRevenueLines.amountExVat, invoiceNumber: normalizedRevenueLines.invoiceNumber })
             .from(normalizedRevenueLines)
-            .where(and(eq(normalizedRevenueLines.projectId, projectId), isNull(normalizedRevenueLines.effectiveTo)))
+            .where(and(eq(normalizedRevenueLines.projectId, projectId), and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt))))
         : [];
       const existingMap = new Map<string, typeof existingRevenue[number]>(existingRevenue.map((r: any) => [`${r.milestoneName}::${r.amountExVat || ""}`, r]));
       let added = 0, modified = 0, unchanged = 0;
@@ -835,7 +835,7 @@ router.get("/api/smart-import/:runId/diff", requireAuth, async (req: Request, re
       const existingCost = projectId
         ? await db.select({ description: normalizedCostLines.description, amountExVat: normalizedCostLines.amountExVat, invoiceNumber: normalizedCostLines.invoiceNumber })
             .from(normalizedCostLines)
-            .where(and(eq(normalizedCostLines.projectId, projectId), isNull(normalizedCostLines.effectiveTo)))
+            .where(and(eq(normalizedCostLines.projectId, projectId), and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))))
         : [];
       const existingMap = new Map(existingCost.map((c: any) => [`${c.description}::${c.amountExVat || ""}::${c.invoiceNumber || ""}`, c]));
       let added = 0, modified = 0, unchanged = 0;
@@ -1495,7 +1495,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
 
     if (!acknowledgeManualEdits && !preserveManualEdits && !hasConflictResolutions && run.projectId) {
       const existingCostLines = await db.select().from(normalizedCostLines)
-        .where(and(eq(normalizedCostLines.projectId, run.projectId), isNull(normalizedCostLines.effectiveTo)));
+        .where(and(eq(normalizedCostLines.projectId, run.projectId), and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))));
 
       const manuallyModifiedRows = existingCostLines.filter((row: any) =>
         row.cosRealised === true ||
@@ -1635,7 +1635,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
 
         // Also check for revenue admin date overrides
         const existingRevLines = await db.select().from(normalizedRevenueLines)
-          .where(and(eq(normalizedRevenueLines.projectId, run.projectId), isNull(normalizedRevenueLines.effectiveTo)));
+          .where(and(eq(normalizedRevenueLines.projectId, run.projectId), and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt))));
 
         const revWithOverrides = existingRevLines.filter((row: any) => !!row.adminDateOverride);
         if (revWithOverrides.length > 0) {
@@ -2050,7 +2050,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
             .from(normalizedCostLines)
             .where(and(
               eq(normalizedCostLines.projectId, projectId),
-              isNull(normalizedCostLines.effectiveTo),
+              and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)),
             ));
 
           // Update each row that needs category_key or category_allocation_id
@@ -2161,7 +2161,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
             const activeNclIds = new Set<number>();
             const activeNclForLinks = await tx.select({ id: normalizedCostLines.id })
               .from(normalizedCostLines)
-              .where(and(eq(normalizedCostLines.projectId, projectId), isNull(normalizedCostLines.effectiveTo)));
+              .where(and(eq(normalizedCostLines.projectId, projectId), and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))));
             for (const r of activeNclForLinks) activeNclIds.add(r.id);
 
             // Fetch links for this project that have canonical_expense_id set
@@ -2594,8 +2594,8 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           // Preserve admin date overrides on re-imported revenue lines
           if (revenueAdminOverrides.size > 0) {
             const insertedRevRows = projectId
-              ? await tx.select({ id: normalizedRevenueLines.id, sourceRow: normalizedRevenueLines.sourceRow }).from(normalizedRevenueLines).where(and(eq(normalizedRevenueLines.projectId, projectId), isNull(normalizedRevenueLines.effectiveTo)))
-              : await tx.select({ id: normalizedRevenueLines.id, sourceRow: normalizedRevenueLines.sourceRow }).from(normalizedRevenueLines).where(and(eq(normalizedRevenueLines.projectName, projectName), isNull(normalizedRevenueLines.effectiveTo)));
+              ? await tx.select({ id: normalizedRevenueLines.id, sourceRow: normalizedRevenueLines.sourceRow }).from(normalizedRevenueLines).where(and(eq(normalizedRevenueLines.projectId, projectId), and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt))))
+              : await tx.select({ id: normalizedRevenueLines.id, sourceRow: normalizedRevenueLines.sourceRow }).from(normalizedRevenueLines).where(and(eq(normalizedRevenueLines.projectName, projectName), and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt))));
 
             for (const inserted of insertedRevRows) {
               if (inserted.sourceRow == null) continue;
@@ -2741,8 +2741,8 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
 
           if (manualEditsToPreserve.size > 0) {
             const insertedRows = projectId
-              ? await tx.select({ id: normalizedCostLines.id, sourceRow: normalizedCostLines.sourceRow }).from(normalizedCostLines).where(and(eq(normalizedCostLines.projectId, projectId), isNull(normalizedCostLines.effectiveTo)))
-              : await tx.select({ id: normalizedCostLines.id, sourceRow: normalizedCostLines.sourceRow }).from(normalizedCostLines).where(and(eq(normalizedCostLines.projectName, projectName), isNull(normalizedCostLines.effectiveTo)));
+              ? await tx.select({ id: normalizedCostLines.id, sourceRow: normalizedCostLines.sourceRow }).from(normalizedCostLines).where(and(eq(normalizedCostLines.projectId, projectId), and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))))
+              : await tx.select({ id: normalizedCostLines.id, sourceRow: normalizedCostLines.sourceRow }).from(normalizedCostLines).where(and(eq(normalizedCostLines.projectName, projectName), and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))));
 
             for (const inserted of insertedRows) {
               if (inserted.sourceRow == null) continue;
@@ -3312,7 +3312,7 @@ router.get("/api/smart-import/normalized/:projectName/revenue", requireAuth, asy
     const records = await db
       .select()
       .from(normalizedRevenueLines)
-      .where(and(eq(normalizedRevenueLines.importRunId, latestRun.id), isNull(normalizedRevenueLines.effectiveTo)));
+      .where(and(eq(normalizedRevenueLines.importRunId, latestRun.id), and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt))));
 
     res.json(records);
   } catch (err: unknown) {
@@ -3337,7 +3337,7 @@ router.get("/api/smart-import/normalized/:projectName/expenditure", requireAuth,
     const records = await db
       .select()
       .from(normalizedCostLines)
-      .where(and(eq(normalizedCostLines.importRunId, latestRun.id), isNull(normalizedCostLines.effectiveTo)));
+      .where(and(eq(normalizedCostLines.importRunId, latestRun.id), and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))));
 
     res.json(records);
   } catch (err: unknown) {

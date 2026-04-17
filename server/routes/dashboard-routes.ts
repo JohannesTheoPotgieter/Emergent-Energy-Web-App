@@ -147,8 +147,8 @@ export function registerDashboardRoutes(app: Express) {
 
       const [allProjectInfo, revenueRows, costRows, importRuns, engRows, approvalsRows, canonicalPlanTasks, qualityResult, usersResult, cashflowPointRows, financeRevenueRows, financeCosRows, revOverrides, cosOverrides] = await Promise.all([
         storage.getAllProjectInfo(),
-        db.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
-        db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
+        db.select().from(normalizedRevenueLines).where(and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt))),
+        db.select().from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
         db.select().from(smartImportRuns).where(eq(smartImportRuns.status, 'committed')),
         // Read ENG work_items
         db.select().from(workItems).where(and(eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt))),

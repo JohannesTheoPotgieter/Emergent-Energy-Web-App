@@ -63,7 +63,7 @@ export function registerDeliverableCaptureRoutes(app: Express) {
           poNumber: normalizedCostLines.poNumber,
         })
           .from(normalizedCostLines)
-          .where(and(eq(normalizedCostLines.projectId, projectId), isNull(normalizedCostLines.effectiveTo)))
+          .where(and(eq(normalizedCostLines.projectId, projectId), and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))))
           .orderBy(asc(normalizedCostLines.id))
           .limit(500),
         db.select({
@@ -75,7 +75,7 @@ export function registerDeliverableCaptureRoutes(app: Express) {
           status: normalizedRevenueLines.status,
         })
           .from(normalizedRevenueLines)
-          .where(and(eq(normalizedRevenueLines.projectId, projectId), isNull(normalizedRevenueLines.effectiveTo)))
+          .where(and(eq(normalizedRevenueLines.projectId, projectId), and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt))))
           .orderBy(asc(normalizedRevenueLines.id))
           .limit(500),
       ]);

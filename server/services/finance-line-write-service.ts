@@ -202,7 +202,7 @@ export async function renameCostLineCounterparty(
   txOrDb: DbOrTx = db,
 ): Promise<void> {
   await (txOrDb as any).execute(
-    sql`UPDATE normalized_cost_lines SET counterparty_name = ${newName} WHERE counterparty_name = ${oldName} AND effective_to IS NULL`,
+    sql`UPDATE normalized_cost_lines SET counterparty_name = ${newName} WHERE counterparty_name = ${oldName} AND effective_to IS NULL AND deleted_at IS NULL`,
   );
   syncCostLineCounterpartyBulk(oldName, newName).catch(bridgeCatch);
 }

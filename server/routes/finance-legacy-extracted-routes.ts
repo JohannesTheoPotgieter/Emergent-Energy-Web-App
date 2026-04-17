@@ -242,8 +242,8 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
       );
 
       const [allNormCosts, allNormRev] = await Promise.all([
-        db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
-        db.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
+        db.select().from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
+        db.select().from(normalizedRevenueLines).where(and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt))),
       ]);
 
       let totalRevenue = 0;

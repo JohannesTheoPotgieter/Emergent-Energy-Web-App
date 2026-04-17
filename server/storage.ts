@@ -547,7 +547,7 @@ export class DatabaseStorage implements IStorage {
 
   // Expenses (legacy)
   async getAllExpenses(): Promise<Expense[]> {
-    const lines = await this.dbInstance.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)).orderBy(desc(normalizedCostLines.id));
+    const lines = await this.dbInstance.select().from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))).orderBy(desc(normalizedCostLines.id));
     const projectMap = new Map((await this.dbInstance.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo)).map((p: any) => [p.projectName, p.id]));
     return lines.map((line: any) => this.mapCostLineToLegacyExpense(line, projectMap.get(line.projectName) ?? line.projectId ?? 0));
   }
@@ -555,7 +555,7 @@ export class DatabaseStorage implements IStorage {
   async getExpensesByProject(projectId: number): Promise<Expense[]> {
     const [project] = await this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, projectId));
     if (!project?.projectName) return [];
-    const lines = await this.dbInstance.select().from(normalizedCostLines).where(and(eq(normalizedCostLines.projectName, project.projectName), isNull(normalizedCostLines.effectiveTo))).orderBy(desc(normalizedCostLines.id));
+    const lines = await this.dbInstance.select().from(normalizedCostLines).where(and(eq(normalizedCostLines.projectName, project.projectName), and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)))).orderBy(desc(normalizedCostLines.id));
     return lines.map((line: any) => this.mapCostLineToLegacyExpense(line, projectId));
   }
 
@@ -597,7 +597,7 @@ export class DatabaseStorage implements IStorage {
 
   // Revenues (legacy)
   async getAllRevenues(): Promise<Revenue[]> {
-    const lines = await this.dbInstance.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)).orderBy(desc(normalizedRevenueLines.id));
+    const lines = await this.dbInstance.select().from(normalizedRevenueLines).where(and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt))).orderBy(desc(normalizedRevenueLines.id));
     const projectMap = new Map((await this.dbInstance.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo)).map((p: any) => [p.projectName, p.id]));
     return lines.map((line: any) => this.mapRevenueLineToLegacyRevenue(line, projectMap.get(line.projectName) ?? line.projectId ?? 0));
   }
@@ -605,7 +605,7 @@ export class DatabaseStorage implements IStorage {
   async getRevenuesByProject(projectId: number): Promise<Revenue[]> {
     const [project] = await this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, projectId));
     if (!project?.projectName) return [];
-    const lines = await this.dbInstance.select().from(normalizedRevenueLines).where(and(eq(normalizedRevenueLines.projectName, project.projectName), isNull(normalizedRevenueLines.effectiveTo))).orderBy(desc(normalizedRevenueLines.id));
+    const lines = await this.dbInstance.select().from(normalizedRevenueLines).where(and(eq(normalizedRevenueLines.projectName, project.projectName), and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt)))).orderBy(desc(normalizedRevenueLines.id));
     return lines.map((line: any) => this.mapRevenueLineToLegacyRevenue(line, projectId));
   }
 

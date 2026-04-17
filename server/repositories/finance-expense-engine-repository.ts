@@ -87,7 +87,7 @@ export class FinanceExpenseEngineRepository {
   async fetchAllProgramExpenses(): Promise<any[]> {
     const { adaptCostToExpense, createNameResolver } = await import("../lib/data-merge");
     const [costLines, piRows] = await Promise.all([
-      this.dbInstance.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
+      this.dbInstance.select().from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
       this.dbInstance.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo),
     ]);
     const resolve = createNameResolver(piRows.map((r: any) => r.projectName));
@@ -113,7 +113,7 @@ export class FinanceExpenseEngineRepository {
   async getAllCostLinesForCashflow(): Promise<any[]> {
     const { adaptCostToExpense, createNameResolver } = await import("../lib/data-merge");
     const [costLines, piRows] = await Promise.all([
-      this.dbInstance.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
+      this.dbInstance.select().from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
       this.dbInstance.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo),
     ]);
     const resolve = createNameResolver(piRows.map((r: any) => r.projectName));
@@ -141,7 +141,7 @@ export class FinanceExpenseEngineRepository {
     const projectIds = projectMatches.map((p: { id: number }) => p.id);
 
     const allActive = await this.dbInstance.select().from(normalizedCostLines)
-      .where(isNull(normalizedCostLines.effectiveTo));
+      .where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)));
 
     const costLines = (allActive as any[]).filter((c: any) => {
       if (typeof c.projectName === "string" && c.projectName.length > 0 && c.projectName === projectName) {
