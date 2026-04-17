@@ -1270,6 +1270,125 @@ export function registerLifecycleRoutes(app: Express) {
     }
   });
 
+  // ===================== COS DIAGNOSTIC =====================
+  app.get("/api/lifecycle-board/cos-diagnostic", requireAuth, async (_req: Request, res: Response) => {
+    try {
+      const fy = getCurrentFinancialYearBounds();
+      const today = new Date().toISOString().slice(0, 10);
+
+      const allCurrentCostLines = await db.select({
+        id: normalizedCostLines.id,
+        projectId: normalizedCostLines.projectId,
+        projectName: normalizedCostLines.projectName,
+        amountExVat: normalizedCostLines.amountExVat,
+        sourceRow: normalizedCostLines.sourceRow,
+        sourceSheet: normalizedCostLines.sourceSheet,
+        importRunId: normalizedCostLines.importRunId,
+        costCategory: normalizedCostLines.costCategory,
+        description: normalizedCostLines.description,
+        approvedDate: normalizedCostLines.approvedDate,
+        invoiceDate: normalizedCostLines.invoiceDate,
+        paidDate: normalizedCostLines.paidDate,
+        subProjectName: normalizedCostLines.subProjectName,
+      }).from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
+
+      const byProject = new Map<number, { projectName: string; totalAmountFy: number; lineCount: number; lines: any[] }>();
+      let grandTotal = 0;
+      let grandTotalAllDates = 0;
+      let linesInFy = 0;
+      let linesOutsideFy = 0;
+      let linesNoDate = 0;
+
+      for (const row of allCurrentCostLines) {
+        const amount = parseFloat(row.amountExVat || "0") || 0;
+        grandTotalAllDates += amount;
+        const dateKey = pickFirstPopulatedDate(row as any, ["approvedDate", "invoiceDate", "paidDate"]);
+        const inFy = isDateInRange(dateKey, fy.start, fy.end);
+        if (!dateKey) { linesNoDate++; continue; }
+        if (!inFy) { linesOutsideFy++; continue; }
+        linesInFy++;
+        grandTotal += amount;
+
+        if (!byProject.has(row.projectId)) {
+          byProject.set(row.projectId, { projectName: row.projectName, totalAmountFy: 0, lineCount: 0, lines: [] });
+        }
+        const entry = byProject.get(row.projectId)!;
+        entry.totalAmountFy += amount;
+        entry.lineCount++;
+        entry.lines.push({
+          id: row.id,
+          sourceRow: row.sourceRow,
+          sourceSheet: row.sourceSheet,
+          importRunId: row.importRunId,
+          amount,
+          costCategory: row.costCategory,
+          description: (row.description || "").slice(0, 60),
+          dateUsed: dateKey,
+          subProjectName: row.subProjectName,
+        });
+      }
+
+      // Check for duplicate sourceRow within same project+importRun
+      const duplicatesByProject: any[] = [];
+      for (const [pid, data] of byProject) {
+        const sourceRowCounts = new Map<string, number>();
+        for (const line of data.lines) {
+          const key = `${line.sourceRow}::${line.importRunId}`;
+          sourceRowCounts.set(key, (sourceRowCounts.get(key) || 0) + 1);
+        }
+        const dupes = Array.from(sourceRowCounts.entries())
+          .filter(([, count]) => count > 1)
+          .map(([key, count]) => ({ key, count }));
+        if (dupes.length > 0) {
+          duplicatesByProject.push({ projectId: pid, projectName: data.projectName, duplicates: dupes });
+        }
+      }
+
+      // Check for multiple importRunIds per project (potential stale data)
+      const importRunsByProject: any[] = [];
+      for (const [pid, data] of byProject) {
+        const runIds = new Set(data.lines.map((l: any) => l.importRunId));
+        if (runIds.size > 1) {
+          importRunsByProject.push({ projectId: pid, projectName: data.projectName, importRunIds: Array.from(runIds), lineCount: data.lineCount });
+        }
+      }
+
+      // Sort projects by COS descending
+      const projectBreakdown = Array.from(byProject.entries())
+        .map(([pid, data]) => ({
+          projectId: pid,
+          projectName: data.projectName,
+          totalAmountFy: Math.round(data.totalAmountFy),
+          lineCount: data.lineCount,
+          importRunIds: [...new Set(data.lines.map((l: any) => l.importRunId))],
+          sourceSheets: [...new Set(data.lines.map((l: any) => l.sourceSheet).filter(Boolean))],
+          topLines: data.lines.sort((a: any, b: any) => b.amount - a.amount).slice(0, 5),
+        }))
+        .sort((a, b) => b.totalAmountFy - a.totalAmountFy);
+
+      res.json({
+        financialYear: fy,
+        summary: {
+          totalCurrentCostLines: allCurrentCostLines.length,
+          linesInFy,
+          linesOutsideFy,
+          linesNoDate,
+          grandTotalFy: Math.round(grandTotal),
+          grandTotalAllDates: Math.round(grandTotalAllDates),
+          projectCount: byProject.size,
+        },
+        dataQuality: {
+          duplicateSourceRows: duplicatesByProject,
+          multipleImportRunsPerProject: importRunsByProject,
+        },
+        projectBreakdown,
+      });
+    } catch (err: any) {
+      console.error("[lifecycle-board] GET cos-diagnostic error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // ===================== OVERDUE PAYMENTS DRILL-DOWN =====================
   app.get("/api/lifecycle-board/overdue-payments", requireAuth, async (req: Request, res: Response) => {
     try {
