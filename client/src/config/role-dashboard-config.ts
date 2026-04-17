@@ -36,7 +36,6 @@ const COO_CEO_CONFIG: RoleDashboardConfig = {
   quickActions: [
     { label: "Execution Board", path: "/execution-board", iconKey: "LayoutDashboard" },
     { label: "Exceptions", path: "/exceptions", iconKey: "AlertTriangle" },
-    { label: "GP Tracker", path: "/gp-tracker", iconKey: "Activity" },
     { label: "Gate Pipeline", path: "/gates", iconKey: "Milestone" },
     { label: "Reports", path: "/reports", iconKey: "FileText" },
     { label: "Control Center", path: "/admin/control-center", iconKey: "Gauge" },
@@ -132,7 +131,6 @@ const FINANCE_CONFIG: RoleDashboardConfig = {
     { label: "Cashflow", path: "/cashflow", iconKey: "Wallet" },
     { label: "Revenue Tracker", path: "/revenue-tracker", iconKey: "TrendingUp" },
     { label: "Costs (COS)", path: "/cos", iconKey: "TrendingUp" },
-    { label: "GP Tracker", path: "/gp-tracker", iconKey: "Activity" },
     { label: "Payment Requests", path: "/payment-request-board", iconKey: "DollarSign" },
     { label: "Projects", path: "/projects", iconKey: "FileSpreadsheet" },
   ],

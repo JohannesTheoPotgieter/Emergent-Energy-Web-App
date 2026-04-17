@@ -8,6 +8,9 @@ import {
   getMergedExpensesAndInflows,
   resolveInflowEffectiveDates,
 } from "../lib/cashflow-helpers";
+import { db } from "../db";
+import { quickbooksInvoiceLinks, quickbooksDocuments } from "@shared/schema";
+import { and, eq, isNull } from "drizzle-orm";
 
 const requireAuth = sharedRequireAuth;
 
@@ -164,15 +167,35 @@ export function registerCashflow2026Routes(app: Express) {
       wsDate.setUTCDate(wsDate.getUTCDate() + 7);
       const weekEnd = wsDate.toISOString().split('T')[0];
 
-      const [legacyExp, legacyInf, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
+      const [legacyExp, legacyInf, allTaskLinks, allOpTasks, allPlanTasks, qbLinks] = await Promise.all([
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
         storage.getAllProjectPlans(),
+        db
+          .select({
+            id: quickbooksInvoiceLinks.id,
+            appEntityType: quickbooksInvoiceLinks.appEntityType,
+            appEntityId: quickbooksInvoiceLinks.appEntityId,
+            qbEntityType: quickbooksInvoiceLinks.qbEntityType,
+            qbEntityId: quickbooksInvoiceLinks.qbEntityId,
+            qbDocNumber: quickbooksInvoiceLinks.qbDocNumber,
+            qbAmount: quickbooksInvoiceLinks.qbAmount,
+          })
+          .from(quickbooksInvoiceLinks)
+          .where(isNull(quickbooksInvoiceLinks.deletedAt)),
       ]);
       const mergedDetail = await getMergedExpensesAndInflows(legacyExp, legacyInf);
       const resolvedInflows = resolveInflowEffectiveDates(mergedDetail.inflows, allTaskLinks, allOpTasks, allPlanTasks);
+
+      // Build lookup maps: QB links by app entity id for fast join on row render.
+      const qbByCostLine = new Map<number, typeof qbLinks[number]>();
+      const qbByRevenueLine = new Map<number, typeof qbLinks[number]>();
+      for (const l of qbLinks) {
+        if (l.appEntityType === "cost_line") qbByCostLine.set(l.appEntityId, l);
+        else if (l.appEntityType === "revenue_line") qbByRevenueLine.set(l.appEntityId, l);
+      }
 
       const outflows = mergedDetail.expenses
         .filter((e: any) => {
@@ -195,6 +218,15 @@ export function registerCashflow2026Routes(app: Express) {
           } else {
             paymentStatus = 'Planned';
           }
+          // QB paid status — if this app cost line is linked to a QB bill,
+          // surface the QB doc number + amount so the cashflow row shows
+          // "QB Confirmed" with the reference. Otherwise mark as unlinked.
+          const costLineId = Number(e.costLineId ?? e.normalizedCostLineId ?? e.id);
+          const qbLink = Number.isFinite(costLineId) ? qbByCostLine.get(costLineId) : undefined;
+          const qbStatus = qbLink ? "confirmed" : "unlinked";
+          const qbDocNumber = qbLink?.qbDocNumber ?? null;
+          const qbAmount = qbLink?.qbAmount != null ? parseFloat(qbLink.qbAmount as any) : null;
+
           return {
             projectName: e.projectName,
             expenseCategory: e.expenseCategory,
@@ -203,6 +235,9 @@ export function registerCashflow2026Routes(app: Express) {
             expensePaymentDate: e.expensePaymentDate,
             expenseActualTotal: parseFloat(e.quotedTotal || e.expenseActualTotal || '0') || 0,
             paymentStatus,
+            qbStatus,
+            qbDocNumber,
+            qbAmount,
           };
         });
 
@@ -222,6 +257,15 @@ export function registerCashflow2026Routes(app: Express) {
             const pay = new Date(inf.paymentReceivedDate);
             daysToReceipt = Math.round((pay.getTime() - inv.getTime()) / (1000 * 60 * 60 * 24));
           }
+          // QB paid status — if this app revenue line is linked to a QB
+          // invoice, surface the QB doc number + amount so the cashflow row
+          // shows "QB Confirmed" with the reference. Otherwise mark as unlinked.
+          const revenueLineId = Number(inf.revenueLineId ?? inf.normalizedRevenueLineId ?? inf.id);
+          const qbLink = Number.isFinite(revenueLineId) ? qbByRevenueLine.get(revenueLineId) : undefined;
+          const qbStatus = qbLink ? "confirmed" : "unlinked";
+          const qbDocNumber = qbLink?.qbDocNumber ?? null;
+          const qbAmount = qbLink?.qbAmount != null ? parseFloat(qbLink.qbAmount as any) : null;
+
           return {
             projectName: inf.projectName,
             milestoneName: inf.milestoneName,
@@ -231,6 +275,9 @@ export function registerCashflow2026Routes(app: Express) {
             invoiceRaisedDate: inf.invoiceRaisedDate,
             daysToReceipt,
             isOverride: inf.effectiveDate !== inf.paymentReceivedDate,
+            qbStatus,
+            qbDocNumber,
+            qbAmount,
           };
         });
 

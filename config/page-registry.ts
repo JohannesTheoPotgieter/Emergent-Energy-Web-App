@@ -27,7 +27,6 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "revenue", path: "/revenue", label: "Revenue", routeComponentKey: "RevenueTracker" },
   { id: "cos", path: "/cos", label: "COS Tracker", iconKey: "TrendingUp", navGroup: "FINANCE", permissionEntity: "cos", showInSidebar: true, routeComponentKey: "CostTracker", labels: { redesigned: "COS Control" } },
   { id: "revenueTracker", path: "/revenue-tracker", label: "Revenue Tracker", iconKey: "TrendingUp", navGroup: "FINANCE", permissionEntity: "revenue_tracker", showInSidebar: true, routeComponentKey: "RevenueTrackerPage", labels: { redesigned: "Revenue Control" } },
-  { id: "gpTracker", path: "/gp-tracker", label: "GP Tracker", iconKey: "Activity", navGroup: "FINANCE", permissionEntity: "gp_tracker", showInSidebar: true, routeComponentKey: "GpTrackerPage", labels: { redesigned: "Gross Profit Control" } },
   { id: "companyPriorities", path: "/company-priorities", label: "Company Priorities", iconKey: "Flag", navGroup: "PRIORITIES", permissionEntity: "company_priorities", showInSidebar: true, routeComponentKey: "MyToolPrioritiesPage" },
   { id: "admin", path: "/admin", label: "Admin Control Center", permissionEntity: "admin", redirectTo: "/admin/control-center" },
   { id: "adminMyTool", path: "/admin/my-tool-settings", label: "Admin My Work Settings", permissionEntity: "admin", routeComponentKey: "MyToolAdminSettingsPage" },
@@ -88,7 +87,6 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "pdPmHandover", path: "/pd/handover/:projectId", label: "PD to PM Handover", routeComponentKey: "PdPmHandoverPage" },
   { id: "pmHandoverReview", path: "/pm/handover-review", label: "PM Handover Review", routeComponentKey: "PmHandoverReviewPage" },
   { id: "handoverControl", path: "/handover-control", label: "Handover Control", iconKey: "Handshake", navGroup: "PROJECTS", permissionEntity: "projects", showInSidebar: true, routeComponentKey: "HandoverControlPage" },
-  { id: "fyeRevenueTracking", path: "/fye-revenue-tracking", label: "FYE Revenue Tracking", iconKey: "BarChart3", navGroup: "FINANCE", permissionEntity: "fye_revenue_tracking", showInSidebar: true, routeComponentKey: "FyeRevenueTrackingPage" },
 ];
 
 export const ROLE_LANDING_PAGE: Record<string, string> = PAGE_REGISTRY
