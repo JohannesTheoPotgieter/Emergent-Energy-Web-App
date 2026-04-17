@@ -617,6 +617,9 @@ export const normalizedCostLines = pgTable("normalized_cost_lines", {
   cosStatusOverrideReason: text("cos_status_override_reason"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  // Soft-delete column (column already present in DB; mirroring it here
+  // so Drizzle queries can reference normalizedCostLines.deletedAt).
+  deletedAt: timestamp("deleted_at"),
   // Temporal columns (Prompt 9)
   effectiveFrom: timestamp("effective_from").notNull().defaultNow(),
   effectiveTo: timestamp("effective_to"),
