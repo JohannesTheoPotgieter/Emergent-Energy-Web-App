@@ -1,8 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { buildVisibleTopSections, getBreadcrumbs, parseDisabledSubPages } from "@/config/app-navigation";
+import {
+  buildVisibleTopSections,
+  getBreadcrumbs,
+  parseDisabledSubPages,
+  ROLE_VISIBLE_SECTIONS,
+  SECTION_KEYS,
+  TOP_SECTIONS,
+} from "@/config/app-navigation";
 import { ADMIN_SURFACES } from "@/config/admin-surfaces";
-import { getAppSectionForPath } from "@/config/page-registry";
+import {
+  getAppSectionForPath,
+  LEGACY_REDIRECTS,
+  PAGE_REGISTRY,
+  ROLE_LANDING_PAGE,
+} from "@/config/page-registry";
 import { NAVIGATION_PERMISSION_MODEL } from "@/config/navigation-permissions";
+import { COMPANY_ROLES } from "@shared/schema/users";
 
 describe("app navigation visibility", () => {
   it("keeps Home secondary navigation items matching sidebar config", () => {
@@ -213,6 +226,57 @@ describe("app navigation visibility", () => {
       section.items.map((item) => `${section.key}:${item.path}`),
     );
     expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+describe("role / section completeness", () => {
+  it("every COMPANY_ROLES entry has visible sections configured", () => {
+    for (const role of COMPANY_ROLES) {
+      expect(ROLE_VISIBLE_SECTIONS[role], `missing ROLE_VISIBLE_SECTIONS[${role}]`).toBeDefined();
+      expect(ROLE_VISIBLE_SECTIONS[role].length).toBeGreaterThan(0);
+    }
+  });
+
+  it("every section listed under a role is a real TOP_SECTIONS key", () => {
+    const topKeys = new Set(TOP_SECTIONS.map((s) => s.key));
+    for (const role of COMPANY_ROLES) {
+      for (const key of ROLE_VISIBLE_SECTIONS[role]) {
+        expect(topKeys.has(key), `role ${role} references unknown section ${key}`).toBe(true);
+      }
+    }
+  });
+
+  it("every TOP_SECTIONS key appears in SECTION_KEYS (single source)", () => {
+    const sectionKeySet = new Set<string>(SECTION_KEYS);
+    for (const section of TOP_SECTIONS) {
+      expect(sectionKeySet.has(section.key)).toBe(true);
+    }
+  });
+
+  it("every SectionKey is visible to at least one role (no dead sections)", () => {
+    const seen = new Set<string>();
+    for (const role of COMPANY_ROLES) {
+      for (const key of ROLE_VISIBLE_SECTIONS[role]) seen.add(key);
+    }
+    for (const key of SECTION_KEYS) {
+      expect(seen.has(key), `section ${key} is not visible to any role`).toBe(true);
+    }
+  });
+
+  it("every COMPANY_ROLES value resolves to a concrete landing path", () => {
+    const registryPaths = new Set(PAGE_REGISTRY.map((p) => p.path));
+    const legacyPaths = new Map(LEGACY_REDIRECTS.map((r) => [r.path, r.redirectTo]));
+    const resolveHome = (role: string) => {
+      const landing = ROLE_LANDING_PAGE[role] || "/dashboard";
+      return legacyPaths.get(landing) ?? landing;
+    };
+    for (const role of COMPANY_ROLES) {
+      const resolved = resolveHome(role);
+      expect(
+        registryPaths.has(resolved),
+        `role ${role} resolves to ${resolved} which is not in PAGE_REGISTRY`,
+      ).toBe(true);
+    }
   });
 });
 

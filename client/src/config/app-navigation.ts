@@ -7,12 +7,33 @@
  * Role-based visibility determines which sections each role sees.
  * "Gates" is not a top-level section — it lives inside Portfolio and functional areas.
  * Labels are consistent across the company.
+ *
+ * Note: the section key "PORTFOLIO" is the stable identifier used in DB-stored
+ * permissions and the permission matrix; the user-facing label is "Company".
+ * Do not rename the key without a coordinated migration.
  */
+
+import type { CompanyRole } from "@shared/schema/users";
+
+export const SECTION_KEYS = [
+  "HOME",
+  "PORTFOLIO",
+  "PRIORITIES",
+  "PROJECT_DEVELOPMENT",
+  "PROJECT_DELIVERY",
+  "FINANCE",
+  "ENGINEERING",
+  "HSE",
+  "QUALITY",
+  "REPORTS",
+  "ADMIN",
+] as const;
+export type SectionKey = typeof SECTION_KEYS[number];
 
 export type SecondaryItem = { label: string; path: string; disabled?: boolean };
 export type TopSection = {
   label: string;
-  key: string; // stable key for role-visibility matching
+  key: SectionKey;
   path: string;
   match: (pathname: string) => boolean;
   secondary: SecondaryItem[];
@@ -209,8 +230,11 @@ export const TOP_SECTIONS: TopSection[] = [
  * Role-based section visibility.
  * Keys match TopSection.key values.
  * Each role sees only the sections listed here.
+ *
+ * Typed as `Record<CompanyRole, SectionKey[]>` so that adding a new role to
+ * COMPANY_ROLES (shared/schema/users.ts) or typoing a section key is a TS error.
  */
-export const ROLE_VISIBLE_SECTIONS: Record<string, string[]> = {
+export const ROLE_VISIBLE_SECTIONS: Record<CompanyRole, SectionKey[]> = {
   COO_ADMIN:              ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY", "ENGINEERING", "QUALITY", "HSE", "FINANCE", "REPORTS", "PRIORITIES", "ADMIN"],
   CEO_ADMIN:              ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY", "FINANCE", "REPORTS", "PRIORITIES", "ADMIN"],
   CCO:                    ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "FINANCE", "REPORTS", "PRIORITIES"],
@@ -233,7 +257,7 @@ export const ROLE_VISIBLE_SECTIONS: Record<string, string[]> = {
  * Maps canonical module names (from lens profiles) to TopSection.key values.
  * Used to translate lens profile `allowedModules` into nav section visibility.
  */
-const CANONICAL_MODULE_TO_SECTION_KEYS: Record<string, string[]> = {
+const CANONICAL_MODULE_TO_SECTION_KEYS: Record<string, SectionKey[]> = {
   HOME:        ["HOME"],
   EXECUTIVE:   ["PORTFOLIO"],
   PORTFOLIO:   ["PORTFOLIO"],
@@ -288,7 +312,7 @@ export function buildVisibleTopSections(options: {
   const { canViewPath, companyRole, allowedSectionKeys, disabledSubPages } = options;
 
   const allowedKeys = allowedSectionKeys
-    ?? (companyRole ? ROLE_VISIBLE_SECTIONS[companyRole] : null);
+    ?? (companyRole ? ROLE_VISIBLE_SECTIONS[companyRole as CompanyRole] ?? null : null);
 
   return TOP_SECTIONS
     .map((section) => {
