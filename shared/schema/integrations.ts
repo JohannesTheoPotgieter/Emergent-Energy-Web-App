@@ -374,6 +374,61 @@ export const insertQuickBooksCustomerMappingSchema = createInsertSchema(
 export type InsertQuickBooksCustomerMapping = z.infer<typeof insertQuickBooksCustomerMappingSchema>;
 export type QuickBooksCustomerMapping = typeof quickbooksCustomerMappings.$inferSelect;
 
+/**
+ * QuickBooks Vendor ↔ App Counterparty mapping.
+ *
+ * A QB vendor (e.g. "ABB Electric (Pty) Ltd") maps to exactly one app
+ * counterparty / supplier. The same supplier typically appears on many
+ * projects, so no projectId is stored here — project attribution on a
+ * bill is derived downstream via cost-line linking.
+ *
+ * Mapping a vendor enables automatic classification of QB bills: every
+ * bill for a mapped vendor is attributable to the canonical supplier
+ * record without running the invoice-pattern regex heuristics.
+ */
+export const quickbooksVendorMappings = pgTable(
+  "quickbooks_vendor_mappings",
+  {
+    id: serial("id").primaryKey(),
+    /** QuickBooks vendor id (VendorRef.value). */
+    qbVendorId: text("qb_vendor_id").notNull(),
+    /** Snapshot of the QB vendor display name at mapping time. */
+    qbVendorName: text("qb_vendor_name"),
+    /** QuickBooks realmId this mapping belongs to. */
+    qbRealmId: text("qb_realm_id").notNull(),
+    /** FK to counterparties.id — the canonical supplier record. */
+    counterpartyId: integer("counterparty_id").notNull(),
+    /** Snapshot of the counterparty name at mapping time (audit). */
+    counterpartyName: text("counterparty_name"),
+    notes: text("notes"),
+    createdBy: integer("created_by"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at"),
+  },
+  (table) => ({
+    // One active mapping per (QB vendor, realm).
+    uniqueVendor: uniqueIndex("quickbooks_vendor_mappings_vendor_idx").on(
+      table.qbVendorId,
+      table.qbRealmId,
+    ),
+    counterpartyIdx: index("quickbooks_vendor_mappings_counterparty_idx").on(
+      table.counterpartyId,
+    ),
+  }),
+);
+
+export const insertQuickBooksVendorMappingSchema = createInsertSchema(
+  quickbooksVendorMappings,
+).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  deletedAt: true,
+} as any);
+export type InsertQuickBooksVendorMapping = z.infer<typeof insertQuickBooksVendorMappingSchema>;
+export type QuickBooksVendorMapping = typeof quickbooksVendorMappings.$inferSelect;
+
 // ===================== SEED LIST =====================
 
 /**

@@ -337,6 +337,37 @@ export async function searchCostLines(
   return rows.map(costLineToSummary);
 }
 
+// `searchRevenueLines` uses the canonical AppRevenueLineSummary and
+// revenueLineToSummary helper defined later in this file (revenue
+// reconciliation section). Those are hoisted via function declaration so the
+// circular reference here is safe.
+
+export async function searchRevenueLines(
+  query: string,
+  limit = 50,
+): Promise<AppRevenueLineSummary[]> {
+  const trimmed = query.trim();
+  const where = trimmed
+    ? and(
+        isNull(normalizedRevenueLines.effectiveTo),
+        or(
+          ilike(normalizedRevenueLines.invoiceNumber, `%${trimmed}%`),
+          ilike(normalizedRevenueLines.description, `%${trimmed}%`),
+          ilike(normalizedRevenueLines.projectName, `%${trimmed}%`),
+        ),
+      )
+    : isNull(normalizedRevenueLines.effectiveTo);
+
+  const rows: NormalizedRevenueLine[] = await db
+    .select()
+    .from(normalizedRevenueLines)
+    .where(where)
+    .orderBy(desc(normalizedRevenueLines.invoiceDate))
+    .limit(limit);
+
+  return rows.map(revenueLineToSummary);
+}
+
 // Export `sql` tag through to keep the drizzle import used if we grow.
 void sql;
 
