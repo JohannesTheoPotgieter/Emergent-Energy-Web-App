@@ -114,6 +114,9 @@ interface DetailInflow {
   milestoneAmount: number;
   invoiceRaisedDate: string;
   daysToReceipt: number;
+  qbStatus?: "confirmed" | "unlinked";
+  qbDocNumber?: string | null;
+  qbAmount?: number | null;
 }
 
 interface DetailOutflow {
@@ -130,6 +133,9 @@ interface DetailOutflow {
   adminDateOverrideAt: string | null;
   expenseActualTotal: number;
   paymentStatus: string;
+  qbStatus?: "confirmed" | "unlinked";
+  qbDocNumber?: string | null;
+  qbAmount?: number | null;
 }
 
 interface WeekDetail {
@@ -415,6 +421,7 @@ function DetailRow({ weekStart, project, colSpan = 8 }: { weekStart: string; pro
                         <th className="text-left px-3 py-2 font-medium text-muted-foreground">Date</th>
                         <th className="text-right px-3 py-2 font-medium text-muted-foreground">Amount</th>
                         <th className="text-right px-3 py-2 font-medium text-muted-foreground">Days</th>
+                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">QB</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -438,6 +445,18 @@ function DetailRow({ weekStart, project, colSpan = 8 }: { weekStart: string; pro
                           </td>
                           <td className="px-3 py-2 text-right font-mono font-medium text-emerald-700">{formatRand(inf.milestoneAmount)}</td>
                           <td className="px-3 py-2 text-right font-mono text-muted-foreground">{inf.daysToReceipt ?? "—"}</td>
+                          <td className="px-3 py-2">
+                            {inf.qbStatus === "confirmed" ? (
+                              <span
+                                className="inline-flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-blue-50 text-blue-700 border-blue-200"
+                                title={inf.qbDocNumber ? `QB Invoice #${inf.qbDocNumber}` : undefined}
+                              >
+                                QB {inf.qbDocNumber ?? "✓"}
+                              </span>
+                            ) : (
+                              <span className="text-[9px] text-muted-foreground">—</span>
+                            )}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -466,6 +485,7 @@ function DetailRow({ weekStart, project, colSpan = 8 }: { weekStart: string; pro
                         <th className="text-left px-3 py-2 font-medium text-muted-foreground">Date</th>
                         <th className="text-center px-3 py-2 font-medium text-muted-foreground">Status</th>
                         <th className="text-right px-3 py-2 font-medium text-muted-foreground">Amount</th>
+                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">QB</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -501,6 +521,18 @@ function DetailRow({ weekStart, project, colSpan = 8 }: { weekStart: string; pro
                             </span>
                           </td>
                           <td className="px-3 py-2 text-right font-mono font-medium text-red-700">{formatRand(out.expenseActualTotal)}</td>
+                          <td className="px-3 py-2">
+                            {out.qbStatus === "confirmed" ? (
+                              <span
+                                className="inline-flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-blue-50 text-blue-700 border-blue-200"
+                                title={out.qbDocNumber ? `QB Bill #${out.qbDocNumber}` : undefined}
+                              >
+                                QB {out.qbDocNumber ?? "✓"}
+                              </span>
+                            ) : (
+                              <span className="text-[9px] text-muted-foreground">—</span>
+                            )}
+                          </td>
                         </tr>
                         );
                       })}

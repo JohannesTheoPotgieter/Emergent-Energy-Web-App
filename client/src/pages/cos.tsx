@@ -46,6 +46,9 @@ interface MonthData {
   budget: number;
   variance: number;
   variancePct: number;
+  /** QB COS actual minus (Realised + Committed) in app. Positive = QB has more than the app recognises. */
+  qbVsAppVariance?: number;
+  qbVsAppVariancePct?: number;
   ytdCOS: number;
   ytdRealised: number;
   ytdCommitted: number;
@@ -130,14 +133,19 @@ const ROW_DEFS: {
   expandable?: boolean;
   projectsKey?: "cosProjects" | "realisedProjects" | "committedProjects" | "plannedProjects" | "qbOnlyProjects" | "appOnlyPendingProjects";
 }[] = [
-  { key: "totalCOS", label: "COS - App Actual", dataKey: "totalCOS", editable: false, colorClass: "text-foreground font-bold", group: "monthly", expandable: true, projectsKey: "cosProjects" },
-  { key: "realisedCOS", label: "Realised COS", dataKey: "realisedCOS", editable: false, colorClass: "text-foreground font-bold", group: "monthly", expandable: true, projectsKey: "realisedProjects" },
-  { key: "committedCOS", label: "Committed COS", dataKey: "committedCOS", editable: false, colorClass: "text-amber-600 font-semibold", group: "monthly", expandable: true, projectsKey: "committedProjects" },
-  { key: "qbOnlyActual", label: "QB Actual", dataKey: "qbOnlyActual", editable: false, colorClass: "text-blue-600 font-semibold", group: "monthly", expandable: true, projectsKey: "qbOnlyProjects" },
-  { key: "appOnlyPending", label: "App-only Pending Invoice (Unlinked)", dataKey: "appOnlyPending", editable: false, colorClass: "text-orange-600 font-semibold", group: "monthly", expandable: true, projectsKey: "appOnlyPendingProjects" },
-  { key: "budget", label: "Costed", dataKey: "budget", editable: true, colorClass: "text-purple-600", group: "monthly" },
-  { key: "variance", label: "Variance", dataKey: "variance", editable: false, colorClass: "", group: "monthly", colorCoded: true },
-  { key: "variancePct", label: "Variance %", dataKey: "variancePct", editable: false, colorClass: "", group: "monthly", colorCoded: true },
+  // Grid rows per spec: COS Planned → COS Realised → COS Committed → QB COS → QB/App Recon.
+  // "Total COS" (Realised + Committed) is retained as the top row for quick reference,
+  // but the unrecognised-planned leakage has been stripped from the backend so the
+  // figure now reconciles to QB COGS within the variance row.
+  { key: "totalCOS", label: "Total COS (App)", dataKey: "totalCOS", editable: false, colorClass: "text-foreground font-bold", group: "monthly", expandable: true, projectsKey: "cosProjects" },
+  { key: "budget", label: "COS Planned (Budget)", dataKey: "budget", editable: true, colorClass: "text-purple-600", group: "monthly" },
+  { key: "realisedCOS", label: "COS Realised", dataKey: "realisedCOS", editable: false, colorClass: "text-foreground font-bold", group: "monthly", expandable: true, projectsKey: "realisedProjects" },
+  { key: "committedCOS", label: "COS Committed", dataKey: "committedCOS", editable: false, colorClass: "text-amber-600 font-semibold", group: "monthly", expandable: true, projectsKey: "committedProjects" },
+  { key: "qbOnlyActual", label: "Quickbooks COS", dataKey: "qbOnlyActual", editable: false, colorClass: "text-blue-600 font-semibold", group: "monthly", expandable: true, projectsKey: "qbOnlyProjects" },
+  { key: "qbVsAppVariance", label: "Quickbooks ↔ App Recon", dataKey: "qbVsAppVariance" as keyof MonthData, editable: false, colorClass: "", group: "monthly", colorCoded: true },
+  { key: "appOnlyPending", label: "App-only Pending (Unlinked)", dataKey: "appOnlyPending", editable: false, colorClass: "text-orange-600 font-semibold", group: "monthly", expandable: true, projectsKey: "appOnlyPendingProjects" },
+  { key: "variance", label: "Budget Variance", dataKey: "variance", editable: false, colorClass: "", group: "monthly", colorCoded: true },
+  { key: "variancePct", label: "Budget Variance %", dataKey: "variancePct", editable: false, colorClass: "", group: "monthly", colorCoded: true },
   { key: "ytdCOS", label: "YTD COS", dataKey: "ytdCOS", editable: false, colorClass: "text-foreground font-bold", group: "ytd" },
   { key: "ytdRealised", label: "YTD Realised", dataKey: "ytdRealised", editable: false, colorClass: "text-foreground font-bold", group: "ytd" },
   { key: "ytdCommitted", label: "YTD Committed", dataKey: "ytdCommitted", editable: false, colorClass: "text-amber-600", group: "ytd" },
@@ -342,13 +350,11 @@ export default function CosTracker() {
     () =>
       months.map((m) => ({
         month: m.monthLabel,
-        "Realised": m.realisedCOS,
-        "Committed": m.committedCOS,
-        "Planned": m.plannedCOS,
-        "QB Actual": m.qbOnlyActual,
-        "App-only Pending": m.appOnlyPending,
-        Costed: m.budget,
-        "YTD Variance": m.ytdVariance,
+        "COS Realised": m.realisedCOS,
+        "COS Committed": m.committedCOS,
+        "Quickbooks COS": m.qbOnlyActual,
+        "COS Planned (Budget)": m.plannedCOS,
+        "QB ↔ App Variance": m.qbVsAppVariance ?? 0,
       })),
     [months],
   );
@@ -357,12 +363,11 @@ export default function CosTracker() {
     () =>
       months.map((m) => ({
         month: m.monthLabel,
-        "Costed COS": m.budget,
-        "Planned COS": m.plannedCOS,
-        "Realised COS": m.realisedCOS,
-        "Committed COS": m.committedCOS,
-        "QB Actual": m.qbOnlyActual,
-        "App-only Pending": m.appOnlyPending,
+        "COS Planned (Budget)": m.plannedCOS,
+        "COS Realised": m.realisedCOS,
+        "COS Committed": m.committedCOS,
+        "Quickbooks COS": m.qbOnlyActual,
+        "QB ↔ App Variance": m.qbVsAppVariance ?? 0,
       })),
     [months],
   );
@@ -387,28 +392,26 @@ export default function CosTracker() {
   if (isLoading) return <PageSkeleton lines={5} />;
   if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load COS Tracker" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
+  const ytdQbCos = lastMonth?.ytdQbOnly ?? 0;
+  const ytdTotalCos = lastMonth?.ytdCOS ?? 0;
+  const ytdQbVsAppVariance = ytdQbCos - ytdTotalCos;
+  const ytdQbVsAppPct = ytdTotalCos !== 0 ? (ytdQbVsAppVariance / ytdTotalCos) * 100 : 0;
+
   const kpiCards = [
-    { id: "ytd-total-cos", label: "YTD COS (Total)", value: formatRand(lastMonth?.ytdCOS ?? 0), icon: DollarSign, iconBg: "bg-muted", iconColor: "text-muted-foreground", valueColor: "text-foreground", borderColor: "", tooltip: "Year-to-date total COS from all line items (realised + committed + planned). Realised = supplier invoice captured AND invoice date confirmed (black font). Planned and pending lines are shown separately from QuickBooks actuals." },
-    { id: "ytd-realised", label: "YTD COS Realised", value: formatRand(lastMonth?.ytdRealised ?? 0), icon: TrendingDown, iconBg: "bg-muted", iconColor: "text-foreground", valueColor: "text-foreground font-black", borderColor: "border-border", tooltip: "COS realised = supplier invoice number captured AND invoice date confirmed (black font, or invoice_date_confirmed = true). Both gates are required per the canonical business spec." },
-    { id: "ytd-planned", label: "YTD Planned COS", value: formatRand(lastMonth?.ytdPlanned ?? 0), icon: Activity, iconBg: "bg-red-100", iconColor: "text-red-600", valueColor: "text-red-600", borderColor: "border-red-200", tooltip: "App cost lines not yet represented in QuickBooks bills." },
-    { id: "ytd-budget", label: "YTD Costed", value: formatRand(lastMonth?.ytdBudget ?? 0), icon: Target, iconBg: "bg-purple-100", iconColor: "text-purple-600", valueColor: "text-purple-700", borderColor: "", tooltip: "The manually entered costed budget for COS. Editable in the grid below. Used to calculate variance." },
+    { id: "ytd-total-cos", label: "Total COS (App)", value: formatRand(ytdTotalCos), icon: DollarSign, iconBg: "bg-muted", iconColor: "text-muted-foreground", valueColor: "text-foreground", borderColor: "", tooltip: "Year-to-date App COS = Realised + Committed. Planned is the forward budget and shown separately below." },
+    { id: "ytd-planned", label: "COS Planned (Budget)", value: formatRand(lastMonth?.ytdPlanned ?? 0), icon: Target, iconBg: "bg-purple-100", iconColor: "text-purple-600", valueColor: "text-purple-700", borderColor: "", tooltip: "Planned COS budget from project imports + manual overrides. The forward plan the team is tracking against." },
+    { id: "ytd-realised", label: "COS Realised", value: formatRand(lastMonth?.ytdRealised ?? 0), icon: TrendingDown, iconBg: "bg-muted", iconColor: "text-foreground", valueColor: "text-foreground font-black", borderColor: "border-border", tooltip: "COS realised = supplier invoice captured AND invoice date confirmed (black font). Both gates are required per the canonical business spec." },
+    { id: "ytd-committed", label: "COS Committed", value: formatRand(lastMonth?.ytdCommitted ?? 0), icon: Activity, iconBg: "bg-amber-100", iconColor: "text-amber-600", valueColor: "text-amber-700", borderColor: "border-amber-200", tooltip: "Cost lines with a PO or invoice captured but invoice date still unconfirmed (red font). Committed spend awaiting final confirmation." },
+    { id: "ytd-qb-cos", label: "Quickbooks COS", value: formatRand(ytdQbCos), icon: DollarSign, iconBg: "bg-sky-100", iconColor: "text-sky-600", valueColor: "text-sky-700", borderColor: "border-sky-200", tooltip: "COS according to QuickBooks bills (YTD). This is the accounting source of truth." },
     {
-      id: "ytd-variance", label: "YTD Variance", value: formatRand(lastMonth?.ytdVariance ?? 0),
+      id: "ytd-qb-vs-app", label: "QB ↔ App Recon",
+      value: `${formatRand(ytdQbVsAppVariance)} (${ytdQbVsAppPct.toFixed(1)}%)`,
       icon: TrendingDown,
-      iconBg: (lastMonth?.ytdVariance ?? 0) <= 0 ? "bg-green-100" : "bg-red-100",
-      iconColor: (lastMonth?.ytdVariance ?? 0) <= 0 ? "text-green-600" : "text-red-600",
-      valueColor: (lastMonth?.ytdVariance ?? 0) <= 0 ? "text-green-600" : "text-red-600",
-      borderColor: (lastMonth?.ytdVariance ?? 0) <= 0 ? "border-green-200" : "border-red-200",
-      tooltip: "Difference between actual COS and costed budget (COS − Costed). Green = under budget, Red = over budget.",
-    },
-    {
-      id: "ytd-variance-pct", label: "YTD Variance %", value: `${(lastMonth?.ytdVariancePct ?? 0).toFixed(1)}%`,
-      icon: Activity,
-      iconBg: (lastMonth?.ytdVariancePct ?? 0) <= 0 ? "bg-green-100" : "bg-red-100",
-      iconColor: (lastMonth?.ytdVariancePct ?? 0) <= 0 ? "text-green-600" : "text-red-600",
-      valueColor: (lastMonth?.ytdVariancePct ?? 0) <= 0 ? "text-green-600" : "text-red-600",
-      borderColor: (lastMonth?.ytdVariancePct ?? 0) <= 0 ? "border-green-200" : "border-red-200",
-      tooltip: "Variance as a percentage of the costed budget. Shows over/under-spend relative to plan.",
+      iconBg: Math.abs(ytdQbVsAppPct) <= 5 ? "bg-green-100" : "bg-red-100",
+      iconColor: Math.abs(ytdQbVsAppPct) <= 5 ? "text-green-600" : "text-red-600",
+      valueColor: Math.abs(ytdQbVsAppPct) <= 5 ? "text-green-700" : "text-red-700",
+      borderColor: Math.abs(ytdQbVsAppPct) <= 5 ? "border-green-200" : "border-red-200",
+      tooltip: "Quickbooks COS minus Total App COS (YTD). Positive = QB has more than the app. Negative = app has more than QB. Target is near zero.",
     },
   ];
 
@@ -493,15 +496,13 @@ export default function CosTracker() {
                     contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', fontSize: '12px' }}
                   />
                   <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '12px' }} />
-                  <Bar dataKey="Realised" stackId="cos" fill="#1e293b" radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="Committed" stackId="cos" fill="#f59e0b" radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="Planned" stackId="cos" fill="#dc2626" radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="QB Actual" stackId="cos" fill="#2563eb" radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="App-only Pending" stackId="cos" fill="#f97316" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="Costed" fill="#a855f7" opacity={0.3} radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="COS Realised" stackId="app" fill="#1e293b" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="COS Committed" stackId="app" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Quickbooks COS" fill="#2563eb" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="COS Planned (Budget)" fill="#a855f7" opacity={0.3} radius={[4, 4, 0, 0]} />
                   <Line
                     type="monotone"
-                    dataKey="YTD Variance"
+                    dataKey="QB ↔ App Variance"
                     stroke="#ef4444"
                     strokeWidth={2}
                     strokeDasharray="5 5"
@@ -529,12 +530,11 @@ export default function CosTracker() {
                     contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', fontSize: '12px' }}
                   />
                   <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '12px' }} />
-                  <Bar dataKey="Costed COS" fill="#a6a6a6" radius={[2, 2, 0, 0]} />
-                  <Bar dataKey="Planned COS" fill="#4472C4" radius={[2, 2, 0, 0]} />
-                  <Bar dataKey="Realised COS" fill="#ED7D31" radius={[2, 2, 0, 0]} />
-                  <Bar dataKey="Committed COS" fill="#f59e0b" radius={[2, 2, 0, 0]} />
-                  <Bar dataKey="QB Actual" fill="#2563eb" radius={[2, 2, 0, 0]} />
-                  <Bar dataKey="App-only Pending" fill="#f97316" radius={[2, 2, 0, 0]} />
+                  <Bar dataKey="COS Planned (Budget)" fill="#a855f7" opacity={0.3} radius={[2, 2, 0, 0]} />
+                  <Bar dataKey="COS Realised" fill="#1e293b" radius={[2, 2, 0, 0]} />
+                  <Bar dataKey="COS Committed" fill="#f59e0b" radius={[2, 2, 0, 0]} />
+                  <Bar dataKey="Quickbooks COS" fill="#2563eb" radius={[2, 2, 0, 0]} />
+                  <Bar dataKey="QB ↔ App Variance" fill="#ef4444" radius={[2, 2, 0, 0]} />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>

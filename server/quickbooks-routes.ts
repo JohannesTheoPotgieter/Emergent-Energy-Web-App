@@ -62,12 +62,17 @@ import {
   runProjectRevenueReconciliation,
   saveCostAllocationsForBill,
   searchCostLines,
+  searchRevenueLines,
   softDeleteCustomerMapping,
   softDeleteLink,
   upsertCustomerMapping,
   type QuickBooksBillSummary,
   type QuickBooksInvoiceSummary,
 } from "./services/quickbooks-reconciliation-service";
+import { recordIntegrationRun } from "./services/integration-health-service";
+import { db } from "./db";
+import { integrations, integrationRunEvents, type IntegrationRunEvent } from "@shared/schema";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { validateBody } from "./middleware/validateBody";
 import { ApiError, conflict, logApiError, sendError, serverError } from "./lib/api-error";
@@ -255,6 +260,134 @@ export function registerQuickBooksRoutes(app: Express): void {
       res.status(500).json({ error: "quickbooks_disconnect_failed", message });
     }
   });
+
+  // ---------- Sync Now (manual refresh) ----------
+  //
+  // Triggers a pull of bills, invoices, customers, vendors and P&L.
+  // Logs the run to integration_run_events so the health tile and
+  // sync log both update in real time.
+  app.post(
+    "/api/quickbooks/sync-now",
+    requireAuth,
+    requirePermission("financial_integration", "view"),
+    async (req, res) => {
+      const startedAt = new Date();
+      const errors: string[] = [];
+      let recordsProcessed = 0;
+
+      const safeCall = async <T>(label: string, fn: () => Promise<T>): Promise<T | null> => {
+        try {
+          const result = await fn();
+          return result;
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          errors.push(`${label}: ${message}`);
+          return null;
+        }
+      };
+
+      const billsEnd = new Date();
+      const billsStart = new Date(billsEnd.getFullYear(), billsEnd.getMonth() - 11, 1);
+      const iso = (d: Date) => d.toISOString().slice(0, 10);
+
+      const [invoicesData, customersData, vendorsData, billsData, pnlData] = await Promise.all([
+        safeCall("invoices", () => getInvoices(iso(billsStart), iso(billsEnd))),
+        safeCall("customers", () => getCustomers()),
+        safeCall("vendors", () => getVendors()),
+        safeCall("bills", () => getBills(iso(billsStart), iso(billsEnd))),
+        safeCall("pnl", () => getProfitAndLossReport(iso(billsStart), iso(billsEnd))),
+      ]);
+
+      const countQr = (resp: any, key: string) => {
+        const arr = resp?.QueryResponse?.[key];
+        return Array.isArray(arr) ? arr.length : 0;
+      };
+      recordsProcessed =
+        countQr(invoicesData, "Invoice") +
+        countQr(customersData, "Customer") +
+        countQr(vendorsData, "Vendor") +
+        countQr(billsData, "Bill") +
+        (pnlData ? 1 : 0);
+
+      const status = errors.length === 0 ? "success" : errors.length >= 5 ? "failure" : "partial";
+
+      try {
+        await recordIntegrationRun({
+          name: "quickbooks",
+          runType: "manual_sync",
+          startedAt,
+          finishedAt: new Date(),
+          status,
+          recordsProcessed,
+          errorCode: errors.length > 0 ? "partial_sync_errors" : null,
+          errorDetail: errors.length > 0 ? errors.join(" | ").slice(0, 1000) : null,
+        });
+      } catch (err) {
+        // Logging is best-effort — don't block the response.
+        console.error("[quickbooks][sync-now] failed to record integration run", err);
+      }
+
+      logAuditFromReq(req, {
+        entityType: "quickbooks_integration",
+        entityId: "quickbooks",
+        action: "quickbooks.sync_now",
+        source: "SETTINGS",
+        changesJson: { status, recordsProcessed, errors: errors.length },
+      });
+
+      res.json({
+        ok: errors.length === 0,
+        status,
+        recordsProcessed,
+        errors,
+        startedAt: startedAt.toISOString(),
+        finishedAt: new Date().toISOString(),
+      });
+    },
+  );
+
+  // ---------- Sync log (recent integration_run_events for QB) ----------
+  app.get(
+    "/api/quickbooks/sync-log",
+    requireAuth,
+    requirePermission("financial_integration", "view"),
+    async (_req, res) => {
+      try {
+        const [qb] = await db
+          .select()
+          .from(integrations)
+          .where(eq(integrations.name, "quickbooks"))
+          .limit(1);
+
+        if (!qb) {
+          res.json({ events: [] });
+          return;
+        }
+
+        const rows = await db
+          .select()
+          .from(integrationRunEvents)
+          .where(eq(integrationRunEvents.integrationId, qb.id))
+          .orderBy(desc(integrationRunEvents.startedAt))
+          .limit(50);
+
+        const events = rows.map((r: IntegrationRunEvent) => ({
+          id: r.id,
+          runAt: r.startedAt.toISOString(),
+          finishedAt: r.finishedAt?.toISOString() ?? null,
+          status: r.status === "success" ? "ok" : r.status === "failure" ? "error" : "running",
+          kind: r.runType,
+          message: r.errorDetail ?? (r.status === "success" ? "Completed successfully" : null),
+          recordCount: r.recordsProcessed,
+        }));
+
+        res.json({ events });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to load sync log";
+        res.status(500).json({ error: "quickbooks_sync_log_failed", message });
+      }
+    },
+  );
 
   // ---------- Data endpoints ----------
 
@@ -699,6 +832,166 @@ export function registerQuickBooksRoutes(app: Express): void {
     }
   });
 
+  // ---------- Vendor mappings (QB Vendor ↔ App Counterparty) ----------
+
+  app.get(
+    "/api/quickbooks/vendor-mappings",
+    requireAuth,
+    requirePermission("financials", "view"),
+    async (_req, res) => {
+      try {
+        const { quickbooksVendorMappings } = await import("@shared/schema");
+        const { counterparties } = await import("@shared/schema/finance");
+        const rows = await db
+          .select({
+            id: quickbooksVendorMappings.id,
+            qbVendorId: quickbooksVendorMappings.qbVendorId,
+            qbVendorName: quickbooksVendorMappings.qbVendorName,
+            qbRealmId: quickbooksVendorMappings.qbRealmId,
+            counterpartyId: quickbooksVendorMappings.counterpartyId,
+            counterpartyName: quickbooksVendorMappings.counterpartyName,
+            counterpartyCurrent: counterparties.nameCanonical,
+            updatedAt: quickbooksVendorMappings.updatedAt,
+          })
+          .from(quickbooksVendorMappings)
+          .leftJoin(counterparties, eq(quickbooksVendorMappings.counterpartyId, counterparties.id))
+          .where(isNull(quickbooksVendorMappings.deletedAt));
+        res.json({ mappings: rows });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to load vendor mappings";
+        res.status(500).json({ error: "quickbooks_vendor_mappings_failed", message });
+      }
+    },
+  );
+
+  app.post(
+    "/api/quickbooks/vendor-mappings",
+    requireAuth,
+    requirePermission("financials", "edit"),
+    async (req, res) => {
+      try {
+        const body = req.body ?? {};
+        const qbVendorId = String(body.qbVendorId ?? "").trim();
+        const counterpartyId = Number(body.counterpartyId);
+        const qbVendorName = body.qbVendorName ? String(body.qbVendorName) : null;
+        const counterpartyName = body.counterpartyName ? String(body.counterpartyName) : null;
+        if (!qbVendorId || !Number.isFinite(counterpartyId) || counterpartyId <= 0) {
+          res.status(400).json({
+            error: "bad_request",
+            message: "qbVendorId and counterpartyId are required",
+          });
+          return;
+        }
+
+        const status = await getQuickBooksConnectionStatus();
+        if (!status.connected || !status.realmId) {
+          res.status(409).json({ error: "not_connected", message: "QuickBooks is not connected" });
+          return;
+        }
+
+        const { quickbooksVendorMappings } = await import("@shared/schema");
+        const user = getEffectiveUser(req);
+
+        const [existing] = await db
+          .select()
+          .from(quickbooksVendorMappings)
+          .where(
+            and(
+              eq(quickbooksVendorMappings.qbVendorId, qbVendorId),
+              eq(quickbooksVendorMappings.qbRealmId, status.realmId),
+              isNull(quickbooksVendorMappings.deletedAt),
+            ),
+          )
+          .limit(1);
+
+        let row;
+        if (existing) {
+          const [updated] = await db
+            .update(quickbooksVendorMappings)
+            .set({
+              counterpartyId,
+              counterpartyName,
+              qbVendorName,
+              updatedAt: new Date(),
+            })
+            .where(eq(quickbooksVendorMappings.id, existing.id))
+            .returning();
+          row = updated;
+        } else {
+          const [created] = await db
+            .insert(quickbooksVendorMappings)
+            .values({
+              qbVendorId,
+              qbVendorName,
+              qbRealmId: status.realmId,
+              counterpartyId,
+              counterpartyName,
+              createdBy: user?.id ?? null,
+            })
+            .returning();
+          row = created;
+        }
+
+        logAuditFromReq(req, {
+          entityType: "quickbooks_vendor_mapping",
+          entityId: String(row.id),
+          action: existing ? "quickbooks.vendor_mapping.update" : "quickbooks.vendor_mapping.create",
+          source: "UI",
+          changesJson: {
+            qbVendorId,
+            qbVendorName,
+            counterpartyId,
+            counterpartyName,
+          },
+        });
+
+        res.json({ mapping: row });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to save vendor mapping";
+        res.status(500).json({ error: "quickbooks_vendor_mapping_save_failed", message });
+      }
+    },
+  );
+
+  app.delete(
+    "/api/quickbooks/vendor-mappings/:id",
+    requireAuth,
+    requirePermission("financials", "edit"),
+    async (req, res) => {
+      try {
+        const id = Number(req.params.id);
+        if (!Number.isFinite(id) || id <= 0) {
+          res.status(400).json({ error: "bad_request", message: "Invalid mapping id" });
+          return;
+        }
+        const { quickbooksVendorMappings } = await import("@shared/schema");
+        const [row] = await db
+          .update(quickbooksVendorMappings)
+          .set({ deletedAt: new Date(), updatedAt: new Date() })
+          .where(eq(quickbooksVendorMappings.id, id))
+          .returning();
+        if (!row) {
+          res.status(404).json({ error: "not_found", message: "Vendor mapping not found" });
+          return;
+        }
+        logAuditFromReq(req, {
+          entityType: "quickbooks_vendor_mapping",
+          entityId: String(id),
+          action: "quickbooks.vendor_mapping.unmap",
+          source: "UI",
+          changesJson: {
+            qbVendorId: row.qbVendorId,
+            counterpartyId: row.counterpartyId,
+          },
+        });
+        res.json({ ok: true });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to delete vendor mapping";
+        res.status(500).json({ error: "quickbooks_vendor_mapping_delete_failed", message });
+      }
+    },
+  );
+
   // ---------- Revenue reconciliation (Invoices ↔ revenue lines) ----------
 
   app.get(
@@ -815,6 +1108,18 @@ export function registerQuickBooksRoutes(app: Express): void {
       const limit = req.query.limit ? Math.min(Number(req.query.limit), 200) : 50;
       const costLines = await searchCostLines(q, Number.isFinite(limit) ? limit : 50);
       res.json({ costLines });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Search failed";
+      res.status(500).json({ error: "quickbooks_search_failed", message });
+    }
+  });
+
+  app.get("/api/quickbooks/revenue-lines/search", requireAuth, requirePermission("financials", "view"), async (req, res) => {
+    try {
+      const q = typeof req.query.q === "string" ? req.query.q : "";
+      const limit = req.query.limit ? Math.min(Number(req.query.limit), 200) : 50;
+      const revenueLines = await searchRevenueLines(q, Number.isFinite(limit) ? limit : 50);
+      res.json({ revenueLines });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Search failed";
       res.status(500).json({ error: "quickbooks_search_failed", message });

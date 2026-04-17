@@ -309,7 +309,6 @@ export const DEFAULT_LENS_PROFILES: LensProfileSeed[] = [
     navPriority: ['HOME', 'EXECUTIVE', 'PORTFOLIO', 'FINANCE', 'PIPELINE', 'REPORTS'],
     quickActions: [
       { label: "Executive Overview", path: "/gates", iconKey: "LayoutDashboard" },
-      { label: "GP Tracker", path: "/gp-tracker", iconKey: "Activity" },
       { label: "Priorities", path: "/priorities", iconKey: "Flag" },
     ],
   },
@@ -337,7 +336,7 @@ export const DEFAULT_LENS_PROFILES: LensProfileSeed[] = [
     quickActions: [
       { label: "Cashflow", path: "/cashflow", iconKey: "Wallet" },
       { label: "Revenue", path: "/revenue-tracker", iconKey: "TrendingUp" },
-      { label: "GP Tracker", path: "/gp-tracker", iconKey: "Activity" },
+      { label: "COS", path: "/cos", iconKey: "TrendingUp" },
     ],
   },
   {
