@@ -135,7 +135,8 @@ const ROW_DEFS: {
 }[] = [
   // Grid rows per spec: COS Planned → COS Realised → COS Committed → QB COS → QB/App Recon.
   // Planned = all cost lines in the app that have a planned date (budget baseline, no duplication)
-  { key: "budget", label: "COS Planned (Budget)", dataKey: "budget", editable: true, colorClass: "text-purple-600", group: "monthly" },
+  { key: "totalCOS", label: "COS Planned", dataKey: "totalCOS", editable: false, colorClass: "text-purple-600 font-semibold", group: "monthly", expandable: true, projectsKey: "cosProjects" },
+  { key: "budget", label: "Budget (Manual)", dataKey: "budget", editable: true, colorClass: "text-purple-600/60", group: "monthly" },
   // Committed = planned line with an invoice captured and linked, but invoice date NOT yet confirmed (not black)
   { key: "committedCOS", label: "COS Committed", dataKey: "committedCOS", editable: false, colorClass: "text-amber-600 font-semibold", group: "monthly", expandable: true, projectsKey: "committedProjects" },
   // Realised = invoice date confirmed (black) AND invoice linked
@@ -268,15 +269,8 @@ export default function CosTracker() {
   const [editing, setEditing] = useState<EditingCell | null>(null);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [drawerMonth, setDrawerMonth] = useState<{ monthKey: string; monthLabel: string; defaultFilter?: "all" | "realised" | "committed" | "planned" | "qb_actual"; defaultProject?: string } | null>(null);
-  const [cosReconTab, setCosReconTab] = useState<"matched" | "appOnly" | "qbOnly" | "exceptions">("matched");
-
   const { data: months = [], isLoading, isError, error, refetch } = useQuery<MonthData[]>({
     queryKey: ["/api/cos-tracker"],
-    staleTime: 30_000,
-  });
-  const { data: cosRecon } = useQuery<any>({
-    queryKey: ["/api/cos-tracker/reconciliation"],
-    queryFn: fetchQueryFn("/api/cos-tracker/reconciliation"),
     staleTime: 30_000,
   });
 
@@ -342,18 +336,6 @@ export default function CosTracker() {
   );
 
   const chartData = useMemo(
-    () =>
-      months.map((m) => ({
-        month: m.monthLabel,
-        "COS Planned (Budget)": m.plannedCOS,
-        "COS Committed": m.committedCOS,
-        "COS Realised": m.realisedCOS,
-        "Quickbooks COS": m.qbOnlyActual,
-      })),
-    [months],
-  );
-
-  const cosBreakdownData = useMemo(
     () =>
       months.map((m) => ({
         month: m.monthLabel,
@@ -488,32 +470,6 @@ export default function CosTracker() {
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm overflow-hidden" data-testid="card-cos-breakdown">
-          <CardHeader className="bg-gradient-to-r from-slate-50 to-white border-b px-3 sm:px-6 py-3 sm:py-4">
-            <CardTitle className="text-base sm:text-lg font-semibold tracking-tight">COS Monthly Breakdown</CardTitle>
-          </CardHeader>
-          <CardContent className="p-3 sm:p-6">
-            <div className="h-[280px] sm:h-[420px]" data-testid="chart-cos-breakdown">
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={cosBreakdownData} margin={{ top: 8, right: 16, left: 8, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} />
-                  <YAxis tickFormatter={(v: number) => formatRand(v)} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                  <Tooltip
-                    formatter={(value: number) => formatRand(value)}
-                    contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', fontSize: '12px' }}
-                  />
-                  <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '12px' }} />
-                  <Bar dataKey="COS Planned (Budget)" fill="#a855f7" opacity={0.3} radius={[2, 2, 0, 0]} />
-                  <Bar dataKey="COS Committed" fill="#f59e0b" radius={[2, 2, 0, 0]} />
-                  <Bar dataKey="COS Realised" fill="#1e293b" radius={[2, 2, 0, 0]} />
-                  <Bar dataKey="Quickbooks COS" fill="#2563eb" radius={[2, 2, 0, 0]} />
-                </ComposedChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
         <Card className="shadow-sm overflow-hidden">
           <CardHeader className="bg-gradient-to-r from-slate-50 to-white border-b px-3 sm:px-6 py-3 sm:py-4">
             <CardTitle className="text-base sm:text-lg font-semibold tracking-tight">Monthly COS Grid</CardTitle>
@@ -537,7 +493,7 @@ export default function CosTracker() {
                   {ROW_DEFS.map((row, rowIdx) => {
                     const isYtd = row.group === "ytd";
                     const isExpanded = expandedRows.has(row.key);
-                    const isClickable = ["realisedCOS", "committedCOS", "qbOnlyActual"].includes(row.key);
+                    const isClickable = ["totalCOS", "realisedCOS", "committedCOS", "qbOnlyActual"].includes(row.key);
                     const isFirstYtd = isYtd && rowIdx > 0 && ROW_DEFS[rowIdx - 1].group !== "ytd";
                     return (
                       <React.Fragment key={row.key}>
@@ -668,46 +624,6 @@ export default function CosTracker() {
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm overflow-hidden">
-          <CardHeader className="bg-gradient-to-r from-slate-50 to-white border-b px-3 sm:px-6 py-3 sm:py-4">
-            <CardTitle className="text-base sm:text-lg font-semibold tracking-tight">COS Reconciliation Workbench</CardTitle>
-          </CardHeader>
-          <CardContent className="p-3 sm:p-6 space-y-4">
-            <div className="flex gap-2 text-xs">
-              {(["matched", "appOnly", "qbOnly", "exceptions"] as const).map((tab) => (
-                <button key={tab} className={`px-2 py-1 rounded border ${cosReconTab === tab ? "bg-blue-600 text-white" : "bg-white"}`} onClick={() => setCosReconTab(tab)}>
-                  {tab === "appOnly" ? "App only" : tab === "qbOnly" ? "QB only" : tab[0].toUpperCase() + tab.slice(1)}
-                </button>
-              ))}
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead><tr className="border-b bg-muted/50">
-                  <th className="text-left px-2 py-2">Month</th><th className="text-left px-2 py-2">Project</th><th className="text-right px-2 py-2">App Actual</th><th className="text-right px-2 py-2">QB Actual</th><th className="text-right px-2 py-2">Delta</th><th className="text-right px-2 py-2">Delta %</th><th className="text-right px-2 py-2">App-only</th><th className="text-right px-2 py-2">QB-only</th><th className="text-right px-2 py-2">Missing PO</th><th className="text-right px-2 py-2">Missing Invoice</th><th className="text-left px-2 py-2">Status</th>
-                </tr></thead>
-                <tbody>
-                  {(cosRecon?.summary || []).map((r: any) => (
-                    <tr key={`${r.month}-${r.project}`} className="border-b">
-                      <td className="px-2 py-1">{r.month}</td><td className="px-2 py-1">{r.project}</td><td className="px-2 py-1 text-right">{formatRand(r.appActual)}</td><td className="px-2 py-1 text-right">{formatRand(r.qbActual)}</td><td className="px-2 py-1 text-right">{formatRand(r.delta)}</td><td className="px-2 py-1 text-right">{Number(r.deltaPct || 0).toFixed(1)}%</td><td className="px-2 py-1 text-right">{r.appOnlyItemCount}</td><td className="px-2 py-1 text-right">{r.qbOnlyItemCount}</td><td className="px-2 py-1 text-right">{r.missingPoCount}</td><td className="px-2 py-1 text-right">{r.missingInvoiceCount}</td><td className="px-2 py-1">{r.status}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead><tr className="border-b bg-muted/30"><th className="text-left px-2 py-2">Month</th><th className="text-left px-2 py-2">Project</th><th className="text-left px-2 py-2">Match</th><th className="text-left px-2 py-2">Reason codes</th><th className="text-right px-2 py-2">App</th><th className="text-right px-2 py-2">QB</th></tr></thead>
-                <tbody>
-                  {(cosRecon?.tabs?.[cosReconTab] || []).slice(0, 200).map((r: any, idx: number) => (
-                    <tr key={`${r.month}-${r.project}-${idx}`} className="border-b">
-                      <td className="px-2 py-1">{r.month}</td><td className="px-2 py-1">{r.project}</td><td className="px-2 py-1">{r.matchStatus}</td><td className="px-2 py-1">{(r.reasonCodes || []).join(", ") || "—"}</td><td className="px-2 py-1 text-right">{formatRand(r.appAmount)}</td><td className="px-2 py-1 text-right">{formatRand(r.qbAmount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
       </div>
 
       {drawerMonth && (

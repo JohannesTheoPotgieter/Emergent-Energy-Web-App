@@ -182,8 +182,17 @@ export function registerCashflow2026Routes(app: Express) {
             qbEntityId: quickbooksInvoiceLinks.qbEntityId,
             qbDocNumber: quickbooksInvoiceLinks.qbDocNumber,
             qbAmount: quickbooksInvoiceLinks.qbAmount,
+            qbPaymentStatus: quickbooksDocuments.qbPaymentStatus,
           })
           .from(quickbooksInvoiceLinks)
+          .leftJoin(
+            quickbooksDocuments,
+            and(
+              eq(quickbooksInvoiceLinks.qbEntityType, quickbooksDocuments.qbEntityType),
+              eq(quickbooksInvoiceLinks.qbEntityId, quickbooksDocuments.qbEntityId),
+              isNull(quickbooksDocuments.deletedAt),
+            ),
+          )
           .where(isNull(quickbooksInvoiceLinks.deletedAt)),
       ]);
       const mergedDetail = await getMergedExpensesAndInflows(legacyExp, legacyInf);
@@ -226,6 +235,7 @@ export function registerCashflow2026Routes(app: Express) {
           const qbStatus = qbLink ? "confirmed" : "unlinked";
           const qbDocNumber = qbLink?.qbDocNumber ?? null;
           const qbAmount = qbLink?.qbAmount != null ? parseFloat(qbLink.qbAmount as any) : null;
+          const qbPaymentStatus = qbLink?.qbPaymentStatus ?? null;
 
           return {
             projectName: e.projectName,
@@ -238,6 +248,7 @@ export function registerCashflow2026Routes(app: Express) {
             qbStatus,
             qbDocNumber,
             qbAmount,
+            qbPaymentStatus,
           };
         });
 
@@ -265,6 +276,7 @@ export function registerCashflow2026Routes(app: Express) {
           const qbStatus = qbLink ? "confirmed" : "unlinked";
           const qbDocNumber = qbLink?.qbDocNumber ?? null;
           const qbAmount = qbLink?.qbAmount != null ? parseFloat(qbLink.qbAmount as any) : null;
+          const qbPaymentStatus = qbLink?.qbPaymentStatus ?? null;
 
           return {
             projectName: inf.projectName,
@@ -278,6 +290,7 @@ export function registerCashflow2026Routes(app: Express) {
             qbStatus,
             qbDocNumber,
             qbAmount,
+            qbPaymentStatus,
           };
         });
 
