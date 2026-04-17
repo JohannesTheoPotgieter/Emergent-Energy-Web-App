@@ -22,6 +22,7 @@ import {
   type PermissionEntity,
 } from "@shared/schema";
 import { evaluateAuthorityForRole, evaluatePermissionForRole } from "@shared/permission-resolver";
+import { getLandingPathForRole } from "@shared/navigation/role-landing-paths";
 import { getEffectiveUser, jwtAuth, requireAuth, setRevokedUserTokenVersionFloor } from "./auth-context";
 import { requireAdmin } from "./middleware/requireAdmin";
 import { invalidateEntityPermCache, invalidateUserOverrideCache } from "./permission-middleware";
@@ -218,6 +219,7 @@ export function buildAuthPermissionsPayload({ perm, userOverrides }: AuthPermiss
     canEditData: perm.canEditData,
     entityPermissions: perm.entityPermissions || null,
     authorityModel: perm.authorityModel || null,
+    landingPath: getLandingPathForRole(perm.role),
     userOverrides: Object.keys(userOverrides).length > 0 ? userOverrides : null,
     authoritySummary: ENTITY_PERMISSION_DEFAULTS.map((rule) => ({
       entity: rule.entity,
