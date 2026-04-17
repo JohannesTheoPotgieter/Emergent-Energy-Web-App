@@ -8,7 +8,6 @@ const ProjectsSummary = lazyWithRetry(() => import("@/pages/projects"));
 const CashflowPage = lazyWithRetry(() => import("@/pages/cashflow"));
 const RevenueTrackerPage = lazyWithRetry(() => import("@/pages/revenue-tracker"));
 const CostTracker = lazyWithRetry(() => import("@/pages/cos"));
-const GpTrackerPage = lazyWithRetry(() => import("@/pages/gp-tracker"));
 const ProjectDetailPage = lazyWithRetry(() => import("@/pages/project-detail"));
 const ProjectStageGatePage = lazyWithRetry(() => import("@/pages/project-stage-gate"));
 const MyWorkAdminSettingsPage = lazyWithRetry(() => import("@/pages/my-work-admin-settings"));
@@ -68,7 +67,6 @@ const PdPmHandoverPage = lazyWithRetry(() => import("@/pages/pd-pm-handover-v2")
 const PmHandoverReviewPage = lazyWithRetry(() => import("@/pages/pm-handover-review"));
 const FinancialReviewQueuePage = lazyWithRetry(() => import("@/pages/financial-review-queue"));
 const HandoverControlPage = lazyWithRetry(() => import("@/pages/handover-control"));
-const FyeRevenueTrackingPage = lazyWithRetry(() => import("@/pages/fye-revenue-tracking"));
 const ExceptionsPage = lazyWithRetry(() => import("@/pages/exceptions"));
 const PhaseTemplatesPage = lazyWithRetry(() => import("@/pages/phase-templates"));
 const ProjectCreatePage = lazyWithRetry(() => import("@/pages/project-create"));
@@ -134,7 +132,6 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   CashflowPage,
   CostTracker,
   RevenueTrackerPage,
-  GpTrackerPage,
   MyWorkPrioritiesPage,
   MyWorkAdminSettingsPage,
   QmDashboardPage,
@@ -191,7 +188,6 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   PmHandoverReviewPage,
   FinancialReviewQueuePage,
   HandoverControlPage,
-  FyeRevenueTrackingPage,
   ExceptionsPage,
   PhaseTemplatesPage,
   ProjectCreatePage,
