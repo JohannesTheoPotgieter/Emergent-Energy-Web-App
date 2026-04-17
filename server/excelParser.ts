@@ -36,9 +36,24 @@ function excelSerialToDate(serial: number): { y: number; m: number; d: number } 
   return { y: date.getFullYear(), m: date.getMonth() + 1, d: date.getDate() };
 }
 
+function isDateLike(v: any): v is Date {
+  return v != null && Object.prototype.toString.call(v) === "[object Date]" && !isNaN((v as Date).getTime());
+}
+
 function parseDate(value: any): string | null {
   if (!value) return null;
-  
+
+  // ExcelJS returns formula cells as { formula, result } or { sharedFormula, result }.
+  // Unwrap to the cached result before any further checks. Cross-realm safe via toString.
+  if (typeof value === "object" && !isDateLike(value) && "result" in value) {
+    value = (value as any).result;
+    if (!value) return null;
+  }
+
+  if (isDateLike(value)) {
+    return (value as Date).toISOString().split("T")[0];
+  }
+
   if (value instanceof Date) {
     if (isNaN(value.getTime())) return null;
     return value.toISOString().split("T")[0];
@@ -56,23 +71,25 @@ function parseDate(value: any): string | null {
   }
   
   if (typeof value === "string") {
-    const parsed = new Date(value);
-    if (!isNaN(parsed.getTime())) {
-      const year = parsed.getFullYear();
-      const month = String(parsed.getMonth() + 1).padStart(2, "0");
-      const day = String(parsed.getDate()).padStart(2, "0");
-      return `${year}-${month}-${day}`;
+    // Match canonical date-only forms first to avoid local-timezone drift
+    // from `new Date(...)` interpreting "YYYY-MM-DD" as UTC midnight.
+    const yyyymmdd = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (yyyymmdd) {
+      return value.substring(0, 10);
     }
-    
+
     const ddmmyyyy = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
     if (ddmmyyyy) {
       const [, day, month, year] = ddmmyyyy;
       return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
     }
-    
-    const yyyymmdd = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (yyyymmdd) {
-      return value.substring(0, 10);
+
+    const parsed = new Date(value);
+    if (!isNaN(parsed.getTime())) {
+      const year = parsed.getUTCFullYear();
+      const month = String(parsed.getUTCMonth() + 1).padStart(2, "0");
+      const day = String(parsed.getUTCDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
     }
   }
   
@@ -567,8 +584,25 @@ export async function parseTrackerFile(buffer: Buffer, fileName: string): Promis
         
         const poNumber = poCol >= 0 && row[poCol] ? String(row[poCol]) : null;
         const invoiceNumber = invoiceCol >= 0 && row[invoiceCol] ? String(row[invoiceCol]) : null;
-        const invoiceDate = invoiceDateCol >= 0 ? parseDate(row[invoiceDateCol]) : null;
+        const rawInvoiceDate = invoiceDateCol >= 0 ? parseDate(row[invoiceDateCol]) : null;
         const paymentDate = paymentDateCol >= 0 ? parseDate(row[paymentDateCol]) : null;
+        // Tracker workbooks define INVOICE RAISED DATE as a formula:
+        //   IF(FINANCE_PAYMENT_DATE > 1, EOMONTH(FINANCE_PAYMENT_DATE, 0), "")
+        // When the workbook is saved without cached formula results, that cell
+        // arrives as a formula object with no result and parseDate returns null.
+        // Replicate the formula in code so the importer matches the Finance-COS
+        // pivot exactly: derive invoice month from paymentDate when missing.
+        let invoiceDate = rawInvoiceDate;
+        if (!invoiceDate && paymentDate) {
+          // Mirror Excel's `IF(W>1, EOMONTH(W,0), "")` — only derive when the
+          // payment date is a real calendar date (post-1900 sentinel guard),
+          // matching the workbook's "ignore zero/sentinel serials" semantics.
+          const [y, m] = paymentDate.split("-").map(Number);
+          if (y && y >= 1900 && m) {
+            const eom = new Date(Date.UTC(y, m, 0)); // day 0 of next month = last day of m
+            invoiceDate = eom.toISOString().split("T")[0];
+          }
+        }
         
         let invoiceDateConfirmed = false;
         let invoiceDateFontColor: string | null = null;
