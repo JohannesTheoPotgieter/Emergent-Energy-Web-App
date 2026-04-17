@@ -1,21 +1,42 @@
 import { describe, expect, it } from "vitest";
-import { buildVisibleTopSections, getBreadcrumbs, parseDisabledSubPages } from "@/config/app-navigation";
+import {
+  buildVisibleTopSections,
+  getBreadcrumbs,
+  parseDisabledSubPages,
+  validateDisabledSubPages,
+  ROLE_VISIBLE_SECTIONS,
+  SECTION_KEYS,
+  TOP_SECTIONS,
+} from "@/config/app-navigation";
 import { ADMIN_SURFACES } from "@/config/admin-surfaces";
-import { getAppSectionForPath } from "@/config/page-registry";
-import { NAVIGATION_PERMISSION_MODEL } from "@/config/navigation-permissions";
+import {
+  findPageByPath,
+  getAppSectionForPath,
+  LEGACY_REDIRECTS,
+  PAGE_REGISTRY,
+  ROLE_LANDING_PAGE,
+} from "@/config/page-registry";
+import {
+  NAVIGATION_PERMISSION_MODEL,
+  validateNavigationPermissionModel,
+} from "@/config/navigation-permissions";
+import { ROUTE_COMPONENT_KEYS } from "@/config/route-components";
+import { NAV_GROUP_KEYS } from "@/config/page-registry";
+import { ROLE_LANDING_PATHS } from "@shared/navigation/role-landing-paths";
+import { COMPANY_ROLES } from "@shared/schema/users";
 
 describe("app navigation visibility", () => {
   it("keeps Home secondary navigation items matching sidebar config", () => {
     const sections = buildVisibleTopSections({ canViewPath: () => true });
     const homeSection = sections.find((section) => section.label === "Home");
 
+    // "Approvals" was consolidated into Project Delivery → PM Approvals and
+    // "Inbox" is reachable via the header, not as a Home pill.
     expect(homeSection?.secondary.map((item) => item.label)).toEqual([
       "My Dashboard",
       "My Tasks",
-      "Approvals",
       "Calendar",
       "Meetings",
-      "Inbox",
     ]);
   });
 
@@ -143,8 +164,10 @@ describe("app navigation visibility", () => {
     });
     const pmDelivery = pmSections.find((section) => section.label === "Project Delivery");
     const pmLabels = pmDelivery?.secondary.map((item) => item.label) ?? [];
-    expect(pmLabels).toContain("Weekly Reviews");
+    // Weekly Reviews moved out of the pill bar; the canonical review flow
+    // now runs through Financial Reviews + Milestone Tracker.
     expect(pmLabels).toContain("Milestone Tracker");
+    expect(pmLabels).toContain("Financial Reviews");
     expect(pmLabels).toContain("PM On-The-Go");
     expect(pmLabels).toContain("Handover & Closeout");
 
@@ -209,6 +232,240 @@ describe("app navigation visibility", () => {
       section.items.map((item) => `${section.key}:${item.path}`),
     );
     expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+describe("role / section completeness", () => {
+  it("every COMPANY_ROLES entry has visible sections configured", () => {
+    for (const role of COMPANY_ROLES) {
+      expect(ROLE_VISIBLE_SECTIONS[role], `missing ROLE_VISIBLE_SECTIONS[${role}]`).toBeDefined();
+      expect(ROLE_VISIBLE_SECTIONS[role].length).toBeGreaterThan(0);
+    }
+  });
+
+  it("every section listed under a role is a real TOP_SECTIONS key", () => {
+    const topKeys = new Set(TOP_SECTIONS.map((s) => s.key));
+    for (const role of COMPANY_ROLES) {
+      for (const key of ROLE_VISIBLE_SECTIONS[role]) {
+        expect(topKeys.has(key), `role ${role} references unknown section ${key}`).toBe(true);
+      }
+    }
+  });
+
+  it("every TOP_SECTIONS key appears in SECTION_KEYS (single source)", () => {
+    const sectionKeySet = new Set<string>(SECTION_KEYS);
+    for (const section of TOP_SECTIONS) {
+      expect(sectionKeySet.has(section.key)).toBe(true);
+    }
+  });
+
+  it("every SectionKey is visible to at least one role (no dead sections)", () => {
+    const seen = new Set<string>();
+    for (const role of COMPANY_ROLES) {
+      for (const key of ROLE_VISIBLE_SECTIONS[role]) seen.add(key);
+    }
+    for (const key of SECTION_KEYS) {
+      expect(seen.has(key), `section ${key} is not visible to any role`).toBe(true);
+    }
+  });
+
+  it("every COMPANY_ROLES value resolves to a concrete landing path", () => {
+    const registryPaths = new Set(PAGE_REGISTRY.map((p) => p.path));
+    const legacyPaths = new Map(LEGACY_REDIRECTS.map((r) => [r.path, r.redirectTo]));
+    const resolveHome = (role: string) => {
+      const landing = ROLE_LANDING_PAGE[role] || "/dashboard";
+      return legacyPaths.get(landing) ?? landing;
+    };
+    for (const role of COMPANY_ROLES) {
+      const resolved = resolveHome(role);
+      expect(
+        registryPaths.has(resolved),
+        `role ${role} resolves to ${resolved} which is not in PAGE_REGISTRY`,
+      ).toBe(true);
+    }
+  });
+});
+
+describe("navigation permission model validator", () => {
+  it("reports zero errors (duplicate section:path keys)", () => {
+    const issues = validateNavigationPermissionModel();
+    const errors = issues.filter((i) => i.severity === "error");
+    expect(errors, errors.map((e) => e.message).join("\n")).toEqual([]);
+  });
+
+  it("reports zero warnings after allowlisted items are excluded", () => {
+    const issues = validateNavigationPermissionModel();
+    const warnings = issues.filter((i) => i.severity === "warning");
+    expect(warnings, warnings.map((w) => w.message).join("\n")).toEqual([]);
+  });
+});
+
+describe("disabled-subpage format", () => {
+  it("parses a valid '!SECTION:/path' entry", () => {
+    const map = parseDisabledSubPages(["!FINANCE:/cashflow", "!ADMIN:/admin/smart-import"]);
+    expect(map.get("FINANCE")?.has("/cashflow")).toBe(true);
+    expect(map.get("ADMIN")?.has("/admin/smart-import")).toBe(true);
+  });
+
+  it("ignores plain section-key entries (no '!' prefix)", () => {
+    const map = parseDisabledSubPages(["FINANCE", "ADMIN"]);
+    expect(map.size).toBe(0);
+  });
+
+  it("validateDisabledSubPages flags malformed entries", () => {
+    const issues = validateDisabledSubPages([
+      "!NOCOLON",
+      "!FINANCE/cashflow",
+      "!:/orphan",
+      "!:/",
+    ]);
+    expect(issues.every((i) => i.reason === "malformed")).toBe(true);
+    expect(issues.length).toBeGreaterThan(0);
+  });
+
+  it("validateDisabledSubPages flags unknown section keys", () => {
+    const issues = validateDisabledSubPages(["!UNKNOWN_SECTION:/path"]);
+    expect(issues.some((i) => i.reason === "unknown_section_key")).toBe(true);
+  });
+
+  it("validateDisabledSubPages flags invalid paths", () => {
+    const issues = validateDisabledSubPages(["!FINANCE:/"]);
+    expect(issues.some((i) => i.reason === "invalid_path")).toBe(true);
+  });
+
+  it("validateDisabledSubPages accepts well-formed entries", () => {
+    const issues = validateDisabledSubPages([
+      "!FINANCE:/cashflow",
+      "!ADMIN:/admin/smart-import",
+      "!PROJECT_DELIVERY:/weekly-reviews",
+      "HOME",
+      "FINANCE",
+    ]);
+    expect(issues).toEqual([]);
+  });
+});
+
+describe("nav ↔ registry ↔ router parity", () => {
+  it("every TOP_SECTIONS secondary path resolves to a PAGE_REGISTRY entry", () => {
+    const basePath = (path: string) => path.split("?")[0] || path;
+    const orphans: string[] = [];
+    for (const section of TOP_SECTIONS) {
+      for (const item of section.secondary) {
+        const path = basePath(item.path);
+        if (path === "/") continue;
+        if (!findPageByPath(path)) {
+          orphans.push(`${section.key} → ${item.label} (${path})`);
+        }
+      }
+    }
+    expect(orphans, orphans.join("\n")).toEqual([]);
+  });
+
+  it("every PAGE_REGISTRY routeComponentKey exists in ROUTE_COMPONENTS", () => {
+    // Entries with `redirectTo` never consult routeComponentKey at runtime
+    // (see App.tsx APP_ROUTES) — ignore their routeComponentKey metadata.
+    const missing: string[] = [];
+    for (const page of PAGE_REGISTRY) {
+      if (page.redirectTo) continue;
+      if (page.routeComponentKey && !ROUTE_COMPONENT_KEYS.has(page.routeComponentKey)) {
+        missing.push(`${page.id} (${page.path}) → ${page.routeComponentKey}`);
+      }
+    }
+    expect(missing, missing.join("\n")).toEqual([]);
+  });
+
+  it("every PAGE_REGISTRY entry declares either routeComponentKey or redirectTo", () => {
+    const orphans: string[] = [];
+    for (const page of PAGE_REGISTRY) {
+      if (!page.routeComponentKey && !page.redirectTo) {
+        orphans.push(`${page.id} (${page.path})`);
+      }
+    }
+    expect(orphans, orphans.join("\n")).toEqual([]);
+  });
+
+  it("every LEGACY_REDIRECTS target resolves to a real route", () => {
+    // "/" is routable via the top-level HomePage Route in App.tsx and has no
+    // PAGE_REGISTRY entry, so accept it as a valid redirect target.
+    const unresolved: string[] = [];
+    for (const redirect of LEGACY_REDIRECTS) {
+      const target = redirect.redirectTo.split("?")[0];
+      if (target === "/") continue;
+      if (!findPageByPath(target)) {
+        unresolved.push(`${redirect.path} → ${redirect.redirectTo}`);
+      }
+    }
+    expect(unresolved, unresolved.join("\n")).toEqual([]);
+  });
+
+  it("every PAGE_REGISTRY redirectTo resolves to a real route", () => {
+    const unresolved: string[] = [];
+    for (const page of PAGE_REGISTRY) {
+      if (page.redirectTo) {
+        const target = page.redirectTo.split("?")[0];
+        if (target === "/") continue;
+        if (!findPageByPath(target)) {
+          unresolved.push(`${page.id} (${page.path}) → ${page.redirectTo}`);
+        }
+      }
+    }
+    expect(unresolved, unresolved.join("\n")).toEqual([]);
+  });
+
+  it("every PAGE_REGISTRY navGroup value is a declared NAV_GROUP_KEYS entry", () => {
+    const validGroups = new Set<string>(NAV_GROUP_KEYS);
+    const unknown: string[] = [];
+    for (const page of PAGE_REGISTRY) {
+      if (page.navGroup && !validGroups.has(page.navGroup)) {
+        unknown.push(`${page.id} (${page.path}) → ${page.navGroup}`);
+      }
+    }
+    expect(unknown, unknown.join("\n")).toEqual([]);
+  });
+
+  it("every sidebar-visible page with a navGroup resolves to a SectionKey", () => {
+    const topKeys = new Set(TOP_SECTIONS.map((s) => s.key));
+    const orphans: string[] = [];
+    for (const page of PAGE_REGISTRY) {
+      if (!page.showInSidebar || !page.navGroup) continue;
+      const section = getAppSectionForPath(page.path);
+      if (!section || !topKeys.has(section)) {
+        orphans.push(`${page.id} (${page.path}) → navGroup=${page.navGroup}`);
+      }
+    }
+    expect(orphans, orphans.join("\n")).toEqual([]);
+  });
+});
+
+describe("shared ROLE_LANDING_PATHS (U6)", () => {
+  it("covers every COMPANY_ROLES entry", () => {
+    for (const role of COMPANY_ROLES) {
+      expect(ROLE_LANDING_PATHS[role], `missing ROLE_LANDING_PATHS[${role}]`).toBeDefined();
+      expect(ROLE_LANDING_PATHS[role].startsWith("/")).toBe(true);
+    }
+  });
+
+  it("every landing path resolves to a real route", () => {
+    const unresolved: string[] = [];
+    for (const role of COMPANY_ROLES) {
+      const path = ROLE_LANDING_PATHS[role];
+      if (!findPageByPath(path)) {
+        unresolved.push(`${role} → ${path}`);
+      }
+    }
+    expect(unresolved, unresolved.join("\n")).toEqual([]);
+  });
+
+  it("matches the PAGE_REGISTRY-derived ROLE_LANDING_PAGE exactly", () => {
+    const drift: string[] = [];
+    for (const role of COMPANY_ROLES) {
+      const derived = ROLE_LANDING_PAGE[role];
+      const shared = ROLE_LANDING_PATHS[role];
+      if (derived !== shared) {
+        drift.push(`${role}: registry=${derived ?? "∅"} shared=${shared}`);
+      }
+    }
+    expect(drift, drift.join("\n")).toEqual([]);
   });
 });
 

@@ -7,12 +7,33 @@
  * Role-based visibility determines which sections each role sees.
  * "Gates" is not a top-level section — it lives inside Portfolio and functional areas.
  * Labels are consistent across the company.
+ *
+ * Note: the section key "PORTFOLIO" is the stable identifier used in DB-stored
+ * permissions and the permission matrix; the user-facing label is "Company".
+ * Do not rename the key without a coordinated migration.
  */
+
+import type { CompanyRole } from "@shared/schema/users";
+
+export const SECTION_KEYS = [
+  "HOME",
+  "PORTFOLIO",
+  "PRIORITIES",
+  "PROJECT_DEVELOPMENT",
+  "PROJECT_DELIVERY",
+  "FINANCE",
+  "ENGINEERING",
+  "HSE",
+  "QUALITY",
+  "REPORTS",
+  "ADMIN",
+] as const;
+export type SectionKey = typeof SECTION_KEYS[number];
 
 export type SecondaryItem = { label: string; path: string; disabled?: boolean };
 export type TopSection = {
   label: string;
-  key: string; // stable key for role-visibility matching
+  key: SectionKey;
   path: string;
   match: (pathname: string) => boolean;
   secondary: SecondaryItem[];
@@ -201,8 +222,11 @@ export const TOP_SECTIONS: TopSection[] = [
  * Role-based section visibility.
  * Keys match TopSection.key values.
  * Each role sees only the sections listed here.
+ *
+ * Typed as `Record<CompanyRole, SectionKey[]>` so that adding a new role to
+ * COMPANY_ROLES (shared/schema/users.ts) or typoing a section key is a TS error.
  */
-export const ROLE_VISIBLE_SECTIONS: Record<string, string[]> = {
+export const ROLE_VISIBLE_SECTIONS: Record<CompanyRole, SectionKey[]> = {
   COO_ADMIN:              ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY", "ENGINEERING", "QUALITY", "HSE", "FINANCE", "REPORTS", "PRIORITIES", "ADMIN"],
   CEO_ADMIN:              ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY", "FINANCE", "REPORTS", "PRIORITIES", "ADMIN"],
   CCO:                    ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "FINANCE", "REPORTS", "PRIORITIES"],
@@ -225,7 +249,7 @@ export const ROLE_VISIBLE_SECTIONS: Record<string, string[]> = {
  * Maps canonical module names (from lens profiles) to TopSection.key values.
  * Used to translate lens profile `allowedModules` into nav section visibility.
  */
-const CANONICAL_MODULE_TO_SECTION_KEYS: Record<string, string[]> = {
+const CANONICAL_MODULE_TO_SECTION_KEYS: Record<string, SectionKey[]> = {
   HOME:        ["HOME"],
   EXECUTIVE:   ["PORTFOLIO"],
   PORTFOLIO:   ["PORTFOLIO"],
@@ -244,8 +268,8 @@ const CANONICAL_MODULE_TO_SECTION_KEYS: Record<string, string[]> = {
 /**
  * Converts a lens profile's allowedModules into TopSection key values.
  */
-export function getAllowedSectionKeysForLens(allowedModules: string[]): string[] {
-  const keys = new Set<string>();
+export function getAllowedSectionKeysForLens(allowedModules: string[]): SectionKey[] {
+  const keys = new Set<SectionKey>();
   for (const mod of allowedModules) {
     const mapped = CANONICAL_MODULE_TO_SECTION_KEYS[mod];
     if (mapped) {
@@ -255,18 +279,59 @@ export function getAllowedSectionKeysForLens(allowedModules: string[]): string[]
   return Array.from(keys);
 }
 
+/**
+ * Disabled-subpage string format:
+ *   "!<SECTION_KEY>:/<path>"
+ *
+ * Examples:
+ *   "!FINANCE:/cashflow"           — disables Cashflow for the role
+ *   "!ADMIN:/admin/smart-import"   — disables Smart Import for the role
+ *
+ * Plain entries without the "!" prefix are treated as enabled section keys
+ * by the caller and ignored by this parser.
+ */
+const DISABLED_SUBPAGE_PATTERN = /^!([A-Z_]+):(\/.*)$/;
+
+export type DisabledSubPageIssue = {
+  entry: string;
+  reason: "malformed" | "unknown_section_key" | "invalid_path";
+};
+
+/**
+ * Validates disabled-subpage entries without mutating state. Returns an issue
+ * list for reporting — empty means every "!"-prefixed entry is well-formed.
+ * Non-prefixed entries (plain section keys) are skipped.
+ */
+export function validateDisabledSubPages(entries: string[]): DisabledSubPageIssue[] {
+  const issues: DisabledSubPageIssue[] = [];
+  const validKeys = new Set<string>(SECTION_KEYS);
+  for (const entry of entries) {
+    if (!entry.startsWith("!")) continue;
+    const match = DISABLED_SUBPAGE_PATTERN.exec(entry);
+    if (!match) {
+      issues.push({ entry, reason: "malformed" });
+      continue;
+    }
+    const [, key, path] = match;
+    if (!validKeys.has(key)) {
+      issues.push({ entry, reason: "unknown_section_key" });
+    }
+    if (path.length <= 1) {
+      issues.push({ entry, reason: "invalid_path" });
+    }
+  }
+  return issues;
+}
+
 export function parseDisabledSubPages(sections: string[]): Map<string, Set<string>> {
   const map = new Map<string, Set<string>>();
   for (const entry of sections) {
-    if (entry.startsWith("!")) {
-      const colonIdx = entry.indexOf(":");
-      if (colonIdx > 1) {
-        const sectionKey = entry.substring(1, colonIdx);
-        const path = entry.substring(colonIdx + 1);
-        if (!map.has(sectionKey)) map.set(sectionKey, new Set());
-        map.get(sectionKey)!.add(path);
-      }
-    }
+    if (!entry.startsWith("!")) continue;
+    const match = DISABLED_SUBPAGE_PATTERN.exec(entry);
+    if (!match) continue;
+    const [, sectionKey, path] = match;
+    if (!map.has(sectionKey)) map.set(sectionKey, new Set());
+    map.get(sectionKey)!.add(path);
   }
   return map;
 }
@@ -280,7 +345,7 @@ export function buildVisibleTopSections(options: {
   const { canViewPath, companyRole, allowedSectionKeys, disabledSubPages } = options;
 
   const allowedKeys = allowedSectionKeys
-    ?? (companyRole ? ROLE_VISIBLE_SECTIONS[companyRole] : null);
+    ?? (companyRole ? ROLE_VISIBLE_SECTIONS[companyRole as CompanyRole] ?? null : null);
 
   return TOP_SECTIONS
     .map((section) => {
