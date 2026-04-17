@@ -273,7 +273,8 @@ router.get("/api/subcontractor-dashboard/detail/:name", requireAuth, async (req:
 
     const monthMap = new Map<string, number>();
     for (const l of lines) {
-      const d = l.invoiceDate || l.paidDate;
+      // COS monthly trend bucketing — invoice_date only (per finance rule).
+      const d = l.invoiceDate;
       if (!d) continue;
       try {
         const dt = new Date(d);

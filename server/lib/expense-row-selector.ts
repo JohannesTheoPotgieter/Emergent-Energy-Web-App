@@ -119,17 +119,21 @@ export function getExpenseEffectiveDateAndSource(expense: ExpenseLikeRow): { dat
 
 /**
  * COS/Revenue/GP month bucketing date resolution.
- * Determines which month an expense belongs to for cost-of-sales tracking.
- * Priority: admin override → invoice date → approved → forecast → payment.
- * Different from getExpenseEffectiveDateAndSource which is payment-date-first (cashflow).
+ * Per finance rule (April 2026): COS and REV realisation are ALWAYS bucketed by
+ * invoice_date. Only cashflow uses payment date. Rows without an invoice_date
+ * are not realised yet and intentionally return null so they fall out of
+ * realisation aggregates.
+ *
+ * The only override is adminDateOverride — an explicit operator-set move that
+ * supersedes invoice_date when finance needs to reclassify a line into a
+ * different period.
+ *
+ * Different from getExpenseEffectiveDateAndSource which is payment-date-first
+ * (cashflow).
  */
 export function getCosEffectiveDateAndSource(expense: ExpenseLikeRow): { date: string | null; source: string | null } {
   if (expense.adminDateOverride) return { date: expense.adminDateOverride, source: "adminDateOverride" };
   if (expense.expenseInvoicedDate) return { date: expense.expenseInvoicedDate, source: "expenseInvoicedDate" };
-  if (expense.approvedDate) return { date: expense.approvedDate, source: "approvedDate" };
-  if (expense.forecastPaymentDate) return { date: expense.forecastPaymentDate, source: "forecastPaymentDate" };
-  if (expense.computedForecastPaymentDate) return { date: expense.computedForecastPaymentDate, source: "computedForecastPaymentDate" };
-  if (expense.expensePaymentDate) return { date: expense.expensePaymentDate, source: "expensePaymentDate" };
   return { date: null, source: null };
 }
 
