@@ -4,15 +4,22 @@ Run every workbook refresh step in order.
 Usage:
     python3 scripts/workbook_refresh/run_all.py
 
-Each step is self-contained and idempotent. They read the workbook, refresh
-their sheet(s), and write the workbook back. Human-authored columns
-(descriptions, friendly names, purpose text) are preserved by keying on a
-stable identifier (SQL table name, URL, file path, etc.) where possible.
+Phase 1 — Mechanical regeneration (steps 01-15)
+  Re-derive each sheet from the live codebase. Human-authored columns
+  (descriptions, purpose text) are preserved by keying on a stable identifier
+  (SQL table name, URL, file path, etc.) where possible.
 
-The scripts touch mechanically-derivable sheets only. Narrative sheets
-(Screen Actions, Click Handlers, Navigation Map, Toasts, React Query Cache
-Keys, Role & Permission Matrix) are left alone — they still reflect the
-state at the last full autogen run.
+Phase 2 — Cleanup / truth-checking (steps 17-21)
+  Prune narrative sheets that can't be fully regenerated but CAN be partially
+  verified:
+    17 — Screen Actions: remove rows whose URL no longer matches a live screen
+    18 — Navigation Map: remove rows with broken/unresolvable URLs
+    19 — File-path sheets: remove rows whose source file no longer exists
+    20 — React Query Cache Keys: remove rows with unresolvable ${...} key names
+    21 — Role & Permission Matrix: resolve spread notation; remove fully-invalid rows
+
+Phase 3 — README (step 16, must run last)
+  Reads live row counts from the workbook to build the summary sheet.
 """
 from __future__ import annotations
 
@@ -22,6 +29,7 @@ from pathlib import Path
 
 
 STEPS = [
+    # Phase 1: mechanical regeneration
     "step01_database_tables",
     "step02_sql_migrations",
     "step03_components",
@@ -37,7 +45,14 @@ STEPS = [
     "step13_server_file_sheets",
     "step14_status_enums",
     "step15_table_relations_and_indexes",
-    "step16_readme",  # must run last — reads live counts from the workbook
+    # Phase 2: cleanup / truth-checking
+    "step17_clean_screen_actions",
+    "step18_clean_navigation_map",
+    "step19_drop_missing_files",
+    "step20_clean_rq_cache_keys",
+    "step21_clean_role_matrix",
+    # Phase 3: readme (must be last — reads live counts)
+    "step16_readme",
 ]
 
 
