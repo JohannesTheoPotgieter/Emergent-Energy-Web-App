@@ -47,6 +47,9 @@ interface MonthData {
   realisedRevenue: number;
   unrealisedRevenue: number;
   qbRevenueActual: number;
+  /** QB revenue actual minus app Realised Revenue. Positive = QB ahead of app. */
+  qbVsAppVariance?: number;
+  qbVsAppVariancePct?: number;
   budget: number;
   variance: number;
   variancePct: number;
@@ -114,11 +117,16 @@ const ROW_DEFS: {
   projectsKey?: "revProjects" | "realisedProjects" | "unrealisedProjects" | "qbRevenueProjects";
   colorCoded?: boolean;
 }[] = [
-  { key: "totalRevenue", label: "Revenue", dataKey: "totalRevenue", colorClass: "text-foreground font-bold", group: "monthly", expandable: true, projectsKey: "revProjects" },
-  { key: "realisedRevenue", label: "Realised Revenue", dataKey: "realisedRevenue", colorClass: "text-emerald-700 font-bold", group: "monthly", expandable: true, projectsKey: "realisedProjects" },
-  { key: "unrealisedRevenue", label: "Unrealised Revenue", dataKey: "unrealisedRevenue", colorClass: "text-amber-600 font-semibold", group: "monthly", expandable: true, projectsKey: "unrealisedProjects" },
-  { key: "qbRevenueActual", label: "Revenue - QB Actual", dataKey: "qbRevenueActual", colorClass: "text-blue-700 font-semibold", group: "monthly", expandable: true, projectsKey: "qbRevenueProjects" },
-  { key: "budget", label: "Budget", dataKey: "budget", colorClass: "text-purple-600", group: "monthly", editable: true },
+  // Grid rows match the COS tab shape: Planned (Budget) → Revenue → Realised →
+  // Unrealised → Quickbooks Revenue → QB/App Recon. Realisation business
+  // rule = invoice captured + date confirmed (applied server side in
+  // isEffectivelyRealised).
+  { key: "budget", label: "Revenue Planned (Budget)", dataKey: "budget", colorClass: "text-purple-600", group: "monthly", editable: true },
+  { key: "totalRevenue", label: "Revenue Recognised", dataKey: "totalRevenue", colorClass: "text-foreground font-bold", group: "monthly", expandable: true, projectsKey: "revProjects" },
+  { key: "realisedRevenue", label: "Revenue Realised", dataKey: "realisedRevenue", colorClass: "text-emerald-700 font-bold", group: "monthly", expandable: true, projectsKey: "realisedProjects" },
+  { key: "unrealisedRevenue", label: "Revenue Unrealised", dataKey: "unrealisedRevenue", colorClass: "text-amber-600 font-semibold", group: "monthly", expandable: true, projectsKey: "unrealisedProjects" },
+  { key: "qbRevenueActual", label: "Quickbooks Revenue", dataKey: "qbRevenueActual", colorClass: "text-blue-700 font-semibold", group: "monthly", expandable: true, projectsKey: "qbRevenueProjects" },
+  { key: "qbVsAppVariance", label: "Quickbooks ↔ App Recon", dataKey: "qbVsAppVariance" as keyof MonthData, colorClass: "", group: "monthly" },
   { key: "variance", label: "Variance", dataKey: "variance", colorClass: "", group: "monthly", colorCoded: true },
   { key: "variancePct", label: "Variance %", dataKey: "variancePct", colorClass: "", group: "monthly", colorCoded: true },
   { key: "ytdRevenue", label: "YTD Revenue", dataKey: "ytdRevenue", colorClass: "text-foreground font-bold", group: "ytd" },

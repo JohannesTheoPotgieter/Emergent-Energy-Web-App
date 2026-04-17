@@ -1793,14 +1793,25 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       const committedBucket = committedByMonth.get(monthKey);
       const committedCOS = committedBucket?.total ?? 0;
       const plannedBucket = plannedByMonth.get(monthKey);
+      // "plannedCOS" from unrecognised cost lines is retained for drill-down
+      // detail but MUST NOT roll into totalCOS — those rows have no invoice
+      // and no PO, so they are future budget, not actual cost. Including
+      // them was double-counting the remaining project budget and inflating
+      // the YTD figure (~R339M vs QB truth ~R220M-R230M).
       const plannedCOS = plannedBucket?.total ?? 0;
-      const totalCOS = realisedCOS + committedCOS + plannedCOS;
+      const totalCOS = realisedCOS + committedCOS;
       const qbOnlyActual = qbCosByMonth.get(monthKey) ?? 0;
       const appOnlyPendingBucket = appOnlyPendingByMonth.get(monthKey);
       const appOnlyPending = appOnlyPendingBucket?.total ?? 0;
 
       const manual = manualMap.get(monthKey);
       const budget = manual?.budget ? parseFloat(manual.budget) : (staticCosBudget[monthKey] ?? 0);
+
+      // QB is the source of truth for actuals. Variance compares the app's
+      // recognised COS (realised + committed) against the QB booked value
+      // so finance can see where reconciliation is still pending.
+      const qbVsAppVariance = qbOnlyActual - totalCOS;
+      const qbVsAppVariancePct = qbOnlyActual !== 0 ? (qbVsAppVariance / qbOnlyActual) * 100 : 0;
 
       const variance = totalCOS - budget;
       const variancePct = budget !== 0 ? (variance / budget) * 100 : 0;
@@ -1827,6 +1838,9 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
         budget,
         variance,
         variancePct,
+        // QB vs App reconciliation — surface where QB and app diverge.
+        qbVsAppVariance,
+        qbVsAppVariancePct,
         ytdCOS,
         ytdRealised,
         ytdCommitted,
@@ -3327,8 +3341,13 @@ async function revenueTrackerHandler(req: Request, res: Response) {
     const qbInvoices = ((qbInvoicesRaw as any)?.QueryResponse?.Invoice ?? []).map(invoiceRawToSummary);
     const linkedInvoiceIds = new Set(revenueLinks.map((l: any) => String(l.qbEntityId)));
     const qbRevenueByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
+    // All QB invoices contribute to QB Revenue actual. Previously, only
+    // manually linked invoices were counted — which meant QB Revenue read
+    // R0 everywhere until every single invoice had been hand-linked in the
+    // QB Bill Linking screen. Finance trusts QB as the source of revenue
+    // truth, so the full picture is surfaced here and linked vs unlinked
+    // is differentiated for drill-down.
     for (const inv of qbInvoices) {
-      if (!linkedInvoiceIds.has(String(inv.id))) continue;
       const recognitionDate = inv.txnDate;
       const dm = String(recognitionDate || "").match(/^(\d{4})-(\d{2})/);
       if (!dm) continue;
@@ -3338,7 +3357,8 @@ async function revenueTrackerHandler(req: Request, res: Response) {
       if (!qbRevenueByMonth.has(monthKey)) qbRevenueByMonth.set(monthKey, { total: 0, projects: new Map() });
       const bucket = qbRevenueByMonth.get(monthKey)!;
       bucket.total += amount;
-      bucket.projects.set("Mapped QB Revenue", (bucket.projects.get("Mapped QB Revenue") || 0) + amount);
+      const bucketKey = linkedInvoiceIds.has(String(inv.id)) ? "Mapped QB Revenue" : "Unmapped QB Revenue";
+      bucket.projects.set(bucketKey, (bucket.projects.get(bucketKey) || 0) + amount);
     }
 
     const months: any[] = [];
@@ -3366,6 +3386,10 @@ async function revenueTrackerHandler(req: Request, res: Response) {
       const variance = totalRevenue - budget;
       const variancePct = budget !== 0 ? (variance / budget) * 100 : 0;
 
+      // QB vs App recon on revenue — QB total minus realised recognised in app.
+      const qbVsAppVariance = qbRevenueActual - realisedRevenue;
+      const qbVsAppVariancePct = qbRevenueActual !== 0 ? (qbVsAppVariance / qbRevenueActual) * 100 : 0;
+
       ytdRevenue += totalRevenue;
       ytdRealised += realisedRevenue;
       ytdQbRevenueActual += qbRevenueActual;
@@ -3381,6 +3405,8 @@ async function revenueTrackerHandler(req: Request, res: Response) {
         realisedRevenue,
         unrealisedRevenue,
         qbRevenueActual,
+        qbVsAppVariance,
+        qbVsAppVariancePct,
         budget,
         variance,
         variancePct,

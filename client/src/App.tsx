@@ -129,6 +129,9 @@ const FinanceQuickBooksLinksPage = lazyWithRetry(() => import("@/pages/finance-q
 const FinanceQuickBooksCustomerMappingPage = lazyWithRetry(
   () => import("@/pages/finance-quickbooks-customer-mapping"),
 );
+const FinanceQuickBooksThroughputPage = lazyWithRetry(
+  () => import("@/pages/finance-quickbooks-throughput"),
+);
 const AdminBackfillPage = lazyWithRetry(() => import("@/pages/admin-backfill"));
 const AdminWorkflowConfigPage = lazyWithRetry(() => import("@/pages/admin-workflow-config"));
 
@@ -254,6 +257,7 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   AdminQuickBooksPage,
   FinanceQuickBooksLinksPage,
   FinanceQuickBooksCustomerMappingPage,
+  FinanceQuickBooksThroughputPage,
   AdminBackfillPage,
   AdminWorkflowConfigPage,
   MilestoneTrackerPage,
