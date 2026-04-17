@@ -139,7 +139,10 @@ export class OpportunitiesRepository {
         isNull(projectInfo.deletedAt),
       ))
       .groupBy(projectInfo.opportunityId);
-    return rows.map(r => ({ opportunityId: r.opportunityId, count: Number(r.count || 0) }));
+    return rows.map((r: { opportunityId: number | null; count: number }) => ({
+      opportunityId: r.opportunityId,
+      count: Number(r.count || 0),
+    }));
   }
 
   async getEngineeringTicketCounts(opportunityIds: number[]): Promise<CountByOpportunity[]> {
@@ -154,7 +157,10 @@ export class OpportunitiesRepository {
         inArray(pdTickets.requestType, [...ENGINEERING_REQUEST_TYPES]),
       ))
       .groupBy(pdTickets.opportunityId);
-    return rows.map(r => ({ opportunityId: r.opportunityId, count: Number(r.count || 0) }));
+    return rows.map((r: { opportunityId: number | null; count: number }) => ({
+      opportunityId: r.opportunityId,
+      count: Number(r.count || 0),
+    }));
   }
 
   // ---- Mapping-context queries ----
@@ -244,7 +250,7 @@ export class OpportunitiesRepository {
 
     if (templates.length === 0) return [];
 
-    const templateIds = templates.map(t => t.id);
+    const templateIds = templates.map((t: ActivePhaseTemplate) => t.id);
     const itemCounts = await db
       .select({
         templateId: phaseTemplateItem.templateId,
@@ -260,7 +266,7 @@ export class OpportunitiesRepository {
     const byTemplateId = new Map<number, number>();
     for (const row of itemCounts) byTemplateId.set(Number(row.templateId), Number(row.count || 0));
 
-    return templates.map(t => ({ ...t, itemCount: byTemplateId.get(t.id) || 0 }));
+    return templates.map((t: ActivePhaseTemplate) => ({ ...t, itemCount: byTemplateId.get(t.id) || 0 }));
   }
 
   async getPhaseTemplateById(templateId: number): Promise<ActivePhaseTemplate | undefined> {

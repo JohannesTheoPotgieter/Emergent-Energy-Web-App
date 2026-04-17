@@ -139,11 +139,17 @@ export function isCosRealised(exp: {
     expensePoNumber: exp.expensePoNumber ?? null,
     paymentDate: null,
     today: new Date().toISOString().slice(0, 10),
-    // Forward the invoice-date-confirmed signals so the canonical check can
-    // enforce the black-font gate. When both are nullish the canonical
-    // function falls back to the legacy invoice-only rule for safety.
-    invoiceDateFontColor: exp.invoiceDateFontColor ?? null,
-    invoiceDateConfirmed: exp.invoiceDateConfirmed ?? null,
+    // Forward the invoice-date-confirmed signals ONLY when the caller
+    // actually supplied them. The canonical function uses `undefined` as
+    // the "legacy caller — fall back to invoice-only rule" sentinel, so
+    // eagerly normalising `undefined → null` would incorrectly engage the
+    // strict black-font gate for callers that never opted in.
+    ...(exp.invoiceDateFontColor !== undefined
+      ? { invoiceDateFontColor: exp.invoiceDateFontColor }
+      : {}),
+    ...(exp.invoiceDateConfirmed !== undefined
+      ? { invoiceDateConfirmed: exp.invoiceDateConfirmed }
+      : {}),
     lineAssignedQbExVat: exp.lineAssignedQbExVat ?? null,
     lineAmountExVat: exp.lineAmountExVat ?? null,
   });
