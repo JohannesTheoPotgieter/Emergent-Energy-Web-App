@@ -147,9 +147,10 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
     : "";
   const projectParam = projectFilter !== "all" ? `&project=${encodeURIComponent(projectFilter)}` : "";
 
-  const { data: rawItems, isLoading } = useQuery<MonthDetailItem[]>({
+  const { data: rawItems, isLoading, isError, error: detailError, refetch: refetchDetail } = useQuery<MonthDetailItem[]>({
     queryKey: ["/api/revenue-tracker/month-detail", monthKey, stateFilter, projectFilter],
     queryFn: fetchQueryFn(`/api/revenue-tracker/month-detail?monthKey=${monthKey}${stateParam}${projectParam}`),
+    retry: 1,
   });
 
   const items = rawItems ?? [];
@@ -308,10 +309,29 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
               <Loader2 className="h-6 w-6 animate-spin text-emerald-500" />
               <span className="text-sm">Loading line items…</span>
             </div>
+          ) : isError ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center gap-3 px-6">
+              <div className="h-12 w-12 rounded-full bg-red-50 flex items-center justify-center">
+                <AlertCircle className="h-6 w-6 text-red-600" />
+              </div>
+              <div>
+                <p className="font-medium text-sm">Unable to load detail</p>
+                <p className="text-xs text-muted-foreground mt-1 max-w-md">{detailError instanceof Error ? detailError.message : "An unexpected error occurred fetching the drill-down."}</p>
+              </div>
+              <button
+                onClick={() => refetchDetail()}
+                className="text-xs font-medium px-3 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors"
+              >
+                Retry
+              </button>
+            </div>
           ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-2">
               <Search className="h-8 w-8 text-slate-600" />
               <span className="text-sm">No line items found</span>
+              <span className="text-xs text-muted-foreground/80 max-w-md text-center">
+                No revenue lines match the current filters for {monthLabel}.
+              </span>
             </div>
           ) : (
             <table className="w-full text-xs">
