@@ -64,6 +64,13 @@ describe("QuickBooks allocation-aware evidence model", () => {
     expect(schema).toContain("qb_amount_ex_vat");
   });
 
+  it("includes OVER_ASSIGNED_BLOCKED in the document assignment-status enum", () => {
+    // computeQbDocumentStatus can return OVER_ASSIGNED_BLOCKED; the enum
+    // and the helper must agree so the status column is never populated
+    // with an out-of-band value.
+    expect(schema).toMatch(/QUICKBOOKS_DOCUMENT_ASSIGNMENT_STATUS[\s\S]*OVER_ASSIGNED_BLOCKED/);
+  });
+
   it("contains explicit over-assignment guard and tiny tolerance", () => {
     expect(allocationLib).toContain("QB_ASSIGNMENT_TOLERANCE_EX_VAT = 0.01");
     expect(allocationLib).toContain("Over-assignment blocked");
@@ -72,6 +79,65 @@ describe("QuickBooks allocation-aware evidence model", () => {
   it("computes realised amount from min(line amount, assigned evidence)", () => {
     expect(allocationLib).toContain("Math.min(lineAmountExVat, assignedQbExVat)");
     expect(allocationLib).toContain("Math.max(0, lineAmountExVat - assignedQbExVat)");
+  });
+});
+
+describe("QuickBooks bulk-assign hardening (#660 follow-up)", () => {
+  const routes = read("server/quickbooks-routes.ts");
+  const service = read("server/services/quickbooks-reconciliation-service.ts");
+
+  it("validates the bulk-assign body with Zod", () => {
+    expect(routes).toContain("bulkAssignSchema");
+    expect(routes).toContain("validateBody(bulkAssignSchema)");
+    // billId is trimmed + regex-enforced so QB QL injection is impossible.
+    expect(routes).toMatch(/billId:\s*z\.string/);
+  });
+
+  it("accepts billId (not a client-supplied bill snapshot) on bulk-assign", () => {
+    // Regression guard: if anyone re-introduces the old `bill: {...}` shape
+    // the client can smuggle inflated qbAmountExVat values. Stay on billId.
+    const handlerIdx = routes.indexOf("/api/quickbooks/cost-allocations/bulk-assign");
+    expect(handlerIdx).toBeGreaterThan(-1);
+    const block = routes.slice(handlerIdx, handlerIdx + 2200);
+    expect(block).toMatch(/billId:\s*body\.billId/);
+    expect(block).not.toMatch(/qbAmountExVat:\s*(?:req|body)\.body?\./);
+  });
+
+  it("re-fetches the Bill server-side via getBillById in the service", () => {
+    expect(service).toContain("getBillById");
+    expect(service).toMatch(/billId:\s*string/);
+  });
+
+  it("exports QuickBooksUnavailableError and QuickBooksBillNotFoundError", () => {
+    expect(service).toMatch(/export\s+class\s+QuickBooksUnavailableError/);
+    expect(service).toMatch(/export\s+class\s+QuickBooksBillNotFoundError/);
+  });
+
+  it("maps QB errors to 503 / 404 / 409 via ApiError/sendError", () => {
+    expect(routes).toContain("QuickBooksUnavailableError");
+    expect(routes).toContain('new ApiError(503, "quickbooks_unavailable"');
+    expect(routes).toContain("QuickBooksBillNotFoundError");
+    expect(routes).toContain('new ApiError(404, "quickbooks_bill_not_found"');
+    expect(routes).toContain("Over-assignment blocked");
+    expect(routes).toContain("conflict(err.message)");
+  });
+
+  it("does not fall back to qbRealmId='unknown' in the save-allocations path", () => {
+    const fnIdx = service.indexOf("export async function saveCostAllocationsForBill");
+    expect(fnIdx).toBeGreaterThan(-1);
+    const block = service.slice(fnIdx, fnIdx + 2000);
+    expect(block).toMatch(/throw new QuickBooksUnavailableError/);
+    expect(block).not.toMatch(/realmId\s*\?\?\s*"unknown"/);
+  });
+
+  it("uses $inferInsert for QB document and allocation writes (no `as any` spray)", () => {
+    expect(service).toContain("quickbooksDocuments.$inferInsert");
+    expect(service).toContain("quickbooksCostAllocations.$inferInsert");
+    const fnIdx = service.indexOf("export async function saveCostAllocationsForBill");
+    const block = service.slice(fnIdx, fnIdx + 2200);
+    // Any `as any` inside the save function is a regression — strict types
+    // should flow via the $inferInsert aliases defined above it.
+    expect(block).not.toMatch(/\bas\s+any\b/);
   });
 });
 

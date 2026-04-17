@@ -1,7 +1,7 @@
 import { and, inArray, isNull, sql } from "drizzle-orm";
 import { normalizedCostLines, normalizedRevenueLines, workItems } from "@shared/schema";
 import { db, getDbMode } from "../db";
-import { getCosRealisedAmountExVat } from "../lib/calculations/financeUtils";
+import { getCosRealisedAmountForNclRow } from "../lib/calculations/financeUtils";
 import { getAssignedEvidenceByCostLineIds } from "../lib/finance/qb-allocation-read";
 
 function toNumber(value: unknown): number {
@@ -91,10 +91,10 @@ export async function getCanonicalFinanceByProjectIds(projectIds: number[]): Pro
       } else {
         current.outstandingCost += amount;
       }
-      current.realisedCost += getCosRealisedAmountExVat({
-        amountExVat: row.amountExVat,
-        lineAssignedQbExVat: assignedByCostLineId.get(row.id) ?? null,
-      });
+      current.realisedCost += getCosRealisedAmountForNclRow(
+        row as any,
+        assignedByCostLineId.get(row.id) ?? null,
+      );
     }
 
     return byProject;
@@ -112,19 +112,6 @@ export async function getCanonicalFinanceByProjectIds(projectIds: number[]): Pro
     GROUP BY project_id
   `);
 
-  const costRows = await db.execute(sql`
-    SELECT
-      project_id,
-      COALESCE(SUM(CAST(amount_ex_vat AS NUMERIC)), 0) AS total_cost,
-      COALESCE(SUM(CASE WHEN paid_date IS NOT NULL THEN CAST(amount_ex_vat AS NUMERIC) ELSE 0 END), 0) AS paid_cost,
-      COALESCE(SUM(CASE WHEN paid_date IS NULL THEN CAST(amount_ex_vat AS NUMERIC) ELSE 0 END), 0) AS outstanding_cost,
-      0::numeric AS realised_cost
-    FROM normalized_cost_lines
-    WHERE project_id = ANY(${sql`ARRAY[${sql.join(projectIds.map((id) => sql`${id}`), sql`,`)}]::int[]`})
-      AND effective_to IS NULL
-    GROUP BY project_id
-  `);
-
   for (const row of revenueRows.rows as any[]) {
     const projectId = Number(row.project_id);
     const current = byProject.get(projectId);
@@ -134,25 +121,40 @@ export async function getCanonicalFinanceByProjectIds(projectIds: number[]): Pro
     current.outstandingRevenue = toNumber(row.outstanding_revenue);
   }
 
-  const rawCostRows = await db.select().from(normalizedCostLines).where(and(inArray(normalizedCostLines.projectId, projectIds), isNull(normalizedCostLines.effectiveTo)));
-  const assignedByCostLineId = await getAssignedEvidenceByCostLineIds((rawCostRows as any[]).map((r: any) => r.id));
-  const realisedByProject = new Map<number, number>();
+  // One cost query feeds all four totals (total/paid/outstanding/realised).
+  // The realised-amount computation relies on the invoice-date-confirmed
+  // gate + override rules which live in `isCanonicalCosRealised`, so we
+  // need the raw rows anyway — issuing a separate aggregate SQL would
+  // duplicate business logic and add a round-trip.
+  const rawCostRows = await db
+    .select()
+    .from(normalizedCostLines)
+    .where(and(inArray(normalizedCostLines.projectId, projectIds), isNull(normalizedCostLines.effectiveTo)));
+  const assignedByCostLineId = await getAssignedEvidenceByCostLineIds(
+    (rawCostRows as any[]).map((r: any) => r.id),
+  );
+
   for (const row of rawCostRows as any[]) {
-    const realised = getCosRealisedAmountExVat({
-      amountExVat: row.amountExVat,
-      lineAssignedQbExVat: assignedByCostLineId.get(row.id) ?? null,
-    });
-    realisedByProject.set(row.projectId, (realisedByProject.get(row.projectId) || 0) + realised);
+    const current = byProject.get(row.projectId);
+    if (!current) continue;
+    const amount = toNumber(row.amountExVat);
+    current.totalCost += amount;
+    if (row.paidDate) {
+      current.paidCost += amount;
+    } else {
+      current.outstandingCost += amount;
+    }
+    current.realisedCost += getCosRealisedAmountForNclRow(
+      row,
+      assignedByCostLineId.get(row.id) ?? null,
+    );
   }
 
-  for (const row of costRows.rows as any[]) {
-    const projectId = Number(row.project_id);
-    const current = byProject.get(projectId);
-    if (!current) continue;
-    current.totalCost = toNumber(row.total_cost);
-    current.paidCost = toNumber(row.paid_cost);
-    current.outstandingCost = toNumber(row.outstanding_cost);
-    current.realisedCost = Number((realisedByProject.get(projectId) || 0).toFixed(2));
+  for (const current of byProject.values()) {
+    current.totalCost = Number(current.totalCost.toFixed(2));
+    current.paidCost = Number(current.paidCost.toFixed(2));
+    current.outstandingCost = Number(current.outstandingCost.toFixed(2));
+    current.realisedCost = Number(current.realisedCost.toFixed(2));
   }
 
   return byProject;

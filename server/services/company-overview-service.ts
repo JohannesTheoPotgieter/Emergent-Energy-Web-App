@@ -42,7 +42,7 @@ import {
 import { computeQcProgress } from "@shared/quality-governance";
 import { evaluateRevenueArStatus, isRevenueSettled } from "../lib/finance/revenue-ar-status";
 import { computeMarginPct } from "../lib/finance/margin";
-import { getCosRealisedAmountExVat } from "../lib/calculations/financeUtils";
+import { getCosRealisedAmountForNclRow } from "../lib/calculations/financeUtils";
 import { getAssignedEvidenceByCostLineIds } from "../lib/finance/qb-allocation-read";
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -191,10 +191,10 @@ export async function getCompanyOverviewData() {
       if ((row as any).paidDate) {
         cashPaidFytd += amount;
       }
-      const realised = getCosRealisedAmountExVat({
-        amountExVat: row.amountExVat,
-        lineAssignedQbExVat: assignedByCostLineId.get(row.id) ?? null,
-      });
+      const realised = getCosRealisedAmountForNclRow(
+        row as any,
+        assignedByCostLineId.get(row.id) ?? null,
+      );
       if (realised > 0) {
         realisedCostFytd += realised;
         projectRealisedCos.set(row.projectId, (projectRealisedCos.get(row.projectId) || 0) + realised);
