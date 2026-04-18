@@ -133,6 +133,16 @@ export const MONEY_IMPACT_LABELS = {
   noActivity: "This import does not change any financial values.",
 } as const;
 
+// Integrity check (B4a) — labels for the invoice / PO data-hygiene report
+// shown on the Confirm step. Phrasing assumes a finance / PM audience and
+// stays plain-language ("warning", "rows", not "violations" / "tuples").
+export const INTEGRITY_LABELS = {
+  title: "Invoice & PO checks",
+  loading: "Checking invoices and POs…",
+  clean: "Invoice and PO checks passed — no issues found.",
+  advisoryNote: "These are advisory checks. The import will still run; fix the workbook if any look wrong.",
+} as const;
+
 // Result screen labels
 export const RESULT_LABELS = {
   success: "Import completed",

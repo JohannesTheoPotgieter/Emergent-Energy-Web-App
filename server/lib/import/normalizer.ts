@@ -135,7 +135,7 @@ const PLACEHOLDER_INVOICES = new Set([
  * Returns true if an invoice number is a real captured supplier invoice,
  * not a placeholder or empty value.
  */
-function isValidInvoiceNumber(invoiceNumber: string | null | undefined): boolean {
+export function isValidInvoiceNumber(invoiceNumber: string | null | undefined): boolean {
   if (!invoiceNumber) return false;
   const trimmed = invoiceNumber.trim();
   if (!trimmed) return false;
