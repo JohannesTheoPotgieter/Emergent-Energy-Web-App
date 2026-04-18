@@ -829,12 +829,7 @@ export default function CashflowPage() {
 
   const { data: projectsSummary = [] } = useQuery<Array<{
     project_name: string;
-    total_contract_revenue?: number | null;
-    total_expenses?: number | null;
-    actual_revenue?: number | null;
-    actual_expenses?: number | null;
-    revenue_outstanding?: number | null;
-    expenses_outstanding?: number | null;
+    has_tracker_import?: boolean;
   }>>({
     queryKey: ["/api/projects-summary"],
     queryFn: async () => {
@@ -851,23 +846,10 @@ export default function CashflowPage() {
     const names = new Set<string>();
     projectsSummary.forEach((p) => {
       if (!p.project_name) return;
-      // Only show projects that have tracker data loaded. Smart Import populates
-      // normalized_cost_lines / normalized_revenue_lines, which feed the aggregate
-      // fields below. We accept either a non-null aggregate (rows exist even if
-      // the SUM is zero) OR any non-zero amount, so newly-imported zero-value
-      // trackers still appear.
-      const trackerFields = [
-        p.total_expenses,
-        p.actual_revenue,
-        p.actual_expenses,
-        p.revenue_outstanding,
-        p.expenses_outstanding,
-        p.total_contract_revenue,
-      ];
-      const hasTrackerData = trackerFields.some(
-        (v) => v != null || Math.abs(Number(v) || 0) > 0,
-      );
-      if (hasTrackerData) names.add(p.project_name);
+      // Only include projects that have a tracker workbook imported. The backend
+      // computes has_tracker_import from upload_metadata + committed
+      // smart_import_runs, which is the authoritative signal.
+      if (p.has_tracker_import) names.add(p.project_name);
     });
     return Array.from(names).sort();
   }, [projectsSummary]);
@@ -1032,28 +1014,7 @@ export default function CashflowPage() {
       <SectionHeader
         icon={<Wallet className="h-5 w-5" />}
         title={`Cashflow FY${CURRENT_FY}`}
-        meta={
-          <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-            <span>Sep {CURRENT_FY - 1} – Aug {CURRENT_FY}</span>
-            <span className="text-border">·</span>
-            <span>{scopeLabel}</span>
-            <span className="text-border">·</span>
-            <span>{overrideWeeks} override · {varianceWeeks} variance weeks</span>
-            <span className="text-border">·</span>
-            <span className="inline-flex items-center gap-1">
-              <Loader2 className={`h-3 w-3 ${isCashflowFetching ? "animate-spin" : "opacity-0"}`} />
-              {cashflowUpdatedAt
-                ? `Refreshed ${new Date(cashflowUpdatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
-                : "Live"}
-            </span>
-            {!canEditCashflow && (
-              <>
-                <span className="text-border">·</span>
-                <span className="text-amber-700">Read-only</span>
-              </>
-            )}
-          </span>
-        }
+        eyebrow={`Sep ${CURRENT_FY - 1} – Aug ${CURRENT_FY}`}
         actions={
           <div className="flex items-center gap-2">
             <Button
@@ -1088,7 +1049,32 @@ export default function CashflowPage() {
           </div>
         }
       />
-      <div className="lg:flex lg:gap-5 lg:items-start -mt-2">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs text-muted-foreground -mt-1">
+        <Badge variant="outline" className="gap-1 px-2 py-0.5 text-[11px] font-medium border-border bg-card">
+          <Wallet className="h-3 w-3" />
+          {scopeLabel}
+        </Badge>
+        <Badge variant="outline" className="gap-1 px-2 py-0.5 text-[11px] font-medium border-border bg-card">
+          <Eye className="h-3 w-3" />
+          {overrideWeeks} override {overrideWeeks === 1 ? "week" : "weeks"}
+        </Badge>
+        <Badge variant="outline" className="gap-1 px-2 py-0.5 text-[11px] font-medium border-border bg-card">
+          <ArrowDownRight className="h-3 w-3" />
+          {varianceWeeks} variance {varianceWeeks === 1 ? "week" : "weeks"}
+        </Badge>
+        <Badge variant="outline" className="gap-1 px-2 py-0.5 text-[11px] font-medium border-border bg-card">
+          <Loader2 className={`h-3 w-3 ${isCashflowFetching ? "animate-spin text-emerald-600" : ""}`} />
+          {cashflowUpdatedAt
+            ? `Refreshed ${new Date(cashflowUpdatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+            : "Live"}
+        </Badge>
+        {!canEditCashflow && (
+          <Badge variant="outline" className="gap-1 px-2 py-0.5 text-[11px] font-medium border-amber-200 bg-amber-50 text-amber-800">
+            Read-only
+          </Badge>
+        )}
+      </div>
+      <div className="lg:flex lg:gap-5 lg:items-start -mt-1">
         <aside
           className="hidden lg:flex lg:flex-col lg:w-56 lg:shrink-0 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] rounded-xl border border-border bg-card shadow-sm p-3"
           data-testid="rail-filter"
