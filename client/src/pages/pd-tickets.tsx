@@ -1,29 +1,36 @@
-import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { statusColorClasses, priorityColorClasses } from "@/lib/status-colors";
-import { Input } from "@/components/ui/input";
-import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
-  Loader2, Plus, Search, FileEdit, AlertTriangle, AlertCircle, ArrowRight, Trash2,
-  FileStack, Clock, PauseCircle, CheckCircle2, BarChart3, TrendingUp, Handshake, Send, XCircle,
+  AlertTriangle,
+  BarChart3,
+  CheckCircle2,
+  Clock,
+  FileEdit,
+  FileStack,
+  Handshake,
+  PauseCircle,
+  Plus,
+  Send,
+  TrendingUp,
+  XCircle,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { usePermission } from "@/hooks/use-permissions";
-import { useTablePagination } from "@/hooks/use-table-pagination";
-import { TablePagination } from "@/components/ui/table-pagination";
-import { ExportDropdown } from "@/components/ui/export-dropdown";
-import { PD_REQUEST_TYPES_FILTERABLE } from "@/lib/pd/request-types";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { useToast } from "@/hooks/use-toast";
 
-async function pdFetch(url: string, opts?: RequestInit) {
+/**
+ * Project Development Dashboard (lean).
+ *
+ * KPI cards + PD work queue + handover readiness only. The full ticket list
+ * and the active opportunities list have been merged into /opportunities —
+ * this page is now an at-a-glance overview. KPI card clicks navigate to
+ * /opportunities with a status filter.
+ */
+async function pdFetch(url: string) {
   const r = await fetch(url, {
     credentials: "include",
-    headers: { "Content-Type": "application/json", ...(opts?.headers || {}) },
-    ...opts,
+    headers: { "Content-Type": "application/json" },
   });
   const body = await r.json().catch(() => null);
   if (!r.ok) {
@@ -31,12 +38,6 @@ async function pdFetch(url: string, opts?: RequestInit) {
   }
   return body;
 }
-
-// Filter list uses the superset (active + legacy) so historical tickets
-// with retired request types remain findable. See client/src/lib/pd/request-types.ts.
-const REQUEST_TYPES = PD_REQUEST_TYPES_FILTERABLE;
-const STATUSES = ["Draft", "In Progress", "On Hold", "Completed", "Cancelled"];
-const PRIORITIES = ["Critical", "High", "Medium", "Low"];
 
 const KANBAN_COLUMN_COLORS: Record<string, string> = {
   "New": "border-t-slate-400",
@@ -48,69 +49,53 @@ const KANBAN_COLUMN_COLORS: Record<string, string> = {
 
 export default function PdTicketsPage() {
   const [, navigate] = useLocation();
-  const { allowed: canView, loading: permLoading } = usePermission('pd_dashboard', 'view');
-  const { allowed: canDelete } = usePermission('pd_tickets', 'edit');
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [priorityFilter, setPriorityFilter] = useState("all");
-  const [typeFilter, setTypeFilter] = useState("all");
-  const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: number) => pdFetch(`/api/pd/tickets/${id}`, { method: "DELETE" }),
-    onSuccess: (result: any) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/pd/tickets"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/pd/dashboard"] });
-      toast({
-        title: "Ticket deleted",
-        description: `Ticket and ${result?.deletedTaskCount || 0} linked engineering task(s) removed. The linked project and client were kept.`,
-      });
-      setDeleteTarget(null);
-    },
-    onError: (e: Error) => toast({ title: "Delete failed", description: e.message, variant: "destructive" }),
-  });
+  const { allowed: canView, loading: permLoading } = usePermission("pd_dashboard", "view");
 
   const { data: stats } = useQuery<{
-    total: number; active: number; overdue: number; dueThisWeek: number; onHold: number; completed: number;
+    total: number;
+    active: number;
+    overdue: number;
+    dueThisWeek: number;
+    onHold: number;
+    completed: number;
   }>({
     queryKey: ["/api/pd/dashboard"],
     queryFn: () => pdFetch("/api/pd/dashboard"),
-  });
-
-  const { data: tickets = [], isLoading, isError, refetch, error } = useQuery<any[]>({
-    queryKey: ["/api/pd/tickets"],
-    queryFn: () => pdFetch("/api/pd/tickets"),
-    retry: 1,
+    enabled: canView,
   });
 
   const { data: pipeline } = useQuery<{
-    tickets: any[];
-    byStatus: Record<string, { count: number; tickets: any[] }>;
+    tickets: unknown[];
+    byStatus: Record<string, { count: number; tickets: unknown[] }>;
     byRequestType: Record<string, number>;
-    overdue: { week: any[]; twoWeeks: any[]; month: any[] };
+    overdue: { week: unknown[]; twoWeeks: unknown[]; month: unknown[] };
     totalPipelineValue: number;
     kanbanColumns: string[];
   }>({
     queryKey: ["/api/pd/pipeline"],
     queryFn: () => pdFetch("/api/pd/pipeline"),
     staleTime: 30_000,
+    enabled: canView,
   });
 
-  const { data: handoverControl } = useQuery<{ items: any[] }>({
+  const { data: handoverControl } = useQuery<{
+    items: Array<{ handover_status: string; days_in_status: number }>;
+  }>({
     queryKey: ["/api/pd-pm-handover/control"],
     queryFn: () => pdFetch("/api/pd-pm-handover/control"),
     staleTime: 60_000,
+    enabled: canView,
   });
 
   const handoverStats = (() => {
     const items = handoverControl?.items || [];
-    const awaitingPmReview = items.filter(i => i.handover_status === "SUBMITTED_FOR_PM_REVIEW").length;
-    const rejected = items.filter(i => i.handover_status === "REJECTED").length;
-    const drafts = items.filter(i => i.handover_status === "DRAFT").length;
-    const accepted = items.filter(i => i.handover_status === "ACCEPTED").length;
-    const overdueReview = items.filter(i => i.handover_status === "SUBMITTED_FOR_PM_REVIEW" && i.days_in_status > 5).length;
+    const awaitingPmReview = items.filter((i) => i.handover_status === "SUBMITTED_FOR_PM_REVIEW").length;
+    const rejected = items.filter((i) => i.handover_status === "REJECTED").length;
+    const drafts = items.filter((i) => i.handover_status === "DRAFT").length;
+    const accepted = items.filter((i) => i.handover_status === "ACCEPTED").length;
+    const overdueReview = items.filter(
+      (i) => i.handover_status === "SUBMITTED_FOR_PM_REVIEW" && i.days_in_status > 5,
+    ).length;
     return { awaitingPmReview, rejected, drafts, accepted, overdueReview, total: items.length };
   })();
 
@@ -118,43 +103,24 @@ export default function PdTicketsPage() {
     ? pipeline.overdue.week.length + pipeline.overdue.twoWeeks.length + pipeline.overdue.month.length
     : 0;
 
-  const filtered = tickets.filter((row: any) => {
-    const t = row.ticket;
-    if (statusFilter !== "all" && t.status !== statusFilter) return false;
-    if (priorityFilter !== "all" && t.priority !== priorityFilter) return false;
-    if (typeFilter !== "all" && t.requestType !== typeFilter) return false;
-    if (search) {
-      const term = search.toLowerCase();
-      return (
-        t.projectSiteName?.toLowerCase().includes(term) ||
-        (row.clientName || "").toLowerCase().includes(term) ||
-        (row.projectName || "").toLowerCase().includes(term) ||
-        (row.developerName || "").toLowerCase().includes(term)
-      );
-    }
-    return true;
-  }).sort((a: any, b: any) => {
-    const today = new Date().toISOString().split("T")[0];
-    const aOverdue = a.ticket.dueDate && a.ticket.dueDate < today && a.ticket.status !== "Completed" && a.ticket.status !== "Cancelled";
-    const bOverdue = b.ticket.dueDate && b.ticket.dueDate < today && b.ticket.status !== "Completed" && b.ticket.status !== "Cancelled";
-    if (aOverdue && !bOverdue) return -1;
-    if (!aOverdue && bOverdue) return 1;
-    return 0;
-  });
-
-  const pagination = useTablePagination(filtered);
-
   if (!permLoading && !canView) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <Card className="max-w-md w-full"><CardContent className="py-12 text-center">
-          <AlertTriangle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold mb-2">Access Denied</h2>
-          <p className="text-muted-foreground">You don't have permission to view Project Development.</p>
-        </CardContent></Card>
+        <Card className="max-w-md w-full">
+          <CardContent className="py-12 text-center">
+            <AlertTriangle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
+            <h2 className="text-xl font-semibold mb-2">Access Denied</h2>
+            <p className="text-muted-foreground">You don't have permission to view Project Development.</p>
+          </CardContent>
+        </Card>
       </div>
     );
   }
+
+  const goToOpportunities = (status?: string) => {
+    const url = status && status !== "all" ? `/opportunities?status=${encodeURIComponent(status)}` : "/opportunities";
+    navigate(url);
+  };
 
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
@@ -162,10 +128,18 @@ export default function PdTicketsPage() {
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="pd-dashboard-title">
             <FileEdit className="h-6 w-6 text-violet-600" />
-            Project Development
+            Project Development Dashboard
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Commercial pipeline, Project Development work queue, and Project Development → PM handover readiness.
+            At-a-glance view of the PD work queue and handover readiness. The full ticket + opportunity list lives on{" "}
+            <button
+              type="button"
+              className="underline hover:text-foreground"
+              onClick={() => goToOpportunities()}
+            >
+              Pipeline / Opportunities
+            </button>
+            .
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -178,7 +152,7 @@ export default function PdTicketsPage() {
         </div>
       </div>
 
-      {/* KPI stat cards */}
+      {/* KPI cards — click through to the merged Opportunities page */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         {[
           { label: "Total", value: stats?.total || 0, icon: FileStack, color: "text-foreground bg-muted", statusFilter: "all" },
@@ -187,11 +161,11 @@ export default function PdTicketsPage() {
           { label: "Due This Week", value: stats?.dueThisWeek || 0, icon: Clock, color: "text-amber-700 bg-amber-100", statusFilter: "all" },
           { label: "On Hold", value: stats?.onHold || 0, icon: PauseCircle, color: "text-orange-700 bg-orange-100", statusFilter: "On Hold" },
           { label: "Completed", value: stats?.completed || 0, icon: CheckCircle2, color: "text-green-700 bg-green-100", statusFilter: "Completed" },
-        ].map(card => (
+        ].map((card) => (
           <Card
             key={card.label}
             className="hover:shadow-md transition-shadow cursor-pointer"
-            onClick={() => setStatusFilter(card.statusFilter)}
+            onClick={() => goToOpportunities(card.statusFilter)}
             data-testid={`pd-stat-${card.label.toLowerCase().replace(/\s/g, "-")}`}
           >
             <CardContent className="p-4 flex flex-col items-center text-center gap-1">
@@ -215,12 +189,16 @@ export default function PdTicketsPage() {
             </h2>
             {pipeline.totalPipelineValue > 0 && (
               <Badge variant="outline" className="text-sm gap-1 font-semibold">
-                Tickets value: R {pipeline.totalPipelineValue.toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                Tickets value: R{" "}
+                {pipeline.totalPipelineValue.toLocaleString("en-ZA", {
+                  minimumFractionDigits: 0,
+                  maximumFractionDigits: 0,
+                })}
               </Badge>
             )}
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-            {pipeline.kanbanColumns.map(col => {
+            {pipeline.kanbanColumns.map((col) => {
               const data = pipeline.byStatus[col];
               return (
                 <Card key={col} className={`border-t-4 ${KANBAN_COLUMN_COLORS[col] || "border-t-gray-300"}`}>
@@ -254,7 +232,12 @@ export default function PdTicketsPage() {
               <Handshake className="h-4 w-4 text-amber-600" />
               PD → PM handover readiness
             </h2>
-            <Button variant="link" size="sm" onClick={() => navigate("/handover-control")} data-testid="link-handover-control">
+            <Button
+              variant="link"
+              size="sm"
+              onClick={() => navigate("/handover-control")}
+              data-testid="link-handover-control"
+            >
               View handover control
             </Button>
           </div>
@@ -264,7 +247,7 @@ export default function PdTicketsPage() {
               { label: "Awaiting PM Review", value: handoverStats.awaitingPmReview, icon: Send, color: "text-blue-700 bg-blue-100" },
               { label: "Overdue Review (>5d)", value: handoverStats.overdueReview, icon: AlertTriangle, color: "text-red-700 bg-red-100" },
               { label: "Accepted", value: handoverStats.accepted, icon: CheckCircle2, color: "text-green-700 bg-green-100" },
-            ].map(card => (
+            ].map((card) => (
               <Card
                 key={card.label}
                 className="hover:shadow-md transition-shadow cursor-pointer"
@@ -284,233 +267,19 @@ export default function PdTicketsPage() {
             ))}
           </div>
           {handoverStats.rejected > 0 && (
-            <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-xs text-red-700" data-testid="handover-rejected-alert">
+            <div
+              className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-xs text-red-700"
+              data-testid="handover-rejected-alert"
+            >
               <XCircle className="h-4 w-4 shrink-0" />
-              <span><strong>{handoverStats.rejected}</strong> handover{handoverStats.rejected !== 1 ? "s" : ""} returned for rework — PD action required to address feedback and resubmit.</span>
+              <span>
+                <strong>{handoverStats.rejected}</strong> handover
+                {handoverStats.rejected !== 1 ? "s" : ""} returned for rework — PD action required to address feedback and resubmit.
+              </span>
             </div>
           )}
         </div>
       )}
-
-      {/* Tickets table */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <FileEdit className="h-4 w-4 text-violet-600" />
-            Project Development Tickets
-          </h2>
-          <ExportDropdown
-            data={filtered.map((r: any) => r.ticket)}
-            columns={[
-              { key: "projectSiteName", header: "Project / Site" },
-              { key: "requestType", header: "Request Type" },
-              { key: "priority", header: "Priority" },
-              { key: "status", header: "Status" },
-              { key: "dueDate", header: "Due Date" },
-              { key: "createdAt", header: "Created" },
-            ]}
-            filename="pd-tickets"
-          />
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative flex-1 min-w-[180px] max-w-xs">
-            <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Search tickets..." className="pl-9 h-8 text-xs" value={search} onChange={e => setSearch(e.target.value)} data-testid="pd-tickets-search" />
-          </div>
-          <SearchableSelect
-            value={statusFilter}
-            onValueChange={setStatusFilter}
-            placeholder="Status"
-            triggerClassName="w-[130px] h-8 text-xs"
-            options={[
-              { value: "all", label: "All Statuses" },
-              ...STATUSES.map(s => ({ value: s, label: s })),
-            ]}
-            data-testid="pd-filter-status"
-          />
-          <SearchableSelect
-            value={priorityFilter}
-            onValueChange={setPriorityFilter}
-            placeholder="Priority"
-            triggerClassName="w-[110px] h-8 text-xs"
-            options={[
-              { value: "all", label: "All Priorities" },
-              ...PRIORITIES.map(p => ({ value: p, label: p })),
-            ]}
-            data-testid="pd-filter-priority"
-          />
-          <SearchableSelect
-            value={typeFilter}
-            onValueChange={setTypeFilter}
-            placeholder="Type"
-            triggerClassName="w-[140px] h-8 text-xs"
-            options={[
-              { value: "all", label: "All Types" },
-              ...REQUEST_TYPES.map(t => ({ value: t, label: t })),
-            ]}
-            data-testid="pd-filter-type"
-          />
-        </div>
-
-        {isLoading ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          </div>
-        ) : isError ? (
-          <Card>
-            <CardContent className="p-8 text-center text-muted-foreground space-y-2">
-              <AlertTriangle className="h-10 w-10 mx-auto text-amber-500" />
-              <p className="font-medium text-foreground">Could not load Project Development tickets</p>
-              <p className="text-xs">{error instanceof Error ? error.message : "Try again."}</p>
-              <Button size="sm" variant="outline" onClick={() => refetch()} data-testid="btn-retry-pd-tickets">Retry</Button>
-            </CardContent>
-          </Card>
-        ) : filtered.length === 0 ? (
-          <Card>
-            <CardContent className="p-8 text-center text-muted-foreground">
-              <FileEdit className="h-10 w-10 mx-auto mb-2 opacity-30" />
-              <p className="font-medium">No tickets found</p>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="overflow-x-auto border rounded-lg" role="region" aria-label="Project Development Tickets table">
-            <table className="w-full text-sm min-w-[1100px]" aria-label="Project Development Tickets">
-              <thead>
-                <tr className="bg-muted/40 border-b text-[11px] text-muted-foreground">
-                  <th scope="col" className="text-left p-2.5 pl-3">Project / Site</th>
-                  <th scope="col" className="text-left p-2.5">Client</th>
-                  <th scope="col" className="text-left p-2.5">Request Type</th>
-                  <th scope="col" className="text-left p-2.5">Priority</th>
-                  <th scope="col" className="text-left p-2.5">Status</th>
-                  <th scope="col" className="text-left p-2.5">Due Date</th>
-                  <th scope="col" className="text-left p-2.5">Days In Progress</th>
-                  <th scope="col" className="text-left p-2.5">Developer</th>
-                  <th scope="col" className="text-left p-2.5" title="Sub-tasks spawned from the ticket's request-type template">Sub-tasks</th>
-                  <th scope="col" className="text-left p-2.5">Next Action</th>
-                  <th scope="col" className="text-left p-2.5">Designer</th>
-                  {canDelete && <th scope="col" className="text-right p-2.5 pr-3 w-[60px]">Actions</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {pagination.paginatedItems.map((row: any) => {
-                  const t = row.ticket;
-                  const today = new Date();
-                  const created = t.createdAt ? new Date(t.createdAt) : null;
-                  const daysInProgress = created && !isNaN(created.getTime())
-                    ? Math.max(0, Math.floor((today.getTime() - created.getTime()) / (1000 * 60 * 60 * 24)))
-                    : null;
-                  const overdue = t.dueDate && t.dueDate < today.toISOString().split("T")[0] && t.status !== "Completed" && t.status !== "Cancelled";
-                  const daysOverdue = overdue ? Math.floor((today.getTime() - new Date(t.dueDate).getTime()) / (1000 * 60 * 60 * 24)) : 0;
-                  return (
-                    <tr key={t.id} className={`border-b hover:bg-muted/10 cursor-pointer transition-colors ${overdue ? "border-l-4 border-l-red-500 bg-red-50/30" : ""}`} onClick={() => navigate(`/pd/tickets/${t.id}`)} data-testid={`pd-ticket-row-${t.id}`}>
-                      <td className="p-2.5 pl-3 font-medium max-w-[200px] truncate" title={t.projectSiteName || ""}>{t.projectSiteName}</td>
-                      <td className="p-2.5 text-muted-foreground max-w-[150px] truncate" title={row.clientName || ""}>{row.clientName || "—"}</td>
-                      <td className="p-2.5"><Badge variant="outline" className="text-[10px]">{t.requestType}</Badge></td>
-                      <td className="p-2.5"><Badge className={`text-[10px] ${priorityColorClasses(t.priority)}`}>{t.priority}</Badge></td>
-                      <td className="p-2.5"><Badge className={`text-[10px] ${statusColorClasses(t.status)}`}>{t.status}</Badge></td>
-                      <td className={`p-2.5 ${overdue ? "text-red-600 font-semibold" : "text-muted-foreground"}`}>
-                        <div className="flex items-center gap-1.5">
-                          <span>{t.dueDate || "—"}</span>
-                          {overdue && <Badge variant="destructive" className="text-[9px] px-1 py-0" data-testid={`overdue-badge-${t.id}`}>{daysOverdue}d overdue</Badge>}
-                        </div>
-                      </td>
-                      <td className="p-2.5 text-muted-foreground" title={created ? `Created: ${created.toLocaleDateString()}` : "No creation date"}>
-                        {daysInProgress != null ? `${daysInProgress}d` : "—"}
-                      </td>
-                      <td className="p-2.5 text-muted-foreground">{row.developerName || "—"}</td>
-                      <td className="p-2.5">
-                        {row.taskTotal > 0 ? (
-                          <div className="flex items-center gap-1.5">
-                            <div className="w-14 h-1.5 rounded-full bg-muted overflow-hidden">
-                              <div
-                                className={`h-full rounded-full transition-all ${row.taskCompleted === row.taskTotal ? "bg-green-500" : row.taskCompleted > 0 ? "bg-blue-500" : "bg-gray-300"}`}
-                                style={{ width: `${Math.round((row.taskCompleted / row.taskTotal) * 100)}%` }}
-                              />
-                            </div>
-                            <span className="text-[10px] text-muted-foreground">{row.taskCompleted}/{row.taskTotal}</span>
-                          </div>
-                        ) : t.tasksSpawnedAt ? (
-                          <span className="text-[10px] text-muted-foreground" title="Tasks spawned but none found">0 tasks</span>
-                        ) : (
-                          <span className="text-[10px] text-muted-foreground italic" title="Spawn tasks from the ticket detail page">Not spawned</span>
-                        )}
-                      </td>
-                      <td className="p-2.5">
-                        {(() => {
-                          if (t.status === "Completed" || t.status === "Cancelled") return <span className="text-[10px] text-muted-foreground">Done</span>;
-                          if (overdue) return <span className="text-[10px] text-red-600 font-medium flex items-center gap-0.5"><AlertCircle className="h-3 w-3" />Overdue — follow up</span>;
-                          if (t.status === "On Hold") return <span className="text-[10px] text-orange-600 font-medium">Unblock to resume</span>;
-                          if (t.status === "Draft") return <span className="text-[10px] text-violet-600 font-medium flex items-center gap-0.5"><ArrowRight className="h-3 w-3" />Start ticket</span>;
-                          if (row.taskTotal > 0 && row.taskCompleted < row.taskTotal) return <span className="text-[10px] text-blue-600 font-medium">{row.taskTotal - row.taskCompleted} task{row.taskTotal - row.taskCompleted !== 1 ? "s" : ""} remaining</span>;
-                          if (row.taskTotal > 0 && row.taskCompleted === row.taskTotal) return <span className="text-[10px] text-green-600 font-medium">Ready to complete</span>;
-                          return <span className="text-[10px] text-muted-foreground">In progress</span>;
-                        })()}
-                      </td>
-                      <td className="p-2.5 text-muted-foreground">{row.designerName || "—"}</td>
-                      {canDelete && (
-                        <td className="p-2.5 pr-3 text-right" onClick={(e) => e.stopPropagation()}>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="h-7 w-7 text-muted-foreground hover:text-red-600 hover:bg-red-50"
-                            onClick={(e) => { e.stopPropagation(); setDeleteTarget(row); }}
-                            title="Delete ticket"
-                            aria-label={`Delete ticket ${t.projectSiteName || t.id}`}
-                            data-testid={`btn-delete-ticket-${t.id}`}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </td>
-                      )}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            <TablePagination {...pagination} />
-          </div>
-        )}
-      </div>
-
-      <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-red-600">Delete Project Development Ticket</DialogTitle>
-          </DialogHeader>
-          <div className="py-3 space-y-2 text-sm">
-            <p>Are you sure you want to permanently delete this ticket?</p>
-            {deleteTarget && (
-              <p className="font-medium">
-                {deleteTarget.ticket?.projectSiteName || `Ticket #${deleteTarget.ticket?.id}`}
-              </p>
-            )}
-            {deleteTarget?.taskTotal > 0 && (
-              <p className="text-amber-600">
-                This will also delete {deleteTarget.taskTotal} linked engineering task
-                {deleteTarget.taskTotal !== 1 ? "s" : ""}.
-              </p>
-            )}
-            <p className="text-xs text-muted-foreground">
-              The linked project and client will <span className="font-semibold">not</span> be deleted. This action cannot be undone.
-            </p>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)} data-testid="btn-cancel-delete-ticket">
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.ticket.id)}
-              disabled={deleteMutation.isPending}
-              data-testid="btn-confirm-delete-ticket"
-            >
-              {deleteMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Trash2 className="h-4 w-4 mr-1" />}
-              Delete Ticket
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

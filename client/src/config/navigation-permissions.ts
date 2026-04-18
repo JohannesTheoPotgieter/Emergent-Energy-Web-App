@@ -19,7 +19,7 @@ const SECTION_HELP_TEXT: Partial<Record<SectionKey, string>> = {
   HOME: "Dashboard, My Tasks, Approvals, Calendar, Meetings, Inbox",
   PORTFOLIO: "Company Overview, Lifecycle Board, Gate Tracker, Blocked Gates, Exceptions",
   PRIORITIES: "My Priorities, Department, Company",
-  PROJECT_DEVELOPMENT: "Project Development Dashboard, Pipeline / Opportunities, Project Development Tickets, Clients, Handover Queue, Project Development Reports",
+  PROJECT_DEVELOPMENT: "Project Development Dashboard, Pipeline / Opportunities, Clients, Handover Queue, Project Development Reports",
   PROJECT_DELIVERY: "Execution Dashboard, PM Dashboard, Portfolio Dashboard, All Projects, PM On-The-Go, Handover & Closeout, and delivery controls",
   FINANCE: "Cashflow, COS, Revenue, QB Throughput",
   ENGINEERING: "Engineering Dashboard, Task Board, Standup",

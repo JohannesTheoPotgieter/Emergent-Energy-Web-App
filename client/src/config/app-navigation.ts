@@ -101,9 +101,8 @@ export const TOP_SECTIONS: TopSection[] = [
       "/handover-control",
     ]),
     secondary: [
-      { label: "Pipeline / Opportunities", path: "/opportunities" },
       { label: "Project Development Dashboard", path: "/pd" },
-      { label: "Project Development Tickets", path: "/pd/tickets" },
+      { label: "Pipeline / Opportunities", path: "/opportunities" },
       { label: "Clients", path: "/clients" },
       { label: "Handover Queue", path: "/handover-control" },
     ],
