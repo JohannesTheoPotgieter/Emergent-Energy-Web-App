@@ -795,19 +795,6 @@ function CalendarTab() {
     staleTime: 30_000,
   });
 
-  if (connectionStatus && !connectionStatus.connected) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 text-center" data-testid="calendar-not-connected">
-        <Calendar className="h-12 w-12 text-muted-foreground mb-4" />
-        <h3 className="text-lg font-semibold mb-2">Outlook Not Connected</h3>
-        <p className="text-muted-foreground text-sm max-w-md">
-          Connect your Microsoft account to view your calendar events here.
-          Contact your administrator to set up the Outlook integration.
-        </p>
-      </div>
-    );
-  }
-
   const days = viewMode === "week"
     ? Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
     : [currentDate];
@@ -824,6 +811,19 @@ function CalendarTab() {
     }
     return map;
   }, [events, days]);
+
+  if (connectionStatus && !connectionStatus.connected) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center" data-testid="calendar-not-connected">
+        <Calendar className="h-12 w-12 text-muted-foreground mb-4" />
+        <h3 className="text-lg font-semibold mb-2">Outlook Not Connected</h3>
+        <p className="text-muted-foreground text-sm max-w-md">
+          Connect your Microsoft account to view your calendar events here.
+          Contact your administrator to set up the Outlook integration.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4" data-testid="calendar-tab">
