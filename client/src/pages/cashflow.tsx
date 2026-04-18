@@ -56,7 +56,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
-import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/page-shell";
+import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { FinanceShell } from "@/components/layout/FinanceShell";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { usePermission } from "@/hooks/use-permissions";
@@ -216,7 +216,7 @@ function KpiCard({
   title: string;
   value: string;
   icon: React.ReactNode;
-  color: "green" | "red" | "blue" | "purple";
+  color: "green" | "red" | "blue" | "purple" | "slate";
   testId: string;
 }) {
   const colorMap = {
@@ -247,6 +247,13 @@ function KpiCard({
       text: "text-violet-700",
       iconBg: "bg-violet-100",
       iconColor: "text-violet-600",
+    },
+    slate: {
+      bg: "bg-slate-50",
+      border: "border-slate-200",
+      text: "text-slate-700",
+      iconBg: "bg-slate-100",
+      iconColor: "text-slate-600",
     },
   };
 
@@ -711,6 +718,7 @@ export default function CashflowPage() {
   const [showDetail, setShowDetail] = useState(false);
   const [expandedWeek, setExpandedWeek] = useState<string | null>(null);
   const [opexOpen, setOpexOpen] = useState(false);
+  const [chartOpen, setChartOpen] = useState(true);
   const [editingBalance, setEditingBalance] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState("");
   const [editingOpex, setEditingOpex] = useState<string | null>(null);
@@ -975,42 +983,15 @@ export default function CashflowPage() {
           { label: scopeLabel, icon: <Wallet className="h-3.5 w-3.5" /> },
           { label: canEditCashflow ? "Manual overrides enabled" : "Read-only finance view", icon: <ArrowRight className="h-3.5 w-3.5" /> },
           { label: `${overrideWeeks} override weeks`, icon: <Eye className="h-3.5 w-3.5" /> },
+          { label: `${varianceWeeks} variance weeks`, icon: <ArrowDownRight className="h-3.5 w-3.5" /> },
+          {
+            label: cashflowUpdatedAt
+              ? `Refreshed ${new Date(cashflowUpdatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}${isCashflowFetching ? " · refreshing…" : ""}`
+              : "Live query",
+            icon: <Loader2 className={`h-3.5 w-3.5 ${isCashflowFetching ? "animate-spin" : ""}`} />,
+          },
         ]}
       />
-      <WorkspaceNotice
-        title="Finance trust stays visible without adding clutter"
-        description="Cashflow shows where values come from, when a number changed, and where manual intervention affects the computed position."
-        icon={<DollarSign className="h-4 w-4" />}
-        tone="finance"
-      >
-        <Badge variant="secondary">Computed cascade</Badge>
-        <Badge variant="secondary">Override history</Badge>
-        <Badge variant="secondary">Source-aware scope</Badge>
-        <Badge variant="secondary">Variance visibility</Badge>
-      </WorkspaceNotice>
-      <div className="ee-data-trust-grid -mt-2">
-        <div className="ee-data-trust-card" data-testid="cashflow-trust-sources">
-          <span className="ee-data-trust-label">Source</span>
-          <span className="ee-data-trust-value">{isProjectFiltered ? "Filtered project inflows and outflows" : "Portfolio inflows with OPEX and project outflows"}</span>
-        </div>
-        <div className="ee-data-trust-card" data-testid="cashflow-trust-freshness">
-          <span className="ee-data-trust-label">Freshness</span>
-          <span className="ee-data-trust-value">
-            {cashflowUpdatedAt
-              ? `Refreshed ${new Date(cashflowUpdatedAt).toLocaleString()}`
-              : "Live query — not yet returned"}
-            {isCashflowFetching ? " · refreshing…" : ""}
-          </span>
-        </div>
-        <div className="ee-data-trust-card" data-testid="cashflow-trust-change">
-          <span className="ee-data-trust-label">Change</span>
-          <span className="ee-data-trust-value">{overrideWeeks} weeks carry a manual opening, OPEX, or available payment override.</span>
-        </div>
-        <div className="ee-data-trust-card" data-testid="cashflow-trust-variance">
-          <span className="ee-data-trust-label">Variance</span>
-          <span className="ee-data-trust-value">{varianceWeeks} weeks show a balance delta versus the computed opening position.</span>
-        </div>
-      </div>
       <div className="flex flex-wrap items-center gap-2 -mt-2">
               <Popover open={projectPickerOpen} onOpenChange={setProjectPickerOpen}>
                 <PopoverTrigger asChild>
@@ -1104,7 +1085,7 @@ export default function CashflowPage() {
                 }}
                 className={`gap-1.5 rounded-lg transition-all ${
                   showDetail
-                    ? "bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
+                    ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
                     : "border-border text-muted-foreground hover:bg-muted"
                 }`}
                 data-testid="button-toggle-detail"
@@ -1129,7 +1110,7 @@ export default function CashflowPage() {
       <div className="space-y-4 sm:space-y-5">
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
-            <Loader2 className="h-8 w-8 animate-spin text-blue-500" data-testid="spinner-main" />
+            <Loader2 className="h-8 w-8 animate-spin text-emerald-500" data-testid="spinner-main" />
             <span className="text-sm font-medium">Loading cashflow data...</span>
           </div>
         ) : cashflowData.length === 0 ? (
@@ -1159,7 +1140,7 @@ export default function CashflowPage() {
                 title="Current Week Opening Balance"
                 value={formatRand(kpis.currentWeekOpeningBalance)}
                 icon={<DollarSign className="h-5 w-5" />}
-                color={kpis.currentWeekOpeningBalance >= 0 ? "blue" : "red"}
+                color={kpis.currentWeekOpeningBalance >= 0 ? "slate" : "red"}
                 testId="kpi-current-balance"
               />
               <KpiCard
@@ -1178,22 +1159,31 @@ export default function CashflowPage() {
             </div>
 
             <Card className="border border-border shadow-sm rounded-xl overflow-hidden" data-testid="card-trend-chart">
-              <CardHeader className="pb-2 pt-4 px-5">
-                <CardTitle className="text-sm font-semibold text-foreground">Cashflow Trend</CardTitle>
-              </CardHeader>
-              <CardContent className="px-2 pb-3">
+              <button
+                type="button"
+                onClick={() => setChartOpen((v) => !v)}
+                className="w-full flex items-center justify-between pb-2 pt-4 px-5 hover:bg-muted/40 transition-colors"
+                aria-expanded={chartOpen}
+                aria-controls="cashflow-trend-chart-body"
+                data-testid="button-toggle-chart"
+              >
+                <span className="text-sm font-semibold text-foreground">Cashflow Trend</span>
+                <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${chartOpen ? "" : "-rotate-90"}`} />
+              </button>
+              {chartOpen && (
+              <CardContent id="cashflow-trend-chart-body" className="px-2 pb-3">
                 <div className="h-[220px] sm:h-[280px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 40 }}>
+                    <LineChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 10 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                       <XAxis
                         dataKey="week"
                         fontSize={10}
                         tickLine={false}
                         axisLine={false}
-                        angle={-45}
-                        textAnchor="end"
-                        height={55}
+                        height={28}
+                        interval="preserveStartEnd"
+                        minTickGap={24}
                         tick={{ fill: "#64748b" }}
                       />
                       <YAxis
@@ -1309,41 +1299,41 @@ export default function CashflowPage() {
                             <tr
                               className={`border-b border-border transition-colors ${
                                 current
-                                  ? "bg-blue-50/70 border-l-[3px] border-l-blue-500"
+                                  ? "border-l-[3px] border-l-emerald-500"
                                   : isEven
                                   ? "bg-card"
                                   : "bg-muted/30"
-                              } ${showDetail ? "cursor-pointer hover:bg-blue-50/40" : "hover:bg-muted/60"}`}
+                              } ${showDetail ? "cursor-pointer hover:bg-emerald-50/40" : "hover:bg-muted/60"}`}
                               onClick={() => handleRowClick(week.weekStart)}
                               data-testid={`row-week-${week.weekStart}`}
                             >
                               <td
                                 className={`px-2 sm:px-4 py-2 sm:py-3 font-medium text-foreground sticky left-0 z-10 border-r border-border ${
-                                  current ? "bg-blue-50/70" : isEven ? "bg-card" : "bg-muted/30"
+                                  current ? "bg-card" : isEven ? "bg-card" : "bg-muted/30"
                                 }`}
                               >
                                 <div className="flex items-center gap-1.5">
                                   {showDetail && (
                                     isExpanded ? (
-                                      <ChevronDown className="h-3.5 w-3.5 text-blue-500 flex-shrink-0" />
+                                      <ChevronDown className="h-3.5 w-3.5 text-emerald-600 flex-shrink-0" />
                                     ) : (
                                       <ChevronRight className="h-3.5 w-3.5 text-slate-500 flex-shrink-0" />
                                     )
                                   )}
                                   <span className="text-[13px]">{formatWeek(week.weekStart)}</span>
                                   {current && (
-                                    <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-700">
+                                    <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-700">
                                       NOW
                                     </span>
                                   )}
                                 </div>
                               </td>
-                              <td className="px-2 sm:px-4 py-2 sm:py-3 text-right font-mono text-[11px] sm:text-[13px] text-blue-600">
+                              <td className="px-2 sm:px-4 py-2 sm:py-3 text-right font-mono text-[11px] sm:text-[13px] text-foreground">
                                 <div className="flex items-center justify-end gap-1.5">
                                   {canEditCashflow && editingBalance === week.weekStart ? (
                                     <input
                                       type="number"
-                                      className="w-28 text-right p-1.5 border border-blue-300 rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+                                      className="w-28 text-right p-1.5 border border-emerald-300 rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400"
                                       value={editingValue}
                                       onChange={(e) => setEditingValue(e.target.value)}
                                       onBlur={() => handleBalanceSave(week.weekStart, week.computedOpening)}
@@ -1483,9 +1473,9 @@ export default function CashflowPage() {
                                 {week.outflowByStatus && week.projectOutflows > 0 && (
                                   <div className="flex justify-end gap-1 mt-0.5">
                                     {week.outflowByStatus.outOfBank > 0 && <span className="text-[8px] px-1 py-0 rounded bg-emerald-50 text-emerald-700 border border-emerald-300" title="Out of Bank (Paid)">Paid {formatRand(week.outflowByStatus.outOfBank)}</span>}
-                                    {week.outflowByStatus.outstanding > 0 && <span className="text-[8px] px-1 py-0 rounded bg-amber-50 text-amber-700 border border-amber-300" title="Outstanding — supplier invoice captured, payment not yet released.">Outstd {formatRand(week.outflowByStatus.outstanding)}</span>}
+                                    {week.outflowByStatus.outstanding > 0 && <span className="text-[8px] px-1 py-0 rounded bg-amber-50 text-amber-700 border border-amber-300" title="Outstanding — supplier invoice captured, payment not yet released.">Outstanding {formatRand(week.outflowByStatus.outstanding)}</span>}
                                     {week.outflowByStatus.risk > 0 && <span className="text-[8px] px-1 py-0 rounded bg-red-50 text-red-700 border border-red-300" title="No supplier invoice on file yet — this is an unbilled commitment that has not flowed through QuickBooks. It is a cashflow blind-spot, not a credit-risk score.">Risk {formatRand(week.outflowByStatus.risk)}</span>}
-                                    {week.outflowByStatus.planned > 0 && <span className="text-[8px] px-1 py-0 rounded bg-muted text-muted-foreground border border-border" title="Planned">Plan {formatRand(week.outflowByStatus.planned)}</span>}
+                                    {week.outflowByStatus.planned > 0 && <span className="text-[8px] px-1 py-0 rounded bg-muted text-muted-foreground border border-border" title="Planned">Planned {formatRand(week.outflowByStatus.planned)}</span>}
                                   </div>
                                 )}
                               </td>
