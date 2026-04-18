@@ -2781,9 +2781,11 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       }>();
 
       if (preserveManualEdits || conflictResolutions) {
+        // v1 fallback path — restrict to current (non-historical) rows so a soft-closed
+        // row cannot clobber active-row state when manual edits are preserved.
         const existingCostRows = projectId
-          ? await tx.select().from(normalizedCostLines).where(eq(normalizedCostLines.projectId, projectId))
-          : await tx.select().from(normalizedCostLines).where(eq(normalizedCostLines.projectName, projectName));
+          ? await tx.select().from(normalizedCostLines).where(and(eq(normalizedCostLines.projectId, projectId), isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)))
+          : await tx.select().from(normalizedCostLines).where(and(eq(normalizedCostLines.projectName, projectName), isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)));
 
         for (const row of existingCostRows) {
           const hasManualEdits = row.cosRealised || row.invoiceDateConfirmed || row.paidDateConfirmed || row.noRevenueLinked || row.cashflowConfirmed || row.adminDateOverride;
@@ -2832,10 +2834,10 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           }
         }
 
-        // Also check revenue lines for admin date overrides
+        // Also check revenue lines for admin date overrides — current rows only.
         const existingRevRows = projectId
-          ? await tx.select().from(normalizedRevenueLines).where(eq(normalizedRevenueLines.projectId, projectId))
-          : await tx.select().from(normalizedRevenueLines).where(eq(normalizedRevenueLines.projectName, projectName));
+          ? await tx.select().from(normalizedRevenueLines).where(and(eq(normalizedRevenueLines.projectId, projectId), isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt)))
+          : await tx.select().from(normalizedRevenueLines).where(and(eq(normalizedRevenueLines.projectName, projectName), isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt)));
 
         for (const row of existingRevRows) {
           if (!row.adminDateOverride || row.sourceRow == null) continue;
