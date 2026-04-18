@@ -827,7 +827,15 @@ export default function CashflowPage() {
     enabled: !!historyWeek,
   });
 
-  const { data: projectsSummary = [] } = useQuery<{ projectName: string }[]>({
+  const { data: projectsSummary = [] } = useQuery<Array<{
+    project_name: string;
+    total_contract_revenue?: number | null;
+    total_expenses?: number | null;
+    actual_revenue?: number | null;
+    actual_expenses?: number | null;
+    revenue_outstanding?: number | null;
+    expenses_outstanding?: number | null;
+  }>>({
     queryKey: ["/api/projects-summary"],
     queryFn: async () => {
       const pToken = localStorage.getItem("auth_token");
@@ -841,8 +849,25 @@ export default function CashflowPage() {
 
   const projectNames = useMemo(() => {
     const names = new Set<string>();
-    projectsSummary.forEach((p: any) => {
-      if (p.project_name) names.add(p.project_name);
+    projectsSummary.forEach((p) => {
+      if (!p.project_name) return;
+      // Only show projects that have tracker data loaded. Smart Import populates
+      // normalized_cost_lines / normalized_revenue_lines, which feed the aggregate
+      // fields below. We accept either a non-null aggregate (rows exist even if
+      // the SUM is zero) OR any non-zero amount, so newly-imported zero-value
+      // trackers still appear.
+      const trackerFields = [
+        p.total_expenses,
+        p.actual_revenue,
+        p.actual_expenses,
+        p.revenue_outstanding,
+        p.expenses_outstanding,
+        p.total_contract_revenue,
+      ];
+      const hasTrackerData = trackerFields.some(
+        (v) => v != null || Math.abs(Number(v) || 0) > 0,
+      );
+      if (hasTrackerData) names.add(p.project_name);
     });
     return Array.from(names).sort();
   }, [projectsSummary]);
@@ -1007,19 +1032,61 @@ export default function CashflowPage() {
       <SectionHeader
         icon={<Wallet className="h-5 w-5" />}
         title={`Cashflow FY${CURRENT_FY}`}
-        description={`Weekly cashflow timeline for Sep ${CURRENT_FY - 1} to Aug ${CURRENT_FY} with visible source, override, and variance relationships.`}
-        badges={[
-          { label: scopeLabel, icon: <Wallet className="h-3.5 w-3.5" /> },
-          { label: canEditCashflow ? "Manual overrides enabled" : "Read-only finance view", icon: <ArrowRight className="h-3.5 w-3.5" /> },
-          { label: `${overrideWeeks} override weeks`, icon: <Eye className="h-3.5 w-3.5" /> },
-          { label: `${varianceWeeks} variance weeks`, icon: <ArrowDownRight className="h-3.5 w-3.5" /> },
-          {
-            label: cashflowUpdatedAt
-              ? `Refreshed ${new Date(cashflowUpdatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}${isCashflowFetching ? " · refreshing…" : ""}`
-              : "Live query",
-            icon: <Loader2 className={`h-3.5 w-3.5 ${isCashflowFetching ? "animate-spin" : ""}`} />,
-          },
-        ]}
+        meta={
+          <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+            <span>Sep {CURRENT_FY - 1} – Aug {CURRENT_FY}</span>
+            <span className="text-border">·</span>
+            <span>{scopeLabel}</span>
+            <span className="text-border">·</span>
+            <span>{overrideWeeks} override · {varianceWeeks} variance weeks</span>
+            <span className="text-border">·</span>
+            <span className="inline-flex items-center gap-1">
+              <Loader2 className={`h-3 w-3 ${isCashflowFetching ? "animate-spin" : "opacity-0"}`} />
+              {cashflowUpdatedAt
+                ? `Refreshed ${new Date(cashflowUpdatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                : "Live"}
+            </span>
+            {!canEditCashflow && (
+              <>
+                <span className="text-border">·</span>
+                <span className="text-amber-700">Read-only</span>
+              </>
+            )}
+          </span>
+        }
+        actions={
+          <div className="flex items-center gap-2">
+            <Button
+              variant={showDetail ? "default" : "outline"}
+              size="sm"
+              onClick={() => {
+                setShowDetail((v) => !v);
+                if (showDetail) setExpandedWeek(null);
+              }}
+              className={`gap-1.5 rounded-lg transition-all ${
+                showDetail
+                  ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
+                  : "border-border text-muted-foreground hover:bg-muted"
+              }`}
+              data-testid="button-toggle-detail"
+            >
+              {showDetail ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+              {showDetail ? "Hide Detail" : "Show Detail"}
+            </Button>
+            {canEditCashflow && !isProjectFiltered && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setOpexOpen(true)}
+                className="gap-1.5 rounded-lg border-border text-muted-foreground hover:bg-muted"
+                data-testid="button-opex-budget"
+              >
+                <DollarSign className="h-3.5 w-3.5" />
+                OPEX Costed
+              </Button>
+            )}
+          </div>
+        }
       />
       <div className="lg:flex lg:gap-5 lg:items-start -mt-2">
         <aside
@@ -1176,35 +1243,6 @@ export default function CashflowPage() {
                     Clear all
                   </Button>
                 </div>
-              )}
-              <Button
-                variant={showDetail ? "default" : "outline"}
-                size="sm"
-                onClick={() => {
-                  setShowDetail((v) => !v);
-                  if (showDetail) setExpandedWeek(null);
-                }}
-                className={`gap-1.5 rounded-lg transition-all ${
-                  showDetail
-                    ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
-                    : "border-border text-muted-foreground hover:bg-muted"
-                }`}
-                data-testid="button-toggle-detail"
-              >
-                {showDetail ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                {showDetail ? "Hide Detail" : "Show Detail"}
-              </Button>
-              {canEditCashflow && !isProjectFiltered && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setOpexOpen(true)}
-                  className="gap-1.5 rounded-lg border-border text-muted-foreground hover:bg-muted"
-                  data-testid="button-opex-budget"
-                >
-                  <DollarSign className="h-3.5 w-3.5" />
-                  OPEX Costed
-                </Button>
               )}
             </div>
 
