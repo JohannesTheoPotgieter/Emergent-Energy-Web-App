@@ -1,4 +1,4 @@
-import { useMemo, useReducer } from "react";
+import { useMemo, useReducer, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,8 +20,45 @@ import { usePermission } from "@/hooks/use-permissions";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { useLocation } from "wouter";
-import { AlertTriangle, CheckCircle2, CircleOff, Loader2, RefreshCw, Sun, TicketPlus, TrendingUp } from "lucide-react";
+import {
+  AlertCircle,
+  AlertTriangle,
+  ArrowRight,
+  CheckCircle2,
+  CircleOff,
+  Clock,
+  FileEdit,
+  FileStack,
+  Loader2,
+  PauseCircle,
+  Plus,
+  RefreshCw,
+  Search,
+  Sun,
+  TicketPlus,
+  Trash2,
+  TrendingUp,
+} from "lucide-react";
 import { OPPORTUNITY_INTAKE_VIEW_ROLES } from "@shared/roles/pd-roles";
+import { statusColorClasses, priorityColorClasses } from "@/lib/status-colors";
+import { useTablePagination } from "@/hooks/use-table-pagination";
+import { TablePagination } from "@/components/ui/table-pagination";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { ExportDropdown } from "@/components/ui/export-dropdown";
+import { PD_REQUEST_TYPES_FILTERABLE } from "@/lib/pd/request-types";
+
+// App-phase label: capitalizes the stored stage value so the column reads
+// "Qualification" instead of "qualification". These are the values produced
+// by resolvePipedriveStageMapping() during Pipedrive sync (see PR #671).
+function appPhaseLabel(stage: string | null): string {
+  if (!stage) return "—";
+  const s = String(stage).trim();
+  if (!s) return "—";
+  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+}
+
+const TICKET_STATUSES = ["Draft", "In Progress", "On Hold", "Completed", "Cancelled"];
+const TICKET_PRIORITIES = ["Critical", "High", "Medium", "Low"];
 
 interface WorkingOpportunityRow {
   id: number;
@@ -143,6 +180,90 @@ export default function OpportunitiesPage() {
     DIALOG_INITIAL,
   );
   const mappingResolved = dlg.resolvedClientId != null && dlg.resolvedProjectId != null;
+
+  // ---- PD Tickets section state (merged from the retired /pd/tickets page) ----
+  const { allowed: canDeleteTicket } = usePermission("pd_tickets", "edit");
+  const [ticketSearch, setTicketSearch] = useState("");
+  const [ticketStatusFilter, setTicketStatusFilter] = useState("all");
+  const [ticketPriorityFilter, setTicketPriorityFilter] = useState("all");
+  const [ticketTypeFilter, setTicketTypeFilter] = useState("all");
+  const [deleteTarget, setDeleteTarget] = useState<{
+    ticket: { id: number; projectSiteName: string | null };
+    taskTotal: number;
+  } | null>(null);
+
+  const { data: ticketStats } = useQuery<{
+    total: number;
+    active: number;
+    overdue: number;
+    dueThisWeek: number;
+    onHold: number;
+    completed: number;
+  }>({
+    queryKey: ["/api/pd/dashboard"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/pd/dashboard");
+      if (!res.ok) throw new Error(`Failed to load PD stats (${res.status})`);
+      return res.json();
+    },
+    enabled: canView,
+  });
+
+  const {
+    data: ticketRows = [],
+    isLoading: ticketsLoading,
+    isError: ticketsError,
+    error: ticketsErrorObj,
+    refetch: refetchTickets,
+  } = useQuery<
+    Array<{
+      ticket: {
+        id: number;
+        projectSiteName: string | null;
+        requestType: string;
+        priority: string;
+        status: string;
+        dueDate: string | null;
+        createdAt: string | null;
+        tasksSpawnedAt: string | null;
+      };
+      clientName: string | null;
+      projectName: string | null;
+      developerName: string | null;
+      designerName: string | null;
+      taskTotal: number;
+      taskCompleted: number;
+    }>
+  >({
+    queryKey: ["/api/pd/tickets"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/pd/tickets");
+      if (!res.ok) throw new Error(`Failed to load PD tickets (${res.status})`);
+      return res.json();
+    },
+    enabled: canView,
+    retry: 1,
+  });
+
+  const deleteTicketMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await apiRequest("DELETE", `/api/pd/tickets/${id}`);
+      const body = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(body?.error || `Delete failed (${res.status})`);
+      return body as { deletedTaskCount?: number };
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/pd/tickets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/pd/dashboard"] });
+      toast({
+        title: "Ticket deleted",
+        description: `Ticket and ${result?.deletedTaskCount || 0} linked engineering task(s) removed. Project and client were kept.`,
+      });
+      setDeleteTarget(null);
+    },
+    onError: (e: Error) =>
+      toast({ title: "Delete failed", description: e.message, variant: "destructive" }),
+  });
 
   const { data = [], isLoading, isError, error, refetch } = useQuery<WorkingOpportunityRow[]>({
     queryKey: ["/api/opportunities/working"],
@@ -333,6 +454,45 @@ export default function OpportunitiesPage() {
     [data],
   );
 
+  // Filtered + sorted PD tickets (overdue first).
+  const filteredTickets = useMemo(() => {
+    const today = new Date().toISOString().split("T")[0];
+    return ticketRows
+      .filter((row) => {
+        const t = row.ticket;
+        if (ticketStatusFilter !== "all" && t.status !== ticketStatusFilter) return false;
+        if (ticketPriorityFilter !== "all" && t.priority !== ticketPriorityFilter) return false;
+        if (ticketTypeFilter !== "all" && t.requestType !== ticketTypeFilter) return false;
+        if (ticketSearch) {
+          const term = ticketSearch.toLowerCase();
+          return (
+            (t.projectSiteName || "").toLowerCase().includes(term) ||
+            (row.clientName || "").toLowerCase().includes(term) ||
+            (row.projectName || "").toLowerCase().includes(term) ||
+            (row.developerName || "").toLowerCase().includes(term)
+          );
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        const aOverdue =
+          !!a.ticket.dueDate &&
+          a.ticket.dueDate < today &&
+          a.ticket.status !== "Completed" &&
+          a.ticket.status !== "Cancelled";
+        const bOverdue =
+          !!b.ticket.dueDate &&
+          b.ticket.dueDate < today &&
+          b.ticket.status !== "Completed" &&
+          b.ticket.status !== "Cancelled";
+        if (aOverdue && !bOverdue) return -1;
+        if (!aOverdue && bOverdue) return 1;
+        return 0;
+      });
+  }, [ticketRows, ticketSearch, ticketStatusFilter, ticketPriorityFilter, ticketTypeFilter]);
+
+  const ticketPagination = useTablePagination(filteredTickets);
+
   const clientOptions = useMemo(() => {
     const base = mappingContext?.likelyClients || [];
     if (mappingContext?.linkedClient && !base.some((c) => c.id === mappingContext.linkedClient!.id)) {
@@ -519,7 +679,7 @@ export default function OpportunitiesPage() {
                     {row.siteLocation ? <p className="text-xs text-muted-foreground">{row.siteLocation}</p> : null}
                   </td>
                   <td className="px-3 py-2 align-top">
-                    <Badge className={`text-[10px] ${stageBadgeClass(row.stage)}`}>{row.stage || "—"}</Badge>
+                    <Badge className={`text-[10px] ${stageBadgeClass(row.stage)}`}>{appPhaseLabel(row.stage)}</Badge>
                   </td>
                   <td className="px-3 py-2 align-top">
                     <Badge className={`text-[10px] ${statusBadgeClass(row.status)}`}>{row.status || "—"}</Badge>
@@ -562,6 +722,337 @@ export default function OpportunitiesPage() {
           </table>
         </div>
       )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Project Development Tickets — merged in from the retired /pd/tickets */}
+      {/* ------------------------------------------------------------------ */}
+      <div className="space-y-4 pt-4 border-t">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <FileEdit className="h-4 w-4 text-violet-600" />
+              Project Development Tickets
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Engineering tickets spawned from opportunities, plus manually-created ones.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <ExportDropdown
+              data={filteredTickets.map((r) => r.ticket)}
+              columns={[
+                { key: "projectSiteName", header: "Project / Site" },
+                { key: "requestType", header: "Request Type" },
+                { key: "priority", header: "Priority" },
+                { key: "status", header: "Status" },
+                { key: "dueDate", header: "Due Date" },
+                { key: "createdAt", header: "Created" },
+              ]}
+              filename="pd-tickets"
+            />
+            <Button
+              size="sm"
+              onClick={() => navigate("/pd/tickets/create")}
+              className="gap-1.5"
+              data-testid="btn-create-ticket"
+            >
+              <Plus className="h-4 w-4" /> New Ticket
+            </Button>
+          </div>
+        </div>
+
+        {/* KPI cards: click to filter the table */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          {[
+            { label: "Total", value: ticketStats?.total || 0, icon: FileStack, color: "text-foreground bg-muted", statusFilter: "all" },
+            { label: "Active", value: ticketStats?.active || 0, icon: FileEdit, color: "text-blue-700 bg-blue-100", statusFilter: "In Progress" },
+            { label: "Overdue", value: ticketStats?.overdue || 0, icon: AlertTriangle, color: "text-red-700 bg-red-100", statusFilter: "all" },
+            { label: "Due This Week", value: ticketStats?.dueThisWeek || 0, icon: Clock, color: "text-amber-700 bg-amber-100", statusFilter: "all" },
+            { label: "On Hold", value: ticketStats?.onHold || 0, icon: PauseCircle, color: "text-orange-700 bg-orange-100", statusFilter: "On Hold" },
+            { label: "Completed", value: ticketStats?.completed || 0, icon: CheckCircle2, color: "text-green-700 bg-green-100", statusFilter: "Completed" },
+          ].map((card) => (
+            <Card
+              key={card.label}
+              className="hover:shadow-md transition-shadow cursor-pointer"
+              onClick={() => setTicketStatusFilter(card.statusFilter)}
+              data-testid={`pd-stat-${card.label.toLowerCase().replace(/\s/g, "-")}`}
+            >
+              <CardContent className="p-4 flex flex-col items-center text-center gap-1">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${card.color}`}>
+                  <card.icon className="h-5 w-5" />
+                </div>
+                <span className="text-2xl font-bold">{card.value}</span>
+                <span className="text-[11px] text-muted-foreground">{card.label}</span>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        {/* Filters */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 min-w-[180px] max-w-xs">
+            <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search tickets..."
+              className="pl-9 h-8 text-xs"
+              value={ticketSearch}
+              onChange={(e) => setTicketSearch(e.target.value)}
+              data-testid="pd-tickets-search"
+            />
+          </div>
+          <SearchableSelect
+            value={ticketStatusFilter}
+            onValueChange={setTicketStatusFilter}
+            placeholder="Status"
+            triggerClassName="w-[130px] h-8 text-xs"
+            options={[{ value: "all", label: "All Statuses" }, ...TICKET_STATUSES.map((s) => ({ value: s, label: s }))]}
+            data-testid="pd-filter-status"
+          />
+          <SearchableSelect
+            value={ticketPriorityFilter}
+            onValueChange={setTicketPriorityFilter}
+            placeholder="Priority"
+            triggerClassName="w-[110px] h-8 text-xs"
+            options={[{ value: "all", label: "All Priorities" }, ...TICKET_PRIORITIES.map((p) => ({ value: p, label: p }))]}
+            data-testid="pd-filter-priority"
+          />
+          <SearchableSelect
+            value={ticketTypeFilter}
+            onValueChange={setTicketTypeFilter}
+            placeholder="Type"
+            triggerClassName="w-[140px] h-8 text-xs"
+            options={[{ value: "all", label: "All Types" }, ...PD_REQUEST_TYPES_FILTERABLE.map((t) => ({ value: t, label: t }))]}
+            data-testid="pd-filter-type"
+          />
+        </div>
+
+        {/* Tickets table */}
+        {ticketsLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : ticketsError ? (
+          <Card>
+            <CardContent className="p-8 text-center text-muted-foreground space-y-2">
+              <AlertTriangle className="h-10 w-10 mx-auto text-amber-500" />
+              <p className="font-medium text-foreground">Could not load Project Development tickets</p>
+              <p className="text-xs">{ticketsErrorObj instanceof Error ? ticketsErrorObj.message : "Try again."}</p>
+              <Button size="sm" variant="outline" onClick={() => refetchTickets()} data-testid="btn-retry-pd-tickets">
+                Retry
+              </Button>
+            </CardContent>
+          </Card>
+        ) : filteredTickets.length === 0 ? (
+          <Card>
+            <CardContent className="p-8 text-center text-muted-foreground">
+              <FileEdit className="h-10 w-10 mx-auto mb-2 opacity-30" />
+              <p className="font-medium">No tickets found</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="overflow-x-auto border rounded-lg">
+            <table className="w-full text-sm min-w-[1100px]" aria-label="Project Development Tickets">
+              <thead>
+                <tr className="bg-muted/40 border-b text-[11px] text-muted-foreground">
+                  <th scope="col" className="text-left p-2.5 pl-3">Project / Site</th>
+                  <th scope="col" className="text-left p-2.5">Client</th>
+                  <th scope="col" className="text-left p-2.5">Request Type</th>
+                  <th scope="col" className="text-left p-2.5">Priority</th>
+                  <th scope="col" className="text-left p-2.5">Status</th>
+                  <th scope="col" className="text-left p-2.5">Due Date</th>
+                  <th scope="col" className="text-left p-2.5">Days In Progress</th>
+                  <th scope="col" className="text-left p-2.5">Developer</th>
+                  <th scope="col" className="text-left p-2.5">Sub-tasks</th>
+                  <th scope="col" className="text-left p-2.5">Next Action</th>
+                  <th scope="col" className="text-left p-2.5">Designer</th>
+                  {canDeleteTicket && <th scope="col" className="text-right p-2.5 pr-3 w-[60px]">Actions</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {ticketPagination.paginatedItems.map((row) => {
+                  const t = row.ticket;
+                  const today = new Date();
+                  const created = t.createdAt ? new Date(t.createdAt) : null;
+                  const daysInProgress =
+                    created && !isNaN(created.getTime())
+                      ? Math.max(0, Math.floor((today.getTime() - created.getTime()) / 86_400_000))
+                      : null;
+                  const todayStr = today.toISOString().split("T")[0];
+                  const overdue =
+                    !!t.dueDate && t.dueDate < todayStr && t.status !== "Completed" && t.status !== "Cancelled";
+                  const daysOverdue = overdue && t.dueDate
+                    ? Math.floor((today.getTime() - new Date(t.dueDate).getTime()) / 86_400_000)
+                    : 0;
+                  return (
+                    <tr
+                      key={t.id}
+                      className={`border-b hover:bg-muted/10 cursor-pointer transition-colors ${
+                        overdue ? "border-l-4 border-l-red-500 bg-red-50/30" : ""
+                      }`}
+                      onClick={() => navigate(`/pd/tickets/${t.id}`)}
+                      data-testid={`pd-ticket-row-${t.id}`}
+                    >
+                      <td className="p-2.5 pl-3 font-medium max-w-[200px] truncate" title={t.projectSiteName || ""}>
+                        {t.projectSiteName || "—"}
+                      </td>
+                      <td className="p-2.5 text-muted-foreground max-w-[150px] truncate" title={row.clientName || ""}>
+                        {row.clientName || "—"}
+                      </td>
+                      <td className="p-2.5">
+                        <Badge variant="outline" className="text-[10px]">{t.requestType}</Badge>
+                      </td>
+                      <td className="p-2.5">
+                        <Badge className={`text-[10px] ${priorityColorClasses(t.priority)}`}>{t.priority}</Badge>
+                      </td>
+                      <td className="p-2.5">
+                        <Badge className={`text-[10px] ${statusColorClasses(t.status)}`}>{t.status}</Badge>
+                      </td>
+                      <td className={`p-2.5 ${overdue ? "text-red-600 font-semibold" : "text-muted-foreground"}`}>
+                        <div className="flex items-center gap-1.5">
+                          <span>{t.dueDate || "—"}</span>
+                          {overdue && (
+                            <Badge variant="destructive" className="text-[9px] px-1 py-0">
+                              {daysOverdue}d overdue
+                            </Badge>
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-2.5 text-muted-foreground">
+                        {daysInProgress != null ? `${daysInProgress}d` : "—"}
+                      </td>
+                      <td className="p-2.5 text-muted-foreground">{row.developerName || "—"}</td>
+                      <td className="p-2.5">
+                        {row.taskTotal > 0 ? (
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-14 h-1.5 rounded-full bg-muted overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all ${
+                                  row.taskCompleted === row.taskTotal
+                                    ? "bg-green-500"
+                                    : row.taskCompleted > 0
+                                      ? "bg-blue-500"
+                                      : "bg-gray-300"
+                                }`}
+                                style={{ width: `${Math.round((row.taskCompleted / row.taskTotal) * 100)}%` }}
+                              />
+                            </div>
+                            <span className="text-[10px] text-muted-foreground">
+                              {row.taskCompleted}/{row.taskTotal}
+                            </span>
+                          </div>
+                        ) : t.tasksSpawnedAt ? (
+                          <span className="text-[10px] text-muted-foreground">0 tasks</span>
+                        ) : (
+                          <span className="text-[10px] text-muted-foreground italic">Not spawned</span>
+                        )}
+                      </td>
+                      <td className="p-2.5">
+                        {(() => {
+                          if (t.status === "Completed" || t.status === "Cancelled")
+                            return <span className="text-[10px] text-muted-foreground">Done</span>;
+                          if (overdue)
+                            return (
+                              <span className="text-[10px] text-red-600 font-medium flex items-center gap-0.5">
+                                <AlertCircle className="h-3 w-3" />
+                                Overdue — follow up
+                              </span>
+                            );
+                          if (t.status === "On Hold")
+                            return <span className="text-[10px] text-orange-600 font-medium">Unblock to resume</span>;
+                          if (t.status === "Draft")
+                            return (
+                              <span className="text-[10px] text-violet-600 font-medium flex items-center gap-0.5">
+                                <ArrowRight className="h-3 w-3" />
+                                Start ticket
+                              </span>
+                            );
+                          if (row.taskTotal > 0 && row.taskCompleted < row.taskTotal)
+                            return (
+                              <span className="text-[10px] text-blue-600 font-medium">
+                                {row.taskTotal - row.taskCompleted} task
+                                {row.taskTotal - row.taskCompleted !== 1 ? "s" : ""} remaining
+                              </span>
+                            );
+                          if (row.taskTotal > 0 && row.taskCompleted === row.taskTotal)
+                            return <span className="text-[10px] text-green-600 font-medium">Ready to complete</span>;
+                          return <span className="text-[10px] text-muted-foreground">In progress</span>;
+                        })()}
+                      </td>
+                      <td className="p-2.5 text-muted-foreground">{row.designerName || "—"}</td>
+                      {canDeleteTicket && (
+                        <td className="p-2.5 pr-3 text-right" onClick={(e) => e.stopPropagation()}>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7 text-muted-foreground hover:text-red-600 hover:bg-red-50"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeleteTarget({
+                                ticket: { id: t.id, projectSiteName: t.projectSiteName },
+                                taskTotal: row.taskTotal,
+                              });
+                            }}
+                            title="Delete ticket"
+                            aria-label={`Delete ticket ${t.projectSiteName || t.id}`}
+                            data-testid={`btn-delete-ticket-${t.id}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <TablePagination {...ticketPagination} />
+          </div>
+        )}
+      </div>
+
+      {/* ---- Delete confirmation dialog ---- */}
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-red-600">Delete Project Development Ticket</DialogTitle>
+          </DialogHeader>
+          <div className="py-3 space-y-2 text-sm">
+            <p>Are you sure you want to permanently delete this ticket?</p>
+            {deleteTarget && (
+              <p className="font-medium">
+                {deleteTarget.ticket.projectSiteName || `Ticket #${deleteTarget.ticket.id}`}
+              </p>
+            )}
+            {deleteTarget && deleteTarget.taskTotal > 0 && (
+              <p className="text-amber-600">
+                This will also delete {deleteTarget.taskTotal} linked engineering task
+                {deleteTarget.taskTotal !== 1 ? "s" : ""}.
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              The linked project and client will <span className="font-semibold">not</span> be deleted. This action cannot be undone.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)} data-testid="btn-cancel-delete-ticket">
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => deleteTarget && deleteTicketMutation.mutate(deleteTarget.ticket.id)}
+              disabled={deleteTicketMutation.isPending}
+              data-testid="btn-confirm-delete-ticket"
+            >
+              {deleteTicketMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-1" />
+              ) : (
+                <Trash2 className="h-4 w-4 mr-1" />
+              )}
+              Delete Ticket
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!dlg.target} onOpenChange={(open) => { if (!open) updateDlg("reset"); }}>
         <DialogContent className="max-w-xl">
