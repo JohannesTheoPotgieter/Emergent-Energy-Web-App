@@ -10,6 +10,12 @@ jobs:
   compile:
     runs-on: ubuntu-latest
 
+    # Turbo Remote Cache (Vercel). Empty values disable remote cache silently
+    # and CI falls back to the actions/cache step below.
+    env:
+      TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+      TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -19,8 +25,9 @@ jobs:
           node-version: '20'
           cache: 'npm'
       - run: npm ci --prefer-offline --no-audit
-      # Turbo task cache — keyed by lockfile + turbo config, restored from
-      # any prior run on this branch (or main if that's all that's available).
+      # Local fallback cache — used when remote cache is unreachable or when
+      # TURBO_TOKEN/TURBO_TEAM secrets aren't configured. Keyed by lockfile +
+      # turbo config, restored from any prior run on this branch (or main).
       - uses: actions/cache@v4
         with:
           path: |
@@ -57,6 +64,9 @@ jobs:
       TOKEN_ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
       JWT_SECRET: ci-test-jwt-secret
       SESSION_SECRET: ci-test-session-secret
+      # Turbo Remote Cache (Vercel). Empty values disable remote cache silently.
+      TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+      TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
 
     steps:
       - uses: actions/checkout@v4
