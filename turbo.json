@@ -1,0 +1,116 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "ui": "stream",
+  "globalDependencies": [
+    "package.json",
+    "package-lock.json",
+    "tsconfig.json",
+    "tsconfig.check.json",
+    "tsconfig.client-check.json",
+    ".env.example"
+  ],
+  "globalEnv": ["NODE_ENV", "DATABASE_URL", "CI"],
+  "tasks": {
+    "check": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!**/*.md",
+        "!**/*.test.ts",
+        "!**/*.test.tsx",
+        "!qa/reports/**",
+        "!qa/_artifacts/**",
+        "!test-results/**",
+        "!dist/**",
+        "!attached_assets/**",
+        "!docs/**"
+      ],
+      "outputs": []
+    },
+    "check:client": {
+      "inputs": [
+        "client/src/**",
+        "shared/**",
+        "tsconfig.client-check.json",
+        "package.json"
+      ],
+      "outputs": []
+    },
+    "lint": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "eslint.config.js",
+        "!**/*.md",
+        "!qa/reports/**",
+        "!qa/_artifacts/**",
+        "!test-results/**",
+        "!dist/**",
+        "!attached_assets/**",
+        "!docs/**"
+      ],
+      "outputs": [".eslintcache"]
+    },
+    "build": {
+      "dependsOn": ["check"],
+      "inputs": [
+        "client/src/**",
+        "client/index.html",
+        "client/public/**",
+        "server/**",
+        "shared/**",
+        "script/build.ts",
+        "vite.config.ts",
+        "vite-plugin-meta-images.ts",
+        "postcss.config.js",
+        "components.json",
+        "tsconfig.json",
+        "tsconfig.check.json",
+        "tsconfig.client-check.json",
+        "package.json"
+      ],
+      "outputs": [
+        "dist/**"
+      ]
+    },
+    "test": {
+      "dependsOn": ["check"],
+      "inputs": [
+        "client/src/**",
+        "server/**",
+        "shared/**",
+        "qa/tests/unit/**",
+        "qa/vitest.config.ts",
+        "package.json"
+      ],
+      "outputs": ["qa/reports/vitest-results.json"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "dev:client": {
+      "cache": false,
+      "persistent": true
+    },
+    "start": {
+      "cache": false,
+      "persistent": true,
+      "dependsOn": ["build"]
+    },
+    "test:api": {
+      "cache": false
+    },
+    "test:smoke": {
+      "cache": false
+    },
+    "test:routes": {
+      "cache": false
+    },
+    "test:workflows": {
+      "cache": false
+    },
+    "release:gate": {
+      "cache": false,
+      "dependsOn": ["build", "test"]
+    }
+  }
+}
