@@ -604,25 +604,8 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
     return () => { clearTimeout(timer); clearTimeout(clearTimer); };
   }, [highlightId]);
 
-  if (isLoading) {
-    return (
-      <Card><CardContent className="flex items-center justify-center py-12">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </CardContent></Card>
-    );
-  }
-
-  if (error || !data) {
-    return (
-      <Card><CardContent className="py-12">
-        <p className="text-center text-destructive">Failed to load revenue tracking data</p>
-      </CardContent></Card>
-    );
-  }
-
-  const { milestones: rawMilestones, highlevel } = data;
-  const reconciliation = data.reconciliation;
-  const riskSignals = data.riskSignals || [];
+  const rawMilestones = data?.milestones ?? [];
+  const highlevel = data?.highlevel;
 
   // Sub-project names (for multi-project/Ad Hoc trackers)
   const subProjectNames = useMemo(() => {
@@ -647,13 +630,33 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
     return { totalContract, invoiced, inBank, pending, overdue, milestoneCount, issueCount };
   }, [milestones]);
 
+  const liveActualExpenditure = highlevel?.actual.expenditure ?? 0;
   const liveActual = useMemo(() => {
     const revenue = summary.inBank;
-    const expenditure = highlevel.actual.expenditure;
+    const expenditure = liveActualExpenditure;
     const profit = revenue - expenditure;
     const margin = revenue > 0 ? profit / revenue : 0;
     return { revenue, expenditure, profit, margin };
-  }, [summary.inBank, highlevel.actual.expenditure]);
+  }, [summary.inBank, liveActualExpenditure]);
+
+  if (isLoading) {
+    return (
+      <Card><CardContent className="flex items-center justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </CardContent></Card>
+    );
+  }
+
+  if (error || !data || !highlevel) {
+    return (
+      <Card><CardContent className="py-12">
+        <p className="text-center text-destructive">Failed to load revenue tracking data</p>
+      </CardContent></Card>
+    );
+  }
+
+  const reconciliation = data.reconciliation;
+  const riskSignals = data.riskSignals || [];
 
   const StatusBadge = ({ status, flags, milestone }: { status: string; flags: string[]; milestone: Milestone }) => {
     const hasInvoice = !!milestone.milestoneInvoiceNumber;
