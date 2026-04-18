@@ -897,6 +897,85 @@ router.get("/api/smart-import/:runId/plan", requireAuth, async (req: Request, re
   }
 });
 
+// GET /api/smart-import/:runId/qb-protections
+// Returns a summary of what QuickBooks precedence will protect on this run:
+// - Whether the gate is enabled
+// - How many active QB-linked cost / revenue lines exist on the resolved project
+// - Which fields are locked from spreadsheet overrides
+// Used by the Smart Import v2 flow to show the user, before they commit, what
+// will and will NOT be touched on linked rows.
+router.get("/api/smart-import/:runId/qb-protections", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const runId = parseInt(req.params.runId as string);
+    if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
+
+    const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));
+    if (!run) return res.status(404).json({ error: "Import run not found" });
+
+    const { isQbPrecedenceEnabled } = await import("./lib/import/qb-precedence");
+    const enabled = await isQbPrecedenceEnabled();
+
+    let costLinkedCount = 0;
+    let revenueLinkedCount = 0;
+
+    if (run.projectId) {
+      // Count active QB-linked cost lines for this project. We join via the
+      // links table so we count *active* links (deleted_at IS NULL) pointing
+      // at *active* snapshot rows (effective_to IS NULL, deleted_at IS NULL).
+      const { quickbooksInvoiceLinks } = await import("@shared/schema");
+      const { sql: sqlTag } = await import("drizzle-orm");
+
+      const [costRow] = await db.execute(sqlTag`
+        SELECT COUNT(DISTINCT ncl.id)::int AS n
+        FROM ${normalizedCostLines} ncl
+        INNER JOIN ${quickbooksInvoiceLinks} ql
+          ON ql.app_entity_type = 'cost_line'
+         AND ql.app_entity_id = ncl.id
+         AND ql.deleted_at IS NULL
+        WHERE ncl.project_id = ${run.projectId}
+          AND ncl.effective_to IS NULL
+          AND ncl.deleted_at IS NULL
+      `) as any;
+      costLinkedCount = Number(costRow?.n ?? costRow?.rows?.[0]?.n ?? 0);
+
+      const [revRow] = await db.execute(sqlTag`
+        SELECT COUNT(DISTINCT nrl.id)::int AS n
+        FROM ${normalizedRevenueLines} nrl
+        INNER JOIN ${quickbooksInvoiceLinks} ql
+          ON ql.app_entity_type = 'revenue_line'
+         AND ql.app_entity_id = nrl.id
+         AND ql.deleted_at IS NULL
+        WHERE nrl.project_id = ${run.projectId}
+          AND nrl.effective_to IS NULL
+          AND nrl.deleted_at IS NULL
+      `) as any;
+      revenueLinkedCount = Number(revRow?.n ?? revRow?.rows?.[0]?.n ?? 0);
+    }
+
+    res.json({
+      enabled,
+      projectId: run.projectId,
+      costLinkedCount,
+      revenueLinkedCount,
+      // Only fields the precedence engine actually locks today. paidDate /
+      // inBankDate are inferred from QB payment events (not flat columns)
+      // and therefore left untouched on linked rows for now — promising
+      // them here would mislead operators.
+      lockedFields: [
+        "amountExVat", "vat", "invoiceNumber", "invoiceDate",
+      ],
+      protections: {
+        autoRealiseOnQbPaid: true,
+        preserveLinkedRowsMissingFromUpload: true,
+        logsVariancesToAudit: true,
+      },
+    });
+  } catch (err: unknown) {
+    console.error("[smart-import] GET qb-protections error:", err);
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+  }
+});
+
 // PATCH /api/smart-import/:runId/project-info
 router.patch("/api/smart-import/:runId/project-info", requireAuth, requirePermission("smart_import", "edit"), async (req: Request, res: Response) => {
   try {

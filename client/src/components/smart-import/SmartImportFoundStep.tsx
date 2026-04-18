@@ -16,15 +16,18 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { SECTION_LABELS, IMPORT_MODE_LABELS } from "./labels";
+import { SmartImportQbProtectionsCallout } from "./SmartImportQbProtectionsCallout";
 
 interface FoundStepProps {
   preview: any;
   planning: any | null;
   onContinue: () => void;
   onBack: () => void;
+  /** Run id is needed to fetch QuickBooks protection summary. */
+  runId?: number | null;
 }
 
-export function SmartImportFoundStep({ preview, planning, onContinue, onBack }: FoundStepProps) {
+export function SmartImportFoundStep({ preview, planning, onContinue, onBack, runId }: FoundStepProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const detection = preview?.detection;
@@ -81,6 +84,13 @@ export function SmartImportFoundStep({ preview, planning, onContinue, onBack }: 
             }
           </span>
         </div>
+
+        {/* QuickBooks protections — shown high so the user sees what is
+            locked before they look at section counts. The component itself
+            decides how loud to be (full vs compact vs muted note). */}
+        {runId && (
+          <SmartImportQbProtectionsCallout runId={runId} />
+        )}
 
         {/* Sections found */}
         <div data-testid="found-sections">
