@@ -26,17 +26,7 @@ function exists(relPath: string) {
 // 1. V2 is the default experience
 // ---------------------------------------------------------------------------
 
-describe("V2 is the default user experience", () => {
-  it("useV2 state defaults to true", () => {
-    const page = read("client/src/pages/smart-import.tsx");
-    expect(page).toContain("const [useV2, setUseV2] = useState(true)");
-  });
-
-  it("v2 flow renders when useV2 is true", () => {
-    const page = read("client/src/pages/smart-import.tsx");
-    expect(page).toContain("{useV2 && !bulkMode && (");
-  });
-
+describe("V2 is the only user experience", () => {
   it("v2 step labels are the default labels shown", () => {
     const labels = read("client/src/components/smart-import/labels.ts");
     expect(labels).toContain('"Upload"');
@@ -48,41 +38,27 @@ describe("V2 is the default user experience", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 2. V1 fallback is isolated
+// 2. V1 fallback has been removed
 // ---------------------------------------------------------------------------
 
-describe("V1 fallback is explicitly isolated", () => {
-  const page = read("client/src/pages/smart-import.tsx");
+describe("V1 fallback has been removed", () => {
   const routes = read("server/smart-import-routes.ts");
 
-  it("v1 step indicator gated behind !useV2", () => {
-    expect(page).toContain("{!useV2 && !bulkMode && <StepIndicator");
+  it("v1 commit path no longer exists in routes", () => {
+    expect(routes).not.toContain("if (!useV2)");
+    expect(routes).not.toContain("v1 fallback path");
   });
 
-  it("v1 loading/error states gated behind !useV2", () => {
-    expect(page).toContain("{!useV2 && loadingRun");
-    expect(page).toContain("{!useV2 && runLoadError");
+  it("useV2 / skipV2ConflictCheck branching is gone", () => {
+    expect(routes).not.toContain("useV2");
+    expect(routes).not.toContain("skipV2ConflictCheck");
   });
 
-  it("v1 commit path gated behind if (!useV2)", () => {
-    expect(routes).toContain("if (!useV2)");
-    expect(routes).toContain("end if (!useV2) — v1 fallback path");
-  });
-
-  it("v2 commit path requires projectId", () => {
-    expect(routes).toContain("const useV2 = !skipV2ConflictCheck && projectId");
-  });
-
-  it("skipV2ConflictCheck provides explicit opt-out", () => {
-    expect(routes).toContain("skipV2ConflictCheck");
-  });
-
-  it("view toggle is labeled Simple/Advanced (not v1/v2)", () => {
-    expect(page).toContain("Simple view");
-    expect(page).toContain("Advanced view");
-    // Does NOT expose internal v1/v2 naming to users
-    expect(page).not.toContain('>v1<');
-    expect(page).not.toContain('>v2<');
+  it("commit fails fast when projectId is missing", () => {
+    expect(routes).toContain("project_id_missing");
+    expect(routes).toContain(
+      "Smart Import requires a resolved project_info.id before commit. Ensure the upsert pass ran first.",
+    );
   });
 });
 
@@ -119,11 +95,13 @@ describe("Dashboard metrics refresh for v2 path", () => {
     expect(routes).toContain("refreshProjectMetricsAsync(projectId)");
   });
 
-  it("refresh call is outside the v1 if-block (fires for both paths)", () => {
-    // The refresh is after the transaction closes and after res.json()
-    const afterTransaction = routes.slice(routes.lastIndexOf("refreshProjectMetricsAsync"));
-    // It should NOT be inside the if (!useV2) block
-    expect(afterTransaction).not.toContain("if (!useV2)");
+  it("refresh call fires after the v2 commit transaction writes", () => {
+    // The refresh must run after writePlanIncremental (inside the commit tx)
+    // has completed — i.e. the refresh call sits after writePlanIncremental.
+    const planWrite = routes.indexOf("await writePlanIncremental(");
+    const refreshCall = routes.indexOf("refreshProjectMetricsAsync(projectId)");
+    expect(planWrite).toBeGreaterThan(-1);
+    expect(refreshCall).toBeGreaterThan(planWrite);
   });
 });
 

@@ -1925,46 +1925,13 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       }
     }
 
-    // ── Emergency v1 mode (S22) ──
-    // The legacy v1 full-replace path is restricted to COO role only.
-    // Non-COO users cannot activate it. A justification reason is required.
-    const emergencyV1Mode = req.body?.emergencyV1Mode === true || req.body?.skipV2ConflictCheck === true;
-    let skipV2ConflictCheck = false;
-    if (emergencyV1Mode) {
-      const userRole = (req as any).user?.role || "";
-      const isCOO = userRole === "COO_ADMIN";
-      if (!isCOO) {
-        return res.status(403).json({
-          error: "emergency_v1_coo_only",
-          message: "Emergency v1 mode is restricted to COO role only.",
-        });
-      }
-      const reason = req.body?.emergencyV1Reason || "";
-      if (typeof reason !== "string" || reason.trim().length < 20) {
-        return res.status(400).json({
-          error: "emergency_v1_reason_required",
-          message: "Emergency v1 mode requires a justification reason (minimum 20 characters).",
-        });
-      }
-      skipV2ConflictCheck = true;
-      // Audit the emergency v1 usage
-      logAuditFromReq(req, {
-        entityType: "smart_import",
-        entityId: String(runId),
-        action: "emergency_v1_mode",
-        projectName: run.projectName,
-        source: "IMPORT",
-        changesJson: { reason: reason.trim(), userId: (req as any).user?.id },
-      });
-    }
-
     // ── Smart Import v2: 3-way conflict check ──
     // Run the planner to detect true conflicts (both app and file diverged from baseline).
     // Unresolved conflicts block commit.
     const v2ConflictResolutions = req.body?.v2ConflictResolutions as Record<string, "keep_app" | "accept_file"> | undefined;
     const preserveManualEditsEarly = req.body?.preserveManualEdits === true;
 
-    if (!skipV2ConflictCheck && !preserveManualEditsEarly && run.projectId) {
+    if (!preserveManualEditsEarly && run.projectId) {
       const summary = run.summaryJson as any;
       if (summary?.normalization) {
         try {
@@ -2007,7 +1974,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
             }
           }
         } catch (planErr: unknown) {
-          console.warn("[SmartImport] v2 conflict check failed (falling through to v1):", (planErr instanceof Error ? planErr.message : String(planErr)));
+          console.warn("[SmartImport] v2 conflict check failed (continuing without planner-based conflict gate):", (planErr instanceof Error ? planErr.message : String(planErr)));
         }
       }
     }
@@ -2292,6 +2259,13 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       }
     }
 
+    if (!projectId) {
+      return res.status(400).json({
+        error: "project_id_missing",
+        message: "Smart Import requires a resolved project_info.id before commit. Ensure the upsert pass ran first.",
+      });
+    }
+
     const ignoredRows = new Map<string, Set<number>>();
     const overrideRows = new Map<string, Map<number, any>>();
     for (const issue of issues) {
@@ -2326,7 +2300,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
     // NOT abort here — the executor's self-id fallback (`#pk<ownId>`) will
     // still resolve the write safely — but we log a diagnostic so ops can
     // see the drift without trawling failed commits.
-    if (!skipV2ConflictCheck && projectId) {
+    if (projectId) {
       try {
         const norm = (run.summaryJson as any)?.normalization;
         if (norm?.planTasks?.length) {
@@ -2401,939 +2375,222 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       }
 
       // ── Smart Import v2: Incremental commit path ──
-      // If v2 is active and projectId is known, use the planner+conflict engine
-      // to perform targeted writes instead of section-wide replace.
-      const useV2 = !skipV2ConflictCheck && projectId;
+      // projectId is guaranteed resolved (fail-fast above). Use the
+      // planner+conflict engine to perform targeted writes instead of
+      // section-wide replace.
+      const commitTimestamp = new Date();
+      const baselineInfo = await detectImportMode(projectId);
 
-      if (useV2) {
-        const commitTimestamp = new Date();
-        const baselineInfo = await detectImportMode(projectId);
+      // Load current state for matching
+      const [planRows, revenueRows, costRows, baselineNorm] = await Promise.all([
+        loadCurrentPlanRows(projectId),
+        loadCurrentRevenueRows(projectId),
+        loadCurrentCostRows(projectId),
+        baselineInfo.importMode === "INCREMENTAL" ? loadBaselineNormalization(projectId) : Promise.resolve(null),
+      ]);
 
-        // Load current state for matching
-        const [planRows, revenueRows, costRows, baselineNorm] = await Promise.all([
-          loadCurrentPlanRows(projectId),
-          loadCurrentRevenueRows(projectId),
-          loadCurrentCostRows(projectId),
-          baselineInfo.importMode === "INCREMENTAL" ? loadBaselineNormalization(projectId) : Promise.resolve(null),
-        ]);
+      // Run row matching per section
+      const matchedPlan = norm.planTasks?.length > 0 || planRows.length > 0
+        ? matchRows("PLAN" as SectionType, projectId, norm.planTasks || [], planRows as any) : [];
+      // Workbook-is-truth guard: only run the matcher when the FILE has
+      // rows for the section. If the upload doesn't contain a Revenue or
+      // Expenditure sheet at all, we skip the section entirely so existing
+      // active rows are NOT classified as MISSING_FROM_UPLOAD and wiped.
+      // (The new MISSING soft-close policy in the executor only fires when
+      // the file legitimately drops a row from a populated section.)
+      const matchedRevenue = (norm.revenueLines?.length ?? 0) > 0
+        ? matchRows("REVENUE" as SectionType, projectId, norm.revenueLines || [], revenueRows as any) : [];
+      const matchedCost = (norm.costLines?.length ?? 0) > 0
+        ? matchRows("EXPENDITURE" as SectionType, projectId, norm.costLines || [], costRows as any) : [];
 
-        // Run row matching per section
-        const matchedPlan = norm.planTasks?.length > 0 || planRows.length > 0
-          ? matchRows("PLAN" as SectionType, projectId, norm.planTasks || [], planRows as any) : [];
-        // Workbook-is-truth guard: only run the matcher when the FILE has
-        // rows for the section. If the upload doesn't contain a Revenue or
-        // Expenditure sheet at all, we skip the section entirely so existing
-        // active rows are NOT classified as MISSING_FROM_UPLOAD and wiped.
-        // (The new MISSING soft-close policy in the executor only fires when
-        // the file legitimately drops a row from a populated section.)
-        const matchedRevenue = (norm.revenueLines?.length ?? 0) > 0
-          ? matchRows("REVENUE" as SectionType, projectId, norm.revenueLines || [], revenueRows as any) : [];
-        const matchedCost = (norm.costLines?.length ?? 0) > 0
-          ? matchRows("EXPENDITURE" as SectionType, projectId, norm.costLines || [], costRows as any) : [];
-
-        // Run 3-way conflict engine for incremental imports
-        let conflictMergeResults = new Map<string, RowMergeResult>();
-        if (baselineInfo.importMode === "INCREMENTAL") {
-          const conflictResult = runConflictEngine(
-            { PLAN: matchedPlan, REVENUE: matchedRevenue, EXPENDITURE: matchedCost },
-            baselineNorm,
-            projectId,
-            generateBusinessKey,
-          );
-          for (const row of conflictResult.allRows) {
-            conflictMergeResults.set(row.rowKey, row);
-          }
+      // Run 3-way conflict engine for incremental imports
+      let conflictMergeResults = new Map<string, RowMergeResult>();
+      if (baselineInfo.importMode === "INCREMENTAL") {
+        const conflictResult = runConflictEngine(
+          { PLAN: matchedPlan, REVENUE: matchedRevenue, EXPENDITURE: matchedCost },
+          baselineNorm,
+          projectId,
+          generateBusinessKey,
+        );
+        for (const row of conflictResult.allRows) {
+          conflictMergeResults.set(row.rowKey, row);
         }
+      }
 
-        const v2Decisions = v2ConflictResolutions || {};
+      const v2Decisions = v2ConflictResolutions || {};
 
-        // ── S11: Pre-import work_items snapshot ──
-        // Capture current work_items state BEFORE v2 overwrites them in-place.
-        // Required for state-restoring rollback (S21).
-        if (planRows.length > 0) {
-          try {
-            const snapshotRows = planRows.map((r: any) => ({
-              id: r.id, taskName: r.taskName, taskNo: r.taskNo, phase: r.phase,
-              startDate: r.startDate, endDate: r.endDate, durationDays: r.durationDays,
-              actualStartDate: r.actualStartDate, actualEndDate: r.actualEndDate,
-              actualDurationDays: r.actualDurationDays, owner: r.owner,
-              status: r.status, pctComplete: r.pctComplete,
-              expectedPctComplete: r.expectedPctComplete, comment: r.comment,
-              isMilestone: r.isMilestone, parentTaskNo: r.parentTaskNo,
-              subProjectName: r.subProjectName, importRunId: r.importRunId,
-            }));
-            await tx.update(smartImportRuns)
-              .set({ preImportSnapshot: snapshotRows })
-              .where(eq(smartImportRuns.id, runId));
-          } catch (snapErr: unknown) {
-            console.warn("[SmartImport] Pre-import snapshot failed (non-blocking):", (snapErr instanceof Error ? snapErr.message : String(snapErr)));
-          }
+      // ── S11: Pre-import work_items snapshot ──
+      // Capture current work_items state BEFORE v2 overwrites them in-place.
+      // Required for state-restoring rollback (S21).
+      if (planRows.length > 0) {
+        try {
+          const snapshotRows = planRows.map((r: any) => ({
+            id: r.id, taskName: r.taskName, taskNo: r.taskNo, phase: r.phase,
+            startDate: r.startDate, endDate: r.endDate, durationDays: r.durationDays,
+            actualStartDate: r.actualStartDate, actualEndDate: r.actualEndDate,
+            actualDurationDays: r.actualDurationDays, owner: r.owner,
+            status: r.status, pctComplete: r.pctComplete,
+            expectedPctComplete: r.expectedPctComplete, comment: r.comment,
+            isMilestone: r.isMilestone, parentTaskNo: r.parentTaskNo,
+            subProjectName: r.subProjectName, importRunId: r.importRunId,
+          }));
+          await tx.update(smartImportRuns)
+            .set({ preImportSnapshot: snapshotRows })
+            .where(eq(smartImportRuns.id, runId));
+        } catch (snapErr: unknown) {
+          console.warn("[SmartImport] Pre-import snapshot failed (non-blocking):", (snapErr instanceof Error ? snapErr.message : String(snapErr)));
         }
+      }
 
-        // Write PLAN incrementally
-        let planResult = null;
-        if (matchedPlan.length > 0) {
-          planResult = await writePlanIncremental({
-            tx, projectId, projectName, runId, userId,
-            matchedRows: matchedPlan,
-            mergeResults: conflictMergeResults,
-            conflictDecisions: v2Decisions,
-            workItemsTable: workItems,
-            workItemDependenciesTable: workItemDependencies,
-            workItemAssignmentsTable: workItemAssignments,
-          });
-          counts.planTasks = planResult.counts.inserted + planResult.counts.updated;
-        }
+      // Write PLAN incrementally
+      let planResult = null;
+      if (matchedPlan.length > 0) {
+        planResult = await writePlanIncremental({
+          tx, projectId, projectName, runId, userId,
+          matchedRows: matchedPlan,
+          mergeResults: conflictMergeResults,
+          conflictDecisions: v2Decisions,
+          workItemsTable: workItems,
+          workItemDependenciesTable: workItemDependencies,
+          workItemAssignmentsTable: workItemAssignments,
+        });
+        counts.planTasks = planResult.counts.inserted + planResult.counts.updated;
+      }
 
-        // Write REVENUE incrementally
-        let revenueResult = null;
-        if (matchedRevenue.length > 0) {
-          revenueResult = await writeRevenueIncremental({
-            tx, projectId, projectName, runId, userId,
-            matchedRows: matchedRevenue,
-            mergeResults: conflictMergeResults,
-            conflictDecisions: v2Decisions,
-            commitTimestamp,
-          });
-          counts.revenueLines = revenueResult.counts.inserted + revenueResult.counts.updated;
-        }
+      // Write REVENUE incrementally
+      let revenueResult = null;
+      if (matchedRevenue.length > 0) {
+        revenueResult = await writeRevenueIncremental({
+          tx, projectId, projectName, runId, userId,
+          matchedRows: matchedRevenue,
+          mergeResults: conflictMergeResults,
+          conflictDecisions: v2Decisions,
+          commitTimestamp,
+        });
+        counts.revenueLines = revenueResult.counts.inserted + revenueResult.counts.updated;
+      }
 
-        // Write EXPENDITURE incrementally
-        let costResult = null;
-        if (matchedCost.length > 0) {
-          costResult = await writeExpenditureIncremental({
-            tx, projectId, projectName, runId, userId,
-            matchedRows: matchedCost,
-            mergeResults: conflictMergeResults,
-            conflictDecisions: v2Decisions,
-            commitTimestamp,
-          });
-          counts.costLines = costResult.counts.inserted + costResult.counts.updated;
-        }
+      // Write EXPENDITURE incrementally
+      let costResult = null;
+      if (matchedCost.length > 0) {
+        costResult = await writeExpenditureIncremental({
+          tx, projectId, projectName, runId, userId,
+          matchedRows: matchedCost,
+          mergeResults: conflictMergeResults,
+          conflictDecisions: v2Decisions,
+          commitTimestamp,
+        });
+        counts.costLines = costResult.counts.inserted + costResult.counts.updated;
+      }
 
-        // ── S09: Write category_revenue_allocations ──
-        // Persist extracted J_cat values from the normalization result.
-        const catAllocs = norm.categoryAllocations as Array<{
-          categoryNumber: string; categoryName: string; categoryKey: string;
-          categorySortOrder: number; revenueAllocation: number | null;
-          cosTotalCosted: number | null; budgetTotal: number | null;
-          allocationSource: string; sourceSheet: string; sourceRow: number;
-        }> | undefined;
+      // ── S09: Write category_revenue_allocations ──
+      // Persist extracted J_cat values from the normalization result.
+      const catAllocs = norm.categoryAllocations as Array<{
+        categoryNumber: string; categoryName: string; categoryKey: string;
+        categorySortOrder: number; revenueAllocation: number | null;
+        cosTotalCosted: number | null; budgetTotal: number | null;
+        allocationSource: string; sourceSheet: string; sourceRow: number;
+      }> | undefined;
 
-        // Map from categoryKey → inserted allocation row ID (for S10 FK)
-        const catAllocIdByKey = new Map<string, number>();
+      // Map from categoryKey → inserted allocation row ID (for S10 FK)
+      const catAllocIdByKey = new Map<string, number>();
 
-        if (catAllocs && catAllocs.length > 0) {
-          // Soft-close existing active allocations for this project
-          await tx.update(categoryRevenueAllocations)
-            .set({ effectiveTo: commitTimestamp })
-            .where(and(
-              eq(categoryRevenueAllocations.projectId, projectId),
-              isNull(categoryRevenueAllocations.effectiveTo),
-            ));
+      if (catAllocs && catAllocs.length > 0) {
+        // Soft-close existing active allocations for this project
+        await tx.update(categoryRevenueAllocations)
+          .set({ effectiveTo: commitTimestamp })
+          .where(and(
+            eq(categoryRevenueAllocations.projectId, projectId),
+            isNull(categoryRevenueAllocations.effectiveTo),
+          ));
 
-          // Insert new allocations
-          for (const ca of catAllocs) {
-            // Use the centralized normalizer so any future allocationSource
-            // value (upper-case, mixed-case, legacy shorthand) still lands on
-            // the canonical lowercase enum literal that the DB expects.
-            const confidence = normalizeAllocationConfidence(ca.allocationSource);
+        // Insert new allocations
+        for (const ca of catAllocs) {
+          // Use the centralized normalizer so any future allocationSource
+          // value (upper-case, mixed-case, legacy shorthand) still lands on
+          // the canonical lowercase enum literal that the DB expects.
+          const confidence = normalizeAllocationConfidence(ca.allocationSource);
 
-            const [inserted] = await tx.insert(categoryRevenueAllocations).values({
-              projectId,
-              projectName,
-              categoryNumber: ca.categoryNumber,
-              categoryName: ca.categoryName,
-              categoryKey: ca.categoryKey,
-              categorySortOrder: ca.categorySortOrder,
-              revenueAllocation: ca.revenueAllocation != null ? String(ca.revenueAllocation) : null,
-              allocationConfidence: confidence,
-              budgetTotal: ca.budgetTotal != null ? String(ca.budgetTotal) : null,
-              budgetCos: ca.cosTotalCosted != null ? String(ca.cosTotalCosted) : null,
-              importRunId: runId,
-              effectiveFrom: commitTimestamp,
-              effectiveTo: null,
-              snapshotRunId: runId,
-              sourceSheet: ca.sourceSheet,
-              sourceRow: ca.sourceRow,
-            }).returning();
-            catAllocIdByKey.set(ca.categoryKey, inserted.id);
-          }
-        }
-
-        // ── S10: Populate category_key and category_allocation_id on NCL rows ──
-        // Set category_key on all active NCL rows for this project, including UNCHANGED rows.
-        if (catAllocIdByKey.size > 0) {
-          // Build a lookup from category_name (stripped) → categoryKey + allocationId
-          const catNameToKeyId = new Map<string, { key: string; id: number }>();
-          for (const ca of catAllocs!) {
-            catNameToKeyId.set(ca.categoryName.toLowerCase(), { key: ca.categoryKey, id: catAllocIdByKey.get(ca.categoryKey)! });
-            // Also index by full key for rows that already have numbered categories
-            catNameToKeyId.set(ca.categoryKey.toLowerCase(), { key: ca.categoryKey, id: catAllocIdByKey.get(ca.categoryKey)! });
-          }
-
-          // Fetch ALL active NCL rows for this project (includes UNCHANGED ones)
-          const activeNclRows = await tx.select({
-            id: normalizedCostLines.id,
-            costCategory: normalizedCostLines.costCategory,
-            categoryKey: normalizedCostLines.categoryKey,
-          })
-            .from(normalizedCostLines)
-            .where(and(
-              eq(normalizedCostLines.projectId, projectId),
-              and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)),
-            ));
-
-          // Update each row that needs category_key or category_allocation_id
-          for (const row of activeNclRows) {
-            const catName = (row.costCategory || "").toLowerCase().trim();
-            const match = catNameToKeyId.get(catName);
-            if (match && (row.categoryKey !== match.key)) {
-              await tx.update(normalizedCostLines)
-                .set({
-                  categoryKey: match.key,
-                  categoryAllocationId: match.id,
-                })
-                .where(eq(normalizedCostLines.id, row.id));
-            } else if (match && !row.categoryKey) {
-              // Row already has the right categoryKey but is missing the FK
-              await tx.update(normalizedCostLines)
-                .set({ categoryAllocationId: match.id })
-                .where(eq(normalizedCostLines.id, row.id));
-            }
-          }
-        }
-
-        v2Result = {
-          sections: {
-            PLAN: planResult,
-            REVENUE: revenueResult,
-            EXPENDITURE: costResult,
-          },
-          totalInserted: (planResult?.counts.inserted || 0) + (revenueResult?.counts.inserted || 0) + (costResult?.counts.inserted || 0),
-          totalUpdated: (planResult?.counts.updated || 0) + (revenueResult?.counts.updated || 0) + (costResult?.counts.updated || 0),
-          totalUnchanged: (planResult?.counts.unchanged || 0) + (revenueResult?.counts.unchanged || 0) + (costResult?.counts.unchanged || 0),
-          totalMissing: (planResult?.counts.missing || 0) + (revenueResult?.counts.missing || 0) + (costResult?.counts.missing || 0),
-        };
-
-        // Handle execution phases (simple re-insert — no temporal matching)
-        if (norm.executionPhases && norm.executionPhases.length > 0) {
-          await tx.delete(normalizedExecutionPhases).where(eq(normalizedExecutionPhases.projectId, projectId));
-          const phaseValues = norm.executionPhases.map((p: any) => ({
+          const [inserted] = await tx.insert(categoryRevenueAllocations).values({
             projectId,
             projectName,
-            phaseName: p.phaseName,
-            phaseDate: p.phaseDate,
-            source: "EXCEL_IMPORT" as const,
+            categoryNumber: ca.categoryNumber,
+            categoryName: ca.categoryName,
+            categoryKey: ca.categoryKey,
+            categorySortOrder: ca.categorySortOrder,
+            revenueAllocation: ca.revenueAllocation != null ? String(ca.revenueAllocation) : null,
+            allocationConfidence: confidence,
+            budgetTotal: ca.budgetTotal != null ? String(ca.budgetTotal) : null,
+            budgetCos: ca.cosTotalCosted != null ? String(ca.cosTotalCosted) : null,
             importRunId: runId,
-          }));
-          await tx.insert(normalizedExecutionPhases).values(phaseValues);
-          counts.executionPhases = phaseValues.length;
+            effectiveFrom: commitTimestamp,
+            effectiveTo: null,
+            snapshotRunId: runId,
+            sourceSheet: ca.sourceSheet,
+            sourceRow: ca.sourceRow,
+          }).returning();
+          catAllocIdByKey.set(ca.categoryKey, inserted.id);
         }
-
-        // Update project info from detected metadata (same as v1)
-        const detectedInfo = summary.detection?.projectInfo;
-        if (detectedInfo && projectId) {
-          const VALID_PHASES = ["dlp", "financial close", "planning", "construction", "qa", "handover", "commercial close out", "compliance handover", "hold"];
-          const [existingProject] = await tx.select({ pm: projectInfo.pm, pd: projectInfo.pd }).from(projectInfo).where(eq(projectInfo.id, projectId));
-          const updates: Record<string, any> = {};
-          if (detectedInfo.sizeKwp) updates.sizeKwp = String(detectedInfo.sizeKwp);
-          if (detectedInfo.pd && (!existingProject?.pd || !existingProject.pd.trim())) updates.pd = String(detectedInfo.pd);
-          if (detectedInfo.pm && (!existingProject?.pm || !existingProject.pm.trim())) updates.pm = String(detectedInfo.pm);
-          if (detectedInfo.contractValue) updates.contractValue = String(detectedInfo.contractValue);
-          const rawPhase = detectedInfo.phase ? String(detectedInfo.phase).trim() : null;
-          if (rawPhase && VALID_PHASES.includes(rawPhase.toLowerCase())) {
-            updates.phase = rawPhase;
-            updates.executionPhase = rawPhase;
-            updates.phaseUpdatedAt = new Date();
-          }
-          if (Object.keys(updates).length > 0) {
-            updates.updatedAt = new Date();
-            await tx.update(projectInfo).set(updates).where(eq(projectInfo.id, projectId));
-            await syncProjectSplitTables(projectId, updates, tx);
-          }
-        }
-
-        // ── S12: Post-commit project_revenue_summary refresh ──
-        // Refreshes project_revenue_summary from the normalized costedSummary
-        // so the FYE Detail view sees fresh budget/actual revenue and COS
-        // figures after each v2 commit. (Previously this helper also wrote
-        // program_expense and program_inflows as back-compat derivatives;
-        // those writes were removed in the PE/PI retirement.)
-        try {
-          const matResult = await materializeDerivatives({
-            tx, projectId, projectName, runId, commitTimestamp, norm,
-          });
-          console.log(`[SmartImport] v2 project_revenue_summary refresh: PRS=${matResult.projectRevenueSummaryUpdated}`);
-        } catch (matErr: unknown) {
-          // PRS refresh failure is non-blocking for the canonical commit.
-          console.warn("[SmartImport] project_revenue_summary refresh failed (non-blocking):", (matErr instanceof Error ? matErr.message : String(matErr)));
-        }
-
-        // ── S13: Canonical expense_task_links re-linking ──
-        // After v2 commit creates new NCL rows (soft-close + insert for CHANGED),
-        // update canonical_expense_id on expense_task_links to point to the new IDs.
-        if (costResult && (costResult.counts.updated > 0 || costResult.counts.inserted > 0)) {
-          try {
-            // Build old→new NCL ID map from the commit result.
-            // updatedIds = old IDs that were soft-closed, insertedIds = new IDs that replaced them.
-            // For CHANGED rows, updatedIds[i] is the old ID and insertedIds[i] is the new ID
-            // (both arrays are populated in parallel by writeExpenditureIncremental).
-            const oldToNewNcl = new Map<number, number>();
-            if (costResult.updatedIds && costResult.insertedIds) {
-              for (let i = 0; i < costResult.updatedIds.length; i++) {
-                if (i < costResult.insertedIds.length) {
-                  oldToNewNcl.set(costResult.updatedIds[i], costResult.insertedIds[i]);
-                }
-              }
-            }
-
-            // Also build a set of all current active NCL IDs for orphan detection
-            const activeNclIds = new Set<number>();
-            const activeNclForLinks = await tx.select({ id: normalizedCostLines.id })
-              .from(normalizedCostLines)
-              .where(and(eq(normalizedCostLines.projectId, projectId), and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))));
-            for (const r of activeNclForLinks) activeNclIds.add(r.id);
-
-            // Fetch links for this project that have canonical_expense_id set
-            const projectLinks = await tx.select().from(expenseTaskLinks)
-              .where(eq(expenseTaskLinks.projectName, projectName));
-
-            for (const link of projectLinks) {
-              const canonId = link.canonicalExpenseId;
-              if (canonId == null) continue;
-
-              // If the canonical ID was soft-closed (old ID), remap to the new ID
-              if (oldToNewNcl.has(canonId)) {
-                await tx.update(expenseTaskLinks)
-                  .set({ canonicalExpenseId: oldToNewNcl.get(canonId)! })
-                  .where(eq(expenseTaskLinks.id, link.id));
-              }
-              // If the canonical ID no longer points to an active NCL row
-              // (and wasn't remapped), clear it so it can be re-resolved
-              else if (!activeNclIds.has(canonId)) {
-                await tx.update(expenseTaskLinks)
-                  .set({ canonicalExpenseId: null })
-                  .where(eq(expenseTaskLinks.id, link.id));
-              }
-            }
-          } catch (linkErr: unknown) {
-            console.warn("[SmartImport] Canonical link re-pointing failed (non-blocking):", (linkErr instanceof Error ? linkErr.message : String(linkErr)));
-          }
-        }
-
-        // Finalize: mark as committed
-        const totalAttempted = (norm.planTasks?.length || 0) + (norm.revenueLines?.length || 0) + (norm.costLines?.length || 0) + (norm.executionPhases?.length || 0);
-        const totalSucceeded = (counts.planTasks || 0) + (counts.revenueLines || 0) + (counts.costLines || 0) + (counts.executionPhases || 0);
-        const totalFailed = totalAttempted - totalSucceeded;
-        const detectedSections: string[] = [];
-        if (norm.planTasks?.length > 0) detectedSections.push("PLAN");
-        if (norm.revenueLines?.length > 0) detectedSections.push("REVENUE");
-        if (norm.costLines?.length > 0) detectedSections.push("EXPENDITURE");
-
-        await tx.update(smartImportRuns).set({
-          status: "committed",
-          committedAt: new Date(),
-          committedBy: userId,
-          recordsAttempted: totalAttempted,
-          recordsSucceeded: totalSucceeded,
-          recordsFailed: totalFailed,
-          importType: detectedSections.join(","),
-        }).where(eq(smartImportRuns.id, runId));
       }
-      // ── End v2 incremental commit path ──
 
-      // ── v1 fallback path (runs when v2 is disabled) ──
-      if (!useV2) {
+      // ── S10: Populate category_key and category_allocation_id on NCL rows ──
+      // Set category_key on all active NCL rows for this project, including UNCHANGED rows.
+      if (catAllocIdByKey.size > 0) {
+        // Build a lookup from category_name (stripped) → categoryKey + allocationId
+        const catNameToKeyId = new Map<string, { key: string; id: number }>();
+        for (const ca of catAllocs!) {
+          catNameToKeyId.set(ca.categoryName.toLowerCase(), { key: ca.categoryKey, id: catAllocIdByKey.get(ca.categoryKey)! });
+          // Also index by full key for rows that already have numbered categories
+          catNameToKeyId.set(ca.categoryKey.toLowerCase(), { key: ca.categoryKey, id: catAllocIdByKey.get(ca.categoryKey)! });
+        }
 
-      const existingTaskOwners = new Map<string, string>();
-      {
-        const existingWiTasks = projectId
-          ? await tx.select({ title: workItems.title, ownerName: workItems.ownerName }).from(workItems)
-              .where(and(eq(workItems.projectId, projectId), eq(workItems.workstream, "PM"), eq(workItems.source, "SMART_IMPORT")))
-          : await tx.select({ title: workItems.title, ownerName: workItems.ownerName }).from(workItems)
-              .where(and(sql`${workItems.externalRef} LIKE ${projectName + '::PLAN::%'}`, eq(workItems.workstream, "PM")));
-        for (const t of existingWiTasks) {
-          if (t.ownerName && t.ownerName.trim()) {
-            existingTaskOwners.set(t.title, t.ownerName);
+        // Fetch ALL active NCL rows for this project (includes UNCHANGED ones)
+        const activeNclRows = await tx.select({
+          id: normalizedCostLines.id,
+          costCategory: normalizedCostLines.costCategory,
+          categoryKey: normalizedCostLines.categoryKey,
+        })
+          .from(normalizedCostLines)
+          .where(and(
+            eq(normalizedCostLines.projectId, projectId),
+            and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)),
+          ));
+
+        // Update each row that needs category_key or category_allocation_id
+        for (const row of activeNclRows) {
+          const catName = (row.costCategory || "").toLowerCase().trim();
+          const match = catNameToKeyId.get(catName);
+          if (match && (row.categoryKey !== match.key)) {
+            await tx.update(normalizedCostLines)
+              .set({
+                categoryKey: match.key,
+                categoryAllocationId: match.id,
+              })
+              .where(eq(normalizedCostLines.id, row.id));
+          } else if (match && !row.categoryKey) {
+            // Row already has the right categoryKey but is missing the FK
+            await tx.update(normalizedCostLines)
+              .set({ categoryAllocationId: match.id })
+              .where(eq(normalizedCostLines.id, row.id));
           }
         }
       }
 
-      const manualEditsToPreserve = new Map<number, {
-        cosRealised?: boolean;
-        invoiceDateConfirmed?: boolean;
-        paidDateConfirmed?: boolean;
-        noRevenueLinked?: boolean;
-        cashflowConfirmed?: boolean;
-        adminDateOverride?: string;
-        adminDateOverrideReason?: string;
-        adminDateOverrideBy?: number;
-        adminDateOverrideAt?: Date;
-      }>();
-
-      // Track revenue admin date overrides separately
-      const revenueAdminOverrides = new Map<number, {
-        adminDateOverride: string;
-        adminDateOverrideReason?: string;
-        adminDateOverrideBy?: number;
-        adminDateOverrideAt?: Date;
-      }>();
-
-      if (preserveManualEdits || conflictResolutions) {
-        // v1 fallback path — restrict to current (non-historical) rows so a soft-closed
-        // row cannot clobber active-row state when manual edits are preserved.
-        const existingCostRows = projectId
-          ? await tx.select().from(normalizedCostLines).where(and(eq(normalizedCostLines.projectId, projectId), isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)))
-          : await tx.select().from(normalizedCostLines).where(and(eq(normalizedCostLines.projectName, projectName), isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)));
-
-        for (const row of existingCostRows) {
-          const hasManualEdits = row.cosRealised || row.invoiceDateConfirmed || row.paidDateConfirmed || row.noRevenueLinked || row.cashflowConfirmed || row.adminDateOverride;
-          if (!hasManualEdits || row.sourceRow == null) continue;
-
-          if (conflictResolutions) {
-            const edits: Record<string, any> = {};
-            const fields: Record<string, string> = {
-              cosRealised: "COS Realised",
-              invoiceDateConfirmed: "Invoice Date Confirmed",
-              paidDateConfirmed: "Paid Date Confirmed",
-              noRevenueLinked: "No Revenue Linked",
-              cashflowConfirmed: "Cashflow Confirmed",
-              adminDateOverride: "Admin Date Override",
-            };
-            for (const [dbField, label] of Object.entries(fields)) {
-              if ((row as any)[dbField]) {
-                const key = `${row.sourceRow}::${label}`;
-                if (conflictResolutions[key] === "keep") {
-                  if (dbField === "adminDateOverride") {
-                    edits.adminDateOverride = row.adminDateOverride;
-                    edits.adminDateOverrideReason = row.adminDateOverrideReason || undefined;
-                    edits.adminDateOverrideBy = row.adminDateOverrideBy || undefined;
-                    edits.adminDateOverrideAt = row.adminDateOverrideAt || undefined;
-                  } else {
-                    edits[dbField] = true;
-                  }
-                }
-              }
-            }
-            if (Object.keys(edits).length > 0) {
-              manualEditsToPreserve.set(row.sourceRow, edits as any);
-            }
-          } else {
-            manualEditsToPreserve.set(row.sourceRow, {
-              cosRealised: row.cosRealised || undefined,
-              invoiceDateConfirmed: row.invoiceDateConfirmed || undefined,
-              paidDateConfirmed: row.paidDateConfirmed || undefined,
-              noRevenueLinked: row.noRevenueLinked || undefined,
-              cashflowConfirmed: row.cashflowConfirmed || undefined,
-              adminDateOverride: row.adminDateOverride || undefined,
-              adminDateOverrideReason: row.adminDateOverrideReason || undefined,
-              adminDateOverrideBy: row.adminDateOverrideBy || undefined,
-              adminDateOverrideAt: row.adminDateOverrideAt || undefined,
-            });
-          }
-        }
-
-        // Also check revenue lines for admin date overrides — current rows only.
-        const existingRevRows = projectId
-          ? await tx.select().from(normalizedRevenueLines).where(and(eq(normalizedRevenueLines.projectId, projectId), isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt)))
-          : await tx.select().from(normalizedRevenueLines).where(and(eq(normalizedRevenueLines.projectName, projectName), isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt)));
-
-        for (const row of existingRevRows) {
-          if (!row.adminDateOverride || row.sourceRow == null) continue;
-
-          if (conflictResolutions) {
-            const key = `${row.sourceRow}::Admin Date Override (Revenue)`;
-            if (conflictResolutions[key] === "keep") {
-              revenueAdminOverrides.set(row.sourceRow, {
-                adminDateOverride: row.adminDateOverride,
-                adminDateOverrideReason: row.adminDateOverrideReason || undefined,
-                adminDateOverrideBy: row.adminDateOverrideBy || undefined,
-                adminDateOverrideAt: row.adminDateOverrideAt || undefined,
-              });
-            }
-          } else {
-            revenueAdminOverrides.set(row.sourceRow, {
-              adminDateOverride: row.adminDateOverride,
-              adminDateOverrideReason: row.adminDateOverrideReason || undefined,
-              adminDateOverrideBy: row.adminDateOverrideBy || undefined,
-              adminDateOverrideAt: row.adminDateOverrideAt || undefined,
-            });
-          }
-        }
-      }
-
-      // Temporal: soft-close existing rows instead of hard delete (Prompt 10)
-      if (projectId) {
-        await softCloseByProjectId(tx, "normalized_revenue_lines", projectId);
-        await softCloseByProjectId(tx, "normalized_cost_lines", projectId);
-        await tx.delete(normalizedExecutionPhases).where(eq(normalizedExecutionPhases.projectId, projectId));
-      } else {
-        await softCloseByProjectName(tx, "normalized_revenue_lines", projectName);
-        await softCloseByProjectName(tx, "normalized_cost_lines", projectName);
-        await tx.delete(normalizedExecutionPhases).where(eq(normalizedExecutionPhases.projectName, projectName));
-      }
-      const commitTimestamp = new Date();
-      const scenarioIds = await tx
-        .select({ id: workingPlanScenario.id })
-        .from(workingPlanScenario)
-        .where(eq(workingPlanScenario.projectName, projectName));
-      if (scenarioIds.length > 0) {
-        const sIds = scenarioIds.map((s: any) => s.id);
-        await tx.update(workingPlanDependencyOverride)
-          .set({ importedDependencyId: null })
-          .where(inArray(workingPlanDependencyOverride.scenarioId, sIds));
-      }
-
-      const manualOverrideMap = new Map<number, Map<string, string>>();
-
-      const existingWorkItemsForImport = await tx
-        .select({ id: workItems.id, externalRef: workItems.externalRef })
-        .from(workItems)
-        .where(and(
-          eq(workItems.source, "SMART_IMPORT"),
-          eq(workItems.workstream, "PM"),
-          projectId
-            ? eq(workItems.projectId, projectId)
-            : sql`${workItems.externalRef} LIKE ${projectName + '::PLAN::%'}`,
-        ));
-      const existingWorkItemIdByExternalRef = new Map<string, number>(
-        existingWorkItemsForImport
-          .filter((w: { externalRef: string | null }) => !!w.externalRef)
-          .map((w: { id: number; externalRef: string | null }) => [w.externalRef as string, w.id])
-      );
-
-      const OVERRIDE_FIELD_MAP: Record<string, string> = {
-        actualStart: 'startDate', actualEnd: 'endDate', actualPctComplete: 'pctComplete',
-        startDate: 'startDate', endDate: 'endDate', percentComplete: 'pctComplete',
-        status: 'status', owner: 'owner', comment: 'comment',
+      v2Result = {
+        sections: {
+          PLAN: planResult,
+          REVENUE: revenueResult,
+          EXPENDITURE: costResult,
+        },
+        totalInserted: (planResult?.counts.inserted || 0) + (revenueResult?.counts.inserted || 0) + (costResult?.counts.inserted || 0),
+        totalUpdated: (planResult?.counts.updated || 0) + (revenueResult?.counts.updated || 0) + (costResult?.counts.updated || 0),
+        totalUnchanged: (planResult?.counts.unchanged || 0) + (revenueResult?.counts.unchanged || 0) + (costResult?.counts.unchanged || 0),
+        totalMissing: (planResult?.counts.missing || 0) + (revenueResult?.counts.missing || 0) + (costResult?.counts.missing || 0),
       };
 
-      if (norm.planTasks && norm.planTasks.length > 0) {
-        const planIgnored = ignoredRows.get("PLAN") || new Set();
-        const planOverrides = overrideRows.get("PLAN") || new Map();
-        const planValues = norm.planTasks
-          .filter((t: any) => !planIgnored.has(t.sourceRow))
-          .map((t: any) => {
-            const ov = planOverrides.get(t.sourceRow);
-            const merged = ov ? { ...t, ...ov } : t;
-            const result: any = {
-              projectId,
-              projectName,
-              taskName: merged.taskName,
-              taskNo: merged.taskNo || null,
-              phase: merged.phase,
-              startDate: merged.startDate,
-              endDate: merged.endDate,
-              durationDays: merged.durationDays,
-              actualStartDate: merged.actualStartDate,
-              actualEndDate: merged.actualEndDate,
-              actualDurationDays: merged.actualDurationDays,
-              owner: existingTaskOwners.get(merged.taskName) || merged.owner,
-              status: merged.status,
-              pctComplete: merged.pctComplete,
-              expectedPctComplete: merged.expectedPctComplete ?? null,
-              comment: merged.comment,
-              isMilestone: merged.isMilestone ?? false,
-              parentTaskNo: merged.parentTaskNo ?? null,
-              indentLevel: merged.indentLevel ?? 0,
-              sourceSheet: t.sourceSheet,
-              sourceRow: t.sourceRow,
-              importRunId: runId,
-              subProjectName: merged.subProjectName || null,
-              assigneeUserId: merged.assigneeUserId ?? null,
-            };
-            const rowOverrides = manualOverrideMap.get(t.sourceRow);
-            if (rowOverrides) {
-              for (const [overrideField, manualValue] of Array.from(rowOverrides.entries())) {
-                const mappedField = OVERRIDE_FIELD_MAP[overrideField] || overrideField;
-                if (mappedField in result) {
-                  const importValue = String(result[mappedField] ?? '');
-                  skippedOverrideFields.push({ row: t.sourceRow, field: overrideField, importValue, manualValue });
-                  result[mappedField] = manualValue;
-                }
-              }
-            }
-            return result;
-          });
-        if (planValues.length > 0) {
-          const workItemByTaskNo = new Map<string, number>();
-          const workItemByIdx = new Map<number, number>();
-          const incomingExternalRefs = new Set<string>();
-
-          for (let idx = 0; idx < planValues.length; idx++) {
-            const pv = planValues[idx] as any;
-            const wbsCode = pv.taskNo || null;
-            const rowRef = pv.sourceRow != null ? `ROW-${pv.sourceRow}` : `IDX-${idx}`;
-            const projectRef = projectId ? `PID-${projectId}` : projectName;
-            const externalRef = `${projectRef}::PLAN::${rowRef}::${wbsCode || ''}`;
-            incomingExternalRefs.add(externalRef);
-
-            const workItemPayload = {
-              clientId: null,
-              projectId: projectId || null,
-              workstream: "PM" as any,
-              type: pv.isMilestone ? "milestone" : "task",
-              source: "SMART_IMPORT" as any,
-              title: pv.taskName,
-              description: pv.comment || null,
-              status: pv.status || "Not Started",
-              priority: null,
-              startDate: pv.startDate || pv.actualStartDate || null,
-              endDate: pv.endDate || pv.actualEndDate || null,
-              duration: pv.durationDays || pv.actualDurationDays || null,
-              actualStart: pv.actualStartDate || null,
-              actualEnd: pv.actualEndDate || null,
-              actualDuration: pv.actualDurationDays || null,
-              percentComplete: pv.pctComplete != null ? Number(pv.pctComplete) : 0,
-              expectedPctComplete: pv.expectedPctComplete != null ? Number(pv.expectedPctComplete) : null,
-              wbsCode: wbsCode,
-              outlineNumber: wbsCode,
-              indentLevel: pv.indentLevel ?? 0,
-              isMilestone: pv.isMilestone ?? false,
-              phase: pv.phase || null,
-              parentId: null,
-              ownerUserId: null,
-              ownerName: pv.owner || null,
-              isShared: false,
-              externalRef,
-              legacyTable: null,
-              legacyId: null,
-              sourceRow: pv.sourceRow || null,
-              sourceSheet: pv.sourceSheet || null,
-              importRunId: runId,
-            };
-
-            const existingWorkItemId = existingWorkItemIdByExternalRef.get(externalRef);
-            let workItemId: number;
-            if (existingWorkItemId) {
-              await tx.update(workItems)
-                .set(workItemPayload)
-                .where(eq(workItems.id, existingWorkItemId));
-              workItemId = existingWorkItemId;
-            } else {
-              const [insertedWi] = await tx.insert(workItems).values({
-                ...workItemPayload,
-                createdBy: userId,
-              }).returning({ id: workItems.id });
-              workItemId = insertedWi.id;
-              existingWorkItemIdByExternalRef.set(externalRef, workItemId);
-            }
-
-            if (wbsCode) {
-              workItemByTaskNo.set(wbsCode, workItemId);
-            }
-            workItemByIdx.set(idx, workItemId);
-          }
-
-          const staleWorkItemIds = existingWorkItemsForImport
-            .filter((w: { id: number; externalRef: string | null }) => !w.externalRef || !incomingExternalRefs.has(w.externalRef))
-            .map((w: { id: number }) => w.id);
-          if (staleWorkItemIds.length > 0) {
-            await tx.delete(workItemDependencies).where(
-              or(
-                inArray(workItemDependencies.predecessorId, staleWorkItemIds),
-                inArray(workItemDependencies.successorId, staleWorkItemIds),
-              )
-            );
-            await tx.delete(workItemAssignments).where(inArray(workItemAssignments.workItemId, staleWorkItemIds));
-            await tx.delete(workItems).where(inArray(workItems.id, staleWorkItemIds));
-          }
-
-          for (let idx = 0; idx < planValues.length; idx++) {
-            const pv = planValues[idx] as any;
-            if (pv.parentTaskNo && workItemByTaskNo.has(pv.parentTaskNo)) {
-              const parentWorkItemId = workItemByTaskNo.get(pv.parentTaskNo)!;
-              const childWorkItemId = workItemByIdx.get(idx);
-              if (childWorkItemId) {
-                await tx.update(workItems)
-                  .set({ parentId: parentWorkItemId })
-                  .where(eq(workItems.id, childWorkItemId));
-              }
-            }
-          }
-
-          if (userId) {
-            const touchedWorkItemIds = Array.from(workItemByIdx.values());
-            const existingOwnerAssignments = touchedWorkItemIds.length > 0
-              ? await tx.select({ workItemId: workItemAssignments.workItemId, userId: workItemAssignments.userId })
-                  .from(workItemAssignments)
-                  .where(and(
-                    inArray(workItemAssignments.workItemId, touchedWorkItemIds),
-                    eq(workItemAssignments.role, "OWNER" as any),
-                  ))
-              : [];
-            const existingOwnerKey = new Set(existingOwnerAssignments.map((a: { workItemId: number; userId: string }) => `${a.workItemId}::${a.userId}`));
-
-            for (let idx = 0; idx < planValues.length; idx++) {
-              const pv = planValues[idx] as any;
-              if (pv.owner && pv.owner.trim()) {
-                const wiId = workItemByIdx.get(idx);
-                if (wiId && pv.assigneeUserId) {
-                  const assignmentKey = `${wiId}::${pv.assigneeUserId}`;
-                  if (!existingOwnerKey.has(assignmentKey)) {
-                    await tx.insert(workItemAssignments).values({
-                      workItemId: wiId,
-                      userId: pv.assigneeUserId,
-                      role: "OWNER" as any,
-                      allocationPct: null,
-                    });
-                    existingOwnerKey.add(assignmentKey);
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-
-      if (norm.revenueLines && norm.revenueLines.length > 0) {
-        const revIgnored = ignoredRows.get("REVENUE") || new Set();
-        const revOverrides = overrideRows.get("REVENUE") || new Map();
-        const revValues = norm.revenueLines
-          .filter((r: any) => !revIgnored.has(r.sourceRow))
-          .map((r: any) => {
-            const ov = revOverrides.get(r.sourceRow);
-            const merged = ov ? { ...r, ...ov } : r;
-            return {
-              projectId,
-              projectName,
-              description: merged.description,
-              milestoneName: merged.milestoneName,
-              milestoneNo: merged.milestoneNo || null,
-              milestonePercent: merged.milestonePercent || null,
-              amountExVat: merged.amountExVat,
-              vat: merged.vat,
-              invoiceNumber: merged.invoiceNumber,
-              invoiceDate: merged.invoiceDate,
-              invoiceDateFontColor: merged.invoiceDateFontColor || null,
-              invoiceDateConfirmed: merged.invoiceDateConfirmed || false,
-              expectedPaymentDate: merged.expectedPaymentDate,
-              paidDate: merged.paidDate,
-              paidDateFontColor: merged.paidDateFontColor || null,
-              paidDateConfirmed: merged.paidDateConfirmed || false,
-              inBankDate: merged.inBankDate,
-              status: merged.status,
-              sourceSheet: r.sourceSheet,
-              sourceRow: r.sourceRow,
-              importRunId: runId,
-              turnaroundDays: merged.turnaroundDays,
-              subProjectName: merged.subProjectName || null,
-            };
-          });
-        if (revValues.length > 0) {
-          await tx.insert(normalizedRevenueLines).values(addTemporalColumns(revValues, runId, commitTimestamp) as any);
-
-          // Preserve admin date overrides on re-imported revenue lines
-          if (revenueAdminOverrides.size > 0) {
-            const insertedRevRows = projectId
-              ? await tx.select({ id: normalizedRevenueLines.id, sourceRow: normalizedRevenueLines.sourceRow }).from(normalizedRevenueLines).where(and(eq(normalizedRevenueLines.projectId, projectId), and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt))))
-              : await tx.select({ id: normalizedRevenueLines.id, sourceRow: normalizedRevenueLines.sourceRow }).from(normalizedRevenueLines).where(and(eq(normalizedRevenueLines.projectName, projectName), and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt))));
-
-            for (const inserted of insertedRevRows) {
-              if (inserted.sourceRow == null) continue;
-              const preserved = revenueAdminOverrides.get(inserted.sourceRow);
-              if (!preserved) continue;
-
-              await tx.update(normalizedRevenueLines).set({
-                adminDateOverride: preserved.adminDateOverride,
-                adminDateOverrideReason: preserved.adminDateOverrideReason || null,
-                adminDateOverrideBy: preserved.adminDateOverrideBy || null,
-                adminDateOverrideAt: preserved.adminDateOverrideAt || null,
-              }).where(eq(normalizedRevenueLines.id, inserted.id));
-              preservedManualEditsCount++;
-            }
-          }
-        }
-        counts.revenueLines = revValues.length;
-      }
-
-      const counterpartyMap = new Map<string, number>();
-      if (norm.counterpartyNames && norm.counterpartyNames.length > 0) {
-        for (const name of norm.counterpartyNames) {
-          const normalized = name.trim().toLowerCase();
-          const existing = await tx
-            .select()
-            .from(counterparties)
-            .where(eq(counterparties.nameCanonical, name.trim()));
-
-          if (existing.length > 0) {
-            counterpartyMap.set(normalized, existing[0].id);
-            await tx
-              .update(counterparties)
-              .set({ lastSeenAt: new Date() })
-              .where(eq(counterparties.id, existing[0].id));
-          } else {
-            const allCps = await tx.select().from(counterparties);
-            let aliasMatch: typeof allCps[0] | null = null;
-            for (const cp of allCps) {
-              const aliases = Array.isArray(cp.nameAliases) ? cp.nameAliases as string[] : [];
-              if (aliases.some(a => a.toLowerCase() === normalized)) {
-                aliasMatch = cp;
-                break;
-              }
-            }
-
-            if (aliasMatch) {
-              counterpartyMap.set(normalized, aliasMatch.id);
-              await tx
-                .update(counterparties)
-                .set({ lastSeenAt: new Date() })
-                .where(eq(counterparties.id, aliasMatch.id));
-            } else {
-              const [created] = await tx
-                .insert(counterparties)
-                .values({
-                  nameCanonical: name.trim(),
-                  nameAliases: [],
-                  typeDefault: "OTHER",
-                  isCore: false,
-                  createdBy: userId,
-                  lastSeenAt: new Date(),
-                })
-                .returning();
-              counterpartyMap.set(normalized, created.id);
-              counts.counterparties++;
-            }
-          }
-        }
-      }
-
-      if (norm.costLines && norm.costLines.length > 0) {
-        const costIgnored = ignoredRows.get("EXPENDITURE") || new Set();
-        const costOverrides = overrideRows.get("EXPENDITURE") || new Map();
-
-        const classificationMap = new Map<number, any>();
-        const classifications: any[] = summary.invoiceClassifications || [];
-        for (const cl of classifications) {
-          if (cl.outcome === "AUTO_APPLIED" || cl.outcome === "USER_CONFIRMED" || cl.outcome === "USER_OVERRIDDEN") {
-            classificationMap.set(cl.sourceRow, cl);
-          }
-        }
-
-        const costValues = norm.costLines
-          .filter((c: any) => !costIgnored.has(c.sourceRow))
-          .map((c: any) => {
-            const ov = costOverrides.get(c.sourceRow);
-            const merged = ov ? { ...c, ...ov } : c;
-            const cpName = merged.counterpartyName?.trim();
-            const cpId = cpName ? counterpartyMap.get(cpName.toLowerCase()) || null : null;
-
-            const classification = classificationMap.get(c.sourceRow);
-            const counterpartyType = classification?.inferredType || null;
-            const classifiedCpId = classification?.inferredCounterpartyId || cpId;
-
-            return {
-              projectId,
-              projectName,
-              costCategory: merged.costCategory,
-              counterpartyId: classifiedCpId,
-              counterpartyName: merged.counterpartyName,
-              counterpartyType,
-              description: merged.description,
-              amountExVat: merged.amountExVat,
-              invoiceNumber: merged.invoiceNumber,
-              invoiceDate: merged.invoiceDate,
-              invoiceDateFontColor: merged.invoiceDateFontColor || null,
-              invoiceDateConfirmed: merged.invoiceDateConfirmed || false,
-              approvedDate: merged.approvedDate,
-              paidDate: merged.paidDate,
-              paidDateFontColor: merged.paidDateFontColor || null,
-              paidDateConfirmed: merged.paidDateConfirmed || false,
-              poNumber: merged.poNumber,
-              cosRealised: merged.cosRealised || false,
-              cashflowConfirmed: merged.cashflowConfirmed || false,
-              status: normalizeCostLineStatus(merged.status),
-              sourceSheet: c.sourceSheet,
-              sourceRow: c.sourceRow,
-              importRunId: runId,
-              turnaroundDays: merged.turnaroundDays,
-              budgetQty: merged.budgetQty || null,
-              budgetRate: merged.budgetRate || null,
-              budgetTotal: merged.budgetTotal || null,
-              budgetCos: merged.budgetCos || null,
-              revenueRecognitionAmount: merged.revenueRecognitionAmount || null,
-              forecastPaymentDate: merged.forecastPaymentDate || null,
-              subProjectName: merged.subProjectName || null,
-              _actualCos: merged.actualCos || null,
-            };
-          });
-        if (costValues.length > 0) {
-          const normalizedInserts = costValues.map((c: any) => {
-            const { _actualCos, ...normalized } = c;
-            return normalized;
-          });
-          // Drop duplicate cost lines created by the workbook repeating an
-          // invoice across multiple forecast paid_date rows. See
-          // dedupeCostLineInserts() doc-comment for full rationale.
-          const { kept: dedupedInserts, dropped: dedupedCount } = dedupeCostLineInserts(normalizedInserts);
-          if (dedupedCount > 0) {
-            console.log(`[smart-import] Dropped ${dedupedCount} duplicate cost-line row(s) for project "${projectName}" before insert.`);
-          }
-          await tx.insert(normalizedCostLines).values(addTemporalColumns(dedupedInserts, runId, commitTimestamp) as any);
-
-          if (manualEditsToPreserve.size > 0) {
-            const insertedRows = projectId
-              ? await tx.select({ id: normalizedCostLines.id, sourceRow: normalizedCostLines.sourceRow }).from(normalizedCostLines).where(and(eq(normalizedCostLines.projectId, projectId), and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))))
-              : await tx.select({ id: normalizedCostLines.id, sourceRow: normalizedCostLines.sourceRow }).from(normalizedCostLines).where(and(eq(normalizedCostLines.projectName, projectName), and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))));
-
-            for (const inserted of insertedRows) {
-              if (inserted.sourceRow == null) continue;
-              const preserved = manualEditsToPreserve.get(inserted.sourceRow);
-              if (!preserved) continue;
-
-              const updates: Record<string, any> = {};
-              if (preserved.cosRealised) updates.cosRealised = true;
-              if (preserved.invoiceDateConfirmed) updates.invoiceDateConfirmed = true;
-              if (preserved.paidDateConfirmed) updates.paidDateConfirmed = true;
-              if (preserved.noRevenueLinked) updates.noRevenueLinked = true;
-              if (preserved.cashflowConfirmed) updates.cashflowConfirmed = true;
-              if (preserved.adminDateOverride) {
-                updates.adminDateOverride = preserved.adminDateOverride;
-                updates.adminDateOverrideReason = preserved.adminDateOverrideReason || null;
-                updates.adminDateOverrideBy = preserved.adminDateOverrideBy || null;
-                updates.adminDateOverrideAt = preserved.adminDateOverrideAt || null;
-              }
-
-              if (Object.keys(updates).length > 0) {
-                await tx.update(normalizedCostLines).set(updates).where(eq(normalizedCostLines.id, inserted.id));
-                preservedManualEditsCount++;
-              }
-            }
-          }
-        }
-        counts.costLines = costValues.length;
-
-        if (classifications.length > 0) {
-          const matchValues = classifications.map((cl: any) => ({
-            importRunId: runId,
-            projectId,
-            invoiceNumberRaw: cl.invoiceNumberRaw,
-            invoiceNumberNorm: cl.invoiceNumberNorm,
-            matchedRuleId: cl.matchedRuleId || null,
-            inferredType: cl.inferredType || "OTHER",
-            inferredCounterpartyId: cl.inferredCounterpartyId || null,
-            confidenceScore: cl.confidenceScore || 0,
-            outcome: cl.outcome || "UNRESOLVED",
-            sourceRow: cl.sourceRow,
-            overrideReason: cl.overrideReason || null,
-          }));
-          for (const mv of matchValues) {
-            await tx.insert(invoicePatternMatches).values(mv);
-          }
-
-          for (const cl of classifications) {
-            if (cl.matchedRuleId && (cl.outcome === "AUTO_APPLIED" || cl.outcome === "USER_CONFIRMED")) {
-              await tx
-                .update(invoicePatternRules)
-                .set({ timesMatched: sql`${invoicePatternRules.timesMatched} + 1` })
-                .where(eq(invoicePatternRules.id, cl.matchedRuleId));
-            }
-          }
-        }
-      }
-
+      // Handle execution phases (simple re-insert — no temporal matching)
       if (norm.executionPhases && norm.executionPhases.length > 0) {
+        await tx.delete(normalizedExecutionPhases).where(eq(normalizedExecutionPhases.projectId, projectId));
         const phaseValues = norm.executionPhases.map((p: any) => ({
           projectId,
           projectName,
@@ -3346,102 +2603,98 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         counts.executionPhases = phaseValues.length;
       }
 
-      if (norm.costedSummary && projectName) {
-        const cs = norm.costedSummary;
-        const hasData = cs.plannedRevenue != null || cs.plannedExpenditure != null;
-        if (hasData) {
-          const [existing] = await tx.select({ id: projectRevenueSummary.id })
-            .from(projectRevenueSummary)
-            .where(eq(projectRevenueSummary.projectName, projectName))
-            .limit(1);
-          const vals: Record<string, any> = {};
-          if (cs.plannedRevenue != null) vals.plannedRevenue = String(cs.plannedRevenue);
-          if (cs.plannedExpenditure != null) vals.plannedExpenditure = String(cs.plannedExpenditure);
-          if (cs.plannedProfit != null) vals.plannedProfit = String(cs.plannedProfit);
-          if (cs.plannedMargin != null) vals.plannedMargin = String(cs.plannedMargin);
-          if (cs.actualRevenue != null) vals.actualRevenue = String(cs.actualRevenue);
-          if (cs.actualExpenditure != null) vals.actualExpenditure = String(cs.actualExpenditure);
-          if (cs.actualProfit != null) vals.actualProfit = String(cs.actualProfit);
-          if (cs.actualMargin != null) vals.actualMargin = String(cs.actualMargin);
-          if (existing) {
-            // Update existing row in-place (project_revenue_summary has a UNIQUE
-            // constraint on project_name, so soft-close + insert would violate it).
-            await tx.update(projectRevenueSummary)
-              .set({ ...vals, snapshotRunId: runId, effectiveFrom: commitTimestamp })
-              .where(eq(projectRevenueSummary.id, existing.id));
-          } else {
-            await tx.insert(projectRevenueSummary).values(addTemporalColumns({ projectName, projectId, ...vals }, runId, commitTimestamp) as any);
-          }
-          console.log(`[SmartImport] Saved costedSummary for "${projectName}":`, JSON.stringify(vals));
+      // Update project info from detected metadata (same as v1)
+      const detectedInfo = summary.detection?.projectInfo;
+      if (detectedInfo && projectId) {
+        const VALID_PHASES = ["dlp", "financial close", "planning", "construction", "qa", "handover", "commercial close out", "compliance handover", "hold"];
+        const [existingProject] = await tx.select({ pm: projectInfo.pm, pd: projectInfo.pd }).from(projectInfo).where(eq(projectInfo.id, projectId));
+        const updates: Record<string, any> = {};
+        if (detectedInfo.sizeKwp) updates.sizeKwp = String(detectedInfo.sizeKwp);
+        if (detectedInfo.pd && (!existingProject?.pd || !existingProject.pd.trim())) updates.pd = String(detectedInfo.pd);
+        if (detectedInfo.pm && (!existingProject?.pm || !existingProject.pm.trim())) updates.pm = String(detectedInfo.pm);
+        if (detectedInfo.contractValue) updates.contractValue = String(detectedInfo.contractValue);
+        const rawPhase = detectedInfo.phase ? String(detectedInfo.phase).trim() : null;
+        if (rawPhase && VALID_PHASES.includes(rawPhase.toLowerCase())) {
+          updates.phase = rawPhase;
+          updates.executionPhase = rawPhase;
+          updates.phaseUpdatedAt = new Date();
+        }
+        if (Object.keys(updates).length > 0) {
+          updates.updatedAt = new Date();
+          await tx.update(projectInfo).set(updates).where(eq(projectInfo.id, projectId));
+          await syncProjectSplitTables(projectId, updates, tx);
         }
       }
 
-      const detectedInfo = summary.detection?.projectInfo;
-      if (detectedInfo) {
-        let resolvedProjectId = projectId;
-        if (!resolvedProjectId && projectName) {
-          const [existing] = await tx.select({ id: projectInfo.id }).from(projectInfo)
-            .where(eq(projectInfo.projectName, projectName));
-          if (existing) {
-            resolvedProjectId = existing.id;
-          } else {
-            const underscoreName = projectName.replace(/\s+/g, "_");
-            const trackerName = underscoreName + "_Tracker";
-            const candidates = [
-              underscoreName,
-              trackerName,
-              projectName + "_Tracker",
-            ];
-            for (const candidate of candidates) {
-              const [match] = await tx.select({ id: projectInfo.id }).from(projectInfo)
-                .where(eq(projectInfo.projectName, candidate));
-              if (match) { resolvedProjectId = match.id; break; }
-            }
-            if (!resolvedProjectId) {
-              const allProjects = await tx.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo);
-              const normName = projectName.toLowerCase().replace(/[\s_]+/g, "").replace(/tracker$/i, "");
-              for (const p of allProjects) {
-                const normDB = p.projectName.toLowerCase().replace(/[\s_]+/g, "").replace(/tracker$/i, "");
-                if (normDB === normName) { resolvedProjectId = p.id; break; }
+      // ── S12: Post-commit project_revenue_summary refresh ──
+      // Refreshes project_revenue_summary from the normalized costedSummary
+      // so the FYE Detail view sees fresh budget/actual revenue and COS
+      // figures after each v2 commit. (Previously this helper also wrote
+      // program_expense and program_inflows as back-compat derivatives;
+      // those writes were removed in the PE/PI retirement.)
+      try {
+        const matResult = await materializeDerivatives({
+          tx, projectId, projectName, runId, commitTimestamp, norm,
+        });
+        console.log(`[SmartImport] v2 project_revenue_summary refresh: PRS=${matResult.projectRevenueSummaryUpdated}`);
+      } catch (matErr: unknown) {
+        // PRS refresh failure is non-blocking for the canonical commit.
+        console.warn("[SmartImport] project_revenue_summary refresh failed (non-blocking):", (matErr instanceof Error ? matErr.message : String(matErr)));
+      }
+
+      // ── S13: Canonical expense_task_links re-linking ──
+      // After v2 commit creates new NCL rows (soft-close + insert for CHANGED),
+      // update canonical_expense_id on expense_task_links to point to the new IDs.
+      if (costResult && (costResult.counts.updated > 0 || costResult.counts.inserted > 0)) {
+        try {
+          // Build old→new NCL ID map from the commit result.
+          // updatedIds = old IDs that were soft-closed, insertedIds = new IDs that replaced them.
+          // For CHANGED rows, updatedIds[i] is the old ID and insertedIds[i] is the new ID
+          // (both arrays are populated in parallel by writeExpenditureIncremental).
+          const oldToNewNcl = new Map<number, number>();
+          if (costResult.updatedIds && costResult.insertedIds) {
+            for (let i = 0; i < costResult.updatedIds.length; i++) {
+              if (i < costResult.insertedIds.length) {
+                oldToNewNcl.set(costResult.updatedIds[i], costResult.insertedIds[i]);
               }
             }
           }
-        }
-        if (resolvedProjectId) {
-          const VALID_PHASES = [
-            "dlp", "financial close", "planning", "construction", "qa",
-            "handover", "commercial close out",
-            "compliance handover", "hold"
-          ];
-          const [existingProject] = await tx.select({ pm: projectInfo.pm, pd: projectInfo.pd }).from(projectInfo)
-            .where(eq(projectInfo.id, resolvedProjectId));
-          const updates: Record<string, any> = {};
-          if (detectedInfo.sizeKwp) updates.sizeKwp = String(detectedInfo.sizeKwp);
-          if (detectedInfo.pd && (!existingProject?.pd || !existingProject.pd.trim())) updates.pd = String(detectedInfo.pd);
-          if (detectedInfo.pm && (!existingProject?.pm || !existingProject.pm.trim())) updates.pm = String(detectedInfo.pm);
-          if (detectedInfo.contractValue) updates.contractValue = String(detectedInfo.contractValue);
-          const rawPhase = detectedInfo.phase ? String(detectedInfo.phase).trim() : null;
-          if (rawPhase && VALID_PHASES.includes(rawPhase.toLowerCase())) {
-            updates.phase = rawPhase;
-            updates.executionPhase = rawPhase;
-            updates.phaseUpdatedAt = new Date();
+
+          // Also build a set of all current active NCL IDs for orphan detection
+          const activeNclIds = new Set<number>();
+          const activeNclForLinks = await tx.select({ id: normalizedCostLines.id })
+            .from(normalizedCostLines)
+            .where(and(eq(normalizedCostLines.projectId, projectId), and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))));
+          for (const r of activeNclForLinks) activeNclIds.add(r.id);
+
+          // Fetch links for this project that have canonical_expense_id set
+          const projectLinks = await tx.select().from(expenseTaskLinks)
+            .where(eq(expenseTaskLinks.projectName, projectName));
+
+          for (const link of projectLinks) {
+            const canonId = link.canonicalExpenseId;
+            if (canonId == null) continue;
+
+            // If the canonical ID was soft-closed (old ID), remap to the new ID
+            if (oldToNewNcl.has(canonId)) {
+              await tx.update(expenseTaskLinks)
+                .set({ canonicalExpenseId: oldToNewNcl.get(canonId)! })
+                .where(eq(expenseTaskLinks.id, link.id));
+            }
+            // If the canonical ID no longer points to an active NCL row
+            // (and wasn't remapped), clear it so it can be re-resolved
+            else if (!activeNclIds.has(canonId)) {
+              await tx.update(expenseTaskLinks)
+                .set({ canonicalExpenseId: null })
+                .where(eq(expenseTaskLinks.id, link.id));
+            }
           }
-          if (detectedInfo.pdHandoverDate) updates.pdHandoverDate = detectedInfo.pdHandoverDate;
-          if (detectedInfo.constructionStartDate) updates.constructionStartDate = detectedInfo.constructionStartDate;
-          if (detectedInfo.commissioningDate) updates.commissioningDate = detectedInfo.commissioningDate;
-          if (detectedInfo.omHandoverDate) updates.omHandoverDate = detectedInfo.omHandoverDate;
-          if (detectedInfo.clientHandoverDate) updates.clientHandoverDate = detectedInfo.clientHandoverDate;
-          if (Object.keys(updates).length > 0) {
-            updates.updatedAt = new Date();
-            console.log(`[SmartImport] Updating projectInfo id=${resolvedProjectId} with:`, JSON.stringify(updates));
-            await tx.update(projectInfo).set(updates).where(eq(projectInfo.id, resolvedProjectId));
-            await syncProjectSplitTables(resolvedProjectId, updates, tx);
-          }
-        } else {
-          console.log(`[SmartImport] Could not resolve projectInfo for "${projectName}" — project metadata will not be updated`);
+        } catch (linkErr: unknown) {
+          console.warn("[SmartImport] Canonical link re-pointing failed (non-blocking):", (linkErr instanceof Error ? linkErr.message : String(linkErr)));
         }
       }
 
+      // Finalize: mark as committed
       const totalAttempted = (norm.planTasks?.length || 0) + (norm.revenueLines?.length || 0) + (norm.costLines?.length || 0) + (norm.executionPhases?.length || 0);
       const totalSucceeded = (counts.planTasks || 0) + (counts.revenueLines || 0) + (counts.costLines || 0) + (counts.executionPhases || 0);
       const totalFailed = totalAttempted - totalSucceeded;
@@ -3450,20 +2703,15 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       if (norm.revenueLines?.length > 0) detectedSections.push("REVENUE");
       if (norm.costLines?.length > 0) detectedSections.push("EXPENDITURE");
 
-      await tx
-        .update(smartImportRuns)
-        .set({
-          status: "committed",
-          committedAt: new Date(),
-          committedBy: userId,
-          recordsAttempted: totalAttempted,
-          recordsSucceeded: totalSucceeded,
-          recordsFailed: totalFailed,
-          importType: detectedSections.join(","),
-        })
-        .where(eq(smartImportRuns.id, runId));
-
-      } // end if (!useV2) — v1 fallback path
+      await tx.update(smartImportRuns).set({
+        status: "committed",
+        committedAt: new Date(),
+        committedBy: userId,
+        recordsAttempted: totalAttempted,
+        recordsSucceeded: totalSucceeded,
+        recordsFailed: totalFailed,
+        importType: detectedSections.join(","),
+      }).where(eq(smartImportRuns.id, runId));
     });
 
     // Record audit ChangeSet for the import commit

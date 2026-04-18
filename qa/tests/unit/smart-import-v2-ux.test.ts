@@ -298,11 +298,6 @@ describe("SmartImportPage v2 integration", () => {
     expect(code).toContain("const [useV2, setUseV2] = useState(true)");
   });
 
-  it("has Simple view / Advanced view toggle buttons", () => {
-    expect(code).toContain("Simple view");
-    expect(code).toContain("Advanced view");
-  });
-
   it("renders v2 flow when useV2 is true", () => {
     expect(code).toContain("{useV2 && !bulkMode && (");
     expect(code).toContain("<SmartImportV2Flow");
