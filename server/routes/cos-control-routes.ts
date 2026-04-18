@@ -13,7 +13,7 @@ import { aggregateCOS, aggregateCOSByProject } from "../lib/calculations/cosAggr
 import { computeWeeklyCashflow, getLinesForWeek, type CashflowLineItem } from "../lib/calculations/cashflow";
 import { runDataQualityChecks } from "../lib/calculations/dataQuality";
 import { isCanonicalCosRealised } from "../lib/finance/cos-realisation";
-import { computeMonthlyBuckets } from "../lib/calculations/scenarioResolver";
+import { computeMonthlyBuckets } from "../lib/calculations/monthlyBuckets";
 import { getCosEffectiveDateAndSource } from "../lib/expense-row-selector";
 import { classifyCosStatusFull } from "../lib/calculations/financeUtils";
 

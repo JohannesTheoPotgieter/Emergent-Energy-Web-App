@@ -39,6 +39,12 @@ export interface DomainRolloutReadiness {
   blockerSummary: string;
 }
 
+export interface DomainRolloutReadinessReport {
+  unavailable: boolean;
+  reason?: "core_view_missing";
+  domains: DomainRolloutReadiness[];
+}
+
 export interface CutoverPostValidationRow {
   domain: string;
   cutoverState: string;
@@ -57,7 +63,7 @@ export interface CutoverPostValidationRow {
   updatedBy: string;
 }
 
-export async function getDomainRolloutReadinessReport(): Promise<DomainRolloutReadiness[]> {
+export async function getDomainRolloutReadinessReport(): Promise<DomainRolloutReadinessReport> {
   try {
     const rows = await db.execute(sql`
       SELECT domain,
@@ -74,7 +80,7 @@ export async function getDomainRolloutReadinessReport(): Promise<DomainRolloutRe
       ORDER BY domain
     `).then((r: any) => r.rows ?? r);
 
-    return rows.map((row: any) => ({
+    const domains: DomainRolloutReadiness[] = rows.map((row: any) => ({
       domain: String(row.domain),
       readiness: row.readiness as ComparisonStatus,
       blockerCount: Number(row.blocker_count ?? 0),
@@ -86,10 +92,12 @@ export async function getDomainRolloutReadinessReport(): Promise<DomainRolloutRe
       safeFullCutoverLater: Boolean(row.safe_full_cutover_later),
       blockerSummary: String(row.blocker_summary ?? ''),
     }));
+
+    return { unavailable: false, domains };
   } catch (error: any) {
     if (isMissingCoreSchemaError(error)) {
-      console.warn("[promoted-read-compat] core.v_domain_rollout_readiness missing, returning empty");
-      return [];
+      console.warn("[promoted-read-compat] core.v_domain_rollout_readiness missing, returning unavailable sentinel");
+      return { unavailable: true, reason: "core_view_missing", domains: [] };
     }
     throw error;
   }
