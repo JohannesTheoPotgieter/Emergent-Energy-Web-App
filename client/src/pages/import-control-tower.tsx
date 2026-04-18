@@ -133,9 +133,6 @@ export default function ImportControlTowerPage() {
     },
   });
 
-  if (isLoading) return <PageSkeleton lines={5} />;
-  if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load Import Control Tower" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
-
   const { data: runErrors, isLoading: errorsLoading } = useQuery<RunErrors>({
     queryKey: ["/api/import-control-tower/run", selectedRunId, "errors"],
     queryFn: async () => {
@@ -169,6 +166,9 @@ export default function ImportControlTowerPage() {
       toast({ title: "Retry Failed", description: err.message, variant: "destructive" });
     },
   });
+
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load Import Control Tower" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
   const totalRuns = runs.length;
   const committedRuns = runs.filter(r => r.status === "COMMITTED").length;
