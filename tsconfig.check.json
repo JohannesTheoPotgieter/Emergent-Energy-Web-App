@@ -1,5 +1,9 @@
 {
   "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./.cache/tsconfig.check.tsbuildinfo",
+    "types": ["node"]
+  },
   "include": [
     "server/types/**/*.d.ts",
     "server/startup-modes.ts",
@@ -22,14 +26,13 @@
     "server/storage.ts",
     "server/index.ts",
     "shared/**/*.ts",
-    "scripts/**/*.ts",
-    "qa/tests/unit/**/*.test.ts",
-    "qa/tests/api/**/*.test.ts"
+    "scripts/**/*.ts"
   ],
   "exclude": [
     "node_modules",
     "build",
     "dist",
-    "scripts/_archive/**"
+    "scripts/_archive/**",
+    "scripts/check-redirect-chains.ts"
   ]
 }

@@ -397,7 +397,9 @@ export async function parseCommissioningWorkbook(
   let wb: ExcelJS.Workbook;
   try {
     wb = new ExcelJS.Workbook();
-    await wb.xlsx.load(buffer);
+    // ExcelJS declares `interface Buffer extends ArrayBuffer` globally, creating a merge
+    // conflict with @types/node's generic Buffer in TS6/ES2024. Cast is safe at runtime.
+    await wb.xlsx.load(buffer as Buffer & ArrayBuffer);
   } catch (err: unknown) {
     emptyResult.warnings.push(`Failed to load workbook: ${err instanceof Error ? err.message : String(err)}`);
     emptyResult.parseMessage = "Could not open workbook file";
