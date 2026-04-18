@@ -18,6 +18,7 @@ import { getAuthHeaders } from "@/pages/smart-import";
 import { SECTION_LABELS, CONFIRM_LABELS, RESULT_LABELS, IMPORT_MODE_LABELS } from "./labels";
 import { SmartImportMoneyImpact } from "./SmartImportMoneyImpact";
 import { SmartImportQbProtectionsCallout } from "./SmartImportQbProtectionsCallout";
+import { SmartImportIntegrityCheck } from "./SmartImportIntegrityCheck";
 
 interface ConfirmStepProps {
   runId: number;
@@ -231,6 +232,11 @@ export function SmartImportConfirmStep({ runId, planning, preview, decisions, on
         {/* Money impact (A1) — pre-commit financial dry-run. */}
         <div className="border-t pt-3">
           <SmartImportMoneyImpact runId={runId} decisions={decisions} />
+        </div>
+
+        {/* Invoice / PO integrity (B4a) — advisory data-hygiene check. */}
+        <div className="border-t pt-3">
+          <SmartImportIntegrityCheck runId={runId} />
         </div>
 
         {/* Error display */}

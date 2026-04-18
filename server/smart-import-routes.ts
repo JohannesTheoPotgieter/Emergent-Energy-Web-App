@@ -1188,6 +1188,240 @@ router.post("/api/smart-import/:runId/money-impact", requireAuth, async (req: Re
   }
 });
 
+// GET /api/smart-import/:runId/integrity-check
+// B4a — Invoice / PO integrity report.
+//
+// Cheap, in-memory validation over `summary.normalization`. Surfaces
+// problems the user should know about BEFORE they commit:
+//
+//   DUPLICATE_INVOICE_IN_SECTION  same invoice number reused inside the
+//                                 same section (revenue or cost).
+//   CROSS_SECTION_INVOICE         same invoice number on a cost AND a
+//                                 revenue row — invoices are either
+//                                 incoming or outgoing, never both.
+//   INVOICE_WITHOUT_AMOUNT        invoice number present but amount is 0
+//                                 or blank (suspicious: invoiced for
+//                                 nothing).
+//   PAID_WITHOUT_INVOICE          paid date set but no invoice number
+//                                 (paid before invoiced — likely typo).
+//   PO_COUNTERPARTY_CONFLICT      same PO number across cost rows pointing
+//                                 to different counterparties.
+//
+// Severity: WARNING for everything (advisory). The endpoint never blocks
+// commit on its own — operators decide.
+//
+// Note: this is intentionally separate from `import_issues` (which is the
+// persisted blocker / acknowledgement table). This is a fresh dry-run on
+// the parsed file so it stays accurate even if persisted issues are stale.
+router.get("/api/smart-import/:runId/integrity-check", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const runId = parseInt(req.params.runId as string);
+    if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
+
+    const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));
+    if (!run) return res.status(404).json({ error: "Import run not found" });
+
+    const summary = run.summaryJson as any;
+    const norm = summary?.normalization;
+    if (!norm) {
+      return res.status(400).json({ error: "No normalization data found in this import run" });
+    }
+
+    type Severity = "INFO" | "WARNING" | "BLOCKER";
+    interface Finding {
+      kind: string;
+      severity: Severity;
+      section: "REVENUE" | "EXPENDITURE" | "CROSS";
+      message: string;
+      rows: number[]; // 1-indexed sourceRow values where the issue occurs
+      detail?: Record<string, unknown>;
+    }
+    const findings: Finding[] = [];
+
+    const revLines = (norm.revenueLines ?? []) as Array<Record<string, any>>;
+    const costLines = (norm.costLines ?? []) as Array<Record<string, any>>;
+
+    // Use the same placeholder filter the normalizer uses so we don't fire
+    // duplicate-invoice / cross-section warnings on TBC, N/A, "0" etc.
+    const { isValidInvoiceNumber } = await import("./lib/import/normalizer");
+    const norm_inv = (s: any): string | null => {
+      if (!isValidInvoiceNumber(s as any)) return null;
+      return String(s).trim().toUpperCase();
+    };
+    const toNum = (v: any): number => {
+      if (v == null || v === "") return 0;
+      const n = typeof v === "number" ? v : Number(v);
+      return Number.isFinite(n) ? n : 0;
+    };
+    const srcRow = (r: any, fallbackIdx: number): number =>
+      typeof r?.sourceRow === "number" ? r.sourceRow : fallbackIdx + 1;
+
+    // --- 1. Duplicate invoice number within section -----------------------
+    function dupesIn(section: "REVENUE" | "EXPENDITURE", rows: Array<Record<string, any>>) {
+      const groups = new Map<string, number[]>();
+      rows.forEach((r, i) => {
+        const inv = norm_inv(r.invoiceNumber);
+        if (!inv) return;
+        const arr = groups.get(inv) ?? [];
+        arr.push(srcRow(r, i));
+        groups.set(inv, arr);
+      });
+      for (const [inv, srcRows] of groups) {
+        if (srcRows.length > 1) {
+          findings.push({
+            kind: "DUPLICATE_INVOICE_IN_SECTION",
+            severity: "WARNING",
+            section,
+            message: `Invoice number "${inv}" appears ${srcRows.length} times in ${section === "REVENUE" ? "revenue" : "expenditure"}.`,
+            rows: srcRows,
+            detail: { invoiceNumber: inv, occurrences: srcRows.length },
+          });
+        }
+      }
+    }
+    dupesIn("REVENUE", revLines);
+    dupesIn("EXPENDITURE", costLines);
+
+    // --- 2. Cross-section invoice collision ------------------------------
+    // Group by invoice number so each clashing invoice produces one
+    // finding (not one per cost row). Prevents quadratic payload growth on
+    // collision-heavy files.
+    {
+      const revInvIndex = new Map<string, number[]>();
+      revLines.forEach((r, i) => {
+        const inv = norm_inv(r.invoiceNumber);
+        if (!inv) return;
+        const arr = revInvIndex.get(inv) ?? [];
+        arr.push(srcRow(r, i));
+        revInvIndex.set(inv, arr);
+      });
+      const costInvIndex = new Map<string, number[]>();
+      costLines.forEach((r, i) => {
+        const inv = norm_inv(r.invoiceNumber);
+        if (!inv) return;
+        const arr = costInvIndex.get(inv) ?? [];
+        arr.push(srcRow(r, i));
+        costInvIndex.set(inv, arr);
+      });
+      for (const [inv, costRows] of costInvIndex) {
+        const revRows = revInvIndex.get(inv);
+        if (!revRows || revRows.length === 0) continue;
+        const allRows = Array.from(new Set([...costRows, ...revRows])).sort((a, b) => a - b);
+        findings.push({
+          kind: "CROSS_SECTION_INVOICE",
+          severity: "WARNING",
+          section: "CROSS",
+          message: `Invoice number "${inv}" is used on both cost (${costRows.length}) and revenue (${revRows.length}) rows.`,
+          rows: allRows,
+          detail: { invoiceNumber: inv, costRows, revenueRows: revRows },
+        });
+      }
+    }
+
+    // --- 3. Invoice number with no amount --------------------------------
+    function invoiceNoAmount(section: "REVENUE" | "EXPENDITURE", rows: Array<Record<string, any>>) {
+      const offenders: number[] = [];
+      const samples: Array<{ row: number; invoice: string }> = [];
+      rows.forEach((r, i) => {
+        const inv = norm_inv(r.invoiceNumber);
+        if (!inv) return;
+        if (toNum(r.amountExVat) === 0) {
+          const sr = srcRow(r, i);
+          offenders.push(sr);
+          if (samples.length < 5) samples.push({ row: sr, invoice: inv });
+        }
+      });
+      if (offenders.length > 0) {
+        findings.push({
+          kind: "INVOICE_WITHOUT_AMOUNT",
+          severity: "WARNING",
+          section,
+          message: `${offenders.length} ${section === "REVENUE" ? "revenue" : "expenditure"} row${offenders.length === 1 ? "" : "s"} have an invoice number but no amount.`,
+          rows: offenders,
+          detail: { count: offenders.length, samples },
+        });
+      }
+    }
+    invoiceNoAmount("REVENUE", revLines);
+    invoiceNoAmount("EXPENDITURE", costLines);
+
+    // --- 4. Paid without invoice -----------------------------------------
+    function paidNoInvoice(section: "REVENUE" | "EXPENDITURE", rows: Array<Record<string, any>>) {
+      // Revenue rows track inBankDate as the "received" signal; cost rows
+      // track paidDate as "paid out". Either should imply an invoice number.
+      //
+      // NOTE: norm_inv() returns null for both blank values AND placeholder
+      // tokens like "TBC" / "N/A". For *this* rule that is intentional —
+      // a paid row whose invoice column says "TBC" is precisely the kind of
+      // anomaly the user wants surfaced (money moved without a real invoice
+      // captured), so we treat placeholders as missing here.
+      const offenders: number[] = [];
+      rows.forEach((r, i) => {
+        const inv = norm_inv(r.invoiceNumber);
+        if (inv) return;
+        const paidLike = section === "REVENUE" ? (r.inBankDate ?? r.paidDate) : r.paidDate;
+        if (paidLike) offenders.push(srcRow(r, i));
+      });
+      if (offenders.length > 0) {
+        findings.push({
+          kind: "PAID_WITHOUT_INVOICE",
+          severity: "WARNING",
+          section,
+          message: `${offenders.length} ${section === "REVENUE" ? "revenue" : "expenditure"} row${offenders.length === 1 ? "" : "s"} have a ${section === "REVENUE" ? "received" : "paid"} date but no invoice number.`,
+          rows: offenders,
+          detail: { count: offenders.length },
+        });
+      }
+    }
+    paidNoInvoice("REVENUE", revLines);
+    paidNoInvoice("EXPENDITURE", costLines);
+
+    // --- 5. PO counterparty conflict (cost only) -------------------------
+    {
+      const byPo = new Map<string, Map<string, number[]>>(); // po -> counterparty -> rows
+      costLines.forEach((r, i) => {
+        const po = norm_inv(r.poNumber);
+        if (!po) return;
+        const cp = (r.counterpartyName ?? "").toString().trim().toUpperCase() || "(blank)";
+        if (!byPo.has(po)) byPo.set(po, new Map());
+        const inner = byPo.get(po)!;
+        const arr = inner.get(cp) ?? [];
+        arr.push(srcRow(r, i));
+        inner.set(cp, arr);
+      });
+      for (const [po, byCp] of byPo) {
+        if (byCp.size > 1) {
+          const counterparties = Array.from(byCp.keys());
+          const allRows: number[] = [];
+          for (const rs of byCp.values()) allRows.push(...rs);
+          findings.push({
+            kind: "PO_COUNTERPARTY_CONFLICT",
+            severity: "WARNING",
+            section: "EXPENDITURE",
+            message: `PO "${po}" is used by ${byCp.size} different counterparties: ${counterparties.join(", ")}.`,
+            rows: allRows.sort((a, b) => a - b),
+            detail: { poNumber: po, counterparties, rowsByCounterparty: Object.fromEntries(byCp) },
+          });
+        }
+      }
+    }
+
+    // --- Summary ---------------------------------------------------------
+    const severityCounts = { INFO: 0, WARNING: 0, BLOCKER: 0 };
+    for (const f of findings) severityCounts[f.severity]++;
+
+    res.json({
+      runId,
+      totalCount: findings.length,
+      severityCounts,
+      findings,
+    });
+  } catch (err: unknown) {
+    console.error("[smart-import] GET integrity-check error:", err);
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+  }
+});
+
 // PATCH /api/smart-import/:runId/project-info
 router.patch("/api/smart-import/:runId/project-info", requireAuth, requirePermission("smart_import", "edit"), async (req: Request, res: Response) => {
   try {
