@@ -300,12 +300,11 @@ The conflict engine classifies each field on matched rows:
 
 ### Commit Handler Changes
 
-1. **V2 conflict gate** runs BEFORE the existing v1 manual-edit check.
+1. **V2 conflict gate** runs BEFORE the manual-edit check.
 2. If unresolved conflicts exist → HTTP 409 with full conflict detail.
 3. Client resolves via `v2ConflictResolutions: { "rowKey::fieldName": "keep_app" | "accept_file" }`.
 4. All resolutions logged to `conflictResolutionLog` with `entityType = "v2_3way_merge"`.
-5. `skipV2ConflictCheck` escape hatch preserves backward compatibility.
-6. Existing v1 manual-edit detection remains as safety net.
+5. The v1 fallback path and the `emergencyV1Mode` / `skipV2ConflictCheck` opt-out flags have been removed.
 
 ### Revenue milestoneNo Canonical Persistence
 
@@ -393,28 +392,23 @@ PlannerResult.conflicts: {
 
 | File | Changes |
 |------|---------|
-| `server/smart-import-routes.ts` | Added v2 incremental commit path inside the transaction, gated by `useV2` flag. v1 full-replace is preserved as fallback behind `if (!useV2)`. Imported new modules. |
+| `server/smart-import-routes.ts` | v2 incremental commit path is the only commit flow. The v1 full-replace fallback and `emergencyV1Mode` / `skipV2ConflictCheck` opt-out flags were removed. Commit fails fast with `project_id_missing` when `projectId` is not resolved. |
 
 ### How the v2 commit path works
 
-Inside the commit transaction, the handler now has two branches:
+Inside the commit transaction, the handler runs the v2 incremental flow unconditionally:
 
 ```
-if (useV2 = !skipV2ConflictCheck && projectId) {
-  // V2 INCREMENTAL PATH:
-  // 1. Load current state from canonical tables
-  // 2. Run row matching (matchRows per section)
-  // 3. Run 3-way conflict engine (baseline vs current vs file)
-  // 4. For each section, call incremental writer:
-  //    - UNCHANGED → skip (no DB write, row keeps its id)
-  //    - NEW       → insert into canonical table
-  //    - CHANGED   → update-in-place (PLAN) or soft-close+replace (REVENUE/EXPENDITURE)
-  //    - MISSING   → keep (not deleted, not soft-closed)
-  // 5. Mark run as COMMITTED
-} else {
-  // V1 FALLBACK:
-  // Original soft-close-all + re-insert-all behavior
-}
+// V2 INCREMENTAL PATH (always-on; projectId is guaranteed by fail-fast above):
+// 1. Load current state from canonical tables
+// 2. Run row matching (matchRows per section)
+// 3. Run 3-way conflict engine (baseline vs current vs file)
+// 4. For each section, call incremental writer:
+//    - UNCHANGED → skip (no DB write, row keeps its id)
+//    - NEW       → insert into canonical table
+//    - CHANGED   → update-in-place (PLAN) or soft-close+replace (REVENUE/EXPENDITURE)
+//    - MISSING   → keep (not deleted, not soft-closed)
+// 5. Mark run as COMMITTED
 ```
 
 ### Canonical write targets (unchanged from spine audit)
