@@ -127,9 +127,11 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "training", path: "/training", label: "Training", iconKey: "GraduationCap", navGroup: "KNOWLEDGE", permissionEntity: "training", showInSidebar: false, routeComponentKey: "TrainingPage" },
   { id: "portfolios", path: "/portfolios", label: "Portfolios", iconKey: "FolderOpen", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "portfolios", showInSidebar: true, routeComponentKey: "PortfoliosPage" },
   { id: "portfolioDetail", path: "/portfolios/:id", label: "Portfolio Detail", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "portfolio_detail", routeComponentKey: "PortfolioDetailPage" },
-  // Merged page: KPI cards + PD work queue + handover readiness + full tickets table.
-  // Formerly two separate entries (`pdDashboard` at /pd and `pdTickets` at /pd/tickets).
-  { id: "pdDashboard", path: "/pd", label: "Project Development", iconKey: "Sun", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_dashboard", showInSidebar: true, routeComponentKey: "PdTicketsPage", aliases: ["/pd/dashboard", "/pd/tickets"], roleLandingEligibility: ["CCO", "KEY_ACCOUNTS_MANAGER", "PROJECT_DEVELOPER"] },
+  // Lean PD Dashboard: KPI cards + PD work queue + handover readiness.
+  // The full ticket list lives on the merged /opportunities page.
+  { id: "pdDashboard", path: "/pd", label: "Project Development Dashboard", iconKey: "Sun", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_dashboard", showInSidebar: true, routeComponentKey: "PdTicketsPage", aliases: ["/pd/dashboard"], roleLandingEligibility: ["CCO", "KEY_ACCOUNTS_MANAGER", "PROJECT_DEVELOPER"] },
+  // Legacy /pd/tickets deep link → redirect to merged Pipeline / Opportunities page.
+  { id: "pdTicketsRedirect", path: "/pd/tickets", label: "Project Development Tickets (moved)", type: "alias", permissionEntity: "pd_dashboard", redirectTo: "/opportunities" },
   { id: "pdTicketCreate", path: "/pd/tickets/create", label: "Create Project Development Ticket", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_tickets", routeComponentKey: "PdTicketCreatePage" },
   { id: "pdTicketDetail", path: "/pd/tickets/:id", label: "Project Development Ticket Detail", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_tickets", routeComponentKey: "PdTicketDetailPage" },
   { id: "pdReports", path: "/pd/reports", label: "Project Development Reports", iconKey: "BarChart3", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_dashboard", showInSidebar: false, routeComponentKey: "PdReportsPage" },

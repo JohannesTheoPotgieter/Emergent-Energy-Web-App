@@ -51,7 +51,7 @@ const ROLE_LANDING_CANDIDATES: Record<string, string[]> = {
   ENGINEERING: ["engineering", "engineeringTasks", "myWorkTasks", "myWork"],
   QUALITY: ["quality", "qualityNcrList", "myWorkApprovals", "myWorkTasks", "myWork"],
   FINANCE: ["cashflow", "cos", "revenueTracker", "gpTracker", "myWork"],
-  PROJECT_DEVELOPMENT: ["pdDashboard", "pdTickets", "pdReports", "clients", "myWork"],
+  PROJECT_DEVELOPMENT: ["pdDashboard", "opportunities", "pdReports", "clients", "myWork"],
   HSE: ["hseDashboard", "quality", "myWorkTasks", "myWork"],
   SSEG: ["hseDashboard", "engineering", "myWorkTasks", "myWork"],
   DEFAULT: ["myWork", "executionBoard", "projects"],
