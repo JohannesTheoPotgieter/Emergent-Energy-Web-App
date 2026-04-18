@@ -16,6 +16,8 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import { getAuthHeaders } from "@/pages/smart-import";
 import { SECTION_LABELS, CONFIRM_LABELS, RESULT_LABELS, IMPORT_MODE_LABELS } from "./labels";
+import { SmartImportMoneyImpact } from "./SmartImportMoneyImpact";
+import { SmartImportQbProtectionsCallout } from "./SmartImportQbProtectionsCallout";
 
 interface ConfirmStepProps {
   runId: number;
@@ -217,6 +219,18 @@ export function SmartImportConfirmStep({ runId, planning, preview, decisions, on
               </div>
             );
           })}
+        </div>
+
+        {/* QuickBooks protections — compact, sits just before the money
+            impact so the user understands what is locked before reading
+            the financial movement. */}
+        <div className="border-t pt-3">
+          <SmartImportQbProtectionsCallout runId={runId} compact />
+        </div>
+
+        {/* Money impact (A1) — pre-commit financial dry-run. */}
+        <div className="border-t pt-3">
+          <SmartImportMoneyImpact runId={runId} decisions={decisions} />
         </div>
 
         {/* Error display */}

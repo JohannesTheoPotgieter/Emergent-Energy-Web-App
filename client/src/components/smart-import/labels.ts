@@ -114,6 +114,25 @@ export const QB_PROTECTIONS_LABELS = {
   off: "QuickBooks protection is currently off. Your spreadsheet values will land as-is, even on QuickBooks-linked rows.",
 } as const;
 
+// Money-impact summary (A1) — labels for the pre-commit financial dry-run
+// shown on the Confirm step. Phrased so PMs and finance can read at a
+// glance without looking up jargon.
+export const MONEY_IMPACT_LABELS = {
+  title: "What this import will move (excl. VAT)",
+  subtitle: "A pre-commit estimate. Final figures are confirmed once the import lands.",
+  revenueTitle: "Revenue / Milestones",
+  costTitle: "Costs / Expenses",
+  newIn: "New money in",
+  netChange: "Net change to existing",
+  qbHeld: "Held by QuickBooks (will not move)",
+  removed: "Removed (missing from this upload)",
+  preserved: "Preserved by QuickBooks link",
+  keptByDecision: "Kept by your decision",
+  nothing: "No financial movement",
+  loading: "Calculating financial impact…",
+  noActivity: "This import does not change any financial values.",
+} as const;
+
 // Result screen labels
 export const RESULT_LABELS = {
   success: "Import completed",
