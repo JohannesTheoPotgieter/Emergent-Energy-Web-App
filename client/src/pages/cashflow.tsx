@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, Fragment } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef, Fragment } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
@@ -55,6 +55,7 @@ import {
   ChevronsUpDown,
   Wallet,
   Pencil,
+  Search,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
@@ -712,6 +713,64 @@ function OpexBudgetModal({ open, onClose }: { open: boolean; onClose: () => void
   );
 }
 
+function KeyboardShortcuts({
+  railSearchRef,
+  setProjectPickerOpen,
+  cashflowData,
+  toast,
+}: {
+  railSearchRef: React.RefObject<HTMLInputElement>;
+  setProjectPickerOpen: (open: boolean) => void;
+  cashflowData: CashflowWeek[];
+  toast: ReturnType<typeof useToast>["toast"];
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tgt = e.target as HTMLElement | null;
+      const tag = tgt?.tagName;
+      const isTyping =
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        tgt?.isContentEditable;
+
+      if (e.key === "/" && !isTyping && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        const railEl = railSearchRef.current;
+        if (railEl && railEl.offsetParent !== null) {
+          railEl.focus();
+          railEl.select();
+        } else {
+          setProjectPickerOpen(true);
+        }
+        return;
+      }
+
+      if ((e.key === "?" || (e.shiftKey && e.key === "/")) && !isTyping) {
+        e.preventDefault();
+        toast({
+          title: "Keyboard shortcuts",
+          description: "/ focus filter · E edit current-week available payment · Esc close",
+        });
+        return;
+      }
+
+      if ((e.key === "e" || e.key === "E") && !isTyping && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const current = cashflowData.find((w) => isCurrentWeek(w.weekStart, w.weekEnd));
+        if (!current) return;
+        const btn = document.getElementById("kb-edit-current-availpay") as HTMLButtonElement | null;
+        if (btn) {
+          e.preventDefault();
+          btn.click();
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [railSearchRef, setProjectPickerOpen, cashflowData, toast]);
+  return null;
+}
+
 export default function CashflowPage() {
   const { allowed: canEditCashflow } = usePermission("cashflow", "edit");
   const { toast } = useToast();
@@ -724,6 +783,8 @@ export default function CashflowPage() {
   const [chartOpen, setChartOpen] = useState(true);
   const [historyWeek, setHistoryWeek] = useState<string | null>(null);
   const [availPayHistoryWeek, setAvailPayHistoryWeek] = useState<string | null>(null);
+  const [railSearch, setRailSearch] = useState("");
+  const railSearchRef = useRef<HTMLInputElement>(null);
 
   const projectParam = selectedProjects.length > 0 ? selectedProjects.join(",") : undefined;
 
@@ -937,6 +998,12 @@ export default function CashflowPage() {
 
   return (
     <FinanceShell><div className="p-4 md:p-6" data-testid="page-cashflow">
+      <KeyboardShortcuts
+        railSearchRef={railSearchRef}
+        setProjectPickerOpen={setProjectPickerOpen}
+        cashflowData={cashflowData}
+        toast={toast}
+      />
       <SectionHeader
         icon={<Wallet className="h-5 w-5" />}
         title={`Cashflow FY${CURRENT_FY}`}
@@ -954,7 +1021,78 @@ export default function CashflowPage() {
           },
         ]}
       />
-      <div className="flex flex-wrap items-center gap-2 -mt-2">
+      <div className="lg:flex lg:gap-5 lg:items-start -mt-2">
+        <aside
+          className="hidden lg:flex lg:flex-col lg:w-56 lg:shrink-0 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] rounded-xl border border-border bg-card shadow-sm p-3"
+          data-testid="rail-filter"
+          aria-label="Filter projects"
+        >
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xs font-semibold text-foreground uppercase tracking-wider">Projects</h3>
+            {selectedProjects.length > 0 && (
+              <button
+                type="button"
+                className="text-[10px] text-muted-foreground hover:text-foreground"
+                onClick={() => setSelectedProjects([])}
+                data-testid="rail-clear-all"
+              >
+                Clear ({selectedProjects.length})
+              </button>
+            )}
+          </div>
+          <div className="relative mb-2">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+            <Input
+              ref={railSearchRef}
+              value={railSearch}
+              onChange={(e) => setRailSearch(e.target.value)}
+              placeholder="Search projects…"
+              className="h-8 text-xs pl-7"
+              data-testid="rail-search"
+            />
+          </div>
+          <div className="flex-1 overflow-y-auto space-y-0.5 -mr-1 pr-1 min-h-0">
+            <label className="flex items-center gap-2 px-1.5 py-1 rounded hover:bg-muted cursor-pointer text-xs">
+              <input
+                type="checkbox"
+                checked={selectedProjects.length === 0}
+                onChange={() => setSelectedProjects([])}
+                className="h-3.5 w-3.5 accent-emerald-600"
+                data-testid="rail-option-all"
+              />
+              <span className="font-medium">All projects</span>
+            </label>
+            {projectNames
+              .filter((n) => n.toLowerCase().includes(railSearch.toLowerCase()))
+              .map((name) => (
+                <label
+                  key={name}
+                  className="flex items-center gap-2 px-1.5 py-1 rounded hover:bg-muted cursor-pointer text-xs"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedProjects.includes(name)}
+                    onChange={() =>
+                      setSelectedProjects((prev) =>
+                        prev.includes(name) ? prev.filter((p) => p !== name) : [...prev, name]
+                      )
+                    }
+                    className="h-3.5 w-3.5 accent-emerald-600"
+                    data-testid={`rail-option-${name}`}
+                  />
+                  <span className="truncate">{name}</span>
+                </label>
+              ))}
+          </div>
+          <div className="mt-2 pt-2 border-t border-border text-[10px] text-muted-foreground leading-relaxed">
+            <kbd className="px-1 py-0.5 rounded bg-muted font-mono">/</kbd> focus filter ·{" "}
+            <kbd className="px-1 py-0.5 rounded bg-muted font-mono">E</kbd> edit current week ·{" "}
+            <kbd className="px-1 py-0.5 rounded bg-muted font-mono">?</kbd> help
+          </div>
+        </aside>
+        <div className="flex-1 min-w-0">
+      <div className="flex flex-wrap items-center gap-2">
+              <div className="lg:hidden">
               <Popover open={projectPickerOpen} onOpenChange={setProjectPickerOpen}>
                 <PopoverTrigger asChild>
                   <Button
@@ -1013,8 +1151,9 @@ export default function CashflowPage() {
                   </Command>
                 </PopoverContent>
               </Popover>
+              </div>
               {selectedProjects.length > 0 && (
-                <div className="flex flex-wrap items-center gap-1">
+                <div className="lg:hidden flex flex-wrap items-center gap-1">
                   {selectedProjects.map((p) => (
                     <Badge
                       key={p}
@@ -1450,6 +1589,7 @@ export default function CashflowPage() {
                                         } ${canEditCashflow ? "cursor-pointer hover:underline decoration-dashed underline-offset-2 transition-colors" : "cursor-default"}`}
                                         disabled={!canEditCashflow}
                                         onClick={(e) => e.stopPropagation()}
+                                        id={current ? "kb-edit-current-availpay" : undefined}
                                         data-testid={`text-available-value-${week.weekStart}`}
                                       >
                                         <span>{formatRand(week.availablePayment)}</span>
@@ -1516,6 +1656,8 @@ export default function CashflowPage() {
             </Card>
           </>
         )}
+      </div>
+        </div>
       </div>
 
       <OpexBudgetModal open={opexOpen} onClose={() => setOpexOpen(false)} />
