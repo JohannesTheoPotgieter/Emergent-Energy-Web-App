@@ -18,10 +18,19 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run check
-      - run: npm run build
+      - run: npm ci --prefer-offline --no-audit
+      # Turbo task cache — keyed by lockfile + turbo config, restored from
+      # any prior run on this branch (or main if that's all that's available).
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .turbo
+            .eslintcache
+          key: turbo-compile-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-compile-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json') }}-
+            turbo-compile-${{ runner.os }}-
+      - run: npx turbo run lint check build
 
   # ── Stage 2: Tests (requires Postgres) ────────────────────
   test:
@@ -57,14 +66,21 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-      - run: npm ci
-      - run: npm run build
-      # Unit tests
-      - run: npm test
+      - run: npm ci --prefer-offline --no-audit
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .turbo
+            .eslintcache
+          key: turbo-test-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-test-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json') }}-
+            turbo-test-${{ runner.os }}-
+            turbo-compile-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json') }}-
+      - run: npx turbo run build test
         if: hashFiles('**/*.test.ts') != ''
-      # API tests (starts app server, runs against Postgres)
+      # Non-cacheable integration steps (need a live server + DB)
       - run: npm run test:api
-      # Release gate (skip smoke tests — no browser in CI)
       - run: npm run release:gate
         env:
           SKIP_SMOKE_TESTS: "true"

@@ -16,10 +16,17 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run check
-      - run: npm run build
+      - run: npm ci --prefer-offline --no-audit
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .turbo
+            .eslintcache
+          key: turbo-compile-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-compile-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json') }}-
+            turbo-compile-${{ runner.os }}-
+      - run: npx turbo run lint check build
 
   # ── Quality gate: tests + release readiness ───────────────
   quality-gate:
@@ -55,9 +62,18 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-      - run: npm ci
-      - run: npm run build
-      - run: npm test
+      - run: npm ci --prefer-offline --no-audit
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .turbo
+            .eslintcache
+          key: turbo-test-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-test-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json') }}-
+            turbo-test-${{ runner.os }}-
+            turbo-compile-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json') }}-
+      - run: npx turbo run build test
         if: hashFiles('**/*.test.ts') != ''
       - run: npm run release:gate
         env:
