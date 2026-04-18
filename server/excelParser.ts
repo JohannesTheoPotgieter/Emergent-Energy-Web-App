@@ -241,8 +241,10 @@ export async function parseTrackerFile(buffer: Buffer, fileName: string): Promis
   const warnings: string[] = [];
   
   const workbook = new ExcelJS.Workbook();
+  // @ts-expect-error ExcelJS declares `interface Buffer extends ArrayBuffer` globally,
+  // creating a merge conflict with @types/node's generic Buffer in TS6/ES2024.
   await workbook.xlsx.load(buffer);
-  
+
   let projectInfo: InsertProjectInfo | null = null;
   const expenses: InsertProgramExpense[] = [];
   const inflows: InsertProgramInflows[] = [];
@@ -1093,8 +1095,10 @@ export async function extractFontColors(buffer: Buffer): Promise<Map<string, { i
   
   try {
     const workbook = new ExcelJS.Workbook();
+    // @ts-expect-error ExcelJS declares `interface Buffer extends ArrayBuffer` globally,
+    // creating a merge conflict with @types/node's generic Buffer in TS6/ES2024.
     await workbook.xlsx.load(buffer);
-    
+
     const ws = workbook.getWorksheet("Expenditure Breakdown");
     if (!ws) return colorMap;
     

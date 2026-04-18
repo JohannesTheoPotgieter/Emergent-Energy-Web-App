@@ -14,7 +14,9 @@ export interface SmartImportPreview {
 export async function runSmartImportPreview(buffer: Buffer, fileName: string): Promise<SmartImportPreview> {
   const workbook = new ExcelJS.Workbook();
   try {
-    await workbook.xlsx.load(buffer);
+    // ExcelJS declares `interface Buffer extends ArrayBuffer` globally, creating a merge
+    // conflict with @types/node's generic Buffer in TS6/ES2024. Cast is safe at runtime.
+    await workbook.xlsx.load(buffer as Buffer & ArrayBuffer);
   } catch (parseErr: any) {
     const isXlsm = fileName.toLowerCase().endsWith(".xlsm");
     if (isXlsm) {
