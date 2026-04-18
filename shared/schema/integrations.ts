@@ -266,6 +266,50 @@ export type InsertQuickBooksDocument = z.infer<typeof insertQuickBooksDocumentSc
 export type QuickBooksDocument = typeof quickbooksDocuments.$inferSelect;
 
 /**
+ * Smart Import × QuickBooks precedence: per-field variance audit trail.
+ *
+ * Whenever a cost/revenue line is QB-linked AND the workbook value disagrees
+ * with the QB-canonical value on a locked field (amount, VAT, invoice number,
+ * invoice date, paid date, in-bank date), the workbook value is silently
+ * dropped and a row is inserted here so finance can reconcile the difference.
+ *
+ * Resolution values:
+ *   - 'qb_locked'         — workbook value differed; QB value was used
+ *   - 'auto_realised'     — QB showed Paid; cosRealised forced to true
+ *   - 'missing_preserved' — workbook omitted this row but QB link exists;
+ *                           the soft-close was suppressed
+ */
+export const importQbVariances = pgTable(
+  "import_qb_variances",
+  {
+    id: serial("id").primaryKey(),
+    importRunId: integer("import_run_id").notNull(),
+    projectId: integer("project_id"),
+    appEntityType: text("app_entity_type").notNull(),
+    appEntityId: integer("app_entity_id").notNull(),
+    qbLinkId: integer("qb_link_id"),
+    qbDocId: integer("qb_doc_id"),
+    qbRealmId: text("qb_realm_id"),
+    fieldName: text("field_name").notNull(),
+    workbookValue: text("workbook_value"),
+    qbValue: text("qb_value"),
+    resolution: text("resolution").notNull(),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    runIdx: index("import_qb_variances_run_idx").on(table.importRunId),
+    projectIdx: index("import_qb_variances_project_idx").on(table.projectId),
+    appEntityIdx: index("import_qb_variances_app_entity_idx").on(
+      table.appEntityType,
+      table.appEntityId,
+    ),
+  }),
+);
+
+export type ImportQbVariance = typeof importQbVariances.$inferSelect;
+
+/**
  * Allocation rows from QuickBooks evidence document -> app cost line.
  * Many-to-many, amount-aware, ex-VAT only.
  *
