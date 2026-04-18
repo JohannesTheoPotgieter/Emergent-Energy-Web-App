@@ -55,6 +55,14 @@ export const FEATURE_FLAG_KEYS = [
   // as_built). Gate it off by default until migration to the controlled table
   // is complete.
   "legacy_capture_deliverable",
+
+  // Smart Import × QuickBooks precedence: when ON, Smart Import defers to
+  // QB on amount, VAT, invoice number, invoice date, paid date and in-bank
+  // date for any cost/revenue line that has an active QB link. Auto-realises
+  // cost lines when QB shows the document as Paid. Variances are logged to
+  // import_qb_variances. Default OFF until the test matrix is validated
+  // against production data.
+  "smart_import_qb_precedence",
 ] as const;
 
 export type RolloutFeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
@@ -333,6 +341,12 @@ export const ROLLOUT_FEATURE_FLAGS: FeatureFlagDefinition[] = [
     key: "legacy_capture_deliverable",
     label: "Legacy capture deliverable",
     description: "Controls the legacy deliverable capture wizard that posts to the un-controlled deliverables table. Disabled by default — use Engineering Stages tab for controlled document uploads.",
+    defaultValue: false,
+  },
+  {
+    key: "smart_import_qb_precedence",
+    label: "Smart Import × QuickBooks precedence",
+    description: "When enabled, Smart Import defers to QuickBooks on amount, VAT, invoice number, invoice date, paid date and in-bank date for any cost/revenue line that has an active QB link, and auto-realises cost lines when QB shows them as Paid. Disagreements are logged to import_qb_variances. Default OFF until validated against production data.",
     defaultValue: false,
   },
 ];

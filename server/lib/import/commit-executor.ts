@@ -397,6 +397,14 @@ export async function writeRevenueIncremental(ctx: TemporalWriteContext): Promis
   const { tx, projectId, projectName, runId, matchedRows, mergeResults, conflictDecisions, commitTimestamp } = ctx;
   const { eq, sql: sqlTag } = await import("drizzle-orm");
   const { normalizedRevenueLines } = await import("@shared/schema");
+  const {
+    applyQbPrecedence,
+    lookupQbLink,
+    writeQbVariances,
+    repointQbLinks,
+    isQbPrecedenceEnabled,
+  } = await import("./qb-precedence");
+  const qbPrecedenceOn = await isQbPrecedenceEnabled();
 
   const counts: CommitCounts = { inserted: 0, updated: 0, unchanged: 0, missing: 0, conflictsResolved: 0 };
   const insertedIds: number[] = [];
@@ -447,6 +455,10 @@ export async function writeRevenueIncremental(ctx: TemporalWriteContext): Promis
     return null;
   }
 
+  // Per-row QB variances accumulated during this commit; flushed once at end.
+  type PendingVariance = { appEntityId: number; variances: any[] };
+  const qbVariancePending: PendingVariance[] = [];
+
   // PRE-PASS: process MISSING_FROM_UPLOAD rows first so the predecessor
   // pool is fully populated before any NEW row is inserted. matchRows()
   // emits NEW/CHANGED/UNCHANGED in file-row order and MISSING last, so
@@ -456,6 +468,31 @@ export async function writeRevenueIncremental(ctx: TemporalWriteContext): Promis
     if (mr.classification !== "MISSING_FROM_UPLOAD") continue;
     counts.missing++;
     if (mr.existingRowId == null) continue;
+
+    // QB precedence: if the row is QB-linked, the workbook's silence on it
+    // does NOT justify removal — QB still considers the document to exist.
+    // Suppress the soft-close and log a "missing_preserved" variance so the
+    // operator can see what happened.
+    if (qbPrecedenceOn) {
+      const link = await lookupQbLink({ tx, appEntityType: "revenue_line", appEntityId: mr.existingRowId });
+      if (link) {
+        qbVariancePending.push({
+          appEntityId: mr.existingRowId,
+          variances: [{
+            field: "row",
+            workbookValue: "missing",
+            qbValue: link.qbDocNumber ?? link.qbEntityId,
+            resolution: "missing_preserved",
+            notes: `Row preserved because QB link ${link.id} is active`,
+            qbLinkId: link.id,
+            qbDocId: null,
+            qbRealmId: link.qbRealmId,
+          }],
+        });
+        continue;
+      }
+    }
+
     await tx.update(normalizedRevenueLines)
       .set({ effectiveTo: commitTimestamp })
       .where(eq(normalizedRevenueLines.id, mr.existingRowId));
@@ -536,7 +573,35 @@ export async function writeRevenueIncremental(ctx: TemporalWriteContext): Promis
         counts.conflictsResolved += mergeResult.fields.filter(f => f.mergeCase === "CONFLICT").length;
       }
 
-      if (Object.keys(fieldUpdates).length === 0) {
+      // QB precedence: for QB-linked rows, lock amount/VAT/invoice-number/
+      // dates to the QB-canonical values. Mutate fieldUpdates so the insert
+      // below picks up the locked values automatically.
+      let qbVariancesForRow: any[] = [];
+      if (qbPrecedenceOn) {
+        const existingForProposed = (mr.existingRow ?? {}) as any;
+        const proposed: Record<string, any> = {
+          amountExVat: fieldUpdates.amountExVat ?? existingForProposed.amountExVat,
+          vat: fieldUpdates.vat ?? existingForProposed.vat,
+          invoiceNumber: fieldUpdates.invoiceNumber ?? existingForProposed.invoiceNumber,
+          invoiceDate: fieldUpdates.invoiceDate ?? existingForProposed.invoiceDate,
+          paidDate: fieldUpdates.paidDate ?? existingForProposed.paidDate,
+          inBankDate: fieldUpdates.inBankDate ?? existingForProposed.inBankDate,
+        };
+        const qbResult = await applyQbPrecedence({
+          tx,
+          appEntityType: "revenue_line",
+          appEntityId: existingId,
+          proposedValues: proposed,
+        });
+        if (qbResult.isLinked) {
+          for (const f of qbResult.lockedFields) {
+            if (qbResult.finalValues[f] !== undefined) fieldUpdates[f] = qbResult.finalValues[f];
+          }
+          qbVariancesForRow = qbResult.variances;
+        }
+      }
+
+      if (Object.keys(fieldUpdates).length === 0 && qbVariancesForRow.length === 0) {
         counts.unchanged++;
         continue;
       }
@@ -584,6 +649,42 @@ export async function writeRevenueIncremental(ctx: TemporalWriteContext): Promis
       insertedIds.push(inserted.id);
       updatedIds.push(existingId); // the old ID that was soft-closed
       counts.updated++;
+      if (qbVariancesForRow.length > 0) {
+        qbVariancePending.push({ appEntityId: inserted.id, variances: qbVariancesForRow });
+        // Re-point any active QB link from the soft-closed predecessor to
+        // the new inserted row id so the gate keeps firing on the next
+        // import. This MUST happen for any QB-linked CHANGED row, not just
+        // those with variances — but when the gate fires we know the link
+        // exists; do it here unconditionally for linked rows.
+        try {
+          await repointQbLinks({
+            tx,
+            appEntityType: "revenue_line",
+            oldAppEntityId: existingId,
+            newAppEntityId: inserted.id,
+          });
+        } catch (err) {
+          console.error("[commit-executor] Failed to re-point QB link for revenue:", err);
+        }
+      }
+    }
+  }
+
+  // Flush QB variances. Failure to log MUST NOT fail the import.
+  if (qbPrecedenceOn && qbVariancePending.length > 0) {
+    try {
+      for (const p of qbVariancePending) {
+        await writeQbVariances({
+          tx,
+          importRunId: runId,
+          projectId,
+          appEntityType: "revenue_line",
+          appEntityId: p.appEntityId,
+          variances: p.variances,
+        });
+      }
+    } catch (err) {
+      console.error("[commit-executor] Failed to log QB variances for revenue:", err);
     }
   }
 
@@ -598,6 +699,14 @@ export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Pr
   const { tx, projectId, projectName, runId, matchedRows, mergeResults, conflictDecisions, commitTimestamp } = ctx;
   const { eq } = await import("drizzle-orm");
   const { normalizedCostLines } = await import("@shared/schema");
+  const {
+    applyQbPrecedence,
+    lookupQbLink,
+    writeQbVariances,
+    repointQbLinks,
+    isQbPrecedenceEnabled,
+  } = await import("./qb-precedence");
+  const qbPrecedenceOn = await isQbPrecedenceEnabled();
 
   const counts: CommitCounts = { inserted: 0, updated: 0, unchanged: 0, missing: 0, conflictsResolved: 0 };
   const insertedIds: number[] = [];
@@ -661,6 +770,10 @@ export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Pr
     return null;
   }
 
+  // Per-row QB variances accumulated during this commit; flushed once at end.
+  type PendingCostVariance = { appEntityId: number; variances: any[] };
+  const qbCostVariancePending: PendingCostVariance[] = [];
+
   // PRE-PASS: process MISSING_FROM_UPLOAD rows first so the predecessor
   // pool is fully populated before any NEW row is inserted. matchRows()
   // emits NEW/CHANGED/UNCHANGED in file-row order and MISSING last, so
@@ -670,6 +783,28 @@ export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Pr
     if (mr.classification !== "MISSING_FROM_UPLOAD") continue;
     counts.missing++;
     if (mr.existingRowId == null) continue;
+
+    // QB precedence: suppress soft-close if the row is QB-linked.
+    if (qbPrecedenceOn) {
+      const link = await lookupQbLink({ tx, appEntityType: "cost_line", appEntityId: mr.existingRowId });
+      if (link) {
+        qbCostVariancePending.push({
+          appEntityId: mr.existingRowId,
+          variances: [{
+            field: "row",
+            workbookValue: "missing",
+            qbValue: link.qbDocNumber ?? link.qbEntityId,
+            resolution: "missing_preserved",
+            notes: `Row preserved because QB link ${link.id} is active`,
+            qbLinkId: link.id,
+            qbDocId: null,
+            qbRealmId: link.qbRealmId,
+          }],
+        });
+        continue;
+      }
+    }
+
     await tx.update(normalizedCostLines)
       .set({ effectiveTo: commitTimestamp })
       .where(eq(normalizedCostLines.id, mr.existingRowId));
@@ -764,7 +899,42 @@ export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Pr
         counts.conflictsResolved += mergeResult.fields.filter(f => f.mergeCase === "CONFLICT").length;
       }
 
-      if (Object.keys(fieldUpdates).length === 0) {
+      // QB precedence: lock fields, force auto-realisation when QB shows
+      // Paid, and surface variances. We track the link result so we can
+      // re-point the QB link after the temporal insert below.
+      let qbVariancesForRow: any[] = [];
+      let qbLinkedRow = false;
+      let qbForceCosRealised: boolean | null = null;
+      if (qbPrecedenceOn) {
+        const existingForProposed = (mr.existingRow ?? {}) as any;
+        const proposed: Record<string, any> = {
+          amountExVat: fieldUpdates.amountExVat ?? existingForProposed.amountExVat,
+          invoiceNumber: fieldUpdates.invoiceNumber ?? existingForProposed.invoiceNumber,
+          invoiceDate: fieldUpdates.invoiceDate ?? existingForProposed.invoiceDate,
+          paidDate: fieldUpdates.paidDate ?? existingForProposed.paidDate,
+          inBankDate: fieldUpdates.inBankDate ?? existingForProposed.inBankDate,
+          cosRealised: existingForProposed.cosRealised,
+        };
+        const qbResult = await applyQbPrecedence({
+          tx,
+          appEntityType: "cost_line",
+          appEntityId: existingId,
+          proposedValues: proposed,
+        });
+        if (qbResult.isLinked) {
+          qbLinkedRow = true;
+          for (const f of qbResult.lockedFields) {
+            if (qbResult.finalValues[f] !== undefined) fieldUpdates[f] = qbResult.finalValues[f];
+          }
+          qbVariancesForRow = qbResult.variances;
+          // QB Paid → cosRealised must be true regardless of workbook flag.
+          if (qbResult.autoRealised || qbResult.finalValues.cosRealised === true) {
+            qbForceCosRealised = true;
+          }
+        }
+      }
+
+      if (Object.keys(fieldUpdates).length === 0 && qbVariancesForRow.length === 0) {
         counts.unchanged++;
         continue;
       }
@@ -793,7 +963,11 @@ export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Pr
         poNumber: fieldUpdates.poNumber ?? existing.poNumber,
         // Recalculate cosRealised from the resolved invoice number (canonical invoice-only rule).
         // Do NOT carry forward the old value — if the invoice number changed, realisation must update.
-        cosRealised: !!((fieldUpdates.invoiceNumber ?? existing.invoiceNumber) && String(fieldUpdates.invoiceNumber ?? existing.invoiceNumber).trim()),
+        // QB precedence override: when the row is QB-linked AND QB shows the doc as Paid,
+        // force cosRealised=true even if the invoice-only rule would not (e.g. invoice number cleared).
+        cosRealised: qbForceCosRealised === true
+          ? true
+          : !!((fieldUpdates.invoiceNumber ?? existing.invoiceNumber) && String(fieldUpdates.invoiceNumber ?? existing.invoiceNumber).trim()),
         cashflowConfirmed: existing.cashflowConfirmed,
         status: normalizeCostLineStatus(fieldUpdates.status ?? existing.status),
         sourceSheet: existing.sourceSheet || fileRow.sourceSheet,
@@ -825,6 +999,43 @@ export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Pr
       insertedIds.push(inserted.id);
       updatedIds.push(existingId);
       counts.updated++;
+      if (qbVariancesForRow.length > 0) {
+        qbCostVariancePending.push({ appEntityId: inserted.id, variances: qbVariancesForRow });
+      }
+      // Re-point any active QB link from the soft-closed predecessor to
+      // the new inserted row id so the gate keeps firing on the next
+      // import. Without this, the link stays pinned to the dead row and
+      // applyQbPrecedence becomes a no-op forever after.
+      if (qbLinkedRow) {
+        try {
+          await repointQbLinks({
+            tx,
+            appEntityType: "cost_line",
+            oldAppEntityId: existingId,
+            newAppEntityId: inserted.id,
+          });
+        } catch (err) {
+          console.error("[commit-executor] Failed to re-point QB link for cost:", err);
+        }
+      }
+    }
+  }
+
+  // Flush QB variances. Failure to log MUST NOT fail the import.
+  if (qbPrecedenceOn && qbCostVariancePending.length > 0) {
+    try {
+      for (const p of qbCostVariancePending) {
+        await writeQbVariances({
+          tx,
+          importRunId: runId,
+          projectId,
+          appEntityType: "cost_line",
+          appEntityId: p.appEntityId,
+          variances: p.variances,
+        });
+      }
+    } catch (err) {
+      console.error("[commit-executor] Failed to log QB variances for cost:", err);
     }
   }
 
