@@ -52,7 +52,6 @@ WHERE key IN (
   'migration_bridge_finance_read_v1',
   'migration_bridge_deliverables_read_v1',
   'migration_bridge_party_read_v1',
-  'canonical_finance_costline_read_v1',
   'promoted_core_project_master_dual_write',
   'promoted_finance_read',
   'task_management_hub',

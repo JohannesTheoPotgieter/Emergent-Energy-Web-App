@@ -27,7 +27,6 @@ export const FEATURE_FLAG_KEYS = [
   "migration_bridge_finance_read_v1",
   "migration_bridge_deliverables_read_v1",
   "migration_bridge_party_read_v1",
-  "canonical_finance_costline_read_v1",
   "migration_bridge_approvals_dual_write_v1",
   "migration_bridge_project_dual_write_v1",
   "task_management_hub",
@@ -237,12 +236,6 @@ export const ROLLOUT_FEATURE_FLAGS: FeatureFlagDefinition[] = [
     key: "migration_bridge_party_read_v1",
     label: "Migration bridge party read v1",
     description: "Controls observability-only party and contact parity diagnostics.",
-    defaultValue: false,
-  },
-  {
-    key: "canonical_finance_costline_read_v1",
-    label: "Canonical finance cost-line read v1",
-    description: "Controls high-risk finance project endpoints reading canonical normalized cost lines instead of legacy program_expense reads.",
     defaultValue: false,
   },
   {

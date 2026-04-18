@@ -15,6 +15,7 @@ import { classifyCosStatusFull, isCosRealised as isCosRealisedShared } from "../
 import { isRevenueSettled } from "../lib/finance/revenue-ar-status";
 import { evaluateRevenueArStatus } from "../lib/finance/revenue-ar-status";
 import { setFinanceTrustHeaders, buildTrustMeta } from "../lib/finance-trust/envelope";
+import { getCanonicalAllCurrentCostLines } from "../services/project-cost-line-read-service";
 
 async function getMergedExpensesAndInflows(expenses: any[], inflows: any[]) {
   return { expenses, inflows };
@@ -999,7 +1000,7 @@ export function registerDashboardRoutes(app: Express) {
     try {
       const [allProjectInfo, legacyExpenses, legacyRawInflows, legacyRawPlans, allPlanOverrides, allTaskLinks, allOpTasks, inBankOverrides] = await Promise.all([
         storage.getAllProjectInfo(),
-        storage.getAllProgramExpenses(),
+        getCanonicalAllCurrentCostLines(),
         storage.getAllProgramInflows(),
         storage.getAllProjectPlans(),
         Promise.resolve([] as any[]),

@@ -237,12 +237,10 @@ describe("B. PE/PI cutover: anti-regression checks (cutover complete)", () => {
     expect(smartImport).not.toContain("tx.insert(programInflows)");
   });
 
-  it("storage.getAllProgramExpenses still exists as PE-shape compatibility view over normalized_cost_lines", () => {
-    // The method name is preserved for caller stability. Internally it now
-    // reads from normalized_cost_lines via FinanceExpenseEngineRepository
-    // (commit 4d08868) — no PE table read.
+  it("storage.getAllProgramExpenses / getProgramExpensesByProject are removed (canonical read service only)", () => {
     const storage = read("server/storage.ts");
-    expect(storage).toContain("async getAllProgramExpenses");
+    expect(storage).not.toContain("async getAllProgramExpenses");
+    expect(storage).not.toContain("async getProgramExpensesByProject");
   });
 });
 
@@ -269,7 +267,7 @@ describe("C. BASELINE: Changed behaviors (all intentional)", () => {
 
   it("CHANGE: COS tracker/GP tracker use NCL-only source", () => {
     // Canonicalization: aligns tracker totals with dashboard totals
-    // COS tracker now uses getHighRiskAllCostReadRows() which delegates to getAllCostLinesForCashflow
+    // COS tracker now uses getHighRiskAllCostReadRows() which delegates to the canonical read service.
     const routes = read("server/departments/finance-routes.ts");
     const cosBlock = routes.substring(
       routes.indexOf('"/api/cos-tracker"'),
@@ -277,7 +275,7 @@ describe("C. BASELINE: Changed behaviors (all intentional)", () => {
     );
     expect(cosBlock).toContain("getHighRiskAllCostReadRows()");
     // Verify the wrapper delegates to the canonical NCL-only source
-    expect(routes).toContain("return storage.getAllCostLinesForCashflow();");
+    expect(routes).toContain("return getCanonicalAllCurrentCostLines();");
   });
 
   it("CHANGE: all margin calculations use shared computeMarginPct", () => {
@@ -304,20 +302,16 @@ describe("C. BASELINE: Changed behaviors (all intentional)", () => {
 // =========================================================================
 
 describe("D. REMAINING AMBIGUITIES", () => {
-  it("AMBIGUITY 1: cos-control-routes still reads merged path (17 call sites)", () => {
+  it("RESOLVED: cos-control-routes migrated to canonical read service", () => {
     const cosControl = read("server/routes/cos-control-routes.ts");
-    const matches = cosControl.match(/storage\.getAllProgramExpenses\(\)/g);
-    expect(matches).toBeTruthy();
-    expect(matches!.length).toBeGreaterThan(10);
-    // These are COS forecast/scenario views, not live trackers.
-    // Lower priority but should be migrated in a follow-up.
+    expect(cosControl).not.toContain("storage.getAllProgramExpenses()");
+    expect(cosControl).toContain("getCanonicalAllCurrentCostLines()");
   });
 
-  it("AMBIGUITY 2: project-routes reads merged path (5 call sites)", () => {
+  it("RESOLVED: project-routes migrated to canonical read service", () => {
     const projectRoutes = read("server/departments/project-routes.ts");
-    const matches = projectRoutes.match(/storage\.getAllProgramExpenses\(\)/g);
-    expect(matches).toBeTruthy();
-    // These serve project-detail views — need PE fields for display.
+    expect(projectRoutes).not.toContain("storage.getAllProgramExpenses()");
+    expect(projectRoutes).toContain("getCanonicalAllCurrentCostLines()");
   });
 
   it("AMBIGUITY 3: finance.finance_records (promoted) is a separate truth", () => {

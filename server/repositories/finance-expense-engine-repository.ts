@@ -1,4 +1,4 @@
-import { eq, and, isNotNull, isNull } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import { softCloseByProjectName } from "../lib/temporal-helpers";
 import { selectWinningExpenseRows } from "../lib/expense-row-selector";
 import { computeCostEvidence } from "../lib/finance/qb-allocation";
@@ -77,38 +77,7 @@ export class FinanceExpenseEngineRepository {
   }
 
   /**
-   * Core implementation for getAllProgramExpenses — called by DatabaseStorage
-   * through the cache wrapper. DO NOT call this directly from routes.
-   *
-   * Reads normalized_cost_lines only. The legacy program_expense overlay
-   * was retired in the PE/PI cutover; every budget/admin-override value
-   * lives on NCL directly after migration 20260414_backfill_ncl_budget_from_pe.sql.
-   */
-  async fetchAllProgramExpenses(): Promise<any[]> {
-    const { adaptCostToExpense, createNameResolver } = await import("../lib/data-merge");
-    const [costLines, piRows] = await Promise.all([
-      this.dbInstance.select().from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
-      this.dbInstance.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo),
-    ]);
-    const resolve = createNameResolver(piRows.map((r: any) => r.projectName));
-
-    const enrichedRows = await this.attachAllocationEvidence(costLines as any[]);
-    const attributed = resolveCostRowProjectNames(enrichedRows as any[], piRows as any[], "[fetchAllProgramExpenses]");
-    const adaptedNormalized = attributed.map(({ row, name }) => adaptCostToExpense(row, resolve(name)));
-
-    // Deterministic winner per business line across normalized rows (handles
-    // any residual duplicates from temporal history or re-imports).
-    const selected = selectWinningExpenseRows(adaptedNormalized);
-    console.log(
-      `[getAllProgramExpenses] Selected winners: ${selected.diagnostics.totalInput} → ${selected.diagnostics.winners}` +
-      ` (removed ${selected.diagnostics.duplicatesRemoved} duplicates)`,
-    );
-    return selected.winners;
-  }
-
-  /**
-   * Canonical cashflow cost read — NCL only, NO PE overlay.
-   * Intentionally separate from fetchAllProgramExpenses.
+   * Canonical cashflow cost read — NCL only.
    */
   async getAllCostLinesForCashflow(): Promise<any[]> {
     const { adaptCostToExpense, createNameResolver } = await import("../lib/data-merge");
@@ -124,75 +93,6 @@ export class FinanceExpenseEngineRepository {
     const { winners, diagnostics } = selectWinningExpenseRows(adapted);
     console.log(`[getAllCostLinesForCashflow] ${costLines.length} active NCL → ${adapted.length} adapted → ${winners.length} after dedup (removed ${diagnostics.duplicatesRemoved})`);
     return winners;
-  }
-
-  /**
-   * Per-project expense read with carry-forward from closed NCL rows.
-   * The legacy program_expense overlay was retired in the PE/PI cutover;
-   * budget columns now come directly from normalized_cost_lines.
-   */
-  async getProgramExpensesByProject(projectName: string): Promise<any[]> {
-    const { adaptCostToExpense } = await import("../lib/data-merge");
-    // Resolve project_id for the requested name so we also catch legacy rows
-    // where project_name is NULL but project_id is set.
-    const projectMatches = await this.dbInstance.select({ id: projectInfo.id })
-      .from(projectInfo)
-      .where(eq(projectInfo.projectName, projectName));
-    const projectIds = projectMatches.map((p: { id: number }) => p.id);
-
-    const allActive = await this.dbInstance.select().from(normalizedCostLines)
-      .where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)));
-
-    const costLines = (allActive as any[]).filter((c: any) => {
-      if (typeof c.projectName === "string" && c.projectName.length > 0 && c.projectName === projectName) {
-        return true;
-      }
-      if (c.projectId != null && projectIds.includes(c.projectId)) {
-        return true;
-      }
-      return false;
-    });
-
-    const enrichedRows = await this.attachAllocationEvidence(costLines as any[]);
-    const adapted = enrichedRows.map((c: any) => adaptCostToExpense(c, projectName));
-
-    const needsCarryForward = adapted.some((a: any) => !a.expensePaymentDate && !a.forecastPaymentDate);
-    if (needsCarryForward) {
-      const closedLines = await this.dbInstance.select().from(normalizedCostLines)
-        .where(and(
-          eq(normalizedCostLines.projectName, projectName),
-          isNotNull(normalizedCostLines.effectiveTo),
-        ));
-      const priorByRow = new Map<number, any>();
-      for (const cl of closedLines) {
-        const row = (cl as any).sourceRow;
-        if (row == null) continue;
-        const payDate = cl.paidDate || (cl as any).forecastPaymentDate;
-        if (!payDate) continue;
-        const existing = priorByRow.get(row);
-        if (!existing || (cl.id > existing.id)) {
-          priorByRow.set(row, cl);
-        }
-      }
-      for (const item of adapted) {
-        if (!item.expensePaymentDate && !item.forecastPaymentDate) {
-          const prior = priorByRow.get(item.rowNumber);
-          if (prior) {
-            const priorDate = prior.paidDate || (prior as any).forecastPaymentDate;
-            if (priorDate) {
-              item.expensePaymentDate = priorDate;
-              item.forecastPaymentDate = priorDate;
-              item.paymentDateFontColor = prior.paidDateFontColor || "red";
-              item.paymentDateConfirmed = prior.paidDateConfirmed ?? false;
-              item._carryForward = true;
-            }
-          }
-        }
-      }
-    }
-
-    const selected = selectWinningExpenseRows(adapted);
-    return selected.winners;
   }
 
   async createManyProgramExpenses(expenseList: InsertProgramExpense[]): Promise<ProgramExpense[]> {

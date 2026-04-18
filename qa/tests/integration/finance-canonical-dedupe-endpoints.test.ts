@@ -187,19 +187,8 @@ const seededNormalizedRows: SeedCostLine[] = [
   },
 ];
 
-// Scenario 2 seed only: overlapping legacy table row that must not be used by canonical endpoints.
-const overlappingProgramExpenseSeed = [{
-  id: 9001,
-  projectName: canonicalProjectName,
-  expenseActualTotal: "999",
-  expensePaymentDate: "2025-09-20",
-  rowType: "item",
-}];
-let canonicalReadEnabled = true;
 const legacyAllCostLinesSeed = [
   ...seededNormalizedRows,
-  // legacy overlap row that should inflate when canonical flag is OFF
-  { id: 9002, projectName: canonicalProjectName, expenseActualTotal: "999", expensePaymentDate: "2025-09-22", rowType: "item" as const },
 ];
 
 function toCanonicalKey(row: SeedCostLine): string {
@@ -246,8 +235,6 @@ vi.mock("../../../server/storage", () => ({
     getOperationalTasksByProject: vi.fn(async () => []),
     getProjectPlansByProject: vi.fn(async () => []),
     getProjectRevenueSummary: vi.fn(async () => ({ totalRevenue: 0 })),
-    // Explicitly seeded but intentionally ignored by canonical endpoints.
-    getProgramExpensesByProject: vi.fn(async () => overlappingProgramExpenseSeed),
     getAllCostLinesForCashflow: vi.fn(async () => legacyAllCostLinesSeed),
     getAllRevenueLinesForCashflow: vi.fn(async () => []),
     getAllMilestoneTaskLinks: vi.fn(async () => []),
@@ -290,10 +277,6 @@ vi.mock("../../../server/services/dashboard-metrics", () => ({
 
 vi.mock("../../../server/services/notification-service", () => ({
   createNotification: vi.fn(async () => undefined),
-}));
-
-vi.mock("../../../server/lib/feature-flags", () => ({
-  getFeatureFlag: vi.fn(async (key: string) => (key === "canonical_finance_costline_read_v1" ? canonicalReadEnabled : false)),
 }));
 
 vi.mock("../../../server/services/project-cost-line-read-service", () => {
@@ -342,7 +325,6 @@ vi.mock("../../../server/services/project-cost-line-read-service", () => {
       duplicateActiveLineageGroups: { count: 1, sample: [] },
       nullSourceImportedRows: { count: 0, sample: [] },
       projectNameDriftGroups: { count: 1, sample: [] },
-      normalizedVsProgramExpenseActiveOverlap: { count: 1, sample: [] },
     })),
   };
 });
@@ -424,29 +406,15 @@ describe("integration: canonical dedupe proof on finance endpoints", () => {
     expect(withMonth.totalRevenue).toBeCloseTo(400, 6);
   });
 
-  it("feature flag rollback path uses legacy program_expense reads for high-risk endpoints", async () => {
-    canonicalReadEnabled = false;
-    const cosRes = await request(app).get(`/api/cos-tracker/project/${encodeURIComponent(canonicalProjectName)}`);
-    canonicalReadEnabled = true;
-
-    expect(cosRes.status).toBe(200);
-    const month = (cosRes.body as any[]).find((m: any) => m.monthKey === "2025-09");
-    expect(month.totalCOS).toBe(999);
-  });
-
-  it("diagnostics endpoint exposes risk categories and feature-flag status", async () => {
+  it("diagnostics endpoint exposes risk categories", async () => {
     const res = await request(app).get(`/api/finance/cost-lines/diagnostics?projectId=${canonicalProjectId}`);
     expect(res.status).toBe(200);
-    expect(res.body.featureFlag.key).toBe("canonical_finance_costline_read_v1");
-    expect(typeof res.body.featureFlag.enabled).toBe("boolean");
     expect(res.body.risks).toHaveProperty("duplicateActiveLineageGroups");
     expect(res.body.risks).toHaveProperty("nullSourceImportedRows");
     expect(res.body.risks).toHaveProperty("projectNameDriftGroups");
-    expect(res.body.risks).toHaveProperty("normalizedVsProgramExpenseActiveOverlap");
   });
 
   it("global COS KPI/cards and month-detail use the same deduped all-project source", async () => {
-    canonicalReadEnabled = true;
     const [cosRes, monthDetailRes] = await Promise.all([
       request(app).get("/api/cos-tracker"),
       request(app).get("/api/cos-tracker/month-detail?monthKey=2025-09"),
@@ -461,14 +429,5 @@ describe("integration: canonical dedupe proof on finance endpoints", () => {
     expect(month.ytdUnrealised).toBe(0);
     expect(monthDetailRes.body.totalAmount).toBe(365);
     expect(monthDetailRes.body.lineCount).toBe(5);
-  });
-
-  it("global COS route rollback path shows legacy inflation when canonical flag is disabled", async () => {
-    canonicalReadEnabled = false;
-    const res = await request(app).get("/api/cos-tracker");
-    canonicalReadEnabled = true;
-    expect(res.status).toBe(200);
-    const month = (res.body as any[]).find((m: any) => m.monthKey === "2025-09");
-    expect(month.totalCOS).toBe(1614);
   });
 });
