@@ -45,11 +45,11 @@ export async function computeFinancialSnapshot(projectId: number) {
     .where(and(eq(normalizedCostLines.projectId, projectId), and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))));
   const actualTotal = Number(costResult[0]?.total || 0);
 
-  // Revenue summary
+  // Revenue summary — current (non-historical) row only
   const [revSummary] = await db
     .select()
     .from(projectRevenueSummary)
-    .where(eq(projectRevenueSummary.projectId, projectId))
+    .where(and(eq(projectRevenueSummary.projectId, projectId), isNull(projectRevenueSummary.effectiveTo)))
     .orderBy(desc(projectRevenueSummary.capturedAt))
     .limit(1);
 

@@ -1,5 +1,7 @@
 import { useState, useMemo, useCallback, Fragment } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { extractTrustHeaders, type FinanceTrustMeta } from "@/lib/finance-trust";
+import { DataTrustBadge } from "@/components/ui/data-trust-badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
   LineChart,
@@ -724,14 +726,14 @@ export default function CashflowPage() {
   const projectParam = selectedProjects.length > 0 ? selectedProjects.join(",") : undefined;
 
   const {
-    data: cashflowData = [],
+    data: cashflowEnvelope,
     isLoading,
     isError,
     error,
     refetch,
     isFetching: isCashflowFetching,
     dataUpdatedAt: cashflowUpdatedAt,
-  } = useQuery<CashflowWeek[]>({
+  } = useQuery<{ rows: CashflowWeek[]; trust: FinanceTrustMeta | null }>({
     queryKey: [CASHFLOW_API_BASE, projectParam],
     queryFn: async () => {
       const url = projectParam
@@ -742,9 +744,13 @@ export default function CashflowPage() {
       if (token) headers["Authorization"] = `Bearer ${token}`;
       const res = await fetch(url, { credentials: "include", headers });
       if (!res.ok) throw new Error("Failed to fetch cashflow data");
-      return res.json();
+      const trust = extractTrustHeaders(res);
+      const rows = (await res.json()) as CashflowWeek[];
+      return { rows, trust };
     },
   });
+  const cashflowData: CashflowWeek[] = cashflowEnvelope?.rows ?? [];
+  const cashflowTrust: FinanceTrustMeta | null = cashflowEnvelope?.trust ?? null;
 
   const { data: balanceHistory = [] } = useQuery<BalanceHistoryEntry[]>({
     queryKey: [`${CASHFLOW_API_BASE}/balance-history`, historyWeek],
@@ -971,6 +977,7 @@ export default function CashflowPage() {
         icon={<Wallet className="h-5 w-5" />}
         title={`Cashflow FY${CURRENT_FY}`}
         description={`Weekly cashflow timeline for Sep ${CURRENT_FY - 1} to Aug ${CURRENT_FY} with visible source, override, and variance relationships.`}
+        actions={<DataTrustBadge trust={cashflowTrust} />}
         badges={[
           { label: scopeLabel, icon: <Wallet className="h-3.5 w-3.5" /> },
           { label: canEditCashflow ? "Manual overrides enabled" : "Read-only finance view", icon: <ArrowRight className="h-3.5 w-3.5" /> },
