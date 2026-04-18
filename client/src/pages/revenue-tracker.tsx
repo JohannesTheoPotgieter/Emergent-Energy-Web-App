@@ -9,6 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip as UiTooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { getQueryFn, fetchQueryFn, apiRequest, invalidateDashboardQueries } from "@/lib/queryClient";
+import { useFinanceQuery } from "@/lib/finance-trust";
+import { DataTrustBadge } from "@/components/ui/data-trust-badge";
 import { usePermission } from "@/hooks/use-permissions";
 import {
   Bar,
@@ -435,8 +437,9 @@ export default function RevenueTrackerPage() {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<EditingCell | null>(null);
   const [drawerMonth, setDrawerMonth] = useState<{ monthKey: string; monthLabel: string; defaultFilter?: "all" | "realised" | "unrealised" | "qb_actual"; defaultProject?: string } | null>(null);
-  const { data, isLoading, isError, error, refetch } = useQuery<RevenueTrackerResponse>({
+  const { data, trust, isLoading, isError, error, refetch } = useFinanceQuery<RevenueTrackerResponse>({
     queryKey: ["/api/revenue-tracker"],
+    url: "/api/revenue-tracker",
     staleTime: 30_000,
   });
 
@@ -595,9 +598,12 @@ export default function RevenueTrackerPage() {
       <div className="bg-white border-b border-border/80 px-3 sm:px-6 py-4 sm:py-6 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 max-w-[1800px] mx-auto">
           <div>
-            <h2 className="text-xl sm:text-3xl font-heading font-bold tracking-tight text-foreground" data-testid="text-page-title">
-              Revenue Tracker FY26
-            </h2>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-xl sm:text-3xl font-heading font-bold tracking-tight text-foreground" data-testid="text-page-title">
+                Revenue Tracker FY26
+              </h2>
+              <DataTrustBadge trust={trust} />
+            </div>
             <p className="text-muted-foreground mt-1 sm:mt-1.5 text-xs sm:text-sm" data-testid="text-page-subtitle">
               Monthly revenue tracking with realised vs unrealised analysis. Click any month cell to see contributing line items.
             </p>

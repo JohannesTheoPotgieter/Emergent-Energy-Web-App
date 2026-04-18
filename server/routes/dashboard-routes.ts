@@ -14,6 +14,7 @@ import { isDateBlack } from "../lib/calculations/stateClassifier";
 import { classifyCosStatusFull, isCosRealised as isCosRealisedShared } from "../lib/calculations/financeUtils";
 import { isRevenueSettled } from "../lib/finance/revenue-ar-status";
 import { evaluateRevenueArStatus } from "../lib/finance/revenue-ar-status";
+import { setFinanceTrustHeaders, buildTrustMeta } from "../lib/finance-trust/envelope";
 
 async function getMergedExpensesAndInflows(expenses: any[], inflows: any[]) {
   return { expenses, inflows };
@@ -936,8 +937,19 @@ export function registerDashboardRoutes(app: Express) {
       const qual = actionRows(projects.filter((p: any) => p._qualityOpen > 0).map((p: any) => ({ ...p, issueTitle: `${p._qualityOpen} open quality issue${p._qualityOpen !== 1 ? 's' : ''}${p._qualityHigh > 0 ? ` (${p._qualityHigh} high)` : ''}`, severity: p._qualityHigh >= 2 ? 'Critical' : p._qualityHigh >= 1 ? 'High' : 'Medium', owner: p.pm })));
       const pending = actionRows(projects.filter((p: any) => p._approvalsPending > 0).map((p: any) => ({ ...p, issueTitle: `${p._approvalsPending} pending approval${p._approvalsPending !== 1 ? 's' : ''}`, severity: p._approvalsPending >= 3 ? 'Critical' : 'High', owner: p.pm })));
 
+      const refreshedAt = new Date().toISOString();
+      const trustParams = {
+        sourceLayer: "canonical" as const,
+        canonicalTable:
+          "normalized_cost_lines,normalized_revenue_lines,cashflow_points,finance_cos_monthly,finance_revenue_monthly",
+        refreshedAt,
+        staleAfterSeconds: 300,
+      };
+      setFinanceTrustHeaders(res, trustParams);
+      const trust = buildTrustMeta(trustParams);
       res.json({
         meta: { fyStart, fyEnd },
+        trust,
         kpis: {
           activeDashboardProjects: projects.length,
           averageActualProgressPct: avg('actualProgressPct'),

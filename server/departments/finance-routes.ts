@@ -1020,6 +1020,17 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
     diagnostics.forecastOutflowsYtd = forecastOutflowsYtd;
     console.log(`[Cashflow2026] Expenses: ${allExpenses.length} total (${normalizedCount} normalized, ${legacyCount} legacy), ${itemCount} items. Outflows YTD: ${totalOutflowsYtd.toFixed(0)} (actual ${actualOutflowsYtd.toFixed(0)}, forecast ${forecastOutflowsYtd.toFixed(0)})`);
 
+    const overrideInEffect = weeks.some(
+      (w: any) => w.hasManualOverride === true || w.hasOpexOverride === true || w.hasAvailPayOverride === true,
+    );
+    setFinanceTrustHeaders(res, {
+      sourceLayer: "canonical",
+      canonicalTable: "cashflow_points,normalized_cost_lines,normalized_revenue_lines",
+      derivedTable: "cashflow_weekly_manual,opex_budget_monthly,opex_weekly_manual",
+      staleAfterSeconds: 60,
+      overrideInEffect,
+    });
+
     if (includeDebug) {
       return res.json({
         weeks,
@@ -1868,6 +1879,12 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       });
     }
 
+    setFinanceTrustHeaders(res, {
+      sourceLayer: "canonical",
+      canonicalTable: "normalized_cost_lines",
+      derivedTable: "quickbooks_invoice_links",
+      staleAfterSeconds: 60,
+    });
     res.json(months);
   } catch (error) {
     console.error("COS tracker error:", error);
@@ -3025,6 +3042,11 @@ router.get("/api/gp-tracker", requireAuth, requirePermission("gp_tracker", "view
     const finalYtdVariance = lastDataMonth?.ytdVariance ?? 0;
     const finalYtdGpPct = lastDataMonth?.ytdGpPct ?? 0;
 
+    setFinanceTrustHeaders(res, {
+      sourceLayer: "canonical",
+      canonicalTable: "normalized_revenue_lines,normalized_cost_lines",
+      staleAfterSeconds: 60,
+    });
     res.json({ months, projects, totalRevenue, totalCOS, totalGP, overallGpPct, ytdGP: finalYtdGP, ytdBudget: finalYtdBudget, ytdVariance: finalYtdVariance, ytdGpPct: finalYtdGpPct });
   } catch (error) {
     console.error("Portfolio GP tracker error:", error);
@@ -3454,6 +3476,11 @@ async function revenueTrackerHandler(req: Request, res: Response) {
     const totalMilestoneRevenue = Array.from(revenueByProject.values()).reduce((s, v) => s + v, 0);
     const totalCOS = Array.from(cosByProject.values()).reduce((s, v) => s + v, 0);
 
+    setFinanceTrustHeaders(res, {
+      sourceLayer: "canonical",
+      canonicalTable: "normalized_revenue_lines",
+      staleAfterSeconds: 60,
+    });
     res.json({
       months,
       totalMilestoneRevenue,
@@ -4074,6 +4101,11 @@ router.get("/api/cashflow", requireAuth, async (req, res) => {
       points = points.filter(p => p.pointDate <= endDate);
     }
 
+    setFinanceTrustHeaders(res, {
+      sourceLayer: "canonical",
+      canonicalTable: "cashflow_points,normalized_cost_lines,normalized_revenue_lines",
+      staleAfterSeconds: 60,
+    });
     res.json(points);
   } catch (error) {
     console.error("Cashflow API error:", error);

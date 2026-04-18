@@ -7,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tooltip as UiTooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { apiRequest, fetchQueryFn, invalidateDashboardQueries } from "@/lib/queryClient";
+import { useFinanceQuery } from "@/lib/finance-trust";
+import { DataTrustBadge } from "@/components/ui/data-trust-badge";
 import {
   Bar,
   XAxis,
@@ -465,10 +467,12 @@ export default function CosTracker() {
   const [editing, setEditing] = useState<EditingCell | null>(null);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [drawerMonth, setDrawerMonth] = useState<{ monthKey: string; monthLabel: string; defaultFilter?: "all" | "realised" | "committed" | "planned" | "qb_actual"; defaultProject?: string } | null>(null);
-  const { data: months = [], isLoading, isError, error, refetch } = useQuery<MonthData[]>({
+  const { data: monthsData, trust, isLoading, isError, error, refetch } = useFinanceQuery<MonthData[]>({
     queryKey: ["/api/cos-tracker"],
+    url: "/api/cos-tracker",
     staleTime: 30_000,
   });
+  const months: MonthData[] = monthsData ?? [];
 
   const mutation = useMutation({
     mutationFn: async (body: { trackerType: string; monthKey: string; budget?: string }) => {
@@ -580,9 +584,12 @@ export default function CosTracker() {
       <div className="bg-card border-b border-border/80 px-3 sm:px-6 py-4 sm:py-6 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 max-w-[1800px] mx-auto">
           <div>
-            <h2 className="text-xl sm:text-3xl font-heading font-bold tracking-tight text-foreground" data-testid="text-page-title">
-              Cost of Sales Tracker FY26
-            </h2>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-xl sm:text-3xl font-heading font-bold tracking-tight text-foreground" data-testid="text-page-title">
+                Cost of Sales Tracker FY26
+              </h2>
+              <DataTrustBadge trust={trust} />
+            </div>
             <p className="text-muted-foreground mt-1 sm:mt-1.5 text-xs sm:text-sm" data-testid="text-page-subtitle">
               Monthly COS tracking with planned vs costed analysis. Click any month cell to see contributing line items.
             </p>

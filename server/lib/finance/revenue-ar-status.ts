@@ -6,6 +6,12 @@ export type RevenueSettlementInput = {
   paidDate?: string | null;
   paidDateConfirmed?: boolean | null;
   paidDateFontColor?: string | null;
+  /**
+   * QB-linked settlement evidence (ex-VAT). When present and > 0 the revenue
+   * line is treated as settled regardless of Excel font-colour signals. QB
+   * is authoritative when it has captured the payment.
+   */
+  qbPaidAmountExVat?: number | null;
 };
 
 export type RevenueArEvaluationInput = RevenueSettlementInput & {
@@ -54,6 +60,14 @@ function isBlack(value: string | null | undefined): boolean {
 }
 
 export function isRevenueSettled(input: RevenueSettlementInput): boolean {
+  // QB evidence is authoritative. When QB has captured the payment the line
+  // is settled regardless of Excel font-colour signals.
+  const qbEvidence =
+    typeof input.qbPaidAmountExVat === "number" && Number.isFinite(input.qbPaidAmountExVat)
+      ? input.qbPaidAmountExVat
+      : 0;
+  if (qbEvidence > 0) return true;
+
   const status = normalizeStatus(input.status);
   const statusSettled = status.length > 0 && SETTLED_STATUS_KEYWORDS.some((k) => status.includes(k));
 
@@ -66,6 +80,40 @@ export function isRevenueSettled(input: RevenueSettlementInput): boolean {
   const confirmedPaid = Boolean(input.paidDateConfirmed) || (hasIsoDate(input.paidDate) && isBlack(input.paidDateFontColor));
 
   return statusSettled || hasReceiptDate || hasInBankDate || manualInBank || confirmedPaid;
+}
+
+/**
+ * Diagnostic: flags lower-confidence settlement signals. Returns
+ * SETTLED_BY_FONT_COLOR_ONLY when the only positive signal is the Excel
+ * black-font paid-date confirmation and there is no QB / receipt-date /
+ * in-bank evidence. Used by the trust exception surface to highlight rows
+ * that depend on the Excel heuristic alone.
+ */
+export function getRevenueSettlementWarnings(input: RevenueSettlementInput): string[] {
+  const warnings: string[] = [];
+  if (!isRevenueSettled(input)) return warnings;
+
+  const qbEvidence =
+    typeof input.qbPaidAmountExVat === "number" && Number.isFinite(input.qbPaidAmountExVat)
+      ? input.qbPaidAmountExVat
+      : 0;
+  if (qbEvidence > 0) return warnings;
+
+  const hasReceiptDate = hasIsoDate(input.paymentReceivedDate) || hasIsoDate(input.paidDate);
+  const hasInBankDate = hasIsoDate(input.inBankDate);
+  const manualInBank = isTruthyFlag(input.manualInBank);
+  const status = normalizeStatus(input.status);
+  const statusSettled = status.length > 0 && SETTLED_STATUS_KEYWORDS.some((k) => status.includes(k));
+
+  const fontOnly =
+    !statusSettled &&
+    !hasReceiptDate &&
+    !hasInBankDate &&
+    !manualInBank &&
+    (Boolean(input.paidDateConfirmed) || (hasIsoDate(input.paidDate) && isBlack(input.paidDateFontColor)));
+
+  if (fontOnly) warnings.push("SETTLED_BY_FONT_COLOR_ONLY");
+  return warnings;
 }
 
 export function evaluateRevenueArStatus(input: RevenueArEvaluationInput): {
