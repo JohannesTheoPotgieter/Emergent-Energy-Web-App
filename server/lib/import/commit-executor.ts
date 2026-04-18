@@ -577,6 +577,7 @@ export async function writeRevenueIncremental(ctx: TemporalWriteContext): Promis
       // dates to the QB-canonical values. Mutate fieldUpdates so the insert
       // below picks up the locked values automatically.
       let qbVariancesForRow: any[] = [];
+      let qbLinkedRow = false;
       if (qbPrecedenceOn) {
         const existingForProposed = (mr.existingRow ?? {}) as any;
         const proposed: Record<string, any> = {
@@ -594,6 +595,7 @@ export async function writeRevenueIncremental(ctx: TemporalWriteContext): Promis
           proposedValues: proposed,
         });
         if (qbResult.isLinked) {
+          qbLinkedRow = true;
           for (const f of qbResult.lockedFields) {
             if (qbResult.finalValues[f] !== undefined) fieldUpdates[f] = qbResult.finalValues[f];
           }
@@ -651,11 +653,14 @@ export async function writeRevenueIncremental(ctx: TemporalWriteContext): Promis
       counts.updated++;
       if (qbVariancesForRow.length > 0) {
         qbVariancePending.push({ appEntityId: inserted.id, variances: qbVariancesForRow });
-        // Re-point any active QB link from the soft-closed predecessor to
-        // the new inserted row id so the gate keeps firing on the next
-        // import. This MUST happen for any QB-linked CHANGED row, not just
-        // those with variances — but when the gate fires we know the link
-        // exists; do it here unconditionally for linked rows.
+      }
+      // Re-point any active QB link from the soft-closed predecessor to
+      // the new inserted row id so the gate keeps firing on the next
+      // import. This MUST run for ANY linked CHANGED row — even when the
+      // change was in a non-locked field and produced no variances —
+      // otherwise the link rots on the dead row and protections silently
+      // erode over re-imports.
+      if (qbLinkedRow) {
         try {
           await repointQbLinks({
             tx,

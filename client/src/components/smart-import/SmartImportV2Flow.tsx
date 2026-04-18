@@ -165,6 +165,7 @@ export function SmartImportV2Flow({ onBulkMode, initialRunId, onBack, onRunIdCha
         <SmartImportFoundStep
           preview={preview}
           planning={planning}
+          runId={runId}
           onContinue={() => setStep(3)}
           onBack={() => onBack ? onBack() : setStep(1)}
         />
@@ -176,6 +177,7 @@ export function SmartImportV2Flow({ onBulkMode, initialRunId, onBack, onRunIdCha
           planning={planning}
           planError={planError}
           loadingPlan={loadingPlan}
+          runId={runId}
           onRetryPlan={runId ? () => loadPlannerData(runId) : undefined}
           onContinue={() => setStep(hasConflicts ? 4 : 5)}
           onBack={() => setStep(2)}

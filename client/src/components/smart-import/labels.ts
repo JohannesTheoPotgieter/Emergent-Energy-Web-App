@@ -98,6 +98,22 @@ export const CONFIRM_LABELS = {
   missingRows: "Rows were not in this upload and will be kept unchanged",
 } as const;
 
+// QuickBooks protections callout (A2) — plain-language strings shown to
+// the user while reviewing an import. These describe what the QB precedence
+// gate will and will not do, in operator-friendly terms.
+export const QB_PROTECTIONS_LABELS = {
+  title: "QuickBooks is protecting some of these rows",
+  linkedSuffix: "are linked to QuickBooks on this project. Their financial values will be taken from QuickBooks, not from your spreadsheet.",
+  lockedHeading: "Locked from spreadsheet changes:",
+  preserveMissing: "Linked rows missing from this upload will be kept (not soft-closed).",
+  autoRealise: "If QuickBooks shows a cost as paid, it is recognised as cost automatically.",
+  auditTrail: "Every difference between your spreadsheet and QuickBooks is logged for audit.",
+  compactPrefix: "QuickBooks is protecting",
+  compactSuffix: "on this project — locked financial fields will not be overwritten by this upload.",
+  armedEmpty: "QuickBooks protection is on, but no rows on this project are linked yet — your spreadsheet values will land as-is.",
+  off: "QuickBooks protection is currently off. Your spreadsheet values will land as-is, even on QuickBooks-linked rows.",
+} as const;
+
 // Result screen labels
 export const RESULT_LABELS = {
   success: "Import completed",

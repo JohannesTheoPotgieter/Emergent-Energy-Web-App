@@ -19,10 +19,13 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { SECTION_LABELS, CLASSIFICATION_LABELS } from "./labels";
+import { SmartImportQbProtectionsCallout } from "./SmartImportQbProtectionsCallout";
 
 interface ChangesStepProps {
   planning: any;
   planError?: string | null;
+  /** Run id is needed to fetch QuickBooks protection summary (compact form). */
+  runId?: number | null;
   loadingPlan?: boolean;
   onRetryPlan?: () => void;
   onContinue: () => void;
@@ -146,7 +149,7 @@ function SectionSummaryCard({ sectionKey, plan }: SectionSummaryCardProps) {
   );
 }
 
-export function SmartImportChangesStep({ planning, planError, loadingPlan, onRetryPlan, onContinue, onBack }: ChangesStepProps) {
+export function SmartImportChangesStep({ planning, planError, loadingPlan, onRetryPlan, onContinue, onBack, runId }: ChangesStepProps) {
   if (planError) {
     return (
       <Card data-testid="changes-step">
@@ -197,6 +200,12 @@ export function SmartImportChangesStep({ planning, planError, loadingPlan, onRet
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* QuickBooks protections — compact form so it sits above the section
+            summaries without dominating the page. */}
+        {runId && (
+          <SmartImportQbProtectionsCallout runId={runId} compact />
+        )}
+
         {/* Section summaries */}
         {(["PLAN", "REVENUE", "EXPENDITURE"] as const).map(key => (
           <SectionSummaryCard key={key} sectionKey={key} plan={sections[key]} />
