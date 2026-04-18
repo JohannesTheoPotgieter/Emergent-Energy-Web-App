@@ -54,6 +54,7 @@ import {
   Check,
   ChevronsUpDown,
   Wallet,
+  Pencil,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
@@ -61,6 +62,8 @@ import { FinanceShell } from "@/components/layout/FinanceShell";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { usePermission } from "@/hooks/use-permissions";
 import { DateOverridePopover } from "@/components/cashflow/DateOverridePopover";
+import { EditCellPopover } from "@/components/cashflow/EditCellPopover";
+import { OverrideChipMenu } from "@/components/cashflow/OverrideChipMenu";
 
 interface OutflowByStatus {
   outOfBank: number;
@@ -719,14 +722,7 @@ export default function CashflowPage() {
   const [expandedWeek, setExpandedWeek] = useState<string | null>(null);
   const [opexOpen, setOpexOpen] = useState(false);
   const [chartOpen, setChartOpen] = useState(true);
-  const [editingBalance, setEditingBalance] = useState<string | null>(null);
-  const [editingValue, setEditingValue] = useState("");
-  const [editingOpex, setEditingOpex] = useState<string | null>(null);
-  const [editingOpexValue, setEditingOpexValue] = useState("");
   const [historyWeek, setHistoryWeek] = useState<string | null>(null);
-  const [availPayEdit, setAvailPayEdit] = useState<{ weekStart: string; computedValue: number } | null>(null);
-  const [availPayValue, setAvailPayValue] = useState("");
-  const [availPayReason, setAvailPayReason] = useState("");
   const [availPayHistoryWeek, setAvailPayHistoryWeek] = useState<string | null>(null);
 
   const projectParam = selectedProjects.length > 0 ? selectedProjects.join(",") : undefined;
@@ -798,7 +794,6 @@ export default function CashflowPage() {
       queryClient.invalidateQueries({ queryKey: [CASHFLOW_API_BASE] });
       queryClient.invalidateQueries({ queryKey: [`${CASHFLOW_API_BASE}/balance-history`] });
       invalidateDashboardQueries(queryClient);
-      setEditingBalance(null);
       toast({ title: "Opening Balance Saved", description: "All forward weeks recalculated" });
     },
     onError: (err: Error) => {
@@ -828,7 +823,6 @@ export default function CashflowPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [CASHFLOW_API_BASE] });
       invalidateDashboardQueries(queryClient);
-      setEditingOpex(null);
       toast({ title: "OPEX Saved", description: "Weekly OPEX updated and values recalculated" });
     },
     onError: (err: Error) => {
@@ -871,9 +865,6 @@ export default function CashflowPage() {
       queryClient.invalidateQueries({ queryKey: [CASHFLOW_API_BASE] });
       queryClient.invalidateQueries({ queryKey: [`${CASHFLOW_API_BASE}/available-payment-history`] });
       invalidateDashboardQueries(queryClient);
-      setAvailPayEdit(null);
-      setAvailPayValue("");
-      setAvailPayReason("");
       toast({ title: "Available Payment Updated", description: "Override saved with reason" });
     },
     onError: (err: Error) => {
@@ -895,35 +886,6 @@ export default function CashflowPage() {
       toast({ title: "Clear Failed", description: err.message || "Failed to clear payment override", variant: "destructive" });
     },
   });
-
-  const handleAvailPaySave = useCallback(() => {
-    if (!availPayEdit) return;
-    const val = parseFloat(availPayValue);
-    if (!Number.isFinite(val)) return;
-    if (!availPayReason.trim()) {
-      toast({ title: "Reason Required", description: "Please provide a reason for the override", variant: "destructive" });
-      return;
-    }
-    availPayMutation.mutate({ weekStartDate: availPayEdit.weekStart, overrideValue: val, reason: availPayReason.trim(), computedValue: availPayEdit.computedValue });
-  }, [availPayEdit, availPayValue, availPayReason, availPayMutation, toast]);
-
-  const handleOpexSave = useCallback(
-    (weekStart: string) => {
-      const val = parseFloat(editingOpexValue);
-      if (!Number.isFinite(val)) return;
-      opexMutation.mutate({ weekStartDate: weekStart, opexAmount: val });
-    },
-    [editingOpexValue, opexMutation]
-  );
-
-  const handleBalanceSave = useCallback(
-    (weekStart: string, computedValue: number) => {
-      const val = parseFloat(editingValue);
-      if (!Number.isFinite(val)) return;
-      balanceMutation.mutate({ weekStartDate: weekStart, openingBalance: val, computedValue, clearForward: true });
-    },
-    [editingValue, balanceMutation]
-  );
 
   const handleRowClick = useCallback(
     (weekStart: string) => {
@@ -1251,6 +1213,7 @@ export default function CashflowPage() {
                   </ResponsiveContainer>
                 </div>
               </CardContent>
+              )}
             </Card>
 
             <Card className="border border-border shadow-sm rounded-xl overflow-hidden" data-testid="card-weekly-grid">
@@ -1268,16 +1231,8 @@ export default function CashflowPage() {
                         <th className="text-right px-2 sm:px-4 py-2 sm:py-3 font-semibold text-muted-foreground text-[10px] sm:text-xs uppercase tracking-wider min-w-[100px] sm:min-w-[130px] bg-muted/80">
                           Proj Inflows
                         </th>
-                        {!isProjectFiltered && (
-                          <th className="text-right px-2 sm:px-4 py-2 sm:py-3 font-semibold text-muted-foreground text-[10px] sm:text-xs uppercase tracking-wider min-w-[90px] sm:min-w-[120px] bg-muted/80">
-                            OPEX
-                          </th>
-                        )}
-                        <th className="text-right px-2 sm:px-4 py-2 sm:py-3 font-semibold text-muted-foreground text-[10px] sm:text-xs uppercase tracking-wider min-w-[100px] sm:min-w-[130px] bg-muted/80">
-                          Proj Outflows
-                        </th>
-                        <th className="text-right px-2 sm:px-4 py-2 sm:py-3 font-semibold text-muted-foreground text-[10px] sm:text-xs uppercase tracking-wider min-w-[100px] sm:min-w-[130px] bg-muted/80">
-                          Total Out
+                        <th className="text-right px-2 sm:px-4 py-2 sm:py-3 font-semibold text-muted-foreground text-[10px] sm:text-xs uppercase tracking-wider min-w-[140px] sm:min-w-[180px] bg-muted/80">
+                          Outflows
                         </th>
                         <th className="text-right px-2 sm:px-4 py-2 sm:py-3 font-semibold text-muted-foreground text-[10px] sm:text-xs uppercase tracking-wider min-w-[100px] sm:min-w-[130px] bg-muted/80">
                           Closing Bal
@@ -1330,69 +1285,62 @@ export default function CashflowPage() {
                               </td>
                               <td className="px-2 sm:px-4 py-2 sm:py-3 text-right font-mono text-[11px] sm:text-[13px] text-foreground">
                                 <div className="flex items-center justify-end gap-1.5">
-                                  {canEditCashflow && editingBalance === week.weekStart ? (
-                                    <input
-                                      type="number"
-                                      className="w-28 text-right p-1.5 border border-emerald-300 rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400"
-                                      value={editingValue}
-                                      onChange={(e) => setEditingValue(e.target.value)}
-                                      onBlur={() => handleBalanceSave(week.weekStart, week.computedOpening)}
-                                      onKeyDown={(e) => {
-                                        if (e.key === "Enter") handleBalanceSave(week.weekStart, week.computedOpening);
-                                        if (e.key === "Escape") setEditingBalance(null);
-                                      }}
-                                      autoFocus
-                                      onClick={(e) => e.stopPropagation()}
-                                      data-testid={`input-opening-balance-${week.weekStart}`}
-                                    />
-                                  ) : (
-                                    <>
-                                      <span
-                                        className={canEditCashflow ? "cursor-pointer hover:underline hover:text-blue-700 decoration-dashed underline-offset-2 transition-colors" : ""}
-                                        onClick={(e) => {
-                                          if (!canEditCashflow) return;
-                                          e.stopPropagation();
-                                          setEditingBalance(week.weekStart);
-                                          setEditingValue(week.openingBalance?.toString() || "0");
-                                        }}
+                                  <EditCellPopover
+                                    trigger={
+                                      <button
+                                        type="button"
+                                        className={`inline-flex items-center gap-1 ${canEditCashflow ? "cursor-pointer hover:underline decoration-dashed underline-offset-2 hover:text-emerald-700 transition-colors" : "cursor-default"}`}
+                                        disabled={!canEditCashflow}
+                                        onClick={(e) => e.stopPropagation()}
                                         data-testid={`text-opening-balance-${week.weekStart}`}
                                       >
-                                        {formatRand(week.openingBalance)}
-                                      </span>
-                                      {week.hasManualOverride && (
-                                        <>
-                                          <span
-                                            className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold cursor-pointer ${
-                                              week.balanceDelta >= 0
-                                                ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                                                : "bg-red-50 text-red-700 hover:bg-red-100"
-                                            }`}
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              setHistoryWeek(week.weekStart);
-                                            }}
-                                            title={`Manual override: ${week.balanceDelta >= 0 ? "+" : ""}${formatRand(week.balanceDelta)} vs computed (${formatRand(week.computedOpening)}). Click for history.`}
-                                            data-testid={`badge-delta-${week.weekStart}`}
-                                          >
-                                            {week.balanceDelta >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
-                                            {formatRand(Math.abs(week.balanceDelta))}
-                                          </span>
-                                          {canEditCashflow && (
-                                            <button
-                                              className="p-0.5 rounded hover:bg-red-100 text-red-600 hover:text-red-600 transition-colors"
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                clearOverrideMutation.mutate(week.weekStart);
-                                              }}
-                                              title="Clear manual override — use cascaded value"
-                                              data-testid={`button-clear-override-${week.weekStart}`}
-                                            >
-                                              <X className="h-3 w-3" />
-                                            </button>
-                                          )}
-                                        </>
-                                      )}
-                                    </>
+                                        <span>{formatRand(week.openingBalance)}</span>
+                                        {canEditCashflow && (
+                                          <Pencil className="h-2.5 w-2.5 text-muted-foreground/60" />
+                                        )}
+                                      </button>
+                                    }
+                                    weekLabel={formatWeek(week.weekStart)}
+                                    fieldLabel="Opening Balance"
+                                    currentValue={week.openingBalance || 0}
+                                    computedValue={week.computedOpening || 0}
+                                    hasOverride={week.hasManualOverride}
+                                    requireReason={false}
+                                    onSave={({ value }) =>
+                                      balanceMutation.mutate({
+                                        weekStartDate: week.weekStart,
+                                        openingBalance: value,
+                                        computedValue: week.computedOpening,
+                                        clearForward: true,
+                                      })
+                                    }
+                                    onResetToComputed={() => clearOverrideMutation.mutate(week.weekStart)}
+                                    isSaving={balanceMutation.isPending}
+                                    isResetting={clearOverrideMutation.isPending}
+                                    testIdPrefix={`edit-opening-${week.weekStart}`}
+                                    helperText="Saving cascades forward and recalculates closing balances."
+                                  />
+                                  {week.hasManualOverride && (
+                                    <OverrideChipMenu
+                                      canEdit={!!canEditCashflow}
+                                      onViewHistory={() => setHistoryWeek(week.weekStart)}
+                                      onClear={() => clearOverrideMutation.mutate(week.weekStart)}
+                                      testId={`override-opening-${week.weekStart}`}
+                                      chip={
+                                        <span
+                                          className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                            week.balanceDelta >= 0
+                                              ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                                              : "bg-red-50 text-red-700 hover:bg-red-100"
+                                          }`}
+                                          title={`Manual override: ${week.balanceDelta >= 0 ? "+" : ""}${formatRand(week.balanceDelta)} vs computed (${formatRand(week.computedOpening)})`}
+                                          data-testid={`badge-delta-${week.weekStart}`}
+                                        >
+                                          {week.balanceDelta >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                                          {formatRand(Math.abs(week.balanceDelta))}
+                                        </span>
+                                      }
+                                    />
                                   )}
                                 </div>
                               </td>
@@ -1402,88 +1350,83 @@ export default function CashflowPage() {
                               >
                                 {formatRand(week.projectInflows)}
                               </td>
-                              {!isProjectFiltered && (
                               <td
-                                className="px-2 sm:px-4 py-2 sm:py-3 text-right font-mono text-[11px] sm:text-[13px] text-red-500"
-                                data-testid={`text-opex-${week.weekStart}`}
+                                className="px-2 sm:px-4 py-2 sm:py-3 text-right font-mono text-[11px] sm:text-[13px]"
+                                data-testid={`text-outflows-${week.weekStart}`}
                               >
-                                <div className="flex items-center justify-end gap-1.5">
-                                  {canEditCashflow && editingOpex === week.weekStart ? (
-                                    <input
-                                      type="number"
-                                      className="w-28 text-right p-1.5 border border-orange-300 rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400"
-                                      value={editingOpexValue}
-                                      onChange={(e) => setEditingOpexValue(e.target.value)}
-                                      onBlur={() => handleOpexSave(week.weekStart)}
-                                      onKeyDown={(e) => {
-                                        if (e.key === "Enter") handleOpexSave(week.weekStart);
-                                        if (e.key === "Escape") setEditingOpex(null);
-                                      }}
-                                      autoFocus
-                                      onClick={(e) => e.stopPropagation()}
-                                      data-testid={`input-opex-weekly-${week.weekStart}`}
-                                    />
-                                  ) : (
-                                    <>
-                                      <span
-                                        className={canEditCashflow ? "cursor-pointer hover:underline hover:text-red-700 decoration-dashed underline-offset-2 transition-colors" : ""}
-                                        onClick={(e) => {
-                                          if (!canEditCashflow) return;
-                                          e.stopPropagation();
-                                          setEditingOpex(week.weekStart);
-                                          setEditingOpexValue(week.opexOutflows?.toString() || "0");
-                                        }}
-                                        data-testid={`text-opex-value-${week.weekStart}`}
-                                      >
-                                        {formatRand(week.opexOutflows)}
-                                      </span>
-                                      {week.hasOpexOverride && (
-                                        <>
-                                          <span
-                                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-50 text-orange-700"
-                                            title={`Manual override. Costed split: ${formatRand(week.computedOpex)}`}
+                                <div className="flex flex-col items-end gap-0.5">
+                                  <div
+                                    className="font-semibold text-red-700 text-[12px] sm:text-[14px]"
+                                    data-testid={`text-total-outflows-${week.weekStart}`}
+                                  >
+                                    {formatRand(totalOutflows)}
+                                  </div>
+                                  {!isProjectFiltered && (
+                                    <div className="flex items-center justify-end gap-1 text-[10px] text-muted-foreground">
+                                      <span className="text-muted-foreground">OPEX</span>
+                                      <EditCellPopover
+                                        trigger={
+                                          <button
+                                            type="button"
+                                            className={`inline-flex items-center gap-0.5 ${canEditCashflow ? "cursor-pointer hover:underline decoration-dashed underline-offset-2 hover:text-red-700 transition-colors" : "cursor-default"} text-red-500`}
+                                            disabled={!canEditCashflow}
+                                            onClick={(e) => e.stopPropagation()}
+                                            data-testid={`text-opex-value-${week.weekStart}`}
                                           >
-                                            <ArrowRight className="h-3 w-3" />
-                                          </span>
-                                          {canEditCashflow && (
-                                            <button
-                                              className="p-0.5 rounded hover:bg-red-100 text-red-600 hover:text-red-600 transition-colors"
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                clearOpexMutation.mutate(week.weekStart);
-                                              }}
-                                              title="Clear OPEX override — use monthly costed split"
-                                              data-testid={`button-clear-opex-${week.weekStart}`}
-                                            >
-                                              <X className="h-3 w-3" />
-                                            </button>
-                                          )}
-                                        </>
+                                            <span>{formatRand(week.opexOutflows)}</span>
+                                            {canEditCashflow && (
+                                              <Pencil className="h-2.5 w-2.5 text-muted-foreground/60" />
+                                            )}
+                                          </button>
+                                        }
+                                        weekLabel={formatWeek(week.weekStart)}
+                                        fieldLabel="OPEX (weekly)"
+                                        currentValue={week.opexOutflows || 0}
+                                        computedValue={week.computedOpex || 0}
+                                        hasOverride={week.hasOpexOverride}
+                                        requireReason={false}
+                                        onSave={({ value }) =>
+                                          opexMutation.mutate({ weekStartDate: week.weekStart, opexAmount: value })
+                                        }
+                                        onResetToComputed={() => clearOpexMutation.mutate(week.weekStart)}
+                                        isSaving={opexMutation.isPending}
+                                        isResetting={clearOpexMutation.isPending}
+                                        testIdPrefix={`edit-opex-${week.weekStart}`}
+                                        helperText="Reset reverts to the monthly costed split."
+                                      />
+                                      {week.hasOpexOverride && canEditCashflow && (
+                                        <button
+                                          type="button"
+                                          className="p-0.5 rounded hover:bg-red-100 text-red-600 transition-colors"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            clearOpexMutation.mutate(week.weekStart);
+                                          }}
+                                          title={`Clear OPEX override (computed ${formatRand(week.computedOpex)})`}
+                                          data-testid={`button-clear-opex-${week.weekStart}`}
+                                        >
+                                          <X className="h-3 w-3" />
+                                        </button>
                                       )}
-                                    </>
+                                      <span className="text-muted-foreground/50 px-0.5">·</span>
+                                      <span className="text-muted-foreground">Proj</span>
+                                      <span
+                                        className="text-red-500"
+                                        data-testid={`text-proj-outflows-${week.weekStart}`}
+                                      >
+                                        {formatRand(week.projectOutflows)}
+                                      </span>
+                                    </div>
+                                  )}
+                                  {week.outflowByStatus && week.projectOutflows > 0 && (
+                                    <div className="flex flex-wrap justify-end gap-1 mt-0.5">
+                                      {week.outflowByStatus.outOfBank > 0 && <span className="text-[8px] px-1 py-0 rounded bg-emerald-50 text-emerald-700 border border-emerald-300" title="Out of Bank (Paid)">Paid {formatRand(week.outflowByStatus.outOfBank)}</span>}
+                                      {week.outflowByStatus.outstanding > 0 && <span className="text-[8px] px-1 py-0 rounded bg-amber-50 text-amber-700 border border-amber-300" title="Outstanding — supplier invoice captured, payment not yet released.">Outstanding {formatRand(week.outflowByStatus.outstanding)}</span>}
+                                      {week.outflowByStatus.risk > 0 && <span className="text-[8px] px-1 py-0 rounded bg-red-50 text-red-700 border border-red-300" title="No supplier invoice on file yet — this is an unbilled commitment that has not flowed through QuickBooks. It is a cashflow blind-spot, not a credit-risk score.">Risk {formatRand(week.outflowByStatus.risk)}</span>}
+                                      {week.outflowByStatus.planned > 0 && <span className="text-[8px] px-1 py-0 rounded bg-muted text-muted-foreground border border-border" title="Planned">Planned {formatRand(week.outflowByStatus.planned)}</span>}
+                                    </div>
                                   )}
                                 </div>
-                              </td>
-                              )}
-                              <td
-                                className="px-2 sm:px-4 py-2 sm:py-3 text-right font-mono text-[11px] sm:text-[13px] text-red-500"
-                                data-testid={`text-proj-outflows-${week.weekStart}`}
-                              >
-                                <div>{formatRand(week.projectOutflows)}</div>
-                                {week.outflowByStatus && week.projectOutflows > 0 && (
-                                  <div className="flex justify-end gap-1 mt-0.5">
-                                    {week.outflowByStatus.outOfBank > 0 && <span className="text-[8px] px-1 py-0 rounded bg-emerald-50 text-emerald-700 border border-emerald-300" title="Out of Bank (Paid)">Paid {formatRand(week.outflowByStatus.outOfBank)}</span>}
-                                    {week.outflowByStatus.outstanding > 0 && <span className="text-[8px] px-1 py-0 rounded bg-amber-50 text-amber-700 border border-amber-300" title="Outstanding — supplier invoice captured, payment not yet released.">Outstanding {formatRand(week.outflowByStatus.outstanding)}</span>}
-                                    {week.outflowByStatus.risk > 0 && <span className="text-[8px] px-1 py-0 rounded bg-red-50 text-red-700 border border-red-300" title="No supplier invoice on file yet — this is an unbilled commitment that has not flowed through QuickBooks. It is a cashflow blind-spot, not a credit-risk score.">Risk {formatRand(week.outflowByStatus.risk)}</span>}
-                                    {week.outflowByStatus.planned > 0 && <span className="text-[8px] px-1 py-0 rounded bg-muted text-muted-foreground border border-border" title="Planned">Planned {formatRand(week.outflowByStatus.planned)}</span>}
-                                  </div>
-                                )}
-                              </td>
-                              <td
-                                className="px-2 sm:px-4 py-2 sm:py-3 text-right font-mono text-[11px] sm:text-[13px] font-semibold text-red-700"
-                                data-testid={`text-total-outflows-${week.weekStart}`}
-                              >
-                                {formatRand(totalOutflows)}
                               </td>
                               <td
                                 className={`px-2 sm:px-4 py-2 sm:py-3 text-right font-mono text-[11px] sm:text-[13px] font-bold ${
@@ -1498,48 +1441,60 @@ export default function CashflowPage() {
                                 data-testid={`text-available-${week.weekStart}`}
                               >
                                 <div className="flex items-center justify-end gap-1.5">
-                                  <span
-                                    className={`font-semibold ${
-                                      (week.availablePayment || 0) >= 0 ? "text-blue-700" : "text-red-700"
-                                    } ${canEditCashflow ? "cursor-pointer hover:underline decoration-dashed underline-offset-2 transition-colors" : ""}`}
-                                    onClick={(e) => {
-                                      if (!canEditCashflow) return;
-                                      e.stopPropagation();
-                                      setAvailPayEdit({ weekStart: week.weekStart, computedValue: week.computedAvailablePayment || 0 });
-                                      setAvailPayValue(week.availablePayment?.toString() || "0");
-                                      setAvailPayReason("");
-                                    }}
-                                    data-testid={`text-available-value-${week.weekStart}`}
-                                  >
-                                    {formatRand(week.availablePayment)}
-                                  </span>
-                                  {week.hasAvailPayOverride && (
-                                    <>
-                                      <span
-                                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 cursor-pointer"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setAvailPayHistoryWeek(week.weekStart);
-                                        }}
-                                        title={`Manual override. Computed: ${formatRand(week.computedAvailablePayment)}${week.availPayReason ? `. Reason: ${week.availPayReason}` : ""}`}
-                                        data-testid={`badge-avail-override-${week.weekStart}`}
+                                  <EditCellPopover
+                                    trigger={
+                                      <button
+                                        type="button"
+                                        className={`inline-flex items-center gap-1 font-semibold ${
+                                          (week.availablePayment || 0) >= 0 ? "text-emerald-700" : "text-red-700"
+                                        } ${canEditCashflow ? "cursor-pointer hover:underline decoration-dashed underline-offset-2 transition-colors" : "cursor-default"}`}
+                                        disabled={!canEditCashflow}
+                                        onClick={(e) => e.stopPropagation()}
+                                        data-testid={`text-available-value-${week.weekStart}`}
                                       >
-                                        <ArrowRight className="h-3 w-3" />
-                                      </span>
-                                      {canEditCashflow && (
-                                        <button
-                                          className="p-0.5 rounded hover:bg-red-100 text-red-600 hover:text-red-600 transition-colors"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            clearAvailPayMutation.mutate(week.weekStart);
-                                          }}
-                                          title="Clear override — use computed value"
-                                          data-testid={`button-clear-avail-${week.weekStart}`}
+                                        <span>{formatRand(week.availablePayment)}</span>
+                                        {canEditCashflow && (
+                                          <Pencil className="h-2.5 w-2.5 text-muted-foreground/60" />
+                                        )}
+                                      </button>
+                                    }
+                                    weekLabel={formatWeek(week.weekStart)}
+                                    fieldLabel="Available Payment"
+                                    currentValue={week.availablePayment || 0}
+                                    computedValue={week.computedAvailablePayment || 0}
+                                    hasOverride={week.hasAvailPayOverride}
+                                    requireReason={true}
+                                    defaultReason={week.availPayReason || ""}
+                                    onSave={({ value, reason }) =>
+                                      availPayMutation.mutate({
+                                        weekStartDate: week.weekStart,
+                                        overrideValue: value,
+                                        reason,
+                                        computedValue: week.computedAvailablePayment || 0,
+                                      })
+                                    }
+                                    onResetToComputed={() => clearAvailPayMutation.mutate(week.weekStart)}
+                                    isSaving={availPayMutation.isPending}
+                                    isResetting={clearAvailPayMutation.isPending}
+                                    testIdPrefix={`edit-avail-${week.weekStart}`}
+                                    helperText="Computed = Opening + Inflows − All Outflows. A reason is required."
+                                  />
+                                  {week.hasAvailPayOverride && (
+                                    <OverrideChipMenu
+                                      canEdit={!!canEditCashflow}
+                                      onViewHistory={() => setAvailPayHistoryWeek(week.weekStart)}
+                                      onClear={() => clearAvailPayMutation.mutate(week.weekStart)}
+                                      testId={`override-avail-${week.weekStart}`}
+                                      chip={
+                                        <span
+                                          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                                          title={`Manual override. Computed: ${formatRand(week.computedAvailablePayment)}${week.availPayReason ? `. Reason: ${week.availPayReason}` : ""}`}
+                                          data-testid={`badge-avail-override-${week.weekStart}`}
                                         >
-                                          <X className="h-3 w-3" />
-                                        </button>
-                                      )}
-                                    </>
+                                          <ArrowRight className="h-3 w-3" />
+                                        </span>
+                                      }
+                                    />
                                   )}
                                 </div>
                               </td>
@@ -1548,7 +1503,7 @@ export default function CashflowPage() {
                               <DetailRow
                                 weekStart={week.weekStart}
                                 project={selectedProjects.length > 0 ? selectedProjects.join(",") : "all"}
-                                colSpan={isProjectFiltered ? 7 : 8}
+                                colSpan={6}
                               />
                             )}
                           </Fragment>
@@ -1565,58 +1520,7 @@ export default function CashflowPage() {
 
       <OpexBudgetModal open={opexOpen} onClose={() => setOpexOpen(false)} />
 
-      <Dialog open={!!availPayEdit} onOpenChange={(v) => { if (!v) { setAvailPayEdit(null); setAvailPayValue(""); setAvailPayReason(""); } }}>
-        <DialogContent className="max-w-md" data-testid="dialog-avail-payment-edit">
-          <DialogHeader>
-            <DialogTitle className="text-lg font-semibold">
-              Edit Available Payment — {availPayEdit ? formatWeek(availPayEdit.weekStart) : ""}
-            </DialogTitle>
-            <DialogDescription className="text-xs text-muted-foreground mt-1">
-              Computed value: {formatRand(availPayEdit?.computedValue || 0)} (Opening + Inflows - All Outflows)
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div>
-              <label className="text-sm font-medium text-foreground">Override Value (R)</label>
-              <Input
-                type="number"
-                value={availPayValue}
-                onChange={(e) => setAvailPayValue(e.target.value)}
-                className="mt-1 font-mono"
-                autoFocus
-                onKeyDown={(e) => { if (e.key === "Enter") handleAvailPaySave(); }}
-                data-testid="input-avail-payment-value"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-foreground">Reason for Override *</label>
-              <Input
-                value={availPayReason}
-                onChange={(e) => setAvailPayReason(e.target.value)}
-                placeholder="e.g. Adjusting for expected delayed payment"
-                className="mt-1"
-                onKeyDown={(e) => { if (e.key === "Enter") handleAvailPaySave(); }}
-                data-testid="input-avail-payment-reason"
-              />
-              <p className="text-[11px] text-muted-foreground mt-1">A reason is required for all manual overrides</p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setAvailPayEdit(null); setAvailPayValue(""); setAvailPayReason(""); }} data-testid="button-avail-cancel">
-              Cancel
-            </Button>
-            <Button
-              onClick={handleAvailPaySave}
-              disabled={availPayMutation.isPending || !availPayReason.trim()}
-              className="bg-blue-600 hover:bg-blue-700"
-              data-testid="button-avail-save"
-            >
-              {availPayMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : null}
-              Save Override
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Avail-pay edit dialog removed in Phase 2 — replaced by EditCellPopover */}
 
       <Dialog open={!!availPayHistoryWeek} onOpenChange={(v) => !v && setAvailPayHistoryWeek(null)}>
         <DialogContent className="max-w-lg" data-testid="dialog-avail-payment-history">
