@@ -123,10 +123,6 @@ If someone changed a value in the app, and your spreadsheet has a different valu
 
 Yes. Click "Browse Folder" and select the folder. Each Excel file will be uploaded and processed as a separate import. You can review each one individually.
 
-### Where is the advanced/technical view?
-
-If you need access to detailed column mapping, data quality issues, or other technical controls, click "Advanced view" in the top-right corner of the import page. This switches to the full technical interface.
-
 ### Can I undo an import?
 
 Contact your administrator. The system keeps a full history of all imports and can roll back to a previous state if needed.

@@ -300,8 +300,8 @@ describe("Commit handler v2 conflict integration", () => {
     expect(routesCode).toContain("conflictResolutionLog");
   });
 
-  it("provides skipV2ConflictCheck escape hatch", () => {
-    expect(routesCode).toContain("skipV2ConflictCheck");
+  it("skipV2ConflictCheck escape hatch has been removed", () => {
+    expect(routesCode).not.toContain("skipV2ConflictCheck");
   });
 });
 
@@ -326,10 +326,10 @@ describe("Revenue milestoneNo canonical persistence", () => {
     expect(migration).toContain("milestone_percent");
   });
 
-  it("commit handler persists milestoneNo in revenue writes", () => {
-    const routesCode = read("server/smart-import-routes.ts");
-    expect(routesCode).toContain("milestoneNo: merged.milestoneNo");
-    expect(routesCode).toContain("milestonePercent: merged.milestonePercent");
+  it("v2 incremental executor persists milestoneNo and milestonePercent in revenue writes", () => {
+    const executor = read("server/lib/import/commit-executor.ts");
+    expect(executor).toContain("milestoneNo:");
+    expect(executor).toContain("milestonePercent:");
   });
 
   it("baseline loader reads milestoneNo from canonical revenue table", () => {
