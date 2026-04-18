@@ -976,6 +976,218 @@ router.get("/api/smart-import/:runId/qb-protections", requireAuth, async (req: R
   }
 });
 
+// POST /api/smart-import/:runId/money-impact
+// Pre-commit financial dry-run aligned with commit-executor semantics.
+//
+// Body (optional):
+//   { decisions?: Record<string, "keep_app" | "accept_file"> }
+//   keys are `${rowUid}::${fieldName}` — same shape the UI builds on the
+//   Decision step. We honour decisions for `amountExVat` so a `keep_app`
+//   choice zeroes that row's contribution to changedDelta.
+//
+// For REVENUE and EXPENDITURE we classify each row the way commit-executor
+// will and sum the resulting amount-ex-vat impact:
+//
+//   newTotal              sum(file.amount) for NEW rows
+//   changedDelta          sum(file.amount - db.amount) for CHANGED rows
+//                          (rows whose amount conflict was resolved with
+//                           keep_app contribute 0)
+//   qbBlockedDelta        subset of changedDelta whose amount move WOULD
+//                          be undone by QuickBooks precedence (gate on +
+//                          row is QB-linked). The UI subtracts this from
+//                          the headline net change.
+//   missingRemovedTotal   sum(db.amount) of MISSING rows that commit-
+//                          executor will soft-close (non-QB-linked). These
+//                          REDUCE the active book — included in net change.
+//   missingPreservedTotal sum(db.amount) of MISSING rows that survive the
+//                          import (QB-linked rows are preserved by
+//                          commit-executor's MISSING pre-pass). NOT part
+//                          of net change — shown for context.
+//
+// Net change per side = newTotal + changedDelta − qbBlockedDelta − missingRemovedTotal.
+// All amounts are in ZAR. NULL/blank amounts are treated as 0.
+router.post("/api/smart-import/:runId/money-impact", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const runId = parseInt(req.params.runId as string);
+    if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
+
+    const decisions: Record<string, "keep_app" | "accept_file"> =
+      (req.body && typeof req.body.decisions === "object" && req.body.decisions !== null)
+        ? req.body.decisions
+        : {};
+
+    const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));
+    if (!run) return res.status(404).json({ error: "Import run not found" });
+
+    const summary = run.summaryJson as any;
+    if (!summary?.normalization) {
+      return res.status(400).json({ error: "No normalization data found in this import run" });
+    }
+
+    const { isQbPrecedenceEnabled } = await import("./lib/import/qb-precedence");
+    const qbOn = await isQbPrecedenceEnabled();
+
+    const projectId = run.projectId;
+
+    const toNum = (v: any): number => {
+      if (v == null || v === "") return 0;
+      const n = typeof v === "number" ? v : Number(v);
+      return Number.isFinite(n) ? n : 0;
+    };
+
+    const blankImpact = () => ({
+      newTotal: 0,
+      changedDelta: 0,
+      qbBlockedDelta: 0,
+      missingPreservedTotal: 0,
+      missingRemovedTotal: 0,
+      newCount: 0,
+      changedCount: 0,
+      missingPreservedCount: 0,
+      missingRemovedCount: 0,
+      qbBlockedCount: 0,
+      keptByDecisionCount: 0,
+    });
+
+    const revenueImpact = blankImpact();
+    const costImpact = blankImpact();
+
+    // BASELINE / no project resolved → everything is NEW from the file side.
+    if (!projectId) {
+      const fileRev = (summary.normalization?.revenueLines ?? []) as Record<string, any>[];
+      const fileCost = (summary.normalization?.costLines ?? []) as Record<string, any>[];
+      for (const r of fileRev) { revenueImpact.newCount++; revenueImpact.newTotal += toNum(r.amountExVat); }
+      for (const r of fileCost) { costImpact.newCount++; costImpact.newTotal += toNum(r.amountExVat); }
+      return res.json({
+        currency: "ZAR", qbPrecedenceEnabled: qbOn, projectId: null,
+        revenue: revenueImpact, cost: costImpact,
+        revenueNetChange: revenueImpact.newTotal,
+        costNetChange: costImpact.newTotal,
+      });
+    }
+
+    // INCREMENTAL — load current rows + a single batched QB-link map per
+    // section to avoid N+1 lookups in the row loop.
+    const [revRows, costRows] = await Promise.all([
+      loadCurrentRevenueRows(projectId),
+      loadCurrentCostRows(projectId),
+    ]);
+
+    const { quickbooksInvoiceLinks } = await import("@shared/schema");
+    const { inArray, isNull, and: dAnd } = await import("drizzle-orm");
+
+    async function loadLinkedIdSet(
+      appEntityType: "revenue_line" | "cost_line",
+      ids: number[],
+    ): Promise<Set<number>> {
+      if (ids.length === 0) return new Set();
+      const rows = await db
+        .select({ appEntityId: quickbooksInvoiceLinks.appEntityId })
+        .from(quickbooksInvoiceLinks)
+        .where(dAnd(
+          eq(quickbooksInvoiceLinks.appEntityType, appEntityType),
+          inArray(quickbooksInvoiceLinks.appEntityId, ids),
+          isNull(quickbooksInvoiceLinks.deletedAt),
+        ));
+      return new Set(rows.map((r: any) => r.appEntityId));
+    }
+
+    const [revLinkedIds, costLinkedIds] = await Promise.all([
+      loadLinkedIdSet("revenue_line", (revRows as any[]).map(r => r.id)),
+      loadLinkedIdSet("cost_line", (costRows as any[]).map(r => r.id)),
+    ]);
+
+    const fileRev = (summary.normalization?.revenueLines ?? []) as Record<string, any>[];
+    const fileCost = (summary.normalization?.costLines ?? []) as Record<string, any>[];
+
+    type Sec = {
+      type: SectionType;
+      fileRows: Record<string, any>[];
+      existingRows: Array<Record<string, any> & { id: number }>;
+      acc: ReturnType<typeof blankImpact>;
+      linked: Set<number>;
+    };
+    const sections: Sec[] = [
+      { type: "REVENUE", fileRows: fileRev, existingRows: revRows as any, acc: revenueImpact, linked: revLinkedIds },
+      { type: "EXPENDITURE", fileRows: fileCost, existingRows: costRows as any, acc: costImpact, linked: costLinkedIds },
+    ];
+
+    for (const sec of sections) {
+      const matched = matchRows(sec.type, projectId, sec.fileRows, sec.existingRows);
+      for (const mr of matched) {
+        switch (mr.classification) {
+          case "NEW": {
+            sec.acc.newCount++;
+            sec.acc.newTotal += toNum(mr.fileRow?.amountExVat);
+            break;
+          }
+          case "CHANGED": {
+            sec.acc.changedCount++;
+            const fileAmt = toNum(mr.fileRow?.amountExVat);
+            const dbAmt = toNum(mr.existingRow?.amountExVat);
+            const rawDelta = fileAmt - dbAmt;
+
+            // Honour user decisions: rowUid::amountExVat == keep_app means
+            // commit-executor will not write the amount, so this row's
+            // contribution to changed-delta is zero.
+            const amountDecisionKey = `${mr.rowUid ?? mr.businessKey.key}::amountExVat`;
+            const keptByUser = decisions[amountDecisionKey] === "keep_app";
+            if (keptByUser) {
+              sec.acc.keptByDecisionCount++;
+              break;
+            }
+
+            sec.acc.changedDelta += rawDelta;
+
+            // QB precedence will lock amount on linked rows. Use the
+            // pre-loaded set instead of a per-row lookup.
+            if (qbOn && rawDelta !== 0 && mr.existingRowId != null && sec.linked.has(mr.existingRowId)) {
+              sec.acc.qbBlockedCount++;
+              sec.acc.qbBlockedDelta += rawDelta;
+            }
+            break;
+          }
+          case "MISSING_FROM_UPLOAD": {
+            const amt = toNum(mr.existingRow?.amountExVat);
+            // commit-executor's MISSING pre-pass only suppresses soft-close
+            // when the QB precedence gate is ON. With the gate off, even
+            // QB-linked rows get soft-closed — i.e. removed from the
+            // active book. Mirror that here so net change matches reality.
+            const isLinked = mr.existingRowId != null && sec.linked.has(mr.existingRowId);
+            const willBePreserved = qbOn && isLinked;
+            if (willBePreserved) {
+              sec.acc.missingPreservedCount++;
+              sec.acc.missingPreservedTotal += amt;
+            } else {
+              sec.acc.missingRemovedCount++;
+              sec.acc.missingRemovedTotal += amt;
+            }
+            break;
+          }
+          // UNCHANGED / CONFLICT_PLACEHOLDER → no money movement
+        }
+      }
+    }
+
+    res.json({
+      currency: "ZAR",
+      qbPrecedenceEnabled: qbOn,
+      projectId,
+      revenue: revenueImpact,
+      cost: costImpact,
+      revenueNetChange:
+        revenueImpact.newTotal + revenueImpact.changedDelta
+        - revenueImpact.qbBlockedDelta - revenueImpact.missingRemovedTotal,
+      costNetChange:
+        costImpact.newTotal + costImpact.changedDelta
+        - costImpact.qbBlockedDelta - costImpact.missingRemovedTotal,
+    });
+  } catch (err: unknown) {
+    console.error("[smart-import] POST money-impact error:", err);
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+  }
+});
+
 // PATCH /api/smart-import/:runId/project-info
 router.patch("/api/smart-import/:runId/project-info", requireAuth, requirePermission("smart_import", "edit"), async (req: Request, res: Response) => {
   try {
