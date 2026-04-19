@@ -1,6 +1,6 @@
-import { useMemo, useState, Suspense } from "react";
+import { useMemo, useState, Suspense, useEffect } from "react";
 import { lazyWithRetry } from "@/lib/lazy-with-retry";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -8,12 +8,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Link, useSearch } from "wouter";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Link, useSearch, useLocation } from "wouter";
 import { PageShell } from "@/components/layout/page-shell";
 import { type AttentionItem } from "@/components/dashboard/AttentionBadges";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { apiRequest } from "@/lib/queryClient";
 import { QueryErrorBanner } from "@/components/QueryErrorBanner";
+import type { DoNextItem } from "@shared/schema/home";
 import { getRoleDashboardConfig, getLensDashboardConfig } from "@/config/role-dashboard-config";
 import { COMPANY_ROLE_LABELS, normalizeRoleForPermissions } from "@shared/schema/users";
 import type { CompanyRole } from "@shared/schema/users";
@@ -53,6 +55,9 @@ import {
   ChevronRight,
   ExternalLink,
   Info,
+  X,
+  BellOff,
+  Sparkles,
 } from "lucide-react";
 
 // Lazy-load tab content from My Work pages (with the same ChunkLoadError
@@ -111,6 +116,22 @@ const HOME_TABS = [
 ] as const;
 
 type HomeTab = typeof HOME_TABS[number]["key"];
+
+type LayoutGroup = 'leadership' | 'portfolio-manager' | 'delivery' | 'specialist' | 'finance' | 'default';
+
+/** Pre-select the most useful starting tab for each layout group. */
+function defaultTabForLayout(group: LayoutGroup, pendingApprovals: number): HomeTab {
+  if (pendingApprovals > 0 && (group === 'finance' || group === 'leadership')) return "approvals";
+  if (group === 'specialist') return "inbox";
+  return "actions";
+}
+
+interface DoNextResponse {
+  role: string;
+  generatedAt: string;
+  items: DoNextItem[];
+  totalBeforeCap: number;
+}
 
 /**
  * Build a compact set of KPI cards from execution-dashboard data,
@@ -202,6 +223,7 @@ export default function HomePage() {
   const searchString = useSearch();
   const urlTab = new URLSearchParams(searchString).get("tab") as HomeTab | null;
   const [activeTab, setActiveTab] = useState<HomeTab>(urlTab || "actions");
+  const [autoTabApplied, setAutoTabApplied] = useState<boolean>(Boolean(urlTab));
   const [prioritiesExpanded, setPrioritiesExpanded] = useState(false);
   const [expandedAttention, setExpandedAttention] = useState<string | null>(null);
   const [overdueDrill, setOverdueDrill] = useState<"ap" | "ar" | null>(null);
@@ -240,12 +262,38 @@ export default function HomePage() {
     enabled: overdueDrill !== null,
   });
 
+  // Do Next — central, role-aware action strip. Single source of truth replaces
+  // the older Attention Needed section. Snooze/dismiss state is server-side so
+  // it follows the user across devices.
+  const queryClient = useQueryClient();
+  const { data: doNextData, isLoading: doNextLoading } = useQuery<DoNextResponse>({
+    queryKey: ["/api/home/do-next"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/home/do-next");
+      return res.json();
+    },
+    staleTime: 60_000,
+  });
+  const doNextItems = doNextData?.items ?? [];
+
+  const snoozeMutation = useMutation({
+    mutationFn: async ({ key, hours }: { key: string; hours: number }) => {
+      await apiRequest("POST", `/api/home/do-next/${encodeURIComponent(key)}/snooze`, { hours });
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/home/do-next"] }),
+  });
+  const dismissMutation = useMutation({
+    mutationFn: async ({ key }: { key: string }) => {
+      await apiRequest("POST", `/api/home/do-next/${encodeURIComponent(key)}/dismiss`, {});
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/home/do-next"] }),
+  });
+
   const lens = useLensContext();
   const userRole = (user as any)?.role;
   const effectiveRole = normalizeRoleForPermissions(userRole) as CompanyRole;
   const config = getLensDashboardConfig(effectiveRole);
   const roleLabel = lens.activeLensLabel;
-  type LayoutGroup = 'leadership' | 'portfolio-manager' | 'delivery' | 'specialist' | 'finance' | 'default';
   const layoutGroup: LayoutGroup = useMemo(() => {
     switch (lens.activeLens) {
       case 'CEO': case 'COO_SUPER_ADMIN': return 'leadership';
@@ -271,6 +319,20 @@ export default function HomePage() {
   const isLoading = dashLoading;
   const currentOverdue = overdueDrill === "ap" ? overdueData?.outflow : overdueDrill === "ar" ? overdueData?.inflow : null;
   const overdueRows = currentOverdue?.items || [];
+
+  // Pre-select the most useful starting tab for this role once the dashboard
+  // data is in (we need pendingApprovals to know if Approvals is the right
+  // landing tab for finance/leadership lenses).
+  useEffect(() => {
+    if (autoTabApplied) return;
+    if (dashLoading) return;
+    const pending = Number(kpis.pendingApprovals) || 0;
+    const next = defaultTabForLayout(layoutGroup, pending);
+    if (next !== activeTab) setActiveTab(next);
+    setAutoTabApplied(true);
+    // We intentionally only run this once per mount, after data lands.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dashLoading, layoutGroup]);
 
   const greeting = useMemo(() => {
     const hour = new Date().getHours();
@@ -526,68 +588,15 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* 3. Attention Badges — Expandable with inline action items */}
-      {!isLoading && attentionItems.filter((a) => a.value > 0).length > 0 && (
-        <div className="mb-6" data-testid="section-attention-needed">
-          <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
-            <ListChecks className="w-3.5 h-3.5" />
-            Attention Needed
-          </h2>
-          <div className="flex flex-wrap gap-2">
-            {attentionItems.filter((a) => a.value > 0).map((a) => (
-              <button
-                key={a.label}
-                onClick={() => setExpandedAttention(expandedAttention === a.label ? null : a.label)}
-                className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium cursor-pointer transition-colors hover:opacity-80 ${a.color} ${expandedAttention === a.label ? "ring-2 ring-offset-1 ring-current" : ""}`}
-              >
-                <span className="font-mono font-bold text-base">{a.value}</span>
-                {a.label}
-                <ChevronDown className={`w-3.5 h-3.5 opacity-50 transition-transform ${expandedAttention === a.label ? "rotate-180" : ""}`} />
-              </button>
-            ))}
-          </div>
-
-          {/* Expanded action items panel */}
-          {expandedAttention && attentionActionRows[expandedAttention]?.length > 0 && (
-            <Card className="mt-3 border-border/50">
-              <CardContent className="p-0">
-                <div className="flex items-center justify-between px-4 py-2.5 border-b bg-muted/30">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{expandedAttention}</span>
-                  <Link href={attentionItems.find((a) => a.label === expandedAttention)?.href || "#"}>
-                    <span className="text-xs text-primary hover:underline flex items-center gap-1 cursor-pointer">
-                      View all <ExternalLink className="w-3 h-3" />
-                    </span>
-                  </Link>
-                </div>
-                <div className="divide-y">
-                  {attentionActionRows[expandedAttention].slice(0, 8).map((row, i) => (
-                    <Link key={i} href={row.link}>
-                      <div className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/40 cursor-pointer transition-colors">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{row.project}</p>
-                          <p className="text-xs text-muted-foreground truncate">{row.issue}</p>
-                        </div>
-                        <Badge variant="outline" className={`text-[10px] shrink-0 ${row.severity === "Critical" ? "border-red-300 text-red-700" : row.severity === "High" ? "border-amber-300 text-amber-700" : "border-gray-300 text-gray-600"}`}>
-                          {row.severity}
-                        </Badge>
-                        <span className="text-xs text-muted-foreground shrink-0 max-w-[100px] truncate">{row.owner}</span>
-                        <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />
-                      </div>
-                    </Link>
-                  ))}
-                  {attentionActionRows[expandedAttention].length > 8 && (
-                    <Link href={attentionItems.find((a) => a.label === expandedAttention)?.href || "#"}>
-                      <div className="px-4 py-2 text-xs text-center text-primary hover:underline cursor-pointer">
-                        +{attentionActionRows[expandedAttention].length - 8} more — view all
-                      </div>
-                    </Link>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </div>
-      )}
+      {/* 3. Do Next — central, role-aware action strip. Replaces the legacy
+          "Attention Needed" badges. Each chip is a direct, two-click resolution
+          path; snooze/dismiss is server-persisted so it follows the user. */}
+      <DoNextStrip
+        items={doNextItems}
+        loading={doNextLoading}
+        onSnooze={(key, hours) => snoozeMutation.mutate({ key, hours })}
+        onDismiss={(key) => dismissMutation.mutate({ key })}
+      />
 
       {/* 4. Tab Navigation — Home absorbs My Work */}
       <div className="flex items-center gap-1 border-b mb-5 overflow-x-auto">
@@ -972,5 +981,174 @@ function PriorityCard({ priority, index }: { priority: any; index: number }) {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+// ============================================================
+// Do Next strip
+// ============================================================
+//
+// A horizontally-scrolling row of action chips. Each chip is a verb-led label
+// linking to a resolution screen, with a quiet snooze/dismiss menu so users
+// can tune what shows up tomorrow. Empty state celebrates a clear queue.
+
+const KIND_CHIP_TONE: Record<string, string> = {
+  approval: "bg-emerald-50 border-emerald-200 text-emerald-900 hover:bg-emerald-100",
+  rag: "bg-rose-50 border-rose-200 text-rose-900 hover:bg-rose-100",
+  hse_incident: "bg-rose-50 border-rose-200 text-rose-900 hover:bg-rose-100",
+  qb_sync_failed: "bg-amber-50 border-amber-200 text-amber-900 hover:bg-amber-100",
+  import_drift: "bg-amber-50 border-amber-200 text-amber-900 hover:bg-amber-100",
+  blocked_priority: "bg-amber-50 border-amber-200 text-amber-900 hover:bg-amber-100",
+  overdue_task: "bg-rose-50 border-rose-200 text-rose-900 hover:bg-rose-100",
+  behind_plan: "bg-amber-50 border-amber-200 text-amber-900 hover:bg-amber-100",
+  eng_blocker: "bg-amber-50 border-amber-200 text-amber-900 hover:bg-amber-100",
+  quality_issue: "bg-amber-50 border-amber-200 text-amber-900 hover:bg-amber-100",
+};
+
+function chipTone(kind: string): string {
+  return KIND_CHIP_TONE[kind] || "bg-muted border-border text-foreground hover:bg-muted/70";
+}
+
+function DoNextStrip({
+  items,
+  loading,
+  onSnooze,
+  onDismiss,
+}: {
+  items: DoNextItem[];
+  loading: boolean;
+  onSnooze: (key: string, hours: number) => void;
+  onDismiss: (key: string) => void;
+}) {
+  if (loading) {
+    return (
+      <div className="mb-6" data-testid="section-do-next">
+        <div className="flex items-center gap-2 mb-2.5">
+          <Sparkles className="w-3.5 h-3.5 text-primary" />
+          <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider">Do Next</h2>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-10 w-44 rounded-lg" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (items.length === 0) {
+    return (
+      <div className="mb-6" data-testid="section-do-next">
+        <div className="flex items-center gap-2 mb-2.5">
+          <Sparkles className="w-3.5 h-3.5 text-primary" />
+          <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider">Do Next</h2>
+        </div>
+        <Card className="border-emerald-200 bg-emerald-50/40">
+          <CardContent className="p-4 flex items-center gap-3">
+            <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+            <p className="text-sm text-emerald-900">
+              You're clear. No actions need you right now — well done.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-6" data-testid="section-do-next">
+      <div className="flex items-center justify-between mb-2.5">
+        <div className="flex items-center gap-2">
+          <Sparkles className="w-3.5 h-3.5 text-primary" />
+          <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider">Do Next</h2>
+          <Badge variant="secondary" className="text-[11px]" data-testid="badge-do-next-count">
+            {items.length} {items.length === 1 ? "action" : "actions"}
+          </Badge>
+        </div>
+        <span className="text-[11px] text-muted-foreground">Ranked for you · snooze or dismiss what isn't useful</span>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {items.map((item) => (
+          <DoNextChip key={item.key} item={item} onSnooze={onSnooze} onDismiss={onDismiss} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DoNextChip({
+  item,
+  onSnooze,
+  onDismiss,
+}: {
+  item: DoNextItem;
+  onSnooze: (key: string, hours: number) => void;
+  onDismiss: (key: string) => void;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const tone = chipTone(item.kind);
+
+  return (
+    <div
+      className={`group inline-flex items-stretch rounded-lg border overflow-hidden ${tone}`}
+      data-testid={`chip-do-next-${item.kind}`}
+    >
+      <Link href={item.href}>
+        <button
+          type="button"
+          className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-left max-w-[320px]"
+          aria-label={`Open: ${item.title}`}
+        >
+          <span className="truncate">{item.title}</span>
+          {item.subtitle && (
+            <span className="text-xs opacity-70 truncate hidden sm:inline">· {item.subtitle}</span>
+          )}
+        </button>
+      </Link>
+      <Popover open={menuOpen} onOpenChange={setMenuOpen}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className="px-2 border-l border-current/20 opacity-60 hover:opacity-100"
+            aria-label="Snooze or dismiss"
+            data-testid={`btn-do-next-menu-${item.kind}`}
+          >
+            <ChevronDown className="w-3.5 h-3.5" />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="w-44 p-1">
+          <div className="px-2 py-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">Snooze</div>
+          <button
+            type="button"
+            onClick={() => { onSnooze(item.key, 4); setMenuOpen(false); }}
+            className="w-full text-left px-2 py-1.5 text-sm rounded hover:bg-muted flex items-center gap-2"
+          >
+            <Clock className="w-3.5 h-3.5" /> 4 hours
+          </button>
+          <button
+            type="button"
+            onClick={() => { onSnooze(item.key, 24); setMenuOpen(false); }}
+            className="w-full text-left px-2 py-1.5 text-sm rounded hover:bg-muted flex items-center gap-2"
+          >
+            <Clock className="w-3.5 h-3.5" /> Tomorrow
+          </button>
+          <button
+            type="button"
+            onClick={() => { onSnooze(item.key, 24 * 7); setMenuOpen(false); }}
+            className="w-full text-left px-2 py-1.5 text-sm rounded hover:bg-muted flex items-center gap-2"
+          >
+            <Clock className="w-3.5 h-3.5" /> Next week
+          </button>
+          <div className="my-1 border-t" />
+          <button
+            type="button"
+            onClick={() => { onDismiss(item.key); setMenuOpen(false); }}
+            className="w-full text-left px-2 py-1.5 text-sm rounded hover:bg-muted flex items-center gap-2 text-rose-700"
+          >
+            <BellOff className="w-3.5 h-3.5" /> Dismiss
+          </button>
+        </PopoverContent>
+      </Popover>
+    </div>
   );
 }

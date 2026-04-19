@@ -42,6 +42,13 @@ export async function registerCoreRoutes(app: Express) {
   } catch (err: unknown) {
     console.error("[Startup:Routes] Failed to register lens config routes:", (err instanceof Error ? err.message : String(err)));
   }
+  // Home "Do Next" — role-aware ranked action strip with per-user snooze/dismiss
+  try {
+    const { registerHomeDoNextRoutes } = await import("./home-do-next-routes");
+    registerHomeDoNextRoutes(app);
+  } catch (err: unknown) {
+    console.error("[Startup:Routes] Failed to register home do-next routes:", (err instanceof Error ? err.message : String(err)));
+  }
   try {
     const { registerPmMonthlyReportRoutes } = await import("./pm-monthly-report-routes");
     registerPmMonthlyReportRoutes(app);

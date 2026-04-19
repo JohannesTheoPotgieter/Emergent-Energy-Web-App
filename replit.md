@@ -31,6 +31,7 @@ The project is organized as a monorepo with distinct `client/` (React SPA), `ser
 - **Startup:** `startup-orchestrator.ts` manages additive migrations and data seeding based on feature flags.
 - **Key Tables:** `public.work_items` is the canonical table for work items.
 - **Smart Import v2:** A core workflow for processing `.xlsx` tracker workbooks, using ExcelJS for parsing and a sophisticated upsert/override pattern to manage project data.
+- **Home "Do Next":** `GET /api/home/do-next` returns ranked, role-aware action chips (approvals, red RAG, overdue tasks, blocked priorities) with server-persisted snooze/dismiss in `do_next_state`. Role is taken from the authenticated session only — the `x-company-role` simulator header is ignored for visibility decisions.
 
 ### Database Strategy
 - **Dual-Mode:** Supports PostgreSQL (production) and SQLite (local development/Replit fallback) based on `DATABASE_URL` environment variable.
