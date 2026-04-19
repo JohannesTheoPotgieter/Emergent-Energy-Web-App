@@ -870,6 +870,20 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
     }
 
     const itemExpenses = allExpenses.filter((e: any) => e.rowType === "item");
+    // Suspicious NULLs: lines with an invoice but no amount → silent 0 in total.
+    let cashflowNullCount = 0;
+    for (const e of itemExpenses) {
+      const rawAmt = (e as any).expenseActualTotal;
+      const hasAmt = rawAmt != null && rawAmt !== "" && Number.isFinite(parseFloat(String(rawAmt)));
+      const hasInvoice = !!((e as any).expenseInvoiceNumber && String((e as any).expenseInvoiceNumber).trim());
+      if (!hasAmt && hasInvoice) cashflowNullCount += 1;
+    }
+    for (const inf of allInflows) {
+      const rawAmt = (inf as any).milestoneAmount;
+      const hasAmt = rawAmt != null && rawAmt !== "" && Number.isFinite(parseFloat(String(rawAmt)));
+      const hasInvoice = !!((inf as any).invoiceNumber && String((inf as any).invoiceNumber).trim());
+      if (!hasAmt && hasInvoice) cashflowNullCount += 1;
+    }
     const weeks: any[] = [];
     const diagnostics = {
       selectedExpenseRows: itemExpenses.length,
@@ -1016,11 +1030,13 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
       derivedTable: "cashflow_weekly_manual,opex_budget_monthly,opex_weekly_manual",
       staleAfterSeconds: 60,
       overrideInEffect,
+      nullCount: cashflowNullCount,
     });
 
     if (includeDebug) {
       return res.json({
         weeks,
+        nullCount: cashflowNullCount,
         debug: {
           ...diagnostics,
           selectedExpenseRows: diagnostics.selectedExpenseRows,
@@ -1740,6 +1756,17 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
     const costLineById = new Map<number, any>();
     for (const row of rawCostLines) costLineById.set(row.id, row);
 
+    // Suspicious NULLs: a cost line has an invoice reference but amountExVat is
+    // null/blank. These silently coalesce to 0 in the total — surface as an
+    // amber "(N missing)" sublabel on the client KPI.
+    let cosNullCount = 0;
+    for (const row of rawCostLines) {
+      const rawAmt = (row as any).amountExVat;
+      const hasAmt = rawAmt != null && rawAmt !== "" && Number.isFinite(Number(rawAmt));
+      const hasInvoice = !!(row.invoiceNumber && String(row.invoiceNumber).trim());
+      if (!hasAmt && hasInvoice) cosNullCount += 1;
+    }
+
     for (const row of rawCostLines) {
       const amount = row.amountExVat ? Number(row.amountExVat) : 0;
       if (!Number.isFinite(amount) || amount === 0) continue;
@@ -1871,6 +1898,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       canonicalTable: "normalized_cost_lines",
       derivedTable: "quickbooks_invoice_links",
       staleAfterSeconds: 60,
+      nullCount: cosNullCount,
     });
     res.json(months);
   } catch (error) {
@@ -2175,6 +2203,10 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       .reduce((s, i) => s + (i.qbAmount ?? 0), 0);
     const totalActual = items.reduce((s, i) => s + (i.qbAmount ?? 0), 0);
 
+    setFinanceTrustHeaders(res, {
+      sourceLayer: "canonical",
+      canonicalTable: "normalized_cost_lines,quickbooks_invoice_links",
+    });
     res.json({
       monthKey,
       lineCount: items.length,
@@ -2306,6 +2338,11 @@ router.get("/api/cos-tracker/reconciliation", requireAuth, async (req, res) => {
       return { ...s, delta, deltaPct, status };
     });
 
+    setFinanceTrustHeaders(res, {
+      sourceLayer: "canonical",
+      canonicalTable: "normalized_cost_lines",
+      derivedTable: "quickbooks_invoice_links",
+    });
     res.json({
       summary,
       tabs: {
@@ -2892,6 +2929,23 @@ router.get("/api/gp-tracker", requireAuth, requirePermission("gp_tracker", "view
       return STATIC_COS_BUDGET_FY26[monthKey] ?? 0;
     }
 
+    // GP = Revenue - COS. Suspicious NULLs in either side silently deflate the
+    // total. Count rows where amount is null but an invoice reference exists.
+    let gpNullCount = 0;
+    for (const rev of allInflowsRaw) {
+      const rawAmt = (rev as any).milestoneAmount;
+      const hasAmt = rawAmt != null && rawAmt !== "" && Number.isFinite(parseFloat(String(rawAmt)));
+      const hasInvoice = !!((rev as any).invoiceNumber && String((rev as any).invoiceNumber).trim());
+      if (!hasAmt && hasInvoice) gpNullCount += 1;
+    }
+    for (const exp of allExpenses) {
+      if (exp.rowType !== 'item') continue;
+      const rawAmt = (exp as any).expenseActualTotal;
+      const hasAmt = rawAmt != null && rawAmt !== "" && Number.isFinite(parseFloat(String(rawAmt)));
+      const hasInvoice = !!((exp as any).expenseInvoiceNumber && String((exp as any).expenseInvoiceNumber).trim());
+      if (!hasAmt && hasInvoice) gpNullCount += 1;
+    }
+
     const revByProject = new Map<string, number>();
     for (const rev of allInflowsRaw) {
       const pName = (rev.projectName || "").replace(/_Tracker$/i, "");
@@ -3033,8 +3087,9 @@ router.get("/api/gp-tracker", requireAuth, requirePermission("gp_tracker", "view
       sourceLayer: "canonical",
       canonicalTable: "normalized_revenue_lines,normalized_cost_lines",
       staleAfterSeconds: 60,
+      nullCount: gpNullCount,
     });
-    res.json({ months, projects, totalRevenue, totalCOS, totalGP, overallGpPct, ytdGP: finalYtdGP, ytdBudget: finalYtdBudget, ytdVariance: finalYtdVariance, ytdGpPct: finalYtdGpPct });
+    res.json({ months, projects, totalRevenue, totalCOS, totalGP, overallGpPct, ytdGP: finalYtdGP, ytdBudget: finalYtdBudget, ytdVariance: finalYtdVariance, ytdGpPct: finalYtdGpPct, nullCount: gpNullCount });
   } catch (error) {
     console.error("Portfolio GP tracker error:", error);
     res.status(500).json({ error: "Failed to fetch GP tracker data" });
@@ -3264,6 +3319,10 @@ router.get("/api/gp-tracker/month-detail", requireAuth, requirePermission("gp_tr
     const realisedGP = items.filter(i => i.isRealised).reduce((s, i) => s + i.gpAmount, 0);
     const unrealisedGP = items.filter(i => !i.isRealised).reduce((s, i) => s + i.gpAmount, 0);
 
+    setFinanceTrustHeaders(res, {
+      sourceLayer: "canonical",
+      canonicalTable: "normalized_cost_lines,normalized_revenue_lines",
+    });
     res.json({
       monthKey,
       lineCount: items.length,
@@ -3301,9 +3360,18 @@ async function revenueTrackerHandler(req: Request, res: Response) {
 
     const manualBudgetMap = new Map(manualEntries.map(e => [e.monthKey, e]));
 
+    // Count revenue rows where amount is null but an invoice reference exists —
+    // suspicious NULLs that silently coalesce to 0 in the total. Surfaces as an
+    // amber "(N missing)" sublabel on the client KPI.
+    let revenueNullCount = 0;
+
     const revenueByProject = new Map<string, number>();
     for (const inflow of allInflowsRaw) {
-      const amt = parseFloat(inflow.milestoneAmount as string) || 0;
+      const rawAmt = (inflow as any).milestoneAmount;
+      const hasAmt = rawAmt != null && rawAmt !== "" && Number.isFinite(parseFloat(String(rawAmt)));
+      const hasInvoice = !!((inflow as any).invoiceNumber && String((inflow as any).invoiceNumber).trim());
+      if (!hasAmt && hasInvoice) revenueNullCount += 1;
+      const amt = hasAmt ? parseFloat(String(rawAmt)) : 0;
       if (amt === 0) continue;
       const pName = (inflow.projectName || '').replace(/_Tracker$/i, '');
       revenueByProject.set(pName, (revenueByProject.get(pName) || 0) + amt);
@@ -3467,11 +3535,13 @@ async function revenueTrackerHandler(req: Request, res: Response) {
       sourceLayer: "canonical",
       canonicalTable: "normalized_revenue_lines",
       staleAfterSeconds: 60,
+      nullCount: revenueNullCount,
     });
     res.json({
       months,
       totalMilestoneRevenue,
       totalCOS,
+      nullCount: revenueNullCount,
     });
   } catch (error) {
     console.error("Revenue tracker error:", error);
@@ -3624,6 +3694,10 @@ router.get("/api/revenue-tracker/month-detail", requireAuth, requirePermission("
       });
     }
 
+    setFinanceTrustHeaders(res, {
+      sourceLayer: "canonical",
+      canonicalTable: "normalized_cost_lines,normalized_revenue_lines,quickbooks_invoice_links",
+    });
     res.json(items);
   } catch (error) {
     console.error("Revenue tracker month-detail error:", error);
@@ -3742,6 +3816,11 @@ router.get("/api/revenue-tracker/reconciliation", requireAuth, requirePermission
       return { ...s, delta, deltaPct, status };
     });
 
+    setFinanceTrustHeaders(res, {
+      sourceLayer: "canonical",
+      canonicalTable: "normalized_revenue_lines",
+      derivedTable: "quickbooks_invoice_links",
+    });
     res.json({
       summary,
       tabs: {
@@ -3833,6 +3912,8 @@ router.get("/api/finance/trust-core-report", requireAuth, requireAdmin, async (_
       sourceLayer: "derived",
       canonicalTable: "normalized_cost_lines,normalized_revenue_lines",
       derivedTable: "finance_cos_monthly,finance_revenue_monthly",
+      staleAfterSeconds: 900,
+      refreshedAt: (report as any)?.generatedAt,
     });
     res.json(report);
   } catch (error) {
@@ -5865,6 +5946,17 @@ router.delete("/api/finance/cos/overrides/:projectName", requireAuth, requireAdm
 
 // ==================== FINANCE REVENUE & COS DATA ====================
 
+function maxCreatedAtIso(rows: Array<{ createdAt?: Date | string | null }>): string | undefined {
+  let maxMs = 0;
+  for (const r of rows) {
+    const c = r.createdAt;
+    if (!c) continue;
+    const t = c instanceof Date ? c.getTime() : Date.parse(String(c));
+    if (Number.isFinite(t) && t > maxMs) maxMs = t;
+  }
+  return maxMs > 0 ? new Date(maxMs).toISOString() : undefined;
+}
+
 router.get("/api/finance/revenue", requireAuth, async (req, res) => {
   try {
     const { projectName, startDate, endDate, applyOverrides } = req.query;
@@ -5872,20 +5964,8 @@ router.get("/api/finance/revenue", requireAuth, async (req, res) => {
 
     if (projectName && typeof projectName === 'string') {
       data = await storage.getFinanceRevenueMonthlyByProject(projectName);
-      setFinanceTrustHeaders(res, {
-        sourceLayer: "derived",
-        derivedTable: "finance_revenue_monthly",
-        canonicalTable: "normalized_revenue_lines",
-      });
-
-      // Override data now baked into base rows
     } else {
       data = await storage.getAllFinanceRevenueMonthly();
-      setFinanceTrustHeaders(res, {
-        sourceLayer: "derived",
-        derivedTable: "finance_revenue_monthly",
-        canonicalTable: "normalized_revenue_lines",
-      });
     }
 
     if (startDate && typeof startDate === 'string') {
@@ -5894,6 +5974,14 @@ router.get("/api/finance/revenue", requireAuth, async (req, res) => {
     if (endDate && typeof endDate === 'string') {
       data = data.filter(d => d.monthEndDate <= endDate);
     }
+
+    setFinanceTrustHeaders(res, {
+      sourceLayer: "derived",
+      derivedTable: "finance_revenue_monthly",
+      canonicalTable: "normalized_revenue_lines",
+      staleAfterSeconds: 900,
+      refreshedAt: maxCreatedAtIso(data),
+    });
 
     res.json(data);
   } catch (error) {
@@ -5908,20 +5996,8 @@ router.get("/api/finance/cos", requireAuth, async (req, res) => {
 
     if (projectName && typeof projectName === 'string') {
       data = await storage.getFinanceCosMonthlyByProject(projectName);
-      setFinanceTrustHeaders(res, {
-        sourceLayer: "derived",
-        derivedTable: "finance_cos_monthly",
-        canonicalTable: "normalized_cost_lines",
-      });
-
-      // Override data now baked into base rows
     } else {
       data = await storage.getAllFinanceCosMonthly();
-      setFinanceTrustHeaders(res, {
-        sourceLayer: "derived",
-        derivedTable: "finance_cos_monthly",
-        canonicalTable: "normalized_cost_lines",
-      });
     }
 
     if (startDate && typeof startDate === 'string') {
@@ -5930,6 +6006,14 @@ router.get("/api/finance/cos", requireAuth, async (req, res) => {
     if (endDate && typeof endDate === 'string') {
       data = data.filter(d => d.monthEndDate <= endDate);
     }
+
+    setFinanceTrustHeaders(res, {
+      sourceLayer: "derived",
+      derivedTable: "finance_cos_monthly",
+      canonicalTable: "normalized_cost_lines",
+      staleAfterSeconds: 900,
+      refreshedAt: maxCreatedAtIso(data),
+    });
 
     res.json(data);
   } catch (error) {
