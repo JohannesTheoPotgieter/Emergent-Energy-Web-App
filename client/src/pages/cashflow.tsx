@@ -214,12 +214,14 @@ function KpiCard({
   icon,
   color,
   testId,
+  nullCount,
 }: {
   title: string;
   value: string;
   icon: React.ReactNode;
   color: "green" | "red" | "blue" | "purple";
   testId: string;
+  nullCount?: number | null;
 }) {
   const colorMap = {
     green: {
@@ -269,6 +271,11 @@ function KpiCard({
         <p className={`text-lg font-bold font-mono ${c.text} truncate`} data-testid={`${testId}-value`}>
           {value}
         </p>
+        {nullCount != null && nullCount > 0 ? (
+          <p className="text-[11px] font-medium text-amber-600 truncate" data-testid={`${testId}-null-count`}>
+            ({nullCount} missing)
+          </p>
+        ) : null}
       </div>
     </div>
   );
@@ -1154,6 +1161,7 @@ export default function CashflowPage() {
                 icon={<TrendingUp className="h-5 w-5" />}
                 color="green"
                 testId="kpi-total-inflows"
+                nullCount={cashflowTrust?.nullCount ?? null}
               />
               <KpiCard
                 title="Total Outflows YTD"
@@ -1161,6 +1169,7 @@ export default function CashflowPage() {
                 icon={<TrendingDown className="h-5 w-5" />}
                 color="red"
                 testId="kpi-total-outflows"
+                nullCount={cashflowTrust?.nullCount ?? null}
               />
               <KpiCard
                 title="Current Week Opening Balance"

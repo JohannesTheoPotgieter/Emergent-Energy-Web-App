@@ -17,6 +17,7 @@ import { computeMonthlyBuckets } from "../lib/calculations/monthlyBuckets";
 import { getCosEffectiveDateAndSource } from "../lib/expense-row-selector";
 import { classifyCosStatusFull } from "../lib/calculations/financeUtils";
 import { getCanonicalAllCurrentCostLines } from "../services/project-cost-line-read-service";
+import { setFinanceTrustHeaders } from "../lib/finance-trust/envelope";
 
 // Unified realisation check: delegates to canonical isCanonicalCosRealised()
 // to stay aligned with COS Tracker, Company Overview, Dashboard Metrics, etc.
@@ -155,6 +156,10 @@ export function registerCosControlRoutes(app: Express) {
         }));
 
       const summary = aggregateCOS(lines as any);
+      setFinanceTrustHeaders(res, {
+        sourceLayer: "canonical",
+        canonicalTable: "normalized_cost_lines",
+      });
       res.json(summary);
     } catch (err: any) {
       console.error('[COS Control] summary error:', err);

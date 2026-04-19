@@ -27,6 +27,7 @@ export interface FinanceTrustMeta {
   exceptionCount: number | null;
   overrideInEffect: boolean;
   featureFlag: { name: string; enabled: boolean } | null;
+  nullCount: number | null;
 }
 
 function parseFeatureFlag(raw: string | null): FinanceTrustMeta["featureFlag"] {
@@ -61,6 +62,7 @@ export function extractTrustHeaders(res: Response): FinanceTrustMeta | null {
     exceptionCount: parseNumber(res.headers.get("x-finance-exception-count")),
     overrideInEffect: res.headers.get("x-finance-override-in-effect") === "1",
     featureFlag: parseFeatureFlag(res.headers.get("x-finance-feature-flag")),
+    nullCount: parseNumber(res.headers.get("x-finance-null-count")),
   };
 }
 
