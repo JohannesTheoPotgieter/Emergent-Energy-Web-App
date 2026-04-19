@@ -129,6 +129,27 @@ export const opportunities = pgTable("opportunities", {
   commercialRisks: text("commercial_risks"),
   notes: text("notes"),
   status: text("status").default("active"),              // 'active', 'won', 'lost', 'on_hold'
+  // === Pipedrive enrichment (added 2026-04-20, migration
+  // 20260420_opportunity_merge_pipedrive_enrich.sql). All optional;
+  // populated by `pipedrive-sync-service.ts` when a deal is synced.
+  // App-side opportunities ('source' = 'internal') leave them null. ===
+  dealName: text("deal_name"),
+  dealOwnerName: text("deal_owner_name"),                // snapshot when no users-table match
+  currency: text("currency").notNull().default("ZAR"),
+  pipedriveUpdatedAt: timestamp("pipedrive_updated_at"), // Pipedrive's update_time
+  pipedriveStageChangedAt: timestamp("pipedrive_stage_changed_at"),
+  probability: decimal("probability", { precision: 5, scale: 2 }),
+  weightedValue: decimal("weighted_value", { precision: 15, scale: 2 }),
+  lostReason: text("lost_reason"),
+  lostTime: timestamp("lost_time"),
+  personName: text("person_name"),
+  personEmail: text("person_email"),
+  personPhone: text("person_phone"),
+  activitiesCount: integer("activities_count").notNull().default(0),
+  lastActivityDate: date("last_activity_date"),
+  nextActivityDate: date("next_activity_date"),
+  nextActivitySubject: text("next_activity_subject"),
+  labels: text("labels"),                                // CSV for now
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   deletedAt: timestamp("deleted_at"),

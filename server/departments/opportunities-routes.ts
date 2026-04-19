@@ -115,17 +115,24 @@ router.get("/api/opportunities/working", requireAuth, requirePermission("opportu
       .map(r => {
         const linkedProjectCount = projectCountByOpportunity.get(r.id) || 0;
         const hasLinkedProject = linkedProjectCount > 0;
+        // Prefer the canonical `opportunities.deal_name` column populated
+        // by Pipedrive sync (M001-M003); fall back to the legacy notes
+        // parsing only for rows that pre-date the migration backfill.
         const note = (r.notes || "").trim();
-        const dealName = note.toLowerCase().startsWith("pipedrive:")
-          ? note.replace(/^pipedrive:\s*/i, "").trim()
-          : (note || `Deal #${r.pipedriveDealId || r.id}`);
+        const dealName =
+          (r.dealName && r.dealName.trim()) ||
+          (note.toLowerCase().startsWith("pipedrive:")
+            ? note.replace(/^pipedrive:\s*/i, "").trim()
+            : (note || `Deal #${r.pipedriveDealId || r.id}`));
 
         return {
           id: r.id,
           dealName,
           pipedriveDealId: r.pipedriveDealId,
           orgClientName: r.clientName || null,
-          dealOwner: r.dealOwnerName || null,
+          // Prefer the joined user-name (live FK), fall back to the
+          // snapshot stored at sync time when the user link is missing.
+          dealOwner: r.dealOwnerUserName || r.dealOwnerNameSnapshot || null,
           stage: r.stage || null,
           status: r.status || null,
           siteLocation: r.siteName || r.siteAddress || null,
@@ -571,6 +578,247 @@ router.get("/api/opportunities/:id", requireAuth, requirePermission("opportuniti
     res.status(500).json({ error: "Failed to fetch opportunity" });
   }
 });
+
+/**
+ * Unified merged-Opportunity read used by the new drawer (2026-04-20).
+ * Returns CRM truth + lazy-created PD shadow + spawned tasks in one
+ * payload. The shadow row is materialised on first open so legacy
+ * Pipedrive-imported deals do not need a back-fill migration.
+ */
+router.get(
+  "/api/opportunities/:id/workflow",
+  requireAuth,
+  requirePermission("opportunities", "view"),
+  async (req: Request, res: Response) => {
+    try {
+      const merged = await opportunitiesRepo.getOpportunityWithWorkflow(
+        Number(req.params.id),
+        req.user?.id ?? null,
+      );
+      if (!merged) return res.status(404).json({ error: "Opportunity not found" });
+      res.json(merged);
+    } catch (err) {
+      console.error("[Opportunities] Failed workflow fetch:", err);
+      res.status(500).json({ error: "Failed to load opportunity workflow" });
+    }
+  },
+);
+
+/**
+ * PD-side update. Whitelist-only — CRM-owned columns (stage, status,
+ * estimated value, expected close date, signed date, clientId) are not
+ * accepted here; the existing PATCH /api/opportunities/:id is the only
+ * surface that mutates the CRM block, and the Pipedrive sync still
+ * overwrites that block on every run for sourced deals.
+ */
+const pdShadowPatchSchema = z.object({
+  requestType: z.string().optional(),
+  priority: z.enum(["Low", "Medium", "High", "Urgent"]).optional(),
+  status: z.enum(["Draft", "In Progress", "On Hold", "Completed", "Cancelled"]).optional(),
+  dueDate: z.string().nullable().optional(),
+  projectDeveloperUserId: z.number().int().nullable().optional(),
+  designerUserId: z.number().int().nullable().optional(),
+  billsOrTariffData: z.boolean().optional(),
+  meteringDataAvailable: z.boolean().optional(),
+  siteInspectionForm: z.boolean().optional(),
+  siteInspectionLink: z.string().nullable().optional(),
+  batteriesNeeded: z.boolean().optional(),
+  batterySize: z.union([z.string(), z.number()]).nullable().optional()
+    .transform(v => v == null ? null : String(v)),
+  dieselGenIntegration: z.boolean().optional(),
+  roofReplacementNeeded: z.boolean().optional(),
+  hseDiscussed: z.boolean().optional(),
+  comments: z.string().nullable().optional(),
+  estimatedCost: z.union([z.string(), z.number()]).nullable().optional()
+    .transform(v => v == null ? null : String(v)),
+  estimatedMargin: z.union([z.string(), z.number()]).nullable().optional()
+    .transform(v => v == null ? null : String(v)),
+  estimatedMarginPercent: z.union([z.string(), z.number()]).nullable().optional()
+    .transform(v => v == null ? null : String(v)),
+  financialNotes: z.string().nullable().optional(),
+}).strict();
+
+router.patch(
+  "/api/opportunities/:id/pd",
+  requireAuth,
+  requirePermission("opportunities", "edit"),
+  async (req: Request, res: Response) => {
+    if (!canCreatePdTicket(getUserRole(req))) {
+      return res.status(403).json({ error: "PD-workflow edits require a PD-approved role." });
+    }
+    const parsed = pdShadowPatchSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "Validation failed (PD endpoint accepts PD-workflow fields only — CRM fields are owned by Pipedrive)",
+        details: parsed.error.flatten(),
+      });
+    }
+    try {
+      const updated = await opportunitiesRepo.updatePdShadow(Number(req.params.id), parsed.data);
+      if (!updated) return res.status(404).json({ error: "PD shadow not found — open the opportunity first to materialise it" });
+      logAuditFromReq(req, {
+        entityType: "opportunity_pd_shadow",
+        entityId: String(updated.id),
+        action: "update",
+        changesJson: { opportunityId: Number(req.params.id), changed: Object.keys(parsed.data) },
+      });
+      res.json(updated);
+    } catch (err) {
+      console.error("[Opportunities] Failed PD update:", err);
+      res.status(500).json({ error: "Failed to update PD workflow" });
+    }
+  },
+);
+
+/** Spawn engineering tasks from the request-type template against the PD shadow. */
+router.post(
+  "/api/opportunities/:id/spawn-tasks",
+  requireAuth,
+  requirePermission("opportunities", "edit"),
+  async (req: Request, res: Response) => {
+    if (!canCreatePdTicket(getUserRole(req))) {
+      return res.status(403).json({ error: "Spawning engineering tasks requires a PD-approved role." });
+    }
+    try {
+      const merged = await opportunitiesRepo.getOpportunityWithWorkflow(
+        Number(req.params.id),
+        req.user?.id ?? null,
+      );
+      if (!merged) return res.status(404).json({ error: "Opportunity not found" });
+      if (!merged.pd.projectId) {
+        return res.status(409).json({ error: "Convert this opportunity to a project first — tasks must attach to a project." });
+      }
+      if (merged.pd.tasksSpawnedAt) {
+        return res.status(409).json({ error: "Tasks already spawned for this opportunity." });
+      }
+      const { spawnTasksForTicket } = await import("../pd-routes");
+      const spawned = await spawnTasksForTicket(
+        merged.pd,
+        req.user,
+        Array.isArray(req.body?.selectedTasks) ? req.body.selectedTasks : undefined,
+        Array.isArray(req.body?.customTasks) ? req.body.customTasks : undefined,
+      );
+      res.json({ spawned: spawned.length, tasks: spawned });
+    } catch (err) {
+      console.error("[Opportunities] Failed task spawn:", err);
+      res.status(500).json({ error: "Failed to spawn tasks" });
+    }
+  },
+);
+
+/**
+ * Convert-to-Project wizard target. Creates a `project_info` row at
+ * `S01_FIRST_ASSESSMENT`, links it back to the opportunity, links the
+ * PD shadow to the new project, marks the shadow Completed, and flips
+ * the opportunity status to 'won' if not already terminal.
+ */
+const convertSchema = z.object({
+  projectName: z.string().min(1),
+  pmUserId: z.number().int().nullable().optional(),
+  clientId: z.number().int().nullable().optional(),
+  siteId: z.number().int().nullable().optional(),
+  sizeKwp: z.union([z.string(), z.number()]).nullable().optional()
+    .transform(v => v == null ? null : String(v)),
+}).strict();
+
+router.post(
+  "/api/opportunities/:id/convert-to-project",
+  requireAuth,
+  requirePermission("opportunities", "edit"),
+  async (req: Request, res: Response) => {
+    if (!canCreatePdTicket(getUserRole(req))) {
+      return res.status(403).json({ error: "Convert-to-project requires a PD-approved role." });
+    }
+    const parsed = convertSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Validation failed", details: parsed.error.flatten() });
+    }
+    const opportunityId = Number(req.params.id);
+    try {
+      const opp = await opportunitiesRepo.getOpportunityById(opportunityId);
+      if (!opp) return res.status(404).json({ error: "Opportunity not found" });
+
+      const { projectInfo, pdTickets, opportunities: oppTable } = await import("@shared/schema/projects");
+      const { eq, desc } = await import("drizzle-orm");
+
+      // Idempotency: if this opportunity is already linked to a project,
+      // return that project instead of creating a duplicate. Prevents
+      // double-clicks / retries from spawning multiple shells.
+      const [existing] = await db
+        .select({ id: projectInfo.id, projectName: projectInfo.projectName })
+        .from(projectInfo)
+        .where(eq(projectInfo.opportunityId, opportunityId))
+        .limit(1);
+      if (existing) {
+        return res.status(200).json({ project: existing, alreadyExisted: true });
+      }
+
+      // The execution-state fields (`phase`, `ragStatus`) live on the
+      // split tables — they are NOT columns on `project_info` post-canonical-phase
+      // refactor. We mirror the `/resolve-mapping` shell-creation flow:
+      // insert project_info, then sync split tables. Architect-flagged 2026-04-20.
+      const projectShellFields = {
+        projectName: parsed.data.projectName,
+        clientId: parsed.data.clientId ?? opp.clientId ?? null,
+        pmUserId: parsed.data.pmUserId ?? null,
+        opportunityId,
+        projectCode: `OPP-${opportunityId}`,
+        inDlp: false,
+        projectStatus: "active" as const,
+        // execution-state extras consumed by syncProjectSplitTablesAfterInsert:
+        phase: "S01_FIRST_ASSESSMENT",
+        ragStatus: "green",
+      };
+
+      const result = await db.transaction(async (tx: typeof db) => {
+        const [project] = await tx
+          .insert(projectInfo)
+          .values(projectShellFields as typeof projectInfo.$inferInsert)
+          .returning();
+
+        await syncProjectSplitTablesAfterInsert(project.id, projectShellFields, tx);
+
+        const [shadow] = await tx
+          .select()
+          .from(pdTickets)
+          .where(eq(pdTickets.opportunityId, opportunityId))
+          .limit(1);
+        if (shadow) {
+          await tx
+            .update(pdTickets)
+            .set({
+              projectId: project.id,
+              status: "Completed",
+              sizeKwp: parsed.data.sizeKwp ?? shadow.sizeKwp,
+              updatedAt: new Date(),
+            })
+            .where(eq(pdTickets.id, shadow.id));
+        }
+
+        if (opp.status !== "won" && opp.status !== "lost") {
+          await tx
+            .update(oppTable)
+            .set({ status: "won", updatedAt: new Date() })
+            .where(eq(oppTable.id, opportunityId));
+        }
+
+        return project;
+      });
+
+      logAuditFromReq(req, {
+        entityType: "opportunity",
+        entityId: String(opportunityId),
+        action: "convert_to_project",
+        changesJson: { newProjectId: result.id, projectName: result.projectName },
+      });
+
+      res.status(201).json({ project: result });
+    } catch (err) {
+      console.error("[Opportunities] Failed convert-to-project:", err);
+      res.status(500).json({ error: "Failed to convert opportunity to project" });
+    }
+  },
+);
 
 // Numeric fields on `opportunities` are stored as Drizzle `numeric` columns
 // which serialize as strings. The Zod schema accepts either string or number

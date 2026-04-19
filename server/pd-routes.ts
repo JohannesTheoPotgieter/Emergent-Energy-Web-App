@@ -1227,61 +1227,59 @@ export function registerPdRoutes(app: Express) {
 // Client-id generation lives in server/lib/client-id-generator.ts so both
 // /api/pd/clients and /api/clients share a single race-safe implementation.
 
-async function spawnTasksForTicket(ticket: any, user: any, selectedTasks?: string[], customTasks?: { title: string; priority: string }[]): Promise<any[]> {
-  if (ticket.tasksSpawnedAt) return [];
+export async function spawnTasksForTicket(ticket: any, user: any, selectedTasks?: string[], customTasks?: { title: string; priority: string }[]): Promise<any[]> {
+  // Atomic idempotency claim: only the first caller for a given ticket
+  // wins the marker. Subsequent retries / concurrent submits get an empty
+  // result instead of duplicating tasks. Architect-flagged 2026-04-20.
+  if (!ticket.projectId) return [];
 
   let templates = PD_REQUEST_TYPE_TASK_TEMPLATES[ticket.requestType] || [];
-
   if (selectedTasks && Array.isArray(selectedTasks)) {
     const selectedSet = new Set(selectedTasks);
     templates = templates.filter(t => selectedSet.has(t.title));
   }
-
   const allTasks: { title: string; priority: string }[] = [
     ...templates,
     ...(Array.isArray(customTasks) ? customTasks.filter(t => t.title?.trim()) : []),
   ];
 
-  let projectName = ticket.projectSiteName || "Unassigned";
-  if (ticket.projectId) {
-    const [proj] = await db.select({ projectName: projectInfo.projectName })
-      .from(projectInfo)
-      .where(eq(projectInfo.id, ticket.projectId));
-    if (proj) projectName = proj.projectName;
-  }
+  // Atomic claim + insert in a single transaction. If task inserts fail
+  // for any reason, the claim rolls back too so retries remain possible.
+  // Architect-flagged 2026-04-20.
+  return db.transaction(async (tx: typeof db) => {
+    const claimed = await tx
+      .update(pdTickets)
+      .set({ tasksSpawnedAt: new Date(), status: ticket.status === "Draft" ? "In Progress" : ticket.status })
+      .where(and(eq(pdTickets.id, ticket.id), isNull(pdTickets.tasksSpawnedAt)))
+      .returning({ id: pdTickets.id });
+    if (claimed.length === 0) return [];
 
-  const spawned: any[] = [];
-  for (let i = 0; i < allTasks.length; i++) {
-    const tmpl = allTasks[i];
-    if (!ticket.projectId) continue;
-    const [task] = await db.insert(workItems).values({
-      projectId: ticket.projectId,
-      workstream: "ENG",
-      source: "UI",
-      title: `[PD] ${tmpl.title}`,
-      description: `Auto-spawned from PD Ticket #${ticket.id} (${ticket.requestType}) for ${ticket.projectSiteName}`,
-      status: "TO DO",
-      priority: tmpl.priority === "High" ? "High" : "Medium",
-      endDate: ticket.dueDate || null,
-      sortOrder: i,
-      pdTicketId: ticket.id,
-      createdBy: user?.id || null,
-    }).returning();
-
-    if (task) {
-      await db.insert(taskActivityLog).values({
-        workItemId: task.id,
-        actorId: user?.id || null,
-        actionType: "created",
-        newValue: `Task spawned from PD Ticket #${ticket.id} (${ticket.requestType})`,
-      });
-      spawned.push(task);
+    const spawned: any[] = [];
+    for (let i = 0; i < allTasks.length; i++) {
+      const tmpl = allTasks[i];
+      const [task] = await tx.insert(workItems).values({
+        projectId: ticket.projectId,
+        workstream: "ENG",
+        source: "UI",
+        title: `[PD] ${tmpl.title}`,
+        description: `Auto-spawned from PD Ticket #${ticket.id} (${ticket.requestType}) for ${ticket.projectSiteName}`,
+        status: "TO DO",
+        priority: tmpl.priority === "High" ? "High" : "Medium",
+        endDate: ticket.dueDate || null,
+        sortOrder: i,
+        pdTicketId: ticket.id,
+        createdBy: user?.id || null,
+      }).returning();
+      if (task) {
+        await tx.insert(taskActivityLog).values({
+          workItemId: task.id,
+          actorId: user?.id || null,
+          actionType: "created",
+          newValue: `Task spawned from PD Ticket #${ticket.id} (${ticket.requestType})`,
+        });
+        spawned.push(task);
+      }
     }
-  }
-
-  await db.update(pdTickets)
-    .set({ tasksSpawnedAt: new Date(), status: ticket.status === "Draft" ? "In Progress" : ticket.status })
-    .where(eq(pdTickets.id, ticket.id));
-
-  return spawned;
+    return spawned;
+  });
 }
