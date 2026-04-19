@@ -109,6 +109,7 @@ export async function getCanonicalFinanceByProjectIds(projectIds: number[]): Pro
     FROM normalized_revenue_lines
     WHERE project_id = ANY(${sql`ARRAY[${sql.join(projectIds.map((id) => sql`${id}`), sql`,`)}]::int[]`})
       AND effective_to IS NULL
+      AND deleted_at IS NULL
     GROUP BY project_id
   `);
 
