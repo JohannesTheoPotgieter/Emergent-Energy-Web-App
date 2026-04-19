@@ -54,8 +54,8 @@ export const MODULE_DEFINITIONS: ModuleDefinition[] = [
     id: 'PIPELINE',
     label: 'Pipeline',
     iconKey: 'Sun',
-    description: 'Development pipeline — opportunities, PD tickets, clients',
-    pageIds: ['pdDashboard', 'pdTickets', 'pdTicketCreate', 'pdTicketDetail', 'pdReports', 'opportunities', 'clients'],
+    description: 'Development pipeline — opportunities (Pipedrive) and clients',
+    pageIds: ['pdDashboard', 'opportunities', 'clients'],
     primaryPath: '/pd',
   },
   {

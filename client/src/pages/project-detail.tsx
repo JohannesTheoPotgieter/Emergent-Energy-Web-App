@@ -1049,26 +1049,9 @@ export default function ProjectDetailPage() {
     setDrawerOpen(true);
   };
 
-  const { data: pdTicketsData = [] } = useQuery<any[]>({
-    queryKey: ["pd-tickets-project", projectInfoId],
-    queryFn: async () => {
-      const res = await engFetch(`/api/pd/tickets`);
-      if (!res.ok) return [];
-      const all = await res.json();
-      return all
-        .filter((t: any) => t.ticket?.projectId === projectInfoId)
-        .map((t: any) => ({
-          id: t.ticket?.id,
-          status: t.ticket?.status,
-          requestType: t.ticket?.requestType,
-          dueDate: t.ticket?.dueDate,
-          projectSiteName: t.ticket?.projectSiteName,
-          priority: t.ticket?.priority,
-          taskCount: { total: t.taskTotal || 0, completed: t.taskCompleted || 0 },
-        }));
-    },
-    enabled: !!projectInfoId,
-  });
+  // PD Tickets removed 2026-04-19 — Pipedrive/Opportunities is the source of truth.
+  // Local stub kept so downstream `dependencyCount` derivation stays valid (always 0).
+  const pdTicketsData: any[] = [];
 
 
   const { data: engStagesData } = useQuery({

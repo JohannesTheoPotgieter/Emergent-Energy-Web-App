@@ -1524,7 +1524,6 @@ const ROLE_SIMULATIONS: RoleSimConfig[] = [
     ],
     dashboards: [
       { label: "PD Dashboard", path: "/pd-dashboard" },
-      { label: "PD Tickets", path: "/pd-tickets" },
       { label: "Lifecycle Board", path: "/lifecycle-board" },
       { label: "Projects", path: "/projects" },
     ],

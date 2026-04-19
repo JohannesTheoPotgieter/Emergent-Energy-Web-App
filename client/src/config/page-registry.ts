@@ -127,14 +127,14 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "training", path: "/training", label: "Training", iconKey: "GraduationCap", navGroup: "KNOWLEDGE", permissionEntity: "training", showInSidebar: false, routeComponentKey: "TrainingPage" },
   { id: "portfolios", path: "/portfolios", label: "Portfolios", iconKey: "FolderOpen", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "portfolios", showInSidebar: true, routeComponentKey: "PortfoliosPage" },
   { id: "portfolioDetail", path: "/portfolios/:id", label: "Portfolio Detail", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "portfolio_detail", routeComponentKey: "PortfolioDetailPage" },
-  // Lean PD Dashboard: KPI cards + PD work queue + handover readiness.
-  // The full ticket list lives on the merged /opportunities page.
-  { id: "pdDashboard", path: "/pd", label: "Project Development Dashboard", iconKey: "Sun", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_dashboard", showInSidebar: true, routeComponentKey: "PdTicketsPage", aliases: ["/pd/dashboard"], roleLandingEligibility: ["CCO", "KEY_ACCOUNTS_MANAGER", "PROJECT_DEVELOPER"] },
-  // Legacy /pd/tickets deep link → redirect to merged Pipeline / Opportunities page.
+  // PD Dashboard now points at the merged Opportunities/Pipeline page.
+  // Pipedrive is the source of truth — legacy PD Tickets and SharePoint Proposals UI removed (2026-04-19).
+  { id: "pdDashboard", path: "/pd", label: "Project Development Dashboard", iconKey: "Sun", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_dashboard", showInSidebar: true, routeComponentKey: "OpportunitiesPage", aliases: ["/pd/dashboard"], roleLandingEligibility: ["CCO", "KEY_ACCOUNTS_MANAGER", "PROJECT_DEVELOPER"] },
+  // Legacy ticket deep links → redirect to Opportunities so existing bookmarks/emails still resolve.
   { id: "pdTicketsRedirect", path: "/pd/tickets", label: "Project Development Tickets (moved)", type: "alias", permissionEntity: "pd_dashboard", redirectTo: "/opportunities" },
-  { id: "pdTicketCreate", path: "/pd/tickets/create", label: "Create Project Development Ticket", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_tickets", routeComponentKey: "PdTicketCreatePage" },
-  { id: "pdTicketDetail", path: "/pd/tickets/:id", label: "Project Development Ticket Detail", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_tickets", routeComponentKey: "PdTicketDetailPage" },
-  { id: "pdReports", path: "/pd/reports", label: "Project Development Reports", iconKey: "BarChart3", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_dashboard", showInSidebar: false, routeComponentKey: "PdReportsPage" },
+  { id: "pdTicketCreateRedirect", path: "/pd/tickets/create", label: "Create Ticket (moved)", type: "alias", permissionEntity: "pd_dashboard", redirectTo: "/opportunities" },
+  { id: "pdTicketDetailRedirect", path: "/pd/tickets/:id", label: "Ticket Detail (moved)", type: "alias", permissionEntity: "pd_dashboard", redirectTo: "/opportunities" },
+  { id: "pdReportsRedirect", path: "/pd/reports", label: "PD Reports (moved)", type: "alias", permissionEntity: "pd_dashboard", redirectTo: "/opportunities" },
   { id: "teamsChats", path: "/teams/chats", label: "Teams Chat", type: "alias", permissionEntity: "teams_chat", redirectTo: "/my-work/teams" },
   { id: "collaboration", path: "/collaboration", label: "Collaboration Hub", type: "alias", permissionEntity: "collaboration_hub", redirectTo: "/my-work" },
   { id: "collabEmail", path: "/collaboration/email", label: "Collaboration Email", type: "alias", permissionEntity: "collaboration_hub", redirectTo: "/my-work/email" },

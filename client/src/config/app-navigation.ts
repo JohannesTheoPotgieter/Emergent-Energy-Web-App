@@ -443,19 +443,6 @@ export function getBreadcrumbs(pathname: string, activeSection: TopSection): Bre
     { label: decodeURIComponent(portfolioMatch[1]) },
   ];
 
-  // --- Project Development Tickets ---
-  if (pathname === "/pd/tickets/create") return [
-    { label: "Project Development", path: "/pd" },
-    { label: "Project Development Tickets", path: "/pd/tickets" },
-    { label: "Create" },
-  ];
-  const ticketMatch = pathname.match(/^\/pd\/tickets\/([^/]+)/);
-  if (ticketMatch) return [
-    { label: "Project Development", path: "/pd" },
-    { label: "Project Development Tickets", path: "/pd/tickets" },
-    { label: `Ticket ${decodeURIComponent(ticketMatch[1])}` },
-  ];
-
   // --- PD Handover ---
   const pdHandoverMatch = pathname.match(/^\/pd\/handover\/([^/]+)$/);
   if (pdHandoverMatch) return [
