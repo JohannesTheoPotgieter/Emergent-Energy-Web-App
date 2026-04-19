@@ -3,6 +3,9 @@ import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, re
 
 // ==================== STATUS ENUMS ====================
 export const archivedStatusEnum = pgEnum("archived_status_enum", ["ACTIVE", "ARCHIVED", "ARCHIVED_MERGED", "GONE"]);
+// Canonical project status (orthogonal to phase). Mirrors the DB enum
+// `project_status_enum` created by 20260420_canonical_phase_cycle.sql.
+export const projectStatusEnum = pgEnum("project_status_enum", ["active", "hold", "internal", "closed", "tbc"]);
 export const executionGateStatusEnum = pgEnum("execution_gate_status_enum", ["NOT_ELIGIBLE", "ELIGIBLE", "APPROVED"]);
 export const signedStatusEnum = pgEnum("signed_status_enum", ["NONE", "PENDING", "SIGNED"]);
 import { createInsertSchema } from "drizzle-zod";
@@ -157,6 +160,12 @@ export const projectInfo = pgTable("project_info", {
   opportunityId: integer("opportunity_id").references(() => opportunities.id),
   deliveryModel: text("delivery_model"),     // 'turnkey', 'design_build', 'epc', 'consulting'
   projectCode: text("project_code"),
+  // Canonical phase cycle (added 2026-04-20). Hold/Internal/Closed/TBC are
+  // no longer phases — they live here as an orthogonal status. DLP is a
+  // flag that auto-pushes RAG to red while the project is in any handover
+  // phase. See shared/phases.ts for the canonical 10-phase list.
+  projectStatus: projectStatusEnum("project_status").notNull().default("active"),
+  inDlp: boolean("in_dlp").notNull().default(false),
 }, (table) => ({
   uqProjectInfoProjectNameActive: uniqueIndex("uq_project_info_project_name_active")
     .on(table.projectName)
@@ -413,15 +422,39 @@ export type ProjectEditableFields = typeof projectEditableFields.$inferSelect;
 
 // ===================== LIFECYCLE PHASES =====================
 
+/**
+ * @deprecated 2026-04-20 — import {@link import('../phases').PHASES} instead.
+ *
+ * This list is kept as a transitional shim so existing call sites still
+ * compile. It is the union of the canonical 10-phase cycle PLUS the
+ * legacy labels (Cost Proposal, QA, Handover, Commercial Close Out, DLP,
+ * Internal, Hold, Closed, TBC) — these legacy values are no longer stored
+ * in the database after migration 20260420_canonical_phase_cycle but are
+ * tolerated as TypeScript types until every call site is migrated.
+ *
+ * Canonical 10 phases (in order): First Assessment, Design & Cost Proposal,
+ * Financial Close, Planning, Construction, Commissioning, O&M Handover,
+ * Client Handover, Compliance Handover, Post-Handover Review.
+ *
+ * Hold / Internal / Closed / TBC live on `project_info.project_status`.
+ * DLP lives on `project_info.in_dlp` and forces RAG=red during handover.
+ */
 export const LIFECYCLE_PHASES = [
+  // Canonical 10:
   "First Assessment",
-  "Cost Proposal",
+  "Design & Cost Proposal",
   "Financial Close",
   "Planning",
   "Construction",
+  "Commissioning",
+  "O&M Handover",
+  "Client Handover",
+  "Compliance Handover",
+  "Post-Handover Review",
+  // Legacy labels — DEPRECATED, kept for compile-time tolerance only:
+  "Cost Proposal",
   "QA",
   "Handover",
-  "Compliance Handover",
   "Commercial Close Out",
   "DLP",
   "Internal",
@@ -430,6 +463,24 @@ export const LIFECYCLE_PHASES = [
   "TBC",
 ] as const;
 export type LifecyclePhase = typeof LIFECYCLE_PHASES[number];
+
+/**
+ * The canonical 10-phase cycle as a string-literal tuple. Use this
+ * (and not LIFECYCLE_PHASES) in new code that needs the active list.
+ */
+export const CANONICAL_LIFECYCLE_PHASES = [
+  "First Assessment",
+  "Design & Cost Proposal",
+  "Financial Close",
+  "Planning",
+  "Construction",
+  "Commissioning",
+  "O&M Handover",
+  "Client Handover",
+  "Compliance Handover",
+  "Post-Handover Review",
+] as const satisfies ReadonlyArray<LifecyclePhase>;
+export type CanonicalLifecyclePhase = typeof CANONICAL_LIFECYCLE_PHASES[number];
 
 export const PROJECT_PHASES = [
   ...LIFECYCLE_PHASES,
@@ -445,28 +496,36 @@ export const PROJECT_PHASES = [
 export type ProjectPhase = typeof PROJECT_PHASES[number];
 
 export const PROJECT_PHASE_LABELS: Record<string, string> = {
-  "First Assessment": "First Assessment",
-  "Cost Proposal": "Cost Proposal",
-  "Financial Close": "Financial Close",
-  "Planning": "Planning",
-  "Construction": "Construction",
-  "QA": "QA",
-  "Handover": "Handover",
-  "Compliance Handover": "Compliance Handover",
-  "Commercial Close Out": "Commercial Close Out",
-  "DLP": "DLP",
-  "Internal": "Internal",
-  "Hold": "Hold",
-  "Closed": "Closed",
-  "TBC": "TBC",
-  P0_FIRST_ASSESSMENT: "First Assessment",
-  P1_COST_PROPOSAL_DESIGN: "Cost Proposal",
-  P2_PD_PM_HANDOVER: "Planning",
-  P3_DETAILED_DESIGN_PROC_RELEASE: "Planning",
-  P4_CONSTRUCTION_INSTALLATION: "Construction",
-  P5_COMMISSIONING_TESTING: "QA",
-  P6_HANDOVER_CLIENT_MATRIARCH: "Handover",
-  P7_CLOSEOUT_POSTMORTEM: "Commercial Close Out",
+  // Canonical labels (preferred)
+  "First Assessment":       "First Assessment",
+  "Design & Cost Proposal": "Design & Cost Proposal",
+  "Financial Close":        "Financial Close",
+  "Planning":               "Planning",
+  "Construction":           "Construction",
+  "Commissioning":          "Commissioning",
+  "O&M Handover":           "O&M Handover",
+  "Client Handover":        "Client Handover",
+  "Compliance Handover":    "Compliance Handover",
+  "Post-Handover Review":   "Post-Handover Review",
+  // Legacy labels normalised to canonical display
+  "Cost Proposal":        "Design & Cost Proposal",
+  "QA":                   "Commissioning",
+  "Handover":             "O&M Handover",
+  "Commercial Close Out": "Post-Handover Review",
+  "DLP":                  "O&M Handover",  // surfaced as in_dlp badge
+  "Internal":             "Internal",      // surfaced via project_status badge
+  "Hold":                 "On Hold",       // surfaced via project_status badge
+  "Closed":               "Closed",        // surfaced via project_status badge
+  "TBC":                  "TBC",           // surfaced via project_status badge
+  // Legacy P-codes from import era
+  P0_FIRST_ASSESSMENT:                "First Assessment",
+  P1_COST_PROPOSAL_DESIGN:            "Design & Cost Proposal",
+  P2_PD_PM_HANDOVER:                  "Financial Close",
+  P3_DETAILED_DESIGN_PROC_RELEASE:    "Planning",
+  P4_CONSTRUCTION_INSTALLATION:       "Construction",
+  P5_COMMISSIONING_TESTING:           "Commissioning",
+  P6_HANDOVER_CLIENT_MATRIARCH:       "O&M Handover",
+  P7_CLOSEOUT_POSTMORTEM:             "Post-Handover Review",
 };
 
 export const LEGACY_TO_LIFECYCLE: Record<string, LifecyclePhase> = {
@@ -521,14 +580,21 @@ export const PHASE_TEXT_TO_ENUM: Record<string, ProjectPhase> = {
 };
 
 export const PHASE_TO_ENG_STAGES: Record<string, string[]> = {
-  "First Assessment": ["First Assessment"],
-  "Cost Proposal": ["Cost Proposal"],
-  "Financial Close": ["Cost Proposal"],
-  "Planning": ["IFC Planning"],
-  "Construction": ["IFC Planning", "Construction Support"],
-  "QA": ["Handover Pack"],
-  "Handover": ["Handover Pack"],
-  "Compliance Handover": ["Handover Pack"],
+  // Canonical labels:
+  "First Assessment":       ["First Assessment"],
+  "Design & Cost Proposal": ["Cost Proposal"],
+  "Financial Close":        ["Cost Proposal"],
+  "Planning":               ["IFC Planning"],
+  "Construction":           ["IFC Planning", "Construction Support"],
+  "Commissioning":          ["Handover Pack"],
+  "O&M Handover":           ["Handover Pack"],
+  "Client Handover":        ["Handover Pack"],
+  "Compliance Handover":    ["Handover Pack"],
+  "Post-Handover Review":   ["Handover Pack"],
+  // Legacy labels (kept for tolerant lookup)
+  "Cost Proposal":        ["Cost Proposal"],
+  "QA":                   ["Handover Pack"],
+  "Handover":             ["Handover Pack"],
 };
 
 // ===================== PROJECT DEVELOPMENT (PD) =====================

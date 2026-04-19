@@ -146,13 +146,15 @@ export const STAGE_SEQUENCE: Record<StageCode, number> = {
   S01_FIRST_ASSESSMENT: 1,
   S02_DESIGN_COST_PROPOSAL: 2,
   S03_SIGNATURE_FINANCIAL_CLOSE: 3,
-  S04_PD_PM_HANDOVER: 3,             // merged into S03
-  S05_FINANCIAL_REVIEW: 2,           // merged into S02
-  S06_CONSTRUCTION: 4,
-  S07_COMMISSIONING: 5,
-  S08_OM_HANDOVER: 6,
-  S09_CLIENT_HANDOVER: 7,
-  S10_POST_HANDOVER_REVIEW: 8,
+  S04_PD_PM_HANDOVER: 3,             // deprecated, merged into S03
+  S05_FINANCIAL_REVIEW: 2,           // deprecated, merged into S02
+  S04_PLANNING: 4,
+  S06_CONSTRUCTION: 5,
+  S07_COMMISSIONING: 6,
+  S08_OM_HANDOVER: 7,
+  S09_CLIENT_HANDOVER: 8,
+  S9B_COMPLIANCE_HANDOVER: 9,
+  S10_POST_HANDOVER_REVIEW: 10,
 };
 
 /**
@@ -169,13 +171,12 @@ export const ACTIVE_STAGE_SEQUENCE: ReadonlyArray<StageCode> = ACTIVE_STAGE_CODE
  * Returns null if at the final stage.
  */
 export function getNextStageCode(current: StageCode): StageCode | null {
-  const active = DEPRECATED_STAGE_CODES.has(current)
-    ? // S04 -> S03, S05 -> S02 mapping lives in stage-lifecycle.ts but
-      // we don't import the runtime helper here to keep this file
-      // tree-shake-friendly. Inline the two cases.
-      current === 'S04_PD_PM_HANDOVER'
-        ? 'S03_SIGNATURE_FINANCIAL_CLOSE'
-        : 'S02_DESIGN_COST_PROPOSAL'
+  const active: StageCode = DEPRECATED_STAGE_CODES.has(current)
+    ? // S04_PD_PM_HANDOVER -> S03, S05_FINANCIAL_REVIEW -> S02. Inlined
+      // to avoid pulling stage-lifecycle helpers into this file.
+      (current === 'S04_PD_PM_HANDOVER'
+        ? ('S03_SIGNATURE_FINANCIAL_CLOSE' as StageCode)
+        : ('S02_DESIGN_COST_PROPOSAL' as StageCode))
     : current;
   const idx = ACTIVE_STAGE_SEQUENCE.indexOf(active);
   if (idx === -1) return null;
