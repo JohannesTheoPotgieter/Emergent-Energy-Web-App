@@ -639,6 +639,11 @@ export default function CosTracker() {
                       <p className={`text-xl font-bold font-mono mt-0.5 ${kpi.valueColor}`} data-testid={`text-${kpi.id}-value`}>
                         {kpi.value}
                       </p>
+                      {trust?.nullCount && trust.nullCount > 0 ? (
+                        <p className="text-[11px] font-medium text-amber-600 mt-0.5" data-testid={`text-${kpi.id}-null-count`}>
+                          ({trust.nullCount} missing)
+                        </p>
+                      ) : null}
                     </div>
                   </div>
                 </CardContent>

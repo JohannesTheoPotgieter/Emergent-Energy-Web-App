@@ -565,6 +565,18 @@ export async function getCompanyOverviewData() {
     !!(r.invoiceNumber && String(r.invoiceNumber).trim()) &&
     !(r.poNumber && String(r.poNumber).trim())
   ).length;
+  // Suspicious NULLs: a finance line has an invoice but no amount (silently
+  // coalesced to 0). Reported on the API response so the client can render a
+  // "(N missing)" sublabel on impacted KPI cards.
+  const nullAmountWithInvoice = (r: any): boolean => {
+    const rawAmt = r?.amountExVat;
+    const hasAmt = rawAmt != null && rawAmt !== "" && Number.isFinite(parseFloat(String(rawAmt)));
+    const hasInvoice = !!(r?.invoiceNumber && String(r.invoiceNumber).trim());
+    return !hasAmt && hasInvoice;
+  };
+  const companyOverviewNullCount =
+    costRows.filter((r) => activeProjectIds.has(r.projectId) && !r.effectiveTo && nullAmountWithInvoice(r)).length +
+    revenueRows.filter((r) => activeProjectIds.has(r.projectId) && !r.effectiveTo && nullAmountWithInvoice(r)).length;
 
   const finKpis = new Map<string, { actual: number | null; target?: number | null }>([
     ["fin_revenue_vs_target", { actual: realisedRevenueFytd, target: totalPlannedRevenue * 0.75 }], // Revenue realised (COS-ratio)
@@ -815,10 +827,13 @@ export async function getCompanyOverviewData() {
         costRowsMissingLineage,
         revenueRowsMissingLineage,
         sourceLayerVisibility: "explicit",
+        nullCount: companyOverviewNullCount,
       },
+      nullCount: companyOverviewNullCount,
     },
     exceptions: exceptions.slice(0, 15),
     priorities: priorityData,
     signals: signals.slice(0, 10),
+    nullCount: companyOverviewNullCount,
   };
 }
