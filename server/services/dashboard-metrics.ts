@@ -28,6 +28,11 @@ import { getAssignedEvidenceByCostLineIds } from "../lib/finance/qb-allocation-r
 const REFRESH_COOLDOWN_MS = 5 * 60 * 1000; // Skip projects refreshed within 5 minutes
 const CONCURRENCY_LIMIT = 5; // Max parallel project refreshes
 const METRICS_CACHE_TTL = 60; // seconds
+// Pending-refresh marker TTL. Acts as a safety cap: if the worker never runs,
+// the marker expires on its own and reads stop reporting stale.
+const PENDING_REFRESH_TTL = 10 * 60; // 10 minutes
+const PENDING_KEY_PREFIX = "dashboard:metrics-pending:";
+const PROGRAM_PENDING_KEY = "dashboard:program-metrics-pending";
 
 function toNum(v: unknown): number {
   if (v === null || v === undefined || v === "") return 0;
@@ -397,8 +402,15 @@ export async function refreshProgramMetrics(): Promise<void> {
 
 export async function getCachedProjectMetrics(projectId: number) {
   const cacheKey = `dashboard:metrics:${projectId}`;
-  const cached = await cacheGet<Record<string, unknown>>(cacheKey);
-  if (cached) return cached;
+  // A pending-refresh marker means a recent finance write has not yet been
+  // recomputed into the materialized row. Bypass cache so we at least read
+  // the latest materialized state rather than a stale snapshot, and skip
+  // re-populating the cache until the refresh job clears the marker.
+  const pending = await cacheGet<string>(`${PENDING_KEY_PREFIX}${projectId}`);
+  if (!pending) {
+    const cached = await cacheGet<Record<string, unknown>>(cacheKey);
+    if (cached) return cached;
+  }
 
   const [row] = await db
     .select()
@@ -406,7 +418,7 @@ export async function getCachedProjectMetrics(projectId: number) {
     .where(eq(dashboardProjectMetrics.projectId, projectId))
     .limit(1);
 
-  if (row) {
+  if (row && !pending) {
     await cacheSet(cacheKey, row, METRICS_CACHE_TTL);
   }
   return row ?? null;
@@ -414,18 +426,32 @@ export async function getCachedProjectMetrics(projectId: number) {
 
 export async function getCachedProgramMetrics() {
   const cacheKey = "dashboard:program-metrics";
-  const cached = await cacheGet<Record<string, unknown>>(cacheKey);
-  if (cached) return cached;
+  const pending = await cacheGet<string>(PROGRAM_PENDING_KEY);
+  if (!pending) {
+    const cached = await cacheGet<Record<string, unknown>>(cacheKey);
+    if (cached) return cached;
+  }
 
   const [row] = await db
     .select()
     .from(dashboardProgramMetrics)
     .limit(1);
 
-  if (row) {
+  if (row && !pending) {
     await cacheSet(cacheKey, row, METRICS_CACHE_TTL);
   }
   return row ?? null;
+}
+
+/**
+ * Freshness signal for a project's materialized dashboard metrics.
+ * Returns the ISO timestamp of the most recent finance-affecting write
+ * whose refresh has not yet completed, or null if metrics are coherent.
+ */
+export async function getProjectMetricsPendingSince(
+  projectId: number,
+): Promise<string | null> {
+  return (await cacheGet<string>(`${PENDING_KEY_PREFIX}${projectId}`)) ?? null;
 }
 
 // ─── Cache invalidation after refresh ───────────────────────────────
@@ -433,16 +459,48 @@ export async function getCachedProgramMetrics() {
 async function invalidateProjectMetricsCache(projectId: number): Promise<void> {
   await cacheDelete(`dashboard:metrics:${projectId}`);
   await cacheDelete("dashboard:program-metrics");
+  await cacheDelete(`${PENDING_KEY_PREFIX}${projectId}`);
+  await cacheDelete(PROGRAM_PENDING_KEY);
 }
 
 async function invalidateAllMetricsCache(): Promise<void> {
   await cacheClear("dashboard:metrics:*");
   await cacheDelete("dashboard:program-metrics");
+  await cacheClear(`${PENDING_KEY_PREFIX}*`);
+  await cacheDelete(PROGRAM_PENDING_KEY);
 }
 
 // ─── Fire-and-forget wrapper (non-blocking) ────────────────────────
 
+/**
+ * Synchronously mark the project's materialized-metrics cache as stale
+ * (delete cached row + set a pending-refresh marker), then enqueue an
+ * async recompute. The marker guarantees reads between write and
+ * recompute see a coherent signal (either fresh materialized data or an
+ * explicit pending flag) instead of a pre-write cache hit.
+ *
+ * Fire-and-forget: does not block the HTTP response. The sync invalidation
+ * is a Promise but is swallowed — the caller does not need to await.
+ */
 export function refreshProjectMetricsAsync(projectId: number): void {
+  if (!projectId || !Number.isFinite(projectId) || projectId <= 0) return;
+
+  // Kick off the synchronous cache invalidation + pending marker. We do not
+  // await to preserve fire-and-forget semantics at call sites, but we still
+  // log failures so silent staleness does not hide.
+  const now = new Date().toISOString();
+  Promise.all([
+    cacheDelete(`dashboard:metrics:${projectId}`),
+    cacheDelete("dashboard:program-metrics"),
+    cacheSet(`${PENDING_KEY_PREFIX}${projectId}`, now, PENDING_REFRESH_TTL),
+    cacheSet(PROGRAM_PENDING_KEY, now, PENDING_REFRESH_TTL),
+  ]).catch((err) =>
+    console.warn(
+      `[dashboard-metrics] Sync invalidate failed for project ${projectId}:`,
+      (err as Error)?.message,
+    ),
+  );
+
   // Try to enqueue via job queue; fall back to direct execution
   enqueueJob(QUEUE_NAMES.METRICS_REFRESH, { type: "project", projectId }, {
     jobId: `metrics-refresh-project-${projectId}`,
@@ -475,6 +533,24 @@ export function refreshProgramMetricsAsync(): void {
         ),
       );
   });
+}
+
+// ─── Write-path coherency helper ────────────────────────────────────
+
+/**
+ * Call from any finance-affecting write path to guarantee the next read
+ * does not return pre-write cached data, and to surface an explicit
+ * degraded/stale signal until the async recomputation catches up.
+ *
+ * Thin semantic wrapper over `refreshProjectMetricsAsync`: finance write
+ * sites reach for this name rather than the generic "refresh" so intent
+ * is obvious at the call site.
+ */
+export function invalidateProjectFinanceReads(
+  projectId: number | null | undefined,
+): void {
+  if (!projectId || !Number.isFinite(projectId) || projectId <= 0) return;
+  refreshProjectMetricsAsync(projectId);
 }
 
 // ─── Register job queue worker for metrics refresh ──────────────────
