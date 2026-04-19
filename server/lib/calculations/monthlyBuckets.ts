@@ -1,40 +1,4 @@
-import type { CashflowLineItem } from "./cashflow";
 import type { COSLineItem } from "./cosAggregator";
-
-export interface EffectiveDateMap {
-  [entityKey: string]: { [fieldName: string]: string };
-}
-
-// DEPRECATED: Override tables have been dropped (Cleanup Prompt 4).
-// These functions are stubs that return inputs unchanged.
-
-export function buildOverrideMap(_overrides: any[]): EffectiveDateMap {
-  return {};
-}
-
-export function getEffectiveDate(
-  _overrideMap: EffectiveDateMap,
-  _entityType: string,
-  _entityId: string,
-  _fieldName: string,
-  importedDate: string | null,
-): string | null {
-  return importedDate;
-}
-
-export function applyOverridesToCashflowLines(
-  lines: CashflowLineItem[],
-  _overrideMap: EffectiveDateMap,
-): CashflowLineItem[] {
-  return lines;
-}
-
-export function applyOverridesToCOSLines(
-  lines: COSLineItem[],
-  _overrideMap: EffectiveDateMap,
-): COSLineItem[] {
-  return lines;
-}
 
 export function computeMonthlyBuckets(
   lines: COSLineItem[],
