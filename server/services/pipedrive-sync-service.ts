@@ -14,8 +14,9 @@
  */
 
 import { db } from "../db";
-import { eq, isNull } from "drizzle-orm";
+import { eq, isNull, sql as drizzleSql } from "drizzle-orm";
 import { opportunities, clients } from "@shared/schema/projects";
+import { users } from "@shared/schema/users";
 import { resolvePipedriveStageMapping } from "@shared/pipedrive-stage-map";
 
 // ===================== TYPES =====================
@@ -30,10 +31,34 @@ interface PipedriveDeal {
   pipeline_id: number;
   org_id: { value: number; name: string } | null;
   owner_id: { id: number; name: string; email: string } | null;
+  person_id: { value: number; name: string; email?: Array<{ value: string }>; phone?: Array<{ value: string }> } | null;
   expected_close_date: string | null;
   won_time: string | null;
+  lost_time: string | null;
+  lost_reason: string | null;
+  stage_change_time: string | null;
+  probability: number | null;
+  weighted_value: number | null;
+  activities_count: number | null;
+  last_activity_date: string | null;
+  next_activity_date: string | null;
+  next_activity_subject: string | null;
+  label: string | number | null;       // Pipedrive returns label id(s); rendered to text via labelMap
   add_time: string;
   update_time: string;
+}
+
+interface PipedrivePerson {
+  id: number;
+  name: string;
+  email?: Array<{ value: string; primary?: boolean }>;
+  phone?: Array<{ value: string; primary?: boolean }>;
+}
+
+interface PipedriveDealField {
+  key: string;
+  name: string;
+  options?: Array<{ id: number; label: string }>;
 }
 
 interface PipedriveStage {
@@ -72,6 +97,24 @@ class PipedriveClient {
   async getStages(): Promise<PipedriveStage[]> {
     const result = await this.apiGet("/stages") as { data: PipedriveStage[] | null };
     return result.data ?? [];
+  }
+
+  async getPerson(personId: number): Promise<PipedrivePerson | null> {
+    try {
+      const result = await this.apiGet(`/persons/${personId}`) as { data: PipedrivePerson | null };
+      return result.data ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  async getDealFields(): Promise<PipedriveDealField[]> {
+    try {
+      const result = await this.apiGet(`/dealFields`) as { data: PipedriveDealField[] | null };
+      return result.data ?? [];
+    } catch {
+      return [];
+    }
   }
 
   async getDeals(start = 0, limit = 100): Promise<{ data: PipedriveDeal[] | null; additional_data?: { pagination?: { more_items_in_collection: boolean; next_start: number } } }> {
@@ -168,6 +211,33 @@ export async function syncPipedriveDeals(
     console.warn("[PipedriveSync] Could not fetch stage definitions — stage names unavailable:", err);
   }
 
+  // Resolve `label` ids → human labels via /dealFields (one fetch per sync).
+  // Pipedrive's `label` field on a deal is a comma-separated list of option ids.
+  let labelIdToName = new Map<string, string>();
+  try {
+    const fields = await client.getDealFields();
+    const labelField = fields.find((f) => f.key === "label");
+    if (labelField?.options) {
+      for (const opt of labelField.options) {
+        labelIdToName.set(String(opt.id), opt.label);
+      }
+    }
+  } catch (err) {
+    console.warn("[PipedriveSync] Could not fetch dealFields for label mapping:", err);
+  }
+
+  // Build users-by-email map once (no per-deal query). Used to resolve
+  // Pipedrive owner email → local user id for `deal_owner_user_id`.
+  const userByEmail = new Map<string, number>();
+  try {
+    const userRows = await db.select({ id: users.id, email: users.email }).from(users);
+    for (const u of userRows) {
+      if (u.email) userByEmail.set(u.email.trim().toLowerCase(), u.id);
+    }
+  } catch (err) {
+    console.warn("[PipedriveSync] Could not load users for owner mapping:", err);
+  }
+
   try {
     const deals = await client.getAllDeals();
 
@@ -192,7 +262,23 @@ export async function syncPipedriveDeals(
 
       result.dealsProcessed++;
       try {
-        await syncSingleDeal(deal, mapping.appStage, mapping.appStatus, result);
+        // Render label ids → comma-separated names (Pipedrive returns id list as csv string).
+        const labelText = deal.label != null
+          ? String(deal.label).split(",").map((id) => labelIdToName.get(id.trim()) ?? id.trim()).filter(Boolean).join(", ") || null
+          : null;
+        // Owner: prefer email-matched local user; always snapshot the name.
+        const ownerEmailLower2 = deal.owner_id?.email?.trim().toLowerCase() ?? null;
+        const ownerUserId = ownerEmailLower2 ? (userByEmail.get(ownerEmailLower2) ?? null) : null;
+        const ownerName = deal.owner_id?.name ?? null;
+        // Optional: fetch person details if linked. One extra HTTP per deal,
+        // only when person_id is present.
+        let person: PipedrivePerson | null = null;
+        if (deal.person_id?.value) {
+          person = await client.getPerson(deal.person_id.value);
+        }
+        await syncSingleDeal(deal, mapping.appStage, mapping.appStatus, result, {
+          labelText, ownerUserId, ownerName, person,
+        });
       } catch (err) {
         result.errors.push(`Deal ${deal.id}: ${err instanceof Error ? err.message : String(err)}`);
       }
@@ -258,7 +344,31 @@ async function safeRecordRun(params: {
   }
 }
 
-async function syncSingleDeal(deal: PipedriveDeal, appStage: string, appStatus: string, result: PipedriveSyncResult) {
+interface SyncEnrichment {
+  labelText: string | null;
+  ownerUserId: number | null;
+  ownerName: string | null;
+  person: PipedrivePerson | null;
+}
+
+function pickPrimary(arr: Array<{ value: string; primary?: boolean }> | undefined): string | null {
+  if (!arr || arr.length === 0) return null;
+  return (arr.find((x) => x.primary)?.value ?? arr[0]?.value) ?? null;
+}
+
+function parsePipedriveDate(s: string | null | undefined): Date | null {
+  if (!s) return null;
+  const d = new Date(s.includes("T") ? s : s.replace(" ", "T") + "Z");
+  return isNaN(d.getTime()) ? null : d;
+}
+
+async function syncSingleDeal(
+  deal: PipedriveDeal,
+  appStage: string,
+  appStatus: string,
+  result: PipedriveSyncResult,
+  enrichment: SyncEnrichment,
+) {
   const dealIdStr = String(deal.id);
 
   // Find existing opportunity by pipedrive_deal_id
@@ -305,6 +415,8 @@ async function syncSingleDeal(deal: PipedriveDeal, appStage: string, appStatus: 
   // `source` is always 'pipedrive' here to stay consistent with pipedrive_deal_id.
   // `stage` and `status` come from the resolved MAIN_EE_PIPELINE_STAGE_MAP so
   // that stage names (not just deal.status) drive the app-side representation.
+  // The enrichment block (added 2026-04-20) populates the new columns from
+  // migration 20260420_opportunity_merge_pipedrive_enrich.sql.
   const crmOwnedFields = {
     pipedriveDealId: dealIdStr,
     source: "pipedrive" as const,
@@ -314,6 +426,25 @@ async function syncSingleDeal(deal: PipedriveDeal, appStage: string, appStatus: 
     expectedCloseDate: deal.expected_close_date ?? null,
     signedDate: deal.won_time ? deal.won_time.split(" ")[0] : null,
     status: appStatus,
+    // --- enrichment (always written, may be null) ---
+    dealName: dealTitle,
+    dealOwnerUserId: enrichment.ownerUserId,
+    dealOwnerName: enrichment.ownerName,
+    currency: deal.currency || "ZAR",
+    pipedriveUpdatedAt: parsePipedriveDate(deal.update_time),
+    pipedriveStageChangedAt: parsePipedriveDate(deal.stage_change_time),
+    probability: deal.probability != null ? String(deal.probability) : null,
+    weightedValue: deal.weighted_value != null ? String(deal.weighted_value) : null,
+    lostReason: deal.lost_reason ?? null,
+    lostTime: parsePipedriveDate(deal.lost_time),
+    personName: enrichment.person?.name ?? deal.person_id?.name ?? null,
+    personEmail: enrichment.person ? pickPrimary(enrichment.person.email) : null,
+    personPhone: enrichment.person ? pickPrimary(enrichment.person.phone) : null,
+    activitiesCount: deal.activities_count ?? 0,
+    lastActivityDate: deal.last_activity_date ?? null,
+    nextActivityDate: deal.next_activity_date ?? null,
+    nextActivitySubject: deal.next_activity_subject ?? null,
+    labels: enrichment.labelText,
     updatedAt: new Date(),
   };
 
@@ -326,7 +457,8 @@ async function syncSingleDeal(deal: PipedriveDeal, appStage: string, appStatus: 
     result.dealsUpdated++;
   } else {
     // On create, seed notes with the Pipedrive deal title so the record is
-    // recognisable. Subsequent syncs will not touch this field again.
+    // recognisable. `deal_name` is the canonical column going forward; the
+    // notes string is kept only for back-compat with old reads.
     await db.insert(opportunities).values({
       ...crmOwnedFields,
       notes: `Pipedrive: ${dealTitle}`,

@@ -27,11 +27,13 @@ interface WorkingListRow {
   signedDate: string | Date | null;
   expectedCloseDate: string | Date | null;
   notes: string | null;
+  dealName: string | null;
   updatedAt: Date | null;
   clientId: number | null;
   clientName: string | null;
   dealOwnerUserId: number | null;
-  dealOwnerName: string | null;
+  dealOwnerUserName: string | null;
+  dealOwnerNameSnapshot: string | null;
   siteId: number | null;
   siteName: string | null;
   siteAddress: string | null;
@@ -146,11 +148,13 @@ export class OpportunitiesRepository {
         signedDate: opportunities.signedDate,
         expectedCloseDate: opportunities.expectedCloseDate,
         notes: opportunities.notes,
+        dealName: opportunities.dealName,
         updatedAt: opportunities.updatedAt,
         clientId: opportunities.clientId,
         clientName: clients.name,
         dealOwnerUserId: opportunities.dealOwnerUserId,
-        dealOwnerName: users.name,
+        dealOwnerUserName: users.name,
+        dealOwnerNameSnapshot: opportunities.dealOwnerName,
         siteId: opportunities.siteId,
         siteName: sites.siteName,
         siteAddress: sites.address,
@@ -336,6 +340,130 @@ export class OpportunitiesRepository {
   async getOpportunityById(opportunityId: number): Promise<Opportunity | undefined> {
     const [row] = await db.select().from(opportunities).where(eq(opportunities.id, opportunityId));
     return row ?? undefined;
+  }
+
+  /**
+   * Unified opportunity workflow read used by the new merged
+   * Opportunity drawer (2026-04-20). Returns the CRM record (Pipedrive
+   * truth) plus its 1:1 PD shadow row. If the shadow does not yet exist,
+   * one is lazy-created with sensible defaults the first time someone
+   * opens the opportunity. The lazy-create is what lets us treat
+   * "Pipedrive Opportunity" and "PD Ticket" as a single user-facing
+   * concept without back-filling a row for every imported deal.
+   */
+  async getOpportunityWithWorkflow(opportunityId: number, actingUserId: number | null) {
+    const [opp] = await db
+      .select({
+        opp: opportunities,
+        clientName: clients.name,
+        siteName: sites.siteName,
+      })
+      .from(opportunities)
+      .leftJoin(clients, eq(clients.id, opportunities.clientId))
+      .leftJoin(sites, eq(sites.id, opportunities.siteId))
+      .where(eq(opportunities.id, opportunityId));
+    if (!opp) return null;
+
+    // Race-safe lazy shadow create: relies on the partial unique index
+    // `pd_tickets_opportunity_id_unique` (migrations/20260420_pd_tickets_opportunity_unique.sql)
+    // — concurrent inserts collapse to a single row via onConflictDoNothing,
+    // then we re-select the canonical row.
+    const projectSiteName =
+      opp.siteName ||
+      opp.clientName ||
+      opp.opp.dealName ||
+      `Opportunity #${opp.opp.id}`;
+    await db
+      .insert(pdTickets)
+      .values({
+        opportunityId,
+        clientId: opp.opp.clientId ?? null,
+        clientNameSnapshot: opp.clientName ?? null,
+        projectSiteName,
+        requestType: "Cost Proposal",
+        priority: "Medium",
+        status: "Draft",
+        fundingType: opp.opp.fundingType ?? null,
+        sizeKwp: opp.opp.estimatedKwp ?? null,
+        estimatedProjectValue: opp.opp.estimatedValue ?? null,
+        createdBy: actingUserId,
+      })
+      .onConflictDoNothing({ target: pdTickets.opportunityId });
+
+    const [shadow] = await db
+      .select()
+      .from(pdTickets)
+      .where(eq(pdTickets.opportunityId, opportunityId))
+      .limit(1);
+    if (!shadow) {
+      throw new Error(`PD shadow vanished for opportunity #${opportunityId}`);
+    }
+
+    const tasks = await db
+      .select({
+        id: workItems.id,
+        title: workItems.title,
+        status: workItems.status,
+        priority: workItems.priority,
+        endDate: workItems.endDate,
+      })
+      .from(workItems)
+      .where(eq(workItems.pdTicketId, shadow.id))
+      .orderBy(asc(workItems.sortOrder));
+
+    return {
+      crm: opp.opp,
+      clientName: opp.clientName,
+      siteName: opp.siteName,
+      pd: shadow,
+      tasks,
+    };
+  }
+
+  /**
+   * PD-side update used by `PATCH /api/opportunities/:id/pd`.
+   * Whitelists the columns that belong to the PD workflow so we can
+   * never accidentally let a UI submit overwrite Pipedrive truth.
+   */
+  async updatePdShadow(
+    opportunityId: number,
+    fields: Partial<Pick<
+      typeof pdTickets.$inferInsert,
+      | "requestType"
+      | "priority"
+      | "status"
+      | "dueDate"
+      | "projectDeveloperUserId"
+      | "designerUserId"
+      | "billsOrTariffData"
+      | "meteringDataAvailable"
+      | "siteInspectionForm"
+      | "siteInspectionLink"
+      | "batteriesNeeded"
+      | "batterySize"
+      | "dieselGenIntegration"
+      | "roofReplacementNeeded"
+      | "hseDiscussed"
+      | "comments"
+      | "estimatedCost"
+      | "estimatedMargin"
+      | "estimatedMarginPercent"
+      | "financialNotes"
+    >>,
+  ): Promise<PdTicket | null> {
+    const [existing] = await db
+      .select()
+      .from(pdTickets)
+      .where(eq(pdTickets.opportunityId, opportunityId))
+      .orderBy(desc(pdTickets.id))
+      .limit(1);
+    if (!existing) return null;
+    const [updated] = await db
+      .update(pdTickets)
+      .set({ ...fields, updatedAt: new Date() })
+      .where(eq(pdTickets.id, existing.id))
+      .returning();
+    return updated ?? null;
   }
 
   async getOpportunityCore(opportunityId: number) {
