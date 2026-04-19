@@ -133,7 +133,7 @@ export const ENTITY_DESCRIPTIONS: Record<string, string> = {
   create_project: "Create new project from lifecycle",
   pd_clients: "Clients list & client overview",
   pd_dashboard: "Project Development Dashboard — project development pipeline",
-  pd_tickets: "Project Development Tickets — development tickets & tracking",
+  pd_tickets: "Project Development — opportunity workflow & tracking",
   projects: "Project List — all projects summary table",
   execution_board: "Execution Dashboard — delivery KPIs & cards",
   deliverables: "Deliverables tracker across projects",
