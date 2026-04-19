@@ -499,7 +499,7 @@ export default function CosTracker() {
   const [editing, setEditing] = useState<EditingCell | null>(null);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [drawerMonth, setDrawerMonth] = useState<{ monthKey: string; monthLabel: string; defaultFilter?: "all" | "realised" | "committed" | "planned" | "qb_actual"; defaultProject?: string } | null>(null);
-  const [activeTab, setActiveTab] = useState<CosTab | "trend">("realised");
+  const [activeTab, setActiveTab] = useState<"recon" | "trend">("recon");
   const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
   const [projectSearch, setProjectSearch] = useState("");
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
@@ -651,11 +651,11 @@ export default function CosTracker() {
     </div>
   );
 
-  const renderGrid = (tab: CosTab) => {
-    const rows = ROW_DEFS.filter((r) => r.tabs.includes(tab));
+  const renderGrid = () => {
+    const rows = ROW_DEFS;
     return (
       <div className="overflow-x-auto">
-        <table className="w-full text-xs sm:text-sm" data-testid={`table-cos-grid-${tab}`}>
+        <table className="w-full text-xs sm:text-sm" data-testid="table-cos-grid">
           <thead>
             <tr className="border-b bg-muted/80">
               <th className="sticky left-0 z-10 bg-muted/95 backdrop-blur-sm px-3 sm:px-5 py-2 sm:py-3 text-left font-semibold text-muted-foreground uppercase tracking-wider text-[10px] sm:text-[11px] min-w-[140px] sm:min-w-[200px] border-r border-border">
@@ -800,58 +800,84 @@ export default function CosTracker() {
     );
   };
 
-  const renderTabContent = (tab: CosTab) => {
+  const renderKpiCard = (tab: CosTab) => {
     const meta = TAB_META[tab];
     const Icon = meta.icon;
     const k = kpiByTab[tab];
     const delta = k.lastValue - k.prevValue;
     const deltaPct = k.prevValue !== 0 ? (delta / Math.abs(k.prevValue)) * 100 : 0;
     const deltaPositive = delta >= 0;
+    const iconBg = tab === "realised" ? "bg-foreground/8 text-foreground" : tab === "committed" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700";
     return (
-      <div className="space-y-4">
-        <Card className="border-border shadow-sm">
-          <CardContent className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6">
-            <div className={`h-11 w-11 rounded-lg flex items-center justify-center shrink-0 ${tab === "realised" ? "bg-foreground/8 text-foreground" : tab === "committed" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>
-              <Icon className="h-5 w-5" />
+      <Card key={tab} className="border-border shadow-sm">
+        <CardContent className="p-3 sm:p-4">
+          <div className="flex items-center gap-2 mb-1.5">
+            <div className={`h-7 w-7 rounded-lg flex items-center justify-center ${iconBg}`}>
+              <Icon className="h-3.5 w-3.5" />
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">YTD {meta.label}</p>
-              <p className={`text-2xl sm:text-3xl font-bold font-mono tracking-tight ${meta.accent}`} data-testid={`text-ytd-${tab}-value`}>
-                {formatRand(k.ytdValue)}
-              </p>
-              <p className="text-xs text-muted-foreground mt-0.5">{meta.description}</p>
-            </div>
-            <div className="flex items-center gap-4 sm:gap-6">
-              <div className="flex flex-col items-end">
-                <span className="text-[11px] uppercase tracking-wider text-muted-foreground">Last month</span>
-                <span className="font-mono font-semibold text-sm">{formatRand(k.lastValue)}</span>
-                {prevMonth && (
-                  <span className={`inline-flex items-center gap-0.5 text-[11px] font-medium ${deltaPositive ? "text-emerald-700" : "text-destructive"}`}>
-                    {deltaPositive ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
-                    {Math.abs(deltaPct).toFixed(1)}% vs prior
-                  </span>
-                )}
-              </div>
-              {renderSparkline(tab)}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-sm overflow-hidden">
-          <CardHeader className="bg-muted/30 border-b border-border px-3 sm:px-5 py-2.5 sm:py-3">
-            <CardTitle className="text-sm font-semibold tracking-tight flex items-center gap-2">
-              <Icon className="h-4 w-4 text-muted-foreground" />
-              {meta.label} — Monthly grid
-              {isProjectFiltered && (
-                <Badge variant="outline" className="ml-2 text-[10px] font-medium border-emerald-200 bg-emerald-50 text-emerald-700">
-                  Filtered: {selectedProjects.length} project{selectedProjects.length === 1 ? "" : "s"}
-                </Badge>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">YTD {meta.label}</p>
+          </div>
+          <p className={`text-lg sm:text-xl font-bold font-mono tracking-tight ${meta.accent}`} data-testid={`text-ytd-${tab}-value`}>
+            {formatRand(k.ytdValue)}
+          </p>
+          <div className="flex items-center justify-between mt-1.5">
+            <div className="flex flex-col">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Last mo.</span>
+              <span className="font-mono font-semibold text-xs">{formatRand(k.lastValue)}</span>
+              {prevMonth && (
+                <span className={`inline-flex items-center gap-0.5 text-[10px] font-medium ${deltaPositive ? "text-emerald-700" : "text-destructive"}`}>
+                  {deltaPositive ? <ArrowUpRight className="h-2.5 w-2.5" /> : <ArrowDownRight className="h-2.5 w-2.5" />}
+                  {Math.abs(deltaPct).toFixed(1)}%
+                </span>
               )}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">{renderGrid(tab)}</CardContent>
-        </Card>
-      </div>
+            </div>
+            {renderSparkline(tab)}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  const renderQbKpiCard = () => {
+    const lastQb = lastMonth?.qbOnlyActual ?? 0;
+    const prevQb = prevMonth?.qbOnlyActual ?? 0;
+    const delta = lastQb - prevQb;
+    const deltaPct = prevQb !== 0 ? (delta / Math.abs(prevQb)) * 100 : 0;
+    const deltaPositive = delta >= 0;
+    const sparkData = months.map((m) => ({ x: m.monthKey, y: m.qbOnlyActual }));
+    return (
+      <Card className="border-border shadow-sm">
+        <CardContent className="p-3 sm:p-4">
+          <div className="flex items-center gap-2 mb-1.5">
+            <div className="h-7 w-7 rounded-lg flex items-center justify-center bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <DollarSign className="h-3.5 w-3.5" />
+            </div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">YTD QuickBooks</p>
+          </div>
+          <p className="text-lg sm:text-xl font-bold font-mono tracking-tight text-emerald-700" data-testid="text-ytd-qb-value">
+            {formatRand(ytdQbCos)}
+          </p>
+          <div className="flex items-center justify-between mt-1.5">
+            <div className="flex flex-col">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Last mo.</span>
+              <span className="font-mono font-semibold text-xs">{formatRand(lastQb)}</span>
+              {prevMonth && (
+                <span className={`inline-flex items-center gap-0.5 text-[10px] font-medium ${deltaPositive ? "text-emerald-700" : "text-destructive"}`}>
+                  {deltaPositive ? <ArrowUpRight className="h-2.5 w-2.5" /> : <ArrowDownRight className="h-2.5 w-2.5" />}
+                  {Math.abs(deltaPct).toFixed(1)}%
+                </span>
+              )}
+            </div>
+            <div className="h-10 w-28 sm:w-36">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={sparkData} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+                  <Line type="monotone" dataKey="y" stroke="#16a34a" strokeWidth={1.5} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     );
   };
 
@@ -1007,21 +1033,20 @@ export default function CosTracker() {
             </div>
           </aside>
 
-          <div className="flex-1 min-w-0">
-            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as CosTab | "trend")}>
+          <div className="flex-1 min-w-0 space-y-3">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3" data-testid="kpi-strip-cos">
+              {renderKpiCard("planned")}
+              {renderKpiCard("committed")}
+              {renderKpiCard("realised")}
+              {renderQbKpiCard()}
+            </div>
+
+            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "recon" | "trend")}>
               <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
                 <TabsList className="bg-muted/60">
-                  <TabsTrigger value="realised" className="data-[state=active]:bg-card gap-1.5" data-testid="tab-realised">
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                    Realised
-                  </TabsTrigger>
-                  <TabsTrigger value="committed" className="data-[state=active]:bg-card gap-1.5" data-testid="tab-committed">
-                    <Clock className="h-3.5 w-3.5" />
-                    Committed
-                  </TabsTrigger>
-                  <TabsTrigger value="planned" className="data-[state=active]:bg-card gap-1.5" data-testid="tab-planned">
+                  <TabsTrigger value="recon" className="data-[state=active]:bg-card gap-1.5" data-testid="tab-recon">
                     <ListChecks className="h-3.5 w-3.5" />
-                    Planned
+                    Recon Grid
                   </TabsTrigger>
                   <TabsTrigger value="trend" className="data-[state=active]:bg-card gap-1.5" data-testid="tab-trend">
                     <LineChartIcon className="h-3.5 w-3.5" />
@@ -1110,9 +1135,22 @@ export default function CosTracker() {
                 </div>
               )}
 
-              <TabsContent value="realised" className="mt-0">{renderTabContent("realised")}</TabsContent>
-              <TabsContent value="committed" className="mt-0">{renderTabContent("committed")}</TabsContent>
-              <TabsContent value="planned" className="mt-0">{renderTabContent("planned")}</TabsContent>
+              <TabsContent value="recon" className="mt-0">
+                <Card className="shadow-sm overflow-hidden">
+                  <CardHeader className="bg-muted/30 border-b border-border px-3 sm:px-5 py-2.5 sm:py-3">
+                    <CardTitle className="text-sm font-semibold tracking-tight flex items-center gap-2">
+                      <ListChecks className="h-4 w-4 text-muted-foreground" />
+                      Planned → Committed → Realised → QuickBooks reconciliation
+                      {isProjectFiltered && (
+                        <Badge variant="outline" className="ml-2 text-[10px] font-medium border-emerald-200 bg-emerald-50 text-emerald-700">
+                          Filtered: {selectedProjects.length} project{selectedProjects.length === 1 ? "" : "s"}
+                        </Badge>
+                      )}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-0">{renderGrid()}</CardContent>
+                </Card>
+              </TabsContent>
               <TabsContent value="trend" className="mt-0">{renderTrend()}</TabsContent>
             </Tabs>
           </div>
