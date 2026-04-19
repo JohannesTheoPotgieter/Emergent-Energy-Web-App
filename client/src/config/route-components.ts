@@ -37,10 +37,6 @@ const TrainingPage = lazyWithRetry(() => import("@/pages/training"));
 const PMDashboard = lazyWithRetry(() => import("@/pages/pm-dashboard"));
 const PortfoliosPage = lazyWithRetry(() => import("@/pages/portfolios"));
 const PortfolioDetailPage = lazyWithRetry(() => import("@/pages/portfolio-detail"));
-const PdTicketsPage = lazyWithRetry(() => import("@/pages/pd-tickets"));
-const PdTicketCreatePage = lazyWithRetry(() => import("@/pages/pd-ticket-create"));
-const PdTicketDetailPage = lazyWithRetry(() => import("@/pages/pd-ticket-detail"));
-const PdReportsPage = lazyWithRetry(() => import("@/pages/pd-reports"));
 const TeamsChatsPage = lazyWithRetry(() => import("@/pages/teams-chats"));
 const CollabEmailPage = lazyWithRetry(() => import("@/pages/collab-email"));
 const FinancialLinkingPage = lazyWithRetry(() => import("@/pages/financial-linking"));
@@ -161,10 +157,6 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   PMDashboard,
   PortfoliosPage,
   PortfolioDetailPage,
-  PdTicketsPage,
-  PdTicketCreatePage,
-  PdTicketDetailPage,
-  PdReportsPage,
   TeamsChatsPage,
   CollabEmailPage,
   PMOnTheGoHome,

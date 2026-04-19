@@ -50,8 +50,13 @@ The project is organized as a monorepo with distinct `client/` (React SPA), `ser
 
 ### Microsoft 365 Integration
 - Utilizes `@microsoft/microsoft-graph-client` for integration with Outlook, Teams, and SharePoint.
-- Includes a sync service (`server/ms-sync-service.ts`) for calendar events and a SharePoint list intake for Engineering Support's "Proposals Pipeline."
+- Includes a sync service (`server/ms-sync-service.ts`) for calendar events.
 - Data storage policy prohibits storing full email bodies or attachment content; only metadata and deep links are stored.
+
+### Project Development module — Pipedrive is the source of truth (2026-04-19)
+- Pipedrive replaces both legacy intake paths. The **Opportunities** page (`/opportunities`) is the canonical PD work queue; `/pd` now resolves to the same Opportunities page.
+- **PD Tickets UI removed**: pages `pd-tickets.tsx`, `pd-ticket-create.tsx`, `pd-ticket-detail.tsx`, `pd-reports.tsx` deleted. Legacy deep links `/pd/tickets`, `/pd/tickets/create`, `/pd/tickets/:id`, `/pd/reports` are alias-redirected to `/opportunities`.
+- **SharePoint Proposals Pipeline UI removed**: no nav entries reference SharePoint intake. Backend SharePoint sync routes (`server/sharepoint*.ts`, `server/intake-connector.ts`, `server/sync-routes.ts` SharePoint endpoints, `server/routes/pd-intake.routes.ts`, `server/engineering-intake-routes.ts`) and the PD Tickets API (`server/pd-routes.ts`) remain **deliberately live**. The Opportunities page itself reads from `/api/pd/tickets` to surface "retired" historical tickets alongside Pipedrive opportunities, so deleting the backend would break Opportunities. Quality and handover routes also depend on `getProjectDevelopmentWorkspace` which queries `pd_tickets` and `intake_requests`. **Backend full removal is queued as a follow-up** — it requires refactoring `server/services/project-development-workspace-service.ts` (currently exposes `workspace.tickets` + `workspace.intake` consumed by quality/handover) and dropping the SharePoint section from `shared/integration-boundaries.ts` and `shared/schema/integrations.ts`. DB tables (`pd_tickets`, `intake_requests`, `intake_tasks`) are retained as orphan storage; no destructive drop.
 
 ### Testing
 - **Unit & API Tests:** Vitest.
