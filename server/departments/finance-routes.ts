@@ -64,7 +64,6 @@ import {
   getCanonicalProjectCostLinesByName,
   resolveProjectIdByName,
 } from "../services/project-cost-line-read-service";
-import { getFeatureFlag } from "../lib/feature-flags";
 import { buildFinanceCoreTrustReport } from "../services/finance-core-trust-service";
 import { setFinanceTrustHeaders as setFinanceTrustHeadersShared } from "../lib/finance-trust/envelope";
 import type { FinanceTrustHeaderParams } from "../lib/finance-trust/envelope";
@@ -78,17 +77,8 @@ import {
 import { QuickBooksLinksRepository } from "../repositories/quickbooks-links-repository";
 
 const FINANCIAL_APPROVER_ROLES = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"];
-const CANONICAL_FINANCE_COSTLINE_READ_FLAG = "canonical_finance_costline_read_v1";
-
-async function isCanonicalFinanceCostlineReadEnabled(): Promise<boolean> {
-  return getFeatureFlag(CANONICAL_FINANCE_COSTLINE_READ_FLAG);
-}
 
 async function getHighRiskProjectCostReadRows(projectName: string, projectIdParam?: number | null): Promise<any[]> {
-  if (!(await isCanonicalFinanceCostlineReadEnabled())) {
-    return storage.getProgramExpensesByProject(projectName);
-  }
-
   if (projectIdParam != null && Number.isFinite(projectIdParam)) {
     return getCanonicalProjectCostLines(projectIdParam as number);
   }
@@ -96,9 +86,6 @@ async function getHighRiskProjectCostReadRows(projectName: string, projectIdPara
 }
 
 async function getHighRiskAllCostReadRows(): Promise<any[]> {
-  if (!(await isCanonicalFinanceCostlineReadEnabled())) {
-    return storage.getAllCostLinesForCashflow();
-  }
   return getCanonicalAllCurrentCostLines();
 }
 
@@ -3781,40 +3768,17 @@ router.get("/api/program-expenses", requireAuth, async (req, res) => {
   try {
     const { projectName, startDate, endDate, applyOverrides } = req.query;
     let expenses;
-    const canonicalEnabled = await isCanonicalFinanceCostlineReadEnabled();
 
-    if (canonicalEnabled && projectName && typeof projectName === 'string') {
+    if (projectName && typeof projectName === 'string') {
       const resolvedProjectId = await resolveProjectIdByName(projectName);
       expenses = resolvedProjectId ? await getCanonicalProjectCostLines(resolvedProjectId) : [];
-      setFinanceTrustHeaders(res, {
-        sourceLayer: "canonical",
-        canonicalTable: "normalized_cost_lines",
-      });
-
-      // Override data now baked into base rows
-    } else if (canonicalEnabled) {
-      expenses = await getCanonicalAllCurrentCostLines();
-      setFinanceTrustHeaders(res, {
-        sourceLayer: "canonical",
-        canonicalTable: "normalized_cost_lines",
-      });
-    } else if (projectName && typeof projectName === 'string') {
-      expenses = await storage.getProgramExpensesByProject(projectName);
-      setFinanceTrustHeaders(res, {
-        sourceLayer: "legacy",
-        canonicalTable: "normalized_cost_lines",
-        cacheLayer: "database_storage_expense_cache_30s_compat",
-        uncertainty: "compatibility_route_legacy_fallback",
-      });
     } else {
-      expenses = await storage.getAllProgramExpenses();
-      setFinanceTrustHeaders(res, {
-        sourceLayer: "legacy",
-        canonicalTable: "normalized_cost_lines",
-        cacheLayer: "database_storage_expense_cache_30s_compat",
-        uncertainty: "compatibility_route_legacy_fallback",
-      });
+      expenses = await getCanonicalAllCurrentCostLines();
     }
+    setFinanceTrustHeaders(res, {
+      sourceLayer: "canonical",
+      canonicalTable: "normalized_cost_lines",
+    });
 
     if (startDate && typeof startDate === 'string') {
       expenses = expenses.filter(e => e.expensePaymentDate && e.expensePaymentDate >= startDate);
@@ -3832,22 +3796,11 @@ router.get("/api/program-expenses", requireAuth, async (req, res) => {
 router.get("/api/program-expenses/:projectName", requireAuth, async (req, res) => {
   try {
     const projectName = paramStr(req.params.projectName);
-    const canonicalEnabled = await isCanonicalFinanceCostlineReadEnabled();
-
-    const expenses = canonicalEnabled
-      ? await getCanonicalProjectCostLinesByName(projectName).then((r) => r.rows)
-      : await storage.getProgramExpensesByProject(projectName);
-    setFinanceTrustHeaders(res, canonicalEnabled
-      ? {
-        sourceLayer: "canonical",
-        canonicalTable: "normalized_cost_lines",
-      }
-      : {
-        sourceLayer: "legacy",
-        canonicalTable: "normalized_cost_lines",
-        cacheLayer: "database_storage_expense_cache_30s_compat",
-        uncertainty: "compatibility_route_legacy_fallback",
-      });
+    const expenses = await getCanonicalProjectCostLinesByName(projectName).then((r) => r.rows);
+    setFinanceTrustHeaders(res, {
+      sourceLayer: "canonical",
+      canonicalTable: "normalized_cost_lines",
+    });
 
     res.json(expenses);
   } catch (error) {
@@ -3859,16 +3812,11 @@ router.get("/api/finance/cost-lines/diagnostics", requireAuth, requireAdmin, asy
   try {
     const projectIdParam = req.query.projectId ? parseInt(String(req.query.projectId), 10) : null;
     const scopedProjectId = Number.isFinite(projectIdParam) ? projectIdParam! : undefined;
-    const [canonicalDiagnostics, riskDiagnostics, canonicalReadEnabled] = await Promise.all([
+    const [canonicalDiagnostics, riskDiagnostics] = await Promise.all([
       getCanonicalCostLineDiagnostics(scopedProjectId),
       getCostLineRiskDiagnostics(scopedProjectId),
-      isCanonicalFinanceCostlineReadEnabled(),
     ]);
     res.json({
-      featureFlag: {
-        key: CANONICAL_FINANCE_COSTLINE_READ_FLAG,
-        enabled: canonicalReadEnabled,
-      },
       canonical: canonicalDiagnostics,
       risks: riskDiagnostics,
     });
@@ -4641,7 +4589,7 @@ router.get("/api/revenue-tab/:projectName", requireAuth, async (req, res) => {
     let actualExpenditure = 0;
     let allExpenditure = 0;
     try {
-      const expenseRows = await storage.getProgramExpensesByProject(projectName);
+      const { rows: expenseRows } = await getCanonicalProjectCostLinesByName(projectName);
       for (const row of expenseRows) {
         if ((row as any).rowType === 'item') {
           costedExpenditure += parseFloat(String((row as any).budgetTotal || 0)) || 0;
@@ -5180,7 +5128,7 @@ router.post("/api/expenditure/overrides", requireAuth, requireAdminOrFinancialEd
 
     for (const pn of projectNames) {
       const projectOverrides = overrides.filter((o: any) => o.projectName === pn);
-      const expenses = await storage.getProgramExpensesByProject(pn as string);
+      const { rows: expenses } = await getCanonicalProjectCostLinesByName(pn as string);
       const rowMap = new Map(expenses.map((e: any) => [e.rowNumber, e]));
 
       const rowGroups = new Map<number, Record<string, any>>();
@@ -5340,7 +5288,7 @@ router.post("/api/expenses/add-line", requireAuth, requireAdmin, async (req, res
     if (!projectName || !expenseCategory) {
       return res.status(400).json({ error: "projectName and expenseCategory are required" });
     }
-    const maxRow = await storage.getProgramExpensesByProject(projectName);
+    const { rows: maxRow } = await getCanonicalProjectCostLinesByName(projectName);
     const maxRowNum = maxRow.reduce((max: number, r: any) => Math.max(max, r.rowNumber || 0), 0);
     const newExpense = await storage.createManualExpense({
       projectName,
@@ -5370,7 +5318,7 @@ router.post("/api/expenses/add-category", requireAuth, requireAdmin, async (req,
     if (!projectName || !categoryName) {
       return res.status(400).json({ error: "projectName and categoryName are required" });
     }
-    const maxRow = await storage.getProgramExpensesByProject(projectName);
+    const { rows: maxRow } = await getCanonicalProjectCostLinesByName(projectName);
     const maxRowNum = maxRow.reduce((max: number, r: any) => Math.max(max, r.rowNumber || 0), 0);
     const newCategory = await storage.createManualExpense({
       projectName,
@@ -5407,7 +5355,7 @@ router.post("/api/expenses/insert-task-as-line", requireAuth, requireAdmin, asyn
       const planTask = planTasks.find((t: any) => t.id === Math.abs(taskId));
       if (planTask) { taskTitle = (planTask as any).highLevelProgramme || `Task ${(planTask as any).taskNo || ''}`; taskEndDate = (planTask as any).actualEnd || null; }
     }
-    const maxRow = await storage.getProgramExpensesByProject(projectName);
+    const { rows: maxRow } = await getCanonicalProjectCostLinesByName(projectName);
     const maxRowNum = maxRow.reduce((max: number, r: any) => Math.max(max, r.rowNumber || 0), 0);
     const newExpense = await storage.createManualExpense({
       projectName,

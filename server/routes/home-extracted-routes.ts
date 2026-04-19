@@ -22,6 +22,7 @@ import { classifyExpenseState } from "../lib/calculations/stateClassifier";
 import { resolveInflowEffectiveDates } from "../lib/cashflow-helpers";
 import { getAllPMWorkItemsAsProjectPlan } from "../work-items-adapter";
 import { safeNum, isWithinDays, isThisWeek, isThisMonth, getFYRange, findMaxEndDate, findMinStartDate } from "../lib/home-helpers";
+import { getCanonicalAllCurrentCostLines } from "../services/project-cost-line-read-service";
 
 export function registerHomeExtractedRoutes(app: Express): void {
 
@@ -31,7 +32,7 @@ export function registerHomeExtractedRoutes(app: Express): void {
     try {
       const [allProjectInfo, legacyExpenses, legacyRawInflows, legacyPlans, latestRefresh, revenueSummaries, allTaskLinks, allOpTasks, allPlanOverrides, allPlanTasks] = await Promise.all([
         storage.getAllProjectInfo(),
-        storage.getAllProgramExpenses(),
+        getCanonicalAllCurrentCostLines(),
         storage.getAllProgramInflows(),
         storage.getAllProjectPlans(),
         storage.getLatestRefresh(),

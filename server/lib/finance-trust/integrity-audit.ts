@@ -66,13 +66,6 @@ const LEGACY_DEPENDENCY_MAP: FinanceLegacyDependency[] = [
     notes: "PI compat type; adapter over normalized_revenue_lines.",
   },
   {
-    path: "server/storage.ts#getAllProgramExpenses",
-    kind: "storage",
-    status: "active",
-    notes:
-      "Legacy cache (30s TTL). Still called when canonical_finance_costline_read_v1 flag is off.",
-  },
-  {
     path: "server/storage.ts#getAllProgramInflows",
     kind: "storage",
     status: "active",
@@ -102,9 +95,9 @@ const LEGACY_DEPENDENCY_MAP: FinanceLegacyDependency[] = [
   {
     path: "POST /api/program-expenses",
     kind: "route",
-    status: "deprecated",
+    status: "active",
     notes:
-      "Compatibility route gated by canonical_finance_costline_read_v1. Emits X-Finance-Source-Layer=legacy when reading from storage cache.",
+      "Reads normalized_cost_lines via project-cost-line-read-service. Always emits X-Finance-Source-Layer=canonical.",
   },
   {
     path: "POST /api/quickbooks/cost-lines/:id/mark-realised",
@@ -244,7 +237,6 @@ export async function buildFinanceIntegrityReport(): Promise<FinanceIntegrityRep
     deferredBecauseProofInsufficient: [
       "Consolidating /api/program-expenses + /api/finance/cos into a single canonical endpoint — downstream clients still read the compat shape.",
       "Enforcing a DB-level CHECK that invoice_number is set when status = 'invoiced' — retention invoices and placeholder rows violate this today.",
-      "Dropping the 30s legacy expense cache in server/storage.ts — used by non-canonical code paths behind the canonical_finance_costline_read_v1 flag.",
       "Adding a unique (project_id, invoice_number, amount_ex_vat) constraint on normalized_cost_lines — legitimate retention patterns trip it.",
     ],
   };

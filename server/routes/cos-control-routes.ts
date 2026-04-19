@@ -16,6 +16,7 @@ import { isCanonicalCosRealised } from "../lib/finance/cos-realisation";
 import { computeMonthlyBuckets } from "../lib/calculations/monthlyBuckets";
 import { getCosEffectiveDateAndSource } from "../lib/expense-row-selector";
 import { classifyCosStatusFull } from "../lib/calculations/financeUtils";
+import { getCanonicalAllCurrentCostLines } from "../services/project-cost-line-read-service";
 
 // Unified realisation check: delegates to canonical isCanonicalCosRealised()
 // to stay aligned with COS Tracker, Company Overview, Dashboard Metrics, etc.
@@ -128,7 +129,7 @@ export function registerCosControlRoutes(app: Express) {
 
   app.get("/api/cos-control/summary", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const legacyExp = await storage.getAllProgramExpenses();
+      const legacyExp = await getCanonicalAllCurrentCostLines();
       const { expenses } = await getMergedExpensesAndInflows(legacyExp, []);
       const lines = expenses
         .filter((e: any) => e.rowType === 'item' || !e.rowType)
@@ -163,7 +164,7 @@ export function registerCosControlRoutes(app: Express) {
 
   app.get("/api/cos-control/by-project", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const legacyExp = await storage.getAllProgramExpenses();
+      const legacyExp = await getCanonicalAllCurrentCostLines();
       const { expenses } = await getMergedExpensesAndInflows(legacyExp, []);
       const lines = expenses
         .filter((e: any) => e.rowType === 'item' || !e.rowType)
@@ -199,7 +200,7 @@ export function registerCosControlRoutes(app: Express) {
   app.get("/api/cos-control/lines", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { project, state, supplier, search } = req.query;
-      const legacyExp = await storage.getAllProgramExpenses();
+      const legacyExp = await getCanonicalAllCurrentCostLines();
       let expenses = (await getMergedExpensesAndInflows(legacyExp, [])).expenses;
 
       let lines = expenses
@@ -249,7 +250,7 @@ export function registerCosControlRoutes(app: Express) {
 
   app.get("/api/cos-control/invoices", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const legacyExp = await storage.getAllProgramExpenses();
+      const legacyExp = await getCanonicalAllCurrentCostLines();
       const { expenses } = await getMergedExpensesAndInflows(legacyExp, []);
       const invoiceMap = new Map<string, any>();
 
@@ -288,7 +289,7 @@ export function registerCosControlRoutes(app: Express) {
 
   app.get("/api/cos-control/pos", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const legacyExp = await storage.getAllProgramExpenses();
+      const legacyExp = await getCanonicalAllCurrentCostLines();
       const { expenses } = await getMergedExpensesAndInflows(legacyExp, []);
       const poMap = new Map<string, any>();
 
@@ -336,7 +337,7 @@ export function registerCosControlRoutes(app: Express) {
       const startDate = String(req.query.start || new Date().toISOString().split('T')[0]);
 
       const [legacyExp, legacyInf, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
-        storage.getAllProgramExpenses(),
+        getCanonicalAllCurrentCostLines(),
         storage.getAllProgramInflows(),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
@@ -408,7 +409,7 @@ export function registerCosControlRoutes(app: Express) {
       }
 
       const [legacyExp2, legacyInf2, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
-        storage.getAllProgramExpenses(),
+        getCanonicalAllCurrentCostLines(),
         storage.getAllProgramInflows(),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
@@ -476,7 +477,7 @@ export function registerCosControlRoutes(app: Express) {
   app.get("/api/data-quality/scan", requireAuth, requireAdmin, async (req, res) => {
     try {
 
-      const legacyExpDQ = await storage.getAllProgramExpenses();
+      const legacyExpDQ = await getCanonicalAllCurrentCostLines();
       const legacyInfDQ = await storage.getAllProgramInflows();
       const mergedDQ = await getMergedExpensesAndInflows(legacyExpDQ, legacyInfDQ);
       const expenses = mergedDQ.expenses;
@@ -621,7 +622,7 @@ export function registerCosControlRoutes(app: Express) {
   app.get("/api/planning-board/projects", requireAuth, requireAdmin, async (req, res) => {
     try {
       const projects = await db.select().from(projectInfo);
-      const legacyExpPB = await storage.getAllProgramExpenses();
+      const legacyExpPB = await getCanonicalAllCurrentCostLines();
       const legacyInfPB = await storage.getAllProgramInflows();
       const mergedPB = await getMergedExpensesAndInflows(legacyExpPB, legacyInfPB);
       const expenses = mergedPB.expenses;
@@ -735,7 +736,7 @@ export function registerCosControlRoutes(app: Express) {
   app.get("/api/cos-control/scenario-monthly", requireAuth, requireAdmin, async (req, res) => {
     try {
       const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
-      const legacyExpSM = await storage.getAllProgramExpenses();
+      const legacyExpSM = await getCanonicalAllCurrentCostLines();
       const allExpenses = (await getMergedExpensesAndInflows(legacyExpSM, [])).expenses;
       const items = allExpenses.filter((e: any) => e.rowType === 'item' || !e.rowType);
 
@@ -800,7 +801,7 @@ export function registerCosControlRoutes(app: Express) {
   app.get("/api/cos-control/tracker", requireAuth, async (req, res) => {
     try {
       const [legacyExp, legacyInf] = await Promise.all([
-        storage.getAllProgramExpenses(),
+        getCanonicalAllCurrentCostLines(),
         storage.getAllProgramInflows(),
       ]);
       const mergedData = await getMergedExpensesAndInflows(legacyExp, legacyInf);
@@ -877,7 +878,7 @@ export function registerCosControlRoutes(app: Express) {
   app.get("/api/cashflow-tracker", requireAuth, async (req, res) => {
     try {
       const [legacyExpCF, legacyInflowsCF, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
-        storage.getAllProgramExpenses(),
+        getCanonicalAllCurrentCostLines(),
         storage.getAllProgramInflows(),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
@@ -983,7 +984,7 @@ export function registerCosControlRoutes(app: Express) {
       const project = req.query.project as string || '';
       const state = req.query.state as string || '';
 
-      const legacyExpSI = await storage.getAllProgramExpenses();
+      const legacyExpSI = await getCanonicalAllCurrentCostLines();
       const allExpenses = (await getMergedExpensesAndInflows(legacyExpSI, [])).expenses;
       const items = allExpenses.filter((e: any) => e.rowType === 'item' || !e.rowType);
 
@@ -1073,7 +1074,7 @@ export function registerCosControlRoutes(app: Express) {
       const project = req.query.project as string || '';
       const state = req.query.state as string || '';
 
-      const legacyExpSL = await storage.getAllProgramExpenses();
+      const legacyExpSL = await getCanonicalAllCurrentCostLines();
       const allExpenses = (await getMergedExpensesAndInflows(legacyExpSL, [])).expenses;
       const items = allExpenses.filter((e: any) => e.rowType === 'item' || !e.rowType);
 
@@ -1147,7 +1148,7 @@ export function registerCosControlRoutes(app: Express) {
       const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
       if (!scenarioId) return res.json({ shifts: [], cashflowDelta: [] });
 
-      const legacyExpSI2 = await storage.getAllProgramExpenses();
+      const legacyExpSI2 = await getCanonicalAllCurrentCostLines();
       const allExpenses = (await getMergedExpensesAndInflows(legacyExpSI2, [])).expenses;
       const items = allExpenses.filter((e: any) => e.rowType === 'item' || !e.rowType);
       const overrides: any[] = [];
@@ -1190,7 +1191,7 @@ export function registerCosControlRoutes(app: Express) {
       const scenarioId = req.query.scenarioId ? parseInt(req.query.scenarioId as string) : null;
       const projectFilter = req.query.project as string || '';
 
-      const legacyExpSW = await storage.getAllProgramExpenses();
+      const legacyExpSW = await getCanonicalAllCurrentCostLines();
       const legacyInfSW = await storage.getAllProgramInflows();
       const [allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
         storage.getAllMilestoneTaskLinks(),
@@ -1305,7 +1306,7 @@ export function registerCosControlRoutes(app: Express) {
       if (!weekStart || !weekEnd) return res.status(400).json({ error: "weekStart and weekEnd required" });
 
       const [legacyExpSWD, legacyInfSWD, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
-        storage.getAllProgramExpenses(),
+        getCanonicalAllCurrentCostLines(),
         storage.getAllProgramInflows(),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),

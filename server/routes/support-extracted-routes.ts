@@ -28,6 +28,7 @@ import { requireAdmin } from "../middleware/requireAdmin";
 import { logAuditFromReq } from "../audit-logger";
 import { ApiError, sendError, logApiError } from "../lib/api-error";
 import { paramStr } from "../lib/req-params";
+import { getCanonicalAllCurrentCostLines } from "../services/project-cost-line-read-service";
 
 // ── generateCSV helper (moved from routes.ts) ──
 
@@ -250,7 +251,7 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
 
   app.get("/api/export/expenses", requireAuth, async (req, res) => {
     try {
-      const expenses = await storage.getAllProgramExpenses();
+      const expenses = await getCanonicalAllCurrentCostLines();
       const csv = generateCSV(expenses, [
         "id", "projectName", "expenseCategory", "expenseLineItem",
         "expenseActualTotal", "expensePoNumber", "expenseInvoiceNumber",

@@ -102,10 +102,10 @@ describe("finance trust envelope — header emission", () => {
     const res = makeRes();
     setFinanceTrustHeaders(res as any, {
       sourceLayer: "canonical",
-      featureFlag: { name: "canonical_finance_costline_read_v1", enabled: true },
+      featureFlag: { name: "example_finance_flag_v1", enabled: true },
     });
     expect(res.headers["X-Finance-Feature-Flag"]).toBe(
-      "canonical_finance_costline_read_v1=on",
+      "example_finance_flag_v1=on",
     );
   });
 

@@ -14,6 +14,7 @@ import { getCosEffectiveDateAndSource } from "../lib/expense-row-selector";
 import { buildCanonicalResolver } from "../services/project-summary-helpers";
 import { getProjectHeaderKpis, recomputeHeaderKpiProjectionForActiveProjects } from "../services/project-header-kpi-service";
 import { evaluateRevenueArStatus } from "../lib/finance/revenue-ar-status";
+import { getCanonicalAllCurrentCostLines } from "../services/project-cost-line-read-service";
 
 const router = Router();
 
@@ -272,7 +273,7 @@ router.get("/api/overview", requireAuth, async (req, res) => {
   try {
     const [allProjectInfo, allExpenses, rawInflows, allPlans, latestRefresh, allTaskLinks, allOpTasks] = await Promise.all([
       storage.getAllProjectInfo(),
-      storage.getAllProgramExpenses(),
+      getCanonicalAllCurrentCostLines(),
       storage.getAllProgramInflows(),
       storage.getAllProjectPlans(),
       storage.getLatestRefresh(),
@@ -348,7 +349,7 @@ router.get("/api/home/summary", requireAuth, async (req, res) => {
   try {
     const [allProjectInfo, allExpenses, rawInflows, allPlans, latestRefresh, revenueSummaries, allTaskLinks, allOpTasks] = await Promise.all([
       storage.getAllProjectInfo(),
-      storage.getAllProgramExpenses(),
+      getCanonicalAllCurrentCostLines(),
       storage.getAllProgramInflows(),
       storage.getAllProjectPlans(),
       storage.getLatestRefresh(),
@@ -653,7 +654,7 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
   try {
     const [allProjectInfo, allExpenses, rawInflows, allPlans, allEditableFields, allTaskLinks, allOpTasks, uploadMetaRows, smartImportRows, workItemsResult, handoverRows, phaseRows] = await Promise.all([
       storage.getAllProjectInfo().catch((e: any) => { console.warn("[dept-projects] allProjectInfo failed:", e.message); return []; }),
-      storage.getAllProgramExpenses().catch((e: any) => { console.warn("[dept-projects] allExpenses failed:", e.message); return []; }),
+      getCanonicalAllCurrentCostLines().catch((e: any) => { console.warn("[dept-projects] allExpenses failed:", e.message); return []; }),
       storage.getAllProgramInflows().catch((e: any) => { console.warn("[dept-projects] rawInflows failed:", e.message); return []; }),
       storage.getAllProjectPlans().catch((e: any) => { console.warn("[dept-projects] rawPlans failed:", e.message); return []; }),
       storage.getAllProjectEditableFields().catch((e: any) => { console.warn("[dept-projects] allEditableFields failed:", e.message); return []; }),
@@ -1178,7 +1179,7 @@ router.get("/api/program-dashboard", requireAuth, async (req, res) => {
   try {
     const [allProjectInfo, allExpenses, rawInflows, allPlans, allEditableFields, allTaskLinks, allOpTasks, manualEntries] = await Promise.all([
       storage.getAllProjectInfo(),
-      storage.getAllProgramExpenses(),
+      getCanonicalAllCurrentCostLines(),
       storage.getAllProgramInflows(),
       storage.getAllProjectPlans(),
       storage.getAllProjectEditableFields(),
@@ -1224,7 +1225,7 @@ router.get("/api/program-dashboard", requireAuth, async (req, res) => {
       // Past-month committed costs are effectively realised
       const nowD = new Date();
       const curMK = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, '0')}`;
-      const cosStatus = classifyCosStatusFull(exp);
+      const cosStatus = classifyCosStatusFull(exp as any);
       const effectivelyRealised = (cosStatus === 'COS Realised' && monthKey <= curMK) ||
                                    (cosStatus === 'Committed' && monthKey < curMK);
       if (effectivelyRealised) {
@@ -1598,7 +1599,7 @@ router.get("/api/dashboard/high-priority", requireAuth, async (req, res) => {
   try {
     const [allProjectInfo, allExpenses, rawInflows, allPlans, allTaskLinks, allOpTasks] = await Promise.all([
       storage.getAllProjectInfo(),
-      storage.getAllProgramExpenses(),
+      getCanonicalAllCurrentCostLines(),
       storage.getAllProgramInflows(),
       storage.getAllProjectPlans(),
       storage.getAllMilestoneTaskLinks(),
