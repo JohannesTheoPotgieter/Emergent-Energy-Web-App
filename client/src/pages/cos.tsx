@@ -161,7 +161,7 @@ interface RowDef {
 
 const ROW_DEFS: RowDef[] = [
   // Planned tab: budget baseline + manual override
-  { key: "totalCOS", label: "COS Planned", dataKey: "totalCOS", editable: false, colorClass: "text-emerald-700 font-semibold", group: "monthly", expandable: true, projectsKey: "cosProjects", tabs: ["planned"] },
+  { key: "totalCOS", label: "COS Planned", dataKey: "totalCOS", editable: false, colorClass: "text-emerald-700 font-semibold", group: "monthly", expandable: true, projectsKey: "plannedProjects", tabs: ["planned"] },
   { key: "budget", label: "Budget (Manual)", dataKey: "budget", editable: true, colorClass: "text-emerald-700/60", group: "monthly", tabs: ["planned"] },
   // Committed tab: planned with invoice captured but date unconfirmed
   { key: "committedCOS", label: "COS Committed", dataKey: "committedCOS", editable: false, colorClass: "text-amber-700 font-semibold", group: "monthly", expandable: true, projectsKey: "committedProjects", tabs: ["committed"] },
