@@ -25,3 +25,4 @@ export * from "./commissioning-source";
 export * from "./integrations";
 export * from "./dashboard-snapshots";
 export * from "./task-reminders";
+export * from "./home";
