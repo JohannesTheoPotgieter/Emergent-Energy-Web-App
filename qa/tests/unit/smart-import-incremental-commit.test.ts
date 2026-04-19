@@ -4,7 +4,7 @@
  * Verifies that:
  * 1. Commit executor module exists and exports correct functions
  * 2. resolveFieldValues correctly applies merge decisions
- * 3. Route refactor gates v1 behind useV2 flag
+ * 3. Legacy v1 fallback path has been removed
  * 4. v2 path writes to canonical targets only
  * 5. Unchanged rows are not rewritten
  * 6. Missing rows do not trigger blanket replacement
@@ -160,13 +160,9 @@ describe("Commit route v2 incremental path", () => {
     expect(routesCode).toContain("writeExpenditureIncremental");
   });
 
-  it("has useV2 gate variable inside transaction", () => {
-    expect(routesCode).toContain("const useV2 = !skipV2ConflictCheck && projectId");
-  });
-
-  it("v1 path is behind if (!useV2) guard", () => {
-    expect(routesCode).toContain("if (!useV2)");
-    expect(routesCode).toContain("end if (!useV2)");
+  it("v1 fallback path has been removed", () => {
+    expect(routesCode).not.toContain("useV2");
+    expect(routesCode).not.toContain("skipV2ConflictCheck");
   });
 
   it("v2 path calls writePlanIncremental", () => {

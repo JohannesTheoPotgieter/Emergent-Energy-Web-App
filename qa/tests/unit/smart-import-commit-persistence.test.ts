@@ -2,7 +2,7 @@
  * Smart Import — Commit Path Persistence Tests (S09, S10, S11, S22)
  *
  * Verifies:
- * 1. S22: Emergency v1 mode is COO-only (backend + frontend)
+ * 1. S22: v1 fallback path removed; commit fails fast when projectId missing
  * 2. S09: category_revenue_allocations written on v2 commit
  * 3. S10: category_key and category_allocation_id set on NCL rows
  * 4. S11: pre_import_snapshot captured before plan writes
@@ -17,55 +17,38 @@ function read(relPath: string) {
 }
 
 // ---------------------------------------------------------------------------
-// S22: Emergency v1 mode restriction
+// S22: v1 fallback path removed — v2 is always-on
 // ---------------------------------------------------------------------------
-describe("S22: Emergency v1 mode COO-only restriction", () => {
+describe("S22: v1 fallback removed; v2 is always-on", () => {
   const routesCode = read("server/smart-import-routes.ts");
   const frontendCode = read("client/src/pages/smart-import.tsx");
 
-  it("backend checks for emergencyV1Mode parameter", () => {
-    expect(routesCode).toContain("emergencyV1Mode");
-    expect(routesCode).toContain("req.body?.emergencyV1Mode === true");
+  it("backend has no emergencyV1Mode handling", () => {
+    expect(routesCode).not.toContain("emergencyV1Mode");
+    expect(routesCode).not.toContain("emergency_v1_coo_only");
+    expect(routesCode).not.toContain("emergency_v1_reason_required");
+    expect(routesCode).not.toContain("emergency_v1_mode");
   });
 
-  it("backend also accepts legacy skipV2ConflictCheck for backward compat", () => {
-    expect(routesCode).toContain("req.body?.skipV2ConflictCheck === true");
+  it("backend has no skipV2ConflictCheck handling", () => {
+    expect(routesCode).not.toContain("skipV2ConflictCheck");
   });
 
-  it("backend rejects non-COO users with 403", () => {
-    expect(routesCode).toContain("emergency_v1_coo_only");
-    expect(routesCode).toContain('userRole === "COO_ADMIN"');
+  it("backend has no useV2 branching", () => {
+    expect(routesCode).not.toContain("useV2");
   });
 
-  it("backend requires justification reason with minimum length", () => {
-    expect(routesCode).toContain("emergency_v1_reason_required");
-    expect(routesCode).toContain("reason.trim().length < 20");
+  it("backend fails fast when projectId is missing before commit", () => {
+    expect(routesCode).toContain("project_id_missing");
+    expect(routesCode).toContain(
+      "Smart Import requires a resolved project_info.id before commit. Ensure the upsert pass ran first.",
+    );
   });
 
-  it("backend logs emergency v1 usage to audit", () => {
-    expect(routesCode).toContain('"emergency_v1_mode"');
-  });
-
-  it("frontend defines isCOO check separate from isAdmin", () => {
-    expect(frontendCode).toContain('const isCOO = companyRole === "COO_ADMIN"');
-  });
-
-  it("frontend wraps v1 toggle in isCOO conditional render", () => {
-    expect(frontendCode).toContain("{isCOO && (");
-  });
-
-  it("frontend v1 toggle is labeled as emergency/COO-only", () => {
-    expect(frontendCode).toContain("Emergency v1 (COO only)");
-  });
-
-  it("frontend sends emergencyV1Mode and reason in commit request", () => {
-    expect(frontendCode).toContain("emergencyV1Mode: true");
-    expect(frontendCode).toContain("emergencyV1Reason:");
-  });
-
-  it("frontend does NOT send old skipV2ConflictCheck directly", () => {
-    // The frontend should use the new parameter name, not the old one
-    expect(frontendCode).not.toContain("skipV2ConflictCheck: true");
+  it("frontend sends no emergencyV1Mode or skipV2ConflictCheck flags", () => {
+    expect(frontendCode).not.toContain("emergencyV1Mode");
+    expect(frontendCode).not.toContain("emergencyV1Reason");
+    expect(frontendCode).not.toContain("skipV2ConflictCheck");
   });
 });
 

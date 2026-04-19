@@ -42,13 +42,12 @@ The v1 technical interface (column mapping, issue resolution, raw detection deta
 
 ## 4. v1 commit fallback
 
-**Status:** Intentional safety net
+**Status:** Removed
 
-If the v2 incremental commit path encounters an unexpected error, or if `skipV2ConflictCheck=true` is passed in the commit request, the system falls back to v1 behavior (soft-close all rows + re-insert all rows).
-
-**Impact:** In the fallback case, unchanged rows will be re-inserted (ID churn), and app edits may be overwritten without conflict detection.
-
-**Decision:** The fallback exists as a safety net during initial rollout. It can be removed once v2 has proven stable.
+The v1 full-replace commit path and the `emergencyV1Mode` / `skipV2ConflictCheck`
+opt-out flags have been deleted. v2 is now the only commit path. Commits fail
+fast with `project_id_missing` when `project_info.id` is not resolved before
+the commit call.
 
 ---
 
@@ -92,6 +91,6 @@ Multi-project trackers (a single file containing data for multiple sub-projects)
 
 When a CHANGED plan row is updated in `work_items`, the update is in-place (the row keeps its ID). However, parent-child relationships (`parentId`) and task dependencies (`work_item_dependencies`) are not automatically re-evaluated during v2 incremental commit.
 
-**Impact:** If a task's parent task number changes in the spreadsheet, the parent-child link may not update. The v1 path handles this by deleting and re-creating all work items.
+**Impact:** If a task's parent task number changes in the spreadsheet, the parent-child link may not update.
 
-**Mitigation:** For imports that significantly restructure the plan hierarchy, operators can use the "Advanced view" with `skipV2ConflictCheck=true` to force v1 full-replace behavior.
+**Mitigation:** For imports that significantly restructure the plan hierarchy, resolve conflicts explicitly via `v2ConflictResolutions`, or delete and re-create affected rows manually. There is no longer a v1 full-replace escape hatch.

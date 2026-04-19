@@ -78,15 +78,15 @@ describe("S12: materializer wired into v2 commit", () => {
     expect(routesCode).toContain('import { materializeDerivatives } from "./lib/import/derivative-materializer"');
   });
 
-  it("calls materializeDerivatives inside v2 commit block", () => {
-    // Must be inside the v2 block (after useV2 check, before finalize)
-    const v2Start = routesCode.indexOf("if (useV2) {");
-    const v2End = routesCode.indexOf("// ── End v2 incremental commit path ──");
+  it("calls materializeDerivatives inside the commit transaction", () => {
+    // Must be inside the transaction (after the v2 header comment, before commit finalize)
+    const v2Start = routesCode.indexOf("// ── Smart Import v2: Incremental commit path ──");
+    const finalizeMarker = routesCode.indexOf("// Finalize: mark as committed");
     const matCall = routesCode.indexOf("await materializeDerivatives(");
     expect(v2Start).toBeGreaterThan(-1);
-    expect(v2End).toBeGreaterThan(-1);
+    expect(finalizeMarker).toBeGreaterThan(-1);
     expect(matCall).toBeGreaterThan(v2Start);
-    expect(matCall).toBeLessThan(v2End);
+    expect(matCall).toBeLessThan(finalizeMarker);
   });
 
   it("PRS refresh failure is non-blocking", () => {

@@ -6,9 +6,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { SectionHeader } from "@/components/layout/page-shell";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { Tooltip as UiTooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { getQueryFn, fetchQueryFn, apiRequest, invalidateDashboardQueries } from "@/lib/queryClient";
+import { fetchQueryFn, apiRequest, invalidateDashboardQueries } from "@/lib/queryClient";
 import { usePermission } from "@/hooks/use-permissions";
 import {
   Bar,
@@ -20,12 +23,11 @@ import {
   Legend,
   ResponsiveContainer,
   ComposedChart,
+  LineChart,
 } from "recharts";
 import {
   DollarSign,
   TrendingUp,
-  Activity,
-  Target,
   ChevronDown,
   ChevronRight,
   X,
@@ -33,6 +35,14 @@ import {
   Loader2,
   AlertCircle,
   HelpCircle,
+  Filter,
+  Wallet,
+  ArrowDownRight,
+  ArrowUpRight,
+  CheckCircle2,
+  Clock,
+  ListChecks,
+  LineChart as LineChartIcon,
 } from "lucide-react";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
@@ -48,7 +58,6 @@ interface MonthData {
   realisedRevenue: number;
   unrealisedRevenue: number;
   qbRevenueActual: number;
-  /** QB revenue actual minus app Realised Revenue. Positive = QB ahead of app. */
   qbVsAppVariance?: number;
   qbVsAppVariancePct?: number;
   budget: number;
@@ -107,7 +116,9 @@ function formatRand(val: number | null | undefined): string {
   return `${sign}R ${Math.round(abs)}`;
 }
 
-const ROW_DEFS: {
+type RevTab = "planned" | "committed" | "realised";
+
+interface RowDef {
   key: string;
   label: string;
   dataKey: keyof MonthData;
@@ -117,23 +128,37 @@ const ROW_DEFS: {
   editable?: boolean;
   projectsKey?: "revProjects" | "realisedProjects" | "unrealisedProjects" | "qbRevenueProjects";
   colorCoded?: boolean;
-}[] = [
-  // Mirrors the COS grid: Planned → Committed (unrealised/linked, not yet confirmed) → Realised → QB.
-  // Realisation rule (server-side): invoice captured + invoice date confirmed (black font).
-  { key: "totalRevenue", label: "Revenue Planned", dataKey: "totalRevenue", colorClass: "text-purple-600 font-semibold", group: "monthly", expandable: true, projectsKey: "revProjects" },
-  { key: "budget", label: "Budget (Manual)", dataKey: "budget", editable: true, colorClass: "text-purple-600/60", group: "monthly" },
-  // Committed = revenue line linked to an invoice but invoice date not yet confirmed
-  { key: "unrealisedRevenue", label: "Revenue Committed", dataKey: "unrealisedRevenue", colorClass: "text-amber-600 font-semibold", group: "monthly", expandable: true, projectsKey: "unrealisedProjects" },
-  { key: "realisedRevenue", label: "Revenue Realised", dataKey: "realisedRevenue", colorClass: "text-emerald-700 font-bold", group: "monthly", expandable: true, projectsKey: "realisedProjects" },
-  { key: "qbRevenueActual", label: "Quickbooks Revenue", dataKey: "qbRevenueActual", colorClass: "text-blue-700 font-semibold", group: "monthly", expandable: true, projectsKey: "qbRevenueProjects" },
+}
+
+const ROW_DEFS: RowDef[] = [
+  // Pipeline order: Planned → Committed → Realised → QB
+  { key: "totalRevenue", label: "Revenue Planned", dataKey: "totalRevenue", colorClass: "text-emerald-700 font-semibold", group: "monthly", expandable: true, projectsKey: "revProjects" },
+  { key: "budget", label: "Budget (Manual)", dataKey: "budget", editable: true, colorClass: "text-emerald-700/60", group: "monthly" },
+  { key: "unrealisedRevenue", label: "Revenue Committed", dataKey: "unrealisedRevenue", colorClass: "text-amber-700 font-semibold", group: "monthly", expandable: true, projectsKey: "unrealisedProjects" },
+  { key: "realisedRevenue", label: "Revenue Realised", dataKey: "realisedRevenue", colorClass: "text-foreground font-bold", group: "monthly", expandable: true, projectsKey: "realisedProjects" },
+  { key: "qbRevenueActual", label: "Quickbooks Revenue", dataKey: "qbRevenueActual", colorClass: "text-emerald-600 font-semibold", group: "monthly", expandable: true, projectsKey: "qbRevenueProjects" },
   { key: "variance", label: "Budget Variance", dataKey: "variance", colorClass: "", group: "monthly", colorCoded: true },
   { key: "variancePct", label: "Budget Variance %", dataKey: "variancePct", colorClass: "", group: "monthly", colorCoded: true },
-  { key: "ytdBudget", label: "YTD Planned (Budget)", dataKey: "ytdBudget", colorClass: "text-purple-600", group: "ytd" },
-  { key: "ytdUnrealised", label: "YTD Committed", dataKey: "ytdUnrealised", colorClass: "text-amber-600", group: "ytd" },
-  { key: "ytdRealised", label: "YTD Realised", dataKey: "ytdRealised", colorClass: "text-emerald-700 font-bold", group: "ytd" },
+  { key: "ytdBudget", label: "YTD Planned (Budget)", dataKey: "ytdBudget", colorClass: "text-emerald-700", group: "ytd" },
+  { key: "ytdUnrealised", label: "YTD Committed", dataKey: "ytdUnrealised", colorClass: "text-amber-700", group: "ytd" },
+  { key: "ytdRealised", label: "YTD Realised", dataKey: "ytdRealised", colorClass: "text-foreground font-bold", group: "ytd" },
+  { key: "ytdQbRevenueActual", label: "YTD QB Revenue", dataKey: "ytdQbRevenueActual", colorClass: "text-emerald-600", group: "ytd" },
   { key: "ytdVariance", label: "YTD Variance", dataKey: "ytdVariance", colorClass: "", group: "ytd", colorCoded: true },
   { key: "ytdVariancePct", label: "YTD Variance %", dataKey: "ytdVariancePct", colorClass: "", group: "ytd", colorCoded: true },
 ];
+
+const TAB_META: Record<RevTab, {
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  ytdKey: keyof MonthData;
+  monthKey: keyof MonthData;
+  accent: string;
+  sparkColor: string;
+}> = {
+  realised: { label: "Realised", icon: CheckCircle2, ytdKey: "ytdRealised", monthKey: "realisedRevenue", accent: "text-foreground", sparkColor: "#0f172a" },
+  committed: { label: "Committed", icon: Clock, ytdKey: "ytdUnrealised", monthKey: "unrealisedRevenue", accent: "text-amber-700", sparkColor: "#b45309" },
+  planned: { label: "Planned", icon: ListChecks, ytdKey: "ytdBudget", monthKey: "totalRevenue", accent: "text-emerald-700", sparkColor: "#16a34a" },
+};
 
 function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all", defaultProject = "all" }: { monthKey: string; monthLabel: string; onClose: () => void; defaultFilter?: "all" | "realised" | "unrealised" | "qb_actual"; defaultProject?: string }) {
   const [, navigate] = useLocation();
@@ -192,18 +217,18 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
   const stateBadgeColor = (state: string) => {
     switch (state) {
       case 'Received':
-      case 'Realised': return 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-300 font-bold';
-      case 'Invoiced': return 'bg-blue-50 text-blue-600 ring-1 ring-blue-200';
-      case 'Committed': return 'bg-amber-50 text-amber-600 ring-1 ring-amber-200';
-      default: return 'bg-amber-100 text-amber-700 ring-1 ring-amber-200';
+      case 'Realised': return 'bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold';
+      case 'Invoiced': return 'bg-card text-foreground border border-border';
+      case 'Committed': return 'bg-amber-50 text-amber-700 border border-amber-200';
+      default: return 'bg-amber-50 text-amber-700 border border-amber-200';
     }
   };
 
   return (
     <div className="fixed inset-0 z-50 flex" data-testid="drawer-revenue-detail" role="dialog" aria-modal="true" aria-label={`Revenue detail for ${monthLabel}`}>
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={onClose} aria-hidden="true" />
-      <div className="ml-auto relative w-full max-w-5xl bg-white shadow-2xl flex flex-col h-full animate-in slide-in-from-right duration-300">
-        <div className="px-3 sm:px-6 py-4 sm:py-5 border-b bg-gradient-to-r from-emerald-50 to-white flex items-center justify-between">
+      <div className="ml-auto relative w-full max-w-5xl bg-card shadow-2xl flex flex-col h-full animate-in slide-in-from-right duration-300">
+        <div className="px-3 sm:px-6 py-4 sm:py-5 border-b border-border bg-gradient-to-r from-emerald-50 to-card flex items-center justify-between">
           <div>
             <h3 className="font-bold text-xl tracking-tight text-foreground" data-testid="text-drawer-title">{monthLabel}</h3>
             <p className="text-sm text-muted-foreground mt-0.5">
@@ -215,56 +240,53 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
           </button>
         </div>
 
-        <div className="px-3 sm:px-6 py-3 sm:py-4 border-b bg-gradient-to-b from-emerald-50/30 to-transparent">
+        <div className="px-3 sm:px-6 py-3 sm:py-4 border-b border-border bg-gradient-to-b from-emerald-50/30 to-transparent">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
-            <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-100/50 border border-emerald-200/60 px-4 py-3">
+            <div className="relative overflow-hidden rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-medium text-emerald-600 uppercase tracking-wider">Realised</p>
-                  <p className="font-mono font-black text-emerald-700 text-lg mt-0.5" data-testid="text-realised-total">{formatRand(summaries.realisedTotal)}</p>
+                  <p className="text-xs font-medium text-emerald-700 uppercase tracking-wider">Realised</p>
+                  <p className="font-mono font-black text-foreground text-lg mt-0.5" data-testid="text-realised-total">{formatRand(summaries.realisedTotal)}</p>
                 </div>
-                <Badge variant="secondary" className="bg-emerald-200/60 text-emerald-700 text-xs font-semibold">{summaries.realisedCount}</Badge>
+                <Badge variant="secondary" className="bg-emerald-100 text-emerald-700 text-xs font-semibold">{summaries.realisedCount}</Badge>
               </div>
-              <div className="absolute -right-3 -bottom-3 w-16 h-16 rounded-full bg-emerald-200/20" />
             </div>
-            <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-amber-50 to-amber-100/50 border border-amber-200/60 px-4 py-3">
+            <div className="relative overflow-hidden rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-medium text-amber-600 uppercase tracking-wider">Unrealised</p>
+                  <p className="text-xs font-medium text-amber-700 uppercase tracking-wider">Unrealised</p>
                   <p className="font-mono font-bold text-amber-700 text-lg mt-0.5" data-testid="text-unrealised-total">{formatRand(summaries.unrealisedTotal)}</p>
                 </div>
-                <Badge variant="secondary" className="bg-amber-200/60 text-amber-600 text-xs font-semibold">{summaries.unrealisedCount}</Badge>
+                <Badge variant="secondary" className="bg-amber-100 text-amber-700 text-xs font-semibold">{summaries.unrealisedCount}</Badge>
               </div>
-              <div className="absolute -right-3 -bottom-3 w-16 h-16 rounded-full bg-amber-200/20" />
             </div>
-            <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-slate-50 to-slate-100/50 border border-border/60 px-4 py-3">
+            <div className="relative overflow-hidden rounded-xl bg-muted/50 border border-border px-4 py-3">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Total</p>
                   <p className="font-mono font-bold text-foreground text-lg mt-0.5">{formatRand(summaries.totalAmount)}</p>
                 </div>
-                <Badge variant="secondary" className="bg-slate-200/60 text-muted-foreground text-xs font-semibold">{summaries.lineCount}</Badge>
+                <Badge variant="secondary" className="bg-muted text-muted-foreground text-xs font-semibold">{summaries.lineCount}</Badge>
               </div>
-              <div className="absolute -right-3 -bottom-3 w-16 h-16 rounded-full bg-slate-200/20" />
             </div>
           </div>
         </div>
 
-        <div className="px-6 py-3 border-b flex flex-wrap items-center gap-2">
+        <div className="px-6 py-3 border-b border-border flex flex-wrap items-center gap-2">
           <div className="relative flex-1 min-w-[220px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Search project, category, supplier, invoice…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 h-9 bg-muted/50 border-border focus:bg-white transition-colors"
+              className="pl-9 h-9 bg-muted/50 border-border focus:bg-card transition-colors"
               data-testid="input-search-detail"
             />
           </div>
           <select
             value={stateFilter}
             onChange={(e) => setStateFilter(e.target.value as any)}
-            className="h-9 px-3 text-sm border border-border rounded-lg bg-muted/50 hover:bg-white transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-300"
+            className="h-9 px-3 text-sm border border-border rounded-lg bg-muted/50 hover:bg-card transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-300"
             data-testid="select-state-filter"
           >
             <option value="all">All States</option>
@@ -286,7 +308,7 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
           />
         </div>
 
-        <div className="px-6 py-2.5 border-b bg-muted/80 flex items-center justify-between text-sm">
+        <div className="px-6 py-2.5 border-b border-border bg-muted/60 flex items-center justify-between text-sm">
           <span className="font-medium text-muted-foreground">
             <span className="text-foreground font-semibold">{filtered.length}</span> items
           </span>
@@ -297,7 +319,7 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
             </span>
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-amber-500" />
-              <span className="text-amber-600 font-mono text-xs font-medium">{formatRand(filteredUnrealised)}</span>
+              <span className="text-amber-700 font-mono text-xs font-medium">{formatRand(filteredUnrealised)}</span>
             </span>
             <span className="font-mono font-bold text-foreground">{formatRand(filteredTotal)}</span>
           </div>
@@ -311,8 +333,8 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
             </div>
           ) : isError ? (
             <div className="flex flex-col items-center justify-center py-16 text-center gap-3 px-6">
-              <div className="h-12 w-12 rounded-full bg-red-50 flex items-center justify-center">
-                <AlertCircle className="h-6 w-6 text-red-600" />
+              <div className="h-12 w-12 rounded-full bg-destructive/10 flex items-center justify-center">
+                <AlertCircle className="h-6 w-6 text-destructive" />
               </div>
               <div>
                 <p className="font-medium text-sm">Unable to load detail</p>
@@ -320,14 +342,14 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
               </div>
               <button
                 onClick={() => refetchDetail()}
-                className="text-xs font-medium px-3 py-1.5 rounded-md border bg-background hover:bg-muted transition-colors"
+                className="text-xs font-medium px-3 py-1.5 rounded-md border border-border bg-background hover:bg-muted transition-colors"
               >
                 Retry
               </button>
             </div>
           ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-2">
-              <Search className="h-8 w-8 text-slate-600" />
+              <Search className="h-8 w-8 text-muted-foreground" />
               <span className="text-sm">No line items found</span>
               <span className="text-xs text-muted-foreground/80 max-w-md text-center">
                 No revenue lines match the current filters for {monthLabel}.
@@ -335,7 +357,7 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
             </div>
           ) : (
             <table className="w-full text-xs">
-              <thead className="sticky top-0 bg-white/95 backdrop-blur-md z-10 border-b">
+              <thead className="sticky top-0 bg-card/95 backdrop-blur-md z-10 border-b border-border">
                 <tr>
                   <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px] w-8"></th>
                   <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">Project</th>
@@ -346,21 +368,21 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                   <th className="text-right px-3 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">Revenue</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-border/50">
                 {filtered.slice(0, 500).map((item, i) => (
                   <React.Fragment key={item.id}>
                     <tr
-                      className={`group cursor-pointer transition-colors ${expandedId === item.id ? 'bg-emerald-50/60' : 'hover:bg-muted/80'}`}
+                      className={`group cursor-pointer transition-colors ${expandedId === item.id ? 'bg-emerald-50/60' : 'hover:bg-muted/60'}`}
                       onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}
                       data-testid={`row-detail-${i}`}
                     >
-                      <td className="px-3 py-2.5 text-slate-500 group-hover:text-muted-foreground transition-colors">
+                      <td className="px-3 py-2.5 text-muted-foreground transition-colors">
                         {expandedId === item.id ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                       </td>
                       <td className="px-3 py-2.5 max-w-[150px] truncate font-medium" title={item.projectName}>
                         <button
                           type="button"
-                          className="text-blue-600 hover:text-blue-800 hover:underline transition-colors text-left truncate max-w-full"
+                          className="text-emerald-700 hover:text-emerald-900 hover:underline transition-colors text-left truncate max-w-full"
                           onClick={(e) => { e.stopPropagation(); navigate(`/project/${encodeURIComponent(item.projectName)}?tab=revenue-tracking`); }}
                         >
                           {item.projectName}
@@ -374,41 +396,41 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                         </span>
                       </td>
                       <td className="px-3 py-2.5 text-right font-mono text-muted-foreground">{formatRand(item.costAmount)}</td>
-                      <td className={`px-3 py-2.5 text-right font-mono font-semibold ${item.isRealised ? 'text-emerald-700' : 'text-amber-600'}`}>
-                        {item.noRevenueLinked ? <span className="text-slate-400 italic text-[10px]">No Rev</span> : formatRand(item.revenueAmount)}
+                      <td className={`px-3 py-2.5 text-right font-mono font-semibold ${item.isRealised ? 'text-foreground' : 'text-amber-700'}`}>
+                        {item.noRevenueLinked ? <span className="text-muted-foreground italic text-[10px]">No Rev</span> : formatRand(item.revenueAmount)}
                       </td>
                     </tr>
                     {expandedId === item.id && (
-                      <tr className="bg-gradient-to-r from-emerald-50/40 to-slate-50/40">
+                      <tr className="bg-emerald-50/40">
                         <td colSpan={7} className="px-6 py-4">
                           <div className="grid grid-cols-2 md:grid-cols-6 gap-x-6 gap-y-3 text-xs">
                             <div>
-                              <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">Invoice #</p>
+                              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-0.5">Invoice #</p>
                               <p className="font-medium text-foreground">{item.invoiceNumber || "—"}</p>
                             </div>
                             <div>
-                              <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">PO #</p>
+                              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-0.5">PO #</p>
                               <p className="font-medium text-foreground">{item.poNumber || "—"}</p>
                             </div>
                             <div>
-                              <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">Invoice Date</p>
+                              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-0.5">Invoice Date</p>
                               <p className="font-medium text-foreground">{item.invoiceDate || "—"}</p>
                             </div>
                             <div>
-                              <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">Supplier</p>
+                              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-0.5">Supplier</p>
                               <p className="font-medium text-foreground">{item.supplier || "—"}</p>
                             </div>
                             <div>
-                              <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">Revenue Status</p>
+                              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-0.5">Revenue Status</p>
                               <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold ${stateBadgeColor(item.revState)}`}>
                                 {item.revState}
                               </span>
                               {item.noRevenueLinked && (
-                                <Badge variant="outline" className="ml-1 text-[9px] border-orange-300 text-orange-600">No Rev Linked</Badge>
+                                <Badge variant="outline" className="ml-1 text-[9px] border-amber-300 text-amber-700">No Rev Linked</Badge>
                               )}
                             </div>
                             <div>
-                              <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">QB Doc / Trace</p>
+                              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-0.5">QB Doc / Trace</p>
                               <p className="font-medium text-foreground">{item.qbDocNumber || item.sourceTraceId || "—"}</p>
                             </div>
                           </div>
@@ -435,10 +457,35 @@ export default function RevenueTrackerPage() {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<EditingCell | null>(null);
   const [drawerMonth, setDrawerMonth] = useState<{ monthKey: string; monthLabel: string; defaultFilter?: "all" | "realised" | "unrealised" | "qb_actual"; defaultProject?: string } | null>(null);
-  const { data, isLoading, isError, error, refetch } = useQuery<RevenueTrackerResponse>({
+  const [activeTab, setActiveTab] = useState<"recon" | "trend">("recon");
+  const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
+  const [projectSearch, setProjectSearch] = useState("");
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
+
+  const { data, isLoading, isError, error, refetch, dataUpdatedAt, isFetching } = useQuery<RevenueTrackerResponse>({
     queryKey: ["/api/revenue-tracker"],
     staleTime: 30_000,
   });
+
+  const { data: projectsSummary = [] } = useQuery<Array<{ project_name: string; has_tracker_import?: boolean }>>({
+    queryKey: ["/api/projects-summary"],
+  });
+
+  const trackerProjectNames = useMemo(() => {
+    const set = new Set<string>();
+    projectsSummary.forEach((p) => {
+      if (p.project_name && p.has_tracker_import) set.add(p.project_name);
+    });
+    return Array.from(set).sort();
+  }, [projectsSummary]);
+
+  const filteredRailNames = useMemo(() => {
+    const q = projectSearch.trim().toLowerCase();
+    if (!q) return trackerProjectNames;
+    return trackerProjectNames.filter((n) => n.toLowerCase().includes(q));
+  }, [trackerProjectNames, projectSearch]);
+
+  const isProjectFiltered = selectedProjects.length > 0;
 
   const mutation = useMutation({
     mutationFn: async (body: { trackerType: string; monthKey: string; budget?: string }) => {
@@ -474,25 +521,26 @@ export default function RevenueTrackerPage() {
   );
 
   const months = data?.months ?? [];
-
-  const lastMonth = useMemo(() => {
-    if (!months.length) return null;
-    return months[months.length - 1];
-  }, [months]);
+  const lastMonth = useMemo(() => (months.length ? months[months.length - 1] : null), [months]);
+  const prevMonth = useMemo(() => (months.length > 1 ? months[months.length - 2] : null), [months]);
 
   const projectNamesByRow = useMemo(() => {
     const result: Record<string, string[]> = {};
+    const trackerSet = new Set(trackerProjectNames);
+    const selectedSet = new Set(selectedProjects);
     for (const key of ["revProjects", "realisedProjects", "unrealisedProjects", "qbRevenueProjects"] as const) {
       const names = new Set<string>();
       for (const m of months) {
         for (const p of (m as any)[key] || []) {
+          if (!trackerSet.has(p.projectName)) continue;
+          if (selectedSet.size > 0 && !selectedSet.has(p.projectName)) continue;
           names.add(p.projectName);
         }
       }
       result[key] = Array.from(names).sort();
     }
     return result;
-  }, [months]);
+  }, [months, trackerProjectNames, selectedProjects]);
 
   const toggleRow = useCallback((key: string) => {
     setExpandedRows((prev) => {
@@ -515,65 +563,34 @@ export default function RevenueTrackerPage() {
     [months],
   );
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50/50" data-testid="loading-indicator">
-        <div className="bg-white border-b border-border/80 px-3 sm:px-6 py-4 sm:py-6 shadow-sm">
-          <div className="max-w-[1800px] mx-auto">
-            <Skeleton className="h-8 w-64 mb-2" />
-            <Skeleton className="h-4 w-96" />
-          </div>
-        </div>
-        <div className="max-w-[1800px] mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-6">
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Card key={i} className="shadow-sm">
-                <CardContent className="pt-5 pb-4 px-4">
-                  <div className="flex items-start gap-3">
-                    <Skeleton className="h-10 w-10 rounded-xl" />
-                    <div className="flex-1">
-                      <Skeleton className="h-3 w-20 mb-2" />
-                      <Skeleton className="h-6 w-24" />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-          <Card className="shadow-sm overflow-hidden">
-            <CardContent className="p-6">
-              <Skeleton className="h-[420px] w-full rounded-lg" />
-            </CardContent>
-          </Card>
-          <Card className="shadow-sm overflow-hidden">
-            <CardContent className="p-0">
-              <div className="px-5 py-3 border-b"><Skeleton className="h-5 w-40" /></div>
-              {Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className="flex gap-2 px-5 py-2.5 border-b border-border/40">
-                  <Skeleton className="h-4 w-36" />
-                  {Array.from({ length: 6 }).map((_, j) => (
-                    <Skeleton key={j} className="h-4 w-20 ml-auto" />
-                  ))}
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    );
-  }
+  const sparkData = useMemo(() => {
+    return {
+      realised: months.map((m) => ({ x: m.monthKey, y: m.realisedRevenue })),
+      committed: months.map((m) => ({ x: m.monthKey, y: m.unrealisedRevenue })),
+      planned: months.map((m) => ({ x: m.monthKey, y: m.totalRevenue })),
+    } as Record<RevTab, { x: string; y: number }[]>;
+  }, [months]);
 
+  const getCellColor = (val: number, variancePct?: number) => {
+    const pct = variancePct != null ? Math.abs(variancePct) : null;
+    const isPositive = val > 0;
+    if (pct !== null) {
+      if (pct >= 0.25) return isPositive ? "text-emerald-700 font-bold bg-emerald-50" : "text-destructive font-bold bg-destructive/10";
+      if (pct >= 0.15) return isPositive ? "text-emerald-600 font-semibold bg-emerald-50" : "text-amber-700 font-semibold bg-amber-50";
+    }
+    return isPositive ? "text-emerald-700" : "text-destructive";
+  };
+
+  const formatCell = (row: RowDef, val: number) => {
+    if (row.key === "variancePct" || row.key === "ytdVariancePct") return `${val.toFixed(1)}%`;
+    return formatRand(val);
+  };
+
+  if (isLoading) return <PageSkeleton lines={5} />;
   if (isError) {
     return (
-      <div className="p-6 max-w-[1200px] mx-auto" data-testid="revenue-tracker-error-state">
-        <Card className="border-red-200 bg-red-50/40">
-          <CardContent className="py-10 text-center space-y-3">
-            <AlertCircle className="h-8 w-8 text-red-500 mx-auto" />
-            <p className="text-sm font-semibold text-red-700">Revenue tracker data failed to load.</p>
-            <p className="text-xs text-red-600/90">{(error as Error)?.message || "An unexpected error occurred."}</p>
-            <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="button-retry-revenue-tracker">Retry</Button>
-          </CardContent>
-        </Card>
+      <div className="p-4 md:p-6">
+        <PageError title="Unable to load Revenue Tracker" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} />
       </div>
     );
   }
@@ -582,266 +599,530 @@ export default function RevenueTrackerPage() {
   const ytdCommitted = lastMonth?.ytdUnrealised ?? 0;
   const ytdRealised = lastMonth?.ytdRealised ?? 0;
   const ytdQbRev = lastMonth?.ytdQbRevenueActual ?? 0;
+  const realisationRate = ytdPlanned > 0 ? Math.round((ytdRealised / ytdPlanned) * 100) : 0;
 
-  const kpiCards = [
-    { id: "ytd-planned", label: "Revenue Planned (Budget)", value: formatRand(ytdPlanned), icon: Target, iconBg: "bg-purple-100", iconColor: "text-purple-600", valueColor: "text-purple-700", borderColor: "border-purple-200", tooltip: "Planned revenue from project imports and manual overrides — the budget baseline." },
-    { id: "ytd-committed", label: "Revenue Committed", value: formatRand(ytdCommitted), icon: Activity, iconBg: "bg-amber-100", iconColor: "text-amber-600", valueColor: "text-amber-700", borderColor: "border-amber-200", tooltip: "Revenue linked to an invoice but invoice date not yet confirmed (not black font). Committed, awaiting final sign-off." },
-    { id: "ytd-realised", label: "Revenue Realised", value: formatRand(ytdRealised), icon: TrendingUp, iconBg: "bg-emerald-100", iconColor: "text-emerald-600", valueColor: "text-emerald-700", borderColor: "border-emerald-200", tooltip: "Invoice captured AND invoice date confirmed (black font). Both gates are required." },
-    { id: "ytd-qb-rev", label: "Quickbooks Revenue", value: formatRand(ytdQbRev), icon: DollarSign, iconBg: "bg-sky-100", iconColor: "text-sky-600", valueColor: "text-sky-700", borderColor: "border-sky-200", tooltip: "Revenue per QuickBooks invoices (YTD). Accounting source of truth." },
-  ];
+  const kpiByTab: Record<RevTab, { ytdValue: number; lastValue: number; prevValue: number }> = {
+    realised: { ytdValue: ytdRealised, lastValue: lastMonth?.realisedRevenue ?? 0, prevValue: prevMonth?.realisedRevenue ?? 0 },
+    committed: { ytdValue: ytdCommitted, lastValue: lastMonth?.unrealisedRevenue ?? 0, prevValue: prevMonth?.unrealisedRevenue ?? 0 },
+    planned: { ytdValue: ytdPlanned, lastValue: lastMonth?.totalRevenue ?? 0, prevValue: prevMonth?.totalRevenue ?? 0 },
+  };
+
+  const renderSparkline = (tab: RevTab) => (
+    <div className="h-10 w-28 sm:w-36">
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={sparkData[tab]} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+          <Line type="monotone" dataKey="y" stroke={TAB_META[tab].sparkColor} strokeWidth={1.5} dot={false} />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+
+  const renderKpiCard = (tab: RevTab) => {
+    const meta = TAB_META[tab];
+    const Icon = meta.icon;
+    const k = kpiByTab[tab];
+    const delta = k.lastValue - k.prevValue;
+    const deltaPct = k.prevValue !== 0 ? (delta / Math.abs(k.prevValue)) * 100 : 0;
+    const deltaPositive = delta >= 0;
+    const iconBg = tab === "realised" ? "bg-foreground/8 text-foreground" : tab === "committed" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700";
+    return (
+      <Card key={tab} className="border-border shadow-sm">
+        <CardContent className="p-3 sm:p-4">
+          <div className="flex items-center gap-2 mb-1.5">
+            <div className={`h-7 w-7 rounded-lg flex items-center justify-center ${iconBg}`}>
+              <Icon className="h-3.5 w-3.5" />
+            </div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">YTD {meta.label}</p>
+          </div>
+          <p className={`text-lg sm:text-xl font-bold font-mono tracking-tight ${meta.accent}`} data-testid={`text-ytd-${tab}-value`}>
+            {formatRand(k.ytdValue)}
+          </p>
+          <div className="flex items-center justify-between mt-1.5">
+            <div className="flex flex-col">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Last mo.</span>
+              <span className="font-mono font-semibold text-xs">{formatRand(k.lastValue)}</span>
+              {prevMonth && (
+                <span className={`inline-flex items-center gap-0.5 text-[10px] font-medium ${deltaPositive ? "text-emerald-700" : "text-destructive"}`}>
+                  {deltaPositive ? <ArrowUpRight className="h-2.5 w-2.5" /> : <ArrowDownRight className="h-2.5 w-2.5" />}
+                  {Math.abs(deltaPct).toFixed(1)}%
+                </span>
+              )}
+            </div>
+            {renderSparkline(tab)}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  const renderQbKpiCard = () => {
+    const lastQb = lastMonth?.qbRevenueActual ?? 0;
+    const prevQb = prevMonth?.qbRevenueActual ?? 0;
+    const delta = lastQb - prevQb;
+    const deltaPct = prevQb !== 0 ? (delta / Math.abs(prevQb)) * 100 : 0;
+    const deltaPositive = delta >= 0;
+    const qbSparkData = months.map((m) => ({ x: m.monthKey, y: m.qbRevenueActual }));
+    return (
+      <Card className="border-border shadow-sm">
+        <CardContent className="p-3 sm:p-4">
+          <div className="flex items-center gap-2 mb-1.5">
+            <div className="h-7 w-7 rounded-lg flex items-center justify-center bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <DollarSign className="h-3.5 w-3.5" />
+            </div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">YTD QuickBooks</p>
+          </div>
+          <p className="text-lg sm:text-xl font-bold font-mono tracking-tight text-emerald-700" data-testid="text-ytd-qb-value">
+            {formatRand(ytdQbRev)}
+          </p>
+          <div className="flex items-center justify-between mt-1.5">
+            <div className="flex flex-col">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Last mo.</span>
+              <span className="font-mono font-semibold text-xs">{formatRand(lastQb)}</span>
+              {prevMonth && (
+                <span className={`inline-flex items-center gap-0.5 text-[10px] font-medium ${deltaPositive ? "text-emerald-700" : "text-destructive"}`}>
+                  {deltaPositive ? <ArrowUpRight className="h-2.5 w-2.5" /> : <ArrowDownRight className="h-2.5 w-2.5" />}
+                  {Math.abs(deltaPct).toFixed(1)}%
+                </span>
+              )}
+            </div>
+            <div className="h-10 w-28 sm:w-36">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={qbSparkData} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+                  <Line type="monotone" dataKey="y" stroke="#16a34a" strokeWidth={1.5} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  const renderTrend = () => (
+    <Card className="shadow-sm overflow-hidden">
+      <CardHeader className="bg-muted/30 border-b border-border px-3 sm:px-5 py-2.5 sm:py-3">
+        <CardTitle className="text-sm font-semibold tracking-tight flex items-center gap-2">
+          <LineChartIcon className="h-4 w-4 text-muted-foreground" />
+          Revenue trend — Planned vs Committed vs Realised vs QB
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="p-3 sm:p-6">
+        <div className="h-[320px] sm:h-[440px]" data-testid="chart-revenue">
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={chartData} margin={{ top: 8, right: 16, left: 8, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#64748b" }} axisLine={{ stroke: "#e2e8f0" }} tickLine={false} />
+              <YAxis tickFormatter={(v: number) => formatRand(v)} tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} />
+              <Tooltip
+                formatter={(value: number) => formatRand(value)}
+                contentStyle={{ borderRadius: "12px", border: "1px solid #e2e8f0", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", fontSize: "12px" }}
+              />
+              <Legend iconType="circle" wrapperStyle={{ fontSize: "12px", paddingTop: "12px" }} />
+              <Bar dataKey="Revenue Planned (Budget)" fill="#a7f3d0" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="Revenue Committed" stackId="rev" fill="#f59e0b" radius={[0, 0, 0, 0]} />
+              <Bar dataKey="Revenue Realised" stackId="rev" fill="#0f172a" radius={[4, 4, 0, 0]} />
+              <Line type="monotone" dataKey="Quickbooks Revenue" stroke="#16a34a" strokeWidth={2} dot={{ r: 3 }} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  const renderGrid = () => (
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs sm:text-sm" data-testid="table-revenue-grid">
+        <thead>
+          <tr className="border-b border-border bg-muted/80">
+            <th className="sticky left-0 z-10 bg-muted/95 backdrop-blur-sm px-3 sm:px-5 py-2 sm:py-3 text-left font-semibold text-muted-foreground uppercase tracking-wider text-[10px] sm:text-[11px] min-w-[140px] sm:min-w-[200px] border-r border-border">
+              Metric
+            </th>
+            {months.map((m) => (
+              <th key={m.monthKey} className="px-2 sm:px-4 py-2 sm:py-3 text-right font-semibold text-muted-foreground uppercase tracking-wider text-[10px] sm:text-[11px] whitespace-nowrap min-w-[85px] sm:min-w-[110px]">
+                {m.monthLabel}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {ROW_DEFS.map((row, rowIdx) => {
+            const isYtd = row.group === "ytd";
+            const isExpanded = expandedRows.has(row.key);
+            const isClickable = ["totalRevenue", "realisedRevenue", "unrealisedRevenue", "qbRevenueActual"].includes(row.key);
+            const isFirstYtd = isYtd && rowIdx > 0 && ROW_DEFS[rowIdx - 1].group !== "ytd";
+            return (
+              <React.Fragment key={row.key}>
+                {isFirstYtd && (
+                  <tr>
+                    <td colSpan={months.length + 1} className="bg-muted/60 h-px" />
+                  </tr>
+                )}
+                <tr
+                  className={`border-b border-border transition-colors ${isYtd ? "bg-muted/40" : "bg-card"} hover:bg-muted/40`}
+                  data-testid={`row-${row.key}`}
+                >
+                  <td className={`sticky left-0 z-10 px-3 sm:px-5 py-2 sm:py-2.5 font-medium text-xs sm:text-sm border-r border-border ${isYtd ? "bg-muted/95" : "bg-card/95"} backdrop-blur-sm`}>
+                    {row.expandable ? (
+                      <button
+                        type="button"
+                        className="flex items-center gap-1.5 hover:text-emerald-700 transition-colors group"
+                        onClick={() => toggleRow(row.key)}
+                        aria-expanded={isExpanded}
+                        aria-label={`${isExpanded ? "Collapse" : "Expand"} ${row.label} by project`}
+                        data-testid={`toggle-${row.key}`}
+                      >
+                        <span className="text-muted-foreground group-hover:text-emerald-600 transition-colors">
+                          {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        </span>
+                        <span>{row.label}</span>
+                      </button>
+                    ) : (
+                      <span className={isYtd ? "pl-5.5 text-muted-foreground" : ""}>{row.label}</span>
+                    )}
+                  </td>
+                  {months.map((m) => {
+                    const val = m[row.dataKey] as number;
+                    const isEditingCell = editing?.field === row.key && editing?.monthKey === m.monthKey;
+                    if (row.editable && canEditRevenueTracker) {
+                      return (
+                        <td key={m.monthKey} className="px-1 sm:px-2 py-1 sm:py-1.5 text-right">
+                          {isEditingCell ? (
+                            <Input
+                              type="number"
+                              className="h-7 sm:h-8 w-full text-right font-mono text-xs sm:text-sm border-emerald-300 focus:ring-emerald-400"
+                              value={editing.value}
+                              onChange={(e) => setEditing({ ...editing, value: e.target.value })}
+                              onBlur={commitEdit}
+                              onKeyDown={handleKeyDown}
+                              autoFocus
+                              data-testid={`input-${row.key}-${m.monthKey}`}
+                            />
+                          ) : (
+                            <button
+                              type="button"
+                              className={`w-full text-right font-mono cursor-pointer hover:bg-emerald-50 rounded-lg px-1.5 sm:px-3 py-1 sm:py-1.5 transition-colors ${row.colorClass}`}
+                              onClick={() => startEdit(row.key, m.monthKey, val)}
+                              data-testid={`cell-${row.key}-${m.monthKey}`}
+                            >
+                              {formatRand(val)}
+                            </button>
+                          )}
+                        </td>
+                      );
+                    }
+                    const pctRef = (row.key === "variance") ? m.variancePct : (row.key === "ytdVariance") ? m.ytdVariancePct : (row.key === "variancePct" || row.key === "ytdVariancePct") ? val : undefined;
+                    const colorClass = row.colorCoded ? getCellColor(val, pctRef) : row.colorClass;
+                    return (
+                      <td
+                        key={m.monthKey}
+                        className={`px-2 sm:px-4 py-1.5 sm:py-2.5 text-right font-mono text-xs sm:text-sm ${colorClass} ${isClickable ? "cursor-pointer hover:bg-emerald-50/70 hover:underline decoration-emerald-300 underline-offset-2 transition-colors rounded" : ""}`}
+                        onClick={isClickable ? () => setDrawerMonth({
+                          monthKey: m.monthKey,
+                          monthLabel: m.monthLabel,
+                          defaultFilter: row.key === "realisedRevenue" ? "realised" : row.key === "unrealisedRevenue" ? "unrealised" : row.key === "qbRevenueActual" ? "qb_actual" : "all",
+                        }) : undefined}
+                        data-testid={`cell-${row.key}-${m.monthKey}`}
+                      >
+                        {formatCell(row, val)}
+                      </td>
+                    );
+                  })}
+                </tr>
+                {row.expandable && isExpanded && row.projectsKey && (projectNamesByRow[row.projectsKey] || []).map((pName) => (
+                  <tr
+                    key={`${row.key}-${pName}`}
+                    className="border-b border-border/40 bg-emerald-50/20 hover:bg-emerald-50/40 transition-colors"
+                    data-testid={`row-detail-${row.key}-${pName}`}
+                  >
+                    <td className="sticky left-0 z-10 bg-emerald-50/30 backdrop-blur-sm pl-7 sm:pl-11 pr-2 sm:pr-4 py-1 sm:py-1.5 text-[10px] sm:text-xs text-muted-foreground truncate max-w-[140px] sm:max-w-[200px] border-r border-border" title={pName}>
+                      <button
+                        type="button"
+                        className="cursor-pointer text-emerald-700 hover:text-emerald-900 hover:underline decoration-dashed underline-offset-2 transition-colors text-left"
+                        onClick={(e) => { e.stopPropagation(); navigate(`/project/${encodeURIComponent(pName)}?tab=revenue-tracking`); }}
+                        aria-label={`View ${pName} revenue details`}
+                      >
+                        {pName}
+                      </button>
+                    </td>
+                    {months.map((m) => {
+                      const projArr = row.projectsKey ? (m as any)[row.projectsKey] as ProjectBreakdown[] : [];
+                      const proj = projArr?.find((p: ProjectBreakdown) => p.projectName === pName);
+                      const val = proj?.value ?? 0;
+                      const drillFilter = row.key === "realisedRevenue" ? "realised" as const : row.key === "unrealisedRevenue" ? "unrealised" as const : row.key === "qbRevenueActual" ? "qb_actual" as const : "all" as const;
+                      return (
+                        <td
+                          key={m.monthKey}
+                          className={`px-2 sm:px-4 py-1 sm:py-1.5 text-right font-mono text-[10px] sm:text-xs text-emerald-700/70 ${val !== 0 ? "cursor-pointer hover:bg-emerald-50/70 hover:underline decoration-emerald-300 underline-offset-2 transition-colors rounded" : ""}`}
+                          onClick={val !== 0 ? () => setDrawerMonth({
+                            monthKey: m.monthKey,
+                            monthLabel: m.monthLabel,
+                            defaultFilter: drillFilter,
+                            defaultProject: pName,
+                          }) : undefined}
+                          data-testid={`cell-detail-${row.key}-${pName}-${m.monthKey}`}
+                        >
+                          {val !== 0 ? formatRand(val) : ""}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </React.Fragment>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
 
   return (
-    <FinanceShell><div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50/50">
-      <div className="bg-white border-b border-border/80 px-3 sm:px-6 py-4 sm:py-6 shadow-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 max-w-[1800px] mx-auto">
-          <div>
-            <h2 className="text-xl sm:text-3xl font-heading font-bold tracking-tight text-foreground" data-testid="text-page-title">
-              Revenue Tracker FY26
-            </h2>
-            <p className="text-muted-foreground mt-1 sm:mt-1.5 text-xs sm:text-sm" data-testid="text-page-subtitle">
-              Monthly revenue tracking with realised vs unrealised analysis. Click any month cell to see contributing line items.
-            </p>
+    <FinanceShell>
+      <div className="space-y-3">
+        <SectionHeader
+          icon={<Wallet className="h-5 w-5" />}
+          title="Revenue Tracker FY26"
+          eyebrow={`Sep ${new Date().getFullYear() - 1} – Aug ${new Date().getFullYear()}`}
+          actions={
+            <TooltipProvider delayDuration={200}>
+              <UiTooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="sm" className="gap-1.5 rounded-lg border-border" data-testid="button-revenue-help">
+                    <HelpCircle className="h-3.5 w-3.5" />
+                    How it works
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-[320px] text-xs leading-relaxed">
+                  <p className="font-semibold mb-1">Revenue realisation pipeline</p>
+                  <p><strong>Planned</strong> = revenue line on a planned date (no invoice yet).</p>
+                  <p><strong>Committed</strong> = revenue line linked to an invoice but invoice date unconfirmed.</p>
+                  <p><strong>Realised</strong> = invoice captured AND invoice date confirmed.</p>
+                  <p className="mt-1 text-muted-foreground">Allocated via the COS-ratio method. This is recognition, not cash received.</p>
+                </TooltipContent>
+              </UiTooltip>
+            </TooltipProvider>
+          }
+        />
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs text-muted-foreground -mt-1">
+          <Badge variant="outline" className="gap-1 px-2 py-0.5 text-[11px] font-medium border-border bg-card">
+            <CheckCircle2 className="h-3 w-3 text-foreground" />
+            YTD Realised {formatRand(ytdRealised)}
+          </Badge>
+          <Badge variant="outline" className="gap-1 px-2 py-0.5 text-[11px] font-medium border-border bg-card">
+            <ListChecks className="h-3 w-3 text-emerald-700" />
+            YTD Planned {formatRand(ytdPlanned)}
+          </Badge>
+          <Badge variant="outline" className="gap-1 px-2 py-0.5 text-[11px] font-medium border-emerald-200 bg-emerald-50 text-emerald-800">
+            <TrendingUp className="h-3 w-3" />
+            {realisationRate}% realised
+          </Badge>
+          <Badge variant="outline" className="gap-1 px-2 py-0.5 text-[11px] font-medium border-border bg-card">
+            <DollarSign className="h-3 w-3" />
+            QB Actual {formatRand(ytdQbRev)}
+          </Badge>
+          <Badge variant="outline" className="gap-1 px-2 py-0.5 text-[11px] font-medium border-border bg-card">
+            <Loader2 className={`h-3 w-3 ${isFetching ? "animate-spin text-emerald-600" : ""}`} />
+            {dataUpdatedAt
+              ? `Refreshed ${new Date(dataUpdatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+              : "Live"}
+          </Badge>
+        </div>
+
+        <div className="lg:flex lg:gap-5 lg:items-start -mt-1">
+          <aside
+            className="hidden lg:flex lg:flex-col lg:w-56 lg:shrink-0 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] rounded-xl border border-border bg-card shadow-sm p-3"
+            data-testid="rail-filter-revenue"
+            aria-label="Filter projects"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-xs font-semibold text-foreground uppercase tracking-wider">Projects</h3>
+              {selectedProjects.length > 0 && (
+                <button
+                  type="button"
+                  className="text-[10px] text-muted-foreground hover:text-foreground"
+                  onClick={() => setSelectedProjects([])}
+                  data-testid="rail-clear-all-revenue"
+                >
+                  Clear ({selectedProjects.length})
+                </button>
+              )}
+            </div>
+            <div className="relative mb-2">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+              <Input
+                placeholder="Search projects…"
+                value={projectSearch}
+                onChange={(e) => setProjectSearch(e.target.value)}
+                className="h-8 pl-7 text-xs"
+                data-testid="rail-search-revenue"
+              />
+            </div>
+            <div className="overflow-y-auto -mx-1 px-1">
+              <label className="flex items-center gap-2 px-1 py-1 cursor-pointer rounded hover:bg-muted/40 text-xs">
+                <input
+                  type="checkbox"
+                  className="accent-emerald-600 h-3.5 w-3.5"
+                  checked={selectedProjects.length === 0}
+                  onChange={() => setSelectedProjects([])}
+                  data-testid="rail-all-projects-revenue"
+                />
+                <span className={`truncate ${selectedProjects.length === 0 ? "font-medium" : "text-muted-foreground"}`}>All projects</span>
+                <span className="ml-auto text-[10px] text-muted-foreground">{trackerProjectNames.length}</span>
+              </label>
+              {filteredRailNames.length === 0 ? (
+                <p className="text-[11px] text-muted-foreground px-2 py-3">No tracker-loaded projects match.</p>
+              ) : (
+                filteredRailNames.map((name) => {
+                  const checked = selectedProjects.includes(name);
+                  return (
+                    <label key={name} className="flex items-center gap-2 px-1 py-1 cursor-pointer rounded hover:bg-muted/40 text-xs">
+                      <input
+                        type="checkbox"
+                        className="accent-emerald-600 h-3.5 w-3.5"
+                        checked={checked}
+                        onChange={() =>
+                          setSelectedProjects((prev) =>
+                            prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name],
+                          )
+                        }
+                        data-testid={`rail-project-revenue-${name}`}
+                      />
+                      <span className={`truncate ${checked ? "font-medium text-foreground" : "text-muted-foreground"}`} title={name}>
+                        {name}
+                      </span>
+                    </label>
+                  );
+                })
+              )}
+            </div>
+          </aside>
+
+          <div className="flex-1 min-w-0 space-y-3">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3" data-testid="kpi-strip-revenue">
+              {renderKpiCard("planned")}
+              {renderKpiCard("committed")}
+              {renderKpiCard("realised")}
+              {renderQbKpiCard()}
+            </div>
+
+            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "recon" | "trend")}>
+              <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+                <TabsList className="bg-muted/60">
+                  <TabsTrigger value="recon" className="data-[state=active]:bg-card gap-1.5" data-testid="tab-recon">
+                    <ListChecks className="h-3.5 w-3.5" />
+                    Recon Grid
+                  </TabsTrigger>
+                  <TabsTrigger value="trend" className="data-[state=active]:bg-card gap-1.5" data-testid="tab-trend">
+                    <LineChartIcon className="h-3.5 w-3.5" />
+                    Trend
+                  </TabsTrigger>
+                </TabsList>
+
+                <div className="lg:hidden">
+                  <Popover open={projectPickerOpen} onOpenChange={setProjectPickerOpen}>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className="gap-1.5 rounded-lg border-border" data-testid="button-project-picker-revenue">
+                        <Filter className="h-3.5 w-3.5" />
+                        Projects
+                        {selectedProjects.length > 0 && (
+                          <Badge variant="outline" className="ml-1 px-1.5 py-0 text-[10px] border-emerald-200 bg-emerald-50 text-emerald-700">
+                            {selectedProjects.length}
+                          </Badge>
+                        )}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-72 p-2" align="end">
+                      <div className="relative mb-2">
+                        <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                        <Input
+                          placeholder="Search projects…"
+                          value={projectSearch}
+                          onChange={(e) => setProjectSearch(e.target.value)}
+                          className="h-8 pl-7 text-xs"
+                        />
+                      </div>
+                      <div className="max-h-72 overflow-y-auto -mx-1 px-1">
+                        <label className="flex items-center gap-2 px-1 py-1 cursor-pointer rounded hover:bg-muted/40 text-xs">
+                          <input
+                            type="checkbox"
+                            className="accent-emerald-600 h-3.5 w-3.5"
+                            checked={selectedProjects.length === 0}
+                            onChange={() => setSelectedProjects([])}
+                          />
+                          <span className={`truncate ${selectedProjects.length === 0 ? "font-medium" : "text-muted-foreground"}`}>All projects</span>
+                        </label>
+                        {filteredRailNames.map((name) => {
+                          const checked = selectedProjects.includes(name);
+                          return (
+                            <label key={name} className="flex items-center gap-2 px-1 py-1 cursor-pointer rounded hover:bg-muted/40 text-xs">
+                              <input
+                                type="checkbox"
+                                className="accent-emerald-600 h-3.5 w-3.5"
+                                checked={checked}
+                                onChange={() =>
+                                  setSelectedProjects((prev) =>
+                                    prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name],
+                                  )
+                                }
+                              />
+                              <span className={`truncate ${checked ? "font-medium" : "text-muted-foreground"}`}>{name}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
+
+              {selectedProjects.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-3 lg:hidden">
+                  {selectedProjects.map((p) => (
+                    <Badge
+                      key={p}
+                      variant="secondary"
+                      className="text-xs gap-1 cursor-pointer hover:bg-destructive/10"
+                      onClick={() => setSelectedProjects((prev) => prev.filter((x) => x !== p))}
+                    >
+                      {p}
+                      <X className="h-3 w-3" />
+                    </Badge>
+                  ))}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 text-xs text-muted-foreground px-2"
+                    onClick={() => setSelectedProjects([])}
+                  >
+                    Clear all
+                  </Button>
+                </div>
+              )}
+
+              <TabsContent value="recon" className="mt-0">
+                <Card className="shadow-sm overflow-hidden">
+                  <CardHeader className="bg-muted/30 border-b border-border px-3 sm:px-5 py-2.5 sm:py-3">
+                    <CardTitle className="text-sm font-semibold tracking-tight flex items-center gap-2">
+                      <ListChecks className="h-4 w-4 text-muted-foreground" />
+                      Planned → Committed → Realised → QuickBooks reconciliation
+                      {isProjectFiltered && (
+                        <Badge variant="outline" className="ml-2 text-[10px] font-medium border-emerald-200 bg-emerald-50 text-emerald-700">
+                          Filtered: {selectedProjects.length} project{selectedProjects.length === 1 ? "" : "s"}
+                        </Badge>
+                      )}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-0">{renderGrid()}</CardContent>
+                </Card>
+              </TabsContent>
+              <TabsContent value="trend" className="mt-0">{renderTrend()}</TabsContent>
+            </Tabs>
           </div>
         </div>
       </div>
 
-      <div className="max-w-[1800px] mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-6">
-        <Card className="border-emerald-200/80 bg-gradient-to-r from-emerald-50 to-emerald-50/30 shadow-sm" data-testid="card-info-banner">
-          <CardContent className="p-4 flex items-start gap-3">
-            <div className="rounded-xl bg-emerald-200/60 p-2.5 mt-0.5 shrink-0">
-              <TrendingUp className="h-5 w-5 text-emerald-700" />
-            </div>
-            <div>
-              <p className="font-semibold text-emerald-900 text-sm">Revenue Realisation Tracker</p>
-              <p className="text-sm text-emerald-700/90 mt-0.5 leading-relaxed">
-                Revenue is "Realised" when the underlying cost line has a supplier invoice captured (COS-realised). Revenue is allocated via the COS-ratio method: each cost line's share of project revenue equals its share of project COS. <strong className="text-emerald-800">Green</strong> = COS-realised. <strong className="text-amber-600">Amber</strong> = not yet realised. This is a recognition concept, not cash received.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <TooltipProvider delayDuration={300}>
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4" role="region" aria-label="Revenue KPI Summary">
-            {kpiCards.map((kpi) => (
-              <Card key={kpi.id} className={`shadow-sm hover:shadow-md transition-shadow ${kpi.borderColor}`} data-testid={`card-${kpi.id}`}>
-                <CardContent className="pt-5 pb-4 px-4">
-                  <div className="flex items-start gap-3">
-                    <div className={`rounded-xl ${kpi.iconBg} p-2.5 shrink-0`}>
-                      <kpi.icon className={`h-5 w-5 ${kpi.iconColor}`} aria-hidden="true" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1">
-                        <p className="text-xs font-medium text-muted-foreground truncate">{kpi.label}</p>
-                        <UiTooltip>
-                          <TooltipTrigger asChild>
-                            <button type="button" className="text-muted-foreground/50 hover:text-muted-foreground transition-colors shrink-0" aria-label={`Info: ${kpi.label}`}>
-                              <HelpCircle className="h-3 w-3" />
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent side="top" className="max-w-[240px] text-xs leading-relaxed">
-                            {kpi.tooltip}
-                          </TooltipContent>
-                        </UiTooltip>
-                      </div>
-                      <p className={`text-xl font-bold font-mono mt-0.5 ${kpi.valueColor}`} data-testid={`text-${kpi.id}-value`}>
-                        {kpi.value}
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </TooltipProvider>
-
-        <Card className="shadow-sm overflow-hidden">
-          <CardHeader className="bg-gradient-to-r from-emerald-50 to-white border-b px-6 py-4">
-            <CardTitle className="text-lg font-semibold tracking-tight">Revenue Overview</CardTitle>
-          </CardHeader>
-          <CardContent className="p-6">
-            <div className="h-[420px]" data-testid="chart-revenue">
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={chartData} margin={{ top: 8, right: 16, left: 8, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} />
-                  <YAxis tickFormatter={(v: number) => formatRand(v)} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                  <Tooltip
-                    formatter={(value: number) => formatRand(value)}
-                    contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', fontSize: '12px' }}
-                  />
-                  <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '12px' }} />
-                  <Bar dataKey="Revenue Planned (Budget)" fill="#a855f7" opacity={0.3} radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="Revenue Committed" stackId="rev" fill="#d97706" radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="Revenue Realised" stackId="rev" fill="#059669" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="Quickbooks Revenue" fill="#2563eb" radius={[4, 4, 0, 0]} />
-                  <Line type="monotone" dataKey="QB ↔ App Variance" stroke="#ef4444" strokeWidth={2} strokeDasharray="5 5" dot={false} />
-                </ComposedChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-sm overflow-hidden">
-          <CardHeader className="bg-gradient-to-r from-emerald-50 to-white border-b px-6 py-4">
-            <CardTitle className="text-lg font-semibold tracking-tight">Monthly Revenue Grid</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm" data-testid="table-revenue-grid">
-                <thead>
-                  <tr className="border-b bg-muted/80">
-                    <th className="sticky left-0 z-10 bg-muted/95 backdrop-blur-sm px-5 py-3 text-left font-semibold text-muted-foreground uppercase tracking-wider text-[11px] min-w-[200px] border-r border-border">
-                      Metric
-                    </th>
-                    {months.map((m) => (
-                      <th key={m.monthKey} className="px-4 py-3 text-right font-semibold text-muted-foreground uppercase tracking-wider text-[11px] whitespace-nowrap min-w-[110px]">
-                        {m.monthLabel}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {ROW_DEFS.map((row, rowIdx) => {
-                    const isYtd = row.group === "ytd";
-                    const isExpanded = expandedRows.has(row.key);
-                    const isClickable = ["totalRevenue", "realisedRevenue", "unrealisedRevenue", "qbRevenueActual"].includes(row.key);
-                    const isFirstYtd = isYtd && rowIdx > 0 && ROW_DEFS[rowIdx - 1].group !== "ytd";
-                    return (
-                      <React.Fragment key={row.key}>
-                        {isFirstYtd && (
-                          <tr>
-                            <td colSpan={months.length + 1} className="bg-muted/60 h-px" />
-                          </tr>
-                        )}
-                        <tr
-                          className={`border-b border-border transition-colors ${isYtd ? "bg-muted/40" : "bg-white"} hover:bg-muted/40`}
-                          data-testid={`row-${row.key}`}
-                        >
-                          <td className={`sticky left-0 z-10 px-5 py-2.5 font-medium text-sm border-r border-border ${isYtd ? "bg-muted/95" : "bg-white/95"} backdrop-blur-sm`}>
-                            {row.expandable ? (
-                              <button
-                                type="button"
-                                className="flex items-center gap-1.5 hover:text-emerald-600 transition-colors group"
-                                onClick={() => toggleRow(row.key)}
-                                aria-expanded={isExpanded}
-                                aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${row.label} by project`}
-                                data-testid={`toggle-${row.key}`}
-                              >
-                                <span className="text-slate-500 group-hover:text-emerald-500 transition-colors">
-                                  {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                                </span>
-                                <span>{row.label}</span>
-                              </button>
-                            ) : (
-                              <span className={isYtd ? "pl-5.5 text-muted-foreground" : ""}>{row.label}</span>
-                            )}
-                          </td>
-                          {months.map((m) => {
-                            const val = m[row.dataKey] as number;
-                            const isEditingCell = editing?.field === row.key && editing?.monthKey === m.monthKey;
-
-                            if (row.editable && canEditRevenueTracker) {
-                              return (
-                                <td key={m.monthKey} className="px-2 py-1.5 text-right">
-                                  {isEditingCell ? (
-                                    <Input
-                                      type="number"
-                                      className="h-8 w-full text-right font-mono text-sm border-purple-300 focus:ring-purple-400"
-                                      value={editing.value}
-                                      onChange={(e) => setEditing({ ...editing, value: e.target.value })}
-                                      onBlur={commitEdit}
-                                      onKeyDown={handleKeyDown}
-                                      autoFocus
-                                      data-testid={`input-${row.key}-${m.monthKey}`}
-                                    />
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      className={`w-full text-right font-mono cursor-pointer hover:bg-purple-50 rounded-lg px-3 py-1.5 transition-colors ${row.colorClass}`}
-                                      onClick={() => startEdit(row.key, m.monthKey, val)}
-                                      data-testid={`cell-${row.key}-${m.monthKey}`}
-                                    >
-                                      {formatRand(val)}
-                                    </button>
-                                  )}
-                                </td>
-                              );
-                            }
-
-                            const colorCodedClass = row.colorCoded
-                              ? val < 0 ? "text-red-600 font-semibold" : val > 0 ? "text-green-600 font-semibold" : "text-slate-500"
-                              : row.colorClass;
-                            const isVarPct = row.key === "variancePct" || row.key === "ytdVariancePct";
-                            const displayVal = isVarPct ? `${val.toFixed(1)}%` : formatRand(val);
-                            return (
-                              <td
-                                key={m.monthKey}
-                                className={`px-4 py-2.5 text-right font-mono text-sm ${colorCodedClass} ${isClickable ? "cursor-pointer hover:bg-emerald-50/80 hover:underline decoration-emerald-300 underline-offset-2 transition-colors rounded" : ""}`}
-                                onClick={isClickable ? () => setDrawerMonth({
-                                  monthKey: m.monthKey,
-                                  monthLabel: m.monthLabel,
-                                  defaultFilter: row.key === 'realisedRevenue' ? 'realised' : row.key === 'unrealisedRevenue' ? 'unrealised' : row.key === 'qbRevenueActual' ? 'qb_actual' : 'all'
-                                }) : undefined}
-                                data-testid={`cell-${row.key}-${m.monthKey}`}
-                              >
-                                {displayVal}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                        {row.expandable && isExpanded && row.projectsKey && (projectNamesByRow[row.projectsKey] || []).map((pName) => (
-                          <tr
-                            key={`${row.key}-${pName}`}
-                            className="border-b border-slate-50 bg-emerald-50/20 hover:bg-emerald-50/50 transition-colors"
-                            data-testid={`row-detail-${row.key}-${pName}`}
-                          >
-                            <td className="sticky left-0 z-10 bg-emerald-50/30 backdrop-blur-sm pl-11 pr-4 py-1.5 text-xs text-muted-foreground truncate max-w-[200px] border-r border-border" title={pName}>
-                              <button
-                                type="button"
-                                className="cursor-pointer text-blue-600 hover:text-blue-800 hover:underline decoration-dashed underline-offset-2 transition-colors text-left"
-                                onClick={(e) => { e.stopPropagation(); navigate(`/project/${encodeURIComponent(pName)}?tab=revenue-tracking`); }}
-                                aria-label={`View ${pName} revenue details`}
-                              >
-                                {pName}
-                              </button>
-                            </td>
-                            {months.map((m) => {
-                              const projArr = row.projectsKey ? (m as any)[row.projectsKey] as ProjectBreakdown[] : [];
-                              const proj = projArr?.find((p: ProjectBreakdown) => p.projectName === pName);
-                              const val = proj?.value ?? 0;
-                              const drillFilter = row.key === 'realisedRevenue' ? 'realised' as const : row.key === 'unrealisedRevenue' ? 'unrealised' as const : row.key === 'qbRevenueActual' ? 'qb_actual' as const : 'all' as const;
-                              return (
-                                <td
-                                  key={m.monthKey}
-                                  className={`px-4 py-1.5 text-right font-mono text-xs text-emerald-600/70 ${val !== 0 ? "cursor-pointer hover:bg-emerald-50/80 hover:underline decoration-emerald-300 underline-offset-2 transition-colors rounded" : ""}`}
-                                  onClick={val !== 0 ? () => setDrawerMonth({
-                                    monthKey: m.monthKey,
-                                    monthLabel: m.monthLabel,
-                                    defaultFilter: drillFilter,
-                                    defaultProject: pName,
-                                  }) : undefined}
-                                  data-testid={`cell-detail-${row.key}-${pName}-${m.monthKey}`}
-                                >
-                                  {val !== 0 ? formatRand(val) : ""}
-                                </td>
-                              );
-                            })}
-                          </tr>
-                        ))}
-                      </React.Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-
-      </div>
-
       {drawerMonth && (
         <MonthDetailDrawer
-          key={`${drawerMonth.monthKey}-${drawerMonth.defaultFilter}-${drawerMonth.defaultProject || 'all'}`}
+          key={`${drawerMonth.monthKey}-${drawerMonth.defaultFilter}-${drawerMonth.defaultProject || "all"}`}
           monthKey={drawerMonth.monthKey}
           monthLabel={drawerMonth.monthLabel}
           defaultFilter={drawerMonth.defaultFilter}
@@ -849,6 +1130,6 @@ export default function RevenueTrackerPage() {
           onClose={() => setDrawerMonth(null)}
         />
       )}
-    </div></FinanceShell>
+    </FinanceShell>
   );
 }

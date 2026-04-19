@@ -12,6 +12,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { SectionHeader } from "@/components/layout/page-shell";
 import { Tooltip as UiTooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { apiRequest, fetchQueryFn, invalidateDashboardQueries } from "@/lib/queryClient";
+import { useFinanceQuery } from "@/lib/finance-trust";
+import { DataTrustBadge } from "@/components/ui/data-trust-badge";
 import {
   Bar,
   XAxis,
@@ -499,15 +501,19 @@ export default function CosTracker() {
   const [editing, setEditing] = useState<EditingCell | null>(null);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [drawerMonth, setDrawerMonth] = useState<{ monthKey: string; monthLabel: string; defaultFilter?: "all" | "realised" | "committed" | "planned" | "qb_actual"; defaultProject?: string } | null>(null);
+
   const [activeTab, setActiveTab] = useState<"recon" | "trend">("recon");
   const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
   const [projectSearch, setProjectSearch] = useState("");
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
 
   const { data: months = [], isLoading, isError, error, refetch, dataUpdatedAt, isFetching } = useQuery<MonthData[]>({
+
     queryKey: ["/api/cos-tracker"],
+    url: "/api/cos-tracker",
     staleTime: 30_000,
   });
+  const months: MonthData[] = monthsData ?? [];
 
   const { data: projectsSummary = [] } = useQuery<Array<{ project_name: string; has_tracker_import?: boolean }>>({
     queryKey: ["/api/projects-summary"],
@@ -1153,9 +1159,11 @@ export default function CosTracker() {
               </TabsContent>
               <TabsContent value="trend" className="mt-0">{renderTrend()}</TabsContent>
             </Tabs>
+
           </div>
         </div>
       </div>
+
 
       {drawerMonth && (
         <MonthDetailDrawer

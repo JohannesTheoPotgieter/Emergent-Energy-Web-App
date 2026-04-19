@@ -57,21 +57,17 @@ The system now extracts and persists milestone numbers (`milestone_no`) from Exc
 
 ### Default experience
 
-Smart Import v2 is the default experience ("Simple view"). The previous v1 interface is available as "Advanced view" for operators who need access to column mapping, issue resolution, and other technical controls.
+Smart Import v2 is the only commit path. The legacy v1 full-replace flow and the `emergencyV1Mode` / `skipV2ConflictCheck` opt-out flags have been removed.
 
-### Feature flag / escape hatch
+### Commit preconditions
 
-The v2 incremental commit path activates when:
-1. The import run has an assigned `projectId`
-2. `skipV2ConflictCheck` is not set to `true` in the commit request
-
-If v2 encounters an error, the system falls back to v1 behavior automatically.
+The v2 incremental commit path requires the import run to have an assigned `projectId`. Commits without a resolved `project_info.id` fail fast with `error: "project_id_missing"`.
 
 ### Migration
 
 - **Schema:** One additive migration adds `milestone_no` and `milestone_percent` columns to `normalized_revenue_lines`. No destructive changes.
 - **Data:** No backfill required. Existing rows get NULL for milestone_no; future imports populate it automatically.
-- **Rollback:** The v1 commit path is preserved as fallback. Setting `skipV2ConflictCheck=true` on the commit request forces v1 behavior.
+- **Rollback:** Revert to the prior release tag. There is no in-app flag to re-enable v1.
 
 ### Key risks addressed
 

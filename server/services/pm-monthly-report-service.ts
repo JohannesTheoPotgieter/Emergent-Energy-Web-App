@@ -139,7 +139,7 @@ export async function generatePmReportData(month: string) {
     db.select().from(qcWarning),
     db.select().from(procurementItems),
     db.select().from(clients),
-    db.select().from(financeRevenueMonthly),
+    db.select().from(financeRevenueMonthly).where(isNull(financeRevenueMonthly.effectiveTo)),
     db.select().from(cashflowPoints).where(isNull(cashflowPoints.effectiveTo)),
     db.select({ id: users.id, name: users.name }).from(users),
     db.select({ committedAt: smartImportRuns.committedAt }).from(smartImportRuns)

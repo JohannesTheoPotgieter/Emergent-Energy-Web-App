@@ -81,17 +81,16 @@ describe("project-cost-line-read-service identity", () => {
 describe("finance routes delegate project expenditure reads to canonical service", () => {
   const routes = read("server/departments/finance-routes.ts");
 
-  it("program-expenses route is gated by canonical feature flag with rollback path", () => {
+  it("program-expenses route reads canonical cost line service unconditionally", () => {
     const block = routes.substring(
       routes.indexOf('"/api/program-expenses"'),
       routes.indexOf('"/api/program-expenses/:projectName"')
     );
-    expect(block).toContain("isCanonicalFinanceCostlineReadEnabled()");
     expect(block).toContain("resolveProjectIdByName(projectName)");
     expect(block).toContain("getCanonicalProjectCostLines(");
     expect(block).toContain("getCanonicalAllCurrentCostLines()");
-    expect(block).toContain("storage.getProgramExpensesByProject(projectName)");
-    expect(block).toContain("storage.getAllProgramExpenses()");
+    expect(block).not.toContain("storage.getProgramExpensesByProject(projectName)");
+    expect(block).not.toContain("storage.getAllProgramExpenses()");
   });
 
   it("project-name expenditure routes use scoped high-risk reader helper", () => {

@@ -9,6 +9,7 @@ import { financialEditRequests, financialIntegrationRules, users, workItems, pro
 import { createNotification } from "../services/notification-service";
 import { eq, and, inArray, isNull, desc, sql } from "drizzle-orm";
 import { paramStr } from "../lib/req-params";
+import { getCanonicalProjectCostLinesByName } from "../services/project-cost-line-read-service";
 
 const router = Router();
 
@@ -325,7 +326,7 @@ router.post("/api/financial-edit-requests/:id/approve", requireAuth, requireFina
           const projectNames = [...new Set(overrides.map((o: any) => o.projectName))];
           for (const pn of projectNames) {
             const projectOverrides = overrides.filter((o: any) => o.projectName === pn);
-            const expenses = await storage.getProgramExpensesByProject(pn as string);
+            const { rows: expenses } = await getCanonicalProjectCostLinesByName(pn as string);
             const rowMap = new Map(expenses.map((e: any) => [e.rowNumber, e]));
 
             const rowGroups = new Map<number, Record<string, any>>();
@@ -423,7 +424,7 @@ router.get("/api/financial-integration/warnings/:projectName", requireAuth, asyn
     const projectName = paramStr(req.params.projectName);
     const warnings: { type: string; severity: string; message: string; details?: any }[] = [];
 
-    const expenses = await storage.getProgramExpensesByProject(projectName);
+    const { rows: expenses } = await getCanonicalProjectCostLinesByName(projectName);
     const inflows = await storage.getProgramInflowsByProject(projectName);
     const piRow = await db.select({ id: projectInfo.id }).from(projectInfo)
       .where(eq(projectInfo.projectName, projectName)).limit(1);
@@ -567,7 +568,7 @@ router.get("/api/financial-integration/sync-status/:projectName", requireAuth, a
   try {
     const projectName = paramStr(req.params.projectName);
 
-    const expenses = await storage.getProgramExpensesByProject(projectName);
+    const { rows: expenses } = await getCanonicalProjectCostLinesByName(projectName);
     const inflows = await storage.getProgramInflowsByProject(projectName);
     const piRowSync = await db.select({ id: projectInfo.id }).from(projectInfo)
       .where(eq(projectInfo.projectName, projectName)).limit(1);
@@ -727,7 +728,7 @@ router.get("/api/financial-integration/suggested-rules/:projectName", requireAut
       reason: string;
     }[] = [];
 
-    const expenses = await storage.getProgramExpensesByProject(projectName);
+    const { rows: expenses } = await getCanonicalProjectCostLinesByName(projectName);
     const inflows = await storage.getProgramInflowsByProject(projectName);
     const planTasks = await storage.getProjectPlansByProject(projectName);
     const revSummary = await storage.getProjectRevenueSummary(projectName);

@@ -19,6 +19,7 @@ import {
 import { useExecutionData } from "./use-execution-data";
 import { apiRequest } from "@/lib/queryClient";
 import RealisationKPIsPage from "./RealisationKPIsPage";
+import { DataTrustBadge } from "@/components/ui/data-trust-badge";
 
 type SortKey = "projectName" | "pm" | "plannedRevenue" | "receivedInflow" | "revenueVariance" | "plannedExpenditure" | "paidExpenditure" | "expenditureVariance" | "grossProfit" | "grossMargin" | "openInflow" | "openExpenditure";
 type SortDir = "asc" | "desc";
@@ -65,7 +66,7 @@ interface OverdueData {
 }
 
 export default function FinancePage() {
-  const { kpis, filteredProjects, actionRows, openProject, fyLabel } = useExecutionData();
+  const { kpis, filteredProjects, actionRows, openProject, fyLabel, trust } = useExecutionData();
   const [sortKey, setSortKey] = useState<SortKey>("grossMargin");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -147,6 +148,11 @@ export default function FinancePage() {
 
   return (
     <div className="space-y-5">
+      {/* Trust badge */}
+      <div className="flex justify-end">
+        <DataTrustBadge trust={trust} />
+      </div>
+
       {/* KPI STRIP - Revenue */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <KpiCard label={`Budget Revenue (${fyLabel})`} value={formatCurrencyCompact(kpis.plannedRevenueFy)} icon={<TrendingUp className="w-4 h-4 text-emerald-600" />} iconBg="bg-emerald-100" />

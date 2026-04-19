@@ -15,6 +15,7 @@ import { classifyExpenseState } from "../lib/calculations/stateClassifier";
 import { mapCostToExpenseInput } from "../lib/data-merge";
 import { resolveInflowEffectiveDates } from "../lib/cashflow-helpers";
 import { isWorkItemsEnabled } from "../work-items-adapter";
+import { getCanonicalAllCurrentCostLines } from "../services/project-cost-line-read-service";
 
 export function registerOverviewExtractedRoutes(app: Express): void {
 
@@ -25,7 +26,7 @@ export function registerOverviewExtractedRoutes(app: Express): void {
       const useCanonicalOv = await isWorkItemsEnabled();
       const [allProjectInfo, allExpenses, rawInflows, allPlans, latestRefresh, allTaskLinks, allOpTasks, allNormCostsOv, allNormRevOv, allNormPlansOv] = await Promise.all([
         storage.getAllProjectInfo(),
-        storage.getAllProgramExpenses(),
+        getCanonicalAllCurrentCostLines(),
         storage.getAllProgramInflows(),
         storage.getAllProjectPlans(),
         storage.getLatestRefresh(),

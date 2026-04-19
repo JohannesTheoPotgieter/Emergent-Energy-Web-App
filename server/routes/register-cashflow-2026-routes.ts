@@ -11,6 +11,7 @@ import {
 import { db } from "../db";
 import { quickbooksInvoiceLinks, quickbooksDocuments } from "@shared/schema";
 import { and, eq, isNull } from "drizzle-orm";
+import { getCanonicalAllCurrentCostLines } from "../services/project-cost-line-read-service";
 
 const requireAuth = sharedRequireAuth;
 
@@ -23,7 +24,7 @@ export function registerCashflow2026Routes(app: Express) {
       const projectFilter = req.query.project ? String(req.query.project) : null;
 
       const [legacyExp, legacyInf, manualBalances, opexBudgets, opexWeeklyOverrides, availPaymentOverrides, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
-        storage.getAllProgramExpenses(),
+        getCanonicalAllCurrentCostLines(),
         storage.getAllProgramInflows(),
         storage.getAllCashflowWeeklyManual(),
         storage.getAllOpexBudgetMonthly(),
@@ -38,9 +39,16 @@ export function registerCashflow2026Routes(app: Express) {
       const allInflows = resolveInflowEffectiveDates(mergedData.inflows, allTaskLinks, allOpTasks, allPlanTasks);
 
       const manualMap = new Map(manualBalances.map((m: any) => [m.weekStartDate, parseFloat(m.openingBalance || "0")]));
+      const manualMetaMap = new Map(manualBalances.map((m: any) => [m.weekStartDate, { updatedAt: m.updatedAt ?? null }]));
       const opexMonthlyMap = new Map(opexBudgets.map((o: any) => [o.monthKey, parseFloat(o.amount || "0")]));
       const opexWeeklyMap = new Map(opexWeeklyOverrides.map((o: any) => [o.weekStartDate, parseFloat(o.opexAmount || "0")]));
-      const availPayMap = new Map(availPaymentOverrides.map((o: any) => [o.weekStartDate, { value: parseFloat(o.overrideValue || "0"), reason: o.reason }]));
+      const opexMetaMap = new Map(opexWeeklyOverrides.map((o: any) => [o.weekStartDate, { updatedAt: o.updatedAt ?? null }]));
+      const availPayMap = new Map(availPaymentOverrides.map((o: any) => [o.weekStartDate, {
+        value: parseFloat(o.overrideValue || "0"),
+        reason: o.reason,
+        updatedAt: o.updatedAt ?? null,
+        updatedBy: o.updatedBy ?? null,
+      }]));
 
       const fyStart = new Date(Date.UTC(2025, 8, 1));
       const fyEnd = new Date(Date.UTC(2026, 7, 31));
@@ -120,6 +128,10 @@ export function registerCashflow2026Routes(app: Express) {
         const availPayOverride = availPayMap.get(weekStart);
         const availablePayment = hasAvailPayOverride ? availPayOverride!.value : computedAvailablePayment;
         const availPayReason = hasAvailPayOverride ? availPayOverride!.reason : null;
+        const availPayOverrideAt = hasAvailPayOverride ? availPayOverride!.updatedAt : null;
+        const availPayOverrideBy = hasAvailPayOverride ? availPayOverride!.updatedBy : null;
+        const manualOverrideMeta = hasManualOverride ? manualMetaMap.get(weekStart) ?? null : null;
+        const opexOverrideMeta = hasOpexOverride ? opexMetaMap.get(weekStart) ?? null : null;
 
         weeks.push({
           weekStart,
@@ -130,15 +142,19 @@ export function registerCashflow2026Routes(app: Express) {
           openingBalance,
           computedOpening,
           hasManualOverride,
+          manualOverrideAt: manualOverrideMeta?.updatedAt ?? null,
           balanceDelta,
           opexOutflows,
           computedOpex,
           hasOpexOverride,
+          opexOverrideAt: opexOverrideMeta?.updatedAt ?? null,
           closingBalance,
           availablePayment,
           computedAvailablePayment,
           hasAvailPayOverride,
           availPayReason,
+          availPayOverrideAt,
+          availPayOverrideBy,
         });
 
         runningBalance = closingBalance;
@@ -168,7 +184,7 @@ export function registerCashflow2026Routes(app: Express) {
       const weekEnd = wsDate.toISOString().split('T')[0];
 
       const [legacyExp, legacyInf, allTaskLinks, allOpTasks, allPlanTasks, qbLinks] = await Promise.all([
-        storage.getAllProgramExpenses(),
+        getCanonicalAllCurrentCostLines(),
         storage.getAllProgramInflows(),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),

@@ -74,8 +74,6 @@ export default function CollabEmailPage() {
     gcTime: 60_000,
   });
 
-  if (isError) return <PageShell className="max-w-5xl p-4 md:p-6"><PageError title="Unable to load Outlook Email" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></PageShell>;
-
   useEffect(() => {
     if (isFetched && items.length === 0 && !autoSyncDone && !syncMutation.isPending) {
       setAutoSyncDone(true);
@@ -91,6 +89,9 @@ export default function CollabEmailPage() {
       (item.preview || "").toLowerCase().includes(q)
     );
   }, [items, searchQuery]);
+
+  if (isError) return <PageShell className="max-w-5xl p-4 md:p-6"><PageError title="Unable to load Outlook Email" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></PageShell>;
+
   const actionRequiredCount = filtered.filter((item: any) => item.actionRequired).length;
 
   return (

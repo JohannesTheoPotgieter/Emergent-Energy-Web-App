@@ -29,8 +29,6 @@ function StaleWarning({ lastImport }: { lastImport: string | null }) {
 export default function DataSourceDebug({ pageName, dataSources }: DataSourceDebugProps) {
   const [open, setOpen] = useState(false);
 
-  if (import.meta.env.PROD) return null;
-
   const { data: importMeta } = useQuery<{ lastImportAt: string | null; importCount: number }>({
     queryKey: ["/api/smart-import/runs"],
     queryFn: async () => {
@@ -49,6 +47,8 @@ export default function DataSourceDebug({ pageName, dataSources }: DataSourceDeb
     },
     staleTime: 60_000,
   });
+
+  if (import.meta.env.PROD) return null;
 
   return (
     <div

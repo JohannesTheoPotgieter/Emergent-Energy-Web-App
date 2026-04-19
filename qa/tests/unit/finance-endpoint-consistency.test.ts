@@ -139,10 +139,9 @@ describe("Expenditure endpoints now delegate to canonical project-cost service",
       routes.indexOf('"/api/program-expenses"'),
       routes.indexOf('"/api/program-expenses"') + 1200
     );
-    expect(block).toContain("isCanonicalFinanceCostlineReadEnabled()");
     expect(block).toContain("getCanonicalProjectCostLines(");
     expect(block).toContain("getCanonicalAllCurrentCostLines()");
-    expect(block).toContain("storage.getAllProgramExpenses()");
+    expect(block).not.toContain("storage.getAllProgramExpenses()");
   });
 
   it("expenditure-breakdown route no longer uses merged program-expense storage reads", () => {
@@ -157,10 +156,9 @@ describe("Expenditure endpoints now delegate to canonical project-cost service",
 describe("Data source alignment summary", () => {
   const routes = read("server/departments/finance-routes.ts");
 
-  it("program-expense merge reads are not used by high-risk tracker/expenditure endpoints", () => {
+  it("program-expense merge reads are fully removed", () => {
     const matches = routes.match(/storage\.getProgramExpensesByProject\(/g) || [];
-    // Feature-flag rollback paths intentionally retain legacy reads.
-    expect(matches.length).toBeLessThanOrEqual(9);
+    expect(matches.length).toBe(0);
   });
 
   it("all-project high-risk helper exists and is used in COS global endpoints", () => {
