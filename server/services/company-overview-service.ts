@@ -42,6 +42,7 @@ import {
 import { computeQcProgress } from "@shared/quality-governance";
 import { evaluateRevenueArStatus, isRevenueSettled } from "../lib/finance/revenue-ar-status";
 import { computeMarginPct } from "../lib/finance/margin";
+import { effectiveRagBucket } from "@shared/utils/effective-rag";
 import { getCosRealisedAmountForNclRow } from "../lib/calculations/financeUtils";
 import { getAssignedEvidenceByCostLineIds } from "../lib/finance/qb-allocation-read";
 
@@ -233,7 +234,12 @@ export async function getCompanyOverviewData() {
   for (const p of activeProjects) {
     const exec = execByProjectId.get(p.id);
     if (!exec) continue;
-    const rag = (exec.ragStatus || "").toLowerCase();
+    // Apply the canonical effective-RAG rule so projects in DLP are counted
+    // as off-track even if their stored rag_status is still green/amber.
+    const rag = effectiveRagBucket({
+      ragStatus: exec.ragStatus,
+      inDlp: (p as any).inDlp ?? false,
+    });
     if (rag === "green") onTrack++;
     else if (rag === "amber") atRisk++;
     else offTrack++;
