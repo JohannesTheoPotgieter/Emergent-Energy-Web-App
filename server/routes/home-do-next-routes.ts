@@ -131,19 +131,31 @@ async function buildRagItems(_req: Request, role: string): Promise<DoNextItem[]>
   if (!isVisibleForRole("rag", role)) return [];
   try {
     // RAG status lives on project_execution_state, not project_info.
+    // Effective RAG = stored rag_status, BUT if project_info.in_dlp = true
+    // (project is in the Defect Liability Period during a handover phase),
+    // it is forced to 'red' with reason 'In DLP'. Handover phases are the
+    // only ones where in_dlp is meaningful per the canonical lifecycle in
+    // shared/phases.ts; the column default false ensures pre-handover
+    // projects never accidentally trip this rule.
     const rows: any[] = await db.execute(sql`
-      SELECT p.project_name, p.pm, p.pd, e.rag_status, e.rag_updated_at
+      SELECT
+        p.project_name, p.pm, p.pd, p.in_dlp,
+        e.rag_status, e.rag_updated_at,
+        CASE WHEN p.in_dlp THEN 'In DLP' ELSE NULL END AS dlp_reason
       FROM project_execution_state e
       JOIN project_info p ON p.id = e.project_id
-      WHERE e.rag_status = 'red' AND p.deleted_at IS NULL
-      ORDER BY e.rag_updated_at DESC NULLS LAST
+      WHERE (e.rag_status = 'red' OR p.in_dlp = true)
+        AND p.deleted_at IS NULL
+      ORDER BY p.in_dlp DESC, e.rag_updated_at DESC NULLS LAST
       LIMIT 15
     `).then((r: any) => r.rows ?? r ?? []);
 
     return rows.map((r: any): DoNextItem => ({
       key: `rag:red:${r.project_name}`,
       kind: "rag",
-      title: `Red RAG · ${r.project_name}`,
+      title: r.in_dlp
+        ? `Red RAG · ${r.project_name} · In DLP`
+        : `Red RAG · ${r.project_name}`,
       subtitle: r.pm || r.pd || null,
       severity: "high",
       score: computeScore("rag", "high", r.rag_updated_at),

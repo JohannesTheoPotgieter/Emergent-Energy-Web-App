@@ -19,20 +19,28 @@ import { STAGE_CODES } from "../schema/stage-lifecycle";
  *   - PD-PM handover phases land on S03 (Financial Close)
  */
 export const PHASE_TO_STAGE: Record<LifecyclePhase, StageCode> = {
-  "First Assessment":     "S01_FIRST_ASSESSMENT",
-  "Cost Proposal":        "S02_DESIGN_COST_PROPOSAL",
-  "Financial Close":      "S03_SIGNATURE_FINANCIAL_CLOSE",
-  "Planning":             "S02_DESIGN_COST_PROPOSAL",    // Planning = closing step of Cost Proposal post-merge
-  "Construction":         "S06_CONSTRUCTION",
-  "QA":                   "S07_COMMISSIONING",
-  "Handover":             "S08_OM_HANDOVER",
-  "Compliance Handover":  "S09_CLIENT_HANDOVER",
-  "Commercial Close Out": "S10_POST_HANDOVER_REVIEW",
-  "DLP":                  "S10_POST_HANDOVER_REVIEW",    // Defect Liability Period — project essentially complete
-  "Internal":             "S01_FIRST_ASSESSMENT",        // Internal projects — start at stage 1
-  "Hold":                 "S01_FIRST_ASSESSMENT",        // On hold — conservative default
-  "Closed":               "S10_POST_HANDOVER_REVIEW",    // Closed — all stages completed
-  "TBC":                  "S01_FIRST_ASSESSMENT",        // Unknown — conservative default
+  // Canonical 10 (matches shared/phases.ts):
+  "First Assessment":       "S01_FIRST_ASSESSMENT",
+  "Design & Cost Proposal": "S02_DESIGN_COST_PROPOSAL",
+  "Financial Close":        "S03_SIGNATURE_FINANCIAL_CLOSE",
+  "Planning":               "S04_PLANNING",
+  "Construction":           "S06_CONSTRUCTION",
+  "Commissioning":          "S07_COMMISSIONING",
+  "O&M Handover":           "S08_OM_HANDOVER",
+  "Client Handover":        "S09_CLIENT_HANDOVER",
+  "Compliance Handover":    "S9B_COMPLIANCE_HANDOVER",
+  "Post-Handover Review":   "S10_POST_HANDOVER_REVIEW",
+  // Legacy labels still tolerated by the type for compile-time compat
+  // (these are no longer stored in the DB after migration 20260420):
+  "Cost Proposal":          "S02_DESIGN_COST_PROPOSAL",
+  "QA":                     "S07_COMMISSIONING",
+  "Handover":               "S08_OM_HANDOVER",
+  "Commercial Close Out":   "S10_POST_HANDOVER_REVIEW",
+  "DLP":                    "S08_OM_HANDOVER",            // DLP is now an in_dlp flag during handover
+  "Internal":               "S01_FIRST_ASSESSMENT",       // moved to project_status
+  "Hold":                   "S01_FIRST_ASSESSMENT",       // moved to project_status
+  "Closed":                 "S10_POST_HANDOVER_REVIEW",   // moved to project_status
+  "TBC":                    "S01_FIRST_ASSESSMENT",       // moved to project_status
 };
 
 /**
@@ -49,11 +57,11 @@ export const PHASE_VALUE_TO_STAGE: Record<string, StageCode> = {
   "First Assessment":     "S01_FIRST_ASSESSMENT",
   "Cost Proposal":        "S02_DESIGN_COST_PROPOSAL",
   "Financial Close":      "S03_SIGNATURE_FINANCIAL_CLOSE",
-  "Planning":             "S02_DESIGN_COST_PROPOSAL",    // post-merge: Planning = S02
+  "Planning":             "S04_PLANNING",
   "Construction":         "S06_CONSTRUCTION",
   "QA":                   "S07_COMMISSIONING",
   "Handover":             "S08_OM_HANDOVER",
-  "Compliance Handover":  "S09_CLIENT_HANDOVER",
+  "Compliance Handover":  "S9B_COMPLIANCE_HANDOVER",
   "Commercial Close Out": "S10_POST_HANDOVER_REVIEW",
   "Commercial Close out": "S10_POST_HANDOVER_REVIEW",
   "DLP":                  "S10_POST_HANDOVER_REVIEW",
@@ -79,7 +87,8 @@ export const PHASE_VALUE_TO_STAGE: Record<string, StageCode> = {
   "P0_FIRST_ASSESSMENT":               "S01_FIRST_ASSESSMENT",
   "P1_COST_PROPOSAL_DESIGN":           "S02_DESIGN_COST_PROPOSAL",
   "P2_PD_PM_HANDOVER":                 "S03_SIGNATURE_FINANCIAL_CLOSE",  // merged into S03
-  "P3_DETAILED_DESIGN_PROC_RELEASE":   "S02_DESIGN_COST_PROPOSAL",       // merged into S02
+  "P3_DETAILED_DESIGN_PROC_RELEASE":   "S04_PLANNING",                   // legacy planning code
+  "P3_PLANNING":                       "S04_PLANNING",
   "P3_FINANCIAL_CLOSE":                "S03_SIGNATURE_FINANCIAL_CLOSE",
   "P4_CONSTRUCTION_INSTALLATION":      "S06_CONSTRUCTION",
   "P5_COMMISSIONING_QA":               "S07_COMMISSIONING",
@@ -94,10 +103,12 @@ export const PHASE_VALUE_TO_STAGE: Record<string, StageCode> = {
   "S03_SIGNATURE_FINANCIAL_CLOSE":     "S03_SIGNATURE_FINANCIAL_CLOSE",
   "S04_PD_PM_HANDOVER":                "S03_SIGNATURE_FINANCIAL_CLOSE",  // merged
   "S05_FINANCIAL_REVIEW":              "S02_DESIGN_COST_PROPOSAL",       // merged
+  "S04_PLANNING":                      "S04_PLANNING",
   "S06_CONSTRUCTION":                  "S06_CONSTRUCTION",
   "S07_COMMISSIONING":                 "S07_COMMISSIONING",
   "S08_OM_HANDOVER":                   "S08_OM_HANDOVER",
   "S09_CLIENT_HANDOVER":               "S09_CLIENT_HANDOVER",
+  "S9B_COMPLIANCE_HANDOVER":           "S9B_COMPLIANCE_HANDOVER",
   "S10_POST_HANDOVER_REVIEW":          "S10_POST_HANDOVER_REVIEW",
 };
 
