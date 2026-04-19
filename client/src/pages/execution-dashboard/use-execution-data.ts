@@ -7,6 +7,7 @@ import {
   filterExecutionProjects,
 } from "@/lib/execution-dashboard";
 import { apiRequest } from "@/lib/queryClient";
+import { extractTrustHeaders, type FinanceTrustMeta } from "@/lib/finance-trust";
 
 export const defaultFilters: ExecutionFilters = {
   search: "",
@@ -37,6 +38,7 @@ export interface ExecutionDashboardContextValue {
   kpis: ComputedKpis;
   actionRows: ExecutionDashboardResponse["actionCenter"]["rows"];
   lastRefresh: Date | null;
+  trust: FinanceTrustMeta | null;
   loadData: () => Promise<void>;
   openProject: (project: ExecutionDashboardProject, tab?: string) => void;
   ragDistribution: Record<string, number>;
@@ -95,6 +97,7 @@ export function useExecutionDataProvider(setLocation: (to: string) => void) {
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<ExecutionFilters>(defaultFilters);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const [trust, setTrust] = useState<FinanceTrustMeta | null>(null);
   const { toast } = useToast();
 
   const loadData = useCallback(async () => {
@@ -102,8 +105,10 @@ export function useExecutionDataProvider(setLocation: (to: string) => void) {
       setLoading(true);
       setError(null);
       const res = await apiRequest("GET", "/api/lifecycle-board/execution-dashboard");
+      const trustMeta = extractTrustHeaders(res);
       const data: ExecutionDashboardResponse = await res.json();
       setDashboard(data);
+      setTrust(trustMeta);
       setLastRefresh(new Date());
     } catch (err: any) {
       setError(err.message || "Failed to load execution dashboard");
@@ -201,7 +206,7 @@ export function useExecutionDataProvider(setLocation: (to: string) => void) {
   return {
     dashboard, loading, error, filters, setFilters,
     filteredProjects, allProjects, fyLabel, kpis, actionRows,
-    lastRefresh, loadData, openProject, ragDistribution,
+    lastRefresh, trust, loadData, openProject, ragDistribution,
     portfolios, pms, pds, phases, hasActiveFilters,
   };
 }
