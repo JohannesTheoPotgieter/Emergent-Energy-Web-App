@@ -508,12 +508,9 @@ export default function CosTracker() {
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
 
   const { data: months = [], isLoading, isError, error, refetch, dataUpdatedAt, isFetching } = useQuery<MonthData[]>({
-
     queryKey: ["/api/cos-tracker"],
-    url: "/api/cos-tracker",
     staleTime: 30_000,
   });
-  const months: MonthData[] = monthsData ?? [];
 
   const { data: projectsSummary = [] } = useQuery<Array<{ project_name: string; has_tracker_import?: boolean }>>({
     queryKey: ["/api/projects-summary"],
