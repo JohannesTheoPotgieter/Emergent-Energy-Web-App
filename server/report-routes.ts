@@ -10,6 +10,7 @@ import { randomUUID } from "crypto";
 import { getProgrammeDrilldownRows, writeDrilldownExcel } from "./services/report-drilldown-service";
 import { requireAuth } from "./auth-context";
 import { requireAdmin } from "./middleware/requireAdmin";
+import { effectiveRagBucket, computeEffectiveRag } from "@shared/utils/effective-rag";
 
 const ADVANCED_REPORT_TYPES = [
   {
@@ -348,10 +349,11 @@ export function registerReportRoutes(app: Express) {
         return !done && r.endDate < new Date().toISOString().substring(0, 10);
       }).length;
 
+      // Apply canonical effective-RAG so projects in DLP are counted as red.
       const health = {
-        green: qualityRows.filter((p: any) => String((p as any).ragStatus || (p as any).rag || "").toLowerCase() === "green").length,
-        amber: qualityRows.filter((p: any) => String((p as any).ragStatus || (p as any).rag || "").toLowerCase() === "amber").length,
-        red: qualityRows.filter((p: any) => String((p as any).ragStatus || (p as any).rag || "").toLowerCase() === "red").length,
+        green: qualityRows.filter((p: any) => effectiveRagBucket({ ragStatus: p.ragStatus ?? p.rag, inDlp: p.inDlp }) === "green").length,
+        amber: qualityRows.filter((p: any) => effectiveRagBucket({ ragStatus: p.ragStatus ?? p.rag, inDlp: p.inDlp }) === "amber").length,
+        red:   qualityRows.filter((p: any) => effectiveRagBucket({ ragStatus: p.ragStatus ?? p.rag, inDlp: p.inDlp }) === "red").length,
       };
 
       const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
@@ -736,10 +738,16 @@ export function registerReportRoutes(app: Express) {
         const lastImport = importInfo.get(p.projectName);
         const staleness = checkStaleness(lastImport?.committedAt);
 
+        const eff = computeEffectiveRag({
+          ragStatus: (p as any).ragStatus || (p as any).rag,
+          inDlp: (p as any).inDlp,
+        });
         return {
           projectName: p.projectName,
           phase: (p as any).phase || (p as any).executionPhase || null,
-          ragStatus: (p as any).ragStatus || (p as any).rag || null,
+          ragStatus: eff.value,
+          ragReason: eff.reason,
+          inDlp: !!(p as any).inDlp,
           sizeKwp: p.sizeKwp,
           pd: p.pd,
           pm: p.pm,

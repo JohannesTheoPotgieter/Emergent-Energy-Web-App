@@ -1474,6 +1474,38 @@ export default function ProjectDetailPage() {
       />
       </div>{/* /cockpit-command-header */}
 
+      {/* Project status / DLP badges — only render when non-default */}
+      {(() => {
+        const status = (projectInfo as any)?.project_status ?? (projectInfo as any)?.projectStatus ?? "active";
+        const inDlp = !!((projectInfo as any)?.in_dlp ?? (projectInfo as any)?.inDlp);
+        if (status === "active" && !inDlp) return null;
+        const statusLabel: Record<string, string> = {
+          hold: "On Hold", internal: "Internal", closed: "Closed", tbc: "TBC", active: "Active",
+        };
+        return (
+          <div className="flex flex-wrap items-center gap-2 mb-3" data-testid="project-status-badges">
+            {status !== "active" && (
+              <span
+                className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium bg-amber-50 text-amber-800 border border-amber-200"
+                data-testid={`badge-project-status-${status}`}
+                title="Project status (orthogonal to phase)"
+              >
+                {statusLabel[status] ?? status}
+              </span>
+            )}
+            {inDlp && (
+              <span
+                className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold bg-red-50 text-red-700 border border-red-200"
+                data-testid="badge-in-dlp"
+                title="In Defect Liability Period — RAG forced to red"
+              >
+                In DLP
+              </span>
+            )}
+          </div>
+        );
+      })()}
+
       {/* Stage Lifecycle — Critical Control Panel */}
       {projectInfoId && (
         <CriticalControlPanel
