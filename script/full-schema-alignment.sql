@@ -1,3 +1,12 @@
+-- =========================================================================
+-- DEPRECATED — DO NOT EXTEND.
+--
+-- Retained for back-compat only (reachable via `npm run db:push:legacy`).
+-- Canonical schema path is `drizzle-kit push`, invoked by
+-- `npm run db:push`, which reads shared/schema.ts directly and applies
+-- every missing column / table / enum without the hand-maintained drift
+-- this file accumulated.
+-- =========================================================================
 -- Auto-generated full schema alignment SQL
 -- Adds all missing columns to existing tables
 
