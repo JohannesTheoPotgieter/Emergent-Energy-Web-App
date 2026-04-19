@@ -44,7 +44,7 @@ const ENTITY_DESCRIPTIONS: Record<string, string> = {
   pd_clients: "Clients list & client overview",
 
   pd_dashboard: "Project Development Dashboard — project development pipeline",
-  pd_tickets: "Project Development Tickets — development tickets & tracking",
+  pd_tickets: "Project Development — opportunity workflow & tracking",
 
   projects: "Project List — all projects summary table",
   project_normalized: "Project Normalized — standardized project view",
