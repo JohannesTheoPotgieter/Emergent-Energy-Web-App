@@ -38,11 +38,12 @@ export const rowSourceEnum = pgEnum("row_source", ["imported", "manual", "import
 //
 // The TypeScript type names ProgramExpense / InsertProgramExpense /
 // ProgramInflows / InsertProgramInflows are preserved as standalone interfaces
-// because ~48 files across the repo still use them as method-signature types
-// for the PE-shape compatibility view served by storage.getAllProgramExpenses
-// and friends. Those methods now read from normalized_cost_lines /
-// normalized_revenue_lines internally and return objects with the legacy
-// PE/PI field shape (via adaptCostToExpense / adaptRevenueToInflow).
+// because many files across the repo still use them as method-signature types
+// for the PE-shape compatibility view returned by adaptCostToExpense /
+// adaptRevenueToInflow. The canonical reads now live in
+// server/services/project-cost-line-read-service.ts (cost) and the
+// normalized_revenue_lines callers (revenue); both emit rows in the legacy
+// PE/PI field shape.
 //
 // The interfaces below mirror the field shapes the old pgTable-derived types
 // produced, so callers compile unchanged. A cosmetic follow-up can rename

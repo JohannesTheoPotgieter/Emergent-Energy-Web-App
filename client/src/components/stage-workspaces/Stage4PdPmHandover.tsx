@@ -81,6 +81,11 @@ export function Stage4PdPmHandover({ projectId, isAdmin }: Stage4Props) {
   const [charterDraft, setCharterDraft] = useState<Partial<ProjectCharter>>({});
   const [charterDirty, setCharterDirty] = useState(false);
 
+  const handleCharterChange = useCallback((field: string, value: any) => {
+    setCharterDraft(prev => ({ ...prev, [field]: value }));
+    setCharterDirty(true);
+  }, []);
+
   if (!stageDetail?.stage) return null;
 
   const stageData = stageDataResult?.data || {};
@@ -88,11 +93,6 @@ export function Stage4PdPmHandover({ projectId, isAdmin }: Stage4Props) {
   const charter = { ...(charterResult?.charter || {}), ...charterDraft };
   const charterStatus = charterResult?.charter?.status || "draft";
   const statusInfo = CHARTER_STATUS_LABELS[charterStatus] || CHARTER_STATUS_LABELS.draft;
-
-  const handleCharterChange = useCallback((field: string, value: any) => {
-    setCharterDraft(prev => ({ ...prev, [field]: value }));
-    setCharterDirty(true);
-  }, []);
 
   const handleSaveCharter = () => {
     saveCharterMutation.mutate(charterDraft, {

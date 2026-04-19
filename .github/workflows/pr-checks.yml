@@ -8,6 +8,12 @@ jobs:
   compile:
     runs-on: ubuntu-latest
 
+    # Turbo Remote Cache (Vercel). Empty values disable remote cache silently
+    # and CI falls back to the actions/cache step below.
+    env:
+      TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+      TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -16,10 +22,19 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run check
-      - run: npm run build
+      - run: npm ci --prefer-offline --no-audit
+      # Local fallback cache — used when remote cache is unreachable or when
+      # TURBO_TOKEN/TURBO_TEAM secrets aren't configured.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .turbo
+            .eslintcache
+          key: turbo-compile-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-compile-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json') }}-
+            turbo-compile-${{ runner.os }}-
+      - run: npx turbo run lint check build
 
   # ── Quality gate: tests + release readiness ───────────────
   quality-gate:
@@ -46,6 +61,9 @@ jobs:
       TOKEN_ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
       JWT_SECRET: ci-test-jwt-secret
       SESSION_SECRET: ci-test-session-secret
+      # Turbo Remote Cache (Vercel). Empty values disable remote cache silently.
+      TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+      TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
 
     steps:
       - uses: actions/checkout@v4
@@ -55,9 +73,18 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-      - run: npm ci
-      - run: npm run build
-      - run: npm test
+      - run: npm ci --prefer-offline --no-audit
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .turbo
+            .eslintcache
+          key: turbo-test-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-test-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json') }}-
+            turbo-test-${{ runner.os }}-
+            turbo-compile-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json') }}-
+      - run: npx turbo run build test
         if: hashFiles('**/*.test.ts') != ''
       - run: npm run release:gate
         env:

@@ -4,6 +4,14 @@
 **Assessor:** Claude (AI-assisted)
 **Branch:** `claude/smart-import-v2-spec-LJvxf`
 
+> **2026-04-18 update:** The v1 fallback path and the `emergencyV1Mode` /
+> `skipV2ConflictCheck` opt-out flags referenced throughout this report have
+> since been removed. v2 is now the only commit path. Any historical
+> recommendation to "route projects to v1 fallback" or "switch to Advanced view"
+> no longer applies — those projects must instead resolve duplicate business
+> keys (see `docs/smart-import-v2-known-limitations.md`) or be rolled back at
+> the release-tag level.
+
 ---
 
 ## Executive Summary
@@ -78,12 +86,10 @@ Smart Import v2 is safe for controlled pilot rollout on projects WITHOUT duplica
 
 ### V1 Fallback Isolation
 
-| # | Scenario | Result | Notes |
-|---|----------|--------|-------|
-| F1 | V1 gated behind `if (!useV2)` in transaction | PASS | |
-| F2 | skipV2ConflictCheck=true forces v1 | PASS | |
-| F3 | V1 UI gated behind "Advanced view" toggle | PASS | |
-| F4 | Default user never sees v1 steps | PASS | useV2 defaults true |
+_Superseded:_ the v1 full-replace commit path and the `emergencyV1Mode` /
+`skipV2ConflictCheck` opt-out flags have been removed. v2 is the only commit
+path, and commits fail fast with `project_id_missing` when `project_info.id`
+is not resolved before commit.
 
 ---
 
@@ -208,8 +214,7 @@ Of 62 imported projects:
 
 ### Rollback guidance
 1. **Per-import rollback:** Use `POST /api/smart-import/:runId/rollback` — works with v2 commits (soft-closes rows by importRunId)
-2. **System-wide rollback to v1:** Set `skipV2ConflictCheck=true` on commit requests. Or: in the frontend, switch to "Advanced view" which uses the v1 wizard and commit path.
-3. **Code rollback:** The v1 commit path is fully preserved inside `if (!useV2)`. Reverting `useV2` default to `false` disables v2 system-wide.
+2. **System-wide rollback:** Revert to the prior release tag. There is no in-app flag to re-enable v1; the `emergencyV1Mode` / `skipV2ConflictCheck` opt-out paths have been deleted.
 
 ---
 

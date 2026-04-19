@@ -1,5 +1,13 @@
 import { useState, useMemo, useCallback, useEffect, useRef, Fragment } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { extractTrustHeaders, type FinanceTrustMeta } from "@/lib/finance-trust";
+import { DataTrustBadge } from "@/components/ui/data-trust-badge";
+import {
+  Tooltip as UiTooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
   LineChart,
@@ -56,6 +64,7 @@ import {
   Wallet,
   Pencil,
   Search,
+
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
@@ -79,11 +88,13 @@ interface CashflowWeek {
   openingBalance: number;
   computedOpening: number;
   hasManualOverride: boolean;
+  manualOverrideAt: string | null;
   balanceDelta: number;
   projectInflows: number;
   opexOutflows: number;
   computedOpex: number;
   hasOpexOverride: boolean;
+  opexOverrideAt: string | null;
   projectOutflows: number;
   outflowByStatus?: OutflowByStatus;
   closingBalance: number;
@@ -91,6 +102,8 @@ interface CashflowWeek {
   computedAvailablePayment: number;
   hasAvailPayOverride: boolean;
   availPayReason: string | null;
+  availPayOverrideAt: string | null;
+  availPayOverrideBy: string | null;
 }
 
 interface BalanceHistoryEntry {
@@ -171,6 +184,14 @@ function formatWeek(dateStr: string): string {
   }
 }
 
+function safeFormatIso(iso: string): string {
+  try {
+    return format(parseISO(iso), "dd MMM yyyy, HH:mm");
+  } catch {
+    return iso;
+  }
+}
+
 /**
  * Determine the fiscal year (Sep-Aug cycle) from the current date.
  * FY runs Sep of (fyYear-1) through Aug of fyYear.
@@ -216,12 +237,14 @@ function KpiCard({
   icon,
   color,
   testId,
+  nullCount,
 }: {
   title: string;
   value: string;
   icon: React.ReactNode;
   color: "green" | "red" | "blue" | "purple" | "slate";
   testId: string;
+  nullCount?: number | null;
 }) {
   const colorMap = {
     green: {
@@ -278,6 +301,11 @@ function KpiCard({
         <p className={`text-lg font-bold font-mono ${c.text} truncate`} data-testid={`${testId}-value`}>
           {value}
         </p>
+        {nullCount != null && nullCount > 0 ? (
+          <p className="text-[11px] font-medium text-amber-600 truncate" data-testid={`${testId}-null-count`}>
+            ({nullCount} missing)
+          </p>
+        ) : null}
       </div>
     </div>
   );
@@ -789,14 +817,14 @@ export default function CashflowPage() {
   const projectParam = selectedProjects.length > 0 ? selectedProjects.join(",") : undefined;
 
   const {
-    data: cashflowData = [],
+    data: cashflowEnvelope,
     isLoading,
     isError,
     error,
     refetch,
     isFetching: isCashflowFetching,
     dataUpdatedAt: cashflowUpdatedAt,
-  } = useQuery<CashflowWeek[]>({
+  } = useQuery<{ rows: CashflowWeek[]; trust: FinanceTrustMeta | null }>({
     queryKey: [CASHFLOW_API_BASE, projectParam],
     queryFn: async () => {
       const url = projectParam
@@ -807,9 +835,13 @@ export default function CashflowPage() {
       if (token) headers["Authorization"] = `Bearer ${token}`;
       const res = await fetch(url, { credentials: "include", headers });
       if (!res.ok) throw new Error("Failed to fetch cashflow data");
-      return res.json();
+      const trust = extractTrustHeaders(res);
+      const rows = (await res.json()) as CashflowWeek[];
+      return { rows, trust };
     },
   });
+  const cashflowData: CashflowWeek[] = cashflowEnvelope?.rows ?? [];
+  const cashflowTrust: FinanceTrustMeta | null = cashflowEnvelope?.trust ?? null;
 
   const { data: balanceHistory = [] } = useQuery<BalanceHistoryEntry[]>({
     queryKey: [`${CASHFLOW_API_BASE}/balance-history`, historyWeek],
@@ -1048,6 +1080,7 @@ export default function CashflowPage() {
             )}
           </div>
         }
+
       />
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs text-muted-foreground -mt-1">
         <Badge variant="outline" className="gap-1 px-2 py-0.5 text-[11px] font-medium border-border bg-card">
@@ -1253,6 +1286,7 @@ export default function CashflowPage() {
                 icon={<TrendingUp className="h-5 w-5" />}
                 color="green"
                 testId="kpi-total-inflows"
+                nullCount={cashflowTrust?.nullCount ?? null}
               />
               <KpiCard
                 title="Total Outflows YTD"
@@ -1260,6 +1294,7 @@ export default function CashflowPage() {
                 icon={<TrendingDown className="h-5 w-5" />}
                 color="red"
                 testId="kpi-total-outflows"
+                nullCount={cashflowTrust?.nullCount ?? null}
               />
               <KpiCard
                 title="Current Week Opening Balance"
@@ -1443,6 +1478,71 @@ export default function CashflowPage() {
                                     <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-700">
                                       NOW
                                     </span>
+                                  )}
+                                  {(week.hasManualOverride || week.hasOpexOverride || week.hasAvailPayOverride) && (
+                                    <TooltipProvider>
+                                      <UiTooltip>
+                                        <TooltipTrigger asChild>
+                                          <span
+                                            className="inline-flex items-center"
+                                            onClick={(e) => e.stopPropagation()}
+                                            data-testid={`week-override-icon-${week.weekStart}`}
+                                          >
+                                            <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
+                                          </span>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="right" className="max-w-xs text-xs leading-relaxed">
+                                          <div className="space-y-2">
+                                            <div className="font-semibold">Week overrides in effect</div>
+                                            {week.hasManualOverride && (
+                                              <div className="space-y-0.5">
+                                                <div className="font-medium">Opening balance</div>
+                                                <div>
+                                                  Computed {formatRand(week.computedOpening)} → Override {formatRand(week.openingBalance)}
+                                                </div>
+                                                {week.manualOverrideAt && (
+                                                  <div className="text-muted-foreground">
+                                                    Updated {safeFormatIso(week.manualOverrideAt)}
+                                                  </div>
+                                                )}
+                                              </div>
+                                            )}
+                                            {week.hasOpexOverride && (
+                                              <div className="space-y-0.5">
+                                                <div className="font-medium">OPEX</div>
+                                                <div>
+                                                  Computed {formatRand(week.computedOpex)} → Override {formatRand(week.opexOutflows)}
+                                                </div>
+                                                {week.opexOverrideAt && (
+                                                  <div className="text-muted-foreground">
+                                                    Updated {safeFormatIso(week.opexOverrideAt)}
+                                                  </div>
+                                                )}
+                                              </div>
+                                            )}
+                                            {week.hasAvailPayOverride && (
+                                              <div className="space-y-0.5">
+                                                <div className="font-medium">Available payment</div>
+                                                <div>
+                                                  Computed {formatRand(week.computedAvailablePayment)} → Override {formatRand(week.availablePayment)}
+                                                </div>
+                                                {week.availPayReason && (
+                                                  <div>Reason: {week.availPayReason}</div>
+                                                )}
+                                                {week.availPayOverrideBy && (
+                                                  <div className="text-muted-foreground">By {week.availPayOverrideBy}</div>
+                                                )}
+                                                {week.availPayOverrideAt && (
+                                                  <div className="text-muted-foreground">
+                                                    Updated {safeFormatIso(week.availPayOverrideAt)}
+                                                  </div>
+                                                )}
+                                              </div>
+                                            )}
+                                          </div>
+                                        </TooltipContent>
+                                      </UiTooltip>
+                                    </TooltipProvider>
                                   )}
                                 </div>
                               </td>

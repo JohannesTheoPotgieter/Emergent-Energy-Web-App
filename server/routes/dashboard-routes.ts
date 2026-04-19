@@ -14,6 +14,8 @@ import { isDateBlack } from "../lib/calculations/stateClassifier";
 import { classifyCosStatusFull, isCosRealised as isCosRealisedShared } from "../lib/calculations/financeUtils";
 import { isRevenueSettled } from "../lib/finance/revenue-ar-status";
 import { evaluateRevenueArStatus } from "../lib/finance/revenue-ar-status";
+import { setFinanceTrustHeaders, buildTrustMeta } from "../lib/finance-trust/envelope";
+import { getCanonicalAllCurrentCostLines } from "../services/project-cost-line-read-service";
 
 async function getMergedExpensesAndInflows(expenses: any[], inflows: any[]) {
   return { expenses, inflows };
@@ -936,8 +938,37 @@ export function registerDashboardRoutes(app: Express) {
       const qual = actionRows(projects.filter((p: any) => p._qualityOpen > 0).map((p: any) => ({ ...p, issueTitle: `${p._qualityOpen} open quality issue${p._qualityOpen !== 1 ? 's' : ''}${p._qualityHigh > 0 ? ` (${p._qualityHigh} high)` : ''}`, severity: p._qualityHigh >= 2 ? 'Critical' : p._qualityHigh >= 1 ? 'High' : 'Medium', owner: p.pm })));
       const pending = actionRows(projects.filter((p: any) => p._approvalsPending > 0).map((p: any) => ({ ...p, issueTitle: `${p._approvalsPending} pending approval${p._approvalsPending !== 1 ? 's' : ''}`, severity: p._approvalsPending >= 3 ? 'Critical' : 'High', owner: p.pm })));
 
+      // Suspicious NULLs across the canonical ledgers: a line has an invoice
+      // reference but a null amount (silently coalesced to 0). Report to the
+      // client as "(N missing)" sublabel on impacted KPI cards.
+      let programDashboardNullCount = 0;
+      for (const r of revenueRows as any[]) {
+        const rawAmt = (r as any).amountExVat;
+        const hasAmt = rawAmt != null && rawAmt !== "" && Number.isFinite(parseFloat(String(rawAmt)));
+        const hasInvoice = !!((r as any).invoiceNumber && String((r as any).invoiceNumber).trim());
+        if (!hasAmt && hasInvoice) programDashboardNullCount += 1;
+      }
+      for (const r of costRows as any[]) {
+        const rawAmt = (r as any).amountExVat;
+        const hasAmt = rawAmt != null && rawAmt !== "" && Number.isFinite(parseFloat(String(rawAmt)));
+        const hasInvoice = !!((r as any).invoiceNumber && String((r as any).invoiceNumber).trim());
+        if (!hasAmt && hasInvoice) programDashboardNullCount += 1;
+      }
+
+      const refreshedAt = new Date().toISOString();
+      const trustParams = {
+        sourceLayer: "canonical" as const,
+        canonicalTable:
+          "normalized_cost_lines,normalized_revenue_lines,cashflow_points,finance_cos_monthly,finance_revenue_monthly",
+        refreshedAt,
+        staleAfterSeconds: 300,
+        nullCount: programDashboardNullCount,
+      };
+      setFinanceTrustHeaders(res, trustParams);
+      const trust = buildTrustMeta(trustParams);
       res.json({
         meta: { fyStart, fyEnd },
+        trust,
         kpis: {
           activeDashboardProjects: projects.length,
           averageActualProgressPct: avg('actualProgressPct'),
@@ -975,7 +1006,8 @@ export function registerDashboardRoutes(app: Express) {
           pds: Array.from(new Set(projects.map((p: any) => p.pd).filter(Boolean))).sort(),
           executionPhases: Array.from(new Set(projects.map((p: any) => p.executionPhase).filter(Boolean))).sort(),
           rags: Array.from(new Set(projects.map((p: any) => p.rag).filter(Boolean))).sort(),
-        }
+        },
+        nullCount: programDashboardNullCount,
       });
     } catch (error) {
       console.error("Program dashboard error:", error);
@@ -987,7 +1019,7 @@ export function registerDashboardRoutes(app: Express) {
     try {
       const [allProjectInfo, legacyExpenses, legacyRawInflows, legacyRawPlans, allPlanOverrides, allTaskLinks, allOpTasks, inBankOverrides] = await Promise.all([
         storage.getAllProjectInfo(),
-        storage.getAllProgramExpenses(),
+        getCanonicalAllCurrentCostLines(),
         storage.getAllProgramInflows(),
         storage.getAllProjectPlans(),
         Promise.resolve([] as any[]),
@@ -1242,6 +1274,10 @@ export function registerDashboardRoutes(app: Express) {
       }
       overdueTasks.sort((a, b) => b.endDate > a.endDate ? -1 : 1);
 
+      setFinanceTrustHeaders(res, {
+        sourceLayer: "canonical",
+        canonicalTable: "normalized_cost_lines,normalized_revenue_lines,project_info",
+      });
       res.json({
         overdueExpenses: overdueExpenses.slice(0, 15),
         revenueOutstanding: revenueOutstanding.slice(0, 15),
@@ -1281,6 +1317,10 @@ export function registerDashboardRoutes(app: Express) {
 
   app.get("/api/dashboard/attention-items", requireAuth, async (_req, res) => {
     try {
+      setFinanceTrustHeaders(res, {
+        sourceLayer: "canonical",
+        canonicalTable: "normalized_cost_lines,normalized_revenue_lines,project_info",
+      });
       res.json({
         behindPlan: [
           { id: 1, name: "Solar Farm Alpha", owner: "John", daysBehind: 12, ageDays: 12, severity: "high", link: "/projects/1" },
@@ -1305,6 +1345,13 @@ export function registerDashboardRoutes(app: Express) {
   app.get("/api/dashboard/financial-summary", requireAuth, async (req, res) => {
     try {
       const period = String(req.query.period || "ytd");
+      setFinanceTrustHeaders(res, {
+        sourceLayer: "canonical",
+        canonicalTable: "normalized_cost_lines,normalized_revenue_lines",
+        derivedTable: "finance_cos_monthly,finance_revenue_monthly,dashboard_project_metrics",
+        cacheLayer: "dashboard_project_metrics_5min_cooldown",
+        staleAfterSeconds: 300,
+      });
       res.json({
         period,
         metrics: [

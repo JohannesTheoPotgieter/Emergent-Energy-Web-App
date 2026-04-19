@@ -60,6 +60,12 @@ export interface FinanceTrustHeaderParams {
    */
   overrideInEffect?: boolean;
   /**
+   * Count of rows where an aggregated amount was NULL but an invoice reference
+   * existed — i.e. lines silently coalesced from null → 0 in the total. The
+   * total stays as-is; the UI surfaces this as an amber "(N missing)" sublabel.
+   */
+  nullCount?: number;
+  /**
    * Feature flag name + state when a silent canonical/legacy switch is
    * controlled by a flag.
    */
@@ -104,6 +110,9 @@ export function setFinanceTrustHeaders(
   if (params.overrideInEffect === true) {
     res.setHeader("X-Finance-Override-In-Effect", "1");
   }
+  if (typeof params.nullCount === "number" && Number.isFinite(params.nullCount)) {
+    res.setHeader("X-Finance-Null-Count", String(Math.max(0, Math.trunc(params.nullCount))));
+  }
   if (params.featureFlag) {
     res.setHeader(
       "X-Finance-Feature-Flag",
@@ -133,6 +142,10 @@ export function buildTrustMeta(params: FinanceTrustHeaderParams): Record<string,
         : null,
     overrideInEffect: params.overrideInEffect === true,
     featureFlag: params.featureFlag ?? null,
+    nullCount:
+      typeof params.nullCount === "number" && Number.isFinite(params.nullCount)
+        ? Math.max(0, Math.trunc(params.nullCount))
+        : null,
   };
 }
 
@@ -160,4 +173,5 @@ export const FINANCE_TRUST_HEADER_NAMES = [
   "X-Finance-Exception-Count",
   "X-Finance-Override-In-Effect",
   "X-Finance-Feature-Flag",
+  "X-Finance-Null-Count",
 ] as const;

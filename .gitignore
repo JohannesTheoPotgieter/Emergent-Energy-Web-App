@@ -2,6 +2,12 @@ node_modules
 dist
 .DS_Store
 
+# ── Turborepo task cache ─────────────────────────────────────
+.turbo
+
+# ── ESLint cache (content-hashed by input files) ─────────────
+.eslintcache
+
 # ── Environment & secrets (NEVER commit) ─────────────────────
 # Secrets must live in Replit Secrets Manager or Azure Key Vault.
 # See docs/runbooks/secrets-rotation.md for the rotation procedure.

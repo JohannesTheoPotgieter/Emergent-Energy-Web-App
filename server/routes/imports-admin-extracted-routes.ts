@@ -42,6 +42,7 @@ import { requirePermission } from "../permission-middleware";
 import { logAuditFromReq } from "../audit-logger";
 import { ApiError, sendError, badRequest, logApiError } from "../lib/api-error";
 import { paramStr } from "../lib/req-params";
+import { getCanonicalProjectCostLinesByName } from "../services/project-cost-line-read-service";
 
 // Ensure uploads directory exists
 const uploadDir = path.join(process.cwd(), 'uploads');
@@ -1292,7 +1293,7 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
         let totalExpenses = 0;
         
         for (const project of projects.slice(0, 5)) {
-          const expenses = await storage.getProgramExpensesByProject(project.projectName);
+          const { rows: expenses } = await getCanonicalProjectCostLinesByName(project.projectName);
           totalExpenses += expenses.length;
         }
         

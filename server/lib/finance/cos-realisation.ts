@@ -74,32 +74,34 @@ export const OVERRIDE_NOT_REALISED = new Set(["PLANNED", "COMMITTED", "INVOICED"
  * getCosEffectiveDateAndSource().
  */
 export function isCanonicalCosRealised(input: CosLineInput): boolean {
-  // QB allocation evidence (lineAssignedQbExVat) does NOT gate this boolean.
-  // It refines the realised AMOUNT via getCosRealisedAmountExVat() — the
-  // "strict finance controls" policy is that a QB bill allocation is
-  // supplementary evidence, not a replacement for the invoice-date-confirmed
-  // gate below.
-
-  // 1. Admin override takes absolute precedence
+  // 1. Admin override takes absolute precedence.
   const override = (input.cosStatusOverride ?? "").toUpperCase().trim();
   if (OVERRIDE_REALISED.has(override)) return true;
   if (OVERRIDE_NOT_REALISED.has(override)) return false;
 
-  // 2. Invoice number check — must be a valid (non-placeholder) supplier invoice.
+  // 2. QB evidence is truth. When a QB bill has been captured (and allocated
+  //    to this line) the line is realised regardless of Excel font-colour
+  //    ambiguity. Excel font-colour remains the fallback when QB is silent.
+  const qbEvidence =
+    typeof input.lineAssignedQbExVat === "number" && Number.isFinite(input.lineAssignedQbExVat)
+      ? input.lineAssignedQbExVat
+      : 0;
+  if (qbEvidence > 0) return true;
+
+  // 3. Invoice number check — must be a valid (non-placeholder) supplier invoice.
   //    Status labels (INVOICED, PAID, etc.) do NOT independently gate this.
   const invoiceTrimmed = (input.expenseInvoiceNumber ?? "").trim();
   const hasInvoice = !!invoiceTrimmed;
   const isPlaceholder = hasInvoice && PLACEHOLDER_INVOICES.has(invoiceTrimmed.toLowerCase());
 
   if (hasInvoice && !isPlaceholder) {
-    // 2a. Zero-amount lines are not realised (no actual cost = nothing to
-    //     realise). Skipped when amountExVat is not provided.
+    // 3a. Zero-amount lines are not realised (no actual cost = nothing to realise).
     if (input.amountExVat !== undefined && input.amountExVat !== null) {
       const amount = typeof input.amountExVat === "number" ? input.amountExVat : parseFloat(String(input.amountExVat));
       if (!isNaN(amount) && amount === 0) return false;
     }
 
-    // 2b. NEW: invoice-date-confirmed gate. Black font OR confirmed=true.
+    // 3b. Invoice-date-confirmed gate. Black font OR confirmed=true.
     //     If neither field is supplied the caller is on the legacy contract
     //     and we fall through to the old "invoice alone = realised" rule.
     const fontColorProvided = input.invoiceDateFontColor !== undefined;
@@ -113,12 +115,11 @@ export function isCanonicalCosRealised(input: CosLineInput): boolean {
     return true;
   }
 
-  // 3. Legacy cosRealised boolean — backward-compatible signal for rows
+  // 4. Legacy cosRealised boolean — backward-compatible signal for rows
   //    that were marked during import. Respected but should be migrated
   //    to invoice-based tracking over time.
   if (input.cosRealised === true) return true;
 
-  // 4. Not realised — no invoice, no override, no legacy flag
   return false;
 }
 
@@ -142,6 +143,11 @@ export function getCosRealisationWarnings(input: CosLineInput): string[] {
   const invoiceTrimmedW = (input.expenseInvoiceNumber ?? "").trim();
   const isPlaceholderW = !!invoiceTrimmedW && PLACEHOLDER_INVOICES.has(invoiceTrimmedW.toLowerCase());
 
+  const qbEvidence =
+    typeof input.lineAssignedQbExVat === "number" && Number.isFinite(input.lineAssignedQbExVat)
+      ? input.lineAssignedQbExVat
+      : 0;
+
   if (isPlaceholderW) {
     warnings.push("PLACEHOLDER_INVOICE");
   }
@@ -150,6 +156,19 @@ export function getCosRealisationWarnings(input: CosLineInput): string[] {
   }
   if (hasInvoice && !hasInvoiceDate) {
     warnings.push("INVOICE_WITHOUT_DATE");
+  }
+
+  // H7: flag lines that are realised via Excel font-colour only (no QB
+  // evidence). These are lower-confidence realisations per policy:
+  // "QB if captured is truth; red is still used in Excel as a fallback."
+  const fontOnly =
+    qbEvidence <= 0 &&
+    hasInvoice &&
+    !isPlaceholderW &&
+    (String(input.invoiceDateFontColor ?? "").toLowerCase() === "black" ||
+      input.invoiceDateConfirmed === true);
+  if (fontOnly) {
+    warnings.push("REALISED_BY_FONT_COLOR_ONLY");
   }
 
   return warnings;
