@@ -30,6 +30,7 @@ import { logAuditFromReq } from "../audit-logger";
 import { classifyExpenseState } from "../lib/calculations/stateClassifier";
 import { z } from "zod";
 import { createCostLine, updateCostLineFields, createRevenueLine, updateRevenueLineFields } from "../services/finance-line-write-service";
+import { invalidateProjectFinanceReads } from "../services/dashboard-metrics";
 import { mapCostToExpenseInput } from "../lib/data-merge";
 import { getMergedExpensesAndInflows } from "../lib/cashflow-helpers";
 import { getCosEffectiveDateAndSource } from "../lib/expense-row-selector";
@@ -1190,6 +1191,9 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
       });
       logAuditFromReq(req, { entityType: "cost_line", action: "create", entityId: String(row.id), projectName: parsed.projectName, source: "UI" });
       res.status(201).json(row);
+      // Invalidate downstream reads (cached metrics + materialized row) so the
+      // next finance read for this project does not serve pre-write state.
+      invalidateProjectFinanceReads(parsed.projectId);
     } catch (error: any) {
       if (error?.name === "ZodError") return res.status(400).json({ error: "Validation error", details: error.issues });
       console.error("[Finance] Failed to create cost line:", error);
@@ -1207,6 +1211,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
       if (!updated) return res.status(404).json({ error: "Cost line not found" });
       logAuditFromReq(req, { entityType: "cost_line", action: "update", entityId: String(id), changesJson: parsed, source: "UI" });
       res.json(updated);
+      invalidateProjectFinanceReads((updated as any).projectId);
     } catch (error: any) {
       if (error?.name === "ZodError") return res.status(400).json({ error: "Validation error", details: error.issues });
       console.error("[Finance] Failed to update cost line:", error);
@@ -1223,6 +1228,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
       if (!row) return res.status(404).json({ error: "Cost line not found" });
       logAuditFromReq(req, { entityType: "cost_line", action: "soft_delete", entityId: String(id), source: "UI" });
       res.json(row);
+      invalidateProjectFinanceReads((row as any).projectId);
     } catch (error) {
       console.error("[Finance] Failed to delete cost line:", error);
       res.status(500).json({ error: "Failed to delete cost line" });
@@ -1241,6 +1247,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
       });
       logAuditFromReq(req, { entityType: "revenue_line", action: "create", entityId: String(row.id), projectName: parsed.projectName, source: "UI" });
       res.status(201).json(row);
+      invalidateProjectFinanceReads(parsed.projectId);
     } catch (error: any) {
       if (error?.name === "ZodError") return res.status(400).json({ error: "Validation error", details: error.issues });
       console.error("[Finance] Failed to create revenue line:", error);
@@ -1258,6 +1265,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
       if (!updated) return res.status(404).json({ error: "Revenue line not found" });
       logAuditFromReq(req, { entityType: "revenue_line", action: "update", entityId: String(id), changesJson: parsed, source: "UI" });
       res.json(updated);
+      invalidateProjectFinanceReads((updated as any).projectId);
     } catch (error: any) {
       if (error?.name === "ZodError") return res.status(400).json({ error: "Validation error", details: error.issues });
       console.error("[Finance] Failed to update revenue line:", error);
@@ -1274,6 +1282,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
       if (!row) return res.status(404).json({ error: "Revenue line not found" });
       logAuditFromReq(req, { entityType: "revenue_line", action: "soft_delete", entityId: String(id), source: "UI" });
       res.json(row);
+      invalidateProjectFinanceReads((row as any).projectId);
     } catch (error) {
       console.error("[Finance] Failed to delete revenue line:", error);
       res.status(500).json({ error: "Failed to delete revenue line" });
