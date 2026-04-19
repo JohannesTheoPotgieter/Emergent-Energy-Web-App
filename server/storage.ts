@@ -140,8 +140,6 @@ export interface IStorage {
   getProjectCounts(): Promise<{ active: number; historical: number; total: number }>;
 
   // Program Expense (new)
-  getAllProgramExpenses(): Promise<ProgramExpense[]>;
-  getProgramExpensesByProject(projectName: string): Promise<ProgramExpense[]>;
   // Canonical cost-line read for cashflow — reads normalized_cost_lines only,
   // bypassing the program_expense merge. Returns adapted expense-shaped rows.
   getAllCostLinesForCashflow(): Promise<any[]>;
@@ -761,41 +759,8 @@ export class DatabaseStorage implements IStorage {
     return this.projectStateRepository.getProjectCounts();
   }
 
-  // Short-TTL cache for getAllProgramExpenses to reduce repeated full-table
-  // scans across COS dashboard endpoints (17 calls in cos-control-routes alone).
-  // 30s TTL: short enough to surface writes promptly, long enough to coalesce
-  // the parallel API calls from a single dashboard page load.
-  // Cache stays on DatabaseStorage (singleton) — NOT on the repository instance.
-  private _expenseCache: { data: any[]; expiresAt: number } | null = null;
-  private _expenseCachePromise: Promise<any[]> | null = null;
-  private static readonly EXPENSE_CACHE_TTL_MS = 30_000;
-
-  async getAllProgramExpenses(): Promise<any[]> {
-    const now = Date.now();
-    if (this._expenseCache && now < this._expenseCache.expiresAt) {
-      return this._expenseCache.data;
-    }
-    // Coalesce concurrent callers: if a fetch is already in-flight, reuse it
-    if (this._expenseCachePromise) {
-      return this._expenseCachePromise;
-    }
-    this._expenseCachePromise = this.financeExpenseEngineRepository.fetchAllProgramExpenses().then(data => {
-      this._expenseCache = { data, expiresAt: Date.now() + DatabaseStorage.EXPENSE_CACHE_TTL_MS };
-      this._expenseCachePromise = null;
-      return data;
-    }).catch(err => {
-      this._expenseCachePromise = null;
-      throw err;
-    });
-    return this._expenseCachePromise;
-  }
-
   async getAllCostLinesForCashflow(): Promise<any[]> {
     return this.financeExpenseEngineRepository.getAllCostLinesForCashflow();
-  }
-
-  async getProgramExpensesByProject(projectName: string): Promise<any[]> {
-    return this.financeExpenseEngineRepository.getProgramExpensesByProject(projectName);
   }
 
   async createManyProgramExpenses(expenseList: InsertProgramExpense[]): Promise<ProgramExpense[]> {

@@ -40,6 +40,7 @@ import { recordManualEditFlag } from "../lib/manual-edit-flag";
 import { safeNum, getFYRange } from "../lib/home-helpers";
 import { isEffectivelyRealisedLocal, isCashflowConfirmedCheck } from "../lib/finance-helpers";
 import { paramStr } from "../lib/req-params";
+import { getCanonicalAllCurrentCostLines, getCanonicalProjectCostLinesByName } from "../services/project-cost-line-read-service";
 
 export function registerFinanceLegacyExtractedRoutes(app: Express): void {
 
@@ -49,7 +50,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
       const atRiskDaysNum = parseInt(atRiskDays as string, 10) || 30;
       
       const [allExpenses, latestRefresh] = await Promise.all([
-        storage.getAllProgramExpenses(),
+        getCanonicalAllCurrentCostLines(),
         storage.getLatestRefresh()
       ]);
 
@@ -372,7 +373,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
 
   app.get("/api/realisation-kpis", requireAuth, async (req, res) => {
     try {
-      const legacyExpenses = await storage.getAllProgramExpenses();
+      const legacyExpenses = await getCanonicalAllCurrentCostLines();
       const { expenses: allExpenses } = await getMergedExpensesAndInflows(
         legacyExpenses, []
       );
@@ -793,7 +794,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
 
       for (const pn of projectNames) {
         const projectOverrides = overrides.filter((o: any) => o.projectName === pn);
-        const expenses = await storage.getProgramExpensesByProject(pn as string);
+        const { rows: expenses } = await getCanonicalProjectCostLinesByName(pn as string);
         const rowMap = new Map(expenses.map((e: any) => [e.rowNumber, e]));
 
         const rowGroups = new Map<number, Record<string, any>>();
@@ -919,7 +920,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
       if (!projectName || !expenseCategory) {
         return res.status(400).json({ error: "projectName and expenseCategory are required" });
       }
-      const maxRow = await storage.getProgramExpensesByProject(projectName);
+      const { rows: maxRow } = await getCanonicalProjectCostLinesByName(projectName);
       const maxRowNum = maxRow.reduce((max: number, r: any) => Math.max(max, r.rowNumber || 0), 0);
       const newExpense = await storage.createManualExpense({
         projectName,
@@ -966,7 +967,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
       if (!projectName || !categoryName) {
         return res.status(400).json({ error: "projectName and categoryName are required" });
       }
-      const maxRow = await storage.getProgramExpensesByProject(projectName);
+      const { rows: maxRow } = await getCanonicalProjectCostLinesByName(projectName);
       const maxRowNum = maxRow.reduce((max: number, r: any) => Math.max(max, r.rowNumber || 0), 0);
       const newCategory = await storage.createManualExpense({
         projectName,
@@ -1020,7 +1021,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
         const planTask = planTasks.find((t: any) => t.id === Math.abs(taskId));
         if (planTask) { taskTitle = (planTask as any).highLevelProgramme || `Task ${(planTask as any).taskNo || ''}`; taskEndDate = (planTask as any).actualEnd || null; }
       }
-      const maxRow = await storage.getProgramExpensesByProject(projectName);
+      const { rows: maxRow } = await getCanonicalProjectCostLinesByName(projectName);
       const maxRowNum = maxRow.reduce((max: number, r: any) => Math.max(max, r.rowNumber || 0), 0);
       const newExpense = await storage.createManualExpense({
         projectName,
@@ -1071,7 +1072,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
         : field === 'paymentDateFontColor' ? 'paymentDateConfirmed' : null;
       const isBlack = color === 'black';
 
-      const expenses = await storage.getProgramExpensesByProject(projectName);
+      const { rows: expenses } = await getCanonicalProjectCostLinesByName(projectName);
       const expense = expenses.find((e: any) => e.rowNumber === rowNumber);
       if (expense) {
         const updateFields: Record<string, any> = { [field]: color };

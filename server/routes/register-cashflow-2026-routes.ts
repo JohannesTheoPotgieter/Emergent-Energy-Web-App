@@ -11,6 +11,7 @@ import {
 import { db } from "../db";
 import { quickbooksInvoiceLinks, quickbooksDocuments } from "@shared/schema";
 import { and, eq, isNull } from "drizzle-orm";
+import { getCanonicalAllCurrentCostLines } from "../services/project-cost-line-read-service";
 
 const requireAuth = sharedRequireAuth;
 
@@ -23,7 +24,7 @@ export function registerCashflow2026Routes(app: Express) {
       const projectFilter = req.query.project ? String(req.query.project) : null;
 
       const [legacyExp, legacyInf, manualBalances, opexBudgets, opexWeeklyOverrides, availPaymentOverrides, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
-        storage.getAllProgramExpenses(),
+        getCanonicalAllCurrentCostLines(),
         storage.getAllProgramInflows(),
         storage.getAllCashflowWeeklyManual(),
         storage.getAllOpexBudgetMonthly(),
@@ -168,7 +169,7 @@ export function registerCashflow2026Routes(app: Express) {
       const weekEnd = wsDate.toISOString().split('T')[0];
 
       const [legacyExp, legacyInf, allTaskLinks, allOpTasks, allPlanTasks, qbLinks] = await Promise.all([
-        storage.getAllProgramExpenses(),
+        getCanonicalAllCurrentCostLines(),
         storage.getAllProgramInflows(),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),

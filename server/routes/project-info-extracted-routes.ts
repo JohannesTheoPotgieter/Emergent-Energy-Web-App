@@ -49,6 +49,7 @@ import {
   getDomainRolloutReadinessReport,
   getCutoverPostValidationReport,
 } from "../services/promoted-read-compat";
+import { getCanonicalProjectCostLinesByName } from "../services/project-cost-line-read-service";
 
 // ── Helpers (moved from routes.ts) ──
 
@@ -80,7 +81,7 @@ export function registerProjectInfoExtractedRoutes(app: Express): void {
 
       // Fetch all data in parallel
       const [expenses, inflows, planTasks, qualitySummaryRes, projectInfoRow, engStagesRes, engTasksRes] = await Promise.all([
-        storage.getProgramExpensesByProject(decodedName),
+        getCanonicalProjectCostLinesByName(decodedName).then((r) => r.rows),
         storage.getProgramInflowsByProject(decodedName),
         (async () => {
           const useCanonical = await isWorkItemsEnabled();
