@@ -23,6 +23,7 @@ import { bridgeCatch } from "./bridge/bridge-writer";
 import { computeMarginPct } from "./lib/finance/margin";
 import { isCanonicalCosRealised, OVERRIDE_REALISED, OVERRIDE_NOT_REALISED } from "./lib/finance/cos-realisation";
 import { paramStr } from "./lib/req-params";
+import { setFinanceTrustHeaders } from "./lib/finance-trust/envelope";
 
 const EXEC_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"];
 const STAGE_GATE_OVERRIDE_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"];
@@ -1199,6 +1200,16 @@ export function registerLifecycleRoutes(app: Express) {
       const plannedExpenditure = projectRows.reduce((s, p) => s + p.plannedExpenditureFy, 0);
       const paidExpenditure = projectRows.reduce((s, p) => s + p.paidExpenditureFy, 0);
 
+      const overrideInEffect = costLines.some((row: any) => {
+        const raw = row.cosStatusOverride;
+        return typeof raw === "string" && raw.trim().length > 0;
+      });
+      setFinanceTrustHeaders(res, {
+        sourceLayer: "canonical",
+        canonicalTable: "normalized_cost_lines,normalized_revenue_lines,cashflow_points",
+        staleAfterSeconds: 60,
+        overrideInEffect,
+      });
       res.json({
         financialYear: fy,
         projects: projectRows,
