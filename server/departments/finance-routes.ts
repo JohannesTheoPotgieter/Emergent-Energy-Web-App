@@ -131,7 +131,14 @@ import { buildFinanceCoreTrustReport } from "../services/finance-core-trust-serv
 import { setFinanceTrustHeaders as setFinanceTrustHeadersShared } from "../lib/finance-trust/envelope";
 import type { FinanceTrustHeaderParams } from "../lib/finance-trust/envelope";
 import { getBills, getInvoices, getMonthlyPnLReport, getQuickBooksConnectionStatus } from "../services/quickbooks-service";
-import { billRawToSummary, invoiceRawToSummary, parsePnLCosMonthly } from "../services/quickbooks-reconciliation-service";
+import {
+  billRawToSummary,
+  billRawToLineRows,
+  buildQbProjectResolver,
+  invoiceRawToSummary,
+  normalizeProjectKey,
+  parsePnLCosMonthly,
+} from "../services/quickbooks-reconciliation-service";
 import {
   deriveInflowsQbStatus,
   deriveOutflowsQbStatus,
@@ -2338,6 +2345,190 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
   } catch (error) {
     console.error("COS month detail error:", error);
     res.status(500).json({ error: "Failed to fetch COS month detail" });
+  }
+});
+
+/**
+ * QuickBooks → Project resolver coverage report (Phase 1, admin-only).
+ *
+ * Pulls QB Bills for a date range, runs the line-row extractor + project
+ * resolver, and returns a JSON report so finance can validate which QB
+ * bills are unmapped (Class typo / missing Class) and which are resolved
+ * to projects but missing from the Excel trackers (the source of truth).
+ *
+ * READ-ONLY. Never writes to normalized_cost_lines or quickbooks_invoice_links.
+ * Trackers stay the source of truth — this just shows what's missing.
+ *
+ *   GET /api/cos-tracker/qb-coverage-report?start=2025-09-01&end=2025-10-31
+ */
+router.get("/api/cos-tracker/qb-coverage-report", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const start = String(req.query.start || "");
+    const end = String(req.query.end || "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) {
+      return res.status(400).json({ error: "start and end required as YYYY-MM-DD" });
+    }
+
+    // Project-name universe = project_info ∪ active normalized_cost_lines.project_name
+    const [projects, ncl] = await Promise.all([
+      db.select({ name: projectInfo.projectName }).from(projectInfo),
+      db
+        .select({ name: normalizedCostLines.projectName })
+        .from(normalizedCostLines)
+        .where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
+    ]);
+    const universe = new Set<string>();
+    for (const p of projects) if (p.name) universe.add(p.name);
+    for (const r of ncl) if (r.name) universe.add(r.name);
+    const projectNames = [...universe];
+
+    // Active cost lines bucketed by normalised project key for tracker_gap preview.
+    const activeCostLines = await db
+      .select({
+        id: normalizedCostLines.id,
+        projectName: normalizedCostLines.projectName,
+        invoiceNumber: normalizedCostLines.invoiceNumber,
+        invoiceDate: normalizedCostLines.invoiceDate,
+        amountExVat: normalizedCostLines.amountExVat,
+        counterpartyName: normalizedCostLines.counterpartyName,
+      })
+      .from(normalizedCostLines)
+      .where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)));
+    const costLinesByProjectKey = new Map<string, typeof activeCostLines>();
+    for (const cl of activeCostLines) {
+      const key = normalizeProjectKey(cl.projectName);
+      if (!key) continue;
+      if (!costLinesByProjectKey.has(key)) costLinesByProjectKey.set(key, []);
+      costLinesByProjectKey.get(key)!.push(cl);
+    }
+
+    const billsResp = await getBills(start, end);
+    const bills: any[] = billsResp?.QueryResponse?.Bill ?? [];
+
+    const resolveProject = buildQbProjectResolver(projectNames);
+    const rows: any[] = [];
+    for (const bill of bills) {
+      for (const lr of billRawToLineRows(bill)) {
+        const resolution = resolveProject({
+          classRefName: lr.classRefName,
+          customerRefName: lr.customerRefName,
+        });
+        let closest: any = null;
+        if (resolution.projectName) {
+          const candidates =
+            costLinesByProjectKey.get(normalizeProjectKey(resolution.projectName)) ?? [];
+          const target = lr.lineAmountExVat ?? 0;
+          const close = candidates
+            .map((c: any) => ({ c, diff: Math.abs(Number(c.amountExVat ?? 0) - target) }))
+            .filter((x: any) => x.diff <= 1)
+            .sort((a: any, b: any) => a.diff - b.diff)[0];
+          if (close) {
+            closest = {
+              id: close.c.id,
+              invoiceNumber: close.c.invoiceNumber,
+              invoiceDate: close.c.invoiceDate ? String(close.c.invoiceDate) : null,
+              amountExVat:
+                close.c.amountExVat !== null && close.c.amountExVat !== undefined
+                  ? Number(close.c.amountExVat)
+                  : null,
+              counterpartyName: close.c.counterpartyName,
+            };
+          }
+        }
+        rows.push({
+          ...lr,
+          resolvedProjectName: resolution.projectName,
+          strategy: resolution.strategy,
+          matchedFrom: resolution.matchedFrom,
+          closestCostLineMatch: closest,
+        });
+      }
+    }
+
+    // Aggregations.
+    const byStrategy: Record<string, { count: number; amount: number }> = {};
+    let totalAmount = 0;
+    let resolvedAmount = 0;
+    let trackerGapAmount = 0;
+    let trackerGapCount = 0;
+    for (const r of rows) {
+      const amt = r.lineAmountExVat ?? 0;
+      totalAmount += amt;
+      if (!byStrategy[r.strategy]) byStrategy[r.strategy] = { count: 0, amount: 0 };
+      byStrategy[r.strategy]!.count += 1;
+      byStrategy[r.strategy]!.amount += amt;
+      if (r.resolvedProjectName) {
+        resolvedAmount += amt;
+        if (!r.closestCostLineMatch) {
+          trackerGapAmount += amt;
+          trackerGapCount += 1;
+        }
+      }
+    }
+    const unmappedClasses = new Map<string, { count: number; amount: number }>();
+    for (const r of rows) {
+      if (r.strategy === "unmapped_class" && r.classRefName) {
+        if (!unmappedClasses.has(r.classRefName))
+          unmappedClasses.set(r.classRefName, { count: 0, amount: 0 });
+        const slot = unmappedClasses.get(r.classRefName)!;
+        slot.count += 1;
+        slot.amount += r.lineAmountExVat ?? 0;
+      }
+    }
+    const unmappedClassList = [...unmappedClasses.entries()]
+      .map(([classRefName, v]) => ({ classRefName, ...v }))
+      .sort((a, b) => b.amount - a.amount);
+
+    const fuzzyMatches = rows
+      .filter((r) => r.strategy === "class_substring" || r.strategy === "customer_substring")
+      .map((r) => ({
+        billId: r.billId,
+        docNumber: r.docNumber,
+        txnDate: r.txnDate,
+        vendorName: r.vendorName,
+        lineAmountExVat: r.lineAmountExVat,
+        matchedFrom: r.matchedFrom,
+        resolvedProjectName: r.resolvedProjectName,
+        strategy: r.strategy,
+      }));
+
+    const trackerGapPreview = rows
+      .filter((r) => r.resolvedProjectName && !r.closestCostLineMatch)
+      .map((r) => ({
+        project: r.resolvedProjectName,
+        billId: r.billId,
+        docNumber: r.docNumber,
+        txnDate: r.txnDate,
+        vendorName: r.vendorName,
+        lineAmountExVat: r.lineAmountExVat,
+        classRefName: r.classRefName,
+        description: r.description,
+      }))
+      .sort((a, b) => (b.lineAmountExVat ?? 0) - (a.lineAmountExVat ?? 0));
+
+    res.json({
+      generatedAt: new Date().toISOString(),
+      window: { start, end },
+      summary: {
+        totalBills: bills.length,
+        totalLineRows: rows.length,
+        totalAmountExVat: Math.round(totalAmount * 100) / 100,
+        resolvedAmountExVat: Math.round(resolvedAmount * 100) / 100,
+        resolvedPct: totalAmount > 0 ? Math.round((resolvedAmount / totalAmount) * 10000) / 100 : 0,
+        trackerGapCount,
+        trackerGapAmountExVat: Math.round(trackerGapAmount * 100) / 100,
+        projectUniverseSize: projectNames.length,
+      },
+      byStrategy,
+      unmappedClasses: unmappedClassList,
+      fuzzyMatches,
+      trackerGapPreview,
+    });
+  } catch (err) {
+    console.error("[qb-coverage-report]", err);
+    res
+      .status(500)
+      .json({ error: "qb_coverage_report_failed", detail: err instanceof Error ? err.message : String(err) });
   }
 });
 
