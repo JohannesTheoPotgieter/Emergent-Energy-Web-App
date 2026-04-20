@@ -309,6 +309,28 @@ export async function syncPipedriveDeals(
         continue;
       }
 
+      // Future-signature rule: only import deals whose expected close date is
+      // strictly after today (compared at midnight, in the local server tz).
+      // Deals with no expected_close_date or a past date are skipped.
+      {
+        const raw = deal.expected_close_date;
+        if (!raw) {
+          result.skipped++;
+          continue;
+        }
+        const closeDate = new Date(raw);
+        if (Number.isNaN(closeDate.getTime())) {
+          result.skipped++;
+          continue;
+        }
+        const todayMidnight = new Date();
+        todayMidnight.setHours(0, 0, 0, 0);
+        if (closeDate.getTime() <= todayMidnight.getTime()) {
+          result.skipped++;
+          continue;
+        }
+      }
+
       result.dealsProcessed++;
       try {
         // Render label ids → comma-separated names (Pipedrive returns id list as csv string).
