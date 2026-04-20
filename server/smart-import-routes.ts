@@ -29,6 +29,7 @@ import { requirePermission, hasImportPermission } from "./permission-middleware"
 import { jwtAuth, requireAuth } from "./auth-context";
 import { requireAdmin } from "./middleware/requireAdmin";
 import { runSmartImportPreview } from "./lib/import/index";
+import { runPreflightValidator } from "./lib/import/preflight-validator";
 import { runImportPlanner, type PlannerResult } from "./lib/import/planner";
 import { writePlanIncremental, writeRevenueIncremental, writeExpenditureIncremental, type IncrementalCommitResult } from "./lib/import/commit-executor";
 import { matchRows, generateBusinessKey, type SectionType, type MatchedRow } from "./lib/import/row-matcher";
@@ -384,6 +385,24 @@ router.post("/api/smart-import/upload", requireAuth, requirePermission("smart_im
     const userId = (req as any).user?.id || null;
 
     const resolvedProjectId = projectId || autoMappedProjectId || null;
+
+    try {
+      const preflight = runPreflightValidator(
+        resolvedProjectId,
+        (preview as any)?.normalization?.planTasks ?? [],
+      );
+      (preview as any).preflight = preflight;
+      if (preflight.warnings.length > 0) {
+        console.log(
+          `[SmartImport] Preflight: ${preflight.warnings.length} warnings ` +
+            `(dup=${preflight.counts.duplicatePlannedRefs}, ` +
+            `blankMs=${preflight.counts.blankOutlineMilestones}, ` +
+            `missingCoord=${preflight.counts.missingSourceCoordinates})`,
+        );
+      }
+    } catch (preflightErr) {
+      console.warn(`[SmartImport] Preflight validator failed (non-fatal):`, preflightErr);
+    }
 
     const [run] = await db
       .insert(smartImportRuns)

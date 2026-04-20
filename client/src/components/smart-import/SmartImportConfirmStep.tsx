@@ -19,6 +19,7 @@ import { SECTION_LABELS, CONFIRM_LABELS, RESULT_LABELS, IMPORT_MODE_LABELS } fro
 import { SmartImportMoneyImpact } from "./SmartImportMoneyImpact";
 import { SmartImportQbProtectionsCallout } from "./SmartImportQbProtectionsCallout";
 import { SmartImportIntegrityCheck } from "./SmartImportIntegrityCheck";
+import { SmartImportPreflightPanel } from "./SmartImportPreflightPanel";
 
 interface ConfirmStepProps {
   runId: number;
@@ -141,6 +142,12 @@ export function SmartImportConfirmStep({ runId, planning, preview, decisions, on
             </div>
           )}
 
+          {Array.isArray(commitResult?.v2?.rowWarnings) && commitResult.v2.rowWarnings.length > 0 && (
+            <div className="border-t pt-3">
+              <SmartImportPreflightPanel rowWarnings={commitResult.v2.rowWarnings} variant="post-commit" />
+            </div>
+          )}
+
           <p className="text-xs text-muted-foreground mt-3">
             {RESULT_LABELS.dashboardNote}
           </p>
@@ -221,6 +228,15 @@ export function SmartImportConfirmStep({ runId, planning, preview, decisions, on
             );
           })}
         </div>
+
+        {/* Pre-flight warnings (S003/S004) — surfaces planned-identifier
+            collisions, blank-outline milestones, and missing source
+            coordinates before the user commits. */}
+        {preview?.preflight && (preview.preflight.warnings?.length ?? 0) > 0 && (
+          <div className="border-t pt-3">
+            <SmartImportPreflightPanel preflight={preview.preflight} variant="pre-commit" />
+          </div>
+        )}
 
         {/* QuickBooks protections — compact, sits just before the money
             impact so the user understands what is locked before reading
