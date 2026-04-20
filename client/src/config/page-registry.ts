@@ -129,7 +129,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "portfolioDetail", path: "/portfolios/:id", label: "Portfolio Detail", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "portfolio_detail", routeComponentKey: "PortfolioDetailPage" },
   // PD Dashboard now points at the merged Opportunities/Pipeline page.
   // Pipedrive is the source of truth — legacy PD Tickets and SharePoint Proposals UI removed (2026-04-19).
-  { id: "pdDashboard", path: "/pd", label: "Project Development Dashboard", iconKey: "Sun", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_dashboard", showInSidebar: true, routeComponentKey: "OpportunitiesPage", aliases: ["/pd/dashboard"], roleLandingEligibility: ["CCO", "KEY_ACCOUNTS_MANAGER", "PROJECT_DEVELOPER"] },
+  { id: "pdDashboard", path: "/pd", label: "Project Development Dashboard", iconKey: "Sun", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_dashboard", showInSidebar: true, routeComponentKey: "PdDashboardPage", aliases: ["/pd/dashboard"], roleLandingEligibility: ["CCO", "KEY_ACCOUNTS_MANAGER", "PROJECT_DEVELOPER"] },
   // Legacy ticket deep links → redirect to Opportunities so existing bookmarks/emails still resolve.
   { id: "pdTicketsRedirect", path: "/pd/tickets", label: "Project Development Tickets (moved)", type: "alias", permissionEntity: "pd_dashboard", redirectTo: "/opportunities" },
   { id: "pdTicketCreateRedirect", path: "/pd/tickets/create", label: "Create Ticket (moved)", type: "alias", permissionEntity: "pd_dashboard", redirectTo: "/opportunities" },

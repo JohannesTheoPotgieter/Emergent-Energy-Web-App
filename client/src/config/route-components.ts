@@ -88,6 +88,7 @@ const HandoverDashboardPage = lazyWithRetry(() => import("@/pages/handover-dashb
 const LessonsLearntPage = lazyWithRetry(() => import("@/pages/lessons-learnt"));
 const SitesPage = lazyWithRetry(() => import("@/pages/sites"));
 const OpportunitiesPage = lazyWithRetry(() => import("@/pages/opportunities"));
+const PdDashboardPage = lazyWithRetry(() => import("@/pages/pd-dashboard"));
 const AdminPipedrivePage = lazyWithRetry(() => import("@/pages/admin-pipedrive"));
 const AdminQuickBooksPage = lazyWithRetry(() => import("@/pages/admin-quickbooks"));
 const FinanceQuickBooksLinksPage = lazyWithRetry(() => import("@/pages/finance-quickbooks-links"));
@@ -207,6 +208,7 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   LessonsLearntPage,
   SitesPage,
   OpportunitiesPage,
+  PdDashboardPage,
   AdminPipedrivePage,
   AdminQuickBooksPage,
   FinanceQuickBooksLinksPage,
