@@ -22,6 +22,13 @@
       "when": 1776676822701,
       "tag": "0002_stage_requirement_template_version",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1777247999000,
+      "tag": "0003_priority_derived_metrics_view",
+      "breakpoints": true
     }
   ]
 }
