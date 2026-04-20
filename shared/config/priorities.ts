@@ -52,6 +52,53 @@ export const SCOPE_LABELS: Record<PriorityScope, string> = {
   role: "My Priorities",
 };
 
+/**
+ * Resolves all descendant priority IDs from a flat `[childId, parentId]`
+ * adjacency list, starting from `rootId`. Does NOT include the root itself.
+ *
+ * Used by the rolled-up drill-down: a Company priority's "Tasks", "Approvals"
+ * and financial totals aggregate across itself + every priority beneath it in
+ * the tree. Pure function — the route layer loads the adjacency once and
+ * delegates the traversal here so the logic is testable without a DB.
+ *
+ * Handles malformed input safely:
+ *   - self-referential cycles (id === parentId)
+ *   - multi-node cycles (A → B → A) via `visited` set
+ *   - bounded depth (MAX_DEPTH) as a safety net
+ */
+export function collectDescendantIds(
+  adjacency: ReadonlyArray<{ id: number; parentId: number | null }>,
+  rootId: number,
+  maxDepth = 20,
+): number[] {
+  const childrenByParent = new Map<number, number[]>();
+  for (const row of adjacency) {
+    if (row.parentId === null || row.parentId === row.id) continue;
+    const bucket = childrenByParent.get(row.parentId);
+    if (bucket) bucket.push(row.id);
+    else childrenByParent.set(row.parentId, [row.id]);
+  }
+
+  const visited = new Set<number>();
+  let frontier: number[] = [rootId];
+  let depth = 0;
+  while (frontier.length > 0 && depth < maxDepth) {
+    const next: number[] = [];
+    for (const parent of frontier) {
+      const kids = childrenByParent.get(parent);
+      if (!kids) continue;
+      for (const k of kids) {
+        if (visited.has(k) || k === rootId) continue;
+        visited.add(k);
+        next.push(k);
+      }
+    }
+    frontier = next;
+    depth++;
+  }
+  return Array.from(visited);
+}
+
 export interface EscalatePatch {
   scope: PriorityScope;
   /** Set to null when the promotion removes the department association. */
