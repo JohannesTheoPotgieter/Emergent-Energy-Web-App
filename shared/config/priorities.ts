@@ -99,6 +99,58 @@ export function collectDescendantIds(
   return Array.from(visited);
 }
 
+export interface PriorityListFilterRow {
+  scope: PriorityScope;
+  departmentKey: string | null;
+  ownerUserId: number | null;
+  assignedUserId: number | null;
+}
+
+export interface PriorityListFilterOptions {
+  /** Null = caller didn't request a scope filter (defaults to 'company'). */
+  scopeFilter: PriorityScope | null;
+  /** Null = no department filter. */
+  departmentFilter: string | null;
+  /**
+   * User IDs that belong to the target department via ROLE_DEPARTMENT_MAP.
+   * When non-empty AND scope filter is 'department' AND a department filter
+   * is set, role-scoped priorities owned or assigned to any of these users
+   * are also included. This is how Department-head views pick up team
+   * members' personal (role-scoped) priorities.
+   */
+  teamUserIds: ReadonlySet<number>;
+}
+
+/**
+ * Pure predicate for the scope + department + team-role filter used by
+ * `GET /api/priorities`. Extracted so the branching logic can be tested
+ * without a DB or HTTP.
+ *
+ * Semantics:
+ *   (1) row matches the primary scope + department filter, OR
+ *   (2) row is a role-scoped priority owned or assigned to someone in the
+ *       target department (team-role inclusion).
+ */
+export function matchesPriorityListFilter(
+  row: PriorityListFilterRow,
+  opts: PriorityListFilterOptions,
+): boolean {
+  const primaryScopeMatch = opts.scopeFilter
+    ? row.scope === opts.scopeFilter
+    : row.scope === "company";
+  const primaryDeptMatch = !opts.departmentFilter || row.departmentKey === opts.departmentFilter;
+  if (primaryScopeMatch && primaryDeptMatch) return true;
+
+  // Team-role inclusion fires only when the caller is on the Department tab —
+  // it's a widening of the department-scope query, not a general fallback.
+  if (opts.scopeFilter !== "department" || opts.teamUserIds.size === 0 || row.scope !== "role") {
+    return false;
+  }
+  if (row.ownerUserId !== null && opts.teamUserIds.has(row.ownerUserId)) return true;
+  if (row.assignedUserId !== null && opts.teamUserIds.has(row.assignedUserId)) return true;
+  return false;
+}
+
 export interface EscalatePatch {
   scope: PriorityScope;
   /** Set to null when the promotion removes the department association. */

@@ -557,9 +557,15 @@ export default function PrioritiesPage() {
   });
 
   // ── Department Priorities ──
+  // include_team_roles=true broadens the response to also surface role-level
+  // priorities owned or assigned to team members in the same department, so
+  // a dept head sees everything on their team rather than only the rows
+  // explicitly scoped to their department.
   const deptQuery = useQuery<Priority[]>({
     queryKey: ["/api/priorities", "department", userDepartment],
-    queryFn: () => fetchPriorities(`scope=department${userDepartment ? `&department=${userDepartment}` : ""}`),
+    queryFn: () => fetchPriorities(
+      `scope=department${userDepartment ? `&department=${userDepartment}` : ""}&include_team_roles=true`,
+    ),
     enabled: activeTab === "department" && isDeptHead,
   });
 
