@@ -282,7 +282,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
         const requirementId = parseInt(p(req.params.requirementId), 10);
         if (Number.isNaN(requirementId)) return res.status(400).json({ error: "Invalid requirementId" });
         const user = getUser(req);
-        const { status, evidenceUrl, notes, contributors } = req.body;
+        const { status, evidenceUrl, notes, contributors, reopenReason } = req.body;
 
         // Support updating contributors without status change
         if (contributors !== undefined && !status) {
@@ -299,8 +299,10 @@ export function registerStageLifecycleRoutes(app: Express): void {
           requirementId,
           status,
           actorUserId: user.id,
+          actorRole: user.role,
           evidenceUrl,
           notes,
+          reopenReason,
         });
         res.json(result);
       } catch (error: unknown) {

@@ -512,19 +512,37 @@ export async function transitionStageStatus(params: TransitionParams): Promise<P
 
 // ── Requirement Updates ─────────────────────────────────────
 
+// §6: once a stage has been closed (gate decision recorded + snapshot taken),
+// its requirements become audit records. Editing them silently would change
+// the historical readinessPct without leaving a trail — see
+// captureStageGateSnapshot. Only COO_ADMIN / CEO_ADMIN may reopen, and they
+// must provide a justification which is persisted to project_stage_decisions.
+export const CLOSED_STAGE_STATUSES = new Set<string>([
+  'approved',
+  'progressed',
+  'exception_approved',
+]);
+
+export const STAGE_REOPEN_ROLES = new Set<string>([
+  'COO_ADMIN',
+  'CEO_ADMIN',
+]);
+
 export interface UpdateRequirementParams {
   requirementId: number;
   status: string;
   actorUserId: number;
+  actorRole?: string;
   evidenceUrl?: string;
   notes?: string;
+  reopenReason?: string;
 }
 
 /**
  * Update a requirement status and recalculate readiness.
  */
 export async function updateRequirementStatus(params: UpdateRequirementParams) {
-  const { requirementId, status, actorUserId, evidenceUrl, notes } = params;
+  const { requirementId, status, actorUserId, actorRole, evidenceUrl, notes, reopenReason } = params;
 
   const [req] = await db
     .select()
@@ -533,6 +551,36 @@ export async function updateRequirementStatus(params: UpdateRequirementParams) {
 
   if (!req) {
     throw new Error(`Requirement ${requirementId} not found`);
+  }
+
+  // §6 immutability guard: block edits on requirements whose parent stage
+  // has already closed, unless an authorised role supplies a reopen reason.
+  const [parentStage] = await db
+    .select()
+    .from(projectStageInstances)
+    .where(eq(projectStageInstances.id, req.stageInstanceId));
+
+  const parentStatus = parentStage?.stageStatus?.toLowerCase() ?? '';
+  if (parentStage && CLOSED_STAGE_STATUSES.has(parentStatus)) {
+    if (!actorRole || !STAGE_REOPEN_ROLES.has(actorRole)) {
+      throw new Error(
+        `Stage ${parentStage.stageCode} is closed (${parentStatus}); only COO_ADMIN or CEO_ADMIN may modify its requirements.`,
+      );
+    }
+    if (!reopenReason || reopenReason.trim().length < 10) {
+      throw new Error(
+        `Reopening a closed stage requires a reopenReason of at least 10 characters.`,
+      );
+    }
+    await db.insert(projectStageDecisions).values({
+      projectId: req.projectId,
+      stageCode: req.stageCode,
+      decisionType: 'stage_reopen',
+      decisionSummary: `Requirement ${req.itemCode} modified on closed stage ${parentStage.stageCode} (status=${parentStatus})`,
+      decidedByUserId: actorUserId,
+      decidedDate: new Date(),
+      rationale: reopenReason.trim(),
+    });
   }
 
   const updateData: Record<string, any> = {
