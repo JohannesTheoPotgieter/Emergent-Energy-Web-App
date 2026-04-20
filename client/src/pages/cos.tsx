@@ -708,16 +708,21 @@ export default function CosTracker() {
         "COS Committed": m.committedCOS,
         "COS Realised": m.realisedCOS,
         "Quickbooks COS": m.qbOnlyActual,
-        // Tracking line: cumulative realised tracking against cumulative planned budget,
-        // expressed as a percentage. Plotted on a secondary right-hand y-axis.
-        // Null when no planned budget exists yet so the line breaks cleanly instead of
-        // sitting on the zero baseline.
+        // Manual budget overlay so edits to the Budget (Manual) row pull through
+        // visually to the trend chart. Budget is tracked at company level only,
+        // so we omit it (null breaks the line cleanly) when a per-project filter
+        // is active to avoid misleading a user with a zeroed-out line.
+        "Budget": isProjectFiltered ? null : (m.budget ?? 0),
+        // Tracking line: cumulative realised tracking against the cumulative
+        // manual budget, expressed as a percentage. Plotted on a secondary
+        // right-hand y-axis. Null when no budget exists yet so the line breaks
+        // cleanly instead of sitting on the zero baseline.
         "Tracking vs Budget %":
-          m.ytdPlanned && m.ytdPlanned > 0
-            ? Math.round(((m.ytdRealised ?? 0) / m.ytdPlanned) * 1000) / 10
+          !isProjectFiltered && m.ytdBudget && m.ytdBudget > 0
+            ? Math.round(((m.ytdRealised ?? 0) / m.ytdBudget) * 1000) / 10
             : null,
       })),
-    [months],
+    [months, isProjectFiltered],
   );
 
   const sparkData = useMemo(() => {
@@ -1015,6 +1020,16 @@ export default function CosTracker() {
               <Bar yAxisId="left" dataKey="COS Committed" stackId="app" fill="#f59e0b" radius={[0, 0, 0, 0]} />
               <Bar yAxisId="left" dataKey="COS Realised" stackId="app" fill="#0f172a" radius={[4, 4, 0, 0]} />
               <Bar yAxisId="left" dataKey="Quickbooks COS" fill="#16a34a" radius={[4, 4, 0, 0]} />
+              <Line
+                yAxisId="left"
+                type="monotone"
+                dataKey="Budget"
+                stroke="#16a34a"
+                strokeWidth={2}
+                strokeDasharray="4 3"
+                dot={{ r: 2.5, fill: "#16a34a" }}
+                connectNulls={false}
+              />
               <Line
                 yAxisId="right"
                 type="monotone"
