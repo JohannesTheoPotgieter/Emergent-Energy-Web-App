@@ -92,9 +92,10 @@ export async function backfillInvoiceDateConfirmed(): Promise<{ updated: number;
     try {
       const buffer = fs.readFileSync(filePath);
       const workbook = new ExcelJS.Workbook();
-      // @ts-expect-error ExcelJS declares `interface Buffer extends ArrayBuffer` globally,
-      // creating a merge conflict with @types/node's generic Buffer in TS6/ES2024.
-      await workbook.xlsx.load(buffer);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- @types/node 20.19
+      // narrowed Buffer to Buffer<ArrayBufferLike>; ExcelJS's load() still declares
+      // the legacy non-generic Buffer so no structural cast can bridge them.
+      await workbook.xlsx.load(buffer as any);
 
       const sheetNames = workbook.worksheets.map(ws => ws.name);
       if (!sheetNames.includes("Expenditure Breakdown")) {
