@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
 import { PageShell } from "@/components/layout/page-shell";
@@ -6,19 +6,37 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
-import { AlertTriangle, Plus, X, Search, DollarSign, ListTodo, MessageSquare, FolderOpen, CheckCircle2, GitBranch, History, UserPlus, UserMinus, ArrowUp, Flag, Link as LinkIcon, LogIn, LogOut } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  DollarSign,
+  FolderOpen,
+  GitBranch,
+  History,
+  ListTodo,
+  MessageSquare,
+  Plus,
+  X,
+} from "lucide-react";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
-import { isPriorityAdminRole } from "@/config/priorities";
-
-const token = () => localStorage.getItem("auth_token") || "";
+import { isPriorityAdminRole, departmentLabel } from "@/config/priorities";
+import { ProjectLinker } from "@/components/priorities/ProjectLinker";
+import { BreakDownDialog } from "@/components/priorities/BreakDownDialog";
+import { useConfirmDialog } from "@/components/priorities/ConfirmActionDialog";
+import { ActivityIcon, formatActivitySentence } from "@/lib/priority-activity-formatter";
+import type {
+  LinkedProject,
+  PriorityActivityRow,
+  PriorityDetail,
+  PriorityRow,
+} from "@/lib/priority-types";
 
 const HEALTH_DOT: Record<string, string> = {
   critical: "bg-red-500",
@@ -39,304 +57,41 @@ const RAG_BADGE: Record<string, string> = {
   red: "bg-red-100 text-red-700",
 };
 
-const DEPARTMENT_OPTIONS = [
-  { value: "ADMIN", label: "Admin" },
-  { value: "LEADERSHIP", label: "Leadership" },
-  { value: "ENGINEERING", label: "Engineering" },
-  { value: "PROJECT_DEVELOPMENT", label: "Project Development" },
-  { value: "PROJECT_MANAGEMENT", label: "Project Management" },
-  { value: "FINANCE", label: "Finance" },
-];
-
 function formatCurrency(value: number): string {
   if (Math.abs(value) >= 1_000_000) return `R ${(value / 1_000_000).toFixed(1)}M`;
   if (Math.abs(value) >= 1_000) return `R ${(value / 1_000).toFixed(0)}K`;
   return `R ${value.toFixed(0)}`;
 }
 
+/**
+ * Date-only diff in days. Uses ISO YYYY-MM-DD comparison so it doesn't flip
+ * across the UTC/local boundary (see Tier 1 bug-fix notes).
+ */
 function daysRemaining(dateStr: string | null): number | null {
   if (!dateStr) return null;
-  const due = new Date(dateStr);
-  const now = new Date();
-  return Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  const due = Date.parse(dateStr + "T00:00:00Z");
+  const today = Date.parse(new Date().toISOString().slice(0, 10) + "T00:00:00Z");
+  if (Number.isNaN(due) || Number.isNaN(today)) return null;
+  return Math.ceil((due - today) / 86_400_000);
 }
 
-function ProjectLinker({ priorityId, existingProjectIds, onDone }: { priorityId: number; existingProjectIds: number[]; onDone: () => void }) {
-  const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState<number[]>([]);
-  const queryClient = useQueryClient();
-
-  const { data: allProjects = [] } = useQuery<any[]>({
-    queryKey: ["/api/v2/projects", "linker"],
-    queryFn: async () => {
-      // Primary source: projects-summary endpoint (widely used across app + role aware).
-      try {
-        const summaryRes = await fetch("/api/projects-summary", {
-          credentials: "include",
-          headers: { Authorization: `Bearer ${token()}` },
-        });
-        if (summaryRes.ok) {
-          const summaryData = await summaryRes.json();
-          const summaryRows = Array.isArray(summaryData)
-            ? summaryData
-            : summaryData?.projects || summaryData?.data?.rows || [];
-          if (summaryRows.length > 0) {
-            return summaryRows.map((p: any) => ({
-              id: p.id || p.project_info_id,
-              projectName: p.projectName || p.project_name || p.name || `Project ${p.id || p.project_info_id}`,
-            }));
-          }
-        }
-      } catch {
-        // Fall through to v2 endpoint
-      }
-
-      // Fallback: v2 projects endpoint.
-      const res = await fetch("/api/v2/projects?pageSize=500", {
-        credentials: "include",
-        headers: { Authorization: `Bearer ${token()}` },
-      });
-      if (!res.ok) return [];
-      const data = await res.json();
-      return (data.data?.rows || []).map((p: any) => ({
-        id: p.id,
-        projectName: p.projectName || p.project_name || p.name || `Project ${p.id}`,
-      }));
-    },
-  });
-
-  const available = useMemo(() => {
-    const existingSet = new Set(existingProjectIds);
-    return allProjects
-      .filter(p => !existingSet.has(p.id))
-      .filter(p => !search || p.projectName?.toLowerCase().includes(search.toLowerCase()));
-  }, [allProjects, existingProjectIds, search]);
-
-  const linkMutation = useMutation({
-    mutationFn: async () => {
-      await apiRequest("POST", `/api/priorities/${priorityId}/projects`, { project_ids: selected });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}/activity`] });
-      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
-      onDone();
-    },
-  });
-
-  return (
-    <div className="space-y-3">
-      <div className="relative">
-        <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-        <Input placeholder="Search projects..." value={search} onChange={e => setSearch(e.target.value)} className="pl-8" />
-      </div>
-      <div className="max-h-60 overflow-y-auto space-y-1">
-        {available.map(p => (
-          <label key={p.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer text-sm">
-            <input
-              type="checkbox"
-              checked={selected.includes(p.id)}
-              onChange={e => {
-                if (e.target.checked) setSelected([...selected, p.id]);
-                else setSelected(selected.filter(id => id !== p.id));
-              }}
-              className="rounded"
-            />
-            <span>{p.projectName}</span>
-          </label>
-        ))}
-        {available.length === 0 && <p className="text-sm text-muted-foreground py-2 text-center">No available projects</p>}
-      </div>
-      <Button size="sm" disabled={selected.length === 0 || linkMutation.isPending} onClick={() => linkMutation.mutate()}>
-        Link {selected.length} project{selected.length !== 1 ? "s" : ""}
-      </Button>
-    </div>
-  );
+interface ProjectLikeChild extends PriorityRow {
+  /** enriched-server shape — children share the PriorityRow envelope. */
+  id: number;
 }
 
-// ── Activity helpers ────────────────────────────────────────────
-function activityIcon(action: string) {
-  const c = "w-2.5 h-2.5";
-  switch (action) {
-    case "created": return <Flag className={`${c} text-emerald-600`} />;
-    case "closed": return <CheckCircle2 className={`${c} text-gray-500`} />;
-    case "reopened": return <LogIn className={`${c} text-emerald-600`} />;
-    case "marked_complete": return <CheckCircle2 className={`${c} text-emerald-600`} />;
-    case "escalated": return <ArrowUp className={`${c} text-orange-600`} />;
-    case "assigned": return <UserPlus className={`${c} text-blue-600`} />;
-    case "reassigned": return <UserPlus className={`${c} text-blue-600`} />;
-    case "unassigned": return <UserMinus className={`${c} text-gray-500`} />;
-    case "broken_down": return <GitBranch className={`${c} text-blue-600`} />;
-    case "project_linked": return <LinkIcon className={`${c} text-emerald-600`} />;
-    case "project_unlinked": return <LogOut className={`${c} text-gray-500`} />;
-    case "status_changed": return <AlertTriangle className={`${c} text-amber-600`} />;
-    case "severity_changed": return <AlertTriangle className={`${c} text-orange-600`} />;
-    case "manual_health_changed": return <AlertTriangle className={`${c} text-amber-600`} />;
-    case "manual_progress_changed": return <AlertTriangle className={`${c} text-amber-600`} />;
-    case "due_date_changed": return <AlertTriangle className={`${c} text-amber-600`} />;
-    case "owner_changed": return <UserPlus className={`${c} text-blue-600`} />;
-    case "accountable_exec_changed": return <UserPlus className={`${c} text-blue-600`} />;
-    case "project_rag_update": return <AlertTriangle className={`${c} text-amber-600`} />;
-    case "project_phase_change": return <GitBranch className={`${c} text-blue-600`} />;
-    default: return <AlertTriangle className={`${c} text-gray-500`} />;
-  }
+interface MergedTaskOrApproval {
+  id: number;
+  title: string;
+  status: string | null;
+  projectName: string;
+  assignee: string | null;
+  dueDate: string | null;
+  endDate?: string | null;
+  itemType: "task" | "approval";
 }
 
-function activitySentence(a: any): string {
-  const fromToUser = (from: string | null, to: string | null) =>
-    (a.fromName || from || "none") + " → " + (a.toName || to || "none");
-  const fromTo = (from: string | null, to: string | null) =>
-    (from ?? "none") + " → " + (to ?? "none");
-  switch (a.action) {
-    case "created": return "created this priority";
-    case "closed": return "closed it";
-    case "reopened": return "reopened it";
-    case "marked_complete": return "marked it complete";
-    case "escalated": return `escalated it${a.details?.reason ? ` (${a.details.reason})` : ""} → ${a.toValue ?? "next scope"}`;
-    case "assigned": return `assigned it to ${a.toName || `user #${a.toValue}`}`;
-    case "reassigned": return `reassigned ${fromToUser(a.fromValue, a.toValue)}`;
-    case "unassigned": return "unassigned it";
-    case "broken_down": return `broke it down into ${a.details?.childCount ?? "sub-"}priorit${a.details?.childCount === 1 ? "y" : "ies"}`;
-    case "project_linked": return `linked project #${a.toValue}`;
-    case "project_unlinked": return `unlinked project #${a.toValue}`;
-    case "status_changed": return `changed status ${fromTo(a.fromValue, a.toValue)}`;
-    case "severity_changed": return `changed severity ${fromTo(a.fromValue, a.toValue)}`;
-    case "manual_health_changed": return `set manual health ${fromTo(a.fromValue, a.toValue)}`;
-    case "manual_progress_changed": return `set manual progress ${fromTo(a.fromValue, a.toValue)}%`;
-    case "due_date_changed": return `changed due date ${fromTo(a.fromValue, a.toValue)}`;
-    case "owner_changed": return `changed owner ${fromToUser(a.fromValue, a.toValue)}`;
-    case "accountable_exec_changed": return `changed accountable exec ${fromToUser(a.fromValue, a.toValue)}`;
-    case "project_rag_update":
-      return `RAG on ${a.details?.projectName || "a linked project"} → ${a.toValue ?? "?"}${a.details?.comment ? ` — ${a.details.comment}` : ""}`;
-    case "project_phase_change":
-      return `${a.details?.projectName || "a linked project"} entered phase ${a.toValue ?? "?"}${a.details?.notes ? ` — ${a.details.notes}` : ""}`;
-    default: return `${a.action} ${fromTo(a.fromValue, a.toValue)}`;
-  }
-}
-
-function BreakDownDialog({ priorityId, open, onOpenChange }: { priorityId: number; open: boolean; onOpenChange: (v: boolean) => void }) {
-  const queryClient = useQueryClient();
-  const [rows, setRows] = useState([{ title: "", department_key: "", assigned_user_id: "" }]);
-
-  // Load users for the person-picker. Previously this dialog asked for a raw
-  // numeric user ID — which nobody memorises — so break-down with an assignee
-  // was effectively unusable. Now it's a SearchableSelect of names.
-  const { data: users = [] } = useQuery<{ id: number; name: string }[]>({
-    queryKey: ["/api/users-list-for-priority"],
-    queryFn: async () => {
-      const res = await fetch("/api/users", { credentials: "include", headers: { Authorization: `Bearer ${token()}` } });
-      if (!res.ok) return [];
-      const data = await res.json();
-      const rowsData = Array.isArray(data) ? data : data.users || data.data || [];
-      return rowsData.map((u: any) => ({ id: u.id, name: u.name }));
-    },
-    enabled: open,
-  });
-  const userOptions: SearchableSelectOption[] = useMemo(
-    () => users.map((u) => ({ value: String(u.id), label: u.name })),
-    [users],
-  );
-
-  const breakDownMutation = useMutation({
-    mutationFn: async () => {
-      const children = rows
-        .filter(r => r.title.trim())
-        .map(r => ({
-          title: r.title.trim(),
-          department_key: r.department_key || undefined,
-          assigned_user_id: r.assigned_user_id ? parseInt(r.assigned_user_id, 10) : undefined,
-        }));
-      const res = await fetch(`/api/priorities/${priorityId}/break-down`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
-        body: JSON.stringify({ children }),
-      });
-      if (!res.ok) throw new Error("Failed to break down priority");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}/children`] });
-      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
-      onOpenChange(false);
-      setRows([{ title: "", department_key: "", assigned_user_id: "" }]);
-    },
-  });
-
-  const updateRow = (idx: number, field: string, value: string) => {
-    setRows(prev => prev.map((r, i) => i === idx ? { ...r, [field]: value } : r));
-  };
-
-  const addRow = () => setRows(prev => [...prev, { title: "", department_key: "", assigned_user_id: "" }]);
-  const removeRow = (idx: number) => setRows(prev => prev.filter((_, i) => i !== idx));
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>Break Down Priority</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3">
-          <p className="text-sm text-muted-foreground">Create child priorities below this one.</p>
-          {rows.map((row, idx) => (
-            <div key={idx} className="grid grid-cols-12 gap-2 items-end border rounded p-2">
-              <div className="col-span-4">
-                <Label className="text-xs">Title *</Label>
-                <Input
-                  value={row.title}
-                  onChange={e => updateRow(idx, "title", e.target.value)}
-                  placeholder="Child priority title"
-                />
-              </div>
-              <div className="col-span-3">
-                <Label className="text-xs">Department</Label>
-                <Select value={row.department_key} onValueChange={v => updateRow(idx, "department_key", v)}>
-                  <SelectTrigger><SelectValue placeholder="Select dept" /></SelectTrigger>
-                  <SelectContent>
-                    {DEPARTMENT_OPTIONS.map(d => (
-                      <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="col-span-4">
-                <Label className="text-xs">Assign to</Label>
-                <SearchableSelect
-                  options={userOptions}
-                  value={row.assigned_user_id}
-                  onValueChange={(v) => updateRow(idx, "assigned_user_id", v)}
-                  placeholder="Optional — pick a person"
-                  searchPlaceholder="Search people..."
-                />
-              </div>
-              <div className="col-span-1 flex justify-end">
-                {rows.length > 1 && (
-                  <button onClick={() => removeRow(idx)} className="text-muted-foreground hover:text-red-600 mt-1" aria-label="Remove sub-priority">
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
-          <Button variant="outline" size="sm" onClick={addRow}>
-            <Plus className="w-3 h-3 mr-1" /> Add another
-          </Button>
-        </div>
-        <div className="flex justify-end gap-2 mt-2">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button
-            onClick={() => breakDownMutation.mutate()}
-            disabled={breakDownMutation.isPending || !rows.some(r => r.title.trim())}
-          >
-            {breakDownMutation.isPending ? "Creating..." : "Create sub-priorities"}
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
+// ── Activity helpers (re-exported from lib for use in JSX below) ──
 export default function PriorityDetailPage() {
   const [, params] = useRoute("/priorities/:id");
   const priorityId = params?.id ? parseInt(params.id) : 0;
@@ -358,80 +113,76 @@ export default function PriorityDetailPage() {
   });
 
   const isAdmin = isPriorityAdminRole(user?.role);
+  const { confirm, dialog: confirmDialog } = useConfirmDialog();
 
-  const { data: priority, isLoading, isError, error, refetch } = useQuery<any>({
+  const { data: priority, isLoading, isError, error, refetch } = useQuery<PriorityDetail>({
     queryKey: [`/api/priorities/${priorityId}`],
     queryFn: async () => {
-      const res = await fetch(`/api/priorities/${priorityId}`, { headers: { Authorization: `Bearer ${token()}` } });
-      if (!res.ok) throw new Error("Failed to fetch data (" + res.status + ")");
+      const res = await apiRequest("GET", `/api/priorities/${priorityId}`);
       return res.json();
     },
     enabled: priorityId > 0,
   });
 
-  const { data: tasks = [] } = useQuery<any[]>({
+  const hasAnyProjects = priorityId > 0
+    && ((priority?.rolledUp?.projectCount ?? 0) > 0 || !!priority?.hasProjects);
+
+  const subResourceFetcher = async <T,>(url: string, fallback: T): Promise<T> => {
+    try {
+      const res = await apiRequest("GET", url);
+      return (await res.json()) as T;
+    } catch {
+      return fallback;
+    }
+  };
+
+  const { data: tasks = [] } = useQuery<MergedTaskOrApproval[]>({
     queryKey: [`/api/priorities/${priorityId}/tasks`],
-    queryFn: async () => {
-      const res = await fetch(`/api/priorities/${priorityId}/tasks`, { headers: { Authorization: `Bearer ${token()}` } });
-      if (!res.ok) return [];
-      return res.json();
-    },
-    enabled: priorityId > 0 && ((priority?.rolledUp?.projectCount ?? 0) > 0 || !!priority?.hasProjects),
+    queryFn: () => subResourceFetcher(`/api/priorities/${priorityId}/tasks`, [] as MergedTaskOrApproval[]),
+    enabled: hasAnyProjects,
   });
 
-  const { data: pendingApprovals = [] } = useQuery<any[]>({
+  const { data: pendingApprovals = [] } = useQuery<MergedTaskOrApproval[]>({
     queryKey: [`/api/priorities/${priorityId}/approvals`],
-    queryFn: async () => {
-      const res = await fetch(`/api/priorities/${priorityId}/approvals`, { headers: { Authorization: `Bearer ${token()}` } });
-      if (!res.ok) return [];
-      return res.json();
-    },
-    enabled: priorityId > 0 && ((priority?.rolledUp?.projectCount ?? 0) > 0 || !!priority?.hasProjects),
+    queryFn: () => subResourceFetcher(`/api/priorities/${priorityId}/approvals`, [] as MergedTaskOrApproval[]),
+    enabled: hasAnyProjects,
   });
 
-  const { data: updates = [] } = useQuery<any[]>({
+  interface ProjectUpdateRow {
+    projectId: number;
+    projectName: string;
+    phase: string | null;
+    ragStatus: string | null;
+    ragComment: string | null;
+    phaseNotes: string | null;
+    date: string | null;
+  }
+  const { data: updates = [] } = useQuery<ProjectUpdateRow[]>({
     queryKey: [`/api/priorities/${priorityId}/updates`],
-    queryFn: async () => {
-      const res = await fetch(`/api/priorities/${priorityId}/updates`, { headers: { Authorization: `Bearer ${token()}` } });
-      if (!res.ok) return [];
-      return res.json();
-    },
-    enabled: priorityId > 0 && ((priority?.rolledUp?.projectCount ?? 0) > 0 || !!priority?.hasProjects),
+    queryFn: () => subResourceFetcher(`/api/priorities/${priorityId}/updates`, [] as ProjectUpdateRow[]),
+    enabled: hasAnyProjects,
   });
 
-  const { data: children = [] } = useQuery<any[]>({
+  const { data: children = [] } = useQuery<ProjectLikeChild[]>({
     queryKey: [`/api/priorities/${priorityId}/children`],
-    queryFn: async () => {
-      const res = await fetch(`/api/priorities/${priorityId}/children`, { headers: { Authorization: `Bearer ${token()}` } });
-      if (!res.ok) return [];
-      return res.json();
-    },
+    queryFn: () => subResourceFetcher(`/api/priorities/${priorityId}/children`, [] as ProjectLikeChild[]),
     enabled: priorityId > 0,
   });
 
-  const { data: activity = [] } = useQuery<any[]>({
+  const { data: activity = [] } = useQuery<PriorityActivityRow[]>({
     queryKey: [`/api/priorities/${priorityId}/activity`, showProjectEvents],
-    queryFn: async () => {
-      const url = `/api/priorities/${priorityId}/activity${showProjectEvents ? "?include_project_events=true" : ""}`;
-      const res = await fetch(url, { headers: { Authorization: `Bearer ${token()}` } });
-      if (!res.ok) return [];
-      return res.json();
-    },
+    queryFn: () => subResourceFetcher(
+      `/api/priorities/${priorityId}/activity${showProjectEvents ? "?include_project_events=true" : ""}`,
+      [] as PriorityActivityRow[],
+    ),
     enabled: priorityId > 0,
   });
 
   const escalateMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch(`/api/priorities/${priorityId}/escalate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
-        body: JSON.stringify({ reason: "manual" }),
-      });
-      if (!res.ok) throw new Error("Failed to escalate");
-      return res.json();
-    },
+    mutationFn: () => apiRequest("POST", `/api/priorities/${priorityId}/escalate`, { reason: "manual" }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}/activity`] });
       queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
     },
   });
@@ -521,8 +272,8 @@ export default function PriorityDetailPage() {
 
   // Merged tasks + approvals
   const mergedItems = [
-    ...tasks.map((t: any) => ({ ...t, itemType: "task" })),
-    ...pendingApprovals.map((a: any) => ({ ...a, itemType: "approval" })),
+    ...tasks.map((t) => ({ ...t, itemType: "task" as const })),
+    ...pendingApprovals.map((a) => ({ ...a, itemType: "approval" as const })),
   ].sort((a, b) => {
     const aBlocked = a.status?.toLowerCase().includes("block") ? 0 : 1;
     const bBlocked = b.status?.toLowerCase().includes("block") ? 0 : 1;
@@ -556,7 +307,15 @@ export default function PriorityDetailPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => { if (confirm("Close this priority?")) closePriorityMutation.mutate(); }}
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: "Close this priority?",
+                      description: "It will be soft-closed and hidden from the active list.",
+                      confirmLabel: "Close",
+                      destructive: true,
+                    });
+                    if (ok) closePriorityMutation.mutate();
+                  }}
                   disabled={closePriorityMutation.isPending}
                 >
                   {closePriorityMutation.isPending ? "Closing..." : "Close"}
@@ -613,7 +372,14 @@ export default function PriorityDetailPage() {
                   size="sm"
                   variant="outline"
                   className="text-xs h-7"
-                  onClick={() => { if (confirm("Escalate this priority?")) escalateMutation.mutate(); }}
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: "Escalate this priority?",
+                      description: "It will move one scope upward (role → department → company).",
+                      confirmLabel: "Escalate",
+                    });
+                    if (ok) escalateMutation.mutate();
+                  }}
                   disabled={escalateMutation.isPending}
                 >
                   {escalateMutation.isPending ? "Escalating..." : "Escalate"}
@@ -761,7 +527,7 @@ export default function PriorityDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {linkedProjects.map((p: any) => {
+                {linkedProjects.map((p: LinkedProject) => {
                   const linkedDirectly = p.linkedDirectly ?? true;
                   return (
                     <tr key={p.id} className="border-b hover:bg-muted/50">
@@ -789,11 +555,19 @@ export default function PriorityDetailPage() {
                         <td className="py-2">
                           {linkedDirectly ? (
                             <button
-                              onClick={() => { if (confirm("Unlink this project?")) unlinkMutation.mutate(p.id); }}
+                              onClick={async () => {
+                                const ok = await confirm({
+                                  title: "Unlink this project?",
+                                  description: "The priority's rolled-up totals will recalculate without it.",
+                                  confirmLabel: "Unlink",
+                                });
+                                if (ok) unlinkMutation.mutate(p.id);
+                              }}
                               className="text-muted-foreground hover:text-red-600"
                               title="Unlink project"
+                              aria-label={`Unlink ${p.name}`}
                             >
-                              <X className="w-3.5 h-3.5" />
+                              <X className="w-3.5 h-3.5" aria-hidden="true" />
                             </button>
                           ) : (
                             <span className="text-muted-foreground/40" title="Managed by sub-priority — unlink there">
@@ -851,7 +625,7 @@ export default function PriorityDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {linkedProjects.map((p: any) => (
+                {linkedProjects.map((p: LinkedProject) => (
                   <tr key={p.id} className="border-b hover:bg-muted/50">
                     <td className="py-2 font-medium">{p.name}</td>
                     <td className="py-2 text-right">{p.totalRevenue ? formatCurrency(p.totalRevenue) : "—"}</td>
@@ -873,7 +647,7 @@ export default function PriorityDetailPage() {
             <p className="text-sm text-muted-foreground py-4 text-center">No tasks or approvals for linked projects</p>
           ) : (
             <div className="space-y-1">
-              {mergedItems.slice(0, 50).map((item: any, i: number) => (
+              {mergedItems.slice(0, 50).map((item) => (
                 <div key={`${item.itemType}-${item.id}`} className="flex items-center gap-3 px-3 py-2 rounded hover:bg-muted text-sm border-b">
                   {item.itemType === "task" ? (
                     <ListTodo className="w-3.5 h-3.5 text-blue-500 shrink-0" />
@@ -937,8 +711,8 @@ export default function PriorityDetailPage() {
               <div className="pl-11 space-y-3">
                 <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Sub-priorities ({children.length})</p>
                 {(() => {
-                  const grouped: Record<string, any[]> = {};
-                  children.forEach((c: any) => {
+                  const grouped: Record<string, ProjectLikeChild[]> = {};
+                  children.forEach((c) => {
                     const key = c.departmentKey || "other";
                     if (!grouped[key]) grouped[key] = [];
                     grouped[key].push(c);
@@ -947,10 +721,10 @@ export default function PriorityDetailPage() {
                     <div key={dept} className="space-y-1">
                       {Object.keys(grouped).length > 1 && (
                         <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">
-                          {DEPARTMENT_OPTIONS.find(d => d.value === dept)?.label || dept}
+                          {departmentLabel(dept)}
                         </p>
                       )}
-                      {deptChildren.map((child: any) => {
+                      {deptChildren.map((child) => {
                         const childDays = daysRemaining(child.dueDate);
                         return (
                           <div key={child.id} className="flex items-center gap-3 px-3 py-2 rounded border hover:bg-muted/50 text-sm">
@@ -995,7 +769,7 @@ export default function PriorityDetailPage() {
             </p>
           ) : (
             <div className="space-y-3">
-              {updates.map((u: any, i: number) => (
+              {updates.map((u, i) => (
                 <Card key={i}>
                   <CardContent className="p-3">
                     <div className="flex items-center gap-2 mb-1">
@@ -1035,14 +809,14 @@ export default function PriorityDetailPage() {
             <p className="text-sm text-muted-foreground py-4 text-center">No activity recorded yet for this priority.</p>
           ) : (
             <ol className="relative border-l border-border pl-4 space-y-3">
-              {activity.map((a: any) => (
+              {activity.map((a) => (
                 <li key={a.id} className="relative">
                   <span className="absolute -left-[22px] top-1 w-4 h-4 rounded-full bg-background border border-border flex items-center justify-center">
-                    {activityIcon(a.action)}
+                    <ActivityIcon action={a.action} />
                   </span>
                   <div className="text-xs">
                     <span className="font-medium text-foreground">{a.actorName || (a.source === "project" ? "Project update" : "Someone")}</span>
-                    <span className="text-muted-foreground"> {activitySentence(a)}</span>
+                    <span className="text-muted-foreground"> {formatActivitySentence(a)}</span>
                     {a.source === "project" && (
                       <Badge variant="secondary" className="ml-2 text-[9px] bg-blue-50 text-blue-700">project</Badge>
                     )}
@@ -1065,7 +839,7 @@ export default function PriorityDetailPage() {
             </DialogHeader>
             <ProjectLinker
               priorityId={priorityId}
-              existingProjectIds={linkedProjects.map((p: any) => p.id)}
+              existingProjectIds={linkedProjects.map((p: LinkedProject) => p.id)}
               onDone={() => setLinkDialogOpen(false)}
             />
           </DialogContent>
@@ -1152,6 +926,8 @@ export default function PriorityDetailPage() {
           onOpenChange={setBreakDownDialogOpen}
         />
       )}
+
+      {confirmDialog}
     </PageShell>
   );
 }
