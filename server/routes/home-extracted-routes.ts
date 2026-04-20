@@ -23,6 +23,11 @@ import { resolveInflowEffectiveDates } from "../lib/cashflow-helpers";
 import { getAllPMWorkItemsAsProjectPlan } from "../work-items-adapter";
 import { safeNum, isWithinDays, isThisWeek, isThisMonth, getFYRange, findMaxEndDate, findMinStartDate } from "../lib/home-helpers";
 import { getCanonicalAllCurrentCostLines } from "../services/project-cost-line-read-service";
+import {
+  sumRevenueRecognition,
+  sumRealisedRevenueRecognition,
+} from "../lib/finance/revenue-recognition";
+import { getCosEffectiveDateAndSource } from "../lib/expense-row-selector";
 
 export function registerHomeExtractedRoutes(app: Express): void {
 
@@ -194,38 +199,32 @@ export function registerHomeExtractedRoutes(app: Express): void {
         if (isWithinDays(dates.clientHandover, 30)) clientHandoverDue30++;
       }
 
-      // Financial summary - compute from raw data tables
-      // If revenueSummaries table has data, use it; otherwise compute from raw inflows/expenses
+      // Financial summary — CANONICAL Revenue Recognition (POC method).
+      // actualRevenue = sum of revenue_recognition_amount on cost lines whose
+      // underlying COS is effectively realised (past-month auto-promote +
+      // canonical strict realisation check). This matches the Revenue Tracker
+      // and FY Revenue Tracker. Cash inflows / outstanding AR are reported
+      // separately below.
       let actualRevenue = 0, actualExpenses = 0, currentVoTotal = 0;
-      
-      const hasRevenueSummaryData = revenueSummaries.length > 0;
-      if (hasRevenueSummaryData) {
-        for (const rs of revenueSummaries) {
-          actualRevenue += safeNum(rs.actualRevenue);
-          actualExpenses += safeNum(rs.actualExpenditure);
-          currentVoTotal += safeNum(rs.currentVoTotal);
-        }
-      } else {
-        // Fallback: compute from normalized_revenue_lines and normalized_cost_lines using proper in-bank/paid logic
-        for (const inflow of allInflows) {
-          if (inflow.milestoneAmount) {
-            const manualInBank = (inflow as any).inBank === 1 || (inflow as any).inBank === '1' || (inflow as any).inBank === true;
-            const hasInvoice = !!(inflow.milestoneInvoiceNumber && String(inflow.milestoneInvoiceNumber).trim());
-            const hasPaymentReceived = !!(inflow.paymentReceivedDate && String(inflow.paymentReceivedDate).trim() && inflow.paymentReceivedDate !== '-');
-            const isInBank = manualInBank || (hasPaymentReceived && hasInvoice);
-            if (isInBank) {
-              actualRevenue += safeNum(inflow.milestoneAmount);
-            }
+      const nowHm = new Date();
+      const cmkHm = `${nowHm.getUTCFullYear()}-${String(nowHm.getUTCMonth() + 1).padStart(2, '0')}`;
+      const getCosMonthKeyHm = (line: any): string | null => {
+        const { date } = getCosEffectiveDateAndSource(line);
+        return date ? date.substring(0, 7) : null;
+      };
+      actualRevenue = sumRealisedRevenueRecognition(allExpenses as any, cmkHm, getCosMonthKeyHm);
+      const plannedRevenue = sumRevenueRecognition(allExpenses as any);
+      for (const expense of allExpenses) {
+        if (expense.expenseActualTotal) {
+          const state = classifyExpenseState(expense as any);
+          if (state === 'Paid') {
+            actualExpenses += safeNum(expense.expenseActualTotal);
           }
         }
-        for (const expense of allExpenses) {
-          if (expense.expenseActualTotal) {
-            const state = classifyExpenseState(expense as any);
-            if (state === 'Paid') {
-              actualExpenses += safeNum(expense.expenseActualTotal);
-            }
-          }
-        }
+      }
+      // VO totals still come from the legacy revenue summaries table.
+      for (const rs of revenueSummaries) {
+        currentVoTotal += safeNum(rs.currentVoTotal);
       }
       const grossProfit = actualRevenue - actualExpenses;
       const grossProfitPercent = actualRevenue > 0 ? (grossProfit / actualRevenue) * 100 : 0;
@@ -321,6 +320,8 @@ export function registerHomeExtractedRoutes(app: Express): void {
         top5BehindPlan,
         financial: {
           actualRevenue,
+          plannedRevenue,
+          revenueMethod: "POC",
           actualExpenses,
           grossProfit,
           grossProfitPercent,
