@@ -6,3 +6,9 @@ id = "JYMHnepAZWIB08D5GfGhF"
 uri = "file://.local/navigation-audit.md"
 type = "text"
 title = "Navigation Audit — Full Mapping"
+
+[[outputs]]
+id = "-5PXst0qSwLlJqGzaKIWd"
+uri = "file://tmp/fy26-cos-by-project-month.csv"
+type = "table"
+title = "FY26 COS by Project & Month (Production)"
