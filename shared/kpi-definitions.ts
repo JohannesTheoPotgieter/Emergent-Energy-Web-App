@@ -69,6 +69,109 @@ export function deriveHealthFromRagStatuses(ragStatuses: string[]): PriorityHeal
   return "healthy";
 }
 
+const HEALTH_RANK: Record<PriorityHealth, number> = {
+  healthy: 0,
+  at_risk: 1,
+  critical: 2,
+};
+
+function worstHealth(...candidates: (PriorityHealth | null | undefined)[]): PriorityHealth {
+  let worst: PriorityHealth = "healthy";
+  for (const c of candidates) {
+    if (!c) continue;
+    if (HEALTH_RANK[c] > HEALTH_RANK[worst]) worst = c;
+  }
+  return worst;
+}
+
+export interface EffectivePriorityHealthInput {
+  /** Manual override set by owner (optional). */
+  manualHealth: PriorityHealth | null | undefined;
+  /** Health derived from linked projects' RAG (null if no projects). */
+  derivedHealth: PriorityHealth | null | undefined;
+  /** Priority severity — "critical" amplifies overdue signals. */
+  severity: string | null | undefined;
+  /** Due date as ISO date string ("YYYY-MM-DD") or null. */
+  dueDate: string | null | undefined;
+  /** Status — "closed" / "complete" short-circuit to healthy. */
+  status: string | null | undefined;
+  /** Count of open blocker work-items on linked projects. */
+  blockerCount: number;
+  /** Optional "now" override, for deterministic tests. Defaults to new Date(). */
+  now?: Date;
+}
+
+export interface EffectivePriorityHealthResult {
+  health: PriorityHealth;
+  /** Human-readable reasons, ordered by contribution. */
+  reasons: string[];
+}
+
+/**
+ * Computes the effective health of a priority by taking the worst-of
+ * across every available signal:
+ *   - manual override by the owner
+ *   - linked-projects' RAG (from priority_derived_metrics.derived_health)
+ *   - overdue-days amplified by severity
+ *   - open blocker count
+ *
+ * If status is "complete" or "closed" the priority is always healthy
+ * regardless of other inputs — finished work shouldn't keep signalling.
+ */
+export function computeEffectivePriorityHealth(
+  input: EffectivePriorityHealthInput,
+): EffectivePriorityHealthResult {
+  const reasons: string[] = [];
+  const status = (input.status || "").toLowerCase();
+  if (status === "complete" || status === "closed") {
+    return { health: "healthy", reasons: [] };
+  }
+
+  // Overdue signal — date-only comparison so timezone doesn't flip the day.
+  let overdueSignal: PriorityHealth | null = null;
+  if (input.dueDate) {
+    const today = (input.now ?? new Date()).toISOString().slice(0, 10);
+    if (input.dueDate < today) {
+      const dueMs = Date.parse(input.dueDate + "T00:00:00Z");
+      const todayMs = Date.parse(today + "T00:00:00Z");
+      const overdueDays = Math.floor((todayMs - dueMs) / 86_400_000);
+      const severityCritical = (input.severity || "").toLowerCase() === "critical";
+      if (overdueDays >= 30 || (severityCritical && overdueDays >= 14)) {
+        overdueSignal = "critical";
+        reasons.push(`${overdueDays}d overdue${severityCritical ? " (critical severity)" : ""}`);
+      } else if (overdueDays >= 1) {
+        overdueSignal = "at_risk";
+        reasons.push(`${overdueDays}d overdue`);
+      }
+    }
+  }
+
+  // Blocker signal
+  let blockerSignal: PriorityHealth | null = null;
+  if (input.blockerCount >= 3) {
+    blockerSignal = "critical";
+    reasons.push(`${input.blockerCount} blockers`);
+  } else if (input.blockerCount >= 1) {
+    blockerSignal = "at_risk";
+    reasons.push(`${input.blockerCount} blocker${input.blockerCount > 1 ? "s" : ""}`);
+  }
+
+  if (input.derivedHealth && input.derivedHealth !== "healthy") {
+    reasons.push(`project RAG ${input.derivedHealth === "critical" ? "red" : "amber"}`);
+  }
+  if (input.manualHealth && input.manualHealth !== "healthy") {
+    reasons.push(`manually flagged ${input.manualHealth === "critical" ? "critical" : "at risk"}`);
+  }
+
+  const health = worstHealth(
+    input.manualHealth,
+    input.derivedHealth,
+    overdueSignal,
+    blockerSignal,
+  );
+  return { health, reasons };
+}
+
 export type KpiSourceLayer = "foundation" | "business_logic" | "derived_kpi" | "view_model";
 
 export interface KpiDefinition {

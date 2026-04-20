@@ -13,7 +13,7 @@ import {
   approvals,
 } from "@shared/schema";
 import { eq, and, sql, desc, asc, inArray, isNull, ne } from "drizzle-orm";
-import { PRIORITY_HEALTH_VALUES, type PriorityHealth } from "@shared/kpi-definitions";
+import { PRIORITY_HEALTH_VALUES, type PriorityHealth, computeEffectivePriorityHealth } from "@shared/kpi-definitions";
 import { PRIORITY_SCOPES, ESCALATION_REASONS, type PriorityScope } from "@shared/config/priorities";
 
 const router = Router();
@@ -76,6 +76,7 @@ interface PriorityWithMetrics {
   assignedUser: { id: number; name: string } | null;
   effectiveHealth: PriorityHealth;
   effectiveProgress: number;
+  healthReasons: string[];
   projectCount: number;
   atRiskProjectCount: number;
   totalRevenue: number;
@@ -177,10 +178,19 @@ async function enrichPriority(
 
   const projectCount = Number(metrics?.project_count || 0);
   const hasProjects = projectCount > 0;
+  const blockerCount = Number(metrics?.blocker_count || 0);
 
-  const effectiveHealth: PriorityHealth = hasProjects
-    ? (metrics?.derived_health || "healthy")
-    : ((p.manualHealth as PriorityHealth) || "healthy");
+  const derivedHealth = hasProjects ? (metrics?.derived_health ?? null) : null;
+  const manualHealth = (p.manualHealth as PriorityHealth | null) || null;
+
+  const { health: effectiveHealth, reasons: healthReasons } = computeEffectivePriorityHealth({
+    manualHealth,
+    derivedHealth,
+    severity: p.severity,
+    dueDate: p.dueDate,
+    status: p.status,
+    blockerCount,
+  });
 
   const effectiveProgress = hasProjects
     ? Math.round(Number(metrics?.avg_progress || 0))
@@ -197,12 +207,13 @@ async function enrichPriority(
     assignedUser,
     effectiveHealth,
     effectiveProgress,
+    healthReasons,
     projectCount,
     atRiskProjectCount: Number(metrics?.at_risk_project_count || 0),
     totalRevenue: Number(metrics?.total_revenue || 0),
     totalCos: Number(metrics?.total_cos || 0),
     totalGp: Number(metrics?.total_gp || 0),
-    blockerCount: Number(metrics?.blocker_count || 0),
+    blockerCount,
     openTaskCount: Number(metrics?.open_task_count || 0),
     hasProjects,
     childCount: childCountMap?.get(p.id) ?? 0,
@@ -753,21 +764,27 @@ router.get("/api/projects/:id/priorities", requireAuth, async (req: Request, res
         severity: mytoolCompanyPriorities.severity,
         manualHealth: mytoolCompanyPriorities.manualHealth,
         status: mytoolCompanyPriorities.status,
+        dueDate: mytoolCompanyPriorities.dueDate,
       })
       .from(priorityProjects)
       .innerJoin(mytoolCompanyPriorities, eq(priorityProjects.priorityId, mytoolCompanyPriorities.id))
       .where(eq(priorityProjects.projectId, projectId));
 
-    // Compute effective health for each
+    // Compute effective health for each using the shared rule engine
     const allMetrics = await getAllPriorityDerivedMetrics();
     const metricsMap = new Map(allMetrics.map((m: any) => [m.priority_id, m]));
 
     const result = priorities.map((p: typeof priorities[number]) => {
       const metrics = metricsMap.get(p.id);
       const projectCount = Number(metrics?.project_count || 0);
-      const effectiveHealth = projectCount > 0
-        ? (metrics?.derived_health || "healthy")
-        : (p.manualHealth || "healthy");
+      const { health: effectiveHealth } = computeEffectivePriorityHealth({
+        manualHealth: p.manualHealth as PriorityHealth | null,
+        derivedHealth: projectCount > 0 ? (metrics?.derived_health ?? null) : null,
+        severity: p.severity,
+        dueDate: p.dueDate,
+        status: p.status,
+        blockerCount: Number(metrics?.blocker_count || 0),
+      });
 
       return {
         id: p.id,
@@ -805,7 +822,9 @@ router.get("/api/priorities/:id/tasks", requireAuth, async (req: Request, res: R
       .where(inArray(projectInfo.id, projectIds));
     const projectNameMap = new Map(projects.map((p: typeof projects[number]) => [p.id, p.name]));
 
-    // Get tasks from linked projects
+    // Get OPEN tasks from linked projects — matches the filter used by the
+    // priority_derived_metrics.open_task_count column so the card count and
+    // the drill-down list always agree.
     const tasks = await db
       .select({
         id: workItems.id,
@@ -822,6 +841,7 @@ router.get("/api/priorities/:id/tasks", requireAuth, async (req: Request, res: R
       .where(and(
         inArray(workItems.projectId, projectIds),
         isNull(workItems.deletedAt),
+        sql`LOWER(${workItems.status}) NOT IN ('complete', 'completed', 'done', 'cancelled', 'canceled', 'qc approved')`,
       ))
       .orderBy(asc(workItems.endDate));
 

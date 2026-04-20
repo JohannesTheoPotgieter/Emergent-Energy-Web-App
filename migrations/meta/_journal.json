@@ -15,6 +15,13 @@
       "when": 1776674287418,
       "tag": "0001_opportunity_province",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1777247999000,
+      "tag": "0002_priority_derived_metrics_view",
+      "breakpoints": true
     }
   ]
 }
