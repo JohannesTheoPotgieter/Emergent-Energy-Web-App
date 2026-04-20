@@ -70,7 +70,6 @@ export function sendError(res: Response, error: unknown, traceId?: string) {
       error: error.code,
       code: error.code,
       type: error.code,
-      // eslint-disable-next-line no-restricted-syntax -- intentional: ApiError messages are user-authored and safe
       message: error.message,
     };
     if (error.details) {

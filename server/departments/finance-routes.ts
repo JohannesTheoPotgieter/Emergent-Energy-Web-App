@@ -19,6 +19,69 @@ import { paramStr } from "../lib/req-params";
 import { requirePermission } from "../permission-middleware";
 import { requireTrackerPermission } from "../lib/finance-route-access";
 import { z } from "zod";
+import { validateBody } from "../middleware/validateBody";
+
+// ── Finance write-surface Zod schemas (Phase 2b-PR2) ──
+// .passthrough() for now so existing UI payloads survive; tighten in a
+// follow-up PR once traffic confirms the shape.
+const isoDateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "YYYY-MM-DD");
+const decimalLike = z.union([z.string(), z.number()]);
+const expenseDateOverrideSchema = z
+  .object({
+    expenseId: z.coerce.number().int().positive(),
+    dateOverride: isoDateStr.nullable().optional(),
+    reason: z.string().max(500).optional().nullable(),
+  })
+  .passthrough();
+const inflowDateOverrideSchema = z
+  .object({
+    inflowId: z.coerce.number().int().positive(),
+    dateOverride: isoDateStr.nullable().optional(),
+    reason: z.string().max(500).optional().nullable(),
+  })
+  .passthrough();
+const openingBalanceSchema = z
+  .object({
+    weekStartDate: isoDateStr,
+    openingBalance: decimalLike,
+    computedValue: decimalLike.nullable().optional(),
+    clearForward: z.boolean().optional(),
+  })
+  .passthrough();
+const opexBudgetSchema = z
+  .object({
+    monthKey: z.string().regex(/^\d{4}-\d{2}$/, "YYYY-MM"),
+    amount: decimalLike,
+  })
+  .passthrough();
+const opexWeeklySchema = z
+  .object({
+    weekStartDate: isoDateStr,
+    amount: decimalLike,
+  })
+  .passthrough();
+const cosPeriodLockSchema = z
+  .object({ notes: z.string().max(500).optional().nullable() })
+  .passthrough();
+const planningOverridesSchema = z
+  .object({
+    overrides: z.array(z.object({
+      projectName: z.string().min(1),
+      overrideValue: decimalLike,
+    }).passthrough()).min(1),
+    overrideCategory: z.string().min(1),
+    overrideComment: z.string().min(3).max(1000),
+  })
+  .passthrough();
+const revenueTrackingOverridesSchema = z
+  .object({
+    overrides: z.array(z.object({
+      projectName: z.string().min(1),
+    }).passthrough()).min(1),
+    overrideCategory: z.string().min(1),
+    overrideComment: z.string().min(3).max(1000),
+  })
+  .passthrough();
 import {
   approvals,
   changeSets,
@@ -1321,7 +1384,7 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
 
 // ==================== ADMIN DATE OVERRIDE ENDPOINTS ====================
 
-router.post("/api/cashflow-2026/expense-date-override", requireAuth, requirePermission("cashflow", "edit"), async (req, res) => {
+router.post("/api/cashflow-2026/expense-date-override", requireAuth, requirePermission("cashflow", "edit"), validateBody(expenseDateOverrideSchema), async (req, res) => {
   try {
     const { expenseId, dateOverride, reason } = req.body;
     if (!expenseId) {
@@ -1416,7 +1479,7 @@ router.post("/api/cashflow-2026/expense-date-override", requireAuth, requirePerm
   }
 });
 
-router.post("/api/cashflow-2026/inflow-date-override", requireAuth, requirePermission("cashflow", "edit"), async (req, res) => {
+router.post("/api/cashflow-2026/inflow-date-override", requireAuth, requirePermission("cashflow", "edit"), validateBody(inflowDateOverrideSchema), async (req, res) => {
   try {
     const { inflowId, dateOverride, reason } = req.body;
     if (!inflowId) {
@@ -1513,7 +1576,7 @@ router.post("/api/cashflow-2026/inflow-date-override", requireAuth, requirePermi
 
 // ==================== MANUAL INPUT ENDPOINTS ====================
 
-router.post("/api/cashflow-2026/opening-balance", requireAuth, requirePermission("cashflow", "edit"), async (req, res) => {
+router.post("/api/cashflow-2026/opening-balance", requireAuth, requirePermission("cashflow", "edit"), validateBody(openingBalanceSchema), async (req, res) => {
   try {
     const { weekStartDate, openingBalance, computedValue, clearForward } = req.body;
     if (!weekStartDate || openingBalance == null) {
@@ -1596,7 +1659,7 @@ router.delete("/api/cashflow-2026/opening-balance", requireAuth, requirePermissi
   }
 });
 
-router.post("/api/cashflow-2026/opex-budget", requireAuth, requirePermission("cashflow", "edit"), async (req, res) => {
+router.post("/api/cashflow-2026/opex-budget", requireAuth, requirePermission("cashflow", "edit"), validateBody(opexBudgetSchema), async (req, res) => {
   try {
     const { monthKey, amount } = req.body;
     if (!monthKey || amount == null) {
@@ -1620,7 +1683,7 @@ router.get("/api/cashflow-2026/opex-budget", requireAuth, requirePermission("cas
   }
 });
 
-router.post("/api/cashflow-2026/opex-weekly", requireAuth, requirePermission("cashflow", "edit"), async (req, res) => {
+router.post("/api/cashflow-2026/opex-weekly", requireAuth, requirePermission("cashflow", "edit"), validateBody(opexWeeklySchema), async (req, res) => {
   try {
     const { weekStartDate, opexAmount } = req.body;
     if (!weekStartDate || opexAmount == null) {
@@ -2686,7 +2749,7 @@ router.get("/api/cos-periods/status", requireAuth, async (req, res) => {
   }
 });
 
-router.post("/api/cos-periods/:yyyyMm/lock", requireAuth, requirePeriodLockRole, async (req, res) => {
+router.post("/api/cos-periods/:yyyyMm/lock", requireAuth, requirePeriodLockRole, validateBody(cosPeriodLockSchema), async (req, res) => {
   try {
     const period = parsePeriodParam(String(req.params.yyyyMm));
     if (!period) return res.status(400).json({ error: "Invalid period. Expected YYYY-MM." });
@@ -2725,7 +2788,7 @@ router.post("/api/cos-periods/:yyyyMm/lock", requireAuth, requirePeriodLockRole,
   }
 });
 
-router.post("/api/cos-periods/:yyyyMm/unlock", requireAuth, requirePeriodLockRole, async (req, res) => {
+router.post("/api/cos-periods/:yyyyMm/unlock", requireAuth, requirePeriodLockRole, validateBody(cosPeriodLockSchema), async (req, res) => {
   try {
     const period = parsePeriodParam(String(req.params.yyyyMm));
     if (!period) return res.status(400).json({ error: "Invalid period. Expected YYYY-MM." });
@@ -4164,7 +4227,7 @@ router.get("/api/cashflow/planning-overrides", requireAuth, async (req, res) => 
   }
 });
 
-router.post("/api/cashflow/planning-overrides", requireAuth, requireAdmin, async (req, res) => {
+router.post("/api/cashflow/planning-overrides", requireAuth, requireAdmin, validateBody(planningOverridesSchema), async (req, res) => {
   try {
     const { overrides, overrideCategory, overrideComment } = req.body;
 
@@ -4248,7 +4311,7 @@ router.get("/api/revenue-tracking/overrides", requireAuth, async (req, res) => {
   }
 });
 
-router.post("/api/revenue-tracking/overrides", requireAuth, requireAdminOrFinancialEditor, requirePermission('financials', 'edit'), async (req, res) => {
+router.post("/api/revenue-tracking/overrides", requireAuth, requireAdminOrFinancialEditor, requirePermission('financials', 'edit'), validateBody(revenueTrackingOverridesSchema), async (req, res) => {
   try {
     const { overrides, overrideCategory, overrideComment } = req.body;
     if (!Array.isArray(overrides)) {
