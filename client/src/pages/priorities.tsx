@@ -231,7 +231,7 @@ export function PriorityCard({ priority, showEscalate, onEscalate, showMarkCompl
         </div>
 
         {/* Action buttons */}
-        {(showMarkComplete || (showEscalate && priority.scope !== "company" && !priority.escalated) || showDeptActions) && (
+        {(showMarkComplete || (showEscalate && priority.scope !== "company") || showDeptActions) && (
           <div className="mt-2 pt-2 border-t flex items-center gap-2 flex-wrap">
             {showMarkComplete && (
               <Button
@@ -251,12 +251,13 @@ export function PriorityCard({ priority, showEscalate, onEscalate, showMarkCompl
                 Assign Priority
               </Button>
             )}
-            {showEscalate && priority.scope !== "company" && !priority.escalated && (
+            {showEscalate && priority.scope !== "company" && (
               <Button
                 variant="outline"
                 size="sm"
                 className="text-xs h-7 text-orange-700 border-orange-200 hover:bg-orange-50"
                 onClick={onEscalate}
+                disabled={priority.status === "complete" || priority.status === "closed"}
               >
                 <ArrowUp className="w-3 h-3 mr-1" />
                 {showDeptActions ? "Escalate to Company" : "Escalate"}

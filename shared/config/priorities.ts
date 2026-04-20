@@ -51,3 +51,33 @@ export const SCOPE_LABELS: Record<PriorityScope, string> = {
   department: "Department",
   role: "My Priorities",
 };
+
+export interface EscalatePatch {
+  scope: PriorityScope;
+  /** Set to null when the promotion removes the department association. */
+  departmentKey: string | null;
+  escalated: true;
+  escalationReason: EscalationReason;
+}
+
+/**
+ * Computes the update patch applied when a priority is escalated one scope up.
+ * Role → Department (retains departmentKey), Department → Company (clears
+ * departmentKey — it no longer applies). Company-scope priorities cannot be
+ * escalated further; returns null in that case.
+ *
+ * Pure helper so the escalate handler's decision logic is testable without a DB.
+ */
+export function computeEscalatePatch(
+  current: { scope: PriorityScope; departmentKey: string | null },
+  reason: EscalationReason = "manual",
+): EscalatePatch | null {
+  if (current.scope === "company") return null;
+  const nextScope: PriorityScope = current.scope === "role" ? "department" : "company";
+  return {
+    scope: nextScope,
+    departmentKey: nextScope === "company" ? null : current.departmentKey,
+    escalated: true,
+    escalationReason: reason,
+  };
+}
