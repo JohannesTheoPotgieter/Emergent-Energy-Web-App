@@ -13,6 +13,17 @@ import { blockInProduction } from "./middleware/production-safety";
 
 type AppUser = { id: number; email: string; name: string; role: string };
 
+// Only engineers, engineering leadership, the quality manager, and company admins
+// may be auto-added to the engineering standup. Other roles can still be added
+// explicitly via POST /participants, but are not surfaced in the facilitator UI.
+const STANDUP_ATTENDEE_ROLES = [
+  "COO_ADMIN",
+  "CEO_ADMIN",
+  "ENGINEERING_MANAGER",
+  "ENGINEER",
+  "QUALITY_MANAGER",
+] as const;
+
 function getUser(req: Request): AppUser {
   return getEffectiveUser(req) as AppUser;
 }
@@ -232,6 +243,7 @@ export function registerStandupRoutes(app: Express) {
   app.get("/api/standups/schedules/:id/participants", requireAuth, async (req: Request, res: Response) => {
     try {
       const scheduleId = parseInt(req.params.id as string);
+      const includeAll = req.query.includeAll === "1" || req.query.includeAll === "true";
       const participants = await db
         .select({
           id: standupParticipants.id,
@@ -241,13 +253,19 @@ export function registerStandupRoutes(app: Express) {
           addedAt: standupParticipants.addedAt,
           userName: users.name,
           userEmail: users.email,
+          userRole: users.role,
         })
         .from(standupParticipants)
         .leftJoin(users, eq(standupParticipants.userId, users.id))
         .where(eq(standupParticipants.scheduleId, scheduleId))
         .orderBy(asc(users.name));
 
-      res.json(participants);
+      const allowedRoles = new Set<string>(STANDUP_ATTENDEE_ROLES);
+      const filtered = includeAll
+        ? participants
+        : participants.filter((p: { userRole: string | null }) => allowedRoles.has(p.userRole || ""));
+
+      res.json(filtered);
     } catch (err: unknown) {
       throw err;
     }
@@ -1300,7 +1318,7 @@ export function registerStandupRoutes(app: Express) {
         schedule = s;
       }
 
-      // Add creator as participant
+      // Add creator as participant (they're the facilitator, always required)
       if (isSqlite) {
         await db.run(sql`INSERT INTO standup_participants (schedule_id, user_id, is_required) VALUES (${schedule.id}, ${user.id}, 1)`);
       } else {
@@ -1311,13 +1329,19 @@ export function registerStandupRoutes(app: Express) {
         });
       }
 
-      // Add all active users as participants (exclude soft-deleted users)
-      const allUsers = await db
-        .select({ id: users.id })
+      // Add active users whose role is in the standup attendee allowlist
+      // (engineers, engineering manager, quality manager, COO/CEO).
+      const eligibleUsers = await db
+        .select({ id: users.id, role: users.role })
         .from(users)
-        .where(isNull(users.deletedAt));
+        .where(
+          and(
+            isNull(users.deletedAt),
+            inArray(users.role, STANDUP_ATTENDEE_ROLES as unknown as string[]),
+          ),
+        );
 
-      const participantValues = allUsers
+      const participantValues = eligibleUsers
         .filter((u: any) => u.id !== user.id)
         .map((u: any) => ({
           scheduleId: schedule.id,

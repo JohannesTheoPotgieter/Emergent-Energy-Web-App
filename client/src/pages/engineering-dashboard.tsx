@@ -56,6 +56,9 @@ import { engFetch, engPatch, engPost } from "@/lib/eng-fetch";
 import { PHASE_COLORS } from "@/lib/phase-colors";
 import { AttentionBadges, type AttentionItem } from "@/components/dashboard/AttentionBadges";
 import UserAssignmentPicker from "@/components/UserAssignmentPicker";
+import { useToast } from "@/hooks/use-toast";
+import { copyTeamsMessage, escapeHtml } from "@/lib/teams-clipboard";
+import { normalizeTaskPriority } from "@shared/task-priorities";
 
 interface StandupTask {
   id: number;
@@ -126,12 +129,10 @@ interface StandupData {
 
 
 const priorityBorderDash: Record<string, string> = {
-  "Critical": "border-l-red-600",
-  "Urgent": "border-l-red-500",
-  "High": "border-l-orange-500",
-  "Med": "border-l-amber-400",
-  "Medium": "border-l-amber-400",
-  "Low": "border-l-gray-300",
+  Urgent: "border-l-red-500",
+  High: "border-l-orange-500",
+  Med: "border-l-amber-400",
+  Low: "border-l-gray-300",
 };
 
 function getInitials(name: string) {
@@ -180,7 +181,7 @@ function TaskRow({ task, showProject = true }: { task: StandupTask; showProject?
 
   return (
     <div
-      className={`flex items-center gap-2.5 px-3 py-2.5 border-b last:border-b-0 hover:bg-muted/40 transition-all text-xs group cursor-pointer border-l-3 ${priorityBorderDash[task.priority] || "border-l-gray-200"} ${isOverdue ? "bg-red-50/30" : ""}`}
+      className={`flex items-center gap-2.5 px-3 py-2.5 border-b last:border-b-0 hover:bg-muted/40 transition-all text-xs group cursor-pointer border-l-3 ${priorityBorderDash[normalizeTaskPriority(task.priority)]} ${isOverdue ? "bg-red-50/30" : ""}`}
       onClick={() => setLocation(`/engineering/tasks?taskId=${task.id}`)}
       data-testid={`standup-task-${task.id}`}
     >
@@ -284,12 +285,12 @@ function CollapsibleSection({
 function KpiStrip({ summary }: { summary: StandupData["summary"] }) {
   const stats = [
     { label: "Projects", value: summary.totalProjects, icon: <Layers className="w-4 h-4" />, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-200", pulse: false, scrollTo: "section-project-health", href: null },
-    { label: "Active", value: summary.activeTasks, icon: <ListTodo className="w-4 h-4" />, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-200", pulse: false, scrollTo: "section-in-progress", href: "/engineering/tasks?status=IN+PROGRESS" },
+    { label: "Active", value: summary.activeTasks, icon: <ListTodo className="w-4 h-4" />, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-200", pulse: false, scrollTo: "section-in-progress", href: "/engineering/tasks?status=in_progress" },
     { label: "Overdue", value: summary.overdueTasks, icon: <AlertTriangle className="w-4 h-4" />, color: summary.overdueTasks > 0 ? "text-red-600" : "text-muted-foreground", bg: summary.overdueTasks > 0 ? "bg-red-50" : "bg-muted", border: summary.overdueTasks > 0 ? "border-red-200" : "", pulse: summary.overdueTasks > 0, scrollTo: "section-blockers", href: "/engineering/tasks?dueDate=overdue" },
-    { label: "On Hold", value: summary.holdTasks, icon: <PauseCircle className="w-4 h-4" />, color: summary.holdTasks > 0 ? "text-amber-600" : "text-muted-foreground", bg: summary.holdTasks > 0 ? "bg-amber-50" : "bg-muted", border: summary.holdTasks > 0 ? "border-amber-200" : "", pulse: false, scrollTo: "section-blockers", href: "/engineering/tasks?status=HOLD" },
-    { label: "Approvals", value: summary.needsApprovalCount, icon: <ShieldAlert className="w-4 h-4" />, color: summary.needsApprovalCount > 0 ? "text-purple-600" : "text-muted-foreground", bg: summary.needsApprovalCount > 0 ? "bg-purple-50" : "bg-muted", border: summary.needsApprovalCount > 0 ? "border-purple-200" : "", pulse: false, scrollTo: "section-approvals", href: "/engineering/tasks?status=NEEDS+APPROVAL" },
+    { label: "On Hold", value: summary.holdTasks, icon: <PauseCircle className="w-4 h-4" />, color: summary.holdTasks > 0 ? "text-amber-600" : "text-muted-foreground", bg: summary.holdTasks > 0 ? "bg-amber-50" : "bg-muted", border: summary.holdTasks > 0 ? "border-amber-200" : "", pulse: false, scrollTo: "section-blockers", href: "/engineering/tasks?status=hold" },
+    { label: "Approvals", value: summary.needsApprovalCount, icon: <ShieldAlert className="w-4 h-4" />, color: summary.needsApprovalCount > 0 ? "text-purple-600" : "text-muted-foreground", bg: summary.needsApprovalCount > 0 ? "bg-purple-50" : "bg-muted", border: summary.needsApprovalCount > 0 ? "border-purple-200" : "", pulse: false, scrollTo: "section-approvals", href: "/engineering/tasks?status=needs_approval" },
     { label: "Due This Week", value: summary.upcomingThisWeekCount, icon: <Timer className="w-4 h-4" />, color: "text-indigo-600", bg: "bg-indigo-50", border: "border-indigo-200", pulse: false, scrollTo: "section-due-this-week", href: "/engineering/tasks?dueDate=this_week" },
-    { label: "Done (24h)", value: summary.recentlyCompletedCount, icon: <CheckCircle2 className="w-4 h-4" />, color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-200", pulse: false, scrollTo: "section-recently-completed", href: "/engineering/tasks?status=COMPLETE" },
+    { label: "Done (24h)", value: summary.recentlyCompletedCount, icon: <CheckCircle2 className="w-4 h-4" />, color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-200", pulse: false, scrollTo: "section-recently-completed", href: "/engineering/tasks?status=complete" },
   ];
 
   return (
@@ -688,6 +689,7 @@ function ActivityFeed() {
 
 export default function EngineeringDashboard() {
   const { user, isAdmin } = useAuth();
+  const { toast } = useToast();
   const userRole = (user as any)?.role || "";
   const managerRoles = ["admin", "eng_program_manager", "CEO_ADMIN", "COO_ADMIN", "CCO", "PROGRAM_MANAGER", "CONSTRUCTION_MANAGER"];
   const isManagerRole = isAdmin || managerRoles.includes(userRole);
@@ -709,8 +711,8 @@ export default function EngineeringDashboard() {
     const s = data.summary;
     const items: AttentionItem[] = [];
     if (s.overdueTasks > 0) items.push({ label: "Overdue Tasks", value: s.overdueTasks, color: "text-red-600 bg-red-50 border-red-200", href: "/engineering/tasks?dueDate=overdue" });
-    if (s.holdTasks > 0) items.push({ label: "On Hold", value: s.holdTasks, color: "text-amber-700 bg-amber-50 border-amber-200", href: "/engineering/tasks?status=HOLD" });
-    if (s.needsApprovalCount > 0) items.push({ label: "Needs Approval", value: s.needsApprovalCount, color: "text-violet-700 bg-violet-50 border-violet-200", href: "/engineering/tasks?status=NEEDS+APPROVAL" });
+    if (s.holdTasks > 0) items.push({ label: "On Hold", value: s.holdTasks, color: "text-amber-700 bg-amber-50 border-amber-200", href: "/engineering/tasks?status=hold" });
+    if (s.needsApprovalCount > 0) items.push({ label: "Needs Approval", value: s.needsApprovalCount, color: "text-violet-700 bg-violet-50 border-violet-200", href: "/engineering/tasks?status=needs_approval" });
     if (s.upcomingThisWeekCount > 0) items.push({ label: "Due This Week", value: s.upcomingThisWeekCount, color: "text-blue-700 bg-blue-50 border-blue-200", href: "/engineering/tasks?dueDate=this_week" });
     return items;
   }, [data?.summary]);
@@ -730,6 +732,78 @@ export default function EngineeringDashboard() {
   const todayFormatted = new Date().toLocaleDateString("en-ZA", {
     weekday: "long", day: "numeric", month: "long", year: "numeric"
   });
+
+  const handleCopyDailyForTeams = useCallback(async () => {
+    const lines: string[] = [];
+    const htmlSections: string[] = [];
+
+    lines.push(`🛠️ Engineering Daily — ${todayFormatted}`);
+    htmlSections.push(`<p><strong>🛠️ Engineering Daily — ${escapeHtml(todayFormatted)}</strong></p>`);
+
+    const s = summary;
+    if (s) {
+      const stat = `Active ${s.activeTasks} · Overdue ${s.overdueTasks} · On hold ${s.holdTasks} · Needs approval ${s.needsApprovalCount} · Due this week ${s.upcomingThisWeekCount}`;
+      lines.push(stat);
+      htmlSections.push(`<p><em>${escapeHtml(stat)}</em></p>`);
+    }
+
+    if ((blockers?.overdue?.length ?? 0) > 0) {
+      lines.push("");
+      lines.push("🚨 Overdue:");
+      const overdueItems = (blockers?.overdue || []).slice(0, 10);
+      for (const t of overdueItems) {
+        const owner = t.assignees?.[0] || "Unassigned";
+        lines.push(`  • ${owner} — ${t.title} (${displayProject(t.projectName)})`);
+      }
+      const overdueHtml = overdueItems
+        .map((t) => {
+          const owner = t.assignees?.[0] || "Unassigned";
+          return `<li><strong>${escapeHtml(owner)}</strong> — ${escapeHtml(t.title)} <em>(${escapeHtml(displayProject(t.projectName))})</em></li>`;
+        })
+        .join("");
+      htmlSections.push(`<p><strong>🚨 Overdue</strong></p><ul>${overdueHtml}</ul>`);
+    }
+
+    if ((blockers?.hold?.length ?? 0) > 0) {
+      lines.push("");
+      lines.push("🚧 On hold:");
+      const holdItems = (blockers?.hold || []).slice(0, 10);
+      for (const t of holdItems) {
+        const owner = t.assignees?.[0] || "Unassigned";
+        const reason = t.holdReason || t.blockerReason || "";
+        lines.push(`  • ${owner} — ${t.title}${reason ? ` (${reason})` : ""}`);
+      }
+      const holdHtml = holdItems
+        .map((t) => {
+          const owner = t.assignees?.[0] || "Unassigned";
+          const reason = t.holdReason || t.blockerReason || "";
+          return `<li><strong>${escapeHtml(owner)}</strong> — ${escapeHtml(t.title)}${reason ? ` <em>(${escapeHtml(reason)})</em>` : ""}</li>`;
+        })
+        .join("");
+      htmlSections.push(`<p><strong>🚧 On hold</strong></p><ul>${holdHtml}</ul>`);
+    }
+
+    if (needsApproval.length > 0) {
+      lines.push("");
+      lines.push("✅ Needs approval:");
+      const items = needsApproval.slice(0, 10);
+      for (const t of items) {
+        const owner = t.assignees?.[0] || "Unassigned";
+        lines.push(`  • ${owner} — ${t.title} (${displayProject(t.projectName)})`);
+      }
+      const html = items
+        .map((t) => `<li><strong>${escapeHtml(t.assignees?.[0] || "Unassigned")}</strong> — ${escapeHtml(t.title)} <em>(${escapeHtml(displayProject(t.projectName))})</em></li>`)
+        .join("");
+      htmlSections.push(`<p><strong>✅ Needs approval</strong></p><ul>${html}</ul>`);
+    }
+
+    try {
+      await copyTeamsMessage({ html: htmlSections.join("\n"), plain: lines.join("\n") });
+      toast({ title: "Copied for Teams", description: "Paste into the Engineering chat." });
+    } catch (err: any) {
+      toast({ title: "Copy failed", description: err?.message || "Clipboard unavailable.", variant: "destructive" });
+    }
+  }, [blockers, needsApproval, summary, todayFormatted, toast]);
 
   if (isLoading) {
     return (
@@ -796,6 +870,17 @@ export default function EngineeringDashboard() {
               </Button>
             </Link>
           )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs gap-1.5 border-[#5059C9] text-[#5059C9] hover:bg-[#5059C9]/10 hover:text-[#464EB8]"
+            onClick={handleCopyDailyForTeams}
+            data-testid="btn-copy-daily-for-teams"
+            title="Copy today's blockers, overdue, and approvals as a Teams-friendly message"
+          >
+            <MessageSquare className="h-3.5 w-3.5" />
+            Copy for Teams
+          </Button>
           {totalBlockers > 0 && (
             <div className="flex items-center gap-1.5 text-red-600 bg-red-50 border border-red-200 px-2.5 py-1 rounded-lg text-xs font-bold" data-testid="blocker-alert">
               <ShieldAlert className="h-3.5 w-3.5" />
