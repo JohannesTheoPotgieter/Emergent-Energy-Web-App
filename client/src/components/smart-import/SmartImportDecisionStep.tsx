@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { useMemo } from "react";
 import { SECTION_LABELS, CONFLICT_ACTIONS, fieldLabel } from "./labels";
+import { SmartImportDecisionIntro } from "./SmartImportDecisionIntro";
 
 interface DecisionStepProps {
   planning: any;
@@ -89,6 +90,12 @@ export function SmartImportDecisionStep({
 
   return (
     <div className="space-y-3" data-testid="decision-step">
+      {/* UX-3: plain-English intro card for non-technical users. */}
+      <SmartImportDecisionIntro
+        pendingCount={totalDecisions - resolvedCount}
+        totalCount={totalDecisions}
+      />
+
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-sm font-semibold flex items-center gap-1.5">
