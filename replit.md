@@ -57,6 +57,7 @@ The project is organized as a monorepo with `client/` (React SPA), `server/` (Ex
 - Three views via tabs: **List** (compact dense table), **Kanban** (5 stage columns with deal count + total value), **Calendar** (month grid anchored on `expected_close_date`, plus undated bucket). All three open the unified `OpportunityDrawer` on click.
 - List columns: client, project, project developer, province, size, deal value, est. signature, next activity, engineering open tasks, action.
 - Backed by `GET /api/opportunities/working` which joins user data and engineering ticket counts.
+- **Role-scoped**: `canViewAllTickets(role)` (COO_ADMIN/CEO_ADMIN/CCO) returns the full working list. All other PD-eligible roles see only opportunities where they are `pd_tickets.project_developer_user_id`, falling back to `opportunities.deal_owner_user_id` when no PD shadow override exists. Filter is applied in JS post-query against `opportunitiesRepo.getWorkingListRows()`; null user with non-admin role returns `[]` (no leak).
 - Pipedrive custom fields are wired to `opportunities.province`, `estimated_kwp`, and `estimated_kwh`.
 - Pipedrive sync ingests deal owner via v1 `deal.user_id` (not `owner_id`); falls back to `deal_owner_name` snapshot when no internal user is linked. Custom-field policy: Pipedrive wins when a value is present; the app's value is preserved when Pipedrive is blank.
 
@@ -72,6 +73,9 @@ The project is organized as a monorepo with `client/` (React SPA), `server/` (Ex
 - 17 additive Pipedrive columns added to `opportunities` table, solely written by Pipedrive sync.
 - Unified API at `/api/opportunities/:id/workflow` for lazy-creation, patching PD fields, spawning tasks, and converting to project.
 - UI: `client/src/components/opportunities/OpportunityDrawer.tsx` is the canonical detail view, with CRM (sky accents) and PD (emerald) blocks.
+- Lazy shadow create in `opportunitiesRepo.getOpportunityWithWorkflow()` uses `onConflictDoNothing` against the partial unique index `pd_tickets_opportunity_shadow_unique` (predicate: `opportunity_id IS NOT NULL AND project_id IS NULL`); the `targetWhere` clause MUST repeat that predicate or Postgres raises 42P10. The follow-up re-select is also constrained to `project_id IS NULL` so it always returns the canonical shadow row.
+- Pipedrive PD stages (Prospect/Qualification/Proposal/Negotiation/Contracting) map to the canonical 10-stage company lifecycle (`shared/phases.ts`) via `shared/lib/pd-stage-lifecycle.ts` (server-safe; client re-exports through `client/src/lib/pdStageLifecycle.ts`). **The lifecycle phase is the primary label** (emerald badge in List, emerald header in Kanban); the Pipedrive stage is demoted to a small lowercase secondary line. When no mapping exists, the original Pipedrive stage falls back as primary.
+- **PD dashboard** (`GET /api/pd/dashboard`) returns both `byStage` (raw Pipedrive aggregation) and `byPhase` (server-side roll-up into canonical lifecycle phases using the shared mapping; unmapped stages bucket under `_UNMAPPED` / "Unmapped"). The frontend renders "Pipeline by Lifecycle Phase" as the primary card (`PhaseBar`), with the Pipedrive stage strip shown beneath each phase row.
 
 ### Testing
 - **Unit & API Tests:** Vitest.
