@@ -57,6 +57,13 @@
       "when": 1777248001000,
       "tag": "0007_priority_pd_feed_view",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1777300000000,
+      "tag": "0008_qb_recon_tables",
+      "breakpoints": true
     }
   ]
 }
