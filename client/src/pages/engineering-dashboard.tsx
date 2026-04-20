@@ -56,6 +56,8 @@ import { engFetch, engPatch, engPost } from "@/lib/eng-fetch";
 import { PHASE_COLORS } from "@/lib/phase-colors";
 import { AttentionBadges, type AttentionItem } from "@/components/dashboard/AttentionBadges";
 import UserAssignmentPicker from "@/components/UserAssignmentPicker";
+import { useToast } from "@/hooks/use-toast";
+import { copyTeamsMessage, escapeHtml } from "@/lib/teams-clipboard";
 
 interface StandupTask {
   id: number;
@@ -688,6 +690,7 @@ function ActivityFeed() {
 
 export default function EngineeringDashboard() {
   const { user, isAdmin } = useAuth();
+  const { toast } = useToast();
   const userRole = (user as any)?.role || "";
   const managerRoles = ["admin", "eng_program_manager", "CEO_ADMIN", "COO_ADMIN", "CCO", "PROGRAM_MANAGER", "CONSTRUCTION_MANAGER"];
   const isManagerRole = isAdmin || managerRoles.includes(userRole);
@@ -730,6 +733,78 @@ export default function EngineeringDashboard() {
   const todayFormatted = new Date().toLocaleDateString("en-ZA", {
     weekday: "long", day: "numeric", month: "long", year: "numeric"
   });
+
+  const handleCopyDailyForTeams = useCallback(async () => {
+    const lines: string[] = [];
+    const htmlSections: string[] = [];
+
+    lines.push(`🛠️ Engineering Daily — ${todayFormatted}`);
+    htmlSections.push(`<p><strong>🛠️ Engineering Daily — ${escapeHtml(todayFormatted)}</strong></p>`);
+
+    const s = summary;
+    if (s) {
+      const stat = `Active ${s.activeTasks} · Overdue ${s.overdueTasks} · On hold ${s.holdTasks} · Needs approval ${s.needsApprovalCount} · Due this week ${s.upcomingThisWeekCount}`;
+      lines.push(stat);
+      htmlSections.push(`<p><em>${escapeHtml(stat)}</em></p>`);
+    }
+
+    if ((blockers?.overdue?.length ?? 0) > 0) {
+      lines.push("");
+      lines.push("🚨 Overdue:");
+      const overdueItems = (blockers?.overdue || []).slice(0, 10);
+      for (const t of overdueItems) {
+        const owner = t.assignees?.[0] || "Unassigned";
+        lines.push(`  • ${owner} — ${t.title} (${displayProject(t.projectName)})`);
+      }
+      const overdueHtml = overdueItems
+        .map((t) => {
+          const owner = t.assignees?.[0] || "Unassigned";
+          return `<li><strong>${escapeHtml(owner)}</strong> — ${escapeHtml(t.title)} <em>(${escapeHtml(displayProject(t.projectName))})</em></li>`;
+        })
+        .join("");
+      htmlSections.push(`<p><strong>🚨 Overdue</strong></p><ul>${overdueHtml}</ul>`);
+    }
+
+    if ((blockers?.hold?.length ?? 0) > 0) {
+      lines.push("");
+      lines.push("🚧 On hold:");
+      const holdItems = (blockers?.hold || []).slice(0, 10);
+      for (const t of holdItems) {
+        const owner = t.assignees?.[0] || "Unassigned";
+        const reason = t.holdReason || t.blockerReason || "";
+        lines.push(`  • ${owner} — ${t.title}${reason ? ` (${reason})` : ""}`);
+      }
+      const holdHtml = holdItems
+        .map((t) => {
+          const owner = t.assignees?.[0] || "Unassigned";
+          const reason = t.holdReason || t.blockerReason || "";
+          return `<li><strong>${escapeHtml(owner)}</strong> — ${escapeHtml(t.title)}${reason ? ` <em>(${escapeHtml(reason)})</em>` : ""}</li>`;
+        })
+        .join("");
+      htmlSections.push(`<p><strong>🚧 On hold</strong></p><ul>${holdHtml}</ul>`);
+    }
+
+    if (needsApproval.length > 0) {
+      lines.push("");
+      lines.push("✅ Needs approval:");
+      const items = needsApproval.slice(0, 10);
+      for (const t of items) {
+        const owner = t.assignees?.[0] || "Unassigned";
+        lines.push(`  • ${owner} — ${t.title} (${displayProject(t.projectName)})`);
+      }
+      const html = items
+        .map((t) => `<li><strong>${escapeHtml(t.assignees?.[0] || "Unassigned")}</strong> — ${escapeHtml(t.title)} <em>(${escapeHtml(displayProject(t.projectName))})</em></li>`)
+        .join("");
+      htmlSections.push(`<p><strong>✅ Needs approval</strong></p><ul>${html}</ul>`);
+    }
+
+    try {
+      await copyTeamsMessage({ html: htmlSections.join("\n"), plain: lines.join("\n") });
+      toast({ title: "Copied for Teams", description: "Paste into the Engineering chat." });
+    } catch (err: any) {
+      toast({ title: "Copy failed", description: err?.message || "Clipboard unavailable.", variant: "destructive" });
+    }
+  }, [blockers, needsApproval, summary, todayFormatted, toast]);
 
   if (isLoading) {
     return (
@@ -796,6 +871,17 @@ export default function EngineeringDashboard() {
               </Button>
             </Link>
           )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs gap-1.5 border-[#5059C9] text-[#5059C9] hover:bg-[#5059C9]/10 hover:text-[#464EB8]"
+            onClick={handleCopyDailyForTeams}
+            data-testid="btn-copy-daily-for-teams"
+            title="Copy today's blockers, overdue, and approvals as a Teams-friendly message"
+          >
+            <MessageSquare className="h-3.5 w-3.5" />
+            Copy for Teams
+          </Button>
           {totalBlockers > 0 && (
             <div className="flex items-center gap-1.5 text-red-600 bg-red-50 border border-red-200 px-2.5 py-1 rounded-lg text-xs font-bold" data-testid="blocker-alert">
               <ShieldAlert className="h-3.5 w-3.5" />

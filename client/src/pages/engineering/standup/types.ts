@@ -4,8 +4,27 @@ export interface Participant {
   userId: number;
   userName: string;
   userEmail: string;
+  userRole?: string | null;
   isRequired: boolean;
 }
+
+// Roles that should attend the engineering standup. Mirror of
+// STANDUP_ATTENDEE_ROLES in server/standup-routes.ts.
+export const STANDUP_ATTENDEE_ROLES = [
+  "COO_ADMIN",
+  "CEO_ADMIN",
+  "ENGINEERING_MANAGER",
+  "ENGINEER",
+  "QUALITY_MANAGER",
+] as const;
+
+export const STANDUP_ATTENDEE_ROLE_LABELS: { role: string; label: string }[] = [
+  { role: "COO_ADMIN", label: "COO" },
+  { role: "CEO_ADMIN", label: "CEO" },
+  { role: "ENGINEERING_MANAGER", label: "Engineering Manager" },
+  { role: "ENGINEER", label: "Engineers" },
+  { role: "QUALITY_MANAGER", label: "Quality Manager" },
+];
 
 export interface EngTask {
   id: number;

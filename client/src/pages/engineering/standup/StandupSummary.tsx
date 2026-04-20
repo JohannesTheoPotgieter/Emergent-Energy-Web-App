@@ -1,8 +1,9 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Copy, Send, CheckCircle2, ArrowRight, AlertTriangle, Users, Clock, BarChart3 } from "lucide-react";
+import { Copy, CheckCircle2, ArrowRight, AlertTriangle, Users, Clock, BarChart3, MessageSquare } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { copyTeamsMessage, escapeHtml } from "@/lib/teams-clipboard";
 import { type TaskMovement, type Participant, MOODS, formatTime } from "./types";
 
 interface StandupSummaryProps {
@@ -88,9 +89,73 @@ export function StandupSummary({
     return lines.join("\n");
   }
 
-  function handleCopy() {
-    navigator.clipboard.writeText(buildCopyText());
-    toast({ title: "Summary copied to clipboard" });
+  function buildTeamsHtml(): string {
+    const date = new Date().toLocaleDateString("en-ZA", { weekday: "long", day: "numeric", month: "short", year: "numeric" });
+    const sections: string[] = [];
+    sections.push(
+      `<p><strong>🛠️ Engineering Standup — ${escapeHtml(date)}</strong></p>`,
+      `<p><em>Duration ${escapeHtml(formatTime(totalSeconds))} · ${completedCount}/${participants.length} participated · Avg ${escapeHtml(formatTime(avgTime))} per person</em></p>`,
+    );
+
+    if (taskMovements.length > 0) {
+      sections.push("<p><strong>✅ Task movements</strong></p>");
+      const items = taskMovements
+        .map((m) => {
+          const arrow = m.toStatus === "COMPLETE" ? "✅" : m.toStatus === "HOLD" ? "🚧" : m.toStatus === "IN PROGRESS" ? "▶️" : "↔️";
+          const reason = m.holdReason ? ` <em>(${escapeHtml(m.holdReason)})</em>` : "";
+          return `<li>${arrow} <strong>${escapeHtml(m.userName)}</strong> — ${escapeHtml(m.taskTitle)}: ${escapeHtml(m.fromStatus)} → <strong>${escapeHtml(m.toStatus)}</strong>${reason}</li>`;
+        })
+        .join("");
+      sections.push(`<ul>${items}</ul>`);
+    }
+
+    if (holdMoves.length > 0) {
+      sections.push("<p><strong>🚧 Blockers raised</strong></p>");
+      const items = holdMoves
+        .map((m) => `<li><strong>${escapeHtml(m.userName)}</strong>: ${escapeHtml(m.holdReason || m.taskTitle)}</li>`)
+        .join("");
+      sections.push(`<ul>${items}</ul>`);
+    }
+
+    const notes = [...facilitatorNotes.entries()].filter(([, n]) => n.trim());
+    if (notes.length > 0) {
+      sections.push("<p><strong>📝 Facilitator notes</strong></p>");
+      const items = notes
+        .map(([userId, note]) => {
+          const p = participants.find((pp) => pp.userId === userId);
+          return `<li><strong>${escapeHtml(p?.userName || "Unknown")}</strong>: ${escapeHtml(note.trim())}</li>`;
+        })
+        .join("");
+      sections.push(`<ul>${items}</ul>`);
+    }
+
+    const moodLine = MOODS.map((m) => {
+      const c = moodCounts.get(m.value) || 0;
+      return c > 0 ? `${m.emoji} ${c}` : null;
+    })
+      .filter(Boolean)
+      .join(" · ");
+    if (moodLine) sections.push(`<p><strong>Mood</strong> — ${moodLine}</p>`);
+
+    return sections.join("\n");
+  }
+
+  async function handleCopyPlain() {
+    try {
+      await navigator.clipboard.writeText(buildCopyText());
+      toast({ title: "Summary copied", description: "Plain-text version on clipboard." });
+    } catch (err: any) {
+      toast({ title: "Copy failed", description: err?.message || "Unable to access clipboard.", variant: "destructive" });
+    }
+  }
+
+  async function handleCopyTeams() {
+    try {
+      await copyTeamsMessage({ html: buildTeamsHtml(), plain: buildCopyText() });
+      toast({ title: "Copied for Teams", description: "Paste into any Teams chat or channel." });
+    } catch (err: any) {
+      toast({ title: "Copy failed", description: err?.message || "Unable to access clipboard.", variant: "destructive" });
+    }
   }
 
   return (
@@ -206,11 +271,14 @@ export function StandupSummary({
       )}
 
       {/* Actions */}
-      <div className="flex items-center gap-3">
-        <Button onClick={handleCopy} variant="outline" className="gap-1.5">
-          <Copy className="h-4 w-4" /> Copy Summary
+      <div className="flex items-center gap-3 flex-wrap">
+        <Button onClick={handleCopyTeams} className="gap-1.5 bg-[#5059C9] hover:bg-[#464EB8] text-white" data-testid="btn-copy-for-teams">
+          <MessageSquare className="h-4 w-4" /> Copy for Teams
         </Button>
-        <Button onClick={onClose} className="gap-1.5">
+        <Button onClick={handleCopyPlain} variant="outline" className="gap-1.5" data-testid="btn-copy-plain">
+          <Copy className="h-4 w-4" /> Copy plain text
+        </Button>
+        <Button onClick={onClose} className="gap-1.5 ml-auto" data-testid="btn-save-close-summary">
           <CheckCircle2 className="h-4 w-4" /> Save & Close
         </Button>
       </div>
