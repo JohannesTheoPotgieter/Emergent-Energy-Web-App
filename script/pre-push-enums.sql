@@ -1,3 +1,19 @@
+-- =========================================================================
+-- DEPRECATED — DO NOT EXTEND.
+--
+-- This file and its sibling script/full-schema-alignment.sql are retained
+-- for back-compat only (reachable via `npm run db:push:legacy`). The
+-- canonical schema path is now `drizzle-kit push`, invoked directly by
+-- `npm run db:push`. `drizzle-kit push` reads shared/schema.ts and
+-- applies every missing column / table / enum from the Drizzle source of
+-- truth — which this file has drifted from (e.g. smart_import_status
+-- uppercase values, stale enum sets, missing tables like
+-- dashboard_snapshots and role_credentials).
+--
+-- The legacy flow is kept available in case a developer needs the
+-- historical sequence for debugging. New schema changes go to
+-- shared/schema/*.ts and are applied by `drizzle-kit push`.
+-- =========================================================================
 -- Auto-generated: pre-create all enums and stub tables before drizzle-kit push
 -- This prevents interactive prompts that block CI/CD automation
 

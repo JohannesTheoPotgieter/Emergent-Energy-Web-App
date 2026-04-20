@@ -64,6 +64,7 @@ import {
   Wallet,
   Pencil,
   Search,
+  AlertCircle,
 
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
@@ -747,7 +748,7 @@ function KeyboardShortcuts({
   cashflowData,
   toast,
 }: {
-  railSearchRef: React.RefObject<HTMLInputElement>;
+  railSearchRef: React.RefObject<HTMLInputElement | null>;
   setProjectPickerOpen: (open: boolean) => void;
   cashflowData: CashflowWeek[];
   toast: ReturnType<typeof useToast>["toast"];
