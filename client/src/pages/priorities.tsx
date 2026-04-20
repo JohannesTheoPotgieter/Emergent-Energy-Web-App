@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Flag, Plus, AlertTriangle, AlertCircle, Clock, RefreshCw, ArrowUp, CheckCircle2, Users, User } from "lucide-react";
+import { Flag, Plus, AlertTriangle, AlertCircle, Clock, RefreshCw, ArrowUp, CheckCircle2, Users, User, Download } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
 import { isPriorityAdminRole, isDepartmentHeadRole, SCOPE_LABELS } from "@/config/priorities";
@@ -117,7 +117,7 @@ async function fetchPriorities(params: string): Promise<Priority[]> {
 
 // ── Priority Card ──────────────────────────────────────────────
 
-export function PriorityCard({ priority, showEscalate, onEscalate, showMarkComplete, onMarkComplete, showDeptActions, onAssign, showReopen, onReopen }: {
+export function PriorityCard({ priority, showEscalate, onEscalate, showMarkComplete, onMarkComplete, showDeptActions, onAssign, showReopen, onReopen, selectable, selected, onToggleSelect }: {
   priority: Priority;
   showEscalate?: boolean;
   onEscalate?: () => void;
@@ -127,6 +127,9 @@ export function PriorityCard({ priority, showEscalate, onEscalate, showMarkCompl
   onAssign?: () => void;
   showReopen?: boolean;
   onReopen?: () => void;
+  selectable?: boolean;
+  selected?: boolean;
+  onToggleSelect?: () => void;
 }) {
   const days = daysRemaining(priority.dueDate);
   const healthColor = HEALTH_COLORS[priority.effectiveHealth] || HEALTH_COLORS.healthy;
@@ -134,8 +137,19 @@ export function PriorityCard({ priority, showEscalate, onEscalate, showMarkCompl
   const sev = SEVERITY_BADGE[priority.severity] || SEVERITY_BADGE.normal;
 
   return (
-    <Card className={`border-l-4 ${healthColor} hover:shadow-md transition-shadow`}>
+    <Card className={`border-l-4 ${healthColor} hover:shadow-md transition-shadow relative ${selected ? "ring-2 ring-primary" : ""}`}>
       <CardContent className="p-4">
+        {selectable && (
+          <div className="absolute top-2 right-2 z-10">
+            <input
+              type="checkbox"
+              checked={!!selected}
+              onChange={(e) => { e.stopPropagation(); onToggleSelect?.(); }}
+              className="rounded cursor-pointer"
+              aria-label={`Select ${priority.title}`}
+            />
+          </div>
+        )}
         {/* Escalation badge */}
         {priority.escalated && (
           <div className="flex items-center gap-1 mb-2">
@@ -655,7 +669,7 @@ function AssignPriorityDialog({ open, onOpenChange, priorityId }: {
 
 // ── Priority List Section ──────────────────────────────────────
 
-function PriorityListSection({ priorities, isLoading, isError, error, refetch, showEscalate, onEscalate, showMarkComplete, onMarkComplete, showDeptActions, onAssign, showReopen, onReopen, emptyMessage, emptyAction }: {
+function PriorityListSection({ priorities, isLoading, isError, error, refetch, showEscalate, onEscalate, showMarkComplete, onMarkComplete, showDeptActions, onAssign, showReopen, onReopen, selectable, selectedIds, onToggleSelect, emptyMessage, emptyAction }: {
   priorities: Priority[];
   isLoading: boolean;
   isError: boolean;
@@ -669,6 +683,9 @@ function PriorityListSection({ priorities, isLoading, isError, error, refetch, s
   onAssign?: (id: number) => void;
   showReopen?: boolean;
   onReopen?: (id: number) => void;
+  selectable?: boolean;
+  selectedIds?: Set<number>;
+  onToggleSelect?: (id: number) => void;
   emptyMessage: string;
   emptyAction?: React.ReactNode;
 }) {
@@ -743,6 +760,9 @@ function PriorityListSection({ priorities, isLoading, isError, error, refetch, s
               onAssign={() => onAssign?.(p.id)}
               showReopen={showReopen}
               onReopen={() => onReopen?.(p.id)}
+              selectable={selectable}
+              selected={selectedIds?.has(p.id)}
+              onToggleSelect={() => onToggleSelect?.(p.id)}
             />
           ))}
         </div>
@@ -770,9 +790,20 @@ export default function PrioritiesPage() {
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [assignDialogPriorityId, setAssignDialogPriorityId] = useState<number | null>(null);
+  const [bulkReassignOpen, setBulkReassignOpen] = useState(false);
   const [levelFilter, setLevelFilter] = useState("all");
   const [healthFilter, setHealthFilter] = useState("all");
   const [showClosed, setShowClosed] = useState(false);
+  const [bulkSelected, setBulkSelected] = useState<Set<number>>(new Set());
+
+  const toggleBulkSelect = (id: number) => {
+    setBulkSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const clearBulkSelection = () => setBulkSelected(new Set());
 
   const listQueryParams = (base: string) =>
     showClosed ? `${base}&include_cancelled=true` : base;
@@ -836,6 +867,44 @@ export default function PrioritiesPage() {
     },
   });
 
+  // ── Bulk actions — loop existing per-id endpoints client-side ──
+  const bulkCloseMutation = useMutation({
+    mutationFn: async (ids: number[]) => {
+      for (const id of ids) {
+        await apiRequest("PUT", `/api/priorities/${id}`, { status: "closed" });
+      }
+    },
+    onSuccess: () => {
+      clearBulkSelection();
+      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
+    },
+  });
+
+  const bulkEscalateMutation = useMutation({
+    mutationFn: async (ids: number[]) => {
+      for (const id of ids) {
+        await apiRequest("POST", `/api/priorities/${id}/escalate`, { reason: "manual" });
+      }
+    },
+    onSuccess: () => {
+      clearBulkSelection();
+      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
+    },
+  });
+
+  const bulkReassignMutation = useMutation({
+    mutationFn: async ({ ids, userId }: { ids: number[]; userId: number }) => {
+      for (const id of ids) {
+        await apiRequest("PUT", `/api/priorities/${id}`, { assigned_user_id: userId });
+      }
+    },
+    onSuccess: () => {
+      clearBulkSelection();
+      setBulkReassignOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
+    },
+  });
+
   // Apply filters to active data
   const applyFilters = (data: Priority[]) => {
     return data.filter(p => {
@@ -866,16 +935,79 @@ export default function PrioritiesPage() {
             {showClosed && closedData.length > 0 && ` · ${closedData.length} closed`}
           </p>
         </div>
-        {(isAdmin || isDeptHead) && (
-          <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
-            <Plus className="w-4 h-4 mr-1" />
-            Add Priority
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {(isAdmin || isDeptHead) && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                const params = new URLSearchParams();
+                if (activeTab === "department" && userDepartment) {
+                  params.set("scope", "department");
+                  params.set("department", userDepartment);
+                } else if (activeTab === "company") {
+                  params.set("scope", "company");
+                }
+                window.open(`/api/reports/priorities-pack?${params.toString()}`, "_blank");
+              }}
+            >
+              <Download className="w-4 h-4 mr-1" />
+              Export PDF
+            </Button>
+          )}
+          {(isAdmin || isDeptHead) && (
+            <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
+              <Plus className="w-4 h-4 mr-1" />
+              Add Priority
+            </Button>
+          )}
+        </div>
       </div>
 
+      {/* Bulk action bar — visible while items are selected */}
+      {bulkSelected.size > 0 && (
+        <div className="sticky top-0 z-20 bg-primary/10 border border-primary rounded-md px-3 py-2 mb-3 flex items-center gap-2 text-sm">
+          <span className="font-medium">{bulkSelected.size} selected</span>
+          {isAdmin && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs h-7"
+              onClick={() => { if (confirm(`Close ${bulkSelected.size} priorit${bulkSelected.size === 1 ? "y" : "ies"}?`)) bulkCloseMutation.mutate(Array.from(bulkSelected)); }}
+              disabled={bulkCloseMutation.isPending}
+            >
+              Close
+            </Button>
+          )}
+          {(isAdmin || isDeptHead) && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs h-7 text-orange-700 border-orange-200 hover:bg-orange-50"
+              onClick={() => { if (confirm(`Escalate ${bulkSelected.size} priorit${bulkSelected.size === 1 ? "y" : "ies"}?`)) bulkEscalateMutation.mutate(Array.from(bulkSelected)); }}
+              disabled={bulkEscalateMutation.isPending}
+            >
+              Escalate
+            </Button>
+          )}
+          {isDeptHead && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs h-7"
+              onClick={() => setBulkReassignOpen(true)}
+            >
+              Reassign...
+            </Button>
+          )}
+          <Button variant="ghost" size="sm" className="text-xs h-7 ml-auto" onClick={clearBulkSelection}>
+            Clear
+          </Button>
+        </div>
+      )}
+
       {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
+      <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v); clearBulkSelection(); setLevelFilter("all"); setHealthFilter("all"); }}>
         <div className="flex items-center justify-between mb-4">
           <TabsList>
             <TabsTrigger value="mine" className="text-xs">
@@ -951,6 +1083,9 @@ export default function PrioritiesPage() {
             onMarkComplete={(id) => markCompleteMutation.mutate(id)}
             showReopen={showClosed}
             onReopen={(id) => reopenMutation.mutate(id)}
+            selectable
+            selectedIds={bulkSelected}
+            onToggleSelect={toggleBulkSelect}
             emptyMessage="No priorities assigned to you"
             emptyAction={
               <p className="text-xs text-muted-foreground mt-1">
@@ -975,6 +1110,9 @@ export default function PrioritiesPage() {
               onAssign={(id) => setAssignDialogPriorityId(id)}
               showReopen={showClosed}
               onReopen={(id) => reopenMutation.mutate(id)}
+              selectable
+              selectedIds={bulkSelected}
+              onToggleSelect={toggleBulkSelect}
               emptyMessage={`No priorities for ${DEPARTMENT_OPTIONS.find(d => d.value === userDepartment)?.label || "your department"}`}
               emptyAction={
                 <Button size="sm" className="mt-3" onClick={() => setCreateDialogOpen(true)}>
@@ -996,6 +1134,9 @@ export default function PrioritiesPage() {
               refetch={companyQuery.refetch}
               showReopen={showClosed}
               onReopen={(id) => reopenMutation.mutate(id)}
+              selectable
+              selectedIds={bulkSelected}
+              onToggleSelect={toggleBulkSelect}
               emptyMessage="No company priorities yet"
               emptyAction={
                 <Button size="sm" className="mt-3" onClick={() => setCreateDialogOpen(true)}>
@@ -1019,6 +1160,60 @@ export default function PrioritiesPage() {
         onOpenChange={(open) => { if (!open) setAssignDialogPriorityId(null); }}
         priorityId={assignDialogPriorityId}
       />
+
+      <BulkReassignDialog
+        open={bulkReassignOpen}
+        onOpenChange={setBulkReassignOpen}
+        selectedCount={bulkSelected.size}
+        onConfirm={(userId) => bulkReassignMutation.mutate({ ids: Array.from(bulkSelected), userId })}
+        isPending={bulkReassignMutation.isPending}
+      />
     </PageShell>
+  );
+}
+
+function BulkReassignDialog({ open, onOpenChange, selectedCount, onConfirm, isPending }: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  selectedCount: number;
+  onConfirm: (userId: number) => void;
+  isPending: boolean;
+}) {
+  const [userId, setUserId] = useState("");
+  const userOptions = useUserOptions(open);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Reassign {selectedCount} priorit{selectedCount === 1 ? "y" : "ies"}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <p className="text-xs text-muted-foreground">All selected priorities will be assigned to this person.</p>
+          <div>
+            <Label className="text-xs">Assign to</Label>
+            <SearchableSelect
+              options={userOptions}
+              value={userId}
+              onValueChange={setUserId}
+              placeholder="Select person"
+              searchPlaceholder="Search people..."
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button
+            onClick={() => {
+              if (!userId) return;
+              onConfirm(parseInt(userId, 10));
+            }}
+            disabled={!userId || isPending}
+          >
+            {isPending ? "Reassigning..." : `Reassign ${selectedCount}`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
