@@ -96,18 +96,23 @@ export function OpportunitiesKanban({
               <div className="px-3 py-2 border-b border-current/10 sticky top-0 bg-inherit rounded-t-lg space-y-0.5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-slate-800">{STAGE_LABELS[stage]}</span>
+                    <span
+                      className="text-sm font-semibold text-emerald-800"
+                      data-testid={`kanban-col-lifecycle-${stage}`}
+                      title={pdStageLifecycleLabel(stage) ? `Company lifecycle phase` : `Pipedrive stage`}
+                    >
+                      {pdStageLifecycleLabel(stage) || STAGE_LABELS[stage]}
+                    </span>
                     <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${theme.chip}`}>{items.length}</span>
                   </div>
                   <span className="text-[11px] text-slate-600 tabular-nums font-medium">{formatZAR(totalValue)}</span>
                 </div>
                 {pdStageLifecycleLabel(stage) && (
                   <div
-                    className="text-[10px] uppercase tracking-wide text-emerald-700/80 font-medium leading-tight"
-                    data-testid={`kanban-col-lifecycle-${stage}`}
-                    title={`Maps to company lifecycle phase: ${pdStageLifecycleLabel(stage)}`}
+                    className="text-[10px] lowercase text-slate-500 leading-tight"
+                    title={`Pipedrive stage: ${STAGE_LABELS[stage]}`}
                   >
-                    {pdStageLifecycleLabel(stage)}
+                    {String(STAGE_LABELS[stage]).toLowerCase()}
                   </div>
                 )}
               </div>

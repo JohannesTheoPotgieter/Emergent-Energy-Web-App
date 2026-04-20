@@ -31,6 +31,7 @@ type PdDashboard = {
     winRate: number | null;
   };
   byStage: Array<{ stage: string; count: number; value: number; weighted: number }>;
+  byPhase: Array<{ phase: string; count: number; value: number; weighted: number; stages: string[] }>;
   atRisk: { staleActivity: number; veryStale: number; highValueNoRecent: number; overdueFollowups: number };
   recentWins: Array<{ id: number; dealName: string | null; value: number | null; owner: string | null; signedDate: string | null }>;
   recentLost: Array<{ id: number; dealName: string | null; value: number | null; owner: string | null; reason: string | null; lostTime: string | null }>;
@@ -144,6 +145,30 @@ function StageBar({ stage, count, value, weighted, maxValue }: { stage: string; 
   );
 }
 
+function PhaseBar({ phase, count, value, weighted, stages, maxValue }: { phase: string; count: number; value: number; weighted: number; stages: string[]; maxValue: number }) {
+  const pct = maxValue > 0 ? (value / maxValue) * 100 : 0;
+  return (
+    <div className="space-y-1.5" data-testid={`phase-row-${phase}`}>
+      <div className="flex items-center justify-between text-sm">
+        <div className="flex items-center gap-2">
+          <span className="font-semibold text-emerald-800">{phase}</span>
+          <Badge variant="outline" className="text-[10px]">{count} deals</Badge>
+          {stages.length > 0 && (
+            <span className="text-[10px] lowercase text-slate-500" title="Pipedrive stages rolled up into this phase">
+              {stages.map((s) => s.toLowerCase()).join(" · ")}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-3 text-xs">
+          <span className="text-muted-foreground">Wtd {formatZAR(weighted)}</span>
+          <span className="font-medium text-foreground">{formatZAR(value)}</span>
+        </div>
+      </div>
+      <Progress value={pct} className="h-2" />
+    </div>
+  );
+}
+
 export default function PdDashboardPage() {
   const { data, isLoading, error } = useQuery<PdDashboard>({
     queryKey: ["/api/pd/dashboard"],
@@ -174,8 +199,10 @@ export default function PdDashboardPage() {
     );
   }
 
-  const { summary, byStage, atRisk, recentWins, recentLost, upcomingActivity, conversion } = data;
+  const { summary, byStage, byPhase, atRisk, recentWins, recentLost, upcomingActivity, conversion } = data;
   const maxStageValue = Math.max(...byStage.map((s) => s.value), 1);
+  const phaseBuckets = byPhase ?? [];
+  const maxPhaseValue = Math.max(...phaseBuckets.map((p) => p.value), 1);
   const totalActive = summary.activeCount;
   const stagePercents = {
     prospect: totalActive > 0 ? (conversion.prospect / totalActive) * 100 : 0,
@@ -240,16 +267,23 @@ export default function PdDashboardPage() {
 
       {/* Pipeline by stage + Conversion funnel */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2" data-testid="card-pipeline-by-stage">
+        <Card className="lg:col-span-2" data-testid="card-pipeline-by-phase">
           <CardHeader>
-            <CardTitle className="text-base">Pipeline by Stage</CardTitle>
+            <CardTitle className="text-base">Pipeline by Lifecycle Phase</CardTitle>
+            <p className="text-xs text-muted-foreground">Active opportunities grouped by the company's 10-stage lifecycle. Pipedrive stages roll up under each phase.</p>
           </CardHeader>
           <CardContent className="space-y-4">
-            {byStage.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No active opportunities.</p>
+            {phaseBuckets.length === 0 ? (
+              byStage.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No active opportunities.</p>
+              ) : (
+                byStage.map((s) => (
+                  <StageBar key={s.stage} stage={s.stage} count={s.count} value={s.value} weighted={s.weighted} maxValue={maxStageValue} />
+                ))
+              )
             ) : (
-              byStage.map((s) => (
-                <StageBar key={s.stage} stage={s.stage} count={s.count} value={s.value} weighted={s.weighted} maxValue={maxStageValue} />
+              phaseBuckets.map((p) => (
+                <PhaseBar key={p.phase} phase={p.phase} count={p.count} value={p.value} weighted={p.weighted} stages={p.stages} maxValue={maxPhaseValue} />
               ))
             )}
           </CardContent>
