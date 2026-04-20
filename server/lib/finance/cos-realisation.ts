@@ -173,3 +173,76 @@ export function getCosRealisationWarnings(input: CosLineInput): string[] {
 
   return warnings;
 }
+
+/**
+ * Past-month auto-promote check (C001).
+ *
+ * Returns true iff the line:
+ *   - sits in a closed month (monthKey strictly < currentMonthKey),
+ *   - has a non-empty, non-placeholder invoice number,
+ *   - has NOT been admin-overridden to a not-realised status.
+ *
+ * Mirrors the override + placeholder gates in `isCanonicalCosRealised` so
+ * past-month lines respect explicit finance intent (overrides) and don't get
+ * promoted on placeholder values like "TBC" / "N/A".
+ *
+ * Rationale: font-colour confirmation is a current-month vetting heuristic
+ * that stops being meaningful once finance has moved on. Without this rule
+ * historical invoice-bearing rows sit in "Committed" limbo forever and the
+ * COS Tracker drifts from QuickBooks.
+ */
+export function isPastMonthAutoRealised(
+  exp: { cosStatusOverride?: string | null; expenseInvoiceNumber?: string | null } & Record<string, any>,
+  monthKey: string | null,
+  currentMonthKey: string,
+): boolean {
+  if (!monthKey || monthKey >= currentMonthKey) return false;
+  const override = String(exp?.cosStatusOverride ?? "").toUpperCase().trim();
+  if (OVERRIDE_NOT_REALISED.has(override)) return false;
+  const invoiceTrimmed = String(exp?.expenseInvoiceNumber ?? "").trim();
+  if (!invoiceTrimmed) return false;
+  if (PLACEHOLDER_INVOICES.has(invoiceTrimmed.toLowerCase())) return false;
+  return true;
+}
+
+/**
+ * Effective realised gate used by COS Tracker, Revenue Tracker, and every
+ * downstream reporting surface that needs to know "is this line realised
+ * for the period it sits in?".
+ *
+ * Combines:
+ *   - past-month auto-promote (closed-month invoiced lines), and
+ *   - canonical strict realisation (font-colour confirmed),
+ *
+ * with a current-month boundary guard so future-dated realised lines do not
+ * leak into the current period.
+ *
+ * Pass the line, its CoS month-key (from getCosEffectiveDateAndSource), and
+ * the *current* month key in UTC. The two month-keys MUST be on the same UTC
+ * anchor or aggregate vs per-project views will disagree.
+ */
+export function isEffectivelyRealised(
+  exp: any,
+  monthKey: string | null,
+  currentMonthKey: string,
+): boolean {
+  if (isPastMonthAutoRealised(exp, monthKey, currentMonthKey)) return true;
+  if (!isCanonicalCosRealised(exp)) return false;
+  return monthKey ? monthKey <= currentMonthKey : true;
+}
+
+/**
+ * Mirror of isEffectivelyRealised: lines that are still actively committed
+ * (PO or invoice-in-progress, but not yet effectively realised). Past-month
+ * auto-promoted lines are excluded so they don't double-count.
+ */
+export function isEffectivelyCommitted(
+  exp: any,
+  monthKey: string | null,
+  currentMonthKey: string,
+  classifyCosStatusFull: (e: any) => string,
+): boolean {
+  if (isPastMonthAutoRealised(exp, monthKey, currentMonthKey)) return false;
+  if (isCanonicalCosRealised(exp)) return false;
+  return classifyCosStatusFull(exp) === "Committed";
+}
