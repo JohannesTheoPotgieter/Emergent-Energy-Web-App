@@ -140,7 +140,7 @@ export function registerStandupRoutes(app: Express) {
 
       res.json(schedules);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -153,7 +153,7 @@ export function registerStandupRoutes(app: Express) {
         .orderBy(desc(standupSchedules.createdAt));
       res.json(schedules);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -188,7 +188,7 @@ export function registerStandupRoutes(app: Express) {
 
       res.status(201).json(schedule);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -211,7 +211,7 @@ export function registerStandupRoutes(app: Express) {
 
       res.json(updated);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -222,7 +222,7 @@ export function registerStandupRoutes(app: Express) {
       await db.update(standupSchedules).set({ deletedAt: new Date(), deletedBy: req.user?.id }).where(eq(standupSchedules.id, id)).returning();
       res.json({ success: true });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -249,7 +249,7 @@ export function registerStandupRoutes(app: Express) {
 
       res.json(participants);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -267,7 +267,7 @@ export function registerStandupRoutes(app: Express) {
 
       res.status(201).json(participant);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -286,7 +286,7 @@ export function registerStandupRoutes(app: Express) {
 
       res.json({ success: true });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -350,7 +350,7 @@ export function registerStandupRoutes(app: Express) {
 
       res.json(todayStandups);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -425,7 +425,7 @@ export function registerStandupRoutes(app: Express) {
 
       res.status(201).json(entry);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -447,7 +447,7 @@ export function registerStandupRoutes(app: Express) {
 
       res.json(updated);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -482,7 +482,7 @@ export function registerStandupRoutes(app: Express) {
 
       res.json(entries);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -551,7 +551,7 @@ export function registerStandupRoutes(app: Express) {
 
       res.json({ entries: grouped, total: totalCount, limit, offset, hasMore: offset + limit < totalCount });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -630,7 +630,7 @@ export function registerStandupRoutes(app: Express) {
         participationRate: avgParticipation,
       });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -729,7 +729,7 @@ export function registerStandupRoutes(app: Express) {
 
       res.json({ series, totalParticipants });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -807,7 +807,7 @@ export function registerStandupRoutes(app: Express) {
 
       res.json({ members: personStats, totalStandups });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -902,7 +902,7 @@ export function registerStandupRoutes(app: Express) {
 
       res.json({ text, markdown, date, scheduleName, submissionCount: entries.length, participantCount: participants.length, blockerCount: blockerEntries.length, missingCount: missing.length });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -956,7 +956,7 @@ export function registerStandupRoutes(app: Express) {
 
       res.json({ whatIDid, whatImDoing });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -1188,7 +1188,7 @@ export function registerStandupRoutes(app: Express) {
         },
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1208,7 +1208,7 @@ export function registerStandupRoutes(app: Express) {
       `);
       res.status(201).json({ ok: true });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -1227,7 +1227,7 @@ export function registerStandupRoutes(app: Express) {
       `);
       res.json({ items: rows.rows || [] });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -1248,7 +1248,7 @@ export function registerStandupRoutes(app: Express) {
       `));
       res.json({ items: rows.rows || [] });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -1337,7 +1337,7 @@ export function registerStandupRoutes(app: Express) {
 
       res.status(201).json({ seeded: true, schedule });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 }

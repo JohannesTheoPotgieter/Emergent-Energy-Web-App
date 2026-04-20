@@ -186,7 +186,7 @@ export function registerHandoverRoutes(app: Express) {
       res.json({ projectId, projectName: project.projectName, gates });
     } catch (err: any) {
       console.error("[handover] GET gates error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -253,7 +253,7 @@ export function registerHandoverRoutes(app: Express) {
       res.json({ success: true, gateId, status: "COMPLETE" });
     } catch (err: any) {
       console.error("[handover] POST complete error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -290,7 +290,7 @@ export function registerHandoverRoutes(app: Express) {
       res.json({ success: true });
     } catch (err: any) {
       console.error("[handover] POST update-checklist error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -335,7 +335,7 @@ export function registerHandoverRoutes(app: Express) {
       res.json({ success: true, gateId, status: "PENDING" });
     } catch (err: any) {
       console.error("[handover] POST reopen error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -361,7 +361,7 @@ export function registerHandoverRoutes(app: Express) {
       res.json({ history });
     } catch (err: any) {
       console.error("[handover] GET history error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 

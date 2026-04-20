@@ -136,7 +136,7 @@ router.post("/api/admin/pipedrive/sync", requireAuth, requirePermission("admin",
     res.json({ ...result, syncStatus });
   } catch (err) {
     console.error("[Pipedrive] Sync failed:", err);
-    res.status(500).json({ error: "Sync failed", message: err instanceof Error ? err.message : String(err) });
+    res.status(500).json({ error: "Sync failed" });
   }
 });
 
@@ -303,7 +303,7 @@ router.post("/api/pipedrive/pull", requireAuth, requirePermission("opportunities
     });
   } catch (err) {
     console.error("[Pipedrive] Pull failed:", err);
-    res.status(500).json({ error: "pull_failed", message: err instanceof Error ? err.message : String(err) });
+    res.status(500).json({ error: "pull_failed" });
   }
 });
 

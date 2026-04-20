@@ -88,7 +88,6 @@ function handleLinkConflict(res: Response, err: unknown): boolean {
       error: "conflict",
       code: err.code,
       reason: err.reason,
-      message: err.message,
       conflicts: err.conflicts.map((c) => ({
         id: c.id,
         appEntityType: c.appEntityType,

@@ -216,7 +216,7 @@ export function registerTrRegisterRoutes(app: Express) {
       });
       res.json(enriched);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -244,7 +244,7 @@ export function registerTrRegisterRoutes(app: Express) {
 
       res.json({ ...item, linkedProjects: links });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -295,7 +295,7 @@ export function registerTrRegisterRoutes(app: Express) {
 
       res.json(item);
     } catch (err: unknown) {
-      res.status(400).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -378,7 +378,7 @@ export function registerTrRegisterRoutes(app: Express) {
 
       res.json(updated);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -390,7 +390,7 @@ export function registerTrRegisterRoutes(app: Express) {
       await db.delete(trItems).where(eq(trItems.id, id));
       res.json({ success: true });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -439,7 +439,7 @@ export function registerTrRegisterRoutes(app: Express) {
 
       res.json({ link: updatedLink, task });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -457,7 +457,7 @@ export function registerTrRegisterRoutes(app: Express) {
       await db.delete(trItemProjectLinks).where(eq(trItemProjectLinks.id, linkId));
       res.json({ success: true });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -497,7 +497,7 @@ export function registerTrRegisterRoutes(app: Express) {
 
       res.json(updated);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -590,7 +590,7 @@ export function registerTrRegisterRoutes(app: Express) {
       scored.sort((a: ScoredProject, b: ScoredProject) => b.score - a.score);
       res.json(scored.slice(0, 8));
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -662,7 +662,7 @@ export function registerTrRegisterRoutes(app: Express) {
 
       res.json({ success: true, decision, linkResult });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 

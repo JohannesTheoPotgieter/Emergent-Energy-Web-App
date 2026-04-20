@@ -91,7 +91,7 @@ export function registerWorkingPlanRoutes(app: Express) {
       });
     } catch (error: any) {
       console.error("Error getting working plan:", error);
-      res.status(500).json({ error: "server_error", message: error.message });
+      res.status(500).json({ error: "server_error" });
     }
   });
 
@@ -110,7 +110,7 @@ export function registerWorkingPlanRoutes(app: Express) {
       res.json({ success: true, message: "Working plan reset to baseline" });
     } catch (error: any) {
       console.error("Error resetting working plan:", error);
-      res.status(500).json({ error: "server_error", message: error.message });
+      res.status(500).json({ error: "server_error" });
     }
   });
 
@@ -192,7 +192,7 @@ export function registerWorkingPlanRoutes(app: Express) {
       }
     } catch (error: any) {
       console.error("Error updating task:", error);
-      res.status(500).json({ error: "server_error", message: error.message });
+      res.status(500).json({ error: "server_error" });
     }
   });
 
@@ -226,7 +226,7 @@ export function registerWorkingPlanRoutes(app: Express) {
       res.json(created);
     } catch (error: any) {
       console.error("Error creating task:", error);
-      res.status(500).json({ error: "server_error", message: error.message });
+      res.status(500).json({ error: "server_error" });
     }
   });
 
@@ -287,7 +287,7 @@ export function registerWorkingPlanRoutes(app: Express) {
       res.json({ success: true, totalRenamed: workingTasks.length });
     } catch (error: any) {
       console.error("Error renumbering WBS:", error);
-      res.status(500).json({ error: "server_error", message: error.message });
+      res.status(500).json({ error: "server_error" });
     }
   });
 
@@ -340,7 +340,7 @@ export function registerWorkingPlanRoutes(app: Express) {
       res.json({ success: true });
     } catch (error: any) {
       console.error("Error deleting task:", error);
-      res.status(500).json({ error: "server_error", message: error.message });
+      res.status(500).json({ error: "server_error" });
     }
   });
 
@@ -419,7 +419,7 @@ export function registerWorkingPlanRoutes(app: Express) {
       res.json(created);
     } catch (error: any) {
       console.error("Error creating dependency:", error);
-      res.status(500).json({ error: "server_error", message: error.message });
+      res.status(500).json({ error: "server_error" });
     }
   });
 
@@ -433,7 +433,7 @@ export function registerWorkingPlanRoutes(app: Express) {
       res.json({ success: true });
     } catch (error: any) {
       console.error("Error deleting dependency:", error);
-      res.status(500).json({ error: "server_error", message: error.message });
+      res.status(500).json({ error: "server_error" });
     }
   });
 
@@ -446,7 +446,7 @@ export function registerWorkingPlanRoutes(app: Express) {
       res.json(notices);
     } catch (error: any) {
       console.error("Error getting change notices:", error);
-      res.status(500).json({ error: "server_error", message: error.message });
+      res.status(500).json({ error: "server_error" });
     }
   });
 
@@ -478,7 +478,7 @@ export function registerWorkingPlanRoutes(app: Express) {
       res.json(created);
     } catch (error: any) {
       console.error("Error creating change notice:", error);
-      res.status(500).json({ error: "server_error", message: error.message });
+      res.status(500).json({ error: "server_error" });
     }
   });
 
@@ -503,7 +503,7 @@ export function registerWorkingPlanRoutes(app: Express) {
       res.json(updated);
     } catch (error: any) {
       console.error("Error updating change notice:", error);
-      res.status(500).json({ error: "server_error", message: error.message });
+      res.status(500).json({ error: "server_error" });
     }
   });
 }

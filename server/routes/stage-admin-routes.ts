@@ -20,7 +20,7 @@ app.get("/api/admin/stage-definitions", jwtAuth, requireAuth, requirePermission(
     res.json({ definitions });
   } catch (err: any) {
     console.error("Stage definitions error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -43,7 +43,7 @@ app.put("/api/admin/stage-definitions/:id", jwtAuth, requireAuth, requirePermiss
     res.json({ success: true });
   } catch (err: any) {
     console.error("Stage definition update error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -60,7 +60,7 @@ app.get("/api/admin/stage-checklist-templates", jwtAuth, requireAuth, requirePer
     res.json({ templates });
   } catch (err: any) {
     console.error("Checklist templates error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -76,7 +76,7 @@ app.post("/api/admin/stage-checklist-templates", jwtAuth, requireAuth, requirePe
     res.json({ template: result[0] });
   } catch (err: any) {
     console.error("Checklist template create error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -99,7 +99,7 @@ app.put("/api/admin/stage-checklist-templates/:id", jwtAuth, requireAuth, requir
     res.json({ success: true });
   } catch (err: any) {
     console.error("Checklist template update error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -112,7 +112,7 @@ app.delete("/api/admin/stage-checklist-templates/:id", jwtAuth, requireAuth, req
     res.json({ success: true });
   } catch (err: any) {
     console.error("Checklist template delete error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -131,7 +131,7 @@ app.get("/api/admin/exception-thresholds", jwtAuth, requireAuth, requirePermissi
     });
   } catch (err: any) {
     console.error("Exception thresholds error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -158,7 +158,7 @@ app.get("/api/admin/gate-config", jwtAuth, requireAuth, requirePermission("stage
     });
   } catch (err: any) {
     console.error("Gate config error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 

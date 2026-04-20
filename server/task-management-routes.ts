@@ -168,7 +168,7 @@ export function registerTaskManagementRoutes(app: Express) {
         offset,
       });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -217,7 +217,7 @@ export function registerTaskManagementRoutes(app: Express) {
 
       res.json(columns);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -265,7 +265,7 @@ export function registerTaskManagementRoutes(app: Express) {
 
       res.json(calendar);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -348,7 +348,7 @@ export function registerTaskManagementRoutes(app: Express) {
         lookbackDays,
       });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -402,7 +402,7 @@ export function registerTaskManagementRoutes(app: Express) {
 
       res.status(201).json(item);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -453,7 +453,7 @@ export function registerTaskManagementRoutes(app: Express) {
 
       res.json(updated);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -472,7 +472,7 @@ export function registerTaskManagementRoutes(app: Express) {
       if (!deleted) return res.status(404).json({ error: "Task not found" });
       res.json({ success: true });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -523,7 +523,7 @@ export function registerTaskManagementRoutes(app: Express) {
 
       res.json({ success: true, updatedCount: taskIds.length });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -559,7 +559,7 @@ export function registerTaskManagementRoutes(app: Express) {
 
       res.status(201).json(entry);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -587,7 +587,7 @@ export function registerTaskManagementRoutes(app: Express) {
 
       res.json({ entries, totalMinutes });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -618,7 +618,7 @@ export function registerTaskManagementRoutes(app: Express) {
 
       res.json({ success: true });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -634,7 +634,7 @@ export function registerTaskManagementRoutes(app: Express) {
         .orderBy(asc(taskTags.category), asc(taskTags.name));
       res.json(tags);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -658,7 +658,7 @@ export function registerTaskManagementRoutes(app: Express) {
       if ((err instanceof Error ? err.message : String(err))?.includes("unique")) {
         return res.status(409).json({ error: "Tag name already exists" });
       }
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -681,7 +681,7 @@ export function registerTaskManagementRoutes(app: Express) {
 
       res.json(updated);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -692,7 +692,7 @@ export function registerTaskManagementRoutes(app: Express) {
       await db.update(taskTags).set({ deletedAt: new Date(), deletedBy: req.user?.id }).where(eq(taskTags.id, id)).returning();
       res.json({ success: true });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -728,7 +728,7 @@ export function registerTaskManagementRoutes(app: Express) {
 
       res.json(currentTags);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -747,7 +747,7 @@ export function registerTaskManagementRoutes(app: Express) {
 
       res.json({ success: true });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -892,7 +892,7 @@ export function registerTaskManagementRoutes(app: Express) {
         counts: { bugs: bugs.length, improvements: improvements.length, features: features.length },
       });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 }

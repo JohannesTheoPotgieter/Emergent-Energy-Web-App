@@ -146,6 +146,7 @@ async function bootstrap() {
   } catch (err) {
     console.error("[Bootstrap] Failed to set up frontend serving:", err);
     app.use("/{*path}", (_req, res) => {
+      // eslint-disable-next-line no-restricted-syntax -- intentional: boot-time 503 with stringified err is server-log-equivalent; no handler runs
       res.status(503).json({ error: "Frontend failed to initialize", detail: String(err) });
     });
   }
