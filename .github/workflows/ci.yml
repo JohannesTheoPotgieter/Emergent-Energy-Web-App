@@ -33,6 +33,9 @@ jobs:
             turbo-compile-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json') }}-
             turbo-compile-${{ runner.os }}-
       - run: npm run ci:compile
+      # Schema-drift guard (Phase 3b). Fails the build if shared/schema/*.ts
+      # was edited without a corresponding new migration under /migrations/.
+      - run: npm run db:check
 
   # ── Stage 2: Tests (requires Postgres) ────────────────────
   test:

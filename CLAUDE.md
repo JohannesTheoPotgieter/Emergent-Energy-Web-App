@@ -23,8 +23,17 @@ and `docs/architecture.md` for the architecture baseline.
 - `npm run test:smoke` — Playwright smoke suite (all routes × all roles).
 - `npm run qa:full-proof` — Full quality gate (check + test:api + test:smoke +
   test:routes + test:workflows + reconciliation + release:gate).
-- `npm run db:push` — Apply pre-push SQL enums + full schema alignment against
-  `$DATABASE_URL`.
+- `npm run db:push` — Sync `shared/schema.ts` to `$DATABASE_URL` via
+  `drizzle-kit push --force`. Dev-only; destructive — will drop columns that
+  exist in the DB but not in the schema.
+- `npm run db:generate` — After editing `shared/schema/*.ts`, run this with
+  `--name=<short_snake_case>` to produce a new migration file next to the
+  baseline.
+- `npm run db:migrate` — Apply pending migrations in order (tracked via
+  `migrations/meta/_journal.json` + the `__drizzle_migrations` table on the
+  target DB).
+- `npm run db:check` — CI guard. Fails if `shared/schema/*.ts` was edited
+  without a matching new migration file. Invoked on every PR.
 
 ## Project Structure
 
@@ -84,12 +93,24 @@ qa/release-gate.ts  Must pass before any release
   - Note: `ProgramExpense` / `ProgramInflows` are **deprecated PE/PI type shapes**
     in `shared/schema/finance.ts` — do not use for new code; use
     `normalizedCostLines` / `normalizedRevenueLines` instead.
-- **Migrations location:** `/migrations/` at the repo root (Drizzle-managed SQL).
-  Do NOT put new migrations in `server/migrations/` — that directory only holds
-  one-off TS maintenance scripts.
-- **Migrations policy:** Additive only. Every migration must use `IF NOT EXISTS`
-  / `IF EXISTS` guards. Never destructively `ALTER TABLE … DROP` or `RENAME`
-  without an explicit multi-step safe-migration plan.
+- **Migrations location:** `/migrations/` at the repo root. The current
+  baseline is `0000_baseline_20260419.sql`; new migrations are generated
+  next to it by `npm run db:generate`. Do NOT hand-write migrations — the
+  journal (`migrations/meta/_journal.json`) is the source of truth for
+  what Drizzle considers applied. Do NOT put migrations in
+  `server/migrations/` — that directory only holds one-off TS scripts.
+- **Historical migrations:** the 225 pre-baseline migrations live in
+  `migrations/archive/` for reference only. They are NOT re-applied by
+  any tooling; prod DBs already contain their effects. See
+  `migrations/archive/README.md`.
+- **Schema-drift CI guard:** `npm run db:check` runs `drizzle-kit generate`
+  in a sandbox and fails if it would produce a new SQL file — meaning the
+  schema and the committed migrations are out of sync. The CI workflows
+  run this on every PR.
+- **Migrations policy:** Additive only. Every new migration must use
+  `IF NOT EXISTS` / `IF EXISTS` guards. Never destructively
+  `ALTER TABLE … DROP` or `RENAME` without an explicit multi-step safe-
+  migration plan.
 - **`work_items`:** Writes go directly to `public.work_items` via Drizzle. The
   writable-view architecture was retired (see
   `migrations/20260409_retire_work_items_view.sql`). The files
