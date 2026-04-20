@@ -30,7 +30,13 @@ interface PipedriveDeal {
   stage_id: number;
   pipeline_id: number;
   org_id: { value: number; name: string } | null;
-  owner_id: { id: number; name: string; email: string } | null;
+  /**
+   * Pipedrive v1 returns the deal owner under `user_id`, not `owner_id`
+   * (the latter is null on modern responses). Field name corrected
+   * 2026-04-20 after `deal_owner_name` came up empty across all 622 active
+   * rows — root cause was that the old `owner_id` path never resolved.
+   */
+  user_id: { id: number; name: string; email: string } | null;
   person_id: { value: number; name: string; email?: Array<{ value: string }>; phone?: Array<{ value: string }> } | null;
   expected_close_date: string | null;
   won_time: string | null;
@@ -287,7 +293,7 @@ export async function syncPipedriveDeals(
     for (const deal of deals) {
       // Owner scope: skip deals that don't belong to the calling PD.
       if (ownerEmailLower) {
-        const dealOwnerEmail = deal.owner_id?.email?.trim().toLowerCase() ?? null;
+        const dealOwnerEmail = deal.user_id?.email?.trim().toLowerCase() ?? null;
         if (!dealOwnerEmail || dealOwnerEmail !== ownerEmailLower) {
           continue;
         }
@@ -310,9 +316,9 @@ export async function syncPipedriveDeals(
           ? String(deal.label).split(",").map((id) => labelIdToName.get(id.trim()) ?? id.trim()).filter(Boolean).join(", ") || null
           : null;
         // Owner: prefer email-matched local user; always snapshot the name.
-        const ownerEmailLower2 = deal.owner_id?.email?.trim().toLowerCase() ?? null;
+        const ownerEmailLower2 = deal.user_id?.email?.trim().toLowerCase() ?? null;
         const ownerUserId = ownerEmailLower2 ? (userByEmail.get(ownerEmailLower2) ?? null) : null;
-        const ownerName = deal.owner_id?.name ?? null;
+        const ownerName = deal.user_id?.name ?? null;
         // Optional: fetch person details if linked. One extra HTTP per deal,
         // only when person_id is present.
         let person: PipedrivePerson | null = null;
