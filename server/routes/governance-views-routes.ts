@@ -79,7 +79,7 @@ app.get("/api/governance/quality", jwtAuth, requireAuth, async (req, res) => {
       return res.json({ commissioningReviews: [], openSnags: [], qualityChecklist: [] });
     }
     console.error("Quality governance error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -115,7 +115,7 @@ app.patch("/api/governance/quality/:id/action", jwtAuth, requireAuth, requirePer
       return res.json({ success: false, error: "Stage tables not yet migrated" });
     }
     console.error("Quality action error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -182,7 +182,7 @@ app.get("/api/governance/compliance", jwtAuth, requireAuth, async (req, res) => 
       return res.json({ ssegByProject: [], authoritySubmissions: [], meteringPending: [] });
     }
     console.error("Compliance governance error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -202,7 +202,7 @@ app.patch("/api/governance/compliance/:id/action", jwtAuth, requireAuth, async (
     res.json({ success: true });
   } catch (err: any) {
     console.error("Compliance action error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 

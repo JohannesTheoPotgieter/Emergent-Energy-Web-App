@@ -178,7 +178,7 @@ export function registerMytoolRoutes(app: Express): void {
       const settings = await storage.getMytoolSettings();
       res.json(settings);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -188,7 +188,7 @@ export function registerMytoolRoutes(app: Express): void {
       logAuditFromReq(req, { entityType: "mytool_settings", action: "update", changesJson: { description: "MyTool settings updated" } });
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -338,7 +338,7 @@ export function registerMytoolRoutes(app: Express): void {
 
       res.json(combined);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -558,7 +558,7 @@ export function registerMytoolRoutes(app: Express): void {
 
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -579,7 +579,7 @@ export function registerMytoolRoutes(app: Express): void {
       const enriched = await enrichMytoolTasks(userId, tasks);
       res.json(enriched);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -654,7 +654,7 @@ export function registerMytoolRoutes(app: Express): void {
       if (hasRequestId) {
         mytoolTaskIdempotencyStore.fail(userId, requestId);
       }
-      console.error("[mytool-task-create] request", { requestId: hasRequestId ? requestId : null, userId, result: "error", message: err?.message || "unknown_error" });
+      console.error("[mytool-task-create] request", { requestId: hasRequestId ? requestId : null, userId, result: "error" });
       sendError(res, err);
     }
   });
@@ -750,7 +750,7 @@ export function registerMytoolRoutes(app: Express): void {
       logAuditFromReq(req, { entityType: "mytool_task", action: "update", entityId: paramStr(req.params.id), changesJson: { description: "MyTool task updated", changedFields: Object.keys(req.body) } });
       res.json(task);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -766,7 +766,7 @@ export function registerMytoolRoutes(app: Express): void {
       logAuditFromReq(req, { entityType: "mytool_task", action: "delete", entityId: paramStr(req.params.id), changesJson: { description: "MyTool task deleted" } });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -797,7 +797,7 @@ export function registerMytoolRoutes(app: Express): void {
         createdAt: null,
       })));
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -835,7 +835,7 @@ export function registerMytoolRoutes(app: Express): void {
         : { predecessorTaskId, successorTaskId, dependencyType, duplicate: true };
       res.json(result);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -854,7 +854,7 @@ export function registerMytoolRoutes(app: Express): void {
       if (dep) await refreshDependentTaskStates(dep.predecessorId);
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -866,7 +866,7 @@ export function registerMytoolRoutes(app: Express): void {
       const templates = await db.select().from(mytoolRecurrenceTemplates).where(eq(mytoolRecurrenceTemplates.ownerUserId, userId)).orderBy(desc(mytoolRecurrenceTemplates.updatedAt));
       res.json(templates);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -876,7 +876,7 @@ export function registerMytoolRoutes(app: Express): void {
       const [template] = await db.insert(mytoolRecurrenceTemplates).values({ ...req.body, ownerUserId: userId }).returning();
       res.json(template);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -892,7 +892,7 @@ export function registerMytoolRoutes(app: Express): void {
       const blocks = await storage.getMytoolTimeblocks(userId, date);
       res.json(blocks);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -903,7 +903,7 @@ export function registerMytoolRoutes(app: Express): void {
       logAuditFromReq(req, { entityType: "mytool_timeblock", action: "create", entityId: String(block.id), changesJson: { description: "Timeblock created" } });
       res.json(block);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -913,7 +913,7 @@ export function registerMytoolRoutes(app: Express): void {
       logAuditFromReq(req, { entityType: "mytool_timeblock", action: "update", entityId: paramStr(req.params.id), changesJson: { description: "Timeblock updated" } });
       res.json(block);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -923,7 +923,7 @@ export function registerMytoolRoutes(app: Express): void {
       logAuditFromReq(req, { entityType: "mytool_timeblock", action: "delete", entityId: paramStr(req.params.id), changesJson: { description: "Timeblock deleted" } });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -939,7 +939,7 @@ export function registerMytoolRoutes(app: Express): void {
       const review = await storage.getMytoolDailyReview(userId, date);
       res.json(review || null);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -950,7 +950,7 @@ export function registerMytoolRoutes(app: Express): void {
       logAuditFromReq(req, { entityType: "mytool_daily_review", action: "update", changesJson: { description: "Daily review updated", date: req.body.date } });
       res.json(review);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1014,7 +1014,7 @@ export function registerMytoolRoutes(app: Express): void {
         console.warn("[escalated-priorities] Schema not ready, returning empty:", msg);
         return res.json([]);
       }
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1026,7 +1026,7 @@ export function registerMytoolRoutes(app: Express): void {
       const prefs = await storage.getMytoolUserPreferences(userId);
       res.json(prefs || { ownerUserId: userId, defaultView: 'today', workdayStartTime: '08:00', workdayEndTime: '17:00', showCompanyPriorities: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1037,7 +1037,7 @@ export function registerMytoolRoutes(app: Express): void {
       logAuditFromReq(req, { entityType: "mytool_preferences", action: "update", changesJson: { description: "User preferences updated" } });
       res.json(prefs);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1060,7 +1060,7 @@ export function registerMytoolRoutes(app: Express): void {
       }
       res.json([]);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1071,7 +1071,7 @@ export function registerMytoolRoutes(app: Express): void {
       logAuditFromReq(req, { entityType: "email_link", action: "create", entityId: String(link.id), changesJson: { description: "Email link created" } });
       res.json(link);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1081,7 +1081,7 @@ export function registerMytoolRoutes(app: Express): void {
       logAuditFromReq(req, { entityType: "email_link", action: "delete", entityId: paramStr(req.params.id), changesJson: { description: "Email link deleted" } });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1092,7 +1092,7 @@ export function registerMytoolRoutes(app: Express): void {
       const templates = await storage.getMytoolDodTemplates();
       res.json(templates);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1103,7 +1103,7 @@ export function registerMytoolRoutes(app: Express): void {
       logAuditFromReq(req, { entityType: "dod_template", action: "create", entityId: String(template.id), changesJson: { description: "DoD template created", title: req.body.title } });
       res.json(template);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1113,7 +1113,7 @@ export function registerMytoolRoutes(app: Express): void {
       logAuditFromReq(req, { entityType: "dod_template", action: "delete", entityId: paramStr(req.params.id), changesJson: { description: "DoD template deleted" } });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1163,7 +1163,7 @@ export function registerMytoolRoutes(app: Express): void {
       const rules = await db.select().from(triageRulesTable).where(eq(triageRulesTable.ownerUserId, userId));
       res.json(rules);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1182,7 +1182,7 @@ export function registerMytoolRoutes(app: Express): void {
       logAuditFromReq(req, { entityType: "triage_rule", action: "create", entityId: String(rule.id), changesJson: { description: "Triage rule created", ruleType, value } });
       res.json(rule);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1202,7 +1202,7 @@ export function registerMytoolRoutes(app: Express): void {
       logAuditFromReq(req, { entityType: "triage_rule", action: "update", entityId: String(ruleId), changesJson: { description: "Triage rule updated" } });
       res.json(rule);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1219,7 +1219,7 @@ export function registerMytoolRoutes(app: Express): void {
       logAuditFromReq(req, { entityType: "triage_rule", action: "delete", entityId: String(ruleId), changesJson: { description: "Triage rule deleted" } });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1284,7 +1284,7 @@ export function registerMytoolRoutes(app: Express): void {
       if (err.message?.includes("not connected") || err.message?.includes("not available")) {
         return res.json({ flagged: [], keywordMatches: [], senderMatches: [], rules: [] });
       }
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1308,7 +1308,7 @@ export function registerMytoolRoutes(app: Express): void {
         );
       res.json(tasks);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 }

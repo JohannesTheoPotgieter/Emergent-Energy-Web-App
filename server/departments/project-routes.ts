@@ -1857,7 +1857,8 @@ router.get("/api/projects/:id/header-kpis", requireAuth, async (req, res) => {
     const kpis = await getProjectHeaderKpis(projectId);
     return res.json(kpis);
   } catch (error: any) {
-    return res.status(500).json({ error: error?.message || "Failed to load header KPIs" });
+    console.error("[project-routes] header-kpis error:", error);
+    return res.status(500).json({ error: "Failed to load header KPIs" });
   }
 });
 
@@ -1866,7 +1867,8 @@ router.post("/api/projects/header-kpis/recompute", requireAuth, requireAdmin, as
     const result = await recomputeHeaderKpiProjectionForActiveProjects();
     return res.json({ ok: true, ...result });
   } catch (error: any) {
-    return res.status(500).json({ error: error?.message || "Failed to recompute KPI projection" });
+    console.error("[project-routes] header-kpis recompute error:", error);
+    return res.status(500).json({ error: "Failed to recompute KPI projection" });
   }
 });
 
@@ -2011,7 +2013,7 @@ router.get("/api/key-date-mappings/:projectName", requireAuth, requireAdmin, asy
     const mappings = await storage.getKeyDateMappings(decodeURIComponent(req.params.projectName as string));
     res.json(mappings);
   } catch (err: unknown) {
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
@@ -2020,7 +2022,7 @@ router.post("/api/key-date-mappings", requireAuth, requireAdmin, async (req: Req
     const mapping = await storage.createKeyDateMapping({ ...req.body, createdBy: (req.user as any)?.id });
     res.json(mapping);
   } catch (err: unknown) {
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
@@ -2029,7 +2031,7 @@ router.patch("/api/key-date-mappings/:id", requireAuth, requireAdmin, async (req
     const updated = await storage.updateKeyDateMapping(parseInt(req.params.id as string), req.body);
     res.json(updated);
   } catch (err: unknown) {
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
@@ -2038,7 +2040,7 @@ router.delete("/api/key-date-mappings/:id", requireAuth, requireAdmin, async (re
     await storage.deleteKeyDateMapping(parseInt(req.params.id as string));
     res.json({ success: true });
   } catch (err: unknown) {
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
@@ -2112,7 +2114,7 @@ router.get("/api/key-dates/:projectName", requireAuth, async (req: Request, res:
 
     res.json(results);
   } catch (err: unknown) {
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 

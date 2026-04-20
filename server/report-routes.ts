@@ -225,7 +225,7 @@ export function registerReportRoutes(app: Express) {
       res.status(201).json({ id, status, downloadUrl, scheduled: Boolean(schedule) });
     } catch (error: any) {
       console.error("[Reports] Failed to generate report", error);
-      res.status(500).json({ error: "report_generation_failed", message: error?.message || "Unknown error" });
+      res.status(500).json({ error: "report_generation_failed" });
     }
   });
 
@@ -251,7 +251,7 @@ export function registerReportRoutes(app: Express) {
       `);
       res.json({ items: rows.rows || [] });
     } catch (error: any) {
-      res.status(500).json({ error: "scheduled_reports_fetch_failed", message: error?.message || "Unknown error" });
+      res.status(500).json({ error: "scheduled_reports_fetch_failed" });
     }
   });
 
@@ -279,7 +279,7 @@ export function registerReportRoutes(app: Express) {
       `);
       res.json({ items: rows.rows || [] });
     } catch (error: any) {
-      res.status(500).json({ error: "report_history_fetch_failed", message: error?.message || "Unknown error" });
+      res.status(500).json({ error: "report_history_fetch_failed" });
     }
   });
 
@@ -307,7 +307,7 @@ export function registerReportRoutes(app: Express) {
       res.json(payload);
     } catch (error: any) {
       console.error("[Programme Reports] drilldown failed", error);
-      res.status(500).json({ error: "programme_drilldown_failed", message: error?.message || "Unknown error" });
+      res.status(500).json({ error: "programme_drilldown_failed" });
     }
   });
 
@@ -390,7 +390,7 @@ export function registerReportRoutes(app: Express) {
       res.send(Buffer.from(data));
     } catch (error: any) {
       console.error("[Programme Reports] board pdf failed", error);
-      res.status(500).json({ error: "programme_board_pdf_failed", message: error?.message || "Unknown error" });
+      res.status(500).json({ error: "programme_board_pdf_failed" });
     }
   });
 
@@ -402,7 +402,7 @@ export function registerReportRoutes(app: Express) {
       res.json(result);
     } catch (err: unknown) {
       console.error("[Reports] Error:", (err instanceof Error ? err.message : String(err)));
-      res.status(400).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -463,7 +463,7 @@ export function registerReportRoutes(app: Express) {
       res.send(pdfBytes);
     } catch (err: unknown) {
       console.error("[Reports] PDF error:", (err instanceof Error ? err.message : String(err)));
-      res.status(400).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -608,7 +608,7 @@ export function registerReportRoutes(app: Express) {
       res.json({ data: rows, meta: { count: rows.length, stalenessThresholdDays: STALENESS_THRESHOLD_DAYS } });
     } catch (err: unknown) {
       console.error("[Reports] Project plan error:", (err instanceof Error ? err.message : String(err)));
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -715,7 +715,7 @@ export function registerReportRoutes(app: Express) {
       });
     } catch (err: unknown) {
       console.error("[Reports] Cost report error:", (err instanceof Error ? err.message : String(err)));
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -773,7 +773,7 @@ export function registerReportRoutes(app: Express) {
       res.json({ data: rows, meta: { count: rows.length, stalenessThresholdDays: STALENESS_THRESHOLD_DAYS } });
     } catch (err: unknown) {
       console.error("[Reports] Quality report error:", (err instanceof Error ? err.message : String(err)));
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -870,7 +870,7 @@ export function registerReportRoutes(app: Express) {
       res.json({ data: rows, meta: { count: rows.length, stalenessThresholdDays: STALENESS_THRESHOLD_DAYS } });
     } catch (err: unknown) {
       console.error("[Reports] Resource allocation error:", (err instanceof Error ? err.message : String(err)));
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 

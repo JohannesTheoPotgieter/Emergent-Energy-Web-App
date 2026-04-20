@@ -127,7 +127,7 @@ export function registerOperationalTasksRoutes(app: Express) {
 
       res.json({ task: { ...task, resolvedAssignees, resolvedOwner }, comments, checklists: checklistsWithItems, attachments, activity });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -144,7 +144,7 @@ export function registerOperationalTasksRoutes(app: Express) {
       // Legacy fallback removed — all data should be in work_items by now.
       return res.json([]);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -198,6 +198,7 @@ export function registerOperationalTasksRoutes(app: Express) {
           assertTaskWorkflowTransition(context, updates.status, "status_update");
         } catch (err: any) {
           if (err instanceof TaskWorkflowGuardError) {
+            // eslint-disable-next-line no-restricted-syntax -- intentional: TaskWorkflowGuardError carries a user-authored business message
             return res.status(err.statusCode).json({ error: err.message });
           }
           throw err;
@@ -306,7 +307,7 @@ export function registerOperationalTasksRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "operational_task", action: "delete", entityId: String(id), changesJson: { description: "Operational task deleted", title: task?.title } });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -414,6 +415,7 @@ export function registerOperationalTasksRoutes(app: Express) {
             assertTaskWorkflowTransition(context, updates.status, "bulk_status_update");
           } catch (err: any) {
             if (err instanceof TaskWorkflowGuardError) {
+              // eslint-disable-next-line no-restricted-syntax -- intentional: TaskWorkflowGuardError carries a user-authored business message
               return res.status(err.statusCode).json({ error: err.message, taskId });
             }
             throw err;
@@ -437,7 +439,7 @@ export function registerOperationalTasksRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "operational_task", action: "bulk_update", changesJson: { description: `${taskIds.length} task(s) bulk updated`, taskCount: taskIds.length, changedFields: Object.keys(updates) } });
       res.json(results);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -448,7 +450,7 @@ export function registerOperationalTasksRoutes(app: Express) {
       const comments = await storage.getTaskComments(parseInt(paramStr(req.params.taskId)));
       res.json(comments);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -458,7 +460,7 @@ export function registerOperationalTasksRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "task_comment", action: "create", entityId: String(comment.id), changesJson: { description: "Task comment added", taskId: req.body.taskId } });
       res.json(comment);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -470,7 +472,7 @@ export function registerOperationalTasksRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "task_comment", action: "delete", entityId: paramStr(req.params.id), changesJson: { description: "Task comment deleted" } });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -485,7 +487,7 @@ export function registerOperationalTasksRoutes(app: Express) {
       })));
       res.json(checklistsWithItems);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -495,7 +497,7 @@ export function registerOperationalTasksRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "task_checklist", action: "create", entityId: String(checklist.id), changesJson: { description: "Task checklist created", taskId: req.body.taskId } });
       res.json(checklist);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -507,7 +509,7 @@ export function registerOperationalTasksRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "task_checklist", action: "delete", entityId: paramStr(req.params.id), changesJson: { description: "Task checklist deleted" } });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -517,7 +519,7 @@ export function registerOperationalTasksRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "checklist_item", action: "create", entityId: String(item.id), changesJson: { description: "Checklist item created" } });
       res.json(item);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -529,7 +531,7 @@ export function registerOperationalTasksRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "checklist_item", action: "update", entityId: paramStr(req.params.id), changesJson: { description: "Checklist item updated" } });
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -541,7 +543,7 @@ export function registerOperationalTasksRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "checklist_item", action: "delete", entityId: paramStr(req.params.id), changesJson: { description: "Checklist item deleted" } });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -552,7 +554,7 @@ export function registerOperationalTasksRoutes(app: Express) {
       const attachments = await storage.getTaskAttachments(parseInt(paramStr(req.params.taskId)));
       res.json(attachments);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -562,7 +564,7 @@ export function registerOperationalTasksRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "task_attachment", action: "create", entityId: String(attachment.id), changesJson: { description: "Task attachment added" } });
       res.json(attachment);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -574,7 +576,7 @@ export function registerOperationalTasksRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "task_attachment", action: "delete", entityId: paramStr(req.params.id), changesJson: { description: "Task attachment deleted" } });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -585,7 +587,7 @@ export function registerOperationalTasksRoutes(app: Express) {
       const activity = await storage.getTaskActivityLog(parseInt(paramStr(req.params.taskId)));
       res.json(activity);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 }

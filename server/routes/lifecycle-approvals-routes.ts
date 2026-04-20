@@ -108,7 +108,7 @@ app.get("/api/approvals", jwtAuth, requireAuth, requirePermission("stage_gate", 
     res.json({ approvals: allApprovals });
   } catch (err: any) {
     console.error("Approvals error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -169,7 +169,7 @@ app.patch("/api/approvals/:type/:id/action", jwtAuth, requireAuth, requirePermis
     res.json({ success: true, action });
   } catch (err: any) {
     console.error("Approval action error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 

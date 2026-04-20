@@ -594,7 +594,7 @@ export function registerPlanningTasksRoutes(app: Express) {
       res.json({ tasks: result, unlinkedOperationalCount });
     } catch (err: any) {
       console.error("Planning tasks error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -649,7 +649,7 @@ export function registerPlanningTasksRoutes(app: Express) {
       res.json(rollup);
     } catch (err: any) {
       console.error("Summary rollup error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -989,7 +989,7 @@ export function registerPlanningTasksRoutes(app: Express) {
       }
     } catch (err: any) {
       console.error("Plan task update error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1269,7 +1269,7 @@ export function registerPlanningTasksRoutes(app: Express) {
       const mappings = await storage.getKeyDateMappings(decodeURIComponent(paramStr(req, "projectName")));
       res.json(mappings);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1279,7 +1279,7 @@ export function registerPlanningTasksRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "key_date_mapping", entityId: String(mapping.id), action: "create", changesJson: req.body });
       res.json(mapping);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1291,7 +1291,7 @@ export function registerPlanningTasksRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "key_date_mapping", entityId: paramStr(req, "id"), action: "update", changesJson: req.body });
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1303,7 +1303,7 @@ export function registerPlanningTasksRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "key_date_mapping", entityId: paramStr(req, "id"), action: "delete" });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1407,7 +1407,7 @@ export function registerPlanningTasksRoutes(app: Express) {
       const pName = piRow?.projectName || "";
       res.json(await resolveKeyDates(projectId, pName));
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1418,7 +1418,7 @@ export function registerPlanningTasksRoutes(app: Express) {
       const projectId = piRow?.id || null;
       res.json(await resolveKeyDates(projectId, projectName));
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 }

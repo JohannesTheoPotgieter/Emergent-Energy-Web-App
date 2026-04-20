@@ -112,7 +112,7 @@ app.get("/api/performance/v1", jwtAuth, requireAuth, requirePermission("performa
       });
     }
     console.error("Performance V1 error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -159,7 +159,7 @@ app.get("/api/reports/gate-reports", jwtAuth, requireAuth, requirePermission("pe
       return res.json({ blockedGates: [], exceptionAgeing: [] });
     }
     console.error("Gate reports error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -234,7 +234,7 @@ app.get("/api/reports/operational", jwtAuth, requireAuth, requirePermission("per
       return res.json({ commissioningQueue: [], handoverQueue: [], weeklyCompliance: [] });
     }
     console.error("Operational reports error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -281,7 +281,7 @@ app.get("/api/reports/quality-compliance", jwtAuth, requireAuth, requirePermissi
       return res.json({ qualityBlockers: [], complianceBlockers: [] });
     }
     console.error("Quality-compliance reports error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 

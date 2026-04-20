@@ -23,7 +23,7 @@ export function registerNotificationRoutes(app: Express) {
 
       res.json({ notifications: rows, unreadCount });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -40,7 +40,7 @@ export function registerNotificationRoutes(app: Express) {
 
       res.json({ count: Number(result[0]?.count ?? 0) });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -57,7 +57,7 @@ export function registerNotificationRoutes(app: Express) {
 
       res.json({ success: true });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -73,7 +73,7 @@ export function registerNotificationRoutes(app: Express) {
 
       res.json({ success: true });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -90,7 +90,7 @@ export function registerNotificationRoutes(app: Express) {
 
       res.json({ success: true });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -105,7 +105,7 @@ export function registerNotificationRoutes(app: Express) {
 
       res.json({ success: true });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 }

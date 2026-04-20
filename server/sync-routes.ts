@@ -54,7 +54,7 @@ export function registerSyncRoutes(app: Express) {
       const sites = await discoverSites();
       res.json({ sites });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -65,7 +65,7 @@ export function registerSyncRoutes(app: Express) {
       const site = await discoverSiteByUrl(hostAndPath as string);
       res.json(site);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -74,7 +74,7 @@ export function registerSyncRoutes(app: Express) {
       const lists = await discoverLists(paramStr(req.params.siteId));
       res.json({ lists });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -92,7 +92,8 @@ export function registerSyncRoutes(app: Express) {
         res.json({ list: null, error: "List not found" });
       }
     } catch (err: any) {
-      res.json({ list: null, error: err.message || "List not found with that name" });
+      console.error("[sync-routes] list lookup error:", err);
+      res.json({ list: null, error: "List not found with that name" });
     }
   });
 
@@ -101,7 +102,7 @@ export function registerSyncRoutes(app: Express) {
       const columns = await getListColumns(paramStr(req.params.siteId), paramStr(req.params.listId));
       res.json({ columns });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -111,7 +112,7 @@ export function registerSyncRoutes(app: Express) {
       const config = await getConfig();
       res.json({ config, isConfigured: isSharePointListConfigured() });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -128,7 +129,7 @@ export function registerSyncRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "sp_sync", action: "configure", changesJson: { siteId, listId, siteName, listName } });
       res.json({ config });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -159,7 +160,7 @@ export function registerSyncRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "sp_sync", action: "auto_detect_columns", changesJson: { totalColumns: columns.length, mappedColumns: Object.keys(mapping).length } });
       res.json({ mapping, columnTypes, totalColumns: columns.length, mappedColumns: Object.keys(mapping).length });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -182,7 +183,7 @@ export function registerSyncRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "sp_sync", action: "update_mapping", changesJson: { fieldsUpdated: Object.keys(mapping || {}).length } });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -421,7 +422,7 @@ export function registerSyncRoutes(app: Express) {
         errorList: errorList.length > 0 ? errorList : undefined,
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -536,7 +537,7 @@ export function registerSyncRoutes(app: Express) {
 
       res.json({ success: true, pushed, errors, errorList: errorList.length > 0 ? errorList : undefined });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -584,7 +585,7 @@ export function registerSyncRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "sp_sync", entityId: requestId, action: "resolve_conflict", changesJson: { resolutions } });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -658,7 +659,7 @@ export function registerSyncRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "intake_request", entityId: requestId, action: "cp_signed", changesJson: { clientName: request.clientName, evidenceType, signedDate } });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -668,7 +669,7 @@ export function registerSyncRoutes(app: Express) {
       const requests = await db.select().from(intakeRequests).orderBy(desc(intakeRequests.updatedAt));
       res.json({ requests });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -684,7 +685,7 @@ export function registerSyncRoutes(app: Express) {
 
       res.json({ request, tasks });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -695,7 +696,7 @@ export function registerSyncRoutes(app: Express) {
         .orderBy(desc(intakeRequests.updatedAt));
       res.json({ requests });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -718,7 +719,7 @@ export function registerSyncRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "intake_request", entityId: paramStr(req.params.id), action: "update", changesJson: { fieldsUpdated: Object.keys(updates).filter(k => k !== "updatedAt" && k !== "lastAppEditAt") } });
       res.json({ request: updated });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -730,7 +731,7 @@ export function registerSyncRoutes(app: Express) {
         .orderBy(intakeTasks.sortOrder);
       res.json({ tasks });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -753,7 +754,7 @@ export function registerSyncRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "intake_task", entityId: paramStr(req.params.taskId), action: "update", changesJson: { status, assignedTo } });
       res.json({ task: updated });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -795,7 +796,7 @@ export function registerSyncRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "intake_request", entityId: paramStr(req.params.requestId), action: "generate_tasks", changesJson: { tasksCreated: templates.length, requestType } });
       res.json({ success: true, tasksCreated: templates.length });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -806,7 +807,7 @@ export function registerSyncRoutes(app: Express) {
         .orderBy(intakeTaskTemplates.requestType, intakeTaskTemplates.sortOrder);
       res.json({ templates });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -819,7 +820,7 @@ export function registerSyncRoutes(app: Express) {
         .limit(limit);
       res.json({ logs });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -870,7 +871,7 @@ export function registerSyncRoutes(app: Express) {
         listName: config?.listName,
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 

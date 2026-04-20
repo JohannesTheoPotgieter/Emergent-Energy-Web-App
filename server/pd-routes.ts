@@ -174,7 +174,7 @@ export function registerPdRoutes(app: Express) {
       const rows = await query;
       res.json(rows);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -238,7 +238,7 @@ export function registerPdRoutes(app: Express) {
       }
       res.status(201).json({ ...created, _promotedMirror: promotedMirror });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -270,7 +270,7 @@ export function registerPdRoutes(app: Express) {
 
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -285,7 +285,7 @@ export function registerPdRoutes(app: Express) {
         .groupBy(projectInfo.clientId);
       res.json(rows);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -337,7 +337,7 @@ export function registerPdRoutes(app: Express) {
       const result = await filterTicketsByRole(enriched, user, role);
       res.json(result);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -424,7 +424,7 @@ export function registerPdRoutes(app: Express) {
         opportunityInfo,
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -537,7 +537,7 @@ export function registerPdRoutes(app: Express) {
 
       res.status(201).json(ticket);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -593,7 +593,7 @@ export function registerPdRoutes(app: Express) {
 
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -639,7 +639,7 @@ export function registerPdRoutes(app: Express) {
 
       res.json({ success: true, deletedTaskCount: deletedTaskIds.length });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -651,7 +651,7 @@ export function registerPdRoutes(app: Express) {
       const templates = PD_REQUEST_TYPE_TASK_TEMPLATES[ticket.requestType] || [];
       res.json({ requestType: ticket.requestType, templates });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -671,7 +671,7 @@ export function registerPdRoutes(app: Express) {
       const spawned = await spawnTasksForTicket(ticket, user, selectedTasks, customTasks);
       res.json({ spawned: spawned.length, tasks: spawned });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -735,7 +735,7 @@ export function registerPdRoutes(app: Express) {
 
       res.status(201).json(task);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -764,7 +764,7 @@ export function registerPdRoutes(app: Express) {
 
       res.json({ total, active, overdue, dueThisWeek, onHold, completed });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -901,7 +901,7 @@ export function registerPdRoutes(app: Express) {
         kanbanColumns: ["New", "In Progress", "Under Review", "Ready for Handover", "Handed Over"],
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -918,7 +918,7 @@ export function registerPdRoutes(app: Express) {
         .orderBy(asc(users.name));
       res.json(allUsers);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1194,7 +1194,7 @@ export function registerPdRoutes(app: Express) {
         },
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1219,7 +1219,7 @@ export function registerPdRoutes(app: Express) {
       const rows = await query;
       res.json(rows);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 }

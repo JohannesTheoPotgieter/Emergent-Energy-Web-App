@@ -326,7 +326,7 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
       const mappings = await storage.getAllWritebackMappings();
       res.json(mappings);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -336,7 +336,7 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
       logAuditFromReq(req, { entityType: "writeback_mapping", action: "create", entityId: String(mapping.id), changesJson: { description: "Writeback mapping created" } });
       res.json(mapping);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -348,7 +348,7 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
       logAuditFromReq(req, { entityType: "writeback_mapping", action: "update", entityId: paramStr(req.params.id), changesJson: { description: "Writeback mapping updated" } });
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -360,7 +360,7 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
       logAuditFromReq(req, { entityType: "writeback_mapping", action: "delete", entityId: paramStr(req.params.id), changesJson: { description: "Writeback mapping deleted" } });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -372,7 +372,7 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
       const logs = await storage.getWritebackAuditLogs(mappingId);
       res.json(logs);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -388,7 +388,7 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
       const sheets = await getWorkbookSheets(check.resolved);
       res.json({ sheets });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -411,7 +411,7 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
       const preview = await previewWriteback(check.resolved, mappings, dataByEntity);
       res.json(preview);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -490,7 +490,7 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
         outputPath: outputPath || workbookPath,
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -520,7 +520,7 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
       logAuditFromReq(req, { entityType: "writeback", action: "rollback", entityId: String(auditId), changesJson: { description: "Writeback rolled back", cellAddress: auditEntry.cellAddress, previousValue: auditEntry.previousValue } });
       res.json({ success: result.success, error: result.error });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -553,7 +553,7 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
       const tickets = await db.select().from(feedbackTickets).where(isNull(feedbackTickets.deletedAt)).orderBy(desc(feedbackTickets.createdAt));
       res.json(tickets);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -575,7 +575,7 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
       logAuditFromReq(req, { entityType: "feedback", action: "create", entityId: String(ticket.id), changesJson: { description: "Feedback ticket created", title, type: type || "bug" } });
       res.json(ticket);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -592,7 +592,7 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
       logAuditFromReq(req, { entityType: "feedback", action: "update", entityId: String(id), changesJson: { description: "Feedback ticket updated", status, priority } });
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -603,7 +603,7 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
       logAuditFromReq(req, { entityType: "feedback", action: "delete", entityId: String(id), changesJson: { description: "Feedback ticket deleted" } });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -624,7 +624,7 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
 
       res.json(folder || null);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -658,7 +658,7 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
       logAuditFromReq(req, { entityType: "user_project_folder", action: "upsert", projectName, changesJson: { folderName } });
       res.json(created);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -676,7 +676,7 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
       logAuditFromReq(req, { entityType: "user_project_folder", action: "delete", projectName });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
