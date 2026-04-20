@@ -16,7 +16,7 @@ import {
   Pencil, History, Zap, SkipForward,
 } from "lucide-react";
 import { useLocation } from "wouter";
-import { SmartImportV2Flow } from "@/components/smart-import";
+import { SmartImportV2Flow, SmartImportPathChooser, UPLOAD_LABELS } from "@/components/smart-import";
 
 function safeStr(v: unknown): string {
   if (v == null) return "";
@@ -142,6 +142,9 @@ export function UploadStep({
   const [error, setError] = useState<string | null>(null);
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
   const [pendingCount, setPendingCount] = useState(0);
+  // UX-1: explicit file-vs-folder path choice at the top of the step.
+  // Defaults to "single" because that's the dominant flow today.
+  const [uploadMode, setUploadMode] = useState<"single" | "folder">("single");
   const inputRef = useRef<HTMLInputElement>(null);
   const folderRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -315,10 +318,13 @@ export function UploadStep({
       <CardHeader>
         <CardTitle className="text-lg flex items-center gap-2">
           <Upload className="w-5 h-5 text-blue-600" />
-          Upload Excel Trackers
+          {UPLOAD_LABELS.pageTitle}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
+        {files.length === 0 && (
+          <SmartImportPathChooser mode={uploadMode} onModeChange={setUploadMode} />
+        )}
         <input
           ref={inputRef}
           type="file"
@@ -390,28 +396,46 @@ export function UploadStep({
           ) : (
             <div className="flex flex-col items-center gap-3">
               <Upload className="w-10 h-10 text-slate-500" />
-              <p className="text-sm text-muted-foreground">Drag & drop Excel trackers here</p>
+              <p className="text-sm text-muted-foreground">
+                {uploadMode === "folder"
+                  ? UPLOAD_LABELS.dropzone.folderHint
+                  : UPLOAD_LABELS.dropzone.singleHint}
+              </p>
               <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  data-testid="btn-browse-files"
-                  onClick={() => inputRef.current?.click()}
-                >
-                  <FileSpreadsheet className="w-3.5 h-3.5 mr-1.5" />
-                  Browse Files
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  data-testid="btn-browse-folder"
-                  onClick={() => folderRef.current?.click()}
-                >
-                  <FileSpreadsheet className="w-3.5 h-3.5 mr-1.5" />
-                  Browse Folder
-                </Button>
+                {uploadMode === "single" ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    data-testid="btn-browse-files"
+                    onClick={() => inputRef.current?.click()}
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5 mr-1.5" />
+                    Browse files
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    data-testid="btn-browse-folder"
+                    onClick={() => folderRef.current?.click()}
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5 mr-1.5" />
+                    Browse folder
+                  </Button>
+                )}
               </div>
-              <p className="text-xs text-slate-500">.xlsx and .xlsm files supported</p>
+              <p className="text-xs text-slate-500">
+                {UPLOAD_LABELS.dropzone.accepted}
+                {" · "}
+                {uploadMode === "folder"
+                  ? UPLOAD_LABELS.dropzone.folderMaxFiles
+                  : UPLOAD_LABELS.dropzone.singleMaxSize}
+              </p>
+              {uploadMode === "folder" && (
+                <p className="text-[11px] text-amber-700" data-testid="folder-browser-note">
+                  {UPLOAD_LABELS.dropzone.browserNote}
+                </p>
+              )}
             </div>
           )}
         </div>
