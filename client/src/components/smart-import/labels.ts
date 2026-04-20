@@ -153,3 +153,45 @@ export const RESULT_LABELS = {
   skippedKept: "Rows kept from previous import",
   dashboardNote: "Dashboard summaries may take a moment to update.",
 } as const;
+
+// Upload step labels (UX-1). The upload step is the first thing a
+// non-technical user sees. Copy here should be plain English, answer
+// "what am I about to do?", and make the reversibility explicit.
+export const UPLOAD_LABELS = {
+  pageTitle: "Import a project plan",
+  singleMode: {
+    title: "Import one file",
+    subtitle: "For a single project",
+    description: "Choose this if you have one spreadsheet covering one project — a plan update, a revenue schedule, or a cost tracker.",
+  },
+  folderMode: {
+    title: "Import a folder of files",
+    subtitle: "Many projects or many sections at once",
+    description: "Choose this when you have several spreadsheets (for example a SharePoint folder with plans for multiple projects).",
+  },
+  dropzone: {
+    singleHint: "Drop your plan file here, or click to browse.",
+    folderHint: "Drop a folder here, or click to browse. Sub-folders are scanned too.",
+    accepted: "Accepted: .xlsx · .xlsm",
+    singleMaxSize: "Max 25 MB.",
+    folderMaxFiles: "Up to 100 files per run.",
+    browserNote: "Folder upload works best in Chrome or Edge.",
+  },
+  howItWorks: {
+    single: [
+      "We'll read your spreadsheet and tell you what we found.",
+      "You review the changes.",
+      "We highlight anything that needs your decision.",
+      "You confirm — nothing is saved until this step.",
+    ],
+    folder: [
+      "We read every spreadsheet in the folder.",
+      "We match each one to a project in the app (you can fix any mismatch).",
+      "You review the changes per file in one place.",
+      "You pick which files to import. Un-ticked files stay untouched.",
+    ],
+  },
+  safety: "Nothing is saved until you click Commit at the final step — you can go back or cancel any time.",
+  templateLink: "Download a sample plan template",
+  guideLink: "Watch a 90-second guide",
+} as const;
