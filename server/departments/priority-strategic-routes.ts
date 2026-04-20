@@ -14,7 +14,7 @@ import {
 } from "@shared/schema";
 import { eq, and, sql, desc, asc, inArray, isNull, ne } from "drizzle-orm";
 import { PRIORITY_HEALTH_VALUES, type PriorityHealth, computeEffectivePriorityHealth } from "@shared/kpi-definitions";
-import { PRIORITY_SCOPES, ESCALATION_REASONS, type PriorityScope } from "@shared/config/priorities";
+import { PRIORITY_SCOPES, ESCALATION_REASONS, computeEscalatePatch, type PriorityScope, type EscalationReason } from "@shared/config/priorities";
 
 const router = Router();
 
@@ -984,9 +984,21 @@ router.get("/api/priorities/:id/updates", requireAuth, async (req: Request, res:
 });
 
 // ==================== POST /api/priorities/:id/escalate ====================
+// Promotes a priority one scope upward (role → department → company) atomically.
+//
+// Design note: the previous implementation inserted a *new* parent priority at
+// the next scope and linked the original as a child. That caused (1) the same
+// issue to appear twice in the UI — once at the original scope, once at the
+// new scope — and (2) a non-atomic three-write sequence that could leave the
+// row flagged `escalated=true` with no parent if any write failed.
+//
+// New contract: a single UPDATE promotes `scope` in place, records the
+// escalation (`escalated=true`, `escalatedAt`, `escalationReason`), and
+// clears `departmentKey` when promoting to company scope. Break-down children
+// keep their `parentId` — the promoted row simply appears at the higher scope
+// while still visibly linked to its parent.
 router.post("/api/priorities/:id/escalate", requireAuth, requirePriorityAdmin, async (req: Request, res: Response) => {
   try {
-    const user = getEffectiveUser(req)!;
     const priorityId = parseIdParam(req.params.id);
     if (priorityId === null) return res.status(400).json({ error: "Invalid priority id" });
     const { reason } = req.body;
@@ -998,57 +1010,35 @@ router.post("/api/priorities/:id/escalate", requireAuth, requirePriorityAdmin, a
     const [priority] = await db.select().from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, priorityId));
     if (!priority) return res.status(404).json({ error: "Priority not found" });
 
-    const currentScope = priority.scope ?? "company";
-    const escalationReason = reason || "manual";
-    const now = new Date();
-
-    if (currentScope === "company") {
+    const patch = computeEscalatePatch(
+      {
+        scope: (priority.scope ?? "company") as PriorityScope,
+        departmentKey: priority.departmentKey ?? null,
+      },
+      (reason as EscalationReason | undefined) ?? "manual",
+    );
+    if (!patch) {
       return res.status(400).json({ error: "Company-level priorities cannot be escalated further" });
     }
 
-    // Determine the next scope up
-    const nextScope: PriorityScope = currentScope === "role" ? "department" : "company";
+    const now = new Date();
 
-    // Mark current priority as escalated
-    await db.update(mytoolCompanyPriorities)
-      .set({ escalated: true, escalatedAt: now, escalationReason, updatedAt: now })
-      .where(eq(mytoolCompanyPriorities.id, priorityId));
+    // Atomic: a single UPDATE is inherently atomic. Wrapping in a transaction
+    // so later additions (audit-log insert, etc.) inherit the atomicity.
+    const [updated] = await db.transaction(async (tx: typeof db) => {
+      return tx.update(mytoolCompanyPriorities)
+        .set({
+          scope: patch.scope,
+          departmentKey: patch.departmentKey,
+          escalated: true,
+          escalatedAt: now,
+          escalationReason: patch.escalationReason,
+          updatedAt: now,
+        })
+        .where(eq(mytoolCompanyPriorities.id, priorityId))
+        .returning();
+    });
 
-    // Create the parent priority at the next level up (if no parent exists)
-    if (!priority.parentId) {
-      const [parent] = await db.insert(mytoolCompanyPriorities).values({
-        title: priority.title,
-        description: priority.description,
-        severity: priority.severity,
-        department: priority.department,
-        dueDate: priority.dueDate,
-        ownerUserId: priority.ownerUserId,
-        ownerRole: priority.ownerRole,
-        assignedTo: priority.assignedTo,
-        horizon: priority.horizon || "quarter",
-        manualHealth: priority.manualHealth,
-        manualProgress: priority.manualProgress,
-        scope: nextScope,
-        departmentKey: nextScope === "department" ? priority.departmentKey : null,
-        escalated: true,
-        escalatedAt: now,
-        escalationReason,
-        createdAt: now,
-        updatedAt: now,
-      }).returning();
-
-      // Link child to new parent
-      await db.update(mytoolCompanyPriorities)
-        .set({ parentId: parent.id, updatedAt: now })
-        .where(eq(mytoolCompanyPriorities.id, priorityId));
-
-      const metrics = await getPriorityDerivedMetrics(parent.id);
-      const enriched = await enrichPriority(parent, metrics);
-      return res.status(201).json(enriched);
-    }
-
-    // Parent already exists — just mark escalation
-    const [updated] = await db.select().from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, priorityId));
     const metrics = await getPriorityDerivedMetrics(priorityId);
     const enriched = await enrichPriority(updated, metrics);
     res.json(enriched);
