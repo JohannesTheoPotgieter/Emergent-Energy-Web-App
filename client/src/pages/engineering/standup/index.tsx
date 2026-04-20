@@ -11,7 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { invalidateAllTaskCaches } from "@/lib/task-cache";
 import { standupLaneToCanonicalStatus, toStandupLaneStatus } from "@/lib/task-status-compat";
 import {
-  Users, Play, Pause, Square, CheckCircle2, Timer, Rocket,
+  Users, Play, Pause, Square, CheckCircle2, Timer, Rocket, Keyboard, ShieldCheck,
 } from "lucide-react";
 
 import { StandupQueue } from "./StandupQueue";
@@ -20,8 +20,35 @@ import { BlockerStrip } from "./BlockerStrip";
 import { StandupSummary } from "./StandupSummary";
 import {
   type Participant, type EngTask, type TaskMovement, type StandupPhase,
-  MOODS, formatTime, timerColor, initials,
+  MOODS, formatTime, timerColor, initials, STANDUP_ATTENDEE_ROLE_LABELS,
 } from "./types";
+
+// Target time for a single speaker — used to size the progress ring.
+const SPEAKER_TARGET_SECONDS = 120;
+
+function SpeakerProgressRing({ seconds }: { seconds: number }) {
+  const clamped = Math.min(seconds, SPEAKER_TARGET_SECONDS);
+  const pct = clamped / SPEAKER_TARGET_SECONDS;
+  const radius = 28;
+  const circumference = 2 * Math.PI * radius;
+  const dashOffset = circumference * (1 - pct);
+  const stroke = seconds >= 180 ? "stroke-red-600" : seconds >= 120 ? "stroke-amber-500" : "stroke-primary";
+  return (
+    <svg width={72} height={72} viewBox="0 0 72 72" className="shrink-0" aria-hidden>
+      <circle cx="36" cy="36" r={radius} className="stroke-muted" strokeWidth={5} fill="none" />
+      <circle
+        cx="36"
+        cy="36"
+        r={radius}
+        strokeWidth={5}
+        fill="none"
+        strokeLinecap="round"
+        className={`${stroke} transition-all duration-500`}
+        style={{ strokeDasharray: circumference, strokeDashoffset: dashOffset, transform: "rotate(-90deg)", transformOrigin: "center" }}
+      />
+    </svg>
+  );
+}
 
 // ── API helper ──────────────────────────────────────────────────────────
 
@@ -69,6 +96,9 @@ export default function EngineeringStandupPage() {
 
   // Blocker tracking across all speakers
   const [heldTasks, setHeldTasks] = useState<Array<{ taskTitle: string; userName: string; holdReason: string; blockedType?: string }>>([]);
+
+  // Shortcuts help overlay
+  const [showShortcuts, setShowShortcuts] = useState(false);
 
   // Timer ref
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -275,15 +305,20 @@ export default function EngineeringStandupPage() {
         remaining.push(i);
       }
     }
-    // Fisher-Yates on remaining indices
-    for (let i = remaining.length - 1; i > 0; i--) {
+    if (remaining.length < 2) return;
+
+    // Fisher-Yates shuffle over the remaining slots — build one new queue and
+    // commit a single setQueue so we don't stomp on intermediate state.
+    const newQueue = [...queue];
+    const shuffledSlots = [...remaining];
+    for (let i = shuffledSlots.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
-      // Swap the actual queue entries
-      const newQueue = [...queue];
-      const [a, b] = [remaining[i], remaining[j]];
-      [newQueue[a], newQueue[b]] = [newQueue[b], newQueue[a]];
-      setQueue(newQueue);
+      [shuffledSlots[i], shuffledSlots[j]] = [shuffledSlots[j], shuffledSlots[i]];
     }
+    remaining.forEach((originalSlot, idx) => {
+      newQueue[originalSlot] = queue[shuffledSlots[idx]];
+    });
+    setQueue(newQueue);
   }
 
   function endStandup() {
@@ -403,6 +438,42 @@ export default function EngineeringStandupPage() {
     });
   }
 
+  // ── Keyboard shortcuts ────────────────────────────────────────────────
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      // Don't trigger while typing in inputs/textareas.
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      if (e.key === "?") {
+        setShowShortcuts((v) => !v);
+        return;
+      }
+
+      if (phase !== "running") return;
+
+      if (e.key === "n" || e.key === "N") {
+        e.preventDefault();
+        nextSpeaker();
+      } else if (e.key === "s" || e.key === "S") {
+        e.preventDefault();
+        skipSpeaker();
+      } else if (e.key === " ") {
+        e.preventDefault();
+        setIsPaused((p) => !p);
+      } else if (e.key === "e" || e.key === "E") {
+        e.preventDefault();
+        endStandup();
+      } else if (e.key === "Escape") {
+        setShowShortcuts(false);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, activeIndex, queue, completedIndices, skippedIndices, speakerTasks]);
+
   // ── Blocker count for queue ───────────────────────────────────────────
   const holdMovements = taskMovements.filter(m => m.toStatus === "HOLD");
   const totalBlockers = heldTasks.length + holdMovements.length;
@@ -435,11 +506,24 @@ export default function EngineeringStandupPage() {
         <div className="flex items-center gap-3">
           {/* Global timer */}
           {phase === "running" && (
-            <div className="flex items-center gap-1.5 text-sm tabular-nums">
+            <div className="flex items-center gap-1.5 text-sm tabular-nums" aria-live="polite">
               <Timer className="h-4 w-4 text-muted-foreground" />
               <span className="font-mono font-medium">{formatTime(totalSeconds)}</span>
             </div>
           )}
+
+          {/* Shortcuts toggle — always available */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowShortcuts(v => !v)}
+            className="gap-1.5 text-xs"
+            data-testid="btn-standup-shortcuts"
+            title="Keyboard shortcuts (press ?)"
+          >
+            <Keyboard className="h-3.5 w-3.5" />
+            Shortcuts
+          </Button>
 
           {/* Phase controls */}
           {phase === "running" && (
@@ -449,11 +533,12 @@ export default function EngineeringStandupPage() {
                 size="sm"
                 onClick={() => setIsPaused(p => !p)}
                 className="gap-1"
+                data-testid="btn-standup-pause"
               >
                 {isPaused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
                 {isPaused ? "Resume" : "Pause"}
               </Button>
-              <Button variant="destructive" size="sm" onClick={endStandup} className="gap-1">
+              <Button variant="destructive" size="sm" onClick={endStandup} className="gap-1" data-testid="btn-standup-end">
                 <Square className="h-3.5 w-3.5" /> End
               </Button>
             </div>
@@ -461,44 +546,98 @@ export default function EngineeringStandupPage() {
         </div>
       </div>
 
-      {/* ── WAITING PHASE — Simple Initiate Button ─────────────────────── */}
+      {/* Keyboard shortcut help overlay */}
+      {showShortcuts && (
+        <div
+          className="rounded-lg border bg-card shadow-sm px-4 py-3 text-xs flex flex-wrap items-center gap-x-5 gap-y-2"
+          role="dialog"
+          aria-label="Standup keyboard shortcuts"
+          data-testid="standup-shortcut-overlay"
+        >
+          <span className="font-semibold text-muted-foreground uppercase tracking-wider">Shortcuts</span>
+          <span><kbd className="rounded border bg-muted px-1.5 py-0.5 font-mono">N</kbd> Next speaker</span>
+          <span><kbd className="rounded border bg-muted px-1.5 py-0.5 font-mono">S</kbd> Skip</span>
+          <span><kbd className="rounded border bg-muted px-1.5 py-0.5 font-mono">Space</kbd> Pause / resume</span>
+          <span><kbd className="rounded border bg-muted px-1.5 py-0.5 font-mono">E</kbd> End standup</span>
+          <span><kbd className="rounded border bg-muted px-1.5 py-0.5 font-mono">?</kbd> Toggle this help</span>
+        </div>
+      )}
+
+      {/* ── WAITING PHASE — Modern launch card with attendee roster ─────── */}
       {phase === "waiting" && (
-        <Card>
-          <CardContent className="py-16 flex flex-col items-center justify-center text-center">
-            <div className="rounded-full bg-primary/10 p-4 mb-4">
-              <Rocket className="h-8 w-8 text-primary" />
+        <Card className="overflow-hidden border-primary/20">
+          <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-6 py-5 flex items-center gap-4">
+            <div className="rounded-full bg-primary/15 p-3">
+              <Rocket className="h-6 w-6 text-primary" />
             </div>
-            <h3 className="text-lg font-semibold mb-1">Ready to Stand Up?</h3>
-            <p className="text-sm text-muted-foreground mb-6 max-w-md">
-              Start the engineering standup session. Only team members with active tasks will participate, shuffled into a random order.
-            </p>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-base font-semibold">Ready to stand up?</h3>
+              <p className="text-xs text-muted-foreground">
+                The standup cycles through attendees in a shuffled order, times each speaker, and captures blockers in real time.
+              </p>
+            </div>
             <Button
               size="lg"
               onClick={schedules.length > 0 && participants.length > 0 ? () => startStandup() : initiateStandup}
               disabled={isInitiating}
-              className="gap-2 px-8"
+              className="gap-2 px-6 shrink-0"
+              data-testid="btn-initiate-standup"
             >
               {isInitiating ? (
                 <>
                   <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                  Setting up...
+                  Setting up…
                 </>
               ) : (
                 <>
                   <Play className="h-5 w-5" />
-                  Initiate Standup
+                  Start standup
                 </>
               )}
             </Button>
-            {participants.length > 0 ? (
-              <p className="text-xs text-muted-foreground mt-4">
-                {participants.length} team member{participants.length !== 1 ? "s" : ""} with active tasks will participate
+          </div>
+
+          <CardContent className="px-6 py-4 space-y-4">
+            <div className="flex items-start gap-3 rounded-lg border bg-muted/30 px-4 py-3 text-xs">
+              <ShieldCheck className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-foreground">Who attends this standup</div>
+                <div className="text-muted-foreground mt-0.5">
+                  Only the following roles are auto-invited:
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1.5" data-testid="standup-attendee-roles">
+                  {STANDUP_ATTENDEE_ROLE_LABELS.map((r) => (
+                    <Badge key={r.role} variant="outline" className="text-[10px]">{r.label}</Badge>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-center">
+              <div className="rounded-lg border bg-card p-3">
+                <div className="text-2xl font-semibold tabular-nums">{participants.length}</div>
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Eligible attendees</div>
+              </div>
+              <div className="rounded-lg border bg-card p-3">
+                <div className="text-2xl font-semibold tabular-nums">{allEngTasks.filter(t => ["TO DO", "IN PROGRESS", "HOLD"].includes(t.status)).length}</div>
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Active eng tasks</div>
+              </div>
+              <div className="rounded-lg border bg-card p-3">
+                <div className="text-2xl font-semibold tabular-nums text-red-600">{allEngTasks.filter(t => t.status === "HOLD").length}</div>
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground">On hold</div>
+              </div>
+            </div>
+
+            {participants.length === 0 && allParticipants.length > 0 && allEngTasks.length > 0 && (
+              <p className="text-xs text-amber-600">
+                No eligible team members have active engineering tasks right now. You can still start — everyone with an active task will be queued.
               </p>
-            ) : allParticipants.length > 0 && allEngTasks.length > 0 ? (
-              <p className="text-xs text-amber-600 mt-4">
-                No team members have active engineering tasks right now.
+            )}
+            {allParticipants.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                No schedule yet — pressing <strong>Start standup</strong> creates the default Mon/Wed/Fri schedule and invites engineers, the engineering manager, the quality manager, and the COO/CEO.
               </p>
-            ) : null}
+            )}
           </CardContent>
         </Card>
       )}
@@ -524,22 +663,29 @@ export default function EngineeringStandupPage() {
           {/* Center — active speaker card + task lanes */}
           <div className="flex-1 space-y-3 min-w-0">
             {/* Speaker header */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Avatar className="h-10 w-10">
-                  <AvatarFallback>{initials(activeSpeaker.userName)}</AvatarFallback>
+            <div className="flex items-center justify-between rounded-lg border bg-gradient-to-r from-primary/5 via-transparent to-transparent px-4 py-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <Avatar className="h-12 w-12 border-2 border-primary/30">
+                  <AvatarFallback className="text-sm font-semibold">{initials(activeSpeaker.userName)}</AvatarFallback>
                 </Avatar>
-                <div>
-                  <div className="font-semibold text-lg">{activeSpeaker.userName}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {speakerTasks.length} active tasks
+                <div className="min-w-0">
+                  <div className="font-semibold text-lg truncate">{activeSpeaker.userName}</div>
+                  <div className="text-xs text-muted-foreground flex items-center gap-2">
+                    <span>{speakerTasks.length} active task{speakerTasks.length !== 1 ? "s" : ""}</span>
+                    {activeSpeaker.userRole && (
+                      <Badge variant="outline" className="text-[9px] py-0 h-4">{activeSpeaker.userRole}</Badge>
+                    )}
+                    <span className="text-muted-foreground">· speaker {activeIndex + 1} of {queue.length}</span>
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
-                <span className={`text-2xl font-mono font-bold tabular-nums ${timerColor(speakerSeconds)}`}>
-                  {formatTime(speakerSeconds)}
-                </span>
+              <div className="flex items-center gap-3 shrink-0">
+                <div className="relative flex items-center justify-center">
+                  <SpeakerProgressRing seconds={speakerSeconds} />
+                  <span className={`absolute text-sm font-mono font-bold tabular-nums ${timerColor(speakerSeconds)}`}>
+                    {formatTime(speakerSeconds)}
+                  </span>
+                </div>
               </div>
             </div>
 
