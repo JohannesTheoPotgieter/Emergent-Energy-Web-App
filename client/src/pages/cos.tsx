@@ -602,6 +602,14 @@ export default function CosTracker() {
         "COS Committed": m.committedCOS,
         "COS Realised": m.realisedCOS,
         "Quickbooks COS": m.qbOnlyActual,
+        // Tracking line: cumulative realised tracking against cumulative planned budget,
+        // expressed as a percentage. Plotted on a secondary right-hand y-axis.
+        // Null when no planned budget exists yet so the line breaks cleanly instead of
+        // sitting on the zero baseline.
+        "Tracking vs Budget %":
+          m.ytdPlanned && m.ytdPlanned > 0
+            ? Math.round(((m.ytdRealised ?? 0) / m.ytdPlanned) * 1000) / 10
+            : null,
       })),
     [months],
   );
@@ -889,25 +897,47 @@ export default function CosTracker() {
       <CardHeader className="bg-muted/30 border-b border-border px-3 sm:px-5 py-2.5 sm:py-3">
         <CardTitle className="text-sm font-semibold tracking-tight flex items-center gap-2">
           <LineChartIcon className="h-4 w-4 text-muted-foreground" />
-          COS trend — Planned vs Committed vs Realised vs QB
+          COS trend — Planned · Committed · Realised · QB (bars) + Tracking vs Budget % (line)
         </CardTitle>
       </CardHeader>
       <CardContent className="p-3 sm:p-6">
         <div className="h-[320px] sm:h-[440px]" data-testid="chart-cos">
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={chartData} margin={{ top: 8, right: 16, left: 8, bottom: 0 }}>
+            <ComposedChart data={chartData} margin={{ top: 8, right: 24, left: 8, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#64748b" }} axisLine={{ stroke: "#e2e8f0" }} tickLine={false} />
-              <YAxis tickFormatter={(v: number) => formatRand(v)} tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} />
+              <YAxis yAxisId="left" tickFormatter={(v: number) => formatRand(v)} tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} />
+              <YAxis
+                yAxisId="right"
+                orientation="right"
+                tickFormatter={(v: number) => `${v}%`}
+                tick={{ fontSize: 11, fill: "#16a34a" }}
+                axisLine={false}
+                tickLine={false}
+                domain={[0, (dataMax: number) => Math.max(120, Math.ceil((dataMax || 0) / 20) * 20)]}
+              />
               <Tooltip
-                formatter={(value: number) => formatRand(value)}
+                formatter={(value: number, name: string) =>
+                  name === "Tracking vs Budget %"
+                    ? [value == null ? "—" : `${value.toFixed(1)}%`, name]
+                    : [formatRand(value), name]
+                }
                 contentStyle={{ borderRadius: "12px", border: "1px solid #e2e8f0", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", fontSize: "12px" }}
               />
               <Legend iconType="circle" wrapperStyle={{ fontSize: "12px", paddingTop: "12px" }} />
-              <Bar dataKey="COS Planned (Budget)" fill="#a7f3d0" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="COS Committed" stackId="app" fill="#f59e0b" radius={[0, 0, 0, 0]} />
-              <Bar dataKey="COS Realised" stackId="app" fill="#0f172a" radius={[4, 4, 0, 0]} />
-              <Line type="monotone" dataKey="Quickbooks COS" stroke="#16a34a" strokeWidth={2} dot={{ r: 3 }} />
+              <Bar yAxisId="left" dataKey="COS Planned (Budget)" fill="#a7f3d0" radius={[4, 4, 0, 0]} />
+              <Bar yAxisId="left" dataKey="COS Committed" stackId="app" fill="#f59e0b" radius={[0, 0, 0, 0]} />
+              <Bar yAxisId="left" dataKey="COS Realised" stackId="app" fill="#0f172a" radius={[4, 4, 0, 0]} />
+              <Bar yAxisId="left" dataKey="Quickbooks COS" fill="#16a34a" radius={[4, 4, 0, 0]} />
+              <Line
+                yAxisId="right"
+                type="monotone"
+                dataKey="Tracking vs Budget %"
+                stroke="#0f766e"
+                strokeWidth={2}
+                dot={{ r: 3, fill: "#0f766e" }}
+                connectNulls={false}
+              />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
