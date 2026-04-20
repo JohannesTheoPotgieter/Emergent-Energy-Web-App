@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon } from "lucide-react";
+import { pdStageLifecycleLabel } from "@/lib/pdStageLifecycle";
 
 export interface OpportunityCardRow {
   id: number;
@@ -92,12 +93,23 @@ export function OpportunitiesKanban({
               className={`w-[280px] shrink-0 rounded-lg border ${theme.col} flex flex-col max-h-[calc(100vh-340px)]`}
               data-testid={`kanban-col-${stage}`}
             >
-              <div className="px-3 py-2 border-b border-current/10 flex items-center justify-between sticky top-0 bg-inherit rounded-t-lg">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold text-slate-800">{STAGE_LABELS[stage]}</span>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${theme.chip}`}>{items.length}</span>
+              <div className="px-3 py-2 border-b border-current/10 sticky top-0 bg-inherit rounded-t-lg space-y-0.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-slate-800">{STAGE_LABELS[stage]}</span>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${theme.chip}`}>{items.length}</span>
+                  </div>
+                  <span className="text-[11px] text-slate-600 tabular-nums font-medium">{formatZAR(totalValue)}</span>
                 </div>
-                <span className="text-[11px] text-slate-600 tabular-nums font-medium">{formatZAR(totalValue)}</span>
+                {pdStageLifecycleLabel(stage) && (
+                  <div
+                    className="text-[10px] uppercase tracking-wide text-emerald-700/80 font-medium leading-tight"
+                    data-testid={`kanban-col-lifecycle-${stage}`}
+                    title={`Maps to company lifecycle phase: ${pdStageLifecycleLabel(stage)}`}
+                  >
+                    {pdStageLifecycleLabel(stage)}
+                  </div>
+                )}
               </div>
               <div className="flex-1 overflow-y-auto p-2 space-y-2">
                 {items.length === 0 ? (

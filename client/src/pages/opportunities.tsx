@@ -50,6 +50,7 @@ import { OpportunityDrawer } from "@/components/opportunities/OpportunityDrawer"
 import { OpportunitiesKanban, OpportunitiesCalendar } from "@/components/opportunities/OpportunityViews";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { LayoutList, KanbanSquare, CalendarDays } from "lucide-react";
+import { pdStageLifecycleLabel } from "@/lib/pdStageLifecycle";
 
 // App-phase label: capitalizes the stored stage value so the column reads
 // "Qualification" instead of "qualification". These are the values produced
@@ -636,7 +637,18 @@ export default function OpportunitiesPage() {
                           </p>
                         </td>
                         <td className="px-2 py-1.5 align-middle">
-                          <Badge className={`text-[10px] font-medium px-1.5 py-0 ${stageBadgeClass(row.stage)}`}>{appPhaseLabel(row.stage)}</Badge>
+                          <div className="flex flex-col items-start gap-0.5">
+                            <Badge className={`text-[10px] font-medium px-1.5 py-0 ${stageBadgeClass(row.stage)}`}>{appPhaseLabel(row.stage)}</Badge>
+                            {pdStageLifecycleLabel(row.stage) && (
+                              <span
+                                className="text-[9px] uppercase tracking-wide text-emerald-700/80 font-medium leading-none"
+                                data-testid={`row-lifecycle-${row.id}`}
+                                title={`Lifecycle phase: ${pdStageLifecycleLabel(row.stage)}`}
+                              >
+                                {pdStageLifecycleLabel(row.stage)}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-2 py-1.5 align-middle min-w-[120px]">
                           <p className="text-slate-800 truncate text-xs" title={row.projectDeveloper || ""}>{row.projectDeveloper || "—"}</p>
