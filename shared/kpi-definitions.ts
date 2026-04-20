@@ -97,6 +97,18 @@ export interface EffectivePriorityHealthInput {
   status: string | null | undefined;
   /** Count of open blocker work-items on linked projects. */
   blockerCount: number;
+  /** Count of blocked engineering stages on linked projects (Tier 4 · PR 3). */
+  engBlockerCount?: number;
+  /** Count of open quality defects / failed QC items on linked projects. */
+  qualityDefectCount?: number;
+  /** Count of open HSE incidents (any high+ severity) on linked projects. */
+  hseIncidentCount?: number;
+  /** Count of open HSE incidents with severity='critical'. Drives immediate critical health. */
+  hseCriticalCount?: number;
+  /** PD signal: stalled opportunities (>60d stuck OR past expected close). */
+  staleOpportunityCount?: number;
+  /** PD signal: open pre-engineering tickets tied to linked opportunities. */
+  openPdTicketCount?: number;
   /** Optional "now" override, for deterministic tests. Defaults to new Date(). */
   now?: Date;
 }
@@ -156,6 +168,57 @@ export function computeEffectivePriorityHealth(
     reasons.push(`${input.blockerCount} blocker${input.blockerCount > 1 ? "s" : ""}`);
   }
 
+  // Engineering signal — any blocked eng stage is at_risk; 3+ is critical.
+  let engSignal: PriorityHealth | null = null;
+  const engBlockers = input.engBlockerCount ?? 0;
+  if (engBlockers >= 3) {
+    engSignal = "critical";
+    reasons.push(`${engBlockers} engineering gates blocked`);
+  } else if (engBlockers >= 1) {
+    engSignal = "at_risk";
+    reasons.push(`${engBlockers} engineering gate${engBlockers === 1 ? "" : "s"} blocked`);
+  }
+
+  // Quality signal — 5+ open QC defects is at_risk; 15+ is critical.
+  let qualitySignal: PriorityHealth | null = null;
+  const qcDefects = input.qualityDefectCount ?? 0;
+  if (qcDefects >= 15) {
+    qualitySignal = "critical";
+    reasons.push(`${qcDefects} open QC defects`);
+  } else if (qcDefects >= 5) {
+    qualitySignal = "at_risk";
+    reasons.push(`${qcDefects} open QC defects`);
+  }
+
+  // HSE signal — any high-severity open incident is at_risk; any critical is critical.
+  let hseSignal: PriorityHealth | null = null;
+  const hseCritical = input.hseCriticalCount ?? 0;
+  const hseOpen = input.hseIncidentCount ?? 0;
+  if (hseCritical >= 1) {
+    hseSignal = "critical";
+    reasons.push(`${hseCritical} critical HSE incident${hseCritical === 1 ? "" : "s"}`);
+  } else if (hseOpen >= 1) {
+    hseSignal = "at_risk";
+    reasons.push(`${hseOpen} open HSE incident${hseOpen === 1 ? "" : "s"}`);
+  }
+
+  // PD signal — stalled opportunities are at_risk; 3+ is critical. Open
+  // PD tickets are at_risk contributors (don't flip to critical by themselves
+  // since they're common steady-state work).
+  let pdSignal: PriorityHealth | null = null;
+  const staleOpps = input.staleOpportunityCount ?? 0;
+  const openPdTickets = input.openPdTicketCount ?? 0;
+  if (staleOpps >= 3) {
+    pdSignal = "critical";
+    reasons.push(`${staleOpps} stalled opportunities`);
+  } else if (staleOpps >= 1) {
+    pdSignal = "at_risk";
+    reasons.push(`${staleOpps} stalled opportunit${staleOpps === 1 ? "y" : "ies"}`);
+  } else if (openPdTickets >= 5) {
+    pdSignal = "at_risk";
+    reasons.push(`${openPdTickets} open PD tickets`);
+  }
+
   if (input.derivedHealth && input.derivedHealth !== "healthy") {
     reasons.push(`project RAG ${input.derivedHealth === "critical" ? "red" : "amber"}`);
   }
@@ -168,6 +231,10 @@ export function computeEffectivePriorityHealth(
     input.derivedHealth,
     overdueSignal,
     blockerSignal,
+    engSignal,
+    qualitySignal,
+    hseSignal,
+    pdSignal,
   );
   return { health, reasons };
 }
