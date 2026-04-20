@@ -106,11 +106,12 @@ export async function refreshProjectMetrics(projectId: number): Promise<void> {
     );
   }
 
-  // D-04 fix: store margin as percentage (0–100) consistent with all other views
-  const marginPct =
-    totalRevenue > 0
-      ? (((totalRevenue - totalCost) / totalRevenue) * 100).toFixed(1)
-      : null;
+  // D-04 fix: store margin as percentage (0–100) consistent with all other views.
+  // Uses the shared computeMarginPct helper so every caller of margin math
+  // produces the same number for the same inputs (pinned by
+  // qa/tests/unit/margin-consistency.test.ts).
+  const marginPctNumber = computeMarginPct(totalRevenue, totalCost, { precision: 1, zeroRevenueValue: null });
+  const marginPct = marginPctNumber !== null ? marginPctNumber.toFixed(1) : null;
 
   // Task aggregates from work_items
   const taskRows = await db
