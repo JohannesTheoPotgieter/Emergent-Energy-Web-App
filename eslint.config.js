@@ -62,6 +62,18 @@ export default [
           message:
             'String(err) / String(error) inside a JSON response body stringifies the raw error. Throw the error (or an ApiError) instead.',
         },
+        {
+          selector:
+            "CallExpression[callee.property.name='json'] Property[value.type='Identifier'][value.name=/^(err|error)$/]",
+          message:
+            'Passing the whole catch variable (err / error) into a JSON response serialises via toString() and can leak details. Throw the error (or an ApiError) instead.',
+        },
+        {
+          selector:
+            "CallExpression[callee.property.name='json'] CallExpression[callee.object.name='JSON'][callee.property.name='stringify'] > Identifier[name=/^(err|error)$/]",
+          message:
+            'JSON.stringify(err) / JSON.stringify(error) inside a response body serialises the raw error shape. Throw the error (or an ApiError) instead.',
+        },
       ],
     },
   },

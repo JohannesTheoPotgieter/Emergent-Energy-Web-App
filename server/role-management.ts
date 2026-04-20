@@ -30,6 +30,21 @@ import bcrypt from "bcryptjs";
 import { logAuditFromReq } from "./audit-logger";
 import { logPermissionAudit, type PermissionAuditEventType } from "./permission-audit";
 import { paramStr } from "./lib/req-params";
+import { z } from "zod";
+import { validateBody } from "./middleware/validateBody";
+
+// ── Admin user/role write schemas (Phase 2b-PR2) ──
+const updateUserRoleSchema = z.object({ role: z.string().min(1) }).passthrough();
+const createUserSchema = z
+  .object({
+    username: z.string().min(1).max(64),
+    name: z.string().min(1).max(200),
+    email: z.string().email(),
+    password: z.string().min(8).max(200),
+    role: z.string().min(1).optional(),
+    department: z.string().max(200).optional().nullable(),
+  })
+  .passthrough();
 
 const LEGACY_ROLE_MAP: Record<string, string> = {
   admin: "COO_ADMIN",
@@ -595,7 +610,7 @@ export function registerRoleManagementRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/admin/users/:userId/role", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  app.patch("/api/admin/users/:userId/role", jwtAuth, requireAuth, requireAdmin, validateBody(updateUserRoleSchema), async (req: Request, res: Response) => {
     try {
       const userId = parseInt(req.params.userId as string);
       const { role } = req.body;
@@ -622,7 +637,7 @@ export function registerRoleManagementRoutes(app: Express) {
     }
   });
 
-  app.post("/api/admin/users", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  app.post("/api/admin/users", jwtAuth, requireAuth, requireAdmin, validateBody(createUserSchema), async (req: Request, res: Response) => {
     try {
       const { username, name, email, password, role } = req.body;
       if (!username || !name || !email || !password) {
