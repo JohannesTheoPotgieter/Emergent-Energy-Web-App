@@ -258,7 +258,8 @@ export async function parseTrackerFile(buffer: Buffer, fileName: string): Promis
   const warnings: string[] = [];
   
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(buffer);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- see backfillInvoiceConfirmed: @types/node 20.19 Buffer mismatch with ExcelJS
+  await workbook.xlsx.load(buffer as any);
 
   let projectInfo: InsertProjectInfo | null = null;
   const expenses: InsertProgramExpense[] = [];
@@ -1127,7 +1128,8 @@ export async function extractFontColors(buffer: Buffer): Promise<Map<string, { i
   
   try {
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buffer);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- see backfillInvoiceConfirmed: @types/node 20.19 Buffer mismatch with ExcelJS
+  await workbook.xlsx.load(buffer as any);
 
     const ws = workbook.getWorksheet("Expenditure Breakdown");
     if (!ws) return colorMap;
