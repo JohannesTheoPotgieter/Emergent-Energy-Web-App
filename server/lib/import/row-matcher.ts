@@ -417,15 +417,82 @@ function pairDuplicateGroup(
   return { pairs, unpairedFiles: remainingFiles, unpairedDbs: remainingDbs };
 }
 
+/**
+ * Slugify a sheet/tab name for use inside external_ref. Lower-case,
+ * whitespace-and-slash collapsed to dashes, restricted to a-z0-9_-, capped
+ * at 40 chars. Empty input falls back to "sheet".
+ */
+export function slugifySheetName(name: string | null | undefined): string {
+  const s = (name ?? "").toString().trim().toLowerCase()
+    .replace(/[\s/\\]+/g, "-")
+    .replace(/[^a-z0-9_-]/g, "")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return s.slice(0, 40) || "sheet";
+}
+
+/**
+ * Build the NEW-shape canonical external_ref for a PLAN row from its
+ * workbook coordinates. Format:
+ *
+ *     PID-{projectId}::PLAN::{sheetSlug}::R{sourceRow}::{outline||'M'}
+ *
+ * Uniqueness is by construction: a workbook row exists at exactly one
+ * (sheet, sourceRow) coordinate, so two distinct rows in the same upload
+ * cannot collide. The trailing outline segment carries the WBS code (or
+ * 'M' for milestones) so the ref remains human-readable.
+ */
+export function buildNewPlanExternalRef(
+  projectId: number,
+  row: {
+    sourceSheet?: string | null;
+    sourceRow?: number | string | null;
+    outlineNumber?: string | null;
+    taskNo?: string | null;
+    isMilestone?: boolean | null;
+  },
+): string {
+  const slug = slugifySheetName(row.sourceSheet);
+  const srRaw = row.sourceRow;
+  const sourceRow = srRaw != null && String(srRaw).trim() ? String(srRaw).trim() : "X";
+  const outlineSrc = (row.outlineNumber != null && String(row.outlineNumber).trim())
+    ? String(row.outlineNumber).trim()
+    : (row.taskNo != null && String(row.taskNo).trim() ? String(row.taskNo).trim() : "");
+  const outline = outlineSrc || (row.isMilestone ? "M" : "M");
+  // Sanitise outline against `::` injection.
+  const safeOutline = outline.replace(/::/g, ":_").slice(0, 60);
+  return `PID-${projectId}::PLAN::${slug}::R${sourceRow}::${safeOutline}`;
+}
+
+/**
+ * Build the LEGACY-shape canonical external_ref (pre-S001). Used for
+ * back-compat lookup so the matcher can still find rows imported under
+ * the old key shape. Kept here so the migration path is documented in
+ * one place.
+ */
+export function buildLegacyPlanExternalRef(projectId: number, rowUid: string): string {
+  return `PID-${projectId}::PLAN::BK::${rowUid}`;
+}
+
 function buildCanonicalExternalRef(
   section: SectionType,
   projectId: number,
   rowUid: string,
+  /**
+   * When provided (and section=PLAN), the new-shape ref is built from the
+   * row's workbook coordinates. When omitted, the legacy BK-rowUid shape
+   * is returned so existing test fixtures and edge code paths (e.g. db-only
+   * MISSING_FROM_UPLOAD without a source_sheet stored) continue to work.
+   */
+  row?: Record<string, any> | null,
 ): string | undefined {
   // Only PLAN uses work_items.external_ref for identity. REVENUE and
   // EXPENDITURE are temporal tables with their own id columns.
   if (section !== "PLAN") return undefined;
-  return `PID-${projectId}::PLAN::BK::${rowUid}`;
+  if (row && (row.sourceSheet || row.sourceRow != null)) {
+    return buildNewPlanExternalRef(projectId, row as any);
+  }
+  return buildLegacyPlanExternalRef(projectId, rowUid);
 }
 
 /**
@@ -491,13 +558,66 @@ export function matchRows(
   const dbIdToFile = new Map<number, FileEntry | null>();
   const groupSizeByKey = new Map<string, { files: number; dbs: number }>();
 
+  // ── S001 dual-key pre-pass (PLAN-only) ──
+  // Bucket DB rows by their stored external_ref so we can pair a file row
+  // directly to its DB counterpart whenever either:
+  //   (a) the DB row already carries the NEW-shape ref the file row would
+  //       generate (matching re-import — typical steady-state), OR
+  //   (b) the DB row carries the LEGACY-shape ref derived from the file
+  //       row's business key (first re-import after S001 ships — silent
+  //       migration; the executor will rewrite to the new shape).
+  // Pairs locked here are removed from the per-businessKey bucketing
+  // below so they don't get re-paired or accidentally trigger
+  // duplicate-group similarity matching.
+  const dbByExternalRef = new Map<string, DbEntry>();
+  const lockedFileIdxs = new Set<number>();
+  const lockedDbIds = new Set<number>();
+  if (section === "PLAN") {
+    for (const row of dbSorted) {
+      const ref = (row as any).externalRef;
+      if (typeof ref === "string" && ref.length > 0 && !dbByExternalRef.has(ref)) {
+        dbByExternalRef.set(ref, { row, bk: generateBusinessKey(section, projectId, row) });
+      }
+    }
+    for (let i = 0; i < fileRows.length; i++) {
+      const fileRow = fileRows[i];
+      const newRef = buildNewPlanExternalRef(projectId, fileRow as any);
+      const viaNew = dbByExternalRef.get(newRef);
+      if (viaNew && !lockedDbIds.has(viaNew.row.id)) {
+        fileIdxToDb.set(i, viaNew);
+        dbIdToFile.set(viaNew.row.id, fileEntries[i]);
+        lockedFileIdxs.add(i);
+        lockedDbIds.add(viaNew.row.id);
+        continue;
+      }
+      // Legacy-shape probe — the bare business-key ref is the most common
+      // legacy form. Duplicate-group variants (`#pk{id}`, `#new-{idx}`)
+      // require the DB id which is exactly what the lookup gives us, so a
+      // direct match here is sufficient.
+      const bkKey = fileEntries[i].bk.key;
+      const legacyRef = buildLegacyPlanExternalRef(projectId, bkKey);
+      const viaLegacy = dbByExternalRef.get(legacyRef);
+      if (viaLegacy && !lockedDbIds.has(viaLegacy.row.id)) {
+        fileIdxToDb.set(i, viaLegacy);
+        dbIdToFile.set(viaLegacy.row.id, fileEntries[i]);
+        lockedFileIdxs.add(i);
+        lockedDbIds.add(viaLegacy.row.id);
+      }
+    }
+  }
+
   // Run pairing per key group up front so we can compute rowUids
-  // deterministically.
+  // deterministically. Pre-locked pairs are filtered out so they don't
+  // get re-considered.
   const allKeys = new Set<string>([...fileBuckets.keys(), ...dbBuckets.keys()]);
   for (const key of allKeys) {
-    const files = fileBuckets.get(key) ?? [];
-    const dbs = dbBuckets.get(key) ?? [];
-    groupSizeByKey.set(key, { files: files.length, dbs: dbs.length });
+    const files = (fileBuckets.get(key) ?? []).filter(f => !lockedFileIdxs.has(f.fileIndex));
+    const dbs = (dbBuckets.get(key) ?? []).filter(d => !lockedDbIds.has(d.row.id));
+    // groupSize uses the ORIGINAL bucket sizes so duplicate-group flagging
+    // remains accurate even when some rows were locked by the pre-pass.
+    const origFiles = fileBuckets.get(key)?.length ?? 0;
+    const origDbs = dbBuckets.get(key)?.length ?? 0;
+    groupSizeByKey.set(key, { files: origFiles, dbs: origDbs });
 
     if (files.length === 0 && dbs.length === 0) continue;
 
@@ -524,13 +644,19 @@ export function matchRows(
   // For singleton groups the rowUid equals the bare business key. For
   // members of a duplicate group we suffix with `#pk<existingId>` (when
   // paired to a DB row) or `#new-<fileIndex>` (when a NEW insert).
+  //
+  // The optional `sourceRow` parameter (the workbook row data — file row
+  // when present, else DB row) is forwarded to `buildCanonicalExternalRef`
+  // so PLAN refs use the new (sheet, sourceRow, outline) shape. Without
+  // it we fall back to the legacy BK-rowUid shape.
   function assignRowUid(opts: {
     bkKey: string;
     existingId: number | null;
     fileIndex: number | null;
     inDuplicateGroup: boolean;
+    sourceRow?: Record<string, any> | null;
   }): { rowUid: string; canonicalExternalRef: string | undefined } {
-    const { bkKey, existingId, fileIndex, inDuplicateGroup } = opts;
+    const { bkKey, existingId, fileIndex, inDuplicateGroup, sourceRow } = opts;
     let rowUid: string;
     if (!inDuplicateGroup) {
       rowUid = bkKey;
@@ -539,7 +665,7 @@ export function matchRows(
     } else {
       rowUid = `${bkKey}#new-${fileIndex ?? "x"}`;
     }
-    return { rowUid, canonicalExternalRef: buildCanonicalExternalRef(section, projectId, rowUid) };
+    return { rowUid, canonicalExternalRef: buildCanonicalExternalRef(section, projectId, rowUid, sourceRow ?? null) };
   }
 
   // Walk file rows in original order so output matches source ordering.
@@ -560,6 +686,7 @@ export function matchRows(
         existingId: db.row.id,
         fileIndex: i,
         inDuplicateGroup,
+        sourceRow: entry.row,
       });
       results.push({
         classification: changed.length > 0 ? "CHANGED" : "UNCHANGED",
@@ -580,6 +707,7 @@ export function matchRows(
         existingId: null,
         fileIndex: i,
         inDuplicateGroup,
+        sourceRow: entry.row,
       });
       results.push({
         classification: "NEW",
@@ -611,13 +739,13 @@ export function matchRows(
       if (!inDuplicateGroup) {
         return {
           rowUid: bk.key,
-          canonicalExternalRef: buildCanonicalExternalRef(section, projectId, bk.key),
+          canonicalExternalRef: buildCanonicalExternalRef(section, projectId, bk.key, row),
         };
       }
       const uid = `${bk.key}#pk${row.id}`;
       return {
         rowUid: uid,
-        canonicalExternalRef: buildCanonicalExternalRef(section, projectId, uid),
+        canonicalExternalRef: buildCanonicalExternalRef(section, projectId, uid, row),
       };
     })();
     results.push({
