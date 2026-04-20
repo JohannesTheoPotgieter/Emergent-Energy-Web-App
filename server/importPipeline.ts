@@ -40,7 +40,8 @@ function extractDates(rows: any[]): { min: string | null; max: string | null } {
 
 async function parseExcelSheets(buffer: Buffer): Promise<Map<string, any[]>> {
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(buffer);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- see backfillInvoiceConfirmed: @types/node 20.19 Buffer mismatch with ExcelJS
+  await workbook.xlsx.load(buffer as any);
 
   const sheets = new Map<string, any[]>();
 
