@@ -38,6 +38,7 @@ interface Priority {
   assignedUser: { id: number; name: string } | null;
   effectiveHealth: string;
   effectiveProgress: number;
+  healthReasons?: string[];
   projectCount: number;
   atRiskProjectCount: number;
   totalRevenue: number;
@@ -143,7 +144,12 @@ export function PriorityCard({ priority, showEscalate, onEscalate, showMarkCompl
 
         {/* Header */}
         <div className="flex items-center gap-2 mb-2">
-          <span className={`w-2.5 h-2.5 rounded-full ${dotColor} shrink-0`} />
+          <span
+            className={`w-2.5 h-2.5 rounded-full ${dotColor} shrink-0`}
+            title={priority.healthReasons && priority.healthReasons.length > 0
+              ? `Health: ${priority.effectiveHealth} — ${priority.healthReasons.join("; ")}`
+              : `Health: ${priority.effectiveHealth}`}
+          />
           <Link href={`/priorities/${priority.id}`}>
             <span className="text-sm font-semibold text-foreground hover:text-primary hover:underline cursor-pointer truncate">
               {priority.title}
@@ -233,10 +239,10 @@ export function PriorityCard({ priority, showEscalate, onEscalate, showMarkCompl
                 size="sm"
                 className="text-xs h-7"
                 onClick={onMarkComplete}
-                disabled={priority.status === "completed"}
+                disabled={priority.status === "complete" || priority.status === "closed"}
               >
                 <CheckCircle2 className="w-3 h-3 mr-1" />
-                {priority.status === "completed" ? "Completed" : "Mark Complete"}
+                {priority.status === "complete" || priority.status === "closed" ? "Completed" : "Mark Complete"}
               </Button>
             )}
             {showDeptActions && (
@@ -576,7 +582,7 @@ export default function PrioritiesPage() {
   // ── Mark complete mutation ──
   const markCompleteMutation = useMutation({
     mutationFn: async (priorityId: number) => {
-      return apiRequest("PATCH", `/api/priorities/${priorityId}`, { status: "completed" });
+      return apiRequest("PUT", `/api/priorities/${priorityId}`, { status: "complete" });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
