@@ -638,14 +638,23 @@ export default function OpportunitiesPage() {
                         </td>
                         <td className="px-2 py-1.5 align-middle">
                           <div className="flex flex-col items-start gap-0.5">
-                            <Badge className={`text-[10px] font-medium px-1.5 py-0 ${stageBadgeClass(row.stage)}`}>{appPhaseLabel(row.stage)}</Badge>
-                            {pdStageLifecycleLabel(row.stage) && (
-                              <span
-                                className="text-[9px] uppercase tracking-wide text-emerald-700/80 font-medium leading-none"
+                            {pdStageLifecycleLabel(row.stage) ? (
+                              <Badge
+                                className="text-[10px] font-medium px-1.5 py-0 bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-50"
                                 data-testid={`row-lifecycle-${row.id}`}
-                                title={`Lifecycle phase: ${pdStageLifecycleLabel(row.stage)}`}
+                                title={`Company lifecycle phase: ${pdStageLifecycleLabel(row.stage)}`}
                               >
                                 {pdStageLifecycleLabel(row.stage)}
+                              </Badge>
+                            ) : (
+                              <Badge className={`text-[10px] font-medium px-1.5 py-0 ${stageBadgeClass(row.stage)}`}>{appPhaseLabel(row.stage)}</Badge>
+                            )}
+                            {pdStageLifecycleLabel(row.stage) && row.stage && (
+                              <span
+                                className="text-[9px] lowercase text-slate-500 leading-none"
+                                title={`Pipedrive stage: ${row.stage}`}
+                              >
+                                {String(row.stage).toLowerCase()}
                               </span>
                             )}
                           </div>
