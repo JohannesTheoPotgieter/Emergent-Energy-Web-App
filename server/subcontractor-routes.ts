@@ -190,7 +190,7 @@ router.get("/api/subcontractor-dashboard/summary", requireAuth, async (req: Requ
     });
   } catch (err: any) {
     console.error("[subcontractor-dashboard] Error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -328,7 +328,7 @@ router.get("/api/subcontractor-dashboard/detail/:name", requireAuth, async (req:
     });
   } catch (err: any) {
     console.error("[subcontractor-detail] Error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -507,7 +507,7 @@ router.post("/api/procurement-analysis/run", requireAuth, requirePermission('pro
     });
   } catch (err: any) {
     console.error("[procurement-analysis] Error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -521,7 +521,7 @@ router.get("/api/procurement-analysis/status", requireAuth, async (_req: Request
       sourceExpenses: Number(costResult.count),
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -564,7 +564,7 @@ router.patch("/api/subcontractor-dashboard/rename", requireAuth, requirePermissi
     res.json({ success: true, oldName, newName: trimmedNew });
   } catch (err: any) {
     console.error("[subcontractor-rename] Error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -596,7 +596,7 @@ router.delete("/api/subcontractor-dashboard/counterparty/:name", requireAuth, re
     res.json({ success: true, deleted: name });
   } catch (err: any) {
     console.error("[subcontractor-delete] Error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -634,7 +634,7 @@ router.patch("/api/subcontractor-dashboard/counterparty/:name/type", requireAuth
     res.json({ success: true, name, type });
   } catch (err: any) {
     console.error("[subcontractor-type] Error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -740,7 +740,7 @@ router.post("/api/subcontractor-dashboard/merge", requireAuth, requirePermission
     res.json({ success: true, merged: sourceNames, into: trimmedTarget });
   } catch (err: any) {
     console.error("[subcontractor-merge] Error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -833,7 +833,7 @@ router.post("/api/subcontractor-dashboard/link-counterparty", requireAuth, requi
     res.json({ success: true, linked: normalizedLineIds.length, counterpartyName: cpName, patternCreated });
   } catch (err: any) {
     console.error("[subcontractor-link] Error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -896,7 +896,7 @@ router.get("/api/subcontractor-dashboard/overdue", requireAuth, async (req: Requ
     });
   } catch (err: any) {
     console.error("[subcontractor-overdue] Error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 

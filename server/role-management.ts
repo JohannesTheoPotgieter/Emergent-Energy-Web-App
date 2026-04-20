@@ -276,7 +276,7 @@ export function registerRoleManagementRoutes(app: Express) {
       const roles = await ensureRolePermissionsSeeded();
       res.json(roles);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -323,7 +323,7 @@ export function registerRoleManagementRoutes(app: Express) {
         scopeCatalog: ["own", "department", "assigned_projects", "all_projects", "company_admin"],
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -334,7 +334,7 @@ export function registerRoleManagementRoutes(app: Express) {
       if (!role) return res.status(404).json({ error: "Role not found" });
       res.json(role);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -377,7 +377,7 @@ export function registerRoleManagementRoutes(app: Express) {
       res.json(updated);
     } catch (err: any) {
       console.error("[Roles] PUT /api/roles/:role error:", err.message, err.stack);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -406,7 +406,7 @@ export function registerRoleManagementRoutes(app: Express) {
       logPermissionAudit(req, { eventType: "role_created", targetRole: role, changeDetail: { label, sections } });
       res.json(created);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -442,7 +442,7 @@ export function registerRoleManagementRoutes(app: Express) {
       logPermissionAudit(req, { eventType: "role_cloned", targetRole: newRole, changeDetail: { sourceRole: sourceRoleKey, label } });
       res.json(created);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -468,7 +468,7 @@ export function registerRoleManagementRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "role_permissions", action: archived ? "archive" : "unarchive", entityId: roleKey, changesJson: { description: archived ? "Role archived" : "Role unarchived" } });
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -507,7 +507,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
       res.json({ role: effectiveRole, matrix: legacyMatrix, authorityMatrix });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -547,7 +547,7 @@ export function registerRoleManagementRoutes(app: Express) {
         requestedRole: targetRole,
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -575,7 +575,7 @@ export function registerRoleManagementRoutes(app: Express) {
       logPermissionAudit(req, { eventType: "role_deleted", targetRole: roleKey, changeDetail: { label: existing.label } });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -591,7 +591,7 @@ export function registerRoleManagementRoutes(app: Express) {
       const mapped = allUsers.map((u: any) => ({ ...u, role: mapRole(u.role) }));
       res.json(mapped);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -618,7 +618,7 @@ export function registerRoleManagementRoutes(app: Express) {
       logPermissionAudit(req, { eventType: "user_role_changed", targetUserId: userId, targetRole: role, changeDetail: { userName: updated.name, previousRole: userBefore?.role, newRole: role } });
       res.json({ id: updated.id, email: updated.email, name: updated.name, role: updated.role });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -655,7 +655,7 @@ export function registerRoleManagementRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "user", action: "create", entityId: String(created.id), changesJson: { description: "New user created", username, name, email, role: assignedRole, department } });
       res.json({ id: created.id, username: created.username, name: created.name, email: created.email, role: created.role, department: created.department ?? null });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -691,7 +691,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -714,7 +714,7 @@ export function registerRoleManagementRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "user", action: "password_reset", entityId: String(userId), changesJson: { description: "User password reset by admin", userName: updated.name } });
       res.json({ success: true, message: `Password updated for ${updated.name}` });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -733,7 +733,7 @@ export function registerRoleManagementRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "user", action: "soft_delete", entityId: String(userId), changesJson: { description: "User soft-deleted", userName: deleted.name, email: deleted.email } });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -795,7 +795,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
       res.json(buildAuthPermissionsPayload({ perm, userOverrides }));
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -810,7 +810,7 @@ export function registerRoleManagementRoutes(app: Express) {
         .where(and(eq(userPermissionOverrides.userId, userId), isNull(userPermissionOverrides.deletedAt)));
       res.json(overrides);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -862,7 +862,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
       res.json(created);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -889,7 +889,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -945,7 +945,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
       res.json({ entries: enriched, limit, offset });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -957,7 +957,7 @@ export function registerRoleManagementRoutes(app: Express) {
       const configs = await db.select().from(pdVisibilityConfig);
       res.json(configs);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -989,7 +989,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
       res.json(created);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1021,7 +1021,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
       res.json(created);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1046,7 +1046,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1067,7 +1067,7 @@ export function registerRoleManagementRoutes(app: Express) {
         roleDepartmentMap: ROLE_DEPARTMENT_MAP,
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1112,7 +1112,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
       res.json(created);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1156,7 +1156,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
       res.json(created);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1181,7 +1181,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1266,7 +1266,7 @@ export function registerRoleManagementRoutes(app: Express) {
         overrideCount: overrides.length,
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1344,7 +1344,7 @@ export function registerRoleManagementRoutes(app: Express) {
         differenceCount: comparison.filter((c) => c.hasDifference).length,
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 }

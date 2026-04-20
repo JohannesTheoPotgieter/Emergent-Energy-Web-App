@@ -42,7 +42,7 @@ app.get("/api/projects/:id/access", jwtAuth, requireAuth, requirePermission("pro
     res.json({ team: accessRecords });
   } catch (err: any) {
     console.error("Project access list error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -69,7 +69,7 @@ app.post("/api/projects/:id/access", jwtAuth, requireAuth, requirePermission("pr
     res.json({ access: result[0] });
   } catch (err: any) {
     console.error("Project access create error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -95,7 +95,7 @@ app.put("/api/projects/:id/access/:accessId", jwtAuth, requireAuth, requirePermi
     res.json({ success: true });
   } catch (err: any) {
     console.error("Project access update error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -108,7 +108,7 @@ app.delete("/api/projects/:id/access/:accessId", jwtAuth, requireAuth, requirePe
     res.json({ success: true });
   } catch (err: any) {
     console.error("Project access delete error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -140,7 +140,7 @@ app.post("/api/projects/:id/access/bulk", jwtAuth, requireAuth, requirePermissio
     res.json({ created: result.length });
   } catch (err: any) {
     console.error("Project access bulk error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 

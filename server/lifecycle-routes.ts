@@ -393,7 +393,7 @@ export function registerLifecycleRoutes(app: Express) {
       res.json({ success: true });
     } catch (err: any) {
       console.error("[lifecycle-board] POST rag error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -426,7 +426,7 @@ export function registerLifecycleRoutes(app: Express) {
       })));
     } catch (err: any) {
       console.error("[lifecycle-board] GET rag-history error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -436,7 +436,7 @@ export function registerLifecycleRoutes(app: Express) {
       res.json(workspace);
     } catch (err: any) {
       console.error("[project-lifecycle] GET workspace error:", err);
-      res.status(500).json({ error: err.message || "Failed to load Project Lifecycle workspace" });
+      res.status(500).json({ error: "Failed to load Project Lifecycle workspace" });
     }
   });
 
@@ -817,7 +817,7 @@ export function registerLifecycleRoutes(app: Express) {
       res.json(results);
     } catch (err: any) {
       console.error("[lifecycle-board] GET projects error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1277,7 +1277,7 @@ export function registerLifecycleRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[lifecycle-board] GET execution-dashboard error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1358,7 +1358,7 @@ export function registerLifecycleRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[lifecycle-board] GET overdue-payments error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1385,7 +1385,7 @@ export function registerLifecycleRoutes(app: Express) {
       res.json({ linked: updated.length, targetProject: target.projectName });
     } catch (err: any) {
       console.error("[lifecycle-board] POST link-engineering error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1479,9 +1479,10 @@ export function registerLifecycleRoutes(app: Express) {
     } catch (err: any) {
       console.error("[lifecycle-board] POST merge error:", err);
       if (err.message === "Source project not found" || err.message === "Target project not found") {
+        // eslint-disable-next-line no-restricted-syntax -- intentional: comparison proves err.message is one of two literals
         return res.status(404).json({ error: err.message });
       }
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1576,7 +1577,7 @@ export function registerLifecycleRoutes(app: Express) {
       res.json(created);
     } catch (err: any) {
       console.error("[lifecycle-board] POST promote-engineering error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1616,7 +1617,7 @@ export function registerLifecycleRoutes(app: Express) {
       res.json(updated);
     } catch (err: any) {
       console.error("[lifecycle-board] PATCH project error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1638,7 +1639,7 @@ export function registerLifecycleRoutes(app: Express) {
       res.json(evaluation);
     } catch (err: any) {
       console.error("[lifecycle-board] GET stage-gates/evaluate error:", err);
-      res.status(500).json({ error: err.message || "Failed to evaluate stage gate" });
+      res.status(500).json({ error: "Failed to evaluate stage gate" });
     }
   });
 
@@ -1705,7 +1706,7 @@ export function registerLifecycleRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[lifecycle-board] POST stage-gates/override error:", err);
-      res.status(500).json({ error: err.message || "Failed to create override" });
+      res.status(500).json({ error: "Failed to create override" });
     }
   });
 
@@ -1866,7 +1867,7 @@ export function registerLifecycleRoutes(app: Express) {
       refreshProjectMetricsAsync(id);
     } catch (err: any) {
       console.error("[lifecycle-board] PATCH phase error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1906,7 +1907,7 @@ export function registerLifecycleRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[lifecycle-board] GET execution-gate error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -2011,7 +2012,7 @@ export function registerLifecycleRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[lifecycle-board] PATCH execution-gate error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -2103,7 +2104,7 @@ export function registerLifecycleRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[lifecycle-board] GET merge-preview error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -2143,7 +2144,7 @@ export function registerLifecycleRoutes(app: Express) {
       res.json(updated);
     } catch (err: any) {
       console.error("[lifecycle-board] PATCH restore error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -2282,7 +2283,7 @@ export function registerLifecycleRoutes(app: Express) {
       res.json({ success: true, projectName: pName, deletionType: "hard_delete" });
     } catch (err: any) {
       console.error("[lifecycle-board] DELETE project error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 }

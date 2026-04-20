@@ -185,7 +185,7 @@ export function registerPlanningExtractedRoutes(app: Express): void {
       logAuditFromReq(req, { entityType: "plan_override", action: "create", projectName: overrides[0]?.projectName, changesJson: { description: `${overrides.length} plan override(s) saved`, count: overrides.length, fields: [...new Set(overrides.map((o: any) => o.fieldName))] } });
       res.json({ message: "Project plan overrides saved", count: saved.length, overrides: saved });
     } catch (error) {
-      res.status(500).json({ error: "Failed to save project plan overrides", message: error instanceof Error ? error.message : "Failed to save project plan overrides" });
+      res.status(500).json({ error: "Failed to save project plan overrides" });
     }
   });
 
@@ -590,6 +590,7 @@ export function registerPlanningExtractedRoutes(app: Express): void {
           });
         } catch (err: any) {
           if (err instanceof WorkItemConversionError) {
+            // eslint-disable-next-line no-restricted-syntax -- intentional: WorkItemConversionError carries a user-authored business message
             return res.status(err.status).json({ error: err.message });
           }
           throw err;
@@ -651,6 +652,7 @@ export function registerPlanningExtractedRoutes(app: Express): void {
           });
         } catch (err: any) {
           if (err instanceof WorkItemConversionError) {
+            // eslint-disable-next-line no-restricted-syntax -- intentional: WorkItemConversionError carries a user-authored business message
             return res.status(err.status).json({ error: err.message });
           }
           throw err;
@@ -805,7 +807,7 @@ export function registerPlanningExtractedRoutes(app: Express): void {
       return res.status(400).json({ error: `Unknown operation: ${operation}` });
     } catch (error: any) {
       console.error("[plan-structure] Error:", error);
-      res.status(500).json({ error: error.message || "Failed to update plan structure" });
+      res.status(500).json({ error: "Failed to update plan structure" });
     }
   });
 

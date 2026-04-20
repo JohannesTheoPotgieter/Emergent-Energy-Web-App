@@ -265,7 +265,7 @@ router.get("/api/invoice-patterns", requireAuth, async (_req: Request, res: Resp
       .orderBy(desc(invoicePatternRules.timesMatched));
     res.json(rules);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -311,7 +311,7 @@ router.post("/api/invoice-patterns", requireAuth, requirePermission('procurement
       .returning();
     res.json(rule);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -333,7 +333,7 @@ router.patch("/api/invoice-patterns/:id", requireAuth, requirePermission('procur
     if (!updated) return res.status(404).json({ error: "Rule not found" });
     res.json(updated);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -350,7 +350,7 @@ router.delete("/api/invoice-patterns/:id", requireAuth, requirePermission('procu
     });
     res.json({ ok: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -384,7 +384,7 @@ router.post("/api/smart-import/:runId/classify", requireAuth, requirePermission(
     res.json({ classifications });
   } catch (err: any) {
     console.error("[invoice-classify] Error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -515,7 +515,7 @@ router.post("/api/smart-import/:runId/classify-review", requireAuth, requirePerm
     res.json({ classification, classifications });
   } catch (err: any) {
     console.error("[invoice-classify-review] Error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -662,7 +662,7 @@ router.post("/api/procurement-analysis/classify", requireAuth, requirePermission
     });
   } catch (err: any) {
     console.error("[procurement-classify] Error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -709,7 +709,7 @@ router.get("/api/procurement-analysis/pattern-stats", requireAuth, async (_req: 
       })),
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -723,7 +723,7 @@ router.get("/api/invoice-pattern-matches", requireAuth, async (req: Request, res
     const matches = await query;
     res.json(matches);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -768,7 +768,7 @@ router.post("/api/procurement-analysis/reset-tags", requireAuth, requirePermissi
     });
   } catch (err: any) {
     console.error("[reset-tags] Error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -864,7 +864,7 @@ router.post("/api/admin/wipe-all-data", requireAuth, requirePermission('admin', 
     });
   } catch (err: any) {
     console.error("[wipe-all] Error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
