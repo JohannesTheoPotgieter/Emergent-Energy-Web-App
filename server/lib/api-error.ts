@@ -64,7 +64,7 @@ export function logApiError(context: string, error: unknown) {
   console.error(`[API Error] ${context}:`, error);
 }
 
-export function sendError(res: Response, error: unknown) {
+export function sendError(res: Response, error: unknown, traceId?: string) {
   if (error instanceof ApiError) {
     const body: Record<string, unknown> = {
       error: error.code,
@@ -78,6 +78,9 @@ export function sendError(res: Response, error: unknown) {
     if (error.nextAction) {
       body.nextAction = error.nextAction;
     }
+    if (traceId) {
+      body.traceId = traceId;
+    }
     return res.status(error.statusCode).json(body);
   }
 
@@ -90,6 +93,7 @@ export function sendError(res: Response, error: unknown) {
       message: "Something went wrong. Please try again.",
       nextAction: "Retry shortly or contact support if this continues.",
       detail: extractDebugDetail(error),
+      ...(traceId ? { traceId } : {}),
     });
   }
 
@@ -101,5 +105,6 @@ export function sendError(res: Response, error: unknown) {
     message: "Something went wrong. Please try again.",
     nextAction: "Retry shortly or contact support if this continues.",
     detail: extractDebugDetail(error),
+    ...(traceId ? { traceId } : {}),
   });
 }

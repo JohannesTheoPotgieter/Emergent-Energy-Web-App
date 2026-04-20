@@ -4,7 +4,26 @@
 import { Express, Request, Response, NextFunction, Router } from "express";
 import multer from "multer";
 import crypto from "crypto";
+import { z } from "zod";
+import { validateBody } from "./middleware/validateBody";
 import { logAuditFromReq } from "./audit-logger";
+
+// Zod schemas for smart-import write surface.
+// passthrough() keeps existing unknown keys flowing during the initial
+// rollout; tighten to strict() in a follow-up once traffic confirms usage.
+const conflictDecisionEnum = z.enum(["keep_app", "accept_file"]);
+const moneyImpactBodySchema = z
+  .object({ decisions: z.record(z.string(), conflictDecisionEnum).optional() })
+  .passthrough();
+const commitBodySchema = z
+  .object({
+    forceCommit: z.boolean().optional(),
+    acknowledgeEqualDate: z.boolean().optional(),
+    acknowledgeManualEdits: z.boolean().optional(),
+    preserveManualEdits: z.boolean().optional(),
+    v2ConflictResolutions: z.record(z.string(), conflictDecisionEnum).optional(),
+  })
+  .passthrough();
 import { db } from "./db";
 import { requirePermission, hasImportPermission } from "./permission-middleware";
 import { jwtAuth, requireAuth } from "./auth-context";
@@ -484,7 +503,7 @@ router.get("/api/smart-import/history/:projectName", requireAuth, async (req: Re
     res.json(runs);
   } catch (err: unknown) {
     console.error("[smart-import] GET history error:", err);
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
@@ -585,7 +604,7 @@ router.get("/api/smart-import/health-dashboard", requireAuth, requirePermission(
     res.json(dashboard);
   } catch (err: unknown) {
     console.error("[smart-import] GET health-dashboard error:", err);
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
@@ -654,7 +673,7 @@ router.get("/api/smart-import/pending-runs", requireAuth, requirePermission("sma
     res.json(runsWithIssues);
   } catch (err: unknown) {
     console.error("[smart-import] GET pending-runs error:", err);
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
@@ -669,7 +688,7 @@ router.get("/api/smart-import/project-matches/:name", requireAuth, requirePermis
     });
   } catch (err: unknown) {
     console.error("[smart-import] GET project-matches error:", err);
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
@@ -703,7 +722,7 @@ router.patch("/api/smart-import/:runId/assign-project", requireAuth, requirePerm
     res.json({ success: true, projectId: targetProject.id, projectName: targetProject.projectName });
   } catch (err: unknown) {
     console.error("[smart-import] PATCH assign-project error:", err);
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
@@ -739,7 +758,7 @@ router.get("/api/smart-import/:runId", requireAuth, async (req: Request, res: Re
     });
   } catch (err: unknown) {
     console.error("[smart-import] GET run error:", err);
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
@@ -859,7 +878,7 @@ router.get("/api/smart-import/:runId/diff", requireAuth, async (req: Request, re
     res.json({ diff });
   } catch (err: unknown) {
     console.error("[smart-import] GET diff error:", err);
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
@@ -893,7 +912,7 @@ router.get("/api/smart-import/:runId/plan", requireAuth, async (req: Request, re
     res.json({ planning });
   } catch (err: unknown) {
     console.error("[smart-import] GET plan error:", err);
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
@@ -905,12 +924,11 @@ router.get("/api/smart-import/:runId/plan", requireAuth, async (req: Request, re
 // Used by the Smart Import v2 flow to show the user, before they commit, what
 // will and will NOT be touched on linked rows.
 router.get("/api/smart-import/:runId/qb-protections", requireAuth, async (req: Request, res: Response) => {
-  try {
-    const runId = parseInt(req.params.runId as string);
-    if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
+  const runId = parseInt(req.params.runId as string);
+  if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
 
-    const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));
-    if (!run) return res.status(404).json({ error: "Import run not found" });
+  const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));
+  if (!run) return res.status(404).json({ error: "Import run not found" });
 
     const { isQbPrecedenceEnabled } = await import("./lib/import/qb-precedence");
     const enabled = await isQbPrecedenceEnabled();
@@ -967,13 +985,9 @@ router.get("/api/smart-import/:runId/qb-protections", requireAuth, async (req: R
       protections: {
         autoRealiseOnQbPaid: true,
         preserveLinkedRowsMissingFromUpload: true,
-        logsVariancesToAudit: true,
-      },
-    });
-  } catch (err: unknown) {
-    console.error("[smart-import] GET qb-protections error:", err);
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
-  }
+      logsVariancesToAudit: true,
+    },
+  });
 });
 
 // POST /api/smart-import/:runId/money-impact
@@ -1006,10 +1020,9 @@ router.get("/api/smart-import/:runId/qb-protections", requireAuth, async (req: R
 //
 // Net change per side = newTotal + changedDelta − qbBlockedDelta − missingRemovedTotal.
 // All amounts are in ZAR. NULL/blank amounts are treated as 0.
-router.post("/api/smart-import/:runId/money-impact", requireAuth, async (req: Request, res: Response) => {
-  try {
-    const runId = parseInt(req.params.runId as string);
-    if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
+router.post("/api/smart-import/:runId/money-impact", requireAuth, validateBody(moneyImpactBodySchema), async (req: Request, res: Response) => {
+  const runId = parseInt(req.params.runId as string);
+  if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
 
     const decisions: Record<string, "keep_app" | "accept_file"> =
       (req.body && typeof req.body.decisions === "object" && req.body.decisions !== null)
@@ -1177,15 +1190,11 @@ router.post("/api/smart-import/:runId/money-impact", requireAuth, async (req: Re
       cost: costImpact,
       revenueNetChange:
         revenueImpact.newTotal + revenueImpact.changedDelta
-        - revenueImpact.qbBlockedDelta - revenueImpact.missingRemovedTotal,
-      costNetChange:
-        costImpact.newTotal + costImpact.changedDelta
-        - costImpact.qbBlockedDelta - costImpact.missingRemovedTotal,
-    });
-  } catch (err: unknown) {
-    console.error("[smart-import] POST money-impact error:", err);
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
-  }
+      - revenueImpact.qbBlockedDelta - revenueImpact.missingRemovedTotal,
+    costNetChange:
+      costImpact.newTotal + costImpact.changedDelta
+      - costImpact.qbBlockedDelta - costImpact.missingRemovedTotal,
+  });
 });
 
 // GET /api/smart-import/:runId/integrity-check
@@ -1214,12 +1223,11 @@ router.post("/api/smart-import/:runId/money-impact", requireAuth, async (req: Re
 // persisted blocker / acknowledgement table). This is a fresh dry-run on
 // the parsed file so it stays accurate even if persisted issues are stale.
 router.get("/api/smart-import/:runId/integrity-check", requireAuth, async (req: Request, res: Response) => {
-  try {
-    const runId = parseInt(req.params.runId as string);
-    if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
+  const runId = parseInt(req.params.runId as string);
+  if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
 
-    const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));
-    if (!run) return res.status(404).json({ error: "Import run not found" });
+  const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));
+  if (!run) return res.status(404).json({ error: "Import run not found" });
 
     const summary = run.summaryJson as any;
     const norm = summary?.normalization;
@@ -1412,14 +1420,10 @@ router.get("/api/smart-import/:runId/integrity-check", requireAuth, async (req: 
 
     res.json({
       runId,
-      totalCount: findings.length,
-      severityCounts,
-      findings,
-    });
-  } catch (err: unknown) {
-    console.error("[smart-import] GET integrity-check error:", err);
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
-  }
+    totalCount: findings.length,
+    severityCounts,
+    findings,
+  });
 });
 
 // PATCH /api/smart-import/:runId/project-info
@@ -1466,7 +1470,7 @@ router.patch("/api/smart-import/:runId/project-info", requireAuth, requirePermis
     res.json({ success: true, projectInfo: summary.detection.projectInfo });
   } catch (err: unknown) {
     console.error("[smart-import] PATCH project-info error:", err);
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
@@ -1607,7 +1611,7 @@ router.patch("/api/smart-import/:runId/mapping", requireAuth, requirePermission(
     res.json({ success: true, updatedMapping: { section, colIndex, canonicalField } });
   } catch (err: unknown) {
     console.error("[smart-import] PATCH mapping error:", err);
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
@@ -1690,7 +1694,7 @@ router.patch("/api/smart-import/:runId/issue/:issueId/resolve", requireAuth, req
     res.json(updated);
   } catch (err: unknown) {
     console.error("[smart-import] PATCH resolve error:", err);
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
@@ -1746,7 +1750,7 @@ router.post("/api/smart-import/:runId/ignore-all-blockers", requireAuth, require
     res.json({ ignored, issues: updatedIssues });
   } catch (err: unknown) {
     console.error("[smart-import] POST ignore-all-blockers error:", err);
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
@@ -1793,7 +1797,7 @@ router.post("/api/smart-import/:runId/allow-all", requireAuth, requirePermission
     res.json({ allowed, issues: updatedIssues });
   } catch (err: unknown) {
     console.error("[smart-import] POST allow-all error:", err);
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
@@ -1865,12 +1869,12 @@ router.post("/api/smart-import/:runId/apply-prior-resolutions", requireAuth, req
     res.json({ applied, issues: updatedIssues });
   } catch (err: unknown) {
     console.error("[smart-import] POST apply-prior-resolutions error:", err);
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
 // POST /api/smart-import/:runId/commit
-router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("smart_import", "approve"), async (req: Request, res: Response) => {
+router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("smart_import", "approve"), validateBody(commitBodySchema), async (req: Request, res: Response) => {
   try {
     const runId = parseInt(req.params.runId as string);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
@@ -2916,9 +2920,14 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       }
     } catch (_) { /* non-blocking */ }
 
-    const statusCode = (err as any)?.status === 409 ? 409 : 500;
-    const causeInfo = pgCause ? { pgCode: pgCause.code, pgConstraint: pgCause.constraint, pgDetail: pgCause.detail, pgMessage: pgCause.message } : undefined;
-    res.status(statusCode).json({ error: (err instanceof Error ? err.message : String(err)), cause: causeInfo });
+    // 409 is a known business error (e.g. run already committed, project_id
+    // missing) where the thrown message is UI-safe; preserve it. 5xx goes to
+    // the global error handler which sanitises and attaches a traceId. PG
+    // error details were logged server-side above and are never returned.
+    if ((err as any)?.status === 409) {
+      return res.status(409).json({ error: "COMMIT_CONFLICT", message: (err instanceof Error ? err.message : "Commit conflict") });
+    }
+    throw err;
   }
 });
 
@@ -2980,7 +2989,7 @@ router.post("/api/smart-import/:runId/rollback", requireAuth, requireAdmin, asyn
     res.json({ success: true, runId, status: "rolled_back" });
   } catch (err: unknown) {
     console.error("[smart-import] POST rollback error:", err);
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
@@ -3028,7 +3037,7 @@ router.post("/api/counterparties/match", requireAuth, async (req: Request, res: 
     res.json({ match: bestMatch, confidence: Math.round(bestConfidence * 100) / 100 });
   } catch (err: unknown) {
     console.error("[counterparties] POST match error:", err);
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
@@ -3073,7 +3082,7 @@ router.get("/api/smart-import/normalized/:projectName/plan", requireAuth, async 
     })));
   } catch (err: unknown) {
     console.error("[smart-import] GET normalized plan error:", err);
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
@@ -3098,7 +3107,7 @@ router.get("/api/smart-import/normalized/:projectName/revenue", requireAuth, asy
     res.json(records);
   } catch (err: unknown) {
     console.error("[smart-import] GET normalized revenue error:", err);
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
@@ -3123,7 +3132,7 @@ router.get("/api/smart-import/normalized/:projectName/expenditure", requireAuth,
     res.json(records);
   } catch (err: unknown) {
     console.error("[smart-import] GET normalized expenditure error:", err);
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
@@ -3290,7 +3299,7 @@ router.post("/api/smart-import/bulk-commit", requireAuth, requirePermission("sma
     });
   } catch (err: unknown) {
     console.error("[smart-import] POST bulk-commit error:", err);
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
@@ -3370,7 +3379,7 @@ router.get("/api/import-control-tower/history", requireAuth, requirePermission("
     res.json(enriched);
   } catch (err: unknown) {
     console.error("[import-control-tower] GET history error:", err);
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
@@ -3409,7 +3418,7 @@ router.get("/api/import-control-tower/run/:runId/errors", requireAuth, requirePe
     });
   } catch (err: unknown) {
     console.error("[import-control-tower] GET run errors:", err);
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
@@ -3444,7 +3453,7 @@ router.post("/api/import-control-tower/retry/:runId", requireAuth, requirePermis
     res.json({ success: true, runId, newStatus: "preview" });
   } catch (err: unknown) {
     console.error("[import-control-tower] POST retry error:", err);
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
@@ -3475,7 +3484,7 @@ router.get("/api/smart-import/audit-log", requireAuth, requireAdmin, async (req:
     });
   } catch (err: unknown) {
     console.error("[smart-import] GET audit-log error:", err);
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 

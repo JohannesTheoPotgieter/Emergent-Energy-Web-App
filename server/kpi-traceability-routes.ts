@@ -12,10 +12,9 @@ function rows0(r: any): any {
 
 export function registerKpiTraceabilityRoutes(app: Express) {
   app.get("/api/admin/kpi-traceability", requireAuth, requireAdmin, async (_req: Request, res: Response) => {
-    try {
-      const [revSummary, cosAgg, cashflowAgg, projCounts, planProgress, engAgg, qcAgg, opCount, ptCount, wiCount, pCount, inflowAgg] = await Promise.all([
+    const [revSummary, cosAgg, cashflowAgg, projCounts, planProgress, engAgg, qcAgg, opCount, ptCount, wiCount, pCount, inflowAgg] = await Promise.all([
         db.execute(sql`
-          SELECT 
+          SELECT
             COALESCE(SUM(CAST(planned_revenue AS NUMERIC)), 0) as total_planned_revenue,
             COALESCE(SUM(CAST(actual_revenue AS NUMERIC)), 0) as total_actual_revenue,
             COALESCE(SUM(CAST(planned_expenditure AS NUMERIC)), 0) as total_planned_expenditure,
@@ -23,6 +22,7 @@ export function registerKpiTraceabilityRoutes(app: Express) {
             COALESCE(SUM(CAST(planned_profit AS NUMERIC)), 0) as total_planned_profit,
             COALESCE(SUM(CAST(actual_profit AS NUMERIC)), 0) as total_actual_profit
           FROM project_revenue_summary
+          WHERE effective_to IS NULL
         `).then(rows0),
         db.execute(sql`
           SELECT
@@ -32,11 +32,12 @@ export function registerKpiTraceabilityRoutes(app: Express) {
           WHERE effective_to IS NULL
         `).then(rows0),
         db.execute(sql`
-          SELECT 
+          SELECT
             COALESCE(SUM(CASE WHEN series_name ILIKE '%revenue%' THEN CAST(value AS NUMERIC) ELSE 0 END), 0) as total_cashflow_revenue,
             COALESCE(SUM(CASE WHEN series_name ILIKE '%expenditure%' OR series_name ILIKE '%expense%' THEN CAST(value AS NUMERIC) ELSE 0 END), 0) as total_cashflow_expenditure,
             COUNT(DISTINCT project_name) as project_count
           FROM cashflow_points
+          WHERE effective_to IS NULL
         `).then(rows0),
         db.execute(sql`
           SELECT 
@@ -118,10 +119,6 @@ export function registerKpiTraceabilityRoutes(app: Express) {
       const now = new Date().toISOString();
       for (const k of enrichedKpis) (k as any).lastComputed = now;
 
-      res.json({ kpis: enrichedKpis, generatedAt: now, totalKpis: enrichedKpis.length });
-    } catch (err: unknown) {
-      console.error("[KPI Traceability] Error:", (err instanceof Error ? err.message : String(err)));
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
-    }
+    res.json({ kpis: enrichedKpis, generatedAt: now, totalKpis: enrichedKpis.length });
   });
 }

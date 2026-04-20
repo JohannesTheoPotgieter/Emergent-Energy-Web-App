@@ -163,7 +163,7 @@ export function registerCosControlRoutes(app: Express) {
       res.json(summary);
     } catch (err: any) {
       console.error('[COS Control] summary error:', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -198,7 +198,7 @@ export function registerCosControlRoutes(app: Express) {
       res.json(byProject);
     } catch (err: any) {
       console.error('[COS Control] by-project error:', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -249,7 +249,7 @@ export function registerCosControlRoutes(app: Express) {
       res.json({ lines, total: lines.length });
     } catch (err: any) {
       console.error('[COS Control] lines error:', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -288,7 +288,7 @@ export function registerCosControlRoutes(app: Express) {
       res.json({ invoices, total: invoices.length });
     } catch (err: any) {
       console.error('[COS Control] invoices error:', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -327,7 +327,7 @@ export function registerCosControlRoutes(app: Express) {
       res.json({ pos, total: pos.length });
     } catch (err: any) {
       console.error('[COS Control] POs error:', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -399,7 +399,7 @@ export function registerCosControlRoutes(app: Express) {
       res.json({ weeks: weeklyData, totalInflows: inflowLines.length, totalOutflows: outflowLines.length });
     } catch (err: any) {
       console.error('[Cashflow Forecast] weekly error:', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -471,7 +471,7 @@ export function registerCosControlRoutes(app: Express) {
       res.json({ lines: weekLines, total: weekLines.length });
     } catch (err: any) {
       console.error('[Cashflow Forecast] week-detail error:', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -532,7 +532,7 @@ export function registerCosControlRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error('[Data Quality] scan error:', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -548,7 +548,7 @@ export function registerCosControlRoutes(app: Express) {
       res.json({ success: true, message: 'Backfill completed' });
     } catch (err: any) {
       console.error('[Admin] backfill error:', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -561,7 +561,7 @@ export function registerCosControlRoutes(app: Express) {
       res.json({ success: true, ...result });
     } catch (err: any) {
       console.error('[Admin] invoice confirmed backfill error:', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -620,7 +620,7 @@ export function registerCosControlRoutes(app: Express) {
       res.json({ weeks, heatmap });
     } catch (err: any) {
       console.error('[Planning Board] capacity error:', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -673,7 +673,7 @@ export function registerCosControlRoutes(app: Express) {
       res.json({ projects: projectData, total: projectData.length });
     } catch (err: any) {
       console.error('[Planning Board] projects error:', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -684,7 +684,7 @@ export function registerCosControlRoutes(app: Express) {
       const all = await (storage as any).getAllScenarios();
       res.json({ scenarios: all });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -697,7 +697,7 @@ export function registerCosControlRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "scenario", action: "create", entityId: String(scenario.id), changesJson: { description: "Scenario created", name } });
       res.json(scenario);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -710,7 +710,7 @@ export function registerCosControlRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "scenario", action: "duplicate", entityId: String(id), changesJson: { description: "Scenario duplicated", sourceId: id, newName: name } });
       res.json(dup);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -721,7 +721,7 @@ export function registerCosControlRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "scenario", action: "delete", entityId: String(id), changesJson: { description: "Scenario deleted" } });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -732,7 +732,7 @@ export function registerCosControlRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "scenario", action: "reset", entityId: String(id), changesJson: { description: "Scenario date overrides cleared" } });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -799,7 +799,7 @@ export function registerCosControlRoutes(app: Express) {
       res.json({ monthly: monthlyData, summary, lineCount: scenarioLines.length });
     } catch (err: any) {
       console.error('[COS Control Scenario Monthly]', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -876,7 +876,7 @@ export function registerCosControlRoutes(app: Express) {
       res.json({ months, totals, lineCount: items.length });
     } catch (err: any) {
       console.error('[COS Tracker]', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -978,7 +978,7 @@ export function registerCosControlRoutes(app: Express) {
       res.json({ weeks, totals });
     } catch (err: any) {
       console.error('[Cashflow Tracker]', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1068,7 +1068,7 @@ export function registerCosControlRoutes(app: Express) {
       res.json({ invoices, total: invoices.length });
     } catch (err: any) {
       console.error('[COS Control Scenario Invoices]', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1144,7 +1144,7 @@ export function registerCosControlRoutes(app: Express) {
       res.json({ lines, total: lines.length });
     } catch (err: any) {
       console.error('[COS Control Scenario Lines]', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1185,7 +1185,7 @@ export function registerCosControlRoutes(app: Express) {
 
       res.json({ shifts: shifts.slice(0, 10), totalShifts: shifts.length });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1298,7 +1298,7 @@ export function registerCosControlRoutes(app: Express) {
       res.json({ weeks: weeklyData });
     } catch (err: any) {
       console.error('[Cashflow Forecast Scenario Weekly]', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1416,7 +1416,7 @@ export function registerCosControlRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error('[Cashflow Forecast Scenario Week Detail]', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1459,7 +1459,7 @@ export function registerCosControlRoutes(app: Express) {
 
       res.json({ projects: projectData });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1541,7 +1541,7 @@ export function registerCosControlRoutes(app: Express) {
 
       res.json({ capacity: capacityData, clashes, resourceType });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 }

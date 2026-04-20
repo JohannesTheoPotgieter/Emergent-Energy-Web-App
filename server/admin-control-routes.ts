@@ -269,7 +269,7 @@ router.get("/api/admin/control-center/health", requireAuth, requireAdmin, async 
       },
     });
   } catch (err: unknown) {
-    res.status(500).json({ error: "Failed to fetch system health", message: (err instanceof Error ? err.message : String(err)) });
+    res.status(500).json({ error: "Failed to fetch system health" });
   }
 });
 
@@ -389,7 +389,7 @@ router.get("/api/admin/control-center/integrations", requireAuth, requireAdmin, 
       teamsStatus: byType.teams?.status || "not_connected",
     });
   } catch (err: unknown) {
-    res.status(500).json({ error: "Failed to fetch integration status", message: (err instanceof Error ? err.message : String(err)) });
+    res.status(500).json({ error: "Failed to fetch integration status" });
   }
 });
 
@@ -417,7 +417,7 @@ router.post(
     });
     res.json({ success: true, message: "All sessions cleared" });
   } catch (err: unknown) {
-    res.status(500).json({ error: "Failed to clear sessions", message: (err instanceof Error ? err.message : String(err)) });
+    res.status(500).json({ error: "Failed to clear sessions" });
   }
   },
 );
@@ -470,7 +470,7 @@ router.get("/api/admin/control-center/active-sessions", requireAuth, requireAdmi
 
     res.json({ count: enriched.length, sessions: enriched });
   } catch (err: unknown) {
-    res.status(500).json({ error: "Failed to fetch sessions", message: (err instanceof Error ? err.message : String(err)) });
+    res.status(500).json({ error: "Failed to fetch sessions" });
   }
 });
 
@@ -486,7 +486,7 @@ router.delete("/api/admin/control-center/sessions/:sid", requireAuth, requireAdm
     });
     res.json({ success: true, message: "Session terminated" });
   } catch (err: unknown) {
-    res.status(500).json({ error: "Failed to delete session", message: (err instanceof Error ? err.message : String(err)) });
+    res.status(500).json({ error: "Failed to delete session" });
   }
 });
 
@@ -577,7 +577,7 @@ router.get("/api/admin/control-center/recent-import-failures", requireAuth, requ
     if (isMissingDbObjectError(err)) {
       return res.json([]);
     }
-    res.status(500).json({ error: "Failed to fetch import failures", message: (err instanceof Error ? err.message : String(err)) });
+    res.status(500).json({ error: "Failed to fetch import failures" });
   }
 });
 
@@ -680,7 +680,7 @@ router.get("/api/admin/control-center/import-governance", requireAuth, requireAd
       ),
     });
   } catch (err: unknown) {
-    res.status(500).json({ error: "Failed to fetch import governance", message: (err instanceof Error ? err.message : String(err)) });
+    res.status(500).json({ error: "Failed to fetch import governance" });
   }
 });
 
@@ -708,7 +708,7 @@ router.get("/api/admin/control-center/recent-issues", requireAuth, requireAdmin,
       requestPath: r.request_path,
     })));
   } catch (err: unknown) {
-    res.status(500).json({ error: "Failed to fetch recent issues", message: (err instanceof Error ? err.message : String(err)) });
+    res.status(500).json({ error: "Failed to fetch recent issues" });
   }
 });
 
@@ -717,7 +717,7 @@ router.get("/api/admin/control-center/integration-health", requireAuth, requireA
     const snapshot = await buildMicrosoftIntegrationSnapshot();
     res.json(snapshot.surfaces);
   } catch (err: unknown) {
-    res.status(500).json({ error: "Failed to fetch integration health", message: (err instanceof Error ? err.message : String(err)) });
+    res.status(500).json({ error: "Failed to fetch integration health" });
   }
 });
 
@@ -763,7 +763,7 @@ router.get("/api/admin/control-center/operational-exceptions", requireAuth, requ
       })),
     });
   } catch (err: unknown) {
-    res.status(500).json({ error: "Failed to fetch operational exceptions", message: (err instanceof Error ? err.message : String(err)) });
+    res.status(500).json({ error: "Failed to fetch operational exceptions" });
   }
 });
 
@@ -864,7 +864,7 @@ router.get("/api/admin/control-center/permission-enforcement", requireAuth, requ
       applicationLogicOnly,
     });
   } catch (err: unknown) {
-    res.status(500).json({ error: "Failed to fetch permission enforcement data", message: (err instanceof Error ? err.message : String(err)) });
+    res.status(500).json({ error: "Failed to fetch permission enforcement data" });
   }
 });
 
