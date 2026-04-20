@@ -302,7 +302,7 @@ export function registerTemplateRoutes(app: Express) {
         .orderBy(asc(phaseTemplate.phase), desc(phaseTemplate.version));
       res.json(templates);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -318,7 +318,7 @@ export function registerTemplateRoutes(app: Express) {
 
       res.json({ ...tmpl, items });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -344,7 +344,7 @@ export function registerTemplateRoutes(app: Express) {
 
       res.json(created);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -364,7 +364,7 @@ export function registerTemplateRoutes(app: Express) {
 
       res.json({ activated: true, phase: tmpl.phase, templateId: id });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -434,7 +434,7 @@ export function registerTemplateRoutes(app: Express) {
 
       res.json({ cloned, itemsCloned: sourceItems.length, collisions });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -491,7 +491,7 @@ export function registerTemplateRoutes(app: Express) {
 
       res.json(created);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -527,7 +527,7 @@ export function registerTemplateRoutes(app: Express) {
       const [updated] = await db.select().from(phaseTemplateItem).where(eq(phaseTemplateItem.id, itemId));
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -548,7 +548,7 @@ export function registerTemplateRoutes(app: Express) {
 
       res.json({ deleted: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -578,7 +578,7 @@ export function registerTemplateRoutes(app: Express) {
         },
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -613,7 +613,7 @@ export function registerTemplateRoutes(app: Express) {
         ...preview,
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -639,7 +639,7 @@ export function registerTemplateRoutes(app: Express) {
       const result = await applyTemplate(projectId, phase, activeTemplate.id, activeTemplate.version, user!.id);
       res.json({ applied: true, result });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -660,7 +660,7 @@ export function registerTemplateRoutes(app: Express) {
         .orderBy(desc(phaseTemplateItemHistory.changedAt));
       res.json(history);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -685,7 +685,7 @@ export function registerTemplateRoutes(app: Express) {
         .orderBy(desc(phaseTemplateApplication.appliedAt));
       res.json(apps);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -725,7 +725,7 @@ export function registerTemplateRoutes(app: Express) {
 
       res.json({ matches });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -884,7 +884,7 @@ export function registerTemplateRoutes(app: Express) {
         _opportunitySource: opportunitySource ?? undefined,
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -960,7 +960,7 @@ export function registerTemplateRoutes(app: Express) {
 
       res.json(result);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1033,7 +1033,7 @@ export function registerTemplateRoutes(app: Express) {
         },
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 

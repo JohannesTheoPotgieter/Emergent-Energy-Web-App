@@ -358,7 +358,7 @@ router.get(
       res.json({ years, currentFye: current });
     } catch (error: any) {
       console.error("FYE years error:", error);
-      res.status(500).json({ error: "Failed to fetch FYE years", message: error?.message });
+      res.status(500).json({ error: "Failed to fetch FYE years" });
     }
   }
 );
@@ -606,7 +606,7 @@ router.get(
       res.json({ fye, months, monthKeys });
     } catch (error: any) {
       console.error("FYE dashboard error:", error);
-      res.status(500).json({ error: "Failed to fetch FYE dashboard", message: error?.message });
+      res.status(500).json({ error: "Failed to fetch FYE dashboard" });
     }
   }
 );
@@ -895,7 +895,7 @@ router.get(
       });
     } catch (error: any) {
       console.error("FYE detail error:", error);
-      res.status(500).json({ error: "Failed to fetch FYE detail", message: error?.message });
+      res.status(500).json({ error: "Failed to fetch FYE detail" });
     }
   }
 );
@@ -947,7 +947,7 @@ router.put(
         return res.status(400).json({ error: "Invalid input", details: error.errors });
       }
       console.error("FYE inline edit error:", error);
-      res.status(500).json({ error: "Failed to update field", message: error?.message });
+      res.status(500).json({ error: "Failed to update field" });
     }
   }
 );
@@ -966,7 +966,7 @@ router.get(
       }).from(fyeBudgets).where(eq(fyeBudgets.fye, fye));
       res.json(rows);
     } catch (error: any) {
-      res.status(500).json({ error: "Failed to fetch budgets", message: error?.message });
+      res.status(500).json({ error: "Failed to fetch budgets" });
     }
   }
 );
@@ -1020,7 +1020,7 @@ router.post(
 
       res.json({ ok: true });
     } catch (error: any) {
-      res.status(400).json({ error: "Failed to save budget", message: error?.message });
+      res.status(400).json({ error: "Failed to save budget" });
     }
   }
 );
@@ -1055,7 +1055,7 @@ router.get(
         .orderBy(desc(forecastPipeline.updatedAt));
       res.json(rows);
     } catch (error: any) {
-      res.status(500).json({ error: "Failed to fetch pipeline", message: error?.message });
+      res.status(500).json({ error: "Failed to fetch pipeline" });
     }
   }
 );
@@ -1088,7 +1088,7 @@ router.post(
       const [row] = await db.select({ id: forecastPipeline.id, projectName: forecastPipeline.projectName }).from(forecastPipeline).orderBy(desc(forecastPipeline.id)).limit(1);
       res.json(row);
     } catch (error: any) {
-      res.status(400).json({ error: "Failed to create pipeline entry", message: error?.message });
+      res.status(400).json({ error: "Failed to create pipeline entry" });
     }
   }
 );
@@ -1118,7 +1118,7 @@ router.put(
 
       res.json({ ok: true });
     } catch (error: any) {
-      res.status(400).json({ error: "Failed to update pipeline entry", message: error?.message });
+      res.status(400).json({ error: "Failed to update pipeline entry" });
     }
   }
 );
@@ -1137,7 +1137,7 @@ router.delete(
         .where(eq(forecastPipeline.id, id));
       res.json({ ok: true });
     } catch (error: any) {
-      res.status(400).json({ error: "Failed to archive pipeline entry", message: error?.message });
+      res.status(400).json({ error: "Failed to archive pipeline entry" });
     }
   }
 );
@@ -1163,7 +1163,7 @@ router.get(
       }).from(lostDeals).where(eq(lostDeals.fyeYear, fye)).orderBy(desc(lostDeals.updatedAt));
       res.json(rows);
     } catch (error: any) {
-      res.status(500).json({ error: "Failed to fetch lost deals", message: error?.message });
+      res.status(500).json({ error: "Failed to fetch lost deals" });
     }
   }
 );
@@ -1192,7 +1192,7 @@ router.post(
       const [row] = await db.select({ id: lostDeals.id, dealName: lostDeals.dealName }).from(lostDeals).orderBy(desc(lostDeals.id)).limit(1);
       res.json(row);
     } catch (error: any) {
-      res.status(400).json({ error: "Failed to create lost deal", message: error?.message });
+      res.status(400).json({ error: "Failed to create lost deal" });
     }
   }
 );
@@ -1219,7 +1219,7 @@ router.put(
 
       res.json({ ok: true });
     } catch (error: any) {
-      res.status(400).json({ error: "Failed to update lost deal", message: error?.message });
+      res.status(400).json({ error: "Failed to update lost deal" });
     }
   }
 );
@@ -1234,7 +1234,7 @@ router.delete(
       await db.delete(lostDeals).where(eq(lostDeals.id, id));
       res.json({ ok: true });
     } catch (error: any) {
-      res.status(400).json({ error: "Failed to delete lost deal", message: error?.message });
+      res.status(400).json({ error: "Failed to delete lost deal" });
     }
   }
 );
@@ -1292,7 +1292,7 @@ router.get(
 
       res.json({ broughtIn, signed, total: broughtIn + signed });
     } catch (error: any) {
-      res.status(500).json({ error: "Failed to fetch KPIs", message: error?.message });
+      res.status(500).json({ error: "Failed to fetch KPIs" });
     }
   }
 );
@@ -1469,7 +1469,7 @@ router.post(
       res.json({ id: last.id, snapshotLabel: last.snapshotLabel, status: last.status, message: "Snapshot created as draft" });
     } catch (error: any) {
       console.error("Snapshot create error:", error);
-      res.status(400).json({ error: "Failed to create snapshot", message: error?.message });
+      res.status(400).json({ error: "Failed to create snapshot" });
     }
   }
 );
@@ -1496,7 +1496,7 @@ router.get(
       }).from(fyeReportSnapshots).where(eq(fyeReportSnapshots.fyeYear, fye)).orderBy(desc(fyeReportSnapshots.snapshotDate));
       res.json(rows);
     } catch (error: any) {
-      res.status(500).json({ error: "Failed to list snapshots", message: error?.message });
+      res.status(500).json({ error: "Failed to list snapshots" });
     }
   }
 );
@@ -1512,7 +1512,7 @@ router.get(
       if (!row) return res.status(404).json({ error: "Snapshot not found" });
       res.json({ ...row, snapshotData: JSON.parse(row.snapshotData) });
     } catch (error: any) {
-      res.status(500).json({ error: "Failed to fetch snapshot", message: error?.message });
+      res.status(500).json({ error: "Failed to fetch snapshot" });
     }
   }
 );
@@ -1532,7 +1532,7 @@ router.put(
       await db.execute(sql`UPDATE fye_report_snapshots SET status = 'submitted', submitted_by = ${userId || null}, submitted_at = CURRENT_TIMESTAMP WHERE id = ${id}`);
       res.json({ ok: true, status: "submitted" });
     } catch (error: any) {
-      res.status(400).json({ error: "Failed to submit snapshot", message: error?.message });
+      res.status(400).json({ error: "Failed to submit snapshot" });
     }
   }
 );
@@ -1552,7 +1552,7 @@ router.put(
       await db.execute(sql`UPDATE fye_report_snapshots SET status = 'approved', approved_by = ${userId || null}, approved_at = CURRENT_TIMESTAMP WHERE id = ${id}`);
       res.json({ ok: true, status: "approved" });
     } catch (error: any) {
-      res.status(400).json({ error: "Failed to approve snapshot", message: error?.message });
+      res.status(400).json({ error: "Failed to approve snapshot" });
     }
   }
 );
@@ -1692,7 +1692,7 @@ router.get(
       res.end();
     } catch (error: any) {
       console.error("Snapshot export error:", error);
-      res.status(500).json({ error: "Failed to export snapshot", message: error?.message });
+      res.status(500).json({ error: "Failed to export snapshot" });
     }
   }
 );

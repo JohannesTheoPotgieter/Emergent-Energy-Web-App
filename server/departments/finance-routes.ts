@@ -2610,7 +2610,11 @@ router.patch("/api/cos-tracker/override-status/:id", requireAuth, requireCosOver
 
     if (expense.projectId) refreshProjectMetricsAsync(expense.projectId);
   } catch (error: any) {
-    if (error.status === 409) return res.status(409).json({ error: error.message });
+    // 409 business conflict — user-authored message is safe to surface.
+    if (error.status === 409) {
+      // eslint-disable-next-line no-restricted-syntax -- intentional: 409 business error message is user-authored
+      return res.status(409).json({ error: error.message });
+    }
     console.error("COS status override error:", error);
     res.status(500).json({ error: "Failed to override COS status" });
   }
@@ -2768,7 +2772,11 @@ router.patch("/api/cost-lines/:id/no-revenue-linked", requireAuth, requireAdmin,
     await updateExpenseFieldsDualTable(id, { noRevenueLinked }, expectedUpdatedAt, req.user?.id ?? null);
     res.json({ success: true, id, noRevenueLinked });
   } catch (error: any) {
-    if (error.status === 409) return res.status(409).json({ error: error.message });
+    // 409 business conflict — user-authored message is safe to surface.
+    if (error.status === 409) {
+      // eslint-disable-next-line no-restricted-syntax -- intentional: 409 business error message is user-authored
+      return res.status(409).json({ error: error.message });
+    }
     console.error("Toggle no-revenue-linked error:", error);
     res.status(500).json({ error: "Failed to toggle no-revenue-linked" });
   }
@@ -4138,7 +4146,7 @@ router.get("/api/cashflow", requireAuth, async (req, res) => {
     res.json(points);
   } catch (error) {
     console.error("Cashflow API error:", error);
-    res.status(500).json({ error: "Failed to fetch cashflow data", message: error instanceof Error ? error.message : "Unknown error" });
+    res.status(500).json({ error: "Failed to fetch cashflow data" });
   }
 });
 
@@ -4208,8 +4216,7 @@ router.post("/api/cashflow/planning-overrides", requireAuth, requireAdmin, async
     res.json({ message: "Planning overrides saved", count: saved.length, overrides: saved });
   } catch (error) {
     res.status(500).json({
-      error: "Failed to save planning overrides",
-      message: error instanceof Error ? error.message : "Failed to save planning overrides"
+      error: "Failed to save planning overrides"
     });
   }
 });
@@ -4382,7 +4389,7 @@ router.post("/api/revenue-tracking/overrides", requireAuth, requireAdminOrFinanc
       }
     } catch (_) { /* non-blocking */ }
   } catch (error) {
-    res.status(500).json({ error: "Failed to save revenue tracking overrides", message: error instanceof Error ? error.message : "Failed to save revenue tracking overrides" });
+    res.status(500).json({ error: "Failed to save revenue tracking overrides" });
   }
 });
 
@@ -5252,7 +5259,7 @@ router.post("/api/expenditure/overrides", requireAuth, requireAdminOrFinancialEd
     }
   } catch (error) {
     console.error("Failed to save expenditure overrides:", error);
-    res.status(500).json({ error: "Failed to save expenditure overrides", message: error instanceof Error ? error.message : "Failed to save expenditure overrides" });
+    res.status(500).json({ error: "Failed to save expenditure overrides" });
   }
 });
 
@@ -5852,7 +5859,7 @@ router.post("/api/finance/revenue/overrides", requireAuth, requireAdmin, require
       console.warn("[finance] Finance revenue override metrics refresh failed:", metricsErr.message);
     }
   } catch (error) {
-    res.status(500).json({ error: "Failed to save finance revenue overrides", message: error instanceof Error ? error.message : "Failed to save finance revenue overrides" });
+    res.status(500).json({ error: "Failed to save finance revenue overrides" });
   }
 });
 
@@ -5927,7 +5934,7 @@ router.post("/api/finance/cos/overrides", requireAuth, requireAdmin, requirePerm
       console.warn("[finance] Finance COS override metrics refresh failed:", metricsErr.message);
     }
   } catch (error) {
-    res.status(500).json({ error: "Failed to save finance COS overrides", message: error instanceof Error ? error.message : "Failed to save finance COS overrides" });
+    res.status(500).json({ error: "Failed to save finance COS overrides" });
   }
 });
 

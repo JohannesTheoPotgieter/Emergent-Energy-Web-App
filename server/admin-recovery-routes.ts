@@ -190,7 +190,7 @@ export function registerAdminRecoveryRoutes(app: Express) {
       });
     } catch (err: unknown) {
       console.error("[AdminRecovery] GET tasks error:", err);
-      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+      throw err;
     }
   });
 
@@ -272,7 +272,7 @@ export function registerAdminRecoveryRoutes(app: Express) {
       res.json({ success: true });
     } catch (err: unknown) {
       console.error("[AdminRecovery] PATCH task error:", err);
-      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+      throw err;
     }
   });
 
@@ -317,7 +317,7 @@ export function registerAdminRecoveryRoutes(app: Express) {
       res.json({ runs: enriched, total: enriched.length });
     } catch (err: unknown) {
       console.error("[AdminRecovery] GET imports error:", err);
-      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+      throw err;
     }
   });
 
@@ -393,7 +393,7 @@ export function registerAdminRecoveryRoutes(app: Express) {
       res.json({ items, total: items.length });
     } catch (err: unknown) {
       console.error("[AdminRecovery] GET deleted error:", err);
-      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+      throw err;
     }
   });
 
@@ -430,7 +430,7 @@ export function registerAdminRecoveryRoutes(app: Express) {
       res.json({ success: true, restored });
     } catch (err: unknown) {
       console.error("[AdminRecovery] POST restore error:", err);
-      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+      throw err;
     }
   });
 
@@ -472,7 +472,7 @@ export function registerAdminRecoveryRoutes(app: Express) {
       res.json({ success: true });
     } catch (err: unknown) {
       console.error("[AdminRecovery] PATCH project error:", err);
-      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+      throw err;
     }
   });
 
@@ -519,7 +519,7 @@ export function registerAdminRecoveryRoutes(app: Express) {
       });
     } catch (err: unknown) {
       console.error("[AdminRecovery] cleanup-old-snapshots error:", err);
-      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+      throw err;
     }
   });
 }

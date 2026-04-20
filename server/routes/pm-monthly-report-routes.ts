@@ -83,7 +83,7 @@ export function registerPmMonthlyReportRoutes(app: Express) {
       });
     } catch (err: unknown) {
       console.error("[PM Monthly Report] Error:", (err instanceof Error ? err.message : String(err)));
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -120,7 +120,7 @@ export function registerPmMonthlyReportRoutes(app: Express) {
       res.json({ data: history });
     } catch (err: unknown) {
       console.error("[PM Monthly Report] History error:", (err instanceof Error ? err.message : String(err)));
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -145,7 +145,7 @@ export function registerPmMonthlyReportRoutes(app: Express) {
       res.json({ success: true, status: "reviewed" });
     } catch (err: unknown) {
       console.error("[PM Monthly Report] Review error:", (err instanceof Error ? err.message : String(err)));
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -171,7 +171,7 @@ export function registerPmMonthlyReportRoutes(app: Express) {
       res.json({ success: true, status: "published" });
     } catch (err: unknown) {
       console.error("[PM Monthly Report] Publish error:", (err instanceof Error ? err.message : String(err)));
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -194,7 +194,7 @@ export function registerPmMonthlyReportRoutes(app: Express) {
       res.json({ success: true, status: "draft" });
     } catch (err: unknown) {
       console.error("[PM Monthly Report] Revert error:", (err instanceof Error ? err.message : String(err)));
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -224,7 +224,7 @@ export function registerPmMonthlyReportRoutes(app: Express) {
       });
     } catch (err: unknown) {
       console.error("[PM Monthly Report] Regenerate error:", (err instanceof Error ? err.message : String(err)));
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -242,7 +242,7 @@ export function registerPmMonthlyReportRoutes(app: Express) {
       res.send(pdfBuffer);
     } catch (err: unknown) {
       console.error("[PM Monthly Report] PDF export error:", (err instanceof Error ? err.message : String(err)));
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -257,7 +257,7 @@ export function registerPmMonthlyReportRoutes(app: Express) {
       await generateReportExcel(REPORT_TYPE, snapshot.data as any, snapshot.reportMonth, res);
     } catch (err: unknown) {
       console.error("[PM Monthly Report] Excel export error:", (err instanceof Error ? err.message : String(err)));
-      if (!res.headersSent) res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      if (!res.headersSent) throw err;
     }
   });
 
@@ -292,7 +292,7 @@ export function registerPmMonthlyReportRoutes(app: Express) {
       });
     } catch (err: unknown) {
       console.error("[PM Monthly Report] Compare error:", (err instanceof Error ? err.message : String(err)));
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -323,7 +323,7 @@ export function registerPmMonthlyReportRoutes(app: Express) {
       res.json(projectData);
     } catch (err: unknown) {
       console.error("[PM Monthly Report] Project drill-down error:", (err instanceof Error ? err.message : String(err)));
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -359,7 +359,7 @@ export function registerPmMonthlyReportRoutes(app: Express) {
       res.json(payload);
     } catch (err: unknown) {
       console.error("[PM Monthly Report] Drill-down error:", (err instanceof Error ? err.message : String(err)));
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 }

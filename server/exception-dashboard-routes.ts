@@ -10,7 +10,7 @@ export function registerExceptionDashboardRoutes(app: Express) {
       const result = await getExceptionDashboard({ userId: user.id, role: user.role, projectId: Number.isFinite(projectId) ? projectId : null });
       res.json({ ...result, summary: summarizeExceptions(result.items) });
     } catch (error: any) {
-      res.status(500).json({ error: "exception_dashboard_failed", message: error?.message || "Unable to load exceptions" });
+      res.status(500).json({ error: "exception_dashboard_failed" });
     }
   });
 
@@ -20,7 +20,7 @@ export function registerExceptionDashboardRoutes(app: Express) {
       const result = await getExceptionDashboard({ userId: user.id, role: user.role });
       res.json(summarizeExceptions(result.items));
     } catch (error: any) {
-      res.status(500).json({ error: "exception_summary_failed", message: error?.message || "Unable to load exception summary" });
+      res.status(500).json({ error: "exception_summary_failed" });
     }
   });
 }

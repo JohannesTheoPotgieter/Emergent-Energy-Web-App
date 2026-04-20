@@ -101,7 +101,7 @@ export function registerMsSyncRoutes(app: Express) {
       res.json(result);
     } catch (err: unknown) {
       const status = (err instanceof Error ? err.message : String(err))?.includes("not found") ? 404 : (err instanceof Error ? err.message : String(err))?.includes("only") ? 403 : 500;
-      res.status(status).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -117,7 +117,7 @@ export function registerMsSyncRoutes(app: Express) {
       res.json({ success: true });
     } catch (err: unknown) {
       const status = (err instanceof Error ? err.message : String(err))?.includes("not found") ? 404 : (err instanceof Error ? err.message : String(err))?.includes("only") ? 403 : 500;
-      res.status(status).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -139,7 +139,7 @@ export function registerMsSyncRoutes(app: Express) {
       const visibleItems = await filterMicrosoftItemsForRequest(req, items);
       res.json(visibleItems);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -155,7 +155,7 @@ export function registerMsSyncRoutes(app: Express) {
       const visibleItems = await filterMicrosoftItemsForRequest(req, items);
       res.json(visibleItems);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -172,7 +172,7 @@ export function registerMsSyncRoutes(app: Express) {
       res.json(result);
     } catch (err: unknown) {
       const status = (err instanceof Error ? err.message : String(err))?.includes("not found") ? 404 : (err instanceof Error ? err.message : String(err))?.includes("only") ? 403 : 500;
-      res.status(status).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -235,7 +235,7 @@ export function registerMsSyncRoutes(app: Express) {
       const visibleRows = await filterMicrosoftItemsForRequest(req, rows);
       res.json(visibleRows);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -256,7 +256,7 @@ export function registerMsSyncRoutes(app: Express) {
 
       res.json(items);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -269,7 +269,7 @@ export function registerMsSyncRoutes(app: Express) {
       await db.update(msObjects).set({ dismissed: true }).where(and(eq(msObjects.id, msObjectId), eq(msObjects.userId, userId)));
       res.json({ success: true });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -317,7 +317,7 @@ export function registerMsSyncRoutes(app: Express) {
       res.json({ success: true, results });
     } catch (err: unknown) {
       console.error("[MS Sync] Trigger error:", (err instanceof Error ? err.message : String(err)));
-      res.status(500).json({ error: "Sync failed: " + (err instanceof Error ? err.message : String(err)) });
+      res.status(500).json({ error: "Sync failed: " });
     }
   });
 
@@ -336,7 +336,7 @@ export function registerMsSyncRoutes(app: Express) {
         }));
       res.json(internal);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -353,7 +353,7 @@ export function registerMsSyncRoutes(app: Express) {
       const assignments = await getAssignmentsForEntity(entityType, entityId);
       res.json(assignments);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -366,7 +366,7 @@ export function registerMsSyncRoutes(app: Express) {
         : await listAssignableDirectory(search);
       res.json(assignable);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -511,8 +511,15 @@ export function registerMsSyncRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[Reassign] Assignment update failed", err?.message, err?.stack?.split("\n").slice(0, 8).join("\n"));
-      const status = err?.message?.toLowerCase().includes("permission") ? 403 : err?.message?.toLowerCase().includes("not found") ? 404 : err?.message?.toLowerCase().includes("required") ? 400 : 500;
-      res.status(status).json({ error: (err instanceof Error ? err.message : String(err)) || "Assignment update failed", _debug: { body: req.body, stack: err?.stack?.split("\n").slice(0, 8) } });
+      // Known validation-style errors surface their own message (safe —
+      // these strings are authored by the caller, not the driver). Anything
+      // else falls through to the global handler for sanitisation.
+      const msg = err instanceof Error ? err.message : "";
+      const lower = msg.toLowerCase();
+      if (lower.includes("permission")) throw Object.assign(new Error(msg), { statusCode: 403 });
+      if (lower.includes("not found")) throw Object.assign(new Error(msg), { statusCode: 404 });
+      if (lower.includes("required")) throw Object.assign(new Error(msg), { statusCode: 400 });
+      throw err;
     }
   });
 
@@ -1077,7 +1084,7 @@ export function registerMsSyncRoutes(app: Express) {
       });
     } catch (err: unknown) {
       console.error("[MyWork AllTasks] Error:", err);
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -1186,7 +1193,7 @@ export function registerMsSyncRoutes(app: Express) {
       });
     } catch (err: unknown) {
       console.error("[MS Teams Project Chat] Error:", err);
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -1208,7 +1215,7 @@ export function registerMsSyncRoutes(app: Express) {
       res.json({ success: true });
     } catch (err: unknown) {
       console.error("[MS Teams Unlink] Error:", err);
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 

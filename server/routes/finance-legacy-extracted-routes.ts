@@ -325,7 +325,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
       });
     } catch (err: any) {
       console.error("[Financial Headline] Error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -724,7 +724,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
       logAuditFromReq(req, { entityType: "revenue_tracking_override", action: "create", changesJson: { description: `${overrides.length} revenue tracking override(s) saved`, count: overrides.length, projectNames } });
       res.json({ message: "Revenue tracking overrides saved", count: saved.length, overrides: saved });
     } catch (error) {
-      res.status(500).json({ error: "Failed to save revenue tracking overrides", message: error instanceof Error ? error.message : "Failed to save revenue tracking overrides" });
+      res.status(500).json({ error: "Failed to save revenue tracking overrides" });
     }
   });
 
@@ -827,7 +827,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
       res.json({ message: "Expenditure overrides applied successfully", count: overrides.length });
     } catch (error) {
       console.error("Failed to submit expenditure overrides for approval:", error);
-      res.status(500).json({ error: "Failed to save overrides", message: error instanceof Error ? error.message : "Failed to save overrides" });
+      res.status(500).json({ error: "Failed to save overrides" });
     }
   });
 

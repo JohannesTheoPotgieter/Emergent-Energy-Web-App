@@ -417,7 +417,7 @@ router.get("/api/priorities/:id", requireAuth, async (req: Request, res: Respons
     res.json({ ...enriched, linkedProjects: projectsWithPm });
   } catch (err: any) {
     console.error("[Priorities] Detail error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -535,7 +535,7 @@ router.post("/api/priorities", requireAuth, requirePriorityAdmin, async (req: Re
     res.status(201).json(enriched);
   } catch (err: any) {
     console.error("[Priorities] Create error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -638,7 +638,7 @@ router.put("/api/priorities/:id", requireAuth, requirePriorityAdmin, async (req:
     res.json(enriched);
   } catch (err: any) {
     console.error("[Priorities] Update error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -658,7 +658,7 @@ router.delete("/api/priorities/:id", requireAuth, requireCooOnly, async (req: Re
     res.status(204).send();
   } catch (err: any) {
     console.error("[Priorities] Delete error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -715,7 +715,7 @@ router.post("/api/priorities/:id/projects", requireAuth, requirePriorityAdmin, a
     res.json(linkedProjects);
   } catch (err: any) {
     console.error("[Priorities] Link projects error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -736,7 +736,7 @@ router.delete("/api/priorities/:id/projects/:projectId", requireAuth, requirePri
     res.status(204).send();
   } catch (err: any) {
     console.error("[Priorities] Unlink project error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -780,7 +780,7 @@ router.get("/api/projects/:id/priorities", requireAuth, async (req: Request, res
     res.json(result);
   } catch (err: any) {
     console.error("[Priorities] Project priorities error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -859,7 +859,7 @@ router.get("/api/priorities/:id/tasks", requireAuth, async (req: Request, res: R
     res.json(result);
   } catch (err: any) {
     console.error("[Priorities] Tasks error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -908,7 +908,7 @@ router.get("/api/priorities/:id/approvals", requireAuth, async (req: Request, re
     res.json(result);
   } catch (err: any) {
     console.error("[Priorities] Approvals error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -959,7 +959,7 @@ router.get("/api/priorities/:id/updates", requireAuth, async (req: Request, res:
     res.json(updates);
   } catch (err: any) {
     console.error("[Priorities] Updates error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 

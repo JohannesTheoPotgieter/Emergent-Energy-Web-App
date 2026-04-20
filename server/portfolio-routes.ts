@@ -198,7 +198,7 @@ export function registerPortfolioRoutes(app: Express) {
       res.json(result);
     } catch (err: any) {
       console.error("[Portfolio] List error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -241,7 +241,7 @@ export function registerPortfolioRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[Portfolio] Get error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -265,7 +265,7 @@ export function registerPortfolioRoutes(app: Express) {
       res.json(created);
     } catch (err: any) {
       console.error("[Portfolio] Create error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -289,7 +289,7 @@ export function registerPortfolioRoutes(app: Express) {
       res.json(updated);
     } catch (err: any) {
       console.error("[Portfolio] Update error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -301,7 +301,7 @@ export function registerPortfolioRoutes(app: Express) {
       res.json({ success: true, record: deleted });
     } catch (err: any) {
       console.error("[Portfolio] Delete error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -333,7 +333,7 @@ export function registerPortfolioRoutes(app: Express) {
       res.json(assignment);
     } catch (err: any) {
       console.error("[Portfolio] Assign error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -364,7 +364,7 @@ export function registerPortfolioRoutes(app: Express) {
       }
     } catch (err: any) {
       console.error("[Portfolio] Move error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -379,7 +379,7 @@ export function registerPortfolioRoutes(app: Express) {
       res.json({ success: true });
     } catch (err: any) {
       console.error("[Portfolio] Remove project error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -520,7 +520,7 @@ export function registerPortfolioRoutes(app: Express) {
       res.json({ finance, schedule, quality: qualityData, engineering: engData, projects: projectDetails });
     } catch (err: any) {
       console.error("[Portfolio] Rollups error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -552,7 +552,7 @@ export function registerPortfolioRoutes(app: Express) {
       res.json(result);
     } catch (err: any) {
       console.error("[Portfolio] Available projects error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -589,7 +589,7 @@ export function registerPortfolioRoutes(app: Express) {
       res.json(plan);
     } catch (err: any) {
       console.error("[Portfolio] Create rollout plan error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -624,7 +624,7 @@ export function registerPortfolioRoutes(app: Express) {
       res.json(updated);
     } catch (err: any) {
       console.error("[Portfolio] Update rollout plan error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -636,7 +636,7 @@ export function registerPortfolioRoutes(app: Express) {
       res.json({ success: true, record: deleted });
     } catch (err: any) {
       console.error("[Portfolio] Delete rollout plan error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -799,7 +799,7 @@ export function registerPortfolioRoutes(app: Express) {
       res.json({ portfolios: result, unassignedProjectCount: unassignedCount, totalPortfolios: allPortfolios.length });
     } catch (err: any) {
       console.error("[Portfolio] Dashboard error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -881,7 +881,7 @@ export function registerPortfolioRoutes(app: Express) {
       res.json(timeline);
     } catch (err: any) {
       console.error("[Portfolio] Timeline error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -988,7 +988,7 @@ export function registerPortfolioRoutes(app: Express) {
       res.json(result);
     } catch (err: any) {
       console.error("[Portfolio] Key dates error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 }

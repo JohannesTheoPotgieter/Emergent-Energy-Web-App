@@ -2925,6 +2925,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
     // the global error handler which sanitises and attaches a traceId. PG
     // error details were logged server-side above and are never returned.
     if ((err as any)?.status === 409) {
+      // eslint-disable-next-line no-restricted-syntax -- intentional: 409 business error message is user-authored
       return res.status(409).json({ error: "COMMIT_CONFLICT", message: (err instanceof Error ? err.message : "Commit conflict") });
     }
     throw err;

@@ -78,7 +78,7 @@ export function registerPmRoutes(app: Express) {
       ));
       res.json({ users: result.rows });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -207,7 +207,7 @@ export function registerPmRoutes(app: Express) {
       res.json({ projects: enrichedProjects, summary, dataQualityWarnings });
     } catch (err: unknown) {
       console.error("[PM Dashboard] Error:", (err instanceof Error ? err.message : String(err)));
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -328,7 +328,7 @@ export function registerPmRoutes(app: Express) {
       res.json({ items });
     } catch (err: unknown) {
       console.error("[PM Priority] Error:", (err instanceof Error ? err.message : String(err)));
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -403,7 +403,7 @@ export function registerPmRoutes(app: Express) {
       res.json({ events });
     } catch (err: unknown) {
       console.error("[PM Calendar] Error:", (err instanceof Error ? err.message : String(err)));
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 }
