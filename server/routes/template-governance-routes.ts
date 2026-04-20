@@ -9,6 +9,7 @@ import { jwtAuth, requireAuth } from "../auth-context";
 import { logAuditFromReq } from "../audit-logger";
 import * as schema from "@shared/schema";
 import { TEMPLATE_TYPES, templateOverrides } from "@shared/schema/template-overrides";
+import { diffTemplateVsOpenStages, applyTemplateSync } from "../services/stage-lifecycle-service";
 
 const COO_ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
 
@@ -322,5 +323,83 @@ app.get("/api/templates/overrides/:id/status", jwtAuth, requireAuth, async (req:
     res.status(500).json({ error: "Failed to check override status" });
   }
 });
+
+// ── §6b: Sync current template version onto existing open stages ──
+//
+// Admin flow:
+//   1. Edit a template item (POST /version above) — creates version N+1.
+//   2. GET /sync-preview/:stageCode  → dry-run diff per project.
+//   3. POST /sync/:stageCode { reason } → apply with audit trail.
+// Closed stages (approved / progressed / exception_approved) are
+// skipped; their snapshots are immutable per §6.
+
+app.get(
+  "/api/templates/stage-checklist/:stageCode/sync-preview",
+  jwtAuth,
+  requireAuth,
+  async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      if (!isAdmin(user.role)) {
+        return res.status(403).json({ error: "Admin role required to preview a template sync" });
+      }
+      const stageCode = String(req.params.stageCode);
+      const plans = await diffTemplateVsOpenStages(stageCode);
+      const summary = plans.reduce(
+        (acc, p) => {
+          if (p.skipped) acc.projectsSkipped += 1;
+          else {
+            acc.added += p.toAdd.length;
+            acc.updated += p.toUpdate.length;
+            acc.removed += p.toRemove.length;
+            if (p.toAdd.length + p.toUpdate.length + p.toRemove.length > 0) acc.projectsWithChanges += 1;
+          }
+          return acc;
+        },
+        { projectsWithChanges: 0, projectsSkipped: 0, added: 0, updated: 0, removed: 0 },
+      );
+      res.json({ stageCode, summary, plans });
+    } catch (err: unknown) {
+      console.error("Template sync preview error:", err);
+      res.status(500).json({ error: "Failed to preview template sync" });
+    }
+  },
+);
+
+app.post(
+  "/api/templates/stage-checklist/:stageCode/sync",
+  jwtAuth,
+  requireAuth,
+  async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      if (!isAdmin(user.role)) {
+        return res.status(403).json({ error: "Admin role required to apply a template sync" });
+      }
+      const stageCode = String(req.params.stageCode);
+      const reason: string | undefined = req.body?.reason;
+      if (!reason || reason.trim().length < 10) {
+        return res.status(400).json({ error: "reason is required (min 10 characters)" });
+      }
+      const result = await applyTemplateSync({
+        stageCode,
+        actorUserId: user.id,
+        actorRole: user.role,
+        reason,
+      });
+      await logAuditFromReq(req, {
+        entityType: "stage_checklist_template",
+        entityId: stageCode,
+        action: "template_sync_applied",
+        changesJson: { ...result, reason: reason.trim() },
+      });
+      res.json(result);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("Template sync apply error:", err);
+      res.status(400).json({ error: msg });
+    }
+  },
+);
 
 } // end registerTemplateGovernanceRoutes

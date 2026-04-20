@@ -357,12 +357,16 @@ export async function hydrateStageChecklist(projectId: number, stageCode: string
     throw new Error(`Cannot hydrate checklist: stage instance does not exist for project ${projectId}, stage ${stageCode}.`);
   }
 
+  // §6b: only the current version of each template item seeds new project
+  // requirements. Without the isCurrentVersion filter, hydrate would pick
+  // up every historical version and duplicate rows after any template edit.
   const templates = await db
     .select()
     .from(stageChecklistTemplates)
     .where(and(
       eq(stageChecklistTemplates.stageCode, stageCode),
       eq(stageChecklistTemplates.isActive, true),
+      eq(stageChecklistTemplates.isCurrentVersion, true),
     ))
     .orderBy(stageChecklistTemplates.sortOrder);
 
@@ -385,6 +389,9 @@ export async function hydrateStageChecklist(projectId: number, stageCode: string
         itemCode: t.itemCode,
         blocksGate: t.blocksGate,
         status: 'NOT_STARTED',
+        // §6b: pin the template version so a future sync can diff cleanly.
+        sourceTemplateId: t.id,
+        templateVersionAtHydrate: t.version,
       });
     }
   }
@@ -407,6 +414,272 @@ export async function hydrateStageChecklist(projectId: number, stageCode: string
     createdCount,
     requirements,
   };
+}
+
+// ── §6b: Template-vs-Open-Stages Diff + Sync ────────────────
+
+export interface RequirementAdd {
+  itemCode: string;
+  itemName: string;
+  department: string;
+  blocksGate: boolean;
+  templateId: number;
+  templateVersion: number;
+}
+
+export interface RequirementUpdate {
+  requirementId: number;
+  itemCode: string;
+  fromVersion: number | null;
+  toVersion: number;
+  changes: {
+    itemName?: { from: string; to: string };
+    department?: { from: string; to: string };
+    blocksGate?: { from: boolean; to: boolean };
+  };
+  templateId: number;
+}
+
+export interface RequirementRemove {
+  requirementId: number;
+  itemCode: string;
+  itemName: string;
+  department: string;
+  currentStatus: string;
+}
+
+export interface StageSyncPlan {
+  projectId: number;
+  stageInstanceId: number;
+  stageCode: string;
+  stageStatus: string;
+  skipped: boolean;
+  skipReason?: string;
+  toAdd: RequirementAdd[];
+  toUpdate: RequirementUpdate[];
+  toRemove: RequirementRemove[];
+}
+
+/**
+ * Compute, per project, what would change on the named stage if the
+ * current-version templates were applied. Closed stages are returned
+ * with `skipped: true` and an empty plan — their snapshots are sacred
+ * (§6). A dry-run-safe function; no writes.
+ */
+export async function diffTemplateVsOpenStages(stageCode: string): Promise<StageSyncPlan[]> {
+  const templates = await db
+    .select()
+    .from(stageChecklistTemplates)
+    .where(and(
+      eq(stageChecklistTemplates.stageCode, stageCode),
+      eq(stageChecklistTemplates.isActive, true),
+      eq(stageChecklistTemplates.isCurrentVersion, true),
+    ));
+
+  const templateByItemCode = new Map<string, typeof templates[number]>();
+  for (const t of templates) templateByItemCode.set(t.itemCode, t);
+
+  const stages = await db
+    .select()
+    .from(projectStageInstances)
+    .where(eq(projectStageInstances.stageCode, stageCode));
+
+  const plans: StageSyncPlan[] = [];
+  for (const stage of stages) {
+    const stageStatus = stage.stageStatus?.toLowerCase() ?? '';
+    if (CLOSED_STAGE_STATUSES.has(stageStatus)) {
+      plans.push({
+        projectId: stage.projectId,
+        stageInstanceId: stage.id,
+        stageCode,
+        stageStatus,
+        skipped: true,
+        skipReason: `Stage is ${stageStatus}; snapshot is immutable.`,
+        toAdd: [],
+        toUpdate: [],
+        toRemove: [],
+      });
+      continue;
+    }
+
+    const existing = await db
+      .select()
+      .from(projectStageRequirements)
+      .where(eq(projectStageRequirements.stageInstanceId, stage.id));
+
+    const existingByItemCode = new Map<string, typeof existing[number]>();
+    for (const r of existing) existingByItemCode.set(r.itemCode, r);
+
+    const toAdd: RequirementAdd[] = [];
+    const toUpdate: RequirementUpdate[] = [];
+    const toRemove: RequirementRemove[] = [];
+
+    for (const t of templates) {
+      const match = existingByItemCode.get(t.itemCode);
+      if (!match) {
+        toAdd.push({
+          itemCode: t.itemCode,
+          itemName: t.itemName,
+          department: t.department,
+          blocksGate: t.blocksGate,
+          templateId: t.id,
+          templateVersion: t.version,
+        });
+        continue;
+      }
+      if (match.templateVersionAtHydrate === t.version) continue;
+      const changes: RequirementUpdate['changes'] = {};
+      if (match.itemName !== t.itemName) changes.itemName = { from: match.itemName, to: t.itemName };
+      if (match.department !== t.department) changes.department = { from: match.department, to: t.department };
+      if (match.blocksGate !== t.blocksGate) changes.blocksGate = { from: match.blocksGate, to: t.blocksGate };
+      if (Object.keys(changes).length === 0 && match.templateVersionAtHydrate === t.version) continue;
+      toUpdate.push({
+        requirementId: match.id,
+        itemCode: match.itemCode,
+        fromVersion: match.templateVersionAtHydrate,
+        toVersion: t.version,
+        changes,
+        templateId: t.id,
+      });
+    }
+
+    for (const r of existing) {
+      if (!templateByItemCode.has(r.itemCode)) {
+        toRemove.push({
+          requirementId: r.id,
+          itemCode: r.itemCode,
+          itemName: r.itemName,
+          department: r.department,
+          currentStatus: r.status,
+        });
+      }
+    }
+
+    plans.push({
+      projectId: stage.projectId,
+      stageInstanceId: stage.id,
+      stageCode,
+      stageStatus,
+      skipped: false,
+      toAdd,
+      toUpdate,
+      toRemove,
+    });
+  }
+
+  return plans;
+}
+
+export interface ApplyTemplateSyncParams {
+  stageCode: string;
+  actorUserId: number;
+  actorRole: string;
+  reason: string;
+}
+
+export interface ApplyTemplateSyncResult {
+  stageCode: string;
+  projectsTouched: number;
+  projectsSkipped: number;
+  added: number;
+  updated: number;
+  removed: number;
+}
+
+/**
+ * Apply the diff computed by diffTemplateVsOpenStages. COO_ADMIN / CEO_ADMIN
+ * only. Closed stages are skipped. Each touched project gets a
+ * `template_sync` decision row so the audit trail points at who pulled
+ * the new template version onto which stages and why.
+ *
+ * Removals here soft-drop the requirement row (hard delete) because it is
+ * no longer in the current template. Projects that need to retain a
+ * deprecated requirement must hold it via a project-level template
+ * override (already supported by template-governance-routes.ts).
+ */
+export async function applyTemplateSync(params: ApplyTemplateSyncParams): Promise<ApplyTemplateSyncResult> {
+  const { stageCode, actorUserId, actorRole, reason } = params;
+
+  if (!STAGE_REOPEN_ROLES.has(actorRole)) {
+    throw new Error(`Only COO_ADMIN or CEO_ADMIN may apply a template sync; actor role=${actorRole}.`);
+  }
+  if (!reason || reason.trim().length < 10) {
+    throw new Error(`Template sync requires a reason of at least 10 characters.`);
+  }
+
+  const plans = await diffTemplateVsOpenStages(stageCode);
+
+  let projectsTouched = 0;
+  let projectsSkipped = 0;
+  let added = 0;
+  let updated = 0;
+  let removed = 0;
+
+  for (const plan of plans) {
+    if (plan.skipped) { projectsSkipped += 1; continue; }
+    const hasChanges = plan.toAdd.length + plan.toUpdate.length + plan.toRemove.length > 0;
+    if (!hasChanges) continue;
+
+    for (const add of plan.toAdd) {
+      await db.insert(projectStageRequirements).values({
+        projectId: plan.projectId,
+        stageInstanceId: plan.stageInstanceId,
+        stageCode: plan.stageCode,
+        department: add.department,
+        itemName: add.itemName,
+        itemCode: add.itemCode,
+        blocksGate: add.blocksGate,
+        status: 'not_started',
+        sourceTemplateId: add.templateId,
+        templateVersionAtHydrate: add.templateVersion,
+      });
+      added += 1;
+    }
+
+    for (const upd of plan.toUpdate) {
+      const patch: Record<string, any> = {
+        templateVersionAtHydrate: upd.toVersion,
+        sourceTemplateId: upd.templateId,
+        updatedAt: new Date(),
+      };
+      if (upd.changes.itemName) patch.itemName = upd.changes.itemName.to;
+      if (upd.changes.department) patch.department = upd.changes.department.to;
+      if (upd.changes.blocksGate !== undefined) patch.blocksGate = upd.changes.blocksGate.to;
+      await db.update(projectStageRequirements).set(patch).where(eq(projectStageRequirements.id, upd.requirementId));
+      updated += 1;
+    }
+
+    for (const rm of plan.toRemove) {
+      await db.delete(projectStageRequirements).where(eq(projectStageRequirements.id, rm.requirementId));
+      removed += 1;
+    }
+
+    await db.insert(projectStageDecisions).values({
+      projectId: plan.projectId,
+      stageCode: plan.stageCode,
+      decisionType: 'template_sync',
+      decisionSummary: `Template sync applied to stage ${plan.stageCode}: +${plan.toAdd.length} / ~${plan.toUpdate.length} / -${plan.toRemove.length}`,
+      decidedByUserId: actorUserId,
+      decidedDate: new Date(),
+      rationale: reason.trim(),
+    });
+
+    // Requirement set changed — recompute readiness.
+    const refreshed = await db
+      .select()
+      .from(projectStageRequirements)
+      .where(eq(projectStageRequirements.stageInstanceId, plan.stageInstanceId));
+    const readiness = computeReadinessPct(refreshed);
+    await db
+      .update(projectStageInstances)
+      .set({ readinessPct: readiness, updatedAt: new Date() })
+      .where(eq(projectStageInstances.id, plan.stageInstanceId));
+    await syncCurrentStage(plan.projectId);
+
+    projectsTouched += 1;
+  }
+
+  return { stageCode, projectsTouched, projectsSkipped, added, updated, removed };
 }
 
 // ── Stage Transition ────────────────────────────────────────
