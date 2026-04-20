@@ -644,7 +644,7 @@ export default function CosTracker() {
   const fyTotals = useMemo(
     () => ({
       budget: months.reduce((s, m) => s + (m.budget ?? 0), 0),
-      planned: months.reduce((s, m) => s + (m.totalCOS ?? 0), 0),
+      planned: months.reduce((s, m) => s + (m.realisedCOS ?? 0) + (m.committedCOS ?? 0) + (m.plannedCOS ?? 0), 0),
       realised: months.reduce((s, m) => s + (m.realisedCOS ?? 0), 0),
       quickbooks: months.reduce((s, m) => s + (m.qbOnlyActual ?? 0), 0),
     }),
@@ -929,24 +929,24 @@ export default function CosTracker() {
     iconBg: string;
     accent: string;
     sparkColor: string;
-    monthField: keyof MonthData;
+    getValue: (m: MonthData) => number;
   }> = {
-    budget: { label: "FY Budget", icon: Wallet, iconBg: "bg-emerald-50 text-emerald-700 border border-emerald-200", accent: "text-emerald-700", sparkColor: "#16a34a", monthField: "budget" },
-    planned: { label: "FY Planned", icon: ListChecks, iconBg: "bg-emerald-100 text-emerald-700", accent: "text-emerald-700", sparkColor: "#16a34a", monthField: "totalCOS" },
-    realised: { label: "FY Realised", icon: CheckCircle2, iconBg: "bg-foreground/8 text-foreground", accent: "text-foreground", sparkColor: "#0f172a", monthField: "realisedCOS" },
-    quickbooks: { label: "FY Quickbooks", icon: DollarSign, iconBg: "bg-emerald-50 text-emerald-700 border border-emerald-200", accent: "text-emerald-700", sparkColor: "#16a34a", monthField: "qbOnlyActual" },
+    budget: { label: "FY Budget", icon: Wallet, iconBg: "bg-emerald-50 text-emerald-700 border border-emerald-200", accent: "text-emerald-700", sparkColor: "#16a34a", getValue: (m) => m.budget ?? 0 },
+    planned: { label: "FY Planned", icon: ListChecks, iconBg: "bg-emerald-100 text-emerald-700", accent: "text-emerald-700", sparkColor: "#16a34a", getValue: (m) => (m.realisedCOS ?? 0) + (m.committedCOS ?? 0) + (m.plannedCOS ?? 0) },
+    realised: { label: "FY Realised", icon: CheckCircle2, iconBg: "bg-foreground/8 text-foreground", accent: "text-foreground", sparkColor: "#0f172a", getValue: (m) => m.realisedCOS ?? 0 },
+    quickbooks: { label: "FY Quickbooks", icon: DollarSign, iconBg: "bg-emerald-50 text-emerald-700 border border-emerald-200", accent: "text-emerald-700", sparkColor: "#16a34a", getValue: (m) => m.qbOnlyActual ?? 0 },
   };
 
   const renderFyKpiCard = (key: FyCardKey) => {
     const meta = FY_CARD_META[key];
     const Icon = meta.icon;
     const fyValue = fyTotals[key];
-    const lastValue = (lastMonth?.[meta.monthField] as number | undefined) ?? 0;
-    const prevValue = (prevMonth?.[meta.monthField] as number | undefined) ?? 0;
+    const lastValue = lastMonth ? meta.getValue(lastMonth) : 0;
+    const prevValue = prevMonth ? meta.getValue(prevMonth) : 0;
     const delta = lastValue - prevValue;
     const deltaPct = prevValue !== 0 ? (delta / Math.abs(prevValue)) * 100 : 0;
     const deltaPositive = delta >= 0;
-    const cardSpark = months.map((m) => ({ x: m.monthKey, y: (m[meta.monthField] as number | undefined) ?? 0 }));
+    const cardSpark = months.map((m) => ({ x: m.monthKey, y: meta.getValue(m) }));
     return (
       <Card key={key} className="border-border shadow-sm">
         <CardContent className="p-3 sm:p-4">
