@@ -487,27 +487,41 @@ function DetailRow({ weekStart, project, colSpan = 8 }: { weekStart: string; pro
                           </td>
                           <td className="px-3 py-2 text-right font-mono font-medium text-emerald-700">{formatRand(inf.milestoneAmount)}</td>
                           <td className="px-3 py-2 text-right font-mono text-muted-foreground">{inf.daysToReceipt ?? "—"}</td>
-                          <td className="px-3 py-2">
+                          <td className="px-3 py-2" data-testid={`qb-cell-inflow-${weekStart}-${i}`}>
                             {inf.qbStatus === "confirmed" ? (
-                              <span className="inline-flex items-center gap-1">
+                              inf.qbPaymentStatus === "paid" ? (
                                 <span
-                                  className="inline-flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-blue-50 text-blue-700 border-blue-200"
-                                  title={inf.qbDocNumber ? `QB Invoice #${inf.qbDocNumber}` : undefined}
+                                  className="inline-flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200"
+                                  title={inf.qbDocNumber ? `QB Invoice #${inf.qbDocNumber} · Settled on QuickBooks` : "Settled on QuickBooks"}
+                                  data-testid={`qb-status-settled-inflow-${weekStart}-${i}`}
                                 >
-                                  QB {inf.qbDocNumber ?? "✓"}
+                                  Settled{inf.qbDocNumber ? ` · ${inf.qbDocNumber}` : ""}
                                 </span>
-                                {inf.qbPaymentStatus === "paid" && (
-                                  <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200">Paid</span>
-                                )}
-                                {inf.qbPaymentStatus === "partial" && (
-                                  <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-amber-50 text-amber-700 border-amber-200">Partial</span>
-                                )}
-                                {inf.qbPaymentStatus === "unpaid" && (
-                                  <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-red-50 text-red-700 border-red-200">Unpaid</span>
-                                )}
-                              </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1">
+                                  <span
+                                    className="inline-flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-blue-50 text-blue-700 border-blue-200"
+                                    title={inf.qbDocNumber ? `QB Invoice #${inf.qbDocNumber} · Matched, awaiting payment` : "Matched, awaiting payment"}
+                                    data-testid={`qb-status-matched-inflow-${weekStart}-${i}`}
+                                  >
+                                    Matched{inf.qbDocNumber ? ` · ${inf.qbDocNumber}` : ""}
+                                  </span>
+                                  {inf.qbPaymentStatus === "partial" && (
+                                    <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-amber-50 text-amber-700 border-amber-200">Partial</span>
+                                  )}
+                                  {inf.qbPaymentStatus === "unpaid" && (
+                                    <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-slate-50 text-slate-600 border-slate-200">Unpaid</span>
+                                  )}
+                                </span>
+                              )
                             ) : (
-                              <span className="text-[9px] text-muted-foreground">—</span>
+                              <span
+                                className="inline-flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-amber-50 text-amber-800 border-amber-300"
+                                title="No QuickBooks invoice linked to this milestone — open the QuickBooks reconciliation tab to link it."
+                                data-testid={`qb-status-unmatched-inflow-${weekStart}-${i}`}
+                              >
+                                Unmatched
+                              </span>
                             )}
                           </td>
                         </tr>
@@ -574,27 +588,41 @@ function DetailRow({ weekStart, project, colSpan = 8 }: { weekStart: string; pro
                             </span>
                           </td>
                           <td className="px-3 py-2 text-right font-mono font-medium text-red-700">{formatRand(out.expenseActualTotal)}</td>
-                          <td className="px-3 py-2">
+                          <td className="px-3 py-2" data-testid={`qb-cell-outflow-${weekStart}-${i}`}>
                             {out.qbStatus === "confirmed" ? (
-                              <span className="inline-flex items-center gap-1">
+                              out.qbPaymentStatus === "paid" ? (
                                 <span
-                                  className="inline-flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-blue-50 text-blue-700 border-blue-200"
-                                  title={out.qbDocNumber ? `QB Bill #${out.qbDocNumber}` : undefined}
+                                  className="inline-flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200"
+                                  title={out.qbDocNumber ? `QB Bill #${out.qbDocNumber} · Settled on QuickBooks` : "Settled on QuickBooks"}
+                                  data-testid={`qb-status-settled-outflow-${weekStart}-${i}`}
                                 >
-                                  QB {out.qbDocNumber ?? "✓"}
+                                  Settled{out.qbDocNumber ? ` · ${out.qbDocNumber}` : ""}
                                 </span>
-                                {out.qbPaymentStatus === "paid" && (
-                                  <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200">Paid</span>
-                                )}
-                                {out.qbPaymentStatus === "partial" && (
-                                  <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-amber-50 text-amber-700 border-amber-200">Partial</span>
-                                )}
-                                {out.qbPaymentStatus === "unpaid" && (
-                                  <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-red-50 text-red-700 border-red-200">Unpaid</span>
-                                )}
-                              </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1">
+                                  <span
+                                    className="inline-flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-blue-50 text-blue-700 border-blue-200"
+                                    title={out.qbDocNumber ? `QB Bill #${out.qbDocNumber} · Matched, awaiting payment` : "Matched, awaiting payment"}
+                                    data-testid={`qb-status-matched-outflow-${weekStart}-${i}`}
+                                  >
+                                    Matched{out.qbDocNumber ? ` · ${out.qbDocNumber}` : ""}
+                                  </span>
+                                  {out.qbPaymentStatus === "partial" && (
+                                    <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-amber-50 text-amber-700 border-amber-200">Partial</span>
+                                  )}
+                                  {out.qbPaymentStatus === "unpaid" && (
+                                    <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-slate-50 text-slate-600 border-slate-200">Unpaid</span>
+                                  )}
+                                </span>
+                              )
                             ) : (
-                              <span className="text-[9px] text-muted-foreground">—</span>
+                              <span
+                                className="inline-flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded-full border bg-amber-50 text-amber-800 border-amber-300"
+                                title="No QuickBooks bill linked to this expense — open the QuickBooks reconciliation tab to link it."
+                                data-testid={`qb-status-unmatched-outflow-${weekStart}-${i}`}
+                              >
+                                Unmatched
+                              </span>
                             )}
                           </td>
                         </tr>

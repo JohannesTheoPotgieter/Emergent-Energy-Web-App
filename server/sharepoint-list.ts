@@ -3,6 +3,8 @@ import { eq } from "drizzle-orm";
 import { spListConfig, type SpListConfig } from "@shared/schema";
 import crypto from "crypto";
 import { getSharePointToken } from "./sharepoint-token";
+import { isConnectorMocked } from "./lib/connector-mode";
+import * as msGraphMocks from "./mocks/ms-graph-fixtures";
 
 async function getAccessToken(): Promise<string> {
   const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
@@ -40,6 +42,14 @@ async function getAccessToken(): Promise<string> {
 }
 
 export async function graphGet(url: string): Promise<any> {
+  if (isConnectorMocked("ms-graph")) {
+    // Best-effort shape match for the few URLs the app asks for. Tests and
+    // UI that deep-link into arbitrary Graph URLs will see an empty object
+    // — those are out of scope for the local-QA mock path.
+    if (url.includes("/sites/") && url.includes("/lists/")) return { id: "mock-list", displayName: "Mock List" };
+    if (url.includes("/sites/")) return { value: msGraphMocks.mockSharePointSites() };
+    return {};
+  }
   const token = await getSharePointToken();
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
@@ -84,6 +94,7 @@ export function hashFields(obj: Record<string, any>): string {
 }
 
 export async function discoverSites(): Promise<{ id: string; displayName: string; webUrl: string }[]> {
+  if (isConnectorMocked("ms-graph")) return msGraphMocks.mockSharePointSites();
   const result = await graphGet(
     "https://graph.microsoft.com/v1.0/sites?search=*&$select=id,displayName,webUrl&$top=50"
   );
@@ -95,6 +106,7 @@ export async function discoverSites(): Promise<{ id: string; displayName: string
 }
 
 export async function discoverSiteByUrl(siteHostAndPath: string): Promise<{ id: string; displayName: string; webUrl: string }> {
+  if (isConnectorMocked("ms-graph")) return msGraphMocks.mockSharePointSites()[0]!;
   const result = await graphGet(
     `https://graph.microsoft.com/v1.0/sites/${siteHostAndPath}`
   );
@@ -102,6 +114,7 @@ export async function discoverSiteByUrl(siteHostAndPath: string): Promise<{ id: 
 }
 
 export async function discoverLists(siteId: string): Promise<{ id: string; displayName: string; itemCount: number }[]> {
+  if (isConnectorMocked("ms-graph")) return msGraphMocks.mockSharePointLists(siteId);
   const result = await graphGet(
     `https://graph.microsoft.com/v1.0/sites/${siteId}/lists?$select=id,displayName,list&$top=50`
   );
@@ -145,6 +158,7 @@ export async function discoverLists(siteId: string): Promise<{ id: string; displ
 export async function getListColumns(siteId: string, listId: string): Promise<{
   name: string; displayName: string; columnType: string; readOnly: boolean; choices?: string[];
 }[]> {
+  if (isConnectorMocked("ms-graph")) return msGraphMocks.mockSharePointListColumns(siteId, listId);
   const result = await graphGet(
     `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/columns?$top=100`
   );
@@ -181,6 +195,7 @@ export async function getListItems(
   select?: string[],
   top: number = 500,
 ): Promise<SpListItem[]> {
+  if (isConnectorMocked("ms-graph")) return msGraphMocks.mockSharePointListItems(siteId, listId) as SpListItem[];
   let url = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items?$expand=fields&$top=${top}`;
   if (filter) url += `&$filter=fields/${filter}`;
   if (select && select.length > 0) url += `&$select=id,fields(${select.join(",")})`;
@@ -220,6 +235,7 @@ export async function updateListItemFields(
   itemId: string,
   fields: Record<string, any>,
 ): Promise<any> {
+  if (isConnectorMocked("ms-graph")) return { id: itemId, fields };
   const url = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items/${itemId}/fields`;
   return graphPatch(url, fields);
 }
