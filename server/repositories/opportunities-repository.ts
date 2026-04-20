@@ -400,9 +400,13 @@ export class OpportunitiesRepository {
     if (!opp) return null;
 
     // Race-safe lazy shadow create: relies on the partial unique index
-    // `pd_tickets_opportunity_id_unique` (migrations/20260420_pd_tickets_opportunity_unique.sql)
-    // — concurrent inserts collapse to a single row via onConflictDoNothing,
-    // then we re-select the canonical row.
+    // `pd_tickets_opportunity_shadow_unique` ON pd_tickets (opportunity_id)
+    // WHERE opportunity_id IS NOT NULL AND project_id IS NULL.
+    // Postgres requires the inference clause to repeat the predicate of a
+    // partial unique index, otherwise it raises 42P10 "no unique or
+    // exclusion constraint matching the ON CONFLICT specification".
+    // We only ever lazy-create unlinked shadows here (project_id is always
+    // NULL on insert), so the predicate is satisfied by construction.
     const projectSiteName =
       opp.siteName ||
       opp.clientName ||
@@ -423,12 +427,18 @@ export class OpportunitiesRepository {
         estimatedProjectValue: opp.opp.estimatedValue ?? null,
         createdBy: actingUserId,
       })
-      .onConflictDoNothing({ target: pdTickets.opportunityId });
+      .onConflictDoNothing({
+        target: pdTickets.opportunityId,
+        targetWhere: sql`opportunity_id IS NOT NULL AND project_id IS NULL`,
+      });
 
+    // Constrain re-select to the canonical shadow scope (project_id IS NULL)
+    // so we always return the row covered by the partial unique index, not
+    // an unrelated project-linked PD ticket that may share the opportunity.
     const [shadow] = await db
       .select()
       .from(pdTickets)
-      .where(eq(pdTickets.opportunityId, opportunityId))
+      .where(and(eq(pdTickets.opportunityId, opportunityId), isNull(pdTickets.projectId)))
       .limit(1);
     if (!shadow) {
       throw new Error(`PD shadow vanished for opportunity #${opportunityId}`);

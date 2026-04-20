@@ -72,6 +72,8 @@ The project is organized as a monorepo with `client/` (React SPA), `server/` (Ex
 - 17 additive Pipedrive columns added to `opportunities` table, solely written by Pipedrive sync.
 - Unified API at `/api/opportunities/:id/workflow` for lazy-creation, patching PD fields, spawning tasks, and converting to project.
 - UI: `client/src/components/opportunities/OpportunityDrawer.tsx` is the canonical detail view, with CRM (sky accents) and PD (emerald) blocks.
+- Lazy shadow create in `opportunitiesRepo.getOpportunityWithWorkflow()` uses `onConflictDoNothing` against the partial unique index `pd_tickets_opportunity_shadow_unique` (predicate: `opportunity_id IS NOT NULL AND project_id IS NULL`); the `targetWhere` clause MUST repeat that predicate or Postgres raises 42P10. The follow-up re-select is also constrained to `project_id IS NULL` so it always returns the canonical shadow row.
+- Pipedrive PD stages (Prospect/Qualification/Proposal/Negotiation/Contracting) are surfaced alongside the canonical 10-stage company lifecycle (`shared/phases.ts`) via `client/src/lib/pdStageLifecycle.ts`; the mapped phase appears as a small uppercase emerald sub-label under each Kanban column header and under the stage badge in the Opportunities List view.
 
 ### Testing
 - **Unit & API Tests:** Vitest.
