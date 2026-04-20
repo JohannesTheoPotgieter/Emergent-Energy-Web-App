@@ -15,6 +15,8 @@ import {
   recordIntegrationRun,
   type IntegrationHealthTile,
 } from "./integration-health-service";
+import { isConnectorMocked } from "../lib/connector-mode";
+import * as qbMocks from "../mocks/quickbooks-fixtures";
 
 export const QB_INTEGRATION_NAME = "quickbooks";
 
@@ -298,6 +300,7 @@ export async function refreshAccessToken(): Promise<QuickBooksTokenMetadata> {
 }
 
 export async function getValidAccessToken(): Promise<{ accessToken: string; realmId: string }> {
+  if (isConnectorMocked("quickbooks")) return qbMocks.mockQuickBooksAccessToken();
   const metadata = await loadQuickBooksMetadata();
 
   if (!metadata.accessToken || !metadata.refreshToken || !metadata.realmId) {
@@ -451,12 +454,23 @@ export async function queryQuickBooks<T = any>(
   _entity: string,
   query: string,
 ): Promise<T> {
+  if (isConnectorMocked("quickbooks")) {
+    // Best-effort query routing for local dev. The UI only uses a handful
+    // of entity types; anything else returns an empty QueryResponse.
+    const e = _entity.toLowerCase();
+    if (e === "invoice") return qbMocks.mockInvoices() as unknown as T;
+    if (e === "bill") return qbMocks.mockBills() as unknown as T;
+    if (e === "customer") return qbMocks.mockCustomers() as unknown as T;
+    if (e === "vendor") return qbMocks.mockVendors() as unknown as T;
+    return { QueryResponse: {} } as unknown as T;
+  }
   // QuickBooks v3 query endpoint: /query?query=...
   const path = `/query?query=${encodeURIComponent(query)}&minorversion=70`;
   return qbGet<T>(path);
 }
 
 export async function getCompanyInfo(): Promise<any> {
+  if (isConnectorMocked("quickbooks")) return qbMocks.mockCompanyInfo();
   const { realmId } = await getValidAccessToken();
   const info = await qbGet<any>(`/companyinfo/${encodeURIComponent(realmId)}?minorversion=70`);
 
@@ -484,17 +498,20 @@ function buildDateClause(field: string, startDate?: string, endDate?: string): s
 }
 
 export async function getInvoices(startDate?: string, endDate?: string): Promise<any> {
+  if (isConnectorMocked("quickbooks")) return qbMocks.mockInvoices(startDate, endDate);
   const where = buildDateClause("TxnDate", startDate, endDate);
   const query = `SELECT * FROM Invoice${where} ORDERBY TxnDate DESC MAXRESULTS 500`;
   return queryQuickBooks("Invoice", query);
 }
 
 export async function getCustomers(): Promise<any> {
+  if (isConnectorMocked("quickbooks")) return qbMocks.mockCustomers();
   const query = `SELECT * FROM Customer WHERE Active = true MAXRESULTS 1000`;
   return queryQuickBooks("Customer", query);
 }
 
 export async function getVendors(): Promise<any> {
+  if (isConnectorMocked("quickbooks")) return qbMocks.mockVendors();
   const query = `SELECT * FROM Vendor WHERE Active = true MAXRESULTS 1000`;
   return queryQuickBooks("Vendor", query);
 }
@@ -505,6 +522,7 @@ export async function getVendors(): Promise<any> {
  * client-supplied snapshot. Returns the raw Bill object or null if missing.
  */
 export async function getBillById(id: string): Promise<any | null> {
+  if (isConnectorMocked("quickbooks")) return qbMocks.mockBillById(id);
   if (!id) return null;
   // QB QL is not SQL-safe for arbitrary IDs. Reject anything outside the
   // documented Id alphabet so we can never smuggle a WHERE clause.
@@ -519,6 +537,7 @@ export async function getBillById(id: string): Promise<any | null> {
 }
 
 export async function getBills(startDate?: string, endDate?: string): Promise<any> {
+  if (isConnectorMocked("quickbooks")) return qbMocks.mockBills(startDate, endDate);
   const where = buildDateClause("TxnDate", startDate, endDate);
   const maxResults = 500;
   let startPosition = 1;
@@ -544,6 +563,7 @@ export async function getBills(startDate?: string, endDate?: string): Promise<an
 }
 
 export async function getProfitAndLossReport(startDate: string, endDate: string): Promise<any> {
+  if (isConnectorMocked("quickbooks")) return qbMocks.mockProfitAndLossReport(startDate, endDate);
   const params = new URLSearchParams({
     start_date: startDate,
     end_date: endDate,
@@ -553,6 +573,7 @@ export async function getProfitAndLossReport(startDate: string, endDate: string)
 }
 
 export async function getMonthlyPnLReport(startDate: string, endDate: string): Promise<any> {
+  if (isConnectorMocked("quickbooks")) return qbMocks.mockMonthlyPnLReport(startDate, endDate);
   const params = new URLSearchParams({
     start_date: startDate,
     end_date: endDate,
@@ -653,6 +674,7 @@ async function loadQuickBooksRunHealth(): Promise<{
 }
 
 export async function getQuickBooksConnectionStatus(): Promise<QuickBooksConnectionStatus> {
+  if (isConnectorMocked("quickbooks")) return qbMocks.mockQuickBooksConnectionStatus() as unknown as QuickBooksConnectionStatus;
   const metadata = await loadQuickBooksMetadata();
   const connected = Boolean(metadata.accessToken && metadata.refreshToken && metadata.realmId);
 

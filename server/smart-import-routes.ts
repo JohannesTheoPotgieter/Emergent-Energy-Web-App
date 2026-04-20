@@ -2871,12 +2871,21 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       // a fresh const so TypeScript can narrow the type correctly.
       v2: (() => {
         const r = v2Result as IncrementalCommitResult | null;
-        return r ? {
+        if (!r) return undefined;
+        // Per-row warnings from the section commit-executors. Today only the
+        // PLAN executor produces them (per-row SAVEPOINT + collision capture)
+        // — that's where the historic 500s came from. Surfacing the array
+        // lets the Smart Import UI render a "rows that didn't import"
+        // panel instead of failing the whole commit silently.
+        const rowWarnings = (["PLAN", "REVENUE", "EXPENDITURE"] as const)
+          .flatMap(k => (r.sections[k]?.warnings ?? []).map(w => ({ section: k, ...w })));
+        return {
           totalInserted: r.totalInserted,
           totalUpdated: r.totalUpdated,
           totalUnchanged: r.totalUnchanged,
           totalMissing: r.totalMissing,
-        } : undefined;
+          rowWarnings: rowWarnings.length > 0 ? rowWarnings : undefined,
+        };
       })(),
       preservedOverrides: skippedOverrideFields.length > 0 ? skippedOverrideFields : undefined,
       preservedManualEdits: preservedManualEditsCount > 0 ? preservedManualEditsCount : undefined,
