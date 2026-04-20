@@ -40,8 +40,6 @@ function extractDates(rows: any[]): { min: string | null; max: string | null } {
 
 async function parseExcelSheets(buffer: Buffer): Promise<Map<string, any[]>> {
   const workbook = new ExcelJS.Workbook();
-  // @ts-expect-error ExcelJS declares `interface Buffer extends ArrayBuffer` globally,
-  // creating a merge conflict with @types/node's generic Buffer in TS6/ES2024.
   await workbook.xlsx.load(buffer);
 
   const sheets = new Map<string, any[]>();
