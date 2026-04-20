@@ -507,7 +507,7 @@ export default function CosTracker() {
   const [projectSearch, setProjectSearch] = useState("");
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
 
-  const { data: months = [], isLoading, isError, error, refetch, dataUpdatedAt, isFetching } = useQuery<MonthData[]>({
+  const { data: rawMonths = [], isLoading, isError, error, refetch, dataUpdatedAt, isFetching } = useQuery<MonthData[]>({
     queryKey: ["/api/cos-tracker"],
     staleTime: 30_000,
   });
@@ -531,6 +531,68 @@ export default function CosTracker() {
   }, [trackerProjectNames, projectSearch]);
 
   const isProjectFiltered = selectedProjects.length > 0;
+
+  // When a project filter is active, derive each month's totals from its per-project
+  // breakdown arrays (filtered to selected projects) and rebuild YTD chains. Budget is
+  // tracked at the company level only, so it falls to 0 in the filtered view.
+  const months = useMemo<MonthData[]>(() => {
+    if (!isProjectFiltered) return rawMonths;
+    const sel = new Set(selectedProjects);
+    const sumProjects = (arr: ProjectBreakdown[] | undefined) =>
+      (arr ?? []).filter((p) => sel.has(p.projectName)).reduce((s, p) => s + (p.value ?? 0), 0);
+    const filterProjects = (arr: ProjectBreakdown[] | undefined) =>
+      (arr ?? []).filter((p) => sel.has(p.projectName));
+    let ytdCOS = 0, ytdRealised = 0, ytdCommitted = 0, ytdPlanned = 0, ytdQbOnly = 0, ytdAppOnlyPending = 0;
+    const ytdBudget = 0;
+    return rawMonths.map((m) => {
+      const realisedCOS = sumProjects(m.realisedProjects);
+      const committedCOS = sumProjects(m.committedProjects);
+      const plannedCOS = sumProjects(m.plannedProjects);
+      const totalCOS = realisedCOS + committedCOS;
+      const qbOnlyActual = sumProjects(m.qbOnlyProjects);
+      const appOnlyPending = sumProjects(m.appOnlyPendingProjects);
+      const budget = 0;
+      const variance = totalCOS - budget;
+      const variancePct = 0;
+      ytdCOS += totalCOS;
+      ytdRealised += realisedCOS;
+      ytdCommitted += committedCOS;
+      ytdPlanned += plannedCOS;
+      ytdQbOnly += qbOnlyActual;
+      ytdAppOnlyPending += appOnlyPending;
+      const ytdVariance = ytdCOS - ytdBudget;
+      const ytdVariancePct = 0;
+      return {
+        ...m,
+        totalCOS,
+        realisedCOS,
+        committedCOS,
+        plannedCOS,
+        qbOnlyActual,
+        appOnlyPending,
+        budget,
+        variance,
+        variancePct,
+        qbVsAppVariance: qbOnlyActual - totalCOS,
+        qbVsAppVariancePct: qbOnlyActual !== 0 ? ((qbOnlyActual - totalCOS) / qbOnlyActual) * 100 : 0,
+        ytdCOS,
+        ytdRealised,
+        ytdCommitted,
+        ytdPlanned,
+        ytdQbOnly,
+        ytdAppOnlyPending,
+        ytdBudget,
+        ytdVariance,
+        ytdVariancePct,
+        cosProjects: filterProjects(m.cosProjects),
+        realisedProjects: filterProjects(m.realisedProjects),
+        committedProjects: filterProjects(m.committedProjects),
+        plannedProjects: filterProjects(m.plannedProjects),
+        qbOnlyProjects: filterProjects(m.qbOnlyProjects),
+        appOnlyPendingProjects: filterProjects(m.appOnlyPendingProjects),
+      };
+    });
+  }, [rawMonths, isProjectFiltered, selectedProjects]);
 
   const mutation = useMutation({
     mutationFn: async (body: { trackerType: string; monthKey: string; budget?: string }) => {
@@ -762,7 +824,7 @@ export default function CosTracker() {
                     {months.map((m) => {
                       const val = m[row.dataKey] as number;
                       const isEditingCell = editing?.field === row.key && editing?.monthKey === m.monthKey;
-                      if (row.editable) {
+                      if (row.editable && !isProjectFiltered) {
                         return (
                           <td key={m.monthKey} className="px-1 sm:px-2 py-1 sm:py-1.5 text-right">
                             {isEditingCell ? (
