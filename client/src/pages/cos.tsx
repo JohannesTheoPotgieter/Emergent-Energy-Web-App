@@ -536,7 +536,41 @@ export default function CosTracker() {
     mutationFn: async (body: { trackerType: string; monthKey: string; budget?: string }) => {
       await apiRequest("POST", "/api/tracker-monthly", body);
     },
-    onSuccess: () => {
+    onMutate: async (body: { trackerType: string; monthKey: string; budget?: string }) => {
+      if (body.budget == null) return;
+      const newBudget = Number(body.budget);
+      if (!Number.isFinite(newBudget)) return;
+      await qc.cancelQueries({ queryKey: ["/api/cos-tracker"] });
+      const previous = qc.getQueryData<MonthData[]>(["/api/cos-tracker"]);
+      if (!previous) return { previous };
+      const targetIdx = previous.findIndex((m) => m.monthKey === body.monthKey);
+      if (targetIdx < 0) return { previous };
+      const next = previous.map((m) => ({ ...m }));
+      next[targetIdx].budget = newBudget;
+      // Recompute per-month variance for the changed month and cumulative YTD from that
+      // month onward — mirrors server formula in finance-routes.ts (variance = totalCOS - budget;
+      // ytdBudget = cumulative budget; ytdVariance = ytdCOS - ytdBudget).
+      let ytdBudget = 0;
+      let ytdCOS = 0;
+      for (let i = 0; i < next.length; i++) {
+        const m = next[i];
+        ytdBudget += m.budget ?? 0;
+        ytdCOS += m.totalCOS ?? 0;
+        if (i >= targetIdx) {
+          m.variance = (m.totalCOS ?? 0) - (m.budget ?? 0);
+          m.variancePct = (m.budget ?? 0) !== 0 ? (m.variance / (m.budget ?? 0)) * 100 : 0;
+          m.ytdBudget = ytdBudget;
+          m.ytdVariance = ytdCOS - ytdBudget;
+          m.ytdVariancePct = ytdBudget !== 0 ? (m.ytdVariance / ytdBudget) * 100 : 0;
+        }
+      }
+      qc.setQueryData<MonthData[]>(["/api/cos-tracker"], next);
+      return { previous };
+    },
+    onError: (_err, _body, ctx) => {
+      if (ctx?.previous) qc.setQueryData(["/api/cos-tracker"], ctx.previous);
+    },
+    onSettled: () => {
       qc.invalidateQueries({ queryKey: ["/api/cos-tracker"] });
       invalidateDashboardQueries(qc);
     },
@@ -544,6 +578,16 @@ export default function CosTracker() {
 
   const lastMonth = useMemo(() => (months.length ? months[months.length - 1] : null), [months]);
   const prevMonth = useMemo(() => (months.length > 1 ? months[months.length - 2] : null), [months]);
+
+  const fyTotals = useMemo(
+    () => ({
+      budget: months.reduce((s, m) => s + (m.budget ?? 0), 0),
+      planned: months.reduce((s, m) => s + (m.totalCOS ?? 0), 0),
+      realised: months.reduce((s, m) => s + (m.realisedCOS ?? 0), 0),
+      quickbooks: months.reduce((s, m) => s + (m.qbOnlyActual ?? 0), 0),
+    }),
+    [months],
+  );
 
   // Collect all project names per row from the months data, then narrow by tracker-loaded set
   // and (optionally) by user-selected projects.
@@ -811,67 +855,47 @@ export default function CosTracker() {
     );
   };
 
-  const renderKpiCard = (tab: CosTab) => {
-    const meta = TAB_META[tab];
-    const Icon = meta.icon;
-    const k = kpiByTab[tab];
-    const delta = k.lastValue - k.prevValue;
-    const deltaPct = k.prevValue !== 0 ? (delta / Math.abs(k.prevValue)) * 100 : 0;
-    const deltaPositive = delta >= 0;
-    const iconBg = tab === "realised" ? "bg-foreground/8 text-foreground" : tab === "committed" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700";
-    return (
-      <Card key={tab} className="border-border shadow-sm">
-        <CardContent className="p-3 sm:p-4">
-          <div className="flex items-center gap-2 mb-1.5">
-            <div className={`h-7 w-7 rounded-lg flex items-center justify-center ${iconBg}`}>
-              <Icon className="h-3.5 w-3.5" />
-            </div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">YTD {meta.label}</p>
-          </div>
-          <p className={`text-lg sm:text-xl font-bold font-mono tracking-tight ${meta.accent}`} data-testid={`text-ytd-${tab}-value`}>
-            {formatRand(k.ytdValue)}
-          </p>
-          <div className="flex items-center justify-between mt-1.5">
-            <div className="flex flex-col">
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Last mo.</span>
-              <span className="font-mono font-semibold text-xs">{formatRand(k.lastValue)}</span>
-              {prevMonth && (
-                <span className={`inline-flex items-center gap-0.5 text-[10px] font-medium ${deltaPositive ? "text-emerald-700" : "text-destructive"}`}>
-                  {deltaPositive ? <ArrowUpRight className="h-2.5 w-2.5" /> : <ArrowDownRight className="h-2.5 w-2.5" />}
-                  {Math.abs(deltaPct).toFixed(1)}%
-                </span>
-              )}
-            </div>
-            {renderSparkline(tab)}
-          </div>
-        </CardContent>
-      </Card>
-    );
+  type FyCardKey = "budget" | "planned" | "realised" | "quickbooks";
+  const FY_CARD_META: Record<FyCardKey, {
+    label: string;
+    icon: React.ComponentType<{ className?: string }>;
+    iconBg: string;
+    accent: string;
+    sparkColor: string;
+    monthField: keyof MonthData;
+  }> = {
+    budget: { label: "FY Budget", icon: Wallet, iconBg: "bg-emerald-50 text-emerald-700 border border-emerald-200", accent: "text-emerald-700", sparkColor: "#16a34a", monthField: "budget" },
+    planned: { label: "FY Planned", icon: ListChecks, iconBg: "bg-emerald-100 text-emerald-700", accent: "text-emerald-700", sparkColor: "#16a34a", monthField: "totalCOS" },
+    realised: { label: "FY Realised", icon: CheckCircle2, iconBg: "bg-foreground/8 text-foreground", accent: "text-foreground", sparkColor: "#0f172a", monthField: "realisedCOS" },
+    quickbooks: { label: "FY Quickbooks", icon: DollarSign, iconBg: "bg-emerald-50 text-emerald-700 border border-emerald-200", accent: "text-emerald-700", sparkColor: "#16a34a", monthField: "qbOnlyActual" },
   };
 
-  const renderQbKpiCard = () => {
-    const lastQb = lastMonth?.qbOnlyActual ?? 0;
-    const prevQb = prevMonth?.qbOnlyActual ?? 0;
-    const delta = lastQb - prevQb;
-    const deltaPct = prevQb !== 0 ? (delta / Math.abs(prevQb)) * 100 : 0;
+  const renderFyKpiCard = (key: FyCardKey) => {
+    const meta = FY_CARD_META[key];
+    const Icon = meta.icon;
+    const fyValue = fyTotals[key];
+    const lastValue = (lastMonth?.[meta.monthField] as number | undefined) ?? 0;
+    const prevValue = (prevMonth?.[meta.monthField] as number | undefined) ?? 0;
+    const delta = lastValue - prevValue;
+    const deltaPct = prevValue !== 0 ? (delta / Math.abs(prevValue)) * 100 : 0;
     const deltaPositive = delta >= 0;
-    const sparkData = months.map((m) => ({ x: m.monthKey, y: m.qbOnlyActual }));
+    const cardSpark = months.map((m) => ({ x: m.monthKey, y: (m[meta.monthField] as number | undefined) ?? 0 }));
     return (
-      <Card className="border-border shadow-sm">
+      <Card key={key} className="border-border shadow-sm">
         <CardContent className="p-3 sm:p-4">
           <div className="flex items-center gap-2 mb-1.5">
-            <div className="h-7 w-7 rounded-lg flex items-center justify-center bg-emerald-50 text-emerald-700 border border-emerald-200">
-              <DollarSign className="h-3.5 w-3.5" />
+            <div className={`h-7 w-7 rounded-lg flex items-center justify-center ${meta.iconBg}`}>
+              <Icon className="h-3.5 w-3.5" />
             </div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">YTD QuickBooks</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{meta.label}</p>
           </div>
-          <p className="text-lg sm:text-xl font-bold font-mono tracking-tight text-emerald-700" data-testid="text-ytd-qb-value">
-            {formatRand(ytdQbCos)}
+          <p className={`text-lg sm:text-xl font-bold font-mono tracking-tight ${meta.accent}`} data-testid={`text-fy-${key}-value`}>
+            {formatRand(fyValue)}
           </p>
           <div className="flex items-center justify-between mt-1.5">
             <div className="flex flex-col">
               <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Last mo.</span>
-              <span className="font-mono font-semibold text-xs">{formatRand(lastQb)}</span>
+              <span className="font-mono font-semibold text-xs">{formatRand(lastValue)}</span>
               {prevMonth && (
                 <span className={`inline-flex items-center gap-0.5 text-[10px] font-medium ${deltaPositive ? "text-emerald-700" : "text-destructive"}`}>
                   {deltaPositive ? <ArrowUpRight className="h-2.5 w-2.5" /> : <ArrowDownRight className="h-2.5 w-2.5" />}
@@ -881,8 +905,8 @@ export default function CosTracker() {
             </div>
             <div className="h-10 w-28 sm:w-36">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={sparkData} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
-                  <Line type="monotone" dataKey="y" stroke="#16a34a" strokeWidth={1.5} dot={false} />
+                <LineChart data={cardSpark} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+                  <Line type="monotone" dataKey="y" stroke={meta.sparkColor} strokeWidth={1.5} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -1068,10 +1092,10 @@ export default function CosTracker() {
 
           <div className="flex-1 min-w-0 space-y-3">
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3" data-testid="kpi-strip-cos">
-              {renderKpiCard("planned")}
-              {renderKpiCard("committed")}
-              {renderKpiCard("realised")}
-              {renderQbKpiCard()}
+              {renderFyKpiCard("budget")}
+              {renderFyKpiCard("planned")}
+              {renderFyKpiCard("realised")}
+              {renderFyKpiCard("quickbooks")}
             </div>
 
             <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "recon" | "trend")}>
