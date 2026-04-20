@@ -293,7 +293,7 @@ export default function PriorityDetailPage() {
       if (!res.ok) return [];
       return res.json();
     },
-    enabled: priorityId > 0 && !!priority?.hasProjects,
+    enabled: priorityId > 0 && ((priority?.rolledUp?.projectCount ?? 0) > 0 || !!priority?.hasProjects),
   });
 
   const { data: pendingApprovals = [] } = useQuery<any[]>({
@@ -303,7 +303,7 @@ export default function PriorityDetailPage() {
       if (!res.ok) return [];
       return res.json();
     },
-    enabled: priorityId > 0 && !!priority?.hasProjects,
+    enabled: priorityId > 0 && ((priority?.rolledUp?.projectCount ?? 0) > 0 || !!priority?.hasProjects),
   });
 
   const { data: updates = [] } = useQuery<any[]>({
@@ -313,7 +313,7 @@ export default function PriorityDetailPage() {
       if (!res.ok) return [];
       return res.json();
     },
-    enabled: priorityId > 0 && !!priority?.hasProjects,
+    enabled: priorityId > 0 && ((priority?.rolledUp?.projectCount ?? 0) > 0 || !!priority?.hasProjects),
   });
 
   const { data: children = [] } = useQuery<any[]>({
@@ -409,7 +409,18 @@ export default function PriorityDetailPage() {
   const sev = SEVERITY_BADGE[priority.severity] || SEVERITY_BADGE.normal;
   const days = daysRemaining(priority.dueDate);
   const linkedProjects = priority.linkedProjects || [];
-  const gpMargin = priority.totalRevenue > 0 ? ((priority.totalGp / priority.totalRevenue) * 100).toFixed(1) : "0.0";
+  // Prefer rolled-up totals (this priority + descendants) so the drill-down
+  // is a true single pane of glass. Falls back to direct totals for older
+  // API responses.
+  const rollup = priority.rolledUp || null;
+  const totalRevenue = rollup?.totalRevenue ?? priority.totalRevenue ?? 0;
+  const totalCos = rollup?.totalCos ?? priority.totalCos ?? 0;
+  const totalGp = rollup?.totalGp ?? priority.totalGp ?? 0;
+  const displayProjectCount = rollup?.projectCount ?? linkedProjects.length;
+  const directProjectCount = rollup?.directProjectCount ?? priority.directProjectCount ?? displayProjectCount;
+  const descendantCount = rollup?.descendantPriorityCount ?? priority.descendantPriorityCount ?? 0;
+  const indirectProjectCount = Math.max(displayProjectCount - directProjectCount, 0);
+  const gpMargin = totalRevenue > 0 ? ((totalGp / totalRevenue) * 100).toFixed(1) : "0.0";
 
   // Merged tasks + approvals
   const mergedItems = [
@@ -538,32 +549,41 @@ export default function PriorityDetailPage() {
           </div>
         </div>
 
-        {/* Financial summary cards (only when has projects) */}
-        {priority.hasProjects && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
-            <Card><CardContent className="p-3">
-              <p className="text-[10px] text-muted-foreground uppercase">Revenue</p>
-              <p className="text-lg font-semibold">{formatCurrency(priority.totalRevenue)}</p>
-            </CardContent></Card>
-            <Card><CardContent className="p-3">
-              <p className="text-[10px] text-muted-foreground uppercase">Cost of Sales</p>
-              <p className="text-lg font-semibold">{formatCurrency(priority.totalCos)}</p>
-            </CardContent></Card>
-            <Card><CardContent className="p-3">
-              <p className="text-[10px] text-muted-foreground uppercase">Gross Profit</p>
-              <p className="text-lg font-semibold">{formatCurrency(priority.totalGp)}</p>
-            </CardContent></Card>
-            <Card><CardContent className="p-3">
-              <p className="text-[10px] text-muted-foreground uppercase">GP Margin</p>
-              <p className="text-lg font-semibold">{gpMargin}%</p>
-            </CardContent></Card>
-          </div>
+        {/* Financial summary cards (shown when any project rolls up — direct or via sub-priorities) */}
+        {displayProjectCount > 0 && (
+          <>
+            {indirectProjectCount > 0 && (
+              <p className="text-[11px] text-muted-foreground mt-3 mb-1">
+                Rolled up across {displayProjectCount} project{displayProjectCount === 1 ? "" : "s"} —
+                {" "}{directProjectCount} directly linked
+                {indirectProjectCount > 0 && `, ${indirectProjectCount} via ${descendantCount} sub-priorit${descendantCount === 1 ? "y" : "ies"}`}
+              </p>
+            )}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
+              <Card><CardContent className="p-3">
+                <p className="text-[10px] text-muted-foreground uppercase">Revenue</p>
+                <p className="text-lg font-semibold">{formatCurrency(totalRevenue)}</p>
+              </CardContent></Card>
+              <Card><CardContent className="p-3">
+                <p className="text-[10px] text-muted-foreground uppercase">Cost of Sales</p>
+                <p className="text-lg font-semibold">{formatCurrency(totalCos)}</p>
+              </CardContent></Card>
+              <Card><CardContent className="p-3">
+                <p className="text-[10px] text-muted-foreground uppercase">Gross Profit</p>
+                <p className="text-lg font-semibold">{formatCurrency(totalGp)}</p>
+              </CardContent></Card>
+              <Card><CardContent className="p-3">
+                <p className="text-[10px] text-muted-foreground uppercase">GP Margin</p>
+                <p className="text-lg font-semibold">{gpMargin}%</p>
+              </CardContent></Card>
+            </div>
+          </>
         )}
 
-        {!priority.hasProjects && (
+        {displayProjectCount === 0 && (
           <Card className="mt-4 border-dashed">
             <CardContent className="p-4 text-sm text-muted-foreground">
-              This is a standalone priority. Link projects to see derived metrics and financial data.
+              This is a standalone priority. Link projects — or break it down into sub-priorities — to see derived metrics and financial data.
               {isAdmin && (
                 <Button variant="outline" size="sm" className="ml-2" onClick={() => setLinkDialogOpen(true)}>
                   <Plus className="w-3 h-3 mr-1" /> Link projects
@@ -575,9 +595,9 @@ export default function PriorityDetailPage() {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue={priority.hasProjects ? "projects" : "details"}>
+      <Tabs defaultValue={displayProjectCount > 0 ? "projects" : "details"}>
         <TabsList>
-          {priority.hasProjects ? (
+          {displayProjectCount > 0 ? (
             <>
               <TabsTrigger value="projects"><FolderOpen className="w-3.5 h-3.5 mr-1" />Projects</TabsTrigger>
               <TabsTrigger value="financials"><DollarSign className="w-3.5 h-3.5 mr-1" />Financials</TabsTrigger>
@@ -642,36 +662,50 @@ export default function PriorityDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {linkedProjects.map((p: any) => (
-                  <tr key={p.id} className="border-b hover:bg-muted/50">
-                    <td className="py-2">
-                      <Link href={`/project/${encodeURIComponent(p.name)}`}>
-                        <span className="text-primary hover:underline cursor-pointer font-medium">{p.name}</span>
-                      </Link>
-                    </td>
-                    <td className="py-2">{p.phase || "—"}</td>
-                    <td className="py-2">{p.pm?.name || "—"}</td>
-                    <td className="py-2">
-                      {p.ragStatus ? (
-                        <Badge variant="secondary" className={`text-[10px] ${RAG_BADGE[p.ragStatus?.toLowerCase()] || ""}`}>
-                          {p.ragStatus}
-                        </Badge>
-                      ) : "—"}
-                    </td>
-                    <td className="py-2">{p.percentComplete}%</td>
-                    {isAdmin && (
+                {linkedProjects.map((p: any) => {
+                  const linkedDirectly = p.linkedDirectly ?? true;
+                  return (
+                    <tr key={p.id} className="border-b hover:bg-muted/50">
                       <td className="py-2">
-                        <button
-                          onClick={() => { if (confirm("Unlink this project?")) unlinkMutation.mutate(p.id); }}
-                          className="text-muted-foreground hover:text-red-600"
-                          title="Unlink project"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
+                        <Link href={`/project/${encodeURIComponent(p.name)}`}>
+                          <span className="text-primary hover:underline cursor-pointer font-medium">{p.name}</span>
+                        </Link>
+                        {!linkedDirectly && (
+                          <Badge variant="secondary" className="ml-2 text-[9px] bg-blue-50 text-blue-700" title="Linked via a sub-priority">
+                            via sub-priority
+                          </Badge>
+                        )}
                       </td>
-                    )}
-                  </tr>
-                ))}
+                      <td className="py-2">{p.phase || "—"}</td>
+                      <td className="py-2">{p.pm?.name || "—"}</td>
+                      <td className="py-2">
+                        {p.ragStatus ? (
+                          <Badge variant="secondary" className={`text-[10px] ${RAG_BADGE[p.ragStatus?.toLowerCase()] || ""}`}>
+                            {p.ragStatus}
+                          </Badge>
+                        ) : "—"}
+                      </td>
+                      <td className="py-2">{p.percentComplete}%</td>
+                      {isAdmin && (
+                        <td className="py-2">
+                          {linkedDirectly ? (
+                            <button
+                              onClick={() => { if (confirm("Unlink this project?")) unlinkMutation.mutate(p.id); }}
+                              className="text-muted-foreground hover:text-red-600"
+                              title="Unlink project"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          ) : (
+                            <span className="text-muted-foreground/40" title="Managed by sub-priority — unlink there">
+                              <X className="w-3.5 h-3.5" />
+                            </span>
+                          )}
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -858,7 +892,7 @@ export default function PriorityDetailPage() {
         <TabsContent value="updates" className="mt-4">
           {updates.length === 0 ? (
             <p className="text-sm text-muted-foreground py-4 text-center">
-              {priority.hasProjects ? "No updates from linked projects" : "Link projects to see updates"}
+              {displayProjectCount > 0 ? "No updates from linked projects" : "Link projects or break this priority down to see updates"}
             </p>
           ) : (
             <div className="space-y-3">

@@ -14,7 +14,7 @@ import {
 } from "@shared/schema";
 import { eq, and, sql, desc, asc, inArray, isNull, ne } from "drizzle-orm";
 import { PRIORITY_HEALTH_VALUES, type PriorityHealth, computeEffectivePriorityHealth } from "@shared/kpi-definitions";
-import { PRIORITY_SCOPES, ESCALATION_REASONS, computeEscalatePatch, type PriorityScope, type EscalationReason } from "@shared/config/priorities";
+import { PRIORITY_SCOPES, ESCALATION_REASONS, computeEscalatePatch, collectDescendantIds, type PriorityScope, type EscalationReason } from "@shared/config/priorities";
 
 const router = Router();
 
@@ -135,6 +135,48 @@ async function getUsersByIds(userIds: number[]): Promise<Map<number, { id: numbe
   if (userIds.length === 0) return new Map();
   const rows: Array<{ id: number; name: string }> = await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, userIds));
   return new Map(rows.map((u) => [u.id, u]));
+}
+
+interface RolledUpScope {
+  descendantPriorityIds: number[];
+  directProjectIds: number[];
+  rolledUpProjectIds: number[];
+}
+
+/**
+ * Resolves the full set of project IDs that should roll up into a priority's
+ * drill-down: its directly-linked projects PLUS every project linked to any
+ * descendant priority. Closed descendants are excluded. Project IDs are
+ * deduped so a project linked at both parent and child level is counted once.
+ */
+async function resolveRolledUpScope(rootPriorityId: number): Promise<RolledUpScope> {
+  // Load the full adjacency of active priorities once, then let the pure
+  // helper walk it. Cheap on realistic data sizes (thousands) and avoids
+  // repeated per-level round trips.
+  const adjacency = await db
+    .select({ id: mytoolCompanyPriorities.id, parentId: mytoolCompanyPriorities.parentId })
+    .from(mytoolCompanyPriorities)
+    .where(ne(mytoolCompanyPriorities.status, "closed"));
+
+  const descendantPriorityIds = collectDescendantIds(
+    adjacency.map((r: { id: number; parentId: number | null }) => ({ id: r.id, parentId: r.parentId })),
+    rootPriorityId,
+  );
+  const allPriorityIds = [rootPriorityId, ...descendantPriorityIds];
+
+  const directLinks: Array<{ projectId: number }> = await db
+    .select({ projectId: priorityProjects.projectId })
+    .from(priorityProjects)
+    .where(eq(priorityProjects.priorityId, rootPriorityId));
+  const directProjectIds: number[] = Array.from(new Set(directLinks.map((l) => l.projectId)));
+
+  const allLinks: Array<{ projectId: number }> = await db
+    .select({ projectId: priorityProjects.projectId })
+    .from(priorityProjects)
+    .where(inArray(priorityProjects.priorityId, allPriorityIds));
+  const rolledUpProjectIds: number[] = Array.from(new Set(allLinks.map((l) => l.projectId)));
+
+  return { descendantPriorityIds, directProjectIds, rolledUpProjectIds };
 }
 
 async function enrichPriority(
@@ -371,6 +413,12 @@ router.get("/api/priorities", requireAuth, async (req: Request, res: Response) =
 });
 
 // ==================== GET /api/priorities/:id ====================
+// Drill-down is now a rolled-up view: `linkedProjects` includes every project
+// linked to this priority OR any descendant, deduped. A `rolledUp` object
+// carries the aggregated financial / progress / blocker totals across the
+// same set so the UI can present the "everything open against this priority"
+// single pane of glass. The direct-only numbers remain on the envelope for
+// callers that still want them.
 router.get("/api/priorities/:id", requireAuth, async (req: Request, res: Response) => {
   try {
     const priorityId = parseIdParam(req.params.id);
@@ -381,8 +429,13 @@ router.get("/api/priorities/:id", requireAuth, async (req: Request, res: Respons
     const metrics = await getPriorityDerivedMetrics(priorityId);
     const enriched = await enrichPriority(priority, metrics);
 
-    // Fetch linked projects with details
-    const linkedProjects = await db
+    const { descendantPriorityIds, directProjectIds, rolledUpProjectIds } = await resolveRolledUpScope(priorityId);
+
+    // Fetch project detail for every project in the rolled-up set (direct + via
+    // descendants). Each row includes the priority it was linked through and
+    // the linkedAt timestamp closest to the root — useful when surfacing
+    // "linked via sub-priority X" in the UI.
+    const linkedProjectRows = rolledUpProjectIds.length === 0 ? [] : await db
       .select({
         id: projectInfo.id,
         name: projectInfo.projectName,
@@ -391,6 +444,7 @@ router.get("/api/priorities/:id", requireAuth, async (req: Request, res: Respons
         pmUserId: projectInfo.pmUserId,
         pmName: projectInfo.pm,
         linkedAt: priorityProjects.linkedAt,
+        linkedViaPriorityId: priorityProjects.priorityId,
         percentComplete: derivedProjectKpis.avgActualPctComplete,
         totalRevenue: derivedProjectKpis.totalPlannedRevenue,
         totalCos: derivedProjectKpis.totalPlannedExpenses,
@@ -403,10 +457,21 @@ router.get("/api/priorities/:id", requireAuth, async (req: Request, res: Respons
       .innerJoin(projectInfo, eq(priorityProjects.projectId, projectInfo.id))
       .leftJoin(projectExecutionState, eq(projectInfo.id, projectExecutionState.projectId))
       .leftJoin(derivedProjectKpis, eq(projectInfo.id, derivedProjectKpis.projectId))
-      .where(eq(priorityProjects.priorityId, priorityId));
+      .where(inArray(priorityProjects.projectId, rolledUpProjectIds));
 
-    // Get PM user objects for linked projects
-    const projectsWithPm = await Promise.all(linkedProjects.map(async (p: typeof linkedProjects[number]) => {
+    // Dedupe by project id — a project linked at both parent and child level
+    // should appear once. Prefer the row linked directly to this priority
+    // when both exist (so the UI shows "direct" not "via sub-priority").
+    const byProjectId = new Map<number, typeof linkedProjectRows[number]>();
+    for (const row of linkedProjectRows) {
+      const existing = byProjectId.get(row.id);
+      if (!existing) byProjectId.set(row.id, row);
+      else if (row.linkedViaPriorityId === priorityId) byProjectId.set(row.id, row);
+    }
+    const dedupedProjects = Array.from(byProjectId.values());
+
+    const directSet = new Set(directProjectIds);
+    const projectsWithPm = await Promise.all(dedupedProjects.map(async (p) => {
       const pm = p.pmUserId ? await getUserById(p.pmUserId) : null;
       return {
         id: p.id,
@@ -416,6 +481,8 @@ router.get("/api/priorities/:id", requireAuth, async (req: Request, res: Respons
         pm: pm || (p.pmName ? { id: 0, name: p.pmName } : null),
         percentComplete: Math.round(Number(p.percentComplete || 0)),
         linkedAt: p.linkedAt,
+        linkedDirectly: directSet.has(p.id),
+        linkedViaPriorityId: p.linkedViaPriorityId,
         totalRevenue: Number(p.totalRevenue || 0),
         totalCos: Number(p.totalCos || 0),
         grossProfit: Number(p.grossProfit || 0),
@@ -425,7 +492,54 @@ router.get("/api/priorities/:id", requireAuth, async (req: Request, res: Respons
       };
     }));
 
-    res.json({ ...enriched, linkedProjects: projectsWithPm });
+    // Aggregate rolled-up metrics from the deduped project set.
+    const rolledUpTotalRevenue = projectsWithPm.reduce((s, p) => s + p.totalRevenue, 0);
+    const rolledUpTotalCos = projectsWithPm.reduce((s, p) => s + p.totalCos, 0);
+    const rolledUpGrossProfit = projectsWithPm.reduce((s, p) => s + p.grossProfit, 0);
+    const rolledUpAtRisk = projectsWithPm.filter(p => (p.ragStatus || "").toLowerCase() === "red").length;
+    const rolledUpAvgProgress = projectsWithPm.length === 0
+      ? 0
+      : Math.round(projectsWithPm.reduce((s, p) => s + p.percentComplete, 0) / projectsWithPm.length);
+
+    // Blocker + open-task counts across the rolled-up project set. Uses the
+    // same filter as the priority_derived_metrics view so counts stay
+    // consistent with the list-card figures.
+    let rolledUpBlockerCount = 0;
+    let rolledUpOpenTaskCount = 0;
+    if (rolledUpProjectIds.length > 0) {
+      const [blockerRow]: any = await db.execute(sql`
+        SELECT COUNT(*)::int AS n FROM work_items
+        WHERE project_id IN ${rolledUpProjectIds} AND deleted_at IS NULL
+        AND LOWER(status) LIKE '%block%'
+      `).then((r: any) => r.rows || r).catch(() => [{ n: 0 }]);
+      rolledUpBlockerCount = Number(blockerRow?.n || 0);
+      const [openRow]: any = await db.execute(sql`
+        SELECT COUNT(*)::int AS n FROM work_items
+        WHERE project_id IN ${rolledUpProjectIds} AND deleted_at IS NULL
+        AND LOWER(status) NOT IN ('complete', 'completed', 'done', 'cancelled', 'canceled', 'qc approved')
+      `).then((r: any) => r.rows || r).catch(() => [{ n: 0 }]);
+      rolledUpOpenTaskCount = Number(openRow?.n || 0);
+    }
+
+    res.json({
+      ...enriched,
+      linkedProjects: projectsWithPm,
+      descendantPriorityCount: descendantPriorityIds.length,
+      hasDescendants: descendantPriorityIds.length > 0,
+      directProjectCount: directProjectIds.length,
+      rolledUp: {
+        projectCount: projectsWithPm.length,
+        directProjectCount: directProjectIds.length,
+        descendantPriorityCount: descendantPriorityIds.length,
+        totalRevenue: rolledUpTotalRevenue,
+        totalCos: rolledUpTotalCos,
+        totalGp: rolledUpGrossProfit,
+        avgProgress: rolledUpAvgProgress,
+        atRiskProjectCount: rolledUpAtRisk,
+        blockerCount: rolledUpBlockerCount,
+        openTaskCount: rolledUpOpenTaskCount,
+      },
+    });
   } catch (err: any) {
     console.error("[Priorities] Detail error:", err);
     throw err;
@@ -802,19 +916,16 @@ router.get("/api/projects/:id/priorities", requireAuth, async (req: Request, res
 });
 
 // ==================== GET /api/priorities/:id/tasks ====================
+// Rolled-up: returns open tasks across every project linked to this priority
+// OR any descendant. Matches the status filter used by priority_derived_metrics
+// .open_task_count so the card counter and drill-down list stay in sync.
 router.get("/api/priorities/:id/tasks", requireAuth, async (req: Request, res: Response) => {
   try {
     const priorityId = parseIdParam(req.params.id);
     if (priorityId === null) return res.status(400).json({ error: "Invalid priority id" });
 
-    // Get linked project IDs
-    const links = await db.select({ projectId: priorityProjects.projectId })
-      .from(priorityProjects)
-      .where(eq(priorityProjects.priorityId, priorityId));
-
-    if (links.length === 0) return res.json([]);
-
-    const projectIds = links.map((l: typeof links[number]) => l.projectId);
+    const { rolledUpProjectIds: projectIds } = await resolveRolledUpScope(priorityId);
+    if (projectIds.length === 0) return res.json([]);
 
     // Get project names for context
     const projects = await db.select({ id: projectInfo.id, name: projectInfo.projectName })
@@ -884,18 +995,15 @@ router.get("/api/priorities/:id/tasks", requireAuth, async (req: Request, res: R
 });
 
 // ==================== GET /api/priorities/:id/approvals ====================
+// Rolled-up: includes pending approvals across every project linked to this
+// priority OR any descendant priority.
 router.get("/api/priorities/:id/approvals", requireAuth, async (req: Request, res: Response) => {
   try {
     const priorityId = parseIdParam(req.params.id);
     if (priorityId === null) return res.status(400).json({ error: "Invalid priority id" });
 
-    const links = await db.select({ projectId: priorityProjects.projectId })
-      .from(priorityProjects)
-      .where(eq(priorityProjects.priorityId, priorityId));
-
-    if (links.length === 0) return res.json([]);
-
-    const projectIds = links.map((l: typeof links[number]) => l.projectId);
+    const { rolledUpProjectIds: projectIds } = await resolveRolledUpScope(priorityId);
+    if (projectIds.length === 0) return res.json([]);
 
     // Get project names
     const projects = await db.select({ id: projectInfo.id, name: projectInfo.projectName })
@@ -933,18 +1041,15 @@ router.get("/api/priorities/:id/approvals", requireAuth, async (req: Request, re
 });
 
 // ==================== GET /api/priorities/:id/updates ====================
+// Rolled-up: RAG / phase updates across every project linked to this priority
+// OR any descendant priority.
 router.get("/api/priorities/:id/updates", requireAuth, async (req: Request, res: Response) => {
   try {
     const priorityId = parseIdParam(req.params.id);
     if (priorityId === null) return res.status(400).json({ error: "Invalid priority id" });
 
-    const links = await db.select({ projectId: priorityProjects.projectId })
-      .from(priorityProjects)
-      .where(eq(priorityProjects.priorityId, priorityId));
-
-    if (links.length === 0) return res.json([]);
-
-    const projectIds = links.map((l: typeof links[number]) => l.projectId);
+    const { rolledUpProjectIds: projectIds } = await resolveRolledUpScope(priorityId);
+    if (projectIds.length === 0) return res.json([]);
 
     // Get latest updates from project_execution_state and project_info
     const projectsWithUpdates = await db
