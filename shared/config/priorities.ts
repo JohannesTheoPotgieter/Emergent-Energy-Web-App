@@ -53,6 +53,30 @@ export const SCOPE_LABELS: Record<PriorityScope, string> = {
 };
 
 /**
+ * Canonical department options for priority dialogs / filters.
+ * Single source of truth — kept aligned with ROLE_DEPARTMENT_MAP in
+ * shared/schema/users.ts so scope-department filters match the user map.
+ */
+export interface DepartmentOption {
+  value: string;
+  label: string;
+}
+
+export const DEPARTMENT_OPTIONS: readonly DepartmentOption[] = [
+  { value: "ADMIN", label: "Admin" },
+  { value: "LEADERSHIP", label: "Leadership" },
+  { value: "ENGINEERING", label: "Engineering" },
+  { value: "PROJECT_DEVELOPMENT", label: "Project Development" },
+  { value: "PROJECT_MANAGEMENT", label: "Project Management" },
+  { value: "FINANCE", label: "Finance" },
+] as const;
+
+export function departmentLabel(key: string | null | undefined): string {
+  if (!key) return "";
+  return DEPARTMENT_OPTIONS.find((d) => d.value === key)?.label ?? key;
+}
+
+/**
  * Resolves all descendant priority IDs from a flat `[childId, parentId]`
  * adjacency list, starting from `rootId`. Does NOT include the root itself.
  *

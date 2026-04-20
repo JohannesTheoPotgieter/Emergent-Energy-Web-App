@@ -8,6 +8,8 @@ export {
   PRIORITY_SCOPES,
   ESCALATION_REASONS,
   SCOPE_LABELS,
+  DEPARTMENT_OPTIONS,
+  departmentLabel,
   isPriorityAdminRole,
   isDepartmentHeadRole,
 } from "@shared/config/priorities";
@@ -16,4 +18,5 @@ export type {
   DepartmentHeadRole,
   PriorityScope,
   EscalationReason,
+  DepartmentOption,
 } from "@shared/config/priorities";
