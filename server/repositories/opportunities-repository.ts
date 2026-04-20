@@ -39,6 +39,7 @@ interface WorkingListRow {
   siteName: string | null;
   siteAddress: string | null;
   estimatedValue: string | null;
+  estimatedKwp: string | null;
   fundingType: string | null;
   province: string | null;
   nextActivityDate: string | Date | null;
@@ -174,6 +175,7 @@ export class OpportunitiesRepository {
         siteAddress: sites.address,
         // Management-board columns (2026-04-20):
         estimatedValue: opportunities.estimatedValue,
+        estimatedKwp: opportunities.estimatedKwp,
         fundingType: opportunities.fundingType,
         province: opportunities.province,
         nextActivityDate: opportunities.nextActivityDate,

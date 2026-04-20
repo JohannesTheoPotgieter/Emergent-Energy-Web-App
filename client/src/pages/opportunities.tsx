@@ -75,6 +75,7 @@ interface WorkingOpportunityRow {
   province: string | null;
   fundingType: string | null;
   estimatedValue: number | null;
+  estimatedKwp: number | null;
   nextActivityDate: string | null;
   nextActivitySubject: string | null;
   hasLinkedClient: boolean;
@@ -580,117 +581,133 @@ export default function OpportunitiesPage() {
           description="No active Pipedrive opportunities currently qualify for this working list."
         />
       ) : (
-        <div className="overflow-x-auto border rounded-lg">
-          <table className="w-full text-sm" data-testid="table-opportunities-working">
-            <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
-              <tr>
-                <th className="text-left px-3 py-2">Client</th>
-                <th className="text-left px-3 py-2">Project</th>
-                <th className="text-left px-3 py-2">Project Developer</th>
-                <th className="text-left px-3 py-2">Province</th>
-                <th className="text-left px-3 py-2">Funding</th>
-                <th className="text-left px-3 py-2 whitespace-nowrap">Est. Signature</th>
-                <th className="text-right px-3 py-2 whitespace-nowrap">Deal Value</th>
-                <th className="text-center px-3 py-2 whitespace-nowrap">Eng. Open</th>
-                <th className="text-left px-3 py-2 whitespace-nowrap">Next Activity</th>
-                <th className="text-left px-3 py-2">Stage</th>
-                <th className="text-right px-3 py-2">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {activeRows.map((row) => (
-                <tr
-                  key={row.id}
-                  className="border-t hover:bg-emerald-50/40 cursor-pointer"
-                  data-testid={`opportunity-row-${row.id}`}
-                  onClick={() => setDrawerOppId(row.id)}
-                >
-                  {/* Client */}
-                  <td className="px-3 py-2 align-top min-w-[180px]">
-                    <p className="font-medium text-foreground" title={row.orgClientName || ""}>{row.orgClientName || "—"}</p>
-                    {!row.hasLinkedClient && (
-                      <span className="inline-flex items-center gap-1 text-[10px] text-amber-700 mt-0.5">
-                        <AlertTriangle className="h-3 w-3" /> Unlinked
-                      </span>
-                    )}
-                  </td>
-                  {/* Project (deal name = project name) */}
-                  <td className="px-3 py-2 align-top min-w-[220px]">
-                    <p className="font-medium text-foreground" title={row.dealName}>{row.dealName || `Deal #${row.id}`}</p>
-                    <p className="text-[10px] text-muted-foreground">PD #{row.pipedriveDealId || "—"}{row.hasLinkedProject ? ` • ${row.linkedProjectCount} project${row.linkedProjectCount === 1 ? "" : "s"}` : ""}</p>
-                  </td>
-                  {/* Project Developer */}
-                  <td className="px-3 py-2 align-top min-w-[160px]">
-                    <p className="text-foreground" title={row.projectDeveloper || ""}>{row.projectDeveloper || "—"}</p>
-                    {row.projectDeveloperOverridden && (
-                      <span className="text-[10px] text-emerald-700">App-assigned</span>
-                    )}
-                  </td>
-                  {/* Province */}
-                  <td className="px-3 py-2 align-top">
-                    {row.province ? (
-                      <Badge variant="outline" className="text-[10px] font-normal">{row.province}</Badge>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
-                  </td>
-                  {/* Funding type */}
-                  <td className="px-3 py-2 align-top text-xs">
-                    {fundingLabel(row.fundingType)}
-                  </td>
-                  {/* Estimated signature date */}
-                  <td className="px-3 py-2 align-top text-xs whitespace-nowrap">
-                    {formatDate(row.expectedCloseDate)}
-                  </td>
-                  {/* Deal value */}
-                  <td className="px-3 py-2 align-top text-right font-medium tabular-nums whitespace-nowrap">
-                    {formatZAR(row.estimatedValue)}
-                  </td>
-                  {/* Engineering tasks open */}
-                  <td className="px-3 py-2 align-top text-center">
-                    <Badge
-                      variant={row.openEngineeringTaskCount > 0 ? "default" : "outline"}
-                      className={row.openEngineeringTaskCount > 0 ? "bg-emerald-600 hover:bg-emerald-600" : ""}
-                    >
-                      {row.openEngineeringTaskCount}
-                    </Badge>
-                  </td>
-                  {/* Next activity */}
-                  <td className="px-3 py-2 align-top min-w-[160px]">
-                    {row.nextActivityDate ? (
-                      <>
-                        <p className="text-xs text-foreground whitespace-nowrap">{formatDate(row.nextActivityDate)}</p>
-                        {row.nextActivitySubject && (
-                          <p className="text-[10px] text-muted-foreground truncate max-w-[180px]" title={row.nextActivitySubject}>
-                            {row.nextActivitySubject}
-                          </p>
-                        )}
-                      </>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
-                  </td>
-                  {/* Stage */}
-                  <td className="px-3 py-2 align-top">
-                    <Badge className={`text-[10px] ${stageBadgeClass(row.stage)}`}>{appPhaseLabel(row.stage)}</Badge>
-                  </td>
-                  {/* Action */}
-                  <td className="px-3 py-2 align-top text-right">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="gap-1"
-                      data-testid={`btn-create-engineering-ticket-${row.id}`}
-                      onClick={(e) => { e.stopPropagation(); openMapping(row); }}
-                    >
-                      <TicketPlus className="h-3.5 w-3.5" />
-                      Eng. Ticket
-                    </Button>
-                  </td>
+        <div className="border rounded-lg overflow-hidden bg-white shadow-sm">
+          <div className="overflow-x-auto max-h-[calc(100vh-280px)]">
+            <table className="w-full text-sm border-collapse" data-testid="table-opportunities-working">
+              <thead className="bg-emerald-50/60 text-[11px] uppercase tracking-wider text-emerald-900/80 sticky top-0 z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
+                <tr>
+                  <th className="text-left px-3 py-2.5 font-semibold">Client / Project</th>
+                  <th className="text-left px-3 py-2.5 font-semibold">Stage</th>
+                  <th className="text-left px-3 py-2.5 font-semibold">Project Developer</th>
+                  <th className="text-left px-3 py-2.5 font-semibold">Province</th>
+                  <th className="text-right px-3 py-2.5 font-semibold whitespace-nowrap">Size</th>
+                  <th className="text-right px-3 py-2.5 font-semibold whitespace-nowrap">Deal Value</th>
+                  <th className="text-left px-3 py-2.5 font-semibold whitespace-nowrap">Est. Signature</th>
+                  <th className="text-left px-3 py-2.5 font-semibold whitespace-nowrap">Next Activity</th>
+                  <th className="text-center px-3 py-2.5 font-semibold whitespace-nowrap" title="Open engineering tasks">Eng.</th>
+                  <th className="text-right px-3 py-2.5 font-semibold">Action</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {activeRows.map((row, idx) => (
+                  <tr
+                    key={row.id}
+                    className={`border-t border-slate-100 cursor-pointer transition-colors hover:bg-emerald-50/50 ${idx % 2 === 1 ? "bg-slate-50/40" : "bg-white"}`}
+                    data-testid={`opportunity-row-${row.id}`}
+                    onClick={() => setDrawerOppId(row.id)}
+                  >
+                    {/* Client / Project (combined) */}
+                    <td className="px-3 py-2.5 align-top min-w-[260px] max-w-[340px]">
+                      <p className="text-[11px] text-slate-500 truncate flex items-center gap-1" title={row.orgClientName || ""}>
+                        {row.orgClientName || "Unlinked client"}
+                        {!row.hasLinkedClient && <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0" />}
+                      </p>
+                      <p className="font-semibold text-slate-900 truncate leading-snug" title={row.dealName}>
+                        {row.dealName || `Deal #${row.id}`}
+                      </p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        PD #{row.pipedriveDealId || "—"}
+                        {row.hasLinkedProject && ` · ${row.linkedProjectCount} project${row.linkedProjectCount === 1 ? "" : "s"}`}
+                      </p>
+                    </td>
+                    {/* Stage */}
+                    <td className="px-3 py-2.5 align-top">
+                      <Badge className={`text-[10px] font-medium ${stageBadgeClass(row.stage)}`}>{appPhaseLabel(row.stage)}</Badge>
+                    </td>
+                    {/* Project Developer */}
+                    <td className="px-3 py-2.5 align-top min-w-[140px]">
+                      <p className="text-slate-800 truncate" title={row.projectDeveloper || ""}>{row.projectDeveloper || "—"}</p>
+                      {row.projectDeveloperOverridden && (
+                        <span className="text-[10px] text-emerald-700 font-medium">App override</span>
+                      )}
+                    </td>
+                    {/* Province */}
+                    <td className="px-3 py-2.5 align-top">
+                      {row.province ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-sky-50 text-sky-700 text-[11px] font-medium border border-sky-100">
+                          {row.province}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-slate-300">—</span>
+                      )}
+                    </td>
+                    {/* Size kWp */}
+                    <td className="px-3 py-2.5 align-top text-right whitespace-nowrap">
+                      {row.estimatedKwp != null ? (
+                        <span className="tabular-nums font-medium text-slate-800">
+                          {row.estimatedKwp >= 1000 ? `${(row.estimatedKwp / 1000).toFixed(2)} MWp` : `${row.estimatedKwp.toFixed(0)} kWp`}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-slate-300">—</span>
+                      )}
+                    </td>
+                    {/* Deal value */}
+                    <td className="px-3 py-2.5 align-top text-right tabular-nums font-semibold text-slate-900 whitespace-nowrap">
+                      {formatZAR(row.estimatedValue)}
+                    </td>
+                    {/* Est. Signature */}
+                    <td className="px-3 py-2.5 align-top text-xs text-slate-700 whitespace-nowrap">
+                      {formatDate(row.expectedCloseDate)}
+                    </td>
+                    {/* Next activity */}
+                    <td className="px-3 py-2.5 align-top min-w-[150px]">
+                      {row.nextActivityDate ? (
+                        <>
+                          <p className="text-xs font-medium text-slate-800 whitespace-nowrap">{formatDate(row.nextActivityDate)}</p>
+                          {row.nextActivitySubject && (
+                            <p className="text-[10px] text-slate-500 truncate max-w-[170px]" title={row.nextActivitySubject}>
+                              {row.nextActivitySubject}
+                            </p>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-xs text-slate-300">—</span>
+                      )}
+                    </td>
+                    {/* Eng. open count */}
+                    <td className="px-3 py-2.5 align-top text-center">
+                      {row.openEngineeringTaskCount > 0 ? (
+                        <span className="inline-flex items-center justify-center min-w-[24px] h-6 px-1.5 rounded-full bg-emerald-600 text-white text-[11px] font-semibold tabular-nums">
+                          {row.openEngineeringTaskCount}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center justify-center min-w-[24px] h-6 px-1.5 rounded-full bg-slate-100 text-slate-400 text-[11px] tabular-nums">
+                          0
+                        </span>
+                      )}
+                    </td>
+                    {/* Action */}
+                    <td className="px-3 py-2.5 align-top text-right whitespace-nowrap">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1 h-7 text-xs border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:border-emerald-300"
+                        data-testid={`btn-create-engineering-ticket-${row.id}`}
+                        onClick={(e) => { e.stopPropagation(); openMapping(row); }}
+                      >
+                        <TicketPlus className="h-3 w-3" />
+                        Eng.
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="px-4 py-2 bg-slate-50 border-t text-[11px] text-slate-500 flex items-center justify-between">
+            <span>{activeRows.length} active opportunit{activeRows.length === 1 ? "y" : "ies"}</span>
+            <span className="text-slate-400">Click any row for full detail</span>
+          </div>
         </div>
       )}
 

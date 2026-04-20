@@ -146,6 +146,7 @@ router.get("/api/opportunities/working", requireAuth, requirePermission("opportu
           province,
           fundingType: r.fundingType || null,
           estimatedValue: r.estimatedValue != null ? Number(r.estimatedValue) : null,
+          estimatedKwp: r.estimatedKwp != null ? Number(r.estimatedKwp) : null,
           nextActivityDate: r.nextActivityDate || null,
           nextActivitySubject: r.nextActivitySubject || null,
           hasLinkedClient: Boolean(r.clientId),
