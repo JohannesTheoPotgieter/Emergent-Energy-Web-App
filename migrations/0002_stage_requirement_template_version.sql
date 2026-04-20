@@ -1,0 +1,3 @@
+ALTER TABLE "project_stage_requirements" ADD COLUMN "source_template_id" integer;--> statement-breakpoint
+ALTER TABLE "project_stage_requirements" ADD COLUMN "template_version_at_hydrate" integer;--> statement-breakpoint
+ALTER TABLE "project_stage_requirements" ADD CONSTRAINT "project_stage_requirements_source_template_id_stage_checklist_templates_id_fk" FOREIGN KEY ("source_template_id") REFERENCES "public"."stage_checklist_templates"("id") ON DELETE set null ON UPDATE no action;

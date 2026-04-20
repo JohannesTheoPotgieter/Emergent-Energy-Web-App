@@ -15,6 +15,13 @@
       "when": 1776674287418,
       "tag": "0001_opportunity_province",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1776676822701,
+      "tag": "0002_stage_requirement_template_version",
+      "breakpoints": true
     }
   ]
 }
