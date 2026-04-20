@@ -553,7 +553,59 @@ export default function RevenueTrackerPage() {
     [commitEdit],
   );
 
-  const months = data?.months ?? [];
+  const rawMonths = data?.months ?? [];
+  // When a project filter is active, derive each month's totals from its per-project
+  // breakdown arrays (filtered to selected projects) and rebuild YTD chains. Budget is
+  // tracked at the company level only, so it falls to 0 in the filtered view.
+  const months = useMemo<MonthData[]>(() => {
+    if (!isProjectFiltered) return rawMonths;
+    const sel = new Set(selectedProjects);
+    const sumProjects = (arr: ProjectBreakdown[] | undefined) =>
+      (arr ?? []).filter((p) => sel.has(p.projectName)).reduce((s, p) => s + (p.value ?? 0), 0);
+    const filterProjects = (arr: ProjectBreakdown[] | undefined) =>
+      (arr ?? []).filter((p) => sel.has(p.projectName));
+    let ytdRevenue = 0, ytdRealised = 0, ytdUnrealised = 0, ytdQbRevenueActual = 0;
+    const ytdBudget = 0;
+    return rawMonths.map((m) => {
+      const totalRevenue = sumProjects(m.revProjects);
+      const realisedRevenue = sumProjects(m.realisedProjects);
+      const unrealisedRevenue = sumProjects(m.unrealisedProjects);
+      const qbRevenueActual = sumProjects(m.qbRevenueProjects);
+      const budget = 0;
+      const variance = totalRevenue - budget;
+      const variancePct = 0;
+      ytdRevenue += totalRevenue;
+      ytdRealised += realisedRevenue;
+      ytdUnrealised += unrealisedRevenue;
+      ytdQbRevenueActual += qbRevenueActual;
+      const ytdVariance = ytdRevenue - ytdBudget;
+      const ytdVariancePct = 0;
+      return {
+        ...m,
+        totalRevenue,
+        realisedRevenue,
+        unrealisedRevenue,
+        qbRevenueActual,
+        qbVsAppVariance: qbRevenueActual - totalRevenue,
+        qbVsAppVariancePct: qbRevenueActual !== 0 ? ((qbRevenueActual - totalRevenue) / qbRevenueActual) * 100 : 0,
+        budget,
+        variance,
+        variancePct,
+        ytdRevenue,
+        ytdRealised,
+        ytdUnrealised,
+        ytdQbRevenueActual,
+        ytdBudget,
+        ytdVariance,
+        ytdVariancePct,
+        revProjects: filterProjects(m.revProjects),
+        realisedProjects: filterProjects(m.realisedProjects),
+        unrealisedProjects: filterProjects(m.unrealisedProjects),
+        qbRevenueProjects: filterProjects(m.qbRevenueProjects),
+        budgetProjects: filterProjects(m.budgetProjects),
+      };
+    });
+  }, [rawMonths, isProjectFiltered, selectedProjects]);
   const lastMonth = useMemo(() => (months.length ? months[months.length - 1] : null), [months]);
   const prevMonth = useMemo(() => (months.length > 1 ? months[months.length - 2] : null), [months]);
 
@@ -806,7 +858,7 @@ export default function RevenueTrackerPage() {
                   {months.map((m) => {
                     const val = m[row.dataKey] as number;
                     const isEditingCell = editing?.field === row.key && editing?.monthKey === m.monthKey;
-                    if (row.editable && canEditRevenueTracker) {
+                    if (row.editable && canEditRevenueTracker && !isProjectFiltered) {
                       return (
                         <td key={m.monthKey} className="px-1 sm:px-2 py-1 sm:py-1.5 text-right">
                           {isEditingCell ? (
