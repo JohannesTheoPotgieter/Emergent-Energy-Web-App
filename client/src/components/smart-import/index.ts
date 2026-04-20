@@ -11,4 +11,10 @@ export { SmartImportScheduleImpact } from "./SmartImportScheduleImpact";
 export { SmartImportDecisionIntro } from "./SmartImportDecisionIntro";
 export { SmartImportDownstreamImpact } from "./SmartImportDownstreamImpact";
 export { SmartImportPostCommitNext } from "./SmartImportPostCommitNext";
+export { SmartImportCreateProjectDialog, type CreatedProject } from "./SmartImportCreateProjectDialog";
+export {
+  SmartImportFolderInventory,
+  type FolderFileEntry,
+  type FolderFileBlocker,
+} from "./SmartImportFolderInventory";
 export * from "./labels";
