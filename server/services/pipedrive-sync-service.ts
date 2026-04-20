@@ -46,6 +46,49 @@ interface PipedriveDeal {
   label: string | number | null;       // Pipedrive returns label id(s); rendered to text via labelMap
   add_time: string;
   update_time: string;
+  // Pipedrive custom fields (hash-keyed). Indexed dynamically via CUSTOM_FIELD_KEYS.
+  [customFieldHash: string]: unknown;
+}
+
+/**
+ * Pipedrive custom-field hash IDs. These were resolved against the live
+ * `/dealFields` API on 2026-04-20 — DO NOT change unless the Pipedrive
+ * admin re-creates the field. They map to existing opportunity columns
+ * (no new schema needed):
+ *
+ *   Lead Location (set, opt id) → opportunities.province (string)
+ *   System Size kWp (double)    → opportunities.estimated_kwp (numeric)
+ *   Battery Size kWh (double)   → opportunities.estimated_kwh (numeric)
+ */
+const CUSTOM_FIELD_KEYS = {
+  leadLocation: "e3a7ca9b4908d9782ed92ebe556ec504c0cf34f8",
+  systemSizeKwp: "9b187266d1c0d4c27b7440f0b190677ad6cada35",
+  batterySizeKwh: "9b74781dcf72f283c9d3f774f507564788771510",
+} as const;
+
+/** Lead Location option id → SA province name. */
+const LEAD_LOCATION_TO_PROVINCE: Record<string, string> = {
+  "65": "Gauteng",          // Joburg
+  "66": "Western Cape",     // Cape Town
+  "67": "KwaZulu-Natal",    // Durban
+  "68": "Eastern Cape",     // Port Elizabeth
+  "69": "Eastern Cape",     // East London
+  "70": "Free State",       // Bloem
+  // 71 = "Other" → leave null
+};
+
+function resolveProvinceFromLeadLocation(raw: unknown): string | null {
+  if (raw == null) return null;
+  // Pipedrive `set` fields come back as a comma-joined option-id string.
+  const first = String(raw).split(",")[0]?.trim();
+  if (!first) return null;
+  return LEAD_LOCATION_TO_PROVINCE[first] ?? null;
+}
+
+function asNumericString(raw: unknown): string | null {
+  if (raw == null || raw === "") return null;
+  const n = typeof raw === "number" ? raw : Number(raw);
+  return Number.isFinite(n) ? String(n) : null;
 }
 
 interface PipedrivePerson {
@@ -448,11 +491,25 @@ async function syncSingleDeal(
     updatedAt: new Date(),
   };
 
+  // Custom fields are admin-defined in Pipedrive and frequently blank. We
+  // treat them as "Pipedrive-wins-when-present, app-keeps-when-blank" to
+  // avoid silently nulling user-entered values on every sync (architect
+  // review 2026-04-20). On INSERT they are seeded; on UPDATE they only
+  // overwrite when Pipedrive provides a concrete mapped value.
+  const customFieldOverrides: Partial<typeof opportunities.$inferInsert> = {};
+  const provinceFromCrm = resolveProvinceFromLeadLocation(deal[CUSTOM_FIELD_KEYS.leadLocation]);
+  if (provinceFromCrm) customFieldOverrides.province = provinceFromCrm;
+  const kwpFromCrm = asNumericString(deal[CUSTOM_FIELD_KEYS.systemSizeKwp]);
+  if (kwpFromCrm) customFieldOverrides.estimatedKwp = kwpFromCrm;
+  const kwhFromCrm = asNumericString(deal[CUSTOM_FIELD_KEYS.batterySizeKwh]);
+  if (kwhFromCrm) customFieldOverrides.estimatedKwh = kwhFromCrm;
+
   if (existing) {
-    // Preserve user-owned `notes`. Only CRM-owned fields are overwritten.
+    // Preserve user-owned `notes`. Only CRM-owned fields are overwritten;
+    // custom fields are merged conditionally to avoid clobbering with null.
     await db
       .update(opportunities)
-      .set(crmOwnedFields)
+      .set({ ...crmOwnedFields, ...customFieldOverrides })
       .where(eq(opportunities.id, existing.id));
     result.dealsUpdated++;
   } else {
@@ -461,6 +518,7 @@ async function syncSingleDeal(
     // notes string is kept only for back-compat with old reads.
     await db.insert(opportunities).values({
       ...crmOwnedFields,
+      ...customFieldOverrides,
       notes: `Pipedrive: ${dealTitle}`,
     });
     result.dealsCreated++;
