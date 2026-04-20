@@ -29,6 +29,13 @@
       "when": 1777247999000,
       "tag": "0003_priority_derived_metrics_view",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1776698140620,
+      "tag": "0004_priority_activity_log",
+      "breakpoints": true
     }
   ]
 }

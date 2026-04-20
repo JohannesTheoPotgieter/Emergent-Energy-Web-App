@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
-import { AlertTriangle, Plus, X, Search, DollarSign, ListTodo, MessageSquare, FolderOpen, CheckCircle2, GitBranch } from "lucide-react";
+import { AlertTriangle, Plus, X, Search, DollarSign, ListTodo, MessageSquare, FolderOpen, CheckCircle2, GitBranch, History, UserPlus, UserMinus, ArrowUp, Flag, Link as LinkIcon, LogIn, LogOut } from "lucide-react";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
@@ -118,6 +118,7 @@ function ProjectLinker({ priorityId, existingProjectIds, onDone }: { priorityId:
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}/activity`] });
       queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
       queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
       onDone();
@@ -152,6 +153,60 @@ function ProjectLinker({ priorityId, existingProjectIds, onDone }: { priorityId:
       </Button>
     </div>
   );
+}
+
+// ── Activity helpers ────────────────────────────────────────────
+function activityIcon(action: string) {
+  const c = "w-2.5 h-2.5";
+  switch (action) {
+    case "created": return <Flag className={`${c} text-emerald-600`} />;
+    case "closed": return <CheckCircle2 className={`${c} text-gray-500`} />;
+    case "reopened": return <LogIn className={`${c} text-emerald-600`} />;
+    case "marked_complete": return <CheckCircle2 className={`${c} text-emerald-600`} />;
+    case "escalated": return <ArrowUp className={`${c} text-orange-600`} />;
+    case "assigned": return <UserPlus className={`${c} text-blue-600`} />;
+    case "reassigned": return <UserPlus className={`${c} text-blue-600`} />;
+    case "unassigned": return <UserMinus className={`${c} text-gray-500`} />;
+    case "broken_down": return <GitBranch className={`${c} text-blue-600`} />;
+    case "project_linked": return <LinkIcon className={`${c} text-emerald-600`} />;
+    case "project_unlinked": return <LogOut className={`${c} text-gray-500`} />;
+    case "status_changed": return <AlertTriangle className={`${c} text-amber-600`} />;
+    case "severity_changed": return <AlertTriangle className={`${c} text-orange-600`} />;
+    case "manual_health_changed": return <AlertTriangle className={`${c} text-amber-600`} />;
+    case "manual_progress_changed": return <AlertTriangle className={`${c} text-amber-600`} />;
+    case "due_date_changed": return <AlertTriangle className={`${c} text-amber-600`} />;
+    case "owner_changed": return <UserPlus className={`${c} text-blue-600`} />;
+    case "accountable_exec_changed": return <UserPlus className={`${c} text-blue-600`} />;
+    default: return <AlertTriangle className={`${c} text-gray-500`} />;
+  }
+}
+
+function activitySentence(a: any): string {
+  const fromToUser = (from: string | null, to: string | null) =>
+    (a.fromName || from || "none") + " → " + (a.toName || to || "none");
+  const fromTo = (from: string | null, to: string | null) =>
+    (from ?? "none") + " → " + (to ?? "none");
+  switch (a.action) {
+    case "created": return "created this priority";
+    case "closed": return "closed it";
+    case "reopened": return "reopened it";
+    case "marked_complete": return "marked it complete";
+    case "escalated": return `escalated it${a.details?.reason ? ` (${a.details.reason})` : ""} → ${a.toValue ?? "next scope"}`;
+    case "assigned": return `assigned it to ${a.toName || `user #${a.toValue}`}`;
+    case "reassigned": return `reassigned ${fromToUser(a.fromValue, a.toValue)}`;
+    case "unassigned": return "unassigned it";
+    case "broken_down": return `broke it down into ${a.details?.childCount ?? "sub-"}priorit${a.details?.childCount === 1 ? "y" : "ies"}`;
+    case "project_linked": return `linked project #${a.toValue}`;
+    case "project_unlinked": return `unlinked project #${a.toValue}`;
+    case "status_changed": return `changed status ${fromTo(a.fromValue, a.toValue)}`;
+    case "severity_changed": return `changed severity ${fromTo(a.fromValue, a.toValue)}`;
+    case "manual_health_changed": return `set manual health ${fromTo(a.fromValue, a.toValue)}`;
+    case "manual_progress_changed": return `set manual progress ${fromTo(a.fromValue, a.toValue)}%`;
+    case "due_date_changed": return `changed due date ${fromTo(a.fromValue, a.toValue)}`;
+    case "owner_changed": return `changed owner ${fromToUser(a.fromValue, a.toValue)}`;
+    case "accountable_exec_changed": return `changed accountable exec ${fromToUser(a.fromValue, a.toValue)}`;
+    default: return `${a.action} ${fromTo(a.fromValue, a.toValue)}`;
+  }
 }
 
 function BreakDownDialog({ priorityId, open, onOpenChange }: { priorityId: number; open: boolean; onOpenChange: (v: boolean) => void }) {
@@ -347,6 +402,16 @@ export default function PriorityDetailPage() {
     enabled: priorityId > 0,
   });
 
+  const { data: activity = [] } = useQuery<any[]>({
+    queryKey: [`/api/priorities/${priorityId}/activity`],
+    queryFn: async () => {
+      const res = await fetch(`/api/priorities/${priorityId}/activity`, { headers: { Authorization: `Bearer ${token()}` } });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: priorityId > 0,
+  });
+
   const escalateMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch(`/api/priorities/${priorityId}/escalate`, {
@@ -369,6 +434,7 @@ export default function PriorityDetailPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}/activity`] });
       queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
       queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
     },
@@ -389,6 +455,7 @@ export default function PriorityDetailPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}/activity`] });
       queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
       queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
       setEditDialogOpen(false);
@@ -401,6 +468,7 @@ export default function PriorityDetailPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}/activity`] });
       queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
       queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
     },
@@ -625,12 +693,14 @@ export default function PriorityDetailPage() {
               <TabsTrigger value="chain"><GitBranch className="w-3.5 h-3.5 mr-1" />Chain</TabsTrigger>
               <TabsTrigger value="tasks"><ListTodo className="w-3.5 h-3.5 mr-1" />Tasks & Approvals</TabsTrigger>
               <TabsTrigger value="updates"><MessageSquare className="w-3.5 h-3.5 mr-1" />Updates</TabsTrigger>
+              <TabsTrigger value="activity"><History className="w-3.5 h-3.5 mr-1" />Activity</TabsTrigger>
             </>
           ) : (
             <>
               <TabsTrigger value="details">Details</TabsTrigger>
               <TabsTrigger value="chain"><GitBranch className="w-3.5 h-3.5 mr-1" />Chain</TabsTrigger>
               <TabsTrigger value="updates"><MessageSquare className="w-3.5 h-3.5 mr-1" />Updates</TabsTrigger>
+              <TabsTrigger value="activity"><History className="w-3.5 h-3.5 mr-1" />Activity</TabsTrigger>
             </>
           )}
         </TabsList>
@@ -937,6 +1007,30 @@ export default function PriorityDetailPage() {
                 </Card>
               ))}
             </div>
+          )}
+        </TabsContent>
+
+        {/* Activity tab — append-only audit timeline */}
+        <TabsContent value="activity" className="mt-4">
+          {activity.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">No activity recorded yet for this priority.</p>
+          ) : (
+            <ol className="relative border-l border-border pl-4 space-y-3">
+              {activity.map((a: any) => (
+                <li key={a.id} className="relative">
+                  <span className="absolute -left-[22px] top-1 w-4 h-4 rounded-full bg-background border border-border flex items-center justify-center">
+                    {activityIcon(a.action)}
+                  </span>
+                  <div className="text-xs">
+                    <span className="font-medium text-foreground">{a.actorName || "Someone"}</span>
+                    <span className="text-muted-foreground"> {activitySentence(a)}</span>
+                  </div>
+                  <span className="text-[10px] text-muted-foreground">
+                    {a.createdAt ? new Date(a.createdAt).toLocaleString() : ""}
+                  </span>
+                </li>
+              ))}
+            </ol>
           )}
         </TabsContent>
       </Tabs>

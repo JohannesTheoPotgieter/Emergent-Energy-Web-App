@@ -20,6 +20,8 @@ import { validateBody } from "../middleware/validateBody";
 import { ApiError, badRequest, forbidden, notFound } from "../lib/api-error";
 import { PRIORITY_HEALTH_VALUES, type PriorityHealth, computeEffectivePriorityHealth } from "@shared/kpi-definitions";
 import { PRIORITY_SCOPES, ESCALATION_REASONS, computeEscalatePatch, collectDescendantIds, matchesPriorityListFilter, type PriorityScope, type EscalationReason } from "@shared/config/priorities";
+import { recordActivity, computeUpdateActivities } from "./priority-activity-log";
+import { priorityActivity } from "@shared/schema";
 
 const router = Router();
 
@@ -700,6 +702,18 @@ router.post(
       );
     }
 
+    await recordActivity({
+      priorityId: created.id,
+      actorUserId: user.id,
+      action: "created",
+      toValue: created.title,
+      details: {
+        scope: created.scope,
+        severity: created.severity,
+        projectCount: project_ids?.length ?? 0,
+      },
+    });
+
     const metrics = await getPriorityDerivedMetrics(created.id);
     const enriched = await enrichPriority(created, metrics);
     res.status(201).json(enriched);
@@ -760,6 +774,39 @@ router.put(
       .where(eq(mytoolCompanyPriorities.id, priorityId))
       .returning();
 
+    // Record one activity event per meaningful field change.
+    const activities = computeUpdateActivities({
+      before: {
+        status: existing[0].status,
+        severity: existing[0].severity,
+        manualHealth: existing[0].manualHealth,
+        manualProgress: existing[0].manualProgress,
+        dueDate: existing[0].dueDate,
+        assignedUserId: existing[0].assignedUserId,
+        ownerUserId: existing[0].ownerUserId,
+        accountableExecId: existing[0].accountableExecId,
+      },
+      after: {
+        status: updated.status,
+        severity: updated.severity,
+        manualHealth: updated.manualHealth,
+        manualProgress: updated.manualProgress,
+        dueDate: updated.dueDate,
+        assignedUserId: updated.assignedUserId,
+        ownerUserId: updated.ownerUserId,
+        accountableExecId: updated.accountableExecId,
+      },
+    });
+    for (const ev of activities) {
+      await recordActivity({
+        priorityId,
+        actorUserId: user.id,
+        action: ev.action,
+        fromValue: ev.fromValue,
+        toValue: ev.toValue,
+      });
+    }
+
     if (project_ids !== undefined) {
       const currentLinks = await db.select().from(priorityProjects)
         .where(eq(priorityProjects.priorityId, priorityId));
@@ -769,6 +816,12 @@ router.put(
       const toDelete = currentLinks.filter((l: typeof currentLinks[number]) => !newProjectIds.has(l.projectId));
       for (const link of toDelete) {
         await db.delete(priorityProjects).where(eq(priorityProjects.id, link.id));
+        await recordActivity({
+          priorityId,
+          actorUserId: user.id,
+          action: "project_unlinked",
+          toValue: String(link.projectId),
+        });
       }
 
       const toInsert = (project_ids as number[]).filter(pid => !currentProjectIds.has(pid));
@@ -780,6 +833,14 @@ router.put(
             linkedBy: user.id,
           }))
         );
+        for (const pid of toInsert) {
+          await recordActivity({
+            priorityId,
+            actorUserId: user.id,
+            action: "project_linked",
+            toValue: String(pid),
+          });
+        }
       }
     }
 
@@ -804,6 +865,14 @@ router.delete(
     await db.update(mytoolCompanyPriorities)
       .set({ status: "closed", updatedAt: new Date() })
       .where(eq(mytoolCompanyPriorities.id, priorityId));
+
+    await recordActivity({
+      priorityId,
+      actorUserId: getEffectiveUser(req)?.id,
+      action: "closed",
+      fromValue: existing[0].status,
+      toValue: "closed",
+    });
 
     res.status(204).send();
   }),
@@ -835,6 +904,12 @@ router.post(
         projectId: pid,
         linkedBy: user.id,
       }).onConflictDoNothing();
+      await recordActivity({
+        priorityId,
+        actorUserId: user.id,
+        action: "project_linked",
+        toValue: String(pid),
+      });
     }
 
     const linkedProjects = await db
@@ -871,6 +946,13 @@ router.delete(
         eq(priorityProjects.projectId, projectId),
       )
     );
+
+    await recordActivity({
+      priorityId,
+      actorUserId: getEffectiveUser(req)?.id,
+      action: "project_unlinked",
+      toValue: String(projectId),
+    });
 
     res.status(204).send();
   }),
@@ -1138,6 +1220,15 @@ router.post(
         .returning();
     });
 
+    await recordActivity({
+      priorityId,
+      actorUserId: getEffectiveUser(req)?.id,
+      action: "escalated",
+      fromValue: priority.scope,
+      toValue: patch.scope,
+      details: { reason: patch.escalationReason },
+    });
+
     const metrics = await getPriorityDerivedMetrics(priorityId);
     const enriched = await enrichPriority(updated, metrics);
     res.json(enriched);
@@ -1211,6 +1302,7 @@ router.post(
     const currentScope = parent.scope ?? "company";
     const childScope: PriorityScope = currentScope === "company" ? "department" : "role";
 
+    const actorUserId = getEffectiveUser(req)?.id;
     const now = new Date();
     const created: any[] = [];
     for (const child of children) {
@@ -1230,11 +1322,176 @@ router.post(
         updatedAt: now,
       }).returning();
       created.push(row);
+      // Log on both the child (created) and the parent (broken_down) so the
+      // event appears in both activity timelines.
+      await recordActivity({
+        priorityId: row.id,
+        actorUserId,
+        action: "created",
+        toValue: row.title,
+        details: { parentId, scope: row.scope },
+      });
     }
+    await recordActivity({
+      priorityId: parentId,
+      actorUserId,
+      action: "broken_down",
+      details: { childCount: created.length, childIds: created.map((c) => c.id) },
+    });
 
     res.status(201).json(created);
   }),
 );
+
+// ==================== GET /api/priorities/:id/activity ====================
+// Returns the append-only activity timeline for a priority, newest-first.
+router.get("/api/priorities/:id/activity", requireAuth, asyncHandler(async (req: Request, res: Response) => {
+  const priorityId = parseIdParam(req.params.id);
+  if (priorityId === null) throw badRequest("Invalid priority id");
+
+  const limit = Math.min(parseInt((req.query.limit as string) || "100", 10) || 100, 500);
+
+  const rows = await db
+    .select()
+    .from(priorityActivity)
+    .where(eq(priorityActivity.priorityId, priorityId))
+    .orderBy(desc(priorityActivity.createdAt))
+    .limit(limit);
+
+  // Enrich to-value / from-value with user names when the value is a numeric
+  // user id, so the UI doesn't have to resolve these separately.
+  const userIdsFromValues = new Set<number>();
+  for (const r of rows) {
+    for (const raw of [r.fromValue, r.toValue]) {
+      if (!raw) continue;
+      if (r.action === "assigned" || r.action === "reassigned" || r.action === "unassigned"
+          || r.action === "owner_changed" || r.action === "accountable_exec_changed") {
+        const n = Number(raw);
+        if (!Number.isNaN(n) && n > 0) userIdsFromValues.add(n);
+      }
+    }
+  }
+  const userNameMap = await getUsersByIds(Array.from(userIdsFromValues));
+
+  const enriched = rows.map((r: typeof rows[number]) => ({
+    id: r.id,
+    priorityId: r.priorityId,
+    actorUserId: r.actorUserId,
+    actorName: r.actorName,
+    action: r.action,
+    fromValue: r.fromValue,
+    toValue: r.toValue,
+    fromName: r.fromValue && userNameMap.get(Number(r.fromValue))?.name || null,
+    toName: r.toValue && userNameMap.get(Number(r.toValue))?.name || null,
+    details: r.details,
+    createdAt: r.createdAt,
+  }));
+
+  res.json(enriched);
+}));
+
+// ==================== GET /api/reports/priorities-pack (PDF) ====================
+// Executive priorities pack — PDF summary of active priorities grouped by
+// scope, with health / severity / overdue highlights. Leverages the
+// pdfkit pattern from server/departments/board-pack-routes.ts.
+router.get("/api/reports/priorities-pack", requireAuth, asyncHandler(async (req: Request, res: Response) => {
+  const scopeFilter = typeof req.query.scope === "string" ? req.query.scope : null;
+  const departmentFilter = typeof req.query.department === "string" ? req.query.department : null;
+
+  let rows = await db.select().from(mytoolCompanyPriorities);
+  rows = rows.filter((p: any) => p.status !== "closed");
+  if (scopeFilter && PRIORITY_SCOPES.includes(scopeFilter as PriorityScope)) {
+    rows = rows.filter((p: any) => (p.scope ?? "company") === scopeFilter);
+  }
+  if (departmentFilter) {
+    rows = rows.filter((p: any) => (p.departmentKey ?? p.department_key) === departmentFilter);
+  }
+
+  const allMetrics = await getAllPriorityDerivedMetrics();
+  const metricsMap = new Map(allMetrics.map((m: any) => [m.priority_id, m]));
+
+  const userIds = Array.from(new Set(
+    rows.flatMap((p: any) => [p.ownerUserId, p.accountableExecId, p.assignedUserId].filter(Boolean)),
+  )) as number[];
+  const userMap = await getUsersByIds(userIds);
+
+  const enriched = await Promise.all(
+    rows.map((p: any) => enrichPriority(p, metricsMap.get(p.id), userMap)),
+  );
+
+  // Load pdfkit lazily so the import cost is paid only when the endpoint is hit.
+  const PDFDocument = (await import("pdfkit")).default;
+  const doc = new PDFDocument({
+    size: "A4",
+    margin: 50,
+    info: { Title: "Priorities Pack", Author: "Emergent Energy" },
+  });
+
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="priorities-pack-${new Date().toISOString().slice(0, 10)}.pdf"`);
+  doc.pipe(res);
+
+  doc.fontSize(20).font("Helvetica-Bold").text("Priorities Pack", { align: "center" });
+  doc.fontSize(10).font("Helvetica").text(
+    `Generated: ${new Date().toLocaleDateString("en-ZA")}${scopeFilter ? ` · scope=${scopeFilter}` : ""}${departmentFilter ? ` · dept=${departmentFilter}` : ""}`,
+    { align: "center" },
+  );
+  doc.moveDown(1.5);
+
+  const healthCounts: Record<string, number> = { critical: 0, at_risk: 0, healthy: 0 };
+  const sevCounts: Record<string, number> = { critical: 0, important: 0, normal: 0 };
+  let overdueCount = 0;
+  const today = new Date().toISOString().slice(0, 10);
+  for (const p of enriched) {
+    healthCounts[p.effectiveHealth] = (healthCounts[p.effectiveHealth] || 0) + 1;
+    sevCounts[p.severity] = (sevCounts[p.severity] || 0) + 1;
+    if (p.dueDate && p.dueDate < today) overdueCount++;
+  }
+
+  doc.fontSize(14).font("Helvetica-Bold").text("Summary");
+  doc.moveDown(0.5);
+  doc.fontSize(10).font("Helvetica");
+  doc.text(`Active priorities: ${enriched.length}`);
+  doc.text(`Health: ${healthCounts.critical} critical · ${healthCounts.at_risk} at risk · ${healthCounts.healthy} healthy`);
+  doc.text(`Severity: ${sevCounts.critical} critical · ${sevCounts.important} high · ${sevCounts.normal} normal`);
+  doc.text(`Overdue: ${overdueCount}`);
+  doc.moveDown(1);
+
+  // Sort for display — worst first.
+  const sevOrder: Record<string, number> = { critical: 0, important: 1, normal: 2 };
+  const healthOrder: Record<string, number> = { critical: 0, at_risk: 1, healthy: 2 };
+  enriched.sort((a, b) => {
+    const hA = healthOrder[a.effectiveHealth] ?? 2;
+    const hB = healthOrder[b.effectiveHealth] ?? 2;
+    if (hA !== hB) return hA - hB;
+    const sA = sevOrder[a.severity] ?? 2;
+    const sB = sevOrder[b.severity] ?? 2;
+    if (sA !== sB) return sA - sB;
+    return (a.dueDate || "").localeCompare(b.dueDate || "");
+  });
+
+  doc.fontSize(14).font("Helvetica-Bold").text("Priorities");
+  doc.moveDown(0.5);
+  for (const p of enriched) {
+    if (doc.y > 720) doc.addPage();
+    const daysOverdue = p.dueDate && p.dueDate < today
+      ? Math.ceil((Date.parse(today + "T00:00:00Z") - Date.parse(p.dueDate + "T00:00:00Z")) / 86_400_000)
+      : null;
+    doc.fontSize(11).font("Helvetica-Bold").text(p.title);
+    doc.fontSize(9).font("Helvetica").fillColor("#444").text(
+      `${p.scope} · severity ${p.severity} · health ${p.effectiveHealth}` +
+      `${p.dueDate ? ` · due ${p.dueDate}${daysOverdue != null ? ` (${daysOverdue}d overdue)` : ""}` : ""}` +
+      `${p.owner?.name ? ` · owner ${p.owner.name}` : ""}` +
+      `${p.projectCount > 0 ? ` · ${p.projectCount} project${p.projectCount === 1 ? "" : "s"}` : ""}`,
+    ).fillColor("black");
+    if (p.description) {
+      doc.fontSize(9).font("Helvetica-Oblique").fillColor("#666").text(p.description, { width: 500 }).fillColor("black");
+    }
+    doc.moveDown(0.6);
+  }
+
+  doc.end();
+}));
 
 export function registerPriorityStrategicRoutes(app: any) {
   app.use(router);

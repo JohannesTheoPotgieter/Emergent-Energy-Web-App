@@ -140,6 +140,33 @@ export const insertMytoolCompanyPrioritySchema = createInsertSchema(mytoolCompan
 export type InsertMytoolCompanyPriority = z.infer<typeof insertMytoolCompanyPrioritySchema>;
 export type MytoolCompanyPriority = typeof mytoolCompanyPriorities.$inferSelect;
 
+// ── Priority activity log ─────────────────────────────────────────────
+// Append-only audit trail of what happened to a priority. One row per
+// observable event — created, updated, escalated, closed, reopened,
+// broken_down, project_linked, project_unlinked, health_changed, etc.
+// Used by the "Activity" tab on the priority detail page so reviewers
+// can trace how a priority got to its current state.
+export const priorityActivity = pgTable("priority_activity", {
+  id: serial("id").primaryKey(),
+  priorityId: integer("priority_id").notNull().references(() => mytoolCompanyPriorities.id, { onDelete: "cascade" }),
+  actorUserId: integer("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+  /** Denormalised snapshot of the actor's name at the time of the event. */
+  actorName: text("actor_name"),
+  /** Event kind — see the union in server/departments/priority-activity-log.ts */
+  action: text("action").notNull(),
+  /** Old value serialised to string (e.g. 'active', 'healthy', 'normal'). Null for inserts. */
+  fromValue: text("from_value"),
+  /** New value serialised to string. Null for purely "marker" events. */
+  toValue: text("to_value"),
+  /** Free-form context (e.g. escalation reason, linked project IDs). */
+  details: jsonb("details"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertPriorityActivitySchema = createInsertSchema(priorityActivity).omit({ id: true, createdAt: true } as any);
+export type InsertPriorityActivity = z.infer<typeof insertPriorityActivitySchema>;
+export type PriorityActivity = typeof priorityActivity.$inferSelect;
+
 export const priorityLinks = pgTable("priority_links", {
   id: serial("id").primaryKey(),
   priorityId: integer("priority_id").notNull().references(() => mytoolCompanyPriorities.id, { onDelete: "cascade" }),
