@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { engFetch } from "@/lib/eng-fetch";
@@ -209,18 +209,18 @@ export default function EngineeringAuditPage() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage] = useState(0);
 
-  // Debounce search
-  const searchTimeout = useMemo(() => {
-    return (value: string) => {
-      const id = setTimeout(() => setDebouncedSearch(value), 300);
-      return () => clearTimeout(id);
-    };
-  }, []);
+  // Debounce search — 300 ms after the user stops typing, update the value
+  // used in the query key so React Query refetches once rather than per-key.
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(0);
+    }, 300);
+    return () => clearTimeout(id);
+  }, [search]);
 
   const handleSearch = (value: string) => {
     setSearch(value);
-    setPage(0);
-    searchTimeout(value);
   };
 
   // Queries
