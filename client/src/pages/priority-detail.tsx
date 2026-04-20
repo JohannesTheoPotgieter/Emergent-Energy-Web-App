@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
 import { AlertTriangle, Plus, X, Search, DollarSign, ListTodo, MessageSquare, FolderOpen, CheckCircle2, GitBranch } from "lucide-react";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { useAuth } from "@/hooks/use-auth";
@@ -157,6 +158,25 @@ function BreakDownDialog({ priorityId, open, onOpenChange }: { priorityId: numbe
   const queryClient = useQueryClient();
   const [rows, setRows] = useState([{ title: "", department_key: "", assigned_user_id: "" }]);
 
+  // Load users for the person-picker. Previously this dialog asked for a raw
+  // numeric user ID — which nobody memorises — so break-down with an assignee
+  // was effectively unusable. Now it's a SearchableSelect of names.
+  const { data: users = [] } = useQuery<{ id: number; name: string }[]>({
+    queryKey: ["/api/users-list-for-priority"],
+    queryFn: async () => {
+      const res = await fetch("/api/users", { credentials: "include", headers: { Authorization: `Bearer ${token()}` } });
+      if (!res.ok) return [];
+      const data = await res.json();
+      const rowsData = Array.isArray(data) ? data : data.users || data.data || [];
+      return rowsData.map((u: any) => ({ id: u.id, name: u.name }));
+    },
+    enabled: open,
+  });
+  const userOptions: SearchableSelectOption[] = useMemo(
+    () => users.map((u) => ({ value: String(u.id), label: u.name })),
+    [users],
+  );
+
   const breakDownMutation = useMutation({
     mutationFn: async () => {
       const children = rows
@@ -164,7 +184,7 @@ function BreakDownDialog({ priorityId, open, onOpenChange }: { priorityId: numbe
         .map(r => ({
           title: r.title.trim(),
           department_key: r.department_key || undefined,
-          assigned_user_id: r.assigned_user_id ? parseInt(r.assigned_user_id) : undefined,
+          assigned_user_id: r.assigned_user_id ? parseInt(r.assigned_user_id, 10) : undefined,
         }));
       const res = await fetch(`/api/priorities/${priorityId}/break-down`, {
         method: "POST",
@@ -192,7 +212,7 @@ function BreakDownDialog({ priorityId, open, onOpenChange }: { priorityId: numbe
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle>Break Down Priority</DialogTitle>
         </DialogHeader>
@@ -200,7 +220,7 @@ function BreakDownDialog({ priorityId, open, onOpenChange }: { priorityId: numbe
           <p className="text-sm text-muted-foreground">Create child priorities below this one.</p>
           {rows.map((row, idx) => (
             <div key={idx} className="grid grid-cols-12 gap-2 items-end border rounded p-2">
-              <div className="col-span-5">
+              <div className="col-span-4">
                 <Label className="text-xs">Title *</Label>
                 <Input
                   value={row.title}
@@ -208,7 +228,7 @@ function BreakDownDialog({ priorityId, open, onOpenChange }: { priorityId: numbe
                   placeholder="Child priority title"
                 />
               </div>
-              <div className="col-span-4">
+              <div className="col-span-3">
                 <Label className="text-xs">Department</Label>
                 <Select value={row.department_key} onValueChange={v => updateRow(idx, "department_key", v)}>
                   <SelectTrigger><SelectValue placeholder="Select dept" /></SelectTrigger>
@@ -219,18 +239,19 @@ function BreakDownDialog({ priorityId, open, onOpenChange }: { priorityId: numbe
                   </SelectContent>
                 </Select>
               </div>
-              <div className="col-span-2">
-                <Label className="text-xs">User ID</Label>
-                <Input
-                  type="number"
+              <div className="col-span-4">
+                <Label className="text-xs">Assign to</Label>
+                <SearchableSelect
+                  options={userOptions}
                   value={row.assigned_user_id}
-                  onChange={e => updateRow(idx, "assigned_user_id", e.target.value)}
-                  placeholder="Optional"
+                  onValueChange={(v) => updateRow(idx, "assigned_user_id", v)}
+                  placeholder="Optional — pick a person"
+                  searchPlaceholder="Search people..."
                 />
               </div>
               <div className="col-span-1 flex justify-end">
                 {rows.length > 1 && (
-                  <button onClick={() => removeRow(idx)} className="text-muted-foreground hover:text-red-600 mt-1">
+                  <button onClick={() => removeRow(idx)} className="text-muted-foreground hover:text-red-600 mt-1" aria-label="Remove sub-priority">
                     <X className="w-4 h-4" />
                   </button>
                 )}
