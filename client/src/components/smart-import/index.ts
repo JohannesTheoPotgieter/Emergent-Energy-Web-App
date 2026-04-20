@@ -6,4 +6,6 @@ export { SmartImportConfirmStep } from "./SmartImportConfirmStep";
 export { SmartImportV2Flow } from "./SmartImportV2Flow";
 export { SmartImportPreflightPanel } from "./SmartImportPreflightPanel";
 export { SmartImportPathChooser, type UploadMode } from "./SmartImportPathChooser";
+export { SmartImportPlanNarrative } from "./SmartImportPlanNarrative";
+export { SmartImportScheduleImpact } from "./SmartImportScheduleImpact";
 export * from "./labels";
