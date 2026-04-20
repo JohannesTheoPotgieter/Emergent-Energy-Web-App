@@ -507,7 +507,7 @@ export default function CosTracker() {
   const [projectSearch, setProjectSearch] = useState("");
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
 
-  const { data: months = [], isLoading, isError, error, refetch, dataUpdatedAt, isFetching } = useQuery<MonthData[]>({
+  const { data: rawMonths = [], isLoading, isError, error, refetch, dataUpdatedAt, isFetching } = useQuery<MonthData[]>({
     queryKey: ["/api/cos-tracker"],
     staleTime: 30_000,
   });
@@ -531,6 +531,68 @@ export default function CosTracker() {
   }, [trackerProjectNames, projectSearch]);
 
   const isProjectFiltered = selectedProjects.length > 0;
+
+  // When a project filter is active, derive each month's totals from its per-project
+  // breakdown arrays (filtered to selected projects) and rebuild YTD chains. Budget is
+  // tracked at the company level only, so it falls to 0 in the filtered view.
+  const months = useMemo<MonthData[]>(() => {
+    if (!isProjectFiltered) return rawMonths;
+    const sel = new Set(selectedProjects);
+    const sumProjects = (arr: ProjectBreakdown[] | undefined) =>
+      (arr ?? []).filter((p) => sel.has(p.projectName)).reduce((s, p) => s + (p.value ?? 0), 0);
+    const filterProjects = (arr: ProjectBreakdown[] | undefined) =>
+      (arr ?? []).filter((p) => sel.has(p.projectName));
+    let ytdCOS = 0, ytdRealised = 0, ytdCommitted = 0, ytdPlanned = 0, ytdQbOnly = 0, ytdAppOnlyPending = 0;
+    const ytdBudget = 0;
+    return rawMonths.map((m) => {
+      const realisedCOS = sumProjects(m.realisedProjects);
+      const committedCOS = sumProjects(m.committedProjects);
+      const plannedCOS = sumProjects(m.plannedProjects);
+      const totalCOS = realisedCOS + committedCOS;
+      const qbOnlyActual = sumProjects(m.qbOnlyProjects);
+      const appOnlyPending = sumProjects(m.appOnlyPendingProjects);
+      const budget = 0;
+      const variance = totalCOS - budget;
+      const variancePct = 0;
+      ytdCOS += totalCOS;
+      ytdRealised += realisedCOS;
+      ytdCommitted += committedCOS;
+      ytdPlanned += plannedCOS;
+      ytdQbOnly += qbOnlyActual;
+      ytdAppOnlyPending += appOnlyPending;
+      const ytdVariance = ytdCOS - ytdBudget;
+      const ytdVariancePct = 0;
+      return {
+        ...m,
+        totalCOS,
+        realisedCOS,
+        committedCOS,
+        plannedCOS,
+        qbOnlyActual,
+        appOnlyPending,
+        budget,
+        variance,
+        variancePct,
+        qbVsAppVariance: qbOnlyActual - totalCOS,
+        qbVsAppVariancePct: qbOnlyActual !== 0 ? ((qbOnlyActual - totalCOS) / qbOnlyActual) * 100 : 0,
+        ytdCOS,
+        ytdRealised,
+        ytdCommitted,
+        ytdPlanned,
+        ytdQbOnly,
+        ytdAppOnlyPending,
+        ytdBudget,
+        ytdVariance,
+        ytdVariancePct,
+        cosProjects: filterProjects(m.cosProjects),
+        realisedProjects: filterProjects(m.realisedProjects),
+        committedProjects: filterProjects(m.committedProjects),
+        plannedProjects: filterProjects(m.plannedProjects),
+        qbOnlyProjects: filterProjects(m.qbOnlyProjects),
+        appOnlyPendingProjects: filterProjects(m.appOnlyPendingProjects),
+      };
+    });
+  }, [rawMonths, isProjectFiltered, selectedProjects]);
 
   const mutation = useMutation({
     mutationFn: async (body: { trackerType: string; monthKey: string; budget?: string }) => {
@@ -646,16 +708,21 @@ export default function CosTracker() {
         "COS Committed": m.committedCOS,
         "COS Realised": m.realisedCOS,
         "Quickbooks COS": m.qbOnlyActual,
-        // Tracking line: cumulative realised tracking against cumulative planned budget,
-        // expressed as a percentage. Plotted on a secondary right-hand y-axis.
-        // Null when no planned budget exists yet so the line breaks cleanly instead of
-        // sitting on the zero baseline.
+        // Manual budget overlay so edits to the Budget (Manual) row pull through
+        // visually to the trend chart. Budget is tracked at company level only,
+        // so we omit it (null breaks the line cleanly) when a per-project filter
+        // is active to avoid misleading a user with a zeroed-out line.
+        "Budget": isProjectFiltered ? null : (m.budget ?? 0),
+        // Tracking line: cumulative realised tracking against the cumulative
+        // manual budget, expressed as a percentage. Plotted on a secondary
+        // right-hand y-axis. Null when no budget exists yet so the line breaks
+        // cleanly instead of sitting on the zero baseline.
         "Tracking vs Budget %":
-          m.ytdPlanned && m.ytdPlanned > 0
-            ? Math.round(((m.ytdRealised ?? 0) / m.ytdPlanned) * 1000) / 10
+          !isProjectFiltered && m.ytdBudget && m.ytdBudget > 0
+            ? Math.round(((m.ytdRealised ?? 0) / m.ytdBudget) * 1000) / 10
             : null,
       })),
-    [months],
+    [months, isProjectFiltered],
   );
 
   const sparkData = useMemo(() => {
@@ -762,7 +829,7 @@ export default function CosTracker() {
                     {months.map((m) => {
                       const val = m[row.dataKey] as number;
                       const isEditingCell = editing?.field === row.key && editing?.monthKey === m.monthKey;
-                      if (row.editable) {
+                      if (row.editable && !isProjectFiltered) {
                         return (
                           <td key={m.monthKey} className="px-1 sm:px-2 py-1 sm:py-1.5 text-right">
                             {isEditingCell ? (
@@ -953,6 +1020,16 @@ export default function CosTracker() {
               <Bar yAxisId="left" dataKey="COS Committed" stackId="app" fill="#f59e0b" radius={[0, 0, 0, 0]} />
               <Bar yAxisId="left" dataKey="COS Realised" stackId="app" fill="#0f172a" radius={[4, 4, 0, 0]} />
               <Bar yAxisId="left" dataKey="Quickbooks COS" fill="#16a34a" radius={[4, 4, 0, 0]} />
+              <Line
+                yAxisId="left"
+                type="monotone"
+                dataKey="Budget"
+                stroke="#16a34a"
+                strokeWidth={2}
+                strokeDasharray="4 3"
+                dot={{ r: 2.5, fill: "#16a34a" }}
+                connectNulls={false}
+              />
               <Line
                 yAxisId="right"
                 type="monotone"

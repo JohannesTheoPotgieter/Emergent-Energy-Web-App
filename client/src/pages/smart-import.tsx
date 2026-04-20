@@ -16,7 +16,13 @@ import {
   Pencil, History, Zap, SkipForward,
 } from "lucide-react";
 import { useLocation } from "wouter";
-import { SmartImportV2Flow, SmartImportPathChooser, UPLOAD_LABELS } from "@/components/smart-import";
+import {
+  SmartImportV2Flow,
+  SmartImportPathChooser, UPLOAD_LABELS,
+  SmartImportBulkIntro,
+  SmartImportBulkResultNext,
+  BULK_LABELS,
+} from "@/components/smart-import";
 
 function safeStr(v: unknown): string {
   if (v == null) return "";
@@ -3595,7 +3601,11 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
               <CheckCircle2 className="w-8 h-8 text-emerald-600" />
             </div>
             <h3 className="text-lg font-semibold text-emerald-700" data-testid="text-bulk-success">
-              Bulk Import Complete
+              {failed.length === 0
+                ? BULK_LABELS.result.titleCommittedOnly
+                : committed.length === 0
+                  ? BULK_LABELS.result.titleFailedOnly
+                  : BULK_LABELS.result.titleMixed}
             </h3>
             <div className="flex gap-4 text-sm">
               <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 px-3 py-1" data-testid="badge-committed-count">
@@ -3616,39 +3626,18 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
         </Card>
 
         {commitResults.length > 0 && (
-          <Card className="bg-card rounded-xl shadow-sm">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Results by Project</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="divide-y" data-testid="bulk-results-list">
-                {commitResults.map((r, idx) => (
-                  <div key={r.projectName} className="flex items-center gap-3 py-2.5" data-testid={`bulk-result-${idx}`}>
-                    {r.status === "committed" ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                    ) : r.status === "skipped" ? (
-                      <SkipForward className="w-4 h-4 text-amber-500 flex-shrink-0" />
-                    ) : (
-                      <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
-                    )}
-                    <span className="text-sm font-medium flex-1 truncate">{r.projectName}</span>
-                    {r.status === "committed" && r.counts && (
-                      <span className="text-xs text-muted-foreground">
-                        {[
-                          r.counts.planTasks && `${r.counts.planTasks} tasks`,
-                          r.counts.revenueLines && `${r.counts.revenueLines} revenue`,
-                          r.counts.costLines && `${r.counts.costLines} costs`,
-                        ].filter(Boolean).join(", ")}
-                      </span>
-                    )}
-                    {(r.status === "skipped" || r.status === "failed") && r.error && (
-                      <span className="text-xs text-red-500 max-w-[200px] truncate">{safeStr(r.error)}</span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+          <SmartImportBulkResultNext
+            projects={commitResults.map(r => ({
+              projectName: r.projectName,
+              status: r.status,
+              error: r.error ? safeStr(r.error) : undefined,
+            }))}
+            onViewProject={(name) => navigate(`/projects?name=${encodeURIComponent(name)}`)}
+            onRetry={(name) => {
+              const hit = pendingRuns.find(p => p.projectName === name);
+              if (hit) onSwitchToWizard(hit.id);
+            }}
+          />
         )}
 
         <div className="flex gap-2">
@@ -3656,7 +3645,7 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
             View Projects
           </Button>
           <Button onClick={() => { setCommitDone(false); setCommitResults([]); loadPendingRuns(); onBack(); }} data-testid="btn-import-more">
-            Import More Files
+            {BULK_LABELS.result.uploadMoreAction}
           </Button>
         </div>
       </div>
@@ -3678,8 +3667,20 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
     );
   }
 
+  // UX-5: narrative summary above the pending-runs list. Mirrors the
+  // single-file UX tone (narrative first, grid second) so PMs see the
+  // shape of the job before the raw row detail.
+  const readyCount = committableRuns.filter(r => r.warningCount === 0).length;
+  const needsAttentionCount = committableRuns.filter(r => r.warningCount > 0).length;
+
   return (
     <div className="space-y-4" data-testid="bulk-commit-panel">
+      <SmartImportBulkIntro
+        totalCount={pendingRuns.length}
+        readyCount={readyCount}
+        needsAttentionCount={needsAttentionCount}
+        blockedCount={blockedRuns.length}
+      />
       <Card className="bg-card rounded-xl shadow-sm">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
