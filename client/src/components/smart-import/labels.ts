@@ -195,3 +195,35 @@ export const UPLOAD_LABELS = {
   templateLink: "Download a sample plan template",
   guideLink: "Watch a 90-second guide",
 } as const;
+
+// Bulk / folder journey labels (UX-5). Copy for the multi-file bulk
+// commit panel, the bulk intro narrative, and the bulk post-commit
+// result screen. Phrasing mirrors UX-3's single-file "what happens
+// next" so the non-technical user sees the same vocabulary in both
+// flows.
+export const BULK_LABELS = {
+  intro: {
+    titleSingular: "We're ready to commit 1 file",
+    titlePlural: "We're ready to commit %n files",
+    readyPrefix: "%n ready to commit",
+    blockedPrefix: "%n need your attention",
+    stuckPrefix: "%n still have blockers — fix or skip each before committing",
+    grouping: "Files are grouped per project below. Use 'Review' to open a single file, or 'Allow All' to accept a file's warnings in one click.",
+  },
+  result: {
+    titleCommittedOnly: "All files imported",
+    titleMixed: "Bulk import finished",
+    titleFailedOnly: "Bulk import did not complete",
+    perFileHeading: "Per-file result",
+    whatNextHeading: "What happens next",
+    whatNextItems: [
+      "Dashboards for every affected project refresh within about 30 seconds.",
+      "Anyone owning a task whose dates or owner changed gets a notification.",
+      "Finance revenue will re-sync with QuickBooks on the next automatic run.",
+    ],
+    viewProjectAction: "View project",
+    retryAction: "Try again",
+    uploadMoreAction: "Import more files",
+    undoHint: "Each committed file is logged and reversible for 7 days via Import History.",
+  },
+} as const;

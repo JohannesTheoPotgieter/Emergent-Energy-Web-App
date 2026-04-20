@@ -17,4 +17,9 @@ export {
   type FolderFileEntry,
   type FolderFileBlocker,
 } from "./SmartImportFolderInventory";
+export {
+  SmartImportBulkIntro,
+  SmartImportBulkResultNext,
+  type BulkResultProject,
+} from "./SmartImportBulkFlow";
 export * from "./labels";

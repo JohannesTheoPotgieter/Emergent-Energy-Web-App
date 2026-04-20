@@ -41,7 +41,6 @@ interface RowSkip {
       sourceSheet: workItems.sourceSheet,
       sourceRow: workItems.sourceRow,
       outlineNumber: workItems.outlineNumber,
-      taskNo: workItems.taskNo,
       isMilestone: workItems.isMilestone,
       deletedAt: workItems.deletedAt,
     })
@@ -84,7 +83,7 @@ interface RowSkip {
       sourceSheet: r.sourceSheet,
       sourceRow: r.sourceRow,
       outlineNumber: r.outlineNumber,
-      taskNo: r.taskNo,
+      taskNo: null,
       isMilestone: r.isMilestone ?? false,
     });
 
