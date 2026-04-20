@@ -1,4 +1,5 @@
-import { Router, type Request, type Response } from "express";
+import { Router, type Request, type Response, type NextFunction } from "express";
+import { z } from "zod";
 import { requireAuth, requirePriorityAdmin } from "./shared-middleware";
 import { getEffectiveUser } from "../auth-context";
 import { db } from "../db";
@@ -12,9 +13,13 @@ import {
   workItems,
   approvals,
 } from "@shared/schema";
+import { ROLE_DEPARTMENT_MAP } from "@shared/schema/users";
 import { eq, and, sql, desc, asc, inArray, isNull, ne } from "drizzle-orm";
+import { asyncHandler } from "../middleware/asyncHandler";
+import { validateBody } from "../middleware/validateBody";
+import { ApiError, badRequest, forbidden, notFound } from "../lib/api-error";
 import { PRIORITY_HEALTH_VALUES, type PriorityHealth, computeEffectivePriorityHealth } from "@shared/kpi-definitions";
-import { PRIORITY_SCOPES, ESCALATION_REASONS, computeEscalatePatch, collectDescendantIds, type PriorityScope, type EscalationReason } from "@shared/config/priorities";
+import { PRIORITY_SCOPES, ESCALATION_REASONS, computeEscalatePatch, collectDescendantIds, matchesPriorityListFilter, type PriorityScope, type EscalationReason } from "@shared/config/priorities";
 
 const router = Router();
 
@@ -35,11 +40,76 @@ function parseIdParam(param: string | string[] | undefined): number | null {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
-function requireCooOnly(req: Request, res: Response, next: any) {
+function requireCooOnly(req: Request, _res: Response, next: NextFunction) {
   const role = getEffectiveUser(req)?.role;
   if (role && COO_ONLY_ROLES.includes(role)) return next();
-  res.status(403).json({ error: "forbidden", message: "COO access required" });
+  next(forbidden("COO access required"));
 }
+
+// ==================== ZOD SCHEMAS ====================
+
+const severityEnum = z.enum(["critical", "important", "normal"]);
+const scopeEnum = z.enum(["company", "department", "role"]);
+const healthEnum = z.enum([...(PRIORITY_HEALTH_VALUES as readonly string[])] as [string, ...string[]]);
+const statusEnum = z.enum(["active", "monitoring", "closed", "not_started", "in_progress", "complete"]);
+const horizonEnum = z.enum(["today", "week", "month", "quarter"]);
+const reasonEnum = z.enum([...ESCALATION_REASONS] as [string, ...string[]]);
+
+const basePrioritySchema = z.object({
+  title: z.string().trim().min(1, "title is required").max(200),
+  description: z.string().max(5000).nullable().optional(),
+  severity: severityEnum.optional(),
+  department: z.string().max(120).nullable().optional(),
+  owner_user_id: z.number().int().positive().nullable().optional(),
+  accountable_exec_id: z.number().int().positive().nullable().optional(),
+  target_start_date: z.string().nullable().optional(),
+  due_date: z.string().nullable().optional(),
+  target_outcome: z.string().max(5000).nullable().optional(),
+  sort_order: z.number().int().optional(),
+  manual_health: healthEnum.nullable().optional(),
+  manual_progress: z.number().int().min(0).max(100).nullable().optional(),
+  project_ids: z.array(z.number().int().positive()).max(500).optional(),
+  owner_role: z.string().max(120).nullable().optional(),
+  assigned_to: z.string().max(120).nullable().optional(),
+  horizon: horizonEnum.optional(),
+  next_action: z.string().max(5000).nullable().optional(),
+  definition_of_done: z.string().max(5000).nullable().optional(),
+  support: z.array(z.string().max(120)).max(20).nullable().optional(),
+  scope: scopeEnum.optional(),
+  parent_id: z.number().int().positive().nullable().optional(),
+  department_key: z.string().max(120).nullable().optional(),
+  assigned_user_id: z.number().int().positive().nullable().optional(),
+});
+
+const createPrioritySchema = basePrioritySchema;
+
+const updatePrioritySchema = basePrioritySchema
+  .partial()
+  .extend({
+    status: statusEnum.optional(),
+    priority_rank: z.number().int().nullable().optional(),
+  });
+
+const escalatePrioritySchema = z.object({
+  reason: reasonEnum.optional(),
+});
+
+const linkProjectsSchema = z.object({
+  project_ids: z.array(z.number().int().positive()).min(1, "project_ids array is required").max(500),
+});
+
+const breakDownSchema = z.object({
+  children: z.array(z.object({
+    title: z.string().trim().min(1).max(200),
+    description: z.string().max(5000).nullable().optional(),
+    severity: severityEnum.optional(),
+    department: z.string().max(120).nullable().optional(),
+    due_date: z.string().nullable().optional(),
+    department_key: z.string().max(120).nullable().optional(),
+    assigned_user_id: z.number().int().positive().nullable().optional(),
+    owner_user_id: z.number().int().positive().nullable().optional(),
+  })).min(1, "children array is required").max(50),
+});
 
 interface PriorityWithMetrics {
   id: number;
@@ -270,73 +340,90 @@ async function enrichPriority(
 //                        &parent_id=45
 //                        &include_cancelled=true
 //                        &escalated_only=true
-router.get("/api/priorities", requireAuth, async (req: Request, res: Response) => {
+//                        &include_team_roles=true  (dept tab: include team's role priorities)
+router.get("/api/priorities", requireAuth, asyncHandler(async (req: Request, res: Response) => {
+  const includeCancelled = req.query.include_cancelled === "true";
+  const rawScope = typeof req.query.scope === "string" ? req.query.scope : undefined;
+  const scopeFilter: PriorityScope | null =
+    rawScope && PRIORITY_SCOPES.includes(rawScope as PriorityScope)
+      ? (rawScope as PriorityScope)
+      : null;
+  const departmentFilter = typeof req.query.department === "string" ? req.query.department : null;
+  const assignedUserIdFilter = typeof req.query.assigned_user_id === "string" ? req.query.assigned_user_id : undefined;
+  const parentIdFilter = typeof req.query.parent_id === "string" ? req.query.parent_id : undefined;
+  const escalatedOnly = req.query.escalated_only === "true";
+  const includeTeamRoles = req.query.include_team_roles === "true";
+
+  // Fetch all priorities
+  let allPriorities: any[];
   try {
-    const includeCancelled = req.query.include_cancelled === "true";
-    const scopeFilter = req.query.scope as string | undefined;
-    const departmentFilter = req.query.department as string | undefined;
-    const assignedUserIdFilter = req.query.assigned_user_id as string | undefined;
-    const parentIdFilter = req.query.parent_id as string | undefined;
-    const escalatedOnly = req.query.escalated_only === "true";
+    allPriorities = await db.select().from(mytoolCompanyPriorities);
+  } catch (dbErr: any) {
+    console.error("[Priorities] DB query failed:", dbErr.message);
+    const raw: any = await db.execute(sql`SELECT * FROM mytool_company_priorities ORDER BY id`);
+    allPriorities = raw.rows || raw || [];
+  }
 
-    // Fetch all priorities
-    let allPriorities: any[];
-    try {
-      allPriorities = await db.select().from(mytoolCompanyPriorities);
-    } catch (dbErr: any) {
-      console.error("[Priorities] DB query failed:", dbErr.message);
-      try {
-        const raw: any = await db.execute(sql`SELECT * FROM mytool_company_priorities ORDER BY id`);
-        allPriorities = raw.rows || raw || [];
-      } catch (rawErr: any) {
-        console.error("[Priorities] Raw SQL fallback also failed:", rawErr.message);
-        return res.status(500).json({ error: "Database query failed", detail: (dbErr as Error).message });
-      }
-    }
+  // Filter out cancelled unless requested
+  if (!includeCancelled) {
+    allPriorities = allPriorities.filter((p: any) => p.status !== "closed");
+  }
 
-    // Filter out cancelled unless requested
-    if (!includeCancelled) {
-      allPriorities = allPriorities.filter((p: any) => p.status !== "closed");
-    }
+  // Department-head team-role inclusion: when the dept tab asks for
+  // include_team_roles=true, also surface role-scoped priorities owned or
+  // assigned to team members whose role maps to the target department via
+  // ROLE_DEPARTMENT_MAP. Keeps the existing department-scope + department_key
+  // match as the primary path.
+  let teamUserIds: Set<number> = new Set();
+  if (includeTeamRoles && scopeFilter === "department" && departmentFilter) {
+    const teamUsers: Array<{ id: number; role: string | null }> = await db
+      .select({ id: users.id, role: users.role })
+      .from(users);
+    teamUserIds = new Set(
+      teamUsers
+        .filter((u) => u.role && (ROLE_DEPARTMENT_MAP as Record<string, string>)[u.role] === departmentFilter)
+        .map((u) => u.id),
+    );
+  }
 
-    // Apply scope filter (defaults to 'company' for backward compatibility)
-    if (scopeFilter && PRIORITY_SCOPES.includes(scopeFilter as PriorityScope)) {
-      allPriorities = allPriorities.filter((p: any) => (p.scope ?? 'company') === scopeFilter);
-    } else if (!scopeFilter) {
-      // Default: show company scope (backward compatible)
-      allPriorities = allPriorities.filter((p: any) => (p.scope ?? 'company') === 'company');
-    }
+  // Apply scope + department + team-role filter via the shared pure matcher.
+  allPriorities = allPriorities.filter((p: any) =>
+    matchesPriorityListFilter(
+      {
+        scope: (p.scope ?? "company") as PriorityScope,
+        departmentKey: p.departmentKey ?? p.department_key ?? null,
+        ownerUserId: p.ownerUserId ?? p.owner_user_id ?? null,
+        assignedUserId: p.assignedUserId ?? p.assigned_user_id ?? null,
+      },
+      { scopeFilter, departmentFilter, teamUserIds },
+    ),
+  );
 
-    // Apply department filter
-    if (departmentFilter) {
+  // Apply assigned user filter — 'me' resolves to the current user
+  if (assignedUserIdFilter) {
+    const targetUserId = assignedUserIdFilter === "me"
+      ? getEffectiveUser(req)?.id
+      : parseInt(assignedUserIdFilter, 10);
+    if (targetUserId) {
       allPriorities = allPriorities.filter((p: any) =>
-        (p.departmentKey ?? p.department_key) === departmentFilter
+        (p.assignedUserId ?? p.assigned_user_id) === targetUserId
+        || (p.ownerUserId ?? p.owner_user_id) === targetUserId
       );
     }
+  }
 
-    // Apply assigned user filter — 'me' resolves to the current user
-    if (assignedUserIdFilter) {
-      const targetUserId = assignedUserIdFilter === "me"
-        ? getEffectiveUser(req)?.id
-        : parseInt(assignedUserIdFilter);
-      if (targetUserId) {
-        allPriorities = allPriorities.filter((p: any) =>
-          (p.assignedUserId ?? p.assigned_user_id) === targetUserId
-          || (p.ownerUserId ?? p.owner_user_id) === targetUserId
-        );
-      }
-    }
-
-    // Apply parent filter
-    if (parentIdFilter) {
-      const parentId = parseInt(parentIdFilter);
+  // Apply parent filter
+  if (parentIdFilter) {
+    const parentId = parseInt(parentIdFilter, 10);
+    if (!Number.isNaN(parentId)) {
       allPriorities = allPriorities.filter((p: any) => (p.parentId ?? p.parent_id) === parentId);
     }
+  }
 
-    // Apply escalation filter
-    if (escalatedOnly) {
-      allPriorities = allPriorities.filter((p: any) => p.escalated === true);
-    }
+  // Apply escalation filter
+  if (escalatedOnly) {
+    allPriorities = allPriorities.filter((p: any) => p.escalated === true);
+  }
 
     // Get all derived metrics
     const allMetrics = await getAllPriorityDerivedMetrics();
@@ -405,12 +492,8 @@ router.get("/api/priorities", requireAuth, async (req: Request, res: Response) =
       return (a.sortOrder || 0) - (b.sortOrder || 0);
     });
 
-    res.json(enriched);
-  } catch (err: any) {
-    console.error("[Priorities] List error:", err);
-    res.status(500).json({ error: (err as Error).message });
-  }
-});
+  res.json(enriched);
+}));
 
 // ==================== GET /api/priorities/:id ====================
 // Drill-down is now a rolled-up view: `linkedProjects` includes every project
@@ -419,12 +502,11 @@ router.get("/api/priorities", requireAuth, async (req: Request, res: Response) =
 // same set so the UI can present the "everything open against this priority"
 // single pane of glass. The direct-only numbers remain on the envelope for
 // callers that still want them.
-router.get("/api/priorities/:id", requireAuth, async (req: Request, res: Response) => {
-  try {
-    const priorityId = parseIdParam(req.params.id);
-    if (priorityId === null) return res.status(400).json({ error: "Invalid priority id" });
-    const [priority] = await db.select().from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, priorityId));
-    if (!priority) return res.status(404).json({ error: "Priority not found" });
+router.get("/api/priorities/:id", requireAuth, asyncHandler(async (req: Request, res: Response) => {
+  const priorityId = parseIdParam(req.params.id);
+  if (priorityId === null) throw badRequest("Invalid priority id");
+  const [priority] = await db.select().from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, priorityId));
+  if (!priority) throw notFound("Priority");
 
     const metrics = await getPriorityDerivedMetrics(priorityId);
     const enriched = await enrichPriority(priority, metrics);
@@ -540,78 +622,44 @@ router.get("/api/priorities/:id", requireAuth, async (req: Request, res: Respons
         openTaskCount: rolledUpOpenTaskCount,
       },
     });
-  } catch (err: any) {
-    console.error("[Priorities] Detail error:", err);
-    throw err;
-  }
-});
+}));
 
 // ==================== POST /api/priorities ====================
-router.post("/api/priorities", requireAuth, requirePriorityAdmin, async (req: Request, res: Response) => {
-  try {
+router.post(
+  "/api/priorities",
+  requireAuth,
+  requirePriorityAdmin,
+  validateBody(createPrioritySchema),
+  asyncHandler(async (req: Request, res: Response) => {
     const user = getEffectiveUser(req)!;
+    const body = req.body as z.infer<typeof createPrioritySchema>;
     const {
       title, description, severity, department, owner_user_id, accountable_exec_id,
       target_start_date, due_date, target_outcome, sort_order,
       manual_health, manual_progress, project_ids, owner_role, assigned_to,
       horizon, next_action, definition_of_done, support,
-      // Cascade fields
       scope, parent_id, department_key, assigned_user_id,
-    } = req.body;
+    } = body;
 
-    if (!title) return res.status(400).json({ error: "title is required" });
-
-    // Validate scope
-    if (scope && !PRIORITY_SCOPES.includes(scope)) {
-      return res.status(400).json({ error: "scope must be one of: company, department, role" });
-    }
-
-    // Validate severity
-    const validSeverities = ["critical", "important", "normal"];
-    if (severity && !validSeverities.includes(severity)) {
-      return res.status(400).json({ error: "severity must be one of: critical, important, normal" });
-    }
-
-    // Validate manual_health
-    if (manual_health && !(PRIORITY_HEALTH_VALUES as readonly string[]).includes(manual_health)) {
-      return res.status(400).json({ error: "manual_health must be one of: healthy, at_risk, critical" });
-    }
-
-    // Validate manual_progress
-    if (manual_progress != null && (manual_progress < 0 || manual_progress > 100)) {
-      return res.status(400).json({ error: "manual_progress must be between 0 and 100" });
-    }
-
-    // Validate owner_user_id exists
     if (owner_user_id) {
       const ownerUser = await getUserById(owner_user_id);
-      if (!ownerUser) return res.status(400).json({ error: "owner_user_id not found" });
+      if (!ownerUser) throw badRequest("owner_user_id not found");
     }
-
-    // Validate accountable_exec_id exists
     if (accountable_exec_id) {
       const execUser = await getUserById(accountable_exec_id);
-      if (!execUser) return res.status(400).json({ error: "accountable_exec_id not found" });
+      if (!execUser) throw badRequest("accountable_exec_id not found");
     }
-
-    // Validate assigned_user_id exists
     if (assigned_user_id) {
       const assignee = await getUserById(assigned_user_id);
-      if (!assignee) return res.status(400).json({ error: "assigned_user_id not found" });
+      if (!assignee) throw badRequest("assigned_user_id not found");
     }
-
-    // Validate parent_id exists
     if (parent_id) {
       const [parent] = await db.select({ id: mytoolCompanyPriorities.id }).from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, parent_id));
-      if (!parent) return res.status(400).json({ error: "parent_id not found" });
+      if (!parent) throw badRequest("parent_id not found");
     }
-
-    // Validate project_ids exist
     if (project_ids && project_ids.length > 0) {
-      const projects = await db.select({ id: projectInfo.id }).from(projectInfo).where(inArray(projectInfo.id, project_ids));
-      if (projects.length !== project_ids.length) {
-        return res.status(400).json({ error: "One or more project_ids not found" });
-      }
+      const projectRows = await db.select({ id: projectInfo.id }).from(projectInfo).where(inArray(projectInfo.id, project_ids));
+      if (projectRows.length !== project_ids.length) throw badRequest("One or more project_ids not found");
     }
 
     const now = new Date();
@@ -634,7 +682,6 @@ router.post("/api/priorities", requireAuth, requirePriorityAdmin, async (req: Re
       nextAction: next_action || null,
       definitionOfDone: definition_of_done || null,
       support: support || null,
-      // Cascade fields
       scope: scope || "company",
       parentId: parent_id || null,
       departmentKey: department_key || null,
@@ -643,7 +690,6 @@ router.post("/api/priorities", requireAuth, requirePriorityAdmin, async (req: Re
       updatedAt: now,
     }).returning();
 
-    // Create junction table rows
     if (project_ids && project_ids.length > 0) {
       await db.insert(priorityProjects).values(
         project_ids.map((pid: number) => ({
@@ -654,51 +700,35 @@ router.post("/api/priorities", requireAuth, requirePriorityAdmin, async (req: Re
       );
     }
 
-    // Return enriched detail
     const metrics = await getPriorityDerivedMetrics(created.id);
     const enriched = await enrichPriority(created, metrics);
     res.status(201).json(enriched);
-  } catch (err: any) {
-    console.error("[Priorities] Create error:", err);
-    throw err;
-  }
-});
+  }),
+);
 
 // ==================== PUT /api/priorities/:id ====================
-router.put("/api/priorities/:id", requireAuth, requirePriorityAdmin, async (req: Request, res: Response) => {
-  try {
+router.put(
+  "/api/priorities/:id",
+  requireAuth,
+  requirePriorityAdmin,
+  validateBody(updatePrioritySchema),
+  asyncHandler(async (req: Request, res: Response) => {
     const user = getEffectiveUser(req)!;
     const priorityId = parseIdParam(req.params.id);
-    if (priorityId === null) return res.status(400).json({ error: "Invalid priority id" });
+    if (priorityId === null) throw badRequest("Invalid priority id");
 
     const existing = await db.select().from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, priorityId));
-    if (existing.length === 0) return res.status(404).json({ error: "Priority not found" });
+    if (existing.length === 0) throw notFound("Priority");
 
+    const body = req.body as z.infer<typeof updatePrioritySchema>;
     const {
       title, description, severity, department, owner_user_id, accountable_exec_id,
       target_start_date, due_date, target_outcome, sort_order,
       manual_health, manual_progress, project_ids, owner_role, assigned_to,
       status, horizon, next_action, definition_of_done, support, priority_rank,
-      // Cascade fields
       scope, parent_id, department_key, assigned_user_id,
-    } = req.body;
+    } = body;
 
-    // Validate severity
-    if (severity && !["critical", "important", "normal"].includes(severity)) {
-      return res.status(400).json({ error: "severity must be one of: critical, important, normal" });
-    }
-
-    // Validate manual_health
-    if (manual_health !== undefined && manual_health !== null && !(PRIORITY_HEALTH_VALUES as readonly string[]).includes(manual_health)) {
-      return res.status(400).json({ error: "manual_health must be one of: healthy, at_risk, critical" });
-    }
-
-    // Validate scope
-    if (scope !== undefined && !PRIORITY_SCOPES.includes(scope)) {
-      return res.status(400).json({ error: "scope must be one of: company, department, role" });
-    }
-
-    // Build update object
     const updates: Record<string, any> = { updatedAt: new Date() };
     if (title !== undefined) updates.title = title;
     if (description !== undefined) updates.description = description;
@@ -720,7 +750,6 @@ router.put("/api/priorities/:id", requireAuth, requirePriorityAdmin, async (req:
     if (definition_of_done !== undefined) updates.definitionOfDone = definition_of_done;
     if (support !== undefined) updates.support = support;
     if (priority_rank !== undefined) updates.priorityRank = priority_rank;
-    // Cascade fields
     if (scope !== undefined) updates.scope = scope;
     if (parent_id !== undefined) updates.parentId = parent_id;
     if (department_key !== undefined) updates.departmentKey = department_key;
@@ -731,20 +760,17 @@ router.put("/api/priorities/:id", requireAuth, requirePriorityAdmin, async (req:
       .where(eq(mytoolCompanyPriorities.id, priorityId))
       .returning();
 
-    // Sync junction table if project_ids provided
     if (project_ids !== undefined) {
       const currentLinks = await db.select().from(priorityProjects)
         .where(eq(priorityProjects.priorityId, priorityId));
       const currentProjectIds = new Set(currentLinks.map((l: typeof currentLinks[number]) => l.projectId));
       const newProjectIds = new Set(project_ids as number[]);
 
-      // Delete removed links
       const toDelete = currentLinks.filter((l: typeof currentLinks[number]) => !newProjectIds.has(l.projectId));
       for (const link of toDelete) {
         await db.delete(priorityProjects).where(eq(priorityProjects.id, link.id));
       }
 
-      // Insert new links
       const toInsert = (project_ids as number[]).filter(pid => !currentProjectIds.has(pid));
       if (toInsert.length > 0) {
         await db.insert(priorityProjects).values(
@@ -757,23 +783,22 @@ router.put("/api/priorities/:id", requireAuth, requirePriorityAdmin, async (req:
       }
     }
 
-    // Return enriched detail
     const metrics = await getPriorityDerivedMetrics(priorityId);
     const enriched = await enrichPriority(updated, metrics);
     res.json(enriched);
-  } catch (err: any) {
-    console.error("[Priorities] Update error:", err);
-    throw err;
-  }
-});
+  }),
+);
 
 // ==================== DELETE /api/priorities/:id ====================
-router.delete("/api/priorities/:id", requireAuth, requireCooOnly, async (req: Request, res: Response) => {
-  try {
+router.delete(
+  "/api/priorities/:id",
+  requireAuth,
+  requireCooOnly,
+  asyncHandler(async (req: Request, res: Response) => {
     const priorityId = parseIdParam(req.params.id);
-    if (priorityId === null) return res.status(400).json({ error: "Invalid priority id" });
+    if (priorityId === null) throw badRequest("Invalid priority id");
     const existing = await db.select().from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, priorityId));
-    if (existing.length === 0) return res.status(404).json({ error: "Priority not found" });
+    if (existing.length === 0) throw notFound("Priority");
 
     // Soft delete: set status to 'closed'
     await db.update(mytoolCompanyPriorities)
@@ -781,48 +806,37 @@ router.delete("/api/priorities/:id", requireAuth, requireCooOnly, async (req: Re
       .where(eq(mytoolCompanyPriorities.id, priorityId));
 
     res.status(204).send();
-  } catch (err: any) {
-    console.error("[Priorities] Delete error:", err);
-    throw err;
-  }
-});
+  }),
+);
 
 // ==================== POST /api/priorities/:id/projects ====================
-router.post("/api/priorities/:id/projects", requireAuth, requirePriorityAdmin, async (req: Request, res: Response) => {
-  try {
+router.post(
+  "/api/priorities/:id/projects",
+  requireAuth,
+  requirePriorityAdmin,
+  validateBody(linkProjectsSchema),
+  asyncHandler(async (req: Request, res: Response) => {
     const user = getEffectiveUser(req)!;
     const priorityId = parseIdParam(req.params.id);
-    if (priorityId === null) return res.status(400).json({ error: "Invalid priority id" });
-    const { project_ids } = req.body;
+    if (priorityId === null) throw badRequest("Invalid priority id");
+    const { project_ids } = req.body as z.infer<typeof linkProjectsSchema>;
 
-    if (!project_ids || !Array.isArray(project_ids) || project_ids.length === 0) {
-      return res.status(400).json({ error: "project_ids array is required" });
-    }
-
-    // Validate priority exists
     const [priority] = await db.select().from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, priorityId));
-    if (!priority) return res.status(404).json({ error: "Priority not found" });
+    if (!priority) throw notFound("Priority");
 
-    // Validate all project_ids exist
-    const projects = await db.select({ id: projectInfo.id }).from(projectInfo).where(inArray(projectInfo.id, project_ids));
-    if (projects.length !== project_ids.length) {
-      return res.status(400).json({ error: "One or more project_ids not found" });
-    }
+    const projectRows = await db.select({ id: projectInfo.id }).from(projectInfo).where(inArray(projectInfo.id, project_ids));
+    if (projectRows.length !== project_ids.length) throw badRequest("One or more project_ids not found");
 
-    // Upsert: insert ignore duplicates
+    // Upsert via ON CONFLICT DO NOTHING — idempotent; the outer for-loop lets
+    // us accept a partial insert if a duplicate constraint fires mid-batch.
     for (const pid of project_ids) {
-      try {
-        await db.insert(priorityProjects).values({
-          priorityId,
-          projectId: pid,
-          linkedBy: user.id,
-        }).onConflictDoNothing();
-      } catch (_) {
-        // Ignore duplicate constraint violations
-      }
+      await db.insert(priorityProjects).values({
+        priorityId,
+        projectId: pid,
+        linkedBy: user.id,
+      }).onConflictDoNothing();
     }
 
-    // Return updated linked projects
     const linkedProjects = await db
       .select({
         id: projectInfo.id,
@@ -838,18 +852,18 @@ router.post("/api/priorities/:id/projects", requireAuth, requirePriorityAdmin, a
       .where(eq(priorityProjects.priorityId, priorityId));
 
     res.json(linkedProjects);
-  } catch (err: any) {
-    console.error("[Priorities] Link projects error:", err);
-    throw err;
-  }
-});
+  }),
+);
 
 // ==================== DELETE /api/priorities/:id/projects/:projectId ====================
-router.delete("/api/priorities/:id/projects/:projectId", requireAuth, requirePriorityAdmin, async (req: Request, res: Response) => {
-  try {
+router.delete(
+  "/api/priorities/:id/projects/:projectId",
+  requireAuth,
+  requirePriorityAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
     const priorityId = parseIdParam(req.params.id);
     const projectId = parseIdParam(req.params.projectId);
-    if (priorityId === null || projectId === null) return res.status(400).json({ error: "Invalid id parameter" });
+    if (priorityId === null || projectId === null) throw badRequest("Invalid id parameter");
 
     await db.delete(priorityProjects).where(
       and(
@@ -859,17 +873,16 @@ router.delete("/api/priorities/:id/projects/:projectId", requireAuth, requirePri
     );
 
     res.status(204).send();
-  } catch (err: any) {
-    console.error("[Priorities] Unlink project error:", err);
-    throw err;
-  }
-});
+  }),
+);
 
 // ==================== GET /api/projects/:id/priorities ====================
-router.get("/api/projects/:id/priorities", requireAuth, async (req: Request, res: Response) => {
-  try {
+router.get(
+  "/api/projects/:id/priorities",
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
     const projectId = parseIdParam(req.params.id);
-    if (projectId === null) return res.status(400).json({ error: "Invalid project id" });
+    if (projectId === null) throw badRequest("Invalid project id");
 
     const priorities = await db
       .select({
@@ -884,7 +897,6 @@ router.get("/api/projects/:id/priorities", requireAuth, async (req: Request, res
       .innerJoin(mytoolCompanyPriorities, eq(priorityProjects.priorityId, mytoolCompanyPriorities.id))
       .where(eq(priorityProjects.projectId, projectId));
 
-    // Compute effective health for each using the shared rule engine
     const allMetrics = await getAllPriorityDerivedMetrics();
     const metricsMap = new Map(allMetrics.map((m: any) => [m.priority_id, m]));
 
@@ -909,23 +921,19 @@ router.get("/api/projects/:id/priorities", requireAuth, async (req: Request, res
     });
 
     res.json(result);
-  } catch (err: any) {
-    console.error("[Priorities] Project priorities error:", err);
-    throw err;
-  }
-});
+  }),
+);
 
 // ==================== GET /api/priorities/:id/tasks ====================
 // Rolled-up: returns open tasks across every project linked to this priority
 // OR any descendant. Matches the status filter used by priority_derived_metrics
 // .open_task_count so the card counter and drill-down list stay in sync.
-router.get("/api/priorities/:id/tasks", requireAuth, async (req: Request, res: Response) => {
-  try {
-    const priorityId = parseIdParam(req.params.id);
-    if (priorityId === null) return res.status(400).json({ error: "Invalid priority id" });
+router.get("/api/priorities/:id/tasks", requireAuth, asyncHandler(async (req: Request, res: Response) => {
+  const priorityId = parseIdParam(req.params.id);
+  if (priorityId === null) throw badRequest("Invalid priority id");
 
-    const { rolledUpProjectIds: projectIds } = await resolveRolledUpScope(priorityId);
-    if (projectIds.length === 0) return res.json([]);
+  const { rolledUpProjectIds: projectIds } = await resolveRolledUpScope(priorityId);
+  if (projectIds.length === 0) return res.json([]);
 
     // Get project names for context
     const projects = await db.select({ id: projectInfo.id, name: projectInfo.projectName })
@@ -987,23 +995,18 @@ router.get("/api/priorities/:id/tasks", requireAuth, async (req: Request, res: R
       return 0;
     });
 
-    res.json(result);
-  } catch (err: any) {
-    console.error("[Priorities] Tasks error:", err);
-    throw err;
-  }
-});
+  res.json(result);
+}));
 
 // ==================== GET /api/priorities/:id/approvals ====================
 // Rolled-up: includes pending approvals across every project linked to this
 // priority OR any descendant priority.
-router.get("/api/priorities/:id/approvals", requireAuth, async (req: Request, res: Response) => {
-  try {
-    const priorityId = parseIdParam(req.params.id);
-    if (priorityId === null) return res.status(400).json({ error: "Invalid priority id" });
+router.get("/api/priorities/:id/approvals", requireAuth, asyncHandler(async (req: Request, res: Response) => {
+  const priorityId = parseIdParam(req.params.id);
+  if (priorityId === null) throw badRequest("Invalid priority id");
 
-    const { rolledUpProjectIds: projectIds } = await resolveRolledUpScope(priorityId);
-    if (projectIds.length === 0) return res.json([]);
+  const { rolledUpProjectIds: projectIds } = await resolveRolledUpScope(priorityId);
+  if (projectIds.length === 0) return res.json([]);
 
     // Get project names
     const projects = await db.select({ id: projectInfo.id, name: projectInfo.projectName })
@@ -1033,23 +1036,18 @@ router.get("/api/priorities/:id/approvals", requireAuth, async (req: Request, re
       itemType: "approval",
     }));
 
-    res.json(result);
-  } catch (err: any) {
-    console.error("[Priorities] Approvals error:", err);
-    throw err;
-  }
-});
+  res.json(result);
+}));
 
 // ==================== GET /api/priorities/:id/updates ====================
 // Rolled-up: RAG / phase updates across every project linked to this priority
 // OR any descendant priority.
-router.get("/api/priorities/:id/updates", requireAuth, async (req: Request, res: Response) => {
-  try {
-    const priorityId = parseIdParam(req.params.id);
-    if (priorityId === null) return res.status(400).json({ error: "Invalid priority id" });
+router.get("/api/priorities/:id/updates", requireAuth, asyncHandler(async (req: Request, res: Response) => {
+  const priorityId = parseIdParam(req.params.id);
+  if (priorityId === null) throw badRequest("Invalid priority id");
 
-    const { rolledUpProjectIds: projectIds } = await resolveRolledUpScope(priorityId);
-    if (projectIds.length === 0) return res.json([]);
+  const { rolledUpProjectIds: projectIds } = await resolveRolledUpScope(priorityId);
+  if (projectIds.length === 0) return res.json([]);
 
     // Get latest updates from project_execution_state and project_info
     const projectsWithUpdates = await db
@@ -1081,12 +1079,8 @@ router.get("/api/priorities/:id/updates", requireAuth, async (req: Request, res:
         date: p.ragUpdatedAt || p.phaseUpdatedAt || p.updatedAt,
       }));
 
-    res.json(updates);
-  } catch (err: any) {
-    console.error("[Priorities] Updates error:", err);
-    throw err;
-  }
-});
+  res.json(updates);
+}));
 
 // ==================== POST /api/priorities/:id/escalate ====================
 // Promotes a priority one scope upward (role → department → company) atomically.
@@ -1102,18 +1096,18 @@ router.get("/api/priorities/:id/updates", requireAuth, async (req: Request, res:
 // clears `departmentKey` when promoting to company scope. Break-down children
 // keep their `parentId` — the promoted row simply appears at the higher scope
 // while still visibly linked to its parent.
-router.post("/api/priorities/:id/escalate", requireAuth, requirePriorityAdmin, async (req: Request, res: Response) => {
-  try {
+router.post(
+  "/api/priorities/:id/escalate",
+  requireAuth,
+  requirePriorityAdmin,
+  validateBody(escalatePrioritySchema),
+  asyncHandler(async (req: Request, res: Response) => {
     const priorityId = parseIdParam(req.params.id);
-    if (priorityId === null) return res.status(400).json({ error: "Invalid priority id" });
-    const { reason } = req.body;
-
-    if (reason && !ESCALATION_REASONS.includes(reason)) {
-      return res.status(400).json({ error: "reason must be one of: overdue, critical, blocked, manual" });
-    }
+    if (priorityId === null) throw badRequest("Invalid priority id");
+    const { reason } = req.body as z.infer<typeof escalatePrioritySchema>;
 
     const [priority] = await db.select().from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, priorityId));
-    if (!priority) return res.status(404).json({ error: "Priority not found" });
+    if (!priority) throw notFound("Priority");
 
     const patch = computeEscalatePatch(
       {
@@ -1123,7 +1117,7 @@ router.post("/api/priorities/:id/escalate", requireAuth, requirePriorityAdmin, a
       (reason as EscalationReason | undefined) ?? "manual",
     );
     if (!patch) {
-      return res.status(400).json({ error: "Company-level priorities cannot be escalated further" });
+      throw badRequest("Company-level priorities cannot be escalated further");
     }
 
     const now = new Date();
@@ -1147,87 +1141,78 @@ router.post("/api/priorities/:id/escalate", requireAuth, requirePriorityAdmin, a
     const metrics = await getPriorityDerivedMetrics(priorityId);
     const enriched = await enrichPriority(updated, metrics);
     res.json(enriched);
-  } catch (err: any) {
-    console.error("[Priorities] Escalate error:", err);
-    res.status(500).json({ error: (err as Error).message });
-  }
-});
+  }),
+);
 
 // ==================== GET /api/priorities/:id/children ====================
-router.get("/api/priorities/:id/children", requireAuth, async (req: Request, res: Response) => {
-  try {
-    const priorityId = parseIdParam(req.params.id);
-    if (priorityId === null) return res.status(400).json({ error: "Invalid priority id" });
+router.get("/api/priorities/:id/children", requireAuth, asyncHandler(async (req: Request, res: Response) => {
+  const priorityId = parseIdParam(req.params.id);
+  if (priorityId === null) throw badRequest("Invalid priority id");
 
-    const children = await db.select().from(mytoolCompanyPriorities)
-      .where(and(
-        eq(mytoolCompanyPriorities.parentId, priorityId),
-        ne(mytoolCompanyPriorities.status, "closed"),
-      ));
+  const children = await db.select().from(mytoolCompanyPriorities)
+    .where(and(
+      eq(mytoolCompanyPriorities.parentId, priorityId),
+      ne(mytoolCompanyPriorities.status, "closed"),
+    ));
 
-    if (children.length === 0) return res.json([]);
+  if (children.length === 0) return res.json([]);
 
-    const allMetrics = await getAllPriorityDerivedMetrics();
-    const metricsMap = new Map(allMetrics.map((m: any) => [m.priority_id, m]));
+  const allMetrics = await getAllPriorityDerivedMetrics();
+  const metricsMap = new Map(allMetrics.map((m: any) => [m.priority_id, m]));
 
-    const userIds = Array.from(new Set(
-      children.flatMap((p: any) => [p.ownerUserId, p.accountableExecId, p.assignedUserId].filter(Boolean)),
-    )) as number[];
-    const userMap = await getUsersByIds(userIds);
+  const userIds = Array.from(new Set(
+    children.flatMap((p: any) => [p.ownerUserId, p.accountableExecId, p.assignedUserId].filter(Boolean)),
+  )) as number[];
+  const userMap = await getUsersByIds(userIds);
 
-    // Get grandchild counts
-    const childIds = children.map((c: typeof children[number]) => c.id);
-    const grandChildResult: any = await db.execute(sql`
-      SELECT parent_id, COUNT(*)::int AS child_count
-      FROM mytool_company_priorities
-      WHERE parent_id = ANY(${childIds}) AND status != 'closed'
-      GROUP BY parent_id
-    `);
-    const grandChildCountMap = new Map<number, number>();
-    for (const row of (grandChildResult.rows || grandChildResult || [])) {
-      grandChildCountMap.set(row.parent_id, row.child_count);
-    }
-
-    const enriched = await Promise.all(
-      children.map((p: any) => enrichPriority(p, metricsMap.get(p.id), userMap, new Map(), grandChildCountMap))
-    );
-
-    // Group by department for display
-    enriched.sort((a, b) => {
-      const deptA = a.departmentKey || "";
-      const deptB = b.departmentKey || "";
-      if (deptA !== deptB) return deptA.localeCompare(deptB);
-      return (a.sortOrder || 0) - (b.sortOrder || 0);
-    });
-
-    res.json(enriched);
-  } catch (err: any) {
-    console.error("[Priorities] Children error:", err);
-    res.status(500).json({ error: (err as Error).message });
+  // Get grandchild counts
+  const childIds = children.map((c: typeof children[number]) => c.id);
+  const grandChildResult: any = await db.execute(sql`
+    SELECT parent_id, COUNT(*)::int AS child_count
+    FROM mytool_company_priorities
+    WHERE parent_id = ANY(${childIds}) AND status != 'closed'
+    GROUP BY parent_id
+  `);
+  const grandChildCountMap = new Map<number, number>();
+  for (const row of (grandChildResult.rows || grandChildResult || [])) {
+    grandChildCountMap.set(row.parent_id, row.child_count);
   }
-});
+
+  const enriched = await Promise.all(
+    children.map((p: any) => enrichPriority(p, metricsMap.get(p.id), userMap, new Map(), grandChildCountMap))
+  );
+
+  // Group by department for display
+  enriched.sort((a, b) => {
+    const deptA = a.departmentKey || "";
+    const deptB = b.departmentKey || "";
+    if (deptA !== deptB) return deptA.localeCompare(deptB);
+    return (a.sortOrder || 0) - (b.sortOrder || 0);
+  });
+
+  res.json(enriched);
+}));
 
 // ==================== POST /api/priorities/:id/break-down ====================
 // Creates child priorities from a parent — used by COO to push down to departments
-router.post("/api/priorities/:id/break-down", requireAuth, requirePriorityAdmin, async (req: Request, res: Response) => {
-  try {
-    const user = getEffectiveUser(req)!;
+router.post(
+  "/api/priorities/:id/break-down",
+  requireAuth,
+  requirePriorityAdmin,
+  validateBody(breakDownSchema),
+  asyncHandler(async (req: Request, res: Response) => {
     const parentId = parseIdParam(req.params.id);
-    if (parentId === null) return res.status(400).json({ error: "Invalid parent id" });
-    const { children } = req.body;
-
-    if (!children || !Array.isArray(children) || children.length === 0) {
-      return res.status(400).json({ error: "children array is required" });
-    }
+    if (parentId === null) throw badRequest("Invalid parent id");
+    const { children } = req.body as z.infer<typeof breakDownSchema>;
 
     const [parent] = await db.select().from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, parentId));
-    if (!parent) return res.status(404).json({ error: "Parent priority not found" });
+    if (!parent) throw notFound("Parent priority");
 
     const currentScope = parent.scope ?? "company";
     const childScope: PriorityScope = currentScope === "company" ? "department" : "role";
 
     const now = new Date();
-    const created = [];
+    const created: any[] = [];
     for (const child of children) {
       const [row] = await db.insert(mytoolCompanyPriorities).values({
         title: child.title,
@@ -1248,11 +1233,8 @@ router.post("/api/priorities/:id/break-down", requireAuth, requirePriorityAdmin,
     }
 
     res.status(201).json(created);
-  } catch (err: any) {
-    console.error("[Priorities] Break-down error:", err);
-    res.status(500).json({ error: (err as Error).message });
-  }
-});
+  }),
+);
 
 export function registerPriorityStrategicRoutes(app: any) {
   app.use(router);
