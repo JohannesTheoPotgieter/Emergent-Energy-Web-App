@@ -51,7 +51,9 @@ import {
   Clock,
   ListChecks,
   LineChart as LineChartIcon,
+  AlertTriangle,
 } from "lucide-react";
+import { TrackerGapTab } from "@/components/cos/TrackerGapTab";
 
 interface ProjectBreakdown {
   projectName: string;
@@ -502,7 +504,7 @@ export default function CosTracker() {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [drawerMonth, setDrawerMonth] = useState<{ monthKey: string; monthLabel: string; defaultFilter?: "all" | "realised" | "committed" | "planned" | "qb_actual"; defaultProject?: string } | null>(null);
 
-  const [activeTab, setActiveTab] = useState<"recon" | "trend">("recon");
+  const [activeTab, setActiveTab] = useState<"recon" | "trend" | "gap">("recon");
   const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
   const [projectSearch, setProjectSearch] = useState("");
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
@@ -1175,7 +1177,7 @@ export default function CosTracker() {
               {renderFyKpiCard("quickbooks")}
             </div>
 
-            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "recon" | "trend")}>
+            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "recon" | "trend" | "gap")}>
               <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
                 <TabsList className="bg-muted/60">
                   <TabsTrigger value="recon" className="data-[state=active]:bg-card gap-1.5" data-testid="tab-recon">
@@ -1185,6 +1187,10 @@ export default function CosTracker() {
                   <TabsTrigger value="trend" className="data-[state=active]:bg-card gap-1.5" data-testid="tab-trend">
                     <LineChartIcon className="h-3.5 w-3.5" />
                     Trend
+                  </TabsTrigger>
+                  <TabsTrigger value="gap" className="data-[state=active]:bg-card gap-1.5" data-testid="tab-gap">
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    Tracker Gap
                   </TabsTrigger>
                 </TabsList>
 
@@ -1286,6 +1292,7 @@ export default function CosTracker() {
                 </Card>
               </TabsContent>
               <TabsContent value="trend" className="mt-0">{renderTrend()}</TabsContent>
+              <TabsContent value="gap" className="mt-0"><TrackerGapTab /></TabsContent>
             </Tabs>
 
           </div>

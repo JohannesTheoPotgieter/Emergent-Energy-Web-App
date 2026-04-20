@@ -93,6 +93,8 @@ import {
   normalizedRevenueLines,
   OVERRIDE_CATEGORIES,
   projectInfo,
+  qbClassProjectOverrides,
+  qbReconIgnores,
   quickbooksInvoiceLinks,
   users,
 } from "@shared/schema";
@@ -2529,6 +2531,402 @@ router.get("/api/cos-tracker/qb-coverage-report", requireAuth, requireAdmin, asy
     res
       .status(500)
       .json({ error: "qb_coverage_report_failed", detail: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+/**
+ * Tracker Gap (C004) — admin-only annotated coverage report.
+ *
+ * Wraps `qb-coverage-report` and merges in user annotations:
+ *   - active rows from `qb_recon_ignores` (suppress matching tracker_gap rows)
+ *   - active rows from `qb_class_project_overrides` (rescue unmapped_class rows)
+ *
+ * READ-ONLY against `normalized_cost_lines` / `quickbooks_invoice_links`.
+ * Trackers remain the source of truth — the only writes here are to the
+ * annotation tables (`POST /ignore`, `POST /class-override`).
+ *
+ *   GET /api/cos-tracker/tracker-gap?start=YYYY-MM-DD&end=YYYY-MM-DD
+ */
+router.get("/api/cos-tracker/tracker-gap", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const start = String(req.query.start || "");
+    const end = String(req.query.end || "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) {
+      return res.status(400).json({ error: "start and end required as YYYY-MM-DD" });
+    }
+
+    // Project-name universe = project_info ∪ active normalized_cost_lines.project_name
+    const [projects, ncl, classOverrides, ignores] = await Promise.all([
+      db.select({ name: projectInfo.projectName }).from(projectInfo),
+      db
+        .select({ name: normalizedCostLines.projectName })
+        .from(normalizedCostLines)
+        .where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
+      db.select().from(qbClassProjectOverrides).where(isNull(qbClassProjectOverrides.deletedAt)),
+      db.select().from(qbReconIgnores).where(isNull(qbReconIgnores.deletedAt)),
+    ]);
+    const universe = new Set<string>();
+    for (const p of projects) if (p.name) universe.add(p.name);
+    for (const r of ncl) if (r.name) universe.add(r.name);
+    const projectNames = [...universe];
+
+    // Class override lookup (case-insensitive on classRefName)
+    const overrideByClass = new Map<string, string>();
+    for (const o of classOverrides) {
+      overrideByClass.set(o.classRefName.toLowerCase().trim(), o.projectName);
+    }
+
+    // Ignore lookup keyed on `${qbBillId}::${qbLineId ?? ""}`
+    const ignoreKey = (billId: string | null, lineId: string | null) =>
+      `${billId ?? ""}::${lineId ?? ""}`;
+
+    // Active cost lines bucketed by normalised project key for tracker_gap matching.
+    const activeCostLines = await db
+      .select({
+        id: normalizedCostLines.id,
+        projectName: normalizedCostLines.projectName,
+        invoiceNumber: normalizedCostLines.invoiceNumber,
+        invoiceDate: normalizedCostLines.invoiceDate,
+        amountExVat: normalizedCostLines.amountExVat,
+        counterpartyName: normalizedCostLines.counterpartyName,
+      })
+      .from(normalizedCostLines)
+      .where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)));
+    const costLinesByProjectKey = new Map<string, typeof activeCostLines>();
+    for (const cl of activeCostLines) {
+      const key = normalizeProjectKey(cl.projectName);
+      if (!key) continue;
+      if (!costLinesByProjectKey.has(key)) costLinesByProjectKey.set(key, []);
+      costLinesByProjectKey.get(key)!.push(cl);
+    }
+
+    let billsResp: any;
+    try {
+      billsResp = await getBills(start, end);
+    } catch (qbErr) {
+      console.error("[tracker-gap] QB getBills failed:", qbErr);
+      return res.status(503).json({
+        error: "qb_not_connected",
+        detail: "QuickBooks integration is unavailable. Reconnect QB to refresh the gap report.",
+        message: qbErr instanceof Error ? qbErr.message : String(qbErr),
+      });
+    }
+    const bills: any[] = billsResp?.QueryResponse?.Bill ?? [];
+
+    const resolveProject = buildQbProjectResolver(projectNames);
+
+    type GapBucket = "tracker_gap" | "unmapped_class" | "unmapped_no_class" | "matched" | "fuzzy";
+    interface GapRow {
+      bucket: GapBucket;
+      billId: string | null;
+      qbLineId: string | null;
+      docNumber: string | null;
+      txnDate: string | null;
+      vendorName: string | null;
+      lineAmountExVat: number | null;
+      classRefName: string | null;
+      customerRefName: string | null;
+      accountRefName: string | null;
+      description: string | null;
+      resolvedProjectName: string | null;
+      strategy: string;
+      matchedFrom: string | null;
+      isOverride: boolean;
+      isIgnored: boolean;
+      ignoreReason: string | null;
+      ignoredByName: string | null;
+      ignoredAt: string | null;
+      closestCostLineId: number | null;
+    }
+
+    const ignoreMeta = new Map<string, { reason: string; ignoredByName: string | null; ignoredAt: string }>();
+    for (const ig of ignores) {
+      ignoreMeta.set(ignoreKey(ig.qbBillId, ig.qbLineId), {
+        reason: ig.reason,
+        ignoredByName: ig.ignoredByName,
+        ignoredAt: ig.ignoredAt.toISOString(),
+      });
+    }
+
+    const rows: GapRow[] = [];
+    for (const bill of bills) {
+      for (const lr of billRawToLineRows(bill)) {
+        let resolution = resolveProject({
+          classRefName: lr.classRefName,
+          customerRefName: lr.customerRefName,
+        });
+        let isOverride = false;
+        if (!resolution.projectName && lr.classRefName) {
+          const override = overrideByClass.get(lr.classRefName.toLowerCase().trim());
+          if (override) {
+            resolution = {
+              projectName: override,
+              strategy: "class_override" as any,
+              matchedFrom: lr.classRefName,
+            };
+            isOverride = true;
+          }
+        }
+
+        // Match against tracker cost lines (project + amount within R1)
+        let closestId: number | null = null;
+        if (resolution.projectName) {
+          const candidates = costLinesByProjectKey.get(normalizeProjectKey(resolution.projectName)) ?? [];
+          const target = lr.lineAmountExVat ?? 0;
+          const close = candidates
+            .map((c: any) => ({ c, diff: Math.abs(Number(c.amountExVat ?? 0) - target) }))
+            .filter((x: any) => x.diff <= 1)
+            .sort((a: any, b: any) => a.diff - b.diff)[0];
+          if (close) closestId = close.c.id;
+        }
+
+        let bucket: GapBucket;
+        if (resolution.projectName && closestId) bucket = "matched";
+        else if (resolution.projectName) bucket = "tracker_gap"; // fuzzy-resolved rows fold in here; UI shows the strategy badge so finance can confirm
+        else if (lr.classRefName) bucket = "unmapped_class";
+        else bucket = "unmapped_no_class";
+
+        const igk = ignoreKey(lr.billId, lr.lineId);
+        const ig = ignoreMeta.get(igk);
+
+        rows.push({
+          bucket,
+          billId: lr.billId,
+          qbLineId: lr.lineId,
+          docNumber: lr.docNumber,
+          txnDate: lr.txnDate,
+          vendorName: lr.vendorName,
+          lineAmountExVat: lr.lineAmountExVat,
+          classRefName: lr.classRefName,
+          customerRefName: lr.customerRefName,
+          accountRefName: lr.accountRefName,
+          description: lr.description,
+          resolvedProjectName: resolution.projectName,
+          strategy: resolution.strategy,
+          matchedFrom: resolution.matchedFrom,
+          isOverride,
+          isIgnored: !!ig,
+          ignoreReason: ig?.reason ?? null,
+          ignoredByName: ig?.ignoredByName ?? null,
+          ignoredAt: ig?.ignoredAt ?? null,
+          closestCostLineId: closestId,
+        });
+      }
+    }
+
+    // Aggregations — exclude ignored from "open" totals, keep them surfaced separately.
+    let totalAmount = 0;
+    let openTrackerGapAmount = 0;
+    let openTrackerGapCount = 0;
+    let ignoredAmount = 0;
+    let ignoredCount = 0;
+    const byBucket: Record<GapBucket, { count: number; amount: number; openCount: number; openAmount: number }> = {
+      tracker_gap: { count: 0, amount: 0, openCount: 0, openAmount: 0 },
+      unmapped_class: { count: 0, amount: 0, openCount: 0, openAmount: 0 },
+      unmapped_no_class: { count: 0, amount: 0, openCount: 0, openAmount: 0 },
+      matched: { count: 0, amount: 0, openCount: 0, openAmount: 0 },
+      fuzzy: { count: 0, amount: 0, openCount: 0, openAmount: 0 },
+    };
+    for (const r of rows) {
+      const amt = r.lineAmountExVat ?? 0;
+      totalAmount += amt;
+      byBucket[r.bucket].count += 1;
+      byBucket[r.bucket].amount += amt;
+      if (!r.isIgnored) {
+        byBucket[r.bucket].openCount += 1;
+        byBucket[r.bucket].openAmount += amt;
+      } else {
+        ignoredAmount += amt;
+        ignoredCount += 1;
+      }
+      if (r.bucket === "tracker_gap" && !r.isIgnored) {
+        openTrackerGapAmount += amt;
+        openTrackerGapCount += 1;
+      }
+    }
+
+    // Per-project rollup (for tracker_gap rows only — that's the actionable bucket)
+    const byProject = new Map<string, { project: string; count: number; openCount: number; amount: number; openAmount: number }>();
+    for (const r of rows) {
+      if (r.bucket !== "tracker_gap") continue;
+      const key = r.resolvedProjectName ?? "(unknown)";
+      if (!byProject.has(key)) byProject.set(key, { project: key, count: 0, openCount: 0, amount: 0, openAmount: 0 });
+      const slot = byProject.get(key)!;
+      slot.count += 1;
+      slot.amount += r.lineAmountExVat ?? 0;
+      if (!r.isIgnored) {
+        slot.openCount += 1;
+        slot.openAmount += r.lineAmountExVat ?? 0;
+      }
+    }
+
+    // Unmapped-class rollup with current override hint (suggest most-frequent customer name as guess)
+    const unmappedClassMap = new Map<string, { classRefName: string; count: number; amount: number; sampleVendors: Set<string>; sampleCustomers: Set<string> }>();
+    for (const r of rows) {
+      if (r.bucket !== "unmapped_class" || !r.classRefName) continue;
+      if (!unmappedClassMap.has(r.classRefName))
+        unmappedClassMap.set(r.classRefName, { classRefName: r.classRefName, count: 0, amount: 0, sampleVendors: new Set(), sampleCustomers: new Set() });
+      const slot = unmappedClassMap.get(r.classRefName)!;
+      slot.count += 1;
+      slot.amount += r.lineAmountExVat ?? 0;
+      if (r.vendorName) slot.sampleVendors.add(r.vendorName);
+      if (r.customerRefName) slot.sampleCustomers.add(r.customerRefName);
+    }
+    const unmappedClassList = [...unmappedClassMap.values()]
+      .map((v) => ({
+        classRefName: v.classRefName,
+        count: v.count,
+        amount: Math.round(v.amount * 100) / 100,
+        sampleVendors: [...v.sampleVendors].slice(0, 5),
+        sampleCustomers: [...v.sampleCustomers].slice(0, 5),
+      }))
+      .sort((a, b) => b.amount - a.amount);
+
+    res.json({
+      generatedAt: new Date().toISOString(),
+      window: { start, end },
+      summary: {
+        totalLineRows: rows.length,
+        totalAmountExVat: Math.round(totalAmount * 100) / 100,
+        openTrackerGapCount,
+        openTrackerGapAmountExVat: Math.round(openTrackerGapAmount * 100) / 100,
+        ignoredCount,
+        ignoredAmountExVat: Math.round(ignoredAmount * 100) / 100,
+        projectUniverseSize: projectNames.length,
+        classOverridesActive: classOverrides.length,
+      },
+      byBucket: Object.fromEntries(
+        Object.entries(byBucket).map(([k, v]) => [
+          k,
+          {
+            count: v.count,
+            amount: Math.round(v.amount * 100) / 100,
+            openCount: v.openCount,
+            openAmount: Math.round(v.openAmount * 100) / 100,
+          },
+        ]),
+      ),
+      byProject: [...byProject.values()].sort((a: any, b: any) => b.openAmount - a.openAmount),
+      unmappedClasses: unmappedClassList,
+      classOverrides: classOverrides.map((o: any) => ({
+        id: o.id,
+        classRefName: o.classRefName,
+        projectName: o.projectName,
+        note: o.note,
+        createdByName: o.createdByName,
+        createdAt: o.createdAt instanceof Date ? o.createdAt.toISOString() : String(o.createdAt),
+      })),
+      rows,
+    });
+  } catch (err) {
+    console.error("[tracker-gap]", err);
+    res.status(500).json({ error: "tracker_gap_failed", detail: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+const ignoreBodySchema = z.object({
+  qbBillId: z.string().min(1),
+  qbLineId: z.string().nullable().optional(),
+  qbDocNumber: z.string().nullable().optional(),
+  vendorName: z.string().nullable().optional(),
+  lineAmountExVat: z.number().nullable().optional(),
+  resolvedProjectName: z.string().nullable().optional(),
+  reason: z.string().min(1).max(500),
+});
+
+router.post("/api/cos-tracker/tracker-gap/ignore", requireAuth, requireAdmin, validateBody(ignoreBodySchema), async (req, res) => {
+  try {
+    const body = req.body as z.infer<typeof ignoreBodySchema>;
+    const user = (req as any).user;
+    const [created] = await db
+      .insert(qbReconIgnores)
+      .values({
+        qbBillId: body.qbBillId,
+        qbLineId: body.qbLineId ?? null,
+        qbDocNumber: body.qbDocNumber ?? null,
+        vendorName: body.vendorName ?? null,
+        lineAmountExVat: body.lineAmountExVat != null ? String(body.lineAmountExVat) : null,
+        resolvedProjectName: body.resolvedProjectName ?? null,
+        reason: body.reason,
+        ignoredByUserId: user?.id ?? null,
+        ignoredByName: user?.name ?? user?.email ?? null,
+      })
+      .returning();
+    res.json({ ok: true, ignore: created });
+  } catch (err) {
+    console.error("[tracker-gap/ignore]", err);
+    res.status(500).json({ error: "ignore_failed", detail: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.delete("/api/cos-tracker/tracker-gap/ignore/:id", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
+    await db.update(qbReconIgnores).set({ deletedAt: new Date() }).where(eq(qbReconIgnores.id, id));
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[tracker-gap/ignore/delete]", err);
+    res.status(500).json({ error: "ignore_delete_failed", detail: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+const overrideBodySchema = z.object({
+  classRefName: z.string().min(1).max(200),
+  projectName: z.string().min(1).max(200),
+  note: z.string().max(500).optional(),
+});
+
+router.post("/api/cos-tracker/tracker-gap/class-override", requireAuth, requireAdmin, validateBody(overrideBodySchema), async (req, res) => {
+  try {
+    const body = req.body as z.infer<typeof overrideBodySchema>;
+    const user = (req as any).user;
+    // Atomic supersede: soft-delete any active row for this class then insert, all in one tx.
+    // The partial unique index on LOWER(class_ref_name) WHERE deleted_at IS NULL means a concurrent
+    // writer can still trip 23505; we surface that as 409 so the client can retry deterministically.
+    const created = await db.transaction(async (tx: any) => {
+      await tx
+        .update(qbClassProjectOverrides)
+        .set({ deletedAt: new Date() })
+        .where(
+          and(
+            isNull(qbClassProjectOverrides.deletedAt),
+            sql`LOWER(${qbClassProjectOverrides.classRefName}) = LOWER(${body.classRefName})`,
+          ),
+        );
+      const [row] = await tx
+        .insert(qbClassProjectOverrides)
+        .values({
+          classRefName: body.classRefName,
+          projectName: body.projectName,
+          note: body.note ?? null,
+          createdByUserId: user?.id ?? null,
+          createdByName: user?.name ?? user?.email ?? null,
+        })
+        .returning();
+      return row;
+    });
+    res.json({ ok: true, override: created });
+  } catch (err: any) {
+    const code = err?.code ?? err?.cause?.code;
+    if (code === "23505") {
+      console.warn("[tracker-gap/class-override] concurrent insert collided", err?.message);
+      return res.status(409).json({ error: "concurrent_update", detail: "Another mapping was just saved for this class. Refresh and retry." });
+    }
+    console.error("[tracker-gap/class-override]", err);
+    res.status(500).json({ error: "override_failed", detail: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.delete("/api/cos-tracker/tracker-gap/class-override/:id", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
+    await db.update(qbClassProjectOverrides).set({ deletedAt: new Date() }).where(eq(qbClassProjectOverrides.id, id));
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[tracker-gap/class-override/delete]", err);
+    res.status(500).json({ error: "override_delete_failed", detail: err instanceof Error ? err.message : String(err) });
   }
 });
 

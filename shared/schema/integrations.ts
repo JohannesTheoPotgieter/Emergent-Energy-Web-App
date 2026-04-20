@@ -549,3 +549,38 @@ export const INTEGRATION_SEED: Array<{
     alertTarget: "COO_ADMIN",
   },
 ];
+
+/**
+ * QB Reconciliation — Tracker Gap support tables (C004).
+ *
+ * Backed by migrations/0008_qb_recon_tables.sql. Pure annotation tables —
+ * trackers stay the source of truth; these only record finance's
+ * disposition of QB bills surfaced by the gap report.
+ */
+export const qbReconIgnores = pgTable("qb_recon_ignores", {
+  id: serial("id").primaryKey(),
+  qbBillId: text("qb_bill_id").notNull(),
+  qbLineId: text("qb_line_id"),
+  qbDocNumber: text("qb_doc_number"),
+  vendorName: text("vendor_name"),
+  lineAmountExVat: decimal("line_amount_ex_vat", { precision: 14, scale: 2 }),
+  resolvedProjectName: text("resolved_project_name"),
+  reason: text("reason").notNull(),
+  ignoredByUserId: integer("ignored_by_user_id"),
+  ignoredByName: text("ignored_by_name"),
+  ignoredAt: timestamp("ignored_at").defaultNow().notNull(),
+  deletedAt: timestamp("deleted_at"),
+});
+export type QbReconIgnore = typeof qbReconIgnores.$inferSelect;
+
+export const qbClassProjectOverrides = pgTable("qb_class_project_overrides", {
+  id: serial("id").primaryKey(),
+  classRefName: text("class_ref_name").notNull(),
+  projectName: text("project_name").notNull(),
+  note: text("note"),
+  createdByUserId: integer("created_by_user_id"),
+  createdByName: text("created_by_name"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  deletedAt: timestamp("deleted_at"),
+});
+export type QbClassProjectOverride = typeof qbClassProjectOverrides.$inferSelect;
