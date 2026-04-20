@@ -18,6 +18,8 @@ import { eq, isNull, sql as drizzleSql } from "drizzle-orm";
 import { opportunities, clients } from "@shared/schema/projects";
 import { users } from "@shared/schema/users";
 import { resolvePipedriveStageMapping } from "@shared/pipedrive-stage-map";
+import { isConnectorMocked } from "../lib/connector-mode";
+import * as pipedriveMocks from "../mocks/pipedrive-fixtures";
 
 // ===================== TYPES =====================
 
@@ -216,6 +218,21 @@ export async function syncPipedriveDeals(
   scope: PipedrivePullScope = { scope: "all" },
 ): Promise<PipedriveSyncResult> {
   const startedAt = new Date();
+
+  // Phase 7: when Pipedrive is mocked, return a synthetic sync result
+  // without a network call. Covers fresh dev setups without a token and
+  // explicit USE_MOCK_CONNECTORS=true.
+  if (isConnectorMocked("pipedrive")) {
+    const deals = pipedriveMocks.mockPipedriveDeals();
+    return {
+      dealsProcessed: deals.length,
+      dealsCreated: 0,
+      dealsUpdated: deals.length,
+      errors: [],
+      skipped: 0,
+    };
+  }
+
   const token = process.env.PIPEDRIVE_API_TOKEN;
   if (!token) {
     const result = { dealsProcessed: 0, dealsCreated: 0, dealsUpdated: 0, errors: ["PIPEDRIVE_API_TOKEN not configured"], skipped: 0 };

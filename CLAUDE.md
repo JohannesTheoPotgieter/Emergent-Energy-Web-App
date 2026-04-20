@@ -172,6 +172,20 @@ qa/release-gate.ts  Must pass before any release
 - **Overrides/scenarios are stored separately with an audit trail.** Never
   overwrite imported baseline rows with override values.
 
+## Local QA: mock connectors
+
+- **External integrations** (MS Graph / Outlook / SharePoint / Teams,
+  QuickBooks, Pipedrive) auto-serve fixture data when their creds are
+  absent AND `NODE_ENV !== "production"`. This lets a fresh clone exercise
+  every integrated page without real tenant tokens.
+- Gate lives in `server/lib/connector-mode.ts`. Decision order per
+  integration: (1) prod → real only; (2) `USE_MOCK_CONNECTORS=false` →
+  force real; (3) `USE_MOCK_CONNECTORS=true` → force mock; (4) creds
+  present → real; (5) creds absent → mock.
+- Fixtures live in `server/mocks/{ms-graph,quickbooks,pipedrive}-fixtures.ts`.
+  Adjust them when the UI needs new realistic data for a scenario.
+- Prod is strictly `NODE_ENV`-gated — the flag has no effect there.
+
 ## Microsoft 365 Integration
 
 - **Graph client:** `@microsoft/microsoft-graph-client` via
