@@ -5,15 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1775565310147,
-      "tag": "0000_neat_juggernaut",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1775735425891,
-      "tag": "0001_useful_the_initiative",
+      "when": 1776665653483,
+      "tag": "0000_baseline_20260419",
       "breakpoints": true
     }
   ]
