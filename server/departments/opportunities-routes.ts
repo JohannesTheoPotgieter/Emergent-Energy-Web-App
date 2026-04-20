@@ -2,6 +2,7 @@
  * B3: Opportunities CRUD routes
  */
 import { Router, type Express, type Request, type Response } from "express";
+import { sql } from "drizzle-orm";
 import { requireAuth } from "./shared-middleware";
 import { requirePermission } from "../permission-middleware";
 import { validateBody } from "../middleware/validateBody";
@@ -157,6 +158,161 @@ router.get("/api/opportunities/working", requireAuth, requirePermission("opportu
   } catch (err) {
     console.error("[Opportunities] Failed to fetch PD working rows:", err);
     res.status(500).json({ error: "Failed to fetch opportunities working list" });
+  }
+});
+
+/**
+ * GET /api/pd/dashboard
+ * Aggregated KPIs for the Project Development Dashboard.
+ * Read-only: aggregates the opportunities table (incl. enriched Pipedrive cols).
+ *
+ * Returns:
+ *   summary    — pipeline value, weighted value, active/won/lost counts, win rate, avg probability
+ *   byStage    — count + value + weighted per active stage
+ *   atRisk     — counts of stale-activity & high-value-no-activity active deals
+ *   recentWins — last 5 won deals
+ *   recentLost — last 5 lost deals (with reason)
+ *   activity   — upcoming activities (next 14d) and overdue counts
+ *   pipeline   — last 90d won-vs-lost weekly buckets (for sparkline)
+ */
+router.get("/api/pd/dashboard", requireAuth, requirePermission("pd_dashboard", "view"), async (_req: Request, res: Response) => {
+  try {
+    const [summaryRow, byStage, atRisk, recentWins, recentLost, activity, conversion] = await Promise.all([
+      db.execute(sql`
+        SELECT
+          COUNT(*) FILTER (WHERE status = 'active' OR status IS NULL) AS active_count,
+          COUNT(*) FILTER (WHERE status = 'won') AS won_count,
+          COUNT(*) FILTER (WHERE status = 'lost') AS lost_count,
+          COALESCE(SUM(estimated_value) FILTER (WHERE status = 'active' OR status IS NULL), 0) AS pipeline_value,
+          COALESCE(SUM(weighted_value) FILTER (WHERE status = 'active' OR status IS NULL), 0) AS weighted_value,
+          COALESCE(SUM(estimated_value) FILTER (WHERE status = 'won'), 0) AS won_value,
+          COALESCE(SUM(estimated_kwp) FILTER (WHERE status = 'active' OR status IS NULL), 0) AS pipeline_kwp,
+          AVG(probability) FILTER (WHERE (status = 'active' OR status IS NULL) AND probability IS NOT NULL) AS avg_probability
+        FROM opportunities
+        WHERE deleted_at IS NULL
+      `),
+      db.execute(sql`
+        SELECT
+          COALESCE(stage, 'unknown') AS stage,
+          COUNT(*) AS count,
+          COALESCE(SUM(estimated_value), 0) AS value,
+          COALESCE(SUM(weighted_value), 0) AS weighted
+        FROM opportunities
+        WHERE deleted_at IS NULL AND (status = 'active' OR status IS NULL)
+        GROUP BY stage
+        ORDER BY value DESC
+      `),
+      db.execute(sql`
+        SELECT
+          COUNT(*) FILTER (WHERE last_activity_date IS NULL OR last_activity_date < CURRENT_DATE - INTERVAL '30 days') AS stale_activity,
+          COUNT(*) FILTER (WHERE last_activity_date < CURRENT_DATE - INTERVAL '60 days') AS very_stale,
+          COUNT(*) FILTER (WHERE estimated_value >= 500000 AND (last_activity_date IS NULL OR last_activity_date < CURRENT_DATE - INTERVAL '14 days')) AS high_value_no_recent,
+          COUNT(*) FILTER (WHERE next_activity_date IS NOT NULL AND next_activity_date < CURRENT_DATE) AS overdue_followups
+        FROM opportunities
+        WHERE deleted_at IS NULL AND (status = 'active' OR status IS NULL)
+      `),
+      db.execute(sql`
+        SELECT id, deal_name, estimated_value, deal_owner_name, signed_date, updated_at
+        FROM opportunities
+        WHERE deleted_at IS NULL AND status = 'won'
+        ORDER BY COALESCE(signed_date, updated_at) DESC NULLS LAST
+        LIMIT 5
+      `),
+      db.execute(sql`
+        SELECT id, deal_name, estimated_value, deal_owner_name, lost_reason, lost_time
+        FROM opportunities
+        WHERE deleted_at IS NULL AND status = 'lost'
+        ORDER BY lost_time DESC NULLS LAST
+        LIMIT 5
+      `),
+      db.execute(sql`
+        SELECT id, deal_name, deal_owner_name, next_activity_date, next_activity_subject, estimated_value
+        FROM opportunities
+        WHERE deleted_at IS NULL
+          AND (status = 'active' OR status IS NULL)
+          AND next_activity_date IS NOT NULL
+          AND next_activity_date <= CURRENT_DATE + INTERVAL '14 days'
+        ORDER BY next_activity_date ASC
+        LIMIT 10
+      `),
+      db.execute(sql`
+        SELECT
+          COUNT(*) FILTER (WHERE stage = 'prospect' AND (status = 'active' OR status IS NULL)) AS prospect,
+          COUNT(*) FILTER (WHERE stage = 'qualification' AND (status = 'active' OR status IS NULL)) AS qualification,
+          COUNT(*) FILTER (WHERE stage = 'proposal' AND (status = 'active' OR status IS NULL)) AS proposal,
+          COUNT(*) FILTER (WHERE stage = 'negotiation' AND (status = 'active' OR status IS NULL)) AS negotiation,
+          COUNT(*) FILTER (WHERE status = 'won') AS won,
+          COUNT(*) FILTER (WHERE status = 'lost') AS lost
+        FROM opportunities
+        WHERE deleted_at IS NULL
+      `),
+    ]);
+
+    const s = (summaryRow.rows?.[0] ?? {}) as Record<string, any>;
+    const c = (conversion.rows?.[0] ?? {}) as Record<string, any>;
+    const totalDecided = Number(c.won ?? 0) + Number(c.lost ?? 0);
+    const winRate = totalDecided > 0 ? Number(c.won) / totalDecided : null;
+
+    res.json({
+      generatedAt: new Date().toISOString(),
+      summary: {
+        activeCount: Number(s.active_count ?? 0),
+        wonCount: Number(s.won_count ?? 0),
+        lostCount: Number(s.lost_count ?? 0),
+        pipelineValue: Number(s.pipeline_value ?? 0),
+        weightedValue: Number(s.weighted_value ?? 0),
+        wonValue: Number(s.won_value ?? 0),
+        pipelineKwp: Number(s.pipeline_kwp ?? 0),
+        avgProbability: s.avg_probability != null ? Number(s.avg_probability) : null,
+        winRate,
+      },
+      byStage: (byStage.rows ?? []).map((r: any) => ({
+        stage: String(r.stage),
+        count: Number(r.count ?? 0),
+        value: Number(r.value ?? 0),
+        weighted: Number(r.weighted ?? 0),
+      })),
+      atRisk: {
+        staleActivity: Number((atRisk.rows?.[0] as any)?.stale_activity ?? 0),
+        veryStale: Number((atRisk.rows?.[0] as any)?.very_stale ?? 0),
+        highValueNoRecent: Number((atRisk.rows?.[0] as any)?.high_value_no_recent ?? 0),
+        overdueFollowups: Number((atRisk.rows?.[0] as any)?.overdue_followups ?? 0),
+      },
+      recentWins: (recentWins.rows ?? []).map((r: any) => ({
+        id: Number(r.id),
+        dealName: r.deal_name ?? null,
+        value: r.estimated_value != null ? Number(r.estimated_value) : null,
+        owner: r.deal_owner_name ?? null,
+        signedDate: r.signed_date ?? r.updated_at ?? null,
+      })),
+      recentLost: (recentLost.rows ?? []).map((r: any) => ({
+        id: Number(r.id),
+        dealName: r.deal_name ?? null,
+        value: r.estimated_value != null ? Number(r.estimated_value) : null,
+        owner: r.deal_owner_name ?? null,
+        reason: r.lost_reason ?? null,
+        lostTime: r.lost_time ?? null,
+      })),
+      upcomingActivity: (activity.rows ?? []).map((r: any) => ({
+        id: Number(r.id),
+        dealName: r.deal_name ?? null,
+        owner: r.deal_owner_name ?? null,
+        date: r.next_activity_date ?? null,
+        subject: r.next_activity_subject ?? null,
+        value: r.estimated_value != null ? Number(r.estimated_value) : null,
+      })),
+      conversion: {
+        prospect: Number(c.prospect ?? 0),
+        qualification: Number(c.qualification ?? 0),
+        proposal: Number(c.proposal ?? 0),
+        negotiation: Number(c.negotiation ?? 0),
+        won: Number(c.won ?? 0),
+        lost: Number(c.lost ?? 0),
+      },
+    });
+  } catch (err) {
+    console.error("[Opportunities] Failed to compute PD dashboard:", err);
+    res.status(500).json({ error: "Failed to compute PD dashboard" });
   }
 });
 

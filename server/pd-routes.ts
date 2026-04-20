@@ -739,7 +739,11 @@ export function registerPdRoutes(app: Express) {
     }
   });
 
-  app.get("/api/pd/dashboard", requireAuth, requirePermission('pd_dashboard', 'view'), async (req: Request, res: Response) => {
+  // Renamed 2026-04-20: was `/api/pd/dashboard`. The new opportunities-aggregation
+  // dashboard owns that path now (see server/departments/opportunities-routes.ts).
+  // This legacy ticket-counts endpoint is preserved at the more specific path for
+  // any internal callers still relying on pd_tickets aggregates.
+  app.get("/api/pd/tickets/dashboard", requireAuth, requirePermission('pd_dashboard', 'view'), async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
       const role = user?.companyRole || user?.role || "";
