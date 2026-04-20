@@ -54,9 +54,11 @@ The project is organized as a monorepo with `client/` (React SPA), `server/` (Ex
 
 ### Opportunities Management Board
 - `/opportunities` is the canonical Project Development working list.
-- Columns display client, project, project developer, province, funding, estimated signature, deal value, engineering open tasks, next activity, stage, and action.
+- Three views via tabs: **List** (compact dense table), **Kanban** (5 stage columns with deal count + total value), **Calendar** (month grid anchored on `expected_close_date`, plus undated bucket). All three open the unified `OpportunityDrawer` on click.
+- List columns: client, project, project developer, province, size, deal value, est. signature, next activity, engineering open tasks, action.
 - Backed by `GET /api/opportunities/working` which joins user data and engineering ticket counts.
 - Pipedrive custom fields are wired to `opportunities.province`, `estimated_kwp`, and `estimated_kwh`.
+- Pipedrive sync ingests deal owner via v1 `deal.user_id` (not `owner_id`); falls back to `deal_owner_name` snapshot when no internal user is linked. Custom-field policy: Pipedrive wins when a value is present; the app's value is preserved when Pipedrive is blank.
 
 ### Project Development Dashboard
 - `/pd` provides an overview dashboard, distinct from the working list.

@@ -47,6 +47,9 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ExportDropdown } from "@/components/ui/export-dropdown";
 import { PD_REQUEST_TYPES_FILTERABLE } from "@/lib/pd/request-types";
 import { OpportunityDrawer } from "@/components/opportunities/OpportunityDrawer";
+import { OpportunitiesKanban, OpportunitiesCalendar } from "@/components/opportunities/OpportunityViews";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { LayoutList, KanbanSquare, CalendarDays } from "lucide-react";
 
 // App-phase label: capitalizes the stored stage value so the column reads
 // "Qualification" instead of "qualification". These are the values produced
@@ -581,134 +584,153 @@ export default function OpportunitiesPage() {
           description="No active Pipedrive opportunities currently qualify for this working list."
         />
       ) : (
-        <div className="border rounded-lg overflow-hidden bg-white shadow-sm">
-          <div className="overflow-x-auto max-h-[calc(100vh-280px)]">
-            <table className="w-full text-sm border-collapse" data-testid="table-opportunities-working">
-              <thead className="bg-emerald-50/60 text-[11px] uppercase tracking-wider text-emerald-900/80 sticky top-0 z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
-                <tr>
-                  <th className="text-left px-3 py-2.5 font-semibold">Client / Project</th>
-                  <th className="text-left px-3 py-2.5 font-semibold">Stage</th>
-                  <th className="text-left px-3 py-2.5 font-semibold">Project Developer</th>
-                  <th className="text-left px-3 py-2.5 font-semibold">Province</th>
-                  <th className="text-right px-3 py-2.5 font-semibold whitespace-nowrap">Size</th>
-                  <th className="text-right px-3 py-2.5 font-semibold whitespace-nowrap">Deal Value</th>
-                  <th className="text-left px-3 py-2.5 font-semibold whitespace-nowrap">Est. Signature</th>
-                  <th className="text-left px-3 py-2.5 font-semibold whitespace-nowrap">Next Activity</th>
-                  <th className="text-center px-3 py-2.5 font-semibold whitespace-nowrap" title="Open engineering tasks">Eng.</th>
-                  <th className="text-right px-3 py-2.5 font-semibold">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {activeRows.map((row, idx) => (
-                  <tr
-                    key={row.id}
-                    className={`border-t border-slate-100 cursor-pointer transition-colors hover:bg-emerald-50/50 ${idx % 2 === 1 ? "bg-slate-50/40" : "bg-white"}`}
-                    data-testid={`opportunity-row-${row.id}`}
-                    onClick={() => setDrawerOppId(row.id)}
-                  >
-                    {/* Client / Project (combined) */}
-                    <td className="px-3 py-2.5 align-top min-w-[260px] max-w-[340px]">
-                      <p className="text-[11px] text-slate-500 truncate flex items-center gap-1" title={row.orgClientName || ""}>
-                        {row.orgClientName || "Unlinked client"}
-                        {!row.hasLinkedClient && <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0" />}
-                      </p>
-                      <p className="font-semibold text-slate-900 truncate leading-snug" title={row.dealName}>
-                        {row.dealName || `Deal #${row.id}`}
-                      </p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">
-                        PD #{row.pipedriveDealId || "—"}
-                        {row.hasLinkedProject && ` · ${row.linkedProjectCount} project${row.linkedProjectCount === 1 ? "" : "s"}`}
-                      </p>
-                    </td>
-                    {/* Stage */}
-                    <td className="px-3 py-2.5 align-top">
-                      <Badge className={`text-[10px] font-medium ${stageBadgeClass(row.stage)}`}>{appPhaseLabel(row.stage)}</Badge>
-                    </td>
-                    {/* Project Developer */}
-                    <td className="px-3 py-2.5 align-top min-w-[140px]">
-                      <p className="text-slate-800 truncate" title={row.projectDeveloper || ""}>{row.projectDeveloper || "—"}</p>
-                      {row.projectDeveloperOverridden && (
-                        <span className="text-[10px] text-emerald-700 font-medium">App override</span>
-                      )}
-                    </td>
-                    {/* Province */}
-                    <td className="px-3 py-2.5 align-top">
-                      {row.province ? (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-sky-50 text-sky-700 text-[11px] font-medium border border-sky-100">
-                          {row.province}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-slate-300">—</span>
-                      )}
-                    </td>
-                    {/* Size kWp */}
-                    <td className="px-3 py-2.5 align-top text-right whitespace-nowrap">
-                      {row.estimatedKwp != null ? (
-                        <span className="tabular-nums font-medium text-slate-800">
-                          {row.estimatedKwp >= 1000 ? `${(row.estimatedKwp / 1000).toFixed(2)} MWp` : `${row.estimatedKwp.toFixed(0)} kWp`}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-slate-300">—</span>
-                      )}
-                    </td>
-                    {/* Deal value */}
-                    <td className="px-3 py-2.5 align-top text-right tabular-nums font-semibold text-slate-900 whitespace-nowrap">
-                      {formatZAR(row.estimatedValue)}
-                    </td>
-                    {/* Est. Signature */}
-                    <td className="px-3 py-2.5 align-top text-xs text-slate-700 whitespace-nowrap">
-                      {formatDate(row.expectedCloseDate)}
-                    </td>
-                    {/* Next activity */}
-                    <td className="px-3 py-2.5 align-top min-w-[150px]">
-                      {row.nextActivityDate ? (
-                        <>
-                          <p className="text-xs font-medium text-slate-800 whitespace-nowrap">{formatDate(row.nextActivityDate)}</p>
-                          {row.nextActivitySubject && (
-                            <p className="text-[10px] text-slate-500 truncate max-w-[170px]" title={row.nextActivitySubject}>
-                              {row.nextActivitySubject}
-                            </p>
-                          )}
-                        </>
-                      ) : (
-                        <span className="text-xs text-slate-300">—</span>
-                      )}
-                    </td>
-                    {/* Eng. open count */}
-                    <td className="px-3 py-2.5 align-top text-center">
-                      {row.openEngineeringTaskCount > 0 ? (
-                        <span className="inline-flex items-center justify-center min-w-[24px] h-6 px-1.5 rounded-full bg-emerald-600 text-white text-[11px] font-semibold tabular-nums">
-                          {row.openEngineeringTaskCount}
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center justify-center min-w-[24px] h-6 px-1.5 rounded-full bg-slate-100 text-slate-400 text-[11px] tabular-nums">
-                          0
-                        </span>
-                      )}
-                    </td>
-                    {/* Action */}
-                    <td className="px-3 py-2.5 align-top text-right whitespace-nowrap">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="gap-1 h-7 text-xs border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:border-emerald-300"
-                        data-testid={`btn-create-engineering-ticket-${row.id}`}
-                        onClick={(e) => { e.stopPropagation(); openMapping(row); }}
+        <Tabs defaultValue="list" className="w-full">
+          <TabsList className="bg-emerald-50/60 border border-emerald-200 h-9 p-0.5" data-testid="tabs-views">
+            <TabsTrigger value="list" className="text-xs gap-1.5 data-[state=active]:bg-white data-[state=active]:text-emerald-800" data-testid="tab-list">
+              <LayoutList className="h-3.5 w-3.5" /> List
+            </TabsTrigger>
+            <TabsTrigger value="kanban" className="text-xs gap-1.5 data-[state=active]:bg-white data-[state=active]:text-emerald-800" data-testid="tab-kanban">
+              <KanbanSquare className="h-3.5 w-3.5" /> Kanban
+            </TabsTrigger>
+            <TabsTrigger value="calendar" className="text-xs gap-1.5 data-[state=active]:bg-white data-[state=active]:text-emerald-800" data-testid="tab-calendar">
+              <CalendarDays className="h-3.5 w-3.5" /> Calendar
+            </TabsTrigger>
+          </TabsList>
+
+          {/* ── List view (compact) ───────────────────────────────────── */}
+          <TabsContent value="list" className="mt-3">
+            <div className="border rounded-lg overflow-hidden bg-white shadow-sm">
+              <div className="overflow-x-auto max-h-[calc(100vh-300px)]">
+                <table className="w-full text-xs border-collapse" data-testid="table-opportunities-working">
+                  <thead className="bg-emerald-50/60 text-[10px] uppercase tracking-wide text-emerald-900/80 sticky top-0 z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
+                    <tr>
+                      <th className="text-left px-2.5 py-1.5 font-semibold">Client / Project</th>
+                      <th className="text-left px-2 py-1.5 font-semibold">Stage</th>
+                      <th className="text-left px-2 py-1.5 font-semibold">Project Developer</th>
+                      <th className="text-left px-2 py-1.5 font-semibold">Province</th>
+                      <th className="text-right px-2 py-1.5 font-semibold whitespace-nowrap">Size</th>
+                      <th className="text-right px-2 py-1.5 font-semibold whitespace-nowrap">Value</th>
+                      <th className="text-left px-2 py-1.5 font-semibold whitespace-nowrap">Est. Sig.</th>
+                      <th className="text-left px-2 py-1.5 font-semibold whitespace-nowrap">Next Activity</th>
+                      <th className="text-center px-2 py-1.5 font-semibold whitespace-nowrap" title="Open engineering tasks">Eng.</th>
+                      <th className="text-right px-2 py-1.5 font-semibold">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activeRows.map((row, idx) => (
+                      <tr
+                        key={row.id}
+                        className={`border-t border-slate-100 cursor-pointer transition-colors hover:bg-emerald-50/50 ${idx % 2 === 1 ? "bg-slate-50/40" : "bg-white"}`}
+                        data-testid={`opportunity-row-${row.id}`}
+                        onClick={() => setDrawerOppId(row.id)}
                       >
-                        <TicketPlus className="h-3 w-3" />
-                        Eng.
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="px-4 py-2 bg-slate-50 border-t text-[11px] text-slate-500 flex items-center justify-between">
-            <span>{activeRows.length} active opportunit{activeRows.length === 1 ? "y" : "ies"}</span>
-            <span className="text-slate-400">Click any row for full detail</span>
-          </div>
-        </div>
+                        <td className="px-2.5 py-1.5 align-middle min-w-[240px] max-w-[320px]">
+                          <p className="font-semibold text-slate-900 truncate leading-tight" title={row.dealName}>
+                            {row.dealName || `Deal #${row.id}`}
+                          </p>
+                          <p className="text-[10px] text-slate-500 truncate flex items-center gap-1 leading-tight" title={row.orgClientName || ""}>
+                            <span className="truncate">{row.orgClientName || "Unlinked"}</span>
+                            {!row.hasLinkedClient && <AlertTriangle className="h-2.5 w-2.5 text-amber-500 shrink-0" />}
+                            <span className="text-slate-300">·</span>
+                            <span className="text-slate-400 shrink-0">#{row.pipedriveDealId || "—"}</span>
+                          </p>
+                        </td>
+                        <td className="px-2 py-1.5 align-middle">
+                          <Badge className={`text-[10px] font-medium px-1.5 py-0 ${stageBadgeClass(row.stage)}`}>{appPhaseLabel(row.stage)}</Badge>
+                        </td>
+                        <td className="px-2 py-1.5 align-middle min-w-[120px]">
+                          <p className="text-slate-800 truncate text-xs" title={row.projectDeveloper || ""}>{row.projectDeveloper || "—"}</p>
+                          {row.projectDeveloperOverridden && (
+                            <span className="text-[9px] text-emerald-700 font-medium">override</span>
+                          )}
+                        </td>
+                        <td className="px-2 py-1.5 align-middle">
+                          {row.province ? (
+                            <span className="inline-flex items-center px-1.5 py-0 rounded bg-sky-50 text-sky-700 text-[10px] font-medium border border-sky-100">
+                              {row.province}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-slate-300">—</span>
+                          )}
+                        </td>
+                        <td className="px-2 py-1.5 align-middle text-right whitespace-nowrap">
+                          {row.estimatedKwp != null ? (
+                            <span className="tabular-nums font-medium text-slate-800">
+                              {row.estimatedKwp >= 1000 ? `${(row.estimatedKwp / 1000).toFixed(2)} MWp` : `${row.estimatedKwp.toFixed(0)} kWp`}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-slate-300">—</span>
+                          )}
+                        </td>
+                        <td className="px-2 py-1.5 align-middle text-right tabular-nums font-semibold text-slate-900 whitespace-nowrap">
+                          {formatZAR(row.estimatedValue)}
+                        </td>
+                        <td className="px-2 py-1.5 align-middle text-[11px] text-slate-700 whitespace-nowrap">
+                          {formatDate(row.expectedCloseDate)}
+                        </td>
+                        <td className="px-2 py-1.5 align-middle min-w-[130px]">
+                          {row.nextActivityDate ? (
+                            <div className="leading-tight">
+                              <p className="text-[11px] font-medium text-slate-800 whitespace-nowrap">{formatDate(row.nextActivityDate)}</p>
+                              {row.nextActivitySubject && (
+                                <p className="text-[10px] text-slate-500 truncate max-w-[160px]" title={row.nextActivitySubject}>
+                                  {row.nextActivitySubject}
+                                </p>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-[10px] text-slate-300">—</span>
+                          )}
+                        </td>
+                        <td className="px-2 py-1.5 align-middle text-center">
+                          {row.openEngineeringTaskCount > 0 ? (
+                            <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1 rounded-full bg-emerald-600 text-white text-[10px] font-semibold tabular-nums">
+                              {row.openEngineeringTaskCount}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-slate-300 tabular-nums">0</span>
+                          )}
+                        </td>
+                        <td className="px-2 py-1.5 align-middle text-right whitespace-nowrap">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="gap-1 h-6 text-[10px] px-1.5 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:border-emerald-300"
+                            data-testid={`btn-create-engineering-ticket-${row.id}`}
+                            onClick={(e) => { e.stopPropagation(); openMapping(row); }}
+                          >
+                            <TicketPlus className="h-3 w-3" />
+                            Eng.
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="px-3 py-1.5 bg-slate-50 border-t text-[11px] text-slate-500 flex items-center justify-between">
+                <span>{activeRows.length} active opportunit{activeRows.length === 1 ? "y" : "ies"}</span>
+                <span className="text-slate-400">Click any row for full detail</span>
+              </div>
+            </div>
+          </TabsContent>
+
+          {/* ── Kanban view ───────────────────────────────────────────── */}
+          <TabsContent value="kanban" className="mt-3">
+            <OpportunitiesKanban
+              rows={activeRows}
+              onCardClick={(id) => setDrawerOppId(id)}
+            />
+          </TabsContent>
+
+          {/* ── Calendar view ─────────────────────────────────────────── */}
+          <TabsContent value="calendar" className="mt-3">
+            <OpportunitiesCalendar
+              rows={activeRows}
+              onEventClick={(id) => setDrawerOppId(id)}
+            />
+          </TabsContent>
+        </Tabs>
       )}
 
       {/* ------------------------------------------------------------------ */}
