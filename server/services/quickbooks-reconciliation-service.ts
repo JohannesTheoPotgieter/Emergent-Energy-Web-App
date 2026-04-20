@@ -179,6 +179,240 @@ export function billRawToSummary(raw: any): QuickBooksBillSummary {
 }
 
 /**
+ * One row per QuickBooks Bill line. Used by the COS Tracker reconciliation
+ * report to surface QB bills that exist in the GL but were never captured
+ * in the project Excel trackers (the source of truth). READ-ONLY — this
+ * helper never writes to `normalized_cost_lines` or any other table.
+ *
+ * The project key on a QB bill line lives on either the line-level
+ * `ClassRef` (preferred — finance tags every project line with the project
+ * Class) or the bill-level `CustomerRef` (fallback — older bills booked
+ * via Customer instead of Class).
+ */
+export interface QuickBooksBillLineRow {
+  billId: string;
+  docNumber: string | null;
+  txnDate: string | null;
+  vendorName: string | null;
+  vendorId: string | null;
+  lineId: string | null;
+  lineNum: number | null;
+  /**
+   * The line subtotal in QB. QB Bill lines are typically stored ex-tax in
+   * `Amount` for AccountBasedExpenseLineDetail; we treat it as ex-VAT for
+   * comparison against `normalized_cost_lines.amount_ex_vat`. If the bill
+   * carries no `TxnTaxDetail`, this is the safest assumption.
+   */
+  lineAmountExVat: number | null;
+  classRefName: string | null;
+  classRefId: string | null;
+  customerRefName: string | null;
+  customerRefId: string | null;
+  accountRefName: string | null;
+  accountRefId: string | null;
+  description: string | null;
+}
+
+/**
+ * Extract one row per Bill line from a raw QB Bill payload. Skips lines
+ * that aren't `AccountBasedExpenseLineDetail` (e.g. SubTotal lines emitted
+ * by some QB UIs) and lines with a non-numeric Amount. Returns at least
+ * one synthetic header row when the bill has no usable Line[] so the
+ * caller can still see the bill in the unmapped bucket.
+ */
+export function billRawToLineRows(raw: any): QuickBooksBillLineRow[] {
+  const billId = String(raw?.Id ?? "");
+  const docNumber = raw?.DocNumber ?? null;
+  const txnDate = raw?.TxnDate ?? null;
+  const vendorName = raw?.VendorRef?.name ?? null;
+  const vendorId = raw?.VendorRef?.value ?? null;
+  const billLevelCustomer = raw?.CustomerRef ?? null;
+
+  const lines: any[] = Array.isArray(raw?.Line) ? raw.Line : [];
+  const out: QuickBooksBillLineRow[] = [];
+
+  for (const line of lines) {
+    const detailType = String(line?.DetailType ?? "");
+    if (detailType !== "AccountBasedExpenseLineDetail" && detailType !== "ItemBasedExpenseLineDetail") {
+      // Skip SubTotal / Description lines.
+      continue;
+    }
+    const detail =
+      line?.AccountBasedExpenseLineDetail ?? line?.ItemBasedExpenseLineDetail ?? {};
+    const amount = amountToNumber(line?.Amount);
+    out.push({
+      billId,
+      docNumber,
+      txnDate,
+      vendorName,
+      vendorId,
+      lineId: line?.Id ? String(line.Id) : null,
+      lineNum: typeof line?.LineNum === "number" ? line.LineNum : null,
+      lineAmountExVat: amount,
+      classRefName: detail?.ClassRef?.name ?? null,
+      classRefId: detail?.ClassRef?.value ?? null,
+      customerRefName: detail?.CustomerRef?.name ?? billLevelCustomer?.name ?? null,
+      customerRefId: detail?.CustomerRef?.value ?? billLevelCustomer?.value ?? null,
+      accountRefName: detail?.AccountRef?.name ?? null,
+      accountRefId: detail?.AccountRef?.value ?? null,
+      description: line?.Description ?? null,
+    });
+  }
+
+  // Header-only fallback so the bill still appears in the report even if
+  // we couldn't parse any usable lines (e.g. tax-only adjustment).
+  if (out.length === 0) {
+    out.push({
+      billId,
+      docNumber,
+      txnDate,
+      vendorName,
+      vendorId,
+      lineId: null,
+      lineNum: null,
+      lineAmountExVat: amountToNumber(raw?.TotalAmt),
+      classRefName: null,
+      classRefId: null,
+      customerRefName: billLevelCustomer?.name ?? null,
+      customerRefId: billLevelCustomer?.value ?? null,
+      accountRefName: null,
+      accountRefId: null,
+      description: raw?.PrivateNote ?? "(synthetic header — bill has no usable expense lines)",
+    });
+  }
+
+  return out;
+}
+
+// ===================== PROJECT RESOLVER =====================
+
+/**
+ * Normalise a project-name candidate (from QB Class/Customer or the app's
+ * project list) into a comparable key. Strips whitespace, lowercases,
+ * removes a trailing `_Tracker` / ` Tracker` suffix, and collapses to
+ * alphanumerics so " Mondi (Tracker)" and "mondi" match.
+ */
+export function normalizeProjectKey(value: string | null | undefined): string {
+  if (!value) return "";
+  return String(value)
+    .replace(/[\s_\-]*tracker\b/i, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
+export type QbProjectResolutionStrategy =
+  | "class_exact"
+  | "customer_exact"
+  | "class_substring"
+  | "customer_substring"
+  | "unmapped_class"
+  | "unmapped_no_class";
+
+export interface QbProjectResolution {
+  projectName: string | null;
+  strategy: QbProjectResolutionStrategy;
+  /** The raw QB tag we used to resolve (or attempted to). */
+  matchedFrom: string | null;
+}
+
+/**
+ * Build an in-memory resolver bound to a known project-name universe.
+ * The returned function is cheap to call per bill line.
+ *
+ * Strategy ladder:
+ *   1. `class_exact`    — normalised `classRefName` exactly equals a normalised project name
+ *   2. `customer_exact` — same, against `customerRefName`
+ *   3. `class_substring` — exactly one project name's normalised key is a
+ *                          substring of the normalised classRefName (or vice
+ *                          versa for short class tags). Flagged as fuzzy.
+ *   4. `customer_substring` — same against customerRefName
+ *   5. `unmapped_class` — has a class but nothing matched
+ *   6. `unmapped_no_class` — no class and customer didn't match either
+ */
+export function buildQbProjectResolver(projectNames: string[]): (input: {
+  classRefName: string | null;
+  customerRefName: string | null;
+}) => QbProjectResolution {
+  // Pre-compute normalised → canonical project name lookup. When two source
+  // names normalise to the same key (e.g. "Mondi" and "Mondi_Tracker"), we
+  // keep the longer/canonical form as the value.
+  const exactMap = new Map<string, string>();
+  for (const name of projectNames) {
+    const key = normalizeProjectKey(name);
+    if (!key) continue;
+    const existing = exactMap.get(key);
+    if (!existing || name.length > existing.length) exactMap.set(key, name);
+  }
+
+  // For substring strategy we need a stable list of (key, name) pairs.
+  const allKeys: { key: string; name: string }[] = [];
+  for (const [key, name] of exactMap.entries()) {
+    if (key.length >= 4) allKeys.push({ key, name }); // ignore 1-3 char keys
+  }
+  // Longest key first so "MEGA PARK P2" wins over "MEGA PARK".
+  allKeys.sort((a, b) => b.key.length - a.key.length);
+
+  function tryExact(raw: string | null): string | null {
+    const key = normalizeProjectKey(raw);
+    if (!key) return null;
+    return exactMap.get(key) ?? null;
+  }
+
+  function trySubstring(raw: string | null): string | null {
+    const key = normalizeProjectKey(raw);
+    // Conservative: only allow when the QB tag is at least 6 chars AND
+    // contains a project key as a substring (i.e. QB tag is *more specific*
+    // than the project name, e.g. QB="MondiPhase2" → "Mondi"). Reject the
+    // reverse direction (project name being a substring of the QB tag is
+    // inherently ambiguous when sibling projects share a prefix — e.g. QB
+    // tag "Mondi" must NOT silently resolve to "Mondi Park 2"). Always
+    // surfaced as `class_substring`/`customer_substring` so finance can
+    // confirm before the row is treated as a real tracker_gap.
+    if (!key || key.length < 6) return null;
+    const hits = allKeys.filter(({ key: pk }) => pk.length >= 5 && key.includes(pk));
+    if (hits.length === 0) return null;
+    const top = hits[0]!; // longest first by sort
+    const tieCount = hits.filter((h) => h.key.length === top.key.length).length;
+    return tieCount === 1 ? top.name : null;
+  }
+
+  return ({ classRefName, customerRefName }) => {
+    const classExact = tryExact(classRefName);
+    if (classExact) {
+      return { projectName: classExact, strategy: "class_exact", matchedFrom: classRefName };
+    }
+    const customerExact = tryExact(customerRefName);
+    if (customerExact) {
+      return {
+        projectName: customerExact,
+        strategy: "customer_exact",
+        matchedFrom: customerRefName,
+      };
+    }
+    const classSub = trySubstring(classRefName);
+    if (classSub) {
+      return { projectName: classSub, strategy: "class_substring", matchedFrom: classRefName };
+    }
+    const customerSub = trySubstring(customerRefName);
+    if (customerSub) {
+      return {
+        projectName: customerSub,
+        strategy: "customer_substring",
+        matchedFrom: customerRefName,
+      };
+    }
+    if (classRefName && classRefName.trim()) {
+      return { projectName: null, strategy: "unmapped_class", matchedFrom: classRefName };
+    }
+    return {
+      projectName: null,
+      strategy: "unmapped_no_class",
+      matchedFrom: customerRefName ?? null,
+    };
+  };
+}
+
+/**
  * Parse a QB P&L report (with summarize_column_by=Month) and extract the
  * "Cost of Goods Sold" (COGS) section totals per month.
  * Returns a Map of monthKey ("YYYY-MM") → COS amount (number).
