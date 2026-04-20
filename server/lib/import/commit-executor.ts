@@ -31,6 +31,19 @@ export interface CommitCounts {
   conflictsResolved: number;
 }
 
+export interface RowWarning {
+  /** 1-indexed source row in the workbook (when known) */
+  sourceRow: number | null;
+  /** sheet name from the workbook */
+  sourceSheet: string | null;
+  /** the canonical external_ref the executor attempted to write */
+  ref: string | null;
+  /** short reason: 'unique_violation' | 'write_failed' | 'collision_skipped' */
+  reason: string;
+  /** human-readable error/cause */
+  cause: string;
+}
+
 export interface SectionCommitResult {
   canonicalSource: string;
   counts: CommitCounts;
@@ -38,6 +51,8 @@ export interface SectionCommitResult {
   insertedIds: number[];
   /** IDs of rows that were updated */
   updatedIds: number[];
+  /** Per-row failures that did NOT abort the sheet (savepoint-rolled-back). */
+  warnings?: RowWarning[];
 }
 
 export interface IncrementalCommitResult {
@@ -151,6 +166,7 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
   const counts: CommitCounts = { inserted: 0, updated: 0, unchanged: 0, missing: 0, conflictsResolved: 0 };
   const insertedIds: number[] = [];
   const updatedIds: number[] = [];
+  const warnings: RowWarning[] = [];
 
   const PLAN_UPDATE_FIELDS = [
     "startDate", "endDate", "durationDays",
@@ -209,7 +225,15 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
     });
   }
 
-  for (const mr of matchedRows) {
+  // Per-row SAVEPOINT wrapping (Layer 2 of the long-term fix):
+  // Each PLAN row gets its own savepoint so that a single bad row
+  // (unique-constraint, check-constraint, NOT NULL violation, etc.) does NOT
+  // abort the surrounding sheet commit. Failures are captured as warnings
+  // and surfaced to the route response; the rest of the sheet still writes.
+  // S001's matcher dedup pass should make collision warnings rare in
+  // practice, but this is defence-in-depth against any future regression.
+  for (let rowIdx = 0; rowIdx < matchedRows.length; rowIdx++) {
+    const mr = matchedRows[rowIdx];
     if (mr.classification === "UNCHANGED") {
       counts.unchanged++;
       continue;
@@ -223,6 +247,14 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
 
     const rowUid = mr.rowUid ?? mr.businessKey.key;
     const canonicalRef = mr.canonicalExternalRef ?? fallbackRef(rowUid);
+
+    // Savepoint name must be a valid SQL identifier; rowIdx is a number so
+    // string-interpolation is safe.
+    const savepointName = `wi_plan_${rowIdx}`;
+    let savepointActive = false;
+    try {
+      await tx.execute(sqlTag.raw(`SAVEPOINT ${savepointName}`));
+      savepointActive = true;
 
     if (mr.classification === "NEW") {
       const fileRow = mr.fileRow!;
@@ -372,9 +404,47 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
       updatedIds.push(existingId);
       counts.updated++;
     }
+
+      // Successful end of the writeable-row block — release the savepoint.
+      // (Note: `continue` statements inside the NEW/CHANGED branches above
+      // skip this release; the savepoint will be implicitly released when
+      // the outer transaction commits. This is correct but slightly wasteful;
+      // Postgres handles thousands of stacked savepoints without issue.)
+      if (savepointActive) {
+        await tx.execute(sqlTag.raw(`RELEASE SAVEPOINT ${savepointName}`));
+        savepointActive = false;
+      }
+    } catch (rowErr: any) {
+      // Roll back this row's writes only — the rest of the sheet continues.
+      if (savepointActive) {
+        try { await tx.execute(sqlTag.raw(`ROLLBACK TO SAVEPOINT ${savepointName}`)); } catch { /* tx may already be poisoned */ }
+        try { await tx.execute(sqlTag.raw(`RELEASE SAVEPOINT ${savepointName}`)); } catch { /* idempotent best-effort */ }
+        savepointActive = false;
+      }
+      const fileRow = (mr.fileRow as any) ?? {};
+      const code = rowErr?.code ?? rowErr?.cause?.code;
+      const reason = code === "23505"
+        ? "unique_violation"
+        : code === "23503"
+          ? "fk_violation"
+          : code === "23502"
+            ? "not_null_violation"
+            : "write_failed";
+      warnings.push({
+        sourceRow: fileRow?.sourceRow ?? null,
+        sourceSheet: fileRow?.sourceSheet ?? null,
+        ref: canonicalRef ?? null,
+        reason,
+        cause: rowErr instanceof Error ? rowErr.message : String(rowErr),
+      });
+      console.warn(
+        `[SmartImport] PLAN row ${rowIdx} (sourceRow=${fileRow?.sourceRow ?? "?"}) write failed; savepoint rolled back, sheet continues:`,
+        { ref: canonicalRef, code, message: rowErr?.message ?? String(rowErr) },
+      );
+    }
   }
 
-  return { canonicalSource: CANONICAL_SOURCES.PLAN, counts, insertedIds, updatedIds };
+  return { canonicalSource: CANONICAL_SOURCES.PLAN, counts, insertedIds, updatedIds, warnings };
 }
 
 // ---------------------------------------------------------------------------

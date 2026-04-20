@@ -598,7 +598,7 @@ export function matchRows(
   }
 
   // Emit DB-only rows (MISSING_FROM_UPLOAD) — preserve db id order for
-  // determinism.
+  // determinism. (Post-pass uniqueness sweep is appended after this loop.)
   for (const row of dbSorted) {
     if (emittedDbIds.has(row.id)) continue;
     // Skip if this DB row was paired to a file entry that we already
@@ -633,6 +633,73 @@ export function matchRows(
       canonicalExternalRef,
       inDuplicateGroup,
     });
+  }
+
+  // ── PLAN-only uniqueness post-pass ──
+  // The duplicate-group pairing above handles the common case where two file
+  // rows share a business key. It does NOT handle the harder drift case where
+  // a NEW file row's canonical external_ref happens to collide with a DB row
+  // already present that the matcher paired to a *different* file row (legacy
+  // ref drift, normalization rule changes between imports, etc.). Without
+  // disambiguation, the executor would either silently overwrite the wrong
+  // row or hit a unique-constraint violation and abort the whole sheet.
+  //
+  // This sweep enforces that every emitted `canonicalExternalRef` is unique
+  // *within* the result set AND does not collide with a DB row's existing
+  // `externalRef` that wasn't paired with the same row. Disambiguators are
+  // deterministic across re-imports:
+  //   - file rows  → `#row{sourceRow}`  (workbook row number, stable)
+  //   - DB rows    → `#pk{id}`          (DB primary key, stable)
+  if (section === "PLAN") {
+    // Build a set of all DB external_refs (excluding ones already paired to
+    // a result row whose canonical ref equals the existing ref — those are
+    // legitimate updates-in-place). For paired rows whose canonical ref
+    // differs from the existing ref, the existing ref is "owned" by another
+    // identity and must not be overwritten by an unrelated NEW insert.
+    const dbRefOwners = new Map<string, number>(); // externalRef → owner DB id
+    for (const dbRow of existingRows) {
+      const ref = (dbRow as any).externalRef;
+      if (typeof ref === "string" && ref.length > 0) dbRefOwners.set(ref, dbRow.id);
+    }
+
+    // For each result, if its canonical ref points at a DB row that ISN'T
+    // this result's own existingRowId, we have a drift collision.
+    const seenRefs = new Map<string, MatchedRow>(); // canonical ref → first owner
+    for (const r of results) {
+      if (!r.canonicalExternalRef) continue;
+      let candidate = r.canonicalExternalRef;
+      let candidateUid = r.rowUid ?? r.businessKey.key;
+
+      const ownerId = dbRefOwners.get(candidate);
+      const driftCollision = ownerId != null && ownerId !== r.existingRowId;
+      const intraResultCollision = seenRefs.has(candidate);
+
+      if (driftCollision || intraResultCollision) {
+        const sourceRow = (r.fileRow as any)?.sourceRow;
+        const suffix = r.existingRowId != null
+          ? `#pk${r.existingRowId}`
+          : `#row${sourceRow ?? r.fileIndex ?? "x"}`;
+        candidateUid = `${candidateUid}${suffix}`;
+        candidate = `${candidate}${suffix}`;
+
+        // Defensive: if the disambiguated form ALSO collides (vanishingly
+        // rare — would need a hand-crafted ref shaped like the suffix), append
+        // a numeric tiebreaker until unique within this batch.
+        let tiebreaker = 2;
+        while (seenRefs.has(candidate) || (dbRefOwners.get(candidate) != null && dbRefOwners.get(candidate) !== r.existingRowId)) {
+          candidate = `${r.canonicalExternalRef}${suffix}.${tiebreaker}`;
+          candidateUid = `${r.rowUid ?? r.businessKey.key}${suffix}.${tiebreaker}`;
+          tiebreaker++;
+          if (tiebreaker > 1000) break; // structural safety
+        }
+
+        r.canonicalExternalRef = candidate;
+        r.rowUid = candidateUid;
+        r.inDuplicateGroup = true;
+      }
+
+      seenRefs.set(candidate, r);
+    }
   }
 
   return results;
