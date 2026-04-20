@@ -11,6 +11,8 @@ import { z } from "zod";
 import { logAuditFromReq } from "../audit-logger";
 import { canCreatePdTicket, canViewOpportunityIntake } from "@shared/roles/pd-roles";
 import { isActivePdWorkingOpportunity, isOpportunityIntakeTerminal } from "../lib/opportunity-working-filter";
+import { canViewAllTickets } from "@shared/roles/pd-roles";
+import { pdStageLifecycleLabel, pdStageLifecycleCode } from "@shared/lib/pd-stage-lifecycle";
 import { insertClientWithGeneratedId } from "../lib/client-id-generator";
 import { syncProjectSplitTablesAfterInsert } from "../lib/project-info-sync";
 import { buildOpportunityMappingPlan } from "../lib/opportunity-mapping-plan";
@@ -94,7 +96,23 @@ router.get("/api/opportunities/working", requireAuth, requirePermission("opportu
       return res.status(403).json({ error: "Opportunities intake view is limited to Project Development and admin oversight roles." });
     }
 
-    const rows = await opportunitiesRepo.getWorkingListRows();
+    const allRows = await opportunitiesRepo.getWorkingListRows();
+
+    // Per-user scoping: COO/CEO/CCO see everything (canViewAllTickets);
+    // Project Developers and other PD-eligible roles only see opportunities
+    // where they are the PD-shadow project developer OR (when no PD override
+    // exists) the Pipedrive deal owner.
+    const userId = req.user?.id ?? null;
+    const role = getUserRole(req);
+    const seesAll = canViewAllTickets(role);
+    const rows = seesAll
+      ? allRows
+      : allRows.filter(r => {
+          if (userId == null) return false;
+          if (r.pdProjectDeveloperUserId != null) return r.pdProjectDeveloperUserId === userId;
+          return r.dealOwnerUserId === userId;
+        });
+
     const opportunityIds = rows.map(r => r.id);
     if (opportunityIds.length === 0) return res.json([]);
 
@@ -285,6 +303,27 @@ router.get("/api/pd/dashboard", requireAuth, requirePermission("pd_dashboard", "
         value: Number(r.value ?? 0),
         weighted: Number(r.weighted ?? 0),
       })),
+      byPhase: (() => {
+        // Aggregate the same active-opportunity rows by canonical company
+        // lifecycle phase (shared/phases.ts) using the PD-stage → phase
+        // mapping in shared/lib/pd-stage-lifecycle.ts. Pipedrive stages
+        // that don't map (e.g. unknown or null) bucket under "Unmapped".
+        const acc = new Map<string, { phase: string; count: number; value: number; weighted: number; stages: Set<string> }>();
+        for (const r of (byStage.rows ?? []) as any[]) {
+          const stage = String(r.stage ?? "");
+          const phase = pdStageLifecycleLabel(stage) || "Unmapped";
+          const key = pdStageLifecycleCode(stage) || "_UNMAPPED";
+          if (!acc.has(key)) acc.set(key, { phase, count: 0, value: 0, weighted: 0, stages: new Set<string>() });
+          const bucket = acc.get(key)!;
+          bucket.count += Number(r.count ?? 0);
+          bucket.value += Number(r.value ?? 0);
+          bucket.weighted += Number(r.weighted ?? 0);
+          if (stage) bucket.stages.add(stage);
+        }
+        return Array.from(acc.values())
+          .map(b => ({ phase: b.phase, count: b.count, value: b.value, weighted: b.weighted, stages: Array.from(b.stages).sort() }))
+          .sort((a, b) => b.value - a.value);
+      })(),
       atRisk: {
         staleActivity: Number((atRisk.rows?.[0] as any)?.stale_activity ?? 0),
         veryStale: Number((atRisk.rows?.[0] as any)?.very_stale ?? 0),

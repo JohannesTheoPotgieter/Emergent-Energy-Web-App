@@ -247,6 +247,12 @@ export const projectStageRequirements = pgTable("project_stage_requirements", {
   completedDate: timestamp("completed_date"),
   contributors: jsonb("contributors").default([]),  // Array of { userId, department, name }
   notes: text("notes"),
+  // §6b: template-version traceability. sourceTemplateId pins which
+  // stage_checklist_templates row spawned this requirement; version is
+  // denormalised to avoid a join when diffing "project on version N" vs
+  // "template now at version M".
+  sourceTemplateId: integer("source_template_id").references(() => stageChecklistTemplates.id, { onDelete: "set null" }),
+  templateVersionAtHydrate: integer("template_version_at_hydrate"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
