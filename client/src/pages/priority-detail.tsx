@@ -177,6 +177,8 @@ function activityIcon(action: string) {
     case "due_date_changed": return <AlertTriangle className={`${c} text-amber-600`} />;
     case "owner_changed": return <UserPlus className={`${c} text-blue-600`} />;
     case "accountable_exec_changed": return <UserPlus className={`${c} text-blue-600`} />;
+    case "project_rag_update": return <AlertTriangle className={`${c} text-amber-600`} />;
+    case "project_phase_change": return <GitBranch className={`${c} text-blue-600`} />;
     default: return <AlertTriangle className={`${c} text-gray-500`} />;
   }
 }
@@ -205,6 +207,10 @@ function activitySentence(a: any): string {
     case "due_date_changed": return `changed due date ${fromTo(a.fromValue, a.toValue)}`;
     case "owner_changed": return `changed owner ${fromToUser(a.fromValue, a.toValue)}`;
     case "accountable_exec_changed": return `changed accountable exec ${fromToUser(a.fromValue, a.toValue)}`;
+    case "project_rag_update":
+      return `RAG on ${a.details?.projectName || "a linked project"} → ${a.toValue ?? "?"}${a.details?.comment ? ` — ${a.details.comment}` : ""}`;
+    case "project_phase_change":
+      return `${a.details?.projectName || "a linked project"} entered phase ${a.toValue ?? "?"}${a.details?.notes ? ` — ${a.details.notes}` : ""}`;
     default: return `${a.action} ${fromTo(a.fromValue, a.toValue)}`;
   }
 }
@@ -339,6 +345,7 @@ export default function PriorityDetailPage() {
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [breakDownDialogOpen, setBreakDownDialogOpen] = useState(false);
+  const [showProjectEvents, setShowProjectEvents] = useState(false);
   const [editForm, setEditForm] = useState({
     title: "",
     description: "",
@@ -403,9 +410,10 @@ export default function PriorityDetailPage() {
   });
 
   const { data: activity = [] } = useQuery<any[]>({
-    queryKey: [`/api/priorities/${priorityId}/activity`],
+    queryKey: [`/api/priorities/${priorityId}/activity`, showProjectEvents],
     queryFn: async () => {
-      const res = await fetch(`/api/priorities/${priorityId}/activity`, { headers: { Authorization: `Bearer ${token()}` } });
+      const url = `/api/priorities/${priorityId}/activity${showProjectEvents ? "?include_project_events=true" : ""}`;
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token()}` } });
       if (!res.ok) return [];
       return res.json();
     },
@@ -1012,6 +1020,17 @@ export default function PriorityDetailPage() {
 
         {/* Activity tab — append-only audit timeline */}
         <TabsContent value="activity" className="mt-4">
+          <div className="flex items-center justify-end mb-3">
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={showProjectEvents}
+                onChange={(e) => setShowProjectEvents(e.target.checked)}
+                className="rounded"
+              />
+              Show project events (RAG / phase changes)
+            </label>
+          </div>
           {activity.length === 0 ? (
             <p className="text-sm text-muted-foreground py-4 text-center">No activity recorded yet for this priority.</p>
           ) : (
@@ -1022,8 +1041,11 @@ export default function PriorityDetailPage() {
                     {activityIcon(a.action)}
                   </span>
                   <div className="text-xs">
-                    <span className="font-medium text-foreground">{a.actorName || "Someone"}</span>
+                    <span className="font-medium text-foreground">{a.actorName || (a.source === "project" ? "Project update" : "Someone")}</span>
                     <span className="text-muted-foreground"> {activitySentence(a)}</span>
+                    {a.source === "project" && (
+                      <Badge variant="secondary" className="ml-2 text-[9px] bg-blue-50 text-blue-700">project</Badge>
+                    )}
                   </div>
                   <span className="text-[10px] text-muted-foreground">
                     {a.createdAt ? new Date(a.createdAt).toLocaleString() : ""}
