@@ -8,4 +8,7 @@ export { SmartImportPreflightPanel } from "./SmartImportPreflightPanel";
 export { SmartImportPathChooser, type UploadMode } from "./SmartImportPathChooser";
 export { SmartImportPlanNarrative } from "./SmartImportPlanNarrative";
 export { SmartImportScheduleImpact } from "./SmartImportScheduleImpact";
+export { SmartImportDecisionIntro } from "./SmartImportDecisionIntro";
+export { SmartImportDownstreamImpact } from "./SmartImportDownstreamImpact";
+export { SmartImportPostCommitNext } from "./SmartImportPostCommitNext";
 export * from "./labels";
