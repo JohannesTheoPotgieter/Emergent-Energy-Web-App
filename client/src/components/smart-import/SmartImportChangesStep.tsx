@@ -20,6 +20,7 @@ import {
 import { useState } from "react";
 import { SECTION_LABELS, CLASSIFICATION_LABELS } from "./labels";
 import { SmartImportQbProtectionsCallout } from "./SmartImportQbProtectionsCallout";
+import { SmartImportScheduleImpact } from "./SmartImportScheduleImpact";
 
 interface ChangesStepProps {
   planning: any;
@@ -200,6 +201,9 @@ export function SmartImportChangesStep({ planning, planError, loadingPlan, onRet
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* UX-2: schedule impact card, always above QB + section counts. */}
+        <SmartImportScheduleImpact planning={planning} />
+
         {/* QuickBooks protections — compact form so it sits above the section
             summaries without dominating the page. */}
         {runId && (

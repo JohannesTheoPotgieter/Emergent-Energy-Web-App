@@ -20,6 +20,8 @@ import { SmartImportMoneyImpact } from "./SmartImportMoneyImpact";
 import { SmartImportQbProtectionsCallout } from "./SmartImportQbProtectionsCallout";
 import { SmartImportIntegrityCheck } from "./SmartImportIntegrityCheck";
 import { SmartImportPreflightPanel } from "./SmartImportPreflightPanel";
+import { SmartImportDownstreamImpact } from "./SmartImportDownstreamImpact";
+import { SmartImportPostCommitNext } from "./SmartImportPostCommitNext";
 
 interface ConfirmStepProps {
   runId: number;
@@ -148,6 +150,9 @@ export function SmartImportConfirmStep({ runId, planning, preview, decisions, on
             </div>
           )}
 
+          {/* UX-3: plain-English "what happens next" card. */}
+          <SmartImportPostCommitNext planning={planning} commitResult={commitResult} />
+
           <p className="text-xs text-muted-foreground mt-3">
             {RESULT_LABELS.dashboardNote}
           </p>
@@ -253,6 +258,14 @@ export function SmartImportConfirmStep({ runId, planning, preview, decisions, on
         {/* Invoice / PO integrity (B4a) — advisory data-hygiene check. */}
         <div className="border-t pt-3">
           <SmartImportIntegrityCheck runId={runId} />
+        </div>
+
+        {/* UX-3: downstream-impact card — final "who will see this" before commit. */}
+        <div className="border-t pt-3">
+          <SmartImportDownstreamImpact
+            planning={planning}
+            projectName={preview?.detection?.projectInfo?.name ?? null}
+          />
         </div>
 
         {/* Error display */}

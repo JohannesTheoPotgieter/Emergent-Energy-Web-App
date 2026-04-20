@@ -17,6 +17,7 @@ import {
 import { useState } from "react";
 import { SECTION_LABELS, IMPORT_MODE_LABELS } from "./labels";
 import { SmartImportQbProtectionsCallout } from "./SmartImportQbProtectionsCallout";
+import { SmartImportPlanNarrative } from "./SmartImportPlanNarrative";
 
 interface FoundStepProps {
   preview: any;
@@ -45,6 +46,9 @@ export function SmartImportFoundStep({ preview, planning, onContinue, onBack, ru
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-5">
+        {/* UX-2: plain-English narrative at the top of the step. */}
+        <SmartImportPlanNarrative planning={planning} preview={preview} />
+
         {/* Project */}
         <div data-testid="found-project">
           <div className="flex items-center gap-3">
