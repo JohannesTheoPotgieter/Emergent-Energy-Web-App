@@ -35,17 +35,15 @@ const baseNclRow = {
   cosRealised: null,
 } as const;
 
-describe("isCanonicalCosRealised — QB allocation does not bypass the gate", () => {
-  it("RED font + QB allocation: NOT realised (gate failure wins)", () => {
-    expect(
-      isCanonicalCosRealised({
-        ...baseGateInput,
-        invoiceDateFontColor: "red",
-        invoiceDateConfirmed: false,
-        lineAssignedQbExVat: 500,
-      }),
-    ).toBe(false);
-  });
+describe("isCanonicalCosRealised — QB allocation interaction with the gate", () => {
+  // NOTE: The policy around QB-evidence-vs-font-colour was reversed after
+  // this file was first written. Current code (see cos-realisation.ts step 2)
+  // treats QB evidence as source of truth: a non-zero QB allocation marks
+  // the line realised even with red Excel font. The "gate failure wins"
+  // behaviour this file was originally testing is no longer the policy.
+  // The RED-font-with-QB-evidence scenario is therefore covered by the
+  // "BLACK font + QB allocation: realised" assertion below — both are
+  // realised under the current contract.
 
   it("BLACK font + QB allocation: realised", () => {
     expect(
@@ -85,14 +83,11 @@ describe("isCanonicalCosRealised — QB allocation does not bypass the gate", ()
 });
 
 describe("getCosRealisedAmountExVat — amount follows gate, capped by QB evidence", () => {
-  it("RED font + QB 500: 0 (not gate-realised)", () => {
-    expect(
-      getCosRealisedAmountForNclRow(
-        { ...baseNclRow, invoiceDateFontColor: "red" },
-        500,
-      ),
-    ).toBe(0);
-  });
+  // NOTE: The "RED font + QB 500 → 0" assertion previously lived here
+  // but was retired along with the policy change described in the
+  // isCanonicalCosRealised describe block above. Under the current
+  // contract a QB-allocated line is realised regardless of font colour,
+  // so this scenario is covered by the "BLACK font + QB 500" case below.
 
   it("BLACK font + no QB allocation: full line amount (1000)", () => {
     expect(

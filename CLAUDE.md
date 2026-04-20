@@ -210,6 +210,26 @@ qa/release-gate.ts  Must pass before any release
 - Before release, `npm run qa:full-proof` must pass (`qa/release-gate.ts`
   enforces this).
 
+## CI Rules
+
+- **Required PR checks** (both `.github/workflows/ci.yml` and `pr-checks.yml`
+  compile job): `npm run ci:compile` → `npm run db:check` → `npm run test`.
+  Green on all three is required to merge. Red means fix-it-now.
+- **Unit tests** (`npm run test`) run on every PR — no Postgres needed. A new
+  regression in any pinned invariant (finance math, error leaks, schema
+  drift, route inventory) fails at this stage.
+- **Schema-drift guard** (`npm run db:check`) — runs `drizzle-kit generate`
+  in a sandbox; fails any PR that edited `shared/schema/*.ts` without a
+  matching new migration file.
+- **Branch protection on `main`** is configured via GitHub UI:
+  `Settings → Branches → Branch protection rules`. Required status checks:
+  `compile` (both workflows). Pattern: `main`. Require linear history, no
+  force-push, no admin bypass on required checks.
+- **Auth rate-limit loopback exemption** — `127.0.0.1` / `::1` are exempt
+  from the auth rate-limiter when `NODE_ENV !== "production"`, so local
+  `npm run test:api` and dev flows aren't blocked after 20 logins. The gate
+  is strictly NODE_ENV-based — prod is always rate-limited.
+
 ## Working With This Codebase — Rules for Claude
 
 1. **Constrain scope before coding.** Server has 60+ large route files. Never
