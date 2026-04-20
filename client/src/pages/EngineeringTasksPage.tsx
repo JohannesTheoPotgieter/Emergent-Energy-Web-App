@@ -2,6 +2,16 @@ import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { HoldReasonDialog } from "@/components/HoldReasonDialog";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -113,8 +123,16 @@ import { DocumentControlBadge } from "@/components/engineering/DocumentControlBa
 import { PHASE_COLORS } from "@/lib/phase-colors";
 import { invalidateAllTaskCaches } from "@/lib/task-cache";
 import { canonicalizeTaskStatus } from "@/lib/task-status-compat";
+import {
+  TASK_PRIORITY_VALUES,
+  TASK_PRIORITY_LABELS,
+  DEFAULT_TASK_PRIORITY,
+  normalizeTaskPriority,
+  taskPriorityLabel,
+  type TaskPriority,
+} from "@shared/task-priorities";
 
-export const PRIORITIES = ["Critical", "Urgent", "High", "Medium", "Low"];
+export const PRIORITIES: readonly TaskPriority[] = TASK_PRIORITY_VALUES;
 export const DUE_DATE_FILTER_OPTIONS: { value: EngineeringDueDateFilter; label: string }[] = [
   { value: "all", label: "All Due Dates" },
   { value: "overdue", label: "Overdue" },
@@ -453,7 +471,7 @@ export function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDu
   const projectDisplay = task.projectName?.replace(/_Tracker.*$/i, "").replace(/_/g, " ");
   const isViewingOnly = user && task.assigneeUserId && task.assigneeUserId !== user.id;
   const label = daysLabel(task.dueDate);
-  const isCritical = task.priority === "Critical" || task.priority === "Urgent";
+  const isCritical = normalizeTaskPriority(task.priority) === "Urgent";
   const assigneeNames = task.assignees || task.resolvedAssignees?.map((user) => user.name) || [];
   const contextBadges = getTaskContextBadges(task);
 
@@ -567,7 +585,7 @@ export function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDu
               onValueChange={(v) => { if (v !== task.priority) onPriorityChange(task.id, v); }}
               placeholder="Priority"
               triggerClassName="h-5 text-[9px] px-0 w-auto min-w-0 border-none shadow-none bg-transparent p-0 gap-0"
-              options={PRIORITIES.map(p => ({ value: p, label: p }))}
+              options={PRIORITIES.map(p => ({ value: p, label: TASK_PRIORITY_LABELS[p] }))}
               data-testid={`card-priority-${task.id}`}
             />
           ) : (
@@ -673,7 +691,7 @@ export function KanbanColumn({
   const [dragOver, setDragOver] = useState(false);
   const sorted = useMemo(() => sortTasksForColumn(tasks), [tasks]);
   const overdueCount = useMemo(() => tasks.filter(t => isOverdue(t.dueDate, t.status)).length, [tasks]);
-  const criticalCount = useMemo(() => tasks.filter(t => t.priority === "Critical" || t.priority === "Urgent").length, [tasks]);
+  const criticalCount = useMemo(() => tasks.filter(t => normalizeTaskPriority(t.priority) === "Urgent").length, [tasks]);
   const pct = totalTasks ? Math.round((tasks.length / totalTasks) * 100) : 0;
 
   if (collapsed) {
@@ -1120,7 +1138,7 @@ export function TaskDetailDrawer({
       return;
     }
     if (newStatus === "complete") {
-      const hasHighWarnings = task.trackingRag === "Red" || task.priority === "Critical";
+      const hasHighWarnings = task.trackingRag === "Red" || normalizeTaskPriority(task.priority) === "Urgent";
       if (hasHighWarnings) {
         if (!window.confirm("This task has high-severity warnings. Proceed with completion anyway?")) {
           return;
@@ -1248,7 +1266,7 @@ export function TaskDetailDrawer({
                   onValueChange={(v) => updateMutation.mutate({ priority: v })}
                   placeholder="Priority"
                   triggerClassName="h-8 text-xs"
-                  options={PRIORITIES.map(p => ({ value: p, label: p }))}
+                  options={PRIORITIES.map(p => ({ value: p, label: TASK_PRIORITY_LABELS[p] }))}
                   data-testid="select-drawer-priority"
                 />
               </div>
@@ -2911,7 +2929,7 @@ export function InlineListView({ tasks, onCardClick, onStatusChange, onPriorityC
             {onBulkPriorityChange && (
               <SearchableSelect value="" onValueChange={(p) => { onBulkPriorityChange(Array.from(selectedIds), p); setSelectedIds(new Set()); }}
                 placeholder="Set priority..." triggerClassName="h-7 text-[10px] min-w-[90px]"
-                options={PRIORITIES.map(p => ({ value: p, label: p }))} />
+                options={PRIORITIES.map(p => ({ value: p, label: TASK_PRIORITY_LABELS[p] }))} />
             )}
             <Button variant="ghost" size="sm" className="h-7 text-[10px] text-muted-foreground" onClick={() => setSelectedIds(new Set())}>
               <X className="h-3 w-3 mr-1" /> Clear
@@ -2976,7 +2994,7 @@ export function InlineListView({ tasks, onCardClick, onStatusChange, onPriorityC
                         onValueChange={(v) => onPriorityChange(task.id, v)}
                         placeholder="Priority"
                         triggerClassName="h-7 text-[10px] w-[90px] border-none shadow-none p-0"
-                        options={PRIORITIES.map(p => ({ value: p, label: p }))}
+                        options={PRIORITIES.map(p => ({ value: p, label: TASK_PRIORITY_LABELS[p] }))}
                         data-testid={`inline-priority-${task.id}`}
                       />
                     </td>
@@ -3210,7 +3228,7 @@ export function MyTasksView({
           triggerClassName="w-[110px] h-8 text-xs"
           options={[
             { value: "all", label: "All Priorities" },
-            ...PRIORITIES.map(p => ({ value: p, label: p })),
+            ...PRIORITIES.map(p => ({ value: p, label: TASK_PRIORITY_LABELS[p] })),
           ]}
           data-testid="my-tasks-filter-priority"
         />
@@ -3247,7 +3265,7 @@ export function MyTasksView({
           if (isTaskComplete(t.status)) return false;
           if (isOverdue(t.dueDate, t.status)) return true;
           if (t.dueDate && new Date(t.dueDate).toDateString() === new Date().toDateString()) return true;
-          if (canonicalizeTaskStatus(t.status) === "in_progress" && (t.priority === "Critical" || t.priority === "Urgent")) return true;
+          if (canonicalizeTaskStatus(t.status) === "in_progress" && normalizeTaskPriority(t.priority) === "Urgent") return true;
           return false;
         }).slice(0, 7);
         if (todayFocus.length === 0) return null;
@@ -3267,7 +3285,7 @@ export function MyTasksView({
                   className="flex items-center gap-2 text-xs p-2 bg-white rounded border hover:bg-blue-50 cursor-pointer transition-colors"
                   onClick={() => onCardClick(t)}
                 >
-                  <span className={`w-2 h-2 rounded-full shrink-0 ${isOverdue(t.dueDate, t.status) ? "bg-red-500" : t.priority === "Critical" ? "bg-red-500" : "bg-blue-500"}`} />
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${isOverdue(t.dueDate, t.status) ? "bg-red-500" : normalizeTaskPriority(t.priority) === "Urgent" ? "bg-red-500" : "bg-blue-500"}`} />
                   <span className="flex-1 font-medium truncate">{t.title}</span>
                   {t.projectName && <span className="text-muted-foreground truncate max-w-[120px]">{t.projectName.replace(/_Tracker.*$/, "").replace(/_/g, " ")}</span>}
                   {t.dueDate && <span className={`text-[10px] font-semibold shrink-0 ${isOverdue(t.dueDate, t.status) ? "text-red-600" : "text-muted-foreground"}`}>{daysLabel(t.dueDate)}</span>}
@@ -3353,7 +3371,7 @@ export function MyTasksView({
                                 onValueChange={v => { if (v !== task.priority) onPriorityChange(task.id, v); }}
                                 placeholder="Priority"
                                 triggerClassName="h-7 text-[10px] w-[90px] border-none shadow-none p-0"
-                                options={PRIORITIES.map(p => ({ value: p, label: p }))}
+                                options={PRIORITIES.map(p => ({ value: p, label: TASK_PRIORITY_LABELS[p] }))}
                                 data-testid={`my-task-priority-${task.id}`}
                               />
                             </td>
@@ -3458,7 +3476,7 @@ export function MyTasksView({
                             onValueChange={v => { if (v !== task.priority) onPriorityChange(task.id, v); }}
                             placeholder="Priority"
                             triggerClassName="h-6 text-[10px] w-auto min-w-0 border-none shadow-none p-0"
-                            options={PRIORITIES.map(p => ({ value: p, label: p }))}
+                            options={PRIORITIES.map(p => ({ value: p, label: TASK_PRIORITY_LABELS[p] }))}
                             data-testid={`my-task-priority-${task.id}`}
                           />
                           {task.dueDate && (
@@ -3529,10 +3547,21 @@ export default function EngineeringTasksPage() {
     return fullName.split(/\s+/)[0];
   });
   const [showNamePicker, setShowNamePicker] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<string>(initialUrlParams.get("status") || savedDefaults?.statusFilter || "all");
+  // Canonicalise the incoming ?status= param so legacy uppercase links from
+  // the dashboard, admin-approvals, or external bookmarks ("HOLD",
+  // "NEEDS APPROVAL", "IN PROGRESS") resolve to the snake_case values the
+  // filter compares against.
+  const initialStatusParam = initialUrlParams.get("status");
+  const initialStatus = initialStatusParam ? canonicalizeTaskStatus(initialStatusParam) : (savedDefaults?.statusFilter || "all");
+  const [statusFilter, setStatusFilter] = useState<string>(initialStatus);
   const [priorityFilter, setPriorityFilter] = useState<string>(initialUrlParams.get("priority") || savedDefaults?.priorityFilter || "all");
   const [assigneeFilter, setAssigneeFilter] = useState<string>(initialUrlParams.get("assignee") || savedDefaults?.assigneeFilter || "all");
-  const [projectFilter, setProjectFilter] = useState<string>(savedDefaults?.projectFilter || "all");
+  // ?project=<name> comes from admin-approvals / lifecycle-board and should
+  // populate the project *filter*, not the free-text search. Fall back to
+  // search if the name doesn't look like a real project (preserves old
+  // single-param bookmarks).
+  const initialProjectParam = initialUrlParams.get("project") || "";
+  const [projectFilter, setProjectFilter] = useState<string>(initialProjectParam || savedDefaults?.projectFilter || "all");
   const [dueDateFilter, setDueDateFilter] = useState<EngineeringDueDateFilter>(
     (initialUrlParams.get("dueDate") as EngineeringDueDateFilter) || (savedDefaults?.dueDateFilter as EngineeringDueDateFilter) || "all",
   );
@@ -3543,11 +3572,11 @@ export default function EngineeringTasksPage() {
     (savedDefaults?.linkedSourceFilter as EngineeringLinkedSourceFilter) || "all",
   );
   const [hasCustomDefault, setHasCustomDefault] = useState(!!savedDefaults);
-  const [searchTerm, setSearchTerm] = useState(() => {
-    return initialUrlParams.get("project") || "";
-  });
+  const [searchTerm, setSearchTerm] = useState(() => initialUrlParams.get("q") || "");
 
-  // Sync key state to URL for shareable links (without full page reload)
+  // Sync key state to URL for shareable links (without full page reload).
+  // ?project= carries the project filter (matches admin-approvals / lifecycle-board links);
+  // ?q= carries the free-text search, so the two are no longer conflated.
   useEffect(() => {
     const params = new URLSearchParams();
     if (viewMode !== "board") params.set("view", viewMode);
@@ -3555,13 +3584,14 @@ export default function EngineeringTasksPage() {
     if (priorityFilter !== "all") params.set("priority", priorityFilter);
     if (assigneeFilter !== "all") params.set("assignee", assigneeFilter);
     if (dueDateFilter !== "all") params.set("dueDate", dueDateFilter);
-    if (searchTerm) params.set("project", searchTerm);
+    if (projectFilter !== "all") params.set("project", projectFilter);
+    if (searchTerm) params.set("q", searchTerm);
     const qs = params.toString();
     const url = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
     if (url !== window.location.pathname + window.location.search) {
       window.history.replaceState(null, "", url);
     }
-  }, [viewMode, statusFilter, priorityFilter, assigneeFilter, dueDateFilter, searchTerm]);
+  }, [viewMode, statusFilter, priorityFilter, assigneeFilter, dueDateFilter, projectFilter, searchTerm]);
 
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -3571,7 +3601,7 @@ export default function EngineeringTasksPage() {
     title: "",
     description: "",
     status: "to_do",
-    priority: "Med",
+    priority: DEFAULT_TASK_PRIORITY,
     phase: "",
     primaryWorkstream: "",
     dueDate: "",
@@ -3582,6 +3612,7 @@ export default function EngineeringTasksPage() {
 
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [holdDialog, setHoldDialog] = useState<{ taskId: number; reason: string; blockedType: string } | null>(null);
+  const [completionGuard, setCompletionGuard] = useState<{ taskId: number; reason: string } | null>(null);
   const [boardCompact, setBoardCompact] = useState(savedDefaults?.boardCompact || false);
   const [boardGroupBy, setBoardGroupBy] = useState<"status" | "priority" | "assignee" | "project">("status");
   const [collapsedColumns, setCollapsedColumns] = useState<Set<string>>(() => new Set());
@@ -3606,25 +3637,39 @@ export default function EngineeringTasksPage() {
     });
   }, []);
 
-  // Keyboard shortcuts
+  // Keyboard shortcuts. Numeric view-switch keys require a `g` prefix
+  // (GitHub-style chord) so numbers typed idly after a dialog closes don't
+  // accidentally switch views.
   const [showShortcuts, setShowShortcuts] = useState(false);
+  const goChordArmedRef = useRef<number | null>(null);
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      // Don't trigger in input/textarea
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
 
-      if (e.key === "?" && !e.ctrlKey && !e.metaKey) { setShowShortcuts(s => !s); return; }
-      if (e.key === "n" && !e.ctrlKey && !e.metaKey) { setCreateOpen(true); return; }
+      // Clear a stale chord after 1.5s of inactivity.
+      const now = Date.now();
+      if (goChordArmedRef.current && now - goChordArmedRef.current > 1500) {
+        goChordArmedRef.current = null;
+      }
+
+      if (e.key === "?") { setShowShortcuts(s => !s); return; }
+      if (e.key === "n") { setCreateOpen(true); return; }
       if (e.key === "Escape") {
+        goChordArmedRef.current = null;
         if (selectedTask) { setSelectedTask(null); return; }
         if (showShortcuts) { setShowShortcuts(false); return; }
       }
-      if (e.key === "1") { setViewMode("board"); return; }
-      if (e.key === "2") { setViewMode("mytasks"); return; }
-      if (e.key === "3") { setViewMode("projects"); return; }
-      if (e.key === "4") { setViewMode("list"); return; }
-      if (e.key === "5") { setViewMode("timeline"); return; }
+      if (e.key === "g") { goChordArmedRef.current = now; return; }
+
+      if (goChordArmedRef.current) {
+        if (e.key === "1") { setViewMode("board"); goChordArmedRef.current = null; return; }
+        if (e.key === "2") { setViewMode("mytasks"); goChordArmedRef.current = null; return; }
+        if (e.key === "3") { setViewMode("projects"); goChordArmedRef.current = null; return; }
+        if (e.key === "4") { setViewMode("list"); goChordArmedRef.current = null; return; }
+        if (e.key === "5") { setViewMode("timeline"); goChordArmedRef.current = null; return; }
+      }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
@@ -3652,6 +3697,21 @@ export default function EngineeringTasksPage() {
       phase: p.phase || "",
     })).filter((p: any) => p.project_name && !EXCLUDED_PHASES.includes(p.phase)).sort((a: any, b: any) => a.project_name.localeCompare(b.project_name)),
   });
+
+  // If the initial ?project= value doesn't match any known project name once
+  // the project list loads, treat it as free-text search (legacy bookmark
+  // compatibility). Runs once per load of allProjects.
+  useEffect(() => {
+    if (!initialProjectParam) return;
+    if (projectFilter !== initialProjectParam) return;
+    if (allProjects.length === 0) return;
+    const matches = allProjects.some(p => p.project_name === initialProjectParam);
+    if (!matches) {
+      setProjectFilter("all");
+      setSearchTerm(prev => prev || initialProjectParam);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allProjects.length]);
 
   const myTasks = useMemo(() => {
     if (!myName) return [];
@@ -3690,7 +3750,7 @@ export default function EngineeringTasksPage() {
         title: "",
         description: "",
         status: "to_do",
-        priority: "Medium",
+        priority: DEFAULT_TASK_PRIORITY,
         phase: "",
         primaryWorkstream: "",
         dueDate: "",
@@ -3756,8 +3816,9 @@ export default function EngineeringTasksPage() {
   const handleStatusChange = useCallback((taskId: number, newStatus: string) => {
     const task = tasks.find(t => t.id === taskId);
     if (!task || canonicalizeTaskStatus(task.status) === newStatus) return;
-    if (newStatus === "complete" && (task.trackingRag === "Red" || task.priority === "Critical")) {
-      if (!window.confirm("This task has high-severity warnings. Proceed with completion?")) return;
+    if (newStatus === "complete" && (task.trackingRag === "Red" || normalizeTaskPriority(task.priority) === "Urgent")) {
+      setCompletionGuard({ taskId, reason: task.trackingRag === "Red" ? "Red tracking RAG" : "Urgent priority" });
+      return;
     }
     requestStatusChange(taskId, newStatus);
   }, [tasks, requestStatusChange]);
@@ -3960,7 +4021,7 @@ export default function EngineeringTasksPage() {
   // Column grouping (#13)
   const boardGroupKeys = useMemo(() => {
     if (boardGroupBy === "status") return boardStatuses;
-    if (boardGroupBy === "priority") return ["Critical", "Urgent", "High", "Medium", "Low"];
+    if (boardGroupBy === "priority") return [...TASK_PRIORITY_VALUES];
     if (boardGroupBy === "assignee") {
       const names = new Set<string>();
       filtered.forEach(t => (t.assignees || []).forEach(a => { if (a) names.add(a); }));
@@ -3980,7 +4041,7 @@ export default function EngineeringTasksPage() {
     boardGroupKeys.forEach(k => { groups[k] = []; });
     filtered.forEach(t => {
       if (boardGroupBy === "priority") {
-        const key = t.priority || "Medium";
+        const key = normalizeTaskPriority(t.priority);
         (groups[key] || (groups[key] = [])).push(t);
       } else if (boardGroupBy === "assignee") {
         const assignees = (t.assignees || []).filter(Boolean);
@@ -4236,9 +4297,9 @@ export default function EngineeringTasksPage() {
                     <Label>Priority</Label>
                     <SearchableSelect
                       value={newTask.priority}
-                      onValueChange={v => setNewTask(p => ({ ...p, priority: v }))}
+                      onValueChange={v => setNewTask(p => ({ ...p, priority: normalizeTaskPriority(v) }))}
                       placeholder="Priority"
-                      options={PRIORITIES.map(p => ({ value: p, label: p }))}
+                      options={PRIORITIES.map(p => ({ value: p, label: TASK_PRIORITY_LABELS[p] }))}
                       data-testid="select-task-priority"
                     />
                   </div>
@@ -4359,7 +4420,7 @@ export default function EngineeringTasksPage() {
               triggerClassName="w-full h-8 text-xs"
               options={[
                 { value: "all", label: "All Priorities" },
-                ...PRIORITIES.map(p => ({ value: p, label: p })),
+                ...PRIORITIES.map(p => ({ value: p, label: TASK_PRIORITY_LABELS[p] })),
               ]}
               data-testid="filter-task-priority"
             />
@@ -4596,7 +4657,7 @@ export default function EngineeringTasksPage() {
               onValueChange={(p) => bulkPriorityMutation.mutate({ taskIds: Array.from(selectedTaskIds), priority: p })}
               placeholder="Set priority..."
               triggerClassName="h-7 text-[10px] min-w-[90px]"
-              options={PRIORITIES.map(p => ({ value: p, label: p }))}
+              options={PRIORITIES.map(p => ({ value: p, label: TASK_PRIORITY_LABELS[p] }))}
               data-testid="bulk-priority-select"
             />
             <Button variant="ghost" size="sm" className="h-7 text-[10px] text-muted-foreground" onClick={clearSelection}>
@@ -4701,6 +4762,32 @@ export default function EngineeringTasksPage() {
         testIdPrefix="hold"
       />
 
+      <AlertDialog open={!!completionGuard} onOpenChange={(open) => { if (!open) setCompletionGuard(null); }}>
+        <AlertDialogContent data-testid="completion-guard-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Complete this task?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This task is flagged with <strong>{completionGuard?.reason}</strong>. Marking it complete will bypass the usual review path — please confirm.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="completion-guard-cancel">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="completion-guard-confirm"
+              onClick={() => {
+                if (completionGuard) {
+                  const id = completionGuard.taskId;
+                  setCompletionGuard(null);
+                  requestStatusChange(id, "complete");
+                }
+              }}
+            >
+              Mark complete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {showShortcuts && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={() => setShowShortcuts(false)}>
           <div className="bg-white rounded-lg shadow-xl p-6 max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
@@ -4711,11 +4798,11 @@ export default function EngineeringTasksPage() {
             <div className="space-y-2 text-xs">
               {[
                 ["N", "New task"],
-                ["1", "Board view"],
-                ["2", "My Tasks view"],
-                ["3", "Projects view"],
-                ["4", "List view"],
-                ["5", "Timeline view"],
+                ["G → 1", "Board view"],
+                ["G → 2", "My Tasks view"],
+                ["G → 3", "Projects view"],
+                ["G → 4", "List view"],
+                ["G → 5", "Timeline view"],
                 ["Esc", "Close drawer / dialog"],
                 ["?", "Toggle this help"],
               ].map(([key, desc]) => (
@@ -4725,6 +4812,7 @@ export default function EngineeringTasksPage() {
                 </div>
               ))}
             </div>
+            <p className="mt-3 text-[10px] text-muted-foreground">Press <kbd className="px-1 py-0.5 bg-muted rounded border text-[10px] font-mono">G</kbd> then a number within 1.5s to switch views.</p>
           </div>
         </div>
       )}

@@ -58,6 +58,7 @@ import { AttentionBadges, type AttentionItem } from "@/components/dashboard/Atte
 import UserAssignmentPicker from "@/components/UserAssignmentPicker";
 import { useToast } from "@/hooks/use-toast";
 import { copyTeamsMessage, escapeHtml } from "@/lib/teams-clipboard";
+import { normalizeTaskPriority } from "@shared/task-priorities";
 
 interface StandupTask {
   id: number;
@@ -128,12 +129,10 @@ interface StandupData {
 
 
 const priorityBorderDash: Record<string, string> = {
-  "Critical": "border-l-red-600",
-  "Urgent": "border-l-red-500",
-  "High": "border-l-orange-500",
-  "Med": "border-l-amber-400",
-  "Medium": "border-l-amber-400",
-  "Low": "border-l-gray-300",
+  Urgent: "border-l-red-500",
+  High: "border-l-orange-500",
+  Med: "border-l-amber-400",
+  Low: "border-l-gray-300",
 };
 
 function getInitials(name: string) {
@@ -182,7 +181,7 @@ function TaskRow({ task, showProject = true }: { task: StandupTask; showProject?
 
   return (
     <div
-      className={`flex items-center gap-2.5 px-3 py-2.5 border-b last:border-b-0 hover:bg-muted/40 transition-all text-xs group cursor-pointer border-l-3 ${priorityBorderDash[task.priority] || "border-l-gray-200"} ${isOverdue ? "bg-red-50/30" : ""}`}
+      className={`flex items-center gap-2.5 px-3 py-2.5 border-b last:border-b-0 hover:bg-muted/40 transition-all text-xs group cursor-pointer border-l-3 ${priorityBorderDash[normalizeTaskPriority(task.priority)]} ${isOverdue ? "bg-red-50/30" : ""}`}
       onClick={() => setLocation(`/engineering/tasks?taskId=${task.id}`)}
       data-testid={`standup-task-${task.id}`}
     >
@@ -286,12 +285,12 @@ function CollapsibleSection({
 function KpiStrip({ summary }: { summary: StandupData["summary"] }) {
   const stats = [
     { label: "Projects", value: summary.totalProjects, icon: <Layers className="w-4 h-4" />, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-200", pulse: false, scrollTo: "section-project-health", href: null },
-    { label: "Active", value: summary.activeTasks, icon: <ListTodo className="w-4 h-4" />, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-200", pulse: false, scrollTo: "section-in-progress", href: "/engineering/tasks?status=IN+PROGRESS" },
+    { label: "Active", value: summary.activeTasks, icon: <ListTodo className="w-4 h-4" />, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-200", pulse: false, scrollTo: "section-in-progress", href: "/engineering/tasks?status=in_progress" },
     { label: "Overdue", value: summary.overdueTasks, icon: <AlertTriangle className="w-4 h-4" />, color: summary.overdueTasks > 0 ? "text-red-600" : "text-muted-foreground", bg: summary.overdueTasks > 0 ? "bg-red-50" : "bg-muted", border: summary.overdueTasks > 0 ? "border-red-200" : "", pulse: summary.overdueTasks > 0, scrollTo: "section-blockers", href: "/engineering/tasks?dueDate=overdue" },
-    { label: "On Hold", value: summary.holdTasks, icon: <PauseCircle className="w-4 h-4" />, color: summary.holdTasks > 0 ? "text-amber-600" : "text-muted-foreground", bg: summary.holdTasks > 0 ? "bg-amber-50" : "bg-muted", border: summary.holdTasks > 0 ? "border-amber-200" : "", pulse: false, scrollTo: "section-blockers", href: "/engineering/tasks?status=HOLD" },
-    { label: "Approvals", value: summary.needsApprovalCount, icon: <ShieldAlert className="w-4 h-4" />, color: summary.needsApprovalCount > 0 ? "text-purple-600" : "text-muted-foreground", bg: summary.needsApprovalCount > 0 ? "bg-purple-50" : "bg-muted", border: summary.needsApprovalCount > 0 ? "border-purple-200" : "", pulse: false, scrollTo: "section-approvals", href: "/engineering/tasks?status=NEEDS+APPROVAL" },
+    { label: "On Hold", value: summary.holdTasks, icon: <PauseCircle className="w-4 h-4" />, color: summary.holdTasks > 0 ? "text-amber-600" : "text-muted-foreground", bg: summary.holdTasks > 0 ? "bg-amber-50" : "bg-muted", border: summary.holdTasks > 0 ? "border-amber-200" : "", pulse: false, scrollTo: "section-blockers", href: "/engineering/tasks?status=hold" },
+    { label: "Approvals", value: summary.needsApprovalCount, icon: <ShieldAlert className="w-4 h-4" />, color: summary.needsApprovalCount > 0 ? "text-purple-600" : "text-muted-foreground", bg: summary.needsApprovalCount > 0 ? "bg-purple-50" : "bg-muted", border: summary.needsApprovalCount > 0 ? "border-purple-200" : "", pulse: false, scrollTo: "section-approvals", href: "/engineering/tasks?status=needs_approval" },
     { label: "Due This Week", value: summary.upcomingThisWeekCount, icon: <Timer className="w-4 h-4" />, color: "text-indigo-600", bg: "bg-indigo-50", border: "border-indigo-200", pulse: false, scrollTo: "section-due-this-week", href: "/engineering/tasks?dueDate=this_week" },
-    { label: "Done (24h)", value: summary.recentlyCompletedCount, icon: <CheckCircle2 className="w-4 h-4" />, color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-200", pulse: false, scrollTo: "section-recently-completed", href: "/engineering/tasks?status=COMPLETE" },
+    { label: "Done (24h)", value: summary.recentlyCompletedCount, icon: <CheckCircle2 className="w-4 h-4" />, color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-200", pulse: false, scrollTo: "section-recently-completed", href: "/engineering/tasks?status=complete" },
   ];
 
   return (
@@ -712,8 +711,8 @@ export default function EngineeringDashboard() {
     const s = data.summary;
     const items: AttentionItem[] = [];
     if (s.overdueTasks > 0) items.push({ label: "Overdue Tasks", value: s.overdueTasks, color: "text-red-600 bg-red-50 border-red-200", href: "/engineering/tasks?dueDate=overdue" });
-    if (s.holdTasks > 0) items.push({ label: "On Hold", value: s.holdTasks, color: "text-amber-700 bg-amber-50 border-amber-200", href: "/engineering/tasks?status=HOLD" });
-    if (s.needsApprovalCount > 0) items.push({ label: "Needs Approval", value: s.needsApprovalCount, color: "text-violet-700 bg-violet-50 border-violet-200", href: "/engineering/tasks?status=NEEDS+APPROVAL" });
+    if (s.holdTasks > 0) items.push({ label: "On Hold", value: s.holdTasks, color: "text-amber-700 bg-amber-50 border-amber-200", href: "/engineering/tasks?status=hold" });
+    if (s.needsApprovalCount > 0) items.push({ label: "Needs Approval", value: s.needsApprovalCount, color: "text-violet-700 bg-violet-50 border-violet-200", href: "/engineering/tasks?status=needs_approval" });
     if (s.upcomingThisWeekCount > 0) items.push({ label: "Due This Week", value: s.upcomingThisWeekCount, color: "text-blue-700 bg-blue-50 border-blue-200", href: "/engineering/tasks?dueDate=this_week" });
     return items;
   }, [data?.summary]);
