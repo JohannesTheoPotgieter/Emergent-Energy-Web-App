@@ -129,6 +129,10 @@ export const opportunities = pgTable("opportunities", {
   commercialRisks: text("commercial_risks"),
   notes: text("notes"),
   status: text("status").default("active"),              // 'active', 'won', 'lost', 'on_hold'
+  // Project location. Populated by Pipedrive sync (when address custom-field
+  // is mapped) or copied from the PD shadow on backfill. See migration
+  // 20260420_opportunity_province.sql.
+  province: text("province"),
   // === Pipedrive enrichment (added 2026-04-20, migration
   // 20260420_opportunity_merge_pipedrive_enrich.sql). All optional;
   // populated by `pipedrive-sync-service.ts` when a deal is synced.
