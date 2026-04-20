@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Flag, Plus, AlertTriangle, AlertCircle, Clock, RefreshCw, ArrowUp, CheckCircle2, Users, User } from "lucide-react";
@@ -116,13 +117,16 @@ async function fetchPriorities(params: string): Promise<Priority[]> {
 
 // ── Priority Card ──────────────────────────────────────────────
 
-export function PriorityCard({ priority, showEscalate, onEscalate, showMarkComplete, onMarkComplete, showDeptActions }: {
+export function PriorityCard({ priority, showEscalate, onEscalate, showMarkComplete, onMarkComplete, showDeptActions, onAssign, showReopen, onReopen }: {
   priority: Priority;
   showEscalate?: boolean;
   onEscalate?: () => void;
   showMarkComplete?: boolean;
   onMarkComplete?: () => void;
   showDeptActions?: boolean;
+  onAssign?: () => void;
+  showReopen?: boolean;
+  onReopen?: () => void;
 }) {
   const days = daysRemaining(priority.dueDate);
   const healthColor = HEALTH_COLORS[priority.effectiveHealth] || HEALTH_COLORS.healthy;
@@ -231,7 +235,7 @@ export function PriorityCard({ priority, showEscalate, onEscalate, showMarkCompl
         </div>
 
         {/* Action buttons */}
-        {(showMarkComplete || (showEscalate && priority.scope !== "company") || showDeptActions) && (
+        {(showMarkComplete || (showEscalate && priority.scope !== "company") || showDeptActions || showReopen) && (
           <div className="mt-2 pt-2 border-t flex items-center gap-2 flex-wrap">
             {showMarkComplete && (
               <Button
@@ -246,9 +250,20 @@ export function PriorityCard({ priority, showEscalate, onEscalate, showMarkCompl
               </Button>
             )}
             {showDeptActions && (
-              <Button variant="outline" size="sm" className="text-xs h-7">
+              <Button variant="outline" size="sm" className="text-xs h-7" onClick={onAssign}>
                 <Users className="w-3 h-3 mr-1" />
-                Assign Priority
+                {priority.assignedUser ? "Reassign" : "Assign Priority"}
+              </Button>
+            )}
+            {showReopen && (priority.status === "closed" || priority.status === "complete") && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs h-7 text-emerald-700 border-emerald-200 hover:bg-emerald-50"
+                onClick={onReopen}
+              >
+                <RefreshCw className="w-3 h-3 mr-1" />
+                Reopen
               </Button>
             )}
             {showEscalate && priority.scope !== "company" && (
@@ -277,15 +292,77 @@ const emptyForm = {
   description: "",
   department: "",
   severity: "normal",
+  horizon: "quarter",
   due_date: "",
   target_outcome: "",
+  next_action: "",
+  definition_of_done: "",
   manual_health: "",
   manual_progress: "",
   scope: "company" as string,
   department_key: "",
+  owner_user_id: "" as string,
+  accountable_exec_id: "" as string,
   assigned_user_id: "" as string,
   parent_id: "" as string,
+  project_ids: [] as number[],
 };
+
+function useUserOptions(enabled: boolean): SearchableSelectOption[] {
+  const { data: users = [] } = useQuery<{ id: number; name: string; role: string }[]>({
+    queryKey: ["/api/users-list-for-priority"],
+    queryFn: async () => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch("/api/users", { credentials: "include", headers });
+      if (!res.ok) return [];
+      const data = await res.json();
+      const rows = Array.isArray(data) ? data : data.users || data.data || [];
+      return rows.map((u: any) => ({ id: u.id, name: u.name, role: u.role }));
+    },
+    enabled,
+  });
+  return useMemo(
+    () => users.map((u) => ({ value: String(u.id), label: u.name })),
+    [users],
+  );
+}
+
+function useProjectOptions(enabled: boolean): { value: number; label: string }[] {
+  const { data: projects = [] } = useQuery<{ id: number; name: string }[]>({
+    queryKey: ["/api/priorities-project-picker"],
+    queryFn: async () => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      try {
+        const res = await fetch("/api/projects-summary", { credentials: "include", headers });
+        if (res.ok) {
+          const data = await res.json();
+          const rows = Array.isArray(data) ? data : data.projects || data.data?.rows || [];
+          if (rows.length > 0) {
+            return rows.map((p: any) => ({
+              id: p.id || p.project_info_id,
+              name: p.projectName || p.project_name || p.name || `Project ${p.id || p.project_info_id}`,
+            }));
+          }
+        }
+      } catch {
+        // fall through
+      }
+      const res = await fetch("/api/v2/projects?pageSize=500", { credentials: "include", headers });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return (data.data?.rows || []).map((p: any) => ({
+        id: p.id,
+        name: p.projectName || p.project_name || p.name || `Project ${p.id}`,
+      }));
+    },
+    enabled,
+  });
+  return useMemo(() => projects.map((p) => ({ value: p.id, label: p.name })), [projects]);
+}
 
 function CreatePriorityDialog({ open, onOpenChange, defaultScope, defaultDepartment }: {
   open: boolean;
@@ -294,24 +371,17 @@ function CreatePriorityDialog({ open, onOpenChange, defaultScope, defaultDepartm
   defaultDepartment?: string;
 }) {
   const [form, setForm] = useState({ ...emptyForm, scope: defaultScope || "company", department_key: defaultDepartment || "" });
+  const [projectSearch, setProjectSearch] = useState("");
   const queryClient = useQueryClient();
 
-  // Fetch users for assignment
-  const { data: allUsers = [] } = useQuery<{ id: number; name: string; role: string }[]>({
-    queryKey: ["/api/users-list-for-priority"],
-    queryFn: async () => {
-      const token = localStorage.getItem("auth_token");
-      const headers: Record<string, string> = {};
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-      // Try the users endpoint
-      const res = await fetch("/api/users", { credentials: "include", headers });
-      if (!res.ok) return [];
-      const data = await res.json();
-      const rows = Array.isArray(data) ? data : data.users || data.data || [];
-      return rows.map((u: any) => ({ id: u.id, name: u.name, role: u.role }));
-    },
-    enabled: open,
-  });
+  const userOptions = useUserOptions(open);
+  const projectOptions = useProjectOptions(open);
+
+  const filteredProjects = useMemo(() => {
+    const needle = projectSearch.trim().toLowerCase();
+    if (!needle) return projectOptions;
+    return projectOptions.filter((p) => p.label.toLowerCase().includes(needle));
+  }, [projectOptions, projectSearch]);
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -320,26 +390,42 @@ function CreatePriorityDialog({ open, onOpenChange, defaultScope, defaultDepartm
         description: form.description || null,
         department: form.department || null,
         severity: form.severity,
+        horizon: form.horizon,
         due_date: form.due_date || null,
         target_outcome: form.target_outcome || null,
+        next_action: form.next_action || null,
+        definition_of_done: form.definition_of_done || null,
         manual_health: form.manual_health || null,
-        manual_progress: form.manual_progress ? parseInt(form.manual_progress) : null,
+        manual_progress: form.manual_progress ? parseInt(form.manual_progress, 10) : null,
         scope: form.scope,
         department_key: form.department_key || null,
-        assigned_user_id: form.assigned_user_id ? parseInt(form.assigned_user_id) : null,
-        parent_id: form.parent_id ? parseInt(form.parent_id) : null,
+        owner_user_id: form.owner_user_id ? parseInt(form.owner_user_id, 10) : null,
+        accountable_exec_id: form.accountable_exec_id ? parseInt(form.accountable_exec_id, 10) : null,
+        assigned_user_id: form.assigned_user_id ? parseInt(form.assigned_user_id, 10) : null,
+        parent_id: form.parent_id ? parseInt(form.parent_id, 10) : null,
+        project_ids: form.project_ids.length > 0 ? form.project_ids : undefined,
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
       setForm({ ...emptyForm, scope: defaultScope || "company", department_key: defaultDepartment || "" });
+      setProjectSearch("");
       onOpenChange(false);
     },
   });
 
+  const toggleProjectId = (id: number) => {
+    setForm((prev) => ({
+      ...prev,
+      project_ids: prev.project_ids.includes(id)
+        ? prev.project_ids.filter((x) => x !== id)
+        : [...prev.project_ids, id],
+    }));
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Add Priority</DialogTitle>
         </DialogHeader>
@@ -352,7 +438,7 @@ function CreatePriorityDialog({ open, onOpenChange, defaultScope, defaultDepartm
             <Label htmlFor="description" className="text-xs">Description</Label>
             <Textarea id="description" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="Brief description" rows={2} />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <div>
               <Label className="text-xs">Scope</Label>
               <Select value={form.scope} onValueChange={v => setForm({ ...form, scope: v })}>
@@ -375,6 +461,18 @@ function CreatePriorityDialog({ open, onOpenChange, defaultScope, defaultDepartm
                 </SelectContent>
               </Select>
             </div>
+            <div>
+              <Label htmlFor="horizon" className="text-xs">Horizon</Label>
+              <Select value={form.horizon} onValueChange={v => setForm({ ...form, horizon: v })}>
+                <SelectTrigger id="horizon"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="today">Today</SelectItem>
+                  <SelectItem value="week">This week</SelectItem>
+                  <SelectItem value="month">This month</SelectItem>
+                  <SelectItem value="quarter">This quarter</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           {(form.scope === "department" || form.scope === "role") && (
             <div>
@@ -389,17 +487,38 @@ function CreatePriorityDialog({ open, onOpenChange, defaultScope, defaultDepartm
               </Select>
             </div>
           )}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs">Owner</Label>
+              <SearchableSelect
+                options={userOptions}
+                value={form.owner_user_id}
+                onValueChange={(v) => setForm({ ...form, owner_user_id: v })}
+                placeholder="Who drives this?"
+                searchPlaceholder="Search people..."
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Accountable exec</Label>
+              <SearchableSelect
+                options={userOptions}
+                value={form.accountable_exec_id}
+                onValueChange={(v) => setForm({ ...form, accountable_exec_id: v })}
+                placeholder="Executive sponsor"
+                searchPlaceholder="Search people..."
+              />
+            </div>
+          </div>
           {form.scope === "role" && (
             <div>
               <Label className="text-xs">Assign to</Label>
-              <Select value={form.assigned_user_id} onValueChange={v => setForm({ ...form, assigned_user_id: v })}>
-                <SelectTrigger><SelectValue placeholder="Select person" /></SelectTrigger>
-                <SelectContent>
-                  {allUsers.map(u => (
-                    <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                options={userOptions}
+                value={form.assigned_user_id}
+                onValueChange={(v) => setForm({ ...form, assigned_user_id: v })}
+                placeholder="Select person"
+                searchPlaceholder="Search people..."
+              />
             </div>
           )}
           <div className="grid grid-cols-2 gap-3">
@@ -424,6 +543,47 @@ function CreatePriorityDialog({ open, onOpenChange, defaultScope, defaultDepartm
             <Label htmlFor="target_outcome" className="text-xs">Target Outcome</Label>
             <Textarea id="target_outcome" value={form.target_outcome} onChange={e => setForm({ ...form, target_outcome: e.target.value })} placeholder="What does success look like?" rows={2} />
           </div>
+          <div>
+            <Label htmlFor="next_action" className="text-xs">Next action</Label>
+            <Input id="next_action" value={form.next_action} onChange={e => setForm({ ...form, next_action: e.target.value })} placeholder="Concrete next step" />
+          </div>
+          <div>
+            <Label htmlFor="definition_of_done" className="text-xs">Definition of done</Label>
+            <Textarea id="definition_of_done" value={form.definition_of_done} onChange={e => setForm({ ...form, definition_of_done: e.target.value })} placeholder="Checklist / acceptance criteria" rows={2} />
+          </div>
+
+          {/* Inline project linker — optional. Users can create + link in one step now. */}
+          <div>
+            <Label className="text-xs">Link projects (optional)</Label>
+            <Input
+              value={projectSearch}
+              onChange={(e) => setProjectSearch(e.target.value)}
+              placeholder="Search projects..."
+              className="mb-1"
+            />
+            <div className="max-h-40 overflow-y-auto rounded border p-1 space-y-0.5">
+              {filteredProjects.length === 0 && (
+                <p className="text-xs text-muted-foreground py-1 text-center">No matching projects</p>
+              )}
+              {filteredProjects.slice(0, 50).map((p) => (
+                <label key={p.value} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-muted cursor-pointer text-xs">
+                  <input
+                    type="checkbox"
+                    checked={form.project_ids.includes(p.value)}
+                    onChange={() => toggleProjectId(p.value)}
+                    className="rounded"
+                  />
+                  <span>{p.label}</span>
+                </label>
+              ))}
+              {filteredProjects.length > 50 && (
+                <p className="text-[10px] text-muted-foreground py-1 text-center">Showing first 50 — refine search</p>
+              )}
+            </div>
+            {form.project_ids.length > 0 && (
+              <p className="text-[10px] text-muted-foreground mt-1">{form.project_ids.length} project{form.project_ids.length === 1 ? "" : "s"} selected</p>
+            )}
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
@@ -436,9 +596,66 @@ function CreatePriorityDialog({ open, onOpenChange, defaultScope, defaultDepartm
   );
 }
 
+// ── Assign Priority Dialog ─────────────────────────────────────
+
+function AssignPriorityDialog({ open, onOpenChange, priorityId }: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  priorityId: number | null;
+}) {
+  const [userId, setUserId] = useState("");
+  const queryClient = useQueryClient();
+  const userOptions = useUserOptions(open);
+
+  const assignMutation = useMutation({
+    mutationFn: async () => {
+      if (!priorityId) return;
+      return apiRequest("PUT", `/api/priorities/${priorityId}`, {
+        assigned_user_id: userId ? parseInt(userId, 10) : null,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
+      setUserId("");
+      onOpenChange(false);
+    },
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Assign Priority</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            Assign this priority to a team member. They'll see it in their "My Priorities" tab.
+          </p>
+          <div>
+            <Label className="text-xs">Assign to</Label>
+            <SearchableSelect
+              options={userOptions}
+              value={userId}
+              onValueChange={setUserId}
+              placeholder="Select person"
+              searchPlaceholder="Search people..."
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={() => assignMutation.mutate()} disabled={!userId || assignMutation.isPending}>
+            {assignMutation.isPending ? "Assigning..." : "Assign"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ── Priority List Section ──────────────────────────────────────
 
-function PriorityListSection({ priorities, isLoading, isError, error, refetch, showEscalate, onEscalate, showMarkComplete, onMarkComplete, showDeptActions, emptyMessage, emptyAction }: {
+function PriorityListSection({ priorities, isLoading, isError, error, refetch, showEscalate, onEscalate, showMarkComplete, onMarkComplete, showDeptActions, onAssign, showReopen, onReopen, emptyMessage, emptyAction }: {
   priorities: Priority[];
   isLoading: boolean;
   isError: boolean;
@@ -449,6 +666,9 @@ function PriorityListSection({ priorities, isLoading, isError, error, refetch, s
   showMarkComplete?: boolean;
   onMarkComplete?: (id: number) => void;
   showDeptActions?: boolean;
+  onAssign?: (id: number) => void;
+  showReopen?: boolean;
+  onReopen?: (id: number) => void;
   emptyMessage: string;
   emptyAction?: React.ReactNode;
 }) {
@@ -520,6 +740,9 @@ function PriorityListSection({ priorities, isLoading, isError, error, refetch, s
               showMarkComplete={showMarkComplete}
               onMarkComplete={() => onMarkComplete?.(p.id)}
               showDeptActions={showDeptActions}
+              onAssign={() => onAssign?.(p.id)}
+              showReopen={showReopen}
+              onReopen={() => onReopen?.(p.id)}
             />
           ))}
         </div>
@@ -546,13 +769,18 @@ export default function PrioritiesPage() {
   const [activeTab, setActiveTab] = useState(defaultTab);
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [assignDialogPriorityId, setAssignDialogPriorityId] = useState<number | null>(null);
   const [levelFilter, setLevelFilter] = useState("all");
   const [healthFilter, setHealthFilter] = useState("all");
+  const [showClosed, setShowClosed] = useState(false);
+
+  const listQueryParams = (base: string) =>
+    showClosed ? `${base}&include_cancelled=true` : base;
 
   // ── My Priorities ──
   const myQuery = useQuery<Priority[]>({
-    queryKey: ["/api/priorities", "mine"],
-    queryFn: () => fetchPriorities("scope=role&assigned_user_id=me"),
+    queryKey: ["/api/priorities", "mine", showClosed],
+    queryFn: () => fetchPriorities(listQueryParams("scope=role&assigned_user_id=me")),
     enabled: activeTab === "mine",
   });
 
@@ -562,17 +790,19 @@ export default function PrioritiesPage() {
   // a dept head sees everything on their team rather than only the rows
   // explicitly scoped to their department.
   const deptQuery = useQuery<Priority[]>({
-    queryKey: ["/api/priorities", "department", userDepartment],
+    queryKey: ["/api/priorities", "department", userDepartment, showClosed],
     queryFn: () => fetchPriorities(
-      `scope=department${userDepartment ? `&department=${userDepartment}` : ""}&include_team_roles=true`,
+      listQueryParams(
+        `scope=department${userDepartment ? `&department=${userDepartment}` : ""}&include_team_roles=true`,
+      ),
     ),
     enabled: activeTab === "department" && isDeptHead,
   });
 
   // ── Company Priorities ──
   const companyQuery = useQuery<Priority[]>({
-    queryKey: ["/api/priorities", "company"],
-    queryFn: () => fetchPriorities("scope=company"),
+    queryKey: ["/api/priorities", "company", showClosed],
+    queryFn: () => fetchPriorities(listQueryParams("scope=company")),
     enabled: activeTab === "company",
   });
 
@@ -596,6 +826,16 @@ export default function PrioritiesPage() {
     },
   });
 
+  // ── Reopen mutation (archive → active) ──
+  const reopenMutation = useMutation({
+    mutationFn: async (priorityId: number) => {
+      return apiRequest("PUT", `/api/priorities/${priorityId}`, { status: "active" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
+    },
+  });
+
   // Apply filters to active data
   const applyFilters = (data: Priority[]) => {
     return data.filter(p => {
@@ -610,6 +850,8 @@ export default function PrioritiesPage() {
   const filteredCompany = useMemo(() => applyFilters(companyQuery.data || []), [companyQuery.data, levelFilter, healthFilter]);
 
   const activeData = activeTab === "mine" ? filteredMine : activeTab === "department" ? filteredDept : filteredCompany;
+  const activeCount = activeData.filter(p => p.status !== "closed" && p.status !== "complete").length;
+  const closedData = activeData.filter(p => p.status === "closed" || p.status === "complete");
 
   return (
     <PageShell>
@@ -620,7 +862,8 @@ export default function PrioritiesPage() {
             Priorities
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            {activeData.length} active priorit{activeData.length === 1 ? "y" : "ies"}
+            {activeCount} active priorit{activeCount === 1 ? "y" : "ies"}
+            {showClosed && closedData.length > 0 && ` · ${closedData.length} closed`}
           </p>
         </div>
         {(isAdmin || isDeptHead) && (
@@ -677,6 +920,15 @@ export default function PrioritiesPage() {
                 <SelectItem value="healthy">Healthy</SelectItem>
               </SelectContent>
             </Select>
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={showClosed}
+                onChange={(e) => setShowClosed(e.target.checked)}
+                className="rounded"
+              />
+              Show closed
+            </label>
             {(levelFilter !== "all" || healthFilter !== "all") && (
               <Button variant="ghost" size="sm" className="text-xs h-8" onClick={() => { setLevelFilter("all"); setHealthFilter("all"); }}>
                 Clear
@@ -697,6 +949,8 @@ export default function PrioritiesPage() {
             onEscalate={(id) => escalateMutation.mutate(id)}
             showMarkComplete
             onMarkComplete={(id) => markCompleteMutation.mutate(id)}
+            showReopen={showClosed}
+            onReopen={(id) => reopenMutation.mutate(id)}
             emptyMessage="No priorities assigned to you"
             emptyAction={
               <p className="text-xs text-muted-foreground mt-1">
@@ -718,6 +972,9 @@ export default function PrioritiesPage() {
               showEscalate
               onEscalate={(id) => escalateMutation.mutate(id)}
               showDeptActions
+              onAssign={(id) => setAssignDialogPriorityId(id)}
+              showReopen={showClosed}
+              onReopen={(id) => reopenMutation.mutate(id)}
               emptyMessage={`No priorities for ${DEPARTMENT_OPTIONS.find(d => d.value === userDepartment)?.label || "your department"}`}
               emptyAction={
                 <Button size="sm" className="mt-3" onClick={() => setCreateDialogOpen(true)}>
@@ -737,6 +994,8 @@ export default function PrioritiesPage() {
               isError={companyQuery.isError}
               error={companyQuery.error as Error}
               refetch={companyQuery.refetch}
+              showReopen={showClosed}
+              onReopen={(id) => reopenMutation.mutate(id)}
               emptyMessage="No company priorities yet"
               emptyAction={
                 <Button size="sm" className="mt-3" onClick={() => setCreateDialogOpen(true)}>
@@ -753,6 +1012,12 @@ export default function PrioritiesPage() {
         onOpenChange={setCreateDialogOpen}
         defaultScope={activeTab === "mine" ? "role" : activeTab === "department" ? "department" : "company"}
         defaultDepartment={userDepartment}
+      />
+
+      <AssignPriorityDialog
+        open={assignDialogPriorityId !== null}
+        onOpenChange={(open) => { if (!open) setAssignDialogPriorityId(null); }}
+        priorityId={assignDialogPriorityId}
       />
     </PageShell>
   );
