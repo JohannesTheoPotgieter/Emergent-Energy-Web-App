@@ -34,6 +34,11 @@ import { getFeatureFlag, getFeatureFlags } from "../lib/feature-flags";
 import { isWorkItemsEnabled, getAllWorkItemsForPlanTab } from "../work-items-adapter";
 import { computeScheduleRag, computeCostRag, computeQualityRag, computeOverallRag } from "@shared/kpi-definitions";
 import { classifyCosStatusFull, isCosRealised as isCosRealisedCanonical } from "../lib/calculations/financeUtils";
+import {
+  sumRevenueRecognition,
+  sumRealisedRevenueRecognition,
+} from "../lib/finance/revenue-recognition";
+import { getCosEffectiveDateAndSource } from "../lib/expense-row-selector";
 import { actorFromReq, createProjectEvent } from "../services/project-event-service";
 import { paramStr } from "../lib/req-params";
 import { classifyProjectInfoPayload } from "../services/source-of-truth-policy";
@@ -127,8 +132,10 @@ export function registerProjectInfoExtractedRoutes(app: Express): void {
         })(),
       ]);
 
-      // Contract value and budget
-      const totalRevenueActual = inflows.reduce((s: number, r: any) => s + (Number(r.milestoneAmount) || 0), 0);
+      // Contract value and budget — POC (canonical revenue recognition).
+      // The fallback uses POC sum from cost lines, NOT milestone billing total.
+      const pocRevenuePlanned = sumRevenueRecognition(expenses as any);
+      const totalRevenueActual = pocRevenuePlanned;
       const contractValue = (projectInfoRow as any)?.contractValue || totalRevenueActual || 0;
       const totalBudgetFromExpenses = expenses.reduce((s: number, e: any) => s + (Number(e.budgetTotal) || 0), 0);
       const budgetTotal = (projectInfoRow as any)?.budgetTotal || totalBudgetFromExpenses || 0;
@@ -180,11 +187,25 @@ export function registerProjectInfoExtractedRoutes(app: Express): void {
       const qualityProgressPct = combinedTotalItems > 0 ? (combinedApprovedItems / combinedTotalItems) * 100 : 0;
       const qualityRag = computeQualityRag(hasQualityData, qualityGatesPassed, qualityGatesTotal, combinedApprovedItems);
 
-      // Revenue realised %
+      // Revenue realised % — POC method:
+      //   numerator   = revenue_recognition_amount on effectively-realised lines
+      //   denominator = contractValue (or POC planned if contract missing)
+      // totalPaidInflows is kept for the cashflow tile (cash actually banked).
+      const nowPi = new Date();
+      const cmkPi = `${nowPi.getUTCFullYear()}-${String(nowPi.getUTCMonth() + 1).padStart(2, '0')}`;
+      const getCosMonthKeyPi = (line: any): string | null => {
+        const { date } = getCosEffectiveDateAndSource(line);
+        return date ? date.substring(0, 7) : null;
+      };
+      const pocRevenueRealised = sumRealisedRevenueRecognition(
+        expenses as any,
+        cmkPi,
+        getCosMonthKeyPi,
+      );
       const totalPaidInflows = inflows
         .filter((m: any) => m.inBank === 1 || m.inBank === true)
         .reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
-      const revenueRealisedPct = contractValue > 0 ? (totalPaidInflows / contractValue) * 100 : 0;
+      const revenueRealisedPct = contractValue > 0 ? (pocRevenueRealised / contractValue) * 100 : 0;
 
       // COS realised %
       const isCosRealised = (e: any) => isCosRealisedCheck(e);
@@ -210,7 +231,7 @@ export function registerProjectInfoExtractedRoutes(app: Express): void {
         schedule: { rag: scheduleRag, overdueTasks: overduePlanTasks.length, overdueEngTasks: overdueEngTasks.length, completionPct: Math.round(planCompletionPct * 10) / 10 },
         cost: { rag: costRag, ratio: Math.round(costRatio * 1000) / 1000, totalExpenses, budgetTotal },
         quality: { rag: qualityRag, gatesTotal: qualityGatesTotal, gatesPassed: qualityGatesPassed, qcGatesTotal, qcGatesPassed, engGatesTotal, engGatesPassed, totalItems: combinedTotalItems, approvedItems: combinedApprovedItems, progressPct: Math.round(qualityProgressPct * 10) / 10 },
-        revenue: { contractValue, realisedPct: Math.round(revenueRealisedPct * 10) / 10, totalPaidInflows },
+        revenue: { contractValue, realisedPct: Math.round(revenueRealisedPct * 10) / 10, totalPaidInflows, pocRevenueRealised, pocRevenuePlanned, revenueMethod: "POC" },
         cos: { realisedPct: Math.round(cosRealisedPct * 10) / 10, totalRealised: totalRealisedCos },
         engineering: { progressPct: Math.round(engProgressPct * 10) / 10, totalTasks: engTotalTasks, completedTasks: engCompletedTasks },
         overall: { rag: overallRag },
