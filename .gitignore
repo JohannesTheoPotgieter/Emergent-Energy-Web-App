@@ -60,3 +60,4 @@ node20-dev.out.log
 tsc-all.txt
 tsc-errors.txt
 .cache/
+.migrations-drift-check/
