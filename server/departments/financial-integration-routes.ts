@@ -448,13 +448,27 @@ router.get("/api/financial-integration/warnings/:projectName", requireAuth, asyn
       });
     }
 
-    const totalRevenue = inflows.reduce((s: number, r: any) => s + (Number(r.milestoneAmount) || 0), 0);
+    // CANONICAL Revenue Recognition (POC) — sum of recognition amounts on
+    // cost lines for this project. Falls back to milestone billing total when
+    // POC is unavailable (no costed revenue captured yet).
+    const pocRevenueTotal = expenses.reduce(
+      (s: number, e: any) =>
+        s + (e.rowType === 'item' && !e.noRevenueLinked
+          ? Number(e.revenueRecognitionAmount) || 0
+          : 0),
+      0,
+    );
+    const milestoneRevenueTotal = inflows.reduce(
+      (s: number, r: any) => s + (Number(r.milestoneAmount) || 0),
+      0,
+    );
+    const totalRevenue = pocRevenueTotal > 0 ? pocRevenueTotal : milestoneRevenueTotal;
     if (totalRevenue > 0 && totalActual > totalRevenue) {
       warnings.push({
         type: "cos_exceeds_revenue",
         severity: "critical",
         message: `COS (R${(totalActual / 1000).toFixed(0)}k) exceeds total revenue (R${(totalRevenue / 1000).toFixed(0)}k)`,
-        details: { totalActual, totalRevenue },
+        details: { totalActual, totalRevenue, revenueMethod: pocRevenueTotal > 0 ? "POC" : "milestone_fallback" },
       });
     }
 
