@@ -407,6 +407,12 @@ export class OpportunitiesRepository {
     // exclusion constraint matching the ON CONFLICT specification".
     // We only ever lazy-create unlinked shadows here (project_id is always
     // NULL on insert), so the predicate is satisfied by construction.
+    //
+    // IMPORTANT: Drizzle's `onConflictDoNothing` only emits the predicate
+    // when passed via the (deprecated-but-functional) `where` key. The
+    // `targetWhere` property is silently ignored on DoNothing — it is only
+    // wired up for `onConflictDoUpdate`. See node_modules/drizzle-orm/
+    // pg-core/query-builders/insert.js (DoNothing branch uses `whereSql`).
     const projectSiteName =
       opp.siteName ||
       opp.clientName ||
@@ -429,7 +435,7 @@ export class OpportunitiesRepository {
       })
       .onConflictDoNothing({
         target: pdTickets.opportunityId,
-        targetWhere: sql`opportunity_id IS NOT NULL AND project_id IS NULL`,
+        where: sql`opportunity_id IS NOT NULL AND project_id IS NULL`,
       });
 
     // Constrain re-select to the canonical shadow scope (project_id IS NULL)
