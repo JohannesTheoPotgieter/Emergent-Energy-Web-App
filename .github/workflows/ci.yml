@@ -36,6 +36,10 @@ jobs:
       # Schema-drift guard (Phase 3b). Fails the build if shared/schema/*.ts
       # was edited without a corresponding new migration under /migrations/.
       - run: npm run db:check
+      # Unit tests (Phase 4). No Postgres, no live server — pure vitest over
+      # qa/tests/unit/. Any regression in finance math, error-leak guards,
+      # schema invariants, or other pinned contracts fails PRs here.
+      - run: npm run test
 
   # ── Stage 2: Tests (requires Postgres) ────────────────────
   test:
