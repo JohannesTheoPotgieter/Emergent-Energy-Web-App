@@ -12,3 +12,9 @@ id = "-5PXst0qSwLlJqGzaKIWd"
 uri = "file://tmp/fy26-cos-by-project-month.csv"
 type = "table"
 title = "FY26 COS by Project & Month (Production)"
+
+[[outputs]]
+id = "VI5zcHmSJ0XGQprb303PP"
+uri = "file://tmp/fy26-cos-by-project-month-recognised.csv"
+type = "table"
+title = "FY26 COS by Project & Month — Realised + Committed (Production)"
