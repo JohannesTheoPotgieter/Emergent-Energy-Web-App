@@ -6,12 +6,16 @@ import { db } from "../db";
 import {
   mytoolCompanyPriorities,
   priorityProjects,
+  priorityOpportunities,
   users,
   projectInfo,
   projectExecutionState,
   derivedProjectKpis,
   workItems,
   approvals,
+  opportunities,
+  pdTickets,
+  raidItems,
 } from "@shared/schema";
 import { ROLE_DEPARTMENT_MAP } from "@shared/schema/users";
 import { eq, and, sql, desc, asc, inArray, isNull, ne } from "drizzle-orm";
@@ -19,7 +23,7 @@ import { asyncHandler } from "../middleware/asyncHandler";
 import { validateBody } from "../middleware/validateBody";
 import { ApiError, badRequest, forbidden, notFound } from "../lib/api-error";
 import { PRIORITY_HEALTH_VALUES, type PriorityHealth, computeEffectivePriorityHealth } from "@shared/kpi-definitions";
-import { PRIORITY_SCOPES, ESCALATION_REASONS, computeEscalatePatch, collectDescendantIds, matchesPriorityListFilter, type PriorityScope, type EscalationReason } from "@shared/config/priorities";
+import { PRIORITY_SCOPES, ESCALATION_REASONS, computeEscalatePatch, collectDescendantIds, collectAncestorIds, matchesPriorityListFilter, type PriorityScope, type EscalationReason } from "@shared/config/priorities";
 import { recordActivity, computeUpdateActivities } from "./priority-activity-log";
 import { priorityActivity } from "@shared/schema";
 
@@ -100,6 +104,10 @@ const linkProjectsSchema = z.object({
   project_ids: z.array(z.number().int().positive()).min(1, "project_ids array is required").max(500),
 });
 
+const linkOpportunitiesSchema = z.object({
+  opportunity_ids: z.array(z.number().int().positive()).min(1, "opportunity_ids array is required").max(500),
+});
+
 const breakDownSchema = z.object({
   children: z.array(z.object({
     title: z.string().trim().min(1).max(200),
@@ -156,6 +164,13 @@ interface PriorityWithMetrics {
   totalGp: number;
   blockerCount: number;
   openTaskCount: number;
+  engBlockerCount: number;
+  qualityDefectCount: number;
+  hseIncidentCount: number;
+  hseCriticalCount: number;
+  opportunityCount: number;
+  staleOpportunityCount: number;
+  openPdTicketCount: number;
   hasProjects: boolean;
   childCount: number;
   parentTitle: string | null;
@@ -172,6 +187,15 @@ interface DerivedMetricsRow {
   avg_progress: number;
   blocker_count: number;
   open_task_count: number;
+  /** Tier 4 · PR 3 cross-department signals. */
+  eng_blocker_count?: number;
+  quality_defect_count?: number;
+  hse_incident_count?: number;
+  hse_critical_count?: number;
+  /** Tier 4 · PR 2 project-development signals. */
+  opportunity_count?: number;
+  stale_opportunity_count?: number;
+  open_pd_ticket_count?: number;
 }
 
 async function getPriorityDerivedMetrics(priorityId: number): Promise<DerivedMetricsRow | null> {
@@ -293,6 +317,13 @@ async function enrichPriority(
   const projectCount = Number(metrics?.project_count || 0);
   const hasProjects = projectCount > 0;
   const blockerCount = Number(metrics?.blocker_count || 0);
+  const engBlockerCount = Number(metrics?.eng_blocker_count || 0);
+  const qualityDefectCount = Number(metrics?.quality_defect_count || 0);
+  const hseIncidentCount = Number(metrics?.hse_incident_count || 0);
+  const hseCriticalCount = Number(metrics?.hse_critical_count || 0);
+  const opportunityCount = Number(metrics?.opportunity_count || 0);
+  const staleOpportunityCount = Number(metrics?.stale_opportunity_count || 0);
+  const openPdTicketCount = Number(metrics?.open_pd_ticket_count || 0);
 
   const derivedHealth = hasProjects ? (metrics?.derived_health ?? null) : null;
   const manualHealth = (p.manualHealth as PriorityHealth | null) || null;
@@ -304,6 +335,12 @@ async function enrichPriority(
     dueDate: p.dueDate,
     status: p.status,
     blockerCount,
+    engBlockerCount,
+    qualityDefectCount,
+    hseIncidentCount,
+    hseCriticalCount,
+    staleOpportunityCount,
+    openPdTicketCount,
   });
 
   const effectiveProgress = hasProjects
@@ -329,6 +366,13 @@ async function enrichPriority(
     totalGp: Number(metrics?.total_gp || 0),
     blockerCount,
     openTaskCount: Number(metrics?.open_task_count || 0),
+    engBlockerCount,
+    qualityDefectCount,
+    hseIncidentCount,
+    hseCriticalCount,
+    opportunityCount,
+    staleOpportunityCount,
+    openPdTicketCount,
     hasProjects,
     childCount: childCountMap?.get(p.id) ?? 0,
     parentTitle: p.parentId ? (parentMap?.get(p.parentId) ?? null) : null,
@@ -605,9 +649,26 @@ router.get("/api/priorities/:id", requireAuth, asyncHandler(async (req: Request,
       rolledUpOpenTaskCount = Number(openRow?.n || 0);
     }
 
+    // Linked opportunities (Tier 4 · PR 2) — enriched with open-PD-ticket
+    // count so the detail page can show pipeline health next to the deal.
+    const linkedOpps = await db
+      .select({
+        id: opportunities.id,
+        dealName: opportunities.dealName,
+        stage: opportunities.stage,
+        estimatedValue: opportunities.estimatedValue,
+        expectedCloseDate: opportunities.expectedCloseDate,
+        pipedriveStageChangedAt: opportunities.pipedriveStageChangedAt,
+        linkedAt: priorityOpportunities.linkedAt,
+      })
+      .from(priorityOpportunities)
+      .innerJoin(opportunities, eq(priorityOpportunities.opportunityId, opportunities.id))
+      .where(eq(priorityOpportunities.priorityId, priorityId));
+
     res.json({
       ...enriched,
       linkedProjects: projectsWithPm,
+      linkedOpportunities: linkedOpps,
       descendantPriorityCount: descendantPriorityIds.length,
       hasDescendants: descendantPriorityIds.length > 0,
       directProjectCount: directProjectIds.length,
@@ -615,6 +676,7 @@ router.get("/api/priorities/:id", requireAuth, asyncHandler(async (req: Request,
         projectCount: projectsWithPm.length,
         directProjectCount: directProjectIds.length,
         descendantPriorityCount: descendantPriorityIds.length,
+        opportunityCount: linkedOpps.length,
         totalRevenue: rolledUpTotalRevenue,
         totalCos: rolledUpTotalCos,
         totalGp: rolledUpGrossProfit,
@@ -622,6 +684,8 @@ router.get("/api/priorities/:id", requireAuth, asyncHandler(async (req: Request,
         atRiskProjectCount: rolledUpAtRisk,
         blockerCount: rolledUpBlockerCount,
         openTaskCount: rolledUpOpenTaskCount,
+        staleOpportunityCount: enriched.staleOpportunityCount,
+        openPdTicketCount: enriched.openPdTicketCount,
       },
     });
 }));
@@ -930,6 +994,75 @@ router.post(
   }),
 );
 
+// ==================== POST /api/priorities/:id/opportunities ====================
+// Link pre-contract opportunities to a priority. Tier 4 · PR 2 — lets the
+// strategic view see pipeline risk (stalled proposals, overdue feasibility)
+// without waiting for deals to convert into signed projects.
+router.post(
+  "/api/priorities/:id/opportunities",
+  requireAuth,
+  requirePriorityAdmin,
+  validateBody(linkOpportunitiesSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const user = getEffectiveUser(req)!;
+    const priorityId = parseIdParam(req.params.id);
+    if (priorityId === null) throw badRequest("Invalid priority id");
+    const { opportunity_ids } = req.body as z.infer<typeof linkOpportunitiesSchema>;
+
+    const [priority] = await db.select().from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, priorityId));
+    if (!priority) throw notFound("Priority");
+
+    const oppRows = await db.select({ id: opportunities.id }).from(opportunities).where(inArray(opportunities.id, opportunity_ids));
+    if (oppRows.length !== opportunity_ids.length) throw badRequest("One or more opportunity_ids not found");
+
+    for (const oid of opportunity_ids) {
+      await db.insert(priorityOpportunities).values({
+        priorityId,
+        opportunityId: oid,
+        linkedBy: user.id,
+      }).onConflictDoNothing();
+      await recordActivity({
+        priorityId,
+        actorUserId: user.id,
+        action: "project_linked",
+        toValue: `opportunity:${oid}`,
+        details: { kind: "opportunity", opportunityId: oid },
+      });
+    }
+
+    res.status(204).send();
+  }),
+);
+
+// ==================== DELETE /api/priorities/:id/opportunities/:opportunityId ====================
+router.delete(
+  "/api/priorities/:id/opportunities/:opportunityId",
+  requireAuth,
+  requirePriorityAdmin,
+  asyncHandler(async (req: Request, res: Response) => {
+    const priorityId = parseIdParam(req.params.id);
+    const opportunityId = parseIdParam(req.params.opportunityId);
+    if (priorityId === null || opportunityId === null) throw badRequest("Invalid id parameter");
+
+    await db.delete(priorityOpportunities).where(
+      and(
+        eq(priorityOpportunities.priorityId, priorityId),
+        eq(priorityOpportunities.opportunityId, opportunityId),
+      )
+    );
+
+    await recordActivity({
+      priorityId,
+      actorUserId: getEffectiveUser(req)?.id,
+      action: "project_unlinked",
+      toValue: `opportunity:${opportunityId}`,
+      details: { kind: "opportunity", opportunityId },
+    });
+
+    res.status(204).send();
+  }),
+);
+
 // ==================== DELETE /api/priorities/:id/projects/:projectId ====================
 router.delete(
   "/api/priorities/:id/projects/:projectId",
@@ -959,6 +1092,14 @@ router.delete(
 );
 
 // ==================== GET /api/projects/:id/priorities ====================
+// Bottom-up: returns priorities linked DIRECTLY to this project PLUS every
+// ancestor priority up the parentId chain. Each row carries `linkedDirectly`
+// so the UI can group "Direct priorities" vs "Rolls up into …".
+//
+// This is the symmetric companion to GET /api/priorities/:id — that endpoint
+// walks DOWN the tree to aggregate a Company priority's descendants; this
+// endpoint walks UP so a PM can see which strategic priorities their project
+// actually feeds.
 router.get(
   "/api/projects/:id/priorities",
   requireAuth,
@@ -966,7 +1107,8 @@ router.get(
     const projectId = parseIdParam(req.params.id);
     if (projectId === null) throw badRequest("Invalid project id");
 
-    const priorities = await db
+    // Direct links for this project
+    const directRows = await db
       .select({
         id: mytoolCompanyPriorities.id,
         title: mytoolCompanyPriorities.title,
@@ -974,33 +1116,82 @@ router.get(
         manualHealth: mytoolCompanyPriorities.manualHealth,
         status: mytoolCompanyPriorities.status,
         dueDate: mytoolCompanyPriorities.dueDate,
+        scope: mytoolCompanyPriorities.scope,
+        parentId: mytoolCompanyPriorities.parentId,
       })
       .from(priorityProjects)
       .innerJoin(mytoolCompanyPriorities, eq(priorityProjects.priorityId, mytoolCompanyPriorities.id))
-      .where(eq(priorityProjects.projectId, projectId));
+      .where(and(
+        eq(priorityProjects.projectId, projectId),
+        ne(mytoolCompanyPriorities.status, "closed"),
+      ));
+
+    // Load the full adjacency once so we can walk ancestors cheaply.
+    const adjacency = await db
+      .select({ id: mytoolCompanyPriorities.id, parentId: mytoolCompanyPriorities.parentId })
+      .from(mytoolCompanyPriorities)
+      .where(ne(mytoolCompanyPriorities.status, "closed"));
+
+    const directIds = new Set(directRows.map((r: typeof directRows[number]) => r.id));
+    const ancestorIdSet = new Set<number>();
+    for (const r of directRows) {
+      for (const anc of collectAncestorIds(
+        adjacency.map((a: { id: number; parentId: number | null }) => ({ id: a.id, parentId: a.parentId })),
+        r.id,
+      )) {
+        if (!directIds.has(anc)) ancestorIdSet.add(anc);
+      }
+    }
+
+    // Fetch ancestor detail in a single round trip.
+    const ancestorRows = ancestorIdSet.size === 0 ? [] : await db
+      .select({
+        id: mytoolCompanyPriorities.id,
+        title: mytoolCompanyPriorities.title,
+        severity: mytoolCompanyPriorities.severity,
+        manualHealth: mytoolCompanyPriorities.manualHealth,
+        status: mytoolCompanyPriorities.status,
+        dueDate: mytoolCompanyPriorities.dueDate,
+        scope: mytoolCompanyPriorities.scope,
+        parentId: mytoolCompanyPriorities.parentId,
+      })
+      .from(mytoolCompanyPriorities)
+      .where(inArray(mytoolCompanyPriorities.id, Array.from(ancestorIdSet)));
 
     const allMetrics = await getAllPriorityDerivedMetrics();
     const metricsMap = new Map(allMetrics.map((m: any) => [m.priority_id, m]));
 
-    const result = priorities.map((p: typeof priorities[number]) => {
-      const metrics = metricsMap.get(p.id);
+    const shape = (row: typeof directRows[number], linkedDirectly: boolean) => {
+      const metrics = metricsMap.get(row.id);
       const projectCount = Number(metrics?.project_count || 0);
       const { health: effectiveHealth } = computeEffectivePriorityHealth({
-        manualHealth: p.manualHealth as PriorityHealth | null,
+        manualHealth: row.manualHealth as PriorityHealth | null,
         derivedHealth: projectCount > 0 ? (metrics?.derived_health ?? null) : null,
-        severity: p.severity,
-        dueDate: p.dueDate,
-        status: p.status,
+        severity: row.severity,
+        dueDate: row.dueDate,
+        status: row.status,
         blockerCount: Number(metrics?.blocker_count || 0),
+        engBlockerCount: Number(metrics?.eng_blocker_count || 0),
+        qualityDefectCount: Number(metrics?.quality_defect_count || 0),
+        hseIncidentCount: Number(metrics?.hse_incident_count || 0),
+        hseCriticalCount: Number(metrics?.hse_critical_count || 0),
       });
-
       return {
-        id: p.id,
-        title: p.title,
-        severity: p.severity,
+        id: row.id,
+        title: row.title,
+        severity: row.severity,
+        status: row.status,
+        scope: row.scope,
+        parentId: row.parentId,
         effectiveHealth,
+        linkedDirectly,
       };
-    });
+    };
+
+    const result = [
+      ...directRows.map((r: typeof directRows[number]) => shape(r, true)),
+      ...ancestorRows.map((r: typeof ancestorRows[number]) => shape(r, false)),
+    ];
 
     res.json(result);
   }),
@@ -1229,6 +1420,43 @@ router.post(
       details: { reason: patch.escalationReason },
     });
 
+    // Tier 4 · PR 5 — outbound signal. Emit a RAID "issue" on every directly
+    // linked project so department boards pick up the escalation context.
+    // Idempotent: we use a stable title so re-running doesn't spam; linked
+    // projects that already have a matching open RAID row get skipped.
+    try {
+      const linkedProjectRows = await db
+        .select({ projectId: priorityProjects.projectId })
+        .from(priorityProjects)
+        .where(eq(priorityProjects.priorityId, priorityId));
+      const raidTitle = `[Priority escalated] ${priority.title}`;
+      const actorUserId = getEffectiveUser(req)?.id ?? null;
+      for (const { projectId } of linkedProjectRows) {
+        const existing = await db
+          .select({ id: raidItems.id })
+          .from(raidItems)
+          .where(and(
+            eq(raidItems.projectId, projectId),
+            eq(raidItems.title, raidTitle),
+            isNull(raidItems.deletedAt),
+          ))
+          .limit(1);
+        if (existing.length > 0) continue;
+        await db.insert(raidItems).values({
+          projectId,
+          type: "issue",
+          title: raidTitle,
+          description: `Priority "${priority.title}" was escalated from ${priority.scope} to ${patch.scope} (${patch.escalationReason}). Review the priority and align this project's plan.`,
+          status: "open",
+          priority: patch.scope === "company" ? "critical" : "high",
+          createdByUserId: actorUserId,
+        });
+      }
+    } catch (err: any) {
+      // Escalation must not fail just because the RAID emit failed.
+      console.warn("[Priorities] RAID emit on escalation failed:", err?.message || err);
+    }
+
     const metrics = await getPriorityDerivedMetrics(priorityId);
     const enriched = await enrichPriority(updated, metrics);
     res.json(enriched);
@@ -1343,13 +1571,38 @@ router.post(
   }),
 );
 
+// ==================== GET /api/priorities/:id/project-ids ====================
+// Lightweight endpoint for department dashboards (engineering / quality /
+// HSE / PD) to filter their project lists by a chosen priority. Returns the
+// rolled-up project ID set — direct links plus every descendant priority's
+// links, deduped. Tier 4 · PR 6.
+router.get("/api/priorities/:id/project-ids", requireAuth, asyncHandler(async (req: Request, res: Response) => {
+  const priorityId = parseIdParam(req.params.id);
+  if (priorityId === null) throw badRequest("Invalid priority id");
+
+  const { directProjectIds, rolledUpProjectIds, descendantPriorityIds } = await resolveRolledUpScope(priorityId);
+
+  res.json({
+    priorityId,
+    directProjectIds,
+    rolledUpProjectIds,
+    descendantPriorityCount: descendantPriorityIds.length,
+  });
+}));
+
 // ==================== GET /api/priorities/:id/activity ====================
 // Returns the append-only activity timeline for a priority, newest-first.
+//
+// Tier 4 · PR 4: when called with ?include_project_events=true the response
+// also merges inherited events from linked projects (RAG transitions,
+// phase changes) so the timeline reflects the full cross-departmental
+// history, not just priority-level mutations.
 router.get("/api/priorities/:id/activity", requireAuth, asyncHandler(async (req: Request, res: Response) => {
   const priorityId = parseIdParam(req.params.id);
   if (priorityId === null) throw badRequest("Invalid priority id");
 
   const limit = Math.min(parseInt((req.query.limit as string) || "100", 10) || 100, 500);
+  const includeProjectEvents = req.query.include_project_events === "true";
 
   const rows = await db
     .select()
@@ -1373,7 +1626,7 @@ router.get("/api/priorities/:id/activity", requireAuth, asyncHandler(async (req:
   }
   const userNameMap = await getUsersByIds(Array.from(userIdsFromValues));
 
-  const enriched = rows.map((r: typeof rows[number]) => ({
+  const enriched: any[] = rows.map((r: typeof rows[number]) => ({
     id: r.id,
     priorityId: r.priorityId,
     actorUserId: r.actorUserId,
@@ -1385,7 +1638,75 @@ router.get("/api/priorities/:id/activity", requireAuth, asyncHandler(async (req:
     toName: r.toValue && userNameMap.get(Number(r.toValue))?.name || null,
     details: r.details,
     createdAt: r.createdAt,
+    source: "priority",
   }));
+
+  if (includeProjectEvents) {
+    // Pull inherited events from the rolled-up project set. We read
+    // `project_execution_state.rag_updated_at` / `phase_updated_at` so each
+    // linked project contributes at most two events — its latest RAG change
+    // and its latest phase transition. Cheaper than streaming every
+    // individual project-side event; good enough for a strategic timeline.
+    const { rolledUpProjectIds } = await resolveRolledUpScope(priorityId);
+    if (rolledUpProjectIds.length > 0) {
+      const projectEvents = await db
+        .select({
+          id: projectInfo.id,
+          name: projectInfo.projectName,
+          phase: projectExecutionState.phase,
+          ragStatus: projectExecutionState.ragStatus,
+          ragComment: projectExecutionState.ragComment,
+          ragUpdatedAt: projectExecutionState.ragUpdatedAt,
+          phaseNotes: projectExecutionState.phaseNotes,
+          phaseUpdatedAt: projectExecutionState.phaseUpdatedAt,
+        })
+        .from(projectInfo)
+        .leftJoin(projectExecutionState, eq(projectInfo.id, projectExecutionState.projectId))
+        .where(inArray(projectInfo.id, rolledUpProjectIds));
+
+      for (const ev of projectEvents) {
+        if (ev.ragUpdatedAt && ev.ragStatus) {
+          enriched.push({
+            id: `proj-rag-${ev.id}`,
+            priorityId,
+            actorUserId: null,
+            actorName: ev.name,
+            action: "project_rag_update",
+            fromValue: null,
+            toValue: ev.ragStatus,
+            fromName: null,
+            toName: null,
+            details: { projectId: ev.id, projectName: ev.name, comment: ev.ragComment },
+            createdAt: ev.ragUpdatedAt,
+            source: "project",
+          });
+        }
+        if (ev.phaseUpdatedAt && ev.phase) {
+          enriched.push({
+            id: `proj-phase-${ev.id}`,
+            priorityId,
+            actorUserId: null,
+            actorName: ev.name,
+            action: "project_phase_change",
+            fromValue: null,
+            toValue: ev.phase,
+            fromName: null,
+            toName: null,
+            details: { projectId: ev.id, projectName: ev.name, notes: ev.phaseNotes },
+            createdAt: ev.phaseUpdatedAt,
+            source: "project",
+          });
+        }
+      }
+
+      // Re-sort merged list by timestamp descending.
+      enriched.sort((a, b) => {
+        const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return tb - ta;
+      });
+    }
+  }
 
   res.json(enriched);
 }));

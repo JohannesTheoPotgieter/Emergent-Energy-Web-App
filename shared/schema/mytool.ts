@@ -4,7 +4,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
 import { users } from "./users";
-import { projectInfo } from "./projects";
+import { projectInfo, opportunities } from "./projects";
 import { workItems } from "./tasks";
 
 // ── Legacy personal-task enums — retained for Drizzle migration compatibility ──
@@ -197,6 +197,24 @@ export const priorityProjects = pgTable("priority_projects", {
 export const insertPriorityProjectSchema = createInsertSchema(priorityProjects).omit({ id: true, linkedAt: true } as any);
 export type InsertPriorityProject = z.infer<typeof insertPriorityProjectSchema>;
 export type PriorityProject = typeof priorityProjects.$inferSelect;
+
+// Priority ↔ Opportunity junction — Tier 4 · PR 2.
+// Lets a Priority attach to a *pre-contract* deal (opportunity) as well as
+// to a signed project. Needed so the strategic view can see pipeline risk
+// (stalled proposals, overdue feasibility work) not just post-signature work.
+export const priorityOpportunities = pgTable("priority_opportunities", {
+  id: serial("id").primaryKey(),
+  priorityId: integer("priority_id").notNull().references(() => mytoolCompanyPriorities.id, { onDelete: "cascade" }),
+  opportunityId: integer("opportunity_id").notNull().references(() => opportunities.id, { onDelete: "cascade" }),
+  linkedBy: integer("linked_by").references(() => users.id, { onDelete: "set null" }),
+  linkedAt: timestamp("linked_at").notNull().defaultNow(),
+}, (table) => ({
+  uniquePriorityOpportunity: unique("priority_opportunities_unique").on(table.priorityId, table.opportunityId),
+}));
+
+export const insertPriorityOpportunitySchema = createInsertSchema(priorityOpportunities).omit({ id: true, linkedAt: true } as any);
+export type InsertPriorityOpportunity = z.infer<typeof insertPriorityOpportunitySchema>;
+export type PriorityOpportunity = typeof priorityOpportunities.$inferSelect;
 
 export const mytoolUserPreferences = pgTable("mytool_user_preferences", {
   ownerUserId: integer("owner_user_id").primaryKey().references(() => users.id),

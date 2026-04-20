@@ -99,6 +99,39 @@ export function collectDescendantIds(
   return Array.from(visited);
 }
 
+/**
+ * Resolves all ancestor priority IDs from a flat `[childId, parentId]`
+ * adjacency list, starting from `leafId`. Does NOT include the leaf itself.
+ *
+ * Used by the bottom-up drill-down: a project's detail page lists every
+ * priority it rolls up into — its directly-linked priorities PLUS every
+ * ancestor up the chain. Mirrors `collectDescendantIds` so the top-down
+ * and bottom-up views share a consistent traversal shape.
+ *
+ * Safe against self-cycles and multi-node cycles via a visited set, and
+ * bounded by `maxDepth` against malformed data.
+ */
+export function collectAncestorIds(
+  adjacency: ReadonlyArray<{ id: number; parentId: number | null }>,
+  leafId: number,
+  maxDepth = 20,
+): number[] {
+  const parentById = new Map<number, number | null>();
+  for (const row of adjacency) {
+    if (!parentById.has(row.id)) parentById.set(row.id, row.parentId ?? null);
+  }
+
+  const visited = new Set<number>();
+  let current: number | null | undefined = parentById.get(leafId) ?? null;
+  let depth = 0;
+  while (current != null && depth < maxDepth && !visited.has(current) && current !== leafId) {
+    visited.add(current);
+    current = parentById.get(current) ?? null;
+    depth++;
+  }
+  return Array.from(visited);
+}
+
 export interface PriorityListFilterRow {
   scope: PriorityScope;
   departmentKey: string | null;
