@@ -126,21 +126,33 @@ router.get("/api/opportunities/working", requireAuth, requirePermission("opportu
             ? note.replace(/^pipedrive:\s*/i, "").trim()
             : (note || `Deal #${r.pipedriveDealId || r.id}`));
 
+        // Project Developer = PD-side override (pd_tickets) ► Pipedrive owner.
+        // Province = opportunity column (Pipedrive) ► PD shadow fallback.
+        const pipedriveOwner = r.dealOwnerUserName || r.dealOwnerNameSnapshot || null;
+        const projectDeveloper = r.pdProjectDeveloperUserName || pipedriveOwner;
+        const province = r.province || r.pdProvince || null;
+
         return {
           id: r.id,
           dealName,
           pipedriveDealId: r.pipedriveDealId,
           orgClientName: r.clientName || null,
-          // Prefer the joined user-name (live FK), fall back to the
-          // snapshot stored at sync time when the user link is missing.
-          dealOwner: r.dealOwnerUserName || r.dealOwnerNameSnapshot || null,
+          dealOwner: pipedriveOwner,
+          projectDeveloper,
+          projectDeveloperOverridden: Boolean(r.pdProjectDeveloperUserName && r.pdProjectDeveloperUserName !== pipedriveOwner),
           stage: r.stage || null,
           status: r.status || null,
           siteLocation: r.siteName || r.siteAddress || null,
+          province,
+          fundingType: r.fundingType || null,
+          estimatedValue: r.estimatedValue != null ? Number(r.estimatedValue) : null,
+          nextActivityDate: r.nextActivityDate || null,
+          nextActivitySubject: r.nextActivitySubject || null,
           hasLinkedClient: Boolean(r.clientId),
           hasLinkedProject,
           linkedProjectCount,
-          existingEngineeringTicketCount: engineeringTicketCountByOpportunity.get(r.id) || 0,
+          openEngineeringTaskCount: engineeringTicketCountByOpportunity.get(r.id) || 0,
+          existingEngineeringTicketCount: engineeringTicketCountByOpportunity.get(r.id) || 0, // alias for legacy callers
           lastUpdated: r.updatedAt || null,
           signedDate: r.signedDate || null,
           expectedCloseDate: r.expectedCloseDate || null,

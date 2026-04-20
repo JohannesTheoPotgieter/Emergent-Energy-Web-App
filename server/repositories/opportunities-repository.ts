@@ -1,4 +1,5 @@
 import { eq, desc, isNull, and, inArray, sql, ilike, asc } from "drizzle-orm";
+import { alias as aliasedTable } from "drizzle-orm/pg-core";
 import {
   opportunities,
   clients,
@@ -37,6 +38,14 @@ interface WorkingListRow {
   siteId: number | null;
   siteName: string | null;
   siteAddress: string | null;
+  estimatedValue: string | null;
+  fundingType: string | null;
+  province: string | null;
+  nextActivityDate: string | Date | null;
+  nextActivitySubject: string | null;
+  pdProvince: string | null;
+  pdProjectDeveloperUserId: number | null;
+  pdProjectDeveloperUserName: string | null;
 }
 
 interface CountByOpportunity {
@@ -138,6 +147,11 @@ export class OpportunitiesRepository {
   // ---- Working-list queries ----
 
   async getWorkingListRows(): Promise<WorkingListRow[]> {
+    // Aliases so we can join `users` twice — once for the Pipedrive deal owner
+    // (CRM side) and once for the in-app project developer override (PD side).
+    const dealOwnerUser = aliasedTable(users, "deal_owner_user");
+    const projectDeveloperUser = aliasedTable(users, "project_developer_user");
+
     return db
       .select({
         id: opportunities.id,
@@ -153,16 +167,31 @@ export class OpportunitiesRepository {
         clientId: opportunities.clientId,
         clientName: clients.name,
         dealOwnerUserId: opportunities.dealOwnerUserId,
-        dealOwnerUserName: users.name,
+        dealOwnerUserName: dealOwnerUser.name,
         dealOwnerNameSnapshot: opportunities.dealOwnerName,
         siteId: opportunities.siteId,
         siteName: sites.siteName,
         siteAddress: sites.address,
+        // Management-board columns (2026-04-20):
+        estimatedValue: opportunities.estimatedValue,
+        fundingType: opportunities.fundingType,
+        province: opportunities.province,
+        nextActivityDate: opportunities.nextActivityDate,
+        nextActivitySubject: opportunities.nextActivitySubject,
+        // PD-shadow override fields:
+        pdProvince: pdTickets.province,
+        pdProjectDeveloperUserId: pdTickets.projectDeveloperUserId,
+        pdProjectDeveloperUserName: projectDeveloperUser.name,
       })
       .from(opportunities)
       .leftJoin(clients, eq(clients.id, opportunities.clientId))
-      .leftJoin(users, eq(users.id, opportunities.dealOwnerUserId))
+      .leftJoin(dealOwnerUser, eq(dealOwnerUser.id, opportunities.dealOwnerUserId))
       .leftJoin(sites, eq(sites.id, opportunities.siteId))
+      // Safe to leftJoin without aggregation: `pd_tickets_opportunity_shadow_unique`
+      // enforces 1:1 between opportunities ↔ pd_tickets shadow rows (partial unique
+      // index where opportunity_id IS NOT NULL AND project_id IS NULL).
+      .leftJoin(pdTickets, eq(pdTickets.opportunityId, opportunities.id))
+      .leftJoin(projectDeveloperUser, eq(projectDeveloperUser.id, pdTickets.projectDeveloperUserId))
       .where(and(
         isNull(opportunities.deletedAt),
         eq(opportunities.source, "pipedrive"),
@@ -189,6 +218,9 @@ export class OpportunitiesRepository {
   }
 
   async getEngineeringTicketCounts(opportunityIds: number[]): Promise<CountByOpportunity[]> {
+    // Counts engineering pd_tickets that are still OPEN — i.e. not Completed
+    // or Cancelled. This is the "engineering tasks open" metric surfaced on
+    // the Opportunities management board.
     const rows = await db
       .select({
         opportunityId: pdTickets.opportunityId,
@@ -198,6 +230,7 @@ export class OpportunitiesRepository {
       .where(and(
         inArray(pdTickets.opportunityId, opportunityIds),
         inArray(pdTickets.requestType, [...ENGINEERING_REQUEST_TYPES]),
+        sql`${pdTickets.status} NOT IN ('Completed', 'Cancelled')`,
       ))
       .groupBy(pdTickets.opportunityId);
     return rows.map((r: { opportunityId: number | null; count: number }) => ({

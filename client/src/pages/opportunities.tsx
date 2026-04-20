@@ -67,15 +67,55 @@ interface WorkingOpportunityRow {
   pipedriveDealId: string | null;
   orgClientName: string | null;
   dealOwner: string | null;
+  projectDeveloper: string | null;
+  projectDeveloperOverridden: boolean;
   stage: string | null;
   status: string | null;
   siteLocation: string | null;
+  province: string | null;
+  fundingType: string | null;
+  estimatedValue: number | null;
+  nextActivityDate: string | null;
+  nextActivitySubject: string | null;
   hasLinkedClient: boolean;
   hasLinkedProject: boolean;
   linkedProjectCount: number;
   existingEngineeringTicketCount: number;
+  openEngineeringTaskCount: number;
   lastUpdated: string | null;
   signedDate?: string | null;
+  expectedCloseDate?: string | null;
+}
+
+const FUNDING_LABELS: Record<string, string> = {
+  self_funded: "Self-funded",
+  third_party: "3rd-party",
+  blended: "Blended",
+  PPA: "PPA",
+  EPC: "EPC",
+  lease: "Lease",
+  hybrid: "Hybrid",
+};
+
+function fundingLabel(value: string | null | undefined): string {
+  if (!value) return "—";
+  return FUNDING_LABELS[value] ?? value;
+}
+
+function formatZAR(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return "—";
+  if (Math.abs(n) >= 1_000_000) return `R ${(n / 1_000_000).toFixed(1)}M`;
+  if (Math.abs(n) >= 1_000) return `R ${(n / 1_000).toFixed(0)}k`;
+  return `R ${n.toFixed(0)}`;
+}
+
+function formatDate(s: string | null | undefined): string {
+  if (!s) return "—";
+  try {
+    return new Date(s).toLocaleDateString("en-ZA", { day: "2-digit", month: "short", year: "2-digit" });
+  } catch {
+    return "—";
+  }
 }
 
 type MappingMode = "existing_existing" | "existing_new" | "new_new";
@@ -544,13 +584,16 @@ export default function OpportunitiesPage() {
           <table className="w-full text-sm" data-testid="table-opportunities-working">
             <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
-                <th className="text-left px-3 py-2">Deal</th>
-                <th className="text-left px-3 py-2">Stage</th>
-                <th className="text-left px-3 py-2">Status</th>
                 <th className="text-left px-3 py-2">Client</th>
                 <th className="text-left px-3 py-2">Project</th>
-                <th className="text-left px-3 py-2">Eng tickets</th>
-                <th className="text-left px-3 py-2">Updated</th>
+                <th className="text-left px-3 py-2">Project Developer</th>
+                <th className="text-left px-3 py-2">Province</th>
+                <th className="text-left px-3 py-2">Funding</th>
+                <th className="text-left px-3 py-2 whitespace-nowrap">Est. Signature</th>
+                <th className="text-right px-3 py-2 whitespace-nowrap">Deal Value</th>
+                <th className="text-center px-3 py-2 whitespace-nowrap">Eng. Open</th>
+                <th className="text-left px-3 py-2 whitespace-nowrap">Next Activity</th>
+                <th className="text-left px-3 py-2">Stage</th>
                 <th className="text-right px-3 py-2">Action</th>
               </tr>
             </thead>
@@ -558,43 +601,80 @@ export default function OpportunitiesPage() {
               {activeRows.map((row) => (
                 <tr
                   key={row.id}
-                  className="border-t hover:bg-muted/20 cursor-pointer"
+                  className="border-t hover:bg-emerald-50/40 cursor-pointer"
                   data-testid={`opportunity-row-${row.id}`}
                   onClick={() => setDrawerOppId(row.id)}
                 >
-                  {/* Row click opens the unified Opportunity drawer */}
-                  <td className="px-3 py-2 align-top min-w-[260px]">
-                    <p className="font-medium text-foreground">{row.dealName || `Deal #${row.id}`}</p>
-                    <p className="text-xs text-muted-foreground">PD #{row.pipedriveDealId || "—"}</p>
-                    <p className="text-xs text-muted-foreground mt-1">{row.orgClientName || "Unknown org"}{row.dealOwner ? ` • Owner: ${row.dealOwner}` : ""}</p>
-                    {row.siteLocation ? <p className="text-xs text-muted-foreground">{row.siteLocation}</p> : null}
+                  {/* Client */}
+                  <td className="px-3 py-2 align-top min-w-[180px]">
+                    <p className="font-medium text-foreground" title={row.orgClientName || ""}>{row.orgClientName || "—"}</p>
+                    {!row.hasLinkedClient && (
+                      <span className="inline-flex items-center gap-1 text-[10px] text-amber-700 mt-0.5">
+                        <AlertTriangle className="h-3 w-3" /> Unlinked
+                      </span>
+                    )}
                   </td>
+                  {/* Project (deal name = project name) */}
+                  <td className="px-3 py-2 align-top min-w-[220px]">
+                    <p className="font-medium text-foreground" title={row.dealName}>{row.dealName || `Deal #${row.id}`}</p>
+                    <p className="text-[10px] text-muted-foreground">PD #{row.pipedriveDealId || "—"}{row.hasLinkedProject ? ` • ${row.linkedProjectCount} project${row.linkedProjectCount === 1 ? "" : "s"}` : ""}</p>
+                  </td>
+                  {/* Project Developer */}
+                  <td className="px-3 py-2 align-top min-w-[160px]">
+                    <p className="text-foreground" title={row.projectDeveloper || ""}>{row.projectDeveloper || "—"}</p>
+                    {row.projectDeveloperOverridden && (
+                      <span className="text-[10px] text-emerald-700">App-assigned</span>
+                    )}
+                  </td>
+                  {/* Province */}
+                  <td className="px-3 py-2 align-top">
+                    {row.province ? (
+                      <Badge variant="outline" className="text-[10px] font-normal">{row.province}</Badge>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </td>
+                  {/* Funding type */}
+                  <td className="px-3 py-2 align-top text-xs">
+                    {fundingLabel(row.fundingType)}
+                  </td>
+                  {/* Estimated signature date */}
+                  <td className="px-3 py-2 align-top text-xs whitespace-nowrap">
+                    {formatDate(row.expectedCloseDate)}
+                  </td>
+                  {/* Deal value */}
+                  <td className="px-3 py-2 align-top text-right font-medium tabular-nums whitespace-nowrap">
+                    {formatZAR(row.estimatedValue)}
+                  </td>
+                  {/* Engineering tasks open */}
+                  <td className="px-3 py-2 align-top text-center">
+                    <Badge
+                      variant={row.openEngineeringTaskCount > 0 ? "default" : "outline"}
+                      className={row.openEngineeringTaskCount > 0 ? "bg-emerald-600 hover:bg-emerald-600" : ""}
+                    >
+                      {row.openEngineeringTaskCount}
+                    </Badge>
+                  </td>
+                  {/* Next activity */}
+                  <td className="px-3 py-2 align-top min-w-[160px]">
+                    {row.nextActivityDate ? (
+                      <>
+                        <p className="text-xs text-foreground whitespace-nowrap">{formatDate(row.nextActivityDate)}</p>
+                        {row.nextActivitySubject && (
+                          <p className="text-[10px] text-muted-foreground truncate max-w-[180px]" title={row.nextActivitySubject}>
+                            {row.nextActivitySubject}
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </td>
+                  {/* Stage */}
                   <td className="px-3 py-2 align-top">
                     <Badge className={`text-[10px] ${stageBadgeClass(row.stage)}`}>{appPhaseLabel(row.stage)}</Badge>
                   </td>
-                  <td className="px-3 py-2 align-top">
-                    <Badge className={`text-[10px] ${statusBadgeClass(row.status)}`}>{row.status || "—"}</Badge>
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    {row.hasLinkedClient ? (
-                      <span className="inline-flex items-center gap-1 text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" /> Linked</span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 text-amber-700"><AlertTriangle className="h-3.5 w-3.5" /> Unlinked</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    {row.hasLinkedProject ? (
-                      <span className="inline-flex items-center gap-1 text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" /> {row.linkedProjectCount} linked</span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 text-slate-600"><CircleOff className="h-3.5 w-3.5" /> None</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    <Badge variant="outline">{row.existingEngineeringTicketCount || 0}</Badge>
-                  </td>
-                  <td className="px-3 py-2 align-top text-xs text-muted-foreground whitespace-nowrap">
-                    {row.lastUpdated ? new Date(row.lastUpdated).toLocaleString() : "—"}
-                  </td>
+                  {/* Action */}
                   <td className="px-3 py-2 align-top text-right">
                     <Button
                       size="sm"
@@ -604,7 +684,7 @@ export default function OpportunitiesPage() {
                       onClick={(e) => { e.stopPropagation(); openMapping(row); }}
                     >
                       <TicketPlus className="h-3.5 w-3.5" />
-                      Create Engineering Ticket
+                      Eng. Ticket
                     </Button>
                   </td>
                 </tr>
