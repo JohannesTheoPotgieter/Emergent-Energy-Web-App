@@ -3,7 +3,7 @@
 // add explicit ': any' to .map/.filter callback params on db result rows.
 import { Router, type Express, type Request, type Response, type NextFunction } from "express";
 import { requireAuth, requireAdmin, requireCosOverrideRole } from './shared-middleware';
-import { PLACEHOLDER_INVOICES } from '../lib/finance/cos-realisation';
+import { PLACEHOLDER_INVOICES, OVERRIDE_NOT_REALISED } from '../lib/finance/cos-realisation';
 import {
   checkCosPeriodLock,
   lockCosPeriod,
@@ -248,7 +248,36 @@ function isCosRealised(exp: any): boolean {
 // Per business rules: "committed from prior month must NOT silently become realised
 // unless it matches the invoice rule." If the line has an invoice, isCosRealised()
 // will return true regardless. If it does not, it stays committed.
+/**
+ * Past-month auto-promote eligibility.
+ *
+ * Returns true iff the line:
+ *   - sits in a closed month (monthKey strictly < currentMonthKey),
+ *   - has a non-empty, non-placeholder invoice number,
+ *   - has NOT been admin-overridden to a not-realised status (PLANNED, COMMITTED, INVOICED, APPROVED, PAID).
+ *
+ * Mirrors the override + placeholder gates in `isCanonicalCosRealised` so that
+ * past-month lines respect explicit finance intent (overrides) and don't get
+ * promoted on placeholder values like "TBC" / "N/A".
+ */
+function isPastMonthAutoRealised(exp: any, monthKey: string | null, currentMonthKey: string): boolean {
+  if (!monthKey || monthKey >= currentMonthKey) return false;
+  const override = String(exp?.cosStatusOverride ?? "").toUpperCase().trim();
+  if (OVERRIDE_NOT_REALISED.has(override)) return false;
+  const invoiceTrimmed = String(exp?.expenseInvoiceNumber ?? "").trim();
+  if (!invoiceTrimmed) return false;
+  if (PLACEHOLDER_INVOICES.has(invoiceTrimmed.toLowerCase())) return false;
+  return true;
+}
+
 function isEffectivelyRealised(exp: any, monthKey: string | null, currentMonthKey: string): boolean {
+  // Past-month auto-promote: once a month has closed, an invoice-bearing line
+  // (with no admin "not realised" override and no placeholder invoice value)
+  // is treated as realised regardless of the Excel font-color confirmation
+  // flag. Font-color is a current-month vetting heuristic that stops being
+  // meaningful for periods finance is no longer actively reviewing — without
+  // this rule historical rows sit in "Committed" limbo forever.
+  if (isPastMonthAutoRealised(exp, monthKey, currentMonthKey)) return true;
   if (!isCosRealisedShared(exp)) return false;
   // Realised lines are effective for current and past months only
   return monthKey ? monthKey <= currentMonthKey : true;
@@ -256,6 +285,11 @@ function isEffectivelyRealised(exp: any, monthKey: string | null, currentMonthKe
 
 // Returns true if a cost is still actively committed (has PO or invoice-in-progress but not yet realised).
 function isEffectivelyCommitted(exp: any, monthKey: string | null, currentMonthKey: string): boolean {
+  // Past-month mirror: lines that auto-promoted to Realised must NOT also
+  // count as Committed. PO-only lines (no invoice) and override-suppressed
+  // lines in past months remain Committed — the supplier hasn't billed us
+  // yet, or finance has explicitly held the line.
+  if (isPastMonthAutoRealised(exp, monthKey, currentMonthKey)) return false;
   if (isCosRealisedShared(exp)) return false;
   const cosStatus = classifyCosStatusFull(exp);
   return cosStatus === 'Committed';
@@ -1804,6 +1838,12 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
     const plannedByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
     const appOnlyPendingByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
 
+    // Past-month auto-promote anchor: any month strictly before this key is
+    // treated as closed for the purposes of font-color confirmation. See the
+    // per-project helpers above for the matching rule.
+    const nowAnchor = new Date();
+    const cosCurrentMonthKey = `${nowAnchor.getUTCFullYear()}-${String(nowAnchor.getUTCMonth() + 1).padStart(2, '0')}`;
+
     const addProjectAmount = (
       map: Map<string, { total: number; projects: Map<string, number> }>,
       monthKey: string,
@@ -1847,8 +1887,17 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       if (!projectName) continue;
       const hasInvoice = !!(row.invoiceNumber && String(row.invoiceNumber).trim());
       const hasPo = !!(row.poNumber && String(row.poNumber).trim());
+      const isPastMonth = monthKey < cosCurrentMonthKey;
       const invoiceDateConfirmed =
-        !!row.invoiceDate && (row.invoiceDateFontColor === 'black' || row.invoiceDateConfirmed === true);
+        !!row.invoiceDate && (
+          row.invoiceDateFontColor === 'black' ||
+          row.invoiceDateConfirmed === true ||
+          // Past-month auto-promote: invoice number on a closed month IS
+          // the confirmation. PO-only lines in past months stay Committed
+          // (supplier hasn't billed us), which is handled by the hasInvoice
+          // guard below.
+          (isPastMonth && hasInvoice)
+        );
 
       // COS classification must come from app-side recognition rules, not QB links.
       if (hasInvoice && invoiceDateConfirmed) {
@@ -1982,7 +2031,9 @@ router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res
     const itemsByMonth = new Map<string, any[]>();
 
     const nowDate = new Date();
-    const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, '0')}`;
+    // UTC anchor — must match `cosCurrentMonthKey` in /api/cos-tracker so the
+    // same line classifies the same way in aggregate and per-project views.
+    const currentMonthKey = `${nowDate.getUTCFullYear()}-${String(nowDate.getUTCMonth() + 1).padStart(2, '0')}`;
 
     for (const exp of projectExpenses) {
       if (exp.rowType !== 'item') continue;
@@ -2872,7 +2923,9 @@ router.get("/api/revenue-tracker/project/:projectName", requireAuth, requirePerm
     }, 0);
 
     const nowDate = new Date();
-    const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, '0')}`;
+    // UTC anchor — must match `cosCurrentMonthKey` in /api/cos-tracker so the
+    // same line classifies the same way in aggregate and per-project views.
+    const currentMonthKey = `${nowDate.getUTCFullYear()}-${String(nowDate.getUTCMonth() + 1).padStart(2, '0')}`;
 
     const revByMonth = new Map<string, number>();
     const realisedRevByMonth = new Map<string, number>();
@@ -3034,7 +3087,9 @@ router.get("/api/gp-tracker", requireAuth, requirePermission("gp_tracker", "view
     }
 
     const nowDate = new Date();
-    const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, '0')}`;
+    // UTC anchor — must match `cosCurrentMonthKey` in /api/cos-tracker so the
+    // same line classifies the same way in aggregate and per-project views.
+    const currentMonthKey = `${nowDate.getUTCFullYear()}-${String(nowDate.getUTCMonth() + 1).padStart(2, '0')}`;
 
     const cosByMonth = new Map<string, number>();
     const realisedCosByMonth = new Map<string, number>();
@@ -3191,7 +3246,9 @@ router.get("/api/gp-tracker/project/:projectName", requireAuth, requirePermissio
     }, 0);
 
     const nowDate = new Date();
-    const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, '0')}`;
+    // UTC anchor — must match `cosCurrentMonthKey` in /api/cos-tracker so the
+    // same line classifies the same way in aggregate and per-project views.
+    const currentMonthKey = `${nowDate.getUTCFullYear()}-${String(nowDate.getUTCMonth() + 1).padStart(2, '0')}`;
 
     const cosByMonth = new Map<string, number>();
     const realisedCosByMonth = new Map<string, number>();
@@ -3458,7 +3515,9 @@ async function revenueTrackerHandler(req: Request, res: Response) {
     }
 
     const nowDate = new Date();
-    const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, '0')}`;
+    // UTC anchor — must match `cosCurrentMonthKey` in /api/cos-tracker so the
+    // same line classifies the same way in aggregate and per-project views.
+    const currentMonthKey = `${nowDate.getUTCFullYear()}-${String(nowDate.getUTCMonth() + 1).padStart(2, '0')}`;
 
     const revByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
     const realisedByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
@@ -3670,7 +3729,9 @@ router.get("/api/revenue-tracker/month-detail", requireAuth, requirePermission("
     }
 
     const nowDate = new Date();
-    const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, '0')}`;
+    // UTC anchor — must match `cosCurrentMonthKey` in /api/cos-tracker so the
+    // same line classifies the same way in aggregate and per-project views.
+    const currentMonthKey = `${nowDate.getUTCFullYear()}-${String(nowDate.getUTCMonth() + 1).padStart(2, '0')}`;
 
     const items: any[] = [];
     for (const exp of allExpenses) {
