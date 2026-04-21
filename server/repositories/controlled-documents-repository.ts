@@ -13,17 +13,21 @@
  * - No pg-specific cast syntax (::) — keep SQLite dev fallback alive.
  */
 
-import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
   controlledDocuments,
   controlledDocumentTypes,
   projectSharepointRoots,
+  CONTROLLED_DOCUMENT_APPROVAL_TYPE,
   type ControlledDocument,
   type ControlledDocumentType,
   type ControlledDocumentState,
   type ProjectSharepointRoot,
 } from "@shared/schema/documents";
+import { approvals, type Approval } from "@shared/schema/collaboration";
+import { users, type User } from "@shared/schema/users";
+import { projectInfo } from "@shared/schema/projects";
 
 // ---- Shapes returned to route handlers -----------------------------------
 
@@ -197,4 +201,475 @@ export async function countPendingSubmissionsAcrossPortfolio(): Promise<number> 
       isNull(controlledDocuments.deletedAt),
     ));
   return Number(result[0]?.count ?? 0);
+}
+
+// =========================================================================
+// Mutations (D3.3)
+//
+// All flows operate on the existing public.approvals table (no new
+// approvals machinery) — the only new state lives in controlled_documents.
+// Transactions guarantee that:
+//   - submission creates exactly one doc row + N approval rows atomically
+//   - promotion supersedes the previous approved row in the same tx
+//   - rejection marks the doc rejected AND all pending approvals rejected
+// =========================================================================
+
+/** Super-users can always be picked as approvers, regardless of role match. */
+const SUPER_APPROVER_ROLES = new Set(["COO_ADMIN", "CEO_ADMIN"]);
+
+/**
+ * Validates that a picked approver user is eligible for the requested role
+ * slot on this document type. Throws an Error the route converts to 403.
+ */
+function assertApproverEligible(
+  user: Pick<User, "id" | "role" | "name" | "email">,
+  requiredRole: string,
+): void {
+  if (user.role === requiredRole) return;
+  if (SUPER_APPROVER_ROLES.has(user.role)) return; // super-user override allowed
+  throw new Error(
+    `User ${user.email} (${user.role}) cannot approve as ${requiredRole}. ` +
+    `Assign a user who holds ${requiredRole} or a super-user (COO/CEO).`,
+  );
+}
+
+export interface SubmissionInput {
+  projectId: number;
+  typeKey: string;
+  fileName: string;
+  sharepointPath: string;
+  sharepointDriveId?: string | null;
+  sharepointItemId?: string | null;
+  fileSizeBytes?: number | null;
+  submitComment?: string | null;
+  /**
+   * Positional approver list — length must match defaultApproverRoles on
+   * the type. approverUserIds[i] must hold defaultApproverRoles[i] (or be
+   * a super-user).
+   */
+  approverUserIds: number[];
+  submittedByUserId: number;
+}
+
+export interface SubmissionResult {
+  document: ControlledDocument;
+  approvalIds: number[];
+}
+
+/**
+ * Create a new controlled_documents row in state='submitted' plus one
+ * approvals row per picked approver. All atomic.
+ */
+export async function createSubmission(input: SubmissionInput): Promise<SubmissionResult> {
+  const type = await getDocumentType(input.typeKey);
+  if (!type) throw new Error(`Unknown document type: ${input.typeKey}`);
+
+  const requiredRoles = type.defaultApproverRoles ?? [];
+  if (requiredRoles.length === 0) {
+    throw new Error(`Document type '${type.typeKey}' has no approver roles configured.`);
+  }
+  if (input.approverUserIds.length !== requiredRoles.length) {
+    throw new Error(
+      `This document type requires ${requiredRoles.length} approver(s) — received ${input.approverUserIds.length}.`,
+    );
+  }
+
+  // Load and validate each picked approver.
+  type ApproverRow = { id: number; role: string; name: string; email: string };
+  const approverUsers: ApproverRow[] = await db
+    .select({ id: users.id, role: users.role, name: users.name, email: users.email })
+    .from(users)
+    .where(inArray(users.id, input.approverUserIds));
+  if (approverUsers.length !== input.approverUserIds.length) {
+    throw new Error("One or more approver users not found.");
+  }
+  const userById = new Map<number, ApproverRow>(approverUsers.map((u) => [u.id, u]));
+  for (let i = 0; i < input.approverUserIds.length; i++) {
+    const user = userById.get(input.approverUserIds[i]);
+    if (!user) throw new Error(`Approver user ${input.approverUserIds[i]} not found.`);
+    assertApproverEligible(user, requiredRoles[i]);
+  }
+
+  // db is typed `any` project-wide (dual-mode sqlite/pg). Annotate tx to
+  // keep strict mode happy without importing driver-specific types.
+  return db.transaction(async (tx: typeof db) => {
+    const [doc] = await tx
+      .insert(controlledDocuments)
+      .values({
+        projectId: input.projectId,
+        typeKey: input.typeKey,
+        state: "submitted",
+        sharepointPath: input.sharepointPath,
+        sharepointDriveId: input.sharepointDriveId ?? null,
+        sharepointItemId: input.sharepointItemId ?? null,
+        fileName: input.fileName,
+        fileSizeBytes: input.fileSizeBytes ?? null,
+        versionNumber: 0,
+        submittedByUserId: input.submittedByUserId,
+        submittedAt: new Date(),
+        submitComment: input.submitComment ?? null,
+      })
+      .returning();
+
+    const approvalRows = await Promise.all(
+      input.approverUserIds.map((approverId) =>
+        tx
+          .insert(approvals)
+          .values({
+            type: CONTROLLED_DOCUMENT_APPROVAL_TYPE,
+            approvalType: CONTROLLED_DOCUMENT_APPROVAL_TYPE,
+            relatedEntityType: CONTROLLED_DOCUMENT_APPROVAL_TYPE,
+            relatedEntityId: doc.id,
+            title: `${type.displayName}: ${input.fileName}`,
+            description: input.submitComment ?? null,
+            status: "pending",
+            requestedBy: input.submittedByUserId,
+            assignedApprover: approverId,
+            projectId: input.projectId,
+          })
+          .returning({ id: approvals.id }),
+      ),
+    );
+
+    return {
+      document: doc,
+      approvalIds: approvalRows.map((r) => r[0].id),
+    };
+  });
+}
+
+export interface ApprovalDecisionInput {
+  documentId: number;
+  userId: number;
+  comment?: string | null;
+}
+
+export interface ApprovalDecisionResult {
+  document: ControlledDocument;
+  /** Remaining pending approvals for this doc after the decision. */
+  pendingRemaining: number;
+  /** True when this decision promoted the doc to approved. */
+  promoted: boolean;
+  /** ID of the previously approved doc that got superseded (if any). */
+  supersededDocumentId: number | null;
+}
+
+/**
+ * Record an approval decision. If all required approvals are in (respecting
+ * requiresAllApprovers), promote the doc: mark it approved, mark any prior
+ * approved row superseded, bump versionNumber.
+ */
+export async function recordApproval(input: ApprovalDecisionInput): Promise<ApprovalDecisionResult> {
+  return db.transaction(async (tx: typeof db) => {
+    const [doc] = await tx
+      .select()
+      .from(controlledDocuments)
+      .where(and(
+        eq(controlledDocuments.id, input.documentId),
+        isNull(controlledDocuments.deletedAt),
+      ))
+      .limit(1);
+    if (!doc) throw new Error(`Document ${input.documentId} not found.`);
+    if (doc.state !== "submitted") {
+      throw new Error(`Document is in state '${doc.state}', only 'submitted' docs can be approved.`);
+    }
+
+    // Find this user's pending approval row.
+    const [myApproval] = await tx
+      .select()
+      .from(approvals)
+      .where(and(
+        eq(approvals.relatedEntityType, CONTROLLED_DOCUMENT_APPROVAL_TYPE),
+        eq(approvals.relatedEntityId, doc.id),
+        eq(approvals.assignedApprover, input.userId),
+        eq(approvals.status, "pending"),
+        isNull(approvals.deletedAt),
+      ))
+      .limit(1);
+    if (!myApproval) {
+      throw new Error("You are not an assigned approver for this document.");
+    }
+
+    // Record the decision.
+    await tx
+      .update(approvals)
+      .set({
+        status: "approved",
+        decidedBy: input.userId,
+        decidedAt: new Date(),
+        decisionNote: input.comment ?? null,
+      })
+      .where(eq(approvals.id, myApproval.id));
+
+    // Count remaining pending approvals for this doc.
+    const pendingRows = await tx
+      .select({ id: approvals.id })
+      .from(approvals)
+      .where(and(
+        eq(approvals.relatedEntityType, CONTROLLED_DOCUMENT_APPROVAL_TYPE),
+        eq(approvals.relatedEntityId, doc.id),
+        eq(approvals.status, "pending"),
+        isNull(approvals.deletedAt),
+      ));
+    const pendingRemaining = pendingRows.length;
+
+    const type = await getDocumentType(doc.typeKey);
+    if (!type) throw new Error(`Document type disappeared mid-decision: ${doc.typeKey}`);
+
+    const thresholdMet = type.requiresAllApprovers ? pendingRemaining === 0 : true;
+
+    if (!thresholdMet) {
+      const [updated] = await tx
+        .select()
+        .from(controlledDocuments)
+        .where(eq(controlledDocuments.id, doc.id))
+        .limit(1);
+      return {
+        document: updated,
+        pendingRemaining,
+        promoted: false,
+        supersededDocumentId: null,
+      };
+    }
+
+    // Supersede any existing approved doc for (project, type).
+    const [currentApproved] = await tx
+      .select()
+      .from(controlledDocuments)
+      .where(and(
+        eq(controlledDocuments.projectId, doc.projectId),
+        eq(controlledDocuments.typeKey, doc.typeKey),
+        eq(controlledDocuments.state, "approved" as ControlledDocumentState),
+        isNull(controlledDocuments.deletedAt),
+      ))
+      .limit(1);
+
+    let supersededDocumentId: number | null = null;
+    let nextVersion = 1;
+    if (currentApproved) {
+      await tx
+        .update(controlledDocuments)
+        .set({
+          state: "superseded",
+          supersededByDocumentId: doc.id,
+          updatedAt: new Date(),
+        })
+        .where(eq(controlledDocuments.id, currentApproved.id));
+      supersededDocumentId = currentApproved.id;
+      nextVersion = (currentApproved.versionNumber ?? 0) + 1;
+    }
+
+    // Promote.
+    const [promotedDoc] = await tx
+      .update(controlledDocuments)
+      .set({
+        state: "approved",
+        versionNumber: nextVersion,
+        updatedAt: new Date(),
+      })
+      .where(eq(controlledDocuments.id, doc.id))
+      .returning();
+
+    return {
+      document: promotedDoc,
+      pendingRemaining: 0,
+      promoted: true,
+      supersededDocumentId,
+    };
+  });
+}
+
+export interface RejectionInput {
+  documentId: number;
+  userId: number;
+  reason: string;
+}
+
+export async function recordRejection(input: RejectionInput): Promise<ControlledDocument> {
+  if (!input.reason || input.reason.trim().length === 0) {
+    throw new Error("Rejection reason is required.");
+  }
+  return db.transaction(async (tx: typeof db) => {
+    const [doc] = await tx
+      .select()
+      .from(controlledDocuments)
+      .where(and(
+        eq(controlledDocuments.id, input.documentId),
+        isNull(controlledDocuments.deletedAt),
+      ))
+      .limit(1);
+    if (!doc) throw new Error(`Document ${input.documentId} not found.`);
+    if (doc.state !== "submitted") {
+      throw new Error(`Document is in state '${doc.state}', only 'submitted' docs can be rejected.`);
+    }
+
+    // Confirm this user is an assigned approver.
+    const [myApproval] = await tx
+      .select()
+      .from(approvals)
+      .where(and(
+        eq(approvals.relatedEntityType, CONTROLLED_DOCUMENT_APPROVAL_TYPE),
+        eq(approvals.relatedEntityId, doc.id),
+        eq(approvals.assignedApprover, input.userId),
+        eq(approvals.status, "pending"),
+        isNull(approvals.deletedAt),
+      ))
+      .limit(1);
+    if (!myApproval) {
+      throw new Error("You are not an assigned approver for this document.");
+    }
+
+    const now = new Date();
+    // Reject all pending approvals with the same reason so the audit trail
+    // shows the full picture. Rejection is final across approvers.
+    await tx
+      .update(approvals)
+      .set({
+        status: "rejected",
+        decidedBy: input.userId,
+        decidedAt: now,
+        decisionNote: input.reason,
+      })
+      .where(and(
+        eq(approvals.relatedEntityType, CONTROLLED_DOCUMENT_APPROVAL_TYPE),
+        eq(approvals.relatedEntityId, doc.id),
+        eq(approvals.status, "pending"),
+      ));
+
+    const [rejected] = await tx
+      .update(controlledDocuments)
+      .set({
+        state: "rejected",
+        updatedAt: now,
+      })
+      .where(eq(controlledDocuments.id, doc.id))
+      .returning();
+    return rejected;
+  });
+}
+
+export interface RecallInput {
+  documentId: number;
+  userId: number;
+  userRole: string;
+  reason: string;
+}
+
+/**
+ * Recall an approved document. Soft-rule policy:
+ *   - The user who decidedBy on one of the approvals can recall at any time.
+ *   - Super-users (COO_ADMIN / CEO_ADMIN) can recall anyone's approval.
+ *   - The approval rows are preserved (audit); the controlled_documents row
+ *     moves to state='recalled' with recallReason captured.
+ */
+export async function recordRecall(input: RecallInput): Promise<ControlledDocument> {
+  if (!input.reason || input.reason.trim().length === 0) {
+    throw new Error("Recall reason is required.");
+  }
+  return db.transaction(async (tx: typeof db) => {
+    const [doc] = await tx
+      .select()
+      .from(controlledDocuments)
+      .where(and(
+        eq(controlledDocuments.id, input.documentId),
+        isNull(controlledDocuments.deletedAt),
+      ))
+      .limit(1);
+    if (!doc) throw new Error(`Document ${input.documentId} not found.`);
+    if (doc.state !== "approved") {
+      throw new Error(`Only approved documents can be recalled — current state: '${doc.state}'.`);
+    }
+
+    const isSuperUser = SUPER_APPROVER_ROLES.has(input.userRole);
+    if (!isSuperUser) {
+      // Must have been one of the deciders on this doc.
+      const [wasDecider] = await tx
+        .select({ id: approvals.id })
+        .from(approvals)
+        .where(and(
+          eq(approvals.relatedEntityType, CONTROLLED_DOCUMENT_APPROVAL_TYPE),
+          eq(approvals.relatedEntityId, doc.id),
+          eq(approvals.decidedBy, input.userId),
+          eq(approvals.status, "approved"),
+        ))
+        .limit(1);
+      if (!wasDecider) {
+        throw new Error("Only the original approver or a super-user can recall an approval.");
+      }
+    }
+
+    const [recalled] = await tx
+      .update(controlledDocuments)
+      .set({
+        state: "recalled",
+        recalledByUserId: input.userId,
+        recalledAt: new Date(),
+        recallReason: input.reason,
+        updatedAt: new Date(),
+      })
+      .where(eq(controlledDocuments.id, doc.id))
+      .returning();
+    return recalled;
+  });
+}
+
+// =========================================================================
+// Approval queue — "waiting on me"
+// =========================================================================
+
+export interface ApprovalQueueRow {
+  approvalId: number;
+  documentId: number;
+  projectId: number;
+  projectName: string | null;
+  typeKey: string;
+  typeDisplayName: string;
+  fileName: string;
+  submittedByUserId: number | null;
+  submittedAt: Date | null;
+  submitComment: string | null;
+  sharepointPath: string;
+  requestedAt: Date | null;
+}
+
+/**
+ * Returns all pending controlled-document approvals assigned to a user,
+ * joined with enough context to render the COO/CEO "Waiting on me" card
+ * without further fetches.
+ */
+export async function getApprovalQueueForUser(userId: number): Promise<ApprovalQueueRow[]> {
+  const rows = await db
+    .select({
+      approvalId: approvals.id,
+      requestedAt: approvals.requestedAt,
+      documentId: controlledDocuments.id,
+      projectId: controlledDocuments.projectId,
+      projectName: projectInfo.projectName,
+      typeKey: controlledDocuments.typeKey,
+      typeDisplayName: controlledDocumentTypes.displayName,
+      fileName: controlledDocuments.fileName,
+      submittedByUserId: controlledDocuments.submittedByUserId,
+      submittedAt: controlledDocuments.submittedAt,
+      submitComment: controlledDocuments.submitComment,
+      sharepointPath: controlledDocuments.sharepointPath,
+    })
+    .from(approvals)
+    .innerJoin(
+      controlledDocuments,
+      eq(approvals.relatedEntityId, controlledDocuments.id),
+    )
+    .innerJoin(
+      controlledDocumentTypes,
+      eq(controlledDocuments.typeKey, controlledDocumentTypes.typeKey),
+    )
+    .leftJoin(projectInfo, eq(controlledDocuments.projectId, projectInfo.id))
+    .where(and(
+      eq(approvals.relatedEntityType, CONTROLLED_DOCUMENT_APPROVAL_TYPE),
+      eq(approvals.assignedApprover, userId),
+      eq(approvals.status, "pending"),
+      isNull(approvals.deletedAt),
+      isNull(controlledDocuments.deletedAt),
+    ))
+    .orderBy(asc(approvals.requestedAt));
+  return rows;
 }
