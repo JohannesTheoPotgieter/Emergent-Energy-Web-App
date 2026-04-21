@@ -196,6 +196,15 @@ async function main() {
         }
       }
 
+      // 3a. DLP detected: lock to O&M Handover immediately. DLP is a
+      //     strong human-curated label and prod's stage_instances often
+      //     contain auto-init S10 progressed rows that misrepresent
+      //     reality. The +in_dlp flag preserves DLP context.
+      if (!target && dlpDetected) {
+        target = PHASES.find((ph) => ph.code === "S08_OM_HANDOVER") ?? null;
+        source = "dlp_default";
+      }
+
       // 4. In-progress stage instance.
       if (!target) {
         const r = pickHighestStage(
@@ -223,16 +232,6 @@ async function main() {
             source = "stage_progressed";
           }
         }
-      }
-
-      // 6. DLP fallback: if DLP was the recorded label, default to O&M
-      //    Handover (the lifecycle phase DLP belongs to) and set
-      //    in_dlp=true. We prefer this over stale stage_progressed signals
-      //    because some prod projects have S10 auto-init rows that don't
-      //    reflect actual progression.
-      if (!target && dlpDetected) {
-        target = PHASES.find((ph) => ph.code === "S08_OM_HANDOVER") ?? null;
-        source = "dlp_default";
       }
 
       // 7. execution_phase aliased (skip if off-lifecycle).
