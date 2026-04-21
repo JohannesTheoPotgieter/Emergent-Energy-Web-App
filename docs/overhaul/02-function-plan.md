@@ -1158,4 +1158,153 @@ Both functions harvest from the same primitives Lens 1 builds — zero duplicate
 
 ---
 
-**End of Lens 3.** Next lens: **Lens 4 · COO + CEO (Executive)** — estimated 3–5 functions; mostly Company Overview refinement + Priorities + admin oversight cross-references.
+**End of Lens 3.**
+
+---
+
+## §7 Tier 1 · Lens 4 — `COO_ADMIN` + `CEO_ADMIN` (Executive)
+
+**Role summary:** Company oversight + platform admin authority. Both roles land at `/company-overview`. Nearly every other page is cross-referenced from Lens 1–3 (they see everything). This lens plans only the executive-dedicated surfaces.
+
+**Function count:** 3 new (F-036 · F-037 · F-038) + virtually every Lens 1–3 function cross-referenced for visibility.
+
+### §7.1 Cross-references
+
+Every Lens 1–3 function is accessible to COO/CEO with full view rights. No re-planning needed. Notably:
+
+- F-001 Execution Board — reviewed for portfolio-level signal
+- F-004 Gates Pipeline + 7 sub-lanes — weekly scan
+- F-016 Approvals — top-of-threshold approvals roll up to COO/CEO
+- F-029 Cashflow — financial oversight
+- F-025/F-026 Portfolios — rollup read
+
+### §7.2 Lens 4 · Batch 1 — Executive-specific functions
+
+#### F-036 · Company Overview
+
+- **Path(s):** `/company-overview`
+- **Lens (primary):** `COO_ADMIN`, `CEO_ADMIN` (landing for both)
+- **Lens (secondary):** all finance-view roles (CFO / PFM / CCO) read for context
+- **Archetype:** W2 Dashboard
+- **User goal:** The full state of the company — every department's health, every finance line, every exception at once.
+- **Current state:** `client/src/pages/company-overview/index.tsx` + sub-components (`DepartmentHealthGrid`, `DepartmentKpiTable`, `ExceptionsAndPriorities`, `ExecutiveSummaryRow`, `PortfolioFinanceRow`, `RecentSignals`). Already structured around W2.
+- **Data source:** Canonical across the board — via `server/services/company-overview-service.ts` + `server/services/dashboard-metrics.ts` (both canonical readers per `00c §2`).
+- **Visual improvements:**
+  - Formalise W2 structure per wireframe W2 — already ~80% there.
+  - Replace any remaining ad-hoc status colouring with `StatusBadge`.
+  - `DataTrustBadge` strip below PageHeader — this is a money + state page.
+  - Consolidate section heading treatment using `ee-section-title`.
+  - Fix any dark-mode gaps in the existing department-health grid.
+- **Additive functional improvements:**
+  - Drill-in via row action → department-specific dashboard (not via full navigation — keeps COO in the oversight view).
+  - "Take a snapshot" action generates a PDF of the current overview for board packs.
+  - Saved-views per user — custom department subsets.
+  - Compare-to-last-week mode with delta chips on every KPI.
+- **Half-built work to finish:** n/a.
+- **Source-of-truth migration:** n/a.
+- **Preserved behaviour contract:**
+  - Landing for COO_ADMIN + CEO_ADMIN.
+  - Permission entity `execution_board`.
+  - Sub-components remain importable (they're used elsewhere).
+- **Risk:** Medium — highly visible exec surface.
+- **Effort:** M.
+
+#### F-037 · Priorities
+
+- **Path(s):** `/priorities` (list) · `/priorities/:id` (detail) · alias `/company-priorities` (LEGACY_REDIRECTS)
+- **Lens (primary):** `COO_ADMIN`, `CEO_ADMIN`, `CCO` (edit rights — `company_priorities` entity)
+- **Lens (secondary):** 12 view roles
+- **Archetype:** W3 List + W4 Detail
+- **User goal:** Manage company priorities — top-level strategic focus items with linked projects.
+- **Current state:** `client/src/pages/company-priorities.tsx` / `/priorities` route. List + detail pattern. PageHeader with [+ New priority] action.
+- **Data source:** Canonical — priorities table + linked `project_info` FKs.
+- **Visual improvements:**
+  - List: W3 `TableLayout`. State / Owner / Due / Impact columns.
+  - Detail: W4 `DetailLayout` with tabs Overview / Updates / Linked projects / Log.
+  - Create flow (F-037a — new priority) uses W5a `FormLayout` (2/3 form + 1/3 context) per wireframe W5a.
+- **Additive functional improvements:**
+  - "Link project" inline action on detail's Linked projects tab.
+  - Per-priority activity feed on Updates tab.
+  - Share / export to board-pack one-click.
+- **Half-built:** n/a.
+- **Source-of-truth migration:** n/a.
+- **Preserved behaviour contract:**
+  - LEGACY_REDIRECTS `/company-priorities` → `/priorities` continues.
+  - Edit gated to Admin + CCO per `company_priorities` entity.
+- **Risk:** Low.
+- **Effort:** M.
+
+#### F-038 · Admin Control Center
+
+- **Path(s):** `/admin/control-center` · alias `/admin` (LEGACY_REDIRECTS) · alias `/admin/legacy-utilities` (LEGACY_REDIRECTS)
+- **Lens (primary):** `COO_ADMIN`, `CEO_ADMIN`
+- **Archetype:** W2 Dashboard (admin cockpit)
+- **User goal:** The admin home — system health, active sessions, feature flags, dangerous actions, import governance.
+- **Current state:** `client/src/pages/admin-control-center.tsx` + `components/admin/*`. Multi-panel cockpit. Hidden from sidebar but reached via `/admin` redirect.
+- **Data source:** Canonical — mix of platform telemetry + auth state + feature flag state.
+- **Visual improvements:**
+  - W2 structure — system health strip + primary grid (feature flags / active sessions / import state / recent errors) + secondary panel (dangerous actions gated behind confirmation).
+  - `StatusBadge` everywhere for health indicators.
+  - Reduce visual noise — current cockpit has dense mixed sections; W2 gives clear structure.
+- **Additive:**
+  - Search across the admin widgets (command-palette scoped to admin).
+  - "One-click copy diagnostic bundle" action for support incidents.
+  - Feature-flag timeline view — see when flags were flipped and by whom.
+- **Half-built:** The 38 `promoted_*` migration-bridge flags (00b §A #9) show here — watch them but don't flip them; Phase 2 schema work owns them.
+- **Source-of-truth migration:** n/a.
+- **Preserved behaviour contract:**
+  - Hidden from sidebar.
+  - Permission entity `admin`.
+  - LEGACY_REDIRECTS `/admin`, `/admin/legacy-utilities` → here.
+  - Dangerous actions (resets, purges) continue to require `ConfirmDialog` + typed confirmation.
+- **Risk:** Medium — admin surface.
+- **Effort:** M.
+
+### §7.3 Lens 4 summary — Executive
+
+**Total functions:** 3 new (F-036 · F-037 · F-038) + virtually every Lens 1–3 function cross-referenced.
+
+| Metric | |
+|---|---|
+| Effort | 3 × M |
+| Risk | 2 × Medium · 1 × Low |
+| SoT migrations | 0 — all canonical |
+| Finish-it candidates | None new |
+
+**Proposed Phase 3 ordering (this lens):**
+
+- **After Wave 3 (DetailLayout built):** F-036 Company Overview adopts formalised W2 + DetailLayout embed for drill-ins.
+- **Harvest from Wave 2 + Wave 3:** F-037 Priorities (uses TableLayout + DetailLayout + FormLayout).
+- **Last in Tier 1:** F-038 Admin Control Center — admin-only, low user traffic, defer behind higher-traffic work.
+
+---
+
+## §8 Tier 1 — COMPLETE
+
+All four Tier 1 lenses planned. Tier 1 totals:
+
+| Metric | Value |
+|---|---|
+| Functions planned (primary entries) | 37 (F-001 through F-038) |
+| Cross-referenced | ~80 Lens 1-2-3-4 mentions; every function is read-consistent across lenses |
+| High-risk functions | 2 (F-013 Project Detail, F-029 Cashflow) |
+| Finish-it candidates flagged | F-020 Handover Control, F-021a PD→PM v2 |
+| Source-of-truth migrations required on UI | 0 direct (all canonical); 1 server-side flagged (`resolveInflowEffectiveDates`) |
+| New layout primitives needed | 5 (`AppShell`, `PageLayout`, `TableLayout`, `DetailLayout`, `FormLayout`, `WizardLayout`) |
+
+**Phase 3 ordering across Tier 1 — unified:**
+
+1. **Wave 1 — Foundation primitives.** Build AppShell + LensNav + PageHeader + PageLayout on a single low-risk page (F-002 Lifecycle Board).
+2. **Wave 2 — List primitive.** Build TableLayout on F-004 Gates Pipeline; harvest across F-005–F-011 (7 sub-lanes), F-012 Projects, F-019 Milestone Tracker, F-030 COS, F-031 Revenue Tracker, F-037 Priorities.
+3. **Wave 3 — Detail primitive.** Build DetailLayout on F-013 Project Detail (largest surface). Harvest across F-015 Clients, F-021 Handover & Closeout, F-026 Portfolio Detail, F-028 PM On-The-Go Project, F-032 QB Throughput, F-036 Company Overview, F-037 Priorities detail.
+4. **Wave 4 — Wizard + Form primitives.** Build WizardLayout on F-018 Weekly Reviews. FormLayout harvested for F-037 New Priority + many Phase 3 new forms.
+5. **Wave 5 — Approvals domain.** F-016 Approvals, F-017 Financial Review Queue, F-022 PO Approvals, F-023 Payment Requests, F-024 Payment Batches (sequenced; Payment Batches last due to QB).
+6. **Wave 6 — Finance wave.** F-030 COS, F-031 Revenue Tracker, F-032 QB Throughput, F-029 Cashflow (largest finance page last).
+7. **Wave 7 — Finish-it.** F-020 Handover Control backend + UI; F-021a PD→PM v2 flag enable; F-036 Company Overview polish.
+8. **Wave 8 — Mobile + remainder.** F-027/F-028 PM On-The-Go (mobile variants), F-001 Execution Board (4 sub-pages), F-014 Sites, F-033/F-034/F-035 (absorbed tabs), F-038 Admin Control Center.
+
+**STOP for Tier 1 approval before Tier 2.** Lens 2 (PM-Site), Lens 3 (Finance), Lens 4 (Exec) approvable together or individually.
+
+---
+
+**End of Tier 1 (§§3–8).** Next tier: **Tier 2 — Construction Manager · Engineering (EngMgr + Engineer) · Project Development (CCO + KAM + PD)**.
