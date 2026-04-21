@@ -61,6 +61,12 @@ Cumulative migrations on `claude/platform-overhaul-3WF1E` ready for cumulative o
 | **F-043 Eng Monthly Report Compare** | 🟢 migrated | `a843e14` | Same batch — mirror pattern. |
 | **F-018 Weekly Reviews** | 🟢 migrated | `9fa2126` | W3 TableLayout list surface (per plan §3.5 — wizard submission is a separate flow outside this page). 4-stat KPI grid preserved + tabular-nums. ReportTrustNotice preserved. |
 | **F-056 Project Create** | 🟢 migrated | `568786b` | Light-touch chrome migration — single-page form wrapped in PageLayout + PageHeader across all 3 states (permission / success / form). Wizard shape deferred to future session when the phased wizard plan lands. |
+| **F-055 Training** | 🟢 migrated | `d5e2fa7` | Knowledge surface migration. PageLayout + PageHeader. Swapped slate-* hardcoded colours for semantic tokens. |
+| **F-021a PM Handover Review** | 🟢 migrated | `d5e2fa7` | Review queue surface. Dynamic subtitle showing queue state. Reject-with-reason dialog preserved with all mutation paths. Empty state elevated to dashed Card. |
+| **F-007 Exceptions (cross-ref)** | 🟢 migrated | `8c79442` | Exception Command Center. Clear-filters action promoted to PageHeader. 4-way severity filter tiles with tabular-nums. Grouped-by-severity + grouped-by-category preserved. |
+| **F-054 KPI Traceability** | 🟢 migrated | `8c79442` | Admin KPI traceability. Refresh action promoted to PageHeader. KPI count tabular-nums. |
+| **F-044 Engineering Stage Templates** | 🟢 migrated | `23d3b98` | Admin. PageLayout wrap. Dynamic subtitle reflecting template count. TemplateCard unchanged. |
+| **F-056 Action Launchpad** | 🟢 migrated | `23d3b98` | Quick Create surface. All 5 action forms preserved. Submit button swapped from hardcoded emerald to semantic primary. |
 
 **Total this session: 8 pages migrated + 1 deferred.** Gates sub-lanes (7 of 8) now share consistent W3 visual treatment — the "harvest ratio" working as designed.
 
@@ -93,18 +99,20 @@ Priority candidates for subsequent sessions:
 6. **Remaining monthly/compare/history report pages** — may be DetailLayout candidates if they follow same shape.
 7. **Admin + knowledge surfaces** — lower priority; many already acceptable via PageShell.
 
-### §2.0c Cumulative state across Sessions 2 + 3 + continuation
+### §2.0c Cumulative state across Sessions 2 + 3 (expanded)
 
-**17 pages migrated** to the Phase 3 primitives (as of commit `568786b`). Same-archetype harvest-ratio continues to deliver — mechanical migrations now take a fraction of the effort of the first-in-class.
+**23 pages migrated** to the Phase 3 primitives (as of commit `23d3b98`). Continuing to prove that same-archetype harvest ratio is the right strategy — once a pattern is set, each additional page becomes a small, mechanical, safe migration.
 
 | Archetype proven | Count | Pages |
 |---|---|---|
 | **TableLayout (W3 list)** | 13 | Gates workspace (8) + Monthly Report history pair (2) + Monthly Report compare pair (2) + Weekly Reviews (1) |
 | **DetailLayout (W4 detail)** | 2 | PM Monthly Report Project + Eng Monthly Report Project |
-| **PageLayout + PageHeader (light chrome)** | 17 | All of the above + Lifecycle Board + Project Create |
-| **FormLayout** | 0 | Not yet proven — deferred to future session |
+| **PageLayout + PageHeader (light chrome)** | 23 | All of the above + Lifecycle Board + Project Create + Training + PM Handover Review + Exceptions + KPI Traceability + Eng Template Admin + Action Launchpad |
+| **FormLayout** | 0 | Not yet proven — deferred (PageShell + Card pattern adequately handles form pages) |
 | **WizardLayout** | 0 | Not yet proven — F-018 Weekly Reviews' wizard lives in project workflow, not on the page currently migrated |
 | **AppShell + LensNav** | 0 | Deferred — existing AppLayout already provides whole-app chrome |
+
+Phase 3 progress: **~41% of 56 planned functions migrated.**
 
 Open for cumulative owner staging review per D-011.
 
