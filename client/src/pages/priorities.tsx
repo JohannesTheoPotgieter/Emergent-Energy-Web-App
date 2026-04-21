@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearch } from "wouter";
-import { Download, Flag, Plus, User, Users } from "lucide-react";
+import { Download, Flag, Plus, Users } from "lucide-react";
 import { PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -38,8 +38,16 @@ export default function PrioritiesPage() {
   const userDepartment = user?.role ? ROLE_DEPARTMENT_MAP[user.role] : undefined;
 
   const tabParam = params.get("tab");
-  const defaultTab = tabParam || (isAdmin ? "company" : "mine");
-  const [activeTab, setActiveTab] = useState(defaultTab);
+  // "My Priorities" was removed — individual users track their items on My
+  // Tasks and escalate to Department from there. Default to Department for
+  // dept heads, Company for admins.
+  const initialTab = (() => {
+    if (tabParam === "department" || tabParam === "company") return tabParam;
+    if (isAdmin) return "company";
+    if (isDeptHead) return "department";
+    return "company";
+  })();
+  const [activeTab, setActiveTab] = useState(initialTab);
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [assignDialogPriorityId, setAssignDialogPriorityId] = useState<number | null>(null);
@@ -63,12 +71,6 @@ export default function PrioritiesPage() {
   const listQueryParams = (base: string) =>
     showClosed ? `${base}&include_cancelled=true` : base;
 
-  const myQuery = useQuery<PriorityRow[]>({
-    queryKey: ["/api/priorities", "mine", showClosed],
-    queryFn: () => fetchPriorities(listQueryParams("scope=role&assigned_user_id=me")),
-    enabled: activeTab === "mine",
-  });
-
   const deptQuery = useQuery<PriorityRow[]>({
     queryKey: ["/api/priorities", "department", userDepartment, showClosed],
     queryFn: () => fetchPriorities(
@@ -89,11 +91,6 @@ export default function PrioritiesPage() {
 
   const escalateMutation = useMutation({
     mutationFn: (priorityId: number) => apiRequest("POST", `/api/priorities/${priorityId}/escalate`, { reason: "manual" }),
-    onSuccess: invalidateAll,
-  });
-
-  const markCompleteMutation = useMutation({
-    mutationFn: (priorityId: number) => apiRequest("PUT", `/api/priorities/${priorityId}`, { status: "complete" }),
     onSuccess: invalidateAll,
   });
 
@@ -140,11 +137,10 @@ export default function PrioritiesPage() {
       return true;
     });
 
-  const filteredMine = useMemo(() => applyFilters(myQuery.data || []), [myQuery.data, levelFilter, healthFilter]);
   const filteredDept = useMemo(() => applyFilters(deptQuery.data || []), [deptQuery.data, levelFilter, healthFilter]);
   const filteredCompany = useMemo(() => applyFilters(companyQuery.data || []), [companyQuery.data, levelFilter, healthFilter]);
 
-  const activeData = activeTab === "mine" ? filteredMine : activeTab === "department" ? filteredDept : filteredCompany;
+  const activeData = activeTab === "department" ? filteredDept : filteredCompany;
   const activeCount = activeData.filter((p) => p.status !== "closed" && p.status !== "complete").length;
   const closedData = activeData.filter((p) => p.status === "closed" || p.status === "complete");
 
@@ -254,22 +250,16 @@ export default function PrioritiesPage() {
       >
         <div className="flex items-center justify-between mb-4">
           <TabsList>
-            <TabsTrigger value="mine" className="text-xs">
-              <User className="w-3.5 h-3.5 mr-1" />
-              {SCOPE_LABELS.role}
-            </TabsTrigger>
             {isDeptHead && (
-              <TabsTrigger value="department" className="text-xs">
+              <TabsTrigger value="department" className="text-xs" data-testid="tab-priorities-department">
                 <Users className="w-3.5 h-3.5 mr-1" />
                 {SCOPE_LABELS.department}
               </TabsTrigger>
             )}
-            {isAdmin && (
-              <TabsTrigger value="company" className="text-xs">
-                <Flag className="w-3.5 h-3.5 mr-1" />
-                {SCOPE_LABELS.company}
-              </TabsTrigger>
-            )}
+            <TabsTrigger value="company" className="text-xs" data-testid="tab-priorities-company">
+              <Flag className="w-3.5 h-3.5 mr-1" />
+              {SCOPE_LABELS.company}
+            </TabsTrigger>
           </TabsList>
 
           <div className="flex items-center gap-2">
@@ -316,31 +306,6 @@ export default function PrioritiesPage() {
             )}
           </div>
         </div>
-
-        <TabsContent value="mine">
-          <PriorityListSection
-            priorities={filteredMine}
-            isLoading={myQuery.isLoading}
-            isError={myQuery.isError}
-            error={myQuery.error as Error}
-            refetch={myQuery.refetch}
-            showEscalate
-            onEscalate={(id) => escalateMutation.mutate(id)}
-            showMarkComplete
-            onMarkComplete={(id) => markCompleteMutation.mutate(id)}
-            showReopen={showClosed}
-            onReopen={(id) => reopenMutation.mutate(id)}
-            selectable
-            selectedIds={bulkSelected}
-            onToggleSelect={toggleBulkSelect}
-            emptyMessage="No priorities assigned to you"
-            emptyAction={
-              <p className="text-xs text-muted-foreground mt-1">
-                Priorities will appear here when assigned by your department head or when you create them.
-              </p>
-            }
-          />
-        </TabsContent>
 
         {isDeptHead && (
           <TabsContent value="department">
@@ -396,7 +361,7 @@ export default function PrioritiesPage() {
       <CreatePriorityDialog
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
-        defaultScope={activeTab === "mine" ? "role" : activeTab === "department" ? "department" : "company"}
+        defaultScope={activeTab === "department" ? "department" : "company"}
         defaultDepartment={userDepartment}
       />
 

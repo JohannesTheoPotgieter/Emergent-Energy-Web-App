@@ -11,7 +11,6 @@ const CostTracker = lazyWithRetry(() => import("@/pages/cos"));
 const ProjectDetailPage = lazyWithRetry(() => import("@/pages/project-detail"));
 const ProjectStageGatePage = lazyWithRetry(() => import("@/pages/project-stage-gate"));
 const MyWorkAdminSettingsPage = lazyWithRetry(() => import("@/pages/my-work-admin-settings"));
-const MyWorkPrioritiesPage = lazyWithRetry(() => import("@/pages/my-work-priorities"));
 const MyWorkMeetingsPage = lazyWithRetry(() => import("@/pages/my-work-meetings"));
 const MyWorkSettingsPage = lazyWithRetry(() => import("@/pages/my-work-settings"));
 const QmDashboardPage = lazyWithRetry(() => import("@/pages/qm-dashboard"));
@@ -131,7 +130,6 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   CashflowPage,
   CostTracker,
   RevenueTrackerPage,
-  MyWorkPrioritiesPage,
   MyWorkAdminSettingsPage,
   QmDashboardPage,
   EngineeringDashboardPage,

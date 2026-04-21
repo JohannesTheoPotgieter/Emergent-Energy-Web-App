@@ -28,7 +28,13 @@ import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
 import { isPriorityAdminRole, departmentLabel } from "@/config/priorities";
 import { ProjectLinker } from "@/components/priorities/ProjectLinker";
-import { ProgressSourcePicker, type ProgressSourceValue } from "@/components/priorities/ProgressSourcePicker";
+import { type ProgressSourceValue } from "@/components/priorities/ProgressSourcePicker";
+import {
+  PriorityFormFields,
+  emptyPriorityForm,
+  buildPriorityPayload,
+  type PriorityFormState,
+} from "@/components/priorities/PriorityFormFields";
 import { BreakDownDialog } from "@/components/priorities/BreakDownDialog";
 import { useConfirmDialog } from "@/components/priorities/ConfirmActionDialog";
 import { ActivityIcon, formatActivitySentence } from "@/lib/priority-activity-formatter";
@@ -132,16 +138,7 @@ export default function PriorityDetailPage() {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [breakDownDialogOpen, setBreakDownDialogOpen] = useState(false);
   const [showProjectEvents, setShowProjectEvents] = useState(false);
-  const [editForm, setEditForm] = useState({
-    title: "",
-    description: "",
-    severity: "normal",
-    status: "active",
-    due_date: "",
-    target_outcome: "",
-    manual_health: "none",
-    manual_progress: "",
-  });
+  const [editForm, setEditForm] = useState<PriorityFormState>(emptyPriorityForm);
   const [progressSource, setProgressSource] = useState<ProgressSourceValue>({
     type: "manual",
     ref: null,
@@ -237,20 +234,14 @@ export default function PriorityDetailPage() {
 
   const updatePriorityMutation = useMutation({
     mutationFn: async () => {
-      await apiRequest("PUT", `/api/priorities/${priorityId}`, {
-        title: editForm.title,
-        description: editForm.description || null,
-        severity: editForm.severity,
-        status: editForm.status,
-        due_date: editForm.due_date || null,
-        target_outcome: editForm.target_outcome || null,
-        manual_health: editForm.manual_health === "none" ? null : editForm.manual_health,
-        manual_progress: progressSource.type === "manual" && progressSource.manualProgress
-          ? parseInt(progressSource.manualProgress)
-          : null,
-        progress_source_type: progressSource.type,
-        progress_source_ref: progressSource.type === "manual" ? null : progressSource.ref,
-      });
+      const payload = buildPriorityPayload(editForm, { includeStatus: true });
+      // Linked-source progress overrides any manual % from the form.
+      payload.manual_progress = progressSource.type === "manual" && progressSource.manualProgress
+        ? parseInt(progressSource.manualProgress, 10)
+        : null;
+      payload.progress_source_type = progressSource.type;
+      payload.progress_source_ref = progressSource.type === "manual" ? null : progressSource.ref;
+      await apiRequest("PUT", `/api/priorities/${priorityId}`, payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}`] });
@@ -282,14 +273,24 @@ export default function PriorityDetailPage() {
 
   const openEditDialog = () => {
     setEditForm({
+      ...emptyPriorityForm,
       title: priority.title || "",
       description: priority.description || "",
+      scope: priority.scope || "company",
       severity: priority.severity || "normal",
       status: priority.status || "active",
+      horizon: (priority as any).horizon || "quarter",
       due_date: priority.dueDate || "",
       target_outcome: priority.targetOutcome || "",
-      manual_health: priority.manualHealth || "none",
+      next_action: (priority as any).nextAction || "",
+      definition_of_done: (priority as any).definitionOfDone || "",
+      manual_health: priority.manualHealth || "",
       manual_progress: priority.manualProgress != null ? String(priority.manualProgress) : "",
+      department_key: (priority as any).departmentKey || "",
+      owner_user_id: priority.ownerUserId != null ? String(priority.ownerUserId) : "",
+      accountable_exec_id: (priority as any).accountableExecId != null ? String((priority as any).accountableExecId) : "",
+      assigned_user_id: (priority as any).assignedUserId != null ? String((priority as any).assignedUserId) : "",
+      parent_id: (priority as any).parentId != null ? String((priority as any).parentId) : "",
     });
     setProgressSource({
       type: ((priority.progressSourceType as any) || "manual") as ProgressSourceValue["type"],
@@ -968,74 +969,26 @@ export default function PriorityDetailPage() {
 
       {isAdmin && (
         <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-          <DialogContent className="max-w-xl">
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Edit Priority</DialogTitle>
             </DialogHeader>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2">
-                <Label className="text-xs">Title</Label>
-                <Input value={editForm.title} onChange={(e) => setEditForm((p) => ({ ...p, title: e.target.value }))} />
-              </div>
-              <div className="col-span-2">
-                <Label className="text-xs">Description</Label>
-                <Textarea value={editForm.description} onChange={(e) => setEditForm((p) => ({ ...p, description: e.target.value }))} rows={3} />
-              </div>
-              <div>
-                <Label className="text-xs">Severity</Label>
-                <Select value={editForm.severity} onValueChange={(v) => setEditForm((p) => ({ ...p, severity: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="critical">Critical</SelectItem>
-                    <SelectItem value="important">High</SelectItem>
-                    <SelectItem value="normal">Normal</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="text-xs">Status</Label>
-                <Select value={editForm.status} onValueChange={(v) => setEditForm((p) => ({ ...p, status: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="monitoring">Monitoring</SelectItem>
-                    <SelectItem value="in_progress">In progress</SelectItem>
-                    <SelectItem value="complete">Complete</SelectItem>
-                    <SelectItem value="closed">Closed</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="text-xs">Due date</Label>
-                <Input type="date" value={editForm.due_date} onChange={(e) => setEditForm((p) => ({ ...p, due_date: e.target.value }))} />
-              </div>
-              <div>
-                <Label className="text-xs">Manual health</Label>
-                <Select value={editForm.manual_health} onValueChange={(v) => setEditForm((p) => ({ ...p, manual_health: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Auto</SelectItem>
-                    <SelectItem value="healthy">Healthy</SelectItem>
-                    <SelectItem value="at_risk">At risk</SelectItem>
-                    <SelectItem value="critical">Critical</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="col-span-2">
-                <ProgressSourcePicker
-                  value={progressSource}
-                  onChange={setProgressSource}
-                  linkedProjects={linkedProjects}
-                />
-              </div>
-              <div className="col-span-2">
-                <Label className="text-xs">Target outcome</Label>
-                <Textarea value={editForm.target_outcome} onChange={(e) => setEditForm((p) => ({ ...p, target_outcome: e.target.value }))} rows={2} />
-              </div>
-            </div>
+            <PriorityFormFields
+              form={editForm}
+              patch={(delta) => setEditForm((prev) => ({ ...prev, ...delta }))}
+              mode="edit"
+              progressSource={progressSource}
+              onProgressSourceChange={setProgressSource}
+              linkedProjects={linkedProjects}
+              excludePriorityId={priorityId}
+            />
             <div className="flex justify-end gap-2 mt-2">
               <Button variant="outline" onClick={() => setEditDialogOpen(false)}>Cancel</Button>
-              <Button onClick={() => updatePriorityMutation.mutate()} disabled={updatePriorityMutation.isPending || !editForm.title.trim()}>
+              <Button
+                onClick={() => updatePriorityMutation.mutate()}
+                disabled={updatePriorityMutation.isPending || !editForm.title.trim()}
+                data-testid="button-save-priority"
+              >
                 {updatePriorityMutation.isPending ? "Saving..." : "Save changes"}
               </Button>
             </div>
