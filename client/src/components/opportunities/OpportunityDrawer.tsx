@@ -82,6 +82,18 @@ interface PdBlock {
   tasksSpawnedAt: string | null;
 }
 
+interface TicketWorkItem {
+  id: number;
+  title: string;
+  status: string;
+  phase: string | null;
+  priority: string | null;
+  endDate: string | null;
+  percentComplete: number | null;
+  ownerUserId: number | null;
+  ownerName: string | null;
+}
+
 interface OpportunityTicket {
   id: number;
   status: string;
@@ -99,6 +111,7 @@ interface OpportunityTicket {
   projectDeveloperName: string | null;
   designerUserId: number | null;
   designerName: string | null;
+  tasks?: TicketWorkItem[];
 }
 
 interface WorkflowResponse {
@@ -415,29 +428,63 @@ export function OpportunityDrawer({ opportunityId, open, onClose }: Props) {
                 </section>
               )}
 
-              {/* === Convert CTA === */}
-              {!merged.projectId && (
-                <section className="rounded-md border border-emerald-200 bg-emerald-50/60 p-3 flex items-center justify-between">
-                  <div className="text-xs">
-                    <p className="font-medium text-emerald-900">Ready to start the project?</p>
-                    <p className="text-emerald-800/80">Creates a project shell at "First Assessment" and links it back here.</p>
-                  </div>
-                  <Button
-                    size="sm"
-                    className="bg-emerald-600 hover:bg-emerald-700"
-                    onClick={() => setConvertOpen(true)}
-                    data-testid="btn-open-convert-wizard"
-                  >
-                    Convert to project <ArrowRight className="h-3 w-3 ml-1" />
-                  </Button>
-                </section>
-              )}
-              {merged.projectId && (
-                <section className="rounded-md border p-3 text-xs flex items-center gap-2 text-muted-foreground">
-                  <ExternalLink className="h-3 w-3" />
-                  Linked to project ID #{merged.projectId}.
-                </section>
-              )}
+              {/* === Convert CTA / linked-project state ===
+                  When a project is already linked (either on the opportunity
+                  itself or on any of its engineering tickets) we treat the
+                  "create project" step as done and render a green confirmation
+                  with a deep link instead of the convert button. */}
+              {(() => {
+                // The shadow PD row is filtered to project_id IS NULL on the
+                // server, so a "linked project" can only ever come from a
+                // real engineering ticket. Source projectId AND projectName
+                // from the same ticket so the deep link is always coherent.
+                const linkedFromTicket = (data.tickets ?? []).find((t) => t.projectId && t.projectName);
+                const effectiveProjectId = linkedFromTicket?.projectId ?? null;
+                const effectiveProjectName = linkedFromTicket?.projectName ?? null;
+                if (effectiveProjectId) {
+                  return (
+                    <section
+                      className="rounded-md border border-emerald-200 bg-emerald-50/60 p-3 flex items-center justify-between"
+                      data-testid="section-project-linked"
+                    >
+                      <div className="text-xs flex items-center gap-2">
+                        <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                        <div>
+                          <p className="font-medium text-emerald-900">Project linked</p>
+                          <p className="text-emerald-800/80">This opportunity has a working project — no need to convert again.</p>
+                        </div>
+                      </div>
+                      {effectiveProjectName ? (
+                        <a
+                          href={`/project/${encodeURIComponent(effectiveProjectName)}`}
+                          className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 hover:text-emerald-800 hover:underline"
+                          data-testid="link-project-linked"
+                        >
+                          {effectiveProjectName} <ExternalLink className="h-3 w-3" />
+                        </a>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">#{effectiveProjectId}</span>
+                      )}
+                    </section>
+                  );
+                }
+                return (
+                  <section className="rounded-md border border-emerald-200 bg-emerald-50/60 p-3 flex items-center justify-between">
+                    <div className="text-xs">
+                      <p className="font-medium text-emerald-900">Ready to start the project?</p>
+                      <p className="text-emerald-800/80">Creates a project shell at "First Assessment" and links it back here.</p>
+                    </div>
+                    <Button
+                      size="sm"
+                      className="bg-emerald-600 hover:bg-emerald-700"
+                      onClick={() => setConvertOpen(true)}
+                      data-testid="btn-open-convert-wizard"
+                    >
+                      Convert to project <ArrowRight className="h-3 w-3 ml-1" />
+                    </Button>
+                  </section>
+                );
+              })()}
             </div>
 
             {convertOpen && data && (
@@ -598,8 +645,89 @@ function TicketRow({ ticket }: { ticket: OpportunityTicket }) {
           {ticket.comments && ticket.comments.length > commentPreview.length ? "…" : ""}
         </p>
       )}
+      <TicketMiniBoard tasks={ticket.tasks ?? []} ticketId={ticket.id} />
     </li>
   );
+}
+
+/**
+ * Mini engineering task board for a single pd_ticket. Groups the ticket's
+ * spawned work_items by `phase` so the user can see the engineering pipeline
+ * for just this ticket at a glance, with each item's status, due date, and
+ * the engineer assigned. Falls back to an "Unassigned" phase when work_items
+ * have no `phase` set (e.g. legacy or template-less tickets).
+ */
+function TicketMiniBoard({ tasks, ticketId }: { tasks: TicketWorkItem[]; ticketId: number }) {
+  if (tasks.length === 0) {
+    return (
+      <p className="mt-1.5 text-[10px] text-muted-foreground italic" data-testid={`empty-mini-board-${ticketId}`}>
+        No engineering tasks spawned yet.
+      </p>
+    );
+  }
+  const phases = new Map<string, TicketWorkItem[]>();
+  for (const t of tasks) {
+    const key = t.phase?.trim() || "Unassigned";
+    const list = phases.get(key) ?? [];
+    list.push(t);
+    phases.set(key, list);
+  }
+  return (
+    <div className="mt-1.5 grid gap-1.5 sm:grid-cols-2" data-testid={`mini-board-${ticketId}`}>
+      {Array.from(phases.entries()).map(([phase, items]) => {
+        const done = items.filter((i) => isDoneStatus(i.status)).length;
+        return (
+          <div
+            key={phase}
+            className="rounded border border-slate-200 bg-slate-50/50 p-1.5"
+            data-testid={`mini-board-phase-${ticketId}-${phase}`}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-700 truncate" title={phase}>
+                {phase}
+              </span>
+              <span className="text-[9px] tabular-nums text-muted-foreground">{done}/{items.length}</span>
+            </div>
+            <ul className="space-y-0.5">
+              {items.map((it) => (
+                <li
+                  key={it.id}
+                  className="flex items-center gap-1 text-[10px]"
+                  data-testid={`mini-board-task-${it.id}`}
+                >
+                  <span
+                    className={`inline-block h-1.5 w-1.5 rounded-full flex-shrink-0 ${workItemStatusDot(it.status)}`}
+                    title={it.status}
+                  />
+                  <span className="flex-1 truncate text-foreground" title={it.title}>{it.title}</span>
+                  <span
+                    className={`text-[9px] truncate max-w-[60px] ${it.ownerName ? "text-slate-600" : "italic text-muted-foreground"}`}
+                    title={it.ownerName ? `Assigned to ${it.ownerName}` : "Unassigned"}
+                  >
+                    {it.ownerName ?? "—"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function isDoneStatus(status: string): boolean {
+  const s = status.toLowerCase();
+  return s === "done" || s === "completed" || s === "complete" || s === "closed";
+}
+
+function workItemStatusDot(status: string): string {
+  const s = status.toLowerCase();
+  if (s === "done" || s === "completed" || s === "complete" || s === "closed") return "bg-emerald-500";
+  if (s === "in_progress" || s === "in progress") return "bg-blue-500";
+  if (s === "blocked" || s === "on_hold" || s === "on hold") return "bg-amber-500";
+  if (s === "cancelled" || s === "canceled") return "bg-slate-400";
+  return "bg-slate-300";
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
