@@ -82,12 +82,32 @@ interface PdBlock {
   tasksSpawnedAt: string | null;
 }
 
+interface OpportunityTicket {
+  id: number;
+  status: string;
+  requestType: string;
+  priority: string;
+  dueDate: string | null;
+  comments: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  clientId: number | null;
+  projectId: number | null;
+  projectName: string | null;
+  tasksSpawnedAt: string | null;
+  projectDeveloperUserId: number | null;
+  projectDeveloperName: string | null;
+  designerUserId: number | null;
+  designerName: string | null;
+}
+
 interface WorkflowResponse {
   crm: CrmBlock;
   clientName: string | null;
   siteName: string | null;
   pd: PdBlock;
   tasks: Array<{ id: number; title: string; status: string; priority: string | null; endDate: string | null }>;
+  tickets?: OpportunityTicket[];
 }
 
 const PD_STATUSES = ["Draft", "In Progress", "On Hold", "Completed", "Cancelled"];
@@ -350,42 +370,50 @@ export function OpportunityDrawer({ opportunityId, open, onClose }: Props) {
                 </Field>
               </section>
 
-              {/* === Tasks === */}
-              <section className="rounded-md border p-3 space-y-2" data-testid="section-tasks">
-                <header className="flex items-center justify-between">
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-foreground flex items-center gap-1.5">
-                    <Zap className="h-3 w-3 text-emerald-600" /> Engineering tasks
-                  </h3>
-                  {!merged.tasksSpawnedAt && merged.projectId && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 text-xs"
-                      onClick={() => spawnTasks.mutate()}
-                      disabled={spawnTasks.isPending}
-                      data-testid="btn-spawn-tasks"
-                    >
-                      {spawnTasks.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
-                      Spawn from "{merged.requestType}" template
-                    </Button>
+              {/* === Engineering tickets (tracking) === */}
+              {(data.tickets ?? []).length > 0 ? (
+                <EngineeringTicketsSection tickets={data.tickets ?? []} />
+              ) : (
+                /* Legacy "spawn tasks for the shadow PD ticket" surface — only
+                   shown when the opportunity has NO real tickets yet. Once the
+                   user creates an engineering ticket via the working-list flow,
+                   this is replaced by the ticket tracking list above. */
+                <section className="rounded-md border p-3 space-y-2" data-testid="section-tasks">
+                  <header className="flex items-center justify-between">
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-foreground flex items-center gap-1.5">
+                      <Zap className="h-3 w-3 text-emerald-600" /> Engineering tasks
+                    </h3>
+                    {!merged.tasksSpawnedAt && merged.projectId && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs"
+                        onClick={() => spawnTasks.mutate()}
+                        disabled={spawnTasks.isPending}
+                        data-testid="btn-spawn-tasks"
+                      >
+                        {spawnTasks.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                        Spawn from "{merged.requestType}" template
+                      </Button>
+                    )}
+                  </header>
+                  {!merged.projectId ? (
+                    <p className="text-[11px] text-muted-foreground italic">No engineering tickets yet — create one from the working list, or convert this opportunity to a project first.</p>
+                  ) : data.tasks.length === 0 ? (
+                    <p className="text-[11px] text-muted-foreground italic">No tasks yet.</p>
+                  ) : (
+                    <ul className="text-xs space-y-1">
+                      {data.tasks.map((t) => (
+                        <li key={t.id} className="flex items-center gap-2 border-b last:border-b-0 py-1">
+                          <CheckCircle2 className={`h-3 w-3 ${t.status === "Done" ? "text-emerald-600" : "text-muted-foreground"}`} />
+                          <span className="flex-1 truncate">{t.title}</span>
+                          <Badge variant="outline" className="text-[10px]">{t.status}</Badge>
+                        </li>
+                      ))}
+                    </ul>
                   )}
-                </header>
-                {!merged.projectId ? (
-                  <p className="text-[11px] text-muted-foreground italic">Convert this opportunity to a project before spawning tasks.</p>
-                ) : data.tasks.length === 0 ? (
-                  <p className="text-[11px] text-muted-foreground italic">No tasks yet.</p>
-                ) : (
-                  <ul className="text-xs space-y-1">
-                    {data.tasks.map((t) => (
-                      <li key={t.id} className="flex items-center gap-2 border-b last:border-b-0 py-1">
-                        <CheckCircle2 className={`h-3 w-3 ${t.status === "Done" ? "text-emerald-600" : "text-muted-foreground"}`} />
-                        <span className="flex-1 truncate">{t.title}</span>
-                        <Badge variant="outline" className="text-[10px]">{t.status}</Badge>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </section>
+                </section>
+              )}
 
               {/* === Convert CTA === */}
               {!merged.projectId && (
@@ -441,6 +469,136 @@ function ReadField({ label, value }: { label: string; value: string | null | und
       <dt className="text-muted-foreground">{label}</dt>
       <dd className="font-medium text-foreground truncate" title={value ?? ""}>{value || "—"}</dd>
     </>
+  );
+}
+
+/**
+ * Per-ticket tracking row for the drawer.
+ *
+ * Replaces the old "Convert this opportunity to a project before spawning
+ * tasks" placeholder when the opportunity already has at least one real
+ * engineering ticket. Each row shows the ticket's request type, status,
+ * priority, due date, days-since-created, owners, the linked project (deep
+ * link to the project page), and an optional first line of the comments so
+ * engineering can leave/track feedback at a glance.
+ */
+function EngineeringTicketsSection({ tickets }: { tickets: OpportunityTicket[] }) {
+  const open = tickets.filter((t) => t.status !== "Completed" && t.status !== "Cancelled").length;
+  const closed = tickets.length - open;
+  return (
+    <section className="rounded-md border p-3 space-y-2" data-testid="section-engineering-tickets">
+      <header className="flex items-center justify-between">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-foreground flex items-center gap-1.5">
+          <Zap className="h-3 w-3 text-emerald-600" /> Engineering tickets
+          <span className="text-[10px] font-normal text-muted-foreground tabular-nums">
+            • {open} open / {closed} closed
+          </span>
+        </h3>
+      </header>
+      <ul className="text-xs space-y-1.5" data-testid="list-engineering-tickets">
+        {tickets.map((t) => (
+          <TicketRow key={t.id} ticket={t} />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function ticketStatusClass(status: string): string {
+  switch (status) {
+    case "Completed":
+      return "bg-emerald-50 text-emerald-700 border-emerald-200";
+    case "Cancelled":
+      return "bg-slate-100 text-slate-600 border-slate-200";
+    case "In Progress":
+      return "bg-blue-50 text-blue-700 border-blue-200";
+    case "On Hold":
+      return "bg-amber-50 text-amber-700 border-amber-200";
+    default:
+      return "bg-slate-50 text-slate-700 border-slate-200";
+  }
+}
+
+function ticketPriorityClass(priority: string): string {
+  switch (priority) {
+    case "Urgent":
+      return "bg-red-50 text-red-700 border-red-200";
+    case "High":
+      return "bg-orange-50 text-orange-700 border-orange-200";
+    case "Low":
+      return "bg-slate-50 text-slate-600 border-slate-200";
+    default:
+      return "bg-slate-50 text-slate-700 border-slate-200";
+  }
+}
+
+function ticketAgeDays(iso: string | null): number | null {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return null;
+  return Math.max(0, Math.floor((Date.now() - t) / (1000 * 60 * 60 * 24)));
+}
+
+function TicketRow({ ticket }: { ticket: OpportunityTicket }) {
+  const isClosed = ticket.status === "Completed" || ticket.status === "Cancelled";
+  const ageDays = ticketAgeDays(ticket.createdAt);
+  const owner = ticket.projectDeveloperName || ticket.designerName || null;
+  const commentPreview = (ticket.comments || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 140);
+  const projectHref = ticket.projectName
+    ? `/project/${encodeURIComponent(ticket.projectName)}`
+    : null;
+  return (
+    <li
+      className={`rounded border px-2 py-1.5 ${
+        isClosed ? "border-slate-200 bg-slate-50/40" : "border-slate-200 bg-white"
+      }`}
+      data-testid={`row-eng-ticket-${ticket.id}`}
+    >
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="font-medium text-foreground truncate">{ticket.requestType}</span>
+        <Badge variant="outline" className={`text-[10px] ${ticketStatusClass(ticket.status)}`}>
+          {ticket.status}
+        </Badge>
+        <Badge variant="outline" className={`text-[10px] ${ticketPriorityClass(ticket.priority)}`}>
+          {ticket.priority}
+        </Badge>
+        {ageDays != null && !isClosed && (
+          <span
+            className={`text-[10px] tabular-nums ${ageDays >= 14 ? "text-amber-700 font-medium" : "text-muted-foreground"}`}
+            title={`Created ${ageDays}d ago`}
+          >
+            {ageDays}d in progress
+          </span>
+        )}
+        <span className="ml-auto text-[10px] text-muted-foreground">#{ticket.id}</span>
+      </div>
+      <div className="mt-1 flex items-center gap-x-3 gap-y-0.5 flex-wrap text-[10px] text-muted-foreground">
+        {ticket.dueDate && <span>Due {ticket.dueDate}</span>}
+        {owner && <span>Owner: <span className="text-foreground">{owner}</span></span>}
+        {projectHref ? (
+          <a
+            href={projectHref}
+            className="inline-flex items-center gap-0.5 text-emerald-700 hover:text-emerald-800 hover:underline"
+            data-testid={`link-eng-ticket-project-${ticket.id}`}
+            title={`Open project ${ticket.projectName} to leave feedback / track progress`}
+          >
+            {ticket.projectName} <ExternalLink className="h-2.5 w-2.5" />
+          </a>
+        ) : (
+          <span className="italic">Not yet linked to a project</span>
+        )}
+        {ticket.tasksSpawnedAt && <span className="text-emerald-700">Tasks spawned</span>}
+      </div>
+      {commentPreview && (
+        <p className="mt-1 text-[10px] text-muted-foreground line-clamp-2" title={ticket.comments ?? undefined}>
+          {commentPreview}
+          {ticket.comments && ticket.comments.length > commentPreview.length ? "…" : ""}
+        </p>
+      )}
+    </li>
   );
 }
 

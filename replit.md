@@ -1,9 +1,7 @@
 # Emergent Energy Web App
 
 ## Overview
-Emergent Energy is an internal operations platform for a South African commercial and industrial (C&I) solar EPC company. Its primary purpose is to serve as a project-centric command center, replacing fragmented, Excel-based systems. The platform provides a single, trusted system for all roles to manage the entire project lifecycle, from engineering intake and development through construction, commissioning, finance tracking, and quality management.
-
-The platform aims to improve efficiency, centralize data, and provide comprehensive insights across all project phases, supporting business growth and market leadership in the C&I solar sector.
+Emergent Energy is an internal operations platform designed for a South African commercial and industrial (C&I) solar EPC company. It centralizes the entire project lifecycle management, from engineering and development to construction, commissioning, finance tracking, and quality assurance. The platform replaces disparate, Excel-based systems, aiming to enhance efficiency, consolidate data, and provide comprehensive insights to support business growth and market leadership in the C&I solar sector.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
@@ -11,91 +9,55 @@ Preferred communication style: Simple, everyday language.
 ## System Architecture
 
 ### Monorepo Structure
-The project uses a monorepo containing `client/` (React SPA), `server/` (Express API), `shared/` (Drizzle schema), `migrations/`, `qa/` (testing), and `script/` directories.
+The project is organized as a monorepo, separating client-side (React SPA), server-side (Express API), shared code (Drizzle schema), database migrations, QA, and scripting concerns into distinct directories.
 
 ### Frontend
-- **Framework:** React 19 with TypeScript and Vite.
-- **Routing:** `wouter` for SPA navigation.
-- **Styling:** Tailwind CSS v4, `shadcn/ui` components (New York style) built on Radix UI, Lucide icons.
-- **State Management:** TanStack React Query v5 for server state, local React state for UI.
-- **Forms:** React Hook Form with Zod for validation.
-- **Design:** CSS variables for theming, white-and-emerald light theme, Barlow, Inter, and JetBrains Mono fonts.
-- **UI/UX:** Consistent design language using `shadcn/ui` components for a professional and intuitive user experience.
+- **Framework & Tooling:** React 19 with TypeScript, powered by Vite.
+- **Routing:** `wouter` for single-page application navigation.
+- **Styling & Components:** Tailwind CSS v4, `shadcn/ui` components (New York style) built on Radix UI, and Lucide icons for a consistent and professional UI/UX.
+- **State Management:** TanStack React Query v5 manages server state, while local React state handles UI-specific data.
+- **Forms:** React Hook Form is used for form management, with Zod for validation.
+- **Design:** The application features a white-and-emerald light theme, using CSS variables for theming and a combination of Barlow, Inter, and JetBrains Mono fonts.
 
 ### Backend
-- **Runtime:** Node.js with Express 5 and TypeScript.
-- **API Style:** RESTful, grouped by domain, with abstracted data access through repositories.
-- **Validation:** Zod schemas and `validateBody` middleware for robust input validation.
-- **Error Handling:** Centralized `ApiError` handling.
-- **Session Management:** `express-session` for user roles.
-- **Startup:** `startup-orchestrator.ts` handles additive migrations and data seeding.
-- **Smart Import v2:** Processes `.xlsx` tracker workbooks using ExcelJS for parsing, with an upsert/override pattern for project data. Includes preflight validation to surface issues before commitment.
-- **COS Tracker Tracker-Gap Reconciliation UI (Phase 2, read-only):** Provides an interface for finance to identify and manage discrepancies between QuickBooks bills and internal cost trackers. It allows ignoring known non-tracker bills and manually overriding class-to-project mappings. It *never* writes to financial source-of-truth tables.
-- **QB Vendor Mappings (QB Vendor ↔ App Counterparty):** Mirror of customer mappings for the supplier side. Backed by `quickbooks_vendor_mappings` (migration 0010) with unique `(qb_vendor_id, qb_realm_id)`. Because QB bills are fetched live (never persisted), historical alignment to a newly-mapped counterparty is automatic on the next read — no row-level backfill needed.
-- **COS Tracker QB → Project Resolver (Phase 1, read-only):** Resolves QuickBooks bills to projects based on a strategy ladder, aiding finance in identifying unmapped or incorrectly mapped transactions. It *never* writes to financial source-of-truth tables.
-- **Canonical Revenue Recognition (POC method):** Computes revenue KPIs based on `normalized_cost_lines.revenue_recognition_amount`, gated by effective realization. Distinct from cashflow/billing.
-- **QuickBooks Revenue (a/c 1000000 Sales):** The "Quickbooks Revenue" row on the Revenue Tracker reads monthly credits to QB account `1000000 Sales` from the `ProfitAndLoss` report (`summarize_column_by=Month`) via `extractMonthlyAccountTotalsFromPnL` in `server/services/quickbooks-service.ts`. This is finance's canonical revenue-recognition source: ex-VAT, accrual-based, and includes journal-entry recognition (e.g. milestone moves from Deferred Revenue → Sales). Replaces the prior `Invoice.TotalAmt` sum which was VAT-inclusive and double-counted A/R deposits posted to liability accounts. Account match falls back to name "Sales" if id `1000000` isn't present.
-- **COS Tracker Past-Month Auto-Promote:** Automatically treats cost lines from past months with invoice numbers as 'Realised' to prevent drift from QuickBooks, differentiating from strict canonical realization rules.
-- **Home "Do Next":** Provides ranked, role-aware action items (approvals, RAG status, overdue tasks) with server-persisted snooze/dismiss functionality.
-- **Canonical Phase Cycle:** Implements a single, company-wide 10-stage project lifecycle defined in `shared/phases.ts`. Planning (`S04_PLANNING`, PM-owned, displayNumber 4) sits between Financial Close and Construction and renders as its own column on the Lifecycle Board, in every gate page label map, and in the Performance report. Legacy `S04_PD_PM_HANDOVER` and `S05_FINANCIAL_REVIEW` codes still alias to S03/S02 for historical projects. `DEFAULT_STAGE_DEFS` in `server/services/stage-lifecycle-service.ts` includes `S04_PLANNING` so any newly initialized project gets the Planning stage seeded; `ensureStageDefinitions` is idempotent and back-fills existing tenants on next boot.
-- **Priority Linked Progress:** A Priority's `effectiveProgress` can be driven from a chosen source (`project_phase` reach-or-pass, `project_percent` from `derived_project_kpis`, `milestone_revenue` 0/60/100 by paid/invoiced state, or `tasks_rollup` averaged from `work_item_pm`). Stored on `mytool_company_priorities.progress_source_type` + `progress_source_ref` (jsonb) — added in migration 0009. Computed every read by `server/lib/priorities/progress-source.ts`; falls back to manual `%` when source is unset or unresolvable. Picker lives in `client/src/components/priorities/ProgressSourcePicker.tsx` and replaces the manual % field in the Edit Priority dialog. A small "Auto" chip under the progress bar surfaces the linked source label. Out-of-scope (follow-up): same picker on the task-edit dialog for work_item-level linking.
-- **Priorities UI Overhaul (V1.5):** Add and Edit dialogs share `client/src/components/priorities/PriorityFormFields.tsx` for full field parity (title, description, scope, severity, horizon, dept, parent picker, owner, exec, assignee, due, health, progress source / manual %, target outcome, next action, DoD, project link). The "My Priorities" page and tab were removed (users track personal items via My Tasks); `/priorities` defaults to Department for dept heads and Company for admins. The duplicate secondary nav under `/priorities` is gone — sub-tabs render only inside the page. Parent-priority picker enforces hierarchy: department priorities can only attach to company parents; role priorities can attach to company or same-department parents. **Server permissions:** `requirePriorityCreator` middleware (admin + dept head) gates POST and PUT in `server/departments/priority-strategic-routes.ts`; non-admin dept heads are scope-guarded — they can only create/edit dept- or role-scoped priorities for their own department, cannot promote to company scope, and cannot edit company-scope priorities or move priorities across departments. `ProgressSourcePicker` field-name bug (`p.projectId`/`p.projectName` → `p.id`/`p.name`) fixed; auto-selects when exactly one project is linked.
+- **Runtime & Framework:** Node.js with Express 5 and TypeScript.
+- **API Design:** RESTful API organized by domain, utilizing a repository pattern for data access.
+- **Validation & Error Handling:** Zod schemas and `validateBody` middleware ensure robust input validation, complemented by centralized `ApiError` handling.
+- **Authentication:** `express-session` manages user sessions and roles.
+- **Data Initialization:** `startup-orchestrator.ts` manages additive migrations and data seeding.
+- **Smart Import v2:** Supports importing `.xlsx` tracker workbooks, parsing with ExcelJS, and applying an upsert/override strategy for project data, including preflight validation.
+- **Financial Reconciliation:** Features read-only interfaces for reconciling QuickBooks data with internal cost trackers (COS Tracker Tracker-Gap Reconciliation UI, COS Tracker QB → Project Resolver) and managing QuickBooks vendor mappings.
+- **Revenue Recognition:** Implements a Canonical Revenue Recognition system based on `normalized_cost_lines` and integrates with QuickBooks Revenue (account `1000000 Sales`).
+- **COS Tracker Past-Month Auto-Promote:** Automates the 'Realised' status for past month cost lines with invoice numbers to align with QuickBooks.
+- **Home "Do Next":** Provides role-aware, ranked action items with snooze/dismiss functionality.
+- **Canonical Phase Cycle:** Defines a company-wide 10-stage project lifecycle (`shared/phases.ts`), including a new `S04_PLANNING` stage.
+- **Priority Linked Progress:** Allows `effectiveProgress` of priorities to be driven by various sources (e.g., `project_phase`, `derived_project_kpis`, `milestone_revenue`, `tasks_rollup`).
+- **Priorities UI Overhaul:** Streamlines priority management with unified add/edit dialogs, improved field parity, and role-based access controls for creating and editing priorities.
+- **Opportunities Management Board:** Centralizes project development activities under `/opportunities` with List, Kanban, and Calendar views. Features role-scoped access and integrates with Pipedrive custom fields.
+- **Project Development Dashboard:** Provides an overview of PD KPIs, pipeline status, and risk signals.
+- **Engineering Ticket Tracking:** Integrates engineering ticket tracking directly into the Opportunity Drawer, displaying ticket status, age, due dates, owners, and comments, with server-side logic for ticket summaries and client-side UX for quick access and skip-mapping.
+- **Opportunities Working List Hardening:** Enhances the opportunities working list with server-side authoritative gating, deep-link support, Pipedrive sync indicators, sortable columns, and refined engineering badges. Includes a partial unique index migration for Pipedrive deal IDs.
+- **Opportunity ↔ PD Ticket Merge:** Unifies Pipedrive opportunities and PD tickets into a single `Opportunity` record, managing CRM fields (read-only from Pipedrive) and internal PD workflow data within the application.
 
 ### Database Strategy
-- **Dual-Mode:** Supports PostgreSQL (production) and SQLite (local development).
-- **ORM:** Drizzle ORM with Drizzle Kit for schema definition and additive SQL migrations.
-- **Schema:** `shared/schema/*.ts` is the source of truth.
-- **Snapshot Versioning:** Uses `effective_to` for snapshotting tables like `normalizedCostLines`.
+- **Dual-Mode:** Supports PostgreSQL for production and SQLite for local development.
+- **ORM:** Drizzle ORM is used for schema definition, with Drizzle Kit for additive SQL migrations.
+- **Schema Source of Truth:** `shared/schema/*.ts`.
+- **Snapshot Versioning:** Uses `effective_to` for versioning select tables.
 
 ### Authentication & Authorization
-- **Primary Auth:** Microsoft SSO via Azure MSAL, mapping MS accounts to internal users and roles.
-- **Fallback Auth:** Username/password login using `bcryptjs`.
-- **Role Management:** Authoritative role list in `shared/schema/users.ts`.
-- **Server-side Enforcement:** `requireAuth` and `requireRole` middleware.
-- **Security:** Azure Key Vault for secrets, encryption for sensitive fields.
+- **Primary:** Microsoft SSO via Azure MSAL, mapping MS accounts to internal users and roles.
+- **Fallback:** Username/password authentication using `bcryptjs`.
+- **Role Management:** Authoritative role list defined in `shared/schema/users.ts`.
+- **Security:** Server-side enforcement with `requireAuth` and `requireRole` middleware, Azure Key Vault for secrets, and encryption for sensitive data.
 
 ### Microsoft 365 Integration
-- Integrates with Outlook, Teams, and SharePoint using `@microsoft/microsoft-graph-client`.
-- Includes a sync service for calendar events, storing only metadata and deep links for emails and attachments.
-
-### Opportunities Management Board
-- Provides a centralized working list for Project Development under `/opportunities`.
-- Offers three views: List, Kanban (5 stage columns), and Calendar.
-- Canonical detail view is the `OpportunityDrawer`.
-- **Role-scoped access** ensures users only see relevant opportunities.
-- Integrates Pipedrive custom fields for `province`, `estimated_kwp`, and `estimated_kwh`.
-
-### Project Development Dashboard
-- `/pd` provides an overview dashboard with KPI cards (pipeline value/kWp, win rate), Pipeline by Stage, Active Funnel, Upcoming Activity, Recent Wins/Losses, and Risk Signals.
-
-### Engineering Ticket UX on Opportunities (2026-04-21)
-- Working list now surfaces a richer engineering-tickets cell: `[open]/[closed] · [Nd]` where `Nd` is days since the oldest still-open ticket was created. Empty state remains a dim `·`. Open pill links to the project when one is linked. `>=14d` ages render in amber.
-- New repository method `getEngineeringTicketSummaries(opportunityIds[])` returns `{openCount, closedCount, oldestOpenAt, lastTicketClientId, lastTicketProjectId}` per opportunity. Terminal statuses are `Completed` and `Cancelled`. The legacy `getEngineeringTicketCounts` is retained (still used by `pd-intake.routes`).
-- `lastTicketClientId/lastTicketProjectId` come from the **most recent ticket where BOTH IDs are populated** (rows scanned `createdAt DESC`), so an unlinked shadow ticket at the top doesn't suppress the skip-mapping default in favor of an older fully-mapped ticket.
-- Working-list response gained `closedEngineeringTaskCount`, `oldestOpenEngineeringAt`, `lastTicketClientId`, `lastTicketProjectId`. `existingEngineeringTicketCount` is now total (open+closed); the only in-app consumer is the working list itself.
-- Engineering-ticket dialog now has a **skip-mapping fast path**: when `openMapping(row)` is called for a deal that already has tickets and we know the latest mapping, the dialog opens straight to the ticket form with `skipMapping=true` and `resolvedClientId/resolvedProjectId` pre-filled from the latest fully-mapped ticket. Mapping mode radios + client/project pickers are hidden, and the title becomes "Add Engineering Ticket". Footer logic still gates POST on `mappingResolved`, which is true via the pre-fill, so create-tickets requests work unchanged.
-
-### Opportunities Working List Hardening (2026-04-21)
-- Server is the authoritative gate via `isActivePdWorkingOpportunity` (`server/lib/opportunity-working-filter.ts`); the client re-applies the same checks as a defensive safety net and `console.warn`s in DEV when the two diverge.
-- Deep-link support: `/opportunities?open={id}` opens the unified `OpportunityDrawer` and the param is stripped via `history.replaceState` so refreshes don't re-pin it. PD Dashboard tiles use this.
-- Pipedrive "Synced Xm ago" indicator next to the Pull button (client-side, driven by last successful mutation).
-- Sort indicators: emerald bold ▲/▼ on the active column with header underline, dim ↕ on inactive columns.
-- Engineering badge: 26×24 pill with hover shadow when linked to a project; empty state is a slate dim dot (·) instead of `0`.
-- Phase-template radio is hidden when `engineering-phase-templates` returns empty; `ticketMode` is auto-coerced to `custom` so the form renders the right inputs.
-- Migration 0011 adds a **partial unique index** `opportunities_pipedrive_deal_source_uniq` on `(pipedrive_deal_id, source)` where `source = 'pipedrive' AND pipedrive_deal_id IS NOT NULL`. Pre-existing un-linked, un-mapped duplicates are removed in a single transaction before the index is created (idempotent on re-run).
-- `pd_tickets:create` → `pd_tickets:view` permission downgrade on three GET routes (`/api/opportunities/engineering-phase-templates`, `/api/opportunities/:id/engineering-phase-templates`, `/api/opportunities/:id/mapping-context`) — these are pure lookups used to populate the convert dialog and shouldn't require write permission.
-- `ENGINEERING_REQUEST_TYPES` (in `shared/roles/pd-roles.ts`) expanded to include the convert-flow names (First Assessment, Cost Proposal, Site visit Report, Sizing Rational Request, CP - PVSOL, etc.) so the engineering badge counts those tickets too.
-
-### Opportunity ↔ PD Ticket Merge
-- Unifies "Pipedrive Opportunity" and "PD Ticket" into a single "Opportunity" record.
-- Pipedrive owns CRM fields (read-only), while the app owns PD-workflow shadow data.
-- Lazy creation and patching of PD fields, spawning tasks, and converting to projects.
-- Lifecycle phases are prioritized over Pipedrive stages, with a clear mapping between the two.
+- Integration with Outlook, Teams, and SharePoint using `@microsoft/microsoft-graph-client`. A sync service stores calendar event metadata and deep links for emails and attachments.
 
 ### Testing
 - **Unit & API Tests:** Vitest.
 - **E2E Tests:** Playwright.
-- **Release Gate:** `qa/release-gate.ts` script for critical test validation.
+- **Release Gate:** `qa/release-gate.ts` script ensures critical test validation.
 
 ## External Dependencies
 
@@ -109,14 +71,16 @@ The project uses a monorepo containing `client/` (React SPA), `server/` (Express
 ### Database
 - PostgreSQL
 - `better-sqlite3`
-- Drizzle ORM + Drizzle Kit
+- Drizzle ORM
+- Drizzle Kit
 
 ### Frontend Libraries
 - `shadcn/ui`
 - Radix UI
 - TanStack React Query v5
 - TanStack Virtual
-- React Hook Form + Zod
+- React Hook Form
+- Zod
 - Recharts
 - ExcelJS
 - DOMPurify
@@ -128,7 +92,8 @@ The project uses a monorepo containing `client/` (React SPA), `server/` (Express
 ### Build & Dev Tools
 - Vite
 - tsx
-- ESLint + Prettier
+- ESLint
+- Prettier
 
 ### Fonts
 - Google Fonts (Barlow, Inter, JetBrains Mono)
