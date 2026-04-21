@@ -231,6 +231,20 @@ export default function OpportunitiesPage() {
   );
   const mappingResolved = dlg.resolvedClientId != null && dlg.resolvedProjectId != null;
 
+  // Search + sort UI state for the List view.
+  type SortKey = "dealName" | "stage" | "projectDeveloper" | "province" | "estimatedKwp" | "estimatedValue" | "expectedCloseDate" | "nextActivityDate" | "openEngineeringTaskCount";
+  const [searchTerm, setSearchTerm] = useState("");
+  const [sortKey, setSortKey] = useState<SortKey>("expectedCloseDate");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
+
   // (Legacy PD Tickets section state was removed 2026-04-20 — replaced by
   // the unified OpportunityDrawer which fetches per-row /workflow on open.)
 
@@ -423,6 +437,53 @@ export default function OpportunitiesPage() {
     [data],
   );
 
+  // Derived list for the table view: applies the search filter and the
+  // current sort. Kanban/Calendar tabs continue to use `activeRows`
+  // directly (their own sort behavior is in the child components).
+  const displayRows = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    const filtered = q
+      ? activeRows.filter((row) => {
+          const haystack = [
+            row.dealName,
+            row.orgClientName,
+            row.projectDeveloper,
+            row.province,
+            row.pipedriveDealId,
+            row.stage,
+            row.fundingType,
+            row.siteLocation,
+            row.nextActivitySubject,
+          ]
+            .map((v) => String(v ?? "").toLowerCase())
+            .join(" ");
+          return haystack.includes(q);
+        })
+      : activeRows;
+
+    const dir = sortDir === "asc" ? 1 : -1;
+    const cmp = (a: WorkingOpportunityRow, b: WorkingOpportunityRow): number => {
+      const av = a[sortKey];
+      const bv = b[sortKey];
+      // Push nullish to the bottom regardless of direction.
+      const aNull = av == null || av === "";
+      const bNull = bv == null || bv === "";
+      if (aNull && bNull) return 0;
+      if (aNull) return 1;
+      if (bNull) return -1;
+      if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+      if (sortKey === "expectedCloseDate" || sortKey === "nextActivityDate") {
+        const at = new Date(String(av)).getTime();
+        const bt = new Date(String(bv)).getTime();
+        if (Number.isFinite(at) && Number.isFinite(bt)) return (at - bt) * dir;
+      }
+      return String(av).localeCompare(String(bv)) * dir;
+    };
+    return [...filtered].sort(cmp);
+  }, [activeRows, searchTerm, sortKey, sortDir]);
+
+  const sortIndicator = (key: SortKey) => (sortKey === key ? (sortDir === "asc" ? " ▲" : " ▼") : "");
+
   const clientOptions = useMemo(() => {
     const base = mappingContext?.likelyClients || [];
     if (mappingContext?.linkedClient && !base.some((c) => c.id === mappingContext.linkedClient!.id)) {
@@ -600,25 +661,42 @@ export default function OpportunitiesPage() {
 
           {/* ── List view (compact) ───────────────────────────────────── */}
           <TabsContent value="list" className="mt-3">
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <div className="relative w-full max-w-md">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+                <Input
+                  type="search"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search by deal, client, developer, province, deal #…"
+                  className="pl-8 h-8 text-xs"
+                  data-testid="input-search-opportunities"
+                />
+              </div>
+              <div className="text-[11px] text-slate-500 whitespace-nowrap" data-testid="text-opportunities-count">
+                {displayRows.length} of {activeRows.length} shown
+                {sortKey && <span className="text-slate-400"> • sorted by {sortKey}{sortDir === "desc" ? " ↓" : " ↑"}</span>}
+              </div>
+            </div>
             <div className="border rounded-lg overflow-hidden bg-white shadow-sm">
               <div className="overflow-x-auto max-h-[calc(100vh-300px)]">
                 <table className="w-full text-xs border-collapse" data-testid="table-opportunities-working">
                   <thead className="bg-emerald-50/60 text-[10px] uppercase tracking-wide text-emerald-900/80 sticky top-0 z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
                     <tr>
-                      <th className="text-left px-2.5 py-1.5 font-semibold">Client / Project</th>
-                      <th className="text-left px-2 py-1.5 font-semibold">Stage</th>
-                      <th className="text-left px-2 py-1.5 font-semibold">Project Developer</th>
-                      <th className="text-left px-2 py-1.5 font-semibold">Province</th>
-                      <th className="text-right px-2 py-1.5 font-semibold whitespace-nowrap">Size</th>
-                      <th className="text-right px-2 py-1.5 font-semibold whitespace-nowrap">Value</th>
-                      <th className="text-left px-2 py-1.5 font-semibold whitespace-nowrap">Est. Sig.</th>
-                      <th className="text-left px-2 py-1.5 font-semibold whitespace-nowrap">Next Activity</th>
-                      <th className="text-center px-2 py-1.5 font-semibold whitespace-nowrap" title="Open engineering tasks">Eng.</th>
+                      <th className="text-left px-2.5 py-1.5 font-semibold cursor-pointer select-none hover:text-emerald-900" onClick={() => toggleSort("dealName")} data-testid="sort-dealName">Client / Project{sortIndicator("dealName")}</th>
+                      <th className="text-left px-2 py-1.5 font-semibold cursor-pointer select-none hover:text-emerald-900" onClick={() => toggleSort("stage")} data-testid="sort-stage">Stage{sortIndicator("stage")}</th>
+                      <th className="text-left px-2 py-1.5 font-semibold cursor-pointer select-none hover:text-emerald-900" onClick={() => toggleSort("projectDeveloper")} data-testid="sort-projectDeveloper">Project Developer{sortIndicator("projectDeveloper")}</th>
+                      <th className="text-left px-2 py-1.5 font-semibold cursor-pointer select-none hover:text-emerald-900" onClick={() => toggleSort("province")} data-testid="sort-province">Province{sortIndicator("province")}</th>
+                      <th className="text-right px-2 py-1.5 font-semibold whitespace-nowrap cursor-pointer select-none hover:text-emerald-900" onClick={() => toggleSort("estimatedKwp")} data-testid="sort-estimatedKwp">Size{sortIndicator("estimatedKwp")}</th>
+                      <th className="text-right px-2 py-1.5 font-semibold whitespace-nowrap cursor-pointer select-none hover:text-emerald-900" onClick={() => toggleSort("estimatedValue")} data-testid="sort-estimatedValue">Value{sortIndicator("estimatedValue")}</th>
+                      <th className="text-left px-2 py-1.5 font-semibold whitespace-nowrap cursor-pointer select-none hover:text-emerald-900" onClick={() => toggleSort("expectedCloseDate")} data-testid="sort-expectedCloseDate">Est. Sig.{sortIndicator("expectedCloseDate")}</th>
+                      <th className="text-left px-2 py-1.5 font-semibold whitespace-nowrap cursor-pointer select-none hover:text-emerald-900" onClick={() => toggleSort("nextActivityDate")} data-testid="sort-nextActivityDate">Next Activity{sortIndicator("nextActivityDate")}</th>
+                      <th className="text-center px-2 py-1.5 font-semibold whitespace-nowrap cursor-pointer select-none hover:text-emerald-900" onClick={() => toggleSort("openEngineeringTaskCount")} title="Open engineering tasks" data-testid="sort-openEngineeringTaskCount">Eng.{sortIndicator("openEngineeringTaskCount")}</th>
                       <th className="text-right px-2 py-1.5 font-semibold">Action</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {activeRows.map((row, idx) => (
+                    {displayRows.map((row, idx) => (
                       <tr
                         key={row.id}
                         className={`border-t border-slate-100 cursor-pointer transition-colors hover:bg-emerald-50/50 ${idx % 2 === 1 ? "bg-slate-50/40" : "bg-white"}`}
@@ -730,7 +808,11 @@ export default function OpportunitiesPage() {
                 </table>
               </div>
               <div className="px-3 py-1.5 bg-slate-50 border-t text-[11px] text-slate-500 flex items-center justify-between">
-                <span>{activeRows.length} active opportunit{activeRows.length === 1 ? "y" : "ies"}</span>
+                <span>
+                  {searchTerm
+                    ? `${displayRows.length} match${displayRows.length === 1 ? "" : "es"} of ${activeRows.length} active`
+                    : `${activeRows.length} active opportunit${activeRows.length === 1 ? "y" : "ies"}`}
+                </span>
                 <span className="text-slate-400">Click any row for full detail</span>
               </div>
             </div>
