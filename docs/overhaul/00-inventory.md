@@ -481,4 +481,163 @@ Bookmarks/deep-link compatibility. Defined separately at `client/src/config/page
 
 ---
 
-**End of §3.** Next checkpoint: §4 — server route inventory + permission-entity × role access matrix.
+**End of §3.**
+
+---
+
+## §4 Server route inventory + access matrix
+
+### §4.1 Server routes — dual-pattern state
+
+Two route conventions coexist today. Per `CLAUDE.md`:
+
+- **New style**: `server/routes/<domain>.routes.ts` (dot-separator). Registered via `server/routes/index.ts`.
+- **Legacy style**: `server/<domain>-routes.ts` (hyphen-separator). Mounted via `registerLegacyRoutes()` in `server/routes.ts`.
+
+Per the standing rule: **do not create new files in the legacy style**. Edit legacy files only when extending or fixing legacy domains.
+
+#### New-style routes — 16 files
+
+| File | Domain | Notes |
+|---|---|---|
+| `server/routes/admin.routes.ts` | Admin / control center | |
+| `server/routes/auth.routes.ts` | Authentication (MS SSO + fallback) | |
+| `server/routes/dashboard.routes.ts` | Dashboards (home, overview) | |
+| `server/routes/documents.routes.ts` | Documents (SharePoint metadata) | |
+| `server/routes/engineering.routes.ts` | Engineering domain | **Dual mount** with `server/engineering-routes.ts` (3607 lines). |
+| `server/routes/financials.routes.ts` | Finance (canonical normalizedCost/Revenue) | |
+| `server/routes/imports.routes.ts` | Smart Import v2 | |
+| `server/routes/microsoft.routes.ts` | MS Graph integrations | **Dual mount** with `server/microsoft-integration-enhancements-routes.ts`. |
+| `server/routes/notifications.routes.ts` | Notification fan-out | |
+| `server/routes/pd-intake.routes.ts` | Project Development intake | |
+| `server/routes/pipeline.routes.ts` | Pipedrive pipeline | |
+| `server/routes/projects.routes.ts` | Project identity / metadata | |
+| `server/routes/quality.routes.ts` | Quality domain | **Dual mount** with `server/quality-routes.ts` (2500 lines). |
+| `server/routes/reports.routes.ts` | Monthly & programme reports | |
+| `server/routes/tasks.routes.ts` | work_items | |
+| `server/routes/users.routes.ts` | User CRUD + role mgmt | |
+
+#### Legacy routes — 57 files
+
+Grouped by intent. Files flagged **(dual)** have a new-style equivalent already present — migration in progress; both files mount handlers today.
+
+**Domain — canonical migration targets:**
+
+- `engineering-routes.ts` **(dual with `routes/engineering.routes.ts`)** — 3607 lines
+- `quality-routes.ts` **(dual with `routes/quality.routes.ts`)** — 2500 lines
+- `microsoft-integration-enhancements-routes.ts` **(dual with `routes/microsoft.routes.ts`)** — 36 lines, feature-gated
+- `commissioning-routes.ts` + `commissioning-dashboard-routes.ts` — absorbed into `quality.routes.ts`
+- `quality-ncr-routes.ts` — NCR endpoints (quality sub-domain)
+- `eng-stage-routes.ts`, `engineering-intake-routes.ts` — engineering sub-domains
+
+**Domain — no new-style equivalent yet:**
+
+- `approvals-routes.ts` — approvals + deliverables (canonical write-master); needs `routes/approvals.routes.ts`
+- `payment-batch-routes.ts`, `payment-request-routes.ts`, `po-routes.ts`, `procurement-routes.ts`, `proof-of-payment-routes.ts` — EPC Phase 1 procurement
+- `invoice-capture-routes.ts`, `invoice-pattern-routes.ts`, `financial-review-routes.ts` — finance ops
+- `quickbooks-routes.ts` — QB sync
+- `subcontractor-routes.ts`, `tr-register-routes.ts` — finance sub-domains
+- `pd-routes.ts` — PD backend
+- `pm-routes.ts`, `pm-on-the-go-routes.ts` — PM backend
+- `handover-routes.ts` — handover domain
+- `lifecycle-routes.ts`, `stage-lifecycle-routes.ts`, `stage-collaboration-routes.ts`, `stage-data-routes.ts` — lifecycle/stage
+- `standup-routes.ts` — engineering standup
+- `task-management-routes.ts` — work_items admin
+- `meeting-routes.ts` — MS meetings
+- `collaboration-workflow-routes.ts` — collab hub
+- `portfolio-routes.ts` — portfolio rollup
+- `dependency-routes.ts`, `raid-routes.ts` — RAID / dependencies
+- `deliverable-capture-routes.ts` — legacy deliverables (canonical now in `approvals`)
+- `change-control-routes.ts` — change control
+- `weekly-review-routes.ts` — weekly review wizard
+- `template-routes.ts` — phase/engineering templates
+- `smart-import-routes.ts` — Smart Import v2 runtime (active; not the same as `routes/imports.routes.ts` which handles import metadata/history)
+- `role-auth-routes.ts` — role assignment
+- `user-dashboard-preferences-routes.ts` — user prefs
+
+**Platform/system (cross-cutting):**
+
+- `platform-routes.ts`, `audit-routes.ts`, `sync-routes.ts`, `ms-sync-routes.ts`, `gamification-routes.ts`, `notification-routes.ts`, `analytics-routes.ts`, `admin-control-routes.ts`, `admin-recovery-routes.ts`, `migration-finalize-routes.ts`, `exception-dashboard-routes.ts`, `kpi-traceability-routes.ts`, `project-events-routes.ts`, `ee-info-routes.ts`
+
+#### Observations
+
+- **73 total server route files.** The new-style migration is ~22% complete by file count, but the new files concentrate the highest-traffic domains (auth, projects, financials, tasks).
+- **Dual-mount risk** on `engineering` / `quality` / `microsoft` — both legacy and new files register handlers; handler precedence depends on mount order in `server/routes.ts`. Flagged for backlog audit in `00b-half-built.md §C`.
+- **No writes-from-routes rule**: all mutating handlers must go through `server/repositories/*`. Assumed honoured — spot-check during per-function Phase 2 work.
+
+### §4.2 Permission-entity × role access matrix
+
+Source: `ENTITY_PERMISSION_DEFAULTS` at `shared/schema/users.ts:314-1230`, resolved through `evaluateEntityAccess` (`client/src/config/runtime-access.ts:37-57`). Runtime `role_permissions` rows override these defaults per tenant.
+
+**Matrix layout**: one row per permission entity referenced by `PAGE_REGISTRY`. Columns V (view) and E (edit). Cell compression:
+
+- `All` = all 16 `COMPANY_ROLES`
+- `Admin` = `COO_ADMIN, CEO_ADMIN`
+- Otherwise: explicit role list (short codes — `COO, CEO, CCO, CFO, PM, PFM, CM, QM, EngM, KAM, Acct, Eng, PMS, PD, HSE, SSEG`)
+
+| Entity | View (V) | Edit (E) |
+|---|---|---|
+| `home` | All | Admin |
+| `my_work` | All | All |
+| `my_tool` | All | All |
+| `meetings` | All | All |
+| `collaboration_hub` | All | Admin, PM, PFM, CM, PMS |
+| `teams_chat` | All | All |
+| `feedback` | All | All |
+| `ee_info` | All | Admin |
+| `training` | All | Admin |
+| `leaderboard` | All | Admin |
+| `reports` | All | Admin, PM, PFM, CM, EngM |
+| `standups` | All except ACCOUNTANT-edit | Admin, PM, EngM, CM |
+| `work_items` | All | Admin, PM, PFM, CM, PMS, Eng |
+| `stage_lifecycle` | All | Admin, PM, CM, PMS, PD |
+| `projects` | All | Admin, CCO, PM, PFM, CM |
+| `company_priorities` | Admin, CCO, CFO, PM, PFM, CM, QM, EngM, KAM, HSE, SSEG | Admin, CCO |
+| `engineering` | Admin, CCO, PM, PFM, QM, EngM, PMS, PD, Eng, SSEG | Admin, EngM, PM, Eng, SSEG |
+| `eng_tasks` | Admin, CCO, PM, QM, EngM, PMS, PD, Eng | Admin, EngM, PM, Eng |
+| `quality` | Admin, CCO, PM, PFM, CM, QM, EngM, PMS, PD, HSE, SSEG | Admin, QM, CM, HSE |
+| `hse` | Admin, CCO, PM, PFM, CM, QM, EngM, PMS, HSE, SSEG | Admin, HSE, CM, QM |
+| `hse_compliance` | Admin, CCO, PM, PFM, CM, QM, EngM, PMS, HSE, SSEG | Admin, HSE, SSEG |
+| `commissioning` | Admin, CCO, PM, PFM, CM, QM, EngM, PMS, PD, Eng, HSE, SSEG | Admin, PM, CM, PMS |
+| `cashflow` | Admin, CCO, CFO, PM, PFM, Acct, PMS | Admin, CFO, PFM, Acct |
+| `cos` | Admin, CCO, CFO, PM, PFM, Acct, PMS | Admin, CFO, PFM, Acct |
+| `revenue_tracker` | Admin, CCO, CFO, PM, PFM, Acct | Admin, CFO, PFM, Acct |
+| `financials` | Admin, CCO, CFO, PM, PFM, Acct | Admin, CFO, PFM, Acct |
+| `financial_linking` | Admin, CFO, PFM, Acct | Admin, CFO |
+| `invoice_patterns` | Admin, CFO, PFM | Admin, PFM |
+| `counterparties` | Admin, CCO, CFO, PM, PFM, CM, Acct | Admin, PFM, PM, CM |
+| `subcontractors` | Admin, CCO, CFO, PM, PFM, CM, Acct | Admin, PFM, PM, CM |
+| `procurement` | Admin, CCO, CFO, PM, PFM, CM | Admin, PFM, PM |
+| `lifecycle` | Admin, CCO, CFO, PM, PFM, CM, QM, EngM, KAM, PMS, PD, HSE, SSEG | Admin, PM |
+| `execution_board` | All except Eng-edit | Admin, PM |
+| `pd_dashboard` | Admin, CCO, PM, KAM, PD | Admin |
+| `pd_clients` | Admin, CCO, KAM, PD | Admin, CCO, KAM, PD |
+| `handover` | Admin, CCO, PM, PFM, CM, KAM, PMS, PD, HSE | Admin, PM, PD |
+| `approvals` | Admin, CCO, CFO, PM, PFM, CM, QM, EngM, PMS, HSE, SSEG | Admin, QM, EngM, CM, PMS |
+| `portfolios` | Admin, CCO, CFO, PM, PFM, KAM | Admin, PM |
+| `portfolio_detail` | Admin, CCO, CFO, PM, PFM, KAM | Admin, PM |
+| `performance` | Admin, CCO, CFO, PM, PFM, CM, QM, EngM, KAM, HSE, SSEG | Admin |
+| `weekly_review_wizard` | Admin, CCO, CFO, PM, PFM, CM, QM, EngM, KAM, PMS, PD, HSE, SSEG | Admin, PM, PFM, CM, PMS |
+| `smart_import` | Admin, CCO, PM, PFM | Admin, PM, PFM |
+| `activity_log` | Admin | Admin |
+| `admin` | Admin | Admin |
+| `admin_roles` | Admin | Admin |
+| `database_migration` | Admin | Admin |
+| `stage_admin` | Admin | Admin |
+| `project_creation` | Admin, CCO | Admin, CCO |
+| `pm_dashboard` | (entity default) | (entity default) |
+| `pm_on_the_go` | (entity default) | (entity default) |
+
+Entities marked "(entity default)" need a direct lookup in `ENTITY_PERMISSION_DEFAULTS`; their grants didn't surface cleanly in the discovery pass and are flagged for the backlog.
+
+### §4.3 Known matrix edge cases
+
+- **ACCOUNTANT** has `execution_board` view but no edit — correct per design. Noted because it's the only delivery-heavy entity where Accountant sees read but not write.
+- **ENGINEER** view scope intentionally narrow (engineering, eng_tasks, standups, work_items, home, my_work). Not a cross-functional viewer.
+- **PROJECT_DEVELOPER** has unusual edit rights on `pd_clients` AND `handover` AND `stage_lifecycle` — this is because PD sits across the deal → project handoff boundary. Worth confirming with the product owner in Phase 2 whether `stage_lifecycle` edit is still intended (a candidate for the source-of-truth audit cross-check).
+- **KEY_ACCOUNTS_MANAGER** has `portfolio_detail` view but cannot edit portfolios — deliberate, per the access-matrix defaults.
+- **CCO** has broad view (pipeline + delivery + quality + lifecycle) but narrow edit (priorities + PD clients + project creation).
+
+---
+
+**End of §4.** Next checkpoint: §5 — per-role functional map + component inventory + cross-cutting observations.
