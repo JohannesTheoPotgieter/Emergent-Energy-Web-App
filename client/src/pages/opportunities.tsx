@@ -19,7 +19,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { usePermission } from "@/hooks/use-permissions";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import {
   AlertCircle,
   AlertTriangle,
@@ -85,6 +85,8 @@ interface WorkingOpportunityRow {
   hasLinkedClient: boolean;
   hasLinkedProject: boolean;
   linkedProjectCount: number;
+  linkedProjectId: number | null;
+  linkedProjectName: string | null;
   existingEngineeringTicketCount: number;
   openEngineeringTaskCount: number;
   lastUpdated: string | null;
@@ -481,7 +483,7 @@ export default function OpportunitiesPage() {
   // Safety net: if upstream filtering drifts, never render terminal deals in
   // this active working view.
   const activeRows = useMemo(
-    () => data.filter((row) => !hasTerminalMarker(row.status) && !hasTerminalMarker(row.stage) && !row.signedDate),
+    () => data.filter((row) => !row.hasLinkedProject && !hasTerminalMarker(row.status) && !hasTerminalMarker(row.stage) && !row.signedDate),
     [data],
   );
 
@@ -834,9 +836,21 @@ export default function OpportunitiesPage() {
                         </td>
                         <td className="px-2 py-1.5 align-middle text-center">
                           {row.openEngineeringTaskCount > 0 ? (
-                            <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1 rounded-full bg-emerald-600 text-white text-[10px] font-semibold tabular-nums">
-                              {row.openEngineeringTaskCount}
-                            </span>
+                            row.linkedProjectName ? (
+                              <Link
+                                href={`/project/${encodeURIComponent(row.linkedProjectName)}`}
+                                onClick={(e) => e.stopPropagation()}
+                                title={`Open project ${row.linkedProjectName} to track engineering progress`}
+                                data-testid={`link-eng-project-${row.id}`}
+                                className="inline-flex items-center justify-center min-w-[20px] h-5 px-1 rounded-full bg-emerald-600 text-white text-[10px] font-semibold tabular-nums hover:bg-emerald-700"
+                              >
+                                {row.openEngineeringTaskCount}
+                              </Link>
+                            ) : (
+                              <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1 rounded-full bg-emerald-600 text-white text-[10px] font-semibold tabular-nums" title="Open engineering tickets (no linked project yet)">
+                                {row.openEngineeringTaskCount}
+                              </span>
+                            )
                           ) : (
                             <span className="text-[10px] text-slate-300 tabular-nums">0</span>
                           )}
