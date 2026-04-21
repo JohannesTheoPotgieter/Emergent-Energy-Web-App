@@ -506,4 +506,84 @@ Six sub-lane pages. All inherit the F-004 archetype + F-005 visual-improvement p
 - **Risk:** Low.
 - **Effort:** M.
 
-**End of batch 4.** 6 functions recorded (F-012, F-013, F-013a, F-013b, F-014, F-015). Next batch: Approvals domain — Approvals, Financial Review Queue, Weekly Reviews.
+**End of batch 4.** 6 functions recorded.
+
+---
+
+### §3.5 Lens 1 · Batch 5 — Approvals domain
+
+#### F-016 · Approvals
+
+- **Path(s):** `/pm/approvals` · aliased from `/my-work/approvals` (redirect) · retired predecessor `/pm/deliverables` (now alias)
+- **Lens (primary):** `PROGRAM_MANAGER`, `PROJECT_MANAGER_SITE`
+- **Lens (secondary):** CFO, PFM, CM, QM, EngM, HSE, SSEG (edit roles vary per `approvals` entity)
+- **Archetype:** W3 List
+- **User goal:** See every approval waiting on me or my team; approve / reject inline where safe; drill in where context needed.
+- **Current state:** Canonical approvals page (replaced the retired PM Deliverables surface 2026-04-19). Table filtered to logged-in user's approval queue by default.
+- **Data source:** Canonical — `approvals` table (single write-master per `00c §1`).
+- **Visual improvements:**
+  - W3 `TableLayout` composition.
+  - Category chips — `StatusChip` variants for `financial_review`, `engineering_signoff`, `quality_signoff`, `hse_signoff`, `handover_signoff`.
+  - Due-date column with RAG-aged chip (overdue / due today / due ≤3d / due >3d).
+  - Amount column tabular-nums + right-aligned for financial approvals.
+- **Additive functional improvements:**
+  - Inline Approve / Reject row action for items below the role's single-click threshold (below-threshold defined per role in runtime config).
+  - Bulk Approve — opens `ConfirmDialog` with list + total amount + 2s undo toast after submit.
+  - "Delegate to" row action opens person-picker using existing `SearchableSelect`.
+  - Saved filter for "my approvals this week."
+- **Half-built work to finish:** n/a.
+- **Source-of-truth migration:** n/a — already canonical.
+- **Preserved behaviour contract:**
+  - `/my-work/approvals` alias → `/my-work/tasks?source=approvals` continues.
+  - `/pm/deliverables` (retired) alias → `/pm/approvals` continues.
+  - Edit roles unchanged per `approvals` entity matrix.
+  - Approval-state transitions continue to route through repository layer (no direct table writes in handler).
+- **Risk:** Medium — approvals change money, state.
+- **Effort:** M–L.
+
+#### F-017 · Financial Review Queue
+
+- **Path(s):** `/governance/financial-reviews`
+- **Lens (primary):** `PROGRAM_MANAGER`, `CFO`, `PROGRAM_FINANCE_MANAGER`
+- **Archetype:** W3 List (specialised slice of Approvals)
+- **User goal:** The sub-queue for finance-specific approvals — monthly close reviews, PO authorisations, budget adjustments.
+- **Current state:** `client/src/pages/financial-review-queue.tsx`. Similar shape to Approvals but filtered to `approvalCategory === 'financial_review'`.
+- **Data source:** Canonical — `approvals` filtered.
+- **Visual improvements:**
+  - Inherit F-016 pattern.
+  - `DataTrustBadge` strip mandatory — this is a money surface.
+  - Amount column always right-aligned tabular-nums with currency prefix (`R`).
+  - Balance-impact preview (inline micro-chart showing effect on monthly GP).
+- **Additive functional improvements:**
+  - Monthly close submit flow — wraps all category items in a single close action.
+  - Auto-flag "over-threshold" items (>R X) that require additional sign-off.
+- **Preserved:** Permission entity `approvals` shared with F-016; row-click → approval detail unchanged.
+- **Risk:** Medium — finance queue.
+- **Effort:** M.
+
+#### F-018 · Weekly Reviews
+
+- **Path(s):** `/weekly-reviews`
+- **Lens (primary):** `PROGRAM_MANAGER` (reviews) · `PROJECT_MANAGER_SITE` (submits)
+- **Archetype:** W3 List — but the review submission uses W5b Wizard
+- **User goal:** Each Site-PM submits a weekly review; Program Manager approves; the aggregation feeds monthly reports.
+- **Current state:** `client/src/pages/weekly-reviews.tsx` — list surface. Submission is a separate wizard flow. Hidden from sidebar (`showInSidebar: false`).
+- **Data source:** Canonical — weekly review snapshots tied to `project_info`.
+- **Visual improvements:**
+  - List: W3 composition with week-number + state + submitter columns.
+  - Wizard: W5b `WizardLayout` composition — Scope → Tasks → Risks → Finance → Summary → Review & submit (6 steps per W5 wireframe).
+  - Draft auto-save every 10s with "Last saved" footer.
+  - Help panel right-side documents the data source for each step (Finance step: "pre-populated from normalized_revenue_lines / normalized_cost_lines current rows").
+- **Additive functional improvements:**
+  - Compare-to-last-week mode in summary step — shows delta per metric.
+  - "Copy forward" action bootstraps next week's draft from this week's numbers.
+- **Half-built work to finish:** n/a.
+- **Source-of-truth migration:** n/a.
+- **Preserved behaviour contract:**
+  - Hidden from sidebar (`showInSidebar: false`) — keep.
+  - Permission entity `weekly_review_wizard` edit roles unchanged.
+  - Finance snapshot locks every Friday 17:00 per existing rules.
+- **Risk:** Medium — feeds monthly close.
+- **Effort:** L (wizard is the largest piece).
+
+**End of batch 5.** 3 functions recorded (F-016, F-017, F-018). Next batch: Handover + Milestones — Milestone Tracker, Handover Control, Handover & Closeout (plus brief note on PD-PM Handover v2).
