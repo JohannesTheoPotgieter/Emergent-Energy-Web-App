@@ -586,4 +586,102 @@ Six sub-lane pages. All inherit the F-004 archetype + F-005 visual-improvement p
 - **Risk:** Medium — feeds monthly close.
 - **Effort:** L (wizard is the largest piece).
 
-**End of batch 5.** 3 functions recorded (F-016, F-017, F-018). Next batch: Handover + Milestones — Milestone Tracker, Handover Control, Handover & Closeout (plus brief note on PD-PM Handover v2).
+**End of batch 5.** 3 functions recorded.
+
+---
+
+### §3.6 Lens 1 · Batch 6 — Handover & Milestones
+
+#### F-019 · Milestone Tracker
+
+- **Path(s):** `/milestone-tracker`
+- **Lens (primary):** `CONSTRUCTION_MANAGER`, `PROGRAM_MANAGER`
+- **Lens (secondary):** all `execution_board` view roles
+- **Archetype:** W3 List (time-sequenced; may use a Gantt view as additive mode)
+- **User goal:** See every project's milestones on one view; identify which are on track, slipping, or missed.
+- **Current state:** `client/src/pages/milestone-tracker.tsx`. List of milestones across projects. Uses existing sort + filter patterns.
+- **Data source:** Canonical — `project_execution_state` milestones + `work_items` milestone workstream.
+- **Visual improvements:**
+  - W3 `TableLayout` composition.
+  - RAG column via `StatusBadge`.
+  - "Days until / since target" chip column (green ≥7d, amber ≤7d, red overdue).
+  - Project + milestone as sticky leading columns on horizontal scroll.
+- **Additive functional improvements:**
+  - Gantt-view toggle (additive, not replacing table) using `Chart` primitive in a horizontal bar layout.
+  - Batch-shift milestones (apply N-day shift to multiple) — opens `ConfirmDialog` with diff preview.
+  - "Notify owner" action — Teams/email via existing MS Graph.
+- **Half-built work to finish:** n/a.
+- **Source-of-truth migration:** n/a.
+- **Preserved behaviour contract:**
+  - Permission entity `execution_board`.
+  - Sidebar visible.
+  - Row-click → Project Detail → Overview tab (anchored to milestone).
+- **Risk:** Low–medium.
+- **Effort:** M.
+
+#### F-020 · Handover Control
+
+- **Path(s):** `/handover-control`
+- **Lens (primary):** `PROGRAM_MANAGER`
+- **Lens (secondary):** COO, CEO, CCO, PD, PMS, CM, KAM, HSE (view)
+- **Archetype:** W2 Dashboard (COO-facing readiness dashboard)
+- **User goal:** The operational control view for handover health across all in-flight handovers.
+- **Current state:** `client/src/pages/handover-control.tsx`. Renders tiles + progress but **`/api/pd-pm-handover/control` returns undefined** — identified finish-it candidate in `00b §A #3`. UI is built; backend wiring incomplete.
+- **Data source:** Canonical — handover-related rows in `project_info` + `project_execution_state` + a new aggregation endpoint. The endpoint needs to be implemented.
+- **Visual improvements:**
+  - Adopt W2 structure — status strip + tile grid + exceptions panel.
+  - Readiness progress cells use `Progress` primitive with RAG colour.
+  - Handover score chip with tooltip explaining calculation.
+- **Additive functional improvements:**
+  - The backend aggregation itself (see "Half-built work" below).
+  - "Drill into handover" row action → F-021 (Handover & Closeout detail).
+  - COO-only action: override readiness score with justification.
+- **Half-built work to finish:** **YES — this is `00b §A #3`, a top-5 finish-it candidate.** Phase 2 plan owns the frontend; Phase 3 implementation wires the backend endpoint (`/api/pd-pm-handover/control`) + aggregation. Server-side work belongs in `server/handover-routes.ts` or a new `server/routes/handover.routes.ts` wrapping `approvals-routes.ts`.
+- **Source-of-truth migration:** n/a.
+- **Preserved behaviour contract:**
+  - Permission entity `handover`.
+  - Page renders even without data (shows `EmptyState` variant, not blank).
+- **Risk:** Medium — backend work has database-query-level implications.
+- **Effort:** M on frontend; additional M on backend endpoint (count separately in Phase 3 estimate).
+
+#### F-021 · Handover & Closeout
+
+- **Path(s):** `/handover` · also accessible via `/sseg` → `/handover?tab=sseg` (LEGACY_REDIRECTS)
+- **Lens (primary):** `PROGRAM_MANAGER` · **Lens (secondary):** many roles for visibility
+- **Archetype:** W4 Detail (top-level handover surface — uses tabs for SSEG / Checklist / Sign-off / Lessons)
+- **User goal:** The top-level handover workspace — view and progress every handover stage.
+- **Current state:** `client/src/pages/handover-dashboard.tsx`. Existing tabs for SSEG, checklist; some tabs more complete than others.
+- **Data source:** Canonical — handover metadata in `project_info` + related tables.
+- **Visual improvements:**
+  - W4 `DetailLayout` with tabs: Overview / SSEG / Checklist / Lessons Learnt / Sign-off.
+  - Lessons Learnt tab pulls from `/admin/lessons` canonical store (Phase D registry addition).
+  - URL-reflective tabs (`?tab=sseg`) — aligns with existing LEGACY_REDIRECTS.
+- **Additive:** Compare-to-lessons suggestion panel on Sign-off tab (pre-close checks).
+- **Half-built work to finish:** n/a direct, but `pd_pm_handover_v2` flag (00b §A #2 finish-it) unlocks the v2 sign-off flow; this page is where it surfaces.
+- **Source-of-truth migration:** n/a.
+- **Preserved behaviour contract:** LEGACY_REDIRECTS `/sseg` → `/handover?tab=sseg` continues; permission entity `handover` unchanged.
+- **Risk:** Low–medium.
+- **Effort:** M.
+
+#### F-021a · PD→PM Handover detail (v2)
+
+- **Path(s):** `/pd/handover/:projectId` · counterpart `/pm/handover-review`
+- **Archetype:** W4 Detail + W5b Wizard (dual-sign-off flow)
+- **User goal:** Complete the PD→PM handover wizard for a specific project; opposite end is the PM review/accept.
+- **Current state:** v2 pages exist (PdPmHandoverPage, PmHandoverReviewPage) — feature-flagged behind `pd_pm_handover_v2` (`00b §A #2`). v1 removed 2026-03-31.
+- **Data source:** Canonical — `project_info` + sign-off records.
+- **Visual improvements:** W5b Wizard composition; dual-sign-off screens share a locked summary view.
+- **Additive:** Readiness gate auto-checks certain criteria from canonical data (e.g., no blocking gates open, no overdue tasks, finance reviewed).
+- **Half-built work to finish:** Flag `pd_pm_handover_v2` — enable in Phase 3 after QA (finish-it candidate).
+- **Preserved:** Route paths; permission entity `handover`.
+- **Risk:** Medium — completes a deferred flow.
+- **Effort:** M (frontend polish + flag enable; backend already substantial).
+
+**End of batch 6.** 4 functions recorded (F-019, F-020, F-021, F-021a).
+
+Two notable callouts:
+
+- **F-020 Handover Control** is the clearest Phase-3 "finish it" target in this lens — a UI that's built but reads nothing. Small, well-scoped, high COO value.
+- **F-021a PD→PM Handover v2** is the second — the flag is the only remaining gate; UI is ready.
+
+Next batch: Procurement domain — PO Approvals, Payment Requests, Payment Batches.
