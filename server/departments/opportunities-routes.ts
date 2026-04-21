@@ -127,9 +127,10 @@ router.get("/api/opportunities/working", requireAuth, requirePermission("opportu
     const opportunityIds = rows.map(r => r.id);
     if (opportunityIds.length === 0) return res.json([]);
 
-    const [linkedProjectCounts, engineeringTicketCounts] = await Promise.all([
+    const [linkedProjectCounts, engineeringTicketCounts, linkedProjects] = await Promise.all([
       opportunitiesRepo.getLinkedProjectCounts(opportunityIds),
       opportunitiesRepo.getEngineeringTicketCounts(opportunityIds),
+      opportunitiesRepo.getLinkedProjectsByOpportunity(opportunityIds),
     ]);
 
     const projectCountByOpportunity = new Map<number, number>();
@@ -139,6 +140,10 @@ router.get("/api/opportunities/working", requireAuth, requirePermission("opportu
     const engineeringTicketCountByOpportunity = new Map<number, number>();
     for (const r of engineeringTicketCounts) {
       if (r.opportunityId != null) engineeringTicketCountByOpportunity.set(r.opportunityId, r.count);
+    }
+    const linkedProjectByOpportunity = new Map<number, { projectId: number; projectName: string | null }>();
+    for (const r of linkedProjects) {
+      linkedProjectByOpportunity.set(r.opportunityId, { projectId: r.projectId, projectName: r.projectName });
     }
 
     const workingRows = rows
@@ -181,6 +186,8 @@ router.get("/api/opportunities/working", requireAuth, requirePermission("opportu
           hasLinkedClient: Boolean(r.clientId),
           hasLinkedProject,
           linkedProjectCount,
+          linkedProjectId: linkedProjectByOpportunity.get(r.id)?.projectId ?? null,
+          linkedProjectName: linkedProjectByOpportunity.get(r.id)?.projectName ?? null,
           openEngineeringTaskCount: engineeringTicketCountByOpportunity.get(r.id) || 0,
           existingEngineeringTicketCount: engineeringTicketCountByOpportunity.get(r.id) || 0, // alias for legacy callers
           lastUpdated: r.updatedAt || null,

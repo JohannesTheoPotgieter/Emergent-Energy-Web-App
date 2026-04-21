@@ -14,7 +14,7 @@
  */
 
 import { db } from "../db";
-import { eq, isNull, sql as drizzleSql } from "drizzle-orm";
+import { and, eq, isNull, sql as drizzleSql } from "drizzle-orm";
 import { opportunities, clients } from "@shared/schema/projects";
 import { users } from "@shared/schema/users";
 import { resolvePipedriveStageMapping } from "@shared/pipedrive-stage-map";
@@ -550,6 +550,27 @@ async function syncSingleDeal(
   if (kwhFromCrm) customFieldOverrides.estimatedKwh = kwhFromCrm;
 
   if (existing) {
+    // GUARD: once an opportunity has been converted to a project (either via
+    // `opportunities.linked_project_id` set by project-linking-service, or by
+    // a `project_info.opportunity_id` row being created by the convert /
+    // resolve-mapping flows), Pipedrive must stop overwriting it. Otherwise
+    // a stale CRM "won/lost/closed" change re-flips its status and a fresh
+    // sync re-resurrects it on the working list. Trackers + project_info
+    // remain the source of truth for converted deals.
+    let isLockedByConversion = existing.linkedProjectId != null;
+    if (!isLockedByConversion) {
+      const { projectInfo } = await import("@shared/schema/projects");
+      const [linkedShell] = await db
+        .select({ id: projectInfo.id })
+        .from(projectInfo)
+        .where(and(eq(projectInfo.opportunityId, existing.id), isNull(projectInfo.deletedAt)))
+        .limit(1);
+      isLockedByConversion = Boolean(linkedShell);
+    }
+    if (isLockedByConversion) {
+      result.skipped++;
+      return;
+    }
     // Preserve user-owned `notes`. Only CRM-owned fields are overwritten;
     // custom fields are merged conditionally to avoid clobbering with null.
     await db

@@ -219,6 +219,37 @@ export class OpportunitiesRepository {
     }));
   }
 
+  /**
+   * Returns the (first) linked project for each opportunity so the UI can
+   * deep-link the "Eng" count badge to the project page where tickets and
+   * progress live. Used by the Opportunities working list to power the
+   * progress-tracking jump-link.
+   */
+  async getLinkedProjectsByOpportunity(opportunityIds: number[]): Promise<Array<{ opportunityId: number; projectId: number; projectName: string | null }>> {
+    if (opportunityIds.length === 0) return [];
+    const rows = await db
+      .select({
+        opportunityId: projectInfo.opportunityId,
+        projectId: projectInfo.id,
+        projectName: projectInfo.projectName,
+      })
+      .from(projectInfo)
+      .where(and(
+        inArray(projectInfo.opportunityId, opportunityIds),
+        isNull(projectInfo.deletedAt),
+      ))
+      .orderBy(projectInfo.id);
+    const seen = new Set<number>();
+    const out: Array<{ opportunityId: number; projectId: number; projectName: string | null }> = [];
+    for (const r of rows) {
+      const oid = r.opportunityId;
+      if (oid == null || seen.has(oid)) continue;
+      seen.add(oid);
+      out.push({ opportunityId: oid, projectId: r.projectId, projectName: r.projectName ?? null });
+    }
+    return out;
+  }
+
   async getEngineeringTicketCounts(opportunityIds: number[]): Promise<CountByOpportunity[]> {
     // Counts engineering pd_tickets that are still OPEN — i.e. not Completed
     // or Cancelled. This is the "engineering tasks open" metric surfaced on
