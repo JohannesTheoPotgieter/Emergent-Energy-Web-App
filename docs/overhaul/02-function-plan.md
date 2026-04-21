@@ -973,4 +973,189 @@ Both functions harvest from the same primitives Lens 1 builds — zero duplicate
 
 ---
 
-**End of Lens 2.** Next lens: **Lens 3 · CFO + PROGRAM_FINANCE_MANAGER + ACCOUNTANT** (combined finance lens) — estimated 8–10 functions.
+**End of Lens 2.**
+
+---
+
+## §6 Tier 1 · Lens 3 — `CFO` + `PROGRAM_FINANCE_MANAGER` + `ACCOUNTANT` (Finance)
+
+**Role summary:** Finance operations across three seniority tiers. Finance is one set of pages — the three roles differ in edit rights, not in which pages they use. Planning combined keeps data-consistency rules and trust envelope in one place.
+
+- **CFO** — highest-authority; all finance views + `financial_linking` edit. Lands at `/cashflow`.
+- **PROGRAM_FINANCE_MANAGER (PFM)** — program-level finance operations. Edits on all finance entities.
+- **ACCOUNTANT** — day-to-day finance ops; narrow scope. Lands at `/cashflow`.
+
+**Function count:** 9 functions + 3 already cross-referenced from Lens 1 (F-017 Financial Review Queue, F-022 PO Approvals, F-023 Payment Requests, F-024 Payment Batches — finance uses those heavily but PM lens owns the plan).
+
+### §6.1 Finance-specific invariant (across every function in this lens)
+
+**`DataTrustBadge` strip is non-optional on every finance page.** Per design system §2.2 and wireframe W-C4, every page that displays money shows: Source / Last updated / Scope / Trust, always. The strip renders even when data is loading (as skeleton).
+
+**Tabular-nums on every money column.** Right-aligned. Currency prefix `R`. Negative values in parentheses, not minus sign.
+
+**`effective_to IS NULL` enforcement.** Every aggregate on `normalized_cost_lines` / `normalized_revenue_lines` / snapshot tables filters historical rows — the `finance-snapshot-queries` skill + CI guard enforce this. Flagged here because finance is where regression would hurt most.
+
+### §6.2 Lens 3 · Batch 1 — Core finance pages
+
+#### F-029 · Cashflow
+
+- **Path(s):** `/cashflow` (primary) · alias `/cashflow-forecast` (LEGACY_REDIRECTS)
+- **Lens (primary):** `CFO`, `PROGRAM_FINANCE_MANAGER`, `ACCOUNTANT` (all 3 landing)
+- **Lens (secondary):** `PROGRAM_MANAGER` (view) — cross-ref from Lens 1
+- **Archetype:** W2 Dashboard (with embedded `FinancialDataGrid`)
+- **User goal:** See current and forecast cashflow — weekly buckets of inflows / outflows / balance. Drill into any bucket to see the lines making it up.
+- **Current state:** `client/src/pages/cashflow.tsx`. Rich surface with weekly / monthly bucketing, forecast vs actual, QB reconciliation markers.
+- **Data source:** Canonical — `normalized_revenue_lines` + `normalized_cost_lines` + `cashflow_points`. **Note:** `resolveInflowEffectiveDates()` hybrid at `server/lib/cashflow-helpers.ts:38` is the single outstanding SoT migration (00c §3 obs 1) — Phase 3 work should NOT introduce new reads from it; it's a Priority 1 server-side backlog item.
+- **Visual improvements:**
+  - Adopt W2 structure — top status strip (cash in / cash out / balance / weekly need) → primary weekly bucket grid → secondary overdue/forecast panel → full-width chart.
+  - `DataTrustBadge` strip mandatory below PageHeader.
+  - Weekly bucket cells use `FinancialDataGrid` primitive — tabular-nums, right-aligned, RAG on forecast-vs-actual variance.
+  - Chart toggle: weekly bars / monthly bars / cumulative line (uses existing `Chart`).
+- **Additive functional improvements:**
+  - Saved views per user — custom bucket ranges, custom scope filter.
+  - "What-if" scenario overlay — add a proposed future payment and see the effect on balance curve.
+  - Drill-in row action → opens `FinancialDataGrid` of constituent lines in a Drawer without leaving the page.
+- **Half-built work to finish:** n/a directly.
+- **Source-of-truth migration:** **Ensure new code doesn't read `resolveInflowEffectiveDates()` legacy outputs.** Server-side migration is Priority 1 in `00c §4` — tracked in `backlog.md` #9.
+- **Preserved behaviour contract:**
+  - LEGACY_REDIRECTS `/cashflow-forecast` → `/cashflow` continues.
+  - Landing for CFO, PFM, Accountant.
+  - Edit gated per `cashflow` entity (Admin + CFO + PFM + Acct).
+  - QB reconciliation markers unchanged.
+- **Risk:** High — highest-stakes finance surface.
+- **Effort:** L.
+
+#### F-030 · COS (Cost of Sales)
+
+- **Path(s):** `/cos` · alias `/cos-control` (LEGACY_REDIRECTS)
+- **Lens (primary):** `CFO`, `PFM`, `ACCOUNTANT` · `PM` (view)
+- **Archetype:** W3 List (heavily financial — uses `FinancialDataGrid`)
+- **User goal:** Every cost line — see commitments, actuals, forecasts per project.
+- **Current state:** `client/src/pages/cos.tsx` (via CostTracker). Dense financial grid.
+- **Data source:** Canonical — `normalized_cost_lines` with `effective_to IS NULL` guard.
+- **Visual improvements:**
+  - Adopt W3 `TableLayout` + `FinancialDataGrid` composition.
+  - `DataTrustBadge` strip mandatory.
+  - Variance column (actual vs committed, %) with RAG chip.
+  - Sticky project + line-category columns.
+- **Additive functional improvements:**
+  - Saved views, bulk export with trust envelope in footer.
+  - Multi-period comparison mode (this month vs last month, this quarter vs last quarter).
+  - Drill-in → cost-line detail Drawer.
+- **Half-built:** n/a.
+- **Source-of-truth migration:** n/a — already canonical.
+- **Preserved behaviour contract:**
+  - LEGACY_REDIRECTS `/cos-control` → `/cos` continues.
+  - Edit gated per `cos` entity.
+  - Smart Import v2 writes unchanged (go through canonical pipeline).
+- **Risk:** Medium — core finance surface.
+- **Effort:** M–L.
+
+#### F-031 · Revenue Tracker
+
+- **Path(s):** `/revenue-tracker` (primary) · alias `/revenue` (LEGACY_REDIRECTS)
+- **Lens (primary):** `CFO`, `PFM`, `ACCOUNTANT`
+- **Archetype:** W3 List
+- **User goal:** Every revenue line — see recognised, forecast, and milestone-linked revenue per project.
+- **Current state:** `client/src/pages/revenue-tracker.tsx`. Grid with milestone-link state and QB invoice state.
+- **Data source:** Canonical — `normalized_revenue_lines` with `effective_to IS NULL` guard.
+- **Visual improvements:**
+  - W3 `TableLayout` + `FinancialDataGrid`.
+  - `DataTrustBadge` strip mandatory.
+  - Milestone-link status chip; QB-invoice status chip.
+  - Tabular-nums on Amount / Recognised / Outstanding columns.
+- **Additive:**
+  - Saved views; multi-period compare.
+  - "Recognise now" inline action (Admin + CFO only) — records revenue recognition with audit trail; uses `ConfirmDialog`.
+- **Half-built:** n/a.
+- **Source-of-truth migration:** n/a.
+- **Preserved behaviour contract:**
+  - LEGACY_REDIRECTS `/revenue` → `/revenue-tracker` continues.
+  - Edit per `revenue_tracker` entity.
+- **Risk:** Medium.
+- **Effort:** M.
+
+### §6.3 Lens 3 · Batch 2 — QB integration pages
+
+#### F-032 · QB Throughput
+
+- **Path(s):** `/finance/quickbooks`
+- **Lens (primary):** `CFO`, `PFM`, `ACCOUNTANT`
+- **Archetype:** W4 Detail with tabs — each tab is itself a W3 list
+- **User goal:** The single surface for every QuickBooks integration view. Tabs absorb what used to be 5+ separate pages (QB Customer Mapping, QB Bill Linking, Counterparties, Subcontractor Dashboard, Invoice Patterns, Admin QB).
+- **Current state:** `client/src/pages/finance-quickbooks-throughput.tsx`. Consolidation page. Absorbed pages still have direct routes (hidden) that render this page's tab content.
+- **Data source:** Canonical — QB link metadata + `normalized_*_lines` joins.
+- **Visual improvements:**
+  - W4 `DetailLayout` — sticky summary bar with throughput KPIs (sync state / pending / failed / last sync).
+  - Tabs: Mapping / Bill Linking / Suppliers / Invoice Patterns / Settings.
+  - Each tab adopts W3 `TableLayout` internally.
+  - `DataTrustBadge` with source = "Canonical + QB".
+- **Additive:**
+  - Tab content loads lazily on tab activation.
+  - "Retry failed sync" bulk action.
+  - Export sync report.
+- **Half-built:** indirectly connects to `smart_import_qb_precedence` flag (00b §A #4) — QB taking precedence on Paid invoices during Smart Import. Flag-enable is Phase 3 work on Smart Import side.
+- **Source-of-truth migration:** n/a.
+- **Preserved behaviour contract:**
+  - Absorbed legacy routes (`/finance/quickbooks-customer-mapping`, `/finance/quickbooks-links`, `/counterparties`, `/subcontractor-dashboard`, `/invoice-patterns`, `/admin/quickbooks`) remain valid — they render this page's tab content.
+  - Edit per `financials` entity.
+- **Risk:** Medium — integration-heavy.
+- **Effort:** L.
+
+#### F-033 · Counterparties (absorbed tab)
+
+- **Path(s):** `/counterparties` (hidden, absorbed into F-032 Suppliers tab)
+- **Archetype:** W3 List (rendered inside F-032)
+- **User goal:** Every supplier / vendor / client counterparty with QB sync state.
+- **Plan:** Inherits F-032 Suppliers tab treatment. Direct route stays for backward-compat deep links.
+- **Preserved:** `counterparties` permission entity.
+- **Risk:** Low.
+- **Effort:** S (inherited).
+
+#### F-034 · Subcontractors (absorbed tab)
+
+- **Path(s):** `/subcontractor-dashboard` (hidden, absorbed into F-032)
+- **Archetype:** W3 List
+- **User goal:** Subcontractor-specific counterparty view with project-allocation context.
+- **Plan:** Part of F-032 Suppliers tab, filtered to subcontractor counterparty-type.
+- **Preserved:** `subcontractors` permission entity.
+- **Risk:** Low.
+- **Effort:** S.
+
+#### F-035 · Invoice Patterns (absorbed tab)
+
+- **Path(s):** `/invoice-patterns` (hidden, absorbed into F-032 Patterns tab)
+- **Archetype:** W3 List
+- **User goal:** Invoice recognition patterns used by Smart Import to auto-link QB invoices to lines.
+- **Plan:** Inherits F-032 Patterns tab.
+- **Preserved:** `invoice_patterns` permission entity.
+- **Risk:** Low.
+- **Effort:** S.
+
+### §6.4 Lens 3 summary — Finance
+
+**Total functions:** 7 new (F-029 through F-035) + 4 cross-referenced (F-017, F-022, F-023, F-024).
+
+| Metric | |
+|---|---|
+| Effort | 1 L-high (F-029) · 2 M–L (F-030, F-032) · 1 M (F-031) · 3 S (F-033, F-034, F-035) |
+| Risk | 1 High (F-029 Cashflow) · 3 Medium · 3 Low |
+| SoT migrations | 0 direct; F-029 flags the cross-cutting server-side Priority 1 (`resolveInflowEffectiveDates` — `00c §4`) |
+| Finish-it candidates | None new (`smart_import_qb_precedence` tangential to F-032) |
+
+**Finance-specific risks to track in Phase 3:**
+
+1. **Number formatting regressions.** Tabular-nums, right-alignment, currency prefix, parentheses for negatives — any drift breaks readability and trust.
+2. **DataTrustBadge drift.** If finance pages ever ship without it, finance trust is compromised.
+3. **`effective_to IS NULL` skill enforcement.** Any new aggregate query on snapshot tables MUST run the `finance-snapshot-queries` skill.
+4. **QB sync integrity.** F-032 handles a live integration — Phase 3 work must preserve mock-connector-in-dev (`USE_MOCK_CONNECTORS` per `CLAUDE.md`) and retry logic.
+
+**Proposed Phase 3 ordering (this lens):**
+
+1. **After Wave 3 (DetailLayout built):** F-032 QB Throughput (tabs are W4 Detail-style; absorbs F-033/F-034/F-035).
+2. **After Wave 2 (TableLayout built):** F-030 COS, F-031 Revenue Tracker (harvest TableLayout).
+3. **Dedicated wave — "Finance wave":** F-029 Cashflow. Largest and highest-risk finance work. Do last in the finance block so all prerequisite primitives (TableLayout, DetailLayout, FinancialDataGrid-usage-patterns) are proven.
+
+---
+
+**End of Lens 3.** Next lens: **Lens 4 · COO + CEO (Executive)** — estimated 3–5 functions; mostly Company Overview refinement + Priorities + admin oversight cross-references.
