@@ -46,6 +46,31 @@ Legend: 🟢 shipped · 🟡 in progress · 🔴 blocked · ⚪ deferred
 
 **Open for owner review (D-006, D-011):** staging deploy of `claude/platform-overhaul-3WF1E` → click through Lifecycle Board → approve for Wave-1 merge to main, or flag regressions.
 
+### §2.0a Discovery after F-002 — `PageShell` is the existing convention
+
+On starting Wave-2 scan of other pages, found that **52 page files** already import `PageShell` + `SectionHeader` from `@/components/layout/page-shell.tsx`. That's the established de-facto page-chrome convention across the codebase. Lifecycle Board was an **anomaly** — using raw JSX instead of PageShell.
+
+**Implication for Phase 3 scope:**
+
+- **Chrome is mostly already consistent.** My new PageLayout + PageHeader primitives duplicate functionality that PageShell + SectionHeader already provides.
+- **The real Phase 3 value is in content migration**, not chrome migration. Archetype primitives (TableLayout for lists, DetailLayout for detail pages, FormLayout for forms, WizardLayout for wizards) are what deliver the overhaul's visual-+-additive improvements.
+- **Pages using PageShell** should keep using it. Do not thrash 52 files for chrome that's already consistent.
+- **Pages using raw JSX** (few — F-002 was one) do migrate to PageLayout + PageHeader.
+
+**New Phase 3 strategy:**
+
+1. For each function F-001 through F-056, inspect whether it uses PageShell.
+2. If it does → leave chrome alone; migrate content to archetype primitives only where it adds value (lists → TableLayout, details → DetailLayout, forms → FormLayout, wizards → WizardLayout).
+3. If it uses raw JSX → migrate chrome to PageLayout + PageHeader as with F-002.
+4. Add `backlog.md` item: long-term consolidation of PageShell + PageLayout into one primitive (requires a design decision + thoughtful migration).
+
+**Updated Wave 1 deliverables:**
+
+- ✅ Primitive toolkit shipped (from Session 1).
+- ✅ F-002 Lifecycle Board migrated (the clearest raw-JSX case; awaiting staging review).
+- ⚪ `LensNav` extraction from existing sidebar — deferred; pending owner confirmation that this is worth doing given PageShell already handles page-level chrome.
+- ⚪ AppShell adoption — deferred likewise; existing `AppLayout.tsx` already provides a sidebar + top-bar shell; wholesale swap is a high-risk change for modest incremental value given chrome is already consistent.
+
 ### §2.1 Phase 3 Wave 1+ per-function migrations require live verification against the running app:
 
 1. Capture current behaviour (manual checklist or strengthened test).
