@@ -1384,4 +1384,217 @@ Plan entries above apply verbatim.
 
 ---
 
-**End of Lens 5.** Next lens: **Lens 6 · Engineering (ENGINEERING_MANAGER + ENGINEER)**.
+**End of Lens 5.**
+
+---
+
+## §10 Tier 2 · Lens 6 — `ENGINEERING_MANAGER` + `ENGINEER` (Engineering)
+
+**Role summary:** Engineering-domain management + execution. Both roles land at `/engineering`. Engineering is one of the narrowest lenses — roughly 7 functions across dashboard, tasks, standup, reports, and templates. The two roles differ only in edit scope (Engineer narrower).
+
+**Function count:** 7 new (F-040 · F-041 · F-042 · F-043 · F-044 · F-045 · F-046).
+
+### §10.1 Lens 6 · Batch 1 — Core engineering surfaces
+
+#### F-040 · Engineering Dashboard
+
+- **Path(s):** `/engineering`
+- **Lens (primary):** `ENGINEERING_MANAGER`, `ENGINEER` (landing for both)
+- **Lens (secondary):** `PROGRAM_MANAGER`, `PROJECT_MANAGER_SITE`, `QUALITY_MANAGER`, `CCO`, `SSEG_MANAGER`, 5 other view roles
+- **Archetype:** W2 Dashboard
+- **User goal:** Daily engineering operational overview — task lanes, blockers, team load, incoming requests.
+- **Current state:** `EngineeringDashboardPage`. Mix of task lanes (todo/doing/review/done) + blocker strip + standup queue.
+- **Data source:** Canonical — `work_items` filtered to ENG workstream + `work_item_assignments` + `work_item_engineering` extension.
+- **Visual improvements:**
+  - Adopt W2 structure — status strip (tasks by state counts) → primary: 4-column lane grid (todo / doing / review / done) → secondary: blockers + standup queue + team load → full-width: weekly burn-down chart.
+  - `StatusBadge` across all state cells.
+  - `LoadingState` skeleton matching lane layout.
+  - Dark-mode pass — the existing dashboard hard-codes some light-mode backgrounds.
+- **Additive functional improvements:**
+  - Filter presets: "My queue", "Team queue", "By project", "Blocked only".
+  - Drag-to-reorder within lanes (EngMgr only) — respects existing priority numeric field; audited in `work_items.updated_at`.
+  - Team-load view as toggle — shows assignments × capacity.
+  - Keyboard shortcuts: `j`/`k` move across cards, `Enter` open detail.
+- **Half-built:** n/a.
+- **Source-of-truth migration:** n/a.
+- **Preserved behaviour contract:**
+  - Landing for EngineeringManager + Engineer.
+  - Permission entity `engineering`.
+  - Existing standup-strip component importable.
+- **Risk:** Medium.
+- **Effort:** M–L.
+
+#### F-041 · Engineering Task Board
+
+- **Path(s):** `/engineering/tasks`
+- **Lens (primary):** `ENGINEERING_MANAGER`, `ENGINEER`
+- **Lens (secondary):** PM / PMS / PD / QM (view)
+- **Archetype:** W3 List (with board-view toggle)
+- **User goal:** Full engineering task workload — table view for filtering/exporting, board view for flow.
+- **Current state:** `client/src/pages/engineering-tasks.tsx` + sub-components (`EngineeringTaskTable`, `EngineeringBulkActions`, `EngineeringTaskDialogs`, `EngineeringTaskFilters`, `TaskDependenciesPanel`). Feature-rich.
+- **Data source:** Canonical — `work_items` ENG workstream.
+- **Visual improvements:**
+  - W3 `TableLayout` for table mode (harvest from Wave 2).
+  - Board view toggle (additive — uses existing Kanban-style component).
+  - Active-filter chip row.
+  - `TaskDependenciesPanel` surfaces in a Drawer, not inline — keeps main board clean.
+- **Additive:**
+  - Saved views per user.
+  - Bulk dependencies — add/remove dependencies across multiple selected tasks.
+  - Import tasks from CSV (additive — uses Smart Import v2 pipeline for validation).
+- **Half-built:** `local_synced_save_flow` beta (00b #5) is tested on this page — offline drafts + sync.
+- **Source-of-truth migration:** n/a.
+- **Preserved behaviour contract:**
+  - Permission entity `eng_tasks`.
+  - Existing bulk action component continues importable.
+  - Dark-mode overrides at `index.css:161-238` honoured (existing engineering-specific dark rules).
+- **Risk:** Medium.
+- **Effort:** L (feature-rich, multi-component).
+
+#### F-042 · Engineering Standup
+
+- **Path(s):** `/engineering/standup` · alias `/standups` (redirects here)
+- **Lens (primary):** `ENGINEERING_MANAGER` · **co-primary:** `ENGINEER`
+- **Archetype:** W2 Dashboard (standup-focused)
+- **User goal:** Run a standup — see each engineer's state, queue blockers, queue "what I'm doing today" updates.
+- **Current state:** `client/src/pages/engineering/standup/*` (BlockerStrip, StandupQueue, TaskLanes). Existing standup surface.
+- **Data source:** Canonical — `work_items` + standups tables (confirm domain in Phase 3).
+- **Visual improvements:**
+  - W2 structure — blocker strip at top (attention focus) + queue grid + task lanes per engineer.
+  - Name + avatar heading each engineer's column via `Avatar` primitive.
+  - Timer for standup pace (additive — non-blocking).
+- **Additive:**
+  - Post-standup summary export to Teams channel (MS Graph).
+  - "Carry over yesterday's blocker" shortcut.
+- **Half-built:** n/a.
+- **Source-of-truth migration:** n/a.
+- **Preserved behaviour contract:**
+  - Permission entity `standups`.
+  - Alias `/standups` → `/engineering/standup` continues.
+  - Mobile rendering preserves horizontal scroll for lane strips.
+- **Risk:** Low–medium.
+- **Effort:** M.
+
+### §10.2 Lens 6 · Batch 2 — Reports + Admin surfaces
+
+#### F-043 · Engineering Monthly Report
+
+- **Path(s):** `/reports/engineering/monthly` (list) · `/reports/engineering/monthly/history` · `/reports/engineering/monthly/compare` · `/reports/engineering/monthly/:month/project/:projectId` (per-project view)
+- **Lens (primary):** `ENGINEERING_MANAGER` (submits) · `PROGRAM_MANAGER`, `COO`, `CEO` (read)
+- **Archetype:** W3 List (top-level) + W4 Detail (per-month) + W5b Wizard (submission flow per project)
+- **User goal:** Monthly engineering narrative per project — hours, blockers, risks, planned vs actual, documents delivered. Aggregates into programme + company reports.
+- **Current state:** `engineering-monthly-report-history.tsx`, `-compare.tsx`, `-project.tsx`. Existing set of 3 related pages + a list.
+- **Data source:** Canonical — engineering monthly snapshots tied to `project_info` + `work_items` aggregations.
+- **Visual improvements:**
+  - Treat as a single functional suite in W4 Detail — top list of months, tabs Overview / History / Compare.
+  - Per-project view (W4 Detail variant) — summary KPI strip (Hours / Tasks closed / Risks / Sign-off state) + tabs.
+  - Compare view uses `FinancialDataGrid`-style side-by-side delta columns.
+- **Additive:**
+  - PDF export with brand logo + trust envelope footer.
+  - "Copy last month forward" bootstrap for next draft.
+  - Keyboard shortcut `c` to compare current with prior.
+- **Half-built:** n/a.
+- **Source-of-truth migration:** n/a.
+- **Preserved behaviour contract:**
+  - Permission entity `reports`.
+  - Parametric routes (`:month/project/:projectId`) stable.
+  - Report-history shape preserved (existing data visible in new UI).
+- **Risk:** Low–medium.
+- **Effort:** M–L.
+
+#### F-044 · Engineering Templates (admin)
+
+- **Path(s):** `/admin/eng-templates`
+- **Lens (primary):** `ENGINEERING_MANAGER` (edit) · COO/CEO (admin)
+- **Archetype:** W3 List + W4 Detail (per-template)
+- **User goal:** Manage task-type templates (engineering deliverables, design reviews, site-survey checklists) that seed new projects.
+- **Current state:** `client/src/pages/eng-template-admin.tsx`. Hidden from sidebar; Admin + EngMgr reach via direct URL.
+- **Data source:** Canonical — templates in `shared/schema/template-overrides.ts` or similar (confirm Phase 3).
+- **Visual improvements:**
+  - W3 List with columns Template name / Category / Last edited / Used by N projects.
+  - W4 Detail with tabs: Structure (items/sections) / Preview / History / Linked projects.
+  - Item editor uses `Form` primitive + drag-sort.
+- **Additive:**
+  - Template versioning — edits create new versions rather than overwriting (existing `template-overrides` pattern).
+  - Compare between versions.
+  - "Apply to N projects" bulk propagate with diff preview + confirm.
+- **Half-built:** n/a.
+- **Source-of-truth migration:** n/a.
+- **Preserved behaviour contract:**
+  - Hidden from sidebar.
+  - Permission entity `admin`.
+  - Existing template-override behaviour (see `server/imports/` and Smart Import v2 rules) preserved.
+- **Risk:** Medium — templates affect many projects.
+- **Effort:** M.
+
+#### F-045 · Engineering Audit Log (admin, view-only)
+
+- **Path(s):** `/engineering/audit`
+- **Lens (primary):** `COO_ADMIN`, `CEO_ADMIN`
+- **Lens (secondary):** `ENGINEERING_MANAGER` (audit own team)
+- **Archetype:** W3 List (read-only)
+- **User goal:** See every engineering state change — who changed what, when, with the before/after values.
+- **Current state:** Existing audit log page (`EngineeringAuditPage`). Dense table of events.
+- **Data source:** Canonical — audit log tables.
+- **Visual improvements:**
+  - W3 `TableLayout` composition.
+  - Event type chips (`StatusChip`).
+  - Expand-row to show full payload diff.
+  - Sticky user + timestamp columns on horizontal scroll.
+- **Additive:**
+  - Saved filters per user.
+  - Export to CSV with trust envelope footer.
+- **Half-built:** n/a.
+- **Source-of-truth migration:** n/a.
+- **Preserved behaviour contract:**
+  - Hidden from sidebar.
+  - Permission entity `admin` — read-only surface.
+- **Risk:** Low.
+- **Effort:** S–M.
+
+#### F-046 · Engineering Intake (SharePoint)
+
+- **Path(s):** `/admin/sharepoint-intake`
+- **Lens (primary):** `COO_ADMIN` only (COO-only sync per CLAUDE.md Microsoft Integration rules)
+- **Archetype:** W3 List with sync action panel
+- **User goal:** Trigger and review the SharePoint "Proposals Pipeline" intake that seeds Engineering Support queue.
+- **Current state:** `client/src/pages/SharePointIntakePage.tsx`. COO-only manual Pull/Push. Hidden from sidebar.
+- **Data source:** MS Graph metadata + canonical intake tables.
+- **Visual improvements:**
+  - W3 List of pending intake items.
+  - Sync status strip with `DataTrustBadge` (source = "SharePoint + Canonical").
+  - Pull / Push actions in PageHeader — confirmation dialog with item count.
+  - Mock-connector-in-dev preserved per `CLAUDE.md` rules.
+- **Additive:**
+  - Sync log — last N syncs with diff counts + duration.
+  - "Dry-run" mode — preview effect of sync without applying.
+- **Half-built:** Tangential to MS feature flags (`00b §A` #6, #11) — stays gated behind them.
+- **Source-of-truth migration:** n/a (intake writes canonical).
+- **Preserved behaviour contract:**
+  - COO-only per `CLAUDE.md`.
+  - Hidden from sidebar.
+  - Never stores full email bodies / attachment content per `CLAUDE.md` rules.
+- **Risk:** Medium — integration-gated.
+- **Effort:** S.
+
+### §10.3 Lens 6 summary — Engineering
+
+**Total functions:** 7 new (F-040 · F-041 · F-042 · F-043 · F-044 · F-045 · F-046).
+
+| Metric | |
+|---|---|
+| Effort | 1 L (F-041) · 3 M–L · 2 M · 1 S |
+| Risk | 5 Medium · 2 Low |
+| SoT migrations | 0 — all canonical |
+| Finish-it candidates | `local_synced_save_flow` beta on F-041 (tangential) |
+
+**Proposed Phase 3 ordering (this lens):**
+
+- **Wave 1 foundation:** no specific target; rides Tier 1 Wave 1.
+- **Wave 2 harvest:** F-041 Task Board (after TableLayout), F-045 Audit Log, F-046 SharePoint Intake.
+- **Wave 3 harvest:** F-040 Engineering Dashboard (W2), F-042 Standup (W2), F-043 Monthly Report (W4 with tabs), F-044 Templates (W3 + W4).
+- No new primitives needed for this lens.
+
+---
+
+**End of Lens 6.** Next lens: **Lens 7 · Project Development (CCO + KAM + PD)**.
