@@ -88,6 +88,7 @@ Cumulative migrations on `claude/platform-overhaul-3WF1E` ready for cumulative o
 | **F-037 Company Priorities** | 🟢 migrated | `eb46172` | Priorities alias target. Decorative Flag icon stripped. Status filter + New-Priority button in PageHeader actions; dynamic subtitle. |
 | **F-055 My Work Meetings** | 🟢 migrated | `e85693a` | Personal meetings action-tracker. Pending count in status slot; Webhook Setup + Add Meeting in actions. All mutations preserved. |
 | **F-055 EE Info (Processes & SOPs)** | 🟢 migrated | `ac86d68` | Large browser page (2258 lines) with 4 tabs. Chrome migrated; all nested components (LifecycleOverview, DepartmentDrilldown, ProcessDetailView, Templates, Simulation, Walkthroughs) preserved. |
+| **F-017 Financial Review Queue** | 🟢 migrated | `fcfbf43` | PM + CFO finance approval sub-queue at /governance/financial-reviews. Previously had NO page-level title — now gets proper "Financial Review Queue" PageHeader + dynamic subtitle. Money-surface tabular-nums on variance/procurement/version. |
 
 **Total this session: 8 pages migrated + 1 deferred.** Gates sub-lanes (7 of 8) now share consistent W3 visual treatment — the "harvest ratio" working as designed.
 
@@ -122,18 +123,31 @@ Priority candidates for subsequent sessions:
 
 ### §2.0c Cumulative state across all sessions
 
-**44 pages migrated** to the Phase 3 primitives (as of commit `ac86d68`).
+**45 pages migrated** to the Phase 3 primitives (as of commit `fcfbf43`).
 
 | Archetype proven | Count | Pages |
 |---|---|---|
 | **TableLayout (W3 list)** | 13 | Gates workspace (8) + Monthly Report history pair (2) + Monthly Report compare pair (2) + Weekly Reviews (1) |
 | **DetailLayout (W4 detail)** | 2 | PM Monthly Report Project + Eng Monthly Report Project |
-| **PageLayout + PageHeader (light chrome)** | 44 | All of the above + Lifecycle Board + Project Create + Training + PM Handover Review + Exceptions + KPI Traceability + Eng Template Admin + Action Launchpad + Engineering Audit Log + PM On-The-Go Home + Department Scores + Programme Reports + Feedback + PD Dashboard + Commissioning Dashboard + Import Control Tower + SharePoint Intake + Database Migration + My Work Admin Settings + Priority Detail + Phase Templates + Portfolios + Financial Linking + Leaderboard + Admin Recovery Center + PM On-The-Go Project + Company Priorities + My Work Meetings + EE Info |
+| **PageLayout + PageHeader (light chrome)** | 45 | All of the above + Lifecycle Board + Project Create + Training + PM Handover Review + Exceptions + KPI Traceability + Eng Template Admin + Action Launchpad + Engineering Audit Log + PM On-The-Go Home + Department Scores + Programme Reports + Feedback + PD Dashboard + Commissioning Dashboard + Import Control Tower + SharePoint Intake + Database Migration + My Work Admin Settings + Priority Detail + Phase Templates + Portfolios + Financial Linking + Leaderboard + Admin Recovery Center + PM On-The-Go Project + Company Priorities + My Work Meetings + EE Info + Financial Review Queue |
 | **FormLayout** | 0 | Not yet proven — deferred (PageShell + Card pattern adequately handles form pages) |
 | **WizardLayout** | 0 | Not yet proven — F-018 Weekly Reviews' wizard lives in project workflow, not on the page currently migrated |
 | **AppShell + LensNav** | 0 | Deferred — existing AppLayout already provides whole-app chrome |
 
-Phase 3 progress: **~79% of 56 planned functions migrated.**
+Phase 3 progress: **~80% of 56 planned functions migrated.**
+
+### §2.0d Phase 3 natural stopping point
+
+At 45/56 migrated (~80%) the remaining 11 pages represent the low-cost-low-benefit tail. Each falls into one of these categories:
+
+1. **Shared shell (PageShell / FinanceShell / ReportShell)** — touching consumer pages individually would lose the shell's intent (Finance eyebrow / Report trust strip). Proper migration is a shell-level refactor with cross-page verification.
+2. **F-013 Project Detail** — rich `ProjectCommandHeader` with RAG chips + inline KPIs. Replacing with simple PageHeader is a functional regression. Dedicated session needed.
+3. **F-029 Cashflow** — highest-risk finance page. Requires `DataTrustBadge` strip + content-level finance polish beyond chrome migration.
+4. **EngineeringTasksPage (4822 lines)** — too large for a chrome-only migration; needs careful per-tab review.
+5. **Teams Chats** — intentional full-viewport chat layout; not a PageLayout pattern.
+6. **Unauthenticated** (login / ms-callback / not-found) — different chrome requirements; not in scope.
+
+Further migrations from here require either dedicated sessions per-page, or a coordinated shell-consolidation pass. Neither is a safe automated-session target.
 
 Pages evaluated and skipped (with rationale):
 - **Teams Chats** — full-viewport 3-column chat interface with fixed height calc; PageLayout pattern not a fit (intentional chrome).
