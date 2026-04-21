@@ -590,12 +590,51 @@ export class OpportunitiesRepository {
       .where(eq(workItems.pdTicketId, shadow.id))
       .orderBy(asc(workItems.sortOrder));
 
+    // All other engineering tickets attached to this opportunity (i.e. real
+    // tickets created via the working-list "+ ticket" flow). The lazy shadow
+    // is excluded so the UI shows tickets the user actually created and can
+    // track. For each ticket we surface enough to render a tracking row:
+    // status, request type, priority, due date, owner names, linked project.
+    const pdUser = aliasedTable(users, "pd_user");
+    const designUser = aliasedTable(users, "design_user");
+    const tickets = await db
+      .select({
+        id: pdTickets.id,
+        status: pdTickets.status,
+        requestType: pdTickets.requestType,
+        priority: pdTickets.priority,
+        dueDate: pdTickets.dueDate,
+        comments: pdTickets.comments,
+        createdAt: pdTickets.createdAt,
+        updatedAt: pdTickets.updatedAt,
+        clientId: pdTickets.clientId,
+        projectId: pdTickets.projectId,
+        projectName: projectInfo.projectName,
+        tasksSpawnedAt: pdTickets.tasksSpawnedAt,
+        projectDeveloperUserId: pdTickets.projectDeveloperUserId,
+        projectDeveloperName: pdUser.name,
+        designerUserId: pdTickets.designerUserId,
+        designerName: designUser.name,
+      })
+      .from(pdTickets)
+      .leftJoin(projectInfo, eq(projectInfo.id, pdTickets.projectId))
+      .leftJoin(pdUser, eq(pdUser.id, pdTickets.projectDeveloperUserId))
+      .leftJoin(designUser, eq(designUser.id, pdTickets.designerUserId))
+      .where(
+        and(
+          eq(pdTickets.opportunityId, opportunityId),
+          sql`${pdTickets.id} <> ${shadow.id}`,
+        ),
+      )
+      .orderBy(desc(pdTickets.createdAt));
+
     return {
       crm: opp.opp,
       clientName: opp.clientName,
       siteName: opp.siteName,
       pd: shadow,
       tasks,
+      tickets,
     };
   }
 
