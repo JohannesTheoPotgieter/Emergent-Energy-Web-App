@@ -613,8 +613,36 @@ export function extractMonthlyAccountTotalsFromPnL(
     });
     if (monthByCol.size === 0) return out;
 
+    const readCells = (cellsArr: any[]): void => {
+      monthByCol.forEach((monthKey, idx) => {
+        const cell = cellsArr[idx];
+        const v = cell?.value;
+        const n = v === undefined || v === null || v === "" ? 0 : Number(v);
+        if (Number.isFinite(n) && n !== 0) {
+          out.set(monthKey, (out.get(monthKey) ?? 0) + n);
+        }
+      });
+    };
+
     const visit = (row: any): boolean => {
       if (!row) return false;
+      // Section row — check Header.ColData[0] for account match (handles
+      // QB accounts that have sub-accounts and therefore appear as a
+      // Section with a Summary row totalling the parent account).
+      if (row.type === "Section" || row.Header || row.Summary) {
+        const headerCell = row?.Header?.ColData?.[0] ?? {};
+        const account = {
+          id: headerCell?.id ? String(headerCell.id) : null,
+          name: headerCell?.value ? String(headerCell.value) : null,
+        };
+        if ((account.id || account.name) && matchAccount(account)) {
+          const sumCells: any[] = row?.Summary?.ColData ?? [];
+          if (sumCells.length) {
+            readCells(sumCells);
+            return true;
+          }
+        }
+      }
       // Data row at the leaf — check the account.
       if (row.type === "Data" && Array.isArray(row.ColData)) {
         const accCell = row.ColData[0] ?? {};
@@ -623,14 +651,7 @@ export function extractMonthlyAccountTotalsFromPnL(
           name: accCell?.value ? String(accCell.value) : null,
         };
         if (matchAccount(account)) {
-          monthByCol.forEach((monthKey, idx) => {
-            const cell = row.ColData[idx];
-            const v = cell?.value;
-            const n = v === undefined || v === null || v === "" ? 0 : Number(v);
-            if (Number.isFinite(n) && n !== 0) {
-              out.set(monthKey, (out.get(monthKey) ?? 0) + n);
-            }
-          });
+          readCells(row.ColData);
           return true;
         }
       }

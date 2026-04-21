@@ -4172,6 +4172,28 @@ async function revenueTrackerHandler(req: Request, res: Response) {
           return name === "sales";
         })
       : new Map<string, number>();
+    if (qbMonthlyPnL && monthlySales.size === 0) {
+      // Diagnostic: parser found no Sales row. Dump the income-section
+      // account names + ids visible in the report so we can see what the
+      // realm actually returns. Logs once per request.
+      try {
+        const seen: Array<{ id: string | null; name: string | null; type: string }> = [];
+        const walk = (row: any) => {
+          if (!row) return;
+          const hCell = row?.Header?.ColData?.[0];
+          const dCell = Array.isArray(row?.ColData) ? row.ColData[0] : null;
+          if (hCell)
+            seen.push({ id: hCell.id ?? null, name: hCell.value ?? null, type: "Section" });
+          if (dCell)
+            seen.push({ id: dCell.id ?? null, name: dCell.value ?? null, type: row.type ?? "?" });
+          for (const c of row?.Rows?.Row ?? []) walk(c);
+        };
+        for (const r of qbMonthlyPnL?.Rows?.Row ?? []) walk(r);
+        console.warn("[qb-revenue] No 1000000/Sales row matched. Accounts visible in P&L:", JSON.stringify(seen.slice(0, 60)));
+      } catch (e) {
+        console.warn("[qb-revenue] diagnostic dump failed:", (e as Error)?.message);
+      }
+    }
     monthlySales.forEach((amount, monthKey) => {
       if (!Number.isFinite(amount) || amount === 0) return;
       if (!qbRevenueByMonth.has(monthKey)) qbRevenueByMonth.set(monthKey, { total: 0, projects: new Map() });
