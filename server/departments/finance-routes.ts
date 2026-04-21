@@ -132,7 +132,7 @@ import {
 import { buildFinanceCoreTrustReport } from "../services/finance-core-trust-service";
 import { setFinanceTrustHeaders as setFinanceTrustHeadersShared } from "../lib/finance-trust/envelope";
 import type { FinanceTrustHeaderParams } from "../lib/finance-trust/envelope";
-import { getBills, getInvoices, getMonthlyPnLReport, getQuickBooksConnectionStatus } from "../services/quickbooks-service";
+import { getBills, getInvoices, getMonthlyPnLReport, getQuickBooksConnectionStatus, extractMonthlyAccountTotalsFromPnL } from "../services/quickbooks-service";
 import {
   billRawToSummary,
   billRawToLineRows,
@@ -4065,13 +4065,14 @@ async function revenueTrackerHandler(req: Request, res: Response) {
       storage.getTrackerMonthlyManual('REV'),
       Promise.resolve(new Map()),
     ]);
-    const [revenueLinks, qbInvoicesRaw] = await Promise.all([
+    const [revenueLinks, qbInvoicesRaw, qbMonthlyPnL] = await Promise.all([
       db.select().from(quickbooksInvoiceLinks).where(and(
         eq(quickbooksInvoiceLinks.appEntityType, "revenue_line"),
         eq(quickbooksInvoiceLinks.qbEntityType, "invoice"),
         isNull(quickbooksInvoiceLinks.deletedAt),
       )),
       getInvoices("2025-09-01", "2026-08-31").catch(() => ({ QueryResponse: { Invoice: [] } })),
+      getMonthlyPnLReport("2025-09-01", "2026-08-31").catch(() => null),
     ]);
 
 
@@ -4153,27 +4154,31 @@ async function revenueTrackerHandler(req: Request, res: Response) {
     }
 
     const qbInvoices = ((qbInvoicesRaw as any)?.QueryResponse?.Invoice ?? []).map(invoiceRawToSummary);
-    const linkedInvoiceIds = new Set(revenueLinks.map((l: any) => String(l.qbEntityId)));
+    void revenueLinks; // (kept fetched for invoice-link-based drilldowns elsewhere)
     const qbRevenueByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
-    // All QB invoices contribute to QB Revenue actual. Previously, only
-    // manually linked invoices were counted — which meant QB Revenue read
-    // R0 everywhere until every single invoice had been hand-linked in the
-    // QB Bill Linking screen. Finance trusts QB as the source of revenue
-    // truth, so the full picture is surfaced here and linked vs unlinked
-    // is differentiated for drill-down.
-    for (const inv of qbInvoices) {
-      const recognitionDate = inv.txnDate;
-      const dm = String(recognitionDate || "").match(/^(\d{4})-(\d{2})/);
-      if (!dm) continue;
-      const monthKey = `${dm[1]}-${dm[2]}`;
-      const amount = Number(inv.totalAmount ?? 0);
-      if (!Number.isFinite(amount) || amount === 0) continue;
+    // QB Revenue actual = monthly credits to account 1000000 "Sales" from
+    // the QB ProfitAndLoss report. This is finance's canonical revenue-
+    // recognition source: ex-VAT, accrual-based, and includes both
+    // invoice income and journal-entry recognition (e.g. milestone moves
+    // from Deferred Revenue → Sales). Previously this row summed
+    // Invoice.TotalAmt across all A/R invoices, which is VAT-inclusive
+    // and double-counts deposits posted to liability accounts — producing
+    // overstated figures (e.g. Sep 2025 reported R 11.76M vs QB Sales
+    // ledger R 2.49M; Oct R 20.02M vs R 16.29M).
+    const monthlySales = qbMonthlyPnL
+      ? extractMonthlyAccountTotalsFromPnL(qbMonthlyPnL, (acc) => {
+          if (acc.id === "1000000") return true;
+          const name = (acc.name || "").trim().toLowerCase();
+          return name === "sales";
+        })
+      : new Map<string, number>();
+    monthlySales.forEach((amount, monthKey) => {
+      if (!Number.isFinite(amount) || amount === 0) return;
       if (!qbRevenueByMonth.has(monthKey)) qbRevenueByMonth.set(monthKey, { total: 0, projects: new Map() });
       const bucket = qbRevenueByMonth.get(monthKey)!;
       bucket.total += amount;
-      const bucketKey = linkedInvoiceIds.has(String(inv.id)) ? "Mapped QB Revenue" : "Unmapped QB Revenue";
-      bucket.projects.set(bucketKey, (bucket.projects.get(bucketKey) || 0) + amount);
-    }
+      bucket.projects.set("Sales (a/c 1000000)", (bucket.projects.get("Sales (a/c 1000000)") || 0) + amount);
+    });
 
     const months: any[] = [];
     const startMonth = new Date(Date.UTC(2025, 8, 1));

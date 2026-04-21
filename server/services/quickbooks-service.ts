@@ -583,6 +583,75 @@ export async function getMonthlyPnLReport(startDate: string, endDate: string): P
   return qbGet<any>(`/reports/ProfitAndLoss?${params.toString()}`);
 }
 
+/**
+ * Walk a QuickBooks ProfitAndLoss report (with summarize_column_by=Month)
+ * and return a Map<YYYY-MM, amount> for the first Data row whose account id
+ * or name matches the predicate. Amounts are returned as positive numbers
+ * (QBO reports income as positive credits already).
+ *
+ * Used by the Revenue Tracker to read account 1000000 "Sales" — which is
+ * the canonical revenue-recognition source per finance (ex-VAT P&L credits,
+ * including journal entries — not Invoice.TotalAmt which is VAT-inclusive
+ * A/R and may post to liability accounts like deferred revenue).
+ *
+ * Defensive: returns an empty Map on any structural mismatch.
+ */
+export function extractMonthlyAccountTotalsFromPnL(
+  report: any,
+  matchAccount: (account: { id: string | null; name: string | null }) => boolean,
+): Map<string, number> {
+  const out = new Map<string, number>();
+  try {
+    const cols: any[] = report?.Columns?.Column ?? [];
+    // Build column-index → YYYY-MM. Account col is index 0; Total col is last.
+    const monthByCol = new Map<number, string>();
+    cols.forEach((col, idx) => {
+      const meta: any[] = col?.MetaData ?? [];
+      const startDate = meta.find((m: any) => m?.Name === "StartDate")?.Value;
+      const dm = String(startDate || "").match(/^(\d{4})-(\d{2})/);
+      if (dm) monthByCol.set(idx, `${dm[1]}-${dm[2]}`);
+    });
+    if (monthByCol.size === 0) return out;
+
+    const visit = (row: any): boolean => {
+      if (!row) return false;
+      // Data row at the leaf — check the account.
+      if (row.type === "Data" && Array.isArray(row.ColData)) {
+        const accCell = row.ColData[0] ?? {};
+        const account = {
+          id: accCell?.id ? String(accCell.id) : null,
+          name: accCell?.value ? String(accCell.value) : null,
+        };
+        if (matchAccount(account)) {
+          monthByCol.forEach((monthKey, idx) => {
+            const cell = row.ColData[idx];
+            const v = cell?.value;
+            const n = v === undefined || v === null || v === "" ? 0 : Number(v);
+            if (Number.isFinite(n) && n !== 0) {
+              out.set(monthKey, (out.get(monthKey) ?? 0) + n);
+            }
+          });
+          return true;
+        }
+      }
+      // Recurse into nested sections.
+      const children: any[] = row?.Rows?.Row ?? [];
+      for (const child of children) {
+        if (visit(child)) return true;
+      }
+      return false;
+    };
+
+    const top: any[] = report?.Rows?.Row ?? [];
+    for (const row of top) {
+      if (visit(row)) break;
+    }
+  } catch {
+    // Defensive — return whatever we've parsed.
+  }
+  return out;
+}
+
 export interface QuickBooksConnectionStatus {
   connected: boolean;
   realmId: string | null;
