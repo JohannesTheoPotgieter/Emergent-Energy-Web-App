@@ -3,6 +3,8 @@
 -- Normalizes project_info.phase + execution_phase to the canonical 10-phase
 -- lifecycle defined in shared/phases.ts. Off-lifecycle labels (Hold/Internal/
 -- Closed/TBC/DLP) are moved out of phase into project_status / in_dlp.
+-- DLP-flagged projects are mapped to O&M Handover (the lifecycle phase DLP
+-- belongs to) with in_dlp=true preserving the warranty-period context.
 -- Active projects with no signal at all default to First Assessment.
 -- Pure DML — no schema changes. Idempotent: each statement has a precondition.
 BEGIN;
@@ -20,9 +22,9 @@ SELECT 260, 'Commercial Close Out', 'Post-Handover Review', 22, 'canonical-phase
 WHERE EXISTS (SELECT 1 FROM project_info WHERE id = 260 AND COALESCE(NULLIF(TRIM(phase),''),'__NULL__') IS DISTINCT FROM COALESCE('Post-Handover Review','__NULL__'));
 UPDATE project_info SET phase = 'Post-Handover Review', execution_phase = 'Post-Handover Review', phase_updated_at = NOW() WHERE id = 260;
 INSERT INTO project_phase_history (project_id, from_phase, to_phase, changed_by_user_id, reason, changed_at)
-SELECT 261, 'DLP', 'Post-Handover Review', 22, 'canonical-phase-backfill 2026-04-21', NOW()
-WHERE EXISTS (SELECT 1 FROM project_info WHERE id = 261 AND COALESCE(NULLIF(TRIM(phase),''),'__NULL__') IS DISTINCT FROM COALESCE('Post-Handover Review','__NULL__'));
-UPDATE project_info SET phase = 'Post-Handover Review', execution_phase = 'Post-Handover Review', in_dlp = TRUE, phase_updated_at = NOW() WHERE id = 261;
+SELECT 261, 'DLP', 'O&M Handover', 22, 'canonical-phase-backfill 2026-04-21', NOW()
+WHERE EXISTS (SELECT 1 FROM project_info WHERE id = 261 AND COALESCE(NULLIF(TRIM(phase),''),'__NULL__') IS DISTINCT FROM COALESCE('O&M Handover','__NULL__'));
+UPDATE project_info SET phase = 'O&M Handover', execution_phase = 'O&M Handover', in_dlp = TRUE, phase_updated_at = NOW() WHERE id = 261;
 INSERT INTO project_phase_history (project_id, from_phase, to_phase, changed_by_user_id, reason, changed_at)
 SELECT 262, 'QA', 'Commissioning', 22, 'canonical-phase-backfill 2026-04-21', NOW()
 WHERE EXISTS (SELECT 1 FROM project_info WHERE id = 262 AND COALESCE(NULLIF(TRIM(phase),''),'__NULL__') IS DISTINCT FROM COALESCE('Commissioning','__NULL__'));
@@ -60,13 +62,13 @@ SELECT 276, 'Handover', 'O&M Handover', 22, 'canonical-phase-backfill 2026-04-21
 WHERE EXISTS (SELECT 1 FROM project_info WHERE id = 276 AND COALESCE(NULLIF(TRIM(phase),''),'__NULL__') IS DISTINCT FROM COALESCE('O&M Handover','__NULL__'));
 UPDATE project_info SET phase = 'O&M Handover', execution_phase = 'O&M Handover', phase_updated_at = NOW() WHERE id = 276;
 INSERT INTO project_phase_history (project_id, from_phase, to_phase, changed_by_user_id, reason, changed_at)
-SELECT 277, 'DLP', 'Post-Handover Review', 22, 'canonical-phase-backfill 2026-04-21', NOW()
-WHERE EXISTS (SELECT 1 FROM project_info WHERE id = 277 AND COALESCE(NULLIF(TRIM(phase),''),'__NULL__') IS DISTINCT FROM COALESCE('Post-Handover Review','__NULL__'));
-UPDATE project_info SET phase = 'Post-Handover Review', execution_phase = 'Post-Handover Review', in_dlp = TRUE, phase_updated_at = NOW() WHERE id = 277;
+SELECT 277, 'DLP', 'O&M Handover', 22, 'canonical-phase-backfill 2026-04-21', NOW()
+WHERE EXISTS (SELECT 1 FROM project_info WHERE id = 277 AND COALESCE(NULLIF(TRIM(phase),''),'__NULL__') IS DISTINCT FROM COALESCE('O&M Handover','__NULL__'));
+UPDATE project_info SET phase = 'O&M Handover', execution_phase = 'O&M Handover', in_dlp = TRUE, phase_updated_at = NOW() WHERE id = 277;
 INSERT INTO project_phase_history (project_id, from_phase, to_phase, changed_by_user_id, reason, changed_at)
-SELECT 278, 'DLP', 'Post-Handover Review', 22, 'canonical-phase-backfill 2026-04-21', NOW()
-WHERE EXISTS (SELECT 1 FROM project_info WHERE id = 278 AND COALESCE(NULLIF(TRIM(phase),''),'__NULL__') IS DISTINCT FROM COALESCE('Post-Handover Review','__NULL__'));
-UPDATE project_info SET phase = 'Post-Handover Review', execution_phase = 'Post-Handover Review', in_dlp = TRUE, phase_updated_at = NOW() WHERE id = 278;
+SELECT 278, 'DLP', 'O&M Handover', 22, 'canonical-phase-backfill 2026-04-21', NOW()
+WHERE EXISTS (SELECT 1 FROM project_info WHERE id = 278 AND COALESCE(NULLIF(TRIM(phase),''),'__NULL__') IS DISTINCT FROM COALESCE('O&M Handover','__NULL__'));
+UPDATE project_info SET phase = 'O&M Handover', execution_phase = 'O&M Handover', in_dlp = TRUE, phase_updated_at = NOW() WHERE id = 278;
 INSERT INTO project_phase_history (project_id, from_phase, to_phase, changed_by_user_id, reason, changed_at)
 SELECT 283, 'Handover', 'O&M Handover', 22, 'canonical-phase-backfill 2026-04-21', NOW()
 WHERE EXISTS (SELECT 1 FROM project_info WHERE id = 283 AND COALESCE(NULLIF(TRIM(phase),''),'__NULL__') IS DISTINCT FROM COALESCE('O&M Handover','__NULL__'));
@@ -76,9 +78,9 @@ SELECT 286, 'QA', 'Commissioning', 22, 'canonical-phase-backfill 2026-04-21', NO
 WHERE EXISTS (SELECT 1 FROM project_info WHERE id = 286 AND COALESCE(NULLIF(TRIM(phase),''),'__NULL__') IS DISTINCT FROM COALESCE('Commissioning','__NULL__'));
 UPDATE project_info SET phase = 'Commissioning', execution_phase = 'Commissioning', phase_updated_at = NOW() WHERE id = 286;
 INSERT INTO project_phase_history (project_id, from_phase, to_phase, changed_by_user_id, reason, changed_at)
-SELECT 287, 'DLP', 'Post-Handover Review', 22, 'canonical-phase-backfill 2026-04-21', NOW()
-WHERE EXISTS (SELECT 1 FROM project_info WHERE id = 287 AND COALESCE(NULLIF(TRIM(phase),''),'__NULL__') IS DISTINCT FROM COALESCE('Post-Handover Review','__NULL__'));
-UPDATE project_info SET phase = 'Post-Handover Review', execution_phase = 'Post-Handover Review', in_dlp = TRUE, phase_updated_at = NOW() WHERE id = 287;
+SELECT 287, 'DLP', 'O&M Handover', 22, 'canonical-phase-backfill 2026-04-21', NOW()
+WHERE EXISTS (SELECT 1 FROM project_info WHERE id = 287 AND COALESCE(NULLIF(TRIM(phase),''),'__NULL__') IS DISTINCT FROM COALESCE('O&M Handover','__NULL__'));
+UPDATE project_info SET phase = 'O&M Handover', execution_phase = 'O&M Handover', in_dlp = TRUE, phase_updated_at = NOW() WHERE id = 287;
 INSERT INTO project_phase_history (project_id, from_phase, to_phase, changed_by_user_id, reason, changed_at)
 SELECT 290, 'Commercial Close Out', 'Post-Handover Review', 22, 'canonical-phase-backfill 2026-04-21', NOW()
 WHERE EXISTS (SELECT 1 FROM project_info WHERE id = 290 AND COALESCE(NULLIF(TRIM(phase),''),'__NULL__') IS DISTINCT FROM COALESCE('Post-Handover Review','__NULL__'));
