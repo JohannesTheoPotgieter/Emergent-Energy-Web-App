@@ -483,6 +483,41 @@ export function OpportunityDrawer({ opportunityId, open, onClose }: Props) {
                     </section>
                   );
                 }
+                // Recognize when the engineering intake ticket is already
+                // engaged (status moved off Draft, or a request type / due
+                // date / comments have been filled in). In that case the
+                // "Ready to start the project?" framing is misleading —
+                // work has begun, we just haven't materialized a project
+                // shell yet. Reframe the CTA around the existing ticket.
+                const activeTicket = (data.tickets ?? []).find(
+                  (t) => t.status !== "Draft" && t.status !== "Cancelled" && t.status !== "Completed",
+                );
+                if (activeTicket) {
+                  return (
+                    <section
+                      className="rounded-md border border-emerald-200 bg-emerald-50/60 p-3 flex items-center justify-between"
+                      data-testid="section-convert-from-ticket"
+                    >
+                      <div className="text-xs">
+                        <p className="font-medium text-emerald-900">
+                          Engineering ticket in progress — no project shell yet
+                        </p>
+                        <p className="text-emerald-800/80">
+                          Materialize a project from "{activeTicket.requestType}" so this ticket's tasks
+                          have a home and the team can track progress on a project page.
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        className="bg-emerald-600 hover:bg-emerald-700"
+                        onClick={() => setConvertOpen(true)}
+                        data-testid="btn-open-convert-wizard"
+                      >
+                        Create project from ticket <ArrowRight className="h-3 w-3 ml-1" />
+                      </Button>
+                    </section>
+                  );
+                }
                 return (
                   <section className="rounded-md border border-emerald-200 bg-emerald-50/60 p-3 flex items-center justify-between">
                     <div className="text-xs">
