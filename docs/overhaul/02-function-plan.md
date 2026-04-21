@@ -527,10 +527,10 @@ Six sub-lane pages. All inherit the F-004 archetype + F-005 visual-improvement p
   - Due-date column with RAG-aged chip (overdue / due today / due ≤3d / due >3d).
   - Amount column tabular-nums + right-aligned for financial approvals.
 - **Additive functional improvements:**
-  - Inline Approve / Reject row action for items below the role's single-click threshold (below-threshold defined per role in runtime config).
   - Bulk Approve — opens `ConfirmDialog` with list + total amount + 2s undo toast after submit.
   - "Delegate to" row action opens person-picker using existing `SearchableSelect`.
   - Saved filter for "my approvals this week."
+  - **Inline single-click approve from list was considered and deferred** (owner decision 2026-04-21): no Rand-value thresholds will be introduced; users continue to click through to the approval detail before approving. Revisit if/when a safety model for inline approval is defined.
 - **Half-built work to finish:** n/a.
 - **Source-of-truth migration:** n/a — already canonical.
 - **Preserved behaviour contract:**
@@ -636,6 +636,9 @@ Six sub-lane pages. All inherit the F-004 archetype + F-005 visual-improvement p
   - The backend aggregation itself (see "Half-built work" below).
   - "Drill into handover" row action → F-021 (Handover & Closeout detail).
   - COO-only action: override readiness score with justification.
+  - **Readiness score is informational only** (owner decision 2026-04-21). No action on the platform blocks / gates / prevents itself based on the score. A COO can proceed with a handover at any readiness percentage. The score exists to *inform* decisions, never to enforce them.
+  - **v1 formula: 4 components weighted equally (25% each)** — (a) all stage-gate criteria marked complete, (b) finance snapshot locked for current week, (c) required handover documents uploaded to SharePoint, (d) PM sign-off on the readiness checklist. Label shown in UI as "Readiness v1" so it's clear this is a first-pass number.
+  - **Tuneable in `/admin/settings`** — component weights and inclusion are editable by COO admin without a code change, so v2/v3 can iterate after real-use feedback.
 - **Half-built work to finish:** **YES — this is `00b §A #3`, a top-5 finish-it candidate.** Phase 2 plan owns the frontend; Phase 3 implementation wires the backend endpoint (`/api/pd-pm-handover/control`) + aggregation. Server-side work belongs in `server/handover-routes.ts` or a new `server/routes/handover.routes.ts` wrapping `approvals-routes.ts`.
 - **Source-of-truth migration:** n/a.
 - **Preserved behaviour contract:**
@@ -863,10 +866,10 @@ Ordering rationale: each wave proves exactly one new layout primitive, then harv
 
 **26 functions planned.** Awaiting approval to continue to Lens 2 (`PROJECT_MANAGER_SITE`).
 
-Open questions worth addressing before Phase 3 starts on this lens:
+Open questions resolved (owner decisions 2026-04-21):
 
-1. **Approval threshold per role** (F-016 Approvals inline-approve): what's the `R` value below which a PM / Program Manager can single-click approve? Currently I've written "below role's single-click threshold" — the threshold value is a product decision, not a design one.
-2. **F-020 Handover Control backend endpoint shape** — who owns the definition of the readiness score formula? (Phase 3 can scaffold a placeholder; product needs to finalise.)
-3. **Wave 2 kick-off choice** — Gates Pipeline is the natural candidate, but if there's a riskier page you'd prefer to prove the primitive on first, name it.
+1. **Inline-approve threshold ladder (F-016)** — **not proceeding**. No Rand-value thresholds introduced. Users continue to click through to approve. Documented in F-016 entry.
+2. **F-020 Handover readiness score** — **v1 ships informational only**, 4 components equally weighted, no action gating on score, COO can override / proceed regardless. Tuneable via `/admin/settings`. Documented in F-020 entry.
+3. **Wave 2 kick-off** — **Gates Pipeline** (owner deferred to recommendation). Matches the §3.9 Phase 3 ordering above; no change needed.
 
-Awaiting approval or redirects.
+All three decisions baked into the plan. Ready for Lens 2.
