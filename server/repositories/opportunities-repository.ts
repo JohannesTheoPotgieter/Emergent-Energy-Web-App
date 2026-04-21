@@ -15,7 +15,6 @@ import {
 import { workItems } from "@shared/schema/tasks";
 import { users } from "@shared/schema/users";
 import { db } from "../db";
-import { ENGINEERING_REQUEST_TYPES } from "@shared/roles/pd-roles";
 
 // ---- Inferred row shapes for select projections ----
 
@@ -251,9 +250,20 @@ export class OpportunitiesRepository {
   }
 
   async getEngineeringTicketCounts(opportunityIds: number[]): Promise<CountByOpportunity[]> {
-    // Counts engineering pd_tickets that are still OPEN — i.e. not Completed
-    // or Cancelled. This is the "engineering tasks open" metric surfaced on
-    // the Opportunities management board.
+    // Counts pd_tickets attached to each opportunity that are still OPEN —
+    // i.e. not Completed or Cancelled. This is the "engineering tasks open"
+    // metric surfaced on the Opportunities management board.
+    //
+    // We intentionally do NOT filter by `pd_tickets.request_type` here. The
+    // request_type field is a free-form string supplied by the convert /
+    // create-engineering-tickets flow (`parsed.customTicket.phase` and the
+    // per-draft `requestType`), so any phase template name a PD types in is
+    // valid. The legacy `ENGINEERING_REQUEST_TYPES` allowlist
+    // ("Feasibility Study", "Design Review", "IFC Planning", …) doesn't match
+    // the names actually flowing through this UI ("First Assessment",
+    // "Cost Proposal", "Site visit Report", …) and silently zeroed the badge.
+    // On the Opportunities board, every pd_ticket attached to an opportunity
+    // IS engineering work, so the opp-scope alone is the correct filter.
     const rows = await db
       .select({
         opportunityId: pdTickets.opportunityId,
@@ -262,7 +272,6 @@ export class OpportunitiesRepository {
       .from(pdTickets)
       .where(and(
         inArray(pdTickets.opportunityId, opportunityIds),
-        inArray(pdTickets.requestType, [...ENGINEERING_REQUEST_TYPES]),
         sql`${pdTickets.status} NOT IN ('Completed', 'Cancelled')`,
       ))
       .groupBy(pdTickets.opportunityId);
@@ -333,13 +342,17 @@ export class OpportunitiesRepository {
   }
 
   async countEngineeringTickets(opportunityId: number): Promise<number> {
+    // Single-opportunity counterpart to `getEngineeringTicketCounts`. We
+    // intentionally drop the `ENGINEERING_REQUEST_TYPES` allowlist filter for
+    // the same reason — the convert / create-engineering-tickets flow writes
+    // free-form `request_type` values ("First Assessment", "Cost Proposal",
+    // "Site visit Report", …) that don't match the legacy hardcoded list, so
+    // filtering here would silently zero the count and the two methods would
+    // disagree across views (working list vs. drawer / detail).
     const [row] = await db
       .select({ count: sql<number>`count(*)` })
       .from(pdTickets)
-      .where(and(
-        eq(pdTickets.opportunityId, opportunityId),
-        inArray(pdTickets.requestType, [...ENGINEERING_REQUEST_TYPES]),
-      ));
+      .where(eq(pdTickets.opportunityId, opportunityId));
     return Number(row?.count || 0);
   }
 
@@ -636,6 +649,26 @@ export class OpportunitiesRepository {
       .update(opportunities)
       .set({ clientId, updatedAt: new Date() })
       .where(eq(opportunities.id, opportunityId));
+  }
+
+  /**
+   * Back-link an existing (non-shell) project to an opportunity. Only writes
+   * when `project_info.opportunity_id` is currently NULL — never clobbers a
+   * link to a different opportunity. Returns true if a row was updated.
+   *
+   * Used by the resolve-mapping flow's `existing_existing` and `existing_new`
+   * (with picked existing project) branches so the opportunity drops off the
+   * Opportunities working list as "converted" once a real project is paired
+   * with it. Without this back-link the opp stays "active" forever even
+   * though pd_tickets are pointing at the chosen project.
+   */
+  async linkProjectToOpportunityIfUnset(tx: typeof db, projectId: number, opportunityId: number): Promise<boolean> {
+    const result = await tx
+      .update(projectInfo)
+      .set({ opportunityId })
+      .where(and(eq(projectInfo.id, projectId), isNull(projectInfo.opportunityId)))
+      .returning({ id: projectInfo.id });
+    return result.length > 0;
   }
 
   // ---- Intake page combined queries ----

@@ -773,6 +773,29 @@ router.post("/api/opportunities/:id/resolve-mapping", requireAuth, requirePermis
       await opportunitiesRepo.updateOpportunityClient(db, opportunityId, resolvedClient.id);
     }
 
+    // Back-link the opportunity onto the resolved (existing) project so it
+    // disappears from the Opportunities working list as "converted". The
+    // shell-creation branch already sets `opportunity_id` at insert time;
+    // this covers the `existing_existing` path (and any prior orphaned
+    // existing project that has never been linked). `IfUnset` guards against
+    // clobbering a different opportunity already pointing at this project.
+    let backLinkedExistingProject = false;
+    if (resolvedProject && !createdProjectShell) {
+      backLinkedExistingProject = await opportunitiesRepo.linkProjectToOpportunityIfUnset(
+        db,
+        resolvedProject.id,
+        opportunityId,
+      );
+      if (backLinkedExistingProject) {
+        logAuditFromReq(req, {
+          entityType: "project",
+          entityId: String(resolvedProject.id),
+          action: "back_link_to_opportunity",
+          changesJson: { opportunityId, projectName: resolvedProject.projectName, mode: parsed.mode },
+        });
+      }
+    }
+
     if (resolvedClient?.id && opportunity.clientId !== resolvedClient.id) {
       logAuditFromReq(req, {
         entityType: "opportunity",
