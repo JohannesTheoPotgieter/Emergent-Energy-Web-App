@@ -595,7 +595,7 @@ Six sub-lane pages. All inherit the F-004 archetype + F-005 visual-improvement p
 #### F-019 · Milestone Tracker
 
 - **Path(s):** `/milestone-tracker`
-- **Lens (primary):** `CONSTRUCTION_MANAGER`, `PROGRAM_MANAGER`
+- **Lens (primary):** `CONSTRUCTION_MANAGER` (daily driver — owner decision 2026-04-21), `PROGRAM_MANAGER`
 - **Lens (secondary):** all `execution_board` view roles
 - **Archetype:** W3 List (time-sequenced; may use a Gantt view as additive mode)
 - **User goal:** See every project's milestones on one view; identify which are on track, slipping, or missed.
@@ -1326,7 +1326,7 @@ CM works daily inside these — all already planned:
 | F-001 | Execution Board | Landing; Construction sub-tab primary |
 | F-013 | Project Detail | Drill-in for their projects (HSE + Quality tabs weighted) |
 | F-016 | Approvals | Their construction-scope approvals |
-| F-019 | Milestone Tracker | Primary landing-alternative |
+| F-019 | Milestone Tracker | **CM daily driver** — primary site-progress surface (owner note 2026-04-21). Already annotated in F-019 entry. |
 | F-021 | Handover & Closeout | Outgoing construction → ops handovers |
 | F-022 | PO Approvals | Construction-site POs |
 | F-023 | Payment Requests | Site subcontractor payments |
