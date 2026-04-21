@@ -316,4 +316,66 @@ The Gates workspace is 8 pages in the `GATES` nav group. They share an archetype
 - **Risk:** Low.
 - **Effort:** M.
 
-**End of batch 2.** 2 functions recorded. Next batch: remaining 6 Gates sub-lanes (Ready / Exceptions / Client Updates / Handover Queue / Open Queries / Commitments) — grouped as they share the same archetype.
+**End of batch 2.** 2 functions recorded.
+
+---
+
+### §3.3 Lens 1 · Batch 3 — Gates remaining sub-lanes
+
+Six sub-lane pages. All inherit the F-004 archetype + F-005 visual-improvement pattern. This batch records per-lane differences only. Each is a lane-filtered `W3 List` on `project_execution_state` or related canonical tables.
+
+**Shared attributes** (all six):
+
+- Lens (primary) — `PROGRAM_MANAGER`
+- Lens (secondary) — 14 `lifecycle` view roles
+- Archetype — W3 List
+- Data source — canonical
+- Effort — S (each one; inheritance keeps work small)
+- Risk — Low
+- **Shared Preserved behaviour** — each sub-lane remains sidebar-visible; permission entity `lifecycle` unchanged; route paths unchanged; server-side lane filter preserved.
+- **Shared additive behaviour** — saved views, bulk actions, CSV export, snooze-until (all from F-004 inheritance).
+
+#### F-006 · Ready Gates — `/gates/ready`
+
+- **User goal:** Find gates ready to advance — hand them to the review owner.
+- **Current state:** `gates-ready.tsx`. Lane filter = `gate_status='ready'`.
+- **Per-lane visual:** Add "Promote to next stage" primary inline action (opens `ConfirmDialog`); age column becomes "Ready since" descending.
+- **Per-lane additive:** "Batch promote eligible" bulk action — promotes multiple gates in one confirmed action (uses canonical state transition).
+
+#### F-007 · Gate Exceptions — `/gates/exceptions`
+
+- **User goal:** See projects with exceptions raised at a gate (failed criteria, deferred decision).
+- **Current state:** `gates-exceptions.tsx`. Lane filter = exceptions-flagged rows. Legacy route `/exceptions` redirects here (LEGACY_REDIRECTS).
+- **Per-lane visual:** Exception reason as primary identifier column; severity chip (`StatusBadge` chip variant).
+- **Per-lane additive:** "Assign exception to" row action (drops a linked `work_items` row to the assignee's My Work).
+- **Preserved behaviour:** LEGACY_REDIRECTS `/exceptions` → `/gates/exceptions` continues to resolve.
+
+#### F-008 · Client Updates — `/gates/client-updates`
+
+- **User goal:** Track every client-facing update commitment and its due date.
+- **Current state:** `gates-client-updates.tsx`.
+- **Per-lane visual:** "Next update due" column as primary RAG (green ≥3d, amber 1–3d, red <24h / overdue); client column sticky-left alongside project.
+- **Per-lane additive:** "Mark update sent" row action logs an audit entry to `project_info.updates` (or equivalent canonical table — confirm in Phase 3 per actual schema).
+
+#### F-009 · Handover Queue — `/gates/handovers`
+
+- **User goal:** Ready-to-handover gates waiting on PM acceptance or PD→PM sign-off.
+- **Current state:** `gates-handovers.tsx`.
+- **Per-lane visual:** Readiness % column (uses `Progress` primitive); handover status chip (not started / in progress / pending sign-off / signed).
+- **Per-lane additive:** Deep-link to `/pd/handover/:projectId` or `/pm/handover-review` per row state. Tied to F-016 Handover Control entry (batch 6).
+
+#### F-010 · Open Queries — `/gates/queries`
+
+- **User goal:** Client or internal queries blocking decision progression.
+- **Current state:** `gates-queries.tsx`.
+- **Per-lane visual:** Query age column, owner column, "awaiting response from" column (client vs internal).
+- **Per-lane additive:** Inline reply-via-email (Outlook integration through existing MS Graph) — pre-fills reply with query context.
+
+#### F-011 · Client Commitments — `/gates/commitments`
+
+- **User goal:** Every commitment made to a client and whether it's being honoured.
+- **Current state:** `gates-commitments.tsx`.
+- **Per-lane visual:** Commitment text as primary identifier; honour-status chip (on track / at risk / missed); due-date sort asc.
+- **Per-lane additive:** "Flag at-risk" row action escalates to COO via server-side notification.
+
+**End of batch 3.** 6 functions recorded (F-006 through F-011). Next batch: Projects domain — Projects list, Project Detail (with its 8 tabs), Sites, Clients.
