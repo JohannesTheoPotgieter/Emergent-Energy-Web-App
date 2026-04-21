@@ -684,4 +684,84 @@ Two notable callouts:
 - **F-020 Handover Control** is the clearest Phase-3 "finish it" target in this lens — a UI that's built but reads nothing. Small, well-scoped, high COO value.
 - **F-021a PD→PM Handover v2** is the second — the flag is the only remaining gate; UI is ready.
 
-Next batch: Procurement domain — PO Approvals, Payment Requests, Payment Batches.
+---
+
+### §3.7 Lens 1 · Batch 7 — Procurement domain (EPC Phase 1)
+
+These three pages are live UI but per `00b §C` their handlers still live in legacy `payment-*-routes.ts` and `po-routes.ts`. Phase 3 per-page polish is fine; the handler-consolidation from legacy → `routes/financials.routes.ts` (or a new `routes/approvals.routes.ts`) is a backlog item, not part of the overhaul.
+
+#### F-022 · PO Approvals
+
+- **Path(s):** `/po-approval-board`
+- **Lens (primary):** `PROGRAM_MANAGER`, `PROGRAM_FINANCE_MANAGER`
+- **Lens (secondary):** `COO_ADMIN`, `CEO_ADMIN`, `CFO`, `CM` (view)
+- **Archetype:** W3 List
+- **User goal:** See every PO awaiting approval with cost + supplier + project context; approve, reject, or ask for revision.
+- **Current state:** `client/src/pages/po-approval-board.tsx`. Columns for PO ref, supplier, project, amount, requested by, age. Table driven from legacy `po-routes.ts`.
+- **Data source:** Canonical — `approvals` table filtered to PO category. Legacy handler remains — flagged in `backlog.md` #6 / #7.
+- **Visual improvements:**
+  - W3 `TableLayout` composition.
+  - `DataTrustBadge` strip (money surface).
+  - Amount column tabular-nums, right-aligned, with currency prefix.
+  - Age chip (green <3d, amber 3–7d, red >7d).
+  - Supplier column sticky-left.
+- **Additive functional improvements:**
+  - Inline approve below single-click threshold.
+  - Bulk approve with confirmation dialog showing total.
+  - "Open PO in QB" deep-link row action when a QB ref exists.
+  - Saved filter "My approvals today."
+- **Half-built work to finish:** indirectly `00b §D Phase 1 EPC Workflow` — handlers currently in legacy files. Consolidation is backlog.
+- **Source-of-truth migration:** n/a — already canonical via `approvals`.
+- **Preserved behaviour contract:**
+  - Permission entity `procurement` (edit: Admin + PM + PFM).
+  - Sidebar visible under PROJECT_MANAGEMENT group.
+- **Risk:** Medium — PO approvals affect commitments + cash.
+- **Effort:** M.
+
+#### F-023 · Payment Requests
+
+- **Path(s):** `/payment-request-board`
+- **Lens (primary):** `PROGRAM_FINANCE_MANAGER`, `PROGRAM_MANAGER`
+- **Archetype:** W3 List
+- **User goal:** See every payment request waiting on authorisation; approve into a payment batch.
+- **Current state:** `client/src/pages/payment-request-board.tsx`. Table driven from legacy `payment-request-routes.ts`.
+- **Data source:** Canonical — `approvals` filtered to payment_request category.
+- **Visual improvements:** Inherit F-022 pattern; add "Pay-by" date column (required for batching logic).
+- **Additive functional improvements:**
+  - "Add to batch" row action that opens payment-batch picker (`SearchableSelect`).
+  - "Split this payment" action (for partial authorisations).
+  - Supplier-last-paid summary in row drawer peek.
+- **Half-built work to finish:** same as F-022.
+- **Source-of-truth migration:** n/a.
+- **Preserved behaviour:** Permission entity `procurement`; sidebar visible.
+- **Risk:** Medium.
+- **Effort:** M.
+
+#### F-024 · Payment Batches
+
+- **Path(s):** `/payment-batch-manager`
+- **Lens (primary):** `PROGRAM_FINANCE_MANAGER`, `CFO` (view)
+- **Archetype:** W3 List + W4 Detail (batch opens into its constituent payments)
+- **User goal:** Group approved payment requests into weekly payment batches for finance execution.
+- **Current state:** `client/src/pages/payment-batch-manager.tsx`. Handlers in legacy `payment-batch-routes.ts`.
+- **Data source:** Canonical — payment-batch tables (confirm exact schema during Phase 3 touch).
+- **Visual improvements:**
+  - List of batches (W3), each batch clickable to a W4 detail view of the constituent payments.
+  - Detail view shows: batch status, total amount, approved by, submission state, QB sync state.
+  - Currency totals with tabular-nums; RAG on QB sync state.
+- **Additive functional improvements:**
+  - "Finalise batch" action — confirms and locks (state transition through repository).
+  - "Download batch report" — PDF generation using existing template pattern.
+  - Compare-to-last-week's-batch mode in detail view.
+- **Half-built work to finish:** same as F-022.
+- **Source-of-truth migration:** n/a.
+- **Preserved behaviour contract:**
+  - Permission entity `procurement`.
+  - Batch state transitions remain server-side only.
+  - QB sync remains gated by QB credentials + feature flag (connector-mode).
+- **Risk:** Medium — batching affects outbound payments.
+- **Effort:** L — detail view is non-trivial; QB integration touches multiple systems.
+
+**End of batch 7.** 3 functions recorded (F-022, F-023, F-024).
+
+Next batch: Portfolios — list + detail. Short batch, then Lens 1 summary.
