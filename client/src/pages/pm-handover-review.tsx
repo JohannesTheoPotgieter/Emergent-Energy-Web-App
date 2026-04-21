@@ -8,6 +8,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permissions";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout } from "@/components/layout";
 
 async function loadQueue() {
   const res = await fetch("/api/pd-pm-handover/submitted", { credentials: "include" });
@@ -52,12 +54,23 @@ export default function PmHandoverReviewPage() {
     onError: (err: any) => toast({ title: "Action failed", description: err?.message || "Please retry.", variant: "destructive" }),
   });
 
+  const itemCount = (data?.items || []).length;
+  const subtitle = isLoading
+    ? "Loading review queue..."
+    : itemCount === 0
+      ? "No submitted or returned handovers are waiting"
+      : `${itemCount} handover${itemCount !== 1 ? "s" : ""} awaiting your review`;
+
   return (
-    <div className="space-y-3">
-      <h1 className="text-2xl font-semibold">PM Handover Review Queue</h1>
-
-      {isLoading ? <p className="text-sm text-muted-foreground">Loading review queue...</p> : null}
-
+    <PageLayout
+      data-testid="pm-handover-review-page"
+      header={
+        <PageHeader
+          title="PM Handover Review Queue"
+          subtitle={subtitle}
+        />
+      }
+    >
       {error ? (
         <Card className="border-red-200 bg-red-50">
           <CardContent className="p-4 text-sm text-red-700 space-y-2">
@@ -66,7 +79,7 @@ export default function PmHandoverReviewPage() {
               Could not load PM review queue.
             </div>
             <p>{(error as Error).message}</p>
-            <button className="text-sm underline font-medium" onClick={() => refetch()} disabled={isRefetching}>
+            <button className="text-sm underline font-medium" onClick={() => refetch()} disabled={isRefetching} data-testid="btn-retry-queue">
               {isRefetching ? "Retrying..." : "Retry queue load"}
             </button>
           </CardContent>
@@ -74,7 +87,7 @@ export default function PmHandoverReviewPage() {
       ) : null}
 
       {(data?.items || []).map((i) => (
-        <div key={i.project_id} className="border rounded p-3 flex items-center justify-between">
+        <div key={i.project_id} className="border rounded-lg p-3 flex items-center justify-between" data-testid={`row-handover-${i.project_id}`}>
           <div>
             <p className="font-medium">{i.project_name}</p>
             <p className="text-xs text-muted-foreground">Status: {i.status} · PD: {i.pd || "—"} · PM: {i.pm || "—"}</p>
@@ -104,13 +117,17 @@ export default function PmHandoverReviewPage() {
                 </Button>
               </>
             )}
-            <Link href={`/pd/handover/${i.project_id}`} className="text-blue-600 underline">Review handover</Link>
+            <Link href={`/pd/handover/${i.project_id}`} className="text-primary underline hover:opacity-80">Review handover</Link>
           </div>
         </div>
       ))}
 
-      {!error && !isLoading && (data?.items || []).length === 0 ? (
-        <p className="text-sm text-muted-foreground">No submitted or recently returned handovers are waiting for PM review.</p>
+      {!error && !isLoading && itemCount === 0 ? (
+        <Card className="border-dashed">
+          <CardContent className="p-6 text-center text-sm text-muted-foreground">
+            No submitted or recently returned handovers are waiting for PM review.
+          </CardContent>
+        </Card>
       ) : null}
 
       <Dialog
@@ -145,6 +162,7 @@ export default function PmHandoverReviewPage() {
                 setRejectReason("");
               }}
               disabled={actionMutation.isPending}
+              data-testid="btn-cancel-reject"
             >
               Cancel
             </Button>
@@ -170,6 +188,6 @@ export default function PmHandoverReviewPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageLayout>
   );
 }
