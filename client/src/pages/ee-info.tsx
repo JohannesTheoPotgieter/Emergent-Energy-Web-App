@@ -18,6 +18,8 @@ import {
   Briefcase, Scale, Cog, HardHat, Truck, UserCheck, ClipboardList,
   FolderOpen, Link2, Hash, Play, CircleDot as StepIcon,
 } from "lucide-react";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout } from "@/components/layout";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
@@ -2160,14 +2162,15 @@ export default function EeInfoPage() {
   const handleBackToLifecycle = () => setOsView({ type: "lifecycle" });
 
   return (
-    <div className="p-4 md:p-6 space-y-4" data-testid="ee-info-page">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold">Emergent Energy Info</h1>
-          <p className="text-xs text-muted-foreground">Operating System, Templates & Walkthroughs</p>
-        </div>
-      </div>
-
+    <PageLayout
+      data-testid="ee-info-page"
+      header={
+        <PageHeader
+          title="Emergent Energy Info"
+          subtitle="Operating System, Templates & Walkthroughs"
+        />
+      }
+    >
       <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v); if (v === "os") setOsView({ type: "lifecycle" }); }}>
         <TabsList>
           <TabsTrigger value="os" className="gap-1 text-xs" data-testid="tab-os">
@@ -2253,6 +2256,6 @@ export default function EeInfoPage() {
           <RoleBasedSimulation />
         </TabsContent>
       </Tabs>
-    </div>
+    </PageLayout>
   );
 }
