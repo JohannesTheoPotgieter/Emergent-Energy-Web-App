@@ -704,12 +704,20 @@ function ProjectTaskBoard({
     }));
   const allItems: ProjectTask[] = [...ticketsAsTasks, ...tasks];
 
-  const phases = new Map<string, ProjectTask[]>();
-  for (const t of allItems) {
-    const key = t.phase?.trim() || "Unassigned";
-    const list = phases.get(key) ?? [];
-    list.push(t);
-    phases.set(key, list);
+  // Kanban swimlanes by status. Items keep their phase as a small chip
+  // on each card so engineers can still see which phase each task belongs
+  // to without losing the at-a-glance "where is each item" board view.
+  const lanes: Array<{ key: string; label: string; match: (s: string) => boolean }> = [
+    { key: "todo", label: "To do", match: (s) => isTodoStatus(s) },
+    { key: "in_progress", label: "In progress", match: (s) => isInProgressStatus(s) },
+    { key: "blocked", label: "Blocked", match: (s) => isBlockedStatus(s) },
+    { key: "done", label: "Done", match: (s) => isDoneStatus(s) || isCancelledStatus(s) },
+  ];
+  const itemsByLane = new Map<string, ProjectTask[]>();
+  for (const lane of lanes) itemsByLane.set(lane.key, []);
+  for (const it of allItems) {
+    const lane = lanes.find((l) => l.match(it.status))?.key ?? "todo";
+    itemsByLane.get(lane)!.push(it);
   }
   const total = allItems.length;
   const done = allItems.filter((t) => isDoneStatus(t.status)).length;
@@ -734,52 +742,69 @@ function ProjectTaskBoard({
           No engineering tasks on the project yet — spawn tasks from a ticket to populate the board.
         </p>
       ) : (
-        <div className="grid gap-1.5 sm:grid-cols-2" data-testid="project-board">
-          {Array.from(phases.entries()).map(([phase, items]) => {
-            const phaseDone = items.filter((i) => isDoneStatus(i.status)).length;
+        <div className="grid gap-1.5 grid-cols-2 sm:grid-cols-4" data-testid="project-board">
+          {lanes.map((lane) => {
+            const items = itemsByLane.get(lane.key) ?? [];
             return (
               <div
-                key={phase}
-                className="rounded border border-slate-200 bg-slate-50/50 p-1.5"
-                data-testid={`project-board-phase-${phase}`}
+                key={lane.key}
+                className="rounded border border-slate-200 bg-slate-50/50 p-1.5 min-h-[60px]"
+                data-testid={`project-board-lane-${lane.key}`}
               >
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-700 truncate" title={phase}>
-                    {phase}
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-700 truncate" title={lane.label}>
+                    {lane.label}
                   </span>
-                  <span className="text-[9px] tabular-nums text-muted-foreground">{phaseDone}/{items.length}</span>
+                  <span className="text-[9px] tabular-nums text-muted-foreground">{items.length}</span>
                 </div>
-                <ul className="space-y-0.5">
-                  {items.map((it) => {
-                    const ticketLabel = it.pdTicketId != null ? ticketLabelById.get(it.pdTicketId) ?? null : null;
-                    return (
-                      <li
-                        key={it.id}
-                        className="flex items-center gap-1 text-[10px]"
-                        data-testid={`project-board-task-${it.id}`}
-                      >
-                        <span
-                          className={`inline-block h-1.5 w-1.5 rounded-full flex-shrink-0 ${workItemStatusDot(it.status)}`}
-                          title={it.status}
-                        />
-                        <span className="flex-1 truncate text-foreground" title={it.title}>{it.title}</span>
-                        {ticketLabel && (
-                          <span
-                            className="text-[9px] px-1 rounded bg-emerald-50 text-emerald-700 border border-emerald-100 truncate max-w-[80px]"
-                            title={`From ticket: ${ticketLabel}`}
-                          >
-                            {ticketLabel}
-                          </span>
-                        )}
-                        <span
-                          className={`text-[9px] truncate max-w-[60px] ${it.ownerName ? "text-slate-600" : "italic text-muted-foreground"}`}
-                          title={it.ownerName ? `Assigned to ${it.ownerName}` : "Unassigned"}
+                <ul className="space-y-1">
+                  {items.length === 0 ? (
+                    <li className="text-[9px] italic text-muted-foreground">—</li>
+                  ) : (
+                    items.map((it) => {
+                      const ticketLabel = it.pdTicketId != null ? ticketLabelById.get(it.pdTicketId) ?? null : null;
+                      const phase = it.phase?.trim() || null;
+                      return (
+                        <li
+                          key={it.id}
+                          className="rounded border border-slate-200 bg-white px-1 py-1 space-y-0.5"
+                          data-testid={`project-board-task-${it.id}`}
                         >
-                          {it.ownerName ?? "—"}
-                        </span>
-                      </li>
-                    );
-                  })}
+                          <div className="flex items-center gap-1">
+                            <span
+                              className={`inline-block h-1.5 w-1.5 rounded-full flex-shrink-0 ${workItemStatusDot(it.status)}`}
+                              title={it.status}
+                            />
+                            <span className="flex-1 text-[10px] text-foreground truncate" title={it.title}>{it.title}</span>
+                          </div>
+                          <div className="flex items-center gap-1 flex-wrap">
+                            {phase && (
+                              <span
+                                className="text-[9px] px-1 rounded bg-slate-100 text-slate-700 truncate max-w-[80px]"
+                                title={`Phase: ${phase}`}
+                              >
+                                {phase}
+                              </span>
+                            )}
+                            {ticketLabel && phase !== ticketLabel && (
+                              <span
+                                className="text-[9px] px-1 rounded bg-emerald-50 text-emerald-700 border border-emerald-100 truncate max-w-[80px]"
+                                title={`From ticket: ${ticketLabel}`}
+                              >
+                                {ticketLabel}
+                              </span>
+                            )}
+                            <span
+                              className={`ml-auto text-[9px] truncate max-w-[80px] ${it.ownerName ? "text-slate-600" : "italic text-muted-foreground"}`}
+                              title={it.ownerName ? `Assigned to ${it.ownerName}` : "Unassigned"}
+                            >
+                              {it.ownerName ?? "—"}
+                            </span>
+                          </div>
+                        </li>
+                      );
+                    })
+                  )}
                 </ul>
               </div>
             );
@@ -788,6 +813,26 @@ function ProjectTaskBoard({
       )}
     </section>
   );
+}
+
+function isTodoStatus(status: string): boolean {
+  const s = status.toLowerCase();
+  return s === "not_started" || s === "draft" || s === "todo" || s === "to_do" || s === "open";
+}
+
+function isInProgressStatus(status: string): boolean {
+  const s = status.toLowerCase();
+  return s === "in_progress" || s === "in progress" || s === "doing" || s === "started";
+}
+
+function isBlockedStatus(status: string): boolean {
+  const s = status.toLowerCase();
+  return s === "blocked" || s === "on_hold" || s === "on hold" || s === "waiting";
+}
+
+function isCancelledStatus(status: string): boolean {
+  const s = status.toLowerCase();
+  return s === "cancelled" || s === "canceled";
 }
 
 /** Map a pd_ticket status onto the work_item status vocabulary so the
