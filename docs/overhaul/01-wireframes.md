@@ -352,3 +352,232 @@ Configuration (not hardcoded) — lives alongside `PAGE_REGISTRY`.
 ---
 
 **End of checkpoint 2.**
+
+---
+
+## W4 — Detail archetype
+
+Used by: Project Detail, Client Detail, Priority Detail, Portfolio Detail, PD→PM Handover, PM Handover Review, Commissioning Dashboard (per project), Engineering Monthly Report Project, PM Monthly Report Project, Invoice Patterns detail, Counterparty detail, Opportunity detail.
+
+Pattern: **summary header → tab row → tab content.** The summary header is sticky on scroll; the tab content is the only thing that reloads when switching tabs.
+
+### Desktop layout — Project Detail (PROGRAM_MANAGER lens)
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────────┐
+│ Project Delivery  ›  Projects  ›  Acme Rooftop 2MW                                    │
+│ ──────────────────────────────────────────────────────────────────────────────────── │
+│ ┌ Summary header (sticky) ─────────────────────────────────────────────────────────┐ │
+│ │ Acme Rooftop 2MW                     ●  Construction    [Edit] [Share] [⋯]       │ │
+│ │ P-0041  ·  Acme Ltd  ·  Anna T (PM)  ·  Johannesburg  ·  2MW                     │ │
+│ │                                                                                    │ │
+│ │ ┌─────────────┬─────────────┬─────────────┬─────────────┬─────────────┐          │ │
+│ │ │ RAG         │ Value       │ GP margin   │ Next gate   │ Go-live     │          │ │
+│ │ │ ●  On track │ R 24.0M     │ 22%         │ G4 in 12d   │ 2026-08-15  │          │ │  ← Summary KPI strip
+│ │ │ Updated 2h  │ +R 0.4M MTD │ +1.5pp MTD  │ ⚠ Blocked   │ (+5 days)   │          │ │
+│ │ └─────────────┴─────────────┴─────────────┴─────────────┴─────────────┘          │ │
+│ └────────────────────────────────────────────────────────────────────────────────────┘ │
+│                                                                                        │
+│ ┌ Tab row ────────────────────────────────────────────────────────────────────────┐  │
+│ │ Overview │ Tasks (23) │ Finance │ Engineering │ Quality │ HSE │ Documents │ Log │  │  ← Tabs (sticky under header)
+│ │ ──────── ──────────── ───────── ───────────── ───────── ───── ────────── ──── │  │
+│ └───────────────────────────────────────────────────────────────────────────────────┘ │
+│                                                                                        │
+│ ┌ Tab content ─────────────────────────────────────────────────────────────────────┐ │
+│ │                                                                                   │ │
+│ │  (Overview tab shown)                                                            │ │
+│ │                                                                                   │ │
+│ │  ┌ Stage timeline ──────────────────────────────────────────────────────────┐    │ │
+│ │  │   G1 ──── G2 ──── G3 ──●─── G4 ───── G5 ───── G6                         │    │ │
+│ │  │   ✓      ✓       ✓    ↑    ⚠ Blocked                                     │    │ │
+│ │  │                     Current                                                │    │ │
+│ │  └────────────────────────────────────────────────────────────────────────────┘    │ │
+│ │                                                                                   │ │
+│ │  ┌ Recent activity (12) ──────────┬ Open items (8) ─────────────────────────┐  │ │
+│ │  │ ● CFO approved R 1.2M PO       │ ⚠ 3 tasks overdue                       │  │ │
+│ │  │ ● NCR-042 closed by QM         │ ⚠ G4 blocker: roof access clearance     │  │ │
+│ │  │ ● Weekly review submitted      │ ⚠ 2 deliverables pending PM review      │  │ │
+│ │  │ … 9 more                       │ … 5 more                                 │  │ │
+│ │  │                        [All →] │                                  [All →] │  │ │
+│ │  └─────────────────────────────────┴──────────────────────────────────────────┘  │ │
+│ │                                                                                   │ │
+│ └───────────────────────────────────────────────────────────────────────────────────┘ │
+└───────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Anatomy
+
+- **Summary header (sticky, 2 rows):** Title + state badge + trailing actions on row 1. Meta line (code, client, owner, location, size) on row 2 — comma-separated, muted. KPI strip (5 cards) below. Sticky on scroll — stays visible as user moves through tab content. Height: ~160px initially, compresses to 80px (just title + state) once scrolled.
+- **Tab row:** Uses existing `Tabs` primitive. Each tab shows a count badge where meaningful (`Tasks (23)`). Tab content changes via React Router param or tab state — URL reflects active tab (`/project/acme/?tab=finance`) for deep-linking.
+- **Tab content area:** Scrolls independently when tabs are sticky. Each tab is its own layout — Overview uses a 2-col split, Finance uses the List archetype (W3), Documents uses a grid, Log uses a timeline. Tabs are NOT forced into one layout.
+- **Edit action:** Always top-right. Opens an inline edit state OR a Drawer (domain-specific — audited in Phase 2).
+
+### Behaviour rules
+
+- **State badge is always current.** Computed server-side from canonical `project_execution_state`. Never cached beyond the page's `TrustEnvelope` window.
+- **Tab counts lazy-load.** The count badge uses a lightweight count query; full tab data loads only when the tab is activated.
+- **URL reflects tab.** `?tab=finance` or `/project/:id/finance` — both work; the page-registry pattern decides per route.
+- **Summary KPI strip never overflows.** Max 5 cards desktop, max 2×2 tablet, stacked list mobile. Choose KPIs per entity (stored in config alongside PAGE_REGISTRY).
+- **"Open items" column surfaces what needs the user's action**, not everything. For PROGRAM_MANAGER on a project: overdue tasks, blocked gates, pending approvals they own. For ENGINEER: their own tasks + their standup blockers.
+- **Breadcrumb shows the drill-in path.** `Section › List page › Detail title`. Always linkable up.
+
+### Mobile collapse
+
+```
+┌──────────────────────────────────────┐
+│ ‹ Back                               │
+│                                      │
+│ Acme Rooftop 2MW                     │
+│ P-0041 · Acme Ltd                    │
+│ ●  Construction                      │
+│                                      │
+│ ┌────────┬────────┐                  │
+│ │ RAG    │ Value  │                  │  ← KPI tiles 2×2 grid
+│ │ ●      │ R 24M  │                  │
+│ ├────────┼────────┤                  │
+│ │ Next G │ Go-live│                  │
+│ │ 12d ⚠  │ Aug 15 │                  │
+│ └────────┴────────┘                  │
+│                                      │
+│ ( Overview ▼ )                       │  ← Tabs → select dropdown
+│                                      │
+│ (Tab content — scrollable)           │
+│                                      │
+└──────────────────────────────────────┘
+```
+
+- Summary header simplified — title + state + 4-tile KPI grid.
+- Tabs → select dropdown (saves horizontal space).
+- Actions (Edit / Share / ⋯) move to a floating action button (FAB) bottom-right, or overflow in the header right side.
+
+### Detail variations by entity
+
+Same structure. Differences live in: which KPIs, which tabs, which tab default.
+
+| Entity | Summary KPIs | Tabs |
+|---|---|---|
+| Project | RAG · Value · GP margin · Next gate · Go-live | Overview · Tasks · Finance · Engineering · Quality · HSE · Documents · Log |
+| Client | Active projects · Total value · Stage spread · Last contact · Owner | Overview · Projects · Opportunities · Contacts · Documents · Log |
+| Priority | State · Owner · Due · Impact · Linked items | Overview · Updates · Linked projects · Log |
+| Portfolio | Project count · Total value · RAG spread · GP margin · Revenue MTD | Overview · Projects · Finance · Performance · Log |
+| Handover (PD→PM) | Readiness % · Sign-offs · Blockers · Target date | Overview · Checklist · Finance handover · Lessons · Sign-off |
+| Opportunity | Stage · Value · Probability · Close date · Owner | Overview · Contacts · Activities · Documents · Log |
+
+---
+
+## W5 — Form / Wizard archetype
+
+Used by: Create Project, Weekly Reviews, PD→PM Handover sign-off, Quick Create (`/actions/launchpad`), Role creation (Admin settings), Commissioning forms, Smart Import kick-off, NCR creation, Payment Request creation, PO create.
+
+Two sub-types:
+
+- **Single-screen form** (most cases) — modal or inline.
+- **Multi-step wizard** (Create Project, Weekly Review, PD→PM Handover, Smart Import) — for flows with distinct stages and a summary review.
+
+### W5a — Single-screen form (inline page)
+
+Example: New Priority.
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ Priorities  ›  New priority                                                   │
+│ ──────────────────────────────────────────────────────────────────────────── │
+│ New priority                                                                  │
+│ Set a company priority and assign an owner and due date.                      │
+│                                                                                │
+│ ┌ Form (2/3 width) ──────────────────────────┬ Context panel (1/3) ─────────┐│
+│ │                                             │                                ││
+│ │ Title *                                     │ Tips                          ││
+│ │ [                                    ]      │ • Keep titles under 80 chars  ││
+│ │                                             │ • Link to at least one project││
+│ │ Owner *                                     │                                ││
+│ │ ( Select person            ▼ )              │ Related                       ││
+│ │                                             │ • Active priorities: 12        ││
+│ │ Due date                                    │ • Your owned: 3                ││
+│ │ [ 2026-05-15        📅 ]                    │                                ││
+│ │                                             │                                ││
+│ │ Impact level                                │                                ││
+│ │ ( ● Low  ○ Medium  ○ High  ○ Critical )     │                                ││
+│ │                                             │                                ││
+│ │ Description                                 │                                ││
+│ │ ┌──────────────────────────────────────┐    │                                ││
+│ │ │                                      │    │                                ││
+│ │ │                                      │    │                                ││
+│ │ └──────────────────────────────────────┘    │                                ││
+│ │                                             │                                ││
+│ │ Linked projects                             │                                ││
+│ │ [+ Link project]                            │                                ││
+│ │                                             │                                ││
+│ │ ───────────────────────────────────────     │                                ││
+│ │                                             │                                ││
+│ │                    [Cancel]  [Save draft]  [Create priority]                ││
+│ └─────────────────────────────────────────────┴────────────────────────────────┘│
+└───────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Form anatomy rules
+
+- **Two columns on desktop** (≥1024px): form body left (2/3), context/help panel right (1/3). Stack on mobile.
+- **Required fields marked `*`.** Error messages inline below field, red `--danger`. Uses existing `react-hook-form` + Zod resolvers.
+- **Disabled actions while form invalid.** Button states: default / hover / active / disabled / loading. Save button shows spinner while submitting.
+- **"Save draft" always available** on multi-field forms. Drafts persist to `localStorage` keyed by route + user. Auto-recover on re-entry.
+- **Cancel is always an explicit button.** Back-button browser navigation prompts if dirty (uses `ConfirmDialog`).
+- **Tab order matches visual order.** Labels above inputs, not placeholder text as label (already the existing `ui/input` + `ui/label` pattern).
+- **Inline validation on blur, not on keystroke.** Keystroke validation only for character limits.
+
+### W5b — Multi-step wizard
+
+Example: Weekly Review.
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────────┐
+│ Project Delivery  ›  Weekly Reviews  ›  Week 17 2026                                 │
+│ ──────────────────────────────────────────────────────────────────────────────────── │
+│ Weekly Review — Week 17 (20–26 Apr 2026)                   [Save draft] [Cancel]     │
+│                                                                                        │
+│ ┌ Step rail ───────────────────────────────────────────────────────────────────────┐ │
+│ │ ✓ Scope   ✓ Tasks   ✓ Risks   ●Finance   ○ Summary   ○ Review & submit         │ │  ← Steps (✓ done · ● current · ○ pending)
+│ │ ───────── ───────── ───────── ───────── ──────────── ─────────────────          │ │
+│ └────────────────────────────────────────────────────────────────────────────────────┘ │
+│                                                                                        │
+│ ┌ Step body ──────────────────────────────────────────┬ Step help ─────────────────┐ │
+│ │                                                      │                              │ │
+│ │ Finance                                              │ About this step              │ │
+│ │ Confirm the financial state for the selected scope.  │                              │ │
+│ │                                                      │ Weekly reviews lock the      │ │
+│ │ ┌ Projects in scope (3) ──────────────────────────┐ │ finance snapshot for Friday │ │
+│ │ │ Acme Rooftop 2MW                                │ │ close. Edit carefully.       │ │
+│ │ │   Revenue MTD       [ R 1.2M          ]         │ │                              │ │
+│ │ │   Cost-to-complete  [ R 8.4M          ]         │ │ Pre-populated from           │ │
+│ │ │   GP margin         22% (auto)                  │ │ normalizedRevenueLines and   │ │
+│ │ │                                                  │ │ normalizedCostLines          │ │
+│ │ │ Solarix Ground                                  │ │ (current effective rows).    │ │
+│ │ │   Revenue MTD       [ R 2.0M          ]         │ │                              │ │
+│ │ │   …                                              │ │ Keyboard                     │ │
+│ │ │                                                  │ │ • Tab: next field            │ │
+│ │ └──────────────────────────────────────────────────┘ │ • ⌘+S: save draft            │ │
+│ │                                                      │ • ⌘+⏎: next step             │ │
+│ │                                                      │                              │ │
+│ │                    [‹ Back]  [Skip step]  [Next ›]  │                              │ │
+│ └──────────────────────────────────────────────────────┴──────────────────────────────┘ │
+└───────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Wizard anatomy rules
+
+- **Step rail at top**, always visible. Clickable back to any completed step. Cannot jump forward to an uncompleted step.
+- **One concept per step.** Never cram two domains into one step. If Finance and Risks share a screen today, split them.
+- **Help panel right-side** explains why the step matters, lists keyboard shortcuts, names the data source. Read-only.
+- **Step body is the hero.** Takes visible width on standard monitors; help panel collapses to bottom on <1024px.
+- **Review step before submit** — always. The last step is read-only summary + [Edit step] links. No "submit" without review.
+- **Draft auto-saves every 10s** on wizards. Exposed via "Last saved 00:05 ago" label in the footer of the step rail.
+- **Wizards close safely.** Cancel button prompts confirmation if any step has dirty fields. Esc key triggers the same confirm.
+
+### Mobile collapse
+
+- Single forms: one column, full width, stacked fields. Context panel moves below the form, or collapses to a "Help" accordion at the bottom.
+- Wizards: step rail becomes horizontal scroll at top. Help panel collapses to a "ⓘ What is this step?" expandable below the step title. [‹ Back] [Next ›] are full-width buttons at bottom.
+
+---
+
+**End of checkpoint 3.**
