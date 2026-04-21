@@ -304,4 +304,183 @@ All primitives must meet these minima. Audited during Phase 3 per-screen touches
 
 ---
 
-**End of §2.** Next: §3 — Layout primitives plan.
+**End of §2.**
+
+---
+
+## §3 Layout primitives — plan
+
+**Doc-only in Phase 1.** Layout primitive implementations land per-screen in Phase 3 as each function migrates. This section defines the primitives, their contract, and the existing components they wrap or replace.
+
+### §3.1 Why not build all layout primitives in Phase 1?
+
+The overhaul prompt's additive-only rule says "New design system runs alongside old. Screens migrate one at a time, opt-in. No forced swap." Building six layout primitives up front with no screen using them creates drift: the primitives age untested, the screens age untouched, neither converges.
+
+Phase 3 builds each primitive **when the first screen migrates to it**, giving real use-site feedback immediately. This section is the contract those implementations must meet.
+
+### §3.2 Primitive inventory
+
+Six primitives. Each has a named file location (convention — actual path decided at build time) and a stated contract.
+
+#### L1 — `AppShell`
+
+**Role:** The outermost frame. Top bar + sidebar + main + (optional) footer. Hosts breadcrumb strip, version banner, network banner.
+
+**Proposed location:** `client/src/components/layout/AppShell.tsx` (extends / replaces existing `AppLayout.tsx`).
+
+**Contract:**
+
+- Renders top bar (56px desktop / 48px mobile) containing: logo (always), command-palette trigger (`⌘K`), notifications, user menu.
+- Renders sidebar (240px expanded / 64px collapsed) — receives `<LensNav />` as children.
+- Reserves vertical space for version banner + network banner when either is active (existing logic at `App.tsx:178-185` preserved).
+- Exposes `mainContent` slot that scrolls independently of sidebar.
+- Respects mobile breakpoint — at <768px sidebar becomes `Sheet`-wrapped drawer, bottom tab bar renders.
+- Sticky-first composition: breadcrumb + PageHeader stack at `z-sticky`.
+
+**Migration path:** existing `AppLayout.tsx` stays. `AppShell` is added alongside. First screen to migrate wraps in `AppShell`; the rest stay on `AppLayout`. Both coexist until every screen migrates, then `AppLayout` is retired via explicit sign-off.
+
+**Preserved behaviour contract (non-negotiable):**
+
+- Logo asset `/emergent-logo.png` rendered identically (`h-7 w-auto` at `AppLayout.tsx:251`).
+- Version banner stacking vs network banner (`App.tsx:201-231` logic).
+- Scroll-restoration + page-title hooks (`App.tsx:120-121`) still fire.
+- `RoleGuard` + `canViewPath` still gate content.
+- `Suspense` + `ErrorBoundary` wrap unchanged.
+
+#### L2 — `PageHeader`
+
+**Role:** The canonical page header per W-C1 — breadcrumb + title + state badge + trailing actions + sub-line.
+
+**Existing:** `client/src/components/ui/page-header.tsx` already exists. Phase 1 formalises its contract; Phase 3 migrations use it universally.
+
+**Contract:**
+
+- Props: `title`, `subline?`, `breadcrumb?`, `status?`, `actions?`, `kpiStrip?` (W4 Detail variant).
+- Three height modes: compact (64px) / default (96px) / with-KPI (160px).
+- Sticky behaviour controlled by parent archetype (Dashboard non-sticky, Detail sticky-compress).
+- Actions: max 3 visible + `DropdownMenu` overflow.
+- Destructive actions only inside overflow, never inline.
+
+**Migration path:** no new file. Extend existing `ui/page-header.tsx` props additively; old call-sites stay valid.
+
+#### L3 — `LensNav`
+
+**Role:** Role-adaptive sidebar navigation. Takes the user's effective role + permission state and renders nav groups + items per `PAGE_REGISTRY`.
+
+**Proposed location:** `client/src/components/layout/LensNav.tsx` (extracted from whatever renders sidebar today — likely already partially there in `components/layout/`).
+
+**Contract:**
+
+- Input: user role + access-matrix state (via `useAccessMatrix()`).
+- Filters `PAGE_REGISTRY` by `showInSidebar === true` and `evaluateEntityAccess(entity, "view")`.
+- Groups by `navGroup` (14 keys) in fixed order: MY_WORK → PRIORITIES → PORTFOLIO → GATES → PROJECTS → PROJECT_MANAGEMENT → PROJECT_DEVELOPMENT → ENGINEERING → QUALITY → HSE → FINANCE → REPORTS → KNOWLEDGE → SYSTEM.
+- Active state: matches `location.pathname` or `matchSubRoutes` range.
+- Collapsed state: shows icons only, tooltips on hover for label.
+- Reuses `ui/sidebar.tsx` primitive composition.
+
+**Migration path:** extract from current sidebar implementation. Behaviour must preserve existing navigation UX exactly — Phase 3 screen migrations don't change sidebar, they use the lens-aware primitive.
+
+#### L4 — `PageLayout`
+
+**Role:** The `ee-page` wrapper. Handles max-width, spacing, and optional sub-nav pills below PageHeader.
+
+**Proposed location:** `client/src/components/layout/PageLayout.tsx`.
+
+**Contract:**
+
+- Wraps children in `ee-page` (max-width 1440px, `space-y-5`).
+- Optional `subNav` slot — renders `ee-subnav-pill` row below PageHeader for pages with sub-tabs outside the Tabs primitive (e.g. some dashboard overview pages).
+- Handles page-level loading / error / empty state delegation via `PageStates`.
+
+**Migration path:** lightweight wrapper, additive. First-screen migration uses it; existing screens continue using direct `<div className="ee-page">`.
+
+#### L5 — `TableLayout`
+
+**Role:** Canonical W3 List archetype composition — toolbar + active filter chips + table + pagination + optional bulk-action bar.
+
+**Proposed location:** `client/src/components/layout/TableLayout.tsx`.
+
+**Contract:**
+
+- Props: `toolbar` (search + filters + view toggle), `activeFilters` (chip row), `table` (W3 sticky-header table), `pagination`, `bulkActions?`.
+- Composes existing `Table`, `TablePagination`, `StatusChip`, `Button`, `DropdownMenu`.
+- Renders bulk-action bar sticky-bottom (z `stickyBottom`) when `selectedRows.length > 0`.
+- Provides slot for `EmptyState` when data empty (variant auto-selected: no-data / no-match / permission-denied).
+
+**Migration path:** net-new composition. Built in Phase 3 when first List page migrates (most likely Projects or Gates Pipeline given Tier-1 priority).
+
+#### L6 — `DetailLayout`
+
+**Role:** Canonical W4 Detail archetype composition — sticky summary header with compress behaviour + tab row + tab content area.
+
+**Proposed location:** `client/src/components/layout/DetailLayout.tsx`.
+
+**Contract:**
+
+- Props: `summary` (W4 summary header with KPI strip), `tabs` ({ key, label, count?, content }), `defaultTab?`, `onTabChange?`.
+- Summary header: sticky, compresses from 160px → 80px on scroll.
+- Tab state: URL-reflective via `?tab=` or parametric route.
+- Tab content: scrolls within its viewport; switching tabs preserves scroll per tab.
+
+**Migration path:** net-new. First candidate screens: Project Detail, Client Detail, Priority Detail.
+
+#### L7 — `FormLayout`
+
+**Role:** Canonical W5a Form archetype — 2/3 form body + 1/3 context panel on desktop; stacks on mobile.
+
+**Proposed location:** `client/src/components/layout/FormLayout.tsx`.
+
+**Contract:**
+
+- Props: `form` (react-hook-form wrapped content), `context?` (right-side help panel), `actions` (Cancel / Save draft / Primary).
+- Auto-saves form state to localStorage if `draftKey` prop provided.
+- Dirty-state navigation guard via existing `ConfirmDialog`.
+- Standard actions row at bottom with primary-right alignment.
+
+**Migration path:** first candidates — New Priority, Create Project (would use `WizardLayout` instead — see below), NCR creation.
+
+#### L8 — `WizardLayout`
+
+**Role:** Canonical W5b Wizard archetype — step rail + step body + help panel + step navigation.
+
+**Proposed location:** `client/src/components/layout/WizardLayout.tsx`.
+
+**Contract:**
+
+- Props: `steps` ({ key, label, content, validate? }), `currentStep`, `onStepChange`, `draftKey` (autosave), `onSubmit`.
+- Step rail: horizontal top, click back to completed, never skip forward.
+- Help panel right-side, collapses to accordion <1024px.
+- Footer: Back / Skip / Next buttons with keyboard shortcuts (⌘+↵ for next).
+- Auto-save every 10s.
+- Review step required as last step.
+
+**Migration path:** first candidates — Weekly Review, Smart Import kick-off, PD→PM Handover.
+
+### §3.3 Layout primitive summary table
+
+| Primitive | Status | First migration target |
+|---|---|---|
+| `AppShell` | Extends existing `AppLayout` | Whole-app — carefully in Phase 3 |
+| `PageHeader` | Exists; extend props | Every Phase 3 screen touch |
+| `LensNav` | Extract from current sidebar | Whole-app refactor — Phase 3 |
+| `PageLayout` | New — lightweight | First screen migration |
+| `TableLayout` | New — net composition | Gates Pipeline or Projects list |
+| `DetailLayout` | New — net composition | Project Detail |
+| `FormLayout` | New — net composition | New Priority (simplest form) |
+| `WizardLayout` | New — net composition | Weekly Review |
+
+### §3.4 Preservation contracts (all layout primitives)
+
+Every layout primitive MUST preserve:
+
+- **Existing `ee-*` classes and their CSS.** Primitives may use or extend them; they may not redefine them.
+- **Dark mode, reduced-motion, mobile responsiveness.**
+- **Accessibility landmarks** — `<header>`, `<nav>`, `<main>`, `<aside>`.
+- **Existing error boundary and suspense wrappers.**
+- **`useScrollRestoration` + `usePageTitle` hook firing** for every page.
+
+These are regression-safety checklists enforced in Phase 3 per-function work, not invented here.
+
+---
+
+**End of §3.** Next: §4 — Data-access primitives.
