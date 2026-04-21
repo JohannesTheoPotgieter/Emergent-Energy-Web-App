@@ -55,6 +55,12 @@ Cumulative migrations on `claude/platform-overhaul-3WF1E` ready for cumulative o
 | **F-011 Client Commitments** | 🟢 migrated | `c1d74d9` | W3 harvest. Status chip per status map. Open-count badge. |
 | **F-043a PM Monthly Report Project** | 🟢 migrated | `a448371` | **First DetailLayout adoption.** W4 archetype: PageHeader + 8-KPI tile grid + DetailLayout with 6 metric tabs + footer stat grid. DetailLayout.summary made optional (additive primitive change). |
 | **F-043 Eng Monthly Report Project** | 🟢 migrated | `365ff4f` | DetailLayout harvest. Mirror of F-043a for Engineering variant. 5 metric tabs. activeTab state preserved via onTabChange for Export-current-tab action. |
+| **F-043 PM Monthly Report History** | 🟢 migrated | `9371dfd` | Session 3 continuation. W3 TableLayout harvest. |
+| **F-043 Eng Monthly Report History** | 🟢 migrated | `9371dfd` | Same batch — mirror pattern. |
+| **F-043 PM Monthly Report Compare** | 🟢 migrated | `a843e14` | Session 3 continuation. PageLayout + PageHeader + Table primitive. KPI comparison rows with tabular-nums. |
+| **F-043 Eng Monthly Report Compare** | 🟢 migrated | `a843e14` | Same batch — mirror pattern. |
+| **F-018 Weekly Reviews** | 🟢 migrated | `9fa2126` | W3 TableLayout list surface (per plan §3.5 — wizard submission is a separate flow outside this page). 4-stat KPI grid preserved + tabular-nums. ReportTrustNotice preserved. |
+| **F-056 Project Create** | 🟢 migrated | `568786b` | Light-touch chrome migration — single-page form wrapped in PageLayout + PageHeader across all 3 states (permission / success / form). Wizard shape deferred to future session when the phased wizard plan lands. |
 
 **Total this session: 8 pages migrated + 1 deferred.** Gates sub-lanes (7 of 8) now share consistent W3 visual treatment — the "harvest ratio" working as designed.
 
@@ -87,13 +93,18 @@ Priority candidates for subsequent sessions:
 6. **Remaining monthly/compare/history report pages** — may be DetailLayout candidates if they follow same shape.
 7. **Admin + knowledge surfaces** — lower priority; many already acceptable via PageShell.
 
-### §2.0c Cumulative state across Sessions 2 + 3
+### §2.0c Cumulative state across Sessions 2 + 3 + continuation
 
-**11 pages migrated** to the Phase 3 primitives. **Same-archetype harvest-ratio working**: migrations get mechanical after the first proof of each archetype.
+**17 pages migrated** to the Phase 3 primitives (as of commit `568786b`). Same-archetype harvest-ratio continues to deliver — mechanical migrations now take a fraction of the effort of the first-in-class.
 
-**TableLayout proven on:** F-004 Gates Pipeline + F-005-F-011 Gates sub-lanes (8 pages).
-**DetailLayout proven on:** F-043a PM Monthly Report Project + F-043 Eng Monthly Report Project (2 pages).
-**PageLayout + PageHeader applied on:** 11 pages total.
+| Archetype proven | Count | Pages |
+|---|---|---|
+| **TableLayout (W3 list)** | 13 | Gates workspace (8) + Monthly Report history pair (2) + Monthly Report compare pair (2) + Weekly Reviews (1) |
+| **DetailLayout (W4 detail)** | 2 | PM Monthly Report Project + Eng Monthly Report Project |
+| **PageLayout + PageHeader (light chrome)** | 17 | All of the above + Lifecycle Board + Project Create |
+| **FormLayout** | 0 | Not yet proven — deferred to future session |
+| **WizardLayout** | 0 | Not yet proven — F-018 Weekly Reviews' wizard lives in project workflow, not on the page currently migrated |
+| **AppShell + LensNav** | 0 | Deferred — existing AppLayout already provides whole-app chrome |
 
 Open for cumulative owner staging review per D-011.
 
