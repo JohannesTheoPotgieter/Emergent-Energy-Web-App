@@ -598,9 +598,65 @@ router.get("/api/priorities/:id", requireAuth, asyncHandler(async (req: Request,
     }
     const dedupedProjects = Array.from(byProjectId.values());
 
+    // Live-compute fallback: derivedProjectKpis is a materialized cache that
+    // can be empty (or stale) for newly-imported projects. When it's missing
+    // we read straight from normalized_cost_lines so the priority detail page
+    // never shows R0 for a project that actually has data. Revenue uses POC
+    // (revenue_recognition_amount) — the canonical method — and realised lines
+    // use the cos_realised flag set by the smart-import normalizer.
+    const projectIdsForKpi = dedupedProjects.map(p => p.id);
+    const liveKpiByProject = new Map<number, { plannedRevenue: number; realisedRevenue: number; plannedCost: number; realisedCost: number }>();
+    if (projectIdsForKpi.length > 0) {
+      const liveRows: any = await db.execute(sql`
+        SELECT
+          project_id,
+          COALESCE(SUM(NULLIF(revenue_recognition_amount, '')::numeric), 0)::float8 AS planned_revenue,
+          COALESCE(SUM(CASE WHEN cos_realised THEN NULLIF(revenue_recognition_amount, '')::numeric ELSE 0 END), 0)::float8 AS realised_revenue,
+          COALESCE(SUM(NULLIF(amount_ex_vat, '')::numeric), 0)::float8 AS planned_cost,
+          COALESCE(SUM(CASE WHEN cos_realised THEN NULLIF(amount_ex_vat, '')::numeric ELSE 0 END), 0)::float8 AS realised_cost
+        FROM normalized_cost_lines
+        WHERE project_id IN ${projectIdsForKpi}
+          AND (effective_to IS NULL OR effective_to > NOW())
+          AND deleted_at IS NULL
+        GROUP BY project_id
+      `).then((r: any) => r.rows || r).catch(() => []);
+      for (const r of liveRows) {
+        liveKpiByProject.set(Number(r.project_id), {
+          plannedRevenue: Number(r.planned_revenue || 0),
+          realisedRevenue: Number(r.realised_revenue || 0),
+          plannedCost: Number(r.planned_cost || 0),
+          realisedCost: Number(r.realised_cost || 0),
+        });
+      }
+    }
+
     const directSet = new Set(directProjectIds);
     const projectsWithPm = await Promise.all(dedupedProjects.map(async (p) => {
       const pm = p.pmUserId ? await getUserById(p.pmUserId) : null;
+      const cached = {
+        totalRevenue: Number(p.totalRevenue || 0),
+        totalCos: Number(p.totalCos || 0),
+        grossProfit: Number(p.grossProfit || 0),
+        grossMarginPct: Number(p.grossMarginPct || 0),
+        revenueRealised: Number(p.revenueRealised || 0),
+        cosRealised: Number(p.cosRealised || 0),
+      };
+      const live = liveKpiByProject.get(p.id);
+      // Prefer the materialized cache when it has any non-zero figure.
+      // When the cache row is missing (or fully zeroed) fall back to the
+      // live aggregation so we don't show R0 for projects with real data.
+      const cacheHasData = cached.totalRevenue > 0 || cached.totalCos > 0 || cached.revenueRealised > 0 || cached.cosRealised > 0;
+      const totalRevenue = cacheHasData ? cached.totalRevenue : (live?.plannedRevenue ?? 0);
+      const totalCos = cacheHasData ? cached.totalCos : (live?.plannedCost ?? 0);
+      const revenueRealised = cacheHasData ? cached.revenueRealised : (live?.realisedRevenue ?? 0);
+      const cosRealised = cacheHasData ? cached.cosRealised : (live?.realisedCost ?? 0);
+      // GP / GM% must use the same basis as the cache contract:
+      //   - grossProfit = totalRevenue - totalCos  (planned-vs-planned)
+      //   - grossMarginPct is a RATIO (0–1) — UI multiplies by 100 itself
+      const grossProfit = cacheHasData ? cached.grossProfit : (totalRevenue - totalCos);
+      const grossMarginPct = cacheHasData
+        ? cached.grossMarginPct
+        : (totalRevenue > 0 ? (totalRevenue - totalCos) / totalRevenue : 0);
       return {
         id: p.id,
         name: p.name,
@@ -611,12 +667,13 @@ router.get("/api/priorities/:id", requireAuth, asyncHandler(async (req: Request,
         linkedAt: p.linkedAt,
         linkedDirectly: directSet.has(p.id),
         linkedViaPriorityId: p.linkedViaPriorityId,
-        totalRevenue: Number(p.totalRevenue || 0),
-        totalCos: Number(p.totalCos || 0),
-        grossProfit: Number(p.grossProfit || 0),
-        grossMarginPct: Number(p.grossMarginPct || 0),
-        revenueRealised: Number(p.revenueRealised || 0),
-        cosRealised: Number(p.cosRealised || 0),
+        totalRevenue,
+        totalCos,
+        grossProfit,
+        grossMarginPct,
+        revenueRealised,
+        cosRealised,
+        kpiSource: cacheHasData ? "cache" : (live ? "live" : "missing"),
       };
     }));
 
