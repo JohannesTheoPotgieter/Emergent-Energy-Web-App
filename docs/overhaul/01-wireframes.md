@@ -860,3 +860,201 @@ If a CFO and an Engineer opened the same project detail page, they would see the
 ---
 
 **End of checkpoint 5.**
+
+---
+
+## Component anatomies
+
+Zoomed in on five primitives that set the tone for every page. These are NOT new components — they wrap existing `ui/*` primitives. Phase 1 tokens + usage rules align them.
+
+### C1 — PageHeader
+
+The single element every archetype shares. Defines "you know where you are" + "what can I do here."
+
+```
+┌ Desktop PageHeader ────────────────────────────────────────────────────────────────┐
+│ Project Delivery  ›  Projects  ›  Acme Rooftop 2MW           ← Breadcrumb (optional)│
+│ ─────────────────────────────────────────────────────────────────────────────────── │
+│                                                                                      │
+│ Acme Rooftop 2MW            ●  Construction     [Edit]  [Share]  [⋯]                 │
+│ └──── Title ─────┘          └── State ──┘       └─── Trailing actions ────┘          │
+│                                                                                      │
+│ P-0041  ·  Acme Ltd  ·  Anna T  ·  Updated 2h ago                                    │
+│ └────────────── Sub-line (meta, small, muted) ───────────────┘                       │
+│                                                                                      │
+└──────────────────────────────────────────────────────────────────────────────────────┘
+   ↑ 96px tall when all elements present · 64px when sub-line omitted
+```
+
+**Rules:**
+
+- **Title** uses `font-heading font-semibold` (Barlow). Truncates with ellipsis if overflow.
+- **State badge** always right of title, uses `StatusIndicator`. Optional — omit on top-level pages that have no single state.
+- **Trailing actions** — max 3 visible + overflow (`⋯`). Primary first (emerald), secondary after (outline), danger last. Destructive actions never inline — always in overflow.
+- **Sub-line** — muted meta. Format: `Identifier · Owner · Freshness · Secondary-context`. Comma-separated with interpunct (`·`). Dates as relative ("2h ago") unless absolute timestamp matters.
+- **Height is deterministic**: 64px (no sub-line), 96px (with sub-line), 160px (with sub-line + KPI strip on detail archetype).
+- **Sticky rules vary by archetype:** List / Dashboard = non-sticky. Detail = sticky with compress behaviour. Wizard = sticky with step rail.
+
+### C2 — EmptyState
+
+Used wherever data could be zero. Three variants — one primitive, three intent modes.
+
+```
+┌ Variant A: Zero data anywhere ────────────────────────────────────────────────────┐
+│                                                                                    │
+│                              ┌────────────┐                                        │
+│                              │   (icon)   │       ← muted, ~48px                   │
+│                              └────────────┘                                        │
+│                                                                                    │
+│                       No projects yet                                              │
+│                                                                                    │
+│                Create your first project or import from a workbook.                │
+│                                                                                    │
+│                        [+ Create project]   [Import workbook]                      │
+│                                                                                    │
+│                                                                                    │
+└────────────────────────────────────────────────────────────────────────────────────┘
+  ↑ min-h-56 · centred · border-dashed border-border bg-muted/40 · ee-empty-state
+
+┌ Variant B: No matches for filters ────────────────────────────────────────────────┐
+│                              ┌────────────┐                                        │
+│                              │   (icon)   │                                        │
+│                              └────────────┘                                        │
+│                       No results                                                   │
+│                Try clearing your filters or widening the search.                   │
+│                        [Clear filters]   [Reset to default]                        │
+└────────────────────────────────────────────────────────────────────────────────────┘
+
+┌ Variant C: Role-gated / permission-denied ───────────────────────────────────────┐
+│                              ┌────────────┐                                        │
+│                              │  (shield)  │                                        │
+│                              └────────────┘                                        │
+│                       Not available for your role                                  │
+│          Contact your administrator if you need access to this surface.            │
+│                                   [Back]                                           │
+└────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Rules:**
+
+- **Always explain why.** Never a naked "No data." — always a reason and a next step.
+- **One primary action** per empty state. Second action optional (outline).
+- **Icon is subtle.** Muted-foreground, not coloured. No illustrations.
+- **Replaces `AccessDenied` card** at `App.tsx:71-86` — Variant C is the canonical permission-denied.
+
+### C3 — StatusIndicator + RAG badges
+
+Semantic-coloured dots + chips. Already exists in `ui/status-badge.tsx` — rules to use consistently.
+
+```
+● On track      ← --success (142 64% 36%)      ·  use for healthy / done / green
+⚠ At risk       ← --warning (35 92% 45%)       ·  use for attention needed / amber
+× Off track     ← --danger  (0 72% 51%)        ·  use for failing / overdue / red
+• Info          ← --info    (214 78% 48%)      ·  use for neutral informational state
+○ Not started   ← --muted   (210 20% 96%)      ·  use for inactive / not-yet
+
+Dot variant:          Chip variant:                    Pill variant:
+●                     ┌─────────────┐                  ┌──────────────┐
+                      │ ● On track  │                  │  On track    │
+                      └─────────────┘                  └──────────────┘
+  6px dot · inline    status-chip · inline             Full pill · background tint
+```
+
+**Rules:**
+
+- **Dot** when the label is obvious from context (table cell, breadcrumb).
+- **Chip** when the label matters on its own (filter chips, summary KPI strip).
+- **Pill** when state is the focal point (status column of detail header).
+- **Never raw coloured text.** Always wrap in a StatusIndicator variant.
+- **Colour + symbol**, never colour alone. Symbols make it colour-blind safe.
+- **Fixed semantic mapping.** `Success = ● + green`. `Warning = ⚠ + amber`. `Danger = × + red`. Do not invent new mappings for specific domains.
+
+### C4 — Data-trust envelope
+
+Already exists at `index.css:366-380` (ee-data-trust-*). Rules to use it consistently.
+
+```
+┌ Data-trust strip (appears below PageHeader on data-heavy pages) ────────────────┐
+│                                                                                   │
+│ ┌──────────────┬──────────────┬──────────────┬──────────────┐                   │
+│ │ SOURCE       │ LAST UPDATED │ SCOPE        │ TRUST        │                   │
+│ │ Canonical    │ 2 min ago    │ All projects │ ● Verified   │                   │
+│ └──────────────┴──────────────┴──────────────┴──────────────┘                   │
+│                                                                                   │
+└───────────────────────────────────────────────────────────────────────────────────┘
+  ↑ ee-data-trust-grid · 4 cards · appears on Cashflow, COS, Revenue, Reports, Company Overview
+```
+
+**Rules:**
+
+- **Source** names the canonical table or service (`Canonical` = single canonical read; `Canonical + QB` = canonical joined with integration; `Legacy adapter` = red-flagged).
+- **Last updated** = `data fetched at` time, not "cached since." Rounded to minute ("2 min ago", "1 h ago", "Yesterday at 16:42").
+- **Scope** = what's included. "All projects" / "Active projects" / "Your portfolio".
+- **Trust** = ● Verified (canonical + recent) / ⚠ Stale (canonical but >5 min) / × Legacy (non-canonical read — flagged as migration backlog).
+- **Never hide this strip on finance pages.** Money decisions require provenance.
+- **Reports retain trust strips on export.** The PDF/Excel export includes the envelope in the footer.
+
+### C5 — Bulk-action bar
+
+Appears on List archetype when rows are selected. Already partially present; rules to use consistently.
+
+```
+Normal state:            ↓ (user selects a row)                Selection state:
+                                                              ┌──────────────────────────────┐
+                                                              │ 2 selected                   │
+(no bar)                                                      │ [Reassign] [Change phase]    │
+                                                              │ [Export] [Archive] [× Clear] │
+                                                              └──────────────────────────────┘
+                                                                ↑ sticky bottom · slide-up 200ms
+```
+
+**Rules:**
+
+- **Slides up from bottom** with 200ms transition (respects `prefers-reduced-motion`).
+- **Sticky bottom**, above any footer, below modals.
+- **Max 4 primary actions + Clear.** More actions go in overflow (`⋯`).
+- **Actions mirror row-action menu** — bulk does what a single-row action does, × N.
+- **Destructive actions confirm.** Bulk Archive / Delete requires `ConfirmDialog` with count.
+- **Select-all is page-scoped**, with "Select all X matching filters" sub-option.
+- **Clear state is explicit.** [× Clear] in the bar; Esc also clears.
+- **Dismiss on navigation.** Navigating away clears selection.
+
+### Reserved primitives not yet covered
+
+The full design-system doc (`01-design-system.md`, checkpoint 2 of Phase 1) will add:
+
+- **Button** variant matrix (primary / secondary / ghost / danger × sm/md/lg × states).
+- **Table** row density tokens (compact / default / relaxed).
+- **Tabs** (horizontal / vertical / with count badges).
+- **Toast / banner / inline notification** rules (when which).
+- **Dialog / Drawer / Sheet** (which for what intent).
+- **LoadingSkeleton** variants per archetype.
+
+All wrap existing `ui/*` primitives — not net-new components.
+
+---
+
+## Summary of Phase 1 wireframes direction
+
+Seven wireframes + five component anatomies = the layout + behavioural contract Phase 1 code must serve.
+
+**What the wireframes lock down:**
+
+1. **Chrome is invariant.** AppShell / PageHeader / breadcrumb / data-trust strip are identical in every lens. The overhaul does NOT customise these per-role.
+2. **Five page archetypes carry every page.** Every one of the 113 PAGE_REGISTRY entries fits into Dashboard / List / Detail / Form / MyWork. Phase 2 per-function plans will annotate archetype per function.
+3. **Lens specialisation = nav + Today's focus + quick-create + mobile bottom-tabs.** Not visual template swapping. This is narrower than "role-based UI" sometimes means.
+4. **Every primitive wraps existing `ui/*` components.** We are not building a parallel design system. We are formalising the one we have.
+5. **Brand is preserved.** Logo, hex values, fonts, radius, shadow — all extracted values from Phase 0. No invention.
+6. **Mobile is first-class for 5 of 16 lenses** (PM-Site, Construction Manager, Engineer, HSE Manager, SSEG Manager). The rest are primarily desktop.
+7. **Zero decoration.** No `energy-*` animations on new surfaces. Motion reserved for state transitions only.
+
+**What the wireframes explicitly do NOT decide (deferred to Phase 2):**
+
+- Exact per-function layouts (W3 List is a template — columns per list come in `02-function-plan.md`).
+- Feature-flag surfaces (Handover Health Score backend work is a finish-it candidate, not a wireframe topic).
+- Per-lens Today's focus ranking weights (shown as examples in W7, tuned by product in Phase 2).
+- Any animation beyond fade/slide/skeleton shimmer (existing catalogue is sufficient).
+
+---
+
+**End of `01-wireframes.md`.** Next Phase 1 artefact: `design/tokens.ts` + `01-design-system.md` (tokens, primitives, layout primitives, data-access primitives, usage rules).
