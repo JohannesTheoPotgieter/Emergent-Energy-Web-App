@@ -70,8 +70,11 @@
   --muted: 210 20% 96%;
   --muted-foreground: 215 16% 47%;
 
-  --accent: 210 20% 95%;
-  --accent-foreground: 222 47% 11%;
+  /* Accent carries a subtle emerald tint so hover states across
+     dropdowns, command palette, select, dialogs all read as
+     "renewable" rather than generic gray. R1 token shift. */
+  --accent: 142 28% 95%;
+  --accent-foreground: 145 60% 22%;
 
   --destructive: 0 84% 60%;
   --destructive-foreground: 0 0% 100%;
@@ -98,8 +101,11 @@
   --sidebar-foreground: 215 16% 47%;
   --sidebar-primary: 142 76% 36%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 210 40% 96%;
-  --sidebar-accent-foreground: 222 47% 11%;
+  /* Sidebar active/hover uses the same emerald-tint as --accent so
+     the sidebar rail feels part of the renewable brand, not a
+     separate gray surface. R1 token shift. */
+  --sidebar-accent: 142 32% 94%;
+  --sidebar-accent-foreground: 145 60% 22%;
   --sidebar-border: 214 32% 91%;
   --sidebar-ring: 142 76% 36%;
 }
@@ -123,8 +129,11 @@
   --muted: 215 14% 18%;
   --muted-foreground: 215 16% 58%;
 
-  --accent: 215 14% 20%;
-  --accent-foreground: 210 20% 92%;
+  /* Dark-mode accent carries the same emerald tint as light mode —
+     so hover states across dropdowns and menus remain brand-aligned
+     when the theme flips. R1 token shift. */
+  --accent: 142 22% 20%;
+  --accent-foreground: 142 40% 86%;
 
   --destructive: 0 72% 55%;
   --destructive-foreground: 0 0% 100%;
@@ -149,8 +158,9 @@
   --sidebar-foreground: 215 16% 58%;
   --sidebar-primary: 142 76% 42%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 215 14% 18%;
-  --sidebar-accent-foreground: 210 20% 92%;
+  /* Dark sidebar active/hover — emerald-tinted to match light mode. */
+  --sidebar-accent: 142 22% 18%;
+  --sidebar-accent-foreground: 142 40% 86%;
   --sidebar-border: 215 14% 20%;
   --sidebar-ring: 142 76% 42%;
 
@@ -380,11 +390,11 @@ body {
   }
 
   .ee-subnav-pill {
-    @apply rounded-md border border-transparent px-3 py-1.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground hover:bg-muted/50;
+    @apply rounded-md border border-transparent px-3 py-1.5 text-[13px] text-muted-foreground transition-colors duration-150 hover:text-foreground hover:bg-[hsl(var(--surface-tint))];
   }
 
   .ee-subnav-pill-active {
-    @apply bg-primary/8 text-primary font-medium;
+    @apply bg-primary/10 text-primary font-medium border-primary/20;
   }
 
   .ee-status-success { @apply border-emerald-200 bg-emerald-50 text-emerald-700; }
