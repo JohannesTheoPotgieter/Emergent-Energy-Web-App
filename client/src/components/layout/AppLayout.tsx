@@ -247,8 +247,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </SheetContent>
           </Sheet>
 
-          <Link href="/" className="flex items-center gap-2.5 min-w-fit">
-            <img src="/emergent-logo.png" alt="Emergent Energy" className="h-7 w-auto object-contain" />
+          <Link href="/" className="flex items-center min-w-fit group" aria-label="Emergent Energy home">
+            <img
+              src="/emergent-leaf.png"
+              alt="Emergent Energy"
+              className="sm:hidden h-7 w-7 object-contain transition-transform duration-200 group-hover:rotate-[6deg]"
+            />
+            <img
+              src="/emergent-logo.png"
+              alt="Emergent Energy"
+              className="hidden sm:block h-7 w-auto object-contain transition-transform duration-200 group-hover:scale-[1.02]"
+            />
           </Link>
 
           <div className={cn("relative flex-1", isMobile ? "max-w-[42vw]" : "max-w-xl")} ref={searchContainerRef}>
@@ -371,7 +380,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </DropdownMenu>
         </div>
 
-        <div className="hidden lg:block border-t border-border/50">
+        <div className="hidden lg:block">
           <nav className="flex px-6 py-1 gap-0.5 overflow-x-auto mx-auto w-full max-w-[1440px]" data-testid="nav-top-sections">
             {visibleSections.map((section) => {
               const active = section.label === activeSection.label;
@@ -397,7 +406,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         {(breadcrumbs.length > 0 || activeSection.secondary.length > 0) && (
-          <div className="border-t border-border/40 bg-muted/20">
+          <div className="bg-[hsl(var(--surface-tint))]/40">
             <div className="px-4 lg:px-6 mx-auto w-full max-w-[1440px]">
               {breadcrumbs.length > 0 && (
                 <nav aria-label="breadcrumb" className="py-1.5">
