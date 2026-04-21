@@ -40,8 +40,12 @@ export interface DetailLayoutProps {
   /**
    * Summary block pinned to the top — typically a PageHeader with
    * `status`, `kpiStrip`, and `sticky` props set per wireframe W4.
+   *
+   * Optional: some detail pages put the summary in PageLayout.header
+   * instead (e.g. when the summary must remain visible during tab
+   * data loading). In that case the tabs stand alone.
    */
-  summary: React.ReactNode;
+  summary?: React.ReactNode;
   /** Tabs configuration. */
   tabs: DetailLayoutTab[];
   /**
@@ -75,12 +79,14 @@ export function DetailLayout({
       data-testid="detail-layout"
       className={cn("flex flex-col gap-4", className)}
     >
-      <div
-        data-testid="detail-layout-summary"
-        className="sticky top-0 z-[10] bg-background border-b border-border pb-3"
-      >
-        {summary}
-      </div>
+      {summary && (
+        <div
+          data-testid="detail-layout-summary"
+          className="sticky top-0 z-[10] bg-background border-b border-border pb-3"
+        >
+          {summary}
+        </div>
+      )}
 
       <Tabs
         value={activeTab}
