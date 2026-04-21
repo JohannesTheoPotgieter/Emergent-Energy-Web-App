@@ -67,6 +67,8 @@ Cumulative migrations on `claude/platform-overhaul-3WF1E` ready for cumulative o
 | **F-054 KPI Traceability** | 🟢 migrated | `8c79442` | Admin KPI traceability. Refresh action promoted to PageHeader. KPI count tabular-nums. |
 | **F-044 Engineering Stage Templates** | 🟢 migrated | `23d3b98` | Admin. PageLayout wrap. Dynamic subtitle reflecting template count. TemplateCard unchanged. |
 | **F-056 Action Launchpad** | 🟢 migrated | `23d3b98` | Quick Create surface. All 5 action forms preserved. Submit button swapped from hardcoded emerald to semantic primary. |
+| **F-045 Engineering Audit Log** | 🟢 migrated | `d68192e` | Admin audit page. Decorative gradient icon box stripped per good-looking-solve D-007. Entry-count in subtitle. Refresh promoted to PageHeader. |
+| **F-027 PM On-The-Go Home** | 🟢 migrated | `7a50645` | Site-PM mobile-first surface. PageLayout + PageHeader chrome aligned with rest of platform; mobile-first composition preserved. Project count tabular-nums. |
 
 **Total this session: 8 pages migrated + 1 deferred.** Gates sub-lanes (7 of 8) now share consistent W3 visual treatment — the "harvest ratio" working as designed.
 
@@ -99,20 +101,20 @@ Priority candidates for subsequent sessions:
 6. **Remaining monthly/compare/history report pages** — may be DetailLayout candidates if they follow same shape.
 7. **Admin + knowledge surfaces** — lower priority; many already acceptable via PageShell.
 
-### §2.0c Cumulative state across Sessions 2 + 3 (expanded)
+### §2.0c Cumulative state across all sessions
 
-**23 pages migrated** to the Phase 3 primitives (as of commit `23d3b98`). Continuing to prove that same-archetype harvest ratio is the right strategy — once a pattern is set, each additional page becomes a small, mechanical, safe migration.
+**25 pages migrated** to the Phase 3 primitives (as of commit `7a50645`). Harvest-ratio strategy confirmed — the sixth List page takes a fraction of the effort of the first.
 
 | Archetype proven | Count | Pages |
 |---|---|---|
 | **TableLayout (W3 list)** | 13 | Gates workspace (8) + Monthly Report history pair (2) + Monthly Report compare pair (2) + Weekly Reviews (1) |
 | **DetailLayout (W4 detail)** | 2 | PM Monthly Report Project + Eng Monthly Report Project |
-| **PageLayout + PageHeader (light chrome)** | 23 | All of the above + Lifecycle Board + Project Create + Training + PM Handover Review + Exceptions + KPI Traceability + Eng Template Admin + Action Launchpad |
+| **PageLayout + PageHeader (light chrome)** | 25 | All of the above + Lifecycle Board + Project Create + Training + PM Handover Review + Exceptions + KPI Traceability + Eng Template Admin + Action Launchpad + Engineering Audit Log + PM On-The-Go Home |
 | **FormLayout** | 0 | Not yet proven — deferred (PageShell + Card pattern adequately handles form pages) |
 | **WizardLayout** | 0 | Not yet proven — F-018 Weekly Reviews' wizard lives in project workflow, not on the page currently migrated |
 | **AppShell + LensNav** | 0 | Deferred — existing AppLayout already provides whole-app chrome |
 
-Phase 3 progress: **~41% of 56 planned functions migrated.**
+Phase 3 progress: **~45% of 56 planned functions migrated.**
 
 Open for cumulative owner staging review per D-011.
 
