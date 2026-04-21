@@ -537,7 +537,12 @@ router.post("/api/opportunities/:id/create-engineering-tickets", requireAuth, re
     });
   } catch (err) {
     console.error("[Opportunities] create engineering tickets failed:", err);
-    res.status(500).json({ error: "Failed to create engineering tickets" });
+    // Surface the real error so the UI toast shows something actionable
+    // instead of a generic "Failed". These are internal users and the
+    // most common causes (duplicate project shell, missing required
+    // column, FK violations) are useful to see directly.
+    const message = err instanceof Error ? err.message : "Failed to create engineering tickets";
+    res.status(500).json({ error: message });
   }
 });
 
