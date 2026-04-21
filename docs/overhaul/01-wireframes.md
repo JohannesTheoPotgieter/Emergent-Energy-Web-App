@@ -707,3 +707,156 @@ Full specialisation table for checkpoint 5 (W7 Lens-switching).
 ---
 
 **End of checkpoint 4.**
+
+---
+
+## W7 — Lens-switching (side-by-side)
+
+Same AppShell, three different lenses. This is the proof that "role-based lens" in this codebase means **sidebar + landing + Today's focus vary; chrome does not.**
+
+Shown: `PROGRAM_MANAGER`, `ENGINEER`, `CFO`. The three are chosen because they're the extremes — PM is cross-cutting (Tier 1), Engineer is narrow-depth (Tier 2), CFO is narrow-horizontal-finance-only (Tier 1).
+
+### Sidebar comparison
+
+```
+┌ PROGRAM_MANAGER ──────┐  ┌ ENGINEER ─────────────┐  ┌ CFO ──────────────────┐
+│                       │  │                       │  │                       │
+│ MY                    │  │ MY                    │  │ MY                    │
+│   Home                │  │   Home                │  │   Home                │
+│   Tasks               │  │   Tasks               │  │   Tasks               │
+│   Calendar            │  │   Calendar            │  │   Calendar            │
+│   Meetings            │  │                       │  │   Meetings            │
+│   Teams Chat          │  │                       │  │                       │
+│                       │  │                       │  │                       │
+│ PORTFOLIO             │  │                       │  │ PORTFOLIO             │
+│   Company Overview    │  │                       │  │   Company Overview    │
+│   Lifecycle Board     │  │                       │  │                       │
+│                       │  │                       │  │                       │
+│ PRIORITIES            │  │                       │  │ PRIORITIES            │
+│   Priorities          │  │                       │  │   Priorities (view)   │
+│                       │  │                       │  │                       │
+│ GATES                 │  │                       │  │                       │
+│   Gates Pipeline      │  │                       │  │                       │
+│   Blocked             │  │                       │  │                       │
+│   Ready               │  │                       │  │                       │
+│   Exceptions          │  │                       │  │                       │
+│   Client Updates      │  │                       │  │                       │
+│   Handover Queue      │  │                       │  │                       │
+│   Open Queries        │  │                       │  │                       │
+│   Commitments         │  │                       │  │                       │
+│                       │  │                       │  │                       │
+│ PROJECTS              │  │                       │  │                       │
+│   Project List        │  │                       │  │                       │
+│   Sites               │  │                       │  │                       │
+│   Clients             │  │                       │  │                       │
+│                       │  │                       │  │                       │
+│ PROJECT DELIVERY      │  │                       │  │                       │
+│   Execution Board     │  │                       │  │                       │
+│   PM Dashboard        │  │                       │  │                       │
+│   Milestone Tracker   │  │                       │  │                       │
+│   Approvals           │  │                       │  │                       │
+│   Financial Reviews   │  │                       │  │                       │
+│   Handover Control    │  │                       │  │                       │
+│   Handover & Closeout │  │                       │  │                       │
+│   Portfolios          │  │                       │  │                       │
+│   PO Approvals        │  │                       │  │                       │
+│   Payment Requests    │  │                       │  │                       │
+│   Payment Batches     │  │                       │  │                       │
+│                       │  │                       │  │                       │
+│ FINANCE               │  │                       │  │ FINANCE               │
+│   Cashflow (view)     │  │                       │  │   Cashflow            │
+│   COS (view)          │  │                       │  │   COS                 │
+│   Revenue (view)      │  │                       │  │   Revenue             │
+│   QB Throughput (view)│  │                       │  │   QB Throughput       │
+│                       │  │                       │  │                       │
+│ ENGINEERING           │  │ ENGINEERING           │  │                       │
+│   Dashboard (view)    │  │   Dashboard           │  │                       │
+│   Task Board          │  │   Task Board          │  │                       │
+│   Standup             │  │   Standup             │  │                       │
+│                       │  │                       │  │                       │
+│ QUALITY               │  │                       │  │                       │
+│   Dashboard (view)    │  │                       │  │                       │
+│   Commissioning (view)│  │                       │  │                       │
+│                       │  │                       │  │                       │
+│ HSE                   │  │                       │  │                       │
+│   HSE (view)          │  │                       │  │                       │
+│                       │  │                       │  │                       │
+│ REPORTS               │  │                       │  │ REPORTS               │
+│   Programme Reports   │  │                       │  │   Programme Reports   │
+│   PM Monthly Report   │  │                       │  │   PM Monthly Report   │
+│   Eng Monthly Report  │  │                       │  │   Eng Monthly Report  │
+│                       │  │                       │  │                       │
+│ KNOWLEDGE             │  │ KNOWLEDGE             │  │ KNOWLEDGE             │
+│   Processes & SOPs    │  │   Processes & SOPs    │  │   Processes & SOPs    │
+│                       │  │                       │  │                       │
+│ [⬅ Fold]              │  │ [⬅ Fold]              │  │ [⬅ Fold]              │
+└───────────────────────┘  └───────────────────────┘  └───────────────────────┘
+      42 items                    7 items                  16 items
+```
+
+The Program Manager lens is the **largest feasible sidebar** (42 items across 8 groups — near the cognitive ceiling). The Engineer lens is the **smallest practical one** (7 items across 2 groups). The CFO lens is **focused** (16 items, finance-heavy).
+
+### Landing page differences
+
+| Role | Landing route | Rationale |
+|---|---|---|
+| `PROGRAM_MANAGER` | `/execution-board` | Cross-cutting; sees every active project state at a glance |
+| `ENGINEER` | `/engineering` | Domain home; task-first workflow |
+| `CFO` | `/cashflow` | The single financial surface they own edit on |
+
+### Today's focus differences (W6)
+
+Same archetype, different ranking + default queues:
+
+| Role | Today's focus top-3 example | Queues shown |
+|---|---|---|
+| `PROGRAM_MANAGER` | 1. Blocked gate: Acme G4<br>2. Handover sign-off: Solarix<br>3. 3 weekly reviews pending | Gates · Approvals · Tasks · Meetings |
+| `ENGINEER` | 1. Blocker from standup: panel spec<br>2. Task due: design review<br>3. Review PR (if flag enabled) | Tasks · Blockers · Standup · Meetings |
+| `CFO` | 1. Approve R 5M+ payment batch<br>2. Lock weekly finance<br>3. Review overdue invoices | Approvals · Finance alerts · Meetings |
+
+### Quick-create menu differences
+
+Opens from ⌘K / [+]. Contents = actions the role can actually take:
+
+| Role | Quick-create options |
+|---|---|
+| `PROGRAM_MANAGER` | New project · New priority · New approval · New weekly review · New gate query · New commitment |
+| `ENGINEER` | New engineering task · New blocker · Log hours |
+| `CFO` | New approval · New journal entry · New payment request |
+| `COO_ADMIN` / `CEO_ADMIN` | (All options — no filtering) |
+
+### Mobile bottom-tab specialisation
+
+(W1 showed the structure. Contents per lens:)
+
+| Role | Tab 1 | Tab 2 | Tab 3 | Tab 4 | Tab 5 |
+|---|---|---|---|---|---|
+| `PROGRAM_MANAGER` | Home | Tasks | Gates | Execution Board | More |
+| `PROJECT_MANAGER_SITE` | Home | Tasks | Milestones | **PM On-The-Go** | More |
+| `CONSTRUCTION_MANAGER` | Home | Tasks | Milestones | HSE | More |
+| `CFO` / `PFM` / `Acct` | Home | Tasks | Cashflow | Approvals | More |
+| `ENGINEERING_MANAGER` | Home | Tasks | Eng Board | Standup | More |
+| `ENGINEER` | Home | Tasks | Eng Board | Standup | More |
+| `QUALITY_MANAGER` | Home | Tasks | Quality | Approvals | More |
+| `HSE_MANAGER` | Home | Tasks | HSE | Quality | More |
+| `CCO` / `KAM` / `PD` | Home | Tasks | Opportunities | PD Dashboard | More |
+| `COO_ADMIN` / `CEO_ADMIN` | Home | Tasks | Company | Gates | More |
+
+### What does NOT change across lenses
+
+Deliberate. Consistency is the point.
+
+- AppShell chrome (top bar, breadcrumb strip, PageHeader).
+- All primitive components (Button, Table, Tabs, Dialog, etc.).
+- Tone (professional, dense, zero decoration).
+- Semantics (status colours, shortcut keys).
+- Brand.
+- Motion + reduced-motion behaviour.
+- Dark mode.
+- Accessibility landmarks.
+
+If a CFO and an Engineer opened the same project detail page, they would see the same layout. Only the **available actions** on it would differ — ruled by `evaluateEntityAccess`, not by visual template swapping.
+
+---
+
+**End of checkpoint 5.**
