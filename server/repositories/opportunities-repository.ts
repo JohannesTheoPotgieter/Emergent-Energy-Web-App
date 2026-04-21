@@ -628,13 +628,14 @@ export class OpportunitiesRepository {
       )
       .orderBy(desc(pdTickets.createdAt));
 
-    // Per-ticket work-items, used by the drawer's mini engineering task
-    // board. Only fetched for the real tickets (the lazy shadow's tasks
-    // already come back via `tasks` above). Owner name is preferred from
-    // the joined users table, falling back to the denormalized
-    // work_items.owner_name when no FK is set (e.g. legacy imports).
-    const ticketIds: number[] = tickets.map((t: { id: number }) => t.id);
-    type TicketTask = {
+    // Project-level task board for the drawer. The board is rendered once
+    // per project (not per ticket) — every engineering ticket's spawned
+    // work_items end up on the same project, so grouping them at the
+    // project level is the more honest view. Each ticket itself is also
+    // surfaced as a board column-header chip so users can see which
+    // tasks came from which ticket. Owner name prefers the joined
+    // users.name, falling back to the denormalized work_items.owner_name.
+    type ProjectTask = {
       id: number;
       pdTicketId: number | null;
       title: string;
@@ -647,10 +648,13 @@ export class OpportunitiesRepository {
       ownerName: string | null;
       sortOrder: number | null;
     };
-    let ticketTasksRows: TicketTask[] = [];
-    if (ticketIds.length > 0) {
+    type TicketRow = (typeof tickets)[number];
+    const linkedProjectId =
+      tickets.find((t: TicketRow) => t.projectId != null)?.projectId ?? null;
+    let projectTasks: ProjectTask[] = [];
+    if (linkedProjectId != null) {
       const ownerUser = aliasedTable(users, "wi_owner_user");
-      ticketTasksRows = (await db
+      projectTasks = (await db
         .select({
           id: workItems.id,
           pdTicketId: workItems.pdTicketId,
@@ -668,24 +672,12 @@ export class OpportunitiesRepository {
         .leftJoin(ownerUser, eq(ownerUser.id, workItems.ownerUserId))
         .where(
           and(
-            inArray(workItems.pdTicketId, ticketIds),
+            eq(workItems.projectId, linkedProjectId),
             isNull(workItems.deletedAt),
           ),
         )
-        .orderBy(asc(workItems.sortOrder), asc(workItems.id))) as TicketTask[];
+        .orderBy(asc(workItems.sortOrder), asc(workItems.id))) as ProjectTask[];
     }
-    const tasksByTicket = new Map<number, TicketTask[]>();
-    for (const row of ticketTasksRows) {
-      if (row.pdTicketId == null) continue;
-      const list = tasksByTicket.get(row.pdTicketId) ?? [];
-      list.push(row);
-      tasksByTicket.set(row.pdTicketId, list);
-    }
-    type TicketRow = (typeof tickets)[number];
-    const ticketsWithTasks = tickets.map((t: TicketRow) => ({
-      ...t,
-      tasks: tasksByTicket.get(t.id) ?? [],
-    }));
 
     return {
       crm: opp.opp,
@@ -693,7 +685,8 @@ export class OpportunitiesRepository {
       siteName: opp.siteName,
       pd: shadow,
       tasks,
-      tickets: ticketsWithTasks,
+      tickets,
+      projectTasks,
     };
   }
 
