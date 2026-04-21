@@ -581,3 +581,129 @@ Example: Weekly Review.
 ---
 
 **End of checkpoint 3.**
+
+---
+
+## W6 — My Work archetype
+
+Used by: `/my-work` (home), `/my-work/tasks`, `/my-work/calendar`, `/my-work/meetings`, `/my-work/teams`, `/my-work/email`, `/inbox`.
+
+Pattern: **today focus → action queues → this week → supporting surfaces.** This is the personal landing for every role. Every staff member starts here when `task_management_hub` is enabled (`00b-half-built.md` top-5 finish-it candidate).
+
+### Desktop layout — My Work home
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────────┐
+│ My Work                                                                               │
+│ ──────────────────────────────────────────────────────────────────────────────────── │
+│ Good morning, Anna                              Tue 21 Apr · Week 17  [+ Quick create]│  ← PageHeader
+│ 7 items for today · 2 due this week · inbox: 12 new                                   │
+│                                                                                        │
+│ ┌ Today's focus (primary) ──────────────────────────┬ Action queues ─────────────────┐│
+│ │                                                    │                                 ││
+│ │ 3 things that need you today                       │ Approvals awaiting you      4  ││
+│ │ ───────────────────────────────────────────────── │ ─────────────────────────── ── ││
+│ │ ●  Approve PO — Acme R 1.2M              ⏱ overdue│ Financial review             2 ││
+│ │     Solar panel supply · Anna T                    │ Engineering sign-off         1 ││
+│ │     [Open] [Approve inline]                        │ Handover sign-off            1 ││
+│ │                                                    │                                 ││
+│ │ ⚠  Review NCR-042 — Solarix            ⏱ 2h left │ Tasks due today             3 ││
+│ │     Submitted by QM · PM sign-off needed           │ ─────────────────────────── ── ││
+│ │     [Open]                                         │ Confirm subcontractor list  ↗ ││
+│ │                                                    │ Close weekly review W17     ↗ ││
+│ │ ●  Weekly review — lock by 17:00         ⏱ 4h left│ Update roof access status   ↗ ││
+│ │     3 projects in scope                            │                                 ││
+│ │     [Open wizard]                                  │ Meetings today              2 ││
+│ │                                                    │ ─────────────────────────── ── ││
+│ │                                                    │ 10:00  Ops standup          ↗ ││
+│ │                                                    │ 14:30  Acme gate review     ↗ ││
+│ │                                                    │                                 ││
+│ └────────────────────────────────────────────────────┴─────────────────────────────────┘│
+│                                                                                        │
+│ ┌ This week (secondary) ──────────────────────────────────────────────────────────┐  │
+│ │   Mon      Tue       Wed      Thu      Fri      Sat    Sun                     │  │
+│ │ ──────── ─────── ──────── ──────── ──────── ─────── ────                       │  │
+│ │          ●today                                                                   │  │
+│ │  2 tasks  5 tasks  3 tasks  4 tasks  Close Friday                                │  │
+│ │           1 mtg   2 mtgs   1 mtg    ↗                                            │  │
+│ │                                                                                   │  │
+│ │  Key: ● done   ⏱ due   ⚠ overdue                                      [Calendar →]│  │
+│ └────────────────────────────────────────────────────────────────────────────────────┘ │
+│                                                                                        │
+│ ┌ Supporting surfaces (tabs) ────────────────────────────────────────────────────┐   │
+│ │ Recent │ Assigned to me │ Watching │ Completed │ Drafts                         │   │
+│ │ ────── ───────────────── ───────── ────────── ──────                           │   │
+│ │ (list of items, archetype W3 dense table)                                       │   │
+│ └──────────────────────────────────────────────────────────────────────────────────┘  │
+└───────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Anatomy
+
+- **PageHeader is personal.** "Good morning, Anna" + date + weekly summary stats. Single primary action: [+ Quick create] — opens the existing `action-launchpad` flow (⌘K also opens it). No "Edit" — My Work is a view over other canonical data, not an edit surface itself.
+- **Today's focus (left, 2/3 width):** The 3–5 items that actually need action TODAY. Ranked by: overdue > due-today > due-this-week > none. Each item has inline actions where safe (Approve small POs, ack a message). Actions that need context open the source page.
+- **Action queues (right, 1/3 width):** Grouped counts by action-type. Each count row links to the filtered list view (W3 List archetype).
+- **This week calendar strip:** Compact 7-day horizontal strip. Each day shows count of tasks + meetings. Today highlighted. Clicking a day opens `/my-work/calendar` pre-scrolled.
+- **Supporting surfaces tabs:** Recent (last 20 touches across everything), Assigned to me, Watching (items they follow), Completed (their completions this week), Drafts (saved-draft forms). Each tab is a dense W3-style list with back-link.
+
+### Behaviour rules
+
+- **Today's focus is computed, not user-configurable.** Ranking is fixed so users can trust what lands here. A "Show more" control expands to 5 items max.
+- **Zero empty queues.** If no approvals / tasks / meetings, show one-line friendly state ("No approvals awaiting you"). Never a giant empty panel.
+- **Inline actions must be safe.** Approving a PO inline works only for POs below the role's single-click threshold (defined per role). Above that, action opens the detail page with the approval dialog pre-triggered.
+- **Real-time freshness.** My Work polls every 60s for new action queue counts; Today's focus updates on TanStack Query invalidation when any source action completes.
+- **Mute / snooze.** Each Today's focus item has a "Snooze 1h / until tomorrow" control in its row overflow. Snooze state stored server-side per user.
+- **Mobile-first priority.** This page is the most-visited route across every role — PM On-The-Go already proves field-users need it on phone.
+
+### Mobile collapse
+
+```
+┌──────────────────────────────────────┐
+│ ☰   My Work          [+] [⋯]         │
+│                                      │
+│ Good morning, Anna                   │
+│ 7 items · 2 due · inbox 12           │
+│                                      │
+│ ── Today ─────────────────────       │
+│ ┌────────────────────────────────┐  │
+│ │ ●  Approve PO — Acme R 1.2M    │  │
+│ │    ⏱ overdue                   │  │
+│ │    [Approve]  [Open]           │  │
+│ └────────────────────────────────┘  │
+│ ┌────────────────────────────────┐  │
+│ │ ⚠  Review NCR-042              │  │
+│ │    ⏱ 2h left                   │  │
+│ │    [Open]                      │  │
+│ └────────────────────────────────┘  │
+│                                      │
+│ ── Queues ────────────────────       │
+│ Approvals (4)        →               │
+│ Tasks due today (3)  →               │
+│ Meetings today (2)   →               │
+│                                      │
+│ ── This week ─────────────────       │
+│ [Horizontal scroll day strip]        │
+│                                      │
+│ ── Recent ────────────────────       │
+│ (card list)                          │
+└──────────────────────────────────────┘
+```
+
+- Single column, stacked sections.
+- Today's focus = vertical cards. No side-by-side with queues.
+- Queues = simple list with count + arrow.
+- Tabs at bottom become a single "Recent" list by default; other tabs accessible via overflow.
+
+### My Work per-lens specialisations
+
+The **structure** is identical for every role. What varies:
+
+- **Today's focus ranking** — what counts as "your focus today". Approval-heavy roles (CFO, COO) see approvals first; field roles (PM, CM) see site tasks first; engineering roles see blockers first.
+- **Action queues shown** — only surface queues the role has items in. Engineer without approvals → no approvals queue card.
+- **Quick create menu** — contents adapt to edit rights. Engineer → [New task] [New blocker]; CFO → [New approval] [New journal entry].
+
+Full specialisation table for checkpoint 5 (W7 Lens-switching).
+
+---
+
+**End of checkpoint 4.**
