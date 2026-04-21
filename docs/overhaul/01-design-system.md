@@ -483,4 +483,116 @@ These are regression-safety checklists enforced in Phase 3 per-function work, no
 
 ---
 
-**End of §3.** Next: §4 — Data-access primitives.
+**End of §3.**
+
+---
+
+## §4 Data-access primitives
+
+Two hooks, one utility. Additive — no existing fetchers removed or deprecated in Phase 1.
+
+### §4.1 Why these primitives exist
+
+Per `00-inventory.md §5.2` red flag #3, there are ~99 inline `useQuery` / `useMutation` call-sites across `components/`. That's not a bug — it's what you'd expect from organic growth. But it means:
+
+- Stale-time policy varies by whim.
+- Error handling forks per component.
+- No single place to enforce "migrated screens read from canonical."
+- Trust-envelope metadata is fetched inconsistently.
+
+Phase 1 introduces `useEntity` + `useEntityList` as **the** way to read data on migrated screens. Phase 3 opt-in per screen. Legacy screens keep their inline `useQuery` until touched.
+
+### §4.2 `useEntity<T>(url, options?)`
+
+Fetch a single entity from the canonical backend. Implemented at `client/src/design/hooks/useEntity.ts`.
+
+**Defaults it standardises:**
+
+- `staleTime: 30_000` (30s) — single entities are stable; refetch-on-window-focus works with this.
+- `queryKey: [url]` — automatic cache key; sharable across components reading the same entity.
+- Error handling via `parseApiError` in `apiRequest` — no raw DB errors surface to UI.
+- Auth token + CSRF token attached automatically.
+
+**Usage:**
+
+```tsx
+import { useEntity } from "@/design/hooks";
+
+function ProjectDetail({ id }: { id: string }) {
+  const { data, isLoading, error } = useEntity<Project>(`/api/projects/${id}`);
+
+  if (isLoading) return <LoadingState variant="skeleton-card" />;
+  if (error) return <EmptyState variant="error" />;
+  if (!data) return <EmptyState variant="no-data" />;
+
+  return <ProjectDetailView project={data} />;
+}
+```
+
+**When NOT to use:**
+
+- Non-canonical (legacy adapter) reads — leave legacy screens alone.
+- Mutations — use `useMutation` from TanStack Query directly (no primitive needed; existing patterns are fine).
+- Polling with complex backoff — compose `useQuery` directly with `refetchInterval`.
+- WebSocket / SSE reads — different pattern entirely.
+
+### §4.3 `useEntityList<T>(url, options?)`
+
+Fetch a list of entities. Implemented at `client/src/design/hooks/useEntityList.ts`.
+
+**Differences from `useEntity`:**
+
+- `staleTime: 15_000` (15s) — lists are more volatile (new items appear, counts change).
+- Accepts `params` object that serialises to URL query string. URL-safe concatenation handled; `undefined` / `null` / `""` values are dropped.
+- Cache key includes `params` — filter changes correctly invalidate cache.
+
+**Usage:**
+
+```tsx
+import { useEntityList } from "@/design/hooks";
+
+function ProjectsList({ status, ownerId }: Filters) {
+  const { data = [], isLoading } = useEntityList<Project>("/api/projects", {
+    params: { status, owner_id: ownerId, page: 1, per_page: 50 },
+  });
+
+  if (isLoading) return <LoadingState variant="skeleton-table" />;
+  if (data.length === 0) return <EmptyState variant="no-match" />;
+
+  return <ProjectsTable rows={data} />;
+}
+```
+
+### §4.4 Coexistence rules
+
+- **`useEntity` / `useEntityList` live alongside `useQuery` and `apiRequest`.** None of those existing primitives are deprecated.
+- **Phase 3 migrations swap inline `useQuery` → `useEntity` screen-by-screen.** Only when the screen is being worked on for other reasons. No bulk refactor.
+- **Legacy screens that use `eng-fetch.ts` or `api.ts` stay as-is.** These are domain-specific patterns that pre-date Phase 1; migration off them requires owner sign-off.
+- **Mutations stay on `useMutation`.** This phase does not introduce `useEntityMutation` — TanStack Query's built-in pattern is already the right shape, and forcing a wrapper loses flexibility.
+
+### §4.5 Future primitives (backlog, not Phase 1)
+
+- `useEntityTrust(url)` — reads trust-envelope metadata (source / last-updated / scope / trust) from response headers. Feeds the `DataTrustBadge` component. Built in Phase 3 when the first canonical finance page is migrated.
+- `useEntityMutation(url, method)` — optional wrapper if mutation patterns prove inconsistent. Decide after Phase 3 shows signal.
+- `useEntityStream(url)` — SSE wrapper for real-time queues (approvals, tasks). Defer to a dedicated realtime pass.
+
+Each is flagged in `backlog.md` with the condition that triggers it.
+
+### §4.6 Error handling contract
+
+All three error modes surface uniformly:
+
+| Mode | Hook state | UI response |
+|---|---|---|
+| Loading | `isLoading === true` | `LoadingState` skeleton matching archetype |
+| Error (network / 5xx) | `error !== null` | `EmptyState variant="error"` with retry |
+| Error (auth / 401) | `error !== null`, `error.status === 401` | Global redirect to `/auth/login` (existing behaviour) |
+| Error (authz / 403) | `error !== null`, `error.status === 403` | `EmptyState variant="permission"` |
+| Empty (200 + empty array / null) | `data === null` / `data.length === 0` | `EmptyState variant="no-data"` or `"no-match"` |
+| Success | `data !== undefined` | Render |
+
+Primitives surface this; composition is per-archetype (TableLayout handles empty for lists; DetailLayout for single entities).
+
+---
+
+**End of §4.** Next: §5 — When-to-use guide + wrap-up.
