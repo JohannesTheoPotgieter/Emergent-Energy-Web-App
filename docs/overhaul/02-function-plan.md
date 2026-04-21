@@ -251,4 +251,69 @@ Tier 1 (daily cross-surface) first — these are the functions every weekday use
 - **Risk:** Low.
 - **Effort:** M.
 
-**End of batch 1.** 3 functions recorded. Next batch: Gates Pipeline + Blocked Gates (spine for the 7-lane Gates workspace).
+**End of batch 1.** 3 functions recorded.
+
+---
+
+### §3.2 Lens 1 · Batch 2 — Gates spine (Pipeline + Blocked)
+
+The Gates workspace is 8 pages in the `GATES` nav group. They share an archetype — list-view with gate-specific columns and filters. This batch plans the two "spine" pages in detail; the remaining 6 sub-lanes inherit the same plan with per-lane filter/column differences — they're entered in §3.3.
+
+#### F-004 · Gates Pipeline
+
+- **Path(s):** `/gates` (primary) · alias `/dashboard` (LEGACY_REDIRECTS) · `matchSubRoutes: true`
+- **Lens (primary):** `PROGRAM_MANAGER`
+- **Lens (secondary):** All 14 roles with `lifecycle` view (COO/CEO/CCO/CFO/PM/PFM/CM/QM/EngM/KAM/PMS/PD/HSE/SSEG)
+- **Archetype:** W3 List
+- **User goal:** See every gate across the portfolio at a glance, sorted by the most time-sensitive.
+- **Current state:** `client/src/pages/gates/gates-pipeline.tsx`. Dense table per gate with state chips. Toolbar + filters + export present. Quality of filter persistence inconsistent vs sub-lane pages.
+- **Data source:** Canonical (`project_execution_state` — phase, gate_status, gate_severity, age). Already canonical.
+- **Visual improvements:**
+  - Adopt W3 `TableLayout` composition once the primitive ships (Phase 3).
+  - Active-filter chip row below toolbar (existing inline chips become the canonical pattern).
+  - Replace raw coloured text cells with `StatusBadge` chip variants.
+  - Sticky header confirmed via existing `index.css:493-501`; ensure horizontal scroll preserves sticky.
+  - Dense-row mode toggle (44px → 36px) for power users; respects accessibility minimum via `data-density` attribute.
+- **Additive functional improvements:**
+  - Saved views per user — persist filter + sort to server-side `user_dashboard_preferences` (existing table).
+  - Bulk reassign to another owner (opens `ConfirmDialog` with count).
+  - "Snooze until" on a gate row — sets a server-side reminder visible in My Work.
+  - Export canonical CSV / XLSX with trust envelope in footer (per design-system W-C4 rule).
+- **Half-built work to finish:** n/a.
+- **Source-of-truth migration:** n/a.
+- **Preserved behaviour contract:**
+  - LEGACY_REDIRECTS `/dashboard` → `/gates` continues.
+  - `matchSubRoutes: true` keeps nav highlight through sub-lanes.
+  - All 14 view roles retain access.
+  - Sidebar sub-items for Blocked / Ready / Exceptions / etc. still render.
+- **Risk:** Low–medium — it's the default landing after the `/dashboard` collapse, so regressions affect everyone.
+- **Effort:** M — most composition already exists.
+
+#### F-005 · Blocked Gates
+
+- **Path(s):** `/gates/blocked` · also reached from alias `/exceptions` (no — that one redirects to `/gates/exceptions`)
+- **Lens (primary):** `PROGRAM_MANAGER`
+- **Lens (secondary):** all 14 `lifecycle` view roles; primary attention from CCO/COO/PM/PMS (they act on blockers)
+- **Archetype:** W3 List (sub-lane of F-004)
+- **User goal:** See only blocked gates — who's blocked, how long they've been blocked, who can unblock.
+- **Current state:** `client/src/pages/gates/gates-blocked.tsx`. Lane-filtered version of Pipeline. Same table as F-004 pre-filtered to `gate_status='blocked'`.
+- **Data source:** Canonical (same as F-004).
+- **Visual improvements:**
+  - Inherit every F-004 visual improvement (shared archetype).
+  - Blocker column becomes the prominent secondary identifier (bold, left-aligned, in `ee-surface-muted` card).
+  - "Blocked for" age column with RAG-coloured age chips (green <3d, amber 3–7d, red >7d) — `StatusChip` variants.
+  - PageHeader sub-line surfaces aggregate "12 blocked · oldest 19 days · R 48M locked" — high-level impact visible.
+- **Additive functional improvements:**
+  - Inline "Add unblock note" row action — opens Drawer with pre-filled template; posts to canonical gate activity log.
+  - "Mark ready" action when unblock criteria met — transitions to `/gates/ready` via a state change through repository layer (no direct table writes in route).
+  - Email escalation to the blocker-owner (single-click from row) uses existing MS Graph mail send.
+- **Half-built work to finish:** n/a — but closely connected to the half-built `/admin/handover-health` backend endpoint (00b §A #3) if escalation targets include handover-stage blockers.
+- **Source-of-truth migration:** n/a.
+- **Preserved behaviour contract:**
+  - Lane filter (`gate_status='blocked'`) stays a server-side filter — never client-only.
+  - Sidebar item remains under GATES nav group.
+  - Severity/age sort order preserved.
+- **Risk:** Low.
+- **Effort:** M.
+
+**End of batch 2.** 2 functions recorded. Next batch: remaining 6 Gates sub-lanes (Ready / Exceptions / Client Updates / Handover Queue / Open Queries / Commitments) — grouped as they share the same archetype.
