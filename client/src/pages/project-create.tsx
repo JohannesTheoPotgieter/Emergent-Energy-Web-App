@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useToast } from "@/hooks/use-toast";
 import { AlertTriangle, Building2, CheckCircle, Loader2, Plus, TrendingUp } from "lucide-react";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout } from "@/components/layout";
 
 const authFetch = async (url: string, opts: RequestInit = {}) => {
   const token = localStorage.getItem("auth_token");
@@ -165,17 +167,21 @@ export default function ProjectCreatePage() {
 
   if (permLoading) {
     return (
-      <div className="p-8 text-center text-muted-foreground">
-        <Loader2 className="w-6 h-6 animate-spin mx-auto" />
-      </div>
+      <PageLayout header={<PageHeader title="Create Project" />}>
+        <div className="p-8 text-center text-muted-foreground">
+          <Loader2 className="w-6 h-6 animate-spin mx-auto" />
+        </div>
+      </PageLayout>
     );
   }
 
   if (!canCreateProject) {
     return (
-      <div className="p-8 text-center text-muted-foreground">
-        You don't have permission to create projects. Contact your admin to request access.
-      </div>
+      <PageLayout header={<PageHeader title="Create Project" />}>
+        <div className="p-8 text-center text-muted-foreground" data-testid="project-create-permission-denied">
+          You don't have permission to create projects. Contact your admin to request access.
+        </div>
+      </PageLayout>
     );
   }
 
@@ -183,7 +189,8 @@ export default function ProjectCreatePage() {
 
   if (result) {
     return (
-      <div className="p-6 max-w-xl mx-auto space-y-6" data-testid="project-create-success">
+      <PageLayout header={<PageHeader title="Create Project" />}>
+      <div className="max-w-xl mx-auto" data-testid="project-create-success">
         <Card>
           <CardContent className="pt-6 space-y-4 text-center">
             <CheckCircle className="w-12 h-12 text-green-500 mx-auto" />
@@ -249,20 +256,22 @@ export default function ProjectCreatePage() {
           </CardContent>
         </Card>
       </div>
+      </PageLayout>
     );
   }
 
   return (
-    <div className="p-6 max-w-xl mx-auto space-y-6" data-testid="project-create-page">
+    <PageLayout
+      header={
+        <PageHeader
+          title="Create New Project"
+          subtitle="Add a new project to the portfolio. Phase templates are applied automatically if configured."
+        />
+      }
+    >
+      <div className="max-w-xl mx-auto" data-testid="project-create-page">
       <Card>
-        <CardHeader>
-          <CardTitle>Create New Project</CardTitle>
-          <CardDescription>
-            Add a new project to the portfolio. Phase templates will be applied automatically if
-            configured.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="pt-6 space-y-4">
           {/* Conversion banner — shown when the form is pre-filled from an opportunity */}
           {sourceOpportunity && (
             <div className="flex items-start gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
@@ -397,6 +406,7 @@ export default function ProjectCreatePage() {
           </Button>
         </CardContent>
       </Card>
-    </div>
+      </div>
+    </PageLayout>
   );
 }
