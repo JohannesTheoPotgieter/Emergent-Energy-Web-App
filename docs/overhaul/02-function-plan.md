@@ -873,3 +873,104 @@ Open questions resolved (owner decisions 2026-04-21):
 3. **Wave 2 kick-off** — **Gates Pipeline** (owner deferred to recommendation). Matches the §3.9 Phase 3 ordering above; no change needed.
 
 All three decisions baked into the plan. Ready for Lens 2.
+
+---
+
+## §5 Tier 1 · Lens 2 — `PROJECT_MANAGER_SITE`
+
+**Role summary:** Site Project Manager. Landing: `/execution-board`. Primary tools: PM Dashboard, PM On-The-Go (mobile field workflow), site-scoped Approvals, Tasks, Milestones. This lens is **mobile-first for field work** and **desktop for review / planning**.
+
+**Function count for this lens:** 2 new + 7 cross-referenced from Lens 1. Several functions the Site PM uses daily are already planned under Lens 1 and not re-planned here.
+
+### §5.1 Cross-references (no re-planning)
+
+Functions the Site PM uses daily that are already planned under Lens 1:
+
+| Ref | Function | Site-PM use |
+|---|---|---|
+| F-001 | Execution Board | Their landing page |
+| F-003 | PM Dashboard | Their personal project home |
+| F-013 | Project Detail | Drill-in for their assigned projects |
+| F-016 | Approvals | Their approvals queue (filtered to them) |
+| F-018 | Weekly Reviews | They **submit** the weekly reviews F-018 lists |
+| F-019 | Milestone Tracker | Their milestones sub-view |
+| F-021a | PD→PM Handover (v2) | They receive incoming handovers here |
+
+Plan entries above apply verbatim. The permission filter is server-side and the UI already respects it — nothing Site-PM-specific to re-plan.
+
+### §5.2 Lens 2 · Batch 1 — Site-PM dedicated functions
+
+#### F-027 · PM On-The-Go (home)
+
+- **Path(s):** `/pm/on-the-go`
+- **Lens (primary):** `PROJECT_MANAGER_SITE`
+- **Lens (secondary):** `CONSTRUCTION_MANAGER` (uses in field)
+- **Archetype:** W6 My Work (mobile-first variant)
+- **User goal:** On a phone on site, see my projects, act on the next thing, capture field data.
+- **Current state:** `client/src/pages/pm-on-the-go-home.tsx`. Existing mobile-first surface. Grid of project cards + quick-capture actions.
+- **Data source:** Canonical — `project_info` filtered to PM + `work_items` filtered to PM.
+- **Visual improvements:**
+  - Adopt W6 mobile-first structure — today's focus (what needs me today on each site) + action queues + quick-capture panel.
+  - Large touch targets throughout (44px minimum already enforced at `index.css:305-318`).
+  - RAG on project cards via `StatusBadge` dot + colour.
+  - Offline-aware banner when network drops (wrap existing `NetworkStatus` component).
+- **Additive functional improvements:**
+  - "Capture photo → task" — take a photo, attach to an auto-created `work_items` row linked to the project.
+  - "Voice note → task" — mobile browser speech-to-text API as additive, not required.
+  - Offline draft queue — notes/tasks captured offline sync when network returns. Rides on `local_synced_save_flow` beta (00b §A #5) when graduated.
+- **Half-built work to finish:** Tangential — `local_synced_save_flow` beta underlies the offline queue. Enable as it rolls out.
+- **Source-of-truth migration:** n/a.
+- **Preserved behaviour contract:**
+  - Permission entity `pm_on_the_go`.
+  - Existing deep links to project cards continue to work.
+  - Mobile navigation bottom-tab slot reserved for this page in the `PROJECT_MANAGER_SITE` lens (per wireframe W7 mobile tabs table).
+- **Risk:** Medium — field-critical surface.
+- **Effort:** M.
+
+#### F-028 · PM On-The-Go Project detail
+
+- **Path(s):** `/pm/on-the-go/project/:projectId`
+- **Lens (primary):** `PROJECT_MANAGER_SITE`
+- **Archetype:** W4 Detail (mobile-optimised variant)
+- **User goal:** Drill into one project on mobile — see what I need to do, capture what happened.
+- **Current state:** `client/src/pages/pm-on-the-go-project.tsx`. Existing mobile project drill-in.
+- **Data source:** Canonical — same as F-013 Project Detail, scoped to one project.
+- **Visual improvements:**
+  - Adopt mobile-first W4 (summary header + tabs collapsed to select dropdown + 2×2 KPI tiles per wireframe W4 mobile).
+  - Sticky FAB bottom-right for primary "capture" action (photo / note / task).
+  - Per-tab content adopts simplified archetypes for touch (Tasks = card list, Log = timeline).
+- **Additive functional improvements:**
+  - "Report incident" quick-capture — creates HSE incident linked to project, surfaces in HSE manager's queue.
+  - Sticky "Next action" card at top of every tab — the single most pressing item for this project.
+  - Share-sheet integration for pictures / voice-notes to iOS/Android native share.
+- **Half-built work to finish:** n/a.
+- **Source-of-truth migration:** n/a.
+- **Preserved behaviour contract:**
+  - Permission entity `pm_on_the_go`.
+  - Parametric route stable — external deep links (MS Teams / SMS) continue to work.
+  - Existing tabs preserve their data sources.
+- **Risk:** Medium.
+- **Effort:** M.
+
+### §5.3 Lens 2 summary
+
+**Total functions:** 2 new (F-027, F-028) + 7 cross-referenced.
+
+| Metric | |
+|---|---|
+| Effort | 2 × M |
+| Risk | 2 × Medium |
+| SoT migrations | 0 — all canonical |
+| Finish-it candidates | None new; `local_synced_save_flow` (00b #5) tangential |
+
+**Proposed Phase 3 ordering (this lens):**
+
+- **Rides on Lens 1 primitives.** No new layout primitives for this lens.
+- **After Wave 3 (DetailLayout built):** layer mobile-first variant onto F-028.
+- **Parallel with Wave 1 (AppShell mobile-ready):** F-027 adopts W6 mobile composition.
+
+Both functions harvest from the same primitives Lens 1 builds — zero duplicate primitive work.
+
+---
+
+**End of Lens 2.** Next lens: **Lens 3 · CFO + PROGRAM_FINANCE_MANAGER + ACCOUNTANT** (combined finance lens) — estimated 8–10 functions.
