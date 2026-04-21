@@ -11,11 +11,13 @@ const STAGE_LABELS: Record<string, string> = {
   S02_DESIGN_COST_PROPOSAL: "Design & Cost Proposal",
   S03_SIGNATURE_FINANCIAL_CLOSE: "Signature & Financial Close",
   S04_PD_PM_HANDOVER: "PD-PM Handover",
+  S04_PLANNING: "Planning",
   S05_FINANCIAL_REVIEW: "Financial Review",
   S06_CONSTRUCTION: "Construction",
   S07_COMMISSIONING: "Commissioning",
   S08_OM_HANDOVER: "O&M Handover",
   S09_CLIENT_HANDOVER: "Client Handover",
+  S9B_COMPLIANCE_HANDOVER: "Compliance Handover",
   S10_POST_HANDOVER_REVIEW: "Post-Handover Review",
 };
 
