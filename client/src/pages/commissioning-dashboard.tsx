@@ -40,6 +40,8 @@ import type {
   CommissioningDisplayStatus,
   OmHandoverChecklistItem,
 } from "@shared/schema/commissioning-source";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout } from "@/components/layout";
 
 function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem("auth_token");
@@ -258,42 +260,52 @@ export default function CommissioningDashboardPage() {
   // Project selector mode (no projectId in URL)
   if (!urlProjectId) {
     return (
-      <div className="p-4 md:p-6 max-w-3xl mx-auto space-y-5">
-        <div>
-          <h1 className="text-xl font-bold flex items-center gap-2"><FileSpreadsheet className="h-5 w-5" /> Commissioning Control Tower</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Select a project to view commissioning status</p>
-        </div>
-        <Card><CardContent className="py-6 px-4 space-y-3">
-          <label className="text-sm font-medium">Project</label>
-          <SearchableSelect
-            options={projectOptions}
-            value={selectedProjectId ? String(selectedProjectId) : ""}
-            onValueChange={(val) => { if (val) setLocation(`/commissioning-dashboard/${val}`); }}
-            placeholder={projectsLoading ? "Loading projects..." : "Search and select a project"}
+      <PageLayout
+        data-testid="commissioning-dashboard-selector"
+        header={
+          <PageHeader
+            title="Commissioning Control Tower"
+            subtitle="Select a project to view commissioning status"
           />
-        </CardContent></Card>
-      </div>
+        }
+      >
+        <div className="max-w-3xl mx-auto">
+          <Card><CardContent className="py-6 px-4 space-y-3">
+            <label className="text-sm font-medium">Project</label>
+            <SearchableSelect
+              options={projectOptions}
+              value={selectedProjectId ? String(selectedProjectId) : ""}
+              onValueChange={(val) => { if (val) setLocation(`/commissioning-dashboard/${val}`); }}
+              placeholder={projectsLoading ? "Loading projects..." : "Search and select a project"}
+            />
+          </CardContent></Card>
+        </div>
+      </PageLayout>
     );
   }
 
   return (
-    <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-xl font-bold flex items-center gap-2"><FileSpreadsheet className="h-5 w-5" /> Commissioning Control Tower</h1>
-          {dashboard && <p className="text-sm text-muted-foreground mt-0.5">{dashboard.projectName}</p>}
-        </div>
-        <div className="flex items-center gap-2">
-          <input ref={fileInputRef} type="file" accept=".xlsx,.xlsm" className="hidden" onChange={handleFileUpload} />
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
-            {isUploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />} {isUploading ? "Uploading..." : "Upload"}
-          </Button>
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => refreshMutation.mutate()} disabled={refreshMutation.isPending}>
-            <RefreshCw className={`h-3.5 w-3.5 ${refreshMutation.isPending ? "animate-spin" : ""}`} /> Refresh
-          </Button>
-        </div>
-      </div>
+    <PageLayout
+      data-testid="commissioning-dashboard"
+      header={
+        <PageHeader
+          title="Commissioning Control Tower"
+          subtitle={dashboard?.projectName}
+          actions={
+            <div className="flex items-center gap-2">
+              <input ref={fileInputRef} type="file" accept=".xlsx,.xlsm" className="hidden" onChange={handleFileUpload} />
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => fileInputRef.current?.click()} disabled={isUploading} data-testid="btn-upload-workbook">
+                {isUploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />} {isUploading ? "Uploading..." : "Upload"}
+              </Button>
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => refreshMutation.mutate()} disabled={refreshMutation.isPending} data-testid="btn-refresh-commissioning">
+                <RefreshCw className={`h-3.5 w-3.5 ${refreshMutation.isPending ? "animate-spin" : ""}`} /> Refresh
+              </Button>
+            </div>
+          }
+        />
+      }
+    >
+      <div className="max-w-6xl mx-auto space-y-4">
 
       {/* Loading / Error */}
       {dashboardLoading && <div className="flex items-center justify-center py-12 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading...</div>}
@@ -427,6 +439,7 @@ export default function CommissioningDashboardPage() {
           </CardContent></Card>
         )}
       </>)}
-    </div>
+      </div>
+    </PageLayout>
   );
 }

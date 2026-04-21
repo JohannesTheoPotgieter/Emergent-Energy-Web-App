@@ -11,6 +11,8 @@ import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { ReportCard } from "@/components/reports/ReportCard";
 import DrilldownDrawer from "@/components/reports/shared/DrilldownDrawer";
 import { ReportTrustNotice } from "@/components/reports/ReportTrustNotice";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout } from "@/components/layout";
 
 function getAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = {};
@@ -402,20 +404,21 @@ export default function ProgrammeReports() {
   ];
 
   return (
-    <div className="container mx-auto p-6 space-y-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-3">
-          <FileSpreadsheet className="w-6 h-6 text-primary" />
-          <div>
-            <h1 className="text-2xl font-bold">Programme Reports</h1>
-            <p className="text-sm text-muted-foreground">Board and management reporting cockpit with full drill-through.</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Clock className="w-3.5 h-3.5" />
-          Last import health: {summary.staleness.lastImportLabel} • {summary.staleness.staleRows} stale rows
-        </div>
-      </div>
+    <PageLayout
+      data-testid="programme-reports-page"
+      header={
+        <PageHeader
+          title="Programme Reports"
+          subtitle="Board and management reporting cockpit with full drill-through"
+          actions={
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Clock className="w-3.5 h-3.5" />
+              <span className="tabular-nums">Last import: {summary.staleness.lastImportLabel} · {summary.staleness.staleRows} stale rows</span>
+            </div>
+          }
+        />
+      }
+    >
       <ReportTrustNotice
         lastUpdatedAt={reportFreshnessAt}
         sourceLabel="Programme reports APIs (/api/reports/*)"
@@ -470,6 +473,6 @@ export default function ProgrammeReports() {
         endpoint="/api/reports/programme/drilldown"
         context={drill?.context || {}}
       />
-    </div>
+    </PageLayout>
   );
 }

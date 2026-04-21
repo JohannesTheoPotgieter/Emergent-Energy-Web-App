@@ -16,6 +16,8 @@ import {
   Target,
   Trophy,
 } from "lucide-react";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout } from "@/components/layout";
 
 type PdDashboard = {
   generatedAt: string;
@@ -212,24 +214,23 @@ export default function PdDashboardPage() {
   };
 
   return (
-    <div className="space-y-6 p-6" data-testid="pd-dashboard">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-emerald-700">Project Development</p>
-          <h1 className="text-2xl font-semibold text-foreground">Dashboard</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Pipeline health, deal activity, and conversion across all opportunities.
-          </p>
-        </div>
-        <Link href="/opportunities">
-          <Button variant="outline" size="sm" className="gap-2" data-testid="link-working-list">
-            Open working list
-            <ExternalLink className="h-3.5 w-3.5" />
-          </Button>
-        </Link>
-      </div>
-
+    <PageLayout
+      data-testid="pd-dashboard"
+      header={
+        <PageHeader
+          title="Project Development"
+          subtitle="Pipeline health, deal activity, and conversion across all opportunities"
+          actions={
+            <Link href="/opportunities">
+              <Button variant="outline" size="sm" className="gap-2" data-testid="link-working-list">
+                Open working list
+                <ExternalLink className="h-3.5 w-3.5" />
+              </Button>
+            </Link>
+          }
+        />
+      }
+    >
       {/* KPI cards */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
         <KpiCard
@@ -460,6 +461,6 @@ export default function PdDashboardPage() {
       <p className="text-[10px] text-muted-foreground" data-testid="generated-at">
         Snapshot generated {new Date(data.generatedAt).toLocaleString()}
       </p>
-    </div>
+    </PageLayout>
   );
 }

@@ -24,6 +24,8 @@ import {
   Lock,
   Info,
 } from "lucide-react";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout } from "@/components/layout";
 
 function getAuthHeaders(): HeadersInit {
   const token = localStorage.getItem("auth_token");
@@ -132,15 +134,16 @@ export default function DatabaseMigrationPage() {
   const allArchived = status && Object.values(status.legacyTables as Record<string, any>).every((t: any) => t.archived || !t.exists);
 
   return (
-    <div className="container mx-auto py-6 space-y-6 max-w-5xl" data-testid="page-database-migration">
-      <div className="flex items-center gap-3 mb-2">
-        <Database className="h-7 w-7 text-primary" />
-        <div>
-          <h1 className="text-2xl font-bold" data-testid="text-page-title">Database Migration Finalize</h1>
-          <p className="text-sm text-muted-foreground">Phase 5: Archive and clean up legacy task tables after canonical work_items migration</p>
-        </div>
-      </div>
-
+    <PageLayout
+      data-testid="page-database-migration"
+      header={
+        <PageHeader
+          title="Database Migration Finalize"
+          subtitle="Phase 5: Archive and clean up legacy task tables after canonical work_items migration"
+        />
+      }
+    >
+      <div className="max-w-5xl mx-auto space-y-6">
       <Alert>
         <Shield className="h-4 w-4" />
         <AlertTitle>Admin-Only Operation</AlertTitle>
@@ -532,7 +535,8 @@ export default function DatabaseMigrationPage() {
           </CardContent>
         </Card>
       )}
-    </div>
+      </div>
+    </PageLayout>
   );
 }
 

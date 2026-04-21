@@ -41,6 +41,8 @@ import {
   Check,
   X,
 } from "lucide-react";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout } from "@/components/layout";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 
 function getAuthHeaders(): Record<string, string> {
@@ -186,19 +188,26 @@ export default function PMOnTheGoProject() {
   const riskDone = compliance?.weeklyRiskDone || false;
 
   return (
-    <div className="p-3 sm:p-4 space-y-4 max-w-4xl mx-auto pb-20">
-      <div className="flex items-center justify-between">
-        <Button variant="ghost" size="sm" onClick={() => navigate("/pm/on-the-go")} data-testid="btn-back-home">
-          <ArrowLeft className="w-4 h-4 mr-1" /> Back
-        </Button>
-        <Button variant="outline" size="sm" onClick={refreshAll} data-testid="btn-refresh-project">
-          <RefreshCw className="w-4 h-4 mr-1" /> Refresh
-        </Button>
-      </div>
-
-      <h2 className="text-xl sm:text-2xl font-heading font-bold truncate" data-testid="text-pm-otg-project-title">
-        {snapshot.projectName}
-      </h2>
+    <PageLayout
+      data-testid="pm-on-the-go-project-page"
+      header={
+        <PageHeader
+          title={snapshot.projectName}
+          subtitle={snapshot.phase || undefined}
+          actions={
+            <>
+              <Button variant="ghost" size="sm" onClick={() => navigate("/pm/on-the-go")} data-testid="btn-back-home">
+                <ArrowLeft className="w-4 h-4 mr-1" /> Back
+              </Button>
+              <Button variant="outline" size="sm" onClick={refreshAll} data-testid="btn-refresh-project">
+                <RefreshCw className="w-4 h-4 mr-1" /> Refresh
+              </Button>
+            </>
+          }
+        />
+      }
+    >
+      <div className="max-w-4xl mx-auto space-y-4 pb-20">
 
       <Card className="p-3 sm:p-4 space-y-3" data-testid="card-health-snapshot">
         <div className="flex items-center justify-between">
@@ -319,7 +328,8 @@ export default function PMOnTheGoProject() {
           }}
         />
       )}
-    </div>
+      </div>
+    </PageLayout>
   );
 }
 

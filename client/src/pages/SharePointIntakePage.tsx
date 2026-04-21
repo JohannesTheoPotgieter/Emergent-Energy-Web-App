@@ -21,6 +21,8 @@ import {
   RefreshCw, Loader2, AlertTriangle, CheckCircle, ChevronDown,
   ChevronRight, Activity, CloudDownload,
 } from "lucide-react";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout } from "@/components/layout";
 
 // --- Types ---
 
@@ -192,49 +194,49 @@ export default function SharePointIntakePage() {
   const auditLogs = auditQuery.data?.logs ?? [];
 
   return (
-    <div className="flex flex-col gap-6 p-4 sm:p-6 max-w-[1400px] mx-auto">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">SharePoint Intake Management</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Manage SharePoint sync, review intake requests, and resolve conflicts.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          {/* Sync status indicator */}
-          {statusQuery.isLoading ? (
-            <Badge variant="secondary"><Loader2 className="h-3 w-3 mr-1 animate-spin" />Loading</Badge>
-          ) : status?.configured && status?.connectorAvailable ? (
-            <Badge variant="success">
-              <CheckCircle className="h-3 w-3 mr-1" />
-              Connected
-              {status.conflictsCount > 0 && (
-                <span className="ml-1.5 text-amber-600">({status.conflictsCount} conflicts)</span>
+    <PageLayout
+      data-testid="sharepoint-intake-page"
+      header={
+        <PageHeader
+          title="SharePoint Intake Management"
+          subtitle="Manage SharePoint sync, review intake requests, and resolve conflicts"
+          actions={
+            <div className="flex items-center gap-3">
+              {statusQuery.isLoading ? (
+                <Badge variant="secondary"><Loader2 className="h-3 w-3 mr-1 animate-spin" />Loading</Badge>
+              ) : status?.configured && status?.connectorAvailable ? (
+                <Badge variant="success">
+                  <CheckCircle className="h-3 w-3 mr-1" />
+                  Connected
+                  {status.conflictsCount > 0 && (
+                    <span className="ml-1.5 text-amber-600">({status.conflictsCount} conflicts)</span>
+                  )}
+                </Badge>
+              ) : (
+                <Badge variant="destructive">
+                  <AlertTriangle className="h-3 w-3 mr-1" />
+                  {!status?.configured ? "Not Configured" : "Connector Unavailable"}
+                </Badge>
               )}
-            </Badge>
-          ) : (
-            <Badge variant="destructive">
-              <AlertTriangle className="h-3 w-3 mr-1" />
-              {!status?.configured ? "Not Configured" : "Connector Unavailable"}
-            </Badge>
-          )}
 
-          <Button
-            onClick={() => pullMutation.mutate()}
-            disabled={pullMutation.isPending}
-            size="sm"
-          >
-            {pullMutation.isPending ? (
-              <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-            ) : (
-              <CloudDownload className="h-4 w-4 mr-1.5" />
-            )}
-            Refresh from SharePoint
-          </Button>
-        </div>
-      </div>
+              <Button
+                onClick={() => pullMutation.mutate()}
+                disabled={pullMutation.isPending}
+                size="sm"
+                data-testid="btn-refresh-sharepoint"
+              >
+                {pullMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                ) : (
+                  <CloudDownload className="h-4 w-4 mr-1.5" />
+                )}
+                Refresh from SharePoint
+              </Button>
+            </div>
+          }
+        />
+      }
+    >
 
       {/* Status summary cards */}
       {status && (
@@ -242,13 +244,13 @@ export default function SharePointIntakePage() {
           <Card>
             <CardContent className="p-4">
               <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Requests</p>
-              <p className="text-2xl font-bold mt-1">{status.totalRequests}</p>
+              <p className="text-2xl font-bold mt-1 tabular-nums">{status.totalRequests}</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
               <p className="text-xs text-muted-foreground uppercase tracking-wide">Conflicts</p>
-              <p className="text-2xl font-bold mt-1 text-amber-600">{status.conflictsCount}</p>
+              <p className="text-2xl font-bold mt-1 text-amber-600 tabular-nums">{status.conflictsCount}</p>
             </CardContent>
           </Card>
           <Card>
@@ -515,6 +517,6 @@ export default function SharePointIntakePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageLayout>
   );
 }

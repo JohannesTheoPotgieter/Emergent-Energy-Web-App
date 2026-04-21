@@ -1,11 +1,21 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { useLocation } from "wouter";
 import DeltaIndicator from "@/components/reports/DeltaIndicator";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout } from "@/components/layout";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 function getAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = {};
@@ -62,22 +72,33 @@ export default function PmMonthlyReportCompare() {
   ];
 
   return (
-    <div className="container mx-auto p-6 space-y-4">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => navigate("/reports/pm/monthly")}>
-          <ArrowLeft className="w-4 h-4" />
-        </Button>
-        <h1 className="text-2xl font-bold">PM Report — Month Comparison</h1>
-      </div>
-
+    <PageLayout
+      data-testid="pm-monthly-report-compare-page"
+      header={
+        <PageHeader
+          title="PM Report — Month Comparison"
+          subtitle={monthA && monthB && monthA !== monthB ? `Comparing ${monthA} vs ${monthB}` : "Select two different months"}
+          actions={
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate("/reports/pm/monthly")}
+              data-testid="btn-back-pm-monthly"
+            >
+              <ArrowLeft className="w-4 h-4 mr-1" /> Back
+            </Button>
+          }
+        />
+      }
+    >
       <div className="flex items-center gap-3">
         <Select value={monthA} onValueChange={setMonthA}>
-          <SelectTrigger className="w-[180px]"><SelectValue placeholder="Month A" /></SelectTrigger>
+          <SelectTrigger className="w-[180px]" data-testid="select-month-a"><SelectValue placeholder="Month A" /></SelectTrigger>
           <SelectContent>{monthOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
         </Select>
         <span className="text-muted-foreground">vs</span>
         <Select value={monthB} onValueChange={setMonthB}>
-          <SelectTrigger className="w-[180px]"><SelectValue placeholder="Month B" /></SelectTrigger>
+          <SelectTrigger className="w-[180px]" data-testid="select-month-b"><SelectValue placeholder="Month B" /></SelectTrigger>
           <SelectContent>{monthOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
         </Select>
       </div>
@@ -94,45 +115,43 @@ export default function PmMonthlyReportCompare() {
 
       {data && (
         <Card>
-          <CardHeader><CardTitle className="text-sm">KPI Comparison</CardTitle></CardHeader>
-          <CardContent>
-            <div className="border rounded-lg overflow-hidden">
-              <table className="w-full text-xs">
-                <thead className="bg-muted">
-                  <tr>
-                    <th className="text-left px-3 py-2 font-medium">Metric</th>
-                    <th className="text-right px-3 py-2 font-medium">{monthA}</th>
-                    <th className="text-right px-3 py-2 font-medium">{monthB}</th>
-                    <th className="text-right px-3 py-2 font-medium">Change</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {compareMetrics.map((m, i) => {
-                    const a = m.a ?? 0;
-                    const b = m.b ?? 0;
-                    const delta = b - a;
-                    const fmtVal = (v: number) => {
-                      if (m.currency) return `R ${v.toLocaleString("en-ZA", { maximumFractionDigits: 0 })}`;
-                      if (m.pct) return `${v.toFixed(1)}%`;
-                      return String(Math.round(v));
-                    };
-                    return (
-                      <tr key={i} className="border-b hover:bg-muted/30">
-                        <td className="px-3 py-2 font-medium">{m.label}</td>
-                        <td className="px-3 py-2 text-right font-mono">{fmtVal(a)}</td>
-                        <td className="px-3 py-2 text-right font-mono">{fmtVal(b)}</td>
-                        <td className="px-3 py-2 text-right">
-                          <DeltaIndicator value={delta} higherIsBetter={m.higherIsBetter} />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+          <CardContent className="p-4">
+            <h2 className="text-sm font-semibold mb-3">KPI Comparison</h2>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Metric</TableHead>
+                  <TableHead className="text-right">{monthA}</TableHead>
+                  <TableHead className="text-right">{monthB}</TableHead>
+                  <TableHead className="text-right">Change</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {compareMetrics.map((m, i) => {
+                  const a = m.a ?? 0;
+                  const b = m.b ?? 0;
+                  const delta = b - a;
+                  const fmtVal = (v: number) => {
+                    if (m.currency) return `R ${v.toLocaleString("en-ZA", { maximumFractionDigits: 0 })}`;
+                    if (m.pct) return `${v.toFixed(1)}%`;
+                    return String(Math.round(v));
+                  };
+                  return (
+                    <TableRow key={i} data-testid={`row-metric-${i}`}>
+                      <TableCell className="font-medium">{m.label}</TableCell>
+                      <TableCell className="text-right font-mono tabular-nums">{fmtVal(a)}</TableCell>
+                      <TableCell className="text-right font-mono tabular-nums">{fmtVal(b)}</TableCell>
+                      <TableCell className="text-right">
+                        <DeltaIndicator value={delta} higherIsBetter={m.higherIsBetter} />
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
           </CardContent>
         </Card>
       )}
-    </div>
+    </PageLayout>
   );
 }
