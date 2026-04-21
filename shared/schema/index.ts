@@ -26,3 +26,4 @@ export * from "./integrations";
 export * from "./dashboard-snapshots";
 export * from "./task-reminders";
 export * from "./home";
+export * from "./documents";
