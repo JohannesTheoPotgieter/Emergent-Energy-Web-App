@@ -640,4 +640,147 @@ Entities marked "(entity default)" need a direct lookup in `ENTITY_PERMISSION_DE
 
 ---
 
-**End of §4.** Next checkpoint: §5 — per-role functional map + component inventory + cross-cutting observations.
+**End of §4.**
+
+---
+
+## §5 Per-role map + components + cross-cutting observations
+
+### §5.1 Per-role functional map
+
+One paragraph per role. Read: "what this role is primarily trying to accomplish in the app, given their edit rights." Derived from the §4 access matrix, not invented. Used by Phase 2 to prioritise visual polish by daily-usage weight.
+
+1. **COO_ADMIN** — Full administrative authority across every domain. Primary flows: Company Overview (landing), Gates pipeline management, Control Center, Roles & Permissions, data migration. Views everything; edits everything. Phase 2 priority: **high** (platform-shaping user).
+
+2. **CEO_ADMIN** — Strategic oversight. Same landing and near-identical edit rights as COO_ADMIN. Primary flows: Company Overview, Portfolios, Reports, Priorities. Phase 2 priority: **high**.
+
+3. **CCO** — Head of Project Development. Primary flows: PD Dashboard (landing), Opportunities, Clients, Priorities (edit), Project Creation. Views portfolio and finance; doesn't manage engineering. Phase 2 priority: **high** — bridges sales ↔ delivery.
+
+4. **CFO** — Finance authority. Primary flows: Cashflow (landing), COS, Revenue Tracker, QB Throughput, Financial Linking (sole editor). Views portfolios and lifecycle for context. Phase 2 priority: **high** — financial UI is decision-grade.
+
+5. **PROGRAM_MANAGER** — Cross-project delivery lead. Primary flows: Execution Board (landing), Lifecycle, Gates, Approvals, Standups, Projects. The single most cross-cutting edit role (approval queues, lifecycle gates, counterparties, subcontractors, procurement). Phase 2 priority: **highest** — daily driver across 12+ surfaces.
+
+6. **PROGRAM_FINANCE_MANAGER** — Program finance expert. Primary flows: Cashflow (landing), COS, Revenue, QB Throughput, Counterparties, Subcontractors, Invoice Patterns, Smart Import, Weekly Reviews. Phase 2 priority: **high**.
+
+7. **CONSTRUCTION_MANAGER** — Construction site lead. Primary flows: Execution Board (landing), Milestone Tracker, HSE, Quality, Commissioning, Approvals, Projects, Handover. Phase 2 priority: **high** — field workflow, often mobile.
+
+8. **QUALITY_MANAGER** — Quality workspace owner. Primary flows: Quality (landing), Commissioning, Approvals, Engineering (view), HSE (edit). Phase 2 priority: **medium-high**.
+
+9. **ENGINEERING_MANAGER** — Engineering design authority. Primary flows: Engineering (landing), Task Board, Standup, Approvals, Engineering Templates, Engineering Audit. Phase 2 priority: **high**.
+
+10. **KEY_ACCOUNTS_MANAGER** — Client relationship manager. Primary flows: PD Dashboard (landing), Opportunities, Clients (edit), Portfolios (view). Phase 2 priority: **medium**.
+
+11. **ACCOUNTANT** — Finance operations. Primary flows: Cashflow (landing), COS, Revenue, Counterparties (view), Subcontractors (view), Financial Linking. Narrow scope — finance-only. Phase 2 priority: **medium**.
+
+12. **ENGINEER** — Engineering execution. Primary flows: Engineering (landing), Task Board, Standups, My Work. Narrowest edit scope after Admin specialists. Phase 2 priority: **high** — concurrent user count is large in the engineering team.
+
+13. **PROJECT_MANAGER_SITE** — Site delivery leader. Primary flows: Execution Board (landing), PM Dashboard, PM On-The-Go (mobile), Approvals, Standups (view), Commissioning, Projects. Second-most cross-cutting edit role. Phase 2 priority: **highest** — daily mobile + desktop usage.
+
+14. **PROJECT_DEVELOPER** — Deal → project bridging. Primary flows: PD Dashboard (landing), Opportunities, Clients (edit), PD-PM Handover (edit), Stage Lifecycle (edit — edge-case noted §4.3). Phase 2 priority: **medium**.
+
+15. **HSE_MANAGER** — Health & Safety authority. Primary flows: HSE (landing), HSE Compliance, Quality (edit), Approvals. Phase 2 priority: **medium** — single-surface.
+
+16. **SSEG_MANAGER** — SSEG compliance specialist. Primary flows: HSE (landing), HSE Compliance (edit), Engineering (edit — atypical), Quality. Phase 2 priority: **medium** — domain-specialist.
+
+**Grouping for Phase 2 sequencing** (highest daily-usage weight first):
+
+1. **Tier 1 (every weekday, cross-surface):** PROGRAM_MANAGER, PROJECT_MANAGER_SITE, COO_ADMIN, CEO_ADMIN, CFO.
+2. **Tier 2 (daily, domain-focused):** PROGRAM_FINANCE_MANAGER, CONSTRUCTION_MANAGER, ENGINEERING_MANAGER, ENGINEER, CCO.
+3. **Tier 3 (daily, narrow):** QUALITY_MANAGER, ACCOUNTANT, HSE_MANAGER, SSEG_MANAGER, KEY_ACCOUNTS_MANAGER, PROJECT_DEVELOPER.
+
+### §5.2 Component inventory
+
+Derived from `client/src/components/`. Intentionally shallow — deeper per-component audit lives in Phase 1 design-system planning.
+
+#### Existing UI primitives — `client/src/components/ui/`
+
+shadcn/ui-derived library already in place. By category:
+
+- **Inputs & form**: Button, Input, Checkbox, Radio-group, Select, Searchable-select, Toggle, Textarea, Slider, Kbd
+- **Feedback & status**: Badge, Alert, Alert-dialog, Toast (Sonner backend), Toaster, Status-badge, Status-chip, Maturity-badge, Data-trust-badge, Progress, Spinner, Energy-loader, Carousel
+- **Overlay & navigation**: Dialog, Confirm-dialog, Drawer, Sheet, Popover, Dropdown-menu, Command, Breadcrumb, Tabs, Sidebar
+- **Layout & structure**: Card, Separator, Scroll-area, Aspect-ratio, Avatar, Skeleton, Page-header, Page-states, Empty-state
+- **Data display**: Table, Table-pagination, Financial-data-grid, Export-dropdown, Chart
+- **Loading**: Loading-state, EnergyLoader (domain-specific)
+
+**Implication for Phase 1**: Phase 1 does NOT need to build a design-system from scratch — `ui/` is the substrate. Phase 1 adds tokens, formalises usage rules, fills gaps (any primitive not yet present), and writes `01-design-system.md` referencing the existing library.
+
+#### Feature components — `client/src/components/`
+
+Each subdirectory is a feature-scoped component bundle:
+
+| Subdir | Description |
+|---|---|
+| `admin/` | Admin console widgets (sessions, feature flags, system health, dangerous actions, import governance) |
+| `approvals/` | Unified approvals queue components |
+| `cashflow/` | Cashflow date-override popovers, cell editing |
+| `cos/` | Cost/P&L views |
+| `dashboard/` | Dashboard widgets, attention panels, financial summary tiles, lifecycle gates checklist |
+| `engineering/` | Engineering-specific views |
+| `governance/` | Governance / stage config panels |
+| `guidance/` | Guidance / help surfaces |
+| `layout/` | AppLayout shell, page-shell, navbar customisation, onboarding tour |
+| `mytool/` | Custom user tools |
+| `opportunities/` | Opportunity management |
+| `priorities/` | Priority filtering & management |
+| `project/` | Project team assignment |
+| `reports/` | Report cards, KPI tiles, delta indicators, beta banners |
+| `smart-import/` | Excel import pipeline UI |
+| `stage-lifecycle/` | Stage progression & task workflows |
+| `stage-workspaces/` | Stage-specific workspace views |
+| `tabs/` | Feature-specific editable tabs (expenditure, revenue, financial review) |
+| `tasks/` | Task-related types |
+
+Plus ~25 root-level components (BoardView, ErrorBoundary, PermissionGate, ProtectedRoute, NetworkStatus, etc.).
+
+#### Conventions — healthy
+
+- `ErrorBoundary` wrap at the top of `ProtectedPages` in `App.tsx:127` catches chunk-load and runtime errors.
+- `Suspense` + `LoadingState` skeleton fallback for lazy-loaded pages (`App.tsx:128`).
+- `@tanstack/react-query` consistent for all server state.
+- `react-hook-form` + Zod for form validation.
+- `wouter` for routing (not React Router).
+
+#### Red flags — captured for Phase 1 cleanup, NOT fixed here
+
+1. **Duplicate `StatusBadge`** — root-level `client/src/components/StatusBadge.tsx` wraps the ui version at `client/src/components/ui/status-badge.tsx`. Legacy imports still reference the root. **Do not silently swap** in Phase 2 — flag for design-system migration plan.
+2. **Hand-rolled `RAGBadge`** at `client/src/components/reports/RAGBadge.tsx:7-11` duplicates `RagBadge()` from `ui/status-badge.tsx`. Same story.
+3. **No shared data-fetching layer** — every feature component calls `useQuery` / `useMutation` directly with inline `apiRequest` (`client/src/lib/queryClient.ts`). ~99 call-sites across `components/`. Phase 1.4 data-access primitives (`useEntity`, `useEntityList`) will address this; migration is opt-in per Phase 3.
+4. **Domain-specific "energy-*" animation / decoration CSS** in `index.css:720-790` (energy-flow, energy-glow-border, energy-progress-bar, renewable-badge). Decorative — per the prompt's "professional, clean, no decoration" brief these need a review in Phase 1. Flag only — do not remove without sign-off (legacy-removal rule).
+
+### §5.3 Cross-cutting observations
+
+Platform-wide patterns relevant to the overhaul. None are defects — all are observations for Phase 2 planning.
+
+1. **Version update banner + network-status banner** both render as fixed top elements (`App.tsx:199-231`, `NetworkStatus` component). Phase 1 AppShell primitive must respect both z-indexes and stacking order (documented in-file at `App.tsx:178-185`).
+
+2. **Role normalisation.** `normalizeRoleForPermissions` (`shared/schema/users.ts:299-302`) exists because the `users.role` column can hold generic values (`member`, `admin`) while `company_role` holds the 16-role key. Phase 2 work touching auth must route through this helper.
+
+3. **localStorage for role** (`App.tsx:46, 94`). `company_role` is read from localStorage in the render path — SSR-safe via `typeof window !== "undefined"` guards. Any Phase 2 changes to this storage key must bump a migration key to avoid stale-role landing.
+
+4. **Scroll restoration + page title** centralised via `useScrollRestoration` + `usePageTitle` hooks (`App.tsx:120-121`). Phase 2 per-page overrides must not bypass these.
+
+5. **Mobile navigation mode** is a first-class platform concern. `NAVIGATION_MODE.mobile = "capture-check-approve-update-escalate"` (`App.tsx:34-37`). PM On-The-Go is a full mobile workflow. Phase 1 primitives must be touch-ready (44px min-height already enforced in `index.css:305-318`).
+
+6. **Dark mode is live** — complete variable override set in `index.css:107-158`, plus domain-specific engineering dark-mode overrides in `index.css:160-238`. Phase 1 must preserve parity.
+
+7. **Reduced-motion.** Already honoured at `index.css:667-681, 898-910`. Phase 1 animations must keep this gate.
+
+8. **Feature flag layer.** `shared/feature-flags.ts` is the canonical gate for in-progress features (detailed in `00b-half-built.md`). 38 migration-bridge flags, plus domain flags (task_management_hub, pd_pm_handover_v2, etc.).
+
+9. **No orphan pages.** Every `client/src/pages/**/*.tsx` is registered in `PAGE_REGISTRY` (verified by the half-built-feature agent).
+
+10. **Legacy terminology in code.** `my_tool` / `my-tool` still appears as a `permissionEntity` key even though the UX is now "My Work". The entity key is stable (DB-persisted); do not rename. Any renames must go via runtime permission-entity migrations — flagged to `backlog.md`.
+
+### §5.4 Inventory deferrals (explicitly not captured here)
+
+For transparency — things Phase 0 is **NOT** recording, with reasoning:
+
+- **Per-page visual-state notes** (layout, density, hierarchy): Recorded function-by-function in `02-function-plan.md` (Phase 2), not here. Capturing for 113 pages in Phase 0 is weeks of work and the output is stale by Phase 3.
+- **Per-endpoint behaviour walk for 73 server route files**: Recorded per-function in Phase 2 as each function is planned. Phase 0 stays at the file / domain level.
+- **Known bugs**: Bugs-in-flight are tracked in the team's issue tracker, not `00-inventory.md`. Only observed **during** discovery are flagged here (e.g. `/admin/handover-health` backend wiring incomplete).
+- **Test coverage levels per function**: Recorded in `02-function-plan.md`'s "Preserved behaviour contract" field, not here.
+
+---
+
+**End of `00-inventory.md`.** Companion artefacts: `00b-half-built.md`, `00c-source-of-truth-audit.md`, `backlog.md`.
