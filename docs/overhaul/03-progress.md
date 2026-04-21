@@ -38,13 +38,39 @@ Legend: 🟢 shipped · 🟡 in progress · 🔴 blocked · ⚪ deferred
 
 ## §2 Function migrations
 
-### §2.0 Wave 1 — in progress
+### §2.0 Migrations in progress
+
+Cumulative migrations on `claude/platform-overhaul-3WF1E` ready for cumulative owner staging review (D-006 + D-011):
 
 | Function | Status | Commit | Notes |
 |---|---|---|---|
-| **F-002 Lifecycle Board** | 🟢 **migrated — awaiting owner staging review** | `6a41be2` | PageLayout + PageHeader. Add Project moved into PageHeader actions. Subtitle consolidated. Zero behaviour changes. Canonical reads unchanged. |
+| **F-002 Lifecycle Board** | 🟢 migrated | `6a41be2` | PageLayout + PageHeader. Add Project moved into PageHeader actions. Subtitle consolidated. |
+| **F-004 Gates Pipeline** | 🟢 migrated | `8d4fe50` | Full W3: PageLayout + PageHeader + TableLayout + Table primitive. Tabular-nums on Readiness + Days columns. Structured empty-state row. |
+| **F-005 Blocked Gates** | 🟢 migrated | `09c1749` | W3 harvest. Destructive count badge. Days-Blocked red+tabular-nums. |
+| **F-006 Ready Gates** | 🟢 migrated | `09c1749` | W3 harvest. Readiness % emerald+tabular-nums. |
+| **F-007 Gate Exceptions** | 🔴 deferred | — | 314-line file with approval/rejection mutations + review dialog. Needs careful per-function verification cycle; not a light-touch candidate. |
+| **F-008 Client Updates** | 🟢 migrated | `c1d74d9` | W3 harvest. Days-Ago tabular-nums. On-Track / Overdue chip. |
+| **F-009 Handover Queue** | 🟢 migrated | `c1d74d9` | W3 harvest. 8-way view sub-tab row retained above TableLayout. SLA + Pack% + Snags + Days all tabular-nums. |
+| **F-010 Open Queries** | 🟢 migrated | `c1d74d9` | W3 harvest. Stale-row tint preserved. Age tabular-nums. |
+| **F-011 Client Commitments** | 🟢 migrated | `c1d74d9` | W3 harvest. Status chip per status map. Open-count badge. |
 
-**Open for owner review (D-006, D-011):** staging deploy of `claude/platform-overhaul-3WF1E` → click through Lifecycle Board → approve for Wave-1 merge to main, or flag regressions.
+**Total this session: 8 pages migrated + 1 deferred.** Gates sub-lanes (7 of 8) now share consistent W3 visual treatment — the "harvest ratio" working as designed.
+
+### §2.1a Remaining work after Session 2
+
+All remaining F-entries under `§2.2 Migration roadmap` below still stand as ⚪ deferred to subsequent sessions. Priority candidates for Session 3:
+
+1. **F-007 Gate Exceptions** — the one Gates sub-lane skipped in Session 2. Needs live verification of approval / rejection mutations.
+2. **F-037 Priorities list + F-037a New Priority form** — good proof surface for FormLayout primitive.
+3. **F-037b Priority Detail** — good proof surface for DetailLayout primitive (simpler than Project Detail).
+4. **F-012 Projects list + F-019 Milestone Tracker** — both use PageShell; evaluate whether chrome migration adds value beyond content (Table primitive) migration.
+5. **F-013 Project Detail** — largest surface; needs a dedicated session. 2000+ lines, 8 tabs.
+
+### §2.0b Session 2 outcome
+
+**Primitive toolkit now proven on 8 real pages.** Same-archetype harvest confirmed: F-004 took ~115 lines of rewriting; F-005/F-006/F-008/F-009/F-010/F-011 each took progressively less effort as the pattern matured. By F-011 the pattern is reliably mechanical.
+
+Open for cumulative owner staging review per D-011.
 
 ### §2.0a Discovery after F-002 — `PageShell` is the existing convention
 
