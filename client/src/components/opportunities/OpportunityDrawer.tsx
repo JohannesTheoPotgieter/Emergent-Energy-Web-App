@@ -681,15 +681,38 @@ function ProjectTaskBoard({
   const ticketLabelById = new Map<number, string>();
   for (const t of tickets) ticketLabelById.set(t.id, t.requestType);
 
+  // Promote each engineering ticket to a first-class board item under its
+  // requestType (e.g. "First Assessment") so the ticket itself shows up
+  // even when no work_items have been spawned. If the ticket DOES have
+  // spawned work_items, those render as additional rows in the same phase
+  // column. Tickets linked to a different project (rare) are skipped so
+  // we don't pollute this board.
+  const linkedProjectId = tickets.find((t) => t.projectId)?.projectId ?? null;
+  const ticketsAsTasks: ProjectTask[] = tickets
+    .filter((t) => t.projectId == null || t.projectId === linkedProjectId)
+    .map((t) => ({
+      id: -t.id, // negative id → distinct from real work_items.id
+      pdTicketId: t.id,
+      title: `Ticket: ${t.requestType}`,
+      status: ticketStatusToWorkItemStatus(t.status),
+      phase: t.requestType,
+      priority: t.priority,
+      endDate: t.dueDate,
+      percentComplete: null,
+      ownerUserId: t.designerUserId ?? t.projectDeveloperUserId ?? null,
+      ownerName: t.designerName ?? t.projectDeveloperName ?? null,
+    }));
+  const allItems: ProjectTask[] = [...ticketsAsTasks, ...tasks];
+
   const phases = new Map<string, ProjectTask[]>();
-  for (const t of tasks) {
+  for (const t of allItems) {
     const key = t.phase?.trim() || "Unassigned";
     const list = phases.get(key) ?? [];
     list.push(t);
     phases.set(key, list);
   }
-  const total = tasks.length;
-  const done = tasks.filter((t) => isDoneStatus(t.status)).length;
+  const total = allItems.length;
+  const done = allItems.filter((t) => isDoneStatus(t.status)).length;
 
   return (
     <section className="rounded-md border p-3 space-y-2" data-testid="section-project-board">
@@ -765,6 +788,23 @@ function ProjectTaskBoard({
       )}
     </section>
   );
+}
+
+/** Map a pd_ticket status onto the work_item status vocabulary so the
+ *  status-dot helpers below treat ticket items consistently with tasks. */
+function ticketStatusToWorkItemStatus(status: string): string {
+  switch (status) {
+    case "Completed":
+      return "done";
+    case "Cancelled":
+      return "cancelled";
+    case "In Progress":
+      return "in_progress";
+    case "On Hold":
+      return "on_hold";
+    default:
+      return "not_started";
+  }
 }
 
 function isDoneStatus(status: string): boolean {
