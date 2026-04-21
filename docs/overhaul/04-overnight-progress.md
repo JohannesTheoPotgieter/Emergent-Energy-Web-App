@@ -10,6 +10,8 @@ Ten commits shipped, all `npm run check` clean, all pushed to the remote branch.
 
 | Commit | Scope | What it adds |
 |---|---|---|
+| `c8745c45` | D3.4c | Standalone `/projects/:projectId/documents` page — direct-URL access to any project's controlled docs strip + approval queue side-by-side. |
+| `32759969` | docs | This progress summary. |
 | `ef3079ac` | R2 | `⌘K` palette now federates `/api/search` — finds projects, clients/installers, invoices, POs, work items, finance lines, documents, people. |
 | `3f6c6547` | D5.1 | `/settings` — clear, grouped super-user landing with one-line descriptions of every admin tool. |
 | `e8ce0eb0` | R3 | `ConfirmDestructive` primitive — cascade-delete blast radius dialog with typed confirmation. Reusable everywhere. |
