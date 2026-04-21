@@ -82,8 +82,9 @@ interface PdBlock {
   tasksSpawnedAt: string | null;
 }
 
-interface TicketWorkItem {
+interface ProjectTask {
   id: number;
+  pdTicketId: number | null;
   title: string;
   status: string;
   phase: string | null;
@@ -111,7 +112,6 @@ interface OpportunityTicket {
   projectDeveloperName: string | null;
   designerUserId: number | null;
   designerName: string | null;
-  tasks?: TicketWorkItem[];
 }
 
 interface WorkflowResponse {
@@ -121,6 +121,7 @@ interface WorkflowResponse {
   pd: PdBlock;
   tasks: Array<{ id: number; title: string; status: string; priority: string | null; endDate: string | null }>;
   tickets?: OpportunityTicket[];
+  projectTasks?: ProjectTask[];
 }
 
 const PD_STATUSES = ["Draft", "In Progress", "On Hold", "Completed", "Cancelled"];
@@ -385,7 +386,16 @@ export function OpportunityDrawer({ opportunityId, open, onClose }: Props) {
 
               {/* === Engineering tickets (tracking) === */}
               {(data.tickets ?? []).length > 0 ? (
-                <EngineeringTicketsSection tickets={data.tickets ?? []} />
+                <>
+                  <EngineeringTicketsSection tickets={data.tickets ?? []} />
+                  {(data.tickets ?? []).some((t) => t.projectId) && (
+                    <ProjectTaskBoard
+                      tasks={data.projectTasks ?? []}
+                      tickets={data.tickets ?? []}
+                      projectName={(data.tickets ?? []).find((t) => t.projectName)?.projectName ?? null}
+                    />
+                  )}
+                </>
               ) : (
                 /* Legacy "spawn tasks for the shadow PD ticket" surface — only
                    shown when the opportunity has NO real tickets yet. Once the
@@ -645,74 +655,115 @@ function TicketRow({ ticket }: { ticket: OpportunityTicket }) {
           {ticket.comments && ticket.comments.length > commentPreview.length ? "…" : ""}
         </p>
       )}
-      <TicketMiniBoard tasks={ticket.tasks ?? []} ticketId={ticket.id} />
     </li>
   );
 }
 
 /**
- * Mini engineering task board for a single pd_ticket. Groups the ticket's
- * spawned work_items by `phase` so the user can see the engineering pipeline
- * for just this ticket at a glance, with each item's status, due date, and
- * the engineer assigned. Falls back to an "Unassigned" phase when work_items
- * have no `phase` set (e.g. legacy or template-less tickets).
+ * Project-level engineering task board.
+ *
+ * Renders ALL work_items belonging to the linked project (not per-ticket),
+ * grouped by `phase` so the user sees the project's engineering pipeline.
+ * The First Assessment ticket's tasks (and any future engineering tickets')
+ * appear here as items inside their corresponding phase column. Each row
+ * shows a status dot, title, the originating ticket chip, and the engineer
+ * assigned. Falls back to "Unassigned" when `phase` is null.
  */
-function TicketMiniBoard({ tasks, ticketId }: { tasks: TicketWorkItem[]; ticketId: number }) {
-  if (tasks.length === 0) {
-    return (
-      <p className="mt-1.5 text-[10px] text-muted-foreground italic" data-testid={`empty-mini-board-${ticketId}`}>
-        No engineering tasks spawned yet.
-      </p>
-    );
-  }
-  const phases = new Map<string, TicketWorkItem[]>();
+function ProjectTaskBoard({
+  tasks,
+  tickets,
+  projectName,
+}: {
+  tasks: ProjectTask[];
+  tickets: OpportunityTicket[];
+  projectName: string | null;
+}) {
+  const ticketLabelById = new Map<number, string>();
+  for (const t of tickets) ticketLabelById.set(t.id, t.requestType);
+
+  const phases = new Map<string, ProjectTask[]>();
   for (const t of tasks) {
     const key = t.phase?.trim() || "Unassigned";
     const list = phases.get(key) ?? [];
     list.push(t);
     phases.set(key, list);
   }
+  const total = tasks.length;
+  const done = tasks.filter((t) => isDoneStatus(t.status)).length;
+
   return (
-    <div className="mt-1.5 grid gap-1.5 sm:grid-cols-2" data-testid={`mini-board-${ticketId}`}>
-      {Array.from(phases.entries()).map(([phase, items]) => {
-        const done = items.filter((i) => isDoneStatus(i.status)).length;
-        return (
-          <div
-            key={phase}
-            className="rounded border border-slate-200 bg-slate-50/50 p-1.5"
-            data-testid={`mini-board-phase-${ticketId}-${phase}`}
-          >
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-700 truncate" title={phase}>
-                {phase}
-              </span>
-              <span className="text-[9px] tabular-nums text-muted-foreground">{done}/{items.length}</span>
-            </div>
-            <ul className="space-y-0.5">
-              {items.map((it) => (
-                <li
-                  key={it.id}
-                  className="flex items-center gap-1 text-[10px]"
-                  data-testid={`mini-board-task-${it.id}`}
-                >
-                  <span
-                    className={`inline-block h-1.5 w-1.5 rounded-full flex-shrink-0 ${workItemStatusDot(it.status)}`}
-                    title={it.status}
-                  />
-                  <span className="flex-1 truncate text-foreground" title={it.title}>{it.title}</span>
-                  <span
-                    className={`text-[9px] truncate max-w-[60px] ${it.ownerName ? "text-slate-600" : "italic text-muted-foreground"}`}
-                    title={it.ownerName ? `Assigned to ${it.ownerName}` : "Unassigned"}
-                  >
-                    {it.ownerName ?? "—"}
+    <section className="rounded-md border p-3 space-y-2" data-testid="section-project-board">
+      <header className="flex items-center justify-between gap-2 flex-wrap">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-foreground flex items-center gap-1.5">
+          <Zap className="h-3 w-3 text-emerald-600" /> Project task board
+          {projectName && (
+            <span className="text-[10px] font-normal text-muted-foreground normal-case">
+              · {projectName}
+            </span>
+          )}
+        </h3>
+        <span className="text-[10px] text-muted-foreground tabular-nums">
+          {done}/{total} done
+        </span>
+      </header>
+      {total === 0 ? (
+        <p className="text-[11px] text-muted-foreground italic" data-testid="empty-project-board">
+          No engineering tasks on the project yet — spawn tasks from a ticket to populate the board.
+        </p>
+      ) : (
+        <div className="grid gap-1.5 sm:grid-cols-2" data-testid="project-board">
+          {Array.from(phases.entries()).map(([phase, items]) => {
+            const phaseDone = items.filter((i) => isDoneStatus(i.status)).length;
+            return (
+              <div
+                key={phase}
+                className="rounded border border-slate-200 bg-slate-50/50 p-1.5"
+                data-testid={`project-board-phase-${phase}`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-700 truncate" title={phase}>
+                    {phase}
                   </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        );
-      })}
-    </div>
+                  <span className="text-[9px] tabular-nums text-muted-foreground">{phaseDone}/{items.length}</span>
+                </div>
+                <ul className="space-y-0.5">
+                  {items.map((it) => {
+                    const ticketLabel = it.pdTicketId != null ? ticketLabelById.get(it.pdTicketId) ?? null : null;
+                    return (
+                      <li
+                        key={it.id}
+                        className="flex items-center gap-1 text-[10px]"
+                        data-testid={`project-board-task-${it.id}`}
+                      >
+                        <span
+                          className={`inline-block h-1.5 w-1.5 rounded-full flex-shrink-0 ${workItemStatusDot(it.status)}`}
+                          title={it.status}
+                        />
+                        <span className="flex-1 truncate text-foreground" title={it.title}>{it.title}</span>
+                        {ticketLabel && (
+                          <span
+                            className="text-[9px] px-1 rounded bg-emerald-50 text-emerald-700 border border-emerald-100 truncate max-w-[80px]"
+                            title={`From ticket: ${ticketLabel}`}
+                          >
+                            {ticketLabel}
+                          </span>
+                        )}
+                        <span
+                          className={`text-[9px] truncate max-w-[60px] ${it.ownerName ? "text-slate-600" : "italic text-muted-foreground"}`}
+                          title={it.ownerName ? `Assigned to ${it.ownerName}` : "Unassigned"}
+                        >
+                          {it.ownerName ?? "—"}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }
 
