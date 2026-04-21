@@ -764,4 +764,109 @@ These three pages are live UI but per `00b §C` their handlers still live in leg
 
 **End of batch 7.** 3 functions recorded (F-022, F-023, F-024).
 
-Next batch: Portfolios — list + detail. Short batch, then Lens 1 summary.
+---
+
+### §3.8 Lens 1 · Batch 8 — Portfolios
+
+#### F-025 · Portfolios (list)
+
+- **Path(s):** `/portfolios`
+- **Lens (primary):** `PROGRAM_MANAGER`
+- **Lens (secondary):** Admin, CCO, CFO, PFM, KAM (view); Admin + PM (edit)
+- **Archetype:** W3 List
+- **User goal:** Browse portfolios (client or segment groupings of projects); open one to see its rollup.
+- **Current state:** Portfolio list surface (registry entry `portfolios`). Standard table.
+- **Data source:** Canonical — portfolios metadata joined to `project_info`.
+- **Visual improvements:**
+  - W3 `TableLayout`.
+  - Columns: Name, Project count, Total value, RAG spread (mini `Progress` bar), Revenue MTD.
+  - Active filter chips; saved views.
+- **Additive:**
+  - "Compare portfolios" bulk action opens a side-by-side comparison view (uses Drawer).
+  - Export to CSV/XLSX with trust envelope.
+- **Half-built:** n/a.
+- **Preserved:** Permission entity `portfolios`.
+- **Risk:** Low.
+- **Effort:** S–M.
+
+#### F-026 · Portfolio Detail
+
+- **Path(s):** `/portfolios/:id`
+- **Lens (primary):** `PROGRAM_MANAGER`
+- **Archetype:** W4 Detail
+- **User goal:** Drill into one portfolio — see its projects, finance rollup, performance trends, log.
+- **Current state:** Detail page with tabs. Tabs vary in completeness.
+- **Data source:** Canonical — `project_info` filtered to portfolio + `normalized_cost_lines` + `normalized_revenue_lines` aggregated.
+- **Visual improvements:**
+  - W4 `DetailLayout` with sticky summary KPI strip: Project count, Total value, RAG spread, GP margin, Revenue MTD.
+  - Tabs: Overview / Projects / Finance / Performance / Log.
+  - Projects tab embeds F-012 table scoped to portfolio.
+  - Finance tab uses `FinancialDataGrid` primitive with `DataTrustBadge` strip.
+- **Additive:**
+  - "Rebalance forecast" tool — propose reallocation given portfolio-level constraints (additive tool, not replacing underlying data).
+  - Per-project RAG history sparkline in Overview.
+- **Half-built:** n/a.
+- **Preserved:** Permission entity `portfolio_detail`.
+- **Risk:** Low–medium.
+- **Effort:** M.
+
+**End of batch 8.** 2 functions recorded (F-025, F-026).
+
+---
+
+### §3.9 Lens 1 summary — `PROGRAM_MANAGER`
+
+**Total functions planned:** 26 (F-001 through F-026, including 3 sub-functions F-013a, F-013b, F-021a).
+
+**Effort distribution:**
+
+| Effort | Count | Functions |
+|---|---|---|
+| S | 7 | F-006, F-007, F-008, F-009, F-010, F-011, F-013b |
+| M | 13 | F-002, F-003, F-004, F-005, F-013a, F-014, F-015, F-017, F-019, F-020, F-021, F-021a, F-022, F-023, F-025 (S–M), F-026 |
+| L | 3 | F-001, F-013, F-018, F-024 |
+
+**Risk distribution:**
+
+| Risk | Count | Notable |
+|---|---|---|
+| Low | 9 | Gates sub-lanes, Lifecycle Board, Milestone Tracker, Portfolios |
+| Medium | 16 | Most core surfaces — Approvals, Finance review, Handover, Procurement, Projects list, Payment Batches |
+| High | 1 | F-013 Project Detail (8 tabs × permission variance) |
+
+**Finish-it candidates in this lens (high ROI):**
+
+1. **F-020 Handover Control** — UI built, backend endpoint missing. Quick win.
+2. **F-021a PD→PM Handover v2** — flag-enable only; UI ready.
+
+**Source-of-truth migration required:** None in this lens. Every canonical read is already canonical per `00c §2`.
+
+**Dual-mount handler risks noted:**
+
+- Procurement (F-022–F-024) — handlers in legacy files; consolidation tracked in `backlog.md` #6, not part of Phase 2/3 scope.
+
+**Proposed Phase 3 ordering for this lens:**
+
+1. **Wave 1 — foundation:** `AppShell` + `LensNav` + `PageHeader` + `PageLayout` primitives (land on any one page first; F-002 Lifecycle Board is the simplest candidate).
+2. **Wave 2 — list primitive proving:** build `TableLayout` on F-004 Gates Pipeline; roll through F-005–F-011 (7 sub-lane pages) in a single sustained wave since they share the archetype.
+3. **Wave 3 — detail primitive proving:** build `DetailLayout` on F-013 Project Detail (largest surface). Then F-015, F-021, F-026 inherit.
+4. **Wave 4 — wizard primitive proving:** build `WizardLayout` on F-018 Weekly Reviews.
+5. **Wave 5 — approvals domain:** F-016, F-017, F-022, F-023, F-024 (sequenced; Payment Batches last due to QB integration complexity).
+6. **Wave 6 — finish-it:** F-020 Handover Control backend + UI; F-021a flag enable.
+7. **Wave 7 — remainder:** F-001 Execution Board (4 sub-pages), F-003 PM Dashboard, F-012 Projects list, F-014 Sites, F-019 Milestone Tracker, F-025 Portfolios, F-013a/b sub-functions.
+
+Ordering rationale: each wave proves exactly one new layout primitive, then harvests it across pages that share the archetype. This keeps the primitive library honest (validated against real use-sites) and the per-page work incremental.
+
+---
+
+## §4 STOP — Lens 1 (PROGRAM_MANAGER) complete
+
+**26 functions planned.** Awaiting approval to continue to Lens 2 (`PROJECT_MANAGER_SITE`).
+
+Open questions worth addressing before Phase 3 starts on this lens:
+
+1. **Approval threshold per role** (F-016 Approvals inline-approve): what's the `R` value below which a PM / Program Manager can single-click approve? Currently I've written "below role's single-click threshold" — the threshold value is a product decision, not a design one.
+2. **F-020 Handover Control backend endpoint shape** — who owns the definition of the readiness score formula? (Phase 3 can scaffold a placeholder; product needs to finalise.)
+3. **Wave 2 kick-off choice** — Gates Pipeline is the natural candidate, but if there's a riskier page you'd prefer to prove the primitive on first, name it.
+
+Awaiting approval or redirects.
