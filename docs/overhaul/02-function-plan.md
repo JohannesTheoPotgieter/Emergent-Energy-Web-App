@@ -1597,4 +1597,123 @@ Plan entries above apply verbatim.
 
 ---
 
-**End of Lens 6.** Next lens: **Lens 7 · Project Development (CCO + KAM + PD)**.
+**End of Lens 6.**
+
+---
+
+## §11 Tier 2 · Lens 7 — `CCO` + `KEY_ACCOUNTS_MANAGER` + `PROJECT_DEVELOPER` (Project Development)
+
+**Role summary:** The sales → delivery bridge. All three land at `/pd`. Pipedrive is the source of truth for pipeline state; legacy SharePoint Proposals UI removed 2026-04-19. Roles vary in edit scope:
+
+- **CCO** — head of PD; cross-cutting priorities + project creation authority
+- **KAM** — client-relationship specialist; edits `pd_clients`, views portfolios
+- **PD (Project Developer)** — deal executor; edits clients, lifecycle, handover
+
+**Function count:** 2 new (F-047 · F-048) + several cross-references.
+
+### §11.1 Cross-references
+
+| Ref | Function | PD-lens use |
+|---|---|---|
+| F-015 | Clients (list + detail) | Primary surface for KAM/PD |
+| F-021a | PD→PM Handover (v2) | PD executes handovers into delivery |
+| F-037 | Priorities | CCO-primary edit rights |
+| F-013 | Project Detail | Read-context for projects they developed |
+| F-025/F-026 | Portfolios | KAM-primary view |
+
+### §11.2 Lens 7 · Batch 1 — PD dedicated
+
+#### F-047 · PD Dashboard
+
+- **Path(s):** `/pd` · alias `/pd/dashboard` · LEGACY_REDIRECTS `/pd/tickets`, `/pd/tickets/create`, `/pd/tickets/:id`, `/pd/reports` all → `/opportunities`
+- **Lens (primary):** `CCO`, `KEY_ACCOUNTS_MANAGER`, `PROJECT_DEVELOPER` (landing for all three)
+- **Lens (secondary):** `PROGRAM_MANAGER`, `PROGRAM_FINANCE_MANAGER` (view)
+- **Archetype:** W2 Dashboard
+- **User goal:** Pipeline overview — stages / values / win rate / this-week closes — all from Pipedrive, rendered in-platform for context alongside projects.
+- **Current state:** `PdDashboardPage`. Points at the merged Opportunities/Pipeline page. Pipedrive is source of truth.
+- **Data source:** Canonical (for internal side) + Pipedrive integration (for pipeline side) via `server/routes/pipeline.routes.ts`. Mock connector in dev.
+- **Visual improvements:**
+  - W2 structure — status strip (pipeline value / weighted value / open deals / win rate / this-week closes) → primary: stage funnel chart → secondary: top opportunities list + recent activity → full-width: monthly trend.
+  - `DataTrustBadge` strip with source = "Pipedrive + Canonical".
+  - `Chart` primitive for the funnel (horizontal bar chart).
+  - Stage chips via `StatusBadge`.
+- **Additive functional improvements:**
+  - "Open in Pipedrive" deep-link on any opportunity row.
+  - Win/loss reason breakdown panel.
+  - Pipeline-to-project conversion funnel (how many opps became projects).
+  - Export pipeline snapshot to PDF for weekly sales meetings.
+- **Half-built:** n/a direct.
+- **Source-of-truth migration:** n/a — Pipedrive remains the pipeline source of truth (per `00-inventory.md §3.4` PD-PM Handover removed SharePoint Proposals 2026-04-19).
+- **Preserved behaviour contract:**
+  - Landing for CCO, KAM, PD.
+  - Permission entity `pd_dashboard`.
+  - All LEGACY_REDIRECTS from old PD routes continue to resolve.
+  - Pipedrive sync mock-connector-in-dev preserved.
+- **Risk:** Medium — integration-backed.
+- **Effort:** M.
+
+#### F-048 · Opportunities
+
+- **Path(s):** `/opportunities`
+- **Lens (primary):** `CCO`, `KEY_ACCOUNTS_MANAGER`, `PROJECT_DEVELOPER`
+- **Lens (secondary):** PROGRAM_MANAGER (view)
+- **Archetype:** W3 List + W4 Detail
+- **User goal:** The full list of opportunities (merged Opportunities / Pipeline surface). Absorbed the legacy PD Tickets and SharePoint Proposals UI.
+- **Current state:** `OpportunitiesPage`. Canonical merge surface — LEGACY_REDIRECTS from `/pd/tickets`, `/pd/tickets/create`, `/pd/tickets/:id`, `/pd/reports` all point here.
+- **Data source:** Pipedrive via integration + canonical metadata (local project link, owner).
+- **Visual improvements:**
+  - W3 `TableLayout` for list — columns Name / Client / Stage / Value / Weighted value / Owner / Close date / Last activity.
+  - `DataTrustBadge` with source = "Pipedrive + Canonical".
+  - Stage chips via `StatusBadge`.
+  - Value column tabular-nums with `R` prefix.
+  - W4 `DetailLayout` per opportunity — summary strip (Stage / Value / Probability / Close date / Owner) + tabs Overview / Contacts / Activities / Documents / Linked project / Log.
+- **Additive:**
+  - Saved views per user (e.g. "This quarter closes", "At-risk opps").
+  - Inline "Convert to project" action for won-stage opportunities (opens `/project-create` pre-filled).
+  - Bulk reassign to another KAM / PD.
+  - Export pipeline to CSV/XLSX.
+- **Half-built:** n/a direct.
+- **Source-of-truth migration:** n/a — Pipedrive is canonical for this entity.
+- **Preserved behaviour contract:**
+  - All 4 LEGACY_REDIRECTS from `/pd/tickets*` + `/pd/reports` continue to resolve here.
+  - Permission entity `pd_dashboard` shared with F-047.
+  - Pipedrive sync cadence + mock-connector preserved.
+- **Risk:** Medium — integration-backed.
+- **Effort:** M–L.
+
+### §11.3 Lens 7 summary — Project Development
+
+**Total functions:** 2 new (F-047 · F-048) + 5 cross-referenced.
+
+| Metric | |
+|---|---|
+| Effort | 1 M · 1 M–L |
+| Risk | 2 × Medium (both integration-backed) |
+| SoT migrations | 0 — Pipedrive is canonical for pipeline; no internal-table migration needed |
+| Finish-it candidates | None new |
+
+**Proposed Phase 3 ordering (this lens):**
+
+- **Wave 2 harvest:** F-048 Opportunities (after TableLayout).
+- **Wave 3 harvest:** F-047 PD Dashboard (W2 composition), F-048 Opportunity detail (DetailLayout).
+
+---
+
+## §12 Tier 2 — COMPLETE
+
+All three Tier 2 lenses planned. Totals:
+
+| Lens | New functions | Cross-refs |
+|---|---|---|
+| 5 · `CONSTRUCTION_MANAGER` | 1 | 10+ |
+| 6 · `ENGINEERING_MANAGER` + `ENGINEER` | 7 | minor |
+| 7 · `CCO` + `KAM` + `PROJECT_DEVELOPER` | 2 | 5 |
+| **Tier 2 total** | **10 new** | |
+
+Running total across Tier 1+2: **47 functions planned** (F-001 through F-048). Zero new layout primitives needed beyond the 5 already specified in Tier 1.
+
+**STOP for Tier 2 approval before Tier 3** (QM + HSE/SSEG) — smaller still, roughly 5 new functions.
+
+---
+
+**End of Tier 2 (§§9–12).**
