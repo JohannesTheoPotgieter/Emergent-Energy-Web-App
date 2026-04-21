@@ -2237,6 +2237,11 @@ export function registerLifecycleRoutes(app: Express) {
         // task_checklists, task_comments, task_watchers, task_deliverables)
         // were already cleared above via subqueries that match all
         // work_items for this project, so this broader delete is safe.
+        // project_eng_tasks_legacy_archive holds NO ACTION FK rows
+        // pointing at our work_items; clear them first so the work_items
+        // delete below can succeed.
+        await safeDel(sql`DELETE FROM project_eng_tasks_legacy_archive WHERE work_item_id IN (SELECT id FROM work_items WHERE project_id = ${pId})`);
+        await safeDel(sql`DELETE FROM expense_task_links WHERE canonical_task_id IN (SELECT id FROM work_items WHERE project_id = ${pId})`);
         await safeDel(sql`DELETE FROM work_items WHERE project_id = ${pId} OR external_ref LIKE ${pN + '::PLAN::%'}`);
         // entity_assignments has a NO ACTION FK to project_info, so we
         // must clear it explicitly. (Was missing — caused SERVER_ERROR on
