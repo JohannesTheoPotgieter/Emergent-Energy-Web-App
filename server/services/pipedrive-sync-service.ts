@@ -550,24 +550,20 @@ async function syncSingleDeal(
   if (kwhFromCrm) customFieldOverrides.estimatedKwh = kwhFromCrm;
 
   if (existing) {
-    // GUARD: once an opportunity has been converted to a project (either via
-    // `opportunities.linked_project_id` set by project-linking-service, or by
-    // a `project_info.opportunity_id` row being created by the convert /
-    // resolve-mapping flows), Pipedrive must stop overwriting it. Otherwise
-    // a stale CRM "won/lost/closed" change re-flips its status and a fresh
-    // sync re-resurrects it on the working list. Trackers + project_info
-    // remain the source of truth for converted deals.
-    let isLockedByConversion = existing.linkedProjectId != null;
-    if (!isLockedByConversion) {
-      const { projectInfo } = await import("@shared/schema/projects");
-      const [linkedShell] = await db
-        .select({ id: projectInfo.id })
-        .from(projectInfo)
-        .where(and(eq(projectInfo.opportunityId, existing.id), isNull(projectInfo.deletedAt)))
-        .limit(1);
-      isLockedByConversion = Boolean(linkedShell);
-    }
-    if (isLockedByConversion) {
+    // GUARD: once an opportunity has been converted to a project (a
+    // `project_info` row exists with `opportunity_id` pointing back at it,
+    // created by the convert-to-project / resolve-mapping flows), Pipedrive
+    // must stop overwriting it. Otherwise a stale CRM "won/lost/closed"
+    // change re-flips its status and the next sync resurrects it on the
+    // working list. Trackers + project_info remain the source of truth for
+    // converted deals.
+    const { projectInfo } = await import("@shared/schema/projects");
+    const [linkedShell] = await db
+      .select({ id: projectInfo.id })
+      .from(projectInfo)
+      .where(and(eq(projectInfo.opportunityId, existing.id), isNull(projectInfo.deletedAt)))
+      .limit(1);
+    if (linkedShell) {
       result.skipped++;
       return;
     }
