@@ -89,6 +89,10 @@ interface WorkingOpportunityRow {
   linkedProjectName: string | null;
   existingEngineeringTicketCount: number;
   openEngineeringTaskCount: number;
+  closedEngineeringTaskCount: number;
+  oldestOpenEngineeringAt: string | null;
+  lastTicketClientId: number | null;
+  lastTicketProjectId: number | null;
   lastUpdated: string | null;
   signedDate?: string | null;
   expectedCloseDate?: string | null;
@@ -126,6 +130,15 @@ function formatRelative(d: Date): string {
   if (hr < 24) return `${hr}h ago`;
   const day = Math.round(hr / 24);
   return `${day}d ago`;
+}
+
+function daysSince(iso: string | null): number | null {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return null;
+  const ms = Date.now() - t;
+  if (ms < 0) return 0;
+  return Math.floor(ms / (1000 * 60 * 60 * 24));
 }
 
 function formatDate(s: string | null | undefined): string {
@@ -191,6 +204,13 @@ interface DialogState {
   mappingWarnings: string[];
   resolvedClientId: number | null;
   resolvedProjectId: number | null;
+  /**
+   * When `true`, the dialog opens straight to the "add ticket" form,
+   * pre-populating `resolvedClientId`/`resolvedProjectId` from the
+   * opportunity's most recent existing ticket. Mapping is suppressed
+   * because the user has already mapped the deal at least once.
+   */
+  skipMapping: boolean;
   ticketMode: "phase_template" | "custom";
   selectedTemplateId: string;
   templateBaseDueDate: string;
@@ -220,6 +240,7 @@ const DIALOG_INITIAL: DialogState = {
   mappingWarnings: [],
   resolvedClientId: null,
   resolvedProjectId: null,
+  skipMapping: false,
   ticketMode: "phase_template",
   selectedTemplateId: "",
   templateBaseDueDate: "",
@@ -236,6 +257,84 @@ const DIALOG_INITIAL: DialogState = {
   customBatteriesNeeded: false,
   customBatterySize: "",
 };
+
+/**
+ * Engineering tickets cell for the working list.
+ *
+ * Layout:
+ *   [open]/[closed] · [Nd]
+ * where:
+ *   - open = open ticket count, emerald pill (links to project if linked)
+ *   - closed = total closed (Completed/Cancelled) tickets, slate
+ *   - Nd = days since the oldest still-open ticket was created (in-progress age)
+ *
+ * Empty state: a single dim "·" centered in the cell.
+ */
+function EngCell({ row }: { row: WorkingOpportunityRow }) {
+  const open = row.openEngineeringTaskCount;
+  const closed = row.closedEngineeringTaskCount;
+  const total = open + closed;
+
+  if (total === 0) {
+    return <span className="text-slate-300" aria-label="No engineering tickets">·</span>;
+  }
+
+  const ageDays = daysSince(row.oldestOpenEngineeringAt);
+  const ageLabel = open > 0 && ageDays != null ? `${ageDays}d` : null;
+
+  const openPill = row.linkedProjectName ? (
+    <Link
+      href={`/project/${encodeURIComponent(row.linkedProjectName)}`}
+      onClick={(e) => e.stopPropagation()}
+      title={`Open project ${row.linkedProjectName} • ${open} open ticket${open === 1 ? "" : "s"}`}
+      data-testid={`link-eng-project-${row.id}`}
+      className={`inline-flex items-center justify-center min-w-[22px] h-5 px-1.5 rounded-full text-[11px] font-semibold tabular-nums ${
+        open > 0 ? "bg-emerald-600 text-white hover:bg-emerald-700 hover:shadow" : "bg-slate-100 text-slate-500"
+      }`}
+    >
+      {open}
+    </Link>
+  ) : (
+    <span
+      className={`inline-flex items-center justify-center min-w-[22px] h-5 px-1.5 rounded-full text-[11px] font-semibold tabular-nums ${
+        open > 0 ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-500"
+      }`}
+      title={open > 0 ? `${open} open engineering ticket${open === 1 ? "" : "s"}` : "No open tickets"}
+    >
+      {open}
+    </span>
+  );
+
+  return (
+    <span className="inline-flex items-center gap-1 text-[11px] tabular-nums">
+      {openPill}
+      <span className="text-slate-400">/</span>
+      <span
+        className="text-slate-600"
+        title={`${closed} closed (Completed or Cancelled)`}
+        data-testid={`text-eng-closed-${row.id}`}
+      >
+        {closed}
+      </span>
+      {ageLabel ? (
+        <>
+          <span className="text-slate-300">·</span>
+          <span
+            className={
+              ageDays! >= 14
+                ? "text-amber-700 font-medium"
+                : "text-slate-500"
+            }
+            title={`Oldest open ticket is ${ageDays}d old`}
+            data-testid={`text-eng-age-${row.id}`}
+          >
+            {ageLabel}
+          </span>
+        </>
+      ) : null}
+    </span>
+  );
+}
 
 export default function OpportunitiesPage() {
   const { user } = useAuth();
@@ -623,6 +722,15 @@ export default function OpportunitiesPage() {
   }, [mappingContext]);
 
   function openMapping(row: WorkingOpportunityRow) {
+    // Fast path: if this opportunity already has tickets AND we know
+    // which client/project the latest one was filed against, skip the
+    // mapping selection entirely and open straight to the ticket form.
+    // Re-mapping the same deal every time you add a ticket is friction
+    // PDs explicitly asked us to remove (2026-04-21 user feedback).
+    const totalTickets = row.openEngineeringTaskCount + row.closedEngineeringTaskCount;
+    const canSkipMapping =
+      totalTickets > 0 && row.lastTicketClientId != null && row.lastTicketProjectId != null;
+
     updateDlg({
       ...DIALOG_INITIAL,
       target: row,
@@ -634,6 +742,13 @@ export default function OpportunitiesPage() {
       customFundingType: row.fundingType || "",
       customSizeKwp: row.estimatedKwp != null ? String(row.estimatedKwp) : "",
       customProvince: row.province || "",
+      ...(canSkipMapping
+        ? {
+            skipMapping: true,
+            resolvedClientId: row.lastTicketClientId,
+            resolvedProjectId: row.lastTicketProjectId,
+          }
+        : {}),
     });
   }
 
@@ -918,25 +1033,7 @@ export default function OpportunitiesPage() {
                           )}
                         </td>
                         <td className="px-2 py-1.5 align-middle text-center">
-                          {row.openEngineeringTaskCount > 0 ? (
-                            row.linkedProjectName ? (
-                              <Link
-                                href={`/project/${encodeURIComponent(row.linkedProjectName)}`}
-                                onClick={(e) => e.stopPropagation()}
-                                title={`Open project ${row.linkedProjectName} to track engineering progress`}
-                                data-testid={`link-eng-project-${row.id}`}
-                                className="inline-flex items-center justify-center min-w-[26px] h-6 px-1.5 rounded-full bg-emerald-600 text-white text-[11px] font-semibold tabular-nums hover:bg-emerald-700 hover:shadow"
-                              >
-                                {row.openEngineeringTaskCount}
-                              </Link>
-                            ) : (
-                              <span className="inline-flex items-center justify-center min-w-[26px] h-6 px-1.5 rounded-full bg-emerald-600 text-white text-[11px] font-semibold tabular-nums" title="Open engineering tickets (no linked project yet)">
-                                {row.openEngineeringTaskCount}
-                              </span>
-                            )
-                          ) : (
-                            <span className="text-slate-300" aria-label="No open engineering tickets">·</span>
-                          )}
+                          <EngCell row={row} />
                         </td>
                         <td className="px-2 py-1.5 align-middle text-right whitespace-nowrap">
                           <Button
@@ -996,9 +1093,13 @@ export default function OpportunitiesPage() {
       <Dialog open={!!dlg.target} onOpenChange={(open) => { if (!open) updateDlg("reset"); }}>
         <DialogContent className="max-w-xl">
           <DialogHeader>
-            <DialogTitle>Create Engineering Ticket — Mapping</DialogTitle>
+            <DialogTitle>
+              {dlg.skipMapping ? "Add Engineering Ticket" : "Create Engineering Ticket — Mapping"}
+            </DialogTitle>
             <DialogDescription>
-              Project Developer is the mapping authority. Choose how this opportunity maps to client/project before ticket creation.
+              {dlg.skipMapping
+                ? "This opportunity already has tickets — re-using the existing client/project mapping. Add another ticket below."
+                : "Project Developer is the mapping authority. Choose how this opportunity maps to client/project before ticket creation."}
             </DialogDescription>
           </DialogHeader>
 
@@ -1011,6 +1112,7 @@ export default function OpportunitiesPage() {
                 <p>Linked client: {mappingContext?.linkedClient ? "Yes" : "No"} • Linked project: {mappingContext?.linkedProject ? "Yes" : "No"}</p>
               </div>
 
+              {!dlg.skipMapping && (
               <div className="space-y-2">
                 <Label className="text-xs">Mapping mode</Label>
                 <div className="grid gap-1 text-sm">
@@ -1019,8 +1121,9 @@ export default function OpportunitiesPage() {
                   <label className="flex items-center gap-2"><input type="radio" checked={dlg.mappingMode === "new_new"} onChange={() => updateDlg({ mappingMode: "new_new" })} /> Create new client + new project shell</label>
                 </div>
               </div>
+              )}
 
-              {dlg.mappingMode !== "new_new" && (
+              {!dlg.skipMapping && dlg.mappingMode !== "new_new" && (
                 <div className="space-y-1">
                   <Label className="text-xs">Client</Label>
                   <select className="w-full border rounded-md h-9 px-2 text-sm" value={dlg.existingClientId} onChange={(e) => updateDlg({ existingClientId: e.target.value })}>
@@ -1030,7 +1133,7 @@ export default function OpportunitiesPage() {
                 </div>
               )}
 
-              {dlg.mappingMode === "existing_existing" && (
+              {!dlg.skipMapping && dlg.mappingMode === "existing_existing" && (
                 <div className="space-y-1">
                   <Label className="text-xs">Project</Label>
                   <select className="w-full border rounded-md h-9 px-2 text-sm" value={dlg.existingProjectId} onChange={(e) => updateDlg({ existingProjectId: e.target.value })}>
@@ -1040,14 +1143,14 @@ export default function OpportunitiesPage() {
                 </div>
               )}
 
-              {dlg.mappingMode === "existing_new" && (
+              {!dlg.skipMapping && dlg.mappingMode === "existing_new" && (
                 <div className="space-y-1">
                   <Label className="text-xs">New project shell name</Label>
                   <Input value={dlg.newProjectName} onChange={(e) => updateDlg({ newProjectName: e.target.value })} placeholder="Enter project shell name" />
                 </div>
               )}
 
-              {dlg.mappingMode === "new_new" && (
+              {!dlg.skipMapping && dlg.mappingMode === "new_new" && (
                 <div className="grid gap-2">
                   <div className="space-y-1">
                     <Label className="text-xs">New client name</Label>

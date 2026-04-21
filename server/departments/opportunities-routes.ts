@@ -145,9 +145,9 @@ router.get("/api/opportunities/working", requireAuth, requirePermission("opportu
     const opportunityIds = rows.map(r => r.id);
     if (opportunityIds.length === 0) return res.json([]);
 
-    const [linkedProjectCounts, engineeringTicketCounts, linkedProjects] = await Promise.all([
+    const [linkedProjectCounts, engineeringTicketSummaries, linkedProjects] = await Promise.all([
       opportunitiesRepo.getLinkedProjectCounts(opportunityIds),
-      opportunitiesRepo.getEngineeringTicketCounts(opportunityIds),
+      opportunitiesRepo.getEngineeringTicketSummaries(opportunityIds),
       opportunitiesRepo.getLinkedProjectsByOpportunity(opportunityIds),
     ]);
 
@@ -155,9 +155,9 @@ router.get("/api/opportunities/working", requireAuth, requirePermission("opportu
     for (const r of linkedProjectCounts) {
       if (r.opportunityId != null) projectCountByOpportunity.set(r.opportunityId, r.count);
     }
-    const engineeringTicketCountByOpportunity = new Map<number, number>();
-    for (const r of engineeringTicketCounts) {
-      if (r.opportunityId != null) engineeringTicketCountByOpportunity.set(r.opportunityId, r.count);
+    const ticketSummaryByOpportunity = new Map<number, typeof engineeringTicketSummaries[number]>();
+    for (const r of engineeringTicketSummaries) {
+      ticketSummaryByOpportunity.set(r.opportunityId, r);
     }
     const linkedProjectByOpportunity = new Map<number, { projectId: number; projectName: string | null }>();
     for (const r of linkedProjects) {
@@ -206,8 +206,19 @@ router.get("/api/opportunities/working", requireAuth, requirePermission("opportu
           linkedProjectCount,
           linkedProjectId: linkedProjectByOpportunity.get(r.id)?.projectId ?? null,
           linkedProjectName: linkedProjectByOpportunity.get(r.id)?.projectName ?? null,
-          openEngineeringTaskCount: engineeringTicketCountByOpportunity.get(r.id) || 0,
-          existingEngineeringTicketCount: engineeringTicketCountByOpportunity.get(r.id) || 0, // alias for legacy callers
+          openEngineeringTaskCount: ticketSummaryByOpportunity.get(r.id)?.openCount ?? 0,
+          closedEngineeringTaskCount: ticketSummaryByOpportunity.get(r.id)?.closedCount ?? 0,
+          oldestOpenEngineeringAt: ticketSummaryByOpportunity.get(r.id)?.oldestOpenAt
+            ? ticketSummaryByOpportunity.get(r.id)!.oldestOpenAt!.toISOString()
+            : null,
+          // When tickets already exist for this deal, the latest ticket's
+          // client/project is the natural default for "+ another ticket"
+          // — surfaces these so the UI can skip the mapping dialog.
+          lastTicketClientId: ticketSummaryByOpportunity.get(r.id)?.lastTicketClientId ?? null,
+          lastTicketProjectId: ticketSummaryByOpportunity.get(r.id)?.lastTicketProjectId ?? null,
+          existingEngineeringTicketCount:
+            (ticketSummaryByOpportunity.get(r.id)?.openCount ?? 0) +
+            (ticketSummaryByOpportunity.get(r.id)?.closedCount ?? 0), // alias for legacy callers (now total, not just open)
           lastUpdated: r.updatedAt || null,
           signedDate: r.signedDate || null,
           expectedCloseDate: r.expectedCloseDate || null,

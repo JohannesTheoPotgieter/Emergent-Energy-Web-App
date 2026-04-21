@@ -53,6 +53,21 @@ interface CountByOpportunity {
   count: number;
 }
 
+/**
+ * Richer per-opportunity ticket summary used by the working list to
+ * display Open/Closed split + days-in-progress, and to skip the
+ * mapping dialog when an opportunity already has tickets (in which
+ * case the latest ticket's client/project is the obvious default).
+ */
+export interface EngineeringTicketSummary {
+  opportunityId: number;
+  openCount: number;
+  closedCount: number;
+  oldestOpenAt: Date | null;
+  lastTicketClientId: number | null;
+  lastTicketProjectId: number | null;
+}
+
 interface MappingContextOpportunity {
   id: number;
   pipedriveDealId: string | null;
@@ -247,6 +262,75 @@ export class OpportunitiesRepository {
       out.push({ opportunityId: oid, projectId: r.projectId, projectName: r.projectName ?? null });
     }
     return out;
+  }
+
+  /**
+   * Richer per-opportunity ticket summary. Returns:
+   *   - openCount: tickets not in Completed/Cancelled
+   *   - closedCount: tickets in Completed/Cancelled
+   *   - oldestOpenAt: created_at of the oldest still-open ticket
+   *   - lastTicketClientId / lastTicketProjectId: from the most recent
+   *     ticket of any status, used by the UI to skip the mapping
+   *     dialog when an opportunity already has tickets.
+   *
+   * Reads pd_tickets only — no writes, no schema changes.
+   */
+  async getEngineeringTicketSummaries(
+    opportunityIds: number[],
+  ): Promise<EngineeringTicketSummary[]> {
+    if (opportunityIds.length === 0) return [];
+    const rows = await db
+      .select({
+        opportunityId: pdTickets.opportunityId,
+        status: pdTickets.status,
+        createdAt: pdTickets.createdAt,
+        clientId: pdTickets.clientId,
+        projectId: pdTickets.projectId,
+      })
+      .from(pdTickets)
+      .where(inArray(pdTickets.opportunityId, opportunityIds))
+      .orderBy(desc(pdTickets.createdAt));
+    const TERMINAL = new Set(["Completed", "Cancelled"]);
+    const byOpp = new Map<number, EngineeringTicketSummary>();
+    for (const r of rows) {
+      const oid = r.opportunityId;
+      if (oid == null) continue;
+      let s = byOpp.get(oid);
+      if (!s) {
+        s = {
+          opportunityId: oid,
+          openCount: 0,
+          closedCount: 0,
+          oldestOpenAt: null,
+          lastTicketClientId: null,
+          lastTicketProjectId: null,
+        };
+        byOpp.set(oid, s);
+      }
+      // Prefer the most recent ticket that has BOTH client and project set
+      // as the skip-mapping default. Rows are ordered DESC by createdAt, so
+      // the first qualifying row wins; an unlinked shadow ticket at the top
+      // (projectId null) is skipped in favor of an older fully-mapped one.
+      if (
+        s.lastTicketClientId == null &&
+        s.lastTicketProjectId == null &&
+        r.clientId != null &&
+        r.projectId != null
+      ) {
+        s.lastTicketClientId = r.clientId;
+        s.lastTicketProjectId = r.projectId;
+      }
+      const isClosed = TERMINAL.has(r.status || "");
+      if (isClosed) {
+        s.closedCount += 1;
+      } else {
+        s.openCount += 1;
+        if (r.createdAt && (!s.oldestOpenAt || r.createdAt < s.oldestOpenAt)) {
+          s.oldestOpenAt = r.createdAt;
+        }
+      }
+    }
+    return Array.from(byOpp.values());
   }
 
   async getEngineeringTicketCounts(opportunityIds: number[]): Promise<CountByOpportunity[]> {

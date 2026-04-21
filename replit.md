@@ -68,6 +68,13 @@ The project uses a monorepo containing `client/` (React SPA), `server/` (Express
 ### Project Development Dashboard
 - `/pd` provides an overview dashboard with KPI cards (pipeline value/kWp, win rate), Pipeline by Stage, Active Funnel, Upcoming Activity, Recent Wins/Losses, and Risk Signals.
 
+### Engineering Ticket UX on Opportunities (2026-04-21)
+- Working list now surfaces a richer engineering-tickets cell: `[open]/[closed] · [Nd]` where `Nd` is days since the oldest still-open ticket was created. Empty state remains a dim `·`. Open pill links to the project when one is linked. `>=14d` ages render in amber.
+- New repository method `getEngineeringTicketSummaries(opportunityIds[])` returns `{openCount, closedCount, oldestOpenAt, lastTicketClientId, lastTicketProjectId}` per opportunity. Terminal statuses are `Completed` and `Cancelled`. The legacy `getEngineeringTicketCounts` is retained (still used by `pd-intake.routes`).
+- `lastTicketClientId/lastTicketProjectId` come from the **most recent ticket where BOTH IDs are populated** (rows scanned `createdAt DESC`), so an unlinked shadow ticket at the top doesn't suppress the skip-mapping default in favor of an older fully-mapped ticket.
+- Working-list response gained `closedEngineeringTaskCount`, `oldestOpenEngineeringAt`, `lastTicketClientId`, `lastTicketProjectId`. `existingEngineeringTicketCount` is now total (open+closed); the only in-app consumer is the working list itself.
+- Engineering-ticket dialog now has a **skip-mapping fast path**: when `openMapping(row)` is called for a deal that already has tickets and we know the latest mapping, the dialog opens straight to the ticket form with `skipMapping=true` and `resolvedClientId/resolvedProjectId` pre-filled from the latest fully-mapped ticket. Mapping mode radios + client/project pickers are hidden, and the title becomes "Add Engineering Ticket". Footer logic still gates POST on `mappingResolved`, which is true via the pre-fill, so create-tickets requests work unchanged.
+
 ### Opportunities Working List Hardening (2026-04-21)
 - Server is the authoritative gate via `isActivePdWorkingOpportunity` (`server/lib/opportunity-working-filter.ts`); the client re-applies the same checks as a defensive safety net and `console.warn`s in DEV when the two diverge.
 - Deep-link support: `/opportunities?open={id}` opens the unified `OpportunityDrawer` and the param is stripped via `history.replaceState` so refreshes don't re-pin it. PD Dashboard tiles use this.
