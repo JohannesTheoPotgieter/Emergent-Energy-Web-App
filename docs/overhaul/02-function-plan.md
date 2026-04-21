@@ -1865,3 +1865,187 @@ Both Tier 3 lenses are compliance-focused and share the "dashboard + domain tabs
 ---
 
 **End of Tier 3 (§§13–15).**
+
+---
+
+## §16 Tier 4 — Admin / system utilities (single batch)
+
+**Scope:** every admin-visible SYSTEM / KNOWLEDGE page not already planned above, plus a few small launch surfaces. Low user traffic; grouped entries rather than one-per-page.
+
+**Not covered here** (already planned):
+
+- `/admin/control-center` → **F-038** (Lens 4)
+- `/admin/sharepoint-intake` → **F-046** (Lens 6)
+- `/admin/eng-templates` → **F-044** (Lens 6)
+- `/admin/handover-health` → **F-020** (Lens 1)
+
+### §16.1 F-051 · Admin integration surfaces
+
+Covers: `/admin/pipedrive`, `/admin/quickbooks`, `/admin/my-tool-settings`.
+
+- **Archetype:** W4 Detail-shaped with tabs per integration.
+- **User goal:** Configure + observe each third-party integration.
+- **Current state:** Separate hidden pages per integration. Most day-to-day operation happens in F-032 QB Throughput and F-047 PD Dashboard — these are the admin/settings counterparts.
+- **Visual improvements:** Unify to a consistent `DetailLayout` with Overview / Credentials / Sync history / Mappings / Errors tabs. Mock-connector-in-dev preserved per `CLAUDE.md`.
+- **Additive:** Per-integration "Health" strip (last sync, error rate last 24h, credential expiry countdown). Rotate-credential action with confirmation.
+- **Preserved:** Hidden from sidebar; `admin` permission entity; mock-connector gating.
+- **Risk / Effort:** Low / S–M (each).
+
+### §16.2 F-052 · Admin data operations
+
+Covers: `/admin/smart-import`, `/admin/import-control-tower`, `/admin/database-migration`, `/admin/data-migration-status`, `/admin/recovery`.
+
+- **Archetype:** W3 List per page (operation history) + modal per action.
+- **User goal:** Run, observe, and recover platform data operations — Excel imports, schema migrations, recovery workflows.
+- **Visual improvements:** Unify list columns across the five pages (Operation / Initiated by / When / Duration / State / Outcome). Dangerous actions (recovery, migration) require typed confirmation via `ConfirmDialog`. Trust envelope strip on migration status.
+- **Additive:** Dry-run mode on migrations and imports. Cancel-safely semantics on long-running operations. Detail drawer showing operation log lines.
+- **Preserved:** Hidden from sidebar; permission entity `admin` / `smart_import` / `database_migration`; Smart Import v2 pipeline rules per `CLAUDE.md` (projects upsert by `projectCode`, hash-based line IDs, overrides separate).
+- **Risk / Effort:** Medium (data ops — high blast radius) / S–M (each).
+
+### §16.3 F-053 · Admin configuration surfaces
+
+Covers: `/admin/stage-lifecycle`, `/admin/phase-templates`, `/admin/workflow-config`, `/admin/settings`, `/admin/roles`, plus admin-settings sub-directory at `client/src/pages/admin-settings/*` (users / roles / visibility / audit sections).
+
+- **Archetype:** W4 Detail with sub-section tabs (admin-settings already uses this pattern via `client/src/pages/admin-settings/index.tsx`).
+- **User goal:** Configure the platform — lifecycle stages, phase templates, workflows, roles, permissions, visibility rules.
+- **Current state:** Existing admin-settings multi-section page + 3 dedicated routes. The admin-settings directory is well-structured; other routes are individual pages.
+- **Visual improvements:** Consolidate all configuration under a single admin-settings entry point with nav-tabs for each configuration domain. Roles & Permissions uses the existing matrix component (`role-permissions-matrix.tsx`). Every config change audited via the existing audit trail.
+- **Additive:** Preview-before-apply on any config change (diff view via Drawer). Export + import configuration snapshot. Per-tenant branding config (stays within Phase 0 brand rules — tenants can't override brand logo/hex).
+- **Preserved:** Permission entity `admin` / `admin_roles` / `stage_admin`; existing role-permission matrix behaviour; audit trail continuity.
+- **Risk / Effort:** Medium (RBAC = blast radius) / M.
+
+### §16.4 F-054 · Admin audit + observability
+
+Covers: `/admin/activity-log`, `/admin/kpi-traceability`.
+
+- **Archetype:** W3 List with detail drawer.
+- **User goal:** Audit every platform event; trace any KPI back to its contributing rows.
+- **Visual improvements:** W3 `TableLayout`; event type chips; expand-row payload diff; KPI traceability uses a tree view (additive) showing the aggregation lineage.
+- **Additive:** Saved filters; export to CSV with trust envelope; bookmark-worthy permalinks per event.
+- **Preserved:** Read-only; `admin` / `activity_log` permission entity; hidden from sidebar.
+- **Risk / Effort:** Low / S.
+
+### §16.5 F-055 · Knowledge surfaces
+
+Covers: `/ee-info` (Processes & SOPs — sidebar-visible), `/leaderboard`, `/feedback`, `/training` (all hidden), plus `/admin/lessons` (Lessons Learnt — belongs here functionally, hidden).
+
+- **Archetype:** W4 Detail for Processes & SOPs (doc-browse); W2-light dashboard for Leaderboard; W5a Form for Feedback; W4 Detail for Training course listings; W3 list + W4 detail for Lessons Learnt.
+- **User goal:** Reference material, gamification, support intake, learning, and institutional memory.
+- **Visual improvements:** Uniform `PageHeader` and `DataTrustBadge` where data is dynamic. Leaderboard uses `StatusBadge` + `Progress` primitives. Feedback uses `FormLayout`. Lessons Learnt readable via existing EE info docs pattern.
+- **Additive:** Processes & SOPs — full-text search; inline "this is outdated" feedback per SOP. Leaderboard — per-role scoreboard filter. Feedback — attach screenshot. Training — progress tracking per user (local state; not a compliance system).
+- **Preserved:** `/feedback` stays hidden per Prompt 0.7 (not actively monitored); `/leaderboard` hidden; `/training` hidden; `/ee-info` sidebar-visible; `/department-scores` alias → `/leaderboard?tab=departments` continues.
+- **Risk / Effort:** Low / S (each).
+
+### §16.6 F-056 · Launch + creation surfaces
+
+Covers: `/actions/launchpad` (Quick Create), `/project-create` (Create Project wizard).
+
+- **Archetype:** `/actions/launchpad` — floating Command-palette-style surface (uses existing `Command` primitive). `/project-create` — W5b `WizardLayout`.
+- **User goal:** Fast creation of entities from anywhere (⌘K); multi-step project creation for CCO.
+- **Visual improvements:** Launchpad opens as an overlay, not a full page; contents filtered per role's edit rights (per wireframe W7 quick-create specialisation). Project Create uses `WizardLayout` with steps: Client + site → Scope → Ownership → Finance baseline → Review.
+- **Additive:** Launchpad learns user's recent creates; project-create can import from Pipedrive opportunity (additive — converts F-048 won-stage opps).
+- **Preserved:** Permission entities `work_items` (launchpad) and `project_creation` (project-create: Admin + CCO).
+- **Risk / Effort:** Low / M (launchpad) · L (project-create wizard, same effort class as F-018 Weekly Reviews).
+
+### §16.7 Tier 4 summary
+
+| Function | Pages covered | Risk | Effort |
+|---|---|---|---|
+| F-051 Admin integrations | 3 | Low | S–M |
+| F-052 Admin data ops | 5 | Medium | S–M |
+| F-053 Admin configuration | 5+ | Medium | M |
+| F-054 Admin audit | 2 | Low | S |
+| F-055 Knowledge surfaces | 5 | Low | S |
+| F-056 Launch / creation | 2 | Low | M–L |
+
+**Pages covered in Tier 4:** ~22.
+**Functions added:** 6 (F-051–F-056).
+
+**Proposed Phase 3 ordering:** Tier 4 goes in **Wave 8 (remainder)** — low user traffic, harvest primitives from earlier waves, no blocker to other work. Project-create wizard (F-056) rides WizardLayout from Wave 4.
+
+---
+
+## §17 Phase 2 — COMPLETE
+
+**56 functions planned** across 9 lenses × 4 tiers (F-001 through F-056). Covering all 113 PAGE_REGISTRY entries + 15 LEGACY_REDIRECTS.
+
+### §17.1 Full roster
+
+| Tier | Lens | Count | Functions |
+|---|---|---|---|
+| 1 | `PROGRAM_MANAGER` | 26 | F-001–F-026 (incl. F-013a, F-013b, F-021a) |
+| 1 | `PROJECT_MANAGER_SITE` | 2 | F-027, F-028 |
+| 1 | `CFO` + `PFM` + `ACCOUNTANT` | 7 | F-029–F-035 |
+| 1 | `COO` + `CEO` | 3 | F-036, F-037, F-038 |
+| 2 | `CONSTRUCTION_MANAGER` | 1 | F-039 |
+| 2 | `ENGINEERING_MANAGER` + `ENGINEER` | 7 | F-040–F-046 |
+| 2 | `CCO` + `KAM` + `PD` | 2 | F-047, F-048 |
+| 3 | `QUALITY_MANAGER` | 1 | F-049 |
+| 3 | `HSE` + `SSEG` | 1 | F-050 |
+| 4 | Admin / system / knowledge | 6 | F-051–F-056 |
+
+### §17.2 Phase-3-unified wave ordering
+
+Final recommended sequence across all tiers:
+
+1. **Wave 1 — Foundation.** `AppShell` + `LensNav` + `PageHeader` + `PageLayout` → F-002 Lifecycle Board (proof surface).
+2. **Wave 2 — List primitive.** `TableLayout` → F-004 Gates Pipeline → harvest F-005–F-011, F-012, F-019, F-030, F-031, F-037, F-041, F-048.
+3. **Wave 3 — Detail primitive.** `DetailLayout` → F-013 Project Detail → harvest F-015, F-021, F-026, F-028, F-032, F-036, F-039, F-040, F-042, F-043, F-044, F-047, F-049, F-050, F-051, F-053.
+4. **Wave 4 — Wizard + Form.** `WizardLayout` → F-018 Weekly Reviews + F-056 Project Create. `FormLayout` → F-037 New Priority + others.
+5. **Wave 5 — Approvals domain.** F-016, F-017, F-022, F-023, F-024.
+6. **Wave 6 — Finance wave.** F-030, F-031, F-032, F-029 (Cashflow last — highest risk).
+7. **Wave 7 — Finish-it.** F-020 (backend + UI), F-021a (flag enable), F-036 (polish).
+8. **Wave 8 — Mobile + remainder.** F-027/F-028 mobile-first, F-001 Execution Board sub-pages, F-033–F-035 absorbed tabs, F-038, F-045, F-046, F-052, F-054, F-055.
+
+### §17.3 Phase-wide metrics
+
+| Metric | Value |
+|---|---|
+| Functions planned | 56 |
+| High-risk | 2 (F-013, F-029) |
+| Medium-risk | ~30 |
+| Low-risk | ~24 |
+| SoT migrations required on UI | **0** |
+| Server-side SoT migrations flagged | 1 (`resolveInflowEffectiveDates` — Priority 1 in `00c §4`) |
+| Finish-it candidates | 4 (F-020 · F-021a · F-036 · `local_synced_save_flow` tangential) |
+| New layout primitives | 5 (`AppShell`, `PageLayout`, `TableLayout`, `DetailLayout`, `FormLayout`, `WizardLayout`) |
+| New data-access primitives | 2 (already shipped — `useEntity`, `useEntityList`) |
+| Zero destructive operations proposed | ✓ |
+| Zero behaviour changes proposed | ✓ |
+| Zero removals proposed | ✓ |
+
+### §17.4 Phase 3 kick-off recommendation
+
+**Start Wave 1 on F-002 Lifecycle Board.**
+
+Rationale:
+
+- Simplest proof surface in Tier 1 — existing component, no feature-flag dependency, all reads canonical.
+- Touches 14 view roles — if AppShell + LensNav behaviour regress, we hear immediately.
+- No finance / approvals / handover coupling — bugs stay local.
+- Low-risk shape (Low per §3.1 F-002) means a rollback is cheap if the primitive contract needs iteration.
+
+Wave 1 deliverables:
+
+- `client/src/components/layout/AppShell.tsx` — extends existing `AppLayout`.
+- `client/src/components/layout/LensNav.tsx` — extracted from current sidebar.
+- Extended `client/src/components/ui/page-header.tsx` with the three height modes.
+- `client/src/components/layout/PageLayout.tsx` — lightweight `ee-page` wrapper.
+- F-002 Lifecycle Board migrated onto the above + capturing of Preserved Behaviour contract.
+
+After Wave 1 lands, Wave 2 (F-004 Gates Pipeline + TableLayout) gives the next harvest — 12 pages converge rapidly once the primitive is proven.
+
+### §17.5 What Phase 2 does NOT decide
+
+Transparency on the deferrals:
+
+- **Per-page pixel-level visual direction** — archetypes + primitives specify the composition, not the pixel layout. Phase 3 work converges pixels through the primitives.
+- **Final Rand value thresholds** — not introduced per owner decision 2026-04-21.
+- **F-020 Readiness score formula weights** — v1 ships 25% × 4 components per owner decision; tune in `/admin/settings` after real use.
+- **Dual-mount legacy route consolidation** (`engineering-routes.ts`, `quality-routes.ts`, `microsoft-integration-enhancements-routes.ts`, procurement handlers) — tracked in `backlog.md` #6/#7; not overhaul scope.
+- **Decorative `energy-*` CSS cleanup** — new surfaces don't use them; existing surfaces keep them unless explicitly approved for removal (backlog #4).
+- **Currency format (Rand)** — default assumed; configurable per-tenant in Phase 3 settings.
+
+---
+
+**End of Phase 2.** All 56 functions planned; all 4 tiers approved. Awaiting sign-off on the Phase 3 kick-off recommendation (Wave 1 on F-002 Lifecycle Board) — at which point Phase 3 implementation can start.
