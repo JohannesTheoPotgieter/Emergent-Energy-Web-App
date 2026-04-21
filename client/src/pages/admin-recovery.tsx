@@ -13,6 +13,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import UserPicker from "@/components/UserPicker";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout } from "@/components/layout";
 import {
   Search, Loader2, ListTodo, FileUp, FolderCog, Trash2,
   RotateCcw, Edit, CheckCircle, AlertTriangle, Shield,
@@ -929,15 +931,15 @@ export default function AdminRecoveryPage() {
   }
 
   return (
-    <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-6">
-      <div className="flex items-center gap-3">
-        <Shield className="h-6 w-6 text-primary" />
-        <div>
-          <h1 className="text-2xl font-bold" data-testid="text-recovery-title">Admin Recovery Center</h1>
-          <p className="text-sm text-muted-foreground">Correct task assignments, fix project data, review imports, and restore deleted items</p>
-        </div>
-      </div>
-
+    <PageLayout
+      data-testid="admin-recovery-page"
+      header={
+        <PageHeader
+          title="Admin Recovery Center"
+          subtitle="Correct task assignments, fix project data, review imports, and restore deleted items"
+        />
+      }
+    >
       <Tabs defaultValue="tasks" className="w-full">
         <TabsList className="grid w-full grid-cols-4 h-auto">
           <TabsTrigger value="tasks" data-testid="tab-recovery-tasks">
@@ -1006,6 +1008,6 @@ export default function AdminRecoveryPage() {
           </Card>
         </TabsContent>
       </Tabs>
-    </div>
+    </PageLayout>
   );
 }
