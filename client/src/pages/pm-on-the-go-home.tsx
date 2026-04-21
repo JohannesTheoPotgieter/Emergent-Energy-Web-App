@@ -15,6 +15,8 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { getQueryFn } from "@/lib/queryClient";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout } from "@/components/layout";
 
 interface PmProject {
   id: number;
@@ -221,25 +223,28 @@ export default function PMOnTheGoHome() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-4 sm:py-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <h2
-          className="text-xl sm:text-2xl font-heading font-bold"
-          data-testid="text-pm-otg-title"
-        >
-          My Active Projects — Control View
-        </h2>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={handleRefresh}
-          disabled={isRefetching}
-          data-testid="btn-refresh-projects"
-          className="shrink-0"
-        >
-          <RefreshCw className={`w-4 h-4 ${isRefetching ? "animate-spin" : ""}`} />
-        </Button>
-      </div>
+    <PageLayout
+      data-testid="pm-on-the-go-home-page"
+      header={
+        <PageHeader
+          title="PM On-The-Go"
+          subtitle="My active projects — control view"
+          actions={
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleRefresh}
+              disabled={isRefetching}
+              data-testid="btn-refresh-projects"
+              className="shrink-0"
+            >
+              <RefreshCw className={`w-4 h-4 ${isRefetching ? "animate-spin" : ""}`} />
+            </Button>
+          }
+        />
+      }
+    >
+      <div className="max-w-2xl mx-auto space-y-4">
 
       {isLoading && (
         <div className="space-y-3" data-testid="loading-projects">
@@ -295,10 +300,11 @@ export default function PMOnTheGoHome() {
       )}
 
       {!isLoading && projects.length > 0 && (
-        <p className="text-xs text-muted-foreground text-center pt-2" data-testid="text-project-count">
+        <p className="text-xs text-muted-foreground text-center pt-2 tabular-nums" data-testid="text-project-count">
           {projects.length} project{projects.length !== 1 ? "s" : ""} assigned
         </p>
       )}
-    </div>
+      </div>
+    </PageLayout>
   );
 }
