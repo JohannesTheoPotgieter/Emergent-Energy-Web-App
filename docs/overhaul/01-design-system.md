@@ -595,4 +595,146 @@ Primitives surface this; composition is per-archetype (TableLayout handles empty
 
 ---
 
-**End of §4.** Next: §5 — When-to-use guide + wrap-up.
+**End of §4.**
+
+---
+
+## §5 When to use which — decision trees
+
+Quick reference. Longer rules in the earlier sections.
+
+### §5.1 "I need to display some data"
+
+```
+Is it a single entity?
+  ├─ Yes → useEntity<T>(url)
+  └─ No → Is it a list?
+           ├─ Yes → useEntityList<T>(url, { params })
+           └─ No → It's aggregated/computed → useQuery directly (no primitive)
+```
+
+### §5.2 "I need to pick a layout"
+
+```
+Is this a new page or a re-layout?
+  ├─ Dashboard-like (KPIs + panels)        → W2 layout, no dedicated primitive
+  ├─ List of entities (table + filters)    → TableLayout (Phase 3)
+  ├─ Entity detail (summary + tabs)        → DetailLayout (Phase 3)
+  ├─ Single-screen form                    → FormLayout (Phase 3)
+  ├─ Multi-step flow                       → WizardLayout (Phase 3)
+  └─ Personal home                         → W6 My Work layout, composed directly
+```
+
+### §5.3 "I need to show state / status"
+
+```
+What kind of state?
+  ├─ RAG (on track / at risk / off track)  → StatusBadge (dot/chip/pill)
+  ├─ Count badge on a tab                   → Badge
+  ├─ Filter chip in a toolbar               → StatusChip
+  ├─ Maturity level (alpha/beta/GA)         → MaturityBadge
+  ├─ Data freshness / provenance            → DataTrustBadge
+  └─ Domain-specific (custom)               → Stop. Design in backlog first.
+```
+
+### §5.4 "I need to show a message"
+
+```
+Is it user action feedback?
+  ├─ Yes, transient (save succeeded)       → Toast (via useToast())
+  ├─ Yes, persistent info inline           → Alert
+  └─ No, it's a confirmation needed
+     ├─ Destructive (delete/archive)        → AlertDialog or ConfirmDialog
+     └─ Non-destructive                     → ConfirmDialog
+```
+
+### §5.5 "I need an overlay"
+
+```
+What's in it?
+  ├─ Form with ≤6 fields                    → Dialog
+  ├─ Form with >6 fields                    → Drawer (right on desktop, bottom on mobile)
+  ├─ Filter panel                           → Sheet (right-side)
+  ├─ Action menu pinned to a trigger        → DropdownMenu
+  ├─ Hover hint (read-only)                 → Tooltip
+  ├─ Interactive popover (date picker etc.) → Popover
+  └─ Search palette                         → Command (Cmd-K pattern)
+```
+
+### §5.6 "I need an input"
+
+```
+What's the data type?
+  ├─ Short text                             → Input
+  ├─ Long text                              → Textarea
+  ├─ Boolean                                → Checkbox (forms) / Switch (immediate toggle)
+  ├─ Number (precise)                       → Input type="number" (Phase 3: NumberInput primitive)
+  ├─ Money                                  → Input type="number" + format on blur (Phase 3: MoneyInput)
+  ├─ Date / date range                      → Popover + Calendar + Input (Phase 3: DateInput primitive)
+  ├─ Choice from 2–5 mutually exclusive     → RadioGroup
+  ├─ Choice from 6–12 mutually exclusive    → Select
+  ├─ Choice from dynamic / >12              → SearchableSelect
+  └─ Range                                  → Slider (rare)
+```
+
+### §5.7 "My Tailwind class X conflicts with token Y"
+
+Tokens win. The design system is additive, but it's also authoritative on tokens. If a Tailwind class hardcodes a colour / spacing / shadow that doesn't match a token, use the token (via `@/design/tokens`) or remove the Tailwind class.
+
+Never inline `style={{ color: "#16A34A" }}` — use `text-primary` or import from tokens.
+
+---
+
+## §6 Migration playbook (for Phase 3)
+
+When a screen is being touched, follow this order of operations:
+
+1. **Read the existing component end-to-end.** Understand every branch.
+2. **Capture current behaviour** in a Preserved Behaviour contract (see `02-function-plan.md` per function).
+3. **Migrate data-access** — swap inline `useQuery` → `useEntity` / `useEntityList` where the endpoint is canonical. Leave legacy endpoints on inline `useQuery` until the server-side migration lands.
+4. **Migrate layout** — wrap in the appropriate layout primitive (`TableLayout` / `DetailLayout` / etc.). The layout primitive composes existing `ui/*` — not new UI.
+5. **Migrate visuals** — swap hand-rolled duplicates for `ui/*` equivalents (StatusBadge root → `ui/status-badge`; hand-rolled RAGBadge → `ui/status-badge RagBadge()`).
+6. **Remove decorative CSS on new surfaces** — `energy-*` classes are legacy; new surfaces don't use them.
+7. **Accessibility pass** — keyboard nav, dark mode, reduced-motion, colour-blind.
+8. **Regression check** — run the Preserved Behaviour contract against the migrated screen. If anything diverges, stop and surface.
+9. **Commit** with message format: `enhance(<lens>/<function>): <kind> — preserves <X>, <Y>`.
+
+Per-lens checkpoints pause between lenses per the overhaul protocol.
+
+---
+
+## §7 What Phase 1 does NOT decide
+
+Transparency on what's left to later phases:
+
+- **Per-function visual direction** — each of the 113 pages gets an explicit plan in `02-function-plan.md` (Phase 2).
+- **Layout primitive implementations** — built in Phase 3 as the first migrating screen touches each one.
+- **`DateInput` / `NumberInput` / `MoneyInput`** — built in Phase 3 on first form touch.
+- **`useEntityTrust`** — built in Phase 3 on first finance page migration.
+- **`LensNav` extraction** — refactored from the current sidebar in Phase 3, not up-front.
+- **Animation catalogue beyond the five approved patterns** — expanded only with explicit sign-off per pattern.
+- **Brand refresh** — not in scope. Phase 0 recorded brand verbatim; Phase 1 enforces it.
+
+---
+
+## §8 Phase 1 deliverables — summary
+
+| File | Size | Kind |
+|---|---|---|
+| `client/src/design/tokens.ts` | 170 lines | New — additive |
+| `client/src/design/hooks/useEntity.ts` | 55 lines | New — additive |
+| `client/src/design/hooks/useEntityList.ts` | 65 lines | New — additive |
+| `client/src/design/hooks/index.ts` | 12 lines | New — additive |
+| `docs/overhaul/01-wireframes.md` | ~1050 lines | New — documentation |
+| `docs/overhaul/01-design-system.md` | ~700 lines | New — documentation |
+
+**Zero existing files modified.** Everything is parallel and opt-in. Phase 3 migrations trigger actual adoption.
+
+---
+
+**End of `01-design-system.md`.**
+
+Companion artefacts (Phase 0): `00-inventory.md`, `00b-half-built.md`, `00c-source-of-truth-audit.md`, `backlog.md`.
+Companion artefact (Phase 1): `01-wireframes.md`.
+
+Next phase: `02-function-plan.md` — per-function improvement plan, grouped by lens, with priority tiers from `00-inventory.md §5.1`.
