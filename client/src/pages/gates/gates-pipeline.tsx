@@ -5,6 +5,16 @@ import { Input } from "@/components/ui/input";
 import { useLocation } from "wouter";
 import { Search, FolderOpen, AlertCircle, Filter } from "lucide-react";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout, TableLayout } from "@/components/layout";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 const STAGE_LABELS: Record<string, string> = {
   S01_FIRST_ASSESSMENT: "First Assessment",
@@ -76,88 +86,113 @@ export default function GatesPipelinePage() {
   if (isLoading) return <PageSkeleton />;
   if (error) return <PageError message="Failed to load gates pipeline" />;
 
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search projects..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-8"
-          />
-        </div>
-        <span className="text-sm text-muted-foreground">
-          {filtered.length} project{filtered.length !== 1 ? "s" : ""}
-        </span>
-        {hasSearch ? (
-          <Badge variant="outline" className="text-xs">
-            <Filter className="h-3 w-3 mr-1" />
-            Search active
-          </Badge>
-        ) : null}
-      </div>
+  const projectCount = filtered.length;
+  const totalCount = data?.projects?.length ?? 0;
+  const subtitle = hasSearch
+    ? `${projectCount} of ${totalCount} project${totalCount !== 1 ? "s" : ""} match your search`
+    : `${projectCount} project${projectCount !== 1 ? "s" : ""} in the lifecycle gate pipeline`;
 
-      <div className="border rounded-lg overflow-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b bg-muted/50">
-              <th className="text-left p-2 font-medium">Project</th>
-              <th className="text-left p-2 font-medium">Client</th>
-              <th className="text-left p-2 font-medium">Stage</th>
-              <th className="text-left p-2 font-medium">Status</th>
-              <th className="text-right p-2 font-medium">Readiness</th>
-              <th className="text-left p-2 font-medium">Waiting On</th>
-              <th className="text-right p-2 font-medium">Days</th>
-              <th className="text-left p-2 font-medium">Exec</th>
-              <th className="text-left p-2 font-medium">PM</th>
-            </tr>
-          </thead>
-          <tbody>
-            {showEmptyState ? (
-              <tr>
-                <td colSpan={9} className="py-12 text-center">
-                  <div className="flex flex-col items-center gap-2 text-muted-foreground">
-                    {data?.diagnostics?.schemaFallback ? <AlertCircle className="h-8 w-8 opacity-60 text-amber-600" /> : <FolderOpen className="h-8 w-8 opacity-40" />}
-                    <p className="text-sm font-medium">{emptyReason.title}</p>
-                    <p className="text-xs max-w-2xl">{emptyReason.details}</p>
-                    <p className="text-xs">{emptyReason.nextAction}</p>
-                    <div className="mt-3 text-[11px] text-left rounded-md border bg-muted/30 p-3 max-w-2xl">
-                      <p><strong>Visibility rules:</strong> Active, non-archived projects with lifecycle gate state.</p>
-                      <p><strong>Search filter:</strong> {hasSearch ? `Active (“${search}”)` : "None"}.</p>
-                      <p><strong>Total source projects:</strong> {data?.diagnostics?.totalProjects ?? data?.projects?.length ?? 0}.</p>
-                      {typeof data?.diagnostics?.activeExecutionRows === "number" ? <p><strong>Active execution rows:</strong> {data?.diagnostics?.activeExecutionRows}.</p> : null}
-                    </div>
-                  </div>
-                </td>
-              </tr>
-            ) : filtered.map((p) => (
-              <tr
-                key={p.projectId}
-                className="border-b hover:bg-muted/30 cursor-pointer"
-                onClick={() => navigate(`/project/${encodeURIComponent(p.projectName)}`)}
-              >
-                <td className="p-2 font-medium">{p.projectName}</td>
-                <td className="p-2 text-muted-foreground">{p.clientName || "-"}</td>
-                <td className="p-2">
-                  <span className="text-xs">{STAGE_LABELS[p.currentStageCode || ""] || p.currentStageCode || "Not set"}</span>
-                </td>
-                <td className="p-2">
-                  <Badge variant="outline" className={`text-[10px] ${gateStatusColor(p.gateStatus)}`}>
-                    {p.gateStatus || "Unknown"}
-                  </Badge>
-                </td>
-                <td className="p-2 text-right">{p.gateReadinessPct ?? 0}%</td>
-                <td className="p-2 text-muted-foreground">{p.waitingOnDepartment || "No blocker set"}</td>
-                <td className="p-2 text-right">{p.daysInStage}</td>
-                <td className="p-2 text-muted-foreground">{p.constructionManagerName || p.pd || "Unassigned"}</td>
-                <td className="p-2 text-muted-foreground">{p.pm || "Unassigned"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+  const toolbar = (
+    <div className="flex items-center gap-3 w-full">
+      <div className="relative flex-1 max-w-sm">
+        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Search projects..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="pl-8"
+          data-testid="input-search-gates-pipeline"
+        />
       </div>
+      <span className="text-sm text-muted-foreground whitespace-nowrap" data-testid="text-project-count">
+        {projectCount} project{projectCount !== 1 ? "s" : ""}
+      </span>
+      {hasSearch ? (
+        <Badge variant="outline" className="text-xs">
+          <Filter className="h-3 w-3 mr-1" />
+          Search active
+        </Badge>
+      ) : null}
     </div>
+  );
+
+  const emptyRow = (
+    <TableRow>
+      <TableCell colSpan={9} className="py-12 text-center">
+        <div className="flex flex-col items-center gap-2 text-muted-foreground">
+          {data?.diagnostics?.schemaFallback ? <AlertCircle className="h-8 w-8 opacity-60 text-amber-600" /> : <FolderOpen className="h-8 w-8 opacity-40" />}
+          <p className="text-sm font-medium">{emptyReason.title}</p>
+          <p className="text-xs max-w-2xl">{emptyReason.details}</p>
+          <p className="text-xs">{emptyReason.nextAction}</p>
+          <div className="mt-3 text-[11px] text-left rounded-md border bg-muted/30 p-3 max-w-2xl">
+            <p><strong>Visibility rules:</strong> Active, non-archived projects with lifecycle gate state.</p>
+            <p><strong>Search filter:</strong> {hasSearch ? `Active (“${search}”)` : "None"}.</p>
+            <p><strong>Total source projects:</strong> {data?.diagnostics?.totalProjects ?? data?.projects?.length ?? 0}.</p>
+            {typeof data?.diagnostics?.activeExecutionRows === "number" ? <p><strong>Active execution rows:</strong> {data?.diagnostics?.activeExecutionRows}.</p> : null}
+          </div>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+
+  const table = (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Project</TableHead>
+          <TableHead>Client</TableHead>
+          <TableHead>Stage</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead className="text-right">Readiness</TableHead>
+          <TableHead>Waiting On</TableHead>
+          <TableHead className="text-right">Days</TableHead>
+          <TableHead>Exec</TableHead>
+          <TableHead>PM</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {showEmptyState ? emptyRow : filtered.map((p) => (
+          <TableRow
+            key={p.projectId}
+            className="cursor-pointer"
+            onClick={() => navigate(`/project/${encodeURIComponent(p.projectName)}`)}
+            data-testid={`row-gate-${p.projectId}`}
+          >
+            <TableCell className="font-medium">{p.projectName}</TableCell>
+            <TableCell className="text-muted-foreground">{p.clientName || "-"}</TableCell>
+            <TableCell>
+              <span className="text-xs">{STAGE_LABELS[p.currentStageCode || ""] || p.currentStageCode || "Not set"}</span>
+            </TableCell>
+            <TableCell>
+              <Badge variant="outline" className={`text-[10px] ${gateStatusColor(p.gateStatus)}`}>
+                {p.gateStatus || "Unknown"}
+              </Badge>
+            </TableCell>
+            <TableCell className="text-right tabular-nums">{p.gateReadinessPct ?? 0}%</TableCell>
+            <TableCell className="text-muted-foreground">{p.waitingOnDepartment || "No blocker set"}</TableCell>
+            <TableCell className="text-right tabular-nums">{p.daysInStage}</TableCell>
+            <TableCell className="text-muted-foreground">{p.constructionManagerName || p.pd || "Unassigned"}</TableCell>
+            <TableCell className="text-muted-foreground">{p.pm || "Unassigned"}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+
+  return (
+    <PageLayout
+      data-testid="gates-pipeline-page"
+      header={
+        <PageHeader
+          title="Gates Pipeline"
+          subtitle={subtitle}
+        />
+      }
+    >
+      <TableLayout
+        toolbar={toolbar}
+        table={table}
+      />
+    </PageLayout>
   );
 }
