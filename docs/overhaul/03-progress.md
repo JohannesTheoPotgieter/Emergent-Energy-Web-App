@@ -75,6 +75,9 @@ Cumulative migrations on `claude/platform-overhaul-3WF1E` ready for cumulative o
 | **F-047 PD Dashboard** | 🟢 migrated | `68ad65b` | CCO/KAM/PD landing. PageLayout + PageHeader with eyebrow promoted to title. Working-list link in actions slot. |
 | **F-039 Commissioning Dashboard** | 🟢 migrated | `e8f84c9` | 2-state page (selector + per-project). Decorative FileSpreadsheet icon stripped. Upload + Refresh in PageHeader.actions. Feeds F-020 Handover readiness-score. |
 | **F-052 Import Control Tower** | 🟢 migrated | `4687d18` | Admin data-ops. 5-stat KPI grid with tabular-nums. Refresh in header. |
+| **F-046 SharePoint Intake** | 🟢 migrated | `51d7a17` | COO-only sync-management page. Status chip + Refresh button both in PageHeader.actions. 4-stat summary cards tabular-nums. |
+| **F-052 Database Migration Finalize** | 🟢 migrated | `caafa9c` | Admin Phase 5 cleanup page. Decorative Database icon stripped. Archive + restore mutations preserved unchanged. |
+| **F-038 My Work Admin Settings** | 🟢 migrated | `f36b4e0` | Global settings + company priorities management. Hidden-from-sidebar admin surface. |
 
 **Total this session: 8 pages migrated + 1 deferred.** Gates sub-lanes (7 of 8) now share consistent W3 visual treatment — the "harvest ratio" working as designed.
 
@@ -109,18 +112,21 @@ Priority candidates for subsequent sessions:
 
 ### §2.0c Cumulative state across all sessions
 
-**31 pages migrated** to the Phase 3 primitives (as of commit `4687d18`).
+**34 pages migrated** to the Phase 3 primitives (as of commit `f36b4e0`).
 
 | Archetype proven | Count | Pages |
 |---|---|---|
 | **TableLayout (W3 list)** | 13 | Gates workspace (8) + Monthly Report history pair (2) + Monthly Report compare pair (2) + Weekly Reviews (1) |
 | **DetailLayout (W4 detail)** | 2 | PM Monthly Report Project + Eng Monthly Report Project |
-| **PageLayout + PageHeader (light chrome)** | 31 | All of the above + Lifecycle Board + Project Create + Training + PM Handover Review + Exceptions + KPI Traceability + Eng Template Admin + Action Launchpad + Engineering Audit Log + PM On-The-Go Home + Department Scores + Programme Reports + Feedback + PD Dashboard + Commissioning Dashboard + Import Control Tower |
+| **PageLayout + PageHeader (light chrome)** | 34 | All of the above + Lifecycle Board + Project Create + Training + PM Handover Review + Exceptions + KPI Traceability + Eng Template Admin + Action Launchpad + Engineering Audit Log + PM On-The-Go Home + Department Scores + Programme Reports + Feedback + PD Dashboard + Commissioning Dashboard + Import Control Tower + SharePoint Intake + Database Migration + My Work Admin Settings |
 | **FormLayout** | 0 | Not yet proven — deferred (PageShell + Card pattern adequately handles form pages) |
 | **WizardLayout** | 0 | Not yet proven — F-018 Weekly Reviews' wizard lives in project workflow, not on the page currently migrated |
 | **AppShell + LensNav** | 0 | Deferred — existing AppLayout already provides whole-app chrome |
 
-Phase 3 progress: **~55% of 56 planned functions migrated.**
+Phase 3 progress: **~61% of 56 planned functions migrated.**
+
+Pages evaluated and skipped (with rationale):
+- **Teams Chats** — full-viewport 3-column chat interface with fixed height calc; PageLayout pattern not a fit (intentional chrome).
 
 Open for cumulative owner staging review per D-011.
 
