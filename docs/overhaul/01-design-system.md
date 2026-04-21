@@ -690,14 +690,21 @@ Never inline `style={{ color: "#16A34A" }}` — use `text-primary` or import fro
 When a screen is being touched, follow this order of operations:
 
 1. **Read the existing component end-to-end.** Understand every branch.
-2. **Capture current behaviour** in a Preserved Behaviour contract (see `02-function-plan.md` per function).
+2. **Capture current behaviour** in a Preserved Behaviour contract (see `02-function-plan.md` per function). Every migrated screen's contract implicitly includes the four mobile checks per owner decision D-010 (`03-progress.md`).
 3. **Migrate data-access** — swap inline `useQuery` → `useEntity` / `useEntityList` where the endpoint is canonical. Leave legacy endpoints on inline `useQuery` until the server-side migration lands.
 4. **Migrate layout** — wrap in the appropriate layout primitive (`TableLayout` / `DetailLayout` / etc.). The layout primitive composes existing `ui/*` — not new UI.
 5. **Migrate visuals** — swap hand-rolled duplicates for `ui/*` equivalents (StatusBadge root → `ui/status-badge`; hand-rolled RAGBadge → `ui/status-badge RagBadge()`).
-6. **Remove decorative CSS on new surfaces** — `energy-*` classes are legacy; new surfaces don't use them.
-7. **Accessibility pass** — keyboard nav, dark mode, reduced-motion, colour-blind.
-8. **Regression check** — run the Preserved Behaviour contract against the migrated screen. If anything diverges, stop and surface.
-9. **Commit** with message format: `enhance(<lens>/<function>): <kind> — preserves <X>, <Y>`.
+6. **Apply the "good-looking solve" principle** (owner decision D-007):
+   - Information-dense + professional + clean — per the wireframes.
+   - Keep purposeful motion: state transitions, loading skeletons, slide-up reveals.
+   - Strip filler decoration that serves no user purpose: decorative `energy-*` animations, ambient glow borders, ornamental gradients that don't communicate state.
+   - Brand green is used **purposefully** (action, active state, success) — not as filler colour.
+   - Commit message calls out the specific decoration stripped, so each removal is visible in the diff.
+7. **Mobile check (D-009 / D-010)** — every migrated page must: (a) not break at 390px, (b) have primary flows touch-reachable without horizontal scroll (dense tables may scroll H with sticky first column), (c) 44px minimum touch targets, (d) lens-appropriate bottom-tab per W7.
+8. **Accessibility pass** — keyboard nav, dark mode, reduced-motion, colour-blind.
+9. **Regression check** — run the Preserved Behaviour contract against the migrated screen. For approval-domain pages: verify operational threshold routing is preserved bit-for-bit per D-008. If anything diverges, stop and surface.
+10. **Deploy to staging per D-011** — wave lands on branch; staging deploy produced; owner approval required before merge to main.
+11. **Commit** with message format: `enhance(<lens>/<function>): <kind> — preserves <X>, <Y>`.
 
 Per-lens checkpoints pause between lenses per the overhaul protocol.
 
