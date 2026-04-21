@@ -38,7 +38,15 @@ Legend: 🟢 shipped · 🟡 in progress · 🔴 blocked · ⚪ deferred
 
 ## §2 Function migrations
 
-Phase 3 Wave 1+ per-function migrations require live verification against the running app:
+### §2.0 Wave 1 — in progress
+
+| Function | Status | Commit | Notes |
+|---|---|---|---|
+| **F-002 Lifecycle Board** | 🟢 **migrated — awaiting owner staging review** | `6a41be2` | PageLayout + PageHeader. Add Project moved into PageHeader actions. Subtitle consolidated. Zero behaviour changes. Canonical reads unchanged. |
+
+**Open for owner review (D-006, D-011):** staging deploy of `claude/platform-overhaul-3WF1E` → click through Lifecycle Board → approve for Wave-1 merge to main, or flag regressions.
+
+### §2.1 Phase 3 Wave 1+ per-function migrations require live verification against the running app:
 
 1. Capture current behaviour (manual checklist or strengthened test).
 2. Make the change using the primitives.
@@ -53,7 +61,7 @@ This loop is **not safely parallelisable across 56 functions in a single automat
 
 | Wave | Function(s) | Status | Notes |
 |---|---|---|---|
-| 1 | F-002 Lifecycle Board | ⚪ deferred | Smallest proof surface. Uses AppShell + LensNav + PageHeader + PageLayout. |
+| 1 | F-002 Lifecycle Board | 🟢 **migrated — awaiting owner staging review** | Commit `6a41be2`. PageLayout + PageHeader applied. |
 | 2 | F-004 Gates Pipeline + F-005–F-011 sub-lanes | ⚪ deferred | Proves TableLayout; harvests 8 pages. |
 | 2 | F-012 Projects, F-019 Milestone Tracker, F-030 COS, F-031 Revenue Tracker, F-037 Priorities list, F-041 Eng Tasks, F-048 Opportunities | ⚪ deferred | Harvest TableLayout further. |
 | 3 | F-013 Project Detail | ⚪ deferred | Largest surface. Proves DetailLayout. High risk. |
