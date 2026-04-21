@@ -129,4 +129,90 @@ Full parallel variable set exists at `index.css:107-158`. Phase 1 design-system 
 
 ---
 
-**End of §1.** Next checkpoint: §2 — canonical backend summary + navigation spine.
+**End of §1.**
+
+---
+
+## §2 Canonical backend + navigation spine
+
+Phase 0 findings that set the ground truth for every "source-of-truth" decision in later phases. Audit details live in `00c-source-of-truth-audit.md`; this section is the summary an overhaul reader needs without opening that file.
+
+### §2.1 Canonical object-based backend — confirmed pattern
+
+**It is not a single polymorphic "objects" table.** It is a **family of domain write-masters** — "one write-master per domain, everything else is adapter or read-model." (The phrase is from `docs/archive/CANONICAL_MODEL_DECISION_TABLE.md:14`.)
+
+| Domain | Canonical write-master | Location | Notes |
+|---|---|---|---|
+| Tasks / work | `work_items` | `shared/schema/tasks.ts:147` | Unified across ENG / PM / QUALITY / PERSONAL workstreams. 75+ columns. Writable base table; view-based architecture retired (`migrations/20260409_retire_work_items_view.sql`). |
+| Task assignments | `work_item_assignments` | `shared/schema/tasks.ts:319` | Roles: OWNER, ASSIGNEE, REVIEWER, VIEWER. |
+| Task domain extensions | `work_item_pm`, `work_item_engineering`, `work_item_scheduling` | `shared/schema/tasks.ts:243-317` | 1:1 with `work_items` via UNIQUE FK; joined in `queryWorkItems()`. |
+| Costs | `normalized_cost_lines` | `shared/schema/finance.ts:574` | Temporal snapshot table. `effective_to IS NULL` = current row — MUST be applied on every aggregate read. |
+| Revenue | `normalized_revenue_lines` | `shared/schema/finance.ts:489` | Temporal snapshot table. Same `effective_to` guard. |
+| Project identity | `project_info` | `shared/schema/projects.ts:169` | Canonical project metadata. Upsert key: `projectCode` (Smart Import v2). |
+| Project lifecycle state | `project_execution_state` | `shared/schema/projects.ts:207` | Phase, gate status, RAG, financial review tracking. Split from `project_info` but read together. |
+| Approvals | `approvals` | referenced by `server/approvals-routes.ts:18` | Single write-master for finance / delivery / quality / engineering / HSE approvals. |
+| Deliverables | `deliverables` | referenced by `server/approvals-routes.ts:16` | Execution board deliverables. |
+
+**Legacy adapter tables** — still exist, still readable for backfill/reference, but new code must NOT read from them once the canonical equivalent is live:
+
+- Tasks: `operational_tasks`, `mytool_tasks`, `normalized_plan_tasks` (backfilled into `work_items` 2026-04-09).
+- Costs: `program_expense` / `programExpense` (legacy PE shape — replaced by `normalized_cost_lines`).
+- Revenue: `program_inflows` / `programInflows` (legacy PI shape — replaced by `normalized_revenue_lines`).
+
+Per `CLAUDE.md`, `server/work-items-adapter.ts` and `server/work-items-backfill.ts` are "read-only reference; do not extend them for new features."
+
+### §2.2 State of the canonical migration as of 2026-04-21
+
+Much better than anticipated. The SoT audit (`00c-source-of-truth-audit.md`) found:
+
+- **Tasks.** All workstream reads (ENG tasks, PM tasks, My Work, operational) now route through `work_items`. Zero remaining legacy reads on new code paths. Feature flag `canonical_work_items_v1` promotes the surface.
+- **Costs.** `normalized_cost_lines` is the sole read source across COS dashboard, Cashflow, Company Overview, Home Dashboard, Data Quality Dashboard. `program_expense` reads decommissioned.
+- **Revenue.** `normalized_revenue_lines` is the sole read source across Revenue Tracker, milestone linking, monthly reports. `program_inflows` reads decommissioned.
+- **Projects / lifecycle / approvals / deliverables.** All read from canonical tables directly.
+
+**One hybrid remaining** — recorded as the highest-priority canonical clean-up:
+
+- `server/lib/cashflow-helpers.ts:resolveInflowEffectiveDates()` still reads from legacy `operationalTasks` and `normalized_plan_tasks` to resolve milestone → effective-date hierarchy for revenue recognition. This is an internal helper (not a page-level read) but it feeds the Cashflow forecast. Migration target: move task-link resolution into `normalized_revenue_lines` extension or `projectExecutionState.financialReviewId`.
+
+**Practical consequence for Phase 2+ planning:** source-of-truth migration work is nearly done. The overhaul focuses on **visual polish + additive function**, not on rescuing reads. Any screen we touch that still hand-rolls a fetcher should adopt the shared canonical hooks (Phase 1 §1.4 data-access primitives) rather than reroute plumbing.
+
+### §2.3 Navigation spine
+
+The sidebar is **two-layered**:
+
+**Layer 1 — 14 nav groups** (sidebar buckets, `client/src/config/page-registry.ts:9-24`):
+
+`MY_WORK`, `PORTFOLIO`, `PRIORITIES`, `PROJECT_DEVELOPMENT`, `PROJECTS`, `PROJECT_MANAGEMENT`, `GATES`, `FINANCE`, `ENGINEERING`, `QUALITY`, `HSE`, `REPORTS`, `KNOWLEDGE`, `SYSTEM`.
+
+**Layer 2 — 10 app sections** (role-level toggles, source: `NAV_GROUP_TO_SECTION` at `client/src/config/page-registry.ts:273-288`; enum: `shared/schema/users.ts:1329-1344`):
+
+| Section | Nav groups folded into it |
+|---|---|
+| `HOME` | MY_WORK |
+| `PROJECT_DELIVERY` | PROJECTS, PROJECT_MANAGEMENT |
+| `PROJECT_DEVELOPMENT` | PROJECT_DEVELOPMENT |
+| `ENGINEERING` | ENGINEERING |
+| `QUALITY` | QUALITY |
+| `HSE` | HSE |
+| `FINANCE` | FINANCE |
+| `PORTFOLIO` | PORTFOLIO, GATES |
+| `PRIORITIES` | PRIORITIES |
+| `REPORTS` | REPORTS |
+| `ADMIN` | KNOWLEDGE, SYSTEM |
+
+**Access is resolved through** (chain, every link verified):
+
+1. User role (from `users.role` or `company_role` localStorage) → normalized via `normalizeRoleForPermissions` (`shared/schema/users.ts:299-302`).
+2. Page path → `permissionEntity` via `getPermissionEntityForPath` (`client/src/config/page-registry.ts:258`).
+3. `(entity, action)` → allow / deny via `evaluateEntityAccess` (`client/src/config/runtime-access.ts:37-57`), which checks in order: user override → runtime entity permissions → `ENTITY_PERMISSION_DEFAULTS` (`shared/schema/users.ts:314-1230`).
+4. Top-level visibility also gated by `role_permissions.sections` DB column (`shared/schema/users.ts:1329-1344`) — role can have `ADMIN` hidden entirely.
+
+**Implications for Phase 1+:**
+
+- New pages must be added to `PAGE_REGISTRY` with `permissionEntity` + `navGroup`.
+- Section-level role visibility is **runtime-configurable** per tenant in `role_permissions`; do not hardcode assumptions based on defaults.
+- The `LensProvider` context (`client/src/hooks/use-lens-context.tsx`) is the right hook-point for per-role lens adaptation — extend, do not replace.
+
+---
+
+**End of §2.** Next checkpoint: §3 — page inventory tables grouped by nav group.
