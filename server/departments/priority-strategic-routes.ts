@@ -1,6 +1,7 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { z } from "zod";
-import { requireAuth, requirePriorityAdmin } from "./shared-middleware";
+import { requireAuth, requirePriorityAdmin, requirePriorityCreator } from "./shared-middleware";
+import { isPriorityAdminRole } from "@shared/config/priorities";
 import { getEffectiveUser } from "../auth-context";
 import { db } from "../db";
 import {
@@ -784,7 +785,7 @@ router.get("/api/priorities/:id", requireAuth, asyncHandler(async (req: Request,
 router.post(
   "/api/priorities",
   requireAuth,
-  requirePriorityAdmin,
+  requirePriorityCreator,
   validateBody(createPrioritySchema),
   asyncHandler(async (req: Request, res: Response) => {
     const user = getEffectiveUser(req)!;
@@ -796,6 +797,23 @@ router.post(
       horizon, next_action, definition_of_done, support,
       scope, parent_id, department_key, assigned_user_id,
     } = body;
+
+    // Non-admin dept heads may only create department/role-scoped priorities
+    // for their own department. Company-scope creation is admin-only.
+    if (!isPriorityAdminRole(user.role)) {
+      const userDept = user.role
+        ? (ROLE_DEPARTMENT_MAP as Record<string, string>)[user.role]
+        : undefined;
+      if (scope && scope !== "department" && scope !== "role") {
+        throw badRequest("Dept-head users can only create department or role priorities");
+      }
+      if (!userDept) {
+        throw badRequest("Your role has no associated department");
+      }
+      if (department_key && department_key !== userDept) {
+        throw badRequest("You may only create priorities for your own department");
+      }
+    }
 
     if (owner_user_id) {
       const ownerUser = await getUserById(owner_user_id);
@@ -878,7 +896,7 @@ router.post(
 router.put(
   "/api/priorities/:id",
   requireAuth,
-  requirePriorityAdmin,
+  requirePriorityCreator,
   validateBody(updatePrioritySchema),
   asyncHandler(async (req: Request, res: Response) => {
     const user = getEffectiveUser(req)!;
@@ -896,6 +914,29 @@ router.put(
       status, horizon, next_action, definition_of_done, support, priority_rank,
       scope, parent_id, department_key, assigned_user_id,
     } = body;
+
+    // Non-admin dept heads may only edit dept/role priorities within their own
+    // department, and may not promote a priority to company scope or move it
+    // to another department. Mirrors the POST scope guard.
+    if (!isPriorityAdminRole(user.role)) {
+      const userDept = user.role
+        ? (ROLE_DEPARTMENT_MAP as Record<string, string>)[user.role]
+        : undefined;
+      const existingScope = (existing[0] as any).scope || "company";
+      const existingDept = (existing[0] as any).departmentKey || null;
+      if (existingScope === "company") {
+        throw badRequest("Only priority admins can edit company-scope priorities");
+      }
+      if (existingDept && userDept && existingDept !== userDept) {
+        throw badRequest("You may only edit priorities within your own department");
+      }
+      if (scope && scope !== "department" && scope !== "role") {
+        throw badRequest("Dept-head users cannot promote a priority to company scope");
+      }
+      if (department_key && userDept && department_key !== userDept) {
+        throw badRequest("You may only assign priorities to your own department");
+      }
+    }
 
     const updates: Record<string, any> = { updatedAt: new Date() };
     if (title !== undefined) updates.title = title;

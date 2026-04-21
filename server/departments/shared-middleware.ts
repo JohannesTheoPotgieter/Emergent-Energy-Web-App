@@ -27,6 +27,23 @@ export function requirePriorityAdmin(req: Request, res: Response, next: NextFunc
   res.status(403).json({ error: "forbidden", message: "Priority admin access required", code: "ROLE_REQUIRED" });
 }
 
+/**
+ * Allow priority admins OR department heads. Used for the POST /api/priorities
+ * endpoint so dept heads can create their own department/role-scoped priorities
+ * (the route handler enforces scope/department restrictions for non-admins).
+ */
+export function requirePriorityCreator(req: Request, res: Response, next: NextFunction) {
+  const role = getEffectiveUser(req)?.role;
+  if (
+    role &&
+    ((PRIORITY_ADMIN_ROLES as readonly string[]).includes(role) ||
+      (DEPARTMENT_HEAD_ROLES as readonly string[]).includes(role))
+  ) {
+    return next();
+  }
+  res.status(403).json({ error: "forbidden", message: "Priority creation requires admin or dept-head role", code: "ROLE_REQUIRED" });
+}
+
 export function requireDepartmentHead(req: Request, res: Response, next: NextFunction) {
   const role = getEffectiveUser(req)?.role;
   if (role && (DEPARTMENT_HEAD_ROLES as readonly string[]).includes(role)) {
