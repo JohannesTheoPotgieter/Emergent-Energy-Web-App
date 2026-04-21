@@ -215,4 +215,270 @@ The sidebar is **two-layered**:
 
 ---
 
-**End of §2.** Next checkpoint: §3 — page inventory tables grouped by nav group.
+**End of §2.**
+
+---
+
+## §3 Page inventory — grouped by nav group
+
+Source of truth for this table: `client/src/config/page-registry.ts` (113 PAGE_REGISTRY entries + 15 LEGACY_REDIRECTS, audited 2026-04-21).
+
+### Legend
+
+- **Status**: `Active` = renders a component & shown in sidebar. `Hidden` = renders a component, sidebar suppressed (`showInSidebar: false`). `Alias` = redirect-only entry. `Detail` = parametric route reachable from a parent (`:id`, `:projectName`, etc.).
+- **Edit roles** uses the permission-group constants in `shared/schema/users.ts:117-149` where they apply, otherwise lists explicitly:
+  - **All** = all 16 `COMPANY_ROLES` (`ALL_STAFF_ROLES`)
+  - **Admin** = `COO_ADMIN, CEO_ADMIN` (`ADMIN_ROLES`)
+  - **Finance Edit** = `COO_ADMIN, CEO_ADMIN, CFO, PROGRAM_FINANCE_MANAGER, ACCOUNTANT` (`FINANCE_EDIT_ROLES`)
+  - **Eng Edit** = `COO_ADMIN, CEO_ADMIN, ENGINEERING_MANAGER, PROGRAM_MANAGER, ENGINEER, SSEG_MANAGER` (`ENG_EDIT_ROLES`)
+  - **Q/HSE Edit** = `COO_ADMIN, CEO_ADMIN, QUALITY_MANAGER, CONSTRUCTION_MANAGER, HSE_MANAGER` (`QUALITY_HSE_EDIT_ROLES`)
+- **Landing** column lists roles for which this is the post-login default (`roleLandingEligibility`).
+- View roles are not column-listed because most pages match a permission group; full view/edit matrix is in §4.
+
+### §3.1 MY_WORK — `Section: HOME`
+
+Daily personal workspace. All staff have access; sub-pages may further gate.
+
+| Path | Label | Permission entity | Edit roles | Status | Notes |
+|---|---|---|---|---|---|
+| `/my-work` | My Work | `home` | Admin | Active | `matchSubRoutes`. Personal dashboard. |
+| `/inbox` | Inbox | `home` | Admin | Hidden | Direct URL only. |
+| `/my-work/calendar` | Calendar | `my_work` | All | Active | Personal calendar — Outlook-bridged. |
+| `/my-work/tasks` | Tasks | `my_tool` | All | Active | Personal task board (PERSONAL bucket of `work_items`). |
+| `/my-work/approvals` | Approvals | `my_work` | All | Alias → `/my-work/tasks?source=approvals` | Duplicate entry-point per Prompt 0.7 — kept for deep links. |
+| `/my-work/meetings` | Meetings | `meetings` | All | Active | Outlook calendar surface. |
+| `/my-work/email` | Email | `collaboration_hub` | Admin+PM/PFM/CM/PMS | Hidden | Outlook inbox preview. |
+| `/my-work/teams` | Teams Chat | `teams_chat` | All | Active | MS Teams chat surface. |
+| `/my-work/settings` | Settings | `home` | Admin | Hidden | Per-user My Work prefs. |
+| `/admin/my-tool-settings` | My Work Settings | `admin` | Admin | Detail | Admin-only override panel. |
+
+### §3.2 PORTFOLIO — `Section: PORTFOLIO`
+
+Cross-portfolio view (executive lens).
+
+| Path | Label | Permission entity | Edit roles | Status | Notes |
+|---|---|---|---|---|---|
+| `/company-overview` | Company Overview | `execution_board` | Admin+PM | Active | **Landing**: COO_ADMIN, CEO_ADMIN. |
+| `/lifecycle-board` | Lifecycle Board | `lifecycle` | Admin+PM | Active | Cross-project lifecycle stage view. |
+
+### §3.3 PRIORITIES — `Section: PRIORITIES`
+
+| Path | Label | Permission entity | Edit roles | Status | Notes |
+|---|---|---|---|---|---|
+| `/priorities` | Priorities | `company_priorities` | Admin+CCO | Active | Company priorities list. |
+| `/priorities/:id` | Priority Detail | `company_priorities` | Admin+CCO | Detail | |
+| `/company-priorities` | Company Priorities | `company_priorities` | — | Alias → `/priorities` | Legacy redirect. |
+
+### §3.4 PROJECT_DEVELOPMENT — `Section: PROJECT_DEVELOPMENT`
+
+CCO / KAM / PD lens. Pipedrive is now the source of truth; legacy SharePoint Proposals UI removed 2026-04-19.
+
+| Path | Label | Permission entity | Edit roles | Status | Notes |
+|---|---|---|---|---|---|
+| `/pd` | PD Dashboard | `pd_dashboard` | Admin | Active | **Landing**: CCO, KEY_ACCOUNTS_MANAGER, PROJECT_DEVELOPER. Aliases `/pd/dashboard`. |
+| `/opportunities` | Opportunities | `pd_dashboard` | Admin | Active | Merged Pipeline / Opportunities surface. |
+| `/pd/tickets` | PD Tickets (moved) | `pd_dashboard` | — | Alias → `/opportunities` | Legacy. |
+| `/pd/tickets/create` | Create Ticket (moved) | `pd_dashboard` | — | Alias → `/opportunities` | Legacy. |
+| `/pd/tickets/:id` | Ticket Detail (moved) | `pd_dashboard` | — | Alias → `/opportunities` | Legacy. |
+| `/pd/reports` | PD Reports (moved) | `pd_dashboard` | — | Alias → `/opportunities` | Legacy. |
+
+### §3.5 PROJECTS — `Section: PROJECT_DELIVERY`
+
+| Path | Label | Permission entity | Edit roles | Status | Notes |
+|---|---|---|---|---|---|
+| `/projects` | Project List | `projects` | Admin+CCO+PM+PFM+CM | Active | Master project list. |
+| `/clients` | Clients | `pd_clients` | Admin+CCO+KAM+PD | Active | Client list. Alias `/pd/clients`. |
+| `/clients/:clientId` | Client Detail | `pd_clients` | Admin+CCO+KAM+PD | Detail | |
+| `/clients/:clientId/project/:projectId` | Project Departments | `pd_clients` | Admin+CCO+KAM+PD | Detail | |
+| `/sites` | Sites | `projects` | Admin+CCO+PM+PFM+CM | Active | Site list (Phase B addition). |
+| `/project-lifecycle` | Project Lifecycle | `lifecycle` | Admin+PM | Active | Project-scoped lifecycle. |
+| `/project-lifecycle/stage-gates` | Stage Gates | `lifecycle` | Admin+PM | Detail | |
+| `/project-lifecycle/latest-updates` | Latest Updates | `projects` | Admin+CCO+PM+PFM+CM | Detail | |
+| `/project-lifecycle/client-overview` | Client Overview | `pd_clients` | Admin+CCO+KAM+PD | Detail | |
+
+### §3.6 PROJECT_MANAGEMENT — `Section: PROJECT_DELIVERY`
+
+The biggest delivery group. Site PM / Construction Manager / Program Manager primary lens.
+
+| Path | Label | Permission entity | Edit roles | Status | Notes |
+|---|---|---|---|---|---|
+| `/execution-board` | Execution Board | `execution_board` | Admin+PM | Active | **Landing**: PROJECT_MANAGER_SITE, COO_ADMIN, CEO_ADMIN, PROGRAM_MANAGER, CONSTRUCTION_MANAGER. `matchSubRoutes`, alias `/execution-dashboard`. |
+| `/execution-board/program` | Program View | `execution_board` | Admin+PM | Detail | |
+| `/execution-board/finance` | Program Finance | `execution_board` | Admin+PM | Detail | |
+| `/execution-dashboard` | Execution Dashboard | `execution_board` | Admin+PM | Hidden | Same component, alternate path. |
+| `/pm-dashboard` | PM Dashboard | `pm_dashboard` | (entity-specific) | Active | Site-PM dashboard. |
+| `/pm/on-the-go` | PM On-The-Go | `pm_on_the_go` | (entity-specific) | Active | Mobile PM workflow. |
+| `/pm/on-the-go/project/:projectId` | On-The-Go Project | `pm_on_the_go` | (entity-specific) | Detail | |
+| `/pm/approvals` | Approvals | `approvals` | Admin+QM+EngM+CM+PMS | Active | Canonical approvals queue. |
+| `/pm/deliverables` | PM Deliverables (Retired) | `deliverables` | — | Alias → `/pm/approvals` | Retired Phase 1 EPC. |
+| `/governance/financial-reviews` | Financial Review Queue | `approvals` | Admin+QM+EngM+CM+PMS | Active | Finance approval sub-queue. |
+| `/portfolios` | Portfolios | `portfolios` | Admin+PM | Active | Portfolio rollups. |
+| `/portfolios/:id` | Portfolio Detail | `portfolio_detail` | Admin+PM | Detail | |
+| `/handover` | Handover & Closeout | `handover` | Admin+PM+PD | Active | Top-level handover surface. |
+| `/handover-control` | Handover Control | `handover` | Admin+PM+PD | Active | COO control view. |
+| `/pd/handover/:projectId` | PD to PM Handover | `handover` | Admin+PM+PD | Detail | v2; v1 removed 2026-03-31. |
+| `/pm/handover-review` | PM Handover Review | `handover` | Admin+PM+PD | Detail | |
+| `/milestone-tracker` | Milestone Tracker | `execution_board` | Admin+PM | Active | Construction Manager view. |
+| `/po-approval-board` | PO Approvals | `procurement` | Admin+PM+PFM | Active | EPC Phase 1. |
+| `/payment-request-board` | Payment Requests | `procurement` | Admin+PM+PFM | Active | EPC Phase 1. |
+| `/payment-batch-manager` | Payment Batches | `procurement` | Admin+PM+PFM | Active | EPC Phase 1. |
+| `/procurement` | Procurement | `execution_board` | — | Alias → `/execution-board` | |
+| `/weekly-reviews` | Weekly Reviews | `weekly_review_wizard` | Admin+PM+PFM+CM+PMS | Hidden | |
+| `/standups` | Standups | `standups` | Admin+PM+EngM+CM | Alias → `/engineering/standup` | |
+| `/project/:projectName` | Project Detail | `projects` | Admin+CCO+PM+PFM+CM | Detail | Per-project drill-in. |
+| `/project/:projectName/financial-linking` | Financial Linking | `financial_linking` | Admin+CFO | Detail | |
+| `/project/:projectName/gate/:stageCode` | Project Stage Gate | `stage_lifecycle` | Admin+PM+CM+PMS+PD | Detail | |
+| `/project-create` | Create Project | `project_creation` | Admin+CCO | Detail | |
+| `/actions/launchpad` | Quick Create | `work_items` | (work_items edit) | Detail | Cmd-K creation surface. |
+
+### §3.7 GATES — `Section: PORTFOLIO`
+
+Newer (Prompt 2) workspace. All gated by `lifecycle`. Edit: Admin + PROGRAM_MANAGER.
+
+| Path | Label | Permission entity | Status |
+|---|---|---|---|
+| `/gates` | Gates Pipeline | `lifecycle` | Active |
+| `/gates/blocked` | Blocked Gates | `lifecycle` | Active |
+| `/gates/ready` | Ready Gates | `lifecycle` | Active |
+| `/gates/exceptions` | Gate Exceptions | `lifecycle` | Active |
+| `/gates/client-updates` | Client Updates | `lifecycle` | Active |
+| `/gates/handovers` | Handover Queue | `lifecycle` | Active |
+| `/gates/queries` | Open Queries | `lifecycle` | Active |
+| `/gates/commitments` | Client Commitments | `lifecycle` | Active |
+
+### §3.8 FINANCE — `Section: FINANCE`
+
+CFO / PFM / Accountant primary lens. All edit: **Finance Edit** unless noted.
+
+| Path | Label | Permission entity | Edit roles | Status | Notes |
+|---|---|---|---|---|---|
+| `/cashflow` | Cashflow | `cashflow` | Finance Edit | Active | **Landing**: CFO, PROGRAM_FINANCE_MANAGER, ACCOUNTANT. |
+| `/cos` | COS | `cos` | Finance Edit | Active | Cost-of-sales tracker. |
+| `/revenue-tracker` | Revenue | `revenue_tracker` | Finance Edit | Active | |
+| `/finance/quickbooks` | QB Throughput | `financials` | Finance Edit | Active | Absorbs QB Mapping, Linking, Counterparties, Subcontractors, Invoice Patterns, Admin QB. |
+| `/finance/quickbooks-customer-mapping` | QB Customer Mapping | `financials` | Finance Edit | Hidden | Absorbed; route retained. |
+| `/finance/quickbooks-links` | QB Bill Linking | `financials` | Finance Edit | Hidden | Absorbed; route retained. |
+| `/invoice-patterns` | Invoice Patterns | `invoice_patterns` | Admin+PFM | Hidden | Absorbed into QB Throughput. |
+| `/counterparties` | Counterparties | `counterparties` | Admin+PFM+PM+CM | Hidden | Absorbed into QB Throughput. |
+| `/subcontractor-dashboard` | Subcontractors | `subcontractors` | Admin+PFM+PM+CM | Hidden | Absorbed into QB Throughput. |
+| `/revenue` | Revenue (Legacy) | `revenue_tracker` | — | Alias → `/revenue-tracker` | |
+| `/cos-control` | COS Control (Legacy) | `cos` | — | Alias → `/cos` | |
+| `/cashflow-forecast` | Cashflow Forecast (Legacy) | `cashflow` | — | Alias → `/cashflow` | |
+
+### §3.9 ENGINEERING — `Section: ENGINEERING`
+
+| Path | Label | Permission entity | Edit roles | Status | Notes |
+|---|---|---|---|---|---|
+| `/engineering` | Engineering | `engineering` | Eng Edit | Active | **Landing**: ENGINEERING_MANAGER, ENGINEER. |
+| `/engineering/tasks` | Task Board | `eng_tasks` | Admin+EngM+PM+Eng | Active | |
+| `/engineering/standup` | Engineering Standup | `standups` | Admin+PM+EngM+CM | Active | |
+| `/engineering/audit` | Engineering Audit Log | `admin` | Admin | Hidden | |
+
+### §3.10 QUALITY — `Section: QUALITY`
+
+| Path | Label | Permission entity | Edit roles | Status | Notes |
+|---|---|---|---|---|---|
+| `/quality` | Quality | `quality` | Q/HSE Edit | Active | **Landing**: QUALITY_MANAGER. |
+| `/quality/dashboard` | Quality Dashboard | `quality` | — | Alias → `/quality` | |
+| `/quality/ncrs` | NCR List (Legacy) | `quality` | — | Alias → `/quality` | |
+| `/quality/ncr/:id` | NCR Detail (Legacy) | `quality` | — | Alias → `/quality` | |
+| `/commissioning-dashboard` | Commissioning | `commissioning` | Admin+PM+CM+PMS | Active | |
+| `/commissioning-dashboard/:projectId` | Commissioning Dashboard | `commissioning` | Admin+PM+CM+PMS | Detail | |
+
+### §3.11 HSE — `Section: HSE`
+
+| Path | Label | Permission entity | Edit roles | Status | Notes |
+|---|---|---|---|---|---|
+| `/hse` | Health, Safety & Environment | `hse` | Admin+HSE+CM+QM | Active | **Landing**: HSE_MANAGER, SSEG_MANAGER. |
+| `/hse/compliance` | Compliance / SSEG | `hse_compliance` | Admin+HSE+SSEG | Alias → `/hse?tab=compliance` | |
+
+### §3.12 REPORTS — `Section: REPORTS`
+
+All gated by `reports` (view: All staff; edit: Admin + PM + PFM + CM + EngM) unless noted.
+
+| Path | Label | Permission entity | Status | Notes |
+|---|---|---|---|---|
+| `/reports/programme` | Programme Reports | `reports` | Active | |
+| `/reports/center` | Report Center | `reports` | Hidden | |
+| `/reports/performance` | Performance | `performance` | Hidden | View: senior roles only. |
+| `/reports/pm/monthly` | PM Monthly Report | `reports` | Active | |
+| `/reports/pm/monthly/history` | PM Report History | `reports` | Hidden | |
+| `/reports/pm/monthly/compare` | PM Report Compare | `reports` | Detail | |
+| `/reports/pm/monthly/:month/project/:projectId` | PM Report Project | `reports` | Detail | |
+| `/reports/engineering/monthly` | Engineering Monthly Report | `reports` | Active | |
+| `/reports/engineering/monthly/history` | Engineering Report History | `reports` | Hidden | |
+| `/reports/engineering/monthly/compare` | Engineering Report Compare | `reports` | Detail | |
+| `/reports/engineering/monthly/:month/project/:projectId` | Engineering Report Project | `reports` | Detail | |
+
+### §3.13 KNOWLEDGE — `Section: ADMIN`
+
+| Path | Label | Permission entity | Edit roles | Status | Notes |
+|---|---|---|---|---|---|
+| `/ee-info` | Processes & SOPs | `ee_info` | Admin | Active | |
+| `/leaderboard` | Leaderboard | `leaderboard` | Admin | Hidden | |
+| `/feedback` | Feedback & Support | `feedback` | All | Hidden | Not actively monitored per Prompt 0.7. |
+| `/training` | Training | `training` | Admin | Hidden | |
+| `/department-scores` | Department Scores | `leaderboard` | — | Alias → `/leaderboard?tab=departments` | |
+
+### §3.14 SYSTEM — `Section: ADMIN`
+
+All `permissionEntity: admin` (Admin edit) unless noted.
+
+| Path | Label | Permission entity | Status | Notes |
+|---|---|---|---|---|
+| `/admin/control-center` | Control Center | `admin` | Hidden | Admin landing target (`/admin` → here). |
+| `/admin/sharepoint-intake` | SharePoint Intake | `admin` | Hidden | COO-only manual sync trigger. |
+| `/admin/smart-import` | Smart Import | `smart_import` | Hidden | Excel pipeline UI. |
+| `/admin/activity-log` | Activity Log | `activity_log` | Hidden | |
+| `/admin/roles` | Roles & Permissions | `admin_roles` | Hidden | RBAC admin. |
+| `/admin/database-migration` | Database Migration | `database_migration` | Detail | |
+| `/admin/kpi-traceability` | KPI Traceability | `admin` | Hidden | |
+| `/admin/import-control-tower` | Import Control Tower | `admin` | Hidden | |
+| `/admin/recovery` | Recovery Center | `admin` | Hidden | |
+| `/admin/stage-lifecycle` | Stage Lifecycle | `stage_admin` | Hidden | |
+| `/admin/eng-templates` | Engineering Templates | `admin` | Hidden | |
+| `/admin/phase-templates` | Phase Templates | `admin` | Hidden | |
+| `/admin/lessons` | Lessons Learnt | `handover` | Hidden | PD-PM v2 extension. |
+| `/admin/handover-health` | Handover Health Score | `handover` | Hidden | **In-progress**: UI exists, backend wiring incomplete (see `00b-half-built.md`). |
+| `/admin/settings` | System Settings | `admin` | Hidden | |
+| `/admin/workflow-config` | Workflow Configuration | `admin` | Hidden | |
+| `/admin/data-migration-status` | Data Migration Status | `admin` | Hidden | |
+| `/admin/pipedrive` | Pipedrive Integration | `admin` | Hidden | |
+| `/admin/quickbooks` | QuickBooks Integration | `admin` | Hidden | |
+
+### §3.15 LEGACY_REDIRECTS
+
+Bookmarks/deep-link compatibility. Defined separately at `client/src/config/page-registry.ts:55-73` so they don't pollute the command palette / sidebar.
+
+| From | To | Reason |
+|---|---|---|
+| `/dashboard` | `/gates` | Old `/dashboard` → `/execution-board` → `/gates` chain collapsed. |
+| `/revenue` | `/revenue-tracker` | Path standardised. |
+| `/my-tool` | `/` | Workspace renamed → My Work. |
+| `/my-tool/week` | `/my-work/calendar` | |
+| `/my-tool/backlog` | `/my-work/tasks` | |
+| `/my-tool/settings` | `/my-work/settings` | |
+| `/my-tool/help` | `/` | |
+| `/my-tool/meetings` | `/my-work/meetings` | |
+| `/company-priorities` | `/priorities` | |
+| `/admin` | `/admin/control-center` | |
+| `/admin/legacy-utilities` | `/admin/control-center` | |
+| `/exceptions` | `/gates/exceptions` | Prompt 2 reorg. |
+| `/project-lifecycle` | `/lifecycle-board` | Prompt 2 reorg. |
+| `/command-center` | `/my-work` | Prompt 2 reorg. |
+| `/sseg` | `/handover?tab=sseg` | Prompt 2 reorg. |
+
+### §3.16 Counts
+
+| Category | Count |
+|---|---|
+| Active sidebar pages | ~50 |
+| Hidden routable pages | ~46 |
+| Detail / parametric routes | ~12 |
+| Internal aliases (in PAGE_REGISTRY) | ~18 |
+| Legacy redirects (LEGACY_REDIRECTS) | 15 |
+| **Total registered routes** | **~141** |
+
+---
+
+**End of §3.** Next checkpoint: §4 — server route inventory + permission-entity × role access matrix.
