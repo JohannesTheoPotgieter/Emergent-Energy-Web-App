@@ -98,9 +98,14 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
     (window as any).__navMode = navMode;
   }
 
-  const { canViewPath } = useAccessMatrix();
+  const { canViewPath, loading: accessLoading } = useAccessMatrix();
 
-  if (effectiveRole && !canViewPath(location)) {
+  // Wait for the permissions matrix to finish loading before deciding the
+  // user is denied — otherwise navigation flashes the "Access Denied" page
+  // for ~200-500ms while /api/auth/permissions is still in flight, then
+  // suddenly renders the real page. See user feedback 2026-04-21 on
+  // /opportunities.
+  if (effectiveRole && !accessLoading && !canViewPath(location)) {
     return <AccessDenied />;
   }
 
