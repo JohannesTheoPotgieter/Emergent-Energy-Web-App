@@ -1307,4 +1307,81 @@ All four Tier 1 lenses planned. Tier 1 totals:
 
 ---
 
-**End of Tier 1 (§§3–8).** Next tier: **Tier 2 — Construction Manager · Engineering (EngMgr + Engineer) · Project Development (CCO + KAM + PD)**.
+**End of Tier 1 (§§3–8).**
+
+---
+
+## §9 Tier 2 · Lens 5 — `CONSTRUCTION_MANAGER`
+
+**Role summary:** Construction site leader. Landing: `/execution-board`. Almost every CM function overlaps PM lens — CM is PM's construction-focused sibling. Only **one** function is CM-primary and not already planned above.
+
+**Function count:** 1 new + 10+ cross-referenced from Lens 1, Lens 2, Lens 3.
+
+### §9.1 Cross-references
+
+CM works daily inside these — all already planned:
+
+| Ref | Function | CM use |
+|---|---|---|
+| F-001 | Execution Board | Landing; Construction sub-tab primary |
+| F-013 | Project Detail | Drill-in for their projects (HSE + Quality tabs weighted) |
+| F-016 | Approvals | Their construction-scope approvals |
+| F-019 | Milestone Tracker | Primary landing-alternative |
+| F-021 | Handover & Closeout | Outgoing construction → ops handovers |
+| F-022 | PO Approvals | Construction-site POs |
+| F-023 | Payment Requests | Site subcontractor payments |
+| F-027 | PM On-The-Go | Field mobile (secondary use — PM-Site primary) |
+| F-028 | PM On-The-Go Project | Same |
+| F-051 | HSE Dashboard | (planned in Tier 3) |
+| F-054 | Quality | (planned in Tier 3 — CM has edit rights) |
+
+Plan entries above apply verbatim.
+
+### §9.2 Lens 5 · Batch 1 — CM dedicated
+
+#### F-039 · Commissioning Dashboard
+
+- **Path(s):** `/commissioning-dashboard` (list) · `/commissioning-dashboard/:projectId` (detail)
+- **Lens (primary):** `CONSTRUCTION_MANAGER` · **co-primary:** `PROGRAM_MANAGER`, `PROJECT_MANAGER_SITE`
+- **Lens (secondary):** `QUALITY_MANAGER`, `ENGINEERING_MANAGER`, `ENGINEER`, 9 other view roles
+- **Archetype:** W3 List (top-level) + W4 Detail (per-project) + embedded checklists on detail
+- **User goal:** Track every project's commissioning state — tests completed, outstanding issues, sign-offs.
+- **Current state:** `client/src/pages/commissioning-dashboard.tsx`. Route group under QUALITY nav but CM/PM own the work. Existing detail view uses a checklist + activity log pattern.
+- **Data source:** Canonical — commissioning tables (confirm domain: `shared/schema/commissioning-source.ts`) + `work_items` filtered to commissioning bucket + `project_info` / `project_execution_state` joins.
+- **Visual improvements:**
+  - W3 `TableLayout` on top-level list — columns: Project / Commissioning stage / Progress % / Outstanding issues / Last tested / Sign-off state.
+  - Progress column uses `Progress` primitive.
+  - Sign-off state chip via `StatusBadge`.
+  - W4 `DetailLayout` on per-project view — summary KPI strip (Stage / Progress / Outstanding / Next test / Sign-off owner) + tabs: Overview / Tests / Issues / Sign-off / Log.
+  - Tests tab is a checklist with inline check-off (row action); issues tab is a W3 list of open items.
+- **Additive functional improvements:**
+  - "Schedule test" row action — opens existing calendar integration (MS Graph).
+  - Bulk check-off of related tests when a parent test passes (configurable per template).
+  - Export commissioning report PDF (feeds handover packs — links to F-021 Handover & Closeout).
+  - "Escalate issue" inline action routes to QM + PM.
+- **Half-built work to finish:** n/a direct. Indirectly feeds F-020 Handover Control readiness-score component 3 ("documents complete") and component 4 ("PM sign-off") — accurate commissioning state is necessary for F-020's v1 formula to produce meaningful numbers.
+- **Source-of-truth migration:** n/a.
+- **Preserved behaviour contract:**
+  - Permission entity `commissioning` (edit: Admin + PM + CM + PMS).
+  - Under QUALITY nav group (registry places it there).
+  - Parametric `/commissioning-dashboard/:projectId` route stable.
+  - Existing checklist submission flow continues.
+- **Risk:** Medium — feeds handover decisions + HSE sign-off.
+- **Effort:** M.
+
+### §9.3 Lens 5 summary — CM
+
+**Total functions:** 1 new (F-039) + 10+ cross-referenced.
+
+| Metric | |
+|---|---|
+| Effort | 1 × M |
+| Risk | 1 × Medium |
+| SoT migrations | 0 |
+| Finish-it candidates | None new |
+
+**Proposed Phase 3 ordering (this lens):** F-039 falls in **Wave 3** (DetailLayout) / **Wave 8** (remainder). The list view rides TableLayout from Wave 2; detail rides DetailLayout from Wave 3. Can slot in either wave since there's no hard dependency.
+
+---
+
+**End of Lens 5.** Next lens: **Lens 6 · Engineering (ENGINEERING_MANAGER + ENGINEER)**.
