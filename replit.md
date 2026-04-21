@@ -68,6 +68,17 @@ The project uses a monorepo containing `client/` (React SPA), `server/` (Express
 ### Project Development Dashboard
 - `/pd` provides an overview dashboard with KPI cards (pipeline value/kWp, win rate), Pipeline by Stage, Active Funnel, Upcoming Activity, Recent Wins/Losses, and Risk Signals.
 
+### Opportunities Working List Hardening (2026-04-21)
+- Server is the authoritative gate via `isActivePdWorkingOpportunity` (`server/lib/opportunity-working-filter.ts`); the client re-applies the same checks as a defensive safety net and `console.warn`s in DEV when the two diverge.
+- Deep-link support: `/opportunities?open={id}` opens the unified `OpportunityDrawer` and the param is stripped via `history.replaceState` so refreshes don't re-pin it. PD Dashboard tiles use this.
+- Pipedrive "Synced Xm ago" indicator next to the Pull button (client-side, driven by last successful mutation).
+- Sort indicators: emerald bold ▲/▼ on the active column with header underline, dim ↕ on inactive columns.
+- Engineering badge: 26×24 pill with hover shadow when linked to a project; empty state is a slate dim dot (·) instead of `0`.
+- Phase-template radio is hidden when `engineering-phase-templates` returns empty; `ticketMode` is auto-coerced to `custom` so the form renders the right inputs.
+- Migration 0011 adds a **partial unique index** `opportunities_pipedrive_deal_source_uniq` on `(pipedrive_deal_id, source)` where `source = 'pipedrive' AND pipedrive_deal_id IS NOT NULL`. Pre-existing un-linked, un-mapped duplicates are removed in a single transaction before the index is created (idempotent on re-run).
+- `pd_tickets:create` → `pd_tickets:view` permission downgrade on three GET routes (`/api/opportunities/engineering-phase-templates`, `/api/opportunities/:id/engineering-phase-templates`, `/api/opportunities/:id/mapping-context`) — these are pure lookups used to populate the convert dialog and shouldn't require write permission.
+- `ENGINEERING_REQUEST_TYPES` (in `shared/roles/pd-roles.ts`) expanded to include the convert-flow names (First Assessment, Cost Proposal, Site visit Report, Sizing Rational Request, CP - PVSOL, etc.) so the engineering badge counts those tickets too.
+
 ### Opportunity ↔ PD Ticket Merge
 - Unifies "Pipedrive Opportunity" and "PD Ticket" into a single "Opportunity" record.
 - Pipedrive owns CRM fields (read-only), while the app owns PD-workflow shadow data.

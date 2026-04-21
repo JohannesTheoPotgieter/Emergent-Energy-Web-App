@@ -105,6 +105,11 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
   // for ~200-500ms while /api/auth/permissions is still in flight, then
   // suddenly renders the real page. See user feedback 2026-04-21 on
   // /opportunities.
+  //
+  // If the matrix query failed entirely the hook returns `loading=false`
+  // with no permissions snapshot. We still render the children so the
+  // page-level error/empty handling can kick in instead of leaving a
+  // blank screen indefinitely.
   if (effectiveRole && !accessLoading && !canViewPath(location)) {
     return <AccessDenied />;
   }

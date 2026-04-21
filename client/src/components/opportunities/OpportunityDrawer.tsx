@@ -137,6 +137,10 @@ export function OpportunityDrawer({ opportunityId, open, onClose }: Props) {
       return res.json();
     },
     enabled: open && opportunityId != null,
+    // Drawer-hopping is common; brief cache makes re-opens feel instant
+    // without going stale relative to mutations (which invalidate this key
+    // explicitly).
+    staleTime: 30_000,
   });
 
   // Local PD edit state (controlled inputs — flushed via patch on blur/save)

@@ -1,4 +1,4 @@
-import { useMemo, useReducer, useState } from "react";
+import { useEffect, useMemo, useReducer, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -114,6 +114,18 @@ function formatZAR(n: number | null | undefined): string {
   if (Math.abs(n) >= 1_000_000) return `R ${(n / 1_000_000).toFixed(1)}M`;
   if (Math.abs(n) >= 1_000) return `R ${(n / 1_000).toFixed(0)}k`;
   return `R ${n.toFixed(0)}`;
+}
+
+function formatRelative(d: Date): string {
+  const ms = Date.now() - d.getTime();
+  const sec = Math.max(0, Math.round(ms / 1000));
+  if (sec < 60) return "just now";
+  const min = Math.round(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.round(hr / 24);
+  return `${day}d ago`;
 }
 
 function formatDate(s: string | null | undefined): string {
@@ -240,6 +252,29 @@ export default function OpportunitiesPage() {
   // surfaces CRM (Pipedrive) + PD shadow + Convert-to-Project together.
   const [drawerOppId, setDrawerOppId] = useState<number | null>(null);
 
+  // Deep-link support: PD Dashboard links use /opportunities?open={id}
+  // to jump straight to a specific deal. Read once on mount, then strip
+  // the param so the URL doesn't pin the drawer permanently.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const raw = params.get("open");
+    const id = raw ? Number(raw) : NaN;
+    if (Number.isFinite(id) && id > 0) {
+      setDrawerOppId(id);
+      params.delete("open");
+      const qs = params.toString();
+      const next = window.location.pathname + (qs ? `?${qs}` : "");
+      window.history.replaceState(null, "", next);
+    }
+    // run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Pipedrive "last synced" indicator — driven entirely client-side from
+  // the most recent successful pull.
+  const [lastPullAt, setLastPullAt] = useState<Date | null>(null);
+
   const [dlg, updateDlg] = useReducer(
     (prev: DialogState, action: Partial<DialogState> | "reset") =>
       action === "reset" ? DIALOG_INITIAL : { ...prev, ...action },
@@ -293,6 +328,14 @@ export default function OpportunitiesPage() {
     },
     enabled: !!dlg.target?.id,
   });
+
+  // If templates are empty, force the dialog into "custom" mode so the
+  // user isn't shown a dropdown with nothing to pick.
+  useEffect(() => {
+    if (dlg.target?.id && phaseTemplates.length === 0 && dlg.ticketMode === "phase_template") {
+      updateDlg({ ticketMode: "custom" });
+    }
+  }, [dlg.target?.id, phaseTemplates.length, dlg.ticketMode]);
 
   // Scope metadata for the "Pull from Pipedrive" button. The server
   // derives `scope` from the caller's role — COO/CEO/CCO get the
@@ -360,6 +403,7 @@ export default function OpportunitiesPage() {
       });
       queryClient.invalidateQueries({ queryKey: ["/api/opportunities/working"] });
       queryClient.invalidateQueries({ queryKey: ["/api/opportunities"] });
+      setLastPullAt(new Date());
     },
     onError: (err: Error) => {
       toast({ title: "Pipedrive pull failed", description: err.message, variant: "destructive" });
@@ -480,12 +524,29 @@ export default function OpportunitiesPage() {
     },
   });
 
-  // Safety net: if upstream filtering drifts, never render terminal deals in
-  // this active working view.
-  const activeRows = useMemo(
-    () => data.filter((row) => !row.hasLinkedProject && !hasTerminalMarker(row.status) && !hasTerminalMarker(row.stage) && !row.signedDate),
-    [data],
-  );
+  // The server (`server/lib/opportunity-working-filter.ts`) is the
+  // authoritative gate for which deals appear here — terminal status,
+  // signed date, and linked project all exclude. We re-apply the same
+  // checks client-side as a defensive safety net (cached responses,
+  // mid-flight mutations, role-stale data); in DEV we log when the
+  // safety net actually trips so any drift between client/server is
+  // visible. See review item C1 (2026-04-21).
+  const activeRows = useMemo(() => {
+    const filtered = data.filter(
+      (row) =>
+        !row.hasLinkedProject &&
+        !hasTerminalMarker(row.status) &&
+        !hasTerminalMarker(row.stage) &&
+        !row.signedDate,
+    );
+    if (import.meta.env.DEV && filtered.length !== data.length) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[opportunities] client safety-net dropped ${data.length - filtered.length} row(s) the server returned — check isActivePdWorkingOpportunity().`,
+      );
+    }
+    return filtered;
+  }, [data]);
 
   // Derived list for the table view: applies the search filter and the
   // current sort. Kanban/Calendar tabs continue to use `activeRows`
@@ -532,7 +593,18 @@ export default function OpportunitiesPage() {
     return [...filtered].sort(cmp);
   }, [activeRows, searchTerm, sortKey, sortDir]);
 
-  const sortIndicator = (key: SortKey) => (sortKey === key ? (sortDir === "asc" ? " ▲" : " ▼") : "");
+  const sortIndicator = (key: SortKey) =>
+    sortKey === key ? (
+      <span className="ml-1 text-emerald-700 font-bold" aria-hidden="true">
+        {sortDir === "asc" ? "▲" : "▼"}
+      </span>
+    ) : (
+      <span className="ml-1 text-slate-300" aria-hidden="true">↕</span>
+    );
+  const sortHeaderClass = (key: SortKey) =>
+    sortKey === key
+      ? "text-emerald-900 font-bold underline decoration-emerald-300 underline-offset-2"
+      : "";
 
   const clientOptions = useMemo(() => {
     const base = mappingContext?.likelyClients || [];
@@ -598,6 +670,16 @@ export default function OpportunitiesPage() {
         title="Opportunities (Active Working List)"
         description="Only active Pipedrive opportunities are shown here. Lost, won/signed/closed, and converted deals are excluded."
         actions={
+          <div className="flex items-center gap-2">
+            {lastPullAt && (
+              <span
+                className="text-[11px] text-slate-500 hidden sm:inline"
+                title={`Last successful Pipedrive pull: ${lastPullAt.toLocaleString()}`}
+                data-testid="text-last-pulled-at"
+              >
+                Synced {formatRelative(lastPullAt)}
+              </span>
+            )}
           <Button
             size="sm"
             variant="outline"
@@ -639,6 +721,7 @@ export default function OpportunitiesPage() {
                     ? "Pull all from Pipedrive"
                     : "Pull my Pipedrive deals"}
           </Button>
+          </div>
         }
       />
 
@@ -736,15 +819,15 @@ export default function OpportunitiesPage() {
                 <table className="w-full text-xs border-collapse" data-testid="table-opportunities-working">
                   <thead className="bg-emerald-50/60 text-[10px] uppercase tracking-wide text-emerald-900/80 sticky top-0 z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
                     <tr>
-                      <th className="text-left px-2.5 py-1.5 font-semibold cursor-pointer select-none hover:text-emerald-900" onClick={() => toggleSort("dealName")} data-testid="sort-dealName">Client / Project{sortIndicator("dealName")}</th>
-                      <th className="text-left px-2 py-1.5 font-semibold cursor-pointer select-none hover:text-emerald-900" onClick={() => toggleSort("stage")} data-testid="sort-stage">Stage{sortIndicator("stage")}</th>
-                      <th className="text-left px-2 py-1.5 font-semibold cursor-pointer select-none hover:text-emerald-900" onClick={() => toggleSort("projectDeveloper")} data-testid="sort-projectDeveloper">Project Developer{sortIndicator("projectDeveloper")}</th>
-                      <th className="text-left px-2 py-1.5 font-semibold cursor-pointer select-none hover:text-emerald-900" onClick={() => toggleSort("province")} data-testid="sort-province">Province{sortIndicator("province")}</th>
-                      <th className="text-right px-2 py-1.5 font-semibold whitespace-nowrap cursor-pointer select-none hover:text-emerald-900" onClick={() => toggleSort("estimatedKwp")} data-testid="sort-estimatedKwp">Size{sortIndicator("estimatedKwp")}</th>
-                      <th className="text-right px-2 py-1.5 font-semibold whitespace-nowrap cursor-pointer select-none hover:text-emerald-900" onClick={() => toggleSort("estimatedValue")} data-testid="sort-estimatedValue">Value{sortIndicator("estimatedValue")}</th>
-                      <th className="text-left px-2 py-1.5 font-semibold whitespace-nowrap cursor-pointer select-none hover:text-emerald-900" onClick={() => toggleSort("expectedCloseDate")} data-testid="sort-expectedCloseDate">Est. Sig.{sortIndicator("expectedCloseDate")}</th>
-                      <th className="text-left px-2 py-1.5 font-semibold whitespace-nowrap cursor-pointer select-none hover:text-emerald-900" onClick={() => toggleSort("nextActivityDate")} data-testid="sort-nextActivityDate">Next Activity{sortIndicator("nextActivityDate")}</th>
-                      <th className="text-center px-2 py-1.5 font-semibold whitespace-nowrap cursor-pointer select-none hover:text-emerald-900" onClick={() => toggleSort("openEngineeringTaskCount")} title="Open engineering tasks" data-testid="sort-openEngineeringTaskCount">Eng.{sortIndicator("openEngineeringTaskCount")}</th>
+                      <th className={`text-left px-2.5 py-1.5 font-semibold cursor-pointer select-none hover:text-emerald-900 ${sortHeaderClass("dealName")}`} onClick={() => toggleSort("dealName")} data-testid="sort-dealName">Client / Project{sortIndicator("dealName")}</th>
+                      <th className={`text-left px-2 py-1.5 font-semibold cursor-pointer select-none hover:text-emerald-900 ${sortHeaderClass("stage")}`} onClick={() => toggleSort("stage")} data-testid="sort-stage">Stage{sortIndicator("stage")}</th>
+                      <th className={`text-left px-2 py-1.5 font-semibold cursor-pointer select-none hover:text-emerald-900 ${sortHeaderClass("projectDeveloper")}`} onClick={() => toggleSort("projectDeveloper")} data-testid="sort-projectDeveloper">Project Developer{sortIndicator("projectDeveloper")}</th>
+                      <th className={`text-left px-2 py-1.5 font-semibold cursor-pointer select-none hover:text-emerald-900 ${sortHeaderClass("province")}`} onClick={() => toggleSort("province")} data-testid="sort-province">Province{sortIndicator("province")}</th>
+                      <th className={`text-right px-2 py-1.5 font-semibold whitespace-nowrap cursor-pointer select-none hover:text-emerald-900 ${sortHeaderClass("estimatedKwp")}`} onClick={() => toggleSort("estimatedKwp")} data-testid="sort-estimatedKwp">Size{sortIndicator("estimatedKwp")}</th>
+                      <th className={`text-right px-2 py-1.5 font-semibold whitespace-nowrap cursor-pointer select-none hover:text-emerald-900 ${sortHeaderClass("estimatedValue")}`} onClick={() => toggleSort("estimatedValue")} data-testid="sort-estimatedValue">Value{sortIndicator("estimatedValue")}</th>
+                      <th className={`text-left px-2 py-1.5 font-semibold whitespace-nowrap cursor-pointer select-none hover:text-emerald-900 ${sortHeaderClass("expectedCloseDate")}`} onClick={() => toggleSort("expectedCloseDate")} data-testid="sort-expectedCloseDate">Est. Sig.{sortIndicator("expectedCloseDate")}</th>
+                      <th className={`text-left px-2 py-1.5 font-semibold whitespace-nowrap cursor-pointer select-none hover:text-emerald-900 ${sortHeaderClass("nextActivityDate")}`} onClick={() => toggleSort("nextActivityDate")} data-testid="sort-nextActivityDate">Next Activity{sortIndicator("nextActivityDate")}</th>
+                      <th className={`text-center px-2 py-1.5 font-semibold whitespace-nowrap cursor-pointer select-none hover:text-emerald-900 ${sortHeaderClass("openEngineeringTaskCount")}`} onClick={() => toggleSort("openEngineeringTaskCount")} title="Open engineering tasks" data-testid="sort-openEngineeringTaskCount">Eng.{sortIndicator("openEngineeringTaskCount")}</th>
                       <th className="text-right px-2 py-1.5 font-semibold">Action</th>
                     </tr>
                   </thead>
@@ -842,17 +925,17 @@ export default function OpportunitiesPage() {
                                 onClick={(e) => e.stopPropagation()}
                                 title={`Open project ${row.linkedProjectName} to track engineering progress`}
                                 data-testid={`link-eng-project-${row.id}`}
-                                className="inline-flex items-center justify-center min-w-[20px] h-5 px-1 rounded-full bg-emerald-600 text-white text-[10px] font-semibold tabular-nums hover:bg-emerald-700"
+                                className="inline-flex items-center justify-center min-w-[26px] h-6 px-1.5 rounded-full bg-emerald-600 text-white text-[11px] font-semibold tabular-nums hover:bg-emerald-700 hover:shadow"
                               >
                                 {row.openEngineeringTaskCount}
                               </Link>
                             ) : (
-                              <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1 rounded-full bg-emerald-600 text-white text-[10px] font-semibold tabular-nums" title="Open engineering tickets (no linked project yet)">
+                              <span className="inline-flex items-center justify-center min-w-[26px] h-6 px-1.5 rounded-full bg-emerald-600 text-white text-[11px] font-semibold tabular-nums" title="Open engineering tickets (no linked project yet)">
                                 {row.openEngineeringTaskCount}
                               </span>
                             )
                           ) : (
-                            <span className="text-[10px] text-slate-300 tabular-nums">0</span>
+                            <span className="text-slate-300" aria-label="No open engineering tickets">·</span>
                           )}
                         </td>
                         <td className="px-2 py-1.5 align-middle text-right whitespace-nowrap">
@@ -989,15 +1072,24 @@ export default function OpportunitiesPage() {
                     Mapping resolved • client #{dlg.resolvedClientId} • project #{dlg.resolvedProjectId}
                   </div>
 
-                  <div className="space-y-2">
-                    <Label className="text-xs">Ticket creation mode</Label>
-                    <div className="grid gap-1 text-sm">
-                      <label className="flex items-center gap-2"><input type="radio" checked={dlg.ticketMode === "phase_template"} onChange={() => updateDlg({ ticketMode: "phase_template" })} /> Phase template</label>
-                      <label className="flex items-center gap-2"><input type="radio" checked={dlg.ticketMode === "custom"} onChange={() => updateDlg({ ticketMode: "custom" })} /> Custom ticket</label>
+                  {phaseTemplates.length > 0 ? (
+                    <div className="space-y-2">
+                      <Label className="text-xs">Ticket creation mode</Label>
+                      <div className="grid gap-1 text-sm">
+                        <label className="flex items-center gap-2"><input type="radio" checked={dlg.ticketMode === "phase_template"} onChange={() => updateDlg({ ticketMode: "phase_template" })} /> Phase template</label>
+                        <label className="flex items-center gap-2"><input type="radio" checked={dlg.ticketMode === "custom"} onChange={() => updateDlg({ ticketMode: "custom" })} /> Custom ticket</label>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    // No phase templates seeded — only "custom" makes sense.
+                    // We coerce ticketMode to "custom" so the form below
+                    // renders the right inputs.
+                    <p className="text-[11px] text-slate-500 italic">
+                      No phase templates are configured. Use the custom ticket form below.
+                    </p>
+                  )}
 
-                  {dlg.ticketMode === "phase_template" ? (
+                  {dlg.ticketMode === "phase_template" && phaseTemplates.length > 0 ? (
                     <div className="grid gap-2">
                       <div className="space-y-1">
                         <Label className="text-xs">Predefined phase template</Label>

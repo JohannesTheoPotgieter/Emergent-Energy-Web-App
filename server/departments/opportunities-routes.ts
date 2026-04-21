@@ -409,7 +409,7 @@ router.get("/api/pd/dashboard", requireAuth, requirePermission("pd_dashboard", "
  * Phase templates are global — the endpoint does not use an opportunity ID.
  * Legacy URL with :id is kept as an alias for backwards compatibility.
  */
-router.get("/api/opportunities/engineering-phase-templates", requireAuth, requirePermission("pd_tickets", "create"), async (req: Request, res: Response) => {
+router.get("/api/opportunities/engineering-phase-templates", requireAuth, requirePermission("pd_tickets", "view"), async (req: Request, res: Response) => {
   try {
     if (!canViewOpportunityIntake(getUserRole(req))) {
       return res.status(403).json({ error: "Template inspection is limited to Project Development and admin oversight roles." });
@@ -422,7 +422,7 @@ router.get("/api/opportunities/engineering-phase-templates", requireAuth, requir
   }
 });
 // Backwards-compat alias for old client code that includes :id
-router.get("/api/opportunities/:id/engineering-phase-templates", requireAuth, requirePermission("pd_tickets", "create"), async (req: Request, res: Response) => {
+router.get("/api/opportunities/:id/engineering-phase-templates", requireAuth, requirePermission("pd_tickets", "view"), async (req: Request, res: Response) => {
   try {
     if (!canViewOpportunityIntake(getUserRole(req))) {
       return res.status(403).json({ error: "Template inspection is limited to Project Development and admin oversight roles." });
@@ -589,7 +589,7 @@ router.post("/api/opportunities/:id/create-engineering-tickets", requireAuth, re
   }
 });
 
-router.get("/api/opportunities/:id/mapping-context", requireAuth, requirePermission("pd_tickets", "create"), async (req: Request, res: Response) => {
+router.get("/api/opportunities/:id/mapping-context", requireAuth, requirePermission("pd_tickets", "view"), async (req: Request, res: Response) => {
   try {
     if (!canViewOpportunityIntake(getUserRole(req))) {
       return res.status(403).json({ error: "Mapping inspection is limited to Project Development and admin oversight roles." });
