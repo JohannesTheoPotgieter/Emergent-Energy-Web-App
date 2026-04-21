@@ -48,27 +48,52 @@ Cumulative migrations on `claude/platform-overhaul-3WF1E` ready for cumulative o
 | **F-004 Gates Pipeline** | 🟢 migrated | `8d4fe50` | Full W3: PageLayout + PageHeader + TableLayout + Table primitive. Tabular-nums on Readiness + Days columns. Structured empty-state row. |
 | **F-005 Blocked Gates** | 🟢 migrated | `09c1749` | W3 harvest. Destructive count badge. Days-Blocked red+tabular-nums. |
 | **F-006 Ready Gates** | 🟢 migrated | `09c1749` | W3 harvest. Readiness % emerald+tabular-nums. |
-| **F-007 Gate Exceptions** | 🔴 deferred | — | 314-line file with approval/rejection mutations + review dialog. Needs careful per-function verification cycle; not a light-touch candidate. |
+| **F-007 Gate Exceptions** | 🟢 migrated | `ede3f80` | Session 3 kick-off. W3 harvest with 3-way view-tab row retained. All 7 row actions + Approve-with-conditions dialog + 7 mutation paths preserved verbatim. |
 | **F-008 Client Updates** | 🟢 migrated | `c1d74d9` | W3 harvest. Days-Ago tabular-nums. On-Track / Overdue chip. |
 | **F-009 Handover Queue** | 🟢 migrated | `c1d74d9` | W3 harvest. 8-way view sub-tab row retained above TableLayout. SLA + Pack% + Snags + Days all tabular-nums. |
 | **F-010 Open Queries** | 🟢 migrated | `c1d74d9` | W3 harvest. Stale-row tint preserved. Age tabular-nums. |
 | **F-011 Client Commitments** | 🟢 migrated | `c1d74d9` | W3 harvest. Status chip per status map. Open-count badge. |
+| **F-043a PM Monthly Report Project** | 🟢 migrated | `a448371` | **First DetailLayout adoption.** W4 archetype: PageHeader + 8-KPI tile grid + DetailLayout with 6 metric tabs + footer stat grid. DetailLayout.summary made optional (additive primitive change). |
+| **F-043 Eng Monthly Report Project** | 🟢 migrated | `365ff4f` | DetailLayout harvest. Mirror of F-043a for Engineering variant. 5 metric tabs. activeTab state preserved via onTabChange for Export-current-tab action. |
 
 **Total this session: 8 pages migrated + 1 deferred.** Gates sub-lanes (7 of 8) now share consistent W3 visual treatment — the "harvest ratio" working as designed.
 
-### §2.1a Remaining work after Session 2
+### §2.0b Session 3 outcome
 
-All remaining F-entries under `§2.2 Migration roadmap` below still stand as ⚪ deferred to subsequent sessions. Priority candidates for Session 3:
+**Three migrations, all pushed, TypeScript check clean.**
 
-1. **F-007 Gate Exceptions** — the one Gates sub-lane skipped in Session 2. Needs live verification of approval / rejection mutations.
-2. **F-037 Priorities list + F-037a New Priority form** — good proof surface for FormLayout primitive.
-3. **F-037b Priority Detail** — good proof surface for DetailLayout primitive (simpler than Project Detail).
-4. **F-012 Projects list + F-019 Milestone Tracker** — both use PageShell; evaluate whether chrome migration adds value beyond content (Table primitive) migration.
-5. **F-013 Project Detail** — largest surface; needs a dedicated session. 2000+ lines, 8 tabs.
+- **F-007 Gate Exceptions** completes the Gates workspace (8/8 sub-lanes now use TableLayout).
+- **F-043a PM Monthly Report Project** is the **first DetailLayout adoption** — proves the W4 archetype primitive on a real page with 6 metric tabs.
+- **F-043 Eng Monthly Report Project** is the harvest — same DetailLayout pattern applied mechanically to the Engineering variant.
 
-### §2.0b Session 2 outcome
+Plus one additive primitive improvement: `DetailLayout.summary` made optional (some pages put the summary in `PageLayout.header` instead of duplicating it in DetailLayout).
 
-**Primitive toolkit now proven on 8 real pages.** Same-archetype harvest confirmed: F-004 took ~115 lines of rewriting; F-005/F-006/F-008/F-009/F-010/F-011 each took progressively less effort as the pattern matured. By F-011 the pattern is reliably mechanical.
+### §2.1a Evaluated but not migrated this session
+
+- **F-037 Priorities list** — uses PageShell + card-based `PriorityListSection` (not a Table). Not a current primitive fit. **Leave alone.**
+- **F-037b Priority Detail** — 933 lines, 7 tabs. DetailLayout candidate but too complex for a quick migration. Dedicated session needed.
+- **Inbox** — uses PageShell correctly + Tabs as simple filter. Not a W4 archetype. **Leave alone.**
+- **PM Monthly Report + Eng Monthly Report (top-level)** — use a shared `ReportShell` component for chrome (not PageShell, not raw JSX). Invasive to migrate; ReportShell is the de-facto chrome for reports. **Leave alone** unless ReportShell itself is migrated.
+
+### §2.1b Remaining work after Session 3
+
+Priority candidates for subsequent sessions:
+
+1. **F-013 Project Detail** — largest surface; 2000+ lines, 8 tabs. Dedicated session.
+2. **F-029 Cashflow** — highest-risk finance page. Dedicated session with extra verification.
+3. **F-018 Weekly Reviews** — wizard proof for WizardLayout primitive.
+4. **F-037b Priority Detail** — DetailLayout harvest (933 lines, needs care).
+5. **F-012 Projects list + F-019 Milestone Tracker** — evaluate whether TableLayout content migration adds enough value on top of PageShell chrome.
+6. **Remaining monthly/compare/history report pages** — may be DetailLayout candidates if they follow same shape.
+7. **Admin + knowledge surfaces** — lower priority; many already acceptable via PageShell.
+
+### §2.0c Cumulative state across Sessions 2 + 3
+
+**11 pages migrated** to the Phase 3 primitives. **Same-archetype harvest-ratio working**: migrations get mechanical after the first proof of each archetype.
+
+**TableLayout proven on:** F-004 Gates Pipeline + F-005-F-011 Gates sub-lanes (8 pages).
+**DetailLayout proven on:** F-043a PM Monthly Report Project + F-043 Eng Monthly Report Project (2 pages).
+**PageLayout + PageHeader applied on:** 11 pages total.
 
 Open for cumulative owner staging review per D-011.
 
