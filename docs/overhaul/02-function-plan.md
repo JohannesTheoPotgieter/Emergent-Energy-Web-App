@@ -1717,3 +1717,151 @@ Running total across Tier 1+2: **47 functions planned** (F-001 through F-048). Z
 ---
 
 **End of Tier 2 (§§9–12).**
+
+---
+
+## §13 Tier 3 · Lens 8 — `QUALITY_MANAGER`
+
+**Role summary:** Quality-domain owner. Landing: `/quality`. Primary edit on `quality` entity; co-edit on `hse`. Narrow lens with deep responsibility — NCRs, inspections, sign-offs.
+
+**Function count:** 1 new (F-049) + cross-references.
+
+### §13.1 Cross-references
+
+| Ref | Function | QM use |
+|---|---|---|
+| F-016 | Approvals | Quality sign-offs surface here |
+| F-039 | Commissioning Dashboard | QM views + participates in sign-off |
+| F-042 | Engineering Standup | QM cross-view for quality blockers |
+
+### §13.2 Lens 8 · Batch 1 — QM dedicated
+
+#### F-049 · Quality Dashboard
+
+- **Path(s):** `/quality` (primary) · aliases `/quality/dashboard`, `/quality/ncrs`, `/quality/ncr/:id` (all legacy — absorbed into `/quality`)
+- **Lens (primary):** `QUALITY_MANAGER` (landing)
+- **Lens (secondary):** 12 view roles per `quality` entity (COO / CEO / CCO / PM / PFM / CM / EngM / PMS / PD / HSE / SSEG)
+- **Archetype:** W4 Detail-shaped dashboard (summary + tabs) — not pure W2 because the domain divides naturally into NCRs / Inspections / Checklists / Sign-offs, each list-shaped
+- **User goal:** Daily quality operational view — open NCRs, inspections due, outstanding sign-offs, recent closures.
+- **Current state:** `QmDashboardPage`. Existing dashboard with tabs. NCR list absorbed from legacy `/quality/ncrs` (now alias). NCR detail absorbed from `/quality/ncr/:id` (now alias).
+- **Data source:** Canonical — quality-domain tables (`shared/schema/quality.ts`) + `approvals` filtered to quality categories.
+- **Visual improvements:**
+  - W4 `DetailLayout` — summary KPI strip: Open NCRs / Overdue inspections / Awaiting sign-off / Closure rate (last 30d) / Trust.
+  - Tabs: Overview / NCRs / Inspections / Checklists / Sign-offs / Log.
+  - Each tab adopts W3 `TableLayout` internally.
+  - NCR rows with severity chips (`StatusBadge`); age chips via RAG colour.
+  - `DataTrustBadge` strip present.
+- **Additive functional improvements:**
+  - NCR quick-create FAB (inline form) — opens `FormLayout` Drawer.
+  - Bulk close NCRs when root-cause resolved across multiple.
+  - "Related inspections" link on NCR detail.
+  - Export NCR register CSV with trust envelope footer.
+  - Keyboard: `n` opens new-NCR dialog.
+- **Half-built:** n/a.
+- **Source-of-truth migration:** n/a.
+- **Preserved behaviour contract:**
+  - Landing for QUALITY_MANAGER.
+  - Permission entity `quality` (edit: Admin + QM + CM + HSE).
+  - All 3 aliases (`/quality/dashboard`, `/quality/ncrs`, `/quality/ncr/:id`) continue to redirect here.
+  - Existing NCR numbering sequence preserved.
+- **Risk:** Medium — quality data feeds compliance + handover.
+- **Effort:** M–L (dashboard + 5 tabs).
+
+### §13.3 Lens 8 summary — Quality
+
+**Total functions:** 1 new (F-049) + 3 cross-referenced.
+
+| Metric | |
+|---|---|
+| Effort | 1 × M–L |
+| Risk | 1 × Medium |
+| SoT migrations | 0 |
+| Finish-it candidates | None new |
+
+**Proposed Phase 3 ordering:** Rides Wave 3 (DetailLayout) — dashboard + per-tab tables harvest directly.
+
+---
+
+## §14 Tier 3 · Lens 9 — `HSE_MANAGER` + `SSEG_MANAGER` (HSE + SSEG Compliance)
+
+**Role summary:** Health & Safety and SSEG compliance. Both land at `/hse`. Distinct edit scopes:
+
+- **HSE_MANAGER** — owns `hse` + co-edit `quality`; focus: incidents, audits, compliance.
+- **SSEG_MANAGER** — owns `hse_compliance`; focus: SSEG applications, municipal compliance, engineering sign-offs.
+
+**Function count:** 1 new (F-050) — HSE + Compliance share one dashboard with tabs. SSEG-specific flows surface in Handover (cross-ref F-021, F-021a).
+
+### §14.1 Cross-references
+
+| Ref | Function | HSE / SSEG use |
+|---|---|---|
+| F-016 | Approvals | HSE sign-offs, SSEG sign-offs |
+| F-021 | Handover & Closeout | `/sseg` LEGACY_REDIRECT → `/handover?tab=sseg`; SSEG Manager primary surface |
+| F-013 | Project Detail | HSE + SSEG tabs per project |
+| F-027/F-028 | PM On-The-Go | HSE quick-capture (incident reporting) |
+
+### §14.2 Lens 9 · Batch 1 — HSE + Compliance dedicated
+
+#### F-050 · HSE Dashboard + Compliance
+
+- **Path(s):** `/hse` (primary) · alias `/hse/compliance` → `/hse?tab=compliance`
+- **Lens (primary):** `HSE_MANAGER`, `SSEG_MANAGER` (landing for both)
+- **Lens (secondary):** 11 view roles per `hse` entity
+- **Archetype:** W4 Detail-shaped dashboard with tabs
+- **User goal:** One surface for Health & Safety operations and SSEG/municipal compliance.
+- **Current state:** `HseDashboardPage`. Existing dashboard with tabs. SSEG tab shares the space rather than having its own page.
+- **Data source:** Canonical — `shared/schema/hse.ts` tables + `approvals` filtered to HSE/SSEG categories.
+- **Visual improvements:**
+  - W4 `DetailLayout` — summary strip: Open incidents / Audit-state / Days since last incident / SSEG apps pending / Compliance score.
+  - Tabs: Overview / Incidents / Audits / Compliance (SSEG) / Training records / Log.
+  - NCR-style severity chips for incidents.
+  - `DataTrustBadge` mandatory.
+  - Compliance tab uses W3 `TableLayout` with application-state columns (Submitted / In review / Approved / Rejected / Appeal).
+- **Additive functional improvements:**
+  - "Report incident" FAB — available across the entire app (wrapped in AppShell action menu). Opens Drawer form; creates `work_items` row + links to project.
+  - Days-since-last-incident counter on summary strip (culturally important KPI in this industry).
+  - SSEG application timeline view (additive) — municipal approval chronology with bottleneck indicators.
+  - Export HSE register to PDF with trust envelope.
+- **Half-built:** n/a direct. Related to `hse_compliance` permission entity — edit rights vary between HSE and SSEG; confirmed per access matrix.
+- **Source-of-truth migration:** n/a.
+- **Preserved behaviour contract:**
+  - Landing for HSE_MANAGER + SSEG_MANAGER.
+  - Permission entities `hse` and `hse_compliance` unchanged.
+  - LEGACY_REDIRECTS `/sseg` → `/handover?tab=sseg` continues (NOT into /hse — handover is a distinct flow).
+  - Alias `/hse/compliance` → `/hse?tab=compliance` continues.
+  - Days-since-last-incident counter resets safely on incident creation.
+- **Risk:** Medium — compliance surface.
+- **Effort:** M–L.
+
+### §14.3 Lens 9 summary — HSE + SSEG
+
+**Total functions:** 1 new (F-050) + 4 cross-referenced.
+
+| Metric | |
+|---|---|
+| Effort | 1 × M–L |
+| Risk | 1 × Medium |
+| SoT migrations | 0 |
+| Finish-it candidates | None new |
+
+**Proposed Phase 3 ordering:** Rides Wave 3 (DetailLayout).
+
+---
+
+## §15 Tier 3 — COMPLETE
+
+| Lens | New functions |
+|---|---|
+| 8 · `QUALITY_MANAGER` | 1 (F-049) |
+| 9 · `HSE_MANAGER` + `SSEG_MANAGER` | 1 (F-050) |
+| **Tier 3 total** | **2 new** |
+
+Running total across Tiers 1+2+3: **50 functions planned** (F-001 through F-050).
+
+Both Tier 3 lenses are compliance-focused and share the "dashboard + domain tabs" pattern already established in Tier 1/2. No new primitives needed.
+
+**STOP for Tier 3 approval before Tier 4** (admin/system utilities batch).
+
+---
+
+**End of Tier 3 (§§13–15).**
