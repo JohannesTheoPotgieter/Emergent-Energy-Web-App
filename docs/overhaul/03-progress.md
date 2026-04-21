@@ -80,6 +80,8 @@ Cumulative migrations on `claude/platform-overhaul-3WF1E` ready for cumulative o
 | **F-038 My Work Admin Settings** | 🟢 migrated | `f36b4e0` | Global settings + company priorities management. Hidden-from-sidebar admin surface. |
 | **F-037b Priority Detail** | 🟢 migrated | `08a7904` | 933-line page with 7 tabs. PageHeader uses breadcrumbs + status (health dot + severity badge) + actions slots. All 7 tabs preserved; mutations (close/escalate/break-down/link) unchanged. |
 | **F-053 Phase Templates** | 🟢 migrated | `6766364` | Admin page for lifecycle phase templates + engineering stage templates. Two-panel layout + 12-column grid preserved. "New Template" in PageHeader actions. |
+| **F-025 Portfolios** | 🟢 migrated | `c44fa6b` | Program-manager portfolio dashboard with 4 view-mode toggle (Management / Finance / Quality / Engineering). "New Portfolio" in PageHeader actions. All 5 nested chart sub-components preserved. |
+| **F-013a Financial Linking** | 🟢 migrated | `ba3410c` | CFO-only commercial-linking surface under /project/:projectName. Project name as subtitle; Back-to-Project button in actions. Sync status + linking tables + bulk-link mutations preserved. |
 
 **Total this session: 8 pages migrated + 1 deferred.** Gates sub-lanes (7 of 8) now share consistent W3 visual treatment — the "harvest ratio" working as designed.
 
@@ -114,21 +116,24 @@ Priority candidates for subsequent sessions:
 
 ### §2.0c Cumulative state across all sessions
 
-**36 pages migrated** to the Phase 3 primitives (as of commit `6766364`).
+**38 pages migrated** to the Phase 3 primitives (as of commit `ba3410c`).
 
 | Archetype proven | Count | Pages |
 |---|---|---|
 | **TableLayout (W3 list)** | 13 | Gates workspace (8) + Monthly Report history pair (2) + Monthly Report compare pair (2) + Weekly Reviews (1) |
 | **DetailLayout (W4 detail)** | 2 | PM Monthly Report Project + Eng Monthly Report Project |
-| **PageLayout + PageHeader (light chrome)** | 36 | All of the above + Lifecycle Board + Project Create + Training + PM Handover Review + Exceptions + KPI Traceability + Eng Template Admin + Action Launchpad + Engineering Audit Log + PM On-The-Go Home + Department Scores + Programme Reports + Feedback + PD Dashboard + Commissioning Dashboard + Import Control Tower + SharePoint Intake + Database Migration + My Work Admin Settings + Priority Detail + Phase Templates |
+| **PageLayout + PageHeader (light chrome)** | 38 | All of the above + Lifecycle Board + Project Create + Training + PM Handover Review + Exceptions + KPI Traceability + Eng Template Admin + Action Launchpad + Engineering Audit Log + PM On-The-Go Home + Department Scores + Programme Reports + Feedback + PD Dashboard + Commissioning Dashboard + Import Control Tower + SharePoint Intake + Database Migration + My Work Admin Settings + Priority Detail + Phase Templates + Portfolios + Financial Linking |
 | **FormLayout** | 0 | Not yet proven — deferred (PageShell + Card pattern adequately handles form pages) |
 | **WizardLayout** | 0 | Not yet proven — F-018 Weekly Reviews' wizard lives in project workflow, not on the page currently migrated |
 | **AppShell + LensNav** | 0 | Deferred — existing AppLayout already provides whole-app chrome |
 
-Phase 3 progress: **~64% of 56 planned functions migrated.**
+Phase 3 progress: **~68% of 56 planned functions migrated.**
 
 Pages evaluated and skipped (with rationale):
 - **Teams Chats** — full-viewport 3-column chat interface with fixed height calc; PageLayout pattern not a fit (intentional chrome).
+- **F-013 Project Detail** (1814 lines) — uses custom `ProjectCommandHeader` component with rich RAG chips + KPIs + inline edits. Replacing with simple PageHeader would be a functional regression. PageShell→PageLayout swap alone offers near-zero benefit. Defer until a dedicated session can decide whether to elevate ProjectCommandHeader into a PageHeader variant.
+- **Invoice Patterns / Counterparties / Subcontractor Dashboard / QB Throughput** — use `FinanceShell` (dedicated finance eyebrow with green dollar icon). Migration would need to either lose the Finance eyebrow or elevate FinanceShell to use PageLayout internally (cross-page change).
+- **PM Monthly Report / Engineering Monthly Report (top-level)** — use shared `ReportShell` component. Same pattern — touch ReportShell itself, not individual pages.
 
 Open for cumulative owner staging review per D-011.
 
