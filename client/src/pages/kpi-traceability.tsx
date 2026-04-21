@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout } from "@/components/layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -102,12 +103,27 @@ export default function KpiTraceabilityPage() {
   if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load KPI traceability" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
   return (
-    <div className="space-y-6 p-6" data-testid="page-kpi-traceability">
-      <PageHeader
-        title="KPI Traceability"
-        subtitle="Full traceability of every headline number — including source layer, business rule, aggregation path, API endpoint, and consuming UI component."
-      />
-
+    <PageLayout
+      data-testid="page-kpi-traceability"
+      header={
+        <PageHeader
+          title="KPI Traceability"
+          subtitle="Full traceability of every headline number — including source layer, business rule, aggregation path, API endpoint, and consuming UI component."
+          actions={
+            <Button
+              data-testid="button-refresh-kpi"
+              variant="outline"
+              size="sm"
+              onClick={() => refetch()}
+              disabled={isFetching}
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+          }
+        />
+      }
+    >
       <div className="flex items-center gap-3">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -119,18 +135,8 @@ export default function KpiTraceabilityPage() {
             className="pl-9"
           />
         </div>
-        <Button
-          data-testid="button-refresh-kpi"
-          variant="outline"
-          size="sm"
-          onClick={() => refetch()}
-          disabled={isFetching}
-        >
-          <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? "animate-spin" : ""}`} />
-          Refresh
-        </Button>
         {data && (
-          <span className="text-xs text-muted-foreground" data-testid="text-kpi-count">
+          <span className="text-xs text-muted-foreground tabular-nums" data-testid="text-kpi-count">
             {filteredKpis.length} of {data.totalKpis} KPIs
           </span>
         )}
@@ -230,6 +236,6 @@ export default function KpiTraceabilityPage() {
           Last generated: {new Date(data.generatedAt).toLocaleString()}
         </p>
       )}
-    </div>
+    </PageLayout>
   );
 }
