@@ -23,6 +23,8 @@ import { useRolloutFlag } from "@/hooks/use-rollout-flag";
 import type { NextAction, BlockerInfo, OwnerInfo } from "@/hooks/use-guidance";
 import { usePermission } from "@/hooks/use-permissions";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout } from "@/components/layout";
 
 interface StageGateBlock {
   projectId: number;
@@ -1011,21 +1013,34 @@ export default function LifecycleBoardPage() {
   if (loading) return <PageSkeleton lines={5} />;
   if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load Lifecycle Board" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
-  return (
-    <div className="space-y-3 md:space-y-3" data-testid="lifecycle-board-page">
-      <div className="flex items-start justify-between flex-wrap gap-1.5">
-        <div>
-          <h1 className="text-xl md:text-2xl font-bold leading-tight" data-testid="text-lifecycle-title">Lifecycle</h1>
-          <p className="text-muted-foreground text-xs md:text-sm leading-snug">
-            Existing lifecycle board for stage movement, history, and gate visibility
-            <span className="ml-2 text-xs">
-              ({trackerCount} with tracker{preTrackerCount > 0 ? `, ${preTrackerCount} pre-tracker` : ""})
-            </span>
-          </p>
-        </div>
-        {microWalkthroughEnabled ? <ReplayWalkthrough screenId="lifecycle-board" label="Replay guide" /> : null}
-      </div>
+  const lifecycleSubtitle = `Stage movement, history, and gate visibility · ${trackerCount} with tracker${preTrackerCount > 0 ? `, ${preTrackerCount} pre-tracker` : ""}`;
 
+  return (
+    <PageLayout
+      data-testid="lifecycle-board-page"
+      header={
+        <PageHeader
+          title="Lifecycle"
+          subtitle={lifecycleSubtitle}
+          actions={
+            <>
+              {microWalkthroughEnabled ? (
+                <ReplayWalkthrough screenId="lifecycle-board" label="Replay guide" />
+              ) : null}
+              {canCreateProject && (
+                <Button
+                  size="sm"
+                  onClick={() => { setAddProjectResult(null); setAddProjectForm({ projectName: "", clientName: "", projectCode: "", location: "", initialPhase: "P0_FIRST_ASSESSMENT" }); setAddProjectOpen(true); }}
+                  data-testid="button-add-project"
+                >
+                  <Plus className="w-4 h-4 mr-1" /> Add Project
+                </Button>
+              )}
+            </>
+          }
+        />
+      }
+    >
       {microWalkthroughEnabled ? <MicroWalkthrough screenId="lifecycle-board" steps={lifecycleWalkthroughSteps} /> : null}
       <ActionBar nextAction={lifecycleNextAction} blockers={lifecycleBlockers} />
 
@@ -1060,15 +1075,6 @@ export default function LifecycleBoardPage() {
           <span className="text-sm text-muted-foreground" data-testid="text-project-count">
             {filtered.length} project{filtered.length !== 1 ? "s" : ""}
           </span>
-          {canCreateProject && (
-            <Button
-              size="sm"
-              onClick={() => { setAddProjectResult(null); setAddProjectForm({ projectName: "", clientName: "", projectCode: "", location: "", initialPhase: "P0_FIRST_ASSESSMENT" }); setAddProjectOpen(true); }}
-              data-testid="button-add-project"
-            >
-              <Plus className="w-4 h-4 mr-1" /> Add Project
-            </Button>
-          )}
         </div>
       </div>
 
@@ -2195,6 +2201,6 @@ export default function LifecycleBoardPage() {
           {ragHistoryLoading && <div className="text-xs text-muted-foreground text-center py-2">Loading history...</div>}
         </DialogContent>
       </Dialog>
-    </div>
+    </PageLayout>
   );
 }

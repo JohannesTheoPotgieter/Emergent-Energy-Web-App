@@ -13,6 +13,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Copy, CheckCircle, Loader2, Trash2, Edit, Eye, Power, History, ChevronDown, ChevronRight, Shield, ListChecks, FileText, AlertTriangle, Users, Wrench } from "lucide-react";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout } from "@/components/layout";
 
 interface PhaseTemplateData {
   id: number;
@@ -327,17 +329,20 @@ export default function PhaseTemplatesPage() {
   }
 
   return (
-    <div className="p-6 max-w-[1400px] mx-auto space-y-6" data-testid="phase-templates-page">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold" data-testid="text-page-title">Phase Templates</h1>
-          <p className="text-muted-foreground">Manage lifecycle phase templates and engineering stage templates that auto-generate tasks, deliverables, and quality items when projects advance</p>
-        </div>
-        <Button onClick={() => setShowCreateDialog(true)} data-testid="button-create-template">
-          <Plus className="w-4 h-4 mr-2" /> New Template
-        </Button>
-      </div>
-
+    <PageLayout
+      data-testid="phase-templates-page"
+      header={
+        <PageHeader
+          title="Phase Templates"
+          subtitle="Manage lifecycle phase templates and engineering stage templates that auto-generate tasks, deliverables, and quality items when projects advance"
+          actions={
+            <Button onClick={() => setShowCreateDialog(true)} data-testid="button-create-template">
+              <Plus className="w-4 h-4 mr-2" /> New Template
+            </Button>
+          }
+        />
+      }
+    >
       {loading ? (
         <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin" /></div>
       ) : (
@@ -702,7 +707,7 @@ export default function PhaseTemplatesPage() {
           )}
         </DialogContent>
       </Dialog>
-    </div>
+    </PageLayout>
   );
 }
 

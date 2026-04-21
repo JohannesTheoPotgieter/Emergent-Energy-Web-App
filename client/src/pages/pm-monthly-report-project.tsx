@@ -3,10 +3,11 @@ import { useQuery } from "@tanstack/react-query";
 import { useRoute, useLocation } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import RAGBadge from "@/components/reports/RAGBadge";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout, DetailLayout } from "@/components/layout";
 
 function getAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = {};
@@ -80,7 +81,7 @@ function ProjectDetailTable({ reportId, projectId, title, metric, defaultSort = 
       <CardContent className="p-4 space-y-3">
         <div className="flex items-center justify-between gap-3">
           <h3 className="text-sm font-semibold">{title}</h3>
-          <Button size="sm" variant="outline" onClick={exportExcel}>Export to Excel</Button>
+          <Button size="sm" variant="outline" onClick={exportExcel} data-testid={`btn-export-${metric}`}>Export to Excel</Button>
         </div>
 
         <div className="text-xs text-muted-foreground border rounded px-2 py-1 bg-muted/20">
@@ -88,8 +89,8 @@ function ProjectDetailTable({ reportId, projectId, title, metric, defaultSort = 
         </div>
 
         <div className="sticky top-0 z-10 bg-background border rounded p-2 text-xs flex flex-wrap gap-3">
-          <span>Rows: <strong>{rows.length}</strong></span>
-          {Object.entries(totals).slice(0, 5).map(([k, v]) => <span key={k}>{k}: <strong>{typeof v === "number" ? v.toLocaleString() : String(v)}</strong></span>)}
+          <span>Rows: <strong className="tabular-nums">{rows.length}</strong></span>
+          {Object.entries(totals).slice(0, 5).map(([k, v]) => <span key={k}>{k}: <strong className="tabular-nums">{typeof v === "number" ? v.toLocaleString() : String(v)}</strong></span>)}
         </div>
 
         <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Filter rows..." className="h-8" />
@@ -101,7 +102,7 @@ function ProjectDetailTable({ reportId, projectId, title, metric, defaultSort = 
                 <tr>{cols.map((c) => <th key={c} className="text-left px-2 py-2 cursor-pointer" onClick={() => setSortKey(c)}>{c}</th>)}</tr>
               </thead>
               <tbody>
-                {rows.length === 0 ? <tr><td colSpan={cols.length || 1} className="p-4">No rows found.</td></tr> : rows.map((r: any, idx: number) => (
+                {rows.length === 0 ? <tr><td colSpan={cols.length || 1} className="p-4 text-center text-muted-foreground">No rows found.</td></tr> : rows.map((r: any, idx: number) => (
                   <tr key={idx} className="border-b">{cols.map((c) => <td key={c} className="px-2 py-1.5">{String(r[c] ?? "—")}</td>)}</tr>
                 ))}
               </tbody>
@@ -147,52 +148,67 @@ export default function PmMonthlyReportProject() {
   const quality = projectData?.quality;
   const procurement = projectData?.procurement || [];
 
-  return (
-    <div className="container mx-auto p-6 space-y-4">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => navigate(`/reports/pm/monthly?month=${month}`)}><ArrowLeft className="w-4 h-4" /></Button>
-        <h1 className="text-2xl font-bold">{ps?.projectName || "Project Detail"}</h1>
-        <span className="text-sm text-muted-foreground">{month}</span>
-      </div>
+  const pageTitle = ps?.projectName || "Project Detail";
 
+  return (
+    <PageLayout
+      data-testid="pm-monthly-report-project-page"
+      header={
+        <PageHeader
+          title={pageTitle}
+          subtitle={month}
+          actions={
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate(`/reports/pm/monthly?month=${month}`)}
+              data-testid="btn-back-monthly-report"
+            >
+              <ArrowLeft className="w-4 h-4 mr-1" /> Back
+            </Button>
+          }
+        />
+      }
+    >
       {error && <p className="text-sm text-red-600">{(error as Error).message}</p>}
-      {isLoading ? <div className="flex items-center justify-center min-h-[30vh]"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div> : !ps && !error ? <p className="text-muted-foreground">No data available for this project.</p> : (
+      {isLoading ? (
+        <div className="flex items-center justify-center min-h-[30vh]">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      ) : !ps && !error ? (
+        <p className="text-muted-foreground">No data available for this project.</p>
+      ) : (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
             <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Phase</p><p className="font-medium">{ps.phase || "—"}</p></CardContent></Card>
             <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">RAG</p><RAGBadge status={ps.ragStatus} /></CardContent></Card>
-            <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Health</p><p className="font-medium">{ps.healthScore?.toFixed(1) || "—"}</p></CardContent></Card>
+            <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Health</p><p className="font-medium tabular-nums">{ps.healthScore?.toFixed(1) || "—"}</p></CardContent></Card>
             <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Revenue</p><p className="font-mono text-sm">{money(fin.revenue?.totalInvoiced || 0)}</p></CardContent></Card>
             <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Cost</p><p className="font-mono text-sm">{money(fin.cost?.actualCost || 0)}</p></CardContent></Card>
             <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">GP</p><p className="font-mono text-sm">{money(fin.grossProfit?.grossProfit || 0)}</p></CardContent></Card>
-            <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Overdue Tasks</p><p className="font-medium text-red-700">{tasks?.overdue || 0}</p></CardContent></Card>
-            <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Open RAID</p><p className="font-medium">{raids.length}</p></CardContent></Card>
+            <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Overdue Tasks</p><p className="font-medium text-red-700 tabular-nums">{tasks?.overdue || 0}</p></CardContent></Card>
+            <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Open RAID</p><p className="font-medium tabular-nums">{raids.length}</p></CardContent></Card>
           </div>
 
-          <Tabs defaultValue="revenue" className="w-full">
-            <TabsList className="w-full justify-start overflow-auto">
-              <TabsTrigger value="revenue">Revenue lines</TabsTrigger>
-              <TabsTrigger value="cost">Cost lines</TabsTrigger>
-              <TabsTrigger value="tasks">Task lines</TabsTrigger>
-              <TabsTrigger value="raid">RAID lines</TabsTrigger>
-              <TabsTrigger value="quality">Quality lines</TabsTrigger>
-              <TabsTrigger value="procurement">Procurement lines</TabsTrigger>
-            </TabsList>
-            <TabsContent value="revenue" className="mt-3"><ProjectDetailTable reportId={reportId} projectId={projectId} title="Revenue Line Items" metric="revenue" defaultSort="invoiceDate" /></TabsContent>
-            <TabsContent value="cost" className="mt-3"><ProjectDetailTable reportId={reportId} projectId={projectId} title="Cost Line Items" metric="cost" defaultSort="invoiceDate" /></TabsContent>
-            <TabsContent value="tasks" className="mt-3"><ProjectDetailTable reportId={reportId} projectId={projectId} title="Task Line Items" metric="tasks" defaultSort="endDate" /></TabsContent>
-            <TabsContent value="raid" className="mt-3"><ProjectDetailTable reportId={reportId} projectId={projectId} title="RAID Line Items" metric="raid" defaultSort="dueDate" /></TabsContent>
-            <TabsContent value="quality" className="mt-3"><ProjectDetailTable reportId={reportId} projectId={projectId} title="Quality Line Items" metric="quality" defaultSort="createdAt" /></TabsContent>
-            <TabsContent value="procurement" className="mt-3"><ProjectDetailTable reportId={reportId} projectId={projectId} title="Procurement Line Items" metric="procurement" defaultSort="status" /></TabsContent>
-          </Tabs>
+          <DetailLayout
+            defaultTab="revenue"
+            tabs={[
+              { key: "revenue", label: "Revenue lines", content: <ProjectDetailTable reportId={reportId} projectId={projectId} title="Revenue Line Items" metric="revenue" defaultSort="invoiceDate" /> },
+              { key: "cost", label: "Cost lines", content: <ProjectDetailTable reportId={reportId} projectId={projectId} title="Cost Line Items" metric="cost" defaultSort="invoiceDate" /> },
+              { key: "tasks", label: "Task lines", content: <ProjectDetailTable reportId={reportId} projectId={projectId} title="Task Line Items" metric="tasks" defaultSort="endDate" /> },
+              { key: "raid", label: "RAID lines", content: <ProjectDetailTable reportId={reportId} projectId={projectId} title="RAID Line Items" metric="raid" defaultSort="dueDate" /> },
+              { key: "quality", label: "Quality lines", content: <ProjectDetailTable reportId={reportId} projectId={projectId} title="Quality Line Items" metric="quality" defaultSort="createdAt" /> },
+              { key: "procurement", label: "Procurement lines", content: <ProjectDetailTable reportId={reportId} projectId={projectId} title="Procurement Line Items" metric="procurement" defaultSort="status" /> },
+            ]}
+          />
 
           <div className="grid sm:grid-cols-3 gap-3 text-xs">
-            <Card><CardContent className="p-3"><p className="text-muted-foreground">Project QC Warnings</p><p className="font-medium text-red-700">{quality?.openWarnings || 0}</p></CardContent></Card>
-            <Card><CardContent className="p-3"><p className="text-muted-foreground">Procurement Lines</p><p className="font-medium">{procurement.length}</p></CardContent></Card>
-            <Card><CardContent className="p-3"><p className="text-muted-foreground">Task Completion</p><p className="font-medium">{tasks?.completionPct?.toFixed(0) || 0}%</p></CardContent></Card>
+            <Card><CardContent className="p-3"><p className="text-muted-foreground">Project QC Warnings</p><p className="font-medium text-red-700 tabular-nums">{quality?.openWarnings || 0}</p></CardContent></Card>
+            <Card><CardContent className="p-3"><p className="text-muted-foreground">Procurement Lines</p><p className="font-medium tabular-nums">{procurement.length}</p></CardContent></Card>
+            <Card><CardContent className="p-3"><p className="text-muted-foreground">Task Completion</p><p className="font-medium tabular-nums">{tasks?.completionPct?.toFixed(0) || 0}%</p></CardContent></Card>
           </div>
         </>
       )}
-    </div>
+    </PageLayout>
   );
 }

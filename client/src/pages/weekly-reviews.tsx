@@ -1,17 +1,25 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
-  Calendar, Clock, CheckCircle, AlertCircle, FileText,
-  ArrowRight, Loader2,
+  Calendar, Clock, CheckCircle, AlertCircle, ArrowRight,
 } from "lucide-react";
 import { useProjectsSummary } from "@/hooks/use-projects-summary";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { format, startOfWeek, addDays, differenceInDays } from "date-fns";
 import { ReportTrustNotice } from "@/components/reports/ReportTrustNotice";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout, TableLayout } from "@/components/layout";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 interface ReviewRecord {
   id: number;
@@ -111,16 +119,102 @@ export default function WeeklyReviewsPage() {
     );
   }
 
+  const emptyRow = (
+    <TableRow>
+      <TableCell colSpan={7} className="py-12 text-center text-muted-foreground">
+        No active projects found.
+      </TableCell>
+    </TableRow>
+  );
+
+  const table = (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Project</TableHead>
+          <TableHead>PM</TableHead>
+          <TableHead>Last Review</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>Next Due</TableHead>
+          <TableHead>Reviews</TableHead>
+          <TableHead className="text-right"></TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {projects.length === 0 ? emptyRow : projects.map((project) => (
+          <TableRow
+            key={project.name}
+            className="cursor-pointer"
+            onClick={() => handleRowClick(project.name)}
+            data-testid={`row-project-review-${project.name}`}
+          >
+            <TableCell>
+              <div className="flex flex-col gap-0.5">
+                <span className="font-medium truncate max-w-[200px]" data-testid={`text-project-name-${project.name}`}>
+                  {project.name}
+                </span>
+                {project.phase && (
+                  <span className="text-[10px] text-muted-foreground">{project.phase}</span>
+                )}
+              </div>
+            </TableCell>
+            <TableCell className="text-muted-foreground text-xs">{project.pm || "—"}</TableCell>
+            <TableCell>
+              {project.latestReview ? (
+                <div className="flex items-center gap-1.5 text-xs">
+                  <Clock className="h-3 w-3 text-muted-foreground" />
+                  <span>{format(new Date(project.latestReview.weekStarting), "dd MMM yyyy")}</span>
+                </div>
+              ) : (
+                <span className="text-xs text-muted-foreground">Never</span>
+              )}
+            </TableCell>
+            <TableCell>
+              {project.hasCurrentWeekReview ? (
+                <Badge variant="default" className="text-[10px] gap-1" data-testid={`badge-status-${project.name}`}>
+                  <CheckCircle className="h-3 w-3" /> Reviewed
+                </Badge>
+              ) : project.latestReview?.status === "draft" ? (
+                <Badge variant="outline" className="text-[10px] gap-1 border-amber-300 text-amber-700" data-testid={`badge-status-${project.name}`}>
+                  <AlertCircle className="h-3 w-3" /> Draft
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="text-[10px] gap-1" data-testid={`badge-status-${project.name}`}>
+                  <Calendar className="h-3 w-3" /> Pending
+                </Badge>
+              )}
+            </TableCell>
+            <TableCell>
+              <span className={`text-xs tabular-nums ${project.daysTilDue < 0 ? "text-red-600 font-semibold" : project.daysTilDue === 0 ? "text-amber-600 font-medium" : "text-muted-foreground"}`}>
+                {project.daysTilDue < 0
+                  ? `${Math.abs(project.daysTilDue)}d overdue`
+                  : project.daysTilDue === 0
+                    ? "Due today"
+                    : `In ${project.daysTilDue}d`}
+              </span>
+            </TableCell>
+            <TableCell>
+              <span className="text-xs text-muted-foreground tabular-nums">{project.reviewCount}</span>
+            </TableCell>
+            <TableCell className="text-right">
+              <ArrowRight className="h-4 w-4 text-muted-foreground inline-block" />
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+
   return (
-    <div className="space-y-6" data-testid="page-weekly-reviews">
-      <div className="flex flex-col gap-2">
-        <h2 className="text-3xl font-heading font-bold text-foreground" data-testid="text-page-title">
-          Weekly Reviews
-        </h2>
-        <p className="text-muted-foreground">
-          Track weekly project review status across all active projects.
-        </p>
-      </div>
+    <PageLayout
+      data-testid="page-weekly-reviews"
+      header={
+        <PageHeader
+          title="Weekly Reviews"
+          subtitle="Track weekly project review status across all active projects"
+        />
+      }
+    >
       <ReportTrustNotice
         lastUpdatedAt={latestRefreshAt}
         sourceLabel="Weekly review records + active projects"
@@ -130,124 +224,23 @@ export default function WeeklyReviewsPage() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Card className="p-4" data-testid="card-stat-reviewed">
           <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Reviewed This Week</p>
-          <p className="text-2xl font-bold mt-1 text-emerald-600">{reviewedThisWeek}</p>
+          <p className="text-2xl font-bold mt-1 text-emerald-600 tabular-nums">{reviewedThisWeek}</p>
         </Card>
         <Card className="p-4" data-testid="card-stat-pending">
           <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Pending This Week</p>
-          <p className="text-2xl font-bold mt-1 text-amber-600">{pendingThisWeek}</p>
+          <p className="text-2xl font-bold mt-1 text-amber-600 tabular-nums">{pendingThisWeek}</p>
         </Card>
         <Card className="p-4" data-testid="card-stat-total">
           <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total Reviews</p>
-          <p className="text-2xl font-bold mt-1">{totalReviews}</p>
+          <p className="text-2xl font-bold mt-1 tabular-nums">{totalReviews}</p>
         </Card>
         <Card className="p-4" data-testid="card-stat-completed">
           <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Completed</p>
-          <p className="text-2xl font-bold mt-1 text-blue-600">{completedReviews}</p>
+          <p className="text-2xl font-bold mt-1 text-blue-600 tabular-nums">{completedReviews}</p>
         </Card>
       </div>
 
-      <Card data-testid="card-project-reviews-table">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <FileText className="h-4 w-4" />
-            Project Review Status
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b bg-muted/50">
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Project</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">PM</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Last Review</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Status</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Next Due</th>
-                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Reviews</th>
-                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {projects.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="text-center py-12 text-muted-foreground">
-                      No active projects found.
-                    </td>
-                  </tr>
-                ) : (
-                  projects.map((project) => (
-                    <tr
-                      key={project.name}
-                      className="border-b hover:bg-muted/30 cursor-pointer transition-colors"
-                      onClick={() => handleRowClick(project.name)}
-                      data-testid={`row-project-review-${project.name}`}
-                    >
-                      <td className="px-4 py-3">
-                        <div className="flex flex-col gap-0.5">
-                          <span className="font-medium truncate max-w-[200px]" data-testid={`text-project-name-${project.name}`}>
-                            {project.name}
-                          </span>
-                          {project.phase && (
-                            <span className="text-[10px] text-muted-foreground">{project.phase}</span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground text-xs">
-                        {project.pm || "—"}
-                      </td>
-                      <td className="px-4 py-3">
-                        {project.latestReview ? (
-                          <div className="flex items-center gap-1.5 text-xs">
-                            <Clock className="h-3 w-3 text-muted-foreground" />
-                            <span>
-                              {format(new Date(project.latestReview.weekStarting), "dd MMM yyyy")}
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">Never</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        {project.hasCurrentWeekReview ? (
-                          <Badge variant="default" className="text-[10px] gap-1" data-testid={`badge-status-${project.name}`}>
-                            <CheckCircle className="h-3 w-3" />
-                            Reviewed
-                          </Badge>
-                        ) : project.latestReview?.status === "draft" ? (
-                          <Badge variant="outline" className="text-[10px] gap-1 border-amber-300 text-amber-700" data-testid={`badge-status-${project.name}`}>
-                            <AlertCircle className="h-3 w-3" />
-                            Draft
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="text-[10px] gap-1" data-testid={`badge-status-${project.name}`}>
-                            <Calendar className="h-3 w-3" />
-                            Pending
-                          </Badge>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`text-xs ${project.daysTilDue < 0 ? "text-red-600 font-semibold" : project.daysTilDue === 0 ? "text-amber-600 font-medium" : "text-muted-foreground"}`}>
-                          {project.daysTilDue < 0
-                            ? `${Math.abs(project.daysTilDue)}d overdue`
-                            : project.daysTilDue === 0
-                              ? "Due today"
-                              : `In ${project.daysTilDue}d`}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="text-xs text-muted-foreground">{project.reviewCount}</span>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <ArrowRight className="h-4 w-4 text-muted-foreground inline-block" />
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+      <TableLayout table={table} />
+    </PageLayout>
   );
 }

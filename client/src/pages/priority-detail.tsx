@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
 import { PageShell } from "@/components/layout/page-shell";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout } from "@/components/layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -287,7 +289,7 @@ export default function PriorityDetailPage() {
       manual_health: priority.manualHealth || "",
       manual_progress: priority.manualProgress != null ? String(priority.manualProgress) : "",
       department_key: (priority as any).departmentKey || "",
-      owner_user_id: priority.ownerUserId != null ? String(priority.ownerUserId) : "",
+      owner_user_id: priority.owner?.id != null ? String(priority.owner.id) : "",
       accountable_exec_id: (priority as any).accountableExecId != null ? String((priority as any).accountableExecId) : "",
       assigned_user_id: (priority as any).assignedUserId != null ? String((priority as any).assignedUserId) : "",
       parent_id: (priority as any).parentId != null ? String((priority as any).parentId) : "",
@@ -330,49 +332,55 @@ export default function PriorityDetailPage() {
   });
 
   return (
-    <PageShell>
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-1 text-xs text-muted-foreground mb-4">
-        <Link href="/"><span className="hover:underline cursor-pointer">Home</span></Link>
-        <span>/</span>
-        <Link href="/priorities"><span className="hover:underline cursor-pointer">Priorities</span></Link>
-        <span>/</span>
-        <span className="text-foreground">{priority.title}</span>
-      </div>
-
-      {/* Header */}
-      <div className="mb-6">
-        <div className="flex items-center gap-2 mb-1">
-          <span className={`w-3 h-3 rounded-full ${HEALTH_DOT[priority.effectiveHealth] || HEALTH_DOT.healthy}`} />
-          <h1 className="text-xl font-semibold text-foreground">{priority.title}</h1>
-          <Badge variant="secondary" className={`text-[10px] ${sev.className}`}>{sev.label}</Badge>
-          {isAdmin && (
-            <div className="ml-auto flex items-center gap-2">
-              <Button size="sm" variant="outline" onClick={openEditDialog}>Edit priority</Button>
-              {priority.status !== "closed" && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={async () => {
-                    const ok = await confirm({
-                      title: "Close this priority?",
-                      description: "It will be soft-closed and hidden from the active list.",
-                      confirmLabel: "Close",
-                      destructive: true,
-                    });
-                    if (ok) closePriorityMutation.mutate();
-                  }}
-                  disabled={closePriorityMutation.isPending}
-                >
-                  {closePriorityMutation.isPending ? "Closing..." : "Close"}
-                </Button>
-              )}
+    <PageLayout
+      data-testid="priority-detail-page"
+      header={
+        <PageHeader
+          breadcrumbs={[
+            { label: "Home", href: "/" },
+            { label: "Priorities", href: "/priorities" },
+            { label: priority.title },
+          ]}
+          title={priority.title}
+          status={
+            <div className="flex items-center gap-2">
+              <span className={`w-3 h-3 rounded-full ${HEALTH_DOT[priority.effectiveHealth] || HEALTH_DOT.healthy}`} aria-label={`health: ${priority.effectiveHealth}`} />
+              <Badge variant="secondary" className={`text-[10px] ${sev.className}`}>{sev.label}</Badge>
             </div>
-          )}
-        </div>
-
+          }
+          actions={
+            isAdmin ? (
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="outline" onClick={openEditDialog} data-testid="btn-edit-priority">Edit priority</Button>
+                {priority.status !== "closed" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={async () => {
+                      const ok = await confirm({
+                        title: "Close this priority?",
+                        description: "It will be soft-closed and hidden from the active list.",
+                        confirmLabel: "Close",
+                        destructive: true,
+                      });
+                      if (ok) closePriorityMutation.mutate();
+                    }}
+                    disabled={closePriorityMutation.isPending}
+                    data-testid="btn-close-priority"
+                  >
+                    {closePriorityMutation.isPending ? "Closing..." : "Close"}
+                  </Button>
+                )}
+              </div>
+            ) : undefined
+          }
+        />
+      }
+    >
+      {/* Description + meta + cascade info */}
+      <div>
         {priority.description && (
-          <p className="text-sm text-muted-foreground mt-1 max-w-2xl">{priority.description}</p>
+          <p className="text-sm text-muted-foreground max-w-2xl">{priority.description}</p>
         )}
 
         <div className="flex items-center gap-4 text-xs text-muted-foreground mt-2 flex-wrap">
@@ -1004,7 +1012,7 @@ export default function PriorityDetailPage() {
       )}
 
       {confirmDialog}
-    </PageShell>
+    </PageLayout>
   );
 }
 

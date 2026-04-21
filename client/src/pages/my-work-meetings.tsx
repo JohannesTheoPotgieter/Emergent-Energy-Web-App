@@ -44,6 +44,8 @@ import {
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout } from "@/components/layout";
 
 interface ActionItem {
   id: number;
@@ -233,32 +235,39 @@ export default function MyWorkMeetingsPage() {
   if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load meetings" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
-      <div className="space-y-6 pb-12" data-testid="meetings-page">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <h2 className="text-xl font-semibold" data-testid="text-meetings-title">Meeting Actions</h2>
-            {pendingCount > 0 && (
-              <Badge variant="secondary" className="bg-amber-100 text-amber-800" data-testid="badge-pending-count">
+    <PageLayout
+      data-testid="meetings-page"
+      header={
+        <PageHeader
+          title="Meeting Actions"
+          subtitle={pendingCount > 0 ? `${pendingCount} pending action${pendingCount !== 1 ? "s" : ""} from meetings` : "Actions captured from your meetings"}
+          status={
+            pendingCount > 0 ? (
+              <Badge variant="secondary" className="bg-amber-100 text-amber-800 tabular-nums" data-testid="badge-pending-count">
                 {pendingCount} pending
               </Badge>
-            )}
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => setWebhookDialog(true)} data-testid="button-webhook-setup">
-              {webhookStatus?.connected ? (
-                <Wifi className="w-4 h-4 mr-1 text-green-600" />
-              ) : (
-                <WifiOff className="w-4 h-4 mr-1 text-gray-400" />
-              )}
-              Webhook Setup
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setManualDialog(true)} data-testid="button-add-meeting">
-              <Plus className="w-4 h-4 mr-1" />
-              Add Meeting
-            </Button>
-          </div>
-        </div>
+            ) : undefined
+          }
+          actions={
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setWebhookDialog(true)} data-testid="button-webhook-setup">
+                {webhookStatus?.connected ? (
+                  <Wifi className="w-4 h-4 mr-1 text-green-600" />
+                ) : (
+                  <WifiOff className="w-4 h-4 mr-1 text-gray-400" />
+                )}
+                Webhook Setup
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setManualDialog(true)} data-testid="button-add-meeting">
+                <Plus className="w-4 h-4 mr-1" />
+                Add Meeting
+              </Button>
+            </div>
+          }
+        />
+      }
+    >
+      <div className="max-w-5xl mx-auto pb-12">
 
         {/* Connection Status Banner */}
         {webhookStatus && (
@@ -931,6 +940,6 @@ export default function MyWorkMeetingsPage() {
           </DialogContent>
         </Dialog>
       </div>
-    </div>
+    </PageLayout>
   );
 }

@@ -15,6 +15,16 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout, TableLayout } from "@/components/layout";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 const STAGE_LABELS: Record<string, string> = {
   S01_FIRST_ASSESSMENT: "First Assessment",
@@ -110,175 +120,209 @@ export default function GatesExceptionsPage() {
   if (isLoading) return <PageSkeleton />;
   if (error) return <PageError message="Failed to load exceptions" />;
 
-  return (
-    <div className="space-y-4">
-      {/* View tabs */}
-      <div className="flex items-center gap-2 border-b pb-2">
-        {VIEW_TABS.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveView(tab.key)}
-            className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
-              activeView === tab.key
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-muted"
-            }`}
-          >
-            {tab.label}
-            {counts && tab.key === "pending_my_approval" && counts.pendingMyApproval > 0 && (
-              <Badge variant="destructive" className="ml-1.5 text-[10px] px-1.5">{counts.pendingMyApproval}</Badge>
-            )}
-            {counts && tab.key === "overdue" && counts.overdue > 0 && (
-              <Badge variant="destructive" className="ml-1.5 text-[10px] px-1.5">{counts.overdue}</Badge>
-            )}
-          </button>
-        ))}
-      </div>
+  const subtitle = filtered.length === 0
+    ? "No exceptions in this view"
+    : `${filtered.length} exception${filtered.length !== 1 ? "s" : ""} in the ${VIEW_TABS.find((t) => t.key === activeView)?.label.toLowerCase()} view`;
 
-      {/* Search and count */}
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search exceptions..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-8"
-          />
-        </div>
-        <Badge variant="outline" className="bg-orange-100 text-orange-800">
-          {filtered.length} exception{filtered.length !== 1 ? "s" : ""}
-        </Badge>
-      </div>
+  const viewTabsRow = (
+    <div className="flex items-center gap-2 border-b pb-2 w-full overflow-x-auto">
+      {VIEW_TABS.map((tab) => (
+        <button
+          key={tab.key}
+          onClick={() => setActiveView(tab.key)}
+          className={`px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap ${
+            activeView === tab.key
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:bg-muted"
+          }`}
+          data-testid={`tab-exceptions-${tab.key}`}
+        >
+          {tab.label}
+          {counts && tab.key === "pending_my_approval" && counts.pendingMyApproval > 0 && (
+            <Badge variant="destructive" className="ml-1.5 text-[10px] px-1.5">{counts.pendingMyApproval}</Badge>
+          )}
+          {counts && tab.key === "overdue" && counts.overdue > 0 && (
+            <Badge variant="destructive" className="ml-1.5 text-[10px] px-1.5">{counts.overdue}</Badge>
+          )}
+        </button>
+      ))}
+    </div>
+  );
 
-      {filtered.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          <AlertTriangle className="h-8 w-8 mx-auto mb-2" />
-          <p>No exceptions in this view.</p>
+  const toolbar = (
+    <div className="flex items-center gap-3 w-full">
+      <div className="relative flex-1 max-w-sm">
+        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Search exceptions..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="pl-8"
+          data-testid="input-search-gates-exceptions"
+        />
+      </div>
+      <Badge variant="outline" className="bg-orange-100 text-orange-800" data-testid="badge-exception-count">
+        {filtered.length} exception{filtered.length !== 1 ? "s" : ""}
+      </Badge>
+    </div>
+  );
+
+  const emptyRow = (
+    <TableRow>
+      <TableCell colSpan={10} className="py-12 text-center">
+        <div className="flex flex-col items-center gap-2 text-muted-foreground">
+          <AlertTriangle className="h-8 w-8" />
+          <p className="text-sm font-medium">No exceptions in this view</p>
         </div>
-      ) : (
-        <div className="border rounded-lg overflow-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b bg-muted/50">
-                <th className="text-left p-2 font-medium">Project</th>
-                <th className="text-left p-2 font-medium">Stage</th>
-                <th className="text-left p-2 font-medium">Blocked Item</th>
-                <th className="text-left p-2 font-medium">Risk</th>
-                <th className="text-left p-2 font-medium">Status</th>
-                <th className="text-left p-2 font-medium">Owner</th>
-                <th className="text-left p-2 font-medium">Approver</th>
-                <th className="text-right p-2 font-medium">Age</th>
-                <th className="text-left p-2 font-medium">Due Date</th>
-                <th className="text-left p-2 font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((e: any) => {
-                const isOverdue = e.age_days > 3 && e.status === "REQUESTED";
-                return (
-                  <tr
-                    key={e.id}
-                    className={`border-b hover:bg-muted/30 ${isOverdue ? "bg-red-50/50" : ""}`}
-                  >
-                    <td
-                      className="p-2 font-medium cursor-pointer hover:underline"
-                      onClick={() => navigate(`/project/${encodeURIComponent(e.project_name)}`)}
+      </TableCell>
+    </TableRow>
+  );
+
+  const table = (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Project</TableHead>
+          <TableHead>Stage</TableHead>
+          <TableHead>Blocked Item</TableHead>
+          <TableHead>Risk</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>Owner</TableHead>
+          <TableHead>Approver</TableHead>
+          <TableHead className="text-right">Age</TableHead>
+          <TableHead>Due Date</TableHead>
+          <TableHead>Actions</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {filtered.length === 0 ? emptyRow : filtered.map((e: any) => {
+          const isOverdue = e.age_days > 3 && e.status === "REQUESTED";
+          return (
+            <TableRow
+              key={e.id}
+              className={isOverdue ? "bg-red-50/50" : ""}
+              data-testid={`row-exception-${e.id}`}
+            >
+              <TableCell
+                className="font-medium cursor-pointer hover:underline"
+                onClick={() => navigate(`/project/${encodeURIComponent(e.project_name)}`)}
+              >
+                {e.project_name}
+              </TableCell>
+              <TableCell className="text-xs">{STAGE_LABELS[e.stage_code] || e.stage_code}</TableCell>
+              <TableCell className="text-xs text-muted-foreground max-w-[150px] truncate">
+                {e.blocked_item_name || e.requirement_code || "-"}
+              </TableCell>
+              <TableCell>
+                <Badge variant="outline" className={`text-[10px] ${riskBadge(e.risk_level)}`}>
+                  {e.risk_level}
+                </Badge>
+              </TableCell>
+              <TableCell>
+                <Badge variant="outline" className={`text-[10px] ${statusBadge(e.status)}`}>
+                  {e.status?.replace(/_/g, " ")}
+                </Badge>
+              </TableCell>
+              <TableCell className="text-xs text-muted-foreground">{e.owner_name || "-"}</TableCell>
+              <TableCell className="text-xs text-muted-foreground">{e.approver_name || "-"}</TableCell>
+              <TableCell className="text-right tabular-nums">
+                <span className={`inline-flex items-center gap-1 text-xs ${isOverdue ? "text-red-600 font-medium" : ""}`}>
+                  <Clock className="h-3 w-3" /> {e.age_days}d
+                </span>
+              </TableCell>
+              <TableCell className="text-xs text-muted-foreground">
+                {e.closeout_due_date ? new Date(e.closeout_due_date).toLocaleDateString() : "-"}
+              </TableCell>
+              <TableCell>
+                <div className="flex items-center gap-1">
+                  {e.status === "REQUESTED" && (
+                    <>
+                      <Button
+                        variant="ghost" size="sm" className="h-6 px-1.5 text-[10px] text-green-700"
+                        onClick={() => handleAction(e.id, "approve", "Approve")}
+                        title="Approve"
+                        data-testid={`btn-approve-${e.id}`}
+                      >
+                        <CheckCircle className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        variant="ghost" size="sm" className="h-6 px-1.5 text-[10px] text-amber-700"
+                        onClick={() => handleAction(e.id, "approve_with_conditions", "Approve with Conditions")}
+                        title="Approve with conditions"
+                        data-testid={`btn-approve-conditions-${e.id}`}
+                      >
+                        <Shield className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        variant="ghost" size="sm" className="h-6 px-1.5 text-[10px] text-red-700"
+                        onClick={() => handleAction(e.id, "reject", "Reject")}
+                        title="Reject"
+                        data-testid={`btn-reject-${e.id}`}
+                      >
+                        <XCircle className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        variant="ghost" size="sm" className="h-6 px-1.5 text-[10px] text-blue-700"
+                        onClick={() => handleAction(e.id, "return", "Return")}
+                        title="Return for more info"
+                        data-testid={`btn-return-${e.id}`}
+                      >
+                        <MessageSquare className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        variant="ghost" size="sm" className="h-6 px-1.5 text-[10px] text-violet-700"
+                        onClick={() => handleAction(e.id, "escalate", "Escalate")}
+                        title="Escalate"
+                        data-testid={`btn-escalate-${e.id}`}
+                      >
+                        <ArrowUpRight className="h-3 w-3" />
+                      </Button>
+                    </>
+                  )}
+                  {(e.status === "APPROVED" || e.status === "APPROVED_WITH_CONDITIONS") && (
+                    <Button
+                      variant="ghost" size="sm" className="h-6 px-1.5 text-[10px]"
+                      onClick={() => handleAction(e.id, "close", "Close")}
+                      title="Close exception"
+                      data-testid={`btn-close-${e.id}`}
                     >
-                      {e.project_name}
-                    </td>
-                    <td className="p-2 text-xs">{STAGE_LABELS[e.stage_code] || e.stage_code}</td>
-                    <td className="p-2 text-xs text-muted-foreground max-w-[150px] truncate">
-                      {e.blocked_item_name || e.requirement_code || "-"}
-                    </td>
-                    <td className="p-2">
-                      <Badge variant="outline" className={`text-[10px] ${riskBadge(e.risk_level)}`}>
-                        {e.risk_level}
-                      </Badge>
-                    </td>
-                    <td className="p-2">
-                      <Badge variant="outline" className={`text-[10px] ${statusBadge(e.status)}`}>
-                        {e.status?.replace(/_/g, " ")}
-                      </Badge>
-                    </td>
-                    <td className="p-2 text-xs text-muted-foreground">{e.owner_name || "-"}</td>
-                    <td className="p-2 text-xs text-muted-foreground">{e.approver_name || "-"}</td>
-                    <td className="p-2 text-right">
-                      <span className={`inline-flex items-center gap-1 text-xs ${isOverdue ? "text-red-600 font-medium" : ""}`}>
-                        <Clock className="h-3 w-3" /> {e.age_days}d
-                      </span>
-                    </td>
-                    <td className="p-2 text-xs text-muted-foreground">
-                      {e.closeout_due_date ? new Date(e.closeout_due_date).toLocaleDateString() : "-"}
-                    </td>
-                    <td className="p-2">
-                      <div className="flex items-center gap-1">
-                        {e.status === "REQUESTED" && (
-                          <>
-                            <Button
-                              variant="ghost" size="sm" className="h-6 px-1.5 text-[10px] text-green-700"
-                              onClick={() => handleAction(e.id, "approve", "Approve")}
-                              title="Approve"
-                            >
-                              <CheckCircle className="h-3 w-3" />
-                            </Button>
-                            <Button
-                              variant="ghost" size="sm" className="h-6 px-1.5 text-[10px] text-amber-700"
-                              onClick={() => handleAction(e.id, "approve_with_conditions", "Approve with Conditions")}
-                              title="Approve with conditions"
-                            >
-                              <Shield className="h-3 w-3" />
-                            </Button>
-                            <Button
-                              variant="ghost" size="sm" className="h-6 px-1.5 text-[10px] text-red-700"
-                              onClick={() => handleAction(e.id, "reject", "Reject")}
-                              title="Reject"
-                            >
-                              <XCircle className="h-3 w-3" />
-                            </Button>
-                            <Button
-                              variant="ghost" size="sm" className="h-6 px-1.5 text-[10px] text-blue-700"
-                              onClick={() => handleAction(e.id, "return", "Return")}
-                              title="Return for more info"
-                            >
-                              <MessageSquare className="h-3 w-3" />
-                            </Button>
-                            <Button
-                              variant="ghost" size="sm" className="h-6 px-1.5 text-[10px] text-violet-700"
-                              onClick={() => handleAction(e.id, "escalate", "Escalate")}
-                              title="Escalate"
-                            >
-                              <ArrowUpRight className="h-3 w-3" />
-                            </Button>
-                          </>
-                        )}
-                        {(e.status === "APPROVED" || e.status === "APPROVED_WITH_CONDITIONS") && (
-                          <Button
-                            variant="ghost" size="sm" className="h-6 px-1.5 text-[10px]"
-                            onClick={() => handleAction(e.id, "close", "Close")}
-                            title="Close exception"
-                          >
-                            <CheckCircle className="h-3 w-3" />
-                          </Button>
-                        )}
-                        {e.status === "CLOSED" && (
-                          <Button
-                            variant="ghost" size="sm" className="h-6 px-1.5 text-[10px]"
-                            onClick={() => handleAction(e.id, "reopen", "Re-open")}
-                            title="Re-open"
-                          >
-                            <RotateCcw className="h-3 w-3" />
-                          </Button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+                      <CheckCircle className="h-3 w-3" />
+                    </Button>
+                  )}
+                  {e.status === "CLOSED" && (
+                    <Button
+                      variant="ghost" size="sm" className="h-6 px-1.5 text-[10px]"
+                      onClick={() => handleAction(e.id, "reopen", "Re-open")}
+                      title="Re-open"
+                      data-testid={`btn-reopen-${e.id}`}
+                    >
+                      <RotateCcw className="h-3 w-3" />
+                    </Button>
+                  )}
+                </div>
+              </TableCell>
+            </TableRow>
+          );
+        })}
+      </TableBody>
+    </Table>
+  );
+
+  return (
+    <PageLayout
+      data-testid="gates-exceptions-page"
+      header={
+        <PageHeader
+          title="Gate Exceptions"
+          subtitle={subtitle}
+        />
+      }
+    >
+      {viewTabsRow}
+      <TableLayout
+        toolbar={toolbar}
+        table={table}
+      />
 
       {/* Approve with conditions dialog */}
       <Dialog open={actionDialog.open} onOpenChange={(open) => {
@@ -293,9 +337,14 @@ export default function GatesExceptionsPage() {
             value={conditionsText}
             onChange={(e) => setConditionsText(e.target.value)}
             rows={4}
+            data-testid="textarea-conditions"
           />
           <DialogFooter>
-            <Button variant="outline" onClick={() => setActionDialog({ open: false, exceptionId: 0, action: "", label: "" })}>
+            <Button
+              variant="outline"
+              onClick={() => setActionDialog({ open: false, exceptionId: 0, action: "", label: "" })}
+              data-testid="btn-cancel-conditions"
+            >
               Cancel
             </Button>
             <Button
@@ -305,12 +354,13 @@ export default function GatesExceptionsPage() {
                 conditionsText,
               })}
               disabled={!conditionsText.trim()}
+              data-testid="btn-confirm-conditions"
             >
               Approve with Conditions
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageLayout>
   );
 }

@@ -5,6 +5,16 @@ import { Input } from "@/components/ui/input";
 import { useLocation } from "wouter";
 import { Search, CalendarCheck, AlertCircle } from "lucide-react";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout, TableLayout } from "@/components/layout";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 const STAGE_LABELS: Record<string, string> = {
   S04_PD_PM_HANDOVER: "PD-PM Handover",
@@ -50,78 +60,101 @@ export default function GatesClientUpdatesPage() {
   if (error) return <PageError message="Failed to load client updates" />;
 
   const overdueCount = filtered.filter((p: any) => p.isOverdue).length;
+  const subtitle = filtered.length === 0
+    ? "No projects currently in active execution requiring client updates"
+    : `${filtered.length} project${filtered.length !== 1 ? "s" : ""} in active execution${overdueCount > 0 ? ` · ${overdueCount} overdue for update` : ""}`;
 
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search projects..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-8"
-          />
-        </div>
-        {overdueCount > 0 && (
-          <Badge variant="destructive">{overdueCount} overdue</Badge>
-        )}
-        <span className="text-sm text-muted-foreground">{filtered.length} projects in active execution</span>
+  const toolbar = (
+    <div className="flex items-center gap-3 w-full">
+      <div className="relative flex-1 max-w-sm">
+        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Search projects..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="pl-8"
+          data-testid="input-search-gates-client-updates"
+        />
       </div>
-
-      {filtered.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          <CalendarCheck className="h-8 w-8 mx-auto mb-2" />
-          <p>No projects requiring client updates.</p>
-        </div>
-      ) : (
-        <div className="border rounded-lg overflow-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b bg-muted/50">
-                <th className="text-left p-2 font-medium">Project</th>
-                <th className="text-left p-2 font-medium">Client</th>
-                <th className="text-left p-2 font-medium">Stage</th>
-                <th className="text-left p-2 font-medium">PM</th>
-                <th className="text-left p-2 font-medium">Last Update</th>
-                <th className="text-right p-2 font-medium">Days Ago</th>
-                <th className="text-left p-2 font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((p: any) => (
-                <tr
-                  key={p.project_id}
-                  className="border-b hover:bg-muted/30 cursor-pointer"
-                  onClick={() => navigate(`/project/${encodeURIComponent(p.project_name)}`)}
-                >
-                  <td className="p-2 font-medium">{p.project_name}</td>
-                  <td className="p-2 text-muted-foreground">{p.client_name || "-"}</td>
-                  <td className="p-2 text-xs">{STAGE_LABELS[p.current_stage_code] || p.current_stage_code || "-"}</td>
-                  <td className="p-2 text-muted-foreground">{p.pm || "-"}</td>
-                  <td className="p-2 text-xs">
-                    {p.last_review_date ? new Date(p.last_review_date).toLocaleDateString() : "Never"}
-                  </td>
-                  <td className="p-2 text-right">
-                    {p.daysSinceUpdate !== null ? `${p.daysSinceUpdate}d` : "-"}
-                  </td>
-                  <td className="p-2">
-                    {p.isOverdue ? (
-                      <Badge variant="destructive" className="text-[10px]">
-                        <AlertCircle className="h-3 w-3 mr-0.5" /> Overdue
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="text-[10px] bg-emerald-100 text-emerald-800">
-                        On Track
-                      </Badge>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {overdueCount > 0 && (
+        <Badge variant="destructive" data-testid="badge-overdue-count">{overdueCount} overdue</Badge>
       )}
     </div>
+  );
+
+  const emptyRow = (
+    <TableRow>
+      <TableCell colSpan={7} className="py-12 text-center">
+        <div className="flex flex-col items-center gap-2 text-muted-foreground">
+          <CalendarCheck className="h-8 w-8" />
+          <p className="text-sm font-medium">No projects requiring client updates</p>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+
+  const table = (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Project</TableHead>
+          <TableHead>Client</TableHead>
+          <TableHead>Stage</TableHead>
+          <TableHead>PM</TableHead>
+          <TableHead>Last Update</TableHead>
+          <TableHead className="text-right">Days Ago</TableHead>
+          <TableHead>Status</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {filtered.length === 0 ? emptyRow : filtered.map((p: any) => (
+          <TableRow
+            key={p.project_id}
+            className="cursor-pointer"
+            onClick={() => navigate(`/project/${encodeURIComponent(p.project_name)}`)}
+            data-testid={`row-client-update-${p.project_id}`}
+          >
+            <TableCell className="font-medium">{p.project_name}</TableCell>
+            <TableCell className="text-muted-foreground">{p.client_name || "-"}</TableCell>
+            <TableCell className="text-xs">{STAGE_LABELS[p.current_stage_code] || p.current_stage_code || "-"}</TableCell>
+            <TableCell className="text-muted-foreground">{p.pm || "-"}</TableCell>
+            <TableCell className="text-xs">
+              {p.last_review_date ? new Date(p.last_review_date).toLocaleDateString() : "Never"}
+            </TableCell>
+            <TableCell className="text-right tabular-nums">
+              {p.daysSinceUpdate !== null ? `${p.daysSinceUpdate}d` : "-"}
+            </TableCell>
+            <TableCell>
+              {p.isOverdue ? (
+                <Badge variant="destructive" className="text-[10px]">
+                  <AlertCircle className="h-3 w-3 mr-0.5" /> Overdue
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="text-[10px] bg-emerald-100 text-emerald-800">
+                  On Track
+                </Badge>
+              )}
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+
+  return (
+    <PageLayout
+      data-testid="gates-client-updates-page"
+      header={
+        <PageHeader
+          title="Client Updates"
+          subtitle={subtitle}
+        />
+      }
+    >
+      <TableLayout
+        toolbar={toolbar}
+        table={table}
+      />
+    </PageLayout>
   );
 }
