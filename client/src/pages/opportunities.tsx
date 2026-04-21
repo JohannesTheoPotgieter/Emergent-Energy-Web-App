@@ -186,6 +186,14 @@ interface DialogState {
   customDueDate: string;
   customPriority: string;
   customRequiredOutput: string;
+  // Operational metadata — mirrors PD ticket fields so this in-dialog
+  // form is the canonical "manual ticket" surface.
+  customFundingType: string;
+  customSizeKwp: string;
+  customProvince: string;
+  customGpsCoordinates: string;
+  customBatteriesNeeded: boolean;
+  customBatterySize: string;
 }
 
 const DIALOG_INITIAL: DialogState = {
@@ -207,6 +215,12 @@ const DIALOG_INITIAL: DialogState = {
   customDueDate: "",
   customPriority: "Medium",
   customRequiredOutput: "",
+  customFundingType: "",
+  customSizeKwp: "",
+  customProvince: "",
+  customGpsCoordinates: "",
+  customBatteriesNeeded: false,
+  customBatterySize: "",
 };
 
 export default function OpportunitiesPage() {
@@ -397,6 +411,17 @@ export default function OpportunitiesPage() {
         body.phaseTemplateId = dlg.selectedTemplateId ? Number(dlg.selectedTemplateId) : undefined;
         body.templateBaseDueDate = dlg.templateBaseDueDate || undefined;
       } else {
+        // Inline required-field check so users see a friendly inline
+        // error rather than a generic "Bad Request" toast.
+        const missing: string[] = [];
+        if (!dlg.customTitle.trim()) missing.push("Title");
+        if (!dlg.customPhase.trim()) missing.push("Phase");
+        if (!dlg.customDescriptionScope.trim()) missing.push("Description / Scope");
+        if (!dlg.customDueDate) missing.push("Due date");
+        if (!dlg.customRequiredOutput.trim()) missing.push("Required output");
+        if (missing.length > 0) {
+          throw new Error(`Please fill in: ${missing.join(", ")}`);
+        }
         body.customTicket = {
           title: dlg.customTitle.trim(),
           phase: dlg.customPhase.trim(),
@@ -404,11 +429,34 @@ export default function OpportunitiesPage() {
           dueDate: dlg.customDueDate,
           priority: dlg.customPriority,
           requiredOutput: dlg.customRequiredOutput.trim(),
+          ...(dlg.customFundingType.trim() ? { fundingType: dlg.customFundingType.trim() } : {}),
+          ...(dlg.customSizeKwp.trim() ? { sizeKwp: dlg.customSizeKwp.trim() } : {}),
+          ...(dlg.customProvince.trim() ? { province: dlg.customProvince.trim() } : {}),
+          ...(dlg.customGpsCoordinates.trim() ? { gpsCoordinates: dlg.customGpsCoordinates.trim() } : {}),
+          batteriesNeeded: dlg.customBatteriesNeeded,
+          ...(dlg.customBatterySize.trim() ? { batterySize: dlg.customBatterySize.trim() } : {}),
         };
       }
       const res = await apiRequest("POST", `/api/opportunities/${dlg.target.id}/create-engineering-tickets`, body);
       const payload = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(payload?.error || "Failed to create engineering tickets");
+      if (!res.ok) {
+        // Extract field-level Zod messages from validateBody's
+        // `details` envelope so the toast tells the user exactly which
+        // fields are wrong instead of just "Bad Request".
+        const fieldErrors = payload?.details?.fieldErrors;
+        const formErrors = payload?.details?.formErrors;
+        const fieldMsgs: string[] = [];
+        if (fieldErrors && typeof fieldErrors === "object") {
+          for (const [k, v] of Object.entries(fieldErrors)) {
+            if (Array.isArray(v) && v.length > 0) fieldMsgs.push(`${k}: ${(v as string[]).join("; ")}`);
+          }
+        }
+        if (Array.isArray(formErrors) && formErrors.length > 0) fieldMsgs.push(...formErrors);
+        const msg = fieldMsgs.length > 0
+          ? fieldMsgs.join(" | ")
+          : payload?.error || `Failed to create engineering tickets (HTTP ${res.status})`;
+        throw new Error(msg);
+      }
       return payload;
     },
     onSuccess: (payload: Record<string, unknown>) => {
@@ -509,6 +557,9 @@ export default function OpportunitiesPage() {
       templateBaseDueDate: new Date().toISOString().slice(0, 10),
       customTitle: row.dealName || "",
       customPhase: "First Assessment",
+      customFundingType: row.fundingType || "",
+      customSizeKwp: row.estimatedKwp != null ? String(row.estimatedKwp) : "",
+      customProvince: row.province || "",
     });
   }
 
@@ -953,32 +1004,66 @@ export default function OpportunitiesPage() {
                   ) : (
                     <div className="grid gap-2">
                       <div className="space-y-1">
-                        <Label className="text-xs">Title</Label>
-                        <Input value={dlg.customTitle} onChange={(e) => updateDlg({ customTitle: e.target.value })} />
+                        <Label className="text-xs">Title <span className="text-red-600">*</span></Label>
+                        <Input value={dlg.customTitle} onChange={(e) => updateDlg({ customTitle: e.target.value })} data-testid="input-custom-title" />
                       </div>
                       <div className="space-y-1">
-                        <Label className="text-xs">Phase</Label>
-                        <Input value={dlg.customPhase} onChange={(e) => updateDlg({ customPhase: e.target.value })} placeholder="e.g. First Assessment" />
+                        <Label className="text-xs">Phase <span className="text-red-600">*</span></Label>
+                        <Input value={dlg.customPhase} onChange={(e) => updateDlg({ customPhase: e.target.value })} placeholder="e.g. First Assessment" data-testid="input-custom-phase" />
                       </div>
                       <div className="space-y-1">
-                        <Label className="text-xs">Description / Scope</Label>
-                        <Input value={dlg.customDescriptionScope} onChange={(e) => updateDlg({ customDescriptionScope: e.target.value })} />
+                        <Label className="text-xs">Description / Scope <span className="text-red-600">*</span></Label>
+                        <Input value={dlg.customDescriptionScope} onChange={(e) => updateDlg({ customDescriptionScope: e.target.value })} data-testid="input-custom-scope" />
                       </div>
                       <div className="grid grid-cols-2 gap-2">
                         <div className="space-y-1">
-                          <Label className="text-xs">Due date</Label>
-                          <Input type="date" value={dlg.customDueDate} onChange={(e) => updateDlg({ customDueDate: e.target.value })} />
+                          <Label className="text-xs">Due date <span className="text-red-600">*</span></Label>
+                          <Input type="date" value={dlg.customDueDate} onChange={(e) => updateDlg({ customDueDate: e.target.value })} data-testid="input-custom-due" />
                         </div>
                         <div className="space-y-1">
                           <Label className="text-xs">Priority</Label>
-                          <select className="w-full border rounded-md h-9 px-2 text-sm" value={dlg.customPriority} onChange={(e) => updateDlg({ customPriority: e.target.value })}>
+                          <select className="w-full border rounded-md h-9 px-2 text-sm" value={dlg.customPriority} onChange={(e) => updateDlg({ customPriority: e.target.value })} data-testid="select-custom-priority">
                             {["Critical", "High", "Medium", "Low"].map((p) => <option key={p} value={p}>{p}</option>)}
                           </select>
                         </div>
                       </div>
                       <div className="space-y-1">
-                        <Label className="text-xs">Required output</Label>
-                        <Input value={dlg.customRequiredOutput} onChange={(e) => updateDlg({ customRequiredOutput: e.target.value })} />
+                        <Label className="text-xs">Required output <span className="text-red-600">*</span></Label>
+                        <Input value={dlg.customRequiredOutput} onChange={(e) => updateDlg({ customRequiredOutput: e.target.value })} data-testid="input-custom-required-output" />
+                      </div>
+
+                      <div className="border-t pt-2 mt-1">
+                        <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+                          Operational metadata <span className="font-normal normal-case text-slate-400">(optional — pre-filled from opportunity)</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <Label className="text-xs">Funding type</Label>
+                            <Input value={dlg.customFundingType} onChange={(e) => updateDlg({ customFundingType: e.target.value })} placeholder="e.g. Cash, PPA, Lease" data-testid="input-custom-funding" />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Size (kWp)</Label>
+                            <Input type="number" inputMode="decimal" value={dlg.customSizeKwp} onChange={(e) => updateDlg({ customSizeKwp: e.target.value })} data-testid="input-custom-kwp" />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Province</Label>
+                            <Input value={dlg.customProvince} onChange={(e) => updateDlg({ customProvince: e.target.value })} data-testid="input-custom-province" />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">GPS coordinates</Label>
+                            <Input value={dlg.customGpsCoordinates} onChange={(e) => updateDlg({ customGpsCoordinates: e.target.value })} placeholder="-26.1234, 28.1234" data-testid="input-custom-gps" />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-[auto_1fr] gap-2 mt-2 items-end">
+                          <label className="flex items-center gap-2 text-xs h-9">
+                            <input type="checkbox" checked={dlg.customBatteriesNeeded} onChange={(e) => updateDlg({ customBatteriesNeeded: e.target.checked })} data-testid="checkbox-custom-batteries" />
+                            Batteries needed
+                          </label>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Battery size (kWh)</Label>
+                            <Input type="number" inputMode="decimal" value={dlg.customBatterySize} onChange={(e) => updateDlg({ customBatterySize: e.target.value })} disabled={!dlg.customBatteriesNeeded} data-testid="input-custom-battery-size" />
+                          </div>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -996,21 +1081,6 @@ export default function OpportunitiesPage() {
             ) : (
               <Button onClick={() => createEngineeringTicketsMutation.mutate()} disabled={createEngineeringTicketsMutation.isPending}>
                 {createEngineeringTicketsMutation.isPending ? "Creating…" : dlg.ticketMode === "phase_template" ? "Generate Template Ticket(s)" : "Create Custom Ticket"}
-              </Button>
-            )}
-            {mappingResolved && (
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  const q = new URLSearchParams({
-                    opportunityId: String(dlg.target!.id),
-                    clientId: String(dlg.resolvedClientId),
-                    projectId: String(dlg.resolvedProjectId),
-                  });
-                  navigate(`/pd/tickets/create?${q.toString()}`);
-                }}
-              >
-                Open full manual form
               </Button>
             )}
           </DialogFooter>

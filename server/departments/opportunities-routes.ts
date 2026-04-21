@@ -68,12 +68,23 @@ const engineeringTicketCreateSchema = z.object({
   phaseTemplateId: z.number().int().optional(),
   templateBaseDueDate: z.string().trim().optional(),
   customTicket: z.object({
-    title: z.string().trim().min(1),
-    phase: z.string().trim().min(1),
-    descriptionScope: z.string().trim().min(1),
-    dueDate: z.string().trim().min(1),
+    title: z.string().trim().min(1, "Title is required"),
+    phase: z.string().trim().min(1, "Phase is required"),
+    descriptionScope: z.string().trim().min(1, "Description / scope is required"),
+    dueDate: z.string().trim().min(1, "Due date is required"),
     priority: z.enum(["Critical", "High", "Medium", "Low"]).default("Medium"),
-    requiredOutput: z.string().trim().min(1),
+    requiredOutput: z.string().trim().min(1, "Required output is required"),
+    // Optional operational fields — let the manual ticket carry the same
+    // metadata the full PD ticket would have. Pre-filled by the UI from
+    // the opportunity row when available.
+    fundingType: z.string().trim().optional(),
+    sizeKwp: z.union([z.string(), z.number()]).optional()
+      .transform((v) => (v === undefined || v === null || v === "" ? undefined : String(v))),
+    province: z.string().trim().optional(),
+    gpsCoordinates: z.string().trim().optional(),
+    batteriesNeeded: z.boolean().optional(),
+    batterySize: z.union([z.string(), z.number()]).optional()
+      .transform((v) => (v === undefined || v === null || v === "" ? undefined : String(v))),
   }).optional(),
 });
 
@@ -438,9 +449,16 @@ router.post("/api/opportunities/:id/create-engineering-tickets", requireAuth, re
       if (!parsed.customTicket) return res.status(400).json({ error: "customTicket payload is required for custom mode" });
       const count = await opportunitiesRepo.countSamePhaseTickets(opportunityId, parsed.projectId, parsed.customTicket.phase);
       warnings.push(...buildSamePhaseDuplicateWarning(parsed.customTicket.phase, count));
+      const ct = parsed.customTicket;
       ticketValues = [{
         clientId: parsed.clientId,
         clientNameSnapshot: clientRow.name,
+        ...(ct.fundingType ? { fundingType: ct.fundingType } : {}),
+        ...(ct.sizeKwp ? { sizeKwp: ct.sizeKwp } : {}),
+        ...(ct.province ? { province: ct.province } : {}),
+        ...(ct.gpsCoordinates ? { gpsCoordinates: ct.gpsCoordinates } : {}),
+        ...(ct.batteriesNeeded !== undefined ? { batteriesNeeded: ct.batteriesNeeded } : {}),
+        ...(ct.batterySize ? { batterySize: ct.batterySize } : {}),
         projectId: parsed.projectId,
         opportunityId,
         projectSiteName: parsed.customTicket.title,
