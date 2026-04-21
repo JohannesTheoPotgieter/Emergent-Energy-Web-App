@@ -86,11 +86,10 @@ export const TOP_SECTIONS: TopSection[] = [
     key: "PRIORITIES",
     path: "/priorities",
     match: (pathname) => startsWithAny(pathname, ["/priorities"]),
-    secondary: [
-      { label: "My Priorities", path: "/priorities?tab=mine" },
-      { label: "Department", path: "/priorities?tab=department" },
-      { label: "Company", path: "/priorities?tab=company" },
-    ],
+    // Sub-tabs are rendered inside the Priorities page itself (Department /
+    // Company) so we don't duplicate them in the secondary nav. Keep the
+    // empty array so consumers that map over `secondary` don't crash.
+    secondary: [],
   },
   {
     label: "Project Development",

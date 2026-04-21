@@ -18,6 +18,8 @@ import {
 
 const STAGE_LABELS: Record<string, string> = {
   S04_PD_PM_HANDOVER: "PD-PM Handover",
+  S04_PLANNING: "Planning",
+  S9B_COMPLIANCE_HANDOVER: "Compliance Handover",
   S05_FINANCIAL_REVIEW: "Financial Review",
   S06_CONSTRUCTION: "Construction",
   S07_COMMISSIONING: "Commissioning",

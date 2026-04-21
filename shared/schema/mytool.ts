@@ -124,6 +124,13 @@ export const mytoolCompanyPriorities = pgTable("mytool_company_priorities", {
   sortOrder: integer("sort_order").notNull().default(0),
   manualHealth: text("manual_health"),
   manualProgress: integer("manual_progress"),
+  // Progress source linking (migration 0009).
+  // When `progressSourceType` is set + non-null, the priority's effective
+  // progress is computed from the linked source (project phase, project %,
+  // revenue milestone, or tasks roll-up) instead of `manualProgress`.
+  // Compute lives in server/lib/priorities/progress-source.ts.
+  progressSourceType: text("progress_source_type"),
+  progressSourceRef: jsonb("progress_source_ref"),
   // Cascading priority columns
   scope: mytoolPriorityScopeEnum("scope").notNull().default('company'),
   parentId: integer("parent_id"),

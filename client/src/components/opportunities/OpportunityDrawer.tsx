@@ -82,12 +82,46 @@ interface PdBlock {
   tasksSpawnedAt: string | null;
 }
 
+interface ProjectTask {
+  id: number;
+  pdTicketId: number | null;
+  title: string;
+  status: string;
+  phase: string | null;
+  priority: string | null;
+  endDate: string | null;
+  percentComplete: number | null;
+  ownerUserId: number | null;
+  ownerName: string | null;
+}
+
+interface OpportunityTicket {
+  id: number;
+  status: string;
+  requestType: string;
+  priority: string;
+  dueDate: string | null;
+  comments: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  clientId: number | null;
+  projectId: number | null;
+  projectName: string | null;
+  tasksSpawnedAt: string | null;
+  projectDeveloperUserId: number | null;
+  projectDeveloperName: string | null;
+  designerUserId: number | null;
+  designerName: string | null;
+}
+
 interface WorkflowResponse {
   crm: CrmBlock;
   clientName: string | null;
   siteName: string | null;
   pd: PdBlock;
   tasks: Array<{ id: number; title: string; status: string; priority: string | null; endDate: string | null }>;
+  tickets?: OpportunityTicket[];
+  projectTasks?: ProjectTask[];
 }
 
 const PD_STATUSES = ["Draft", "In Progress", "On Hold", "Completed", "Cancelled"];
@@ -137,6 +171,10 @@ export function OpportunityDrawer({ opportunityId, open, onClose }: Props) {
       return res.json();
     },
     enabled: open && opportunityId != null,
+    // Drawer-hopping is common; brief cache makes re-opens feel instant
+    // without going stale relative to mutations (which invalidate this key
+    // explicitly).
+    staleTime: 30_000,
   });
 
   // Local PD edit state (controlled inputs — flushed via patch on blur/save)
@@ -346,66 +384,117 @@ export function OpportunityDrawer({ opportunityId, open, onClose }: Props) {
                 </Field>
               </section>
 
-              {/* === Tasks === */}
-              <section className="rounded-md border p-3 space-y-2" data-testid="section-tasks">
-                <header className="flex items-center justify-between">
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-foreground flex items-center gap-1.5">
-                    <Zap className="h-3 w-3 text-emerald-600" /> Engineering tasks
-                  </h3>
-                  {!merged.tasksSpawnedAt && merged.projectId && (
+              {/* === Engineering tickets (tracking) === */}
+              {(data.tickets ?? []).length > 0 ? (
+                <>
+                  <EngineeringTicketsSection tickets={data.tickets ?? []} />
+                  {(data.tickets ?? []).some((t) => t.projectId) && (
+                    <ProjectTaskBoard
+                      tasks={data.projectTasks ?? []}
+                      tickets={data.tickets ?? []}
+                      projectName={(data.tickets ?? []).find((t) => t.projectName)?.projectName ?? null}
+                    />
+                  )}
+                </>
+              ) : (
+                /* Legacy "spawn tasks for the shadow PD ticket" surface — only
+                   shown when the opportunity has NO real tickets yet. Once the
+                   user creates an engineering ticket via the working-list flow,
+                   this is replaced by the ticket tracking list above. */
+                <section className="rounded-md border p-3 space-y-2" data-testid="section-tasks">
+                  <header className="flex items-center justify-between">
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-foreground flex items-center gap-1.5">
+                      <Zap className="h-3 w-3 text-emerald-600" /> Engineering tasks
+                    </h3>
+                    {!merged.tasksSpawnedAt && merged.projectId && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs"
+                        onClick={() => spawnTasks.mutate()}
+                        disabled={spawnTasks.isPending}
+                        data-testid="btn-spawn-tasks"
+                      >
+                        {spawnTasks.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                        Spawn from "{merged.requestType}" template
+                      </Button>
+                    )}
+                  </header>
+                  {!merged.projectId ? (
+                    <p className="text-[11px] text-muted-foreground italic">No engineering tickets yet — create one from the working list, or convert this opportunity to a project first.</p>
+                  ) : data.tasks.length === 0 ? (
+                    <p className="text-[11px] text-muted-foreground italic">No tasks yet.</p>
+                  ) : (
+                    <ul className="text-xs space-y-1">
+                      {data.tasks.map((t) => (
+                        <li key={t.id} className="flex items-center gap-2 border-b last:border-b-0 py-1">
+                          <CheckCircle2 className={`h-3 w-3 ${t.status === "Done" ? "text-emerald-600" : "text-muted-foreground"}`} />
+                          <span className="flex-1 truncate">{t.title}</span>
+                          <Badge variant="outline" className="text-[10px]">{t.status}</Badge>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              )}
+
+              {/* === Convert CTA / linked-project state ===
+                  When a project is already linked (either on the opportunity
+                  itself or on any of its engineering tickets) we treat the
+                  "create project" step as done and render a green confirmation
+                  with a deep link instead of the convert button. */}
+              {(() => {
+                // The shadow PD row is filtered to project_id IS NULL on the
+                // server, so a "linked project" can only ever come from a
+                // real engineering ticket. Source projectId AND projectName
+                // from the same ticket so the deep link is always coherent.
+                const linkedFromTicket = (data.tickets ?? []).find((t) => t.projectId && t.projectName);
+                const effectiveProjectId = linkedFromTicket?.projectId ?? null;
+                const effectiveProjectName = linkedFromTicket?.projectName ?? null;
+                if (effectiveProjectId) {
+                  return (
+                    <section
+                      className="rounded-md border border-emerald-200 bg-emerald-50/60 p-3 flex items-center justify-between"
+                      data-testid="section-project-linked"
+                    >
+                      <div className="text-xs flex items-center gap-2">
+                        <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                        <div>
+                          <p className="font-medium text-emerald-900">Project linked</p>
+                          <p className="text-emerald-800/80">This opportunity has a working project — no need to convert again.</p>
+                        </div>
+                      </div>
+                      {effectiveProjectName ? (
+                        <a
+                          href={`/project/${encodeURIComponent(effectiveProjectName)}`}
+                          className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 hover:text-emerald-800 hover:underline"
+                          data-testid="link-project-linked"
+                        >
+                          {effectiveProjectName} <ExternalLink className="h-3 w-3" />
+                        </a>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">#{effectiveProjectId}</span>
+                      )}
+                    </section>
+                  );
+                }
+                return (
+                  <section className="rounded-md border border-emerald-200 bg-emerald-50/60 p-3 flex items-center justify-between">
+                    <div className="text-xs">
+                      <p className="font-medium text-emerald-900">Ready to start the project?</p>
+                      <p className="text-emerald-800/80">Creates a project shell at "First Assessment" and links it back here.</p>
+                    </div>
                     <Button
                       size="sm"
-                      variant="outline"
-                      className="h-7 text-xs"
-                      onClick={() => spawnTasks.mutate()}
-                      disabled={spawnTasks.isPending}
-                      data-testid="btn-spawn-tasks"
+                      className="bg-emerald-600 hover:bg-emerald-700"
+                      onClick={() => setConvertOpen(true)}
+                      data-testid="btn-open-convert-wizard"
                     >
-                      {spawnTasks.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
-                      Spawn from "{merged.requestType}" template
+                      Convert to project <ArrowRight className="h-3 w-3 ml-1" />
                     </Button>
-                  )}
-                </header>
-                {!merged.projectId ? (
-                  <p className="text-[11px] text-muted-foreground italic">Convert this opportunity to a project before spawning tasks.</p>
-                ) : data.tasks.length === 0 ? (
-                  <p className="text-[11px] text-muted-foreground italic">No tasks yet.</p>
-                ) : (
-                  <ul className="text-xs space-y-1">
-                    {data.tasks.map((t) => (
-                      <li key={t.id} className="flex items-center gap-2 border-b last:border-b-0 py-1">
-                        <CheckCircle2 className={`h-3 w-3 ${t.status === "Done" ? "text-emerald-600" : "text-muted-foreground"}`} />
-                        <span className="flex-1 truncate">{t.title}</span>
-                        <Badge variant="outline" className="text-[10px]">{t.status}</Badge>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </section>
-
-              {/* === Convert CTA === */}
-              {!merged.projectId && (
-                <section className="rounded-md border border-emerald-200 bg-emerald-50/60 p-3 flex items-center justify-between">
-                  <div className="text-xs">
-                    <p className="font-medium text-emerald-900">Ready to start the project?</p>
-                    <p className="text-emerald-800/80">Creates a project shell at "First Assessment" and links it back here.</p>
-                  </div>
-                  <Button
-                    size="sm"
-                    className="bg-emerald-600 hover:bg-emerald-700"
-                    onClick={() => setConvertOpen(true)}
-                    data-testid="btn-open-convert-wizard"
-                  >
-                    Convert to project <ArrowRight className="h-3 w-3 ml-1" />
-                  </Button>
-                </section>
-              )}
-              {merged.projectId && (
-                <section className="rounded-md border p-3 text-xs flex items-center gap-2 text-muted-foreground">
-                  <ExternalLink className="h-3 w-3" />
-                  Linked to project ID #{merged.projectId}.
-                </section>
-              )}
+                  </section>
+                );
+              })()}
             </div>
 
             {convertOpen && data && (
@@ -438,6 +527,258 @@ function ReadField({ label, value }: { label: string; value: string | null | und
       <dd className="font-medium text-foreground truncate" title={value ?? ""}>{value || "—"}</dd>
     </>
   );
+}
+
+/**
+ * Per-ticket tracking row for the drawer.
+ *
+ * Replaces the old "Convert this opportunity to a project before spawning
+ * tasks" placeholder when the opportunity already has at least one real
+ * engineering ticket. Each row shows the ticket's request type, status,
+ * priority, due date, days-since-created, owners, the linked project (deep
+ * link to the project page), and an optional first line of the comments so
+ * engineering can leave/track feedback at a glance.
+ */
+function EngineeringTicketsSection({ tickets }: { tickets: OpportunityTicket[] }) {
+  const open = tickets.filter((t) => t.status !== "Completed" && t.status !== "Cancelled").length;
+  const closed = tickets.length - open;
+  return (
+    <section className="rounded-md border p-3 space-y-2" data-testid="section-engineering-tickets">
+      <header className="flex items-center justify-between">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-foreground flex items-center gap-1.5">
+          <Zap className="h-3 w-3 text-emerald-600" /> Engineering tickets
+          <span className="text-[10px] font-normal text-muted-foreground tabular-nums">
+            • {open} open / {closed} closed
+          </span>
+        </h3>
+      </header>
+      <ul className="text-xs space-y-1.5" data-testid="list-engineering-tickets">
+        {tickets.map((t) => (
+          <TicketRow key={t.id} ticket={t} />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function ticketStatusClass(status: string): string {
+  switch (status) {
+    case "Completed":
+      return "bg-emerald-50 text-emerald-700 border-emerald-200";
+    case "Cancelled":
+      return "bg-slate-100 text-slate-600 border-slate-200";
+    case "In Progress":
+      return "bg-blue-50 text-blue-700 border-blue-200";
+    case "On Hold":
+      return "bg-amber-50 text-amber-700 border-amber-200";
+    default:
+      return "bg-slate-50 text-slate-700 border-slate-200";
+  }
+}
+
+function ticketPriorityClass(priority: string): string {
+  switch (priority) {
+    case "Urgent":
+      return "bg-red-50 text-red-700 border-red-200";
+    case "High":
+      return "bg-orange-50 text-orange-700 border-orange-200";
+    case "Low":
+      return "bg-slate-50 text-slate-600 border-slate-200";
+    default:
+      return "bg-slate-50 text-slate-700 border-slate-200";
+  }
+}
+
+function ticketAgeDays(iso: string | null): number | null {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return null;
+  return Math.max(0, Math.floor((Date.now() - t) / (1000 * 60 * 60 * 24)));
+}
+
+function TicketRow({ ticket }: { ticket: OpportunityTicket }) {
+  const isClosed = ticket.status === "Completed" || ticket.status === "Cancelled";
+  const ageDays = ticketAgeDays(ticket.createdAt);
+  const owner = ticket.projectDeveloperName || ticket.designerName || null;
+  const commentPreview = (ticket.comments || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 140);
+  const projectHref = ticket.projectName
+    ? `/project/${encodeURIComponent(ticket.projectName)}`
+    : null;
+  return (
+    <li
+      className={`rounded border px-2 py-1.5 ${
+        isClosed ? "border-slate-200 bg-slate-50/40" : "border-slate-200 bg-white"
+      }`}
+      data-testid={`row-eng-ticket-${ticket.id}`}
+    >
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="font-medium text-foreground truncate">{ticket.requestType}</span>
+        <Badge variant="outline" className={`text-[10px] ${ticketStatusClass(ticket.status)}`}>
+          {ticket.status}
+        </Badge>
+        <Badge variant="outline" className={`text-[10px] ${ticketPriorityClass(ticket.priority)}`}>
+          {ticket.priority}
+        </Badge>
+        {ageDays != null && !isClosed && (
+          <span
+            className={`text-[10px] tabular-nums ${ageDays >= 14 ? "text-amber-700 font-medium" : "text-muted-foreground"}`}
+            title={`Created ${ageDays}d ago`}
+          >
+            {ageDays}d in progress
+          </span>
+        )}
+        <span className="ml-auto text-[10px] text-muted-foreground">#{ticket.id}</span>
+      </div>
+      <div className="mt-1 flex items-center gap-x-3 gap-y-0.5 flex-wrap text-[10px] text-muted-foreground">
+        {ticket.dueDate && <span>Due {ticket.dueDate}</span>}
+        {owner && <span>Owner: <span className="text-foreground">{owner}</span></span>}
+        {projectHref ? (
+          <a
+            href={projectHref}
+            className="inline-flex items-center gap-0.5 text-emerald-700 hover:text-emerald-800 hover:underline"
+            data-testid={`link-eng-ticket-project-${ticket.id}`}
+            title={`Open project ${ticket.projectName} to leave feedback / track progress`}
+          >
+            {ticket.projectName} <ExternalLink className="h-2.5 w-2.5" />
+          </a>
+        ) : (
+          <span className="italic">Not yet linked to a project</span>
+        )}
+        {ticket.tasksSpawnedAt && <span className="text-emerald-700">Tasks spawned</span>}
+      </div>
+      {commentPreview && (
+        <p className="mt-1 text-[10px] text-muted-foreground line-clamp-2" title={ticket.comments ?? undefined}>
+          {commentPreview}
+          {ticket.comments && ticket.comments.length > commentPreview.length ? "…" : ""}
+        </p>
+      )}
+    </li>
+  );
+}
+
+/**
+ * Project-level engineering task board.
+ *
+ * Renders ALL work_items belonging to the linked project (not per-ticket),
+ * grouped by `phase` so the user sees the project's engineering pipeline.
+ * The First Assessment ticket's tasks (and any future engineering tickets')
+ * appear here as items inside their corresponding phase column. Each row
+ * shows a status dot, title, the originating ticket chip, and the engineer
+ * assigned. Falls back to "Unassigned" when `phase` is null.
+ */
+function ProjectTaskBoard({
+  tasks,
+  tickets,
+  projectName,
+}: {
+  tasks: ProjectTask[];
+  tickets: OpportunityTicket[];
+  projectName: string | null;
+}) {
+  const ticketLabelById = new Map<number, string>();
+  for (const t of tickets) ticketLabelById.set(t.id, t.requestType);
+
+  const phases = new Map<string, ProjectTask[]>();
+  for (const t of tasks) {
+    const key = t.phase?.trim() || "Unassigned";
+    const list = phases.get(key) ?? [];
+    list.push(t);
+    phases.set(key, list);
+  }
+  const total = tasks.length;
+  const done = tasks.filter((t) => isDoneStatus(t.status)).length;
+
+  return (
+    <section className="rounded-md border p-3 space-y-2" data-testid="section-project-board">
+      <header className="flex items-center justify-between gap-2 flex-wrap">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-foreground flex items-center gap-1.5">
+          <Zap className="h-3 w-3 text-emerald-600" /> Project task board
+          {projectName && (
+            <span className="text-[10px] font-normal text-muted-foreground normal-case">
+              · {projectName}
+            </span>
+          )}
+        </h3>
+        <span className="text-[10px] text-muted-foreground tabular-nums">
+          {done}/{total} done
+        </span>
+      </header>
+      {total === 0 ? (
+        <p className="text-[11px] text-muted-foreground italic" data-testid="empty-project-board">
+          No engineering tasks on the project yet — spawn tasks from a ticket to populate the board.
+        </p>
+      ) : (
+        <div className="grid gap-1.5 sm:grid-cols-2" data-testid="project-board">
+          {Array.from(phases.entries()).map(([phase, items]) => {
+            const phaseDone = items.filter((i) => isDoneStatus(i.status)).length;
+            return (
+              <div
+                key={phase}
+                className="rounded border border-slate-200 bg-slate-50/50 p-1.5"
+                data-testid={`project-board-phase-${phase}`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-700 truncate" title={phase}>
+                    {phase}
+                  </span>
+                  <span className="text-[9px] tabular-nums text-muted-foreground">{phaseDone}/{items.length}</span>
+                </div>
+                <ul className="space-y-0.5">
+                  {items.map((it) => {
+                    const ticketLabel = it.pdTicketId != null ? ticketLabelById.get(it.pdTicketId) ?? null : null;
+                    return (
+                      <li
+                        key={it.id}
+                        className="flex items-center gap-1 text-[10px]"
+                        data-testid={`project-board-task-${it.id}`}
+                      >
+                        <span
+                          className={`inline-block h-1.5 w-1.5 rounded-full flex-shrink-0 ${workItemStatusDot(it.status)}`}
+                          title={it.status}
+                        />
+                        <span className="flex-1 truncate text-foreground" title={it.title}>{it.title}</span>
+                        {ticketLabel && (
+                          <span
+                            className="text-[9px] px-1 rounded bg-emerald-50 text-emerald-700 border border-emerald-100 truncate max-w-[80px]"
+                            title={`From ticket: ${ticketLabel}`}
+                          >
+                            {ticketLabel}
+                          </span>
+                        )}
+                        <span
+                          className={`text-[9px] truncate max-w-[60px] ${it.ownerName ? "text-slate-600" : "italic text-muted-foreground"}`}
+                          title={it.ownerName ? `Assigned to ${it.ownerName}` : "Unassigned"}
+                        >
+                          {it.ownerName ?? "—"}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function isDoneStatus(status: string): boolean {
+  const s = status.toLowerCase();
+  return s === "done" || s === "completed" || s === "complete" || s === "closed";
+}
+
+function workItemStatusDot(status: string): string {
+  const s = status.toLowerCase();
+  if (s === "done" || s === "completed" || s === "complete" || s === "closed") return "bg-emerald-500";
+  if (s === "in_progress" || s === "in progress") return "bg-blue-500";
+  if (s === "blocked" || s === "on_hold" || s === "on hold") return "bg-amber-500";
+  if (s === "cancelled" || s === "canceled") return "bg-slate-400";
+  return "bg-slate-300";
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

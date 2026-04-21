@@ -21,16 +21,23 @@ export function useUserOptions(enabled: boolean): SearchableSelectOption[] {
   const { data: users = [] } = useQuery<RawUser[]>({
     queryKey: ["/api/users-list-for-priority"],
     queryFn: async () => {
+      // Canonical assignable-people directory. Server route lives at
+      // `/api/users/assignable` (server/ms-sync-routes.ts) and returns
+      // `[{ id, name, username, role, email }]` for internal users.
       try {
-        const res = await apiRequest("GET", "/api/users");
+        const res = await apiRequest("GET", "/api/users/assignable");
         const data = await res.json();
         const rows = Array.isArray(data) ? data : data.users || data.data || [];
-        return rows.map((u: RawUser) => ({ id: u.id, name: u.name, role: u.role ?? null }));
+        return rows
+          .map((u: RawUser) => ({ id: u.id, name: u.name, role: u.role ?? null }))
+          .filter((u: RawUser) => u.id && u.name)
+          .sort((a: RawUser, b: RawUser) => a.name.localeCompare(b.name));
       } catch {
         return [];
       }
     },
     enabled,
+    staleTime: 5 * 60 * 1000,
   });
   return useMemo(
     () => users.map((u) => ({ value: String(u.id), label: u.name })),

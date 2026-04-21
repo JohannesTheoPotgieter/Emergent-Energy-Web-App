@@ -1,4 +1,4 @@
-import { useMemo, useReducer, useState } from "react";
+import { useEffect, useMemo, useReducer, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { usePermission } from "@/hooks/use-permissions";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import {
   AlertCircle,
   AlertTriangle,
@@ -85,8 +85,14 @@ interface WorkingOpportunityRow {
   hasLinkedClient: boolean;
   hasLinkedProject: boolean;
   linkedProjectCount: number;
+  linkedProjectId: number | null;
+  linkedProjectName: string | null;
   existingEngineeringTicketCount: number;
   openEngineeringTaskCount: number;
+  closedEngineeringTaskCount: number;
+  oldestOpenEngineeringAt: string | null;
+  lastTicketClientId: number | null;
+  lastTicketProjectId: number | null;
   lastUpdated: string | null;
   signedDate?: string | null;
   expectedCloseDate?: string | null;
@@ -112,6 +118,27 @@ function formatZAR(n: number | null | undefined): string {
   if (Math.abs(n) >= 1_000_000) return `R ${(n / 1_000_000).toFixed(1)}M`;
   if (Math.abs(n) >= 1_000) return `R ${(n / 1_000).toFixed(0)}k`;
   return `R ${n.toFixed(0)}`;
+}
+
+function formatRelative(d: Date): string {
+  const ms = Date.now() - d.getTime();
+  const sec = Math.max(0, Math.round(ms / 1000));
+  if (sec < 60) return "just now";
+  const min = Math.round(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.round(hr / 24);
+  return `${day}d ago`;
+}
+
+function daysSince(iso: string | null): number | null {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return null;
+  const ms = Date.now() - t;
+  if (ms < 0) return 0;
+  return Math.floor(ms / (1000 * 60 * 60 * 24));
 }
 
 function formatDate(s: string | null | undefined): string {
@@ -177,6 +204,13 @@ interface DialogState {
   mappingWarnings: string[];
   resolvedClientId: number | null;
   resolvedProjectId: number | null;
+  /**
+   * When `true`, the dialog opens straight to the "add ticket" form,
+   * pre-populating `resolvedClientId`/`resolvedProjectId` from the
+   * opportunity's most recent existing ticket. Mapping is suppressed
+   * because the user has already mapped the deal at least once.
+   */
+  skipMapping: boolean;
   ticketMode: "phase_template" | "custom";
   selectedTemplateId: string;
   templateBaseDueDate: string;
@@ -186,6 +220,14 @@ interface DialogState {
   customDueDate: string;
   customPriority: string;
   customRequiredOutput: string;
+  // Operational metadata — mirrors PD ticket fields so this in-dialog
+  // form is the canonical "manual ticket" surface.
+  customFundingType: string;
+  customSizeKwp: string;
+  customProvince: string;
+  customGpsCoordinates: string;
+  customBatteriesNeeded: boolean;
+  customBatterySize: string;
 }
 
 const DIALOG_INITIAL: DialogState = {
@@ -198,6 +240,7 @@ const DIALOG_INITIAL: DialogState = {
   mappingWarnings: [],
   resolvedClientId: null,
   resolvedProjectId: null,
+  skipMapping: false,
   ticketMode: "phase_template",
   selectedTemplateId: "",
   templateBaseDueDate: "",
@@ -207,7 +250,91 @@ const DIALOG_INITIAL: DialogState = {
   customDueDate: "",
   customPriority: "Medium",
   customRequiredOutput: "",
+  customFundingType: "",
+  customSizeKwp: "",
+  customProvince: "",
+  customGpsCoordinates: "",
+  customBatteriesNeeded: false,
+  customBatterySize: "",
 };
+
+/**
+ * Engineering tickets cell for the working list.
+ *
+ * Layout:
+ *   [open]/[closed] · [Nd]
+ * where:
+ *   - open = open ticket count, emerald pill (links to project if linked)
+ *   - closed = total closed (Completed/Cancelled) tickets, slate
+ *   - Nd = days since the oldest still-open ticket was created (in-progress age)
+ *
+ * Empty state: a single dim "·" centered in the cell.
+ */
+function EngCell({ row }: { row: WorkingOpportunityRow }) {
+  const open = row.openEngineeringTaskCount;
+  const closed = row.closedEngineeringTaskCount;
+  const total = open + closed;
+
+  if (total === 0) {
+    return <span className="text-slate-300" aria-label="No engineering tickets">·</span>;
+  }
+
+  const ageDays = daysSince(row.oldestOpenEngineeringAt);
+  const ageLabel = open > 0 && ageDays != null ? `${ageDays}d` : null;
+
+  const openPill = row.linkedProjectName ? (
+    <Link
+      href={`/project/${encodeURIComponent(row.linkedProjectName)}`}
+      onClick={(e) => e.stopPropagation()}
+      title={`Open project ${row.linkedProjectName} • ${open} open ticket${open === 1 ? "" : "s"}`}
+      data-testid={`link-eng-project-${row.id}`}
+      className={`inline-flex items-center justify-center min-w-[22px] h-5 px-1.5 rounded-full text-[11px] font-semibold tabular-nums ${
+        open > 0 ? "bg-emerald-600 text-white hover:bg-emerald-700 hover:shadow" : "bg-slate-100 text-slate-500"
+      }`}
+    >
+      {open}
+    </Link>
+  ) : (
+    <span
+      className={`inline-flex items-center justify-center min-w-[22px] h-5 px-1.5 rounded-full text-[11px] font-semibold tabular-nums ${
+        open > 0 ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-500"
+      }`}
+      title={open > 0 ? `${open} open engineering ticket${open === 1 ? "" : "s"}` : "No open tickets"}
+    >
+      {open}
+    </span>
+  );
+
+  return (
+    <span className="inline-flex items-center gap-1 text-[11px] tabular-nums">
+      {openPill}
+      <span className="text-slate-400">/</span>
+      <span
+        className="text-slate-600"
+        title={`${closed} closed (Completed or Cancelled)`}
+        data-testid={`text-eng-closed-${row.id}`}
+      >
+        {closed}
+      </span>
+      {ageLabel ? (
+        <>
+          <span className="text-slate-300">·</span>
+          <span
+            className={
+              ageDays! >= 14
+                ? "text-amber-700 font-medium"
+                : "text-slate-500"
+            }
+            title={`Oldest open ticket is ${ageDays}d old`}
+            data-testid={`text-eng-age-${row.id}`}
+          >
+            {ageLabel}
+          </span>
+        </>
+      ) : null}
+    </span>
+  );
+}
 
 export default function OpportunitiesPage() {
   const { user } = useAuth();
@@ -224,12 +351,49 @@ export default function OpportunitiesPage() {
   // surfaces CRM (Pipedrive) + PD shadow + Convert-to-Project together.
   const [drawerOppId, setDrawerOppId] = useState<number | null>(null);
 
+  // Deep-link support: PD Dashboard links use /opportunities?open={id}
+  // to jump straight to a specific deal. Read once on mount, then strip
+  // the param so the URL doesn't pin the drawer permanently.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const raw = params.get("open");
+    const id = raw ? Number(raw) : NaN;
+    if (Number.isFinite(id) && id > 0) {
+      setDrawerOppId(id);
+      params.delete("open");
+      const qs = params.toString();
+      const next = window.location.pathname + (qs ? `?${qs}` : "");
+      window.history.replaceState(null, "", next);
+    }
+    // run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Pipedrive "last synced" indicator — driven entirely client-side from
+  // the most recent successful pull.
+  const [lastPullAt, setLastPullAt] = useState<Date | null>(null);
+
   const [dlg, updateDlg] = useReducer(
     (prev: DialogState, action: Partial<DialogState> | "reset") =>
       action === "reset" ? DIALOG_INITIAL : { ...prev, ...action },
     DIALOG_INITIAL,
   );
   const mappingResolved = dlg.resolvedClientId != null && dlg.resolvedProjectId != null;
+
+  // Search + sort UI state for the List view.
+  type SortKey = "dealName" | "stage" | "projectDeveloper" | "province" | "estimatedKwp" | "estimatedValue" | "expectedCloseDate" | "nextActivityDate" | "openEngineeringTaskCount";
+  const [searchTerm, setSearchTerm] = useState("");
+  const [sortKey, setSortKey] = useState<SortKey>("expectedCloseDate");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
 
   // (Legacy PD Tickets section state was removed 2026-04-20 — replaced by
   // the unified OpportunityDrawer which fetches per-row /workflow on open.)
@@ -263,6 +427,14 @@ export default function OpportunitiesPage() {
     },
     enabled: !!dlg.target?.id,
   });
+
+  // If templates are empty, force the dialog into "custom" mode so the
+  // user isn't shown a dropdown with nothing to pick.
+  useEffect(() => {
+    if (dlg.target?.id && phaseTemplates.length === 0 && dlg.ticketMode === "phase_template") {
+      updateDlg({ ticketMode: "custom" });
+    }
+  }, [dlg.target?.id, phaseTemplates.length, dlg.ticketMode]);
 
   // Scope metadata for the "Pull from Pipedrive" button. The server
   // derives `scope` from the caller's role — COO/CEO/CCO get the
@@ -330,6 +502,7 @@ export default function OpportunitiesPage() {
       });
       queryClient.invalidateQueries({ queryKey: ["/api/opportunities/working"] });
       queryClient.invalidateQueries({ queryKey: ["/api/opportunities"] });
+      setLastPullAt(new Date());
     },
     onError: (err: Error) => {
       toast({ title: "Pipedrive pull failed", description: err.message, variant: "destructive" });
@@ -383,6 +556,17 @@ export default function OpportunitiesPage() {
         body.phaseTemplateId = dlg.selectedTemplateId ? Number(dlg.selectedTemplateId) : undefined;
         body.templateBaseDueDate = dlg.templateBaseDueDate || undefined;
       } else {
+        // Inline required-field check so users see a friendly inline
+        // error rather than a generic "Bad Request" toast.
+        const missing: string[] = [];
+        if (!dlg.customTitle.trim()) missing.push("Title");
+        if (!dlg.customPhase.trim()) missing.push("Phase");
+        if (!dlg.customDescriptionScope.trim()) missing.push("Description / Scope");
+        if (!dlg.customDueDate) missing.push("Due date");
+        if (!dlg.customRequiredOutput.trim()) missing.push("Required output");
+        if (missing.length > 0) {
+          throw new Error(`Please fill in: ${missing.join(", ")}`);
+        }
         body.customTicket = {
           title: dlg.customTitle.trim(),
           phase: dlg.customPhase.trim(),
@@ -390,11 +574,34 @@ export default function OpportunitiesPage() {
           dueDate: dlg.customDueDate,
           priority: dlg.customPriority,
           requiredOutput: dlg.customRequiredOutput.trim(),
+          ...(dlg.customFundingType.trim() ? { fundingType: dlg.customFundingType.trim() } : {}),
+          ...(dlg.customSizeKwp.trim() ? { sizeKwp: dlg.customSizeKwp.trim() } : {}),
+          ...(dlg.customProvince.trim() ? { province: dlg.customProvince.trim() } : {}),
+          ...(dlg.customGpsCoordinates.trim() ? { gpsCoordinates: dlg.customGpsCoordinates.trim() } : {}),
+          batteriesNeeded: dlg.customBatteriesNeeded,
+          ...(dlg.customBatterySize.trim() ? { batterySize: dlg.customBatterySize.trim() } : {}),
         };
       }
       const res = await apiRequest("POST", `/api/opportunities/${dlg.target.id}/create-engineering-tickets`, body);
       const payload = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(payload?.error || "Failed to create engineering tickets");
+      if (!res.ok) {
+        // Extract field-level Zod messages from validateBody's
+        // `details` envelope so the toast tells the user exactly which
+        // fields are wrong instead of just "Bad Request".
+        const fieldErrors = payload?.details?.fieldErrors;
+        const formErrors = payload?.details?.formErrors;
+        const fieldMsgs: string[] = [];
+        if (fieldErrors && typeof fieldErrors === "object") {
+          for (const [k, v] of Object.entries(fieldErrors)) {
+            if (Array.isArray(v) && v.length > 0) fieldMsgs.push(`${k}: ${(v as string[]).join("; ")}`);
+          }
+        }
+        if (Array.isArray(formErrors) && formErrors.length > 0) fieldMsgs.push(...formErrors);
+        const msg = fieldMsgs.length > 0
+          ? fieldMsgs.join(" | ")
+          : payload?.error || `Failed to create engineering tickets (HTTP ${res.status})`;
+        throw new Error(msg);
+      }
       return payload;
     },
     onSuccess: (payload: Record<string, unknown>) => {
@@ -416,12 +623,87 @@ export default function OpportunitiesPage() {
     },
   });
 
-  // Safety net: if upstream filtering drifts, never render terminal deals in
-  // this active working view.
-  const activeRows = useMemo(
-    () => data.filter((row) => !hasTerminalMarker(row.status) && !hasTerminalMarker(row.stage) && !row.signedDate),
-    [data],
-  );
+  // The server (`server/lib/opportunity-working-filter.ts`) is the
+  // authoritative gate for which deals appear here — terminal status,
+  // signed date, and linked project all exclude. We re-apply the same
+  // checks client-side as a defensive safety net (cached responses,
+  // mid-flight mutations, role-stale data); in DEV we log when the
+  // safety net actually trips so any drift between client/server is
+  // visible. See review item C1 (2026-04-21).
+  const activeRows = useMemo(() => {
+    const filtered = data.filter(
+      (row) =>
+        !row.hasLinkedProject &&
+        !hasTerminalMarker(row.status) &&
+        !hasTerminalMarker(row.stage) &&
+        !row.signedDate,
+    );
+    if (import.meta.env.DEV && filtered.length !== data.length) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[opportunities] client safety-net dropped ${data.length - filtered.length} row(s) the server returned — check isActivePdWorkingOpportunity().`,
+      );
+    }
+    return filtered;
+  }, [data]);
+
+  // Derived list for the table view: applies the search filter and the
+  // current sort. Kanban/Calendar tabs continue to use `activeRows`
+  // directly (their own sort behavior is in the child components).
+  const displayRows = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    const filtered = q
+      ? activeRows.filter((row) => {
+          const haystack = [
+            row.dealName,
+            row.orgClientName,
+            row.projectDeveloper,
+            row.province,
+            row.pipedriveDealId,
+            row.stage,
+            row.fundingType,
+            row.siteLocation,
+            row.nextActivitySubject,
+          ]
+            .map((v) => String(v ?? "").toLowerCase())
+            .join(" ");
+          return haystack.includes(q);
+        })
+      : activeRows;
+
+    const dir = sortDir === "asc" ? 1 : -1;
+    const cmp = (a: WorkingOpportunityRow, b: WorkingOpportunityRow): number => {
+      const av = a[sortKey];
+      const bv = b[sortKey];
+      // Push nullish to the bottom regardless of direction.
+      const aNull = av == null || av === "";
+      const bNull = bv == null || bv === "";
+      if (aNull && bNull) return 0;
+      if (aNull) return 1;
+      if (bNull) return -1;
+      if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+      if (sortKey === "expectedCloseDate" || sortKey === "nextActivityDate") {
+        const at = new Date(String(av)).getTime();
+        const bt = new Date(String(bv)).getTime();
+        if (Number.isFinite(at) && Number.isFinite(bt)) return (at - bt) * dir;
+      }
+      return String(av).localeCompare(String(bv)) * dir;
+    };
+    return [...filtered].sort(cmp);
+  }, [activeRows, searchTerm, sortKey, sortDir]);
+
+  const sortIndicator = (key: SortKey) =>
+    sortKey === key ? (
+      <span className="ml-1 text-emerald-700 font-bold" aria-hidden="true">
+        {sortDir === "asc" ? "▲" : "▼"}
+      </span>
+    ) : (
+      <span className="ml-1 text-slate-300" aria-hidden="true">↕</span>
+    );
+  const sortHeaderClass = (key: SortKey) =>
+    sortKey === key
+      ? "text-emerald-900 font-bold underline decoration-emerald-300 underline-offset-2"
+      : "";
 
   const clientOptions = useMemo(() => {
     const base = mappingContext?.likelyClients || [];
@@ -440,6 +722,15 @@ export default function OpportunitiesPage() {
   }, [mappingContext]);
 
   function openMapping(row: WorkingOpportunityRow) {
+    // Fast path: if this opportunity already has tickets AND we know
+    // which client/project the latest one was filed against, skip the
+    // mapping selection entirely and open straight to the ticket form.
+    // Re-mapping the same deal every time you add a ticket is friction
+    // PDs explicitly asked us to remove (2026-04-21 user feedback).
+    const totalTickets = row.openEngineeringTaskCount + row.closedEngineeringTaskCount;
+    const canSkipMapping =
+      totalTickets > 0 && row.lastTicketClientId != null && row.lastTicketProjectId != null;
+
     updateDlg({
       ...DIALOG_INITIAL,
       target: row,
@@ -448,6 +739,16 @@ export default function OpportunitiesPage() {
       templateBaseDueDate: new Date().toISOString().slice(0, 10),
       customTitle: row.dealName || "",
       customPhase: "First Assessment",
+      customFundingType: row.fundingType || "",
+      customSizeKwp: row.estimatedKwp != null ? String(row.estimatedKwp) : "",
+      customProvince: row.province || "",
+      ...(canSkipMapping
+        ? {
+            skipMapping: true,
+            resolvedClientId: row.lastTicketClientId,
+            resolvedProjectId: row.lastTicketProjectId,
+          }
+        : {}),
     });
   }
 
@@ -484,6 +785,16 @@ export default function OpportunitiesPage() {
         title="Opportunities (Active Working List)"
         description="Only active Pipedrive opportunities are shown here. Lost, won/signed/closed, and converted deals are excluded."
         actions={
+          <div className="flex items-center gap-2">
+            {lastPullAt && (
+              <span
+                className="text-[11px] text-slate-500 hidden sm:inline"
+                title={`Last successful Pipedrive pull: ${lastPullAt.toLocaleString()}`}
+                data-testid="text-last-pulled-at"
+              >
+                Synced {formatRelative(lastPullAt)}
+              </span>
+            )}
           <Button
             size="sm"
             variant="outline"
@@ -525,6 +836,7 @@ export default function OpportunitiesPage() {
                     ? "Pull all from Pipedrive"
                     : "Pull my Pipedrive deals"}
           </Button>
+          </div>
         }
       />
 
@@ -600,25 +912,42 @@ export default function OpportunitiesPage() {
 
           {/* ── List view (compact) ───────────────────────────────────── */}
           <TabsContent value="list" className="mt-3">
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <div className="relative w-full max-w-md">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+                <Input
+                  type="search"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search by deal, client, developer, province, deal #…"
+                  className="pl-8 h-8 text-xs"
+                  data-testid="input-search-opportunities"
+                />
+              </div>
+              <div className="text-[11px] text-slate-500 whitespace-nowrap" data-testid="text-opportunities-count">
+                {displayRows.length} of {activeRows.length} shown
+                {sortKey && <span className="text-slate-400"> • sorted by {sortKey}{sortDir === "desc" ? " ↓" : " ↑"}</span>}
+              </div>
+            </div>
             <div className="border rounded-lg overflow-hidden bg-white shadow-sm">
               <div className="overflow-x-auto max-h-[calc(100vh-300px)]">
                 <table className="w-full text-xs border-collapse" data-testid="table-opportunities-working">
                   <thead className="bg-emerald-50/60 text-[10px] uppercase tracking-wide text-emerald-900/80 sticky top-0 z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
                     <tr>
-                      <th className="text-left px-2.5 py-1.5 font-semibold">Client / Project</th>
-                      <th className="text-left px-2 py-1.5 font-semibold">Stage</th>
-                      <th className="text-left px-2 py-1.5 font-semibold">Project Developer</th>
-                      <th className="text-left px-2 py-1.5 font-semibold">Province</th>
-                      <th className="text-right px-2 py-1.5 font-semibold whitespace-nowrap">Size</th>
-                      <th className="text-right px-2 py-1.5 font-semibold whitespace-nowrap">Value</th>
-                      <th className="text-left px-2 py-1.5 font-semibold whitespace-nowrap">Est. Sig.</th>
-                      <th className="text-left px-2 py-1.5 font-semibold whitespace-nowrap">Next Activity</th>
-                      <th className="text-center px-2 py-1.5 font-semibold whitespace-nowrap" title="Open engineering tasks">Eng.</th>
+                      <th className={`text-left px-2.5 py-1.5 font-semibold cursor-pointer select-none hover:text-emerald-900 ${sortHeaderClass("dealName")}`} onClick={() => toggleSort("dealName")} data-testid="sort-dealName">Client / Project{sortIndicator("dealName")}</th>
+                      <th className={`text-left px-2 py-1.5 font-semibold cursor-pointer select-none hover:text-emerald-900 ${sortHeaderClass("stage")}`} onClick={() => toggleSort("stage")} data-testid="sort-stage">Stage{sortIndicator("stage")}</th>
+                      <th className={`text-left px-2 py-1.5 font-semibold cursor-pointer select-none hover:text-emerald-900 ${sortHeaderClass("projectDeveloper")}`} onClick={() => toggleSort("projectDeveloper")} data-testid="sort-projectDeveloper">Project Developer{sortIndicator("projectDeveloper")}</th>
+                      <th className={`text-left px-2 py-1.5 font-semibold cursor-pointer select-none hover:text-emerald-900 ${sortHeaderClass("province")}`} onClick={() => toggleSort("province")} data-testid="sort-province">Province{sortIndicator("province")}</th>
+                      <th className={`text-right px-2 py-1.5 font-semibold whitespace-nowrap cursor-pointer select-none hover:text-emerald-900 ${sortHeaderClass("estimatedKwp")}`} onClick={() => toggleSort("estimatedKwp")} data-testid="sort-estimatedKwp">Size{sortIndicator("estimatedKwp")}</th>
+                      <th className={`text-right px-2 py-1.5 font-semibold whitespace-nowrap cursor-pointer select-none hover:text-emerald-900 ${sortHeaderClass("estimatedValue")}`} onClick={() => toggleSort("estimatedValue")} data-testid="sort-estimatedValue">Value{sortIndicator("estimatedValue")}</th>
+                      <th className={`text-left px-2 py-1.5 font-semibold whitespace-nowrap cursor-pointer select-none hover:text-emerald-900 ${sortHeaderClass("expectedCloseDate")}`} onClick={() => toggleSort("expectedCloseDate")} data-testid="sort-expectedCloseDate">Est. Sig.{sortIndicator("expectedCloseDate")}</th>
+                      <th className={`text-left px-2 py-1.5 font-semibold whitespace-nowrap cursor-pointer select-none hover:text-emerald-900 ${sortHeaderClass("nextActivityDate")}`} onClick={() => toggleSort("nextActivityDate")} data-testid="sort-nextActivityDate">Next Activity{sortIndicator("nextActivityDate")}</th>
+                      <th className={`text-center px-2 py-1.5 font-semibold whitespace-nowrap cursor-pointer select-none hover:text-emerald-900 ${sortHeaderClass("openEngineeringTaskCount")}`} onClick={() => toggleSort("openEngineeringTaskCount")} title="Open engineering tasks" data-testid="sort-openEngineeringTaskCount">Eng.{sortIndicator("openEngineeringTaskCount")}</th>
                       <th className="text-right px-2 py-1.5 font-semibold">Action</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {activeRows.map((row, idx) => (
+                    {displayRows.map((row, idx) => (
                       <tr
                         key={row.id}
                         className={`border-t border-slate-100 cursor-pointer transition-colors hover:bg-emerald-50/50 ${idx % 2 === 1 ? "bg-slate-50/40" : "bg-white"}`}
@@ -704,13 +1033,7 @@ export default function OpportunitiesPage() {
                           )}
                         </td>
                         <td className="px-2 py-1.5 align-middle text-center">
-                          {row.openEngineeringTaskCount > 0 ? (
-                            <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1 rounded-full bg-emerald-600 text-white text-[10px] font-semibold tabular-nums">
-                              {row.openEngineeringTaskCount}
-                            </span>
-                          ) : (
-                            <span className="text-[10px] text-slate-300 tabular-nums">0</span>
-                          )}
+                          <EngCell row={row} />
                         </td>
                         <td className="px-2 py-1.5 align-middle text-right whitespace-nowrap">
                           <Button
@@ -730,7 +1053,11 @@ export default function OpportunitiesPage() {
                 </table>
               </div>
               <div className="px-3 py-1.5 bg-slate-50 border-t text-[11px] text-slate-500 flex items-center justify-between">
-                <span>{activeRows.length} active opportunit{activeRows.length === 1 ? "y" : "ies"}</span>
+                <span>
+                  {searchTerm
+                    ? `${displayRows.length} match${displayRows.length === 1 ? "" : "es"} of ${activeRows.length} active`
+                    : `${activeRows.length} active opportunit${activeRows.length === 1 ? "y" : "ies"}`}
+                </span>
                 <span className="text-slate-400">Click any row for full detail</span>
               </div>
             </div>
@@ -766,9 +1093,13 @@ export default function OpportunitiesPage() {
       <Dialog open={!!dlg.target} onOpenChange={(open) => { if (!open) updateDlg("reset"); }}>
         <DialogContent className="max-w-xl">
           <DialogHeader>
-            <DialogTitle>Create Engineering Ticket — Mapping</DialogTitle>
+            <DialogTitle>
+              {dlg.skipMapping ? "Add Engineering Ticket" : "Create Engineering Ticket — Mapping"}
+            </DialogTitle>
             <DialogDescription>
-              Project Developer is the mapping authority. Choose how this opportunity maps to client/project before ticket creation.
+              {dlg.skipMapping
+                ? "This opportunity already has tickets — re-using the existing client/project mapping. Add another ticket below."
+                : "Project Developer is the mapping authority. Choose how this opportunity maps to client/project before ticket creation."}
             </DialogDescription>
           </DialogHeader>
 
@@ -781,6 +1112,7 @@ export default function OpportunitiesPage() {
                 <p>Linked client: {mappingContext?.linkedClient ? "Yes" : "No"} • Linked project: {mappingContext?.linkedProject ? "Yes" : "No"}</p>
               </div>
 
+              {!dlg.skipMapping && (
               <div className="space-y-2">
                 <Label className="text-xs">Mapping mode</Label>
                 <div className="grid gap-1 text-sm">
@@ -789,8 +1121,9 @@ export default function OpportunitiesPage() {
                   <label className="flex items-center gap-2"><input type="radio" checked={dlg.mappingMode === "new_new"} onChange={() => updateDlg({ mappingMode: "new_new" })} /> Create new client + new project shell</label>
                 </div>
               </div>
+              )}
 
-              {dlg.mappingMode !== "new_new" && (
+              {!dlg.skipMapping && dlg.mappingMode !== "new_new" && (
                 <div className="space-y-1">
                   <Label className="text-xs">Client</Label>
                   <select className="w-full border rounded-md h-9 px-2 text-sm" value={dlg.existingClientId} onChange={(e) => updateDlg({ existingClientId: e.target.value })}>
@@ -800,7 +1133,7 @@ export default function OpportunitiesPage() {
                 </div>
               )}
 
-              {dlg.mappingMode === "existing_existing" && (
+              {!dlg.skipMapping && dlg.mappingMode === "existing_existing" && (
                 <div className="space-y-1">
                   <Label className="text-xs">Project</Label>
                   <select className="w-full border rounded-md h-9 px-2 text-sm" value={dlg.existingProjectId} onChange={(e) => updateDlg({ existingProjectId: e.target.value })}>
@@ -810,14 +1143,14 @@ export default function OpportunitiesPage() {
                 </div>
               )}
 
-              {dlg.mappingMode === "existing_new" && (
+              {!dlg.skipMapping && dlg.mappingMode === "existing_new" && (
                 <div className="space-y-1">
                   <Label className="text-xs">New project shell name</Label>
                   <Input value={dlg.newProjectName} onChange={(e) => updateDlg({ newProjectName: e.target.value })} placeholder="Enter project shell name" />
                 </div>
               )}
 
-              {dlg.mappingMode === "new_new" && (
+              {!dlg.skipMapping && dlg.mappingMode === "new_new" && (
                 <div className="grid gap-2">
                   <div className="space-y-1">
                     <Label className="text-xs">New client name</Label>
@@ -842,15 +1175,24 @@ export default function OpportunitiesPage() {
                     Mapping resolved • client #{dlg.resolvedClientId} • project #{dlg.resolvedProjectId}
                   </div>
 
-                  <div className="space-y-2">
-                    <Label className="text-xs">Ticket creation mode</Label>
-                    <div className="grid gap-1 text-sm">
-                      <label className="flex items-center gap-2"><input type="radio" checked={dlg.ticketMode === "phase_template"} onChange={() => updateDlg({ ticketMode: "phase_template" })} /> Phase template</label>
-                      <label className="flex items-center gap-2"><input type="radio" checked={dlg.ticketMode === "custom"} onChange={() => updateDlg({ ticketMode: "custom" })} /> Custom ticket</label>
+                  {phaseTemplates.length > 0 ? (
+                    <div className="space-y-2">
+                      <Label className="text-xs">Ticket creation mode</Label>
+                      <div className="grid gap-1 text-sm">
+                        <label className="flex items-center gap-2"><input type="radio" checked={dlg.ticketMode === "phase_template"} onChange={() => updateDlg({ ticketMode: "phase_template" })} /> Phase template</label>
+                        <label className="flex items-center gap-2"><input type="radio" checked={dlg.ticketMode === "custom"} onChange={() => updateDlg({ ticketMode: "custom" })} /> Custom ticket</label>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    // No phase templates seeded — only "custom" makes sense.
+                    // We coerce ticketMode to "custom" so the form below
+                    // renders the right inputs.
+                    <p className="text-[11px] text-slate-500 italic">
+                      No phase templates are configured. Use the custom ticket form below.
+                    </p>
+                  )}
 
-                  {dlg.ticketMode === "phase_template" ? (
+                  {dlg.ticketMode === "phase_template" && phaseTemplates.length > 0 ? (
                     <div className="grid gap-2">
                       <div className="space-y-1">
                         <Label className="text-xs">Predefined phase template</Label>
@@ -871,32 +1213,66 @@ export default function OpportunitiesPage() {
                   ) : (
                     <div className="grid gap-2">
                       <div className="space-y-1">
-                        <Label className="text-xs">Title</Label>
-                        <Input value={dlg.customTitle} onChange={(e) => updateDlg({ customTitle: e.target.value })} />
+                        <Label className="text-xs">Title <span className="text-red-600">*</span></Label>
+                        <Input value={dlg.customTitle} onChange={(e) => updateDlg({ customTitle: e.target.value })} data-testid="input-custom-title" />
                       </div>
                       <div className="space-y-1">
-                        <Label className="text-xs">Phase</Label>
-                        <Input value={dlg.customPhase} onChange={(e) => updateDlg({ customPhase: e.target.value })} placeholder="e.g. First Assessment" />
+                        <Label className="text-xs">Phase <span className="text-red-600">*</span></Label>
+                        <Input value={dlg.customPhase} onChange={(e) => updateDlg({ customPhase: e.target.value })} placeholder="e.g. First Assessment" data-testid="input-custom-phase" />
                       </div>
                       <div className="space-y-1">
-                        <Label className="text-xs">Description / Scope</Label>
-                        <Input value={dlg.customDescriptionScope} onChange={(e) => updateDlg({ customDescriptionScope: e.target.value })} />
+                        <Label className="text-xs">Description / Scope <span className="text-red-600">*</span></Label>
+                        <Input value={dlg.customDescriptionScope} onChange={(e) => updateDlg({ customDescriptionScope: e.target.value })} data-testid="input-custom-scope" />
                       </div>
                       <div className="grid grid-cols-2 gap-2">
                         <div className="space-y-1">
-                          <Label className="text-xs">Due date</Label>
-                          <Input type="date" value={dlg.customDueDate} onChange={(e) => updateDlg({ customDueDate: e.target.value })} />
+                          <Label className="text-xs">Due date <span className="text-red-600">*</span></Label>
+                          <Input type="date" value={dlg.customDueDate} onChange={(e) => updateDlg({ customDueDate: e.target.value })} data-testid="input-custom-due" />
                         </div>
                         <div className="space-y-1">
                           <Label className="text-xs">Priority</Label>
-                          <select className="w-full border rounded-md h-9 px-2 text-sm" value={dlg.customPriority} onChange={(e) => updateDlg({ customPriority: e.target.value })}>
+                          <select className="w-full border rounded-md h-9 px-2 text-sm" value={dlg.customPriority} onChange={(e) => updateDlg({ customPriority: e.target.value })} data-testid="select-custom-priority">
                             {["Critical", "High", "Medium", "Low"].map((p) => <option key={p} value={p}>{p}</option>)}
                           </select>
                         </div>
                       </div>
                       <div className="space-y-1">
-                        <Label className="text-xs">Required output</Label>
-                        <Input value={dlg.customRequiredOutput} onChange={(e) => updateDlg({ customRequiredOutput: e.target.value })} />
+                        <Label className="text-xs">Required output <span className="text-red-600">*</span></Label>
+                        <Input value={dlg.customRequiredOutput} onChange={(e) => updateDlg({ customRequiredOutput: e.target.value })} data-testid="input-custom-required-output" />
+                      </div>
+
+                      <div className="border-t pt-2 mt-1">
+                        <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+                          Operational metadata <span className="font-normal normal-case text-slate-400">(optional — pre-filled from opportunity)</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <Label className="text-xs">Funding type</Label>
+                            <Input value={dlg.customFundingType} onChange={(e) => updateDlg({ customFundingType: e.target.value })} placeholder="e.g. Cash, PPA, Lease" data-testid="input-custom-funding" />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Size (kWp)</Label>
+                            <Input type="number" inputMode="decimal" value={dlg.customSizeKwp} onChange={(e) => updateDlg({ customSizeKwp: e.target.value })} data-testid="input-custom-kwp" />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Province</Label>
+                            <Input value={dlg.customProvince} onChange={(e) => updateDlg({ customProvince: e.target.value })} data-testid="input-custom-province" />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">GPS coordinates</Label>
+                            <Input value={dlg.customGpsCoordinates} onChange={(e) => updateDlg({ customGpsCoordinates: e.target.value })} placeholder="-26.1234, 28.1234" data-testid="input-custom-gps" />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-[auto_1fr] gap-2 mt-2 items-end">
+                          <label className="flex items-center gap-2 text-xs h-9">
+                            <input type="checkbox" checked={dlg.customBatteriesNeeded} onChange={(e) => updateDlg({ customBatteriesNeeded: e.target.checked })} data-testid="checkbox-custom-batteries" />
+                            Batteries needed
+                          </label>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Battery size (kWh)</Label>
+                            <Input type="number" inputMode="decimal" value={dlg.customBatterySize} onChange={(e) => updateDlg({ customBatterySize: e.target.value })} disabled={!dlg.customBatteriesNeeded} data-testid="input-custom-battery-size" />
+                          </div>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -914,21 +1290,6 @@ export default function OpportunitiesPage() {
             ) : (
               <Button onClick={() => createEngineeringTicketsMutation.mutate()} disabled={createEngineeringTicketsMutation.isPending}>
                 {createEngineeringTicketsMutation.isPending ? "Creating…" : dlg.ticketMode === "phase_template" ? "Generate Template Ticket(s)" : "Create Custom Ticket"}
-              </Button>
-            )}
-            {mappingResolved && (
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  const q = new URLSearchParams({
-                    opportunityId: String(dlg.target!.id),
-                    clientId: String(dlg.resolvedClientId),
-                    projectId: String(dlg.resolvedProjectId),
-                  });
-                  navigate(`/pd/tickets/create?${q.toString()}`);
-                }}
-              >
-                Open full manual form
               </Button>
             )}
           </DialogFooter>
