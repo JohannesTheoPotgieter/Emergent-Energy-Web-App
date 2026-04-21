@@ -46,6 +46,8 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout } from "@/components/layout";
 import { format } from "date-fns";
 
 interface PriorityLink {
@@ -456,41 +458,39 @@ export default function MyWorkPrioritiesPage() {
   if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load priorities" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
   return (
-    <div className="p-6">
-      <div className="space-y-4 max-w-[1400px] mx-auto" data-testid="company-priorities-page">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-xl font-semibold flex items-center gap-2">
-              <Flag className="h-5 w-5 text-red-500" />
-              Emergent Energy Company Priorities
-            </h2>
-            <p className="text-xs text-muted-foreground mt-1">
-              {filteredPriorities.length} {statusFilter === "all_active" ? "active" : statusFilter} priorities across {groupedByDept.length} departments
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <SearchableSelect
-              value={statusFilter}
-              onValueChange={setStatusFilter}
-              triggerClassName="h-8 w-32 text-xs"
-              options={[
-                { value: "all_active", label: "Active" },
-                { value: "in_progress", label: "In progress" },
-                { value: "not_started", label: "Not started" },
-                { value: "complete", label: "Complete" },
-                { value: "closed", label: "Closed" },
-                { value: "all", label: "All" },
-              ]}
-              data-testid="select-status-filter"
-            />
-            {canEdit && (
-              <Button size="sm" onClick={() => openCreate()} data-testid="button-create-priority">
-                <Plus className="h-4 w-4 mr-1" />
-                New Priority
-              </Button>
-            )}
-          </div>
-        </div>
+    <PageLayout
+      data-testid="company-priorities-page"
+      header={
+        <PageHeader
+          title="Emergent Energy Company Priorities"
+          subtitle={`${filteredPriorities.length} ${statusFilter === "all_active" ? "active" : statusFilter} priorities across ${groupedByDept.length} departments`}
+          actions={
+            <div className="flex items-center gap-2">
+              <SearchableSelect
+                value={statusFilter}
+                onValueChange={setStatusFilter}
+                triggerClassName="h-8 w-32 text-xs"
+                options={[
+                  { value: "all_active", label: "Active" },
+                  { value: "in_progress", label: "In progress" },
+                  { value: "not_started", label: "Not started" },
+                  { value: "complete", label: "Complete" },
+                  { value: "closed", label: "Closed" },
+                  { value: "all", label: "All" },
+                ]}
+                data-testid="select-status-filter"
+              />
+              {canEdit && (
+                <Button size="sm" onClick={() => openCreate()} data-testid="button-create-priority">
+                  <Plus className="h-4 w-4 mr-1" />
+                  New Priority
+                </Button>
+              )}
+            </div>
+          }
+        />
+      }
+    >
 
         {isLoading ? (
           <div className="flex items-center justify-center py-16">
@@ -1046,7 +1046,6 @@ export default function MyWorkPrioritiesPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </div>
-    </div>
+    </PageLayout>
   );
 }
