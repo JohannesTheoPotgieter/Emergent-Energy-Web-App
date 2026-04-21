@@ -71,6 +71,8 @@ Total: **56 functions deferred** to subsequent sessions where per-function verif
 
 ## §3 Decisions surfaced during implementation (Session 1)
 
+### Technical decisions (during primitive build)
+
 | # | Decision | Note |
 |---|---|---|
 | D-001 | `client/src/components/layout/index.ts` barrel created. | Verified no existing `from "@/components/layout"` imports exist; safe. |
@@ -78,6 +80,17 @@ Total: **56 functions deferred** to subsequent sessions where per-function verif
 | D-003 | `AppShell` access-agnostic. | Access filtering happens in the caller (via `useAccessMatrix`); `LensNav` accepts pre-filtered entries. Keeps primitives testable in isolation. |
 | D-004 | `DetailLayout` throws at runtime for empty tabs array. | Developer safety — prevents silent blank pages. |
 | D-005 | `WizardLayout` does not render nav buttons. | Caller owns Next/Back logic so it can validate per its own rules. Primitive provides the footer slot only. |
+
+### Owner decisions (2026-04-21 — blocking-clarity round)
+
+| # | Decision | Implication for Phase 3 |
+|---|---|---|
+| D-006 | **Approver: owner only.** Every migrated page reviewed personally by the owner before wave merges. | Migration tempo capped by owner review bandwidth. Tactical: ship small wave-sized batches to make review tractable. |
+| D-007 | **Aesthetic principle: "good-looking solve."** Migrated pages must be information-dense + professional + clean per the wireframes. Decorative effects allowed only where they serve the user. No decoration as filler. | New surfaces = no decoration (committed). Existing migrated surfaces = case-by-case: keep purposeful motion (state transitions, loading skeletons), strip filler animations that exist only for aesthetic noise. |
+| D-008 | **Operational approval thresholds preserved exactly.** Current workflow rules (amount caps, required signatories per level) are not re-examined during the overhaul. | Every approval-domain migration (F-016 / F-017 / F-022 / F-023 / F-024) must preserve routing rules bit-for-bit. Regression test includes: "a payment that today requires CFO sign-off still requires CFO sign-off after migration." |
+| D-009 | **Mobile-first is every lens, not just field roles.** Prior scoping of "mobile-first for 5 lenses" is overridden. Every lens must be fully usable on mobile. | Propagated in §4 (plan) and `01-wireframes.md §W7` (bottom-tab table already covers all 16 roles). Every F-entry now counts mobile render as part of its Preserved Behaviour contract. See D-010 below for what "mobile-first" means in practice. |
+| D-010 | **Mobile-first definition.** "Mobile-first" means: (1) no layout breaks at 390px width, (2) primary flows are touch-reachable without horizontal scroll, (3) 44px minimum touch targets (already enforced in `index.css:305-318`), (4) each role has a lens-appropriate mobile bottom-tab set per `01-wireframes.md §W7`. It does NOT mean every page has a separate mobile-only design. | `AppShell` primitive already supports bottomTabBar for any lens (no code change needed). Caller composes per-lens bottomTabBar content from the W7 table. |
+| D-011 | **Deploy gate: staging per wave, owner-approved merge to main.** Each migration wave lands on the feature branch; a staging deploy is produced; owner clicks through; only then merges to main. | Phase 3 workflow: (i) wave migrations land on branch → (ii) staging deploy + screenshot pack → (iii) owner approval → (iv) merge to main. Applies to every wave. |
 
 ---
 

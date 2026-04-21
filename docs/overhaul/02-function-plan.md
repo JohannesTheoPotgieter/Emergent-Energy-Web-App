@@ -69,6 +69,21 @@ Entries **do**:
 - Call out any half-built work to close.
 - Enumerate the preserved-behaviour regression list.
 
+### §1.5 Cross-cutting mobile requirement (per owner decision D-009)
+
+**Every function entry in this plan is mobile-first** — regardless of lens. Per `03-progress.md D-009` / D-010 (2026-04-21), the owner's requirement is that every role can do its work on mobile, not just field roles.
+
+Concretely, every F-entry's Preserved Behaviour contract gains four implicit items:
+
+1. **No layout breaks at 390px viewport width.**
+2. **Primary flows are touch-reachable without horizontal scroll.** Exception: dense financial tables may scroll horizontally with sticky first columns.
+3. **44px minimum touch targets** (already enforced in `index.css:305-318`).
+4. **Lens-appropriate mobile bottom-tab set per `01-wireframes.md §W7`.** AppShell primitive wires this; each lens's bottom-tab contents are composed at the lens level.
+
+This does NOT mean every page gets a mobile-only redesign. It means every page, in its single responsive design, must hold up at mobile widths.
+
+Where a page has genuine mobile-specialised flows (F-027 PM On-The-Go home, F-028 PM On-The-Go Project), those remain as dedicated mobile surfaces — complementary to the responsive base. For every other page, "mobile-first" = "responsive base works on mobile."
+
 ### §1.5 What gets no entry
 
 Some PAGE_REGISTRY rows don't need plans:
@@ -878,7 +893,7 @@ All three decisions baked into the plan. Ready for Lens 2.
 
 ## §5 Tier 1 · Lens 2 — `PROJECT_MANAGER_SITE`
 
-**Role summary:** Site Project Manager. Landing: `/execution-board`. Primary tools: PM Dashboard, PM On-The-Go (mobile field workflow), site-scoped Approvals, Tasks, Milestones. This lens is **mobile-first for field work** and **desktop for review / planning**.
+**Role summary:** Site Project Manager. Landing: `/execution-board`. Primary tools: PM Dashboard, PM On-The-Go (mobile field workflow), site-scoped Approvals, Tasks, Milestones. Site-PM uses mobile more than most — but per **D-009 (2026-04-21 owner decision)** every lens is mobile-first, not just field roles. PM-Site still gets its dedicated mobile surfaces (F-027 / F-028) because they're specialised field-capture flows.
 
 **Function count for this lens:** 2 new + 7 cross-referenced from Lens 1. Several functions the Site PM uses daily are already planned under Lens 1 and not re-planned here.
 
