@@ -76,6 +76,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "companyOverview", path: "/company-overview", label: "Company Overview", iconKey: "Activity", navGroup: "PORTFOLIO", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "CompanyOverviewPage" },
   { id: "ceoHome", path: "/ceo", label: "CEO Dashboard", iconKey: "Sun", navGroup: "MY_WORK", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "CeoHomePage", roleLandingEligibility: ["CEO_ADMIN"] },
   { id: "cooHome", path: "/coo", label: "COO Dashboard", iconKey: "Activity", navGroup: "MY_WORK", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "CooHomePage", roleLandingEligibility: ["COO_ADMIN"] },
+  { id: "settingsHome", path: "/settings", label: "Settings", iconKey: "SlidersHorizontal", navGroup: "SYSTEM", permissionEntity: "admin_roles", showInSidebar: true, routeComponentKey: "SettingsHomePage" },
   { id: "projectLifecycle", path: "/project-lifecycle", label: "Project Lifecycle", iconKey: "Layers", navGroup: "PROJECTS", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "ProjectLifecyclePage" },
   { id: "projectLifecycleStageGates", path: "/project-lifecycle/stage-gates", label: "Stage Gates", permissionEntity: "lifecycle", routeComponentKey: "ProjectLifecyclePage" },
   { id: "projectLifecycleLatestUpdates", path: "/project-lifecycle/latest-updates", label: "Latest Updates", permissionEntity: "projects", routeComponentKey: "ProjectLifecyclePage" },

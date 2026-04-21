@@ -5,6 +5,7 @@ const CompanyOverviewPage = lazyWithRetry(() => import("@/pages/company-overview
 const Dashboard = lazyWithRetry(() => import("@/pages/dashboard"));
 const CeoHomePage = lazyWithRetry(() => import("@/pages/ceo-home"));
 const CooHomePage = lazyWithRetry(() => import("@/pages/coo-home"));
+const SettingsHomePage = lazyWithRetry(() => import("@/pages/settings-home"));
 const ProjectLifecyclePage = lazyWithRetry(() => import("@/pages/project-lifecycle"));
 const ProjectsSummary = lazyWithRetry(() => import("@/pages/projects"));
 const CashflowPage = lazyWithRetry(() => import("@/pages/cashflow"));
@@ -228,6 +229,7 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   CommissioningDashboardPage,
   CeoHomePage,
   CooHomePage,
+  SettingsHomePage,
 };
 
 export const ROUTE_COMPONENT_KEYS: ReadonlySet<string> = new Set(Object.keys(ROUTE_COMPONENTS));
