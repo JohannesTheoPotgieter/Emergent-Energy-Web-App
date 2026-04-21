@@ -16,6 +16,8 @@ import {
   Users,
 } from "lucide-react";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout } from "@/components/layout";
 
 function engFetch(url: string, options?: RequestInit) {
   const token = localStorage.getItem("auth_token");
@@ -81,14 +83,15 @@ export default function EngTemplateAdmin() {
   }
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-6" data-testid="eng-template-admin">
-      <div>
-        <h1 className="text-2xl font-bold" data-testid="page-title">Engineering Stage Templates</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Manage the 5 engineering stage templates used across all projects.
-        </p>
-      </div>
-
+    <PageLayout
+      data-testid="eng-template-admin"
+      header={
+        <PageHeader
+          title="Engineering Stage Templates"
+          subtitle={`Manage the ${templates.length} engineering stage template${templates.length !== 1 ? "s" : ""} used across all projects.`}
+        />
+      }
+    >
       <div className="space-y-4">
         {templates.map((template: any) => (
           <TemplateCard
@@ -100,7 +103,7 @@ export default function EngTemplateAdmin() {
           />
         ))}
       </div>
-    </div>
+    </PageLayout>
   );
 }
 
