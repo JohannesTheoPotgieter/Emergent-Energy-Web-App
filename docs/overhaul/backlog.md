@@ -35,6 +35,7 @@ Columns:
 | 16 | **`PROJECT_DEVELOPER` has `stage_lifecycle` edit right** — atypical for a sales-stage role. | 00-inventory §4.3 | S3 | RBAC product-confirmation | Confirm with product owner in Phase 2 whether intentional. |
 | 17 | **`ACCOUNTANT` can view `execution_board` but not edit** — noted because it's the only delivery-heavy entity where Accountant has read-only. | 00-inventory §4.3 | S4 | RBAC product-confirmation | Confirm intentional. |
 | 18 | **`KEY_ACCOUNTS_MANAGER` view-only on portfolios** despite "account" in title. | 00-inventory §4.3 | S4 | RBAC product-confirmation | Confirm intentional. |
+| 19 | **Duplicate page-chrome primitives.** `client/src/components/layout/page-shell.tsx` (`PageShell` + `SectionHeader`, used by 52 pages) overlaps with Phase-1 `client/src/components/layout/PageLayout.tsx` (`PageLayout` + `PageHeader`, used by F-002). Long-term consolidation is a design decision + thoughtful migration. | 03-progress §2.0a | S3 | Design system | Decide on canonical; migrate remaining callers to the winner. Not in current overhaul scope. |
 
 ---
 
