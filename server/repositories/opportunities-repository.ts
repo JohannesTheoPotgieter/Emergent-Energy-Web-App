@@ -628,13 +628,72 @@ export class OpportunitiesRepository {
       )
       .orderBy(desc(pdTickets.createdAt));
 
+    // Per-ticket work-items, used by the drawer's mini engineering task
+    // board. Only fetched for the real tickets (the lazy shadow's tasks
+    // already come back via `tasks` above). Owner name is preferred from
+    // the joined users table, falling back to the denormalized
+    // work_items.owner_name when no FK is set (e.g. legacy imports).
+    const ticketIds: number[] = tickets.map((t: { id: number }) => t.id);
+    type TicketTask = {
+      id: number;
+      pdTicketId: number | null;
+      title: string;
+      status: string;
+      phase: string | null;
+      priority: string | null;
+      endDate: string | null;
+      percentComplete: number | null;
+      ownerUserId: number | null;
+      ownerName: string | null;
+      sortOrder: number | null;
+    };
+    let ticketTasksRows: TicketTask[] = [];
+    if (ticketIds.length > 0) {
+      const ownerUser = aliasedTable(users, "wi_owner_user");
+      ticketTasksRows = (await db
+        .select({
+          id: workItems.id,
+          pdTicketId: workItems.pdTicketId,
+          title: workItems.title,
+          status: workItems.status,
+          phase: workItems.phase,
+          priority: workItems.priority,
+          endDate: workItems.endDate,
+          percentComplete: workItems.percentComplete,
+          ownerUserId: workItems.ownerUserId,
+          ownerName: sql<string | null>`COALESCE(${ownerUser.name}, ${workItems.ownerName})`,
+          sortOrder: workItems.sortOrder,
+        })
+        .from(workItems)
+        .leftJoin(ownerUser, eq(ownerUser.id, workItems.ownerUserId))
+        .where(
+          and(
+            inArray(workItems.pdTicketId, ticketIds),
+            isNull(workItems.deletedAt),
+          ),
+        )
+        .orderBy(asc(workItems.sortOrder), asc(workItems.id))) as TicketTask[];
+    }
+    const tasksByTicket = new Map<number, TicketTask[]>();
+    for (const row of ticketTasksRows) {
+      if (row.pdTicketId == null) continue;
+      const list = tasksByTicket.get(row.pdTicketId) ?? [];
+      list.push(row);
+      tasksByTicket.set(row.pdTicketId, list);
+    }
+    type TicketRow = (typeof tickets)[number];
+    const ticketsWithTasks = tickets.map((t: TicketRow) => ({
+      ...t,
+      tasks: tasksByTicket.get(t.id) ?? [],
+    }));
+
     return {
       crm: opp.opp,
       clientName: opp.clientName,
       siteName: opp.siteName,
       pd: shadow,
       tasks,
-      tickets,
+      tickets: ticketsWithTasks,
     };
   }
 
