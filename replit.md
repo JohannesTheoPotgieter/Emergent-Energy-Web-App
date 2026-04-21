@@ -36,6 +36,7 @@ The project uses a monorepo containing `client/` (React SPA), `server/` (Express
 - **COS Tracker Past-Month Auto-Promote:** Automatically treats cost lines from past months with invoice numbers as 'Realised' to prevent drift from QuickBooks, differentiating from strict canonical realization rules.
 - **Home "Do Next":** Provides ranked, role-aware action items (approvals, RAG status, overdue tasks) with server-persisted snooze/dismiss functionality.
 - **Canonical Phase Cycle:** Implements a single, company-wide 10-stage project lifecycle defined in `shared/phases.ts`.
+- **Priority Linked Progress:** A Priority's `effectiveProgress` can be driven from a chosen source (`project_phase` reach-or-pass, `project_percent` from `derived_project_kpis`, `milestone_revenue` 0/60/100 by paid/invoiced state, or `tasks_rollup` averaged from `work_item_pm`). Stored on `mytool_company_priorities.progress_source_type` + `progress_source_ref` (jsonb) — added in migration 0009. Computed every read by `server/lib/priorities/progress-source.ts`; falls back to manual `%` when source is unset or unresolvable. Picker lives in `client/src/components/priorities/ProgressSourcePicker.tsx` and replaces the manual % field in the Edit Priority dialog. A small "Auto" chip under the progress bar surfaces the linked source label. Out-of-scope (follow-up): same picker on the task-edit dialog for work_item-level linking.
 
 ### Database Strategy
 - **Dual-Mode:** Supports PostgreSQL (production) and SQLite (local development).
