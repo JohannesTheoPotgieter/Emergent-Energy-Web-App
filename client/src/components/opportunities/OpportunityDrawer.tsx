@@ -384,9 +384,14 @@ export function OpportunityDrawer({ opportunityId, open, onClose }: Props) {
                 </Field>
               </section>
 
-              {/* === Engineering tickets (tracking) === */}
+              {/* === Engineering task board (tickets + project board merged) === */}
               {(data.tickets ?? []).length > 0 ? (
-                <>
+                <section className="rounded-md border p-3 space-y-3" data-testid="section-engineering-task-board">
+                  <header className="flex items-center justify-between">
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-foreground flex items-center gap-1.5">
+                      <Zap className="h-3 w-3 text-emerald-600" /> Engineering task board
+                    </h3>
+                  </header>
                   <EngineeringTicketsSection tickets={data.tickets ?? []} />
                   {(data.tickets ?? []).some((t) => t.projectId) && (
                     <ProjectTaskBoard
@@ -395,7 +400,7 @@ export function OpportunityDrawer({ opportunityId, open, onClose }: Props) {
                       projectName={(data.tickets ?? []).find((t) => t.projectName)?.projectName ?? null}
                     />
                   )}
-                </>
+                </section>
               ) : (
                 /* Legacy "spawn tasks for the shadow PD ticket" surface — only
                    shown when the opportunity has NO real tickets yet. Once the
@@ -543,21 +548,21 @@ function EngineeringTicketsSection({ tickets }: { tickets: OpportunityTicket[] }
   const open = tickets.filter((t) => t.status !== "Completed" && t.status !== "Cancelled").length;
   const closed = tickets.length - open;
   return (
-    <section className="rounded-md border p-3 space-y-2" data-testid="section-engineering-tickets">
-      <header className="flex items-center justify-between">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-foreground flex items-center gap-1.5">
-          <Zap className="h-3 w-3 text-emerald-600" /> Engineering tickets
+    <div className="space-y-1.5" data-testid="section-engineering-tickets">
+      <div className="flex items-center justify-between">
+        <h4 className="text-[11px] font-semibold uppercase tracking-wide text-slate-600 flex items-center gap-1.5">
+          Tickets
           <span className="text-[10px] font-normal text-muted-foreground tabular-nums">
             • {open} open / {closed} closed
           </span>
-        </h3>
-      </header>
+        </h4>
+      </div>
       <ul className="text-xs space-y-1.5" data-testid="list-engineering-tickets">
         {tickets.map((t) => (
           <TicketRow key={t.id} ticket={t} />
         ))}
       </ul>
-    </section>
+    </div>
   );
 }
 
@@ -723,20 +728,20 @@ function ProjectTaskBoard({
   const done = allItems.filter((t) => isDoneStatus(t.status)).length;
 
   return (
-    <section className="rounded-md border p-3 space-y-2" data-testid="section-project-board">
-      <header className="flex items-center justify-between gap-2 flex-wrap">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-foreground flex items-center gap-1.5">
-          <Zap className="h-3 w-3 text-emerald-600" /> Project task board
+    <div className="space-y-1.5" data-testid="section-project-board">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <h4 className="text-[11px] font-semibold uppercase tracking-wide text-slate-600 flex items-center gap-1.5">
+          Board
           {projectName && (
             <span className="text-[10px] font-normal text-muted-foreground normal-case">
               · {projectName}
             </span>
           )}
-        </h3>
+        </h4>
         <span className="text-[10px] text-muted-foreground tabular-nums">
           {done}/{total} done
         </span>
-      </header>
+      </div>
       {total === 0 ? (
         <p className="text-[11px] text-muted-foreground italic" data-testid="empty-project-board">
           No engineering tasks on the project yet — spawn tasks from a ticket to populate the board.
@@ -811,7 +816,7 @@ function ProjectTaskBoard({
           })}
         </div>
       )}
-    </section>
+    </div>
   );
 }
 
