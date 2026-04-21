@@ -63,6 +63,36 @@ function formatCurrency(value: number): string {
   return `R ${value.toFixed(0)}`;
 }
 
+/** Short, human-friendly date — handles ISO `YYYY-MM-DD` and full Date strings. */
+function formatDateShort(value: string | null | undefined): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function formatDateTime(value: string | null | undefined): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function prettyStatus(s: string | null | undefined): string {
+  if (!s) return "—";
+  return s.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function statusBadgeClass(s: string | null | undefined): string {
+  const k = (s || "").toLowerCase().replace(/[_-]+/g, " ").trim();
+  if (k.includes("block")) return "bg-red-50 text-red-700 border-red-200";
+  if (k.includes("progress") || k === "open" || k === "active") return "bg-blue-50 text-blue-700 border-blue-200";
+  if (k === "complete" || k === "completed" || k === "done" || k === "qc approved") return "bg-emerald-50 text-emerald-700 border-emerald-200";
+  if (k === "cancelled" || k === "canceled") return "bg-gray-100 text-gray-500 border-gray-200";
+  if (k.startsWith("not")) return "bg-slate-100 text-slate-600 border-slate-200";
+  return "bg-gray-100 text-gray-600 border-gray-200";
+}
+
 /**
  * Date-only diff in days. Uses ISO YYYY-MM-DD comparison so it doesn't flip
  * across the UTC/local boundary (see Tier 1 bug-fix notes).
@@ -423,23 +453,16 @@ export default function PriorityDetailPage() {
               </p>
             )}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
-              <Card><CardContent className="p-3">
-                <p className="text-[10px] text-muted-foreground uppercase">Revenue</p>
-                <p className="text-lg font-semibold">{formatCurrency(totalRevenue)}</p>
-              </CardContent></Card>
-              <Card><CardContent className="p-3">
-                <p className="text-[10px] text-muted-foreground uppercase">Cost of Sales</p>
-                <p className="text-lg font-semibold">{formatCurrency(totalCos)}</p>
-              </CardContent></Card>
-              <Card><CardContent className="p-3">
-                <p className="text-[10px] text-muted-foreground uppercase">Gross Profit</p>
-                <p className="text-lg font-semibold">{formatCurrency(totalGp)}</p>
-              </CardContent></Card>
-              <Card><CardContent className="p-3">
-                <p className="text-[10px] text-muted-foreground uppercase">GP Margin</p>
-                <p className="text-lg font-semibold">{gpMargin}%</p>
-              </CardContent></Card>
+              <KpiTile label="Revenue" value={formatCurrency(totalRevenue)} dim={totalRevenue === 0} />
+              <KpiTile label="Cost of Sales" value={formatCurrency(totalCos)} dim={totalCos === 0} />
+              <KpiTile label="Gross Profit" value={formatCurrency(totalGp)} dim={totalGp === 0} accent={totalGp > 0 ? "emerald" : totalGp < 0 ? "red" : undefined} />
+              <KpiTile label="GP Margin" value={`${gpMargin}%`} dim={totalRevenue === 0} />
             </div>
+            {totalRevenue === 0 && totalCos === 0 && (
+              <p className="text-[11px] text-muted-foreground italic mt-2">
+                No tracker data yet. Once revenue / COS lines are committed for the linked project{displayProjectCount === 1 ? "" : "s"}, totals will appear here automatically.
+              </p>
+            )}
           </>
         )}
 
@@ -459,22 +482,22 @@ export default function PriorityDetailPage() {
 
       {/* Tabs */}
       <Tabs defaultValue={displayProjectCount > 0 ? "projects" : "details"}>
-        <TabsList>
+        <TabsList className="bg-muted/60">
           {displayProjectCount > 0 ? (
             <>
-              <TabsTrigger value="projects"><FolderOpen className="w-3.5 h-3.5 mr-1" />Projects</TabsTrigger>
-              <TabsTrigger value="financials"><DollarSign className="w-3.5 h-3.5 mr-1" />Financials</TabsTrigger>
-              <TabsTrigger value="chain"><GitBranch className="w-3.5 h-3.5 mr-1" />Chain</TabsTrigger>
-              <TabsTrigger value="tasks"><ListTodo className="w-3.5 h-3.5 mr-1" />Tasks & Approvals</TabsTrigger>
-              <TabsTrigger value="updates"><MessageSquare className="w-3.5 h-3.5 mr-1" />Updates</TabsTrigger>
-              <TabsTrigger value="activity"><History className="w-3.5 h-3.5 mr-1" />Activity</TabsTrigger>
+              <TabsTrigger value="projects" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><FolderOpen className="w-3.5 h-3.5" />Projects</TabsTrigger>
+              <TabsTrigger value="financials" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><DollarSign className="w-3.5 h-3.5" />Financials</TabsTrigger>
+              <TabsTrigger value="chain" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><GitBranch className="w-3.5 h-3.5" />Chain</TabsTrigger>
+              <TabsTrigger value="tasks" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><ListTodo className="w-3.5 h-3.5" />Tasks & Approvals</TabsTrigger>
+              <TabsTrigger value="updates" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><MessageSquare className="w-3.5 h-3.5" />Updates</TabsTrigger>
+              <TabsTrigger value="activity" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><History className="w-3.5 h-3.5" />Activity</TabsTrigger>
             </>
           ) : (
             <>
-              <TabsTrigger value="details">Details</TabsTrigger>
-              <TabsTrigger value="chain"><GitBranch className="w-3.5 h-3.5 mr-1" />Chain</TabsTrigger>
-              <TabsTrigger value="updates"><MessageSquare className="w-3.5 h-3.5 mr-1" />Updates</TabsTrigger>
-              <TabsTrigger value="activity"><History className="w-3.5 h-3.5 mr-1" />Activity</TabsTrigger>
+              <TabsTrigger value="details" className="data-[state=active]:bg-card data-[state=active]:shadow-sm">Details</TabsTrigger>
+              <TabsTrigger value="chain" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><GitBranch className="w-3.5 h-3.5" />Chain</TabsTrigger>
+              <TabsTrigger value="updates" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><MessageSquare className="w-3.5 h-3.5" />Updates</TabsTrigger>
+              <TabsTrigger value="activity" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><History className="w-3.5 h-3.5" />Activity</TabsTrigger>
             </>
           )}
         </TabsList>
@@ -591,82 +614,100 @@ export default function PriorityDetailPage() {
         </TabsContent>
 
         {/* Financials tab */}
-        <TabsContent value="financials" className="mt-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-            <Card><CardContent className="p-3">
-              <p className="text-[10px] text-muted-foreground uppercase">Revenue</p>
-              <p className="text-lg font-semibold">{formatCurrency(priority.totalRevenue)}</p>
-            </CardContent></Card>
-            <Card><CardContent className="p-3">
-              <p className="text-[10px] text-muted-foreground uppercase">Cost of Sales</p>
-              <p className="text-lg font-semibold">{formatCurrency(priority.totalCos)}</p>
-            </CardContent></Card>
-            <Card><CardContent className="p-3">
-              <p className="text-[10px] text-muted-foreground uppercase">Gross Profit</p>
-              <p className="text-lg font-semibold">{formatCurrency(priority.totalGp)}</p>
-            </CardContent></Card>
-            <Card><CardContent className="p-3">
-              <p className="text-[10px] text-muted-foreground uppercase">GP Margin</p>
-              <p className="text-lg font-semibold">{gpMargin}%</p>
-            </CardContent></Card>
+        <TabsContent value="financials" className="mt-4 space-y-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <KpiTile label="Revenue" value={formatCurrency(totalRevenue)} dim={totalRevenue === 0} />
+            <KpiTile label="Cost of Sales" value={formatCurrency(totalCos)} dim={totalCos === 0} />
+            <KpiTile label="Gross Profit" value={formatCurrency(totalGp)} dim={totalGp === 0} accent={totalGp > 0 ? "emerald" : totalGp < 0 ? "red" : undefined} />
+            <KpiTile label="GP Margin" value={`${gpMargin}%`} dim={totalRevenue === 0} />
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-xs text-muted-foreground">
-                  <th className="pb-2 font-medium">Project</th>
-                  <th className="pb-2 font-medium text-right">Revenue</th>
-                  <th className="pb-2 font-medium text-right">COS</th>
-                  <th className="pb-2 font-medium text-right">GP</th>
-                  <th className="pb-2 font-medium text-right">GP%</th>
-                  <th className="pb-2 font-medium text-right">Revenue Realised</th>
-                  <th className="pb-2 font-medium text-right">COS Realised</th>
-                </tr>
-              </thead>
-              <tbody>
-                {linkedProjects.map((p: LinkedProject) => (
-                  <tr key={p.id} className="border-b hover:bg-muted/50">
-                    <td className="py-2 font-medium">{p.name}</td>
-                    <td className="py-2 text-right">{p.totalRevenue ? formatCurrency(p.totalRevenue) : "—"}</td>
-                    <td className="py-2 text-right">{p.totalCos ? formatCurrency(p.totalCos) : "—"}</td>
-                    <td className="py-2 text-right">{p.grossProfit ? formatCurrency(p.grossProfit) : "—"}</td>
-                    <td className="py-2 text-right">{p.grossMarginPct ? `${(p.grossMarginPct * 100).toFixed(1)}%` : "—"}</td>
-                    <td className="py-2 text-right">{p.revenueRealised ? formatCurrency(p.revenueRealised) : "—"}</td>
-                    <td className="py-2 text-right">{p.cosRealised ? formatCurrency(p.cosRealised) : "—"}</td>
+          <Card>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/30 text-left text-[11px] text-muted-foreground uppercase tracking-wide">
+                    <th className="px-3 py-2 font-medium">Project</th>
+                    <th className="px-3 py-2 font-medium text-right">Revenue</th>
+                    <th className="px-3 py-2 font-medium text-right">COS</th>
+                    <th className="px-3 py-2 font-medium text-right">GP</th>
+                    <th className="px-3 py-2 font-medium text-right">GP%</th>
+                    <th className="px-3 py-2 font-medium text-right">Revenue Realised</th>
+                    <th className="px-3 py-2 font-medium text-right">COS Realised</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {linkedProjects.map((p: LinkedProject) => (
+                    <tr key={p.id} className="border-b last:border-b-0 hover:bg-muted/30">
+                      <td className="px-3 py-2 font-medium">{p.name}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{p.totalRevenue ? formatCurrency(p.totalRevenue) : <span className="text-muted-foreground/60">—</span>}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{p.totalCos ? formatCurrency(p.totalCos) : <span className="text-muted-foreground/60">—</span>}</td>
+                      <td className="px-3 py-2 text-right tabular-nums font-medium">{p.grossProfit ? formatCurrency(p.grossProfit) : <span className="text-muted-foreground/60">—</span>}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{p.grossMarginPct ? `${(p.grossMarginPct * 100).toFixed(1)}%` : <span className="text-muted-foreground/60">—</span>}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{p.revenueRealised ? formatCurrency(p.revenueRealised) : <span className="text-muted-foreground/60">—</span>}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{p.cosRealised ? formatCurrency(p.cosRealised) : <span className="text-muted-foreground/60">—</span>}</td>
+                    </tr>
+                  ))}
+                  {linkedProjects.length === 0 && (
+                    <tr><td colSpan={7} className="px-3 py-6 text-center text-muted-foreground text-sm">No linked projects.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+
+          <p className="text-[10px] text-muted-foreground italic">
+            Revenue uses the canonical POC method (revenue recognition amount). COS uses the COS-realised gate. Same source as the Finance and Project Delivery dashboards.
+          </p>
         </TabsContent>
 
         {/* Tasks & Approvals tab */}
         <TabsContent value="tasks" className="mt-4">
           {mergedItems.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">No tasks or approvals for linked projects</p>
+            <Card><CardContent className="p-6 text-sm text-muted-foreground text-center">No open tasks or approvals on linked projects.</CardContent></Card>
           ) : (
-            <div className="space-y-1">
-              {mergedItems.slice(0, 50).map((item) => (
-                <div key={`${item.itemType}-${item.id}`} className="flex items-center gap-3 px-3 py-2 rounded hover:bg-muted text-sm border-b">
-                  {item.itemType === "task" ? (
-                    <ListTodo className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                  ) : (
-                    <CheckCircle2 className="w-3.5 h-3.5 text-purple-500 shrink-0" />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <span className="font-medium truncate block">{item.title}</span>
-                    <span className="text-xs text-muted-foreground">{item.projectName}</span>
-                  </div>
-                  <span className="text-xs text-muted-foreground">{item.assignee || ""}</span>
-                  <Badge variant="outline" className="text-[10px] shrink-0">{item.status}</Badge>
-                  <span className="text-xs text-muted-foreground shrink-0">{item.dueDate || ""}</span>
-                </div>
-              ))}
+            <Card>
+              <div className="divide-y">
+                {mergedItems.slice(0, 50).map((item) => {
+                  const due = item.dueDate || item.endDate;
+                  // Tasks may arrive as full Date strings ("Fri Apr 10 2026 …") rather than
+                  // ISO YYYY-MM-DD. Normalise to ISO before computing days-remaining so the
+                  // overdue hint renders consistently.
+                  const dueIso = due ? (() => {
+                    const d = new Date(due);
+                    return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+                  })() : null;
+                  const dueDays = daysRemaining(dueIso);
+                  return (
+                    <div key={`${item.itemType}-${item.id}`} className="flex items-center gap-3 px-3 py-2.5 text-sm hover:bg-muted/30">
+                      {item.itemType === "task" ? (
+                        <ListTodo className="w-3.5 h-3.5 text-blue-500 shrink-0" aria-label="Task" />
+                      ) : (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-purple-500 shrink-0" aria-label="Approval" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium truncate text-foreground">{item.title}</div>
+                        <div className="text-xs text-muted-foreground truncate">
+                          {item.projectName}{item.assignee ? <> · <span className="text-foreground/70">{item.assignee}</span></> : null}
+                        </div>
+                      </div>
+                      <Badge variant="outline" className={`text-[10px] shrink-0 ${statusBadgeClass(item.status)}`}>{prettyStatus(item.status)}</Badge>
+                      <div className="text-right shrink-0 w-28">
+                        <div className="text-xs text-foreground tabular-nums">{formatDateShort(due)}</div>
+                        {dueDays != null && (
+                          <div className={`text-[10px] ${dueDays < 0 ? "text-red-600 font-medium" : dueDays <= 7 ? "text-amber-600" : "text-muted-foreground"}`}>
+                            {dueDays < 0 ? `${Math.abs(dueDays)}d overdue` : dueDays === 0 ? "today" : `${dueDays}d remaining`}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
               {mergedItems.length > 50 && (
-                <p className="text-xs text-muted-foreground text-center py-2">Showing first 50 of {mergedItems.length} items</p>
+                <p className="text-xs text-muted-foreground text-center py-2 border-t bg-muted/20">Showing first 50 of {mergedItems.length} items</p>
               )}
-            </div>
+            </Card>
           )}
         </TabsContent>
 
@@ -779,8 +820,8 @@ export default function PriorityDetailPage() {
                           {u.ragStatus}
                         </Badge>
                       )}
-                      <span className="text-xs text-muted-foreground ml-auto">
-                        {u.date ? new Date(u.date).toLocaleDateString() : ""}
+                      <span className="text-xs text-muted-foreground ml-auto tabular-nums">
+                        {formatDateShort(u.date)}
                       </span>
                     </div>
                     {u.ragComment && <p className="text-sm">{u.ragComment}</p>}
@@ -821,8 +862,8 @@ export default function PriorityDetailPage() {
                       <Badge variant="secondary" className="ml-2 text-[9px] bg-blue-50 text-blue-700">project</Badge>
                     )}
                   </div>
-                  <span className="text-[10px] text-muted-foreground">
-                    {a.createdAt ? new Date(a.createdAt).toLocaleString() : ""}
+                  <span className="text-[10px] text-muted-foreground tabular-nums">
+                    {formatDateTime(a.createdAt)}
                   </span>
                 </li>
               ))}
@@ -929,5 +970,17 @@ export default function PriorityDetailPage() {
 
       {confirmDialog}
     </PageShell>
+  );
+}
+
+function KpiTile({ label, value, dim, accent }: { label: string; value: string; dim?: boolean; accent?: "emerald" | "red" }) {
+  const accentClass = accent === "emerald" ? "text-emerald-700" : accent === "red" ? "text-red-700" : "text-foreground";
+  return (
+    <Card className="shadow-sm">
+      <CardContent className="p-3">
+        <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{label}</p>
+        <p className={`text-lg font-semibold tabular-nums ${dim ? "text-muted-foreground/60" : accentClass}`}>{value}</p>
+      </CardContent>
+    </Card>
   );
 }
