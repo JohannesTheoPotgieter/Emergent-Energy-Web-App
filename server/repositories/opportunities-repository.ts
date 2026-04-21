@@ -15,7 +15,6 @@ import {
 import { workItems } from "@shared/schema/tasks";
 import { users } from "@shared/schema/users";
 import { db } from "../db";
-import { ENGINEERING_REQUEST_TYPES } from "@shared/roles/pd-roles";
 
 // ---- Inferred row shapes for select projections ----
 
@@ -52,6 +51,21 @@ interface WorkingListRow {
 interface CountByOpportunity {
   opportunityId: number | null;
   count: number;
+}
+
+/**
+ * Richer per-opportunity ticket summary used by the working list to
+ * display Open/Closed split + days-in-progress, and to skip the
+ * mapping dialog when an opportunity already has tickets (in which
+ * case the latest ticket's client/project is the obvious default).
+ */
+export interface EngineeringTicketSummary {
+  opportunityId: number;
+  openCount: number;
+  closedCount: number;
+  oldestOpenAt: Date | null;
+  lastTicketClientId: number | null;
+  lastTicketProjectId: number | null;
 }
 
 interface MappingContextOpportunity {
@@ -219,10 +233,121 @@ export class OpportunitiesRepository {
     }));
   }
 
+  /**
+   * Returns the (first) linked project for each opportunity so the UI can
+   * deep-link the "Eng" count badge to the project page where tickets and
+   * progress live. Used by the Opportunities working list to power the
+   * progress-tracking jump-link.
+   */
+  async getLinkedProjectsByOpportunity(opportunityIds: number[]): Promise<Array<{ opportunityId: number; projectId: number; projectName: string | null }>> {
+    if (opportunityIds.length === 0) return [];
+    const rows = await db
+      .select({
+        opportunityId: projectInfo.opportunityId,
+        projectId: projectInfo.id,
+        projectName: projectInfo.projectName,
+      })
+      .from(projectInfo)
+      .where(and(
+        inArray(projectInfo.opportunityId, opportunityIds),
+        isNull(projectInfo.deletedAt),
+      ))
+      .orderBy(projectInfo.id);
+    const seen = new Set<number>();
+    const out: Array<{ opportunityId: number; projectId: number; projectName: string | null }> = [];
+    for (const r of rows) {
+      const oid = r.opportunityId;
+      if (oid == null || seen.has(oid)) continue;
+      seen.add(oid);
+      out.push({ opportunityId: oid, projectId: r.projectId, projectName: r.projectName ?? null });
+    }
+    return out;
+  }
+
+  /**
+   * Richer per-opportunity ticket summary. Returns:
+   *   - openCount: tickets not in Completed/Cancelled
+   *   - closedCount: tickets in Completed/Cancelled
+   *   - oldestOpenAt: created_at of the oldest still-open ticket
+   *   - lastTicketClientId / lastTicketProjectId: from the most recent
+   *     ticket of any status, used by the UI to skip the mapping
+   *     dialog when an opportunity already has tickets.
+   *
+   * Reads pd_tickets only — no writes, no schema changes.
+   */
+  async getEngineeringTicketSummaries(
+    opportunityIds: number[],
+  ): Promise<EngineeringTicketSummary[]> {
+    if (opportunityIds.length === 0) return [];
+    const rows = await db
+      .select({
+        opportunityId: pdTickets.opportunityId,
+        status: pdTickets.status,
+        createdAt: pdTickets.createdAt,
+        clientId: pdTickets.clientId,
+        projectId: pdTickets.projectId,
+      })
+      .from(pdTickets)
+      .where(inArray(pdTickets.opportunityId, opportunityIds))
+      .orderBy(desc(pdTickets.createdAt));
+    const TERMINAL = new Set(["Completed", "Cancelled"]);
+    const byOpp = new Map<number, EngineeringTicketSummary>();
+    for (const r of rows) {
+      const oid = r.opportunityId;
+      if (oid == null) continue;
+      let s = byOpp.get(oid);
+      if (!s) {
+        s = {
+          opportunityId: oid,
+          openCount: 0,
+          closedCount: 0,
+          oldestOpenAt: null,
+          lastTicketClientId: null,
+          lastTicketProjectId: null,
+        };
+        byOpp.set(oid, s);
+      }
+      // Prefer the most recent ticket that has BOTH client and project set
+      // as the skip-mapping default. Rows are ordered DESC by createdAt, so
+      // the first qualifying row wins; an unlinked shadow ticket at the top
+      // (projectId null) is skipped in favor of an older fully-mapped one.
+      if (
+        s.lastTicketClientId == null &&
+        s.lastTicketProjectId == null &&
+        r.clientId != null &&
+        r.projectId != null
+      ) {
+        s.lastTicketClientId = r.clientId;
+        s.lastTicketProjectId = r.projectId;
+      }
+      const isClosed = TERMINAL.has(r.status || "");
+      if (isClosed) {
+        s.closedCount += 1;
+      } else {
+        s.openCount += 1;
+        if (r.createdAt && (!s.oldestOpenAt || r.createdAt < s.oldestOpenAt)) {
+          s.oldestOpenAt = r.createdAt;
+        }
+      }
+    }
+    return Array.from(byOpp.values());
+  }
+
   async getEngineeringTicketCounts(opportunityIds: number[]): Promise<CountByOpportunity[]> {
-    // Counts engineering pd_tickets that are still OPEN — i.e. not Completed
-    // or Cancelled. This is the "engineering tasks open" metric surfaced on
-    // the Opportunities management board.
+    // Counts pd_tickets attached to each opportunity that are still OPEN —
+    // i.e. not Completed or Cancelled. This is the "engineering tasks open"
+    // metric surfaced on the Opportunities management board.
+    //
+    // We intentionally do NOT filter by `pd_tickets.request_type` here. The
+    // request_type field is a free-form string supplied by the convert /
+    // create-engineering-tickets flow (`parsed.customTicket.phase` and the
+    // per-draft `requestType`), so any phase template name a PD types in is
+    // valid. The legacy `ENGINEERING_REQUEST_TYPES` allowlist
+    // ("Feasibility Study", "Design Review", "IFC Planning", …) doesn't match
+    // the names actually flowing through this UI ("First Assessment",
+    // "Cost Proposal", "Site visit Report", …) and silently zeroed the badge.
+    // On the Opportunities board, every pd_ticket attached to an opportunity
+    // IS engineering work, so the opp-scope alone is the correct filter.
     const rows = await db
       .select({
         opportunityId: pdTickets.opportunityId,
@@ -231,7 +356,6 @@ export class OpportunitiesRepository {
       .from(pdTickets)
       .where(and(
         inArray(pdTickets.opportunityId, opportunityIds),
-        inArray(pdTickets.requestType, [...ENGINEERING_REQUEST_TYPES]),
         sql`${pdTickets.status} NOT IN ('Completed', 'Cancelled')`,
       ))
       .groupBy(pdTickets.opportunityId);
@@ -302,13 +426,17 @@ export class OpportunitiesRepository {
   }
 
   async countEngineeringTickets(opportunityId: number): Promise<number> {
+    // Single-opportunity counterpart to `getEngineeringTicketCounts`. We
+    // intentionally drop the `ENGINEERING_REQUEST_TYPES` allowlist filter for
+    // the same reason — the convert / create-engineering-tickets flow writes
+    // free-form `request_type` values ("First Assessment", "Cost Proposal",
+    // "Site visit Report", …) that don't match the legacy hardcoded list, so
+    // filtering here would silently zero the count and the two methods would
+    // disagree across views (working list vs. drawer / detail).
     const [row] = await db
       .select({ count: sql<number>`count(*)` })
       .from(pdTickets)
-      .where(and(
-        eq(pdTickets.opportunityId, opportunityId),
-        inArray(pdTickets.requestType, [...ENGINEERING_REQUEST_TYPES]),
-      ));
+      .where(eq(pdTickets.opportunityId, opportunityId));
     return Number(row?.count || 0);
   }
 
@@ -462,12 +590,103 @@ export class OpportunitiesRepository {
       .where(eq(workItems.pdTicketId, shadow.id))
       .orderBy(asc(workItems.sortOrder));
 
+    // All other engineering tickets attached to this opportunity (i.e. real
+    // tickets created via the working-list "+ ticket" flow). The lazy shadow
+    // is excluded so the UI shows tickets the user actually created and can
+    // track. For each ticket we surface enough to render a tracking row:
+    // status, request type, priority, due date, owner names, linked project.
+    const pdUser = aliasedTable(users, "pd_user");
+    const designUser = aliasedTable(users, "design_user");
+    const tickets = await db
+      .select({
+        id: pdTickets.id,
+        status: pdTickets.status,
+        requestType: pdTickets.requestType,
+        priority: pdTickets.priority,
+        dueDate: pdTickets.dueDate,
+        comments: pdTickets.comments,
+        createdAt: pdTickets.createdAt,
+        updatedAt: pdTickets.updatedAt,
+        clientId: pdTickets.clientId,
+        projectId: pdTickets.projectId,
+        projectName: projectInfo.projectName,
+        tasksSpawnedAt: pdTickets.tasksSpawnedAt,
+        projectDeveloperUserId: pdTickets.projectDeveloperUserId,
+        projectDeveloperName: pdUser.name,
+        designerUserId: pdTickets.designerUserId,
+        designerName: designUser.name,
+      })
+      .from(pdTickets)
+      .leftJoin(projectInfo, eq(projectInfo.id, pdTickets.projectId))
+      .leftJoin(pdUser, eq(pdUser.id, pdTickets.projectDeveloperUserId))
+      .leftJoin(designUser, eq(designUser.id, pdTickets.designerUserId))
+      .where(
+        and(
+          eq(pdTickets.opportunityId, opportunityId),
+          sql`${pdTickets.id} <> ${shadow.id}`,
+        ),
+      )
+      .orderBy(desc(pdTickets.createdAt));
+
+    // Project-level task board for the drawer. The board is rendered once
+    // per project (not per ticket) — every engineering ticket's spawned
+    // work_items end up on the same project, so grouping them at the
+    // project level is the more honest view. Each ticket itself is also
+    // surfaced as a board column-header chip so users can see which
+    // tasks came from which ticket. Owner name prefers the joined
+    // users.name, falling back to the denormalized work_items.owner_name.
+    type ProjectTask = {
+      id: number;
+      pdTicketId: number | null;
+      title: string;
+      status: string;
+      phase: string | null;
+      priority: string | null;
+      endDate: string | null;
+      percentComplete: number | null;
+      ownerUserId: number | null;
+      ownerName: string | null;
+      sortOrder: number | null;
+    };
+    type TicketRow = (typeof tickets)[number];
+    const linkedProjectId =
+      tickets.find((t: TicketRow) => t.projectId != null)?.projectId ?? null;
+    let projectTasks: ProjectTask[] = [];
+    if (linkedProjectId != null) {
+      const ownerUser = aliasedTable(users, "wi_owner_user");
+      projectTasks = (await db
+        .select({
+          id: workItems.id,
+          pdTicketId: workItems.pdTicketId,
+          title: workItems.title,
+          status: workItems.status,
+          phase: workItems.phase,
+          priority: workItems.priority,
+          endDate: workItems.endDate,
+          percentComplete: workItems.percentComplete,
+          ownerUserId: workItems.ownerUserId,
+          ownerName: sql<string | null>`COALESCE(${ownerUser.name}, ${workItems.ownerName})`,
+          sortOrder: workItems.sortOrder,
+        })
+        .from(workItems)
+        .leftJoin(ownerUser, eq(ownerUser.id, workItems.ownerUserId))
+        .where(
+          and(
+            eq(workItems.projectId, linkedProjectId),
+            isNull(workItems.deletedAt),
+          ),
+        )
+        .orderBy(asc(workItems.sortOrder), asc(workItems.id))) as ProjectTask[];
+    }
+
     return {
       crm: opp.opp,
       clientName: opp.clientName,
       siteName: opp.siteName,
       pd: shadow,
       tasks,
+      tickets,
+      projectTasks,
     };
   }
 
@@ -605,6 +824,26 @@ export class OpportunitiesRepository {
       .update(opportunities)
       .set({ clientId, updatedAt: new Date() })
       .where(eq(opportunities.id, opportunityId));
+  }
+
+  /**
+   * Back-link an existing (non-shell) project to an opportunity. Only writes
+   * when `project_info.opportunity_id` is currently NULL — never clobbers a
+   * link to a different opportunity. Returns true if a row was updated.
+   *
+   * Used by the resolve-mapping flow's `existing_existing` and `existing_new`
+   * (with picked existing project) branches so the opportunity drops off the
+   * Opportunities working list as "converted" once a real project is paired
+   * with it. Without this back-link the opp stays "active" forever even
+   * though pd_tickets are pointing at the chosen project.
+   */
+  async linkProjectToOpportunityIfUnset(tx: typeof db, projectId: number, opportunityId: number): Promise<boolean> {
+    const result = await tx
+      .update(projectInfo)
+      .set({ opportunityId })
+      .where(and(eq(projectInfo.id, projectId), isNull(projectInfo.opportunityId)))
+      .returning({ id: projectInfo.id });
+    return result.length > 0;
   }
 
   // ---- Intake page combined queries ----

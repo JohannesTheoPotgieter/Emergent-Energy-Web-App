@@ -1,9 +1,7 @@
 # Emergent Energy Web App
 
 ## Overview
-Emergent Energy is an internal operations platform for a South African commercial and industrial (C&I) solar EPC company. Its primary purpose is to serve as a project-centric command center, replacing fragmented, Excel-based systems. The platform provides a single, trusted system for all roles to manage the entire project lifecycle, from engineering intake and development through construction, commissioning, finance tracking, and quality management.
-
-The platform aims to improve efficiency, centralize data, and provide comprehensive insights across all project phases, supporting business growth and market leadership in the C&I solar sector.
+Emergent Energy is an internal operations platform designed for a South African commercial and industrial (C&I) solar EPC company. It centralizes the entire project lifecycle management, from engineering and development to construction, commissioning, finance tracking, and quality assurance. The platform replaces disparate, Excel-based systems, aiming to enhance efficiency, consolidate data, and provide comprehensive insights to support business growth and market leadership in the C&I solar sector.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
@@ -11,69 +9,55 @@ Preferred communication style: Simple, everyday language.
 ## System Architecture
 
 ### Monorepo Structure
-The project uses a monorepo containing `client/` (React SPA), `server/` (Express API), `shared/` (Drizzle schema), `migrations/`, `qa/` (testing), and `script/` directories.
+The project is organized as a monorepo, separating client-side (React SPA), server-side (Express API), shared code (Drizzle schema), database migrations, QA, and scripting concerns into distinct directories.
 
 ### Frontend
-- **Framework:** React 19 with TypeScript and Vite.
-- **Routing:** `wouter` for SPA navigation.
-- **Styling:** Tailwind CSS v4, `shadcn/ui` components (New York style) built on Radix UI, Lucide icons.
-- **State Management:** TanStack React Query v5 for server state, local React state for UI.
-- **Forms:** React Hook Form with Zod for validation.
-- **Design:** CSS variables for theming, white-and-emerald light theme, Barlow, Inter, and JetBrains Mono fonts.
-- **UI/UX:** Consistent design language using `shadcn/ui` components for a professional and intuitive user experience.
+- **Framework & Tooling:** React 19 with TypeScript, powered by Vite.
+- **Routing:** `wouter` for single-page application navigation.
+- **Styling & Components:** Tailwind CSS v4, `shadcn/ui` components (New York style) built on Radix UI, and Lucide icons for a consistent and professional UI/UX.
+- **State Management:** TanStack React Query v5 manages server state, while local React state handles UI-specific data.
+- **Forms:** React Hook Form is used for form management, with Zod for validation.
+- **Design:** The application features a white-and-emerald light theme, using CSS variables for theming and a combination of Barlow, Inter, and JetBrains Mono fonts.
 
 ### Backend
-- **Runtime:** Node.js with Express 5 and TypeScript.
-- **API Style:** RESTful, grouped by domain, with abstracted data access through repositories.
-- **Validation:** Zod schemas and `validateBody` middleware for robust input validation.
-- **Error Handling:** Centralized `ApiError` handling.
-- **Session Management:** `express-session` for user roles.
-- **Startup:** `startup-orchestrator.ts` handles additive migrations and data seeding.
-- **Smart Import v2:** Processes `.xlsx` tracker workbooks using ExcelJS for parsing, with an upsert/override pattern for project data. Includes preflight validation to surface issues before commitment.
-- **COS Tracker Tracker-Gap Reconciliation UI (Phase 2, read-only):** Provides an interface for finance to identify and manage discrepancies between QuickBooks bills and internal cost trackers. It allows ignoring known non-tracker bills and manually overriding class-to-project mappings. It *never* writes to financial source-of-truth tables.
-- **COS Tracker QB → Project Resolver (Phase 1, read-only):** Resolves QuickBooks bills to projects based on a strategy ladder, aiding finance in identifying unmapped or incorrectly mapped transactions. It *never* writes to financial source-of-truth tables.
-- **Canonical Revenue Recognition (POC method):** Computes revenue KPIs based on `normalized_cost_lines.revenue_recognition_amount`, gated by effective realization. Distinct from cashflow/billing.
-- **COS Tracker Past-Month Auto-Promote:** Automatically treats cost lines from past months with invoice numbers as 'Realised' to prevent drift from QuickBooks, differentiating from strict canonical realization rules.
-- **Home "Do Next":** Provides ranked, role-aware action items (approvals, RAG status, overdue tasks) with server-persisted snooze/dismiss functionality.
-- **Canonical Phase Cycle:** Implements a single, company-wide 10-stage project lifecycle defined in `shared/phases.ts`.
+- **Runtime & Framework:** Node.js with Express 5 and TypeScript.
+- **API Design:** RESTful API organized by domain, utilizing a repository pattern for data access.
+- **Validation & Error Handling:** Zod schemas and `validateBody` middleware ensure robust input validation, complemented by centralized `ApiError` handling.
+- **Authentication:** `express-session` manages user sessions and roles.
+- **Data Initialization:** `startup-orchestrator.ts` manages additive migrations and data seeding.
+- **Smart Import v2:** Supports importing `.xlsx` tracker workbooks, parsing with ExcelJS, and applying an upsert/override strategy for project data, including preflight validation.
+- **Financial Reconciliation:** Features read-only interfaces for reconciling QuickBooks data with internal cost trackers (COS Tracker Tracker-Gap Reconciliation UI, COS Tracker QB → Project Resolver) and managing QuickBooks vendor mappings.
+- **Revenue Recognition:** Implements a Canonical Revenue Recognition system based on `normalized_cost_lines` and integrates with QuickBooks Revenue (account `1000000 Sales`).
+- **COS Tracker Past-Month Auto-Promote:** Automates the 'Realised' status for past month cost lines with invoice numbers to align with QuickBooks.
+- **Home "Do Next":** Provides role-aware, ranked action items with snooze/dismiss functionality.
+- **Canonical Phase Cycle:** Defines a company-wide 10-stage project lifecycle (`shared/phases.ts`), including a new `S04_PLANNING` stage.
+- **Priority Linked Progress:** Allows `effectiveProgress` of priorities to be driven by various sources (e.g., `project_phase`, `derived_project_kpis`, `milestone_revenue`, `tasks_rollup`).
+- **Priorities UI Overhaul:** Streamlines priority management with unified add/edit dialogs, improved field parity, and role-based access controls for creating and editing priorities.
+- **Opportunities Management Board:** Centralizes project development activities under `/opportunities` with List, Kanban, and Calendar views. Features role-scoped access and integrates with Pipedrive custom fields.
+- **Project Development Dashboard:** Provides an overview of PD KPIs, pipeline status, and risk signals.
+- **Engineering Ticket Tracking:** Integrates engineering ticket tracking directly into the Opportunity Drawer, displaying ticket status, age, due dates, owners, and comments, with server-side logic for ticket summaries and client-side UX for quick access and skip-mapping. Each ticket also renders a **mini engineering task board** of its spawned `work_items` grouped by `phase` with status dots and the assigned engineer (server `COALESCE(users.name, work_items.owner_name)`); fetched in one batched `inArray(workItems.pdTicketId, …)` query (no N+1). When any ticket has a linked project, the "Convert to project" CTA auto-resolves to a green "Project linked" confirmation card with a deep link to `/project/<projectName>` (both id+name sourced from the same ticket so the link is always coherent; the shadow PD row is filtered to `project_id IS NULL` so it never contributes a stale link).
+- **Opportunities Working List Hardening:** Enhances the opportunities working list with server-side authoritative gating, deep-link support, Pipedrive sync indicators, sortable columns, and refined engineering badges. Includes a partial unique index migration for Pipedrive deal IDs.
+- **Opportunity ↔ PD Ticket Merge:** Unifies Pipedrive opportunities and PD tickets into a single `Opportunity` record, managing CRM fields (read-only from Pipedrive) and internal PD workflow data within the application.
 
 ### Database Strategy
-- **Dual-Mode:** Supports PostgreSQL (production) and SQLite (local development).
-- **ORM:** Drizzle ORM with Drizzle Kit for schema definition and additive SQL migrations.
-- **Schema:** `shared/schema/*.ts` is the source of truth.
-- **Snapshot Versioning:** Uses `effective_to` for snapshotting tables like `normalizedCostLines`.
+- **Dual-Mode:** Supports PostgreSQL for production and SQLite for local development.
+- **ORM:** Drizzle ORM is used for schema definition, with Drizzle Kit for additive SQL migrations.
+- **Schema Source of Truth:** `shared/schema/*.ts`.
+- **Snapshot Versioning:** Uses `effective_to` for versioning select tables.
 
 ### Authentication & Authorization
-- **Primary Auth:** Microsoft SSO via Azure MSAL, mapping MS accounts to internal users and roles.
-- **Fallback Auth:** Username/password login using `bcryptjs`.
-- **Role Management:** Authoritative role list in `shared/schema/users.ts`.
-- **Server-side Enforcement:** `requireAuth` and `requireRole` middleware.
-- **Security:** Azure Key Vault for secrets, encryption for sensitive fields.
+- **Primary:** Microsoft SSO via Azure MSAL, mapping MS accounts to internal users and roles.
+- **Fallback:** Username/password authentication using `bcryptjs`.
+- **Role Management:** Authoritative role list defined in `shared/schema/users.ts`.
+- **Security:** Server-side enforcement with `requireAuth` and `requireRole` middleware, Azure Key Vault for secrets, and encryption for sensitive data.
 
 ### Microsoft 365 Integration
-- Integrates with Outlook, Teams, and SharePoint using `@microsoft/microsoft-graph-client`.
-- Includes a sync service for calendar events, storing only metadata and deep links for emails and attachments.
-
-### Opportunities Management Board
-- Provides a centralized working list for Project Development under `/opportunities`.
-- Offers three views: List, Kanban (5 stage columns), and Calendar.
-- Canonical detail view is the `OpportunityDrawer`.
-- **Role-scoped access** ensures users only see relevant opportunities.
-- Integrates Pipedrive custom fields for `province`, `estimated_kwp`, and `estimated_kwh`.
-
-### Project Development Dashboard
-- `/pd` provides an overview dashboard with KPI cards (pipeline value/kWp, win rate), Pipeline by Stage, Active Funnel, Upcoming Activity, Recent Wins/Losses, and Risk Signals.
-
-### Opportunity ↔ PD Ticket Merge
-- Unifies "Pipedrive Opportunity" and "PD Ticket" into a single "Opportunity" record.
-- Pipedrive owns CRM fields (read-only), while the app owns PD-workflow shadow data.
-- Lazy creation and patching of PD fields, spawning tasks, and converting to projects.
-- Lifecycle phases are prioritized over Pipedrive stages, with a clear mapping between the two.
+- Integration with Outlook, Teams, and SharePoint using `@microsoft/microsoft-graph-client`. A sync service stores calendar event metadata and deep links for emails and attachments.
 
 ### Testing
 - **Unit & API Tests:** Vitest.
 - **E2E Tests:** Playwright.
-- **Release Gate:** `qa/release-gate.ts` script for critical test validation.
+- **Release Gate:** `qa/release-gate.ts` script ensures critical test validation.
 
 ## External Dependencies
 
@@ -87,14 +71,16 @@ The project uses a monorepo containing `client/` (React SPA), `server/` (Express
 ### Database
 - PostgreSQL
 - `better-sqlite3`
-- Drizzle ORM + Drizzle Kit
+- Drizzle ORM
+- Drizzle Kit
 
 ### Frontend Libraries
 - `shadcn/ui`
 - Radix UI
 - TanStack React Query v5
 - TanStack Virtual
-- React Hook Form + Zod
+- React Hook Form
+- Zod
 - Recharts
 - ExcelJS
 - DOMPurify
@@ -106,7 +92,8 @@ The project uses a monorepo containing `client/` (React SPA), `server/` (Express
 ### Build & Dev Tools
 - Vite
 - tsx
-- ESLint + Prettier
+- ESLint
+- Prettier
 
 ### Fonts
 - Google Fonts (Barlow, Inter, JetBrains Mono)

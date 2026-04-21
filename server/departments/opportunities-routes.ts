@@ -68,12 +68,23 @@ const engineeringTicketCreateSchema = z.object({
   phaseTemplateId: z.number().int().optional(),
   templateBaseDueDate: z.string().trim().optional(),
   customTicket: z.object({
-    title: z.string().trim().min(1),
-    phase: z.string().trim().min(1),
-    descriptionScope: z.string().trim().min(1),
-    dueDate: z.string().trim().min(1),
+    title: z.string().trim().min(1, "Title is required"),
+    phase: z.string().trim().min(1, "Phase is required"),
+    descriptionScope: z.string().trim().min(1, "Description / scope is required"),
+    dueDate: z.string().trim().min(1, "Due date is required"),
     priority: z.enum(["Critical", "High", "Medium", "Low"]).default("Medium"),
-    requiredOutput: z.string().trim().min(1),
+    requiredOutput: z.string().trim().min(1, "Required output is required"),
+    // Optional operational fields — let the manual ticket carry the same
+    // metadata the full PD ticket would have. Pre-filled by the UI from
+    // the opportunity row when available.
+    fundingType: z.string().trim().optional(),
+    sizeKwp: z.union([z.string(), z.number()]).optional()
+      .transform((v) => (v === undefined || v === null || v === "" ? undefined : String(v))),
+    province: z.string().trim().optional(),
+    gpsCoordinates: z.string().trim().optional(),
+    batteriesNeeded: z.boolean().optional(),
+    batterySize: z.union([z.string(), z.number()]).optional()
+      .transform((v) => (v === undefined || v === null || v === "" ? undefined : String(v))),
   }).optional(),
 });
 
@@ -105,7 +116,7 @@ router.get("/api/opportunities/working", requireAuth, requirePermission("opportu
     const userId = req.user?.id ?? null;
     const role = getUserRole(req);
     const seesAll = canViewAllTickets(role);
-    const rows = seesAll
+    let rows = seesAll
       ? allRows
       : allRows.filter(r => {
           if (userId == null) return false;
@@ -113,21 +124,44 @@ router.get("/api/opportunities/working", requireAuth, requirePermission("opportu
           return r.dealOwnerUserId === userId;
         });
 
+    // Defensive dedupe: getWorkingOpportunities does a leftJoin on pd_tickets
+    // and, while the partial-unique index normally enforces 1:1, real-world
+    // data has shown duplicate shadow rows (e.g. one with project_id null
+    // and an older one with project_id set) sneaking through. That produces
+    // duplicate React keys on the client and a runtime crash. Dedupe by
+    // opportunity id, preferring the first row (already ordered by
+    // updatedAt desc). 2026-04-21 hotfix.
+    {
+      const seen = new Set<number>();
+      const deduped: typeof rows = [];
+      for (const r of rows) {
+        if (seen.has(r.id)) continue;
+        seen.add(r.id);
+        deduped.push(r);
+      }
+      rows = deduped;
+    }
+
     const opportunityIds = rows.map(r => r.id);
     if (opportunityIds.length === 0) return res.json([]);
 
-    const [linkedProjectCounts, engineeringTicketCounts] = await Promise.all([
+    const [linkedProjectCounts, engineeringTicketSummaries, linkedProjects] = await Promise.all([
       opportunitiesRepo.getLinkedProjectCounts(opportunityIds),
-      opportunitiesRepo.getEngineeringTicketCounts(opportunityIds),
+      opportunitiesRepo.getEngineeringTicketSummaries(opportunityIds),
+      opportunitiesRepo.getLinkedProjectsByOpportunity(opportunityIds),
     ]);
 
     const projectCountByOpportunity = new Map<number, number>();
     for (const r of linkedProjectCounts) {
       if (r.opportunityId != null) projectCountByOpportunity.set(r.opportunityId, r.count);
     }
-    const engineeringTicketCountByOpportunity = new Map<number, number>();
-    for (const r of engineeringTicketCounts) {
-      if (r.opportunityId != null) engineeringTicketCountByOpportunity.set(r.opportunityId, r.count);
+    const ticketSummaryByOpportunity = new Map<number, typeof engineeringTicketSummaries[number]>();
+    for (const r of engineeringTicketSummaries) {
+      ticketSummaryByOpportunity.set(r.opportunityId, r);
+    }
+    const linkedProjectByOpportunity = new Map<number, { projectId: number; projectName: string | null }>();
+    for (const r of linkedProjects) {
+      linkedProjectByOpportunity.set(r.opportunityId, { projectId: r.projectId, projectName: r.projectName });
     }
 
     const workingRows = rows
@@ -170,8 +204,21 @@ router.get("/api/opportunities/working", requireAuth, requirePermission("opportu
           hasLinkedClient: Boolean(r.clientId),
           hasLinkedProject,
           linkedProjectCount,
-          openEngineeringTaskCount: engineeringTicketCountByOpportunity.get(r.id) || 0,
-          existingEngineeringTicketCount: engineeringTicketCountByOpportunity.get(r.id) || 0, // alias for legacy callers
+          linkedProjectId: linkedProjectByOpportunity.get(r.id)?.projectId ?? null,
+          linkedProjectName: linkedProjectByOpportunity.get(r.id)?.projectName ?? null,
+          openEngineeringTaskCount: ticketSummaryByOpportunity.get(r.id)?.openCount ?? 0,
+          closedEngineeringTaskCount: ticketSummaryByOpportunity.get(r.id)?.closedCount ?? 0,
+          oldestOpenEngineeringAt: ticketSummaryByOpportunity.get(r.id)?.oldestOpenAt
+            ? ticketSummaryByOpportunity.get(r.id)!.oldestOpenAt!.toISOString()
+            : null,
+          // When tickets already exist for this deal, the latest ticket's
+          // client/project is the natural default for "+ another ticket"
+          // — surfaces these so the UI can skip the mapping dialog.
+          lastTicketClientId: ticketSummaryByOpportunity.get(r.id)?.lastTicketClientId ?? null,
+          lastTicketProjectId: ticketSummaryByOpportunity.get(r.id)?.lastTicketProjectId ?? null,
+          existingEngineeringTicketCount:
+            (ticketSummaryByOpportunity.get(r.id)?.openCount ?? 0) +
+            (ticketSummaryByOpportunity.get(r.id)?.closedCount ?? 0), // alias for legacy callers (now total, not just open)
           lastUpdated: r.updatedAt || null,
           signedDate: r.signedDate || null,
           expectedCloseDate: r.expectedCloseDate || null,
@@ -373,7 +420,7 @@ router.get("/api/pd/dashboard", requireAuth, requirePermission("pd_dashboard", "
  * Phase templates are global — the endpoint does not use an opportunity ID.
  * Legacy URL with :id is kept as an alias for backwards compatibility.
  */
-router.get("/api/opportunities/engineering-phase-templates", requireAuth, requirePermission("pd_tickets", "create"), async (req: Request, res: Response) => {
+router.get("/api/opportunities/engineering-phase-templates", requireAuth, requirePermission("pd_tickets", "view"), async (req: Request, res: Response) => {
   try {
     if (!canViewOpportunityIntake(getUserRole(req))) {
       return res.status(403).json({ error: "Template inspection is limited to Project Development and admin oversight roles." });
@@ -386,7 +433,7 @@ router.get("/api/opportunities/engineering-phase-templates", requireAuth, requir
   }
 });
 // Backwards-compat alias for old client code that includes :id
-router.get("/api/opportunities/:id/engineering-phase-templates", requireAuth, requirePermission("pd_tickets", "create"), async (req: Request, res: Response) => {
+router.get("/api/opportunities/:id/engineering-phase-templates", requireAuth, requirePermission("pd_tickets", "view"), async (req: Request, res: Response) => {
   try {
     if (!canViewOpportunityIntake(getUserRole(req))) {
       return res.status(403).json({ error: "Template inspection is limited to Project Development and admin oversight roles." });
@@ -438,9 +485,16 @@ router.post("/api/opportunities/:id/create-engineering-tickets", requireAuth, re
       if (!parsed.customTicket) return res.status(400).json({ error: "customTicket payload is required for custom mode" });
       const count = await opportunitiesRepo.countSamePhaseTickets(opportunityId, parsed.projectId, parsed.customTicket.phase);
       warnings.push(...buildSamePhaseDuplicateWarning(parsed.customTicket.phase, count));
+      const ct = parsed.customTicket;
       ticketValues = [{
         clientId: parsed.clientId,
         clientNameSnapshot: clientRow.name,
+        ...(ct.fundingType ? { fundingType: ct.fundingType } : {}),
+        ...(ct.sizeKwp ? { sizeKwp: ct.sizeKwp } : {}),
+        ...(ct.province ? { province: ct.province } : {}),
+        ...(ct.gpsCoordinates ? { gpsCoordinates: ct.gpsCoordinates } : {}),
+        ...(ct.batteriesNeeded !== undefined ? { batteriesNeeded: ct.batteriesNeeded } : {}),
+        ...(ct.batterySize ? { batterySize: ct.batterySize } : {}),
         projectId: parsed.projectId,
         opportunityId,
         projectSiteName: parsed.customTicket.title,
@@ -537,11 +591,16 @@ router.post("/api/opportunities/:id/create-engineering-tickets", requireAuth, re
     });
   } catch (err) {
     console.error("[Opportunities] create engineering tickets failed:", err);
-    res.status(500).json({ error: "Failed to create engineering tickets" });
+    // Surface the real error so the UI toast shows something actionable
+    // instead of a generic "Failed". These are internal users and the
+    // most common causes (duplicate project shell, missing required
+    // column, FK violations) are useful to see directly.
+    const message = err instanceof Error ? err.message : "Failed to create engineering tickets";
+    res.status(500).json({ error: message });
   }
 });
 
-router.get("/api/opportunities/:id/mapping-context", requireAuth, requirePermission("pd_tickets", "create"), async (req: Request, res: Response) => {
+router.get("/api/opportunities/:id/mapping-context", requireAuth, requirePermission("pd_tickets", "view"), async (req: Request, res: Response) => {
   try {
     if (!canViewOpportunityIntake(getUserRole(req))) {
       return res.status(403).json({ error: "Mapping inspection is limited to Project Development and admin oversight roles." });
@@ -723,6 +782,29 @@ router.post("/api/opportunities/:id/resolve-mapping", requireAuth, requirePermis
     } else if (resolvedClient?.id && opportunity.clientId !== resolvedClient.id) {
       // No shell needed but client link needs updating
       await opportunitiesRepo.updateOpportunityClient(db, opportunityId, resolvedClient.id);
+    }
+
+    // Back-link the opportunity onto the resolved (existing) project so it
+    // disappears from the Opportunities working list as "converted". The
+    // shell-creation branch already sets `opportunity_id` at insert time;
+    // this covers the `existing_existing` path (and any prior orphaned
+    // existing project that has never been linked). `IfUnset` guards against
+    // clobbering a different opportunity already pointing at this project.
+    let backLinkedExistingProject = false;
+    if (resolvedProject && !createdProjectShell) {
+      backLinkedExistingProject = await opportunitiesRepo.linkProjectToOpportunityIfUnset(
+        db,
+        resolvedProject.id,
+        opportunityId,
+      );
+      if (backLinkedExistingProject) {
+        logAuditFromReq(req, {
+          entityType: "project",
+          entityId: String(resolvedProject.id),
+          action: "back_link_to_opportunity",
+          changesJson: { opportunityId, projectName: resolvedProject.projectName, mode: parsed.mode },
+        });
+      }
     }
 
     if (resolvedClient?.id && opportunity.clientId !== resolvedClient.id) {
