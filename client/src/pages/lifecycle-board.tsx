@@ -114,9 +114,9 @@ const PHASE_GROUPS = [
       "P1",
       "S02_DESIGN_COST_PROPOSAL",
       "S02",
-      // Absorbed Financial Review phases
+      // Absorbed Financial Review phases (P3_DETAILED_DESIGN_PROC_RELEASE
+      // intentionally omitted — it now resolves to S04_PLANNING.)
       "Financial Review",
-      "P3_DETAILED_DESIGN_PROC_RELEASE",
       "S05_FINANCIAL_REVIEW",
       "S05",
     ],
@@ -125,7 +125,9 @@ const PHASE_GROUPS = [
   },
   {
     key: "signature_financial_close",
-    // Post-merge: this column absorbs the former "PD-PM Handover" column.
+    // Post-merge: this column absorbs the legacy PD-PM Handover stage codes
+    // (S04_PD_PM_HANDOVER is deprecated and aliases to S03 in the canonical
+    // model). The new active S04_PLANNING gets its own column below.
     label: "Financial Close",
     phaseValue: "Signature & Financial Close",
     matches: [
@@ -135,16 +137,27 @@ const PHASE_GROUPS = [
       "P3",
       "S03_SIGNATURE_FINANCIAL_CLOSE",
       "S03",
-      // Absorbed PD-PM handover phases
-      "Planning",
+      // Absorbed legacy PD-PM handover stage codes (deprecated, alias → S03)
       "PD-PM Handover",
       "P2_PD_PM_HANDOVER",
       "P2",
       "S04_PD_PM_HANDOVER",
-      "S04",
     ],
     color: "bg-indigo-50 border-indigo-300",
     headerBg: "bg-indigo-500",
+  },
+  {
+    key: "planning",
+    label: "Planning",
+    phaseValue: "Planning",
+    matches: [
+      "Planning",
+      "S04_PLANNING",
+      "P3_PLANNING",
+      "P3_DETAILED_DESIGN_PROC_RELEASE",
+    ],
+    color: "bg-amber-50 border-amber-300",
+    headerBg: "bg-amber-500",
   },
   {
     key: "construction",
