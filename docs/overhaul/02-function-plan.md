@@ -378,4 +378,132 @@ Six sub-lane pages. All inherit the F-004 archetype + F-005 visual-improvement p
 - **Per-lane visual:** Commitment text as primary identifier; honour-status chip (on track / at risk / missed); due-date sort asc.
 - **Per-lane additive:** "Flag at-risk" row action escalates to COO via server-side notification.
 
-**End of batch 3.** 6 functions recorded (F-006 through F-011). Next batch: Projects domain — Projects list, Project Detail (with its 8 tabs), Sites, Clients.
+**End of batch 3.** 6 functions recorded (F-006 through F-011).
+
+---
+
+### §3.4 Lens 1 · Batch 4 — Projects domain
+
+#### F-012 · Projects list
+
+- **Path(s):** `/projects`
+- **Lens (primary):** `PROGRAM_MANAGER`
+- **Lens (secondary):** All 16 roles (view); edit roles per `projects` entity — Admin, CCO, PM, PFM, CM.
+- **Archetype:** W3 List
+- **User goal:** Browse every project; filter, sort, and open a specific one.
+- **Current state:** Primary landing surface for project navigation. Existing dense table with filters, sort, pagination. Some columns vary per role.
+- **Data source:** Canonical — `project_info` + `project_execution_state`.
+- **Visual improvements:**
+  - Adopt W3 `TableLayout` composition (Phase 3).
+  - Active-filter chip row below toolbar.
+  - Standardise RAG column to `StatusBadge`.
+  - Tabular-nums on Value column; right-aligned.
+  - Sticky first 2 columns (Code + Name) on horizontal scroll.
+- **Additive functional improvements:**
+  - Saved views per user.
+  - Quick-peek Drawer on row action that shows Project summary without leaving the list.
+  - "Create similar project" row action — opens project-create wizard pre-filled.
+  - Bulk export (uses `ExportDropdown` with trust envelope footer).
+- **Half-built work to finish:** n/a.
+- **Source-of-truth migration:** n/a.
+- **Preserved behaviour contract:**
+  - All 16 view roles retain access.
+  - Edit action visibility follows `projects` permission entity edit roles.
+  - Existing row-click → Project Detail unchanged.
+- **Risk:** Low.
+- **Effort:** M.
+
+#### F-013 · Project Detail (with 8 tabs)
+
+- **Path(s):** `/project/:projectName` (primary). Sub-routes: `/project/:projectName/financial-linking` (F-013a — treated as dedicated function since it has its own permission entity `financial_linking`), `/project/:projectName/gate/:stageCode` (F-013b — parametric sub-function within the Detail).
+- **Lens (primary):** `PROGRAM_MANAGER`
+- **Lens (secondary):** All 16 roles (scoped view + scoped edit per sub-tab).
+- **Archetype:** W4 Detail
+- **User goal:** A single project's full state — any role drills in to see and act on their domain of it.
+- **Current state:** Rich detail page with multiple visual patterns across tabs. Layout inconsistent between Overview vs Finance vs Engineering vs Documents.
+- **Data source:** Canonical — per-tab:
+  - Overview: `project_info` + `project_execution_state`
+  - Tasks: `work_items` filtered to project
+  - Finance: `normalized_cost_lines` + `normalized_revenue_lines` + `approvals` (financial_review category)
+  - Engineering: `work_items` filtered to ENG workstream
+  - Quality: `quality` entity tables (audit during Phase 3)
+  - HSE: `hse` entity tables
+  - Documents: `documents` via MS Graph metadata (stored as links only, never bodies per CLAUDE.md)
+  - Log: project audit events via canonical activity log
+- **Visual improvements:**
+  - Adopt W4 `DetailLayout` composition with sticky-compress summary header + tabs + tab content.
+  - Summary KPI strip: RAG / Value / GP margin / Next gate / Go-live (per wireframe W4).
+  - URL-reflective tabs (`?tab=finance`) for deep-linking.
+  - Per-tab content adopts matching archetype — Tasks tab = W3 table, Finance tab = W3 table with trust strip, Documents tab = grid, Log tab = timeline.
+  - Tab count badges (e.g., `Tasks (23)`).
+- **Additive functional improvements:**
+  - Tab content lazy-loads — faster initial render.
+  - "Follow" toggle per project (adds to My Work → Watching tab).
+  - Inline comment thread in Log tab for out-of-channel notes that shouldn't go to Teams.
+  - Breadcrumb-level "copy deep link" action.
+- **Half-built work to finish:** n/a (but indirectly affects `/admin/handover-health` backend work — F-013 Handover tab triggers the scoring that page reads).
+- **Source-of-truth migration:** n/a — all per-tab canonical.
+- **Preserved behaviour contract:**
+  - Per-tab permission gates preserved (e.g., Finance tab needs `financials` view).
+  - Sub-route `/project/:projectName/financial-linking` resolves to the Financial Linking function (F-013a).
+  - Sub-route `/project/:projectName/gate/:stageCode` resolves to the Gate Detail function (F-013b).
+  - Existing `ProjectDetailPage` component export remains importable.
+- **Risk:** High — broadest surface in the platform, 8 tabs × permission variance.
+- **Effort:** L — largest in Phase 3 for this lens.
+
+#### F-013a · Project Financial Linking
+
+- **Path(s):** `/project/:projectName/financial-linking`
+- **Lens (primary):** `CFO` (edit) · `PROGRAM_MANAGER` (view-context)
+- **Archetype:** W3 List (within project detail context)
+- **User goal:** Link project's imported finance lines to QuickBooks invoices or manual journal entries.
+- **Current state:** `client/src/pages/financial-linking.tsx`. Dense grid per line; separate permission entity `financial_linking` (edit: Admin + CFO only).
+- **Data source:** Canonical — `normalized_cost_lines` + `normalized_revenue_lines` + QB link metadata.
+- **Visual improvements:** Adopt W3 composition; unlinked-first default sort; trust strip mandatory; tabular-nums on money columns.
+- **Additive functional improvements:** Bulk auto-link (pattern-match by reference); one-row-undo last link.
+- **Preserved behaviour:** CFO-only edit; accessible from Project Detail tab.
+- **Risk:** Medium — finance write.
+- **Effort:** M.
+
+#### F-013b · Project Stage Gate detail
+
+- **Path(s):** `/project/:projectName/gate/:stageCode`
+- **Archetype:** W4 Detail (parametric sub-function of F-013)
+- **User goal:** Drill into a single gate's state and act on it.
+- **Current state:** Route exists; rendered via `ProjectStageGatePage`. Content consists of stage criteria checklist + activity log + sign-off.
+- **Data source:** Canonical — `project_execution_state` + `work_items` filtered to stage.
+- **Visual improvements:** DetailLayout summary strip (stage name / phase / readiness % / blocker / owner); tabs for Criteria / Activity / Sign-off.
+- **Additive:** "Go to next unready criterion" keyboard shortcut (`j`); stage comparison against template.
+- **Preserved:** Permission entity `stage_lifecycle`; accessible from F-004 Gates Pipeline cells and from F-013 summary.
+- **Risk:** Low.
+- **Effort:** S.
+
+#### F-014 · Sites
+
+- **Path(s):** `/sites`
+- **Lens (primary):** `PROGRAM_MANAGER`, `CONSTRUCTION_MANAGER`
+- **Archetype:** W3 List
+- **User goal:** List of physical sites (may be 1:1 with projects or 1:N — some projects have multi-site).
+- **Current state:** `client/src/pages/` — Phase B addition (registry line 193).
+- **Data source:** Canonical — `sites` table (confirm schema domain in Phase 3).
+- **Visual improvements:** Standard W3 composition; map-view toggle (uses existing `Chart` primitive — additive, not replacing table).
+- **Additive:** Location clustering; "sites needing HSE check" filter preset.
+- **Preserved:** `projects` permission entity shared with Projects list.
+- **Risk:** Low.
+- **Effort:** S–M (depends on map integration scope).
+
+#### F-015 · Clients (list + detail)
+
+- **Path(s):** `/clients` (list) · `/clients/:clientId` (detail) · `/clients/:clientId/project/:projectId` (detail → project departments view)
+- **Lens (primary):** `KEY_ACCOUNTS_MANAGER`, `CCO` · **Lens (secondary):** `PROGRAM_MANAGER` (view)
+- **Archetype:** W3 (list) + W4 (detail)
+- **User goal:** Browse client accounts; open a client to see their projects, contacts, opportunities, documents.
+- **Current state:** Existing list + detail; detail uses a departments-view variant for drill-through.
+- **Data source:** Canonical — `clients`/`project_info` (confirm during Phase 3 per actual schema split).
+- **Visual improvements:** List adopts W3; detail adopts W4 with tabs per wireframe W4 variations table.
+- **Additive:** "Last contact" aging chip; bulk reassign to another KAM.
+- **Preserved:** Alias `/pd/clients` still resolves; permission entity `pd_clients` unchanged.
+- **Risk:** Low.
+- **Effort:** M.
+
+**End of batch 4.** 6 functions recorded (F-012, F-013, F-013a, F-013b, F-014, F-015). Next batch: Approvals domain — Approvals, Financial Review Queue, Weekly Reviews.
