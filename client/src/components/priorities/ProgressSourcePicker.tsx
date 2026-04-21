@@ -88,11 +88,25 @@ export function ProgressSourcePicker({ value, onChange, linkedProjects }: Props)
   });
 
   const projectOptions = useMemo(() => {
-    return linkedProjects.map((p) => ({
-      id: p.projectId,
-      name: p.projectName || `Project #${p.projectId}`,
-    }));
+    return linkedProjects
+      .filter((p) => Number.isFinite(p.id))
+      .map((p) => ({
+        id: p.id,
+        name: p.name || `Project #${p.id}`,
+      }));
   }, [linkedProjects]);
+
+  // Auto-select the only linked project when a non-manual source is chosen
+  // and no project is set yet — saves a click in the common single-project case.
+  useEffect(() => {
+    if (value.type === "manual") return;
+    if (ref.projectId) return;
+    if (projectOptions.length !== 1) return;
+    const only = projectOptions[0].id;
+    setProjectId(only);
+    onChange({ ...value, ref: { ...(value.ref || {}), projectId: only } });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value.type, projectOptions.length, ref.projectId]);
 
   function setType(t: ProgressSourceType) {
     if (t === "manual") {
