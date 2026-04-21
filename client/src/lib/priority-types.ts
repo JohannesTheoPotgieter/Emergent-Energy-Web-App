@@ -27,6 +27,19 @@ export interface PriorityRow {
   sortOrder: number;
   manualHealth: string | null;
   manualProgress: number | null;
+  progressSourceType: string | null;
+  progressSourceRef: {
+    projectId?: number;
+    phaseCode?: string;
+    milestoneId?: number;
+    workItemIds?: number[];
+  } | null;
+  progressSource: {
+    type: string;
+    ref: any;
+    value: number | null;
+    label: string;
+  } | null;
   targetStartDate: string | null;
   targetOutcome: string | null;
   owner: PriorityUserRef | null;

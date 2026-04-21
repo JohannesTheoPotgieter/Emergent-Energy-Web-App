@@ -25,6 +25,9 @@ import { ApiError, badRequest, forbidden, notFound } from "../lib/api-error";
 import { PRIORITY_HEALTH_VALUES, type PriorityHealth, computeEffectivePriorityHealth } from "@shared/kpi-definitions";
 import { PRIORITY_SCOPES, ESCALATION_REASONS, computeEscalatePatch, collectDescendantIds, collectAncestorIds, matchesPriorityListFilter, type PriorityScope, type EscalationReason } from "@shared/config/priorities";
 import { recordActivity, computeUpdateActivities } from "./priority-activity-log";
+import { computePriorityProgress } from "../lib/priorities/progress-source";
+import { attachProjectScope, getProjectScope } from "../middleware/project-scope-middleware";
+import { isProjectAccessible } from "../services/project-access-service";
 import { priorityActivity } from "@shared/schema";
 
 const router = Router();
@@ -85,6 +88,13 @@ const basePrioritySchema = z.object({
   parent_id: z.number().int().positive().nullable().optional(),
   department_key: z.string().max(120).nullable().optional(),
   assigned_user_id: z.number().int().positive().nullable().optional(),
+  progress_source_type: z.enum(["manual", "project_phase", "project_percent", "milestone_revenue", "tasks_rollup"]).nullable().optional(),
+  progress_source_ref: z.object({
+    projectId: z.number().int().positive().optional(),
+    phaseCode: z.string().max(80).optional(),
+    milestoneId: z.number().int().positive().optional(),
+    workItemIds: z.array(z.number().int().positive()).max(200).optional(),
+  }).nullable().optional(),
 });
 
 const createPrioritySchema = basePrioritySchema;
@@ -156,6 +166,7 @@ interface PriorityWithMetrics {
   assignedUser: { id: number; name: string } | null;
   effectiveHealth: PriorityHealth;
   effectiveProgress: number;
+  progressSource: { type: string; ref: any; value: number | null; label: string } | null;
   healthReasons: string[];
   projectCount: number;
   atRiskProjectCount: number;
@@ -296,6 +307,8 @@ async function enrichPriority(
     sortOrder: priority.sortOrder ?? priority.sort_order ?? 0,
     manualHealth: priority.manualHealth ?? priority.manual_health,
     manualProgress: priority.manualProgress ?? priority.manual_progress,
+    progressSourceType: priority.progressSourceType ?? priority.progress_source_type ?? null,
+    progressSourceRef: priority.progressSourceRef ?? priority.progress_source_ref ?? null,
     targetStartDate: priority.targetStartDate ?? priority.target_start_date,
     targetOutcome: priority.targetOutcome ?? priority.target_outcome,
     accountableExecId: priority.accountableExecId ?? priority.accountable_exec_id,
@@ -343,9 +356,28 @@ async function enrichPriority(
     openPdTicketCount,
   });
 
-  const effectiveProgress = hasProjects
-    ? Math.round(Number(metrics?.avg_progress || 0))
-    : (p.manualProgress || 0);
+  // Linked progress source (project_phase / project_percent / milestone_revenue
+  // / tasks_rollup) takes precedence over both metrics-derived and manual.
+  let progressSource: PriorityWithMetrics["progressSource"] = null;
+  let linkedProgress: number | null = null;
+  if (p.progressSourceType && p.progressSourceType !== "manual") {
+    const computed = await computePriorityProgress(p.progressSourceType, p.progressSourceRef);
+    if (computed.value != null) {
+      linkedProgress = computed.value;
+      progressSource = {
+        type: p.progressSourceType,
+        ref: p.progressSourceRef,
+        value: computed.value,
+        label: computed.label,
+      };
+    }
+  }
+
+  const effectiveProgress = linkedProgress != null
+    ? linkedProgress
+    : hasProjects
+      ? Math.round(Number(metrics?.avg_progress || 0))
+      : (p.manualProgress || 0);
 
   const owner = p.ownerUserId ? (userMap?.get(p.ownerUserId) || await getUserById(p.ownerUserId)) : null;
   const accountableExec = p.accountableExecId ? (userMap?.get(p.accountableExecId) || await getUserById(p.accountableExecId)) : null;
@@ -358,6 +390,7 @@ async function enrichPriority(
     assignedUser,
     effectiveHealth,
     effectiveProgress,
+    progressSource,
     healthReasons,
     projectCount,
     atRiskProjectCount: Number(metrics?.at_risk_project_count || 0),
@@ -889,6 +922,10 @@ router.put(
     if (parent_id !== undefined) updates.parentId = parent_id;
     if (department_key !== undefined) updates.departmentKey = department_key;
     if (assigned_user_id !== undefined) updates.assignedUserId = assigned_user_id;
+    const progress_source_type = (body as any).progress_source_type;
+    const progress_source_ref = (body as any).progress_source_ref;
+    if (progress_source_type !== undefined) updates.progressSourceType = progress_source_type;
+    if (progress_source_ref !== undefined) updates.progressSourceRef = progress_source_ref;
 
     const [updated] = await db.update(mytoolCompanyPriorities)
       .set(updates)
@@ -970,6 +1007,62 @@ router.put(
     res.json(enriched);
   }),
 );
+
+// ==================== GET /api/priorities/progress-source-options ====================
+// Picker support — returns the revenue milestones + work items available
+// for a given project, so the Edit Priority dialog can populate the
+// linked-progress picker. Phases are static (shared/phases.ts) so they
+// live entirely in the client.
+router.get("/api/priorities/progress-source-options", requireAuth, attachProjectScope, asyncHandler(async (req: Request, res: Response) => {
+  const projectId = parseInt(String(req.query.projectId ?? ""), 10);
+  if (!Number.isFinite(projectId) || projectId <= 0) {
+    return res.json({ projectId: null, milestones: [], workItems: [] });
+  }
+  // Project-level authorization — prevents enumerating milestone amounts
+  // and invoice numbers across projects the user can't access.
+  const scope = getProjectScope(req);
+  if (scope.kind !== "full_oversight" && !isProjectAccessible(scope, projectId)) {
+    return res.status(403).json({ error: "FORBIDDEN", message: "No access to this project" });
+  }
+  const milestonesRows: any = await db.execute(sql`
+    SELECT id, milestone_name, milestone_no, paid_date, invoice_number,
+           amount_ex_vat, expected_payment_date
+    FROM normalized_revenue_lines
+    WHERE project_id = ${projectId}
+      AND deleted_at IS NULL
+      AND effective_to IS NULL
+    ORDER BY milestone_no NULLS LAST, id ASC
+    LIMIT 200
+  `);
+  const workItemsRows: any = await db.execute(sql`
+    SELECT wi.id, wi.title, wi.status,
+           COALESCE(pm.percent_complete, wi.percent_complete, 0) AS percent_complete
+    FROM work_items wi
+    LEFT JOIN work_item_pm pm ON pm.work_item_id = wi.id
+    WHERE wi.project_id = ${projectId}
+      AND wi.deleted_at IS NULL
+    ORDER BY wi.status ASC, wi.id ASC
+    LIMIT 500
+  `);
+  res.json({
+    projectId,
+    milestones: (milestonesRows.rows || milestonesRows).map((m: any) => ({
+      id: m.id,
+      name: m.milestone_name,
+      no: m.milestone_no,
+      amountExVat: m.amount_ex_vat,
+      paidDate: m.paid_date,
+      invoiceNumber: m.invoice_number,
+      expectedPaymentDate: m.expected_payment_date,
+    })),
+    workItems: (workItemsRows.rows || workItemsRows).map((w: any) => ({
+      id: w.id,
+      title: w.title,
+      status: w.status,
+      percentComplete: Number(w.percent_complete || 0),
+    })),
+  });
+}));
 
 // ==================== DELETE /api/priorities/:id ====================
 router.delete(

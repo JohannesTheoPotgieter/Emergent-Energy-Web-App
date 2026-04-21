@@ -28,6 +28,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
 import { isPriorityAdminRole, departmentLabel } from "@/config/priorities";
 import { ProjectLinker } from "@/components/priorities/ProjectLinker";
+import { ProgressSourcePicker, type ProgressSourceValue } from "@/components/priorities/ProgressSourcePicker";
 import { BreakDownDialog } from "@/components/priorities/BreakDownDialog";
 import { useConfirmDialog } from "@/components/priorities/ConfirmActionDialog";
 import { ActivityIcon, formatActivitySentence } from "@/lib/priority-activity-formatter";
@@ -141,6 +142,11 @@ export default function PriorityDetailPage() {
     manual_health: "none",
     manual_progress: "",
   });
+  const [progressSource, setProgressSource] = useState<ProgressSourceValue>({
+    type: "manual",
+    ref: null,
+    manualProgress: "",
+  });
 
   const isAdmin = isPriorityAdminRole(user?.role);
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
@@ -239,7 +245,11 @@ export default function PriorityDetailPage() {
         due_date: editForm.due_date || null,
         target_outcome: editForm.target_outcome || null,
         manual_health: editForm.manual_health === "none" ? null : editForm.manual_health,
-        manual_progress: editForm.manual_progress ? parseInt(editForm.manual_progress) : null,
+        manual_progress: progressSource.type === "manual" && progressSource.manualProgress
+          ? parseInt(progressSource.manualProgress)
+          : null,
+        progress_source_type: progressSource.type,
+        progress_source_ref: progressSource.type === "manual" ? null : progressSource.ref,
       });
     },
     onSuccess: () => {
@@ -280,6 +290,11 @@ export default function PriorityDetailPage() {
       target_outcome: priority.targetOutcome || "",
       manual_health: priority.manualHealth || "none",
       manual_progress: priority.manualProgress != null ? String(priority.manualProgress) : "",
+    });
+    setProgressSource({
+      type: ((priority.progressSourceType as any) || "manual") as ProgressSourceValue["type"],
+      ref: (priority.progressSourceRef as any) || null,
+      manualProgress: priority.manualProgress != null ? String(priority.manualProgress) : "",
     });
     setEditDialogOpen(true);
   };
@@ -440,6 +455,17 @@ export default function PriorityDetailPage() {
               style={{ width: `${Math.min(priority.effectiveProgress, 100)}%` }}
             />
           </div>
+          {priority.progressSource && (
+            <p
+              className="text-[11px] text-muted-foreground mt-1"
+              data-testid="text-progress-source-label"
+            >
+              <span className="inline-block px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 mr-1">
+                Auto
+              </span>
+              {priority.progressSource.label} · {priority.progressSource.value}%
+            </p>
+          )}
         </div>
 
         {/* Financial summary cards (shown when any project rolls up — direct or via sub-priorities) */}
@@ -995,9 +1021,12 @@ export default function PriorityDetailPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div>
-                <Label className="text-xs">Manual progress %</Label>
-                <Input type="number" min={0} max={100} value={editForm.manual_progress} onChange={(e) => setEditForm((p) => ({ ...p, manual_progress: e.target.value }))} />
+              <div className="col-span-2">
+                <ProgressSourcePicker
+                  value={progressSource}
+                  onChange={setProgressSource}
+                  linkedProjects={linkedProjects}
+                />
               </div>
               <div className="col-span-2">
                 <Label className="text-xs">Target outcome</Label>
