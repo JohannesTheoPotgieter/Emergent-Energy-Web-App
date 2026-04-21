@@ -116,13 +116,31 @@ router.get("/api/opportunities/working", requireAuth, requirePermission("opportu
     const userId = req.user?.id ?? null;
     const role = getUserRole(req);
     const seesAll = canViewAllTickets(role);
-    const rows = seesAll
+    let rows = seesAll
       ? allRows
       : allRows.filter(r => {
           if (userId == null) return false;
           if (r.pdProjectDeveloperUserId != null) return r.pdProjectDeveloperUserId === userId;
           return r.dealOwnerUserId === userId;
         });
+
+    // Defensive dedupe: getWorkingOpportunities does a leftJoin on pd_tickets
+    // and, while the partial-unique index normally enforces 1:1, real-world
+    // data has shown duplicate shadow rows (e.g. one with project_id null
+    // and an older one with project_id set) sneaking through. That produces
+    // duplicate React keys on the client and a runtime crash. Dedupe by
+    // opportunity id, preferring the first row (already ordered by
+    // updatedAt desc). 2026-04-21 hotfix.
+    {
+      const seen = new Set<number>();
+      const deduped: typeof rows = [];
+      for (const r of rows) {
+        if (seen.has(r.id)) continue;
+        seen.add(r.id);
+        deduped.push(r);
+      }
+      rows = deduped;
+    }
 
     const opportunityIds = rows.map(r => r.id);
     if (opportunityIds.length === 0) return res.json([]);
