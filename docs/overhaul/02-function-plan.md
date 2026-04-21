@@ -160,4 +160,95 @@ Tier 1 (daily cross-surface) first — these are the functions every weekday use
 
 ---
 
-**End of §1 scope doc + §2 ordering + §3 Tier 1 Lens 1 roster.** Next checkpoint: Lens 1 function entries batch 1 — Dashboards (Execution Board, Lifecycle Board, PM Dashboard).
+**End of §1 scope + §2 ordering + §3 Lens 1 roster.**
+
+---
+
+### §3.1 Lens 1 · Batch 1 — Dashboards
+
+#### F-001 · Execution Board
+
+- **Path(s):** `/execution-board` (primary) · aliases `/execution-dashboard`, `/dashboard` (LEGACY_REDIRECTS) · `matchSubRoutes: true` — `/execution-board/program`, `/execution-board/finance`
+- **Lens (primary):** `PROGRAM_MANAGER`
+- **Lens (secondary):** `COO_ADMIN`, `CEO_ADMIN`, `CONSTRUCTION_MANAGER`, `PROJECT_MANAGER_SITE` (also landing page for all 5)
+- **Archetype:** W2 Dashboard
+- **User goal:** Read the state of every active project at a glance; drill into any that needs attention.
+- **Current state:** Multi-page `execution-dashboard/` directory with Overview, Program, Construction, Realisation KPI sub-pages (`client/src/pages/execution-dashboard/`). Content-rich; layout inconsistent across sub-pages; density varies.
+- **Data source:** Canonical (`project_info` + `project_execution_state` + `normalized_cost_lines` + `normalized_revenue_lines`). See `00c §2` Projects + Costs + Revenue tables.
+- **Visual improvements:**
+  - Adopt W2 structure uniformly across all 4 sub-pages: status strip → primary grid → secondary panels → full-width.
+  - Replace ad-hoc card layouts with the shared `Card` primitive and `ee-page` container.
+  - Unify status indicators to `StatusBadge` (dot/chip/pill) — no raw coloured text.
+  - Add `DataTrustBadge` strip below PageHeader (mandatory per §1.3 of design system).
+  - Consolidate stacked section headings into `ee-section-title` class for consistency.
+- **Additive functional improvements:**
+  - Persist selected sub-tab in URL query param so deep-links share the same view.
+  - Add keyboard shortcut `g p` / `g c` / `g f` / `g r` to jump between sub-pages.
+  - Column-fold toggle for users on narrower viewports.
+  - "Last touched" filter preset surfaced from existing data.
+- **Half-built work to finish:** n/a directly; indirectly related to `task_management_hub` flag (`00b §A` top-5 #2) which surfaces `/my-work/tasks` — doesn't block.
+- **Source-of-truth migration:** n/a — already canonical.
+- **Preserved behaviour contract:**
+  - 5 landing roles (PROGRAM_MANAGER, COO_ADMIN, CEO_ADMIN, CONSTRUCTION_MANAGER, PROJECT_MANAGER_SITE) still land here.
+  - Aliases `/execution-dashboard`, `/dashboard` resolve to this page.
+  - Sub-page routing (`/program`, `/finance`) continues to work.
+  - `matchSubRoutes: true` flag honoured for nav highlight.
+  - Existing `ExecutionBoardPage` + `execution-dashboard/*` components remain importable.
+- **Risk:** Medium — high-traffic, 5 landing roles, easy to regress.
+- **Effort:** L — spans 4 sub-pages.
+
+#### F-002 · Lifecycle Board
+
+- **Path(s):** `/lifecycle-board` (primary) · alias `/project-lifecycle` (LEGACY_REDIRECTS)
+- **Lens (primary):** `PROGRAM_MANAGER`
+- **Lens (secondary):** `COO_ADMIN`, `CEO_ADMIN`, `CCO`, `CFO`, `PROGRAM_FINANCE_MANAGER`, `CONSTRUCTION_MANAGER`, `QUALITY_MANAGER`, `ENGINEERING_MANAGER`, `KEY_ACCOUNTS_MANAGER`, `PROJECT_MANAGER_SITE`, `PROJECT_DEVELOPER`, `HSE_MANAGER`, `SSEG_MANAGER` — broad view scope
+- **Archetype:** W2 Dashboard (matrix-style)
+- **User goal:** See every project's position on the stage-gate lifecycle, identify where each is blocked.
+- **Current state:** `client/src/pages/lifecycle-board.tsx` renders a wide matrix of projects × stages with gate status badges. Dense but legible; mobile rendering cramped.
+- **Data source:** Canonical (`project_execution_state.phase`, `gate_status`, `financial_review_status`). Already on canonical — see `00c §2` Projects.
+- **Visual improvements:**
+  - Standardise gate-state cells with `StatusBadge` dot variant.
+  - Sticky column for project name + code (so horizontal scroll keeps context).
+  - Add `PageHeader` with summary counts (total / blocked / ready / at-risk).
+  - Dark-mode pass — current matrix hard-codes light backgrounds in some cells.
+  - Add "Show only my projects" toggle using existing role-scoped project list.
+- **Additive functional improvements:**
+  - Cell click opens the project's gate-detail page in a Drawer (not full navigation) for quick triage.
+  - Keyboard arrows move focus across the matrix for scan-reading.
+  - Export matrix to PNG / PDF for weekly ops reports (uses existing `ExportDropdown`).
+- **Half-built work to finish:** n/a.
+- **Source-of-truth migration:** n/a.
+- **Preserved behaviour contract:**
+  - LEGACY_REDIRECTS entry `/project-lifecycle` → `/lifecycle-board` preserved.
+  - Gate-status click-throughs to project stage-gate page continue to work.
+  - 14 view roles retain access.
+- **Risk:** Low.
+- **Effort:** M.
+
+#### F-003 · PM Dashboard
+
+- **Path(s):** `/pm-dashboard`
+- **Lens (primary):** `PROJECT_MANAGER_SITE` (landing — will revisit in Lens 2)
+- **Lens (secondary):** `PROGRAM_MANAGER` reviews Site-PM status; plan this entry from PM lens perspective.
+- **Archetype:** W2 Dashboard (site-PM focused)
+- **User goal:** A Site-PM opens this as their daily home; reads their own project's state + their own task queue + their own approvals.
+- **Current state:** `client/src/pages/pm-dashboard.tsx`. Scoped to the logged-in PM. Layout mixes tiles, lists, and a calendar strip. Mobile-first origin visible in structure.
+- **Data source:** Canonical (`work_items` filtered by assignee + `project_info` filtered by PM).
+- **Visual improvements:**
+  - Adopt W6 "My Work" structure (Today's focus + action queues + this-week strip) on top of project-scoped content — this is an operational-home dashboard, not a portfolio dashboard.
+  - Consolidate top cards into a single `ee-data-trust-grid` KPI strip.
+  - Unify action rows across queues (each action uses `Button variant="ghost" size="sm"`).
+- **Additive functional improvements:**
+  - Cross-link to `/pm/on-the-go` for mobile field workflow (already exists — make the entry point first-class).
+  - Weekly burn-down chart (additive — uses existing `Chart` primitive).
+  - "Escalate to Program Manager" quick action on overdue items.
+- **Half-built work to finish:** Related to `task_management_hub` (00b §A #2) — when enabled, this page becomes a lens-specialised view of that hub.
+- **Source-of-truth migration:** n/a.
+- **Preserved behaviour contract:**
+  - Scoped to logged-in PM (server-side filter), not all projects.
+  - `pm_dashboard` permission entity defaults unchanged — view gated per existing roles.
+  - Quick actions that currently work (task create, standup add) still work.
+- **Risk:** Low.
+- **Effort:** M.
+
+**End of batch 1.** 3 functions recorded. Next batch: Gates Pipeline + Blocked Gates (spine for the 7-lane Gates workspace).
