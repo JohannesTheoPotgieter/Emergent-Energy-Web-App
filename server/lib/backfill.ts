@@ -27,7 +27,10 @@ export async function backfillExpenseComputedFields(): Promise<{ updated: number
       if (supplier && !cost.counterpartyName) {
         await db.update(normalizedCostLines)
           .set({ counterpartyName: supplier })
-          .where(eq(normalizedCostLines.id, cost.id));
+          .where(and(
+            eq(normalizedCostLines.id, cost.id),
+            isNull(normalizedCostLines.effectiveTo),
+          ));
         updated++;
       }
     }
