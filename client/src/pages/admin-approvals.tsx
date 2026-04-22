@@ -8,16 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { useToast } from "@/hooks/use-toast";
-import { toast as sonnerToast } from "sonner";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
+import { toast } from "sonner";
 import {
   Wrench,
   ShieldCheck,
@@ -179,10 +170,8 @@ export default function AdminApprovalsPage() {
   const [location, navigate] = useLocation();
   const [filter, setFilter] = useState<ApprovalType>("all");
   const [showAll, setShowAll] = useState(false);
-  const [actionDialog, setActionDialog] = useState<{ item: ApprovalItem; action: "approve" | "reject" } | null>(null);
-  const [reason, setReason] = useState("");
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const { toast } = useToast();
+  const [rejectOpenById, setRejectOpenById] = useState<Record<string, boolean>>({});
+  const [rejectReasonById, setRejectReasonById] = useState<Record<string, string>>({});
   const queryClient = useQueryClient();
 
   const { data, isLoading, error } = useQuery<ApprovalsResponse>({
@@ -198,19 +187,132 @@ export default function AdminApprovalsPage() {
 
   const isAdmin = data?.isAdmin ?? false;
 
-  const actionMutation = useMutation({
-    mutationFn: async ({ item, action, comment }: { item: ApprovalItem; action: "approve" | "reject"; comment: string }) => {
-      return performApprovalAction(item, action, comment);
+  const applyApprovalAction = async ({ item, action, comment }: { item: ApprovalItem; action: "approve" | "reject"; comment: string }) => {
+      if (item.type === "general") {
+        const approvalId = item.meta.generalApprovalId || item.id.replace("gen-", "");
+        const res = await fetch(`/api/approvals/general/${approvalId}`, {
+          method: "PATCH",
+          headers: getAuthHeaders(),
+          body: JSON.stringify({
+            status: action === "approve" ? "approved" : "rejected",
+            decisionNote: comment || undefined,
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || err.message || "Failed to update general approval");
+        }
+        return res.json();
+      }
+      if (item.type === "engineering") {
+        const approvalId = item.meta.approvalId;
+        const res = await fetch(`/api/eng-stages/approvals/${approvalId}`, {
+          method: "PATCH",
+          headers: getAuthHeaders(),
+          body: JSON.stringify({
+            status: action === "approve" ? "approved" : "rejected",
+            comments: comment || undefined,
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || err.message || "Failed to update engineering approval");
+        }
+        return res.json();
+      } else if (item.type === "quality") {
+        const itemInstanceId = item.meta.itemInstanceId;
+        const res = await fetch(`/api/quality/project/${encodeURIComponent(item.projectName)}/item/${itemInstanceId}/approve`, {
+          method: "POST",
+          headers: getAuthHeaders(),
+          body: JSON.stringify({
+            approved: action === "approve",
+            comment: comment || undefined,
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || err.message || "Failed to update quality approval");
+        }
+        return res.json();
+      } else if (item.type === "deliverable") {
+        const deliverableId = item.meta.deliverableId;
+        const newStatus = action === "approve" ? "COMPLETE" : "PROVIDE FEEDBACK";
+        const res = await fetch(`/api/deliverables/${deliverableId}`, {
+          method: "PATCH",
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ status: newStatus }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || err.message || "Failed to update deliverable");
+        }
+        if (action === "reject" && comment) {
+          await fetch(`/api/deliverables/${deliverableId}/feedback`, {
+            method: "POST",
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ feedbackText: comment }),
+          }).catch(() => {});
+        }
+        return res.json();
+      }
+  };
+
+  const approveMutation = useMutation({
+    mutationFn: ({ item }: { item: ApprovalItem }) => applyApprovalAction({ item, action: "approve", comment: "" }),
+    onMutate: async ({ item }) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/approvals/pending"] });
+      const previous = queryClient.getQueryData<ApprovalsResponse>(["/api/approvals/pending", showAll]);
+      queryClient.setQueryData<ApprovalsResponse>(["/api/approvals/pending", showAll], (current) => {
+        if (!current) return current;
+        return {
+          ...current,
+          items: current.items.map((row) => row.id === item.id ? { ...row, status: "approved" } : row),
+        };
+      });
+      return { previous };
     },
     onSuccess: (_data, variables) => {
-      const verb = variables.action === "approve" ? "approved" : "rejected";
-      toast({ title: `Item ${verb}`, description: `${variables.item.title} has been ${verb}.` });
-      queryClient.invalidateQueries({ queryKey: ["/api/approvals/pending"] });
-      setActionDialog(null);
-      setReason("");
+      toast.success(`${variables.item.title} approved`);
     },
-    onError: (err: any) => {
-      toast({ title: "Action failed", description: err.message || "Something went wrong", variant: "destructive" });
+    onError: (err: any, _variables, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(["/api/approvals/pending", showAll], context.previous);
+      }
+      toast.error(err.message || "Failed to approve");
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/approvals/pending"] });
+    },
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: ({ item, comment }: { item: ApprovalItem; comment: string }) =>
+      applyApprovalAction({ item, action: "reject", comment }),
+    onMutate: async ({ item }) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/approvals/pending"] });
+      const previous = queryClient.getQueryData<ApprovalsResponse>(["/api/approvals/pending", showAll]);
+      queryClient.setQueryData<ApprovalsResponse>(["/api/approvals/pending", showAll], (current) => {
+        if (!current) return current;
+        return {
+          ...current,
+          items: current.items.map((row) => row.id === item.id ? { ...row, status: "rejected" } : row),
+        };
+      });
+      return { previous };
+    },
+    onSuccess: (_data, variables) => {
+      setRejectOpenById((prev) => ({ ...prev, [variables.item.id]: false }));
+      setRejectReasonById((prev) => ({ ...prev, [variables.item.id]: "" }));
+      toast.success(`${variables.item.title} rejected`);
+    },
+    onError: (err: any, _variables, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(["/api/approvals/pending", showAll], context.previous);
+      }
+      toast.error(err.message || "Failed to reject");
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/approvals/pending"] });
     },
   });
 
@@ -231,23 +333,37 @@ export default function AdminApprovalsPage() {
       ? "All pending approvals across all projects"
       : "Your pending approvals";
 
-  function openAction(item: ApprovalItem, action: "approve" | "reject", e: { stopPropagation: () => void }) {
-    e.stopPropagation();
-    setReason("");
-    setActionDialog({ item, action });
-  }
+  // A6: Group by urgency
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const weekEnd = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-  function submitAction() {
-    if (!canApprove) {
-      toast({ title: "Permission required", description: "You do not have approval permission for this queue.", variant: "destructive" });
-      return;
+  const urgencyGroups = (() => {
+    const overdue: ApprovalItem[] = [];
+    const dueToday: ApprovalItem[] = [];
+    const thisWeek: ApprovalItem[] = [];
+    const later: ApprovalItem[] = [];
+
+    for (const item of filtered) {
+      const created = new Date(item.createdAt);
+      const ageDays = Math.floor((now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24));
+
+      if (ageDays > 3) overdue.push(item);
+      else if (ageDays >= 1) dueToday.push(item);
+      else if (created >= today && created < weekEnd) thisWeek.push(item);
+      else later.push(item);
     }
-    if (!actionDialog) return;
-    if (actionDialog.action === "reject" && !reason.trim()) {
-      toast({ title: "Reason required", description: "Please provide a reason for rejection.", variant: "destructive" });
-      return;
-    }
-    actionMutation.mutate({ item: actionDialog.item, action: actionDialog.action, comment: reason.trim() });
+
+    return [
+      { label: "Overdue (>3 days)", items: overdue, color: "text-red-600" },
+      { label: "Aging (1-3 days)", items: dueToday, color: "text-amber-600" },
+      { label: "Recent", items: thisWeek, color: "text-blue-600" },
+      { label: "New Today", items: later, color: "text-muted-foreground" },
+    ].filter(g => g.items.length > 0);
+  })();
+
+  function isPendingStatus(status: string) {
+    return status.toLowerCase() === "pending";
   }
 
   function navigateToItem(item: ApprovalItem) {
@@ -456,94 +572,71 @@ export default function AdminApprovalsPage() {
         )}
 
         {!isLoading && !error && filtered.length > 0 && (
-          <Card>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted/50 border-b">
-                    <tr>
-                      <th className="px-4 py-3 w-12 text-left">
-                        <Checkbox.Root
-                          className="grid place-content-center h-5 w-5 rounded border border-primary shadow-sm data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
-                          checked={allRowsSelected ? true : someRowsSelected ? "indeterminate" : false}
-                          onCheckedChange={(checked) => toggleSelectAll(checked === true)}
-                          aria-label="Select all approvals"
-                        >
-                          <Checkbox.Indicator className="flex items-center justify-center">
-                            <Check className="h-4 w-4" />
-                          </Checkbox.Indicator>
-                        </Checkbox.Root>
-                      </th>
-                      <th className="px-4 py-3 text-left">Approval</th>
-                      <th className="px-4 py-3 text-left">Project</th>
-                      <th className="px-4 py-3 text-left">Assignee</th>
-                      <th className="px-4 py-3 text-left">Created</th>
-                      <th className="px-4 py-3 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filtered.map((item) => {
-                      const config = typeConfig[item.type];
-                      const isSelected = selectedIds.has(item.id);
-                      return (
-                        <tr key={item.id} className={`border-b last:border-0 ${isSelected ? "bg-primary/5" : ""}`}>
-                          <td className="px-4 py-3">
-                            <Checkbox.Root
-                              className="grid place-content-center h-5 w-5 rounded border border-primary shadow-sm data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
-                              checked={isSelected}
-                              onCheckedChange={(checked) => toggleSelected(item.id, checked === true)}
-                              aria-label={`Select ${item.title}`}
-                            >
-                              <Checkbox.Indicator className="flex items-center justify-center">
-                                <Check className="h-4 w-4" />
-                              </Checkbox.Indicator>
-                            </Checkbox.Root>
-                          </td>
-                          <td className="px-4 py-3 min-w-[280px]">
-                            <div className="font-medium">{item.title}</div>
-                            <Badge className={`text-[10px] mt-1 ${config.badgeClass}`}>{config.label}</Badge>
-                          </td>
-                          <td className="px-4 py-3">
-                            <button className="inline-flex items-center gap-1 text-left hover:underline" onClick={() => navigateToItem(item)}>
-                              <FolderOpen className="w-3 h-3" />
-                              {item.projectName}
-                            </button>
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className="inline-flex items-center gap-1">
-                              <User className="w-3 h-3" />
-                              {item.assignee}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-muted-foreground">{format(new Date(item.createdAt), "dd MMM yyyy")}</td>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center justify-end gap-1.5">
-                              {canApprove ? (
-                                <>
-                                  <Button
-                                    variant="default"
-                                    size="sm"
-                                    className="h-7 text-xs bg-green-600 hover:bg-green-700 gap-1"
-                                    onClick={(e) => openAction(item, "approve", e)}
-                                    data-testid={`btn-approve-${item.id}`}
-                                  >
-                                    <ThumbsUp className="w-3 h-3" />
-                                    Approve
-                                  </Button>
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700 gap-1"
-                                    onClick={(e) => openAction(item, "reject", e)}
-                                    data-testid={`btn-reject-${item.id}`}
-                                  >
-                                    <ThumbsDown className="w-3 h-3" />
-                                    Reject
-                                  </Button>
-                                </>
-                              ) : (
-                                <Badge variant="outline" className="text-[10px]">View only</Badge>
-                              )}
+          <div className="space-y-4">
+            {/* A6: Urgency-grouped approval cards */}
+            {urgencyGroups.map(group => (
+              <div key={group.label} className="space-y-2">
+                <h3 className={`text-xs font-semibold uppercase tracking-wide ${group.color}`}>
+                  {group.label} ({group.items.length})
+                </h3>
+                {group.items.map(item => {
+                  const config = typeConfig[item.type];
+                  const Icon = config.icon;
+                  const ageDays = Math.floor((now.getTime() - new Date(item.createdAt).getTime()) / (1000 * 60 * 60 * 24));
+                  return (
+                    <Card
+                      key={item.id}
+                      className="hover:shadow-md transition-shadow cursor-pointer"
+                      onClick={() => navigateToItem(item)}
+                      data-testid={`card-approval-${item.id}`}
+                    >
+                      <CardContent className="p-4">
+                        <div className="flex items-start gap-3">
+                          <div className={`p-2 rounded-lg ${config.bg} mt-0.5`}>
+                            <Icon className={`w-4 h-4 ${config.color}`} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-medium text-sm truncate" data-testid={`text-title-${item.id}`}>
+                                {item.title}
+                              </span>
+                              <Badge className={`text-[10px] ${config.badgeClass}`}>
+                                {config.label}
+                              </Badge>
+                              <Badge variant="secondary" className="text-[10px]">
+                                {ageDays === 0 ? "today" : `${ageDays}d ago`}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center gap-4 mt-1.5 text-xs text-muted-foreground">
+                              <span className="flex items-center gap-1">
+                                <FolderOpen className="w-3 h-3" />
+                                {item.projectName}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <User className="w-3 h-3" />
+                                {item.assignee}
+                              </span>
+                            </div>
+                          </div>
+                          {canApprove && isPendingStatus(item.status) ? (
+                            <div className="flex gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                              <Button
+                                variant="outline" size="sm" className="h-7 text-xs gap-1 text-emerald-700 border-emerald-300 hover:text-emerald-800"
+                                onClick={() => approveMutation.mutate({ item })}
+                                disabled={approveMutation.isPending || rejectMutation.isPending}
+                                data-testid={`btn-approve-${item.id}`}
+                              >
+                                {approveMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <ThumbsUp className="w-3 h-3" />}
+                                Approve
+                              </Button>
+                              <Button
+                                variant="outline" size="sm" className="h-7 text-xs gap-1 text-red-600 hover:text-red-700"
+                                onClick={() => setRejectOpenById((prev) => ({ ...prev, [item.id]: !prev[item.id] }))}
+                                data-testid={`btn-reject-${item.id}`}
+                              >
+                                <ThumbsDown className="w-3 h-3" />
+                                Reject
+                              </Button>
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -555,100 +648,187 @@ export default function AdminApprovalsPage() {
                                 <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />
                               </Button>
                             </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                          ) : (
+                            <Badge variant="outline" className="text-[10px]">View only</Badge>
+                          )}
+                        </div>
+                        {canApprove && isPendingStatus(item.status) && rejectOpenById[item.id] && (
+                          <div className="mt-3 pl-11 space-y-2" onClick={(e) => e.stopPropagation()}>
+                            <Textarea
+                              rows={2}
+                              placeholder="Enter rejection reason"
+                              value={rejectReasonById[item.id] || ""}
+                              onChange={(e) => setRejectReasonById((prev) => ({ ...prev, [item.id]: e.target.value }))}
+                              data-testid={`input-reject-reason-${item.id}`}
+                            />
+                            <div className="flex items-center gap-2">
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                disabled={!String(rejectReasonById[item.id] || "").trim() || rejectMutation.isPending || approveMutation.isPending}
+                                onClick={() => {
+                                  const reason = String(rejectReasonById[item.id] || "").trim();
+                                  if (!reason) {
+                                    toast.error("Please provide a reason for rejection.");
+                                    return;
+                                  }
+                                  rejectMutation.mutate({ item, comment: reason });
+                                }}
+                                data-testid={`btn-confirm-reject-${item.id}`}
+                              >
+                                {rejectMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : null}
+                                Submit rejection
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  setRejectOpenById((prev) => ({ ...prev, [item.id]: false }));
+                                  setRejectReasonById((prev) => ({ ...prev, [item.id]: "" }));
+                                }}
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
               </div>
-            </CardContent>
-          </Card>
+            ))}
+            {/* Legacy flat list fallback — hidden when urgency groups render */}
+            {urgencyGroups.length === 0 && filtered.map(item => {
+              const config = typeConfig[item.type];
+              const Icon = config.icon;
+
+              return (
+                <Card
+                  key={item.id}
+                  className="hover:shadow-md transition-shadow"
+                  data-testid={`card-approval-${item.id}`}
+                >
+                  <CardContent className="p-4">
+                    <div className="flex items-start gap-3">
+                      <div className={`p-2 rounded-lg ${config.bg} mt-0.5`}>
+                        <Icon className={`w-4 h-4 ${config.color}`} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium text-sm truncate" data-testid={`text-title-${item.id}`}>
+                            {item.title}
+                          </span>
+                          <Badge className={`text-[10px] ${config.badgeClass}`}>
+                            {config.label}
+                          </Badge>
+                          <Badge variant="secondary" className="text-[10px]">
+                            {item.status}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-4 mt-1.5 text-xs text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            <FolderOpen className="w-3 h-3" />
+                            {item.projectName}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <User className="w-3 h-3" />
+                            {item.assignee}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            {format(new Date(item.createdAt), "dd MMM yyyy")}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {canApprove && isPendingStatus(item.status) ? (
+                          <>
+                            <Button
+                              variant="default"
+                              size="sm"
+                              className="h-7 text-xs bg-green-600 hover:bg-green-700 gap-1"
+                              onClick={() => approveMutation.mutate({ item })}
+                              disabled={approveMutation.isPending || rejectMutation.isPending}
+                              data-testid={`btn-approve-${item.id}`}
+                            >
+                              {approveMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <ThumbsUp className="w-3 h-3" />}
+                              Approve
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700 gap-1"
+                              onClick={() => setRejectOpenById((prev) => ({ ...prev, [item.id]: !prev[item.id] }))}
+                              data-testid={`btn-reject-${item.id}`}
+                            >
+                              <ThumbsDown className="w-3 h-3" />
+                              Reject
+                            </Button>
+                          </>
+                        ) : (
+                          <Badge variant="outline" className="text-[10px]">View only</Badge>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0"
+                          onClick={() => navigateToItem(item)}
+                          title="View in project"
+                          data-testid={`btn-navigate-${item.id}`}
+                        >
+                          <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />
+                        </Button>
+                      </div>
+                    </div>
+                    {canApprove && isPendingStatus(item.status) && rejectOpenById[item.id] && (
+                      <div className="mt-3 pl-11 space-y-2" onClick={(e) => e.stopPropagation()}>
+                        <Textarea
+                          rows={2}
+                          placeholder="Enter rejection reason"
+                          value={rejectReasonById[item.id] || ""}
+                          onChange={(e) => setRejectReasonById((prev) => ({ ...prev, [item.id]: e.target.value }))}
+                          data-testid={`input-reject-reason-${item.id}`}
+                        />
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            disabled={!String(rejectReasonById[item.id] || "").trim() || rejectMutation.isPending || approveMutation.isPending}
+                            onClick={() => {
+                              const reason = String(rejectReasonById[item.id] || "").trim();
+                              if (!reason) {
+                                toast.error("Please provide a reason for rejection.");
+                                return;
+                              }
+                              rejectMutation.mutate({ item, comment: reason });
+                            }}
+                            data-testid={`btn-confirm-reject-${item.id}`}
+                          >
+                            {rejectMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : null}
+                            Submit rejection
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setRejectOpenById((prev) => ({ ...prev, [item.id]: false }));
+                              setRejectReasonById((prev) => ({ ...prev, [item.id]: "" }));
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
         )}
         </div>
       </PageShell>
-
-      {selectedItems.length > 0 && canApprove && (
-        <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur">
-          <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
-            <p className="text-sm text-muted-foreground">
-              {selectedItems.length} selected
-            </p>
-            <Button
-              className="bg-green-600 hover:bg-green-700"
-              onClick={approveSelected}
-              disabled={actionMutation.isPending}
-            >
-              Approve Selected
-            </Button>
-          </div>
-        </div>
-      )}
-
-      <Dialog open={!!actionDialog} onOpenChange={(open) => { if (!open) { setActionDialog(null); setReason(""); } }}>
-        <DialogContent className="sm:max-w-[440px]">
-          {actionDialog && (
-            <>
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                  {actionDialog.action === "approve" ? (
-                    <ThumbsUp className="w-5 h-5 text-green-600" />
-                  ) : (
-                    <ThumbsDown className="w-5 h-5 text-red-600" />
-                  )}
-                  {actionDialog.action === "approve" ? "Approve Item" : "Reject Item"}
-                </DialogTitle>
-                <DialogDescription>
-                  {actionDialog.action === "approve"
-                    ? "Confirm approval for this item. You can optionally add a comment."
-                    : "Please provide a reason for rejecting this item."}
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-3 py-2">
-                <div className="rounded-lg border p-3 bg-muted/30">
-                  <div className="text-sm font-medium">{actionDialog.item.title}</div>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    {actionDialog.item.projectName} · {typeConfig[actionDialog.item.type].label}
-                  </div>
-                </div>
-                <div>
-                  <label className="text-sm font-medium">
-                    {actionDialog.action === "approve" ? "Comment (optional)" : "Reason (required)"}
-                  </label>
-                  <Textarea
-                    value={reason}
-                    onChange={(e) => setReason(e.target.value)}
-                    placeholder={actionDialog.action === "approve" ? "Add a comment..." : "Why is this being rejected?"}
-                    className="mt-1.5"
-                    rows={3}
-                    data-testid="input-reason"
-                  />
-                </div>
-              </div>
-              <DialogFooter className="gap-2 sm:gap-0">
-                <Button
-                  variant="outline"
-                  onClick={() => { setActionDialog(null); setReason(""); }}
-                  disabled={actionMutation.isPending}
-                  data-testid="btn-cancel-action"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  variant={actionDialog.action === "approve" ? "default" : "destructive"}
-                  className={actionDialog.action === "approve" ? "bg-green-600 hover:bg-green-700" : ""}
-                  onClick={submitAction}
-                  disabled={actionMutation.isPending || (actionDialog.action === "reject" && !reason.trim())}
-                  data-testid="btn-confirm-action"
-                >
-                  {actionMutation.isPending && <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />}
-                  {actionDialog.action === "approve" ? "Confirm Approval" : "Confirm Rejection"}
-                </Button>
-              </DialogFooter>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
     </>
   );
 }
