@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -9,7 +9,7 @@ import { useStageDefinitions, useStageChecklistTemplates } from "@/hooks/use-sta
 import { apiRequest } from "@/lib/queryClient";
 import { useQueryClient } from "@tanstack/react-query";
 import type { StageDefinition, StageChecklistTemplate } from "@shared/schema";
-import { Settings, ListChecks, Save, Loader2, Trash2 } from "lucide-react";
+import { Settings, Trash2 } from "lucide-react";
 
 export default function StageAdminPanel() {
   return (
@@ -42,6 +42,45 @@ function StageDefinitionsTab() {
   const [saving, setSaving] = useState<number | null>(null);
   const [draft, setDraft] = useState<Record<number, { stageName: string; description: string; stageSequence: number }>>({});
   const [newStage, setNewStage] = useState({ stageCode: "", stageName: "", stageSequence: 99 });
+  const [orderedIds, setOrderedIds] = useState<number[]>([]);
+  const [orderingDirty, setOrderingDirty] = useState(false);
+
+  const definitions = data?.definitions || [];
+
+  const effectiveDefinitions = (() => {
+    if (orderedIds.length === 0) return definitions;
+    const byId = new Map(definitions.map((d) => [d.id, d]));
+    const resolved = orderedIds.map((id) => byId.get(id)).filter(Boolean) as StageDefinition[];
+    const missing = definitions.filter((d) => !orderedIds.includes(d.id));
+    return [...resolved, ...missing];
+  })();
+
+  useEffect(() => {
+    if (definitions.length === 0) return;
+    setOrderedIds(definitions.map((d) => d.id));
+    setOrderingDirty(false);
+  }, [data?.definitions]);
+
+  const moveDefinition = (id: number, direction: "up" | "down") => {
+    setOrderedIds((prev) => {
+      const base = prev.length > 0 ? [...prev] : definitions.map((d) => d.id);
+      const idx = base.indexOf(id);
+      if (idx < 0) return base;
+      const target = direction === "up" ? idx - 1 : idx + 1;
+      if (target < 0 || target >= base.length) return base;
+      [base[idx], base[target]] = [base[target], base[idx]];
+      setOrderingDirty(true);
+      return base;
+    });
+  };
+
+  const saveOrder = async () => {
+    const base = orderedIds.length > 0 ? orderedIds : definitions.map((d) => d.id);
+    const order = base.map((id, idx) => ({ id, stageSequence: idx + 1 }));
+    await apiRequest("POST", "/api/admin/stage-definitions/reorder", { order });
+    setOrderingDirty(false);
+    qc.invalidateQueries({ queryKey: ["/api/admin/stage-definitions"] });
+  };
 
   const handleSave = async (def: StageDefinition) => {
     setSaving(def.id);
@@ -97,10 +136,15 @@ function StageDefinitionsTab() {
           <Button className="col-span-2" onClick={handleCreate}>Create</Button>
         </CardContent>
       </Card>
-      {data?.definitions?.map((def: StageDefinition) => (
+      <div className="flex justify-end">
+        <Button size="sm" variant="outline" onClick={saveOrder} disabled={!orderingDirty}>
+          Save Order
+        </Button>
+      </div>
+      {effectiveDefinitions.map((def: StageDefinition, index: number) => (
         <Card key={def.id}>
           <CardContent className="flex items-center gap-4 py-3">
-            <Badge variant="outline" className="text-xs">{def.stageSequence}</Badge>
+            <Badge variant="outline" className="text-xs">{index + 1}</Badge>
             <div className="flex-1">
               <Input
                 className="h-8 text-sm font-medium"
@@ -128,6 +172,10 @@ function StageDefinitionsTab() {
             <Button size="sm" variant="outline" onClick={() => handleSave(def)} disabled={saving === def.id}>
               Save
             </Button>
+            <div className="flex flex-col gap-1">
+              <Button size="sm" variant="ghost" onClick={() => moveDefinition(def.id, "up")} disabled={index === 0}>↑</Button>
+              <Button size="sm" variant="ghost" onClick={() => moveDefinition(def.id, "down")} disabled={index === effectiveDefinitions.length - 1}>↓</Button>
+            </div>
             <Button size="sm" variant="ghost" onClick={() => handleArchive(def)} disabled={saving === def.id}>
               <Trash2 className="h-4 w-4 text-red-600" />
             </Button>
