@@ -180,7 +180,10 @@ export class FinanceExpenseEngineRepository {
       const [current] = await this.dbInstance
         .select({ updatedAt: normalizedCostLines.updatedAt })
         .from(normalizedCostLines)
-        .where(eq(normalizedCostLines.id, canonicalId))
+        .where(and(
+          eq(normalizedCostLines.id, canonicalId),
+          isNull(normalizedCostLines.effectiveTo),
+        ))
         .limit(1);
       if (current?.updatedAt) {
         const currentTs = new Date(current.updatedAt).getTime();
@@ -198,7 +201,10 @@ export class FinanceExpenseEngineRepository {
     const result = await this.dbInstance
       .update(normalizedCostLines)
       .set(mappedFields)
-      .where(eq(normalizedCostLines.id, canonicalId))
+      .where(and(
+        eq(normalizedCostLines.id, canonicalId),
+        isNull(normalizedCostLines.effectiveTo),
+      ))
       .returning();
     if (!result[0]) return undefined;
     const { adaptCostToExpense } = await import("../lib/data-merge");

@@ -67,7 +67,10 @@ export async function materializeDerivatives(ctx: MaterializerContext): Promise<
       if (existing) {
         await tx.update(projectRevenueSummary)
           .set({ ...vals, snapshotRunId: runId, effectiveFrom: commitTimestamp })
-          .where(eq(projectRevenueSummary.id, existing.id));
+          .where(and(
+            eq(projectRevenueSummary.id, existing.id),
+            isNull(projectRevenueSummary.effectiveTo),
+          ));
       } else {
         await tx.insert(projectRevenueSummary).values(addTemporalColumns({ projectName, projectId, ...vals }, runId, commitTimestamp) as any);
       }

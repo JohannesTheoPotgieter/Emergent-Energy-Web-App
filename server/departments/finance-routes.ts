@@ -1459,7 +1459,10 @@ router.post("/api/cashflow-2026/expense-date-override", requireAuth, requirePerm
     // Try normalizedCostLines first (IDs from the detail endpoint come from this table)
     const updated = await db.update(normalizedCostLines)
       .set(overrideFields)
-      .where(eq(normalizedCostLines.id, expenseId))
+      .where(and(
+        eq(normalizedCostLines.id, expenseId),
+        isNull(normalizedCostLines.effectiveTo),
+      ))
       .returning();
 
     let row: any;
@@ -1554,7 +1557,10 @@ router.post("/api/cashflow-2026/inflow-date-override", requireAuth, requirePermi
     // Try normalizedRevenueLines first (IDs from the detail endpoint come from this table)
     const updated = await db.update(normalizedRevenueLines)
       .set(overrideFields)
-      .where(eq(normalizedRevenueLines.id, inflowId))
+      .where(and(
+        eq(normalizedRevenueLines.id, inflowId),
+        isNull(normalizedRevenueLines.effectiveTo),
+      ))
       .returning();
 
     let row: any;
@@ -5916,6 +5922,7 @@ router.post("/api/revenue-tracking/overrides", requireAuth, requireAdminOrFinanc
               and(
                 eq(normalizedRevenueLines.projectName, projectName),
                 eq(normalizedRevenueLines.sourceRow, rowNum),
+                isNull(normalizedRevenueLines.effectiveTo),
               )
             );
         }
