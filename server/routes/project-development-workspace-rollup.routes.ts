@@ -1,7 +1,7 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { requireAuth } from "../departments/shared-middleware";
-import { requirePermission } from "../permission-middleware";
+import { evaluatePermissionForRequest, logPermissionFailure } from "../permission-middleware";
 import { logAuditFromReq } from "../audit-logger";
 import { getProjectDevelopmentWorkspaceRollup } from "../services/project-development-workspace-service";
 import { db } from "../db";
@@ -15,10 +15,28 @@ function parseDateParam(v: unknown): string | null {
 }
 
 export function registerProjectDevelopmentWorkspaceRollupRoutes(app: Express) {
+  // Permission policy: this endpoint historically required `projects:view`,
+  // but it now also powers the Cross-company Interaction section of /pd.
+  // /pd is gated on `pd_dashboard:view`, so we widen this endpoint to allow
+  // either capability. This closes the permission-drift gap where a PD user
+  // could open /pd but get a 403 panel for one of its required sections.
+  const requirePdOrProjects = async (req: Request, res: Response, next: NextFunction) => {
+    const a = await evaluatePermissionForRequest(req, "pd_dashboard", "view");
+    if (a.allowed) return next();
+    const b = await evaluatePermissionForRequest(req, "projects", "view");
+    if (b.allowed) return next();
+    // Preserve denied-access audit semantics from the original
+    // requirePermission middleware. Log against `projects:view` since that
+    // was the historical gate; record the pd_dashboard reason in the body
+    // so audit trails surface both attempts.
+    logPermissionFailure(req, "projects", "view", b.reason);
+    return res.status(403).json({ error: "forbidden", reason: a.reason || b.reason });
+  };
+
   app.get(
     "/api/project-development/workspace/rollup",
     requireAuth,
-    requirePermission("projects", "view"),
+    requirePdOrProjects,
     async (req: Request, res: Response) => {
       try {
         const asOf = parseDateParam(req.query.asOf) ?? new Date().toISOString().slice(0, 10);

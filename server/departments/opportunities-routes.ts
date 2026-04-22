@@ -255,7 +255,22 @@ router.get("/api/opportunities/working", requireAuth, requirePermission("opportu
  */
 router.get("/api/pd/dashboard", requireAuth, requirePermission("pd_dashboard", "view"), async (_req: Request, res: Response) => {
   try {
-    const [summaryRow, byStage, atRisk, recentWins, recentLost, activity, conversion] = await Promise.all([
+    const [
+      summaryRow,
+      byStage,
+      atRisk,
+      recentWins,
+      recentLost,
+      activity,
+      conversion,
+      byOwnerRows,
+      byOwnerHandoverRows,
+      handoverRow,
+      linkageRows,
+      actionQueueRows,
+      eligibleRow,
+      blockedRow,
+    ] = await Promise.all([
       db.execute(sql`
         SELECT
           COUNT(*) FILTER (WHERE status = 'active' OR status IS NULL) AS active_count,
@@ -323,6 +338,185 @@ router.get("/api/pd/dashboard", requireAuth, requirePermission("pd_dashboard", "
           COUNT(*) FILTER (WHERE status = 'lost') AS lost
         FROM opportunities
         WHERE deleted_at IS NULL
+      `),
+      // byOwner: per-owner operational rollup of *active* opportunities.
+      // Owners are the human-readable snapshot (deal_owner_name) which is
+      // populated from the Pipedrive sync. Rows with no owner roll up under
+      // "Unassigned" so they remain visible (and actionable).
+      db.execute(sql`
+        SELECT
+          COALESCE(NULLIF(TRIM(deal_owner_name), ''), 'Unassigned') AS owner,
+          COUNT(*) AS active,
+          COUNT(*) FILTER (WHERE next_activity_date IS NOT NULL AND next_activity_date < CURRENT_DATE) AS overdue,
+          COUNT(*) FILTER (WHERE last_activity_date IS NULL OR last_activity_date < CURRENT_DATE - INTERVAL '30 days') AS stale30,
+          COUNT(*) FILTER (WHERE next_activity_date IS NOT NULL AND next_activity_date >= CURRENT_DATE AND next_activity_date <= CURRENT_DATE + INTERVAL '7 days') AS due_this_week,
+          COALESCE(SUM(estimated_value), 0) AS pipeline_value
+        FROM opportunities
+        WHERE deleted_at IS NULL AND (status = 'active' OR status IS NULL)
+        GROUP BY 1
+        ORDER BY active DESC, owner ASC
+        LIMIT 25
+      `),
+      // byOwner handover-ready: per-owner count of won+signed deals whose
+      // handover_readiness has been advanced. Computed separately so we
+      // don't pollute the active-opportunity rollup with terminal rows.
+      db.execute(sql`
+        SELECT
+          COALESCE(NULLIF(TRIM(deal_owner_name), ''), 'Unassigned') AS owner,
+          COUNT(*) AS handover_ready
+        FROM opportunities
+        WHERE deleted_at IS NULL
+          AND status = 'won'
+          AND signed_date IS NOT NULL
+          AND handover_readiness IN ('ready', 'in_preparation', 'awaiting_approval', 'submitted')
+        GROUP BY 1
+      `),
+      // Handover-ready signal: deals that are won AND have a signed date
+      // AND have a non-default handover_readiness value. Strict to avoid
+      // surfacing stale/unmaintained signal. Returns the count and a top
+      // list (by signed_date desc).
+      db.execute(sql`
+        WITH hr AS (
+          SELECT id, deal_name, deal_owner_name, estimated_value, signed_date, handover_readiness
+          FROM opportunities
+          WHERE deleted_at IS NULL
+            AND status = 'won'
+            AND signed_date IS NOT NULL
+            AND handover_readiness IS NOT NULL
+            AND handover_readiness IN ('ready', 'in_preparation', 'awaiting_approval', 'submitted')
+        )
+        SELECT
+          (SELECT COUNT(*) FROM hr) AS total,
+          COALESCE(json_agg(row_to_json(t)) FILTER (WHERE t.id IS NOT NULL), '[]'::json) AS items
+        FROM (SELECT * FROM hr ORDER BY signed_date DESC NULLS LAST LIMIT 5) t
+      `),
+      // Linkage / data-gap signal: won opportunities that have no linked
+      // project_info row. These are real handover blockers — the deal is
+      // closed but not yet a project on our books.
+      db.execute(sql`
+        SELECT o.id, o.deal_name, o.deal_owner_name, o.estimated_value, o.signed_date
+        FROM opportunities o
+        WHERE o.deleted_at IS NULL
+          AND o.status = 'won'
+          AND NOT EXISTS (
+            SELECT 1 FROM project_info p
+            WHERE p.opportunity_id = o.id AND p.deleted_at IS NULL
+          )
+        ORDER BY o.signed_date DESC NULLS LAST
+        LIMIT 200
+      `),
+      // Action queue: top items needing action right now, ranked by
+      // composite priority. Each item carries a deterministic `reason`
+      // chip so the dashboard never invents a justification.
+      // Priority order: overdue follow-up > very stale > high-value quiet > stale 30d.
+      db.execute(sql`
+        WITH ranked AS (
+          SELECT
+            id,
+            deal_name,
+            deal_owner_name,
+            estimated_value,
+            next_activity_date,
+            last_activity_date,
+            CASE
+              WHEN next_activity_date IS NOT NULL AND next_activity_date < CURRENT_DATE THEN 'overdue_followup'
+              WHEN last_activity_date IS NOT NULL AND last_activity_date < CURRENT_DATE - INTERVAL '60 days' THEN 'very_stale'
+              WHEN estimated_value >= 500000 AND (last_activity_date IS NULL OR last_activity_date < CURRENT_DATE - INTERVAL '14 days') THEN 'high_value_quiet'
+              WHEN last_activity_date IS NULL OR last_activity_date < CURRENT_DATE - INTERVAL '30 days' THEN 'stale_30d'
+              ELSE NULL
+            END AS reason
+          FROM opportunities
+          WHERE deleted_at IS NULL AND (status = 'active' OR status IS NULL)
+        )
+        SELECT id, deal_name, deal_owner_name, estimated_value, next_activity_date, last_activity_date, reason
+        FROM ranked
+        WHERE reason IS NOT NULL
+        ORDER BY
+          CASE reason
+            WHEN 'overdue_followup' THEN 1
+            WHEN 'very_stale' THEN 2
+            WHEN 'high_value_quiet' THEN 3
+            WHEN 'stale_30d' THEN 4
+          END ASC,
+          COALESCE(estimated_value, 0) DESC
+        LIMIT 12
+      `),
+      // Eligible active = exact set the /opportunities working list shows.
+      // Defined in server/lib/opportunity-working-filter.ts as:
+      //   source=pipedrive AND no linked project AND not terminal AND
+      //   (status contains an active marker OR stage contains an active
+      //    front-office stage marker).
+      // Mirroring all four conditions here in SQL — including the positive
+      // active-marker requirement — keeps the top-strip tile fully
+      // reconcilable: clicking "Active eligible" drills to /opportunities
+      // and the row counts match exactly.
+      db.execute(sql`
+        SELECT COUNT(*) AS eligible
+        FROM opportunities o
+        WHERE o.deleted_at IS NULL
+          AND LOWER(COALESCE(o.source, '')) = 'pipedrive'
+          AND o.signed_date IS NULL
+          AND COALESCE(LOWER(o.status), '') NOT LIKE '%won%'
+          AND COALESCE(LOWER(o.status), '') NOT LIKE '%lost%'
+          AND COALESCE(LOWER(o.status), '') NOT LIKE '%closed%'
+          AND COALESCE(LOWER(o.status), '') NOT LIKE '%deleted%'
+          AND COALESCE(LOWER(o.status), '') NOT LIKE '%signed%'
+          AND COALESCE(LOWER(o.status), '') NOT LIKE '%contracted%'
+          AND COALESCE(LOWER(o.stage), '') NOT LIKE '%won%'
+          AND COALESCE(LOWER(o.stage), '') NOT LIKE '%lost%'
+          AND COALESCE(LOWER(o.stage), '') NOT LIKE '%closed%'
+          AND COALESCE(LOWER(o.stage), '') NOT LIKE '%deleted%'
+          AND COALESCE(LOWER(o.stage), '') NOT LIKE '%signed%'
+          AND COALESCE(LOWER(o.stage), '') NOT LIKE '%contracted%'
+          AND (
+            -- Primary include: open/active pipeline status
+            LOWER(COALESCE(o.status, '')) LIKE '%active%'
+            OR LOWER(COALESCE(o.status, '')) LIKE '%open%'
+            OR LOWER(COALESCE(o.status, '')) LIKE '%pipeline%'
+            OR LOWER(COALESCE(o.status, '')) LIKE '%in_progress%'
+            -- Fallback include: non-terminal stage in front-office pipeline
+            OR LOWER(COALESCE(o.stage, '')) LIKE '%prospect%'
+            OR LOWER(COALESCE(o.stage, '')) LIKE '%qualification%'
+            OR LOWER(COALESCE(o.stage, '')) LIKE '%proposal%'
+            OR LOWER(COALESCE(o.stage, '')) LIKE '%negotiation%'
+            OR LOWER(COALESCE(o.stage, '')) LIKE '%discovery%'
+            OR LOWER(COALESCE(o.stage, '')) LIKE '%assessment%'
+            OR LOWER(COALESCE(o.stage, '')) LIKE '%first assessment%'
+            OR LOWER(COALESCE(o.stage, '')) LIKE '%cost proposal%'
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM project_info p
+            WHERE p.opportunity_id = o.id AND p.deleted_at IS NULL
+          )
+      `),
+      // Blocked-by-internal-dependency: count distinct active/won opps that
+      // have at least one work_item in 'hold' status. work_items has no
+      // direct opportunity_id so we traverse via two valid paths:
+      //   1) work_items.pd_ticket_id -> pd_tickets.opportunity_id
+      //   2) work_items.project_id   -> project_info.opportunity_id
+      // 'hold' is the work-item blocker semantic in this codebase (see
+      // shared/schema/work-items.ts).
+      db.execute(sql`
+        SELECT COUNT(DISTINCT o.id) AS blocked
+        FROM opportunities o
+        WHERE o.deleted_at IS NULL
+          AND (o.status = 'active' OR o.status IS NULL OR o.status = 'won')
+          AND (
+            EXISTS (
+              SELECT 1 FROM work_items w
+              JOIN pd_tickets t ON t.id = w.pd_ticket_id AND t.deleted_at IS NULL
+              WHERE w.deleted_at IS NULL
+                AND LOWER(COALESCE(w.status, '')) = 'hold'
+                AND t.opportunity_id = o.id
+            )
+            OR EXISTS (
+              SELECT 1 FROM work_items w
+              JOIN project_info p ON p.id = w.project_id AND p.deleted_at IS NULL
+              WHERE w.deleted_at IS NULL
+                AND LOWER(COALESCE(w.status, '')) = 'hold'
+                AND p.opportunity_id = o.id
+            )
+          )
       `),
     ]);
 
@@ -408,6 +602,59 @@ router.get("/api/pd/dashboard", requireAuth, requirePermission("pd_dashboard", "
         won: Number(c.won ?? 0),
         lost: Number(c.lost ?? 0),
       },
+      // --- Operational additions (read-only). Backwards compatible: any
+      // consumer of the older /api/pd/dashboard contract continues to work
+      // because no existing field has been removed or renamed. ---
+      eligibleActiveCount: Number((eligibleRow.rows?.[0] as any)?.eligible ?? 0),
+      blockedDependencyCount: Number((blockedRow.rows?.[0] as any)?.blocked ?? 0),
+      byOwner: (() => {
+        const handoverByOwner = new Map<string, number>();
+        for (const r of (byOwnerHandoverRows.rows ?? []) as any[]) {
+          handoverByOwner.set(String(r.owner ?? "Unassigned"), Number(r.handover_ready ?? 0));
+        }
+        return (byOwnerRows.rows ?? []).map((r: any) => {
+          const owner = String(r.owner ?? "Unassigned");
+          return {
+            owner,
+            active: Number(r.active ?? 0),
+            overdue: Number(r.overdue ?? 0),
+            stale30: Number(r.stale30 ?? 0),
+            dueThisWeek: Number(r.due_this_week ?? 0),
+            pipelineValue: Number(r.pipeline_value ?? 0),
+            handoverReady: handoverByOwner.get(owner) ?? 0,
+          };
+        });
+      })(),
+      handoverReady: {
+        total: Number((handoverRow.rows?.[0] as any)?.total ?? 0),
+        items: (((handoverRow.rows?.[0] as any)?.items ?? []) as any[]).map((it) => ({
+          id: Number(it.id),
+          dealName: it.deal_name ?? null,
+          owner: it.deal_owner_name ?? null,
+          value: it.estimated_value != null ? Number(it.estimated_value) : null,
+          signedDate: it.signed_date ?? null,
+          handoverReadiness: it.handover_readiness ?? null,
+        })),
+      },
+      linkageGaps: {
+        total: linkageRows.rows?.length ?? 0,
+        items: (linkageRows.rows ?? []).slice(0, 8).map((r: any) => ({
+          id: Number(r.id),
+          dealName: r.deal_name ?? null,
+          owner: r.deal_owner_name ?? null,
+          value: r.estimated_value != null ? Number(r.estimated_value) : null,
+          signedDate: r.signed_date ?? null,
+        })),
+      },
+      actionQueue: (actionQueueRows.rows ?? []).map((r: any) => ({
+        id: Number(r.id),
+        dealName: r.deal_name ?? null,
+        owner: r.deal_owner_name ?? null,
+        value: r.estimated_value != null ? Number(r.estimated_value) : null,
+        nextActivityDate: r.next_activity_date ?? null,
+        lastActivityDate: r.last_activity_date ?? null,
+        reason: String(r.reason ?? ""),
+      })),
     });
   } catch (err) {
     console.error("[Opportunities] Failed to compute PD dashboard:", err);
