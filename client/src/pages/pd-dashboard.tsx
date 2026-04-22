@@ -593,6 +593,13 @@ function MeetingViewSection() {
             <p className="text-muted-foreground">Spine gaps</p>
             <p className={`text-lg font-semibold ${data.totals.spineGap > 0 ? "text-rose-700" : ""}`}>{data.totals.spineGap}</p>
             <p className="text-[10px] text-muted-foreground">work_items but no PD ticket</p>
+            <Link
+              href="/admin/work-item-linkage"
+              className="text-[10px] text-emerald-700 underline hover:no-underline"
+              data-testid="link-spine-gap-repair"
+            >
+              Open linkage repair →
+            </Link>
           </div>
         </div>
         <div className="overflow-x-auto">

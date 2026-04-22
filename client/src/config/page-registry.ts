@@ -229,6 +229,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "adminSettings", path: "/admin/settings", label: "System Settings", iconKey: "Settings", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "RoleSettingsPage" },
   { id: "adminWorkflowConfig", path: "/admin/workflow-config", label: "Workflow Configuration", iconKey: "Workflow", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminWorkflowConfigPage" },
   { id: "adminBackfill", path: "/admin/data-migration-status", label: "Data Migration Status", iconKey: "Database", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminBackfillPage" },
+  { id: "adminWorkItemLinkage", path: "/admin/work-item-linkage", label: "Work Item Linkage", iconKey: "Link", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminWorkItemLinkagePage" },
   { id: "adminPipedrive", path: "/admin/pipedrive", label: "Pipedrive Integration", iconKey: "Plug", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminPipedrivePage" },
   { id: "adminQuickBooks", path: "/admin/quickbooks", label: "QuickBooks Integration", iconKey: "Plug", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminQuickBooksPage" },
   // Absorbed into QB Throughput > Mapping / Reconciliation tabs — hidden from nav.
