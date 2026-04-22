@@ -13,7 +13,7 @@ import { normalizeRoleForPermissions } from "@shared/schema";
 import { ShieldAlert, ArrowLeft } from "lucide-react";
 import { LoadingState } from "@/components/ui/loading-state";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { PAGE_REGISTRY, LEGACY_REDIRECTS, ROLE_LANDING_PAGE } from "@/config/page-registry";
+import { PAGE_REGISTRY, LEGACY_REDIRECTS } from "@/config/page-registry";
 import { useScrollRestoration } from "@/hooks/use-scroll-restoration";
 import { LensProvider } from "@/hooks/use-lens-context";
 import { Suspense, useEffect, useState } from "react";
@@ -23,10 +23,10 @@ import { Button } from "@/components/ui/button";
 import { lazyWithRetry } from "@/lib/lazy-with-retry";
 import { ROUTE_COMPONENTS } from "@/config/route-components";
 import { useScreenAvailability } from "@/hooks/use-screen-availability";
+import { useRoleRedirect } from "@/hooks/useRoleRedirect";
 
 // Eagerly loaded pages (critical path — login, home, not-found)
 import LoginPage from "@/pages/login";
-import HomePage from "@/pages/home";
 import NotFound from "@/pages/not-found";
 import MsCallbackPage from "@/pages/ms-callback";
 
@@ -37,15 +37,9 @@ const NAVIGATION_MODE = {
   mobile: "capture-check-approve-update-escalate",
 } as const;
 
-function resolveHomePath(userRole?: string | null, companyRole?: string | null) {
-  const effectiveRole = normalizeRoleForPermissions(userRole || companyRole);
-  return ROLE_LANDING_PAGE[effectiveRole] || "/dashboard";
-}
-
 function HomeRedirect() {
-  const { user } = useAuth();
-  const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
-  return <Redirect to={resolveHomePath(user?.role, companyRole)} />;
+  const redirectPath = useRoleRedirect();
+  return <Redirect to={redirectPath} />;
 }
 
 const APP_ROUTES: RouteConfig[] = [
@@ -162,7 +156,7 @@ function ProtectedPages() {
       <Suspense fallback={<div className="space-y-6 p-6"><LoadingState variant="skeleton-card" cards={4} /><LoadingState variant="skeleton-table" rows={6} /></div>}>
       <div className="page-enter">
         <Switch>
-          <Route path="/" component={HomePage} />
+          <Route path="/" component={HomeRedirect} />
           {APP_ROUTES.map((route) => {
             if (route.redirectTo) {
               return <Route key={route.path} path={route.path}>{() => <Redirect to={route.redirectTo!} />}</Route>;
