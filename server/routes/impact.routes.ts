@@ -26,7 +26,7 @@ import { projectInfo, clients, sites, opportunities } from "@shared/schema/proje
 import { workItems } from "@shared/schema/tasks";
 import { approvals } from "@shared/schema/collaboration";
 import { controlledDocuments } from "@shared/schema/documents";
-import { purchaseOrders, poReviewAssignments, paymentRequests } from "@shared/schema/finance";
+import { purchaseOrders, poReviewAssignments, paymentRequests, invoiceCaptures } from "@shared/schema/finance";
 import { ApiError, badRequest, notFound, serverError } from "../lib/api-error";
 
 interface ImpactRow {
@@ -182,6 +182,52 @@ async function getPoDeleteImpact(poId: number): Promise<{ subject: string; rows:
   return { subject: `${po.poRef} — ${po.supplierName}`, rows };
 }
 
+/**
+ * Invoice (capture) delete impact. Invoices attach to payment requests
+ * and can be linked to POs + procurement items — severity high when any
+ * of those are live.
+ */
+async function getInvoiceDeleteImpact(invoiceId: number): Promise<{ subject: string; rows: ImpactRow[] } | null> {
+  const [invoice] = await db
+    .select({
+      id: invoiceCaptures.id,
+      invoiceNumber: invoiceCaptures.invoiceNumber,
+      amount: invoiceCaptures.amount,
+      linkedPoId: invoiceCaptures.linkedPoId,
+    })
+    .from(invoiceCaptures)
+    .where(eq(invoiceCaptures.id, invoiceId))
+    .limit(1);
+  if (!invoice) return null;
+
+  const [paymentRequestCount] = await Promise.all([
+    countRows(paymentRequests, eq(paymentRequests.invoiceCaptureId, invoiceId)),
+  ]);
+
+  const rows: ImpactRow[] = [];
+  if (paymentRequestCount > 0) {
+    rows.push({
+      label: "Payment requests raised from this invoice",
+      count: paymentRequestCount,
+      severity: "high",
+      note: "Removing can break the reconciliation chain",
+    });
+  }
+  if (invoice.linkedPoId) {
+    rows.push({
+      label: "Linked to a purchase order",
+      count: 1,
+      severity: "medium",
+      note: "PO → invoice link will be broken",
+    });
+  }
+
+  const label = invoice.invoiceNumber
+    ? `Invoice ${invoice.invoiceNumber}${invoice.amount ? ` — R ${invoice.amount}` : ""}`
+    : `Invoice #${invoice.id}`;
+  return { subject: label, rows };
+}
+
 export function registerImpactRoutes(app: Express): void {
   // ------------------------------------------------------------------
   // GET /api/projects/:id/delete-impact
@@ -241,6 +287,27 @@ export function registerImpactRoutes(app: Express): void {
       } catch (err) {
         if (err instanceof ApiError) throw err;
         console.error("[impact] PO delete-impact error:", err);
+        throw serverError("Failed to compute delete impact");
+      }
+    },
+  );
+
+  // ------------------------------------------------------------------
+  // GET /api/invoices/:id/delete-impact
+  // ------------------------------------------------------------------
+  app.get(
+    "/api/invoices/:id/delete-impact",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      const parsed = projectIdParam.safeParse(req.params.id);
+      if (!parsed.success) throw badRequest("Invalid invoice id");
+      try {
+        const impact = await getInvoiceDeleteImpact(parsed.data);
+        if (!impact) throw notFound(`Invoice ${parsed.data} not found`);
+        res.json(impact);
+      } catch (err) {
+        if (err instanceof ApiError) throw err;
+        console.error("[impact] invoice delete-impact error:", err);
         throw serverError("Failed to compute delete impact");
       }
     },
