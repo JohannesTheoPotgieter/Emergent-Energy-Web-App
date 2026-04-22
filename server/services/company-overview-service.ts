@@ -70,6 +70,19 @@ function daysBetween(a: string, b: string): number {
   );
 }
 
+const HARD_HIDDEN_KPI_KEYS = new Set<string>([
+  // Proxy-target KPIs
+  "pd_signed_pipeline_vs_target",
+  "fin_revenue_vs_target",
+  "fin_cash_collected_vs_target",
+  "fin_cos_vs_target",
+  "fin_gross_margin_vs_target",
+  // Null-model KPIs
+  "hse_site_audit_pass_rate",
+  "hse_toolbox_compliance",
+  "hse_safety_file_completeness",
+]);
+
 // ── Main Service ─────────────────────────────────────────────────────
 
 export async function getCompanyOverviewData() {
@@ -603,6 +616,10 @@ export async function getCompanyOverviewData() {
   ];
 
   const companyScore = calculateCompanyScore(departmentScores);
+  const visibleDepartmentScores = departmentScores.map((ds) => ({
+    ...ds,
+    kpis: ds.kpis.filter((k) => !HARD_HIDDEN_KPI_KEYS.has(k.kpiKey)),
+  }));
 
   // ── Executive exceptions ───────────────────────────────────────────
   type Exception = {
@@ -752,13 +769,31 @@ export async function getCompanyOverviewData() {
   signals.sort((a, b) => b.date.localeCompare(a.date));
 
   // ── Build response ─────────────────────────────────────────────────
+  const confidenceIssues = invoiceWithoutPoCount + costRowsMissingLineage + revenueRowsMissingLineage + companyOverviewNullCount;
+  const dataConfidence = confidenceIssues === 0 ? "high" : confidenceIssues <= 5 ? "medium" : "low";
+  const trustedTopStrip = {
+    activeProjects: activeProjects.length,
+    blockedGates: blockedGates.length,
+    overdueItems: overdueItems.length,
+    missingUpdates: missingUpdateProjects.length,
+  };
+  const drilldownReconciliation = [
+    { metricKey: "activeProjects", label: "Active Projects", drilldownPath: "/gates", summaryValue: trustedTopStrip.activeProjects, drilldownValue: activeProjects.length, match: trustedTopStrip.activeProjects === activeProjects.length },
+    { metricKey: "blockedGates", label: "Blocked Gates", drilldownPath: "/gates/blocked", summaryValue: trustedTopStrip.blockedGates, drilldownValue: blockedGates.length, match: trustedTopStrip.blockedGates === blockedGates.length },
+    { metricKey: "overdueItems", label: "Overdue Items", drilldownPath: "/gates/exceptions", summaryValue: trustedTopStrip.overdueItems, drilldownValue: overdueItems.length, match: trustedTopStrip.overdueItems === overdueItems.length },
+    { metricKey: "missingUpdates", label: "Missing Weekly Updates", drilldownPath: "/gates/client-updates", summaryValue: trustedTopStrip.missingUpdates, drilldownValue: missingUpdateProjects.length, match: trustedTopStrip.missingUpdates === missingUpdateProjects.length },
+  ];
+
   return {
     meta: {
       fyStart,
       fyEnd,
       today,
       refreshedAt,
+      lastUpdated: refreshedAt,
       period: "FYTD",
+      dataConfidence,
+      hiddenKpiKeys: Array.from(HARD_HIDDEN_KPI_KEYS),
       financeTrust: {
         sourceLayer: {
           canonical: ["normalized_revenue_lines", "normalized_cost_lines"],
@@ -770,9 +805,17 @@ export async function getCompanyOverviewData() {
           ? "Some active finance rows are missing source_sheet/source_row lineage metadata."
           : null,
       },
+      metricRegister: [
+        { label: "Active Projects", formula: "COUNT(project_info where execution state ACTIVE)", source: "project_info + project_execution_state", owner: "PMO", timeBasis: "as-of now", thresholds: "none", drilldownTarget: "/gates", trustStatus: "trusted", visible: true },
+        { label: "Blocked Gates", formula: "COUNT(project_stage_requirements where blocksGate=true and status not complete/approved)", source: "project_stage_requirements", owner: "Project Delivery", timeBasis: "as-of now", thresholds: ">0 needs action", drilldownTarget: "/gates/blocked", trustStatus: "trusted", visible: true },
+        { label: "Overdue Items", formula: "COUNT(work_items due < today and not completed)", source: "work_items", owner: "Project Delivery", timeBasis: "daily", thresholds: ">0 needs action", drilldownTarget: "/gates/exceptions", trustStatus: "trusted", visible: true },
+        { label: "Missing Weekly Updates", formula: "COUNT(active projects with no client update in last 7 days)", source: "client_updates + project_info", owner: "Project Delivery", timeBasis: "rolling 7 days", thresholds: ">0 needs action", drilldownTarget: "/gates/client-updates", trustStatus: "trusted", visible: true },
+      ],
     },
+    trustedTopStrip,
+    drilldownReconciliation,
     companyScore,
-    departmentScores,
+    departmentScores: visibleDepartmentScores,
     executiveSummary: {
       companyHealthScore: companyScore.score,
       companyHealthRag: companyScore.rag,

@@ -9,13 +9,21 @@ import {
   ShieldCheck,
   CheckCircle2,
   DollarSign,
-  ArrowUp,
-  ArrowDown,
-  Minus,
   AlertTriangle,
   Info,
 } from "lucide-react";
 import type { Department, RagStatus, DepartmentScore, KpiScore } from "@shared/config/kpi-registry";
+
+const HIDDEN_KPI_KEYS = new Set([
+  "pd_signed_pipeline_vs_target",
+  "fin_revenue_vs_target",
+  "fin_cash_collected_vs_target",
+  "fin_cos_vs_target",
+  "fin_gross_margin_vs_target",
+  "hse_site_audit_pass_rate",
+  "hse_toolbox_compliance",
+  "hse_safety_file_completeness",
+]);
 
 const DEPT_ICONS: Record<Department, React.ReactNode> = {
   "Project Development": <Briefcase className="w-4 h-4" />,
@@ -41,16 +49,10 @@ const RAG_COLORS: Record<RagStatus, { bg: string; text: string; border: string; 
   red: { bg: "bg-red-50", text: "text-red-700", border: "border-red-200", dot: "bg-red-500" },
 };
 
-const TREND_ICONS: Record<string, React.ReactNode> = {
-  up: <ArrowUp className="w-3 h-3 text-emerald-600" />,
-  down: <ArrowDown className="w-3 h-3 text-red-600" />,
-  flat: <Minus className="w-3 h-3 text-muted-foreground" />,
-};
-
 function KpiChip({ kpi }: { kpi: KpiScore }) {
   if (kpi.score == null) {
     return (
-      <span className="text-[10px] text-muted-foreground/60 truncate">
+      <span className="text-[10px] text-muted-foreground/60 truncate" title={`${kpi.kpiName}: no data`}>
         {kpi.kpiName}: —
       </span>
     );
@@ -58,7 +60,11 @@ function KpiChip({ kpi }: { kpi: KpiScore }) {
   const color = kpi.score >= 85 ? "text-emerald-600" : kpi.score >= 70 ? "text-amber-600" : "text-red-600";
   return (
     <span className={`text-[10px] truncate ${color}`}>
-      {kpi.kpiName.replace(/ \(.*\)/, "").slice(0, 30)}: {Math.round(kpi.score)}
+      <span title={`${kpi.kpiName}: ${Math.round(kpi.score)}/100`}>
+        {kpi.kpiName.replace(/ \(.*\)/, "").slice(0, 22)}
+      </span>
+      <span className="text-muted-foreground"> · </span>
+      {Math.round(kpi.score)}
     </span>
   );
 }
@@ -92,8 +98,9 @@ export function DepartmentHealthGrid({
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
       {scores.map((ds) => {
         const rag = RAG_COLORS[ds.rag];
-        const topKpis = ds.kpis.slice(0, 3);
-        const worstKpi = [...ds.kpis]
+        const visibleKpis = ds.kpis.filter((k) => !HIDDEN_KPI_KEYS.has(k.kpiKey));
+        const topKpis = visibleKpis.slice(0, 3);
+        const worstKpi = [...visibleKpis]
           .filter((k) => k.score != null)
           .sort((a, b) => (a.score ?? 100) - (b.score ?? 100))[0];
 
@@ -130,6 +137,9 @@ export function DepartmentHealthGrid({
                   {topKpis.map((kpi) => (
                     <KpiChip key={kpi.kpiKey} kpi={kpi} />
                   ))}
+                  {topKpis.length === 0 && (
+                    <span className="text-[10px] text-muted-foreground">No trusted KPI models visible</span>
+                  )}
                 </div>
 
                 {/* Worst blocker */}

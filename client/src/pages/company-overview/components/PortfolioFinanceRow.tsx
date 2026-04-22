@@ -25,6 +25,11 @@ interface PortfolioSnapshot {
 }
 
 interface FinanceSnapshot {
+  cashReceivedFytd?: number;
+  cashPaidFytd?: number;
+  realisedRevenueFytd?: number;
+  realisedCostFytd?: number;
+  realisedGrossMarginPct?: number;
   revenueFytd: number;
   revenueTarget: number;
   cosFytd: number;
@@ -88,13 +93,6 @@ export function PortfolioFinanceRow({
     );
   }
 
-  const revPct = finance.revenueTarget > 0
-    ? Math.round((finance.revenueFytd / finance.revenueTarget) * 100)
-    : 0;
-  const cosPct = finance.cosTarget > 0
-    ? Math.round((finance.cosFytd / finance.cosTarget) * 100)
-    : 0;
-
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
       {/* Portfolio Delivery Snapshot */}
@@ -141,7 +139,6 @@ export function PortfolioFinanceRow({
             <div className="flex items-center gap-2">
               <DollarSign className="w-4 h-4 text-primary" />
               <h3 className="text-sm font-semibold text-foreground">Financial Snapshot</h3>
-              <Badge variant="secondary" className="text-[10px]">FYTD</Badge>
             </div>
             <Link href="/cashflow">
               <span className="text-xs text-primary hover:underline font-medium cursor-pointer flex items-center gap-1">
@@ -151,29 +148,25 @@ export function PortfolioFinanceRow({
           </div>
           <div className="divide-y divide-border/30">
             <div className="flex items-center justify-between py-1.5">
-              <span className="text-xs text-muted-foreground">Revenue FYTD</span>
+              <span className="text-xs text-muted-foreground">Revenue Realised FYTD</span>
               <div className="text-right">
-                <span className="text-sm font-semibold font-mono text-foreground">{money(finance.revenueFytd)}</span>
-                <span className="text-[10px] text-muted-foreground ml-1.5">/ {money(finance.revenueTarget)}</span>
-                <Badge variant="secondary" className={`text-[10px] ml-1.5 ${revPct >= 80 ? "bg-emerald-50 text-emerald-700" : revPct >= 60 ? "bg-amber-50 text-amber-700" : "bg-red-50 text-red-700"}`}>
-                  {revPct}%
-                </Badge>
+                <span className="text-sm font-semibold font-mono text-foreground">{money(finance.realisedRevenueFytd ?? finance.revenueFytd)}</span>
               </div>
             </div>
             <div className="flex items-center justify-between py-1.5">
-              <span className="text-xs text-muted-foreground">COS FYTD</span>
+              <span className="text-xs text-muted-foreground">COS Realised FYTD</span>
               <div className="text-right">
-                <span className="text-sm font-semibold font-mono text-foreground">{money(finance.cosFytd)}</span>
-                <span className="text-[10px] text-muted-foreground ml-1.5">/ {money(finance.cosTarget)}</span>
+                <span className="text-sm font-semibold font-mono text-foreground">{money(finance.realisedCostFytd ?? finance.cosFytd)}</span>
               </div>
             </div>
             <StatLine
               icon={<span />}
               label="Gross Margin %"
-              value={`${finance.grossMarginPct}%`}
-              color={finance.grossMarginPct >= 15 ? "text-emerald-600" : finance.grossMarginPct >= 10 ? "text-amber-600" : "text-red-600"}
+              value={`${finance.realisedGrossMarginPct ?? finance.grossMarginPct}%`}
             />
-            <StatLine icon={<span />} label="Collection Rate" value={`${finance.collectionRate}%`} />
+            <StatLine icon={<span />} label="Cash Collection Rate" value={`${finance.collectionRate}%`} />
+            <StatLine icon={<span />} label="Cash Received FYTD" value={money(finance.cashReceivedFytd ?? finance.revenueFytd)} />
+            <StatLine icon={<span />} label="Cash Paid FYTD" value={money(finance.cashPaidFytd ?? finance.cosFytd)} />
             <StatLine
               icon={<AlertTriangle className="w-3.5 h-3.5" />}
               label="Overdue Debtors"
