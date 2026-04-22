@@ -383,9 +383,22 @@ export default function OpportunitiesPage() {
 
   // Search + sort UI state for the List view.
   type SortKey = "dealName" | "stage" | "projectDeveloper" | "province" | "estimatedKwp" | "estimatedValue" | "expectedCloseDate" | "nextActivityDate" | "openEngineeringTaskCount";
+  type RiskFilter = "stale-30" | "stale-60" | "high-value-quiet" | "overdue-followups" | null;
   const [searchTerm, setSearchTerm] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("expectedCloseDate");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  // Risk-signal filter from PD dashboard drill-ins. Read once on mount
+  // from ?filter= query param so /opportunities?filter=stale-30 etc.
+  // land on the filtered view.
+  const [riskFilter, setRiskFilter] = useState<RiskFilter>(() => {
+    if (typeof window === "undefined") return null;
+    const raw = new URLSearchParams(window.location.search).get("filter");
+    if (raw === "stale-30" || raw === "stale-60" || raw === "high-value-quiet" || raw === "overdue-followups") {
+      return raw;
+    }
+    return null;
+  });
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -647,13 +660,46 @@ export default function OpportunitiesPage() {
     return filtered;
   }, [data]);
 
+  // Apply risk-signal filter (from PD dashboard drill-ins) on top of
+  // active rows. Keeps activeRows unchanged so the Kanban / Calendar
+  // tabs stay unaffected by this filter.
+  const riskFilteredRows = useMemo(() => {
+    if (!riskFilter) return activeRows;
+    const now = Date.now();
+    const MS_PER_DAY = 86_400_000;
+    const HIGH_VALUE_THRESHOLD = 500_000; // R500k+ = high value
+    return activeRows.filter((row) => {
+      switch (riskFilter) {
+        case "stale-30": {
+          if (!row.lastUpdated) return true; // never updated = definitely stale
+          return now - new Date(row.lastUpdated).getTime() > 30 * MS_PER_DAY;
+        }
+        case "stale-60": {
+          if (!row.lastUpdated) return true;
+          return now - new Date(row.lastUpdated).getTime() > 60 * MS_PER_DAY;
+        }
+        case "high-value-quiet": {
+          if (row.estimatedValue == null || row.estimatedValue < HIGH_VALUE_THRESHOLD) return false;
+          if (!row.lastUpdated) return true;
+          return now - new Date(row.lastUpdated).getTime() > 14 * MS_PER_DAY;
+        }
+        case "overdue-followups": {
+          if (!row.nextActivityDate) return false;
+          return new Date(row.nextActivityDate).getTime() < now;
+        }
+        default:
+          return true;
+      }
+    });
+  }, [activeRows, riskFilter]);
+
   // Derived list for the table view: applies the search filter and the
   // current sort. Kanban/Calendar tabs continue to use `activeRows`
   // directly (their own sort behavior is in the child components).
   const displayRows = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
     const filtered = q
-      ? activeRows.filter((row) => {
+      ? riskFilteredRows.filter((row) => {
           const haystack = [
             row.dealName,
             row.orgClientName,
@@ -669,7 +715,7 @@ export default function OpportunitiesPage() {
             .join(" ");
           return haystack.includes(q);
         })
-      : activeRows;
+      : riskFilteredRows;
 
     const dir = sortDir === "asc" ? 1 : -1;
     const cmp = (a: WorkingOpportunityRow, b: WorkingOpportunityRow): number => {
@@ -690,7 +736,7 @@ export default function OpportunitiesPage() {
       return String(av).localeCompare(String(bv)) * dir;
     };
     return [...filtered].sort(cmp);
-  }, [activeRows, searchTerm, sortKey, sortDir]);
+  }, [riskFilteredRows, searchTerm, sortKey, sortDir]);
 
   const sortIndicator = (key: SortKey) =>
     sortKey === key ? (
@@ -912,6 +958,35 @@ export default function OpportunitiesPage() {
 
           {/* ── List view (compact) ───────────────────────────────────── */}
           <TabsContent value="list" className="mt-3">
+            {riskFilter && (
+              <div
+                className="mb-2 flex items-center justify-between rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+                data-testid="risk-filter-banner"
+              >
+                <span>
+                  <strong>Filter active:</strong>{" "}
+                  {riskFilter === "stale-30" && "Deals with no activity for 30+ days"}
+                  {riskFilter === "stale-60" && "Deals with no activity for 60+ days"}
+                  {riskFilter === "high-value-quiet" && "High-value deals with 14+ days quiet"}
+                  {riskFilter === "overdue-followups" && "Deals with overdue follow-ups"}
+                  {" "}·{" "}<span className="tabular-nums">{riskFilteredRows.length} match{riskFilteredRows.length === 1 ? "" : "es"}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRiskFilter(null);
+                    const params = new URLSearchParams(window.location.search);
+                    params.delete("filter");
+                    const qs = params.toString();
+                    window.history.replaceState(null, "", window.location.pathname + (qs ? `?${qs}` : ""));
+                  }}
+                  className="text-amber-900 underline hover:no-underline"
+                  data-testid="btn-clear-risk-filter"
+                >
+                  Clear filter
+                </button>
+              </div>
+            )}
             <div className="flex items-center justify-between gap-3 mb-2">
               <div className="relative w-full max-w-md">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
