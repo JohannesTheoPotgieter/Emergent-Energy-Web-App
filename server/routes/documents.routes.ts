@@ -30,12 +30,14 @@ import {
   getApprovalQueueForUser,
   getProjectDocumentDetail,
   getProjectDocumentSummary,
+  getProjectSharepointRoot,
   listActiveDocumentTypes,
   listAllDocumentTypes,
   recordApproval,
   recordRecall,
   recordRejection,
   updateDocumentType,
+  upsertProjectSharepointRoot,
 } from "../repositories/controlled-documents-repository";
 import { ApiError, badRequest, conflict, forbidden, notFound, serverError, unauthorized } from "../lib/api-error";
 
@@ -59,6 +61,12 @@ const createTypeBodySchema = z.object({
     })
     .nullish(),
   sortOrder: z.number().int().min(0).max(9999).optional(),
+});
+
+const upsertSharepointRootBodySchema = z.object({
+  rootPath: z.string().min(1).max(1024),
+  driveId: z.string().max(256).nullish(),
+  rootItemId: z.string().max(256).nullish(),
 });
 
 const updateTypeBodySchema = z.object({
@@ -404,6 +412,59 @@ export function registerControlledDocumentRoutes(app: Express): void {
         const msg = err instanceof Error ? err.message : "Deactivate failed";
         if (/not found/i.test(msg)) throw notFound(msg);
         throw badRequest(msg);
+      }
+    },
+  );
+
+  // ====================================================================
+  // D5.3 — per-project SharePoint root config (super-user)
+  //   GET   /api/projects/:projectId/sharepoint-root  — any authed user
+  //   PUT   /api/projects/:projectId/sharepoint-root  — super-user only
+  // Metadata only. Real folder tree creation lives in D3.5 when Graph
+  // integration lands — today we store the root path string so the
+  // DocumentStrip + submit dialog know where to look.
+  // ====================================================================
+
+  app.get(
+    "/api/projects/:projectId/sharepoint-root",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      const parsedId = projectIdParam.safeParse(req.params.projectId);
+      if (!parsedId.success) throw badRequest("Invalid projectId");
+      try {
+        const root = await getProjectSharepointRoot(parsedId.data);
+        res.json({ root });
+      } catch (err) {
+        if (err instanceof ApiError) throw err;
+        console.error("[controlled-documents] get root error:", err);
+        throw serverError("Failed to load SharePoint root");
+      }
+    },
+  );
+
+  app.put(
+    "/api/projects/:projectId/sharepoint-root",
+    requireAuth,
+    requireRole(SUPER_ROLES),
+    async (req: Request, res: Response) => {
+      const user = getEffectiveUser(req);
+      if (!user) throw unauthorized();
+      const parsedId = projectIdParam.safeParse(req.params.projectId);
+      if (!parsedId.success) throw badRequest("Invalid projectId");
+      const parsedBody = upsertSharepointRootBodySchema.safeParse(req.body);
+      if (!parsedBody.success) throw badRequest("Invalid SharePoint root payload");
+      try {
+        const row = await upsertProjectSharepointRoot({
+          projectId: parsedId.data,
+          rootPath: parsedBody.data.rootPath,
+          driveId: parsedBody.data.driveId ?? null,
+          rootItemId: parsedBody.data.rootItemId ?? null,
+          userId: user.id,
+        });
+        res.json({ root: row });
+      } catch (err) {
+        console.error("[controlled-documents] upsert root error:", err);
+        throw badRequest(err instanceof Error ? err.message : "Upsert failed");
       }
     },
   );
