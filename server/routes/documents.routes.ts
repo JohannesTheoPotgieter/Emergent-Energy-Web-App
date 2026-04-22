@@ -28,6 +28,7 @@ import {
   createSubmission,
   deactivateDocumentType,
   getApprovalQueueForUser,
+  getDocumentType,
   getProjectDocumentDetail,
   getProjectDocumentSummary,
   getProjectSharepointRoot,
@@ -39,6 +40,7 @@ import {
   updateDocumentType,
   upsertProjectSharepointRoot,
 } from "../repositories/controlled-documents-repository";
+import { listDraftFiles } from "../services/sharepoint-doc-control-service";
 import { ApiError, badRequest, conflict, forbidden, notFound, serverError, unauthorized } from "../lib/api-error";
 
 const projectIdParam = z.coerce.number().int().positive();
@@ -325,6 +327,42 @@ export function registerControlledDocumentRoutes(app: Express): void {
         if (err instanceof ApiError) throw err;
         console.error("[controlled-documents] queue error:", err);
         throw serverError("Failed to load approval queue");
+      }
+    },
+  );
+
+  // ------------------------------------------------------------------
+  // GET /api/projects/:projectId/sharepoint-drafts/:typeKey
+  // Lists draft files in the project's SharePoint Drafts folder for a
+  // given document type. Mock-connector aware — returns fixture files
+  // when MS Graph creds absent.
+  // ------------------------------------------------------------------
+  app.get(
+    "/api/projects/:projectId/sharepoint-drafts/:typeKey",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      const parsedId = projectIdParam.safeParse(req.params.projectId);
+      if (!parsedId.success) throw badRequest("Invalid projectId");
+      const parsedKey = typeKeyParam.safeParse(req.params.typeKey);
+      if (!parsedKey.success) throw badRequest("Invalid typeKey");
+      try {
+        const [root, type] = await Promise.all([
+          getProjectSharepointRoot(parsedId.data),
+          getDocumentType(parsedKey.data),
+        ]);
+        if (!type) throw notFound(`Document type '${parsedKey.data}' not found`);
+        if (!root) {
+          throw conflict(
+            `Project has no SharePoint root configured. ` +
+            `Set one on the Controlled docs tab before picking drafts.`,
+          );
+        }
+        const drafts = await listDraftFiles(root.driveId, root.rootPath, type.folderSubPath);
+        res.json({ drafts });
+      } catch (err) {
+        if (err instanceof ApiError) throw err;
+        console.error("[controlled-documents] drafts error:", err);
+        throw serverError("Failed to list draft files");
       }
     },
   );
