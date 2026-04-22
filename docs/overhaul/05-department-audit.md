@@ -93,4 +93,105 @@ Lifecycle order: **Project Development → Program / Project Delivery → Engine
 
 ---
 
-(Next departments will be appended as we walk them: PM delivery → Engineering → Quality → HSE → Finance → Handover → O&M.)
+## B. Program / Project Delivery (PM)
+
+**Role ownership:** `PROGRAM_MANAGER`, `PROJECT_MANAGER_SITE`, `CONSTRUCTION_MANAGER`. COO watches.
+
+### B1. `/projects` — Project list
+
+- **Job**: Browse all projects, filter/sort, click into detail.
+- **Necessary?** Yes — the index.
+- **End-to-end?** Yes — reads from `/api/projects-summary`.
+- **Super-user?** Can edit project metadata via the detail page. No delete button here — intentional: projects are archived not deleted. `DeleteProjectDialog` (R4.2) is available but not wired here; archive flow lives on project-detail.
+- **Gaps:** Filters are numerous and functional. No known correctness issue.
+
+### B2. `/project/:projectName` — Project detail
+
+- **Job**: The PM's primary working surface per project. Tabs across delivery, commercial, engineering, quality, PD (with controlled docs), etc.
+- **Necessary?** Yes — central to PM life.
+- **End-to-end?** Yes. D3.4d added the Controlled docs subtab; D5.3 added the SharePoint root config card.
+- **Super-user?** Yes.
+- **Gaps:**
+  - Very large file (1814 lines) — refactoring candidate for a future session, not a correctness bug.
+  - No inline DeleteProjectDialog yet (archive is preferred — see B1). ✓ Design intent.
+
+### B3. `/execution-board` — Program / execution overview
+
+- **Job**: COO / Program Manager's portfolio view of active projects. Action Center, RAG split, financial KPIs, Top Problem Projects.
+- **Necessary?** Yes — the "what needs attention" portfolio surface.
+- **End-to-end?** Yes — already audited during D2 COO home planning. 3 tabs (Overview / Program / Finance).
+- **Super-user?** Read-focused. Actions flow via drill-in.
+- **Gaps:** None new since D2 reshape planning.
+
+### B4. `/pm-dashboard` — PM personal dashboard
+
+- **Job**: A specific PM's own view of their projects + their open tasks + approvals.
+- **Necessary?** Yes — individual PM's morning surface.
+- **End-to-end?** Yes.
+- **Super-user?** Read + action.
+- **Gaps:** Could absorb the `ApprovalQueueCard` so PMs see their D3 approvals without hunting. **Fix = small.**
+
+### B5. `/pm/on-the-go` — PM mobile-friendly
+
+- **Job**: PM on site with a phone — quick log photo / update / issue / invoice.
+- **Necessary?** Yes — unique mobile flow.
+- **End-to-end?** Yes.
+- **Super-user?** Yes.
+- **Gaps:** Hasn't been visually refreshed in the R1 pass (it uses its own layout). Low-priority — field-work app feels OK as-is.
+
+### B6. `/pm/approvals` — PM-owned approvals
+
+- **Job**: PM's queue of things waiting on them to approve (PO, variation, invoice attach).
+- **Necessary?** Yes.
+- **End-to-end?** Yes — approvals table backs it.
+- **Super-user?** Yes — can override on behalf-of.
+- **Gaps:** Doesn't include controlled-document approvals today. Easy merge: this page can either (a) filter the `approvals` table generically — today it probably does — which means our D3 `approvalType='controlled_document'` rows should already appear. **Verification needed** in a future session by inspecting what the page filters on.
+
+### B7. `/weekly-reviews` — Weekly PM review wizard
+
+- **Job**: Structured weekly form for each PM to update their projects.
+- **Necessary?** Yes — cadence discipline.
+- **End-to-end?** Yes.
+- **Super-user?** Yes.
+- **Gaps:** None new.
+
+### B8. `/portfolios` + `/portfolios/:id` — Portfolio management
+
+- **Job**: Group projects by program / client / region for portfolio rollups.
+- **Necessary?** Yes.
+- **End-to-end?** Yes.
+- **Super-user?** Yes.
+
+### B9. `/governance/financial-reviews` — Financial review queue
+
+- **Job**: Finance-related approvals pending (budget exceptions, vendor on-boarding, etc.).
+- **Necessary?** Yes — audit path.
+- **End-to-end?** Yes.
+- **Super-user?** Yes.
+
+### B10. `/handover-control` — Handover Control
+
+- **Job**: Cross-project view of handover state: which projects are mid-handover, their readiness, who's assigned.
+- **Necessary?** Yes — complements D4 live interface.
+- **End-to-end?** Yes.
+- **Super-user?** Yes.
+- **Gaps:** Should link each row to `/handover/:id/live` where applicable. **Verification needed.**
+
+### B11. `/po-approval-board` / `/payment-request-board` / `/payment-batch-manager` — Procurement finance flows
+
+- **Job**: PO lifecycle from request → PM approval → CFO approval → payment batch.
+- **Necessary?** Yes.
+- **End-to-end?** Yes — these pages have been in use for months.
+- **Super-user?** Yes.
+- **Gaps:** Individual POs / payment requests don't have a cascade-delete dialog yet. Same R4 pattern applies — *follow-up.*
+
+### PM follow-ups after this round
+
+- Add `ApprovalQueueCard` to `/pm-dashboard` (small).
+- Verify `/pm/approvals` includes D3 controlled-document approvals (verify-only).
+- Verify `/handover-control` rows link to `/handover/:id/live` (verify-only).
+- Extend R4 cascade-delete pattern to POs, payment requests (medium, pending pattern need).
+
+---
+
+(Next: Engineering → Quality → HSE → Finance → Handover / O&M.)
