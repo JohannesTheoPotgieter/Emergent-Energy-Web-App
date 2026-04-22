@@ -21,6 +21,8 @@ import { NotificationBell } from "@/components/NotificationBell";
 import { LensSwitcher } from "@/components/layout/LensSwitcher";
 import { useLensContext } from "@/hooks/use-lens-context";
 import { GlobalCommandPalette } from "@/components/GlobalCommandPalette";
+import { KeyboardShortcutsDialog } from "@/components/KeyboardShortcutsDialog";
+import { useKeyboardNav } from "@/hooks/use-keyboard-nav";
 import { NavOnboardingTour } from "@/components/layout/NavOnboardingTour";
 import { NavOrderCustomizer } from "@/components/layout/NavOrderCustomizer";
 import { useTheme } from "@/hooks/use-theme";
@@ -576,6 +578,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       <main id="main-content" className={cn("px-4 lg:px-6 py-5", isTablet && "pb-24")}>{children}</main>
       <GlobalCommandPalette />
+      <KeyboardShortcutsDialog />
+      <KeyboardNavActivator />
       {onboardingTourEnabled ? <NavOnboardingTour /> : null}
     </div>
   );
@@ -619,4 +623,14 @@ function MobileCollapsibleSubNav({ items, location }: { items: { label: string; 
       )}
     </div>
   );
+}
+
+/**
+ * Tiny wrapper so the useKeyboardNav hook is installed inside AppLayout
+ * (hooks must live inside a component; useKeyboardNav is a side-effect
+ * hook that attaches a keydown listener globally).
+ */
+function KeyboardNavActivator() {
+  useKeyboardNav();
+  return null;
 }
