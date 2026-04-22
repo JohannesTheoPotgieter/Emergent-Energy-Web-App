@@ -150,7 +150,7 @@
     "@typescript-eslint/parser": "^8.58.2",
     "@vitejs/plugin-react": "^5.0.4",
     "autoprefixer": "^10.4.21",
-    "drizzle-kit": "^0.18.1",
+    "drizzle-kit": "^0.31.10",
     "esbuild": "^0.25.0",
     "eslint": "^9.39.1",
     "eslint-config-prettier": "^10.1.8",
