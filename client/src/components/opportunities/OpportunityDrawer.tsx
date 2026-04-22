@@ -18,7 +18,7 @@
  */
 import { useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -27,7 +27,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Loader2, ExternalLink, Lock, Sparkles, Zap, ArrowRight, CheckCircle2 } from "lucide-react";
+import { Loader2, ExternalLink, Lock, Sparkles, Zap, ArrowRight, CheckCircle2, Building2, Inbox } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -159,6 +159,27 @@ interface Props {
 }
 
 export function OpportunityDrawer({ opportunityId, open, onClose }: Props) {
+  return (
+    <Sheet open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <SheetContent className="w-full sm:max-w-2xl overflow-y-auto p-0" data-testid="opportunity-drawer">
+        <OpportunityDetailBody opportunityId={opportunityId} active={open} variant="drawer" />
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+interface DetailBodyProps {
+  opportunityId: number | null;
+  /** Whether the body should fetch / be shown. In the inline panel,
+   *  callers pass `active={opportunityId != null}` so the query only
+   *  runs when something is selected. */
+  active: boolean;
+  /** "drawer" adds inner padding to fit a SheetContent; "inline" omits
+   *  outer padding so the host can control its own gutters. */
+  variant?: "drawer" | "inline";
+}
+
+export function OpportunityDetailBody({ opportunityId, active, variant = "inline" }: DetailBodyProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [convertOpen, setConvertOpen] = useState(false);
@@ -170,14 +191,10 @@ export function OpportunityDrawer({ opportunityId, open, onClose }: Props) {
       if (!res.ok) throw new Error(`Failed to load opportunity (${res.status})`);
       return res.json();
     },
-    enabled: open && opportunityId != null,
-    // Drawer-hopping is common; brief cache makes re-opens feel instant
-    // without going stale relative to mutations (which invalidate this key
-    // explicitly).
+    enabled: active && opportunityId != null,
     staleTime: 30_000,
   });
 
-  // Local PD edit state (controlled inputs — flushed via patch on blur/save)
   const [pdDraft, setPdDraft] = useState<Partial<PdBlock>>({});
   useEffect(() => {
     setPdDraft({});
@@ -221,56 +238,112 @@ export function OpportunityDrawer({ opportunityId, open, onClose }: Props) {
   const isPipedrive = data?.crm.source === "pipedrive";
   const daysInStage = daysBetween(data?.crm.pipedriveStageChangedAt ?? data?.crm.pipedriveUpdatedAt ?? null);
 
+  const wrapperClass =
+    variant === "drawer"
+      ? "p-4 sm:p-5 space-y-4"
+      : "space-y-4";
+
+  if (!active || opportunityId == null) {
+    return (
+      <div
+        className="flex h-full min-h-[420px] flex-col items-center justify-center rounded-lg border border-dashed border-slate-200 bg-white p-8 text-center"
+        data-testid="opportunity-detail-empty"
+      >
+        <Inbox className="h-8 w-8 text-slate-300" />
+        <p className="mt-3 text-sm font-medium text-slate-700">Select an opportunity</p>
+        <p className="mt-1 max-w-xs text-xs text-slate-500">
+          Pick a deal from the list on the left to see its CRM details, internal readiness, engineering tickets, and activity.
+        </p>
+      </div>
+    );
+  }
+
   return (
-    <Sheet open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <SheetContent className="w-full sm:max-w-2xl overflow-y-auto" data-testid="opportunity-drawer">
-        {isLoading ? (
-          <div className="flex items-center justify-center h-[60vh]">
-            <Loader2 className="h-6 w-6 animate-spin text-emerald-600" />
-          </div>
-        ) : isError || !data || !merged ? (
-          <div className="p-6 text-sm text-muted-foreground">Could not load opportunity.</div>
-        ) : (
-          <>
-            <SheetHeader className="space-y-1 pb-3 border-b">
-              <SheetTitle className="text-base flex items-start gap-2 pr-6">
-                <span className="flex-1" data-testid="text-opportunity-name">
+    <div className={wrapperClass} data-testid={variant === "drawer" ? undefined : "opportunity-detail-panel"}>
+      {isLoading ? (
+        <div className="flex items-center justify-center h-[60vh]">
+          <Loader2 className="h-6 w-6 animate-spin text-emerald-600" />
+        </div>
+      ) : isError || !data || !merged ? (
+        <div className="p-6 text-sm text-muted-foreground">Could not load opportunity.</div>
+      ) : (
+        <>
+          {/* === Header card === */}
+          <header
+            className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
+            data-testid="section-detail-header"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                  Opportunity #{data.crm.id}
+                  {isPipedrive && data.crm.pipedriveDealId && (
+                    <span className="ml-2 text-slate-400">· Pipedrive #{data.crm.pipedriveDealId}</span>
+                  )}
+                </p>
+                <h2
+                  className="mt-0.5 text-base font-semibold text-slate-900 truncate"
+                  data-testid="text-opportunity-name"
+                  title={data.crm.dealName || data.clientName || `Opportunity #${data.crm.id}`}
+                >
                   {data.crm.dealName || data.clientName || `Opportunity #${data.crm.id}`}
-                </span>
-              </SheetTitle>
-              <div className="flex flex-wrap items-center gap-2 text-xs">
-                <Badge variant="outline" className="border-emerald-200 text-emerald-800 bg-emerald-50">
-                  {data.clientName || "No client"}
-                </Badge>
-                {isPipedrive && data.crm.pipedriveDealId && (
-                  <Badge variant="outline" className="text-muted-foreground">
-                    Pipedrive #{data.crm.pipedriveDealId}
+                </h2>
+                <p className="mt-0.5 text-xs text-slate-500 flex items-center gap-1.5 truncate">
+                  <Building2 className="h-3 w-3 text-slate-400 shrink-0" />
+                  <span className="truncate">{data.clientName || "No client"}</span>
+                  {data.siteName && (
+                    <>
+                      <span className="text-slate-300">·</span>
+                      <span className="truncate">{data.siteName}</span>
+                    </>
+                  )}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5 justify-end">
+                {isPipedrive && (
+                  <Badge variant="outline" className="text-[10px] border-sky-200 bg-sky-50 text-sky-700">
+                    Pipedrive
                   </Badge>
                 )}
-                <span className="text-muted-foreground">CRM stage: <span className="font-medium text-foreground">{data.crm.stage || "—"}</span></span>
-                <span className="text-muted-foreground">·</span>
-                <span className="text-muted-foreground">PD status:
-                  <span className={`ml-1 font-medium ${merged.status === "Completed" ? "text-emerald-700" : merged.status === "On Hold" ? "text-amber-700" : "text-foreground"}`}>
-                    {merged.status}
-                  </span>
-                </span>
+                <Badge
+                  variant="outline"
+                  className={`text-[10px] ${
+                    merged.status === "Completed"
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                      : merged.status === "On Hold"
+                        ? "border-amber-200 bg-amber-50 text-amber-700"
+                        : merged.status === "Cancelled"
+                          ? "border-slate-200 bg-slate-50 text-slate-600"
+                          : "border-emerald-200 bg-emerald-50/70 text-emerald-700"
+                  }`}
+                >
+                  {merged.status}
+                </Badge>
               </div>
-            </SheetHeader>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-4 text-xs">
+              <HeaderStat label="Value" value={fmtMoney(data.crm.estimatedValue, data.crm.currency)} />
+              <HeaderStat label="Margin" value={merged.estimatedMarginPercent ? `${merged.estimatedMarginPercent}%` : "—"} />
+              <HeaderStat label="Owner" value={data.crm.dealOwnerName} />
+              <HeaderStat label="CRM stage" value={data.crm.stage} />
+            </div>
+          </header>
 
-            <div className="py-4 space-y-6">
-              {/* === CRM block (read-only, blue accent) === */}
-              <section className="rounded-md border border-sky-100 bg-sky-50/40 p-3 space-y-2" data-testid="section-crm">
-                <header className="flex items-center justify-between">
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-sky-900 flex items-center gap-1.5">
-                    <Lock className="h-3 w-3" /> CRM (Pipedrive — read-only)
+          <div className="space-y-4">
+              {/* === CRM block (read-only) === */}
+              <section className="rounded-lg border border-slate-200 bg-white shadow-sm" data-testid="section-crm">
+                <header className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-100">
+                  <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-700 flex items-center gap-1.5">
+                    <Lock className="h-3 w-3 text-sky-600" /> CRM details
+                    <span className="font-normal normal-case text-[10px] text-slate-400">· Pipedrive (read-only)</span>
                   </h3>
                   {data.crm.pipedriveUpdatedAt && (
-                    <span className="text-[10px] text-sky-700">
+                    <span className="text-[10px] text-slate-500">
                       synced {fmtDate(data.crm.pipedriveUpdatedAt)}
                     </span>
                   )}
                 </header>
-                <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs p-4">
                   <ReadField label="Deal value" value={fmtMoney(data.crm.estimatedValue, data.crm.currency)} />
                   <ReadField label="Weighted value" value={fmtMoney(data.crm.weightedValue, data.crm.currency)} />
                   <ReadField label="Probability" value={data.crm.probability ? `${data.crm.probability}%` : "—"} />
@@ -286,11 +359,11 @@ export function OpportunityDrawer({ opportunityId, open, onClose }: Props) {
                 </dl>
               </section>
 
-              {/* === PD workflow (editable, emerald accent) === */}
-              <section className="rounded-md border border-emerald-200 bg-emerald-50/40 p-3 space-y-3" data-testid="section-pd">
-                <header className="flex items-center justify-between">
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-emerald-900 flex items-center gap-1.5">
-                    <Sparkles className="h-3 w-3" /> Project Development (editable)
+              {/* === Internal readiness (editable PD workflow) === */}
+              <section className="rounded-lg border border-slate-200 bg-white shadow-sm" data-testid="section-pd">
+                <header className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-100">
+                  <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-700 flex items-center gap-1.5">
+                    <Sparkles className="h-3 w-3 text-emerald-600" /> Internal readiness
                   </h3>
                   {hasUnsavedPd && (
                     <Button
@@ -306,6 +379,7 @@ export function OpportunityDrawer({ opportunityId, open, onClose }: Props) {
                   )}
                 </header>
 
+                <div className="p-4 space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Request type">
                     <Select
@@ -352,7 +426,7 @@ export function OpportunityDrawer({ opportunityId, open, onClose }: Props) {
                 </div>
 
                 <Field label="Technical readiness">
-                  <div className="grid grid-cols-2 gap-1.5 text-xs">
+                  <ul className="divide-y divide-slate-100 rounded-md border border-slate-200 bg-slate-50/40 text-xs">
                     {([
                       ["billsOrTariffData", "Bills / tariff data"],
                       ["meteringDataAvailable", "Metering data"],
@@ -360,18 +434,30 @@ export function OpportunityDrawer({ opportunityId, open, onClose }: Props) {
                       ["hseDiscussed", "HSE discussed"],
                       ["batteriesNeeded", "Batteries needed"],
                       ["roofReplacementNeeded", "Roof replacement"],
-                    ] as const).map(([key, label]) => (
-                      <label key={key} className="flex items-center gap-1.5">
-                        <input
-                          type="checkbox"
-                          checked={Boolean((merged as PdBlock)[key])}
-                          onChange={(e) => setPdDraft((p) => ({ ...p, [key]: e.target.checked }))}
-                          data-testid={`check-pd-${key}`}
-                        />
-                        {label}
-                      </label>
-                    ))}
-                  </div>
+                    ] as const).map(([key, label]) => {
+                      const checked = Boolean((merged as PdBlock)[key]);
+                      return (
+                        <li key={key} className="flex items-center justify-between gap-2 px-3 py-2">
+                          <label className="flex items-center gap-2 cursor-pointer min-w-0 flex-1">
+                            <input
+                              type="checkbox"
+                              className="h-3.5 w-3.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                              checked={checked}
+                              onChange={(e) => setPdDraft((p) => ({ ...p, [key]: e.target.checked }))}
+                              data-testid={`check-pd-${key}`}
+                            />
+                            <span className={checked ? "text-slate-700" : "text-slate-600"}>{label}</span>
+                          </label>
+                          <Badge
+                            variant="outline"
+                            className={`text-[10px] ${checked ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-white text-slate-500"}`}
+                          >
+                            {checked ? "Done" : "Pending"}
+                          </Badge>
+                        </li>
+                      );
+                    })}
+                  </ul>
                 </Field>
 
                 <Field label="PD comments">
@@ -382,34 +468,83 @@ export function OpportunityDrawer({ opportunityId, open, onClose }: Props) {
                     data-testid="textarea-pd-comments"
                   />
                 </Field>
+                </div>
               </section>
 
-              {/* === Engineering task board (tickets + project board merged) === */}
+              {/* === Activity card (presentation of CRM activity + PD comments preview) === */}
+              <section className="rounded-lg border border-slate-200 bg-white shadow-sm" data-testid="section-activity">
+                <header className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-100">
+                  <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-700 flex items-center gap-1.5">
+                    <Sparkles className="h-3 w-3 text-emerald-600" /> Activity
+                  </h3>
+                </header>
+                <div className="p-4 space-y-2.5 text-xs">
+                  <div className="flex items-start gap-2">
+                    <div className="mt-0.5 h-6 w-6 shrink-0 rounded-full bg-sky-100 text-sky-700 grid place-items-center text-[10px] font-semibold">
+                      P
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-slate-700">
+                        <span className="font-medium text-slate-900">Last activity</span>
+                        <span className="text-slate-500"> · {fmtDate(data.crm.lastActivityDate)}</span>
+                      </p>
+                      <p className="text-slate-500 truncate">
+                        Pipedrive sync · {data.crm.dealOwnerName || "Deal owner"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <div className="mt-0.5 h-6 w-6 shrink-0 rounded-full bg-emerald-100 text-emerald-700 grid place-items-center text-[10px] font-semibold">
+                      N
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-slate-700">
+                        <span className="font-medium text-slate-900">Next activity</span>
+                        <span className="text-slate-500"> · {fmtDate(data.crm.nextActivityDate)}</span>
+                      </p>
+                      <p className="text-slate-500 truncate" title={data.crm.nextActivitySubject ?? ""}>
+                        {data.crm.nextActivitySubject || "No follow-up scheduled in Pipedrive"}
+                      </p>
+                    </div>
+                  </div>
+                  {(merged.comments ?? "").trim() && (
+                    <div className="flex items-start gap-2 border-t border-slate-100 pt-2.5">
+                      <div className="mt-0.5 h-6 w-6 shrink-0 rounded-full bg-slate-100 text-slate-700 grid place-items-center text-[10px] font-semibold">
+                        PD
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-slate-900">PD note</p>
+                        <p className="text-slate-600 line-clamp-3 whitespace-pre-wrap">{merged.comments}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              {/* === Engineering task board / Open requests === */}
               {(data.tickets ?? []).length > 0 ? (
-                <section className="rounded-md border p-3 space-y-3" data-testid="section-engineering-task-board">
-                  <header className="flex items-center justify-between">
-                    <h3 className="text-xs font-semibold uppercase tracking-wide text-foreground flex items-center gap-1.5">
-                      <Zap className="h-3 w-3 text-emerald-600" /> Engineering task board
+                <section className="rounded-lg border border-slate-200 bg-white shadow-sm" data-testid="section-engineering-task-board">
+                  <header className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-100">
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-700 flex items-center gap-1.5">
+                      <Zap className="h-3 w-3 text-emerald-600" /> Open requests
                     </h3>
                   </header>
-                  <EngineeringTicketsSection tickets={data.tickets ?? []} opportunityId={opportunityId} />
-                  {(data.tickets ?? []).some((t) => t.projectId) && (
-                    <ProjectTaskBoard
-                      tasks={data.projectTasks ?? []}
-                      tickets={data.tickets ?? []}
-                      projectName={(data.tickets ?? []).find((t) => t.projectName)?.projectName ?? null}
-                    />
-                  )}
+                  <div className="p-4 space-y-3">
+                    <EngineeringTicketsSection tickets={data.tickets ?? []} opportunityId={opportunityId} />
+                    {(data.tickets ?? []).some((t) => t.projectId) && (
+                      <ProjectTaskBoard
+                        tasks={data.projectTasks ?? []}
+                        tickets={data.tickets ?? []}
+                        projectName={(data.tickets ?? []).find((t) => t.projectName)?.projectName ?? null}
+                      />
+                    )}
+                  </div>
                 </section>
               ) : (
-                /* Legacy "spawn tasks for the shadow PD ticket" surface — only
-                   shown when the opportunity has NO real tickets yet. Once the
-                   user creates an engineering ticket via the working-list flow,
-                   this is replaced by the ticket tracking list above. */
-                <section className="rounded-md border p-3 space-y-2" data-testid="section-tasks">
-                  <header className="flex items-center justify-between">
-                    <h3 className="text-xs font-semibold uppercase tracking-wide text-foreground flex items-center gap-1.5">
-                      <Zap className="h-3 w-3 text-emerald-600" /> Engineering tasks
+                <section className="rounded-lg border border-slate-200 bg-white shadow-sm" data-testid="section-tasks">
+                  <header className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-100">
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-700 flex items-center gap-1.5">
+                      <Zap className="h-3 w-3 text-emerald-600" /> Open requests
                     </h3>
                     {!merged.tasksSpawnedAt && merged.projectId && (
                       <Button
@@ -425,6 +560,7 @@ export function OpportunityDrawer({ opportunityId, open, onClose }: Props) {
                       </Button>
                     )}
                   </header>
+                  <div className="p-4 space-y-2">
                   {!merged.projectId ? (
                     <p className="text-[11px] text-muted-foreground italic">No engineering tickets yet — create one from the working list, or convert this opportunity to a project first.</p>
                   ) : data.tasks.length === 0 ? (
@@ -440,6 +576,7 @@ export function OpportunityDrawer({ opportunityId, open, onClose }: Props) {
                       ))}
                     </ul>
                   )}
+                  </div>
                 </section>
               )}
 
@@ -459,14 +596,14 @@ export function OpportunityDrawer({ opportunityId, open, onClose }: Props) {
                 if (effectiveProjectId) {
                   return (
                     <section
-                      className="rounded-md border border-emerald-200 bg-emerald-50/60 p-3 flex items-center justify-between"
+                      className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-4 flex items-center justify-between gap-3 shadow-sm"
                       data-testid="section-project-linked"
                     >
-                      <div className="text-xs flex items-center gap-2">
-                        <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                        <div>
+                      <div className="text-xs flex items-center gap-2 min-w-0">
+                        <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                        <div className="min-w-0">
                           <p className="font-medium text-emerald-900">Project linked</p>
-                          <p className="text-emerald-800/80">This opportunity has a working project — no need to convert again.</p>
+                          <p className="text-emerald-800/80 truncate">This opportunity has a working project — no need to convert again.</p>
                         </div>
                       </div>
                       {effectiveProjectName ? (
@@ -495,10 +632,10 @@ export function OpportunityDrawer({ opportunityId, open, onClose }: Props) {
                 if (activeTicket) {
                   return (
                     <section
-                      className="rounded-md border border-emerald-200 bg-emerald-50/60 p-3 flex items-center justify-between"
+                      className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-4 flex items-center justify-between gap-3 shadow-sm"
                       data-testid="section-convert-from-ticket"
                     >
-                      <div className="text-xs">
+                      <div className="text-xs min-w-0">
                         <p className="font-medium text-emerald-900">
                           Engineering ticket in progress — no project shell yet
                         </p>
@@ -519,8 +656,8 @@ export function OpportunityDrawer({ opportunityId, open, onClose }: Props) {
                   );
                 }
                 return (
-                  <section className="rounded-md border border-emerald-200 bg-emerald-50/60 p-3 flex items-center justify-between">
-                    <div className="text-xs">
+                  <section className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-4 flex items-center justify-between gap-3 shadow-sm" data-testid="section-convert-cta">
+                    <div className="text-xs min-w-0">
                       <p className="font-medium text-emerald-900">Ready to start the project?</p>
                       <p className="text-emerald-800/80">Creates a project shell at "First Assessment" and links it back here.</p>
                     </div>
@@ -553,12 +690,52 @@ export function OpportunityDrawer({ opportunityId, open, onClose }: Props) {
             )}
           </>
         )}
-      </SheetContent>
-    </Sheet>
+    </div>
   );
 }
 
 // --- Tiny helpers ---
+
+function HeaderStat({ label, value }: { label: string; value: string | null | undefined }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[10px] uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="truncate text-xs font-semibold text-slate-800" title={value ?? ""}>
+        {value && value.trim() ? value : "—"}
+      </p>
+    </div>
+  );
+}
+
+function SectionCard({
+  title,
+  icon,
+  testId,
+  rightSlot,
+  children,
+}: {
+  title: string;
+  icon?: React.ReactNode;
+  testId?: string;
+  rightSlot?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section
+      className="rounded-lg border border-slate-200 bg-white shadow-sm"
+      data-testid={testId}
+    >
+      <header className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-100">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-700 flex items-center gap-1.5">
+          {icon}
+          {title}
+        </h3>
+        {rightSlot}
+      </header>
+      <div className="p-4">{children}</div>
+    </section>
+  );
+}
 
 function ReadField({ label, value }: { label: string; value: string | null | undefined }) {
   return (
