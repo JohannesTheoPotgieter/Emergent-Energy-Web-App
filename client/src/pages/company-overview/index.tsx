@@ -1,9 +1,8 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { PageShell } from "@/components/layout/page-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { QueryErrorBanner } from "@/components/QueryErrorBanner";
 import { useAuth } from "@/hooks/use-auth";
 import { useLensContext } from "@/hooks/use-lens-context";
@@ -20,9 +19,9 @@ import { RecentSignals } from "./components/RecentSignals";
 type PeriodFilter = "today" | "week" | "month" | "fytd";
 
 const PERIOD_OPTIONS: { key: PeriodFilter; label: string }[] = [
-  { key: "today", label: "Today" },
-  { key: "week", label: "This Week" },
-  { key: "month", label: "This Month" },
+  { key: "today", label: "Today (coming soon)" },
+  { key: "week", label: "This Week (coming soon)" },
+  { key: "month", label: "This Month (coming soon)" },
   { key: "fytd", label: "FYTD" },
 ];
 
@@ -37,7 +36,7 @@ function formatTimestamp(iso: string): string {
 }
 
 export default function CompanyOverviewPage() {
-  const { user } = useAuth();
+  useAuth();
   const lens = useLensContext();
   const [period, setPeriod] = useState<PeriodFilter>("fytd");
 
@@ -81,19 +80,25 @@ export default function CompanyOverviewPage() {
         <div className="flex items-center gap-3 flex-wrap">
           {/* Period selector */}
           <div className="flex items-center border rounded-md bg-background overflow-hidden">
-            {PERIOD_OPTIONS.map((opt) => (
+            {PERIOD_OPTIONS.map((opt) => {
+              const disabled = opt.key !== "fytd";
+              return (
               <button
                 key={opt.key}
-                onClick={() => setPeriod(opt.key)}
+                onClick={() => !disabled && setPeriod(opt.key)}
+                disabled={disabled}
                 className={`px-3 py-1.5 text-xs font-medium transition-colors ${
                   period === opt.key
                     ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                    : disabled
+                      ? "text-muted-foreground/50 cursor-not-allowed"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                 }`}
               >
                 {opt.label}
               </button>
-            ))}
+              );
+            })}
           </div>
 
           {/* Last refresh + role */}
@@ -103,6 +108,11 @@ export default function CompanyOverviewPage() {
                 <Clock className="w-3 h-3" />
                 {formatTimestamp(data.meta.refreshedAt)}
               </span>
+            )}
+            {data?.meta?.dataConfidence && (
+              <Badge variant="outline" className="text-[10px]">
+                Data confidence: {String(data.meta.dataConfidence).toUpperCase()}
+              </Badge>
             )}
             <Badge variant="outline" className="text-[10px]">{roleLabel}</Badge>
           </div>
@@ -120,9 +130,18 @@ export default function CompanyOverviewPage() {
         </div>
       </div>
 
-      {/* ── Row 1: Executive Summary ──────────────────────────────── */}
+      {/* ── Row 1: Trusted Top Strip ──────────────────────────────── */}
       <section className="mb-5">
-        <ExecutiveSummaryRow data={data?.executiveSummary} isLoading={isLoading} />
+        <ExecutiveSummaryRow data={data?.trustedTopStrip} isLoading={isLoading} />
+        {Array.isArray(data?.drilldownReconciliation) && data.drilldownReconciliation.length > 0 && (
+          <div className="mt-2 text-[11px] text-muted-foreground flex flex-wrap gap-x-3 gap-y-1">
+            {data.drilldownReconciliation.map((r: any) => (
+              <span key={r.metricKey}>
+                {r.label}: {r.match ? "matched" : "mismatch"} ({r.summaryValue}/{r.drilldownValue})
+              </span>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* ── Row 2: Department Health Grid ─────────────────────────── */}
