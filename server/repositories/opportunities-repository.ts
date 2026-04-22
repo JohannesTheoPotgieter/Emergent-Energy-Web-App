@@ -567,7 +567,7 @@ export class OpportunitiesRepository {
       })
       .onConflictDoNothing({
         target: pdTickets.opportunityId,
-        where: sql`opportunity_id IS NOT NULL AND project_id IS NULL`,
+        where: sql`opportunity_id IS NOT NULL AND project_id IS NULL AND deleted_at IS NULL`,
       });
 
     // Constrain re-select to the canonical shadow scope (project_id IS NULL)
