@@ -697,8 +697,9 @@ export const pdTickets = pgTable("pd_tickets", {
   createdBy: integer("created_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
 });
-export const insertPdTicketSchema = createInsertSchema(pdTickets).omit({ id: true, createdAt: true, updatedAt: true, tasksSpawnedAt: true } as any);
+export const insertPdTicketSchema = createInsertSchema(pdTickets).omit({ id: true, createdAt: true, updatedAt: true, tasksSpawnedAt: true, deletedAt: true } as any);
 export type InsertPdTicket = z.infer<typeof insertPdTicketSchema>;
 export type PdTicket = typeof pdTickets.$inferSelect;
 

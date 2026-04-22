@@ -38,4 +38,9 @@ export async function registerProjectRoutes(app: Express) {
   registerCollaborationWorkflowRoutes(app);
   const { registerStageCollaborationRoutes } = await import("../stage-collaboration-routes");
   registerStageCollaborationRoutes(app);
+  // Foundation Linkage Hardening (Task #34) — org-wide PD workspace rollup.
+  const { registerProjectDevelopmentWorkspaceRollupRoutes } = await import(
+    "./project-development-workspace-rollup.routes"
+  );
+  registerProjectDevelopmentWorkspaceRollupRoutes(app);
 }

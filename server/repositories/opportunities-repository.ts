@@ -206,7 +206,7 @@ export class OpportunitiesRepository {
       // Safe to leftJoin without aggregation: `pd_tickets_opportunity_shadow_unique`
       // enforces 1:1 between opportunities ↔ pd_tickets shadow rows (partial unique
       // index where opportunity_id IS NOT NULL AND project_id IS NULL).
-      .leftJoin(pdTickets, eq(pdTickets.opportunityId, opportunities.id))
+      .leftJoin(pdTickets, and(eq(pdTickets.opportunityId, opportunities.id), isNull(pdTickets.deletedAt)))
       .leftJoin(projectDeveloperUser, eq(projectDeveloperUser.id, pdTickets.projectDeveloperUserId))
       .where(and(
         isNull(opportunities.deletedAt),
@@ -288,7 +288,8 @@ export class OpportunitiesRepository {
         projectId: pdTickets.projectId,
       })
       .from(pdTickets)
-      .where(inArray(pdTickets.opportunityId, opportunityIds))
+      // Cascade-display: ignore soft-deleted PD tickets (Task #34).
+      .where(and(inArray(pdTickets.opportunityId, opportunityIds), isNull(pdTickets.deletedAt)))
       .orderBy(desc(pdTickets.createdAt));
     const TERMINAL = new Set(["Completed", "Cancelled"]);
     const byOpp = new Map<number, EngineeringTicketSummary>();
@@ -357,6 +358,8 @@ export class OpportunitiesRepository {
       .where(and(
         inArray(pdTickets.opportunityId, opportunityIds),
         sql`${pdTickets.status} NOT IN ('Completed', 'Cancelled')`,
+        // Cascade-display: ignore soft-deleted PD tickets (Task #34).
+        isNull(pdTickets.deletedAt),
       ))
       .groupBy(pdTickets.opportunityId);
     return rows.map((r: { opportunityId: number | null; count: number }) => ({
@@ -436,7 +439,8 @@ export class OpportunitiesRepository {
     const [row] = await db
       .select({ count: sql<number>`count(*)` })
       .from(pdTickets)
-      .where(eq(pdTickets.opportunityId, opportunityId));
+      // Cascade-display: ignore soft-deleted PD tickets (Task #34).
+      .where(and(eq(pdTickets.opportunityId, opportunityId), isNull(pdTickets.deletedAt)));
     return Number(row?.count || 0);
   }
 
@@ -572,7 +576,13 @@ export class OpportunitiesRepository {
     const [shadow] = await db
       .select()
       .from(pdTickets)
-      .where(and(eq(pdTickets.opportunityId, opportunityId), isNull(pdTickets.projectId)))
+      // Cascade-display: ignore soft-deleted shadow rows (Task #34) so a
+      // tombstoned shadow does not block recreating the canonical one.
+      .where(and(
+        eq(pdTickets.opportunityId, opportunityId),
+        isNull(pdTickets.projectId),
+        isNull(pdTickets.deletedAt),
+      ))
       .limit(1);
     if (!shadow) {
       throw new Error(`PD shadow vanished for opportunity #${opportunityId}`);
@@ -627,7 +637,8 @@ export class OpportunitiesRepository {
       .leftJoin(projectInfo, eq(projectInfo.id, pdTickets.projectId))
       .leftJoin(pdUser, eq(pdUser.id, pdTickets.projectDeveloperUserId))
       .leftJoin(designUser, eq(designUser.id, pdTickets.designerUserId))
-      .where(eq(pdTickets.opportunityId, opportunityId))
+      // Cascade-display: hide soft-deleted PD tickets from the drawer (Task #34).
+      .where(and(eq(pdTickets.opportunityId, opportunityId), isNull(pdTickets.deletedAt)))
       .orderBy(desc(pdTickets.createdAt));
 
     // Project-level task board for the drawer. The board is rendered once
@@ -726,7 +737,8 @@ export class OpportunitiesRepository {
     const [existing] = await db
       .select()
       .from(pdTickets)
-      .where(eq(pdTickets.opportunityId, opportunityId))
+      // Cascade-display: never resurrect a soft-deleted shadow via update (Task #34).
+      .where(and(eq(pdTickets.opportunityId, opportunityId), isNull(pdTickets.deletedAt)))
       .orderBy(desc(pdTickets.id))
       .limit(1);
     if (!existing) return null;
@@ -795,6 +807,8 @@ export class OpportunitiesRepository {
         eq(pdTickets.opportunityId, opportunityId),
         eq(pdTickets.projectId, projectId),
         eq(pdTickets.requestType, phase),
+        // Cascade-display: ignore soft-deleted same-phase tickets (Task #34).
+        isNull(pdTickets.deletedAt),
       ));
     return Number(row?.count || 0);
   }
@@ -907,6 +921,8 @@ export class OpportunitiesRepository {
         eq(workItems.pdTicketId, pdTickets.id),
         isNull(workItems.deletedAt),
       ))
+      // Cascade-display: hide soft-deleted PD tickets from the intake board (Task #34).
+      .where(isNull(pdTickets.deletedAt))
       .groupBy(
         pdTickets.id,
         clients.name,
@@ -941,7 +957,9 @@ export class OpportunitiesRepository {
         overdue: sql<number>`count(*) filter (where ${pdTickets.dueDate} < ${today} and ${pdTickets.status} not in ('Completed','Cancelled'))`,
         completed: sql<number>`count(*) filter (where ${pdTickets.status} = 'Completed')`,
       })
-      .from(pdTickets);
+      .from(pdTickets)
+      // Cascade-display: ignore soft-deleted PD tickets in stats (Task #34).
+      .where(isNull(pdTickets.deletedAt));
 
     return {
       opportunities: {

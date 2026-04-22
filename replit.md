@@ -97,3 +97,6 @@ The project is organized as a monorepo, separating client-side (React SPA), serv
 
 ### Fonts
 - Google Fonts (Barlow, Inter, JetBrains Mono)
+
+## Runbooks
+- `docs/runbooks/foundation-linkage-hardening-2026-04-22.md` — Task #34 hardened the live data spine (opportunities → project_info → pd_tickets → work_items): migration `0019_foundation_linkage_hardening.sql` adds `pd_tickets.deleted_at`, FK `work_items.pd_ticket_id → pd_tickets.id ON DELETE SET NULL`, and partial indexes; cascade-display filters apply across all read paths; soft-delete-only DELETE handler with audit log; `GET /api/project-development/workspace/rollup` powers the Meeting view UI section on `/pd-dashboard`. Integration test: `qa/tests/integration/foundation-linkage-cascades.test.ts` (wired into `qa/release-gate.ts`).

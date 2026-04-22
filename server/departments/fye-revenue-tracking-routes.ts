@@ -678,7 +678,9 @@ router.get(
         const tickets = await db.select({
           projectSiteName: pdTickets.projectSiteName,
           province: pdTickets.province,
-        }).from(pdTickets);
+        }).from(pdTickets)
+          // Cascade-display: ignore soft-deleted PD tickets (Task #34).
+          .where(isNull(pdTickets.deletedAt));
         for (const t of tickets) {
           if (t.province && t.projectSiteName) {
             provinceMap.set(t.projectSiteName, t.province);

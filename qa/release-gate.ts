@@ -36,6 +36,7 @@ const REQUIRED_COMMAND_CHECKS = [
   { name: "API tests", command: "npm run test:api" },
   ...(SKIP_SMOKE ? [] : [{ name: "Smoke tests", command: "npm run test:smoke" }]),
   { name: "Routes tests", command: "npm run test:routes" },
+  { name: "Foundation linkage cascades (Task #34)", command: "tsx script/run-with-app.ts \"vitest run -c qa/vitest.config.ts qa/tests/integration/foundation-linkage-cascades.test.ts\"" },
   { name: "Workflow tests", command: WORKFLOW_TEST_COMMAND },
 ] as const;
 
