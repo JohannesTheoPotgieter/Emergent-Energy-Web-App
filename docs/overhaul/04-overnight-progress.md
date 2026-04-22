@@ -18,6 +18,14 @@ Navigation index for what landed on branch `claude/platform-overhaul-3WF1E` over
 
 | Commit | Scope | What it adds |
 |---|---|---|
+| `75cb170c` | R4.4 | Cascade-delete extended to **purchase orders**. `DeletePoDialog` drop-in + `/api/purchase-orders/:id/delete-impact`. High-severity signal when a payment request is raised against the PO. |
+| `c971fb83` | clients | `primaryEmailDomain` + `additionalEmailDomains` accepted on PATCH `/api/clients/:id`. |
+| `c417d66d` | schema | Email-domain columns on clients — migration 0013 + schema update. Foundation for email-linking feature. |
+| `f696bc68` | project-create | Optional SharePoint root input at project creation time — wires to D5.3 endpoint. |
+| `99c18527` | opportunities | `?filter=` query-param handling — PD risk drill-ins now actually filter. Amber banner + clear-filter button. |
+| `eb08f6ad` | audit | Engineering / Quality / HSE dashboards get `ApprovalQueueCard`. Consistency across lifecycle. |
+| `da62f1fd` | audit | PM dashboard gets `ApprovalQueueCard`. |
+| `0f0363e0` | audit | PD dashboard Risk Signals become clickable drill-ins. Starts the department-by-department audit doc. |
 | `cf277388` | D4 | Live handover meeting interface — attendee check-in, 6-step guided charter walkthrough with facilitator prompts, live decision log, PM accept/reject. `/handover/:projectId/live`. Wired into CEO home upcoming-handovers. |
 | `d319ce80` | R6.1 | Global keyboard navigation — leader-key ("g" then letter) jumps + `?` shortcut dialog. `g h`, `g p`, `g s`, `g a`, `g q`, etc. |
 | `b10119ea` | R4.3 | Cascade-delete extended to clients — `/api/clients/:id/delete-impact` + `DeleteClientDialog` drop-in. Pattern proven. |
