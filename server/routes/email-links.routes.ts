@@ -28,6 +28,7 @@ import {
   removeEmailLink,
   removeTeamsLink,
 } from "../repositories/email-links-repository";
+import { autoLinkInboundEmail, mockIngestInboundEmails, type InboundEmailMeta } from "../services/email-auto-linker";
 import { ApiError, badRequest, notFound, serverError, unauthorized } from "../lib/api-error";
 
 const projectIdParam = z.coerce.number().int().positive();
@@ -70,6 +71,16 @@ const createTeamsLinkBodySchema = z.object({
 
 const domainMatchQuerySchema = z.object({
   email: z.string().email().max(320),
+});
+
+const mockIngestBodySchema = z.object({
+  emails: z.array(z.object({
+    graphMessageId: z.string().min(1).max(512),
+    graphConversationId: z.string().max(512).optional(),
+    senderEmail: z.string().email().max(320),
+    subject: z.string().max(1024),
+    receivedAt: z.string().datetime().optional(),
+  })).min(1).max(50),
 });
 
 export function registerEmailLinksRoutes(app: Express): void {
@@ -125,6 +136,36 @@ export function registerEmailLinksRoutes(app: Express): void {
         if (err instanceof ApiError) throw err;
         console.error("[email-links] domain-match error:", err);
         throw serverError("Failed to run domain match");
+      }
+    },
+  );
+
+  // ---- Dev-only mock ingester ---------------------------------------
+  // Lets devs trigger the layered-signal auto-linker against a batch of
+  // synthetic inbound emails without needing a live Graph webhook. In
+  // prod this endpoint refuses (NODE_ENV check inside the service).
+  app.post(
+    "/api/dev/email-links/mock-ingest",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      if (process.env.NODE_ENV === "production") {
+        throw badRequest("Not available in production");
+      }
+      const parsed = mockIngestBodySchema.safeParse(req.body);
+      if (!parsed.success) throw badRequest("Invalid mock-ingest payload");
+      try {
+        const batch: InboundEmailMeta[] = parsed.data.emails.map((e) => ({
+          graphMessageId: e.graphMessageId,
+          graphConversationId: e.graphConversationId ?? null,
+          senderEmail: e.senderEmail,
+          subject: e.subject,
+          receivedAt: e.receivedAt ?? null,
+        }));
+        const results = await mockIngestInboundEmails(batch);
+        res.json({ results });
+      } catch (err) {
+        console.error("[email-links] mock-ingest error:", err);
+        throw badRequest(err instanceof Error ? err.message : "Ingest failed");
       }
     },
   );
