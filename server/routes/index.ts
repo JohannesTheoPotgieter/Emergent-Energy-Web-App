@@ -6,6 +6,7 @@ import { registerQuickBooksRoutes } from '../quickbooks-routes';
 import { registerFinanceTrustRoutes } from './finance-trust-routes';
 import { registerPdIntakeRoutes } from './pd-intake.routes';
 import { registerControlledDocumentRoutes } from './documents.routes';
+import { registerImpactRoutes } from './impact.routes';
 
 export async function registerRoutes(httpServer: Server, app: Express) {
   registerTemplateGovernanceRoutes(app);
@@ -13,5 +14,6 @@ export async function registerRoutes(httpServer: Server, app: Express) {
   registerFinanceTrustRoutes(app);
   registerPdIntakeRoutes(app);
   registerControlledDocumentRoutes(app);
+  registerImpactRoutes(app);
   return registerLegacyRoutes(httpServer, app);
 }
