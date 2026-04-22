@@ -776,3 +776,51 @@ export async function updateDocumentType(
 export async function deactivateDocumentType(typeKey: string): Promise<ControlledDocumentType> {
   return updateDocumentType(typeKey, { active: false });
 }
+
+// =========================================================================
+// Per-project SharePoint root CRUD (D5.3)
+// =========================================================================
+
+export interface UpsertProjectSharepointRootInput {
+  projectId: number;
+  rootPath: string;
+  driveId?: string | null;
+  rootItemId?: string | null;
+  userId: number;
+}
+
+/**
+ * Upsert a project's SharePoint root. Metadata only — real Graph
+ * folder-tree creation happens in D3.5 when a super-user clicks
+ * "Apply folder template" and we wire drives.items.children create.
+ */
+export async function upsertProjectSharepointRoot(
+  input: UpsertProjectSharepointRootInput,
+): Promise<ProjectSharepointRoot> {
+  const existing = await getProjectSharepointRoot(input.projectId);
+  if (existing) {
+    const [row] = await db
+      .update(projectSharepointRoots)
+      .set({
+        rootPath: input.rootPath,
+        driveId: input.driveId ?? existing.driveId,
+        rootItemId: input.rootItemId ?? existing.rootItemId,
+        configuredByUserId: input.userId,
+        updatedAt: new Date(),
+      })
+      .where(eq(projectSharepointRoots.projectId, input.projectId))
+      .returning();
+    return row;
+  }
+  const [row] = await db
+    .insert(projectSharepointRoots)
+    .values({
+      projectId: input.projectId,
+      rootPath: input.rootPath,
+      driveId: input.driveId ?? null,
+      rootItemId: input.rootItemId ?? null,
+      configuredByUserId: input.userId,
+    })
+    .returning();
+  return row;
+}

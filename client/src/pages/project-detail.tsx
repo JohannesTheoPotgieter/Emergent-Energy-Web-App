@@ -38,7 +38,7 @@ import { ProjectHistoryTab } from "@/components/tabs/ProjectHistoryTab";
 import { WeeklyReviewWizard } from "@/components/WeeklyReviewWizard";
 import { ProjectChatTab } from "@/components/tabs/ProjectChatTab";
 import { LocalFolderTab } from "@/components/tabs/LocalFolderTab";
-import { DocumentStrip } from "@/components/controlled-documents";
+import { DocumentStrip, ProjectSharepointRootCard } from "@/components/controlled-documents";
 import { ProjectApprovalsTab } from "@/components/tabs/ProjectApprovalsTab";
 import { ProjectTimelineTab } from "@/components/tabs/ProjectTimelineTab";
 import { ProjectRaidTab } from "@/components/tabs/ProjectRaidTab";
@@ -1787,7 +1787,12 @@ export default function ProjectDetailPage() {
           </div>
 
           {activeSubTab === "changes" && projectInfoId && <ProjectChangeControlTab projectId={projectInfoId} projectName={projectName} />}
-          {activeSubTab === "controlled-docs" && projectInfoId && <DocumentStrip projectId={projectInfoId} title="Controlled documents" />}
+          {activeSubTab === "controlled-docs" && projectInfoId && (
+            <div className="space-y-4">
+              <ProjectSharepointRootCard projectId={projectInfoId} />
+              <DocumentStrip projectId={projectInfoId} title="Controlled documents" />
+            </div>
+          )}
           {activeSubTab === "documents" && <LocalFolderTab projectName={projectName} />}
           {activeSubTab === "comms" && <ProjectChatTab projectName={projectName} projectInfoId={projectInfoId ?? null} />}
         </div>
