@@ -78,6 +78,12 @@ export function registerInvoiceCaptureRoutes(app: Express): void {
         }
       }
 
+      logAuditFromReq(req, {
+        entityType: "invoice_capture",
+        action: "create_attempt",
+        changesJson: { invoiceNumber, amount, projectId, linkedPoId, linkedProcurementItemId },
+      });
+
       const result = await db.insert(invoiceCaptures).values({
         projectId: parseInt(projectId),
         supplierId: supplierId ? parseInt(supplierId) : null,
@@ -95,6 +101,13 @@ export function registerInvoiceCaptureRoutes(app: Express): void {
 
 
       if (result[0].linkedProcurementItemId) {
+        logAuditFromReq(req, {
+          entityType: "procurement_item",
+          entityId: String(result[0].linkedProcurementItemId),
+          action: "link_invoice_capture_attempt",
+          changesJson: { invoiceCaptureId: result[0].id, invoiceNumber: result[0].invoiceNumber || oldInvoiceRefFallback(result[0].id) },
+        });
+
         await db.update(procurementItems)
           .set({
             invoiceRef: result[0].invoiceNumber || oldInvoiceRefFallback(result[0].id),
@@ -148,6 +161,13 @@ export function registerInvoiceCaptureRoutes(app: Express): void {
         if (req.body[f] !== undefined) updates[f] = req.body[f];
       }
 
+      logAuditFromReq(req, {
+        entityType: "invoice_capture",
+        entityId: String(id),
+        action: "update_attempt",
+        changesJson: { updates: req.body },
+      });
+
       const result = await db.update(invoiceCaptures).set(updates).where(eq(invoiceCaptures.id, id)).returning();
 
       if (updates.status && updates.status !== old.status) {
@@ -167,6 +187,13 @@ export function registerInvoiceCaptureRoutes(app: Express): void {
       }
 
       if (result[0].linkedProcurementItemId) {
+        logAuditFromReq(req, {
+          entityType: "procurement_item",
+          entityId: String(result[0].linkedProcurementItemId),
+          action: "sync_invoice_capture_attempt",
+          changesJson: { invoiceCaptureId: result[0].id, invoiceRef: result[0].invoiceNumber || old.invoiceNumber || `INV-${result[0].id}` },
+        });
+
         await db.update(procurementItems)
           .set({
             invoiceRef: result[0].invoiceNumber || old.invoiceNumber || `INV-${result[0].id}`,
@@ -200,6 +227,13 @@ export function registerInvoiceCaptureRoutes(app: Express): void {
       if (existing[0].documentPath) {
         try { fs.unlinkSync(existing[0].documentPath); } catch { /* ignore */ }
       }
+
+      logAuditFromReq(req, {
+        entityType: "invoice_capture",
+        entityId: String(id),
+        action: "delete_attempt",
+        changesJson: { invoiceNumber: existing[0].invoiceNumber },
+      });
 
       const [deleted] = await db.update(invoiceCaptures).set({ deletedAt: new Date(), deletedBy: req.user?.id }).where(eq(invoiceCaptures.id, id)).returning();
 

@@ -1302,7 +1302,7 @@ export default function CashflowPage() {
           </div>
         ) : cashflowData.length === 0 ? (
           <EmptyState
-            icon={<DollarSign className="w-6 h-6 text-muted-foreground" />}
+            icon={DollarSign}
             title="No cashflow data available"
             description="Upload tracker files to populate the cashflow timeline"
           />

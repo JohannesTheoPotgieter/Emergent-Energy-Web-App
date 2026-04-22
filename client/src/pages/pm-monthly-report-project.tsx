@@ -4,9 +4,10 @@ import { useRoute, useLocation } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import RAGBadge from "@/components/reports/RAGBadge";
 import { PageHeader } from "@/components/ui/page-header";
+import { QueryLoading, QueryError } from "@/components/ui/query-states";
 import { PageLayout, DetailLayout } from "@/components/layout";
 
 function getAuthHeaders(): Record<string, string> {
@@ -36,7 +37,7 @@ function ProjectDetailTable({ reportId, projectId, title, metric, defaultSort = 
   const [sortKey, setSortKey] = useState(defaultSort);
   const tab = TAB_MAP[metric] || metric;
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["pm-project-tab", reportId, projectId, metric],
     enabled: !!reportId,
     queryFn: async () => {
@@ -95,7 +96,7 @@ function ProjectDetailTable({ reportId, projectId, title, metric, defaultSort = 
 
         <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Filter rows..." className="h-8" />
 
-        {isLoading ? <div className="text-xs text-muted-foreground">Loading...</div> : (
+        {isLoading ? <QueryLoading /> : isError ? <QueryError error={error} onRetry={() => refetch()} /> : (
           <div className="border rounded overflow-auto max-h-[52vh]">
             <table className="w-full text-xs">
               <thead className="bg-muted sticky top-0">
@@ -120,7 +121,7 @@ export default function PmMonthlyReportProject() {
   const month = params?.month || "";
   const projectId = params?.projectId || "";
 
-  const { data: report } = useQuery({
+  const { data: report, isLoading: reportLoading, isError: reportError, error: reportQueryError, refetch: refetchReport } = useQuery({
     queryKey: ["/api/reports/pm/monthly", month],
     queryFn: async () => {
       const res = await fetch(`/api/reports/pm/monthly?month=${month}`, { headers: getAuthHeaders() });
@@ -131,7 +132,7 @@ export default function PmMonthlyReportProject() {
   });
 
   const reportId = report?.id;
-  const { data: projectData, isLoading, error } = useQuery({
+  const { data: projectData, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["/api/reports/pm/monthly/project", reportId, projectId],
     queryFn: async () => {
       const res = await fetch(`/api/reports/pm/monthly/${reportId}/project/${projectId}`, { headers: getAuthHeaders() });
@@ -170,12 +171,15 @@ export default function PmMonthlyReportProject() {
         />
       }
     >
-      {error && <p className="text-sm text-red-600">{(error as Error).message}</p>}
-      {isLoading ? (
-        <div className="flex items-center justify-center min-h-[30vh]">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
-      ) : !ps && !error ? (
+      {reportLoading ? (
+        <QueryLoading />
+      ) : reportError ? (
+        <QueryError error={reportQueryError} onRetry={() => refetchReport()} />
+      ) : isLoading ? (
+        <QueryLoading />
+      ) : isError ? (
+        <QueryError error={error} onRetry={() => refetch()} />
+      ) : !ps ? (
         <p className="text-muted-foreground">No data available for this project.</p>
       ) : (
         <>
