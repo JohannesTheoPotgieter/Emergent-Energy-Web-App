@@ -57,7 +57,7 @@ const opexBudgetSchema = z
 const opexWeeklySchema = z
   .object({
     weekStartDate: isoDateStr,
-    amount: decimalLike,
+    opexAmount: decimalLike,
   })
   .passthrough();
 const cosPeriodLockSchema = z
