@@ -2166,15 +2166,28 @@ router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res
 
 router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
   try {
-    const { monthKey, project, state: stateFilter } = req.query as { monthKey?: string; project?: string; state?: string };
+    const { monthKey, fromMonthKey, project, state: stateFilter } = req.query as { monthKey?: string; fromMonthKey?: string; project?: string; state?: string };
     if (!monthKey) return res.status(400).json({ error: "monthKey required" });
 
     const match = monthKey.match(/^(\d{4})-(\d{2})$/);
     if (!match) return res.status(400).json({ error: "Invalid monthKey format" });
 
-    const monthStart = `${monthKey}-01`;
+    // YTD drilldown: when fromMonthKey is set, the response covers every month
+    // from fromMonthKey through monthKey inclusive. Used by the YTD rows on
+    // the COS grid (ytdRealised, ytdCommitted, ytdQbOnly) so their drawers
+    // sum to the cumulative figure shown in the cell.
+    let fromMatch: RegExpMatchArray | null = null;
+    if (fromMonthKey) {
+      fromMatch = fromMonthKey.match(/^(\d{4})-(\d{2})$/);
+      if (!fromMatch) return res.status(400).json({ error: "Invalid fromMonthKey format" });
+      if (fromMonthKey > monthKey) return res.status(400).json({ error: "fromMonthKey must be <= monthKey" });
+    }
+    const startKey = fromMonthKey || monthKey;
+    const startMatch = fromMatch || match;
+    const monthStart = `${startKey}-01`;
     const lastDay = new Date(Number(match[1]), Number(match[2]), 0).getDate();
     const monthEnd = `${monthKey}-${String(lastDay).padStart(2, '0')}`;
+    void startMatch;
 
     // The drilldown MUST classify lines using the same app-side rules the
     // aggregate /api/cos-tracker uses, otherwise drawer rows won't sum to the
@@ -2254,12 +2267,20 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
 
       // Month bucket — invoice_date only, identical to the aggregate.
       const appMonth = String(row.invoiceDate || '').slice(0, 7) || null;
-      if (appMonth !== monthKey) continue;
+      if (!appMonth) continue;
+      if (fromMonthKey) {
+        if (appMonth < fromMonthKey || appMonth > monthKey) continue;
+      } else {
+        if (appMonth !== monthKey) continue;
+      }
       if (project && projectName !== project) continue;
 
       const hasInvoice = !!(row.invoiceNumber && String(row.invoiceNumber).trim());
       const hasPo = !!(row.poNumber && String(row.poNumber).trim());
-      const isPastMonth = monthKey < cosCurrentMonthKey;
+      // YTD-aware: each line's "past month" check uses its own appMonth, not
+      // the URL's monthKey — otherwise a Sep line in a YTD-through-Jan range
+      // would lose its past-month auto-promote.
+      const isPastMonth = appMonth < cosCurrentMonthKey;
       const invoiceDateConfirmed =
         !!row.invoiceDate && (
           (row as any).invoiceDateFontColor === 'black' ||
@@ -2325,7 +2346,12 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       for (const bill of bills) {
         if (linkedBillIds.has(String(bill.id))) continue;
         const billMonth = bill.txnDate?.slice(0, 7);
-        if (billMonth !== monthKey) continue;
+        if (!billMonth) continue;
+        if (fromMonthKey) {
+          if (billMonth < fromMonthKey || billMonth > monthKey) continue;
+        } else {
+          if (billMonth !== monthKey) continue;
+        }
         const qbAmt = bill.totalAmount ?? 0;
         items.push({
           id: `qb-${bill.id}`,
