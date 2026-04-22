@@ -40,6 +40,11 @@ export const clients = pgTable("clients", {
   industry: text("industry"),
   pipedriveOrgId: text("pipedrive_org_id"),
   status: text("status").default("active"),    // 'active', 'inactive', 'prospect'
+  // Email-linking foundations — used to auto-attribute incoming Outlook
+  // emails to this client when the sender's domain matches.
+  // See docs/overhaul/04-overnight-progress.md for the email-linking design.
+  primaryEmailDomain: text("primary_email_domain"),     // e.g. "clientabc.com"
+  additionalEmailDomains: jsonb("additional_email_domains").$type<string[]>().default([]),
 });
 export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertClient = z.infer<typeof insertClientSchema>;

@@ -136,10 +136,10 @@ export function LensNav({
                         data-testid={`lens-nav-item-${entry.id}`}
                         title={collapsed ? entry.label : undefined}
                         className={cn(
-                          "flex items-center gap-3 px-4 py-1.5 text-sm transition-colors",
+                          "relative flex items-center gap-3 px-4 py-1.5 text-sm transition-colors duration-150",
                           "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                           active &&
-                            "bg-sidebar-accent text-sidebar-primary font-medium",
+                            "bg-sidebar-accent text-sidebar-primary font-medium before:content-[''] before:absolute before:left-0 before:top-1 before:bottom-1 before:w-[3px] before:rounded-r before:bg-sidebar-primary",
                           collapsed && "justify-center px-0",
                         )}
                       >
