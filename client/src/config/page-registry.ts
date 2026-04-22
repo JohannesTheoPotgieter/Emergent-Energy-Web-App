@@ -302,6 +302,10 @@ const NAV_GROUP_TO_SECTION: Record<NavGroupKey, SectionKey> = {
   HSE: "HSE",
   GATES: "PORTFOLIO",
   FINANCE: "FINANCE",
+  // KNOWLEDGE is the historical nav-group key for company-knowledge surfaces
+  // (Processes & SOPs, Training, Leaderboard, Feedback). They live inside the
+  // user-facing "Admin" top section so power users / admins maintain them
+  // alongside system tools — see ADMIN_NAV_ITEMS for the surfaced list.
   KNOWLEDGE: "ADMIN",
   PRIORITIES: "PRIORITIES",
   PORTFOLIO: "PORTFOLIO",

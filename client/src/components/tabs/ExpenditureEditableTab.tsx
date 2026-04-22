@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { useAccessMatrix } from "@/hooks/use-access-matrix";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { invalidateDashboardQueries } from "@/lib/queryClient";
 import { PermissionGate } from "@/components/PermissionGate";
@@ -293,6 +294,13 @@ const OverrideDot = ({ originalValue, audit }: { originalValue: string; audit?: 
 
 export function ExpenditureEditableTab({ projectName, projectId, highlightId, initialFilter }: ExpenditureEditableTabProps) {
   const { isAdmin } = useAuth();
+  const { canAccessEntityAction } = useAccessMatrix();
+  // Frontend visibility for the COS status override must mirror the backend
+  // `requireCosOverrideRole` guard (server/departments/finance-routes.ts):
+  // COO_ADMIN, CEO_ADMIN, CFO, PROGRAM_FINANCE_MANAGER. The cos entity's
+  // `override` action in ENTITY_PERMISSION_DEFAULTS is the closest match —
+  // we keep CFO/PFM through the existing role permission matrix.
+  const canOverrideCos = canAccessEntityAction("cos", "override");
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const tableContainerRef = useRef<HTMLDivElement>(null);
@@ -1231,9 +1239,32 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
         return renderLinkedTask(exp);
       case "cosStatus": {
         const computedStatus = exp.computedCosStatus || exp.cosStatus;
-        const isClickable = !!exp.cosOverride;
         const badge = getCosStatusBadge(exp.cosStatus);
-        if (!isClickable && !exp.cosOverride) return badge;
+        // Only senior finance / admin roles can open the override dialog —
+        // mirrors the backend requireCosOverrideRole middleware so users without
+        // override authority are not shown a button that would 403 on submit.
+        if (!canOverrideCos) {
+          if (!exp.cosOverride) return badge;
+          return (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex items-center gap-0.5" data-testid={`cos-override-readonly-${exp.id}`}>
+                    {badge}
+                    <span className="text-amber-500 text-[10px] font-bold">*</span>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-xs">
+                  <div className="text-xs space-y-1">
+                    <p className="font-semibold">Override: {exp.cosOverride.originalStatus} → {exp.cosOverride.overrideStatus}</p>
+                    <p>{exp.cosOverride.reason}</p>
+                    {exp.cosOverride.overriddenBy && <p className="text-muted-foreground">By: {exp.cosOverride.overriddenBy}</p>}
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          );
+        }
         return (
           <TooltipProvider>
             <Tooltip>

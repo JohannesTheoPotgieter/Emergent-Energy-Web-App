@@ -11,6 +11,11 @@ import { CcDangerousActionsCard } from "@/components/admin/cc-dangerous-actions-
 import { CcOperationalExceptions } from "@/components/admin/cc-operational-exceptions";
 import { CcRecentEvents } from "@/components/admin/cc-recent-events";
 import type { HealthData, ImportGovernanceData, IntegrationHealthItem } from "@/components/admin/cc-types";
+import { Link } from "wouter";
+import { ADMIN_SURFACES } from "@/config/admin-surfaces";
+import { Card, CardContent } from "@/components/ui/card";
+import { SectionHeader } from "@/components/layout/page-shell";
+import { LayoutGrid } from "lucide-react";
 
 export default function AdminControlCenterPage() {
   // These queries are also used by child components — React Query deduplicates them
@@ -83,6 +88,44 @@ export default function AdminControlCenterPage() {
 
         {/* Dangerous actions */}
         <CcDangerousActionsCard />
+
+        {/* All Admin Tools — full reachability hub for admins.
+            Every admin surface in the app is linked here so no admin-only
+            page requires URL typing. New surfaces added to ADMIN_SURFACES
+            appear here automatically. */}
+        <div className="rounded-2xl border border-border/80 bg-background/95 p-4 shadow-[var(--shadow-xs)] sm:p-5">
+          <SectionHeader
+            icon={<LayoutGrid className="h-4 w-4" />}
+            title="All Admin Tools"
+            description="Every admin surface in the platform — use this hub to reach tools that aren't pinned to the sidebar."
+          />
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3" data-testid="admin-tools-grid">
+            {ADMIN_SURFACES.map((surface) => {
+              const Icon = surface.icon;
+              return (
+                <Link
+                  key={surface.id}
+                  href={surface.path}
+                  data-testid={`admin-tool-link-${surface.id}`}
+                  className="group block"
+                >
+                  <Card className="h-full border-border/70 bg-background/95 transition-colors hover:border-primary/30 hover:bg-primary/5">
+                    <CardContent className="flex items-start gap-3 p-3">
+                      <div className="mt-0.5 rounded-lg bg-muted p-2 text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary">
+                        <Icon className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0 space-y-1">
+                        <p className="text-sm font-medium text-foreground">{surface.label}</p>
+                        <p className="line-clamp-2 text-[11px] leading-4 text-muted-foreground">{surface.description}</p>
+                        <p className="font-mono text-[10px] text-muted-foreground/70">{surface.path}</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
       </div>
     </AdminPageShell>
   );
