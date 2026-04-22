@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { ShieldAlert, AlertTriangle, CheckCircle2, Clock, Plus, Pencil } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
+import { useAccessMatrix } from "@/hooks/use-access-matrix";
 
 interface HseIncidentSummary { id: number; incidentType: string; severity: string; description: string; status: string; incidentDate: string; location: string | null; evidenceLink: string | null; }
 interface CorrectiveActionSummary { id: number; title: string; sourceType: string; status: string; dueDate: string | null; }
@@ -54,6 +55,14 @@ const SEVERITIES = [
 ];
 
 export default function HseDashboardPage() {
+  // HSE backend (server/departments/hse-routes.ts header) is intentionally
+  // open: any authenticated user may CREATE an incident or EDIT non-status
+  // fields on it. Only status transitions are gated server-side via the
+  // approveGate* helpers (hse_incidents.approve permission). The only UI
+  // signal we need is whether the current user can approve status changes,
+  // so they know what the "set status" controls will and will not let them do.
+  const { canAccessEntityAction } = useAccessMatrix();
+  const canApproveStatus = canAccessEntityAction("hse_incidents", "approve");
   const [tab, setTab] = useState<"incidents" | "corrective_actions">("incidents");
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ incidentType: "near_miss", severity: "low", description: "", location: "", evidenceLink: "", incidentDate: new Date().toISOString().slice(0, 10) });
@@ -152,11 +161,16 @@ export default function HseDashboardPage() {
         title="Health, Safety & Environment"
         description={`${openIncidents.length} open incidents, ${openActions.length} corrective actions pending`}
         actions={
-          <Button size="sm" className="gap-1.5" onClick={() => setShowCreate(true)}>
+          <Button size="sm" className="gap-1.5" onClick={() => setShowCreate(true)} data-testid="button-report-incident">
             <Plus className="h-4 w-4" /> Report Incident
           </Button>
         }
       />
+      {!canApproveStatus && (
+        <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground" data-testid="banner-hse-status-readonly">
+          Anyone can log and edit incident details. Status transitions (e.g. mark as closed) require an HSE Manager, Construction Manager, COO, or CEO.
+        </div>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Card>
@@ -220,7 +234,7 @@ export default function HseDashboardPage() {
                   </Badge>
                   <Badge className={`text-[10px] ${severityBadge(incident.severity)}`}>{incident.severity}</Badge>
                   <span className="text-xs text-muted-foreground ml-auto">{incident.incidentDate}</span>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditIncident(incident)}>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditIncident(incident)} data-testid={`button-edit-incident-${incident.id}`}>
                     <Pencil className="h-3.5 w-3.5" />
                   </Button>
                 </div>

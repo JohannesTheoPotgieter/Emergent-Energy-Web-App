@@ -13,6 +13,10 @@ import {
   ShieldAlert,
   ShieldCheck,
   Workflow,
+  BookOpen,
+  Handshake,
+  Mail,
+  Milestone,
 } from "lucide-react";
 
 export type AdminSurfaceId =
@@ -23,6 +27,7 @@ export type AdminSurfaceId =
   | "import-control-tower"
   | "data-migration"
   | "pipedrive"
+  | "quickbooks"
   | "sharepoint-intake"
   | "phase-templates"
   | "eng-templates"
@@ -30,7 +35,13 @@ export type AdminSurfaceId =
   | "my-work-settings"
   | "kpi-traceability"
   | "recovery"
-  | "database-migration";
+  | "database-migration"
+  | "document-types"
+  | "email-linker-dev"
+  | "lessons-learnt"
+  | "handover-health"
+  | "system-settings"
+  | "stage-lifecycle";
 
 export interface AdminSurfaceMeta {
   id: AdminSurfaceId;
@@ -149,6 +160,56 @@ export const ADMIN_SURFACES: AdminSurfaceMeta[] = [
     path: "/admin/database-migration",
     description: "Run and monitor database schema migrations.",
     icon: Database,
+  },
+  // --- Document & Knowledge ---
+  {
+    id: "document-types",
+    label: "Document Types",
+    path: "/admin/document-types",
+    description: "Manage controlled document taxonomy and SharePoint root config.",
+    icon: FileText,
+  },
+  {
+    id: "email-linker-dev",
+    label: "Email Auto-Linker (dev)",
+    path: "/admin/email-linker-dev",
+    description: "Inspect and tune the email→entity auto-linking heuristics.",
+    icon: Mail,
+  },
+  {
+    id: "lessons-learnt",
+    label: "Lessons Learnt",
+    path: "/admin/lessons",
+    description: "Review captured lessons learnt across project handovers.",
+    icon: BookOpen,
+  },
+  {
+    id: "handover-health",
+    label: "Handover Health",
+    path: "/admin/handover-health",
+    description: "Health scoring across PD↔PM handovers.",
+    icon: Handshake,
+  },
+  {
+    id: "system-settings",
+    label: "System Settings",
+    path: "/admin/settings",
+    description: "Global system settings and tenant configuration.",
+    icon: Settings,
+  },
+  {
+    id: "quickbooks",
+    label: "QuickBooks Integration",
+    path: "/admin/quickbooks",
+    description: "Manage QuickBooks OAuth, sync state, and reconnections.",
+    icon: Plug,
+  },
+  {
+    id: "stage-lifecycle",
+    label: "Stage Lifecycle",
+    path: "/admin/stage-lifecycle",
+    description: "Configure stage definitions, gate rules, and lifecycle policies.",
+    icon: Milestone,
   },
 ];
 

@@ -340,7 +340,9 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'ACCOUNTANT'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'ACCOUNTANT'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO'],
-    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    // Mirrors backend requireCosOverrideRole guard
+    // (server/departments/finance-routes.ts → /api/cos-tracker/override-status/:id).
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO', 'PROGRAM_FINANCE_MANAGER'],
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
