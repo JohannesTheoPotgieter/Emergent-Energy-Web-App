@@ -10,6 +10,8 @@ import { RoleNavAccess } from "./role-nav-access";
 import { RolePermissionsMatrix } from "./role-permissions-matrix";
 import { RoleAuthorityConfig } from "./role-authority-config";
 import { ENTITY_PERMISSION_DEFAULTS } from "@shared/schema";
+import { PAGE_REGISTRY } from "@/config/page-registry";
+import { useScreenAvailability } from "@/hooks/use-screen-availability";
 
 interface RoleDetailPanelProps {
   role: RoleSummary;
@@ -36,6 +38,18 @@ export function RoleDetailPanel({
 
   const hasChanges = Object.keys(draft).length > 0;
   const roleUsers = users.filter((u) => u.role === role.role);
+
+  const { disabledScreenIds } = useScreenAvailability();
+  const disabledEntityIds = useMemo(() => {
+    if (disabledScreenIds.size === 0) return undefined;
+    const entities = new Set<string>();
+    for (const page of PAGE_REGISTRY) {
+      if (page.permissionEntity && disabledScreenIds.has(page.id)) {
+        entities.add(page.permissionEntity);
+      }
+    }
+    return entities.size > 0 ? entities : undefined;
+  }, [disabledScreenIds]);
 
   // Compute permission stats for header
   const permStats = useMemo(() => {
@@ -196,7 +210,7 @@ export function RoleDetailPanel({
                   <RoleNavAccess role={role} draft={draft} onUpdateDraft={onUpdateDraft} canManageRoles={canManageRoles} />
                 )}
                 {section.key === "permissions" && (
-                  <RolePermissionsMatrix role={role} draft={draft} onUpdateDraft={onUpdateDraft} canManageRoles={canManageRoles} enabledNavSections={(draft.sections ?? role.sections) || []} />
+                  <RolePermissionsMatrix role={role} draft={draft} onUpdateDraft={onUpdateDraft} canManageRoles={canManageRoles} enabledNavSections={(draft.sections ?? role.sections) || []} disabledEntityIds={disabledEntityIds} />
                 )}
                 {section.key === "authority" && (
                   <RoleAuthorityConfig role={role} draft={draft} onUpdateDraft={onUpdateDraft} canManageRoles={canManageRoles} />

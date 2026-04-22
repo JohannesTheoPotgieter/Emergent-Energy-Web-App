@@ -33,3 +33,4 @@ export * from "./schema/dashboard-snapshots";
 export * from "./schema/task-reminders";
 export * from "./schema/documents";
 export * from "./schema/email-links";
+export * from "./schema/app-settings";

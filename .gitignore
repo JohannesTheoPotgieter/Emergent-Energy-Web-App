@@ -24,6 +24,7 @@ vite.config.ts.*
 # ── Runtime data (developer machine state, not source) ───────
 uploads/
 data/
+!client/src/data/
 server/data-seed/.migrated
 server/.pd-seed-done
 backups/
