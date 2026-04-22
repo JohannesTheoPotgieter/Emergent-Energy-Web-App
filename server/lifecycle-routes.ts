@@ -4,7 +4,7 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { db, getDbMode } from "./db";
 import { eq, sql, inArray, desc, and, isNull } from "drizzle-orm";
-import { projectInfo, executionGateLog, mergeAuditLog, qcChecklist, qcItemInstance, PHASE_TO_ENG_STAGES, normalizedCostLines, normalizedRevenueLines, projectRagAudit, workItems, users, qcWarning, approvals, smartImportRuns, projectExecutionState, projectPhaseHistory, projectPdPmHandover } from "@shared/schema";
+import { projectInfo, executionGateLog, mergeAuditLog, qcChecklist, qcItemInstance, PHASE_TO_ENG_STAGES, normalizedCostLines, normalizedRevenueLines, projectRagAudit, workItems, users, qcWarning, approvals, smartImportRuns, projectExecutionState, projectPhaseHistory, projectPdPmHandover, phaseTemplate } from "@shared/schema";
 import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { generateEngStagesForProject } from "./eng-stage-routes";
@@ -18,6 +18,7 @@ import { initializeProjectStages } from "./services/stage-lifecycle-service";
 import { evaluateRevenueArStatus } from "./lib/finance/revenue-ar-status";
 import { projectStageInstances, STAGE_CODES } from "@shared/schema";
 import { resolveStageFromPhase, isFullyCompletedPhase, stagesBefore } from "../shared/utils/phase-to-stage-map";
+import { PHASES as CANONICAL_PHASES, resolveCanonicalPhase } from "../shared/phases";
 import { jwtAuth, requireAuth } from "./auth-context";
 import { bridgeCatch } from "./bridge/bridge-writer";
 import { computeMarginPct } from "./lib/finance/margin";
@@ -27,6 +28,19 @@ import { setFinanceTrustHeaders } from "./lib/finance-trust/envelope";
 
 const EXEC_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"];
 const STAGE_GATE_OVERRIDE_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"];
+const CANONICAL_LIFECYCLE_LABELS = CANONICAL_PHASES.map((p) => p.label);
+const CANONICAL_LIFECYCLE_LABELS_LC = new Map(CANONICAL_LIFECYCLE_LABELS.map((p) => [p.toLowerCase(), p]));
+
+function requireCanonicalLifecyclePhase(raw: unknown): string {
+  if (typeof raw !== "string" || !raw.trim()) {
+    throw new Error("phase is required and must be a string");
+  }
+  const matched = CANONICAL_LIFECYCLE_LABELS_LC.get(raw.trim().toLowerCase());
+  if (!matched) {
+    throw new Error(`Invalid lifecycle phase: ${String(raw)}. Use canonical lifecycle labels only.`);
+  }
+  return matched;
+}
 
 
 function requireExecRole(req: Request, res: Response, next: NextFunction) {
@@ -438,6 +452,70 @@ export function registerLifecycleRoutes(app: Express) {
       console.error("[project-lifecycle] GET workspace error:", err);
       res.status(500).json({ error: "Failed to load Project Lifecycle workspace" });
     }
+  });
+
+  app.get("/api/lifecycle-board/lifecycle-model", requireAuth, async (_req: Request, res: Response) => {
+    const lifecycle = CANONICAL_PHASES.map((p) => ({
+      key: p.code.toLowerCase(),
+      code: p.code,
+      label: p.label,
+      phaseValue: p.label,
+      sequence: p.displayNumber,
+      isSelectable: true,
+      isActive: true,
+      ownerRole: p.ownerRole,
+    }));
+    res.json({ lifecycle });
+  });
+
+  app.get("/api/lifecycle-board/remediation/legacy-phases", requireAuth, requirePermission('projects', 'view'), async (_req: Request, res: Response) => {
+    const canonicalLc = new Set(CANONICAL_LIFECYCLE_LABELS.map((p) => p.toLowerCase()));
+
+    const projectRows = await db.select({
+      projectId: projectInfo.id,
+      projectName: projectInfo.projectName,
+      phase: projectExecutionState.phase,
+      projectStatus: projectInfo.projectStatus,
+    }).from(projectInfo)
+      .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
+
+    const projectsNeedingReview = projectRows
+      .filter((row: any) => !!row.phase && !canonicalLc.has(String(row.phase).trim().toLowerCase()))
+      .map((row: any) => ({
+        projectId: row.projectId,
+        projectName: row.projectName,
+        currentPhase: row.phase,
+        projectStatus: row.projectStatus,
+        suggestedCanonicalPhase: resolveCanonicalPhase(row.phase)?.label ?? null,
+        requiresManualReview: !resolveCanonicalPhase(row.phase),
+      }));
+
+    const templateRows = await db.select({
+      templateId: phaseTemplate.id,
+      phase: phaseTemplate.phase,
+      name: phaseTemplate.name,
+      version: phaseTemplate.version,
+      isActive: phaseTemplate.isActive,
+    }).from(phaseTemplate);
+
+    const templatesNeedingReview = templateRows
+      .filter((row: any) => !canonicalLc.has(String(row.phase || "").trim().toLowerCase()))
+      .map((row: any) => ({
+        templateId: row.templateId,
+        templateName: row.name,
+        version: row.version,
+        isActive: row.isActive,
+        currentPhase: row.phase,
+        suggestedCanonicalPhase: resolveCanonicalPhase(row.phase)?.label ?? null,
+        requiresManualReview: !resolveCanonicalPhase(row.phase),
+      }));
+
+    res.json({
+      generatedAt: new Date().toISOString(),
+      canonicalPhases: CANONICAL_LIFECYCLE_LABELS,
+      projectsNeedingReview,
+      templatesNeedingReview,
+    });
   });
 
   app.get("/api/lifecycle-board/projects", requireAuth, async (_req: Request, res: Response) => {
@@ -1494,13 +1572,14 @@ export function registerLifecycleRoutes(app: Express) {
       }
 
       const cleanName = engineeringProjectName.replace(/_Tracker$/i, "").replace(/_/g, " ");
+      const canonicalPhase = requireCanonicalLifecyclePhase(phase || "First Assessment");
       const userId = ((req as any).user as any)?.id || null;
 
       const allProjects = await db.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo);
       const normTarget = normalizeName(cleanName);
       const existing = allProjects.find((p: any) => normalizeName(p.projectName) === normTarget);
       if (existing) {
-        const targetPhase = phase || "First Assessment";
+        const targetPhase = canonicalPhase;
         const promoteFields = {
           phase: targetPhase,
           isActive: true,
@@ -1541,7 +1620,7 @@ export function registerLifecycleRoutes(app: Express) {
 
       const promoteInsertFields = {
         projectName: cleanName,
-        phase: phase || "First Assessment",
+        phase: canonicalPhase,
         isActive: true,
         phaseUpdatedAt: new Date(),
         phaseUpdatedByUserId: userId,
@@ -1549,7 +1628,7 @@ export function registerLifecycleRoutes(app: Express) {
       const [created] = await db.insert(projectInfo).values(promoteInsertFields).returning();
       await syncProjectSplitTablesAfterInsert(created.id, promoteInsertFields);
 
-      const targetPhase = phase || "First Assessment";
+      const targetPhase = canonicalPhase;
       const stageNames = PHASE_TO_ENG_STAGES[targetPhase];
       if (stageNames && stageNames.length > 0 && userId) {
         try {
@@ -1577,6 +1656,9 @@ export function registerLifecycleRoutes(app: Express) {
       res.json(created);
     } catch (err: any) {
       console.error("[lifecycle-board] POST promote-engineering error:", err);
+      if (String(err?.message || "").includes("lifecycle phase") || String(err?.message || "").includes("phase is required")) {
+        return res.status(400).json({ error: "Invalid lifecycle phase" });
+      }
       throw err;
     }
   });
@@ -1606,7 +1688,7 @@ export function registerLifecycleRoutes(app: Express) {
       if (escalationLevel !== undefined) updates.escalationLevel = (escalationLevel && escalationLevel !== "none") ? escalationLevel : null;
       if (ragStatus !== undefined) updates.ragStatus = (ragStatus && ragStatus !== "none") ? ragStatus : null;
       if (phase !== undefined && phase !== existing.phase) {
-        updates.phase = phase;
+        updates.phase = requireCanonicalLifecyclePhase(phase);
         updates.phaseUpdatedAt = new Date();
         updates.phaseUpdatedByUserId = ((req as any).user as any)?.id || null;
       }
@@ -1617,6 +1699,9 @@ export function registerLifecycleRoutes(app: Express) {
       res.json(updated);
     } catch (err: any) {
       console.error("[lifecycle-board] PATCH project error:", err);
+      if (String(err?.message || "").includes("lifecycle phase") || String(err?.message || "").includes("phase is required")) {
+        return res.status(400).json({ error: "Invalid lifecycle phase" });
+      }
       throw err;
     }
   });
@@ -1716,10 +1801,7 @@ export function registerLifecycleRoutes(app: Express) {
       const id = parseInt(idParam);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid project id" });
 
-      const { phase } = req.body;
-      if (!phase || typeof phase !== "string") {
-        return res.status(400).json({ error: "phase is required and must be a string" });
-      }
+      const canonicalPhase = requireCanonicalLifecyclePhase(req.body?.phase);
 
       const [existing] = await db.select().from(projectInfo).where(eq(projectInfo.id, id));
       if (!existing) return res.status(404).json({ error: "Project not found" });
@@ -1729,7 +1811,7 @@ export function registerLifecycleRoutes(app: Express) {
 
       const evaluation = await evaluateStageGate({
         projectId: id,
-        targetStage: phase.trim(),
+        targetStage: canonicalPhase,
         actorUserId: actor.actorUserId,
         actorRole: actor.actorRole,
       });
@@ -1750,7 +1832,7 @@ export function registerLifecycleRoutes(app: Express) {
       }
 
       const stageTransitionFields = {
-        phase: phase.trim(),
+        phase: canonicalPhase,
         phaseUpdatedAt: new Date(),
         phaseUpdatedByUserId: userId,
         updatedAt: new Date(),
@@ -1762,8 +1844,8 @@ export function registerLifecycleRoutes(app: Express) {
       try {
         await initializeProjectStages(id); // idempotent — skips existing
 
-        const mappedStage = resolveStageFromPhase(phase.trim());
-        const isCompleted = isFullyCompletedPhase(phase.trim());
+        const mappedStage = resolveStageFromPhase(canonicalPhase);
+        const isCompleted = isFullyCompletedPhase(canonicalPhase);
 
         // Mark all prior stages as PROGRESSED
         const priorStageCodes = isCompleted
@@ -1800,22 +1882,19 @@ export function registerLifecycleRoutes(app: Express) {
       await db.insert(projectPhaseHistory).values({
         projectId: id,
         fromPhase: existing.phase || null,
-        toPhase: phase.trim(),
+        toPhase: canonicalPhase,
         changedByUserId: userId,
-        reason: `Phase changed from ${existing.phase || "unknown"} to ${phase.trim()}`,
+        reason: `Phase changed from ${existing.phase || "unknown"} to ${canonicalPhase}`,
       });
 
       // Auto-create PD→PM handover DRAFT when project reaches the handover stage.
       // Post-merge: the trigger phase set includes the legacy PD-PM codes plus the
       // merged S03 Financial Close, since the handover is now a sub-step of S03.
       const PD_PM_HANDOVER_PHASES = [
-        "P2_PD_PM_HANDOVER",
-        "S04_PD_PM_HANDOVER",
-        "S03_SIGNATURE_FINANCIAL_CLOSE",
-        "Signature & Financial Close",
+        "Financial Close",
         "Planning",
       ];
-      if (PD_PM_HANDOVER_PHASES.includes(phase.trim())) {
+      if (PD_PM_HANDOVER_PHASES.includes(canonicalPhase)) {
         try {
           const existingHandover = await db.select({ id: projectPdPmHandover.id })
             .from(projectPdPmHandover)
@@ -1837,7 +1916,7 @@ export function registerLifecycleRoutes(app: Express) {
       }
 
       let engStagesResult: any = null;
-      const stageNames = PHASE_TO_ENG_STAGES[phase.trim()];
+      const stageNames = PHASE_TO_ENG_STAGES[canonicalPhase];
       if (stageNames && stageNames.length > 0 && userId) {
         try {
           engStagesResult = await generateEngStagesForProject(id, userId, stageNames);
@@ -1849,7 +1928,7 @@ export function registerLifecycleRoutes(app: Express) {
         }
       }
 
-      logAuditFromReq(req, { entityType: "project_lifecycle", entityId: String(id), action: "update", projectName: updated.projectName, changesJson: { description: "Phase changed", fromPhase: existing.phase, toPhase: phase.trim() } });
+      logAuditFromReq(req, { entityType: "project_lifecycle", entityId: String(id), action: "update", projectName: updated.projectName, changesJson: { description: "Phase changed", fromPhase: existing.phase, toPhase: canonicalPhase } });
       await createProjectEvent({
         projectId: id,
         eventType: "project.stage_changed",
@@ -1857,9 +1936,9 @@ export function registerLifecycleRoutes(app: Express) {
         actorRole: actor.actorRole,
         sourceEntityType: "project_info",
         sourceEntityId: String(id),
-        summary: `Stage changed from ${existing.phase || "unknown"} to ${phase.trim()}`,
-        details: { fromPhase: existing.phase, toPhase: phase.trim(), engStagesCreated: engStagesResult?.stagesCreated || 0 },
-        idempotencyKey: `phase:${id}:${existing.phase || ""}:${phase.trim()}`,
+        summary: `Stage changed from ${existing.phase || "unknown"} to ${canonicalPhase}`,
+        details: { fromPhase: existing.phase, toPhase: canonicalPhase, engStagesCreated: engStagesResult?.stagesCreated || 0 },
+        idempotencyKey: `phase:${id}:${existing.phase || ""}:${canonicalPhase}`,
       });
       res.json({ ...updated, engStagesResult });
 
@@ -1867,6 +1946,9 @@ export function registerLifecycleRoutes(app: Express) {
       refreshProjectMetricsAsync(id);
     } catch (err: any) {
       console.error("[lifecycle-board] PATCH phase error:", err);
+      if (String(err?.message || "").includes("lifecycle phase") || String(err?.message || "").includes("phase is required")) {
+        return res.status(400).json({ error: "Invalid lifecycle phase" });
+      }
       throw err;
     }
   });
