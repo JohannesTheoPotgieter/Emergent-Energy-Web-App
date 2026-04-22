@@ -4,9 +4,9 @@ import { PageLayout } from "@/components/layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
-  Shield, Users, FileText, FolderTree, Puzzle, ScrollText,
-  Workflow, Database, Activity, AlertTriangle, ArrowRight, SlidersHorizontal,
-  Link as LinkIcon, Mail,
+  Shield, FileText, Puzzle, ScrollText,
+  Workflow, Database, Activity, AlertTriangle, ArrowRight,
+  Link as LinkIcon,
 } from "lucide-react";
 import { isSuperAdmin } from "@/lib/access-control";
 
@@ -46,26 +46,10 @@ const GROUPS: SettingsGroupDef[] = [
       {
         key: "roles",
         title: "Roles & Permissions",
-        description: "Assign users to roles. Configure what each role can view, edit, and approve across the company.",
+        description: "Assign users to roles, link Microsoft identities, and configure which pages each role sees. One surface for everything people-related.",
         href: "/admin/roles",
         icon: Shield,
         status: "ready",
-      },
-      {
-        key: "users",
-        title: "Users (managed via Roles)",
-        description: "User management lives inside Roles & Permissions today — assign roles + Microsoft identities there. A dedicated Users editor is planned.",
-        href: "/admin/roles",
-        icon: Users,
-        status: "beta",
-      },
-      {
-        key: "visibility",
-        title: "Visibility & Navigation",
-        description: "Control which pages show up in which role's sidebar. Per-role configuration via Roles & Permissions visibility tab.",
-        href: "/admin/roles",
-        icon: SlidersHorizontal,
-        status: "beta",
       },
     ],
   },
@@ -80,14 +64,6 @@ const GROUPS: SettingsGroupDef[] = [
         href: "/admin/document-types",
         icon: FileText,
         status: "ready",
-      },
-      {
-        key: "sharepoint-templates",
-        title: "SharePoint folder templates",
-        description: "Per-project folder structure is set on each project's Controlled docs tab. A project-wide template editor is planned.",
-        href: "/projects",
-        icon: FolderTree,
-        status: "beta",
       },
     ],
   },
@@ -110,22 +86,6 @@ const GROUPS: SettingsGroupDef[] = [
         href: "/admin/pipedrive",
         icon: LinkIcon,
         status: "ready",
-      },
-      {
-        key: "microsoft",
-        title: "Microsoft 365",
-        description: "MS Graph status: Outlook, Calendar, Teams, SharePoint tokens + delta sync. Coming once tenant tokens are configured.",
-        href: "/admin/control-center",
-        icon: Mail,
-        status: "beta",
-      },
-      {
-        key: "email-linker-dev",
-        title: "Email auto-linker (dev)",
-        description: "Synthesise inbound emails + run the layered-signal auto-linker to verify domain match, subject tags, thread inheritance without a real Graph webhook.",
-        href: "/admin/email-linker-dev",
-        icon: Mail,
-        status: "beta",
       },
     ],
   },
@@ -183,7 +143,7 @@ const GROUPS: SettingsGroupDef[] = [
         key: "recovery",
         title: "Recovery centre",
         description: "Restore soft-deleted records, review cascade-delete audit history.",
-        href: "/admin-recovery",
+        href: "/admin/recovery",
         icon: AlertTriangle,
         status: "beta",
       },
