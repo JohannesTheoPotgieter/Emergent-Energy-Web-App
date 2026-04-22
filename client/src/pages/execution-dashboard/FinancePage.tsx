@@ -20,6 +20,7 @@ import { useExecutionData } from "./use-execution-data";
 import { apiRequest } from "@/lib/queryClient";
 import RealisationKPIsPage from "./RealisationKPIsPage";
 import { DataTrustBadge } from "@/components/ui/data-trust-badge";
+import { getMarginColour } from "@/lib/margin-colour";
 
 type SortKey = "projectName" | "pm" | "plannedRevenue" | "receivedInflow" | "revenueVariance" | "plannedExpenditure" | "paidExpenditure" | "expenditureVariance" | "grossProfit" | "grossMargin" | "openInflow" | "openExpenditure";
 type SortDir = "asc" | "desc";
@@ -362,7 +363,7 @@ export default function FinancePage() {
                   return (
                     <React.Fragment key={p.projectId}>
                       <tr
-                        className={`border-t border-border/40 cursor-pointer transition-colors ${expanded ? "bg-emerald-50/40" : "hover:bg-muted/30"}`}
+                        className={`border-t border-border/40 cursor-pointer transition-colors ${expanded ? "bg-emerald-50/40" : "hover:bg-muted/30"} ${p.grossMarginPctFy !== null ? getMarginColour(p.grossMarginPctFy) : ""}`}
                         onClick={() => setExpandedId(expanded ? null : p.projectId)}
                       >
                         <td className="py-2 px-3 font-medium truncate max-w-[180px]">{p.projectName}</td>
@@ -464,7 +465,11 @@ export default function FinancePage() {
                 </thead>
                 <tbody>
                   {marginWatchlist.map((p) => (
-                    <tr key={p.projectId} className="border-t border-border/40 hover:bg-muted/30 cursor-pointer" onClick={() => openProject(p, "revenue")}>
+                    <tr
+                      key={p.projectId}
+                      className={`border-t border-border/40 hover:bg-muted/30 cursor-pointer ${p.grossMarginPctFy !== null ? getMarginColour(p.grossMarginPctFy) : ""}`}
+                      onClick={() => openProject(p, "revenue")}
+                    >
                       <td className="py-2 px-3 font-medium truncate max-w-[200px]">{p.projectName}</td>
                       <td className="py-2 px-3 text-muted-foreground text-xs hidden sm:table-cell">{p.pm || "—"}</td>
                       <td className={`py-2 px-3 text-right tabular-nums font-medium ${(p.grossMarginPctFy ?? 0) < 0 ? "text-red-600" : (p.grossMarginPctFy ?? 0) < 10 ? "text-red-600" : "text-amber-600"}`}>
