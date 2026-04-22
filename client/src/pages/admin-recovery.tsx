@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import UserPicker from "@/components/UserPicker";
 import { PageHeader } from "@/components/ui/page-header";
+import { QueryError, QueryLoading } from "@/components/ui/query-states";
 import { PageLayout } from "@/components/layout";
 import {
   Search, Loader2, ListTodo, FileUp, FolderCog, Trash2,
@@ -38,7 +39,7 @@ function TaskRecoveryTab() {
   const [editingTask, setEditingTask] = useState<any>(null);
   const [editFields, setEditFields] = useState<Record<string, any>>({});
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["recovery-tasks", search, taskType],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -120,9 +121,9 @@ function TaskRecoveryTab() {
       </div>
 
       {isLoading ? (
-        <div className="flex items-center justify-center py-12" data-testid="recovery-tasks-loading">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        </div>
+        <QueryLoading />
+      ) : isError ? (
+        <QueryError error={error} onRetry={() => refetch()} />
       ) : tasks.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
@@ -287,7 +288,7 @@ function TaskRecoveryTab() {
 }
 
 function ImportRecoveryTab() {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["recovery-imports"],
     queryFn: async () => {
       const res = await authFetch("/api/admin/recovery/imports?limit=50");
@@ -312,9 +313,9 @@ function ImportRecoveryTab() {
   return (
     <div className="space-y-4">
       {isLoading ? (
-        <div className="flex items-center justify-center py-12" data-testid="recovery-imports-loading">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        </div>
+        <QueryLoading />
+      ) : isError ? (
+        <QueryError error={error} onRetry={() => refetch()} />
       ) : runs.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
@@ -403,7 +404,7 @@ function ProjectRecoveryTab() {
   const [editingProject, setEditingProject] = useState<any>(null);
   const [editFields, setEditFields] = useState<Record<string, any>>({});
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["recovery-projects", search],
     queryFn: async () => {
       const res = await authFetch("/api/admin/recovery/tasks?taskType=__projects_only__&limit=0");
@@ -413,7 +414,7 @@ function ProjectRecoveryTab() {
     },
   });
 
-  const { data: projectsDetail, isLoading: projectsLoading } = useQuery({
+  const { data: projectsDetail, isLoading: projectsLoading, isError: projectsIsError, error: projectsError, refetch: refetchProjects } = useQuery({
     queryKey: ["recovery-projects-detail"],
     queryFn: async () => {
       const res = await authFetch("/api/project-info");
@@ -480,10 +481,12 @@ function ProjectRecoveryTab() {
         />
       </div>
 
-      {projectsLoading ? (
-        <div className="flex items-center justify-center py-12" data-testid="recovery-projects-loading">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        </div>
+      {isLoading || projectsLoading ? (
+        <QueryLoading />
+      ) : isError ? (
+        <QueryError error={error} onRetry={() => refetch()} />
+      ) : projectsIsError ? (
+        <QueryError error={projectsError} onRetry={() => refetchProjects()} />
       ) : projects.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
@@ -715,7 +718,7 @@ function DeletedItemsTab() {
   const [typeFilter, setTypeFilter] = useState<string>("");
   const [search, setSearch] = useState("");
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["recovery-deleted"],
     queryFn: async () => {
       const res = await authFetch("/api/admin/recovery/deleted");
@@ -848,9 +851,9 @@ function DeletedItemsTab() {
       )}
 
       {isLoading ? (
-        <div className="flex items-center justify-center py-12" data-testid="recovery-deleted-loading">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        </div>
+        <QueryLoading />
+      ) : isError ? (
+        <QueryError error={error} onRetry={() => refetch()} />
       ) : items.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">

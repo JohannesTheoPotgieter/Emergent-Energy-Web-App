@@ -25,6 +25,7 @@ import {
   Info,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
+import { QueryLoading, QueryError } from "@/components/ui/query-states";
 import { PageLayout } from "@/components/layout";
 
 function getAuthHeaders(): HeadersInit {
@@ -132,6 +133,9 @@ export default function DatabaseMigrationPage() {
 
   const hasArchivedTables = status && Object.values(status.legacyTables as Record<string, any>).some((t: any) => t.archived);
   const allArchived = status && Object.values(status.legacyTables as Record<string, any>).every((t: any) => t.archived || !t.exists);
+
+  if (statusQuery.isLoading) return <QueryLoading />;
+  if (statusQuery.isError) return <QueryError error={statusQuery.error} onRetry={() => statusQuery.refetch()} />;
 
   return (
     <PageLayout
