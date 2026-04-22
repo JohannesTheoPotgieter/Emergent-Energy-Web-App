@@ -84,6 +84,7 @@ const revenueTrackingOverridesSchema = z
   .passthrough();
 import {
   approvals,
+  auditEvents,
   changeSets,
   fieldChanges,
   financialEditRequests,
@@ -2547,7 +2548,7 @@ router.get("/api/cos-tracker/qb-coverage-report", requireAuth, requireAdmin, asy
  *
  *   GET /api/cos-tracker/tracker-gap?start=YYYY-MM-DD&end=YYYY-MM-DD
  */
-router.get("/api/cos-tracker/tracker-gap", requireAuth, requireAdmin, async (req, res) => {
+router.get("/api/cos-tracker/tracker-gap", requireAuth, requirePermission("cos", "edit"), async (req, res) => {
   try {
     const start = String(req.query.start || "");
     const end = String(req.query.end || "");
@@ -2834,7 +2835,7 @@ const ignoreBodySchema = z.object({
   reason: z.string().min(1).max(500),
 });
 
-router.post("/api/cos-tracker/tracker-gap/ignore", requireAuth, requireAdmin, validateBody(ignoreBodySchema), async (req, res) => {
+router.post("/api/cos-tracker/tracker-gap/ignore", requireAuth, requirePermission("cos", "edit"), validateBody(ignoreBodySchema), async (req, res) => {
   try {
     const body = req.body as z.infer<typeof ignoreBodySchema>;
     const user = (req as any).user;
@@ -2852,6 +2853,25 @@ router.post("/api/cos-tracker/tracker-gap/ignore", requireAuth, requireAdmin, va
         ignoredByName: user?.name ?? user?.email ?? null,
       })
       .returning();
+    // Audit: every ignore is captured with reason + actor + before/after for forensic replay.
+    await logAuditFromReq(req, {
+      entityType: "qb_recon_ignore",
+      entityId: String(created.id),
+      action: "create",
+      changesJson: {
+        previous_state: null,
+        new_state: {
+          qbBillId: body.qbBillId,
+          qbLineId: body.qbLineId ?? null,
+          qbDocNumber: body.qbDocNumber ?? null,
+          vendorName: body.vendorName ?? null,
+          lineAmountExVat: body.lineAmountExVat ?? null,
+          resolvedProjectName: body.resolvedProjectName ?? null,
+        },
+        reason: body.reason,
+      },
+      projectName: body.resolvedProjectName ?? undefined,
+    });
     res.json({ ok: true, ignore: created });
   } catch (err) {
     console.error("[tracker-gap/ignore]", err);
@@ -2859,11 +2879,35 @@ router.post("/api/cos-tracker/tracker-gap/ignore", requireAuth, requireAdmin, va
   }
 });
 
-router.delete("/api/cos-tracker/tracker-gap/ignore/:id", requireAuth, requireAdmin, async (req, res) => {
+const ignoreUndoBodySchema = z.object({
+  reason: z.string().min(1).max(500),
+});
+
+router.delete("/api/cos-tracker/tracker-gap/ignore/:id", requireAuth, requirePermission("cos", "edit"), validateBody(ignoreUndoBodySchema), async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
+    const body = req.body as z.infer<typeof ignoreUndoBodySchema>;
+    // Capture pre-state so the audit row records what is being undone.
+    const [prev] = await db.select().from(qbReconIgnores).where(eq(qbReconIgnores.id, id));
+    if (!prev) return res.status(404).json({ error: "not_found" });
     await db.update(qbReconIgnores).set({ deletedAt: new Date() }).where(eq(qbReconIgnores.id, id));
+    await logAuditFromReq(req, {
+      entityType: "qb_recon_ignore",
+      entityId: String(id),
+      action: "delete",
+      changesJson: {
+        previous_state: {
+          qbBillId: prev.qbBillId,
+          qbDocNumber: prev.qbDocNumber,
+          reason: prev.reason,
+          ignoredByName: prev.ignoredByName,
+        },
+        new_state: null,
+        reason: body.reason,
+      },
+      projectName: prev.resolvedProjectName ?? undefined,
+    });
     res.json({ ok: true });
   } catch (err) {
     console.error("[tracker-gap/ignore/delete]", err);
@@ -2874,10 +2918,12 @@ router.delete("/api/cos-tracker/tracker-gap/ignore/:id", requireAuth, requireAdm
 const overrideBodySchema = z.object({
   classRefName: z.string().min(1).max(200),
   projectName: z.string().min(1).max(200),
-  note: z.string().max(500).optional(),
+  // Mandatory rationale per COS hardening brief — every QB class→project mapping must record
+  // *why* it was created so the override trail is auditable, not just *who*.
+  note: z.string().min(1).max(500),
 });
 
-router.post("/api/cos-tracker/tracker-gap/class-override", requireAuth, requireAdmin, validateBody(overrideBodySchema), async (req, res) => {
+router.post("/api/cos-tracker/tracker-gap/class-override", requireAuth, requirePermission("cos", "edit"), validateBody(overrideBodySchema), async (req, res) => {
   try {
     const body = req.body as z.infer<typeof overrideBodySchema>;
     const user = (req as any).user;
@@ -2906,6 +2952,17 @@ router.post("/api/cos-tracker/tracker-gap/class-override", requireAuth, requireA
         .returning();
       return row;
     });
+    await logAuditFromReq(req, {
+      entityType: "qb_class_project_override",
+      entityId: String(created.id),
+      action: "create",
+      changesJson: {
+        previous_state: null,
+        new_state: { classRefName: body.classRefName, projectName: body.projectName },
+        reason: body.note,
+      },
+      projectName: body.projectName,
+    });
     res.json({ ok: true, override: created });
   } catch (err: any) {
     const code = err?.code ?? err?.cause?.code;
@@ -2918,15 +2975,92 @@ router.post("/api/cos-tracker/tracker-gap/class-override", requireAuth, requireA
   }
 });
 
-router.delete("/api/cos-tracker/tracker-gap/class-override/:id", requireAuth, requireAdmin, async (req, res) => {
+const overrideUndoBodySchema = z.object({
+  reason: z.string().min(1).max(500),
+});
+
+router.delete("/api/cos-tracker/tracker-gap/class-override/:id", requireAuth, requirePermission("cos", "edit"), validateBody(overrideUndoBodySchema), async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
+    const body = req.body as z.infer<typeof overrideUndoBodySchema>;
+    const [prev] = await db.select().from(qbClassProjectOverrides).where(eq(qbClassProjectOverrides.id, id));
+    if (!prev) return res.status(404).json({ error: "not_found" });
     await db.update(qbClassProjectOverrides).set({ deletedAt: new Date() }).where(eq(qbClassProjectOverrides.id, id));
+    await logAuditFromReq(req, {
+      entityType: "qb_class_project_override",
+      entityId: String(id),
+      action: "delete",
+      changesJson: {
+        previous_state: { classRefName: prev.classRefName, projectName: prev.projectName, note: prev.note },
+        new_state: null,
+        reason: body.reason,
+      },
+      projectName: prev.projectName,
+    });
     res.json({ ok: true });
   } catch (err) {
     console.error("[tracker-gap/class-override/delete]", err);
     res.status(500).json({ error: "override_delete_failed", detail: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+/**
+ * Audit-history viewer for any tracker-gap or COS reconciliation entity. Returns up to 200 of the
+ * most-recent `audit_events` rows for the given entityType+entityId, newest-first, so the UI can
+ * render a "what happened to this row" timeline (link / unlink / ignore / override / undo). The
+ * client is responsible for reversing the order if it wants oldest-first display.
+ *
+ * Permission mirrors the maintenance workspace itself (`cos:edit`) so site-leads can self-audit
+ * their own actions; senior finance/admin retain full read-anywhere via the audit explorer.
+ */
+const auditHistoryQuerySchema = z.object({
+  entityType: z.enum([
+    "qb_recon_ignore",
+    "qb_class_project_override",
+    "quickbooks_invoice_link",
+    "normalized_cost_line",
+    "cost_line",
+  ]),
+  entityId: z.string().min(1).max(100),
+});
+
+router.get("/api/cos-tracker/audit-history", requireAuth, requirePermission("cos", "edit"), async (req, res) => {
+  try {
+    const parsed = auditHistoryQuerySchema.safeParse({
+      entityType: req.query.entityType,
+      entityId: req.query.entityId,
+    });
+    if (!parsed.success) {
+      return res.status(400).json({ error: "invalid_query", detail: parsed.error.format() });
+    }
+    const { entityType, entityId } = parsed.data;
+    const events = await db
+      .select()
+      .from(auditEvents)
+      .where(and(eq(auditEvents.entityType, entityType), eq(auditEvents.entityId, entityId)))
+      .orderBy(desc(auditEvents.createdAt))
+      .limit(200);
+    res.json({
+      entityType,
+      entityId,
+      count: events.length,
+      events: events.map((e) => ({
+        id: e.id,
+        action: e.action,
+        actorRole: e.actorRole,
+        userName: e.userName,
+        userId: e.userId,
+        source: e.source,
+        changes: e.changesJson,
+        projectName: e.projectName,
+        requestPath: e.requestPath,
+        createdAt: e.createdAt instanceof Date ? e.createdAt.toISOString() : String(e.createdAt),
+      })),
+    });
+  } catch (err) {
+    console.error("[cos-tracker/audit-history]", err);
+    res.status(500).json({ error: "audit_history_failed", detail: err instanceof Error ? err.message : String(err) });
   }
 });
 

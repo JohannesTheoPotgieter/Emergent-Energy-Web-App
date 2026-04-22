@@ -643,15 +643,20 @@ export default function CosTracker() {
   const lastMonth = useMemo(() => (months.length ? months[months.length - 1] : null), [months]);
   const prevMonth = useMemo(() => (months.length > 1 ? months[months.length - 2] : null), [months]);
 
-  const fyTotals = useMemo(
-    () => ({
-      budget: months.reduce((s, m) => s + (m.budget ?? 0), 0),
-      planned: months.reduce((s, m) => s + (m.realisedCOS ?? 0) + (m.committedCOS ?? 0) + (m.plannedCOS ?? 0), 0),
-      realised: months.reduce((s, m) => s + (m.realisedCOS ?? 0), 0),
-      quickbooks: months.reduce((s, m) => s + (m.qbOnlyActual ?? 0), 0),
-    }),
-    [months],
-  );
+  // FY totals — source-pure per the COS hardening brief:
+  //   planned/committed/realised come from the App pipeline (no QB or Budget mixed in)
+  //   quickbooks is QB-only; budget is Budget-only; variance/variancePct are derived (App vs Budget).
+  const fyTotals = useMemo(() => {
+    const planned = months.reduce((s, m) => s + (m.plannedCOS ?? 0), 0);
+    const committed = months.reduce((s, m) => s + (m.committedCOS ?? 0), 0);
+    const realised = months.reduce((s, m) => s + (m.realisedCOS ?? 0), 0);
+    const quickbooks = months.reduce((s, m) => s + (m.qbOnlyActual ?? 0), 0);
+    const budget = months.reduce((s, m) => s + (m.budget ?? 0), 0);
+    const totalApp = planned + committed + realised;
+    const variance = totalApp - budget;
+    const variancePct = budget !== 0 ? (variance / budget) * 100 : 0;
+    return { planned, committed, realised, quickbooks, budget, variance, variancePct };
+  }, [months]);
 
   // Collect all project names per row from the months data, then narrow by tracker-loaded set
   // and (optionally) by user-selected projects.
@@ -722,6 +727,13 @@ export default function CosTracker() {
         "Tracking vs Budget %":
           !isProjectFiltered && m.ytdBudget && m.ytdBudget > 0
             ? Math.round(((m.ytdRealised ?? 0) / m.ytdBudget) * 1000) / 10
+            : null,
+        // Cumulative App-COS variance % vs Budget plotted on the secondary right axis.
+        // (ytdCOS - ytdBudget) / ytdBudget * 100. Null until a budget exists for the FY so
+        // the line breaks rather than sitting on zero.
+        "YTD Variance %":
+          !isProjectFiltered && m.ytdBudget && m.ytdBudget > 0
+            ? Math.round(((m.ytdVariance ?? 0) / m.ytdBudget) * 1000) / 10
             : null,
       })),
     [months, isProjectFiltered],
@@ -924,19 +936,28 @@ export default function CosTracker() {
     );
   };
 
-  type FyCardKey = "budget" | "planned" | "realised" | "quickbooks";
+  // 7-card FY KPI strip in the exact order required by the COS hardening brief:
+  //   Planned (App-only) → Committed (App-only) → Realised (App-only) → QuickBooks COS (QB-only)
+  //   → Budget (Budget-only) → Variance to Budget → Variance to Budget %
+  // App-only and QB-only sources are deliberately separated so each card is source-pure.
+  type FyCardKey = "planned" | "committed" | "realised" | "quickbooks" | "budget" | "variance" | "variancePct";
   const FY_CARD_META: Record<FyCardKey, {
     label: string;
+    source: "App" | "QB" | "Budget" | "Derived";
     icon: React.ComponentType<{ className?: string }>;
     iconBg: string;
     accent: string;
     sparkColor: string;
     getValue: (m: MonthData) => number;
+    format?: (v: number) => string;
   }> = {
-    budget: { label: "FY Budget", icon: Wallet, iconBg: "bg-emerald-50 text-emerald-700 border border-emerald-200", accent: "text-emerald-700", sparkColor: "#16a34a", getValue: (m) => m.budget ?? 0 },
-    planned: { label: "FY Planned", icon: ListChecks, iconBg: "bg-emerald-100 text-emerald-700", accent: "text-emerald-700", sparkColor: "#16a34a", getValue: (m) => (m.realisedCOS ?? 0) + (m.committedCOS ?? 0) + (m.plannedCOS ?? 0) },
-    realised: { label: "FY Realised", icon: CheckCircle2, iconBg: "bg-foreground/8 text-foreground", accent: "text-foreground", sparkColor: "#0f172a", getValue: (m) => m.realisedCOS ?? 0 },
-    quickbooks: { label: "FY Quickbooks", icon: DollarSign, iconBg: "bg-emerald-50 text-emerald-700 border border-emerald-200", accent: "text-emerald-700", sparkColor: "#16a34a", getValue: (m) => m.qbOnlyActual ?? 0 },
+    planned:    { label: "FY COS Planned",     source: "App",     icon: ListChecks,   iconBg: "bg-emerald-50 text-emerald-700 border border-emerald-200", accent: "text-emerald-700", sparkColor: "#16a34a", getValue: (m) => m.plannedCOS ?? 0 },
+    committed:  { label: "FY COS Committed",   source: "App",     icon: ListChecks,   iconBg: "bg-amber-50 text-amber-700 border border-amber-200",       accent: "text-amber-700",  sparkColor: "#f59e0b", getValue: (m) => m.committedCOS ?? 0 },
+    realised:   { label: "FY COS Realised",    source: "App",     icon: CheckCircle2, iconBg: "bg-foreground/8 text-foreground",                          accent: "text-foreground", sparkColor: "#0f172a", getValue: (m) => m.realisedCOS ?? 0 },
+    quickbooks: { label: "FY QuickBooks COS",  source: "QB",      icon: DollarSign,   iconBg: "bg-emerald-50 text-emerald-700 border border-emerald-200", accent: "text-emerald-700", sparkColor: "#16a34a", getValue: (m) => m.qbOnlyActual ?? 0 },
+    budget:     { label: "FY Budget",          source: "Budget",  icon: Wallet,       iconBg: "bg-emerald-50 text-emerald-700 border border-emerald-200", accent: "text-emerald-700", sparkColor: "#16a34a", getValue: (m) => m.budget ?? 0 },
+    variance:   { label: "FY Variance to Budget", source: "Derived", icon: TrendingUp, iconBg: "bg-slate-100 text-slate-700",                              accent: "text-slate-800",  sparkColor: "#64748b", getValue: (m) => (m.variance ?? 0) },
+    variancePct:{ label: "FY Variance to Budget %", source: "Derived", icon: TrendingUp, iconBg: "bg-slate-100 text-slate-700",                            accent: "text-slate-800",  sparkColor: "#64748b", getValue: (m) => (m.variancePct ?? 0), format: (v) => `${v.toFixed(1)}%` },
   };
 
   const renderFyKpiCard = (key: FyCardKey) => {
@@ -949,6 +970,7 @@ export default function CosTracker() {
     const deltaPct = prevValue !== 0 ? (delta / Math.abs(prevValue)) * 100 : 0;
     const deltaPositive = delta >= 0;
     const cardSpark = months.map((m) => ({ x: m.monthKey, y: meta.getValue(m) }));
+    const fmt = meta.format ?? formatRand;
     return (
       <Card key={key} className="border-border shadow-sm">
         <CardContent className="p-3 sm:p-4">
@@ -957,14 +979,18 @@ export default function CosTracker() {
               <Icon className="h-3.5 w-3.5" />
             </div>
             <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{meta.label}</p>
+            {/* Source-purity badge so a viewer can always see whether a number is App / QB / Budget / derived. */}
+            <Badge variant="outline" className="ml-auto text-[9px] font-medium px-1.5 py-0 border-border bg-card text-muted-foreground" data-testid={`badge-source-${key}`}>
+              {meta.source}
+            </Badge>
           </div>
           <p className={`text-lg sm:text-xl font-bold font-mono tracking-tight ${meta.accent}`} data-testid={`text-fy-${key}-value`}>
-            {formatRand(fyValue)}
+            {fmt(fyValue)}
           </p>
           <div className="flex items-center justify-between mt-1.5">
             <div className="flex flex-col">
               <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Last mo.</span>
-              <span className="font-mono font-semibold text-xs">{formatRand(lastValue)}</span>
+              <span className="font-mono font-semibold text-xs">{fmt(lastValue)}</span>
               {prevMonth && (
                 <span className={`inline-flex items-center gap-0.5 text-[10px] font-medium ${deltaPositive ? "text-emerald-700" : "text-destructive"}`}>
                   {deltaPositive ? <ArrowUpRight className="h-2.5 w-2.5" /> : <ArrowDownRight className="h-2.5 w-2.5" />}
@@ -990,7 +1016,7 @@ export default function CosTracker() {
       <CardHeader className="bg-muted/30 border-b border-border px-3 sm:px-5 py-2.5 sm:py-3">
         <CardTitle className="text-sm font-semibold tracking-tight flex items-center gap-2">
           <LineChartIcon className="h-4 w-4 text-muted-foreground" />
-          COS trend — Planned · Committed · Realised · QB (bars) + Tracking vs Budget % (line)
+          COS trend — Planned · Committed · Realised · QB (bars) + Tracking vs Budget % · YTD Variance % (lines)
         </CardTitle>
       </CardHeader>
       <CardContent className="p-3 sm:p-6">
@@ -1007,11 +1033,17 @@ export default function CosTracker() {
                 tick={{ fontSize: 11, fill: "#16a34a" }}
                 axisLine={false}
                 tickLine={false}
-                domain={[0, (dataMax: number) => Math.max(120, Math.ceil((dataMax || 0) / 20) * 20)]}
+                domain={[
+                  (dataMin: number) => {
+                    const m = Math.min(0, dataMin ?? 0);
+                    return Math.floor(m / 20) * 20;
+                  },
+                  (dataMax: number) => Math.max(120, Math.ceil((dataMax || 0) / 20) * 20),
+                ]}
               />
               <Tooltip
                 formatter={(value: number, name: string) =>
-                  name === "Tracking vs Budget %"
+                  name === "Tracking vs Budget %" || name === "YTD Variance %"
                     ? [value == null ? "—" : `${value.toFixed(1)}%`, name]
                     : [formatRand(value), name]
                 }
@@ -1039,6 +1071,16 @@ export default function CosTracker() {
                 stroke="#0f766e"
                 strokeWidth={2}
                 dot={{ r: 3, fill: "#0f766e" }}
+                connectNulls={false}
+              />
+              <Line
+                yAxisId="right"
+                type="monotone"
+                dataKey="YTD Variance %"
+                stroke="#dc2626"
+                strokeWidth={2}
+                strokeDasharray="6 3"
+                dot={{ r: 3, fill: "#dc2626" }}
                 connectNulls={false}
               />
             </ComposedChart>
@@ -1170,11 +1212,16 @@ export default function CosTracker() {
           </aside>
 
           <div className="flex-1 min-w-0 space-y-3">
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3" data-testid="kpi-strip-cos">
-              {renderFyKpiCard("budget")}
+            {/* 7-card FY KPI strip — exact order per COS hardening brief: */}
+            {/*   Planned · Committed · Realised · QuickBooks COS · Budget · Variance · Variance % */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-7 gap-2 sm:gap-3" data-testid="kpi-strip-cos">
               {renderFyKpiCard("planned")}
+              {renderFyKpiCard("committed")}
               {renderFyKpiCard("realised")}
               {renderFyKpiCard("quickbooks")}
+              {renderFyKpiCard("budget")}
+              {renderFyKpiCard("variance")}
+              {renderFyKpiCard("variancePct")}
             </div>
 
             <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "recon" | "trend" | "gap")}>
