@@ -57,11 +57,35 @@ function ownerLabel(p: PriorityRow): string {
   return "Unassigned";
 }
 
+interface ExecDashboardPayload {
+  kpis?: {
+    plannedRevenueFy?: number;
+    receivedInflowFy?: number;
+    openInflowFy?: number;
+    openExpenditureFy?: number;
+    grossProfitFy?: number;
+    grossMarginPctFy?: number | null;
+    plannedExpenditureFy?: number;
+    projectsRed?: number;
+    projectsAmber?: number;
+    projectsGreen?: number;
+    activeDashboardProjects?: number;
+    pendingApprovals?: number;
+    projectsBehindPlan?: number;
+  };
+  financialYear?: { start?: string; end?: string };
+}
+
 export default function CooHome() {
   const { data: gatesData, isLoading, error } = useGatesPipeline();
   const { data: handoversData } = useGatesHandovers();
   const prioritiesQuery = useQuery<{ priorities: PriorityRow[] } | PriorityRow[]>({
     queryKey: ["/api/priorities"],
+    queryFn: getQueryFn({ on401: "throw" }),
+    staleTime: 60_000,
+  });
+  const execQuery = useQuery<ExecDashboardPayload>({
+    queryKey: ["/api/lifecycle-board/execution-dashboard"],
     queryFn: getQueryFn({ on401: "throw" }),
     staleTime: 60_000,
   });
@@ -103,6 +127,9 @@ export default function CooHome() {
             <ApprovalQueueCard />
             <PrioritiesCard rows={priorities} loading={prioritiesQuery.isLoading} />
           </div>
+
+          {/* Finance KPI strip — revenue, CoS, outstanding, margin */}
+          <FinanceKpiStrip kpis={execQuery.data?.kpis} loading={execQuery.isLoading} />
 
           {/* Red + blocked + amber rows */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -152,6 +179,94 @@ export default function CooHome() {
   );
 }
 
+function formatZAR(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return "—";
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000) return `R ${(n / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `R ${(n / 1_000).toFixed(0)}k`;
+  return `R ${Math.round(n)}`;
+}
+
+function FinanceKpiStrip({ kpis, loading }: { kpis: ExecDashboardPayload["kpis"] | undefined; loading: boolean }) {
+  if (loading) {
+    return (
+      <Card data-testid="finance-kpi-strip">
+        <CardContent className="p-3 text-xs text-muted-foreground">Loading finance KPIs…</CardContent>
+      </Card>
+    );
+  }
+  if (!kpis) {
+    return null;
+  }
+  const revenuePct = kpis.plannedRevenueFy && kpis.plannedRevenueFy > 0
+    ? Math.round(((kpis.receivedInflowFy ?? 0) / kpis.plannedRevenueFy) * 100)
+    : null;
+  return (
+    <Card data-testid="finance-kpi-strip">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm flex items-center gap-2">
+          <DollarSign className="h-4 w-4 text-primary" />
+          Finance pulse (FY)
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="pt-0">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <KpiTile
+            label="Revenue realised"
+            primary={formatZAR(kpis.receivedInflowFy)}
+            sub={`of ${formatZAR(kpis.plannedRevenueFy)} planned${revenuePct != null ? ` · ${revenuePct}%` : ""}`}
+            to="/revenue-tracker"
+          />
+          <KpiTile
+            label="Revenue outstanding"
+            primary={formatZAR(kpis.openInflowFy)}
+            tone="amber"
+            to="/revenue-tracker"
+          />
+          <KpiTile
+            label="Expense outstanding"
+            primary={formatZAR(kpis.openExpenditureFy)}
+            tone="amber"
+            to="/cos"
+          />
+          <KpiTile
+            label="Gross profit (planned)"
+            primary={formatZAR(kpis.grossProfitFy)}
+            sub={kpis.grossMarginPctFy != null ? `Margin ${kpis.grossMarginPctFy}%` : undefined}
+            to="/execution-board/finance"
+          />
+          <KpiTile
+            label="Cashflow 30-day"
+            primary="View"
+            sub="Projected position"
+            to="/cashflow"
+          />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function KpiTile({ label, primary, sub, tone, to }: {
+  label: string;
+  primary: string;
+  sub?: string;
+  tone?: "amber" | "red";
+  to: string;
+}) {
+  const toneClass = tone === "amber" ? "text-amber-700" : tone === "red" ? "text-red-700" : "";
+  return (
+    <Link
+      href={to}
+      className="block rounded-md border bg-card p-2.5 hover:bg-[hsl(var(--surface-tint))] hover:border-primary/30 transition-colors"
+    >
+      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className={`text-base font-semibold tabular-nums mt-0.5 ${toneClass}`}>{primary}</p>
+      {sub && <p className="text-[11px] text-muted-foreground mt-0.5">{sub}</p>}
+    </Link>
+  );
+}
+
 function PrioritiesCard({ rows, loading }: { rows: PriorityRow[]; loading: boolean }) {
   return (
     <Card data-testid="priorities-card">
@@ -198,13 +313,24 @@ function PrioritiesCard({ rows, loading }: { rows: PriorityRow[]; loading: boole
   );
 }
 
+interface ProjectRowShape {
+  projectId: number;
+  projectName: string;
+  clientName: string | null;
+  pm: string | null;
+  daysInStage: number;
+  nextRequiredAction?: string | null;
+  waitingOnDepartment?: string | null;
+  gateReadinessPct?: number | null;
+}
+
 function ProjectList({
   title, icon, badgeClass, projects, emptyLabel,
 }: {
   title: string;
   icon: React.ReactNode;
   badgeClass: string;
-  projects: { projectId: number; projectName: string; clientName: string | null; pm: string | null; daysInStage: number }[];
+  projects: ProjectRowShape[];
   emptyLabel: string;
 }) {
   return (
@@ -222,22 +348,37 @@ function ProjectList({
         ) : (
           <ul className="divide-y divide-border/50">
             {projects.map((p) => (
-              <li key={p.projectId} className="py-2">
+              <li key={p.projectId} className="py-2" data-testid={`project-row-${p.projectId}`}>
                 <Link
                   href={`/project/${encodeURIComponent(p.projectName)}`}
-                  className="flex items-center justify-between gap-2 hover:bg-[hsl(var(--surface-tint))] -mx-2 px-2 py-1 rounded transition-colors"
-                  data-testid={`project-row-${p.projectId}`}
+                  className="block hover:bg-[hsl(var(--surface-tint))] -mx-2 px-2 py-1 rounded transition-colors"
                 >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium truncate">{p.projectName}</p>
-                    <p className="text-[11px] text-muted-foreground truncate">
-                      {p.clientName || "—"} {p.pm ? `· ${p.pm}` : ""}
-                    </p>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate">{p.projectName}</p>
+                      <p className="text-[11px] text-muted-foreground truncate">
+                        {p.clientName || "—"} {p.pm ? `· ${p.pm}` : ""}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {p.gateReadinessPct != null && (
+                        <Badge variant="outline" className="text-[10px] tabular-nums">
+                          {p.gateReadinessPct}%
+                        </Badge>
+                      )}
+                      {p.daysInStage != null && (
+                        <span className="text-[11px] text-muted-foreground tabular-nums">
+                          {p.daysInStage}d
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  {p.daysInStage != null && (
-                    <span className="text-[11px] text-muted-foreground tabular-nums shrink-0">
-                      {p.daysInStage}d
-                    </span>
+                  {(p.nextRequiredAction || p.waitingOnDepartment) && (
+                    <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
+                      {p.nextRequiredAction && <>Next: <span className="text-foreground">{p.nextRequiredAction}</span></>}
+                      {p.nextRequiredAction && p.waitingOnDepartment && " · "}
+                      {p.waitingOnDepartment && <>Waiting on <span className="text-foreground">{p.waitingOnDepartment}</span></>}
+                    </p>
                   )}
                 </Link>
               </li>
