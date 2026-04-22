@@ -584,7 +584,7 @@ function EngineeringTicketsSection({
   opportunityId,
 }: {
   tickets: OpportunityTicket[];
-  opportunityId: number;
+  opportunityId: number | null;
 }) {
   const open = tickets.filter((t) => t.status !== "Completed" && t.status !== "Cancelled").length;
   const closed = tickets.length - open;
@@ -666,7 +666,7 @@ function TicketRow({
 }: {
   ticket: OpportunityTicket;
   siblingProject: { id: number; name: string } | null;
-  opportunityId: number;
+  opportunityId: number | null;
 }) {
   const queryClient = useQueryClient();
   const linkToProject = useMutation({
