@@ -1244,7 +1244,7 @@ export default function DashboardPage() {
                 </tbody>
               </table>
               {(data?.projects || []).length === 0 && (
-                <EmptyState title="No projects match current filters" className="border-0 rounded-none" />
+                <EmptyState title="No projects match current filters" description="Update your filters or clear them to view project rows." className="border-0 rounded-none" />
               )}
             </div>
           )}
