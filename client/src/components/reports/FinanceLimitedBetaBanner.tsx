@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { AlertTriangle } from 'lucide-react';
 
 type FinanceLimitedBetaBannerProps = {
@@ -9,9 +10,10 @@ type FinanceLimitedBetaBannerProps = {
   /**
    * Body text describing what is or is not trustworthy about the feature.
    * Kept deliberately plain so PMs / finance managers can self-serve the
-   * risk assessment without opening the release notes.
+   * risk assessment without opening the release notes. Accepts ReactNode
+   * so banners can embed inline links (e.g. "Open Throughput").
    */
-  body: string;
+  body: ReactNode;
   /**
    * When true, the banner uses a hotter red treatment to signal that the
    * feature should not be relied on for reporting decisions yet.
