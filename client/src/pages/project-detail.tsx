@@ -19,6 +19,7 @@ import {
   ChevronDown, ChevronUp, Eye, Play, Zap, Target, Users, Trash2, Plus,
   MessageSquare, FolderOpen, FileCheck, Search, X,
   Handshake, MapPin, LayoutDashboard, FileText, ClipboardList, Plug,
+  CalendarClock,
 } from "lucide-react";
 import { EnergyLoader } from "@/components/ui/energy-loader";
 import { RevenueTrackingTab } from "@/components/tabs/RevenueTrackingTab";
@@ -975,6 +976,7 @@ export default function ProjectDetailPage() {
 
   const [activeDept, setActiveDept] = useState<string>(resolvedFromUrl?.dept || "pm");
   const [activeSubTab, setActiveSubTab] = useState<string>(resolvedFromUrl?.subTab || "plan");
+  const [showActivityTimeline, setShowActivityTimeline] = useState<boolean>(false);
   // Keep legacy aliases
   const activeSection = activeDept === "pm" ? "delivery" : activeDept === "eng" ? "engineering" : activeDept === "finance" ? "commercial" : activeDept === "pd" ? "commercial" : activeDept;
 
@@ -1490,8 +1492,47 @@ export default function ProjectDetailPage() {
         );
       })()}
 
-      {/* Stage Lifecycle — Critical Control Panel */}
-      {projectInfoId && (
+      {/* Stage Lifecycle — Critical Control Panel + Stage Timeline + Activity Timeline */}
+      {projectInfoId && canViewTab.engineering && (
+        <div className="space-y-2" data-testid="stage-lifecycle-block">
+          <CriticalControlPanel
+            projectId={projectInfoId}
+            onViewGate={() => setLocation(`/project/${encodeURIComponent(projectName)}/gate/${encodeURIComponent(stageData?.currentStage?.stageCode || "S01_FIRST_ASSESSMENT")}`)}
+            isAdmin={isAdmin}
+          />
+          {stageData && (stageData.stages || []).length > 0 && (
+            <div className="rounded-lg border bg-card px-3 py-2" data-testid="stage-timeline-inline">
+              <StageTimeline
+                stages={(stageData.stages || []) as any}
+                currentStageCode={stageData.currentStage?.stageCode ?? null}
+                onStageClick={(stageCode) => setLocation(`/project/${encodeURIComponent(projectName)}/gate/${encodeURIComponent(stageCode)}`)}
+              />
+            </div>
+          )}
+          <div className="rounded-lg border bg-card" data-testid="activity-timeline-disclosure">
+            <button
+              type="button"
+              onClick={() => setShowActivityTimeline((v) => !v)}
+              className="flex w-full items-center justify-between gap-2 px-3 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
+              aria-expanded={showActivityTimeline}
+              data-testid="toggle-activity-timeline"
+            >
+              <span className="flex items-center gap-2">
+                <CalendarClock className="h-3.5 w-3.5" />
+                Activity timeline
+                <span className="text-[10px] font-normal text-muted-foreground/80">— gate, approval, procurement, RAID & change events</span>
+              </span>
+              {showActivityTimeline ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            </button>
+            {showActivityTimeline && (
+              <div className="border-t px-3 py-3">
+                <ProjectTimelineTab projectName={projectName} projectInfoId={projectInfoId ?? null} />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      {projectInfoId && !canViewTab.engineering && (
         <CriticalControlPanel
           projectId={projectInfoId}
           onViewGate={() => setLocation(`/project/${encodeURIComponent(projectName)}/gate/${encodeURIComponent(stageData?.currentStage?.stageCode || "S01_FIRST_ASSESSMENT")}`)}
@@ -1634,11 +1675,12 @@ export default function ProjectDetailPage() {
             {overdueEngineeringCount > 0 && <div className="text-amber-600 font-semibold"><AlertTriangle className="inline h-3 w-3 mr-0.5" />{overdueEngineeringCount} overdue</div>}
           </div>
 
-          {/* Engineering sub-tabs: subtab-tasks, subtab-timeline, subtab-drawings */}
+          {/* Engineering sub-tabs: subtab-tasks, subtab-drawings.
+              Timeline (stage + activity) was moved into the Stage Lifecycle block at the top of the page;
+              legacy ?sub=timeline URLs fall through to the Tasks sub-tab. */}
           <div className="flex items-center gap-1.5 flex-wrap overflow-x-auto scrollbar-hide" data-testid="eng-sub-tabs">
             {[
               { key: "tasks", label: "Tasks", icon: ListTodo },
-              { key: "timeline", label: "Timeline", icon: CalendarDays },
               { key: "drawings", label: "Drawings", icon: FileText },
             ].map(st => (
               <Button key={st.key} size="sm" variant={activeSubTab === st.key ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab(st.key)} data-testid={`subtab-${st.key}`}>
@@ -1647,18 +1689,7 @@ export default function ProjectDetailPage() {
             ))}
           </div>
 
-          {activeSubTab === "tasks" && projectInfoId && <EngTasksTab projectInfoId={projectInfoId} isAdmin={isAdmin} projectName={projectName} initialStatusFilter={engFilter || undefined} />}
-          {activeSubTab === "timeline" && (
-            <div className="space-y-4">
-              {projectInfoId && stageData && (
-                <StageTimeline
-                  stages={(stageData.stages || []) as any}
-                  currentStageCode={stageData.currentStage?.stageCode ?? null}
-                />
-              )}
-              <ProjectTimelineTab projectName={projectName} projectInfoId={projectInfoId ?? null} />
-            </div>
-          )}
+          {(activeSubTab === "tasks" || activeSubTab === "timeline") && projectInfoId && <EngTasksTab projectInfoId={projectInfoId} isAdmin={isAdmin} projectName={projectName} initialStatusFilter={engFilter || undefined} />}
           {activeSubTab === "drawings" && projectInfoId && <DrawingRegisterTab projectId={projectInfoId} projectName={projectName} />}
         </div>
       )}
