@@ -39,6 +39,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { FieldHint } from "@/components/ui/field-hint";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { format, parse, isValid } from "date-fns";
@@ -1466,7 +1467,7 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
               {kpis.variance >= 0 ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-red-600" />}
             </div>
             <div className="min-w-0">
-              <span className="text-[10px] uppercase tracking-wider font-medium text-slate-500">Variance</span>
+              <span className="text-[10px] uppercase tracking-wider font-medium text-slate-500 inline-flex items-center gap-1">Variance <FieldHint hint="Positive = under budget. Negative = over budget" /></span>
               <div className={`text-base sm:text-lg font-bold font-mono mt-0.5 ${kpis.variance >= 0 ? "text-emerald-600" : "text-red-600"}`} data-testid="text-kpi-variance">
                 {formatCurrency(kpis.variance)}
               </div>
@@ -1771,7 +1772,7 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
                 />
               </div>
               <div>
-                <Label className="text-xs">Planned Month</Label>
+                <Label className="text-xs inline-flex items-center gap-1">Planned Month <FieldHint hint="The date this record becomes active in financial calculations" /></Label>
                 <SearchableSelect
                   value={drawerFilter.plannedMonth || "all"}
                   onValueChange={v => setDrawerFilter(f => ({ ...f, plannedMonth: v === "all" ? "" : v }))}
@@ -1788,7 +1789,7 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
                   onChange={e => setDrawerFilter(f => ({ ...f, invoiceNo: e.target.value }))} />
               </div>
               <div>
-                <Label className="text-xs">PO Number</Label>
+                <Label className="text-xs inline-flex items-center gap-1">PO Number <FieldHint hint="Purchase Order must exist before capturing this invoice" /></Label>
                 <Input className="h-8 text-xs" placeholder="Search..." value={drawerFilter.poNumber || ""}
                   onChange={e => setDrawerFilter(f => ({ ...f, poNumber: e.target.value }))} />
               </div>
@@ -1901,7 +1902,7 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
                 <Input type="date" className="h-8 text-xs" value={newLineData.invoiceDate} onChange={e => setNewLineData(d => ({ ...d, invoiceDate: e.target.value }))} />
               </div>
               <div>
-                <Label className="text-xs">Finance Payment Date</Label>
+                <Label className="text-xs inline-flex items-center gap-1">Finance Payment Date <FieldHint hint="Leave blank for current records. Set only when superseding with a new version" /></Label>
                 <Input type="date" className="h-8 text-xs" value={newLineData.paymentDate} onChange={e => setNewLineData(d => ({ ...d, paymentDate: e.target.value }))} />
               </div>
             </div>
