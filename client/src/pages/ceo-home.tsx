@@ -220,10 +220,10 @@ function UpcomingHandoversCard({ rows }: { rows: any[] }) {
         ) : (
           <ul className="divide-y divide-border/50">
             {rows.map((r, i) => (
-              <li key={r.projectId ?? i} className="py-2.5">
+              <li key={r.projectId ?? i} className="py-2.5 flex items-center justify-between gap-2">
                 <button
                   onClick={() => navigate(`/project/${encodeURIComponent(r.projectName)}`)}
-                  className="w-full flex items-center justify-between gap-2 text-left hover:bg-[hsl(var(--surface-tint))] rounded px-2 -mx-2 py-1 transition-colors"
+                  className="flex-1 min-w-0 flex items-center justify-between gap-2 text-left hover:bg-[hsl(var(--surface-tint))] rounded px-2 -mx-2 py-1 transition-colors"
                   data-testid={`upcoming-handover-${r.projectId ?? i}`}
                 >
                   <div className="min-w-0 flex-1">
@@ -232,15 +232,21 @@ function UpcomingHandoversCard({ rows }: { rows: any[] }) {
                       {r.clientName || ""} {r.pm ? `· PM: ${r.pm}` : ""}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {r.gateReadinessPct != null && (
-                      <Badge variant="outline" className="text-[10px] tabular-nums">
-                        {r.gateReadinessPct}% ready
-                      </Badge>
-                    )}
-                    <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
-                  </div>
+                  {r.gateReadinessPct != null && (
+                    <Badge variant="outline" className="text-[10px] tabular-nums shrink-0">
+                      {r.gateReadinessPct}% ready
+                    </Badge>
+                  )}
                 </button>
+                {r.projectId ? (
+                  <Link
+                    href={`/handover/${r.projectId}/live`}
+                    className="text-[11px] text-primary hover:underline shrink-0 px-2"
+                    data-testid={`open-live-room-${r.projectId}`}
+                  >
+                    Live room →
+                  </Link>
+                ) : null}
               </li>
             ))}
           </ul>
