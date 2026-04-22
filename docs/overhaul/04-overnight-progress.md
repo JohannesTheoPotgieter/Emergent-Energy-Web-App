@@ -18,6 +18,9 @@ Navigation index for what landed on branch `claude/platform-overhaul-3WF1E` over
 
 | Commit | Scope | What it adds |
 |---|---|---|
+| `f029a0e4` | email-linking | **Communications tab** on project-detail — groups linked emails + Teams messages by phase with signal-coded badges and Outlook deep-links. |
+| `c7e87859` | email-linking | **Repository + API layer** — `matchClientByDomain` (layered signal #1), `createEmailLink`/`createTeamsLink`, list-for-project, super-user unlink. Domain-match test endpoint. |
+| `e55f9196` | email-linking | **Schema + migration 0015** — `email_project_links` + `teams_project_links` attribution tables. 6 email signals + 3 teams signals. Phase-at-link-time snapshot. |
 | `5cdb63a1` | clients | **ClientEditDialog** — full enriched-field edit (legal name, type, industry, contacts, billing, primary + additional email domains). Two buttons per row now: pencil rename + building-icon full details. |
 | `fec21d3c` | R4.5 | Cascade-delete extended to **invoices**. `DeleteInvoiceDialog` + `/api/invoices/:id/delete-impact` — high severity when a payment request is raised from the invoice. |
 | `80c9ca2d` | D4 | **Handover meeting persistence** — attendees + section notes now land on `stage_acceptances` via migration 0014. Previously dropped when the dialog closed. |
