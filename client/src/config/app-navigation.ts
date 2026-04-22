@@ -206,7 +206,6 @@ export const TOP_SECTIONS: TopSection[] = [
     ]),
     secondary: [
       { label: "Settings", path: "/settings" },
-      { label: "Document types", path: "/admin/document-types" },
       { label: "Roles & Permissions", path: "/admin/roles" },
       { label: "Control Center", path: "/admin/control-center" },
       { label: "Smart Import", path: "/admin/smart-import" },
