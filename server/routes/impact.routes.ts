@@ -26,6 +26,7 @@ import { projectInfo, clients, sites, opportunities } from "@shared/schema/proje
 import { workItems } from "@shared/schema/tasks";
 import { approvals } from "@shared/schema/collaboration";
 import { controlledDocuments } from "@shared/schema/documents";
+import { purchaseOrders, poReviewAssignments, paymentRequests } from "@shared/schema/finance";
 import { ApiError, badRequest, notFound, serverError } from "../lib/api-error";
 
 interface ImpactRow {
@@ -143,6 +144,44 @@ async function getClientDeleteImpact(clientId: number): Promise<{ subject: strin
   return { subject: client.name, rows };
 }
 
+/**
+ * Purchase order delete impact. POs have review assignments and payment
+ * requests hanging off them; deleting a PO with a raised payment request
+ * is very high severity because the supplier is expecting the money.
+ */
+async function getPoDeleteImpact(poId: number): Promise<{ subject: string; rows: ImpactRow[] } | null> {
+  const [po] = await db
+    .select({ id: purchaseOrders.id, poRef: purchaseOrders.poRef, supplierName: purchaseOrders.supplierName })
+    .from(purchaseOrders)
+    .where(eq(purchaseOrders.id, poId))
+    .limit(1);
+  if (!po) return null;
+
+  const [reviewCount, paymentRequestCount] = await Promise.all([
+    countRows(poReviewAssignments, eq(poReviewAssignments.purchaseOrderId, poId)),
+    countRows(paymentRequests, eq(paymentRequests.purchaseOrderId, poId)),
+  ]);
+
+  const rows: ImpactRow[] = [];
+  if (reviewCount > 0) {
+    rows.push({
+      label: "Review assignments",
+      count: reviewCount,
+      severity: "medium",
+      note: "Reviewers notified",
+    });
+  }
+  if (paymentRequestCount > 0) {
+    rows.push({
+      label: "Payment requests raised against this PO",
+      count: paymentRequestCount,
+      severity: "high",
+      note: "Supplier expecting funds — investigate before delete",
+    });
+  }
+  return { subject: `${po.poRef} — ${po.supplierName}`, rows };
+}
+
 export function registerImpactRoutes(app: Express): void {
   // ------------------------------------------------------------------
   // GET /api/projects/:id/delete-impact
@@ -181,6 +220,27 @@ export function registerImpactRoutes(app: Express): void {
       } catch (err) {
         if (err instanceof ApiError) throw err;
         console.error("[impact] client delete-impact error:", err);
+        throw serverError("Failed to compute delete impact");
+      }
+    },
+  );
+
+  // ------------------------------------------------------------------
+  // GET /api/purchase-orders/:id/delete-impact
+  // ------------------------------------------------------------------
+  app.get(
+    "/api/purchase-orders/:id/delete-impact",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      const parsed = projectIdParam.safeParse(req.params.id);
+      if (!parsed.success) throw badRequest("Invalid PO id");
+      try {
+        const impact = await getPoDeleteImpact(parsed.data);
+        if (!impact) throw notFound(`Purchase order ${parsed.data} not found`);
+        res.json(impact);
+      } catch (err) {
+        if (err instanceof ApiError) throw err;
+        console.error("[impact] PO delete-impact error:", err);
         throw serverError("Failed to compute delete impact");
       }
     },
