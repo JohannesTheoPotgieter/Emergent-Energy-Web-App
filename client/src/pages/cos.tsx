@@ -244,17 +244,18 @@ function MatchStatusBadge({ status }: { status: "matched" | "qb_only" | "app_onl
   );
 }
 
-function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all", defaultProject = "all" }: { monthKey: string; monthLabel: string; onClose: () => void; defaultFilter?: DrawerStateFilter; defaultProject?: string }) {
+function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all", defaultProject = "all", fromMonthKey }: { monthKey: string; monthLabel: string; onClose: () => void; defaultFilter?: DrawerStateFilter; defaultProject?: string; fromMonthKey?: string }) {
   const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
   const [stateFilter, setStateFilter] = useState<DrawerStateFilter>(defaultFilter);
   const [projectFilter, setProjectFilter] = useState<string>(defaultProject);
   const stateParam = stateFilter !== "all" ? `&state=${stateFilter}` : "";
   const projectParam = projectFilter !== "all" ? `&project=${encodeURIComponent(projectFilter)}` : "";
+  const fromParam = fromMonthKey ? `&fromMonthKey=${fromMonthKey}` : "";
 
   const { data, isLoading, isError, error, refetch } = useQuery<MonthDetail>({
-    queryKey: ["/api/cos-tracker/month-detail", monthKey, stateFilter, projectFilter],
-    queryFn: fetchQueryFn(`/api/cos-tracker/month-detail?monthKey=${monthKey}${stateParam}${projectParam}`),
+    queryKey: ["/api/cos-tracker/month-detail", monthKey, fromMonthKey || "", stateFilter, projectFilter],
+    queryFn: fetchQueryFn(`/api/cos-tracker/month-detail?monthKey=${monthKey}${fromParam}${stateParam}${projectParam}`),
     retry: 1,
   });
 
@@ -558,7 +559,7 @@ export default function CosTracker() {
   const qc = useQueryClient();
   const [editing, setEditing] = useState<EditingCell | null>(null);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
-  const [drawerMonth, setDrawerMonth] = useState<{ monthKey: string; monthLabel: string; defaultFilter?: DrawerStateFilter; defaultProject?: string } | null>(null);
+  const [drawerMonth, setDrawerMonth] = useState<{ monthKey: string; monthLabel: string; defaultFilter?: DrawerStateFilter; defaultProject?: string; fromMonthKey?: string } | null>(null);
 
   const [activeTab, setActiveTab] = useState<"recon" | "trend" | "gap">("recon");
   const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
@@ -878,7 +879,19 @@ export default function CosTracker() {
             {rows.map((row, rowIdx) => {
               const isYtd = row.group === "ytd";
               const isExpanded = expandedRows.has(row.key);
-              const isClickable = ["totalCOS", "realisedCOS", "committedCOS", "qbOnlyActual"].includes(row.key);
+              // Monthly rows drill into a single month; YTD rows drill into
+              // the cumulative range from FY26 start (Sep 2025) through the
+              // clicked month so the drawer total matches the YTD figure.
+              const FY_START = "2025-09";
+              const isMonthlyDrill = ["totalCOS", "realisedCOS", "committedCOS", "qbOnlyActual"].includes(row.key);
+              const isYtdDrill = ["ytdRealised", "ytdCommitted", "ytdQbOnly"].includes(row.key);
+              const isClickable = isMonthlyDrill || isYtdDrill;
+              const drillFilterForRow: DrawerStateFilter =
+                row.key === "realisedCOS" || row.key === "ytdRealised" ? "realised"
+                : row.key === "committedCOS" || row.key === "ytdCommitted" ? "committed"
+                : row.key === "totalCOS" ? "recognised"
+                : row.key === "qbOnlyActual" || row.key === "ytdQbOnly" ? "qb_actual"
+                : "all";
               const isFirstYtd = isYtd && rowIdx > 0 && rows[rowIdx - 1].group !== "ytd";
               return (
                 <React.Fragment key={row.key}>
@@ -948,8 +961,9 @@ export default function CosTracker() {
                           className={`px-2 sm:px-4 py-1.5 sm:py-2.5 text-right font-mono text-xs sm:text-sm ${colorClass} ${isClickable ? "cursor-pointer hover:bg-emerald-50/70 hover:underline decoration-emerald-300 underline-offset-2 transition-colors rounded" : ""}`}
                           onClick={isClickable ? () => setDrawerMonth({
                             monthKey: m.monthKey,
-                            monthLabel: m.monthLabel,
-                            defaultFilter: row.key === "realisedCOS" ? "realised" : row.key === "committedCOS" ? "committed" : row.key === "totalCOS" ? "recognised" : row.key === "qbOnlyActual" ? "qb_actual" : "all",
+                            monthLabel: isYtdDrill ? `FY26-to-date through ${m.monthLabel}` : m.monthLabel,
+                            defaultFilter: drillFilterForRow,
+                            fromMonthKey: isYtdDrill ? FY_START : undefined,
                           }) : undefined}
                           data-testid={`cell-${row.key}-${m.monthKey}`}
                         >
@@ -1423,11 +1437,12 @@ export default function CosTracker() {
 
       {drawerMonth && (
         <MonthDetailDrawer
-          key={`${drawerMonth.monthKey}-${drawerMonth.defaultFilter}-${drawerMonth.defaultProject || "all"}`}
+          key={`${drawerMonth.fromMonthKey || ""}-${drawerMonth.monthKey}-${drawerMonth.defaultFilter}-${drawerMonth.defaultProject || "all"}`}
           monthKey={drawerMonth.monthKey}
           monthLabel={drawerMonth.monthLabel}
           defaultFilter={drawerMonth.defaultFilter}
           defaultProject={drawerMonth.defaultProject}
+          fromMonthKey={drawerMonth.fromMonthKey}
           onClose={() => setDrawerMonth(null)}
         />
       )}
