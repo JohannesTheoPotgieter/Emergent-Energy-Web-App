@@ -2657,7 +2657,7 @@ router.get("/api/cos-tracker/qb-coverage-report", requireAuth, requireAdmin, asy
     console.error("[qb-coverage-report]", err);
     res
       .status(500)
-      .json({ error: "qb_coverage_report_failed", detail: err instanceof Error ? err.message : String(err) });
+      .json({ error: "qb_coverage_report_failed", detail: "An unexpected server error occurred" });
   }
 });
 
@@ -2947,7 +2947,7 @@ router.get("/api/cos-tracker/tracker-gap", requireAuth, requirePermission("cos",
     });
   } catch (err) {
     console.error("[tracker-gap]", err);
-    res.status(500).json({ error: "tracker_gap_failed", detail: err instanceof Error ? err.message : String(err) });
+    res.status(500).json({ error: "tracker_gap_failed", detail: "An unexpected server error occurred" });
   }
 });
 
@@ -3001,7 +3001,7 @@ router.post("/api/cos-tracker/tracker-gap/ignore", requireAuth, requirePermissio
     res.json({ ok: true, ignore: created });
   } catch (err) {
     console.error("[tracker-gap/ignore]", err);
-    res.status(500).json({ error: "ignore_failed", detail: err instanceof Error ? err.message : String(err) });
+    res.status(500).json({ error: "ignore_failed", detail: "An unexpected server error occurred" });
   }
 });
 
@@ -3037,7 +3037,7 @@ router.delete("/api/cos-tracker/tracker-gap/ignore/:id", requireAuth, requirePer
     res.json({ ok: true });
   } catch (err) {
     console.error("[tracker-gap/ignore/delete]", err);
-    res.status(500).json({ error: "ignore_delete_failed", detail: err instanceof Error ? err.message : String(err) });
+    res.status(500).json({ error: "ignore_delete_failed", detail: "An unexpected server error occurred" });
   }
 });
 
@@ -3097,7 +3097,7 @@ router.post("/api/cos-tracker/tracker-gap/class-override", requireAuth, requireP
       return res.status(409).json({ error: "concurrent_update", detail: "Another mapping was just saved for this class. Refresh and retry." });
     }
     console.error("[tracker-gap/class-override]", err);
-    res.status(500).json({ error: "override_failed", detail: err instanceof Error ? err.message : String(err) });
+    res.status(500).json({ error: "override_failed", detail: "An unexpected server error occurred" });
   }
 });
 
@@ -3127,7 +3127,7 @@ router.delete("/api/cos-tracker/tracker-gap/class-override/:id", requireAuth, re
     res.json({ ok: true });
   } catch (err) {
     console.error("[tracker-gap/class-override/delete]", err);
-    res.status(500).json({ error: "override_delete_failed", detail: err instanceof Error ? err.message : String(err) });
+    res.status(500).json({ error: "override_delete_failed", detail: "An unexpected server error occurred" });
   }
 });
 
@@ -3434,7 +3434,7 @@ router.get(
       });
     } catch (err) {
       console.error("[revenue tracker-gap]", err);
-      res.status(500).json({ error: "revenue_tracker_gap_failed", detail: err instanceof Error ? err.message : String(err) });
+      res.status(500).json({ error: "revenue_tracker_gap_failed", detail: "An unexpected server error occurred" });
     }
   },
 );
@@ -3499,7 +3499,7 @@ router.post(
       res.json({ ok: true, ignore: created });
     } catch (err) {
       console.error("[revenue tracker-gap/ignore]", err);
-      res.status(500).json({ error: "ignore_failed", detail: err instanceof Error ? err.message : String(err) });
+      res.status(500).json({ error: "ignore_failed", detail: "An unexpected server error occurred" });
     }
   },
 );
@@ -3541,7 +3541,7 @@ router.delete(
       res.json({ ok: true });
     } catch (err) {
       console.error("[revenue tracker-gap/ignore/delete]", err);
-      res.status(500).json({ error: "ignore_delete_failed", detail: err instanceof Error ? err.message : String(err) });
+      res.status(500).json({ error: "ignore_delete_failed", detail: "An unexpected server error occurred" });
     }
   },
 );
@@ -3602,7 +3602,7 @@ router.post(
         return res.status(409).json({ error: "concurrent_update", detail: "Another mapping was just saved for this customer. Refresh and retry." });
       }
       console.error("[revenue tracker-gap/customer-override]", err);
-      res.status(500).json({ error: "override_failed", detail: err instanceof Error ? err.message : String(err) });
+      res.status(500).json({ error: "override_failed", detail: "An unexpected server error occurred" });
     }
   },
 );
@@ -3634,7 +3634,7 @@ router.delete(
       res.json({ ok: true });
     } catch (err) {
       console.error("[revenue tracker-gap/customer-override/delete]", err);
-      res.status(500).json({ error: "override_delete_failed", detail: err instanceof Error ? err.message : String(err) });
+      res.status(500).json({ error: "override_delete_failed", detail: "An unexpected server error occurred" });
     }
   },
 );
@@ -3683,7 +3683,7 @@ router.get(
       });
     } catch (err) {
       console.error("[revenue tracker-gap/audit-history]", err);
-      res.status(500).json({ error: "audit_history_failed", detail: err instanceof Error ? err.message : String(err) });
+      res.status(500).json({ error: "audit_history_failed", detail: "An unexpected server error occurred" });
     }
   },
 );
@@ -3743,7 +3743,7 @@ router.get("/api/cos-tracker/audit-history", requireAuth, requirePermission("cos
     });
   } catch (err) {
     console.error("[cos-tracker/audit-history]", err);
-    res.status(500).json({ error: "audit_history_failed", detail: err instanceof Error ? err.message : String(err) });
+    res.status(500).json({ error: "audit_history_failed", detail: "An unexpected server error occurred" });
   }
 });
 

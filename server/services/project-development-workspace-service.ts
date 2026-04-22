@@ -15,7 +15,7 @@ import {
   workItemDependencies,
   workItems,
 } from "@shared/schema";
-import { db } from "../db";
+import { db, initializeDatabase } from "../db";
 import { getPlatformProjectSummaryMap } from "./project-platform-summary-service";
 
 export const FEASIBILITY_STATUS_VALUES = [
@@ -916,55 +916,71 @@ export type WorkspaceRollupRow = {
 // Org-wide rollup. Driven from project_info filtered by deleted_at so
 // cascade-display is honoured at source.
 export async function getProjectDevelopmentWorkspaceRollup(): Promise<WorkspaceRollupRow[]> {
+  if (!db) {
+    await initializeDatabase();
+  }
   const today = new Date().toISOString().slice(0, 10);
 
-  const [projects, oppRows, ticketRows, workItemAggRows, raidAggRows] = await Promise.all([
-    db
-      .select({
-        id: projectInfo.id,
-        projectName: projectInfo.projectName,
-        clientId: projectInfo.clientId,
-        phase: projectExecutionState.phase,
-        opportunityId: projectInfo.opportunityId,
-        ragStatus: projectExecutionState.ragStatus,
-        updatedAt: projectInfo.updatedAt,
-      })
-      .from(projectInfo)
-      .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
-      .where(isNull(projectInfo.deletedAt)),
-    db
-      .select({ id: opportunities.id, stage: opportunities.stage })
-      .from(opportunities)
-      .where(isNull(opportunities.deletedAt)),
-    db
-      .select({
-        projectId: pdTickets.projectId,
-        status: pdTickets.status,
-        dueDate: pdTickets.dueDate,
-        createdAt: pdTickets.createdAt,
-      })
-      .from(pdTickets)
-      .where(isNull(pdTickets.deletedAt)),
-    db
-      .select({
-        projectId: workItems.projectId,
-        total: sql<number>`COUNT(*)::int`,
-        completed: sql<number>`COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(${workItems.status}, ''))) IN ('completed','complete','closed','resolved','done'))::int`,
-        blocked: sql<number>`COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(${workItems.status}, ''))) IN ('blocked','on hold'))::int`,
-        overdue: sql<number>`COUNT(*) FILTER (WHERE ${workItems.endDate} IS NOT NULL AND ${workItems.endDate} < ${today} AND LOWER(TRIM(COALESCE(${workItems.status}, ''))) NOT IN ('completed','complete','closed','resolved','done'))::int`,
-        lastActivityAt: sql<string | null>`MAX(${workItems.updatedAt})`,
-      })
-      .from(workItems)
-      .where(isNull(workItems.deletedAt))
-      .groupBy(workItems.projectId),
-    db
-      .select({
-        projectId: raidItems.projectId,
-        open: sql<number>`COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(${raidItems.status}, ''))) NOT IN ('completed','complete','closed','resolved','done'))::int`,
-      })
-      .from(raidItems)
-      .groupBy(raidItems.projectId),
-  ]);
+  let projects: any[];
+  let oppRows: any[];
+  let ticketRows: any[];
+  let workItemAggRows: any[];
+  let raidAggRows: any[];
+  try {
+    [projects, oppRows, ticketRows, workItemAggRows, raidAggRows] = await Promise.all([
+      db
+        .select({
+          id: projectInfo.id,
+          projectName: projectInfo.projectName,
+          clientId: projectInfo.clientId,
+          phase: projectExecutionState.phase,
+          opportunityId: projectInfo.opportunityId,
+          ragStatus: projectExecutionState.ragStatus,
+          updatedAt: projectInfo.updatedAt,
+        })
+        .from(projectInfo)
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
+        .where(isNull(projectInfo.deletedAt)),
+      db
+        .select({ id: opportunities.id, stage: opportunities.stage })
+        .from(opportunities)
+        .where(isNull(opportunities.deletedAt)),
+      db
+        .select({
+          projectId: pdTickets.projectId,
+          status: pdTickets.status,
+          dueDate: pdTickets.dueDate,
+          createdAt: pdTickets.createdAt,
+        })
+        .from(pdTickets)
+        .where(isNull(pdTickets.deletedAt)),
+      db
+        .select({
+          projectId: workItems.projectId,
+          total: sql<number>`COUNT(*)::int`,
+          completed: sql<number>`COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(${workItems.status}, ''))) IN ('completed','complete','closed','resolved','done'))::int`,
+          blocked: sql<number>`COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(${workItems.status}, ''))) IN ('blocked','on hold'))::int`,
+          overdue: sql<number>`COUNT(*) FILTER (WHERE ${workItems.endDate} IS NOT NULL AND ${workItems.endDate} < ${today} AND LOWER(TRIM(COALESCE(${workItems.status}, ''))) NOT IN ('completed','complete','closed','resolved','done'))::int`,
+          lastActivityAt: sql<string | null>`MAX(${workItems.updatedAt})`,
+        })
+        .from(workItems)
+        .where(isNull(workItems.deletedAt))
+        .groupBy(workItems.projectId),
+      db
+        .select({
+          projectId: raidItems.projectId,
+          open: sql<number>`COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(${raidItems.status}, ''))) NOT IN ('completed','complete','closed','resolved','done'))::int`,
+        })
+        .from(raidItems)
+        .groupBy(raidItems.projectId),
+    ]);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/no such table/i.test(message) || /no such column/i.test(message)) {
+      return [];
+    }
+    throw error;
+  }
 
   const oppStageById = new Map<number, string | null>();
   for (const o of oppRows) oppStageById.set(o.id, o.stage ?? null);
