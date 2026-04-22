@@ -1,35 +1,51 @@
-# Overnight progress — Emergent Energy overhaul
+# Progress — Emergent Energy overhaul
 
-Session window: user asked me to finish as much as possible with no further input. This document is the navigation index for what landed on branch `claude/platform-overhaul-3WF1E`.
+Navigation index for what landed on branch `claude/platform-overhaul-3WF1E` over the overnight + follow-up run.
 
 ## TL;DR
 
-Ten commits shipped, all `npm run check` clean, all pushed to the remote branch. The chain builds a **real document-control system** (D3) that feeds **role-specific home screens** (D1 CEO, D2 COO) with a **universal search palette** (R2), a **reusable cascade-delete primitive** (R3), and a **clean Settings landing** (D5) that replaces the cluttered admin pages.
+**17 commits** shipped, all `npm run check` clean, all pushed. Chain covers:
 
-## Commits on the branch (newest first)
+- **Document control (D3)** — schema + API + UI, now visible on every project via a new "Controlled docs" subtab in the PD section.
+- **Role homes (D1 CEO · D2 COO)** — opinionated landing pages wired to the approval queue.
+- **Settings (D5.1)** — one grouped landing replacing cluttered admin pages.
+- **QuickBooks (R5)** — new clean front-door at `/quickbooks` (status → action → history).
+- **Search (R2)** — `⌘K` federates `/api/search` across projects, invoices, installers, work items, documents.
+- **Cascade-delete (R3 + R4.1 + R4.2)** — reusable primitive + first `/impact` endpoint + drop-in `DeleteProjectDialog`.
+- **Visual first pass (R1)** — emerald-tinted hover/active states across primitives.
+
+## Commits (newest first)
 
 | Commit | Scope | What it adds |
 |---|---|---|
-| `c8745c45` | D3.4c | Standalone `/projects/:projectId/documents` page — direct-URL access to any project's controlled docs strip + approval queue side-by-side. |
-| `32759969` | docs | This progress summary. |
-| `ef3079ac` | R2 | `⌘K` palette now federates `/api/search` — finds projects, clients/installers, invoices, POs, work items, finance lines, documents, people. |
-| `3f6c6547` | D5.1 | `/settings` — clear, grouped super-user landing with one-line descriptions of every admin tool. |
-| `e8ce0eb0` | R3 | `ConfirmDestructive` primitive — cascade-delete blast radius dialog with typed confirmation. Reusable everywhere. |
-| `7a02b84d` | D1 + D2 | CEO home at `/ceo` + COO home at `/coo` — role-landing pages. |
-| `a6bed286` | D3.4b | `DocumentStrip` + `DocumentSubmitDialog` — submit path. |
-| `beab94a7` | D3.4a | `ApprovalQueueCard` + `DocumentApprovalDialog` + TanStack hooks — approve/reject path. |
+| `e3310997` | R5 | `/quickbooks` — status → action → history front-door. Replaces the "half-cooked" feel of `/admin-quickbooks` (still accessible as Advanced admin). |
+| `3c2a3d4b` | R4.2 | `useDeleteImpact` hook + `DeleteProjectDialog` drop-in. Any page with a project delete button can now wire cascade-preview in 3 lines. |
+| `dff44e3a` | R4.1 | `GET /api/projects/:id/delete-impact` — scaffold endpoint feeding ConfirmDestructive. Pattern ready to replicate for clients, invoices, documents. |
+| `c5e5063b` | D3.4d | `DocumentStrip` wired into `project-detail.tsx` as a new "Controlled docs" subtab under Project Development. |
+| `c043e54d` | docs | Progress index update. |
+| `c8745c45` | D3.4c | Standalone `/projects/:projectId/documents` — direct-URL access pairing DocumentStrip with the approval queue. |
+| `32759969` | docs | Overnight progress index (this document's predecessor). |
+| `ef3079ac` | R2 | `⌘K` palette federates `/api/search` — projects, clients/installers, invoices, POs, work items, finance lines, documents, people. |
+| `3f6c6547` | D5.1 | `/settings` — clear, grouped super-user landing. |
+| `e8ce0eb0` | R3 | `ConfirmDestructive` primitive. |
+| `7a02b84d` | D1 + D2 | CEO home at `/ceo` + COO home at `/coo`. |
+| `a6bed286` | D3.4b | `DocumentStrip` + `DocumentSubmitDialog`. |
+| `beab94a7` | D3.4a | `ApprovalQueueCard` + `DocumentApprovalDialog` + TanStack hooks. |
 | `7f7cdda0` | D3.3 | Mutations: submit / approve / reject / recall + approval queue API. |
-| `f15d291d` | D3.2 | Repository + read APIs for controlled documents. |
-| `ee6d590c` | D3.1 | Schema + migration + seed for 13 controlled document types. |
-| `ec6eb2fc` | R1 | Visual direction first pass — emerald-tinted tokens, hover/active consistency, chrome trim. |
+| `f15d291d` | D3.2 | Repository + read APIs. |
+| `ee6d590c` | D3.1 | Schema + migration + seed for 13 document types. |
+| `ec6eb2fc` | R1 | Visual direction first pass. |
 
 ## What you can look at in dev
 
-1. **`/ceo`** — pre-execution pipeline + waiting-on-me + upcoming handovers + portfolio strip. Every card click → project detail.
-2. **`/coo`** — morning check: approvals, priorities, red / blocked / amber projects, engineering/quality/HSE drill tiles, upcoming handovers, financial pulse right column.
-3. **`/settings`** — new clean landing replacing the cluttered admin page. Super-user (COO/CEO) only.
-4. **`⌘K`** — from anywhere, search a project name, client, invoice number, or page name.
-5. **Any page** — hover table rows, dropdowns, subnav pills. Subtle emerald tint everywhere instead of the gray it was.
+1. **`/ceo`** — pre-execution pipeline + waiting-on-me + upcoming handovers + portfolio strip.
+2. **`/coo`** — morning check: approvals, priorities, red / blocked / amber projects, drill tiles, upcoming handovers, financial pulse column.
+3. **`/settings`** — clean grouped super-user landing.
+4. **`/quickbooks`** — new QB front-door (status, actions, sync log).
+5. **Any project** → PD section → "Controlled docs" subtab — D3 live on every project.
+6. **`/projects/:projectId/documents`** — standalone quick access to a project's docs + approval queue.
+7. **`⌘K`** — federated search across the app.
+8. **Any page** — hover states now emerald-tinted (R1).
 
 ## Document control (D3) — what exists vs what's still needed
 
