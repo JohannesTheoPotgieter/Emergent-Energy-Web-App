@@ -153,7 +153,10 @@ export class FinanceInflowsRepository {
     const result = await this.dbInstance
       .update(normalizedRevenueLines)
       .set(mappedFields)
-      .where(eq(normalizedRevenueLines.id, canonicalId))
+      .where(and(
+        eq(normalizedRevenueLines.id, canonicalId),
+        isNull(normalizedRevenueLines.effectiveTo),
+      ))
       .returning();
     if (!result[0]) return undefined;
     const { adaptRevenueToInflow } = await import("../lib/data-merge");
