@@ -584,3 +584,43 @@ export const qbClassProjectOverrides = pgTable("qb_class_project_overrides", {
   deletedAt: timestamp("deleted_at"),
 });
 export type QbClassProjectOverride = typeof qbClassProjectOverrides.$inferSelect;
+
+/**
+ * QB Reconciliation — Revenue Tracker Gap support tables (Task #18).
+ *
+ * Parallel to qb_recon_ignores / qb_class_project_overrides but keyed on
+ * QB Invoices + Customers (revenue side) rather than Bills + Classes
+ * (cost side). Two separate tables instead of polymorphising the existing
+ * ones, to avoid touching live COS data.
+ *
+ * Pure annotation tables — `normalized_revenue_lines` stays the source
+ * of truth; these only record finance's disposition of QB invoices
+ * surfaced by the revenue gap report.
+ */
+export const qbRevenueReconIgnores = pgTable("qb_revenue_recon_ignores", {
+  id: serial("id").primaryKey(),
+  qbInvoiceId: text("qb_invoice_id").notNull(),
+  qbLineId: text("qb_line_id"),
+  qbDocNumber: text("qb_doc_number"),
+  customerName: text("customer_name"),
+  lineAmountExVat: decimal("line_amount_ex_vat", { precision: 14, scale: 2 }),
+  resolvedProjectName: text("resolved_project_name"),
+  reason: text("reason").notNull(),
+  ignoredByUserId: integer("ignored_by_user_id"),
+  ignoredByName: text("ignored_by_name"),
+  ignoredAt: timestamp("ignored_at").defaultNow().notNull(),
+  deletedAt: timestamp("deleted_at"),
+});
+export type QbRevenueReconIgnore = typeof qbRevenueReconIgnores.$inferSelect;
+
+export const qbCustomerProjectOverrides = pgTable("qb_customer_project_overrides", {
+  id: serial("id").primaryKey(),
+  customerRefName: text("customer_ref_name").notNull(),
+  projectName: text("project_name").notNull(),
+  note: text("note"),
+  createdByUserId: integer("created_by_user_id"),
+  createdByName: text("created_by_name"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  deletedAt: timestamp("deleted_at"),
+});
+export type QbCustomerProjectOverride = typeof qbCustomerProjectOverrides.$inferSelect;

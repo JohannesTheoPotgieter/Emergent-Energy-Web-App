@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback } from "react";
 import { FinanceShell } from "@/components/layout/FinanceShell";
+import { RevenueGapTab } from "@/components/revenue/RevenueGapTab";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -98,6 +99,8 @@ interface MonthDetailItem {
   noRevenueLinked: boolean;
   revState: string;
   dataSource?: string;
+  dateSource?: string | null;
+  dateSourceLabel?: string | null;
   qbTransactionType?: string | null;
   qbDocNumber?: string | null;
   paymentReference?: string | null;
@@ -432,6 +435,16 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                             <div>
                               <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-0.5">QB Doc / Trace</p>
                               <p className="font-medium text-foreground">{item.qbDocNumber || item.sourceTraceId || "—"}</p>
+                              {item.dateSource && (
+                                <Badge
+                                  variant="outline"
+                                  className={`mt-1 text-[9px] ${item.dateSource === "qb_txn_date_paid" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-amber-300 bg-amber-50 text-amber-700"}`}
+                                  title={item.dateSourceLabel ?? undefined}
+                                  data-testid={`badge-date-source-${item.id}`}
+                                >
+                                  {item.dateSource === "qb_txn_date_paid" ? "Issue date · paid" : "Issue date · proxy"}
+                                </Badge>
+                              )}
                             </div>
                           </div>
                         </td>
@@ -457,7 +470,7 @@ export default function RevenueTrackerPage() {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<EditingCell | null>(null);
   const [drawerMonth, setDrawerMonth] = useState<{ monthKey: string; monthLabel: string; defaultFilter?: "all" | "realised" | "unrealised" | "qb_actual"; defaultProject?: string } | null>(null);
-  const [activeTab, setActiveTab] = useState<"recon" | "trend">("recon");
+  const [activeTab, setActiveTab] = useState<"recon" | "trend" | "gap">("recon");
   const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
   const [projectSearch, setProjectSearch] = useState("");
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
@@ -1079,7 +1092,7 @@ export default function RevenueTrackerPage() {
               {renderFyKpiCard("quickbooks")}
             </div>
 
-            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "recon" | "trend")}>
+            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "recon" | "trend" | "gap")}>
               <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
                 <TabsList className="bg-muted/60">
                   <TabsTrigger value="recon" className="data-[state=active]:bg-card gap-1.5" data-testid="tab-recon">
@@ -1089,6 +1102,10 @@ export default function RevenueTrackerPage() {
                   <TabsTrigger value="trend" className="data-[state=active]:bg-card gap-1.5" data-testid="tab-trend">
                     <LineChartIcon className="h-3.5 w-3.5" />
                     Trend
+                  </TabsTrigger>
+                  <TabsTrigger value="gap" className="data-[state=active]:bg-card gap-1.5" data-testid="tab-revenue-gap">
+                    <ListChecks className="h-3.5 w-3.5" />
+                    Tracker Gap
                   </TabsTrigger>
                 </TabsList>
 
@@ -1190,6 +1207,7 @@ export default function RevenueTrackerPage() {
                 </Card>
               </TabsContent>
               <TabsContent value="trend" className="mt-0">{renderTrend()}</TabsContent>
+              <TabsContent value="gap" className="mt-0"><RevenueGapTab /></TabsContent>
             </Tabs>
           </div>
         </div>

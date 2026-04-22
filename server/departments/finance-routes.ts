@@ -15,6 +15,8 @@ import {
 import { logAuditFromReq } from '../audit-logger';
 import { storage } from "../storage";
 import { db } from "../db";
+import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import * as schema from "@shared/schema";
 import { paramStr } from "../lib/req-params";
 import { requirePermission } from "../permission-middleware";
 import { requireTrackerPermission } from "../lib/finance-route-access";
@@ -96,6 +98,8 @@ import {
   projectInfo,
   qbClassProjectOverrides,
   qbReconIgnores,
+  qbRevenueReconIgnores,
+  qbCustomerProjectOverrides,
   quickbooksInvoiceLinks,
   users,
 } from "@shared/schema";
@@ -138,9 +142,13 @@ import {
   billRawToSummary,
   billRawToLineRows,
   buildQbProjectResolver,
+  buildRevenueProjectResolver,
   invoiceRawToSummary,
+  invoiceRawToLineRows,
   normalizeProjectKey,
   parsePnLCosMonthly,
+  rankRevenueProjectSuggestions,
+  type QbProjectResolution,
 } from "../services/quickbooks-reconciliation-service";
 import {
   deriveInflowsQbStatus,
@@ -3005,6 +3013,563 @@ router.delete("/api/cos-tracker/tracker-gap/class-override/:id", requireAuth, re
   }
 });
 
+// =====================================================================
+// REVENUE Tracker-Gap maintenance workspace (Task #18 — mirrors COS).
+//
+// Same architecture as the COS endpoints above, but works on QuickBooks
+// Invoices + Customers instead of Bills + Classes, and writes to
+// qb_revenue_recon_ignores / qb_customer_project_overrides.
+// READ-ONLY against `normalized_revenue_lines` / `quickbooks_invoice_links`.
+// =====================================================================
+
+router.get(
+  "/api/revenue-tracker/tracker-gap",
+  requireAuth,
+  requirePermission("revenue_tracker", "edit"),
+  async (req, res) => {
+    try {
+      const start = String(req.query.start || "");
+      const end = String(req.query.end || "");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) {
+        return res.status(400).json({ error: "start and end required as YYYY-MM-DD" });
+      }
+
+      const [projects, nrl, custOverrides, ignores] = await Promise.all([
+        db.select({ name: projectInfo.projectName }).from(projectInfo),
+        db
+          .select({ name: normalizedRevenueLines.projectName })
+          .from(normalizedRevenueLines)
+          .where(and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt))),
+        db.select().from(qbCustomerProjectOverrides).where(isNull(qbCustomerProjectOverrides.deletedAt)),
+        db.select().from(qbRevenueReconIgnores).where(isNull(qbRevenueReconIgnores.deletedAt)),
+      ]);
+
+      const universe = new Set<string>();
+      for (const p of projects) if (p.name) universe.add(p.name);
+      for (const r of nrl) if (r.name) universe.add(r.name);
+      const projectNames = [...universe];
+
+      const overrideByCustomer = new Map<string, string>();
+      for (const o of custOverrides) {
+        overrideByCustomer.set(o.customerRefName.toLowerCase().trim(), o.projectName);
+      }
+
+      const ignoreKey = (invoiceId: string | null, lineId: string | null) =>
+        `${invoiceId ?? ""}::${lineId ?? ""}`;
+
+      const activeRevLines = await db
+        .select({
+          id: normalizedRevenueLines.id,
+          projectName: normalizedRevenueLines.projectName,
+          invoiceNumber: normalizedRevenueLines.invoiceNumber,
+          invoiceDate: normalizedRevenueLines.invoiceDate,
+          amountExVat: normalizedRevenueLines.amountExVat,
+        })
+        .from(normalizedRevenueLines)
+        .where(and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt)));
+      const revLinesByProjectKey = new Map<string, typeof activeRevLines>();
+      for (const rl of activeRevLines) {
+        const key = normalizeProjectKey(rl.projectName);
+        if (!key) continue;
+        if (!revLinesByProjectKey.has(key)) revLinesByProjectKey.set(key, []);
+        revLinesByProjectKey.get(key)!.push(rl);
+      }
+
+      let invoicesResp: { QueryResponse?: { Invoice?: unknown[] } } | undefined;
+      try {
+        invoicesResp = await getInvoices(start, end);
+      } catch (qbErr) {
+        console.error("[revenue tracker-gap] QB getInvoices failed:", qbErr);
+        return res.status(503).json({
+          error: "qb_not_connected",
+          detail: "QuickBooks integration is unavailable. Reconnect QB to refresh the gap report.",
+          message: qbErr instanceof Error ? qbErr.message : String(qbErr),
+        });
+      }
+      const invoices: unknown[] = invoicesResp?.QueryResponse?.Invoice ?? [];
+
+      // Revenue resolution prioritises CUSTOMER over CLASS (opposite of COS).
+      const resolveProject = buildRevenueProjectResolver(projectNames);
+
+      type GapBucket = "tracker_gap" | "unmapped_customer" | "unmapped_no_customer" | "matched" | "fuzzy";
+      interface GapRow {
+        bucket: GapBucket;
+        invoiceId: string | null;
+        qbLineId: string | null;
+        docNumber: string | null;
+        txnDate: string | null;
+        customerName: string | null;
+        lineAmountExVat: number | null;
+        classRefName: string | null;
+        itemRefName: string | null;
+        description: string | null;
+        balance: number | null;
+        resolvedProjectName: string | null;
+        strategy: string;
+        matchedFrom: string | null;
+        isOverride: boolean;
+        isIgnored: boolean;
+        ignoreReason: string | null;
+        ignoredByName: string | null;
+        ignoredAt: string | null;
+        closestRevenueLineId: number | null;
+      }
+
+      const ignoreMeta = new Map<string, { reason: string; ignoredByName: string | null; ignoredAt: string }>();
+      for (const ig of ignores) {
+        ignoreMeta.set(ignoreKey(ig.qbInvoiceId, ig.qbLineId), {
+          reason: ig.reason,
+          ignoredByName: ig.ignoredByName,
+          ignoredAt: ig.ignoredAt.toISOString(),
+        });
+      }
+
+      const rows: GapRow[] = [];
+      for (const inv of invoices) {
+        for (const lr of invoiceRawToLineRows(inv)) {
+          let resolution: QbProjectResolution = resolveProject({
+            classRefName: lr.classRefName,
+            customerRefName: lr.customerName,
+          });
+          let isOverride = false;
+          if (!resolution.projectName && lr.customerName) {
+            const override = overrideByCustomer.get(lr.customerName.toLowerCase().trim());
+            if (override) {
+              resolution = {
+                projectName: override,
+                strategy: "customer_override",
+                matchedFrom: lr.customerName,
+              };
+              isOverride = true;
+            }
+          }
+
+          let closestId: number | null = null;
+          if (resolution.projectName) {
+            const candidates = revLinesByProjectKey.get(normalizeProjectKey(resolution.projectName)) ?? [];
+            const target = lr.lineAmountExVat ?? 0;
+            type Cand = (typeof candidates)[number];
+            const close = candidates
+              .map((c: Cand) => ({ c, diff: Math.abs(Number(c.amountExVat ?? 0) - target) }))
+              .filter((x: { diff: number }) => x.diff <= 1)
+              .sort((a: { diff: number }, b: { diff: number }) => a.diff - b.diff)[0];
+            if (close) closestId = close.c.id;
+          }
+
+          let bucket: GapBucket;
+          if (resolution.projectName && closestId) bucket = "matched";
+          else if (resolution.projectName) bucket = "tracker_gap";
+          else if (lr.customerName) bucket = "unmapped_customer";
+          else bucket = "unmapped_no_customer";
+
+          const igk = ignoreKey(lr.invoiceId, lr.lineId);
+          const ig = ignoreMeta.get(igk);
+
+          rows.push({
+            bucket,
+            invoiceId: lr.invoiceId,
+            qbLineId: lr.lineId,
+            docNumber: lr.docNumber,
+            txnDate: lr.txnDate,
+            customerName: lr.customerName,
+            lineAmountExVat: lr.lineAmountExVat,
+            classRefName: lr.classRefName,
+            itemRefName: lr.itemRefName,
+            description: lr.description,
+            balance: lr.balance,
+            resolvedProjectName: resolution.projectName,
+            strategy: resolution.strategy,
+            matchedFrom: resolution.matchedFrom,
+            isOverride,
+            isIgnored: !!ig,
+            ignoreReason: ig?.reason ?? null,
+            ignoredByName: ig?.ignoredByName ?? null,
+            ignoredAt: ig?.ignoredAt ?? null,
+            closestRevenueLineId: closestId,
+          });
+        }
+      }
+
+      let totalAmount = 0;
+      let openTrackerGapAmount = 0;
+      let openTrackerGapCount = 0;
+      let ignoredAmount = 0;
+      let ignoredCount = 0;
+      const byBucket: Record<GapBucket, { count: number; amount: number; openCount: number; openAmount: number }> = {
+        tracker_gap: { count: 0, amount: 0, openCount: 0, openAmount: 0 },
+        unmapped_customer: { count: 0, amount: 0, openCount: 0, openAmount: 0 },
+        unmapped_no_customer: { count: 0, amount: 0, openCount: 0, openAmount: 0 },
+        matched: { count: 0, amount: 0, openCount: 0, openAmount: 0 },
+        fuzzy: { count: 0, amount: 0, openCount: 0, openAmount: 0 },
+      };
+      for (const r of rows) {
+        const amt = r.lineAmountExVat ?? 0;
+        totalAmount += amt;
+        byBucket[r.bucket].count += 1;
+        byBucket[r.bucket].amount += amt;
+        if (!r.isIgnored) {
+          byBucket[r.bucket].openCount += 1;
+          byBucket[r.bucket].openAmount += amt;
+        } else {
+          ignoredAmount += amt;
+          ignoredCount += 1;
+        }
+        if (r.bucket === "tracker_gap" && !r.isIgnored) {
+          openTrackerGapAmount += amt;
+          openTrackerGapCount += 1;
+        }
+      }
+
+      const byProject = new Map<string, { project: string; count: number; openCount: number; amount: number; openAmount: number }>();
+      for (const r of rows) {
+        if (r.bucket !== "tracker_gap") continue;
+        const key = r.resolvedProjectName ?? "(unknown)";
+        if (!byProject.has(key)) byProject.set(key, { project: key, count: 0, openCount: 0, amount: 0, openAmount: 0 });
+        const slot = byProject.get(key)!;
+        slot.count += 1;
+        slot.amount += r.lineAmountExVat ?? 0;
+        if (!r.isIgnored) {
+          slot.openCount += 1;
+          slot.openAmount += r.lineAmountExVat ?? 0;
+        }
+      }
+
+      const unmappedCustomerMap = new Map<string, { customerName: string; count: number; amount: number; sampleClasses: Set<string>; sampleItems: Set<string> }>();
+      for (const r of rows) {
+        if (r.bucket !== "unmapped_customer" || !r.customerName) continue;
+        if (!unmappedCustomerMap.has(r.customerName))
+          unmappedCustomerMap.set(r.customerName, { customerName: r.customerName, count: 0, amount: 0, sampleClasses: new Set(), sampleItems: new Set() });
+        const slot = unmappedCustomerMap.get(r.customerName)!;
+        slot.count += 1;
+        slot.amount += r.lineAmountExVat ?? 0;
+        if (r.classRefName) slot.sampleClasses.add(r.classRefName);
+        if (r.itemRefName) slot.sampleItems.add(r.itemRefName);
+      }
+      // Per-customer suggestion engine — ranked candidates for each unmapped
+      // customer. Scoring blends prior overrides for the same customer (rare
+      // but strongest signal), normalised name overlap with project names,
+      // and amount-window co-occurrence with active revenue lines.
+      const customerAmountsMap = new Map<string, number[]>();
+      for (const r of rows) {
+        if (r.bucket !== "unmapped_customer" || !r.customerName) continue;
+        if (!customerAmountsMap.has(r.customerName)) customerAmountsMap.set(r.customerName, []);
+        customerAmountsMap.get(r.customerName)!.push(r.lineAmountExVat ?? 0);
+      }
+      const overridesByCustomerHistory = new Map<string, { projectName: string }[]>();
+      for (const o of custOverrides) {
+        const k = o.customerRefName.toLowerCase().trim();
+        if (!overridesByCustomerHistory.has(k)) overridesByCustomerHistory.set(k, []);
+        overridesByCustomerHistory.get(k)!.push({ projectName: o.projectName });
+      }
+      const unmappedCustomerList = [...unmappedCustomerMap.values()]
+        .map((v) => ({
+          customerName: v.customerName,
+          count: v.count,
+          amount: Math.round(v.amount * 100) / 100,
+          sampleClasses: [...v.sampleClasses].slice(0, 5),
+          sampleItems: [...v.sampleItems].slice(0, 5),
+          suggestions: rankRevenueProjectSuggestions({
+            customerName: v.customerName,
+            customerAmounts: customerAmountsMap.get(v.customerName) ?? [],
+            projectNames,
+            revenueLinesByProjectKey: revLinesByProjectKey,
+            priorOverridesForCustomer: overridesByCustomerHistory.get(v.customerName.toLowerCase().trim()) ?? [],
+          }),
+        }))
+        .sort((a, b) => b.amount - a.amount);
+
+      res.json({
+        generatedAt: new Date().toISOString(),
+        window: { start, end },
+        summary: {
+          totalLineRows: rows.length,
+          totalAmountExVat: Math.round(totalAmount * 100) / 100,
+          openTrackerGapCount,
+          openTrackerGapAmountExVat: Math.round(openTrackerGapAmount * 100) / 100,
+          ignoredCount,
+          ignoredAmountExVat: Math.round(ignoredAmount * 100) / 100,
+          projectUniverseSize: projectNames.length,
+          customerOverridesActive: custOverrides.length,
+        },
+        byBucket: Object.fromEntries(
+          Object.entries(byBucket).map(([k, v]) => [
+            k,
+            {
+              count: v.count,
+              amount: Math.round(v.amount * 100) / 100,
+              openCount: v.openCount,
+              openAmount: Math.round(v.openAmount * 100) / 100,
+            },
+          ]),
+        ),
+        byProject: [...byProject.values()].sort((a: any, b: any) => b.openAmount - a.openAmount),
+        unmappedCustomers: unmappedCustomerList,
+        customerOverrides: custOverrides.map((o: any) => ({
+          id: o.id,
+          customerRefName: o.customerRefName,
+          projectName: o.projectName,
+          note: o.note,
+          createdByName: o.createdByName,
+          createdAt: o.createdAt instanceof Date ? o.createdAt.toISOString() : String(o.createdAt),
+        })),
+        rows,
+      });
+    } catch (err) {
+      console.error("[revenue tracker-gap]", err);
+      res.status(500).json({ error: "revenue_tracker_gap_failed", detail: err instanceof Error ? err.message : String(err) });
+    }
+  },
+);
+
+const revenueIgnoreBodySchema = z.object({
+  qbInvoiceId: z.string().min(1),
+  qbLineId: z.string().nullable().optional(),
+  qbDocNumber: z.string().nullable().optional(),
+  customerName: z.string().nullable().optional(),
+  lineAmountExVat: z.number().nullable().optional(),
+  resolvedProjectName: z.string().nullable().optional(),
+  reason: z.string().min(1).max(500),
+});
+
+router.post(
+  "/api/revenue-tracker/tracker-gap/ignore",
+  requireAuth,
+  requirePermission("revenue_tracker", "edit"),
+  validateBody(revenueIgnoreBodySchema),
+  async (req, res) => {
+    try {
+      const body = req.body as z.infer<typeof revenueIgnoreBodySchema>;
+      const user = req.user;
+      const [created] = await db
+        .insert(qbRevenueReconIgnores)
+        .values({
+          qbInvoiceId: body.qbInvoiceId,
+          qbLineId: body.qbLineId ?? null,
+          qbDocNumber: body.qbDocNumber ?? null,
+          customerName: body.customerName ?? null,
+          lineAmountExVat: body.lineAmountExVat != null ? String(body.lineAmountExVat) : null,
+          resolvedProjectName: body.resolvedProjectName ?? null,
+          reason: body.reason,
+          ignoredByUserId: user?.id ?? null,
+          ignoredByName: user?.name ?? user?.email ?? null,
+        })
+        .returning();
+      // Audit entityId is the (qbInvoiceId,qbLineId) composite — not the
+      // ignore-table row id — so the maintenance UI can look up history by
+      // the same key it already has on every gap row. Format mirrors the COS
+      // workspace convention: "<invoiceId>:<lineId or _>".
+      const ignoreAuditEntityId = `${body.qbInvoiceId}:${body.qbLineId ?? "_"}`;
+      await logAuditFromReq(req, {
+        entityType: "qb_revenue_recon_ignore",
+        entityId: ignoreAuditEntityId,
+        action: "create",
+        changesJson: {
+          ignoreRowId: created.id,
+          previous_state: null,
+          new_state: {
+            qbInvoiceId: body.qbInvoiceId,
+            qbLineId: body.qbLineId ?? null,
+            qbDocNumber: body.qbDocNumber ?? null,
+            customerName: body.customerName ?? null,
+            lineAmountExVat: body.lineAmountExVat ?? null,
+            resolvedProjectName: body.resolvedProjectName ?? null,
+          },
+          reason: body.reason,
+        },
+        projectName: body.resolvedProjectName ?? undefined,
+      });
+      res.json({ ok: true, ignore: created });
+    } catch (err) {
+      console.error("[revenue tracker-gap/ignore]", err);
+      res.status(500).json({ error: "ignore_failed", detail: err instanceof Error ? err.message : String(err) });
+    }
+  },
+);
+
+const revenueIgnoreUndoBodySchema = z.object({ reason: z.string().min(1).max(500) });
+
+router.delete(
+  "/api/revenue-tracker/tracker-gap/ignore/:id",
+  requireAuth,
+  requirePermission("revenue_tracker", "edit"),
+  validateBody(revenueIgnoreUndoBodySchema),
+  async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
+      const body = req.body as z.infer<typeof revenueIgnoreUndoBodySchema>;
+      const [prev] = await db.select().from(qbRevenueReconIgnores).where(eq(qbRevenueReconIgnores.id, id));
+      if (!prev) return res.status(404).json({ error: "not_found" });
+      await db.update(qbRevenueReconIgnores).set({ deletedAt: new Date() }).where(eq(qbRevenueReconIgnores.id, id));
+      const undoAuditEntityId = `${prev.qbInvoiceId}:${prev.qbLineId ?? "_"}`;
+      await logAuditFromReq(req, {
+        entityType: "qb_revenue_recon_ignore",
+        entityId: undoAuditEntityId,
+        action: "delete",
+        changesJson: {
+          ignoreRowId: id,
+          previous_state: {
+            qbInvoiceId: prev.qbInvoiceId,
+            qbLineId: prev.qbLineId,
+            qbDocNumber: prev.qbDocNumber,
+            reason: prev.reason,
+            ignoredByName: prev.ignoredByName,
+          },
+          new_state: null,
+          reason: body.reason,
+        },
+        projectName: prev.resolvedProjectName ?? undefined,
+      });
+      res.json({ ok: true });
+    } catch (err) {
+      console.error("[revenue tracker-gap/ignore/delete]", err);
+      res.status(500).json({ error: "ignore_delete_failed", detail: err instanceof Error ? err.message : String(err) });
+    }
+  },
+);
+
+const customerOverrideBodySchema = z.object({
+  customerRefName: z.string().min(1).max(200),
+  projectName: z.string().min(1).max(200),
+  note: z.string().min(1).max(500),
+});
+
+router.post(
+  "/api/revenue-tracker/tracker-gap/customer-override",
+  requireAuth,
+  requirePermission("revenue_tracker", "edit"),
+  validateBody(customerOverrideBodySchema),
+  async (req, res) => {
+    try {
+      const body = req.body as z.infer<typeof customerOverrideBodySchema>;
+      const user = req.user;
+      const created = await db.transaction(async (tx: NodePgDatabase<typeof schema>) => {
+        await tx
+          .update(qbCustomerProjectOverrides)
+          .set({ deletedAt: new Date() })
+          .where(
+            and(
+              isNull(qbCustomerProjectOverrides.deletedAt),
+              sql`LOWER(${qbCustomerProjectOverrides.customerRefName}) = LOWER(${body.customerRefName})`,
+            ),
+          );
+        const [row] = await tx
+          .insert(qbCustomerProjectOverrides)
+          .values({
+            customerRefName: body.customerRefName,
+            projectName: body.projectName,
+            note: body.note ?? null,
+            createdByUserId: user?.id ?? null,
+            createdByName: user?.name ?? user?.email ?? null,
+          })
+          .returning();
+        return row;
+      });
+      await logAuditFromReq(req, {
+        entityType: "qb_customer_project_override",
+        entityId: String(created.id),
+        action: "create",
+        changesJson: {
+          previous_state: null,
+          new_state: { customerRefName: body.customerRefName, projectName: body.projectName },
+          reason: body.note,
+        },
+        projectName: body.projectName,
+      });
+      res.json({ ok: true, override: created });
+    } catch (err) {
+      const e = err as { code?: string; cause?: { code?: string } };
+      const code = e?.code ?? e?.cause?.code;
+      if (code === "23505") {
+        return res.status(409).json({ error: "concurrent_update", detail: "Another mapping was just saved for this customer. Refresh and retry." });
+      }
+      console.error("[revenue tracker-gap/customer-override]", err);
+      res.status(500).json({ error: "override_failed", detail: err instanceof Error ? err.message : String(err) });
+    }
+  },
+);
+
+router.delete(
+  "/api/revenue-tracker/tracker-gap/customer-override/:id",
+  requireAuth,
+  requirePermission("revenue_tracker", "edit"),
+  validateBody(z.object({ reason: z.string().min(1).max(500) })),
+  async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
+      const body = req.body as { reason: string };
+      const [prev] = await db.select().from(qbCustomerProjectOverrides).where(eq(qbCustomerProjectOverrides.id, id));
+      if (!prev) return res.status(404).json({ error: "not_found" });
+      await db.update(qbCustomerProjectOverrides).set({ deletedAt: new Date() }).where(eq(qbCustomerProjectOverrides.id, id));
+      await logAuditFromReq(req, {
+        entityType: "qb_customer_project_override",
+        entityId: String(id),
+        action: "delete",
+        changesJson: {
+          previous_state: { customerRefName: prev.customerRefName, projectName: prev.projectName, note: prev.note },
+          new_state: null,
+          reason: body.reason,
+        },
+        projectName: prev.projectName,
+      });
+      res.json({ ok: true });
+    } catch (err) {
+      console.error("[revenue tracker-gap/customer-override/delete]", err);
+      res.status(500).json({ error: "override_delete_failed", detail: err instanceof Error ? err.message : String(err) });
+    }
+  },
+);
+
+// Revenue audit-history viewer (mirrors /api/cos-tracker/audit-history).
+router.get(
+  "/api/revenue-tracker/audit-history",
+  requireAuth,
+  requirePermission("revenue_tracker", "edit"),
+  async (req, res) => {
+    try {
+      const schema = z.object({
+        entityType: z.enum([
+          "qb_revenue_recon_ignore",
+          "qb_customer_project_override",
+          "quickbooks_invoice_link",
+          "normalized_revenue_line",
+          "revenue_line",
+        ]),
+        entityId: z.string().min(1).max(100),
+      });
+      const parsed = schema.safeParse({ entityType: req.query.entityType, entityId: req.query.entityId });
+      if (!parsed.success) return res.status(400).json({ error: "invalid_query", detail: parsed.error.format() });
+      const { entityType, entityId } = parsed.data;
+      const events: (typeof auditEvents.$inferSelect)[] = await db
+        .select()
+        .from(auditEvents)
+        .where(and(eq(auditEvents.entityType, entityType), eq(auditEvents.entityId, entityId)))
+        .orderBy(desc(auditEvents.createdAt))
+        .limit(200);
+      res.json({
+        entityType,
+        entityId,
+        count: events.length,
+        events: events.map((e) => ({
+          id: e.id,
+          action: e.action,
+          actorRole: e.actorRole,
+          userName: e.userName,
+          userId: e.userId,
+          source: e.source,
+          changes: e.changesJson,
+          projectName: e.projectName,
+          createdAt: e.createdAt instanceof Date ? e.createdAt.toISOString() : String(e.createdAt),
+        })),
+      });
+    } catch (err) {
+      console.error("[revenue tracker-gap/audit-history]", err);
+      res.status(500).json({ error: "audit_history_failed", detail: err instanceof Error ? err.message : String(err) });
+    }
+  },
+);
+
 /**
  * Audit-history viewer for any tracker-gap or COS reconciliation entity. Returns up to 200 of the
  * most-recent `audit_events` rows for the given entityType+entityId, newest-first, so the UI can
@@ -3045,7 +3610,7 @@ router.get("/api/cos-tracker/audit-history", requireAuth, requirePermission("cos
       entityType,
       entityId,
       count: events.length,
-      events: events.map((e) => ({
+      events: events.map((e: any) => ({
         id: e.id,
         action: e.action,
         actorRole: e.actorRole,
@@ -4550,6 +5115,15 @@ router.get("/api/revenue-tracker/month-detail", requireAuth, requirePermission("
       const invMonth = String(inv.txnDate || "").slice(0, 7);
       if (invMonth !== monthKey) continue;
       if (stateFilter && stateFilter.toLowerCase() !== "qb_actual") continue;
+      // Task #18 — txnDate fallback flag. QB Invoice rarely carries an
+      // explicit settlement date in the snapshot; we fall back to TxnDate
+      // (issue date) and surface that to the UI via dateSource so finance
+      // can see it's an issue-date proxy, not a confirmed payment date.
+      const balance = Number((inv as any).balance ?? 0);
+      const dateSource = balance === 0 ? "qb_txn_date_paid" : "qb_txn_date_fallback";
+      const dateSourceLabel = balance === 0
+        ? "QB Issue date (invoice fully paid)"
+        : "QB Issue date — no settlement/payment date in QB; using TxnDate as proxy";
       items.push({
         id: Number(`9${String(inv.id).replace(/\D/g, "").slice(0, 8)}`) || 0,
         canonicalLineKey: null,
@@ -4566,6 +5140,8 @@ router.get("/api/revenue-tracker/month-detail", requireAuth, requirePermission("
         noRevenueLinked: false,
         revState: "QB Actual",
         dataSource: "quickbooks",
+        dateSource,
+        dateSourceLabel,
         qbTransactionType: "Invoice",
         qbDocNumber: inv.docNumber || null,
         paymentReference: null,
