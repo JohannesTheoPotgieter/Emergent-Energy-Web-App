@@ -46,8 +46,10 @@ import { TablePagination } from "@/components/ui/table-pagination";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ExportDropdown } from "@/components/ui/export-dropdown";
 import { PD_REQUEST_TYPES_FILTERABLE } from "@/lib/pd/request-types";
-import { OpportunityDrawer } from "@/components/opportunities/OpportunityDrawer";
+import { OpportunityDrawer, OpportunityDetailBody } from "@/components/opportunities/OpportunityDrawer";
 import { OpportunitiesKanban, OpportunitiesCalendar } from "@/components/opportunities/OpportunityViews";
+import { useBreakpoint } from "@/hooks/use-breakpoint";
+import { X } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { LayoutList, KanbanSquare, CalendarDays } from "lucide-react";
 import { pdStageLifecycleLabel } from "@/lib/pdStageLifecycle";
@@ -350,6 +352,7 @@ export default function OpportunitiesPage() {
   // Unified drawer (2026-04-20 merge) — opens for any row click and
   // surfaces CRM (Pipedrive) + PD shadow + Convert-to-Project together.
   const [drawerOppId, setDrawerOppId] = useState<number | null>(null);
+  const { isDesktop } = useBreakpoint();
 
   // Deep-link support: PD Dashboard links use /opportunities?open={id}
   // to jump straight to a specific deal. Read once on mount, then strip
@@ -943,7 +946,8 @@ export default function OpportunitiesPage() {
           description="No active Pipedrive opportunities currently qualify for this working list."
         />
       ) : (
-        <Tabs defaultValue="list" className="w-full">
+        <div className={isDesktop ? "grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-4 items-start" : ""}>
+        <Tabs defaultValue="list" className="w-full min-w-0">
           {/* Risk-signal filter banner — always visible when a filter is
               active, regardless of which tab (List/Kanban/Calendar). */}
           {riskFilter && (
@@ -1157,14 +1161,46 @@ export default function OpportunitiesPage() {
             />
           </TabsContent>
         </Tabs>
+        {isDesktop && (
+          <aside
+            className="sticky top-2 max-h-[calc(100vh-90px)] overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-sm min-w-0"
+            data-testid="panel-opportunity-detail"
+          >
+            {drawerOppId != null && (
+              <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100">
+                <span className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">
+                  Opportunity detail
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0 text-slate-500 hover:text-slate-900"
+                  onClick={() => setDrawerOppId(null)}
+                  data-testid="btn-close-detail-panel"
+                  aria-label="Close detail panel"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            )}
+            <OpportunityDetailBody
+              opportunityId={drawerOppId}
+              active={drawerOppId != null}
+              variant="inline"
+            />
+          </aside>
+        )}
+        </div>
       )}
 
       {/* ------------------------------------------------------------------ */}
 
-      {/* Unified Opportunity drawer (2026-04-20 merge) — opens on row click. */}
+      {/* Unified Opportunity drawer (2026-04-20 merge) — opens on row click.
+          On desktop, the detail body is rendered inline in the right panel
+          above; the Sheet drawer is suppressed to avoid double-rendering. */}
       <OpportunityDrawer
         opportunityId={drawerOppId}
-        open={drawerOppId != null}
+        open={drawerOppId != null && !isDesktop}
         onClose={() => setDrawerOppId(null)}
       />
 
