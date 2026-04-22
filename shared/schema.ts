@@ -31,3 +31,5 @@ export * from "./schema/collaboration-workflow";
 export * from "./schema/integrations";
 export * from "./schema/dashboard-snapshots";
 export * from "./schema/task-reminders";
+export * from "./schema/documents";
+export * from "./schema/email-links";

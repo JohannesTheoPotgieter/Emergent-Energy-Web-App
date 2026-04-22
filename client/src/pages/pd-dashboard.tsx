@@ -438,22 +438,42 @@ export default function PdDashboardPage() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-            <div data-testid="risk-stale">
+            <Link
+              href="/opportunities?filter=stale-30"
+              className="rounded-md -m-2 p-2 transition-colors hover:bg-[hsl(var(--surface-tint))]"
+              data-testid="risk-stale"
+            >
               <p className="text-xs text-muted-foreground">Stale &gt; 30d</p>
               <p className="mt-1 text-xl font-semibold text-amber-700">{atRisk.staleActivity}</p>
-            </div>
-            <div data-testid="risk-very-stale">
+              <p className="text-[10px] text-primary mt-0.5">View deals →</p>
+            </Link>
+            <Link
+              href="/opportunities?filter=stale-60"
+              className="rounded-md -m-2 p-2 transition-colors hover:bg-[hsl(var(--surface-tint))]"
+              data-testid="risk-very-stale"
+            >
               <p className="text-xs text-muted-foreground">Stale &gt; 60d</p>
               <p className="mt-1 text-xl font-semibold text-rose-700">{atRisk.veryStale}</p>
-            </div>
-            <div data-testid="risk-high-value">
+              <p className="text-[10px] text-primary mt-0.5">View deals →</p>
+            </Link>
+            <Link
+              href="/opportunities?filter=high-value-quiet"
+              className="rounded-md -m-2 p-2 transition-colors hover:bg-[hsl(var(--surface-tint))]"
+              data-testid="risk-high-value"
+            >
               <p className="text-xs text-muted-foreground">High-value &gt; 14d quiet</p>
               <p className="mt-1 text-xl font-semibold text-amber-700">{atRisk.highValueNoRecent}</p>
-            </div>
-            <div data-testid="risk-overdue">
+              <p className="text-[10px] text-primary mt-0.5">View deals →</p>
+            </Link>
+            <Link
+              href="/opportunities?filter=overdue-followups"
+              className="rounded-md -m-2 p-2 transition-colors hover:bg-[hsl(var(--surface-tint))]"
+              data-testid="risk-overdue"
+            >
               <p className="text-xs text-muted-foreground">Overdue follow-ups</p>
               <p className="mt-1 text-xl font-semibold text-rose-700">{atRisk.overdueFollowups}</p>
-            </div>
+              <p className="text-[10px] text-primary mt-0.5">View deals →</p>
+            </Link>
           </div>
         </CardContent>
       </Card>
