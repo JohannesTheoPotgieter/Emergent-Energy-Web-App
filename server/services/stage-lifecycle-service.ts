@@ -549,6 +549,9 @@ export async function diffTemplateVsOpenStages(stageCode: string): Promise<Stage
 
     for (const r of existing) {
       if (!templateByItemCode.has(r.itemCode)) {
+        // Manual/project-specific requirements (no source template) are
+        // explicitly protected from template sync removals.
+        if (!r.sourceTemplateId) continue;
         toRemove.push({
           requirementId: r.id,
           itemCode: r.itemCode,
