@@ -3,10 +3,11 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { useLocation } from "wouter";
 import DeltaIndicator from "@/components/reports/DeltaIndicator";
 import { PageHeader } from "@/components/ui/page-header";
+import { QueryLoading, QueryError } from "@/components/ui/query-states";
 import { PageLayout } from "@/components/layout";
 import {
   Table,
@@ -46,7 +47,7 @@ export default function PmMonthlyReportCompare() {
   const [monthB, setMonthB] = useState(() => initParams?.get("monthB") || getMonthOptions()[0]?.value || "");
   const monthOptions = getMonthOptions();
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["/api/reports/pm/monthly/compare", monthA, monthB],
     queryFn: async () => {
       const res = await fetch(`/api/reports/pm/monthly/compare?monthA=${monthA}&monthB=${monthB}`, { headers: getAuthHeaders() });
@@ -105,13 +106,8 @@ export default function PmMonthlyReportCompare() {
 
       {monthA === monthB && <p className="text-sm text-amber-600">Select two different months to compare.</p>}
 
-      {isLoading && (
-        <div className="flex items-center justify-center min-h-[30vh]">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
-      )}
-
-      {error && <p className="text-sm text-red-600">{(error as Error).message}</p>}
+      {isLoading && <QueryLoading />}
+      {isError && <QueryError error={error} onRetry={() => refetch()} />}
 
       {data && (
         <Card>
