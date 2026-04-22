@@ -1904,23 +1904,24 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       const projectName = (row.projectName || '').replace(/_Tracker$/i, '');
       if (!projectName) continue;
       const hasInvoice = !!(row.invoiceNumber && String(row.invoiceNumber).trim());
-      const hasPo = !!(row.poNumber && String(row.poNumber).trim());
       const isPastMonth = monthKey < cosCurrentMonthKey;
       const invoiceDateConfirmed =
         !!row.invoiceDate && (
           row.invoiceDateFontColor === 'black' ||
           row.invoiceDateConfirmed === true ||
           // Past-month auto-promote: invoice number on a closed month IS
-          // the confirmation. PO-only lines in past months stay Committed
-          // (supplier hasn't billed us), which is handled by the hasInvoice
-          // guard below.
+          // the confirmation.
           (isPastMonth && hasInvoice)
         );
 
-      // COS classification must come from app-side recognition rules, not QB links.
+      // COS classification — purchase order is intentionally NOT part of the
+      // logic per finance rule. A PO without an invoice is still "Planned".
+      //   Realised  = invoice present AND invoice date confirmed (black)
+      //   Committed = invoice present AND invoice date unconfirmed (red)
+      //   Planned   = no invoice
       if (hasInvoice && invoiceDateConfirmed) {
         addProjectAmount(realisedByMonth, monthKey, projectName, amount);
-      } else if (hasInvoice || hasPo) {
+      } else if (hasInvoice) {
         addProjectAmount(committedByMonth, monthKey, projectName, amount);
       } else {
         addProjectAmount(plannedByMonth, monthKey, projectName, amount);
@@ -1943,7 +1944,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
 
     const months: any[] = [];
     const startMonth = new Date(Date.UTC(2025, 8, 1));
-    let ytdCOS = 0, ytdBudget = 0, ytdRealised = 0, ytdCommitted = 0, ytdPlanned = 0, ytdQbOnly = 0, ytdAppOnlyPending = 0;
+    let ytdCOS = 0, ytdBudget = 0, ytdRealised = 0, ytdCommitted = 0, ytdPlanned = 0, ytdQbOnly = 0, ytdAppOnlyPending = 0, ytdCosPlanned = 0;
 
     for (let i = 0; i < 12; i++) {
       const monthDate = new Date(startMonth);
