@@ -23,7 +23,6 @@ import { Button } from "@/components/ui/button";
 import { lazyWithRetry } from "@/lib/lazy-with-retry";
 import { ROUTE_COMPONENTS } from "@/config/route-components";
 import { useScreenAvailability } from "@/hooks/use-screen-availability";
-import { useRoleRedirect } from "@/hooks/useRoleRedirect";
 
 // Eagerly loaded pages (critical path — login, home, not-found)
 import LoginPage from "@/pages/login";
@@ -36,11 +35,6 @@ const NAVIGATION_MODE = {
   desktop: "cockpit",
   mobile: "capture-check-approve-update-escalate",
 } as const;
-
-function HomeRedirect() {
-  const redirectPath = useRoleRedirect();
-  return <Redirect to={redirectPath} />;
-}
 
 const APP_ROUTES: RouteConfig[] = [
   // Legacy redirects (old bookmarks / deep links)
@@ -156,7 +150,7 @@ function ProtectedPages() {
       <Suspense fallback={<div className="space-y-6 p-6"><LoadingState variant="skeleton-card" cards={4} /><LoadingState variant="skeleton-table" rows={6} /></div>}>
       <div className="page-enter">
         <Switch>
-          <Route path="/" component={HomeRedirect} />
+          <Route path="/">{() => <Redirect to="/my-work" />}</Route>
           {APP_ROUTES.map((route) => {
             if (route.redirectTo) {
               return <Route key={route.path} path={route.path}>{() => <Redirect to={route.redirectTo!} />}</Route>;
