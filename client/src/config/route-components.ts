@@ -9,6 +9,7 @@ const SettingsHomePage = lazyWithRetry(() => import("@/pages/settings-home"));
 const ProjectDocumentsPage = lazyWithRetry(() => import("@/pages/project-documents"));
 const QuickBooksHomePage = lazyWithRetry(() => import("@/pages/quickbooks-home"));
 const AdminDocumentTypesPage = lazyWithRetry(() => import("@/pages/admin-document-types"));
+const AdminEmailLinkerDevPage = lazyWithRetry(() => import("@/pages/admin-email-linker-dev"));
 const HandoverLivePage = lazyWithRetry(() => import("@/pages/handover-live"));
 const ProjectLifecyclePage = lazyWithRetry(() => import("@/pages/project-lifecycle"));
 const ProjectsSummary = lazyWithRetry(() => import("@/pages/projects"));
@@ -237,6 +238,7 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   ProjectDocumentsPage,
   QuickBooksHomePage,
   AdminDocumentTypesPage,
+  AdminEmailLinkerDevPage,
   HandoverLivePage,
 };
 

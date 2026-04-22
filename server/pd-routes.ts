@@ -165,16 +165,57 @@ export function registerPdRoutes(app: Express) {
   app.get("/api/pd/clients", requireAuth, requirePermission('pd_clients', 'view'), async (req: Request, res: Response) => {
     try {
       const search = (req.query.search as string) || "";
-      let query;
-      if (search) {
-        query = db.select().from(clients).where(ilike(clients.name, `%${search}%`)).orderBy(asc(clients.name)).limit(50);
-      } else {
-        query = db.select().from(clients).orderBy(asc(clients.name)).limit(100);
+      // Explicit column selection so this endpoint stays alive when a
+      // Drizzle-schema column exists but the DB column has not been
+      // migrated yet (email-domain columns from migration 0013 are a
+      // recent addition — without explicit selection the `select()`
+      // fails with "column does not exist" against an un-migrated DB).
+      const baseCols = {
+        id: clients.id,
+        clientId: clients.clientId,
+        name: clients.name,
+        createdAt: clients.createdAt,
+        updatedAt: clients.updatedAt,
+        createdBy: clients.createdBy,
+        updatedBy: clients.updatedBy,
+        legalEntityName: clients.legalEntityName,
+        tradingName: clients.tradingName,
+        clientType: clients.clientType,
+        billingEntity: clients.billingEntity,
+        primaryContactName: clients.primaryContactName,
+        primaryContactEmail: clients.primaryContactEmail,
+        primaryContactPhone: clients.primaryContactPhone,
+        secondaryContactName: clients.secondaryContactName,
+        secondaryContactEmail: clients.secondaryContactEmail,
+        industry: clients.industry,
+        pipedriveOrgId: clients.pipedriveOrgId,
+        status: clients.status,
+      };
+      let rows;
+      try {
+        const full = {
+          ...baseCols,
+          primaryEmailDomain: clients.primaryEmailDomain,
+          additionalEmailDomains: clients.additionalEmailDomains,
+        };
+        rows = search
+          ? await db.select(full).from(clients).where(ilike(clients.name, `%${search}%`)).orderBy(asc(clients.name)).limit(50)
+          : await db.select(full).from(clients).orderBy(asc(clients.name)).limit(100);
+      } catch (err: any) {
+        const msg = err?.message || String(err);
+        if (/primary_email_domain|additional_email_domains|42703|does not exist/i.test(msg)) {
+          console.warn("[pd-routes] clients: email-domain columns missing (migration 0013 not applied) — falling back to base columns");
+          rows = search
+            ? await db.select(baseCols).from(clients).where(ilike(clients.name, `%${search}%`)).orderBy(asc(clients.name)).limit(50)
+            : await db.select(baseCols).from(clients).orderBy(asc(clients.name)).limit(100);
+        } else {
+          throw err;
+        }
       }
-      const rows = await query;
       res.json(rows);
     } catch (err: any) {
-      throw err;
+      console.error("[pd-routes] list clients error:", err);
+      res.status(500).json({ error: "Failed to load clients" });
     }
   });
 

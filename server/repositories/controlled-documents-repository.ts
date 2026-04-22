@@ -60,11 +60,20 @@ export interface ProjectDocumentDetail {
 // ---- Types catalogue -----------------------------------------------------
 
 export async function listActiveDocumentTypes(): Promise<ControlledDocumentType[]> {
-  return db
-    .select()
-    .from(controlledDocumentTypes)
-    .where(eq(controlledDocumentTypes.active, true))
-    .orderBy(asc(controlledDocumentTypes.sortOrder), asc(controlledDocumentTypes.displayName));
+  try {
+    return await db
+      .select()
+      .from(controlledDocumentTypes)
+      .where(eq(controlledDocumentTypes.active, true))
+      .orderBy(asc(controlledDocumentTypes.sortOrder), asc(controlledDocumentTypes.displayName));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/42P01|42703|does not exist|no such table/i.test(msg)) {
+      console.warn("[controlled-documents] types table not migrated yet — returning empty list");
+      return [];
+    }
+    throw err;
+  }
 }
 
 /** Admin view — includes inactive types so super users can reactivate. */
@@ -677,8 +686,26 @@ export interface ApprovalQueueRow {
  * Returns all pending controlled-document approvals assigned to a user,
  * joined with enough context to render the COO/CEO "Waiting on me" card
  * without further fetches.
+ *
+ * Graceful fallback: if the controlled_documents tables haven't been
+ * created yet (migrations 0012 not applied), return an empty list
+ * rather than throwing — dashboards render cleanly with a zero count.
  */
 export async function getApprovalQueueForUser(userId: number): Promise<ApprovalQueueRow[]> {
+  try {
+    return await queryApprovalQueueForUser(userId);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // Postgres error codes 42P01 (undefined_table) / 42703 (undefined_column)
+    if (/42P01|42703|does not exist|no such table/i.test(msg)) {
+      console.warn("[controlled-documents] approval queue: tables not migrated yet — returning empty list");
+      return [];
+    }
+    throw err;
+  }
+}
+
+async function queryApprovalQueueForUser(userId: number): Promise<ApprovalQueueRow[]> {
   const rows = await db
     .select({
       approvalId: approvals.id,

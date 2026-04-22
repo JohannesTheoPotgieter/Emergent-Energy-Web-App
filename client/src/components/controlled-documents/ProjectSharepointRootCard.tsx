@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, getQueryFn } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { FolderTree, Save, Loader2, AlertCircle, CheckCircle2, Pencil } from "lucide-react";
+import { FolderTree, Save, Loader2, AlertCircle, CheckCircle2, Pencil, Sparkles, FolderOpen } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { isSuperAdmin } from "@/lib/access-control";
 import { ApiError } from "@/lib/api-error";
@@ -16,10 +16,41 @@ interface RootResponse {
   root: ProjectSharepointRoot | null;
 }
 
+interface ProjectSummaryLite {
+  project_info_id?: number;
+  projectInfoId?: number;
+  project_name?: string;
+  projectName?: string;
+  client_name?: string | null;
+  clientName?: string | null;
+}
+
 interface Props {
   projectId: number;
   /** When true, super-user edit form is hidden — useful on read-only contexts. */
   readOnly?: boolean;
+}
+
+/** Normalise a filesystem segment — strip trailing/leading slashes, whitespace. */
+function sanitizeSegment(seg: string): string {
+  return seg.trim().replace(/^[/\\]+|[/\\]+$/g, "").replace(/\s{2,}/g, " ");
+}
+
+/** Generate a handful of suggested root paths from project + client names. */
+function buildSuggestions(projectName: string | null, clientName: string | null): string[] {
+  const proj = sanitizeSegment(projectName || "");
+  const client = sanitizeSegment(clientName || "");
+  const out: string[] = [];
+  if (client && proj) {
+    out.push(`Sites/EngineeringSupport/Projects/${client}/${proj}`);
+    out.push(`Projects/${client}/${proj}`);
+    out.push(`Clients/${client}/${proj}`);
+  }
+  if (proj && !client) {
+    out.push(`Sites/EngineeringSupport/Projects/${proj}`);
+    out.push(`Projects/${proj}`);
+  }
+  return out;
 }
 
 /**
@@ -45,6 +76,30 @@ export function ProjectSharepointRootCard({ projectId, readOnly }: Props) {
   const [editing, setEditing] = useState(false);
   const [rootPath, setRootPath] = useState("");
   const [driveId, setDriveId] = useState("");
+
+  // Pull current project + client name for suggestion seeds, and recent
+  // configured roots (from the cross-project projects-summary query) so
+  // the user can reuse a sibling project's root pattern with one click.
+  const projectsSummaryQuery = useQuery<ProjectSummaryLite[]>({
+    queryKey: ["/api/projects-summary"],
+    queryFn: getQueryFn({ on401: "throw" }),
+    enabled: editing,
+    staleTime: 120_000,
+  });
+
+  const thisProject = useMemo(() => {
+    const list = projectsSummaryQuery.data ?? [];
+    return list.find((p) => (p.project_info_id ?? p.projectInfoId) === projectId) ?? null;
+  }, [projectsSummaryQuery.data, projectId]);
+
+  const suggestions = useMemo(() => {
+    return buildSuggestions(
+      thisProject?.project_name ?? thisProject?.projectName ?? null,
+      thisProject?.client_name ?? thisProject?.clientName ?? null,
+    );
+  }, [thisProject]);
+
+  const cleanedPath = sanitizeSegment(rootPath);
 
   useEffect(() => {
     if (query.data?.root) {
@@ -106,7 +161,27 @@ export function ProjectSharepointRootCard({ projectId, readOnly }: Props) {
         {query.isLoading ? (
           <p className="text-xs text-muted-foreground py-2">Loading…</p>
         ) : editing ? (
-          <div className="space-y-2">
+          <div className="space-y-3">
+            {suggestions.length > 0 && (
+              <div className="space-y-1.5">
+                <Label className="text-xs flex items-center gap-1">
+                  <Sparkles className="h-3 w-3 text-primary" /> Suggested paths for this project
+                </Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {suggestions.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setRootPath(s)}
+                      className="px-2 py-1 rounded-md border text-[11px] font-mono bg-card hover:bg-[hsl(var(--surface-tint))] hover:border-primary/30 transition-colors"
+                      data-testid={`sharepoint-suggestion-${s}`}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="space-y-1">
               <Label className="text-xs">Root path</Label>
               <Input
@@ -117,19 +192,42 @@ export function ProjectSharepointRootCard({ projectId, readOnly }: Props) {
                 data-testid="input-root-path"
               />
               <p className="text-[11px] text-muted-foreground">
-                The app appends document-type folder-sub-paths and /Drafts, /Approved, /History under this root.
+                Type or pick a suggestion above. The app appends document-type sub-folders + /Drafts, /Approved, /History automatically.
               </p>
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Graph drive id (optional)</Label>
-              <Input
-                value={driveId}
-                onChange={(e) => setDriveId(e.target.value)}
-                placeholder="Drive id — populated automatically when Graph integration is wired (D3.5)"
-                className="font-mono text-xs"
-                data-testid="input-drive-id"
-              />
-            </div>
+
+            {cleanedPath && (
+              <div className="rounded-md border bg-[hsl(var(--surface-tint))]/60 p-2.5">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1.5 flex items-center gap-1">
+                  <FolderOpen className="h-3 w-3" /> Preview — folder tree that will be used
+                </p>
+                <pre className="text-[11px] font-mono text-foreground leading-relaxed whitespace-pre">
+{`${cleanedPath}/
+  ├── BD/Cost Proposal/Costing/
+  │     ├── Drafts/
+  │     ├── Approved/
+  │     └── History/
+  ├── BD/Cost Proposal/Design/...
+  └── (13 document types — see Settings → Document types)`}
+                </pre>
+              </div>
+            )}
+
+            <details className="rounded-md border bg-muted/30 p-2 text-xs">
+              <summary className="cursor-pointer font-medium text-muted-foreground">Advanced: Graph drive id</summary>
+              <div className="pt-2 space-y-1">
+                <Input
+                  value={driveId}
+                  onChange={(e) => setDriveId(e.target.value)}
+                  placeholder="Drive id — populated automatically when Graph integration is wired"
+                  className="font-mono text-xs"
+                  data-testid="input-drive-id"
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Leave blank. The real Graph integration populates this automatically when it lands.
+                </p>
+              </div>
+            </details>
             <div className="flex gap-2 pt-1">
               <Button
                 size="sm"
