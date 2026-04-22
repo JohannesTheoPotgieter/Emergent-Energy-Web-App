@@ -157,8 +157,29 @@ export function GlobalCommandPalette() {
     {},
   );
 
+  // Manual filter for nav items — so they stay visible when the user
+  // types (cmdk's default shouldFilter would hide anything not matching
+  // the query, including the "Pages" group the user wants always
+  // reachable). Server results are fetched separately and already
+  // filtered server-side; they always render.
+  const q = query.trim().toLowerCase();
+  const filteredVisibleItems = q.length === 0
+    ? visibleItems
+    : visibleItems.filter((item) =>
+      item.label.toLowerCase().includes(q) ||
+      item.group.toLowerCase().includes(q),
+    );
+  const filteredGroups = filteredVisibleItems.reduce<Record<string, typeof visibleItems>>(
+    (acc, item) => {
+      if (!acc[item.group]) acc[item.group] = [];
+      acc[item.group].push(item);
+      return acc;
+    },
+    {},
+  );
+
   return (
-    <CommandDialog open={open} onOpenChange={setOpen}>
+    <CommandDialog open={open} onOpenChange={setOpen} shouldFilter={false}>
       <CommandInput
         placeholder="Search projects, invoices, installers, pages, actions... (⌘K)"
         value={query}
@@ -241,7 +262,7 @@ export function GlobalCommandPalette() {
             ))}
           </CommandGroup>
         )}
-        {Object.entries(groups).map(([group, items]) => (
+        {Object.entries(filteredGroups).map(([group, items]) => (
           <CommandGroup key={group} heading={group.replace(/_/g, " ")}>
             {items.map((item) => (
               <CommandItem

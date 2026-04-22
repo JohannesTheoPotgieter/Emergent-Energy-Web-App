@@ -78,7 +78,9 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "cooHome", path: "/coo", label: "COO Dashboard", iconKey: "Activity", navGroup: "MY_WORK", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "CooHomePage", roleLandingEligibility: ["COO_ADMIN"] },
   { id: "settingsHome", path: "/settings", label: "Settings", iconKey: "SlidersHorizontal", navGroup: "SYSTEM", permissionEntity: "admin_roles", showInSidebar: true, routeComponentKey: "SettingsHomePage" },
   { id: "projectDocuments", path: "/projects/:projectId/documents", label: "Project Documents", permissionEntity: "projects", routeComponentKey: "ProjectDocumentsPage" },
-  { id: "quickbooksHome", path: "/quickbooks", label: "QuickBooks", iconKey: "LinkIcon", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: true, routeComponentKey: "QuickBooksHomePage" },
+  // /quickbooks merged into the existing /finance/quickbooks (Throughput).
+  // Kept as a redirect so any bookmarked link still lands in the right place.
+  { id: "quickbooksHomeRedirect", path: "/quickbooks", label: "QuickBooks (moved)", type: "alias", permissionEntity: "financials", redirectTo: "/finance/quickbooks" },
   { id: "adminDocumentTypes", path: "/admin/document-types", label: "Document types", iconKey: "FileText", navGroup: "SYSTEM", permissionEntity: "admin_roles", routeComponentKey: "AdminDocumentTypesPage" },
   { id: "handoverLive", path: "/handover/:projectId/live", label: "Handover live meeting", permissionEntity: "projects", routeComponentKey: "HandoverLivePage" },
   { id: "projectLifecycle", path: "/project-lifecycle", label: "Project Lifecycle", iconKey: "Layers", navGroup: "PROJECTS", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "ProjectLifecyclePage" },
