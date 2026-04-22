@@ -32,6 +32,7 @@ import { formatRand } from "@/lib/safeMoney";
 import { FinanceShell } from "@/components/layout/FinanceShell";
 import { useAuth } from "@/hooks/use-auth";
 import { SuggestMatchesDialog } from "@/components/quickbooks/SuggestMatchesDialog";
+import { FieldHint } from "@/components/ui/field-hint";
 import { Sparkles } from "lucide-react";
 
 
@@ -1372,7 +1373,7 @@ function BillsReconciliationView({ isConnected }: { isConnected: boolean }) {
           <CardContent className="p-3 space-y-2">
             <div className="flex items-center justify-between">
               <div className="text-xs font-semibold flex items-center gap-2">
-                2. Pick a project cost line
+                2. Pick a project cost line <FieldHint hint="Auto-generated hash ID — do not edit manually" />
                 <Badge variant="outline" className="text-[10px]">
                   {costLineSearchResp?.costLines.length ?? 0} candidates
                 </Badge>

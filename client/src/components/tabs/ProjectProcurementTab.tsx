@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/table";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { POGenerator } from "@/components/POGenerator";
+import { FieldHint } from "@/components/ui/field-hint";
 import UserPicker from "@/components/UserPicker";
 import CaptureDeliverable from "@/components/CaptureDeliverable";
 import { OwnerName } from "@/components/OwnerName";
@@ -760,7 +761,7 @@ function ExpandedProcurementDetail({
           />
         </div>
         <div className="space-y-1">
-          <Label className="text-[10px] uppercase text-muted-foreground">PO Reference</Label>
+          <Label className="text-[10px] uppercase text-muted-foreground inline-flex items-center gap-1">PO Reference <FieldHint hint="Purchase Order must exist before capturing this invoice" /></Label>
           <Input
             className="h-8 w-40 text-xs"
             value={poId}
@@ -770,7 +771,7 @@ function ExpandedProcurementDetail({
           />
         </div>
         <div className="space-y-1">
-          <Label className="text-[10px] uppercase text-muted-foreground">Budget Line</Label>
+          <Label className="text-[10px] uppercase text-muted-foreground inline-flex items-center gap-1">Budget Line <FieldHint hint="Auto-generated hash ID — do not edit manually" /></Label>
           <Input className="h-8 w-40 text-xs" value={budgetLine} onChange={(e) => setBudgetLine(e.target.value)} placeholder="Budget line" data-testid={`input-budget-line-${item.id}`} />
         </div>
         <div className="space-y-1">
@@ -784,7 +785,7 @@ function ExpandedProcurementDetail({
           />
         </div>
         <div className="space-y-1">
-          <Label className="text-[10px] uppercase text-muted-foreground">Milestone</Label>
+          <Label className="text-[10px] uppercase text-muted-foreground inline-flex items-center gap-1">Milestone <FieldHint hint="% of contract value tied to this milestone billing event" /></Label>
           <Input className="h-8 w-40 text-xs" value={linkedMilestone} onChange={(e) => setLinkedMilestone(e.target.value)} placeholder="Milestone" data-testid={`input-linked-milestone-${item.id}`} />
         </div>
         <div className="space-y-1">
@@ -792,7 +793,7 @@ function ExpandedProcurementDetail({
           <Input className="h-8 w-40 text-xs" value={receiptRef} onChange={(e) => setReceiptRef(e.target.value)} placeholder="GRN / receipt" data-testid={`input-receipt-ref-${item.id}`} />
         </div>
         <div className="space-y-1">
-          <Label className="text-[10px] uppercase text-muted-foreground">Progress %</Label>
+          <Label className="text-[10px] uppercase text-muted-foreground inline-flex items-center gap-1">Progress % <FieldHint hint="Amount withheld until project completion. Usually 5-10%" /></Label>
           <Input className="h-8 w-24 text-xs font-mono" value={progressPercent} onChange={(e) => setProgressPercent(e.target.value)} placeholder="0-100" data-testid={`input-progress-${item.id}`} />
         </div>
         <div className="space-y-1">
@@ -1023,11 +1024,11 @@ function CreateProcurementDialog({
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label className="text-xs">Budget Line</Label>
+              <Label className="text-xs inline-flex items-center gap-1">Budget Line <FieldHint hint="Auto-generated hash ID — do not edit manually" /></Label>
               <Input className="h-8 text-sm" value={form.budgetLine} onChange={(e) => setForm({ ...form, budgetLine: e.target.value })} placeholder="e.g. BOS-Electrical" data-testid="input-create-budget-line" />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Milestone</Label>
+              <Label className="text-xs inline-flex items-center gap-1">Milestone <FieldHint hint="% of contract value tied to this milestone billing event" /></Label>
               <Input className="h-8 text-sm" value={form.linkedMilestone} onChange={(e) => setForm({ ...form, linkedMilestone: e.target.value })} placeholder="Milestone ref" data-testid="input-create-milestone" />
             </div>
           </div>
@@ -1985,7 +1986,7 @@ function CaptureInvoiceDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label className="text-xs">Linked PO</Label>
+              <Label className="text-xs inline-flex items-center gap-1">Linked PO <FieldHint hint="Purchase Order must exist before capturing this invoice" /></Label>
               <SearchableSelect
                 options={[{ value: "", label: "None" }, ...poOptions]}
                 value={form.linkedPoId}
