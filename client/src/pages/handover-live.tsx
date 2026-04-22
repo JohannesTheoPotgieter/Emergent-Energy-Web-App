@@ -165,11 +165,13 @@ export default function HandoverLive() {
     try {
       // Post to the existing collaboration-workflow acceptance endpoint;
       // downstream Stage4PdPmHandover surfaces the record via
-      // AcceptanceWorkflow.
+      // AcceptanceWorkflow. Field names map to the server's
+      // createAcceptance signature (outcome + rejectionReason, plus the
+      // D4-only attendees + sectionNotes that migration 0014 added).
       await apiRequest("POST", `/api/projects/${projectId}/acceptances`, {
         stageCode: STAGE_CODE,
-        decision: acceptanceDecision,
-        reason: acceptanceReason.trim() || undefined,
+        outcome: acceptanceDecision,
+        rejectionReason: acceptanceReason.trim() || undefined,
         attendees: Array.from(attendees),
         sectionNotes: stepNotes,
       });

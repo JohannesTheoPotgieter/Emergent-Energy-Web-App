@@ -73,6 +73,11 @@ export async function createAcceptance(params: {
   adminOverride?: boolean;
   adminOverrideReason?: string;
   reservations?: { description: string; ownerUserId?: number; deadline?: string }[];
+  // D4 live-meeting capture (optional). When the acceptance is recorded
+  // via /handover/:projectId/live, these carry the attendee list + notes
+  // from the meeting for audit + later review.
+  attendees?: string[];
+  sectionNotes?: Record<string, string>;
 }): Promise<StageAcceptance> {
   const [acceptance] = await db.insert(stageAcceptances).values({
     projectId: params.projectId,
@@ -83,6 +88,8 @@ export async function createAcceptance(params: {
     rejectionReason: params.rejectionReason || null,
     adminOverride: params.adminOverride || false,
     adminOverrideReason: params.adminOverrideReason || null,
+    attendees: params.attendees ?? null,
+    sectionNotes: params.sectionNotes ?? null,
   }).returning();
 
   // Create reservation records if accepted with reservations

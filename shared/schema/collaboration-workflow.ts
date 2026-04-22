@@ -76,6 +76,12 @@ export const stageAcceptances = pgTable("stage_acceptances", {
   rejectionReason: text("rejection_reason"),
   adminOverride: boolean("admin_override").notNull().default(false),
   adminOverrideReason: text("admin_override_reason"),
+  // D4 live meeting capture — populated by /handover/:projectId/live.
+  // attendees: array of role keys present in the room (pd, pm, coo, cfo, ...).
+  // sectionNotes: { [sectionKey: string]: string } captured during the walkthrough.
+  // Both nullable — legacy acceptances created pre-D4 have no meeting context.
+  attendees: jsonb("attendees").$type<string[]>(),
+  sectionNotes: jsonb("section_notes").$type<Record<string, string>>(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   projectIdIdx: index("sa_project_id_idx").on(table.projectId),
