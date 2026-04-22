@@ -2,7 +2,7 @@
  * B3: Opportunities CRUD routes
  */
 import { Router, type Express, type Request, type Response } from "express";
-import { sql } from "drizzle-orm";
+import { sql, eq, and, isNull } from "drizzle-orm";
 import { requireAuth } from "./shared-middleware";
 import { requirePermission } from "../permission-middleware";
 import { validateBody } from "../middleware/validateBody";
@@ -1071,7 +1071,8 @@ router.post(
         const [shadow] = await tx
           .select()
           .from(pdTickets)
-          .where(eq(pdTickets.opportunityId, opportunityId))
+          // Cascade-display: don't promote a soft-deleted shadow (Task #34).
+          .where(and(eq(pdTickets.opportunityId, opportunityId), isNull(pdTickets.deletedAt)))
           .limit(1);
         if (shadow) {
           await tx
