@@ -22,6 +22,7 @@ import { Download, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { lazyWithRetry } from "@/lib/lazy-with-retry";
 import { ROUTE_COMPONENTS } from "@/config/route-components";
+import { useScreenAvailability } from "@/hooks/use-screen-availability";
 
 // Eagerly loaded pages (critical path — login, home, not-found)
 import LoginPage from "@/pages/login";
@@ -85,6 +86,23 @@ function AccessDenied() {
   );
 }
 
+function ScreenUnavailable() {
+  return (
+    <div className="min-h-[60vh] flex items-center justify-center">
+      <div className="text-center space-y-4 max-w-md px-4">
+        <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center mx-auto">
+          <X className="h-8 w-8 text-slate-400" />
+        </div>
+        <h2 className="text-xl font-semibold text-foreground">Not Available</h2>
+        <p className="text-sm text-muted-foreground">This section has been disabled by your administrator.</p>
+        <a href="/" className="inline-flex items-center gap-2 text-sm font-medium text-emerald-600 hover:text-emerald-700">
+          <ArrowLeft className="h-4 w-4" /> Back to Home
+        </a>
+      </div>
+    </div>
+  );
+}
+
 function RoleGuard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const [location] = useLocation();
@@ -125,10 +143,16 @@ function usePageTitle(location: string) {
   }, [location]);
 }
 
+// Map each route path to its PAGE_REGISTRY id, for screen-availability checks.
+const PATH_TO_SCREEN_ID = new Map<string, string>(
+  PAGE_REGISTRY.filter((p) => p.id && p.path).map((p) => [p.path, p.id]),
+);
+
 function ProtectedPages() {
   const [location] = useLocation();
   useScrollRestoration(location);
   usePageTitle(location);
+  const { isScreenEnabled } = useScreenAvailability();
 
   return (
     <LensProvider>
@@ -144,7 +168,15 @@ function ProtectedPages() {
               return <Route key={route.path} path={route.path}>{() => <Redirect to={route.redirectTo!} />}</Route>;
             }
             const PageComponent = route.component!;
-            return <Route key={route.path} path={route.path}>{() => <ErrorBoundary><PageComponent /></ErrorBoundary>}</Route>;
+            const screenId = PATH_TO_SCREEN_ID.get(route.path);
+            return (
+              <Route key={route.path} path={route.path}>
+                {() => {
+                  if (screenId && !isScreenEnabled(screenId)) return <ScreenUnavailable />;
+                  return <ErrorBoundary><PageComponent /></ErrorBoundary>;
+                }}
+              </Route>
+            );
           })}
           <Route component={NotFound} />
         </Switch>
