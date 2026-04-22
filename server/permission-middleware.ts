@@ -114,7 +114,7 @@ function buildRoleRecord(role: string) {
   return roleRecordCache[role] || { entityPermissions: entityPermCache[role] as CachedRoleRecord["entityPermissions"], authorityModel: null, canManageUsers: false, canManageRoles: false };
 }
 
-function logPermissionFailure(req: Request, entity: PermissionEntity, action: string, reason: string) {
+export function logPermissionFailure(req: Request, entity: PermissionEntity, action: string, reason: string) {
   logAuditFromReq(req, {
     entityType: "permission",
     entityId: `${entity}:${action}`,
