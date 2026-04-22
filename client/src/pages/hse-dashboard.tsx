@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
+import { ApprovalQueueCard } from "@/components/controlled-documents";
 import { useToast } from "@/hooks/use-toast";
 import { ShieldAlert, AlertTriangle, CheckCircle2, Clock, Plus, Pencil } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
@@ -141,6 +142,10 @@ export default function HseDashboardPage() {
 
   return (
     <PageShell className="p-4 md:p-6" data-testid="page-hse-dashboard">
+      {/* D3 controlled-document approvals waiting on this HSE user */}
+      <div className="mb-4">
+        <ApprovalQueueCard />
+      </div>
       <SectionHeader
         icon={<ShieldAlert className="h-5 w-5" />}
         eyebrow="HSE"

@@ -194,4 +194,166 @@ Lifecycle order: **Project Development → Program / Project Delivery → Engine
 
 ---
 
-(Next: Engineering → Quality → HSE → Finance → Handover / O&M.)
+## C. Engineering
+
+**Role ownership:** `ENGINEERING_MANAGER`, `ENGINEER`. COO watches (called out as "my baby").
+
+### C1. `/engineering` — Engineering Dashboard
+
+- **Job**: Engineering Manager's portfolio view — tasks by status, blockers, deliverables outstanding.
+- **Necessary?** Yes.
+- **End-to-end?** Yes.
+- **Super-user?** Yes.
+- **Gaps:** Should host `ApprovalQueueCard` filtered to engineering approvals (design packs, feasibility, yield studies — all rows where ENGINEERING_MANAGER is the approver). ✓ The D3 queue API already returns these; the card shows them. **Fix = small: add ApprovalQueueCard.**
+
+### C2. `/engineering/tasks` — Task Board
+
+- **Job**: Engineers work their individual task list here (blockers, design tasks, reviews).
+- **Necessary?** Yes.
+- **End-to-end?** Yes — work_items backed.
+- **Super-user?** Yes.
+- **Gaps:**
+  - Task delete (if exposed) doesn't show cascade impact. Tasks have sub-items, comments, reminders. Low priority though — task deletes are rare. **Follow-up: R4 extend to work_items.**
+
+### C3. `/engineering/standup` — Engineering Standup
+
+- **Job**: Daily stand-up surface — who's working on what, yesterday/today/blockers.
+- **Necessary?** Yes — rhythm discipline.
+- **End-to-end?** Yes.
+- **Super-user?** Yes.
+- **Gaps:** None new.
+
+### C4. `/reports/engineering/monthly` + history + compare + project — Monthly engineering reports
+
+- **Job**: Monthly narrative snapshot of engineering state for COO / program governance.
+- **Necessary?** Yes.
+- **End-to-end?** Yes — has its own snapshot machinery.
+- **Super-user?** Yes (COO reads + PMs contribute).
+- **Gaps:** None new.
+
+### C5. `/engineering/audit` + `/admin/eng-templates` — System admin
+
+- **Job**: Audit log of engineering-specific events + engineering task templates admin.
+- **Necessary?** Yes for traceability + reuse.
+- **End-to-end?** Yes.
+- **Super-user?** Yes — COO / EM only.
+- **Gaps:** None new.
+
+### Engineering follow-ups
+
+- Add `ApprovalQueueCard` to `/engineering` (small).
+- Extend R4 cascade-delete to work_items when deletion is meaningful (medium, pending need).
+
+---
+
+## D. Quality
+
+**Role ownership:** `QUALITY_MANAGER`.
+
+### D1. `/quality` — Quality Dashboard
+
+- **Job**: QM's view of open findings, inspections due, NCRs, sign-offs overdue.
+- **Necessary?** Yes.
+- **End-to-end?** Yes.
+- **Super-user?** Yes.
+- **Gaps:** ApprovalQueueCard useful here too (quality-related approvals). **Fix = small.**
+
+### D2. Quality-related tabs on project-detail
+
+- **Job**: Per-project quality findings, QA reports, inspection records.
+- **Necessary?** Yes.
+- **End-to-end?** Yes.
+- **Super-user?** Yes.
+- **Gaps:** None new.
+
+### Quality follow-ups
+- Add `ApprovalQueueCard` to `/quality` (small).
+
+---
+
+## E. HSE
+
+**Role ownership:** `HSE_MANAGER`, `SSEG_MANAGER`.
+
+### E1. `/hse` — HSE Dashboard
+
+- **Job**: Incidents, near-misses, corrective actions, audits.
+- **Necessary?** Yes.
+- **End-to-end?** Yes.
+- **Super-user?** Yes.
+- **Gaps:** ApprovalQueueCard may be relevant if HSE corrective-action approvals flow through D3. **Fix = small.** Confirm HSE approvals are in approval taxonomy.
+
+### E2. Project-level HSE tabs
+
+- Same pattern as Quality. Fine.
+
+### HSE follow-ups
+- Add `ApprovalQueueCard` to `/hse` (small).
+- Consider dedicated SSEG (grid-tie compliance) view separate from HSE. Today SSEG lives inside the lifecycle stages (Stage 9 Client Handover). Covered by COO SSEG strip — no separate page needed yet.
+
+---
+
+## F. Finance
+
+**Role ownership:** `CFO`, `PROGRAM_FINANCE_MANAGER`, `ACCOUNTANT`.
+
+### F1. `/cashflow`, `/revenue-tracker`, `/cos` — core finance boards
+
+- **Job**: Forecast + actual across cash, revenue, cost-of-sales.
+- **Necessary?** Yes.
+- **End-to-end?** Yes.
+- **Super-user?** Yes for admin edits.
+- **Gaps:** Already linked from COO home financial pulse column.
+
+### F2. `/quickbooks` — QB home (R5)
+
+- **Job**: Connection health, sync, mappings, recon jump-offs.
+- **Necessary?** Yes.
+- **End-to-end?** Yes.
+- **Super-user?** Yes.
+- **Gaps:** None — just shipped.
+
+### F3. `/finance-quickbooks-links` + `customer-mapping` + `throughput` — Deep QB tooling
+
+- **Job**: Power-user mappings + recon.
+- **Necessary?** Yes.
+- **End-to-end?** Yes.
+- **Super-user?** Yes.
+- **Gaps:** None new.
+
+### Finance follow-ups
+- Invoices + POs cascade-delete pattern extension (R4).
+
+---
+
+## G. Handover / Closeout
+
+Covered by D4 (live meeting) and the existing Stage4PdPmHandover workspace. Charter + acceptance flow covered. Handover-control board feeds it.
+
+- **Job**: Move from PD → PM, then PM → O&M, then O&M → Client.
+- **Necessary?** Yes.
+- **End-to-end?** Yes. D4 added live-meeting surface.
+- **Super-user?** Yes.
+- **Gaps:** Persisting `attendees` + `sectionNotes` server-side on the live meeting (deferred from D4).
+
+---
+
+## Summary of audit-driven concrete fixes applied this session
+
+1. `/pd` — Risk Signals tile drill-ins to `/opportunities?filter=*` (commit `0f0363e0`).
+2. `/pm-dashboard` — `ApprovalQueueCard` added (commit `da62f1fd`).
+3. `/engineering` — `ApprovalQueueCard` *(this commit)*.
+4. `/quality` — `ApprovalQueueCard` *(this commit)*.
+5. `/hse` — `ApprovalQueueCard` *(this commit)*.
+
+## Audit-driven follow-ups (not blocking)
+
+- `DeleteClientDialog` wired once `/clients` gains a delete button.
+- `/opportunities` filter query-param handling.
+- D3 "Docs pending CEO approval" strip on `/pd`.
+- Optional SharePoint root input on `/project-create`.
+- Email-domain + contact list fields on clients.
+- Server-side persistence of handover meeting attendees + section notes.
+- R4 cascade-delete extended to POs, payment requests, work_items, invoices.
+- Verify `/pm/approvals` includes D3 rows (likely already does).
+- Verify `/handover-control` rows link to `/handover/:id/live`.
