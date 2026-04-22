@@ -2,17 +2,19 @@ import React, { useState, useCallback, useEffect } from "react";
 import { AdminPageShell } from "@/components/admin/admin-shell";
 import { isSuperAdmin } from "@/lib/access-control";
 import { Card, CardContent } from "@/components/ui/card";
-import { AlertTriangle, Shield, Users, Eye, ScrollText } from "lucide-react";
+import { AlertTriangle, MonitorOff, Shield, Users, Eye, ScrollText } from "lucide-react";
 import { RolesSection } from "./roles/roles-section";
 import { UsersSection } from "./users/users-section";
 import { VisibilitySection } from "./visibility/visibility-section";
 import { AuditSection } from "./audit/audit-section";
+import { ScreensSection } from "./screens/screens-section";
 import type { AdminSettingsSection } from "./settings-types";
 
 const SETTINGS_NAV: Array<{ key: AdminSettingsSection; label: string; icon: React.ElementType }> = [
   { key: "roles", label: "Roles & Permissions", icon: Shield },
   { key: "users", label: "Users", icon: Users },
   { key: "visibility", label: "Visibility", icon: Eye },
+  { key: "screens", label: "Screen Availability", icon: MonitorOff },
   { key: "audit", label: "Audit Log", icon: ScrollText },
 ];
 
@@ -97,6 +99,7 @@ function AdminSettingsContent() {
           {activeSection === "roles" && <RolesSection />}
           {activeSection === "users" && <UsersSection />}
           {activeSection === "visibility" && <VisibilitySection />}
+          {activeSection === "screens" && <ScreensSection />}
           {activeSection === "audit" && <AuditSection />}
         </div>
       </div>

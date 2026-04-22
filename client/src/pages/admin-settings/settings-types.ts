@@ -34,7 +34,12 @@ export type UserSummary = {
   department?: string | null;
 };
 
-export type AdminSettingsSection = "roles" | "users" | "visibility" | "audit";
+export type AdminSettingsSection = "roles" | "users" | "visibility" | "screens" | "audit";
+
+export interface ScreenSetting {
+  screenId: string;
+  isEnabled: boolean;
+}
 
 export type AdminRolesViewState = "loading" | "error" | "empty" | "ready";
 
