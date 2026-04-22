@@ -78,19 +78,36 @@ export async function listActiveDocumentTypes(): Promise<ControlledDocumentType[
 
 /** Admin view — includes inactive types so super users can reactivate. */
 export async function listAllDocumentTypes(): Promise<ControlledDocumentType[]> {
-  return db
-    .select()
-    .from(controlledDocumentTypes)
-    .orderBy(asc(controlledDocumentTypes.sortOrder), asc(controlledDocumentTypes.displayName));
+  try {
+    return await db
+      .select()
+      .from(controlledDocumentTypes)
+      .orderBy(asc(controlledDocumentTypes.sortOrder), asc(controlledDocumentTypes.displayName));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/42P01|42703|does not exist|no such table/i.test(msg)) {
+      console.warn("[controlled-documents] admin types: tables not migrated yet — returning empty list");
+      return [];
+    }
+    throw err;
+  }
 }
 
 export async function getDocumentType(typeKey: string): Promise<ControlledDocumentType | null> {
-  const rows = await db
-    .select()
-    .from(controlledDocumentTypes)
-    .where(eq(controlledDocumentTypes.typeKey, typeKey))
-    .limit(1);
-  return rows[0] ?? null;
+  try {
+    const rows = await db
+      .select()
+      .from(controlledDocumentTypes)
+      .where(eq(controlledDocumentTypes.typeKey, typeKey))
+      .limit(1);
+    return rows[0] ?? null;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/42P01|42703|does not exist|no such table/i.test(msg)) {
+      return null;
+    }
+    throw err;
+  }
 }
 
 // ---- Per-project reads ---------------------------------------------------
