@@ -64,6 +64,9 @@ interface MonthData {
   monthKey: string;
   monthLabel: string;
   totalCOS: number;
+  cosPlanned: number;
+  ytdCosPlanned: number;
+  cosPlannedProjects: ProjectBreakdown[];
   realisedCOS: number;
   committedCOS: number;
   plannedCOS: number;
@@ -168,13 +171,13 @@ interface RowDef {
   group: "monthly" | "ytd";
   colorCoded?: boolean;
   expandable?: boolean;
-  projectsKey?: "cosProjects" | "realisedProjects" | "committedProjects" | "plannedProjects" | "qbOnlyProjects" | "appOnlyPendingProjects";
+  projectsKey?: "cosProjects" | "cosPlannedProjects" | "realisedProjects" | "committedProjects" | "plannedProjects" | "qbOnlyProjects" | "appOnlyPendingProjects";
   tabs: CosTab[];
 }
 
 const ROW_DEFS: RowDef[] = [
   // Planned tab: budget baseline + manual override
-  { key: "totalCOS", label: "COS Planned", dataKey: "totalCOS", editable: false, colorClass: "text-emerald-700 font-semibold", group: "monthly", expandable: true, projectsKey: "plannedProjects", tabs: ["planned"] },
+  { key: "totalCOS", label: "COS Planned", dataKey: "cosPlanned", editable: false, colorClass: "text-emerald-700 font-semibold", group: "monthly", expandable: true, projectsKey: "cosPlannedProjects", tabs: ["planned"] },
   { key: "budget", label: "Budget (Manual)", dataKey: "budget", editable: true, colorClass: "text-emerald-700/60", group: "monthly", tabs: ["planned"] },
   // Committed tab: planned with invoice captured but date unconfirmed
   { key: "committedCOS", label: "COS Committed", dataKey: "committedCOS", editable: false, colorClass: "text-amber-700 font-semibold", group: "monthly", expandable: true, projectsKey: "committedProjects", tabs: ["committed"] },
@@ -331,7 +334,7 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
             stateFilter === "realised" ? "Realised total"
             : stateFilter === "committed" ? "Committed total"
             : stateFilter === "planned" ? "Planned total"
-            : stateFilter === "recognised" ? "Recognised total (Realised + Committed)"
+            : stateFilter === "recognised" ? "COS Planned total (Planned + Committed + Realised)"
             : stateFilter === "qb_actual" ? "QuickBooks total"
             : null;
           const expected = data.expectedTotal;
@@ -406,7 +409,7 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                 <option value="all">All statuses</option>
                 <option value="realised">Realised</option>
                 <option value="committed">Committed</option>
-                <option value="recognised">Recognised (Realised + Committed)</option>
+                <option value="recognised">All app states (Planned + Committed + Realised)</option>
                 <option value="planned">Planned</option>
                 <option value="qb_actual">QB Actual</option>
               </select>
@@ -601,19 +604,23 @@ export default function CosTracker() {
       (arr ?? []).filter((p) => sel.has(p.projectName)).reduce((s, p) => s + (p.value ?? 0), 0);
     const filterProjects = (arr: ProjectBreakdown[] | undefined) =>
       (arr ?? []).filter((p) => sel.has(p.projectName));
-    let ytdCOS = 0, ytdRealised = 0, ytdCommitted = 0, ytdPlanned = 0, ytdQbOnly = 0, ytdAppOnlyPending = 0;
+    let ytdCOS = 0, ytdRealised = 0, ytdCommitted = 0, ytdPlanned = 0, ytdQbOnly = 0, ytdAppOnlyPending = 0, ytdCosPlanned = 0;
     const ytdBudget = 0;
     return rawMonths.map((m) => {
       const realisedCOS = sumProjects(m.realisedProjects);
       const committedCOS = sumProjects(m.committedProjects);
       const plannedCOS = sumProjects(m.plannedProjects);
       const totalCOS = realisedCOS + committedCOS;
+      const cosPlanned = realisedCOS + committedCOS + plannedCOS;
       const qbOnlyActual = sumProjects(m.qbOnlyProjects);
       const appOnlyPending = sumProjects(m.appOnlyPendingProjects);
       const budget = 0;
-      const variance = totalCOS - budget;
+      // Variance against the full app-side baseline (R+C+P) so the row
+      // beneath "COS Planned" reads consistently.
+      const variance = cosPlanned - budget;
       const variancePct = 0;
-      ytdCOS += totalCOS;
+      ytdCOS += cosPlanned;
+      ytdCosPlanned += cosPlanned;
       ytdRealised += realisedCOS;
       ytdCommitted += committedCOS;
       ytdPlanned += plannedCOS;
@@ -621,9 +628,21 @@ export default function CosTracker() {
       ytdAppOnlyPending += appOnlyPending;
       const ytdVariance = ytdCOS - ytdBudget;
       const ytdVariancePct = 0;
+      // cosPlannedProjects = combined R+C+P per project, mirrors server.
+      const merged = new Map<string, number>();
+      for (const arr of [m.realisedProjects, m.committedProjects, m.plannedProjects]) {
+        for (const p of arr ?? []) {
+          if (!sel.has(p.projectName)) continue;
+          merged.set(p.projectName, (merged.get(p.projectName) ?? 0) + (p.value ?? 0));
+        }
+      }
+      const cosPlannedProjects = Array.from(merged.entries())
+        .map(([projectName, value]) => ({ projectName, value }))
+        .sort((a, b) => b.value - a.value);
       return {
         ...m,
         totalCOS,
+        cosPlanned,
         realisedCOS,
         committedCOS,
         plannedCOS,
@@ -635,6 +654,7 @@ export default function CosTracker() {
         qbVsAppVariance: qbOnlyActual - totalCOS,
         qbVsAppVariancePct: qbOnlyActual !== 0 ? ((qbOnlyActual - totalCOS) / qbOnlyActual) * 100 : 0,
         ytdCOS,
+        ytdCosPlanned,
         ytdRealised,
         ytdCommitted,
         ytdPlanned,
@@ -644,6 +664,7 @@ export default function CosTracker() {
         ytdVariance,
         ytdVariancePct,
         cosProjects: filterProjects(m.cosProjects),
+        cosPlannedProjects,
         realisedProjects: filterProjects(m.realisedProjects),
         committedProjects: filterProjects(m.committedProjects),
         plannedProjects: filterProjects(m.plannedProjects),
@@ -669,16 +690,17 @@ export default function CosTracker() {
       const next = previous.map((m) => ({ ...m }));
       next[targetIdx].budget = newBudget;
       // Recompute per-month variance for the changed month and cumulative YTD from that
-      // month onward — mirrors server formula in finance-routes.ts (variance = totalCOS - budget;
-      // ytdBudget = cumulative budget; ytdVariance = ytdCOS - ytdBudget).
+      // month onward — mirrors server formula in finance-routes.ts
+      // (variance = cosPlanned - budget; ytdBudget = cumulative budget;
+      //  ytdVariance = cumulative cosPlanned - ytdBudget).
       let ytdBudget = 0;
       let ytdCOS = 0;
       for (let i = 0; i < next.length; i++) {
         const m = next[i];
         ytdBudget += m.budget ?? 0;
-        ytdCOS += m.totalCOS ?? 0;
+        ytdCOS += m.cosPlanned ?? 0;
         if (i >= targetIdx) {
-          m.variance = (m.totalCOS ?? 0) - (m.budget ?? 0);
+          m.variance = (m.cosPlanned ?? 0) - (m.budget ?? 0);
           m.variancePct = (m.budget ?? 0) !== 0 ? (m.variance / (m.budget ?? 0)) * 100 : 0;
           m.ytdBudget = ytdBudget;
           m.ytdVariance = ytdCOS - ytdBudget;
@@ -739,7 +761,7 @@ export default function CosTracker() {
     const result: Record<string, string[]> = {};
     const trackerSet = new Set(trackerProjectNames);
     const selectedSet = new Set(selectedProjects);
-    for (const key of ["cosProjects", "realisedProjects", "committedProjects", "plannedProjects", "qbOnlyProjects", "appOnlyPendingProjects"] as const) {
+    for (const key of ["cosProjects", "cosPlannedProjects", "realisedProjects", "committedProjects", "plannedProjects", "qbOnlyProjects", "appOnlyPendingProjects"] as const) {
       const names = new Set<string>();
       for (const m of months) {
         for (const p of m[key] || []) {
@@ -853,7 +875,7 @@ export default function CosTracker() {
   const kpiByTab: Record<CosTab, { ytdValue: number; lastValue: number; prevValue: number }> = {
     realised: { ytdValue: ytdRealised, lastValue: lastMonth?.realisedCOS ?? 0, prevValue: prevMonth?.realisedCOS ?? 0 },
     committed: { ytdValue: ytdCommitted, lastValue: lastMonth?.committedCOS ?? 0, prevValue: prevMonth?.committedCOS ?? 0 },
-    planned: { ytdValue: ytdPlanned, lastValue: lastMonth?.totalCOS ?? 0, prevValue: prevMonth?.totalCOS ?? 0 },
+    planned: { ytdValue: ytdPlanned, lastValue: lastMonth?.cosPlanned ?? 0, prevValue: prevMonth?.cosPlanned ?? 0 },
   };
 
   const renderSparkline = (tab: CosTab) => (
@@ -1206,10 +1228,11 @@ export default function CosTracker() {
                 </TooltipTrigger>
                 <TooltipContent side="bottom" className="max-w-[320px] text-xs leading-relaxed">
                   <p className="font-semibold mb-1">COS realisation pipeline</p>
-                  <p><strong>Planned</strong> = cost line with a planned date (no PO/invoice).</p>
-                  <p><strong>Committed</strong> = invoice captured but invoice date unconfirmed.</p>
-                  <p><strong>Realised</strong> = invoice date confirmed AND supplier invoice linked.</p>
-                  <p className="mt-1 text-muted-foreground">Both gates required for realisation. Sourced from Finance - COS sheets and Expenditure Breakdown.</p>
+                  <p><strong>Planned</strong> = cost line in this FY with no invoice number captured yet.</p>
+                  <p><strong>Committed</strong> = invoice captured, invoice date still red (unconfirmed).</p>
+                  <p><strong>Realised</strong> = invoice captured, invoice date black (confirmed).</p>
+                  <p className="mt-1"><strong>COS Planned row</strong> = the FY baseline = Planned + Committed + Realised.</p>
+                  <p className="mt-1 text-muted-foreground">Purchase order is not part of the logic. Sourced from Finance - COS sheets and Expenditure Breakdown.</p>
                 </TooltipContent>
               </UiTooltip>
             </TooltipProvider>

@@ -1965,6 +1965,12 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       // the YTD figure (~R339M vs QB truth ~R220M-R230M).
       const plannedCOS = plannedBucket?.total ?? 0;
       const totalCOS = realisedCOS + committedCOS;
+      // cosPlanned = full app-side baseline (every cost line in the month
+      // regardless of state). Per finance rule the "COS Planned" grid row
+      // shows this. Variance against budget is also computed against this
+      // baseline. totalCOS (= R+C, "recognised") is retained only for the
+      // QB-vs-App reconciliation metric below.
+      const cosPlanned = realisedCOS + committedCOS + plannedCOS;
       const qbOnlyActual = qbCosByMonth.get(monthKey) ?? 0;
       const appOnlyPendingBucket = appOnlyPendingByMonth.get(monthKey);
       const appOnlyPending = appOnlyPendingBucket?.total ?? 0;
@@ -1978,10 +1984,13 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       const qbVsAppVariance = qbOnlyActual - totalCOS;
       const qbVsAppVariancePct = qbOnlyActual !== 0 ? (qbVsAppVariance / qbOnlyActual) * 100 : 0;
 
-      const variance = totalCOS - budget;
+      // Variance vs budget uses the full baseline so the row sits directly
+      // beneath "COS Planned" with consistent arithmetic (planned − budget).
+      const variance = cosPlanned - budget;
       const variancePct = budget !== 0 ? (variance / budget) * 100 : 0;
 
-      ytdCOS += totalCOS;
+      ytdCOS += cosPlanned;
+      ytdCosPlanned += cosPlanned;
       ytdRealised += realisedCOS;
       ytdCommitted += committedCOS;
       ytdPlanned += plannedCOS;
@@ -1995,6 +2004,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
         monthKey,
         monthLabel: monthDate.toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }),
         totalCOS,
+        cosPlanned,
         realisedCOS,
         committedCOS,
         plannedCOS,
@@ -2007,6 +2017,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
         qbVsAppVariance,
         qbVsAppVariancePct,
         ytdCOS,
+        ytdCosPlanned,
         ytdRealised,
         ytdCommitted,
         ytdPlanned,
@@ -2019,6 +2030,16 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
         realisedProjects: mapToSortedArray(realisedBucket?.projects ?? new Map()),
         committedProjects: mapToSortedArray(committedBucket?.projects ?? new Map()),
         plannedProjects: mapToSortedArray(plannedBucket?.projects ?? new Map()),
+        // Per-project breakdown for the "COS Planned" row = combined R+C+P.
+        cosPlannedProjects: (() => {
+          const merged = new Map<string, number>();
+          for (const bucket of [realisedBucket, committedBucket, plannedBucket]) {
+            for (const [name, val] of bucket?.projects ?? new Map()) {
+              merged.set(name, (merged.get(name) ?? 0) + val);
+            }
+          }
+          return mapToSortedArray(merged);
+        })(),
         qbOnlyProjects: [],
         appOnlyPendingProjects: mapToSortedArray(appOnlyPendingBucket?.projects ?? new Map()),
       });
@@ -2255,9 +2276,11 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
     const billById = new Map<string, any>();
     for (const bill of bills) billById.set(String(bill.id), bill);
 
-    // Accept "recognised" alias for realised+committed (the row labelled
-    // "COS Planned" in the grid actually shows totalCOS = realised+committed,
-    // so it drills down with state=recognised).
+    // The "COS Planned" row in the grid shows the full app-side baseline =
+    // realised + committed + planned. Clicking it drills down with
+    // state=recognised, which on this route now means "all app states"
+    // (every cost line regardless of stage). This is intentionally a
+    // superset of realised+committed; QB-only bills are still excluded.
     const stateFilterNorm = stateFilter === "recognised" ? "recognised" : stateFilter;
 
     for (const row of allCostLines) {
@@ -2277,7 +2300,6 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       if (project && projectName !== project) continue;
 
       const hasInvoice = !!(row.invoiceNumber && String(row.invoiceNumber).trim());
-      const hasPo = !!(row.poNumber && String(row.poNumber).trim());
       // YTD-aware: each line's "past month" check uses its own appMonth, not
       // the URL's monthKey — otherwise a Sep line in a YTD-through-Jan range
       // would lose its past-month auto-promote.
@@ -2289,10 +2311,12 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
           (isPastMonth && hasInvoice)
         );
 
-      // App-side classification (matches aggregate exactly).
+      // App-side classification (matches aggregate exactly). Purchase order
+      // is intentionally NOT part of the logic — a PO without an invoice
+      // is still "Planned".
       let cosState: "realised" | "committed" | "planned";
       if (hasInvoice && invoiceDateConfirmed) cosState = "realised";
-      else if (hasInvoice || hasPo) cosState = "committed";
+      else if (hasInvoice) cosState = "committed";
       else cosState = "planned";
 
       const link = linksByCostLineId.get(row.id);
@@ -2309,7 +2333,10 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       if (stateFilterNorm === "realised" && cosState !== "realised") continue;
       if (stateFilterNorm === "committed" && cosState !== "committed") continue;
       if (stateFilterNorm === "planned" && cosState !== "planned") continue;
-      if (stateFilterNorm === "recognised" && !(cosState === "realised" || cosState === "committed")) continue;
+      // "recognised" filter = all app-side states (R+C+P) so it matches the
+      // "COS Planned" row total. QB-only bills are always excluded for this
+      // filter (handled by the includeQbOnly gate further down).
+      // (No-op: every app row passes; the filter exists only to suppress QB.)
       // qb_actual filter only returns QB-only bills (handled below); skip app rows.
       if (stateFilterNorm === "qb_actual") continue;
 
@@ -2387,7 +2414,9 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
     const committedTotal = items.filter(i => i.cosState === "committed").reduce((s, i) => s + (i.appAmount ?? 0), 0);
     const plannedTotal = items.filter(i => i.cosState === "planned").reduce((s, i) => s + (i.appAmount ?? 0), 0);
     const qbOnlyTotal = items.filter(i => i.cosState === "qb_actual").reduce((s, i) => s + (i.qbAmount ?? 0), 0);
-    const recognisedTotal = realisedTotal + committedTotal;
+    // recognisedTotal = full app-side baseline (R+C+P) to match the
+    // "COS Planned" grid row that drills down with state=recognised.
+    const recognisedTotal = realisedTotal + committedTotal + plannedTotal;
     // expectedTotal = sum of contributions for the active filter — this is what
     // the cell shows, so the drawer header can verify the math out of the box.
     const expectedTotal =
