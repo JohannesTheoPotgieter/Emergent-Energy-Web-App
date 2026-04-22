@@ -36,8 +36,25 @@ interface PriorityRow {
   title: string;
   status?: string | null;
   severity?: string | null;
-  owner?: string | null;
+  /**
+   * Owner shape from /api/priorities is an object ({ id, name } | null),
+   * not a plain string. We accept both for tolerance.
+   */
+  owner?: { id: number; name: string } | string | null;
+  ownerName?: string | null;
+  assignedUser?: { id: number; name: string } | null;
   nextCheckpoint?: string | null;
+}
+
+function ownerLabel(p: PriorityRow): string {
+  if (!p) return "Unassigned";
+  if (typeof p.owner === "string") return p.owner || "Unassigned";
+  if (p.owner && typeof p.owner === "object" && "name" in p.owner) {
+    return p.owner.name || "Unassigned";
+  }
+  if (p.ownerName) return p.ownerName;
+  if (p.assignedUser?.name) return p.assignedUser.name;
+  return "Unassigned";
 }
 
 export default function CooHome() {
@@ -162,7 +179,7 @@ function PrioritiesCard({ rows, loading }: { rows: PriorityRow[]; loading: boole
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium truncate">{p.title}</p>
                     <p className="text-xs text-muted-foreground truncate">
-                      {p.owner ? `${p.owner}` : "Unassigned"}
+                      {ownerLabel(p)}
                       {p.nextCheckpoint ? ` · next: ${p.nextCheckpoint}` : ""}
                     </p>
                   </div>
