@@ -23,7 +23,15 @@ import { z } from "zod";
 import { requireAuth } from "../auth-context";
 import { db } from "../db";
 import { projectInfo, clients, sites, opportunities } from "@shared/schema/projects";
-import { workItems } from "@shared/schema/tasks";
+import {
+  workItems,
+  taskComments,
+  taskChecklists,
+  taskAttachments,
+  taskDeliverables,
+  workItemAssignments,
+  workItemDependencies,
+} from "@shared/schema/tasks";
 import { approvals } from "@shared/schema/collaboration";
 import { controlledDocuments } from "@shared/schema/documents";
 import { purchaseOrders, poReviewAssignments, paymentRequests, invoiceCaptures } from "@shared/schema/finance";
@@ -228,6 +236,89 @@ async function getInvoiceDeleteImpact(invoiceId: number): Promise<{ subject: str
   return { subject: label, rows };
 }
 
+/**
+ * Work item delete impact. Work items have several related tables that
+ * cascade ON DELETE in the schema — we count them so the user sees what
+ * they're trashing: comments, checklists, attachments, deliverables,
+ * assignments, dependencies.
+ */
+async function getWorkItemDeleteImpact(workItemId: number): Promise<{ subject: string; rows: ImpactRow[] } | null> {
+  const [item] = await db
+    .select({ id: workItems.id, title: workItems.title })
+    .from(workItems)
+    .where(eq(workItems.id, workItemId))
+    .limit(1);
+  if (!item) return null;
+
+  const [commentCount, checklistCount, attachmentCount, deliverableCount, assignmentCount, depCount] =
+    await Promise.all([
+      countRows(taskComments, eq(taskComments.workItemId, workItemId)),
+      countRows(taskChecklists, eq(taskChecklists.workItemId, workItemId)),
+      countRows(taskAttachments, eq(taskAttachments.workItemId, workItemId)),
+      countRows(taskDeliverables, eq(taskDeliverables.workItemId, workItemId)),
+      countRows(workItemAssignments, eq(workItemAssignments.workItemId, workItemId)),
+      // Dependencies — count rows where this work item is either
+      // predecessor or successor.
+      countRows(workItemDependencies, sql`${workItemDependencies.predecessorId} = ${workItemId} OR ${workItemDependencies.successorId} = ${workItemId}`),
+    ]);
+
+  const rows: ImpactRow[] = [];
+  if (commentCount > 0) rows.push({ label: "Comments", count: commentCount, severity: "low" });
+  if (checklistCount > 0) rows.push({ label: "Checklists", count: checklistCount, severity: "low" });
+  if (attachmentCount > 0) rows.push({ label: "Attachments", count: attachmentCount, severity: "medium" });
+  if (deliverableCount > 0) rows.push({ label: "Deliverables", count: deliverableCount, severity: "medium" });
+  if (assignmentCount > 0) rows.push({ label: "Assignments", count: assignmentCount, severity: "medium", note: "Assignees notified" });
+  if (depCount > 0) rows.push({ label: "Dependent items", count: depCount, severity: "high", note: "Other work items depend on this" });
+
+  return { subject: item.title ?? `Work item #${item.id}`, rows };
+}
+
+/**
+ * Controlled-document delete impact. D3 uses soft-delete by default
+ * (deletedAt set) rather than hard-delete, so the blast radius is
+ * normally small. High severity only when the row is currently in
+ * state='approved' — removing an approved document can break downstream
+ * references (CEO home headline numbers, handover packs).
+ */
+async function getControlledDocDeleteImpact(docId: number): Promise<{ subject: string; rows: ImpactRow[] } | null> {
+  const [doc] = await db
+    .select({ id: controlledDocuments.id, fileName: controlledDocuments.fileName, state: controlledDocuments.state, typeKey: controlledDocuments.typeKey })
+    .from(controlledDocuments)
+    .where(eq(controlledDocuments.id, docId))
+    .limit(1);
+  if (!doc) return null;
+
+  const rows: ImpactRow[] = [];
+  if (doc.state === "approved") {
+    rows.push({
+      label: "Current approved version",
+      count: 1,
+      severity: "high",
+      note: "CEO home + handover packs reference this",
+    });
+  } else if (doc.state === "submitted") {
+    // Pending approvals will be cancelled.
+    const pendingApprovalsCount = await countRows(
+      approvals,
+      and(
+        eq(approvals.relatedEntityType, "controlled_document"),
+        eq(approvals.relatedEntityId, docId),
+        eq(approvals.status, "pending"),
+      ),
+    );
+    if (pendingApprovalsCount > 0) {
+      rows.push({
+        label: "Pending approvals that will be cancelled",
+        count: pendingApprovalsCount,
+        severity: "medium",
+        note: "Approvers notified",
+      });
+    }
+  }
+
+  return { subject: `${doc.typeKey}: ${doc.fileName}`, rows };
+}
+
 export function registerImpactRoutes(app: Express): void {
   // ------------------------------------------------------------------
   // GET /api/projects/:id/delete-impact
@@ -308,6 +399,48 @@ export function registerImpactRoutes(app: Express): void {
       } catch (err) {
         if (err instanceof ApiError) throw err;
         console.error("[impact] invoice delete-impact error:", err);
+        throw serverError("Failed to compute delete impact");
+      }
+    },
+  );
+
+  // ------------------------------------------------------------------
+  // GET /api/work-items/:id/delete-impact
+  // ------------------------------------------------------------------
+  app.get(
+    "/api/work-items/:id/delete-impact",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      const parsed = projectIdParam.safeParse(req.params.id);
+      if (!parsed.success) throw badRequest("Invalid work item id");
+      try {
+        const impact = await getWorkItemDeleteImpact(parsed.data);
+        if (!impact) throw notFound(`Work item ${parsed.data} not found`);
+        res.json(impact);
+      } catch (err) {
+        if (err instanceof ApiError) throw err;
+        console.error("[impact] work-item delete-impact error:", err);
+        throw serverError("Failed to compute delete impact");
+      }
+    },
+  );
+
+  // ------------------------------------------------------------------
+  // GET /api/documents/:id/delete-impact   (controlled documents)
+  // ------------------------------------------------------------------
+  app.get(
+    "/api/documents/:id/delete-impact",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      const parsed = projectIdParam.safeParse(req.params.id);
+      if (!parsed.success) throw badRequest("Invalid document id");
+      try {
+        const impact = await getControlledDocDeleteImpact(parsed.data);
+        if (!impact) throw notFound(`Controlled document ${parsed.data} not found`);
+        res.json(impact);
+      } catch (err) {
+        if (err instanceof ApiError) throw err;
+        console.error("[impact] controlled-doc delete-impact error:", err);
         throw serverError("Failed to compute delete impact");
       }
     },
