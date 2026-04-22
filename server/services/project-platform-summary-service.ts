@@ -14,7 +14,6 @@ import {
   workItems,
 } from "@shared/schema";
 import { computeEffectiveRag } from "@shared/utils/effective-rag";
-import { computeScheduleRag } from "@shared/kpi-definitions";
 import {
   createDepartmentWorkspaceContracts,
   normalizeLifecycleStage,
@@ -570,29 +569,32 @@ export async function getProjectListSummaries(
     .where(inArray(projectInfo.id, ids));
 
   // 2. Live work_items aggregation — used as fallback for both % Complete
-  //    and the schedule-derived RAG when the cache row is missing.
-  const liveTaskByProject = new Map<number, { avgPct: number | null; overdueCount: number; totalCount: number }>();
+  //    and the schedule-variance derived RAG when the cache row is missing.
+  //    The % Complete formula matches progress-source.ts (canonical):
+  //    AVG(COALESCE(work_item_pm.percent_complete, work_items.percent_complete, 0))
+  //    The schedule-variance formula matches lifecycle-routes.ts:1100-1117 and
+  //    dashboard-routes.ts:407-414 — actual − expected, with thresholds
+  //    (>= -5 = green, >= -15 = amber, < -15 = red).
+  const idArrayLiteral = `{${ids.join(",")}}`;
+  const liveTaskByProject = new Map<number, { avgPct: number | null; avgExpectedPct: number | null; totalCount: number }>();
   try {
     const liveTaskRows: any = await db.execute(sql`
       SELECT
-        project_id,
-        AVG(NULLIF(percent_complete, NULL)) AS avg_pct,
-        COUNT(*) FILTER (
-          WHERE end_date IS NOT NULL
-            AND end_date < CURRENT_DATE
-            AND COALESCE(LOWER(status), '') NOT IN ('complete','completed','done','closed','cancelled','canceled')
-        ) AS overdue_count,
+        wi.project_id,
+        AVG(COALESCE(pm.percent_complete, wi.percent_complete, 0))::float8 AS avg_pct,
+        AVG(NULLIF(wi.expected_pct_complete, NULL))::float8 AS avg_expected_pct,
         COUNT(*) AS total_count
-      FROM work_items
-      WHERE project_id = ANY(${`{${ids.join(",")}}`}::int[])
-        AND deleted_at IS NULL
-      GROUP BY project_id
+      FROM work_items wi
+      LEFT JOIN work_item_pm pm ON pm.work_item_id = wi.id
+      WHERE wi.project_id = ANY(${idArrayLiteral}::int[])
+        AND wi.deleted_at IS NULL
+      GROUP BY wi.project_id
     `);
     const rows = liveTaskRows.rows || liveTaskRows;
     for (const r of rows) {
       liveTaskByProject.set(Number(r.project_id), {
         avgPct: r.avg_pct == null ? null : Number(r.avg_pct),
-        overdueCount: Number(r.overdue_count || 0),
+        avgExpectedPct: r.avg_expected_pct == null ? null : Number(r.avg_expected_pct),
         totalCount: Number(r.total_count || 0),
       });
     }
@@ -682,20 +684,49 @@ export interface ComposeProjectListSummaryInput {
       cosRealised: number;
     };
   };
-  liveTask: { avgPct: number | null; overdueCount: number; totalCount: number } | null;
+  liveTask: { avgPct: number | null; avgExpectedPct: number | null; totalCount: number } | null;
   liveFinance: { plannedRevenue: number; realisedRevenue: number; plannedCost: number; realisedCost: number } | null;
+}
+
+/**
+ * Derive RAG from schedule variance (actual − expected progress).
+ * Mirrors the formula used by lifecycle-routes.ts:1100-1117 and
+ * dashboard-routes.ts:407-414 so RAG badges agree across the app.
+ *
+ * Thresholds (percentage points):
+ *   variance >= -5  → green   (on/ahead of plan)
+ *   variance >= -15 → amber   (slipping)
+ *   variance <  -15 → red     (significantly behind)
+ *
+ * Returns null when there's no expected baseline to compare against —
+ * we don't fabricate a colour from raw progress alone.
+ */
+function deriveRagFromScheduleVariance(actualPct: number | null, expectedPct: number | null): "green" | "amber" | "red" | null {
+  if (actualPct == null || !Number.isFinite(actualPct)) return null;
+  if (expectedPct == null || !Number.isFinite(expectedPct)) return null;
+  const variance = actualPct - expectedPct;
+  if (variance >= -5) return "green";
+  if (variance >= -15) return "amber";
+  return "red";
 }
 
 export function composeProjectListSummaryRow(input: ComposeProjectListSummaryInput): ProjectListSummary {
   const { base, liveTask, liveFinance } = input;
 
-  // ── % Complete fallback: cache → live AVG(work_items) → null
+  // ── % Complete fallback: cache → live AVG → null.
+  //    A cached zero is treated as a cache miss because the materialised
+  //    `derived_project_kpis` row is initialised to 0 before the first
+  //    refresh — surfacing "0%" for projects that already have task
+  //    progress is the bug this fix was raised against.
   let percentComplete: number | null;
   let percentCompleteSource: PercentCompleteSource;
-  if (base.cachedPercentComplete != null && Number.isFinite(base.cachedPercentComplete)) {
-    percentComplete = Math.round(base.cachedPercentComplete);
+  const cachedPctIsAuthoritative = base.cachedPercentComplete != null
+    && Number.isFinite(base.cachedPercentComplete)
+    && base.cachedPercentComplete > 0;
+  if (cachedPctIsAuthoritative) {
+    percentComplete = Math.round(base.cachedPercentComplete!);
     percentCompleteSource = "cache";
-  } else if (liveTask && liveTask.avgPct != null && Number.isFinite(liveTask.avgPct)) {
+  } else if (liveTask && liveTask.avgPct != null && Number.isFinite(liveTask.avgPct) && liveTask.totalCount > 0) {
     percentComplete = Math.round(liveTask.avgPct);
     percentCompleteSource = "live";
   } else {
@@ -703,13 +734,17 @@ export function composeProjectListSummaryRow(input: ComposeProjectListSummaryInp
     percentCompleteSource = "missing";
   }
 
-  // ── RAG fallback: stored → derived (overdue→schedule RAG) → null,
-  //    then DLP override applied via computeEffectiveRag.
+  // ── RAG fallback: stored → derived (schedule variance: actual − expected
+  //    progress, bucketed by the same thresholds dashboard / lifecycle use)
+  //    → null. Then computeEffectiveRag applies the DLP override.
   let ragForEffective: string | null = base.ragStatus;
   let ragSource: RagSource = base.ragStatus ? "manual" : "missing";
   if (!base.ragStatus && liveTask && liveTask.totalCount > 0) {
-    ragForEffective = computeScheduleRag(liveTask.overdueCount);
-    ragSource = "derived";
+    const derived = deriveRagFromScheduleVariance(liveTask.avgPct, liveTask.avgExpectedPct);
+    if (derived) {
+      ragForEffective = derived;
+      ragSource = "derived";
+    }
   }
   const effective = computeEffectiveRag({ ragStatus: ragForEffective, inDlp: base.inDlp });
 

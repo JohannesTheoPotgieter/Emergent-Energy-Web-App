@@ -1108,19 +1108,33 @@ router.post(
       });
     }
 
-    const linkedProjects = await db
-      .select({
-        id: projectInfo.id,
-        name: projectInfo.projectName,
-        phase: projectExecutionState.phase,
-        ragStatus: projectExecutionState.ragStatus,
-        pmName: projectInfo.pm,
-        linkedAt: priorityProjects.linkedAt,
-      })
+    // Same foundation read as GET /api/priorities/:id linkedProjects so the
+    // RAG / % Complete fallbacks (cache → live) apply consistently after a
+    // link operation, instead of the old raw join that surfaced "—" for
+    // projects with no materialised cache row.
+    const linkRows: Array<{ projectId: number; linkedAt: Date | null }> = await db
+      .select({ projectId: priorityProjects.projectId, linkedAt: priorityProjects.linkedAt })
       .from(priorityProjects)
-      .innerJoin(projectInfo, eq(priorityProjects.projectId, projectInfo.id))
-      .leftJoin(projectExecutionState, eq(projectInfo.id, projectExecutionState.projectId))
       .where(eq(priorityProjects.priorityId, priorityId));
+    const projectIdsLinked: number[] = Array.from(new Set(linkRows.map((r) => r.projectId)));
+    const summaryByProjectId = await getProjectListSummaries({ projectIds: projectIdsLinked });
+    const linkedProjects = linkRows
+      .map((r: { projectId: number; linkedAt: Date | null }) => {
+        const s = summaryByProjectId.get(r.projectId);
+        if (!s) return null;
+        return {
+          id: s.id,
+          name: s.name,
+          phase: s.phase,
+          ragStatus: s.ragStatus,
+          ragSource: s.ragSource,
+          pmName: s.pmName,
+          percentComplete: s.percentComplete ?? 0,
+          percentCompleteSource: s.percentCompleteSource,
+          linkedAt: r.linkedAt,
+        };
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null);
 
     res.json(linkedProjects);
   }),
