@@ -477,9 +477,9 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                     <tr>
                       <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">Project</th>
                       <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">Supplier</th>
+                      <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">Description</th>
                       <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">App Invoice</th>
                       <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">QB Bill</th>
-                      <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">PO</th>
                       <th className="text-right px-3 py-2.5 font-semibold text-muted-foreground">App</th>
                       <th className="text-right px-3 py-2.5 font-semibold text-muted-foreground">QB</th>
                       <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">Recognised</th>
@@ -502,9 +502,9 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                           ) : "—"}
                         </td>
                         <td className="px-3 py-2 text-muted-foreground truncate max-w-[160px]">{item.supplier || "—"}</td>
+                        <td className="px-3 py-2 text-foreground truncate max-w-[220px]" title={item.lineItem || ""}>{item.lineItem || "—"}</td>
                         <td className="px-3 py-2 font-mono text-[11px]">{item.invoiceNumber || "—"}</td>
                         <td className="px-3 py-2 font-mono text-[11px] text-foreground">{item.qbBillNumber || "—"}</td>
-                        <td className="px-3 py-2 font-mono text-[11px]">{item.poNumber || "—"}</td>
                         <td className="px-3 py-2 text-right font-mono">{item.appAmount == null ? <span className="text-muted-foreground">—</span> : formatRand(item.appAmount)}</td>
                         <td className="px-3 py-2 text-right font-mono text-foreground">{item.qbAmount == null ? <span className="text-muted-foreground">—</span> : formatRand(item.qbAmount)}</td>
                         <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">{item.recognitionDate || "—"}</td>
@@ -531,6 +531,9 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                           </button>
                         ) : <span className="text-sm text-muted-foreground">Unassigned</span>}
                         <p className="text-xs text-muted-foreground truncate">{item.supplier || "—"}</p>
+                        {item.lineItem && (
+                          <p className="text-xs text-foreground/80 truncate" title={item.lineItem}>{item.lineItem}</p>
+                        )}
                       </div>
                       <div className="flex flex-col items-end gap-1 flex-shrink-0">
                         <CosStateBadge state={item.cosState} />

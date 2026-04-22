@@ -420,10 +420,6 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                               <p className="font-medium text-foreground">{item.invoiceNumber || "—"}</p>
                             </div>
                             <div>
-                              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-0.5">PO #</p>
-                              <p className="font-medium text-foreground">{item.poNumber || "—"}</p>
-                            </div>
-                            <div>
                               <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-0.5">Invoice Date</p>
                               <p className="font-medium text-foreground">{item.invoiceDate || "—"}</p>
                             </div>
