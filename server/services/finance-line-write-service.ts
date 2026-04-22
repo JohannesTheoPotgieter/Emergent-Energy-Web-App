@@ -18,7 +18,7 @@
  *                  adminDateOverrideAt
  */
 
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "../db";
 import { normalizedCostLines, normalizedRevenueLines } from "../../shared/schema";
 import {
@@ -58,7 +58,10 @@ export async function createCostLine(
     const existing = await (txOrDb as any)
       .select()
       .from(normalizedCostLines)
-      .where(eq(normalizedCostLines.idempotencyKey, values.idempotencyKey))
+      .where(and(
+        eq(normalizedCostLines.idempotencyKey, values.idempotencyKey),
+        isNull(normalizedCostLines.effectiveTo),
+      ))
       .limit(1);
     if (existing.length > 0) {
       return existing[0];
@@ -98,7 +101,10 @@ export async function updateCostLineFields(
   const [updated] = await (txOrDb as any)
     .update(normalizedCostLines)
     .set(fields)
-    .where(eq(normalizedCostLines.id, id))
+    .where(and(
+      eq(normalizedCostLines.id, id),
+      isNull(normalizedCostLines.effectiveTo),
+    ))
     .returning();
   if (updated) {
     syncCostLineFieldUpdate(id, fields).catch(bridgeCatch);
@@ -165,7 +171,10 @@ export async function updateRevenueLineFields(
   const [updated] = await (txOrDb as any)
     .update(normalizedRevenueLines)
     .set(fields)
-    .where(eq(normalizedRevenueLines.id, id))
+    .where(and(
+      eq(normalizedRevenueLines.id, id),
+      isNull(normalizedRevenueLines.effectiveTo),
+    ))
     .returning();
   if (updated) {
     syncRevenueLineFieldUpdate(id, fields).catch(bridgeCatch);

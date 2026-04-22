@@ -200,7 +200,10 @@ export async function previewCustomerCascade(
           paidDateConfirmed: normalizedRevenueLines.paidDateConfirmed,
         })
         .from(normalizedRevenueLines)
-        .where(inArray(normalizedRevenueLines.id, revIds))
+        .where(and(
+          inArray(normalizedRevenueLines.id, revIds),
+          isNull(normalizedRevenueLines.effectiveTo),
+        ))
     : [];
   const revMap = new Map(revStatus.map((r) => [r.id, r] as const));
 
@@ -300,7 +303,10 @@ export async function previewVendorCascade(
           paidDateConfirmed: normalizedCostLines.paidDateConfirmed,
         })
         .from(normalizedCostLines)
-        .where(inArray(normalizedCostLines.id, costIds))
+        .where(and(
+          inArray(normalizedCostLines.id, costIds),
+          isNull(normalizedCostLines.effectiveTo),
+        ))
     : [];
   const costMap = new Map(costStatus.map((c) => [c.id, c] as const));
 
