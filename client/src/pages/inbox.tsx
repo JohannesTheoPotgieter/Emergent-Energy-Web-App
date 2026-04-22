@@ -24,11 +24,34 @@ interface Notification {
   eventType: string;
   title: string;
   body: string | null;
+  entityType?: string | null;
+  entityId?: number | string | null;
   projectName: string | null;
   linkedTaskId: number | null;
   linkedDeliverableId: number | null;
   isRead: boolean;
   createdAt: string;
+}
+
+function getNotificationEntityPath(notification: Notification): string | null {
+  if (!notification.entityType || notification.entityId === null || notification.entityId === undefined) {
+    return null;
+  }
+  const id = String(notification.entityId);
+  if (!id) return null;
+
+  switch (notification.entityType) {
+    case "approval":
+      return `/approvals/${id}`;
+    case "invoice":
+      return `/finance/invoices/${id}`;
+    case "po":
+      return `/procurement/po/${id}`;
+    case "project":
+      return `/projects/${id}`;
+    default:
+      return null;
+  }
 }
 
 function timeAgo(dateStr: string): string {
@@ -122,6 +145,13 @@ export default function InboxPage() {
     }
   }, [markRead, navigate]);
 
+  const handleEntityLinkClick = useCallback((n: Notification) => {
+    const path = getNotificationEntityPath(n);
+    if (!path) return;
+    if (!n.isRead) markRead(n.id);
+    navigate(path);
+  }, [markRead, navigate]);
+
   return (
     <PageShell data-testid="inbox-page">
       <SectionHeader
@@ -210,6 +240,21 @@ export default function InboxPage() {
                             <>
                               <span>·</span>
                               <span>{n.projectName}</span>
+                            </>
+                          )}
+                          {getNotificationEntityPath(n) && (
+                            <>
+                              <span>·</span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEntityLinkClick(n);
+                                }}
+                                className="text-primary hover:underline"
+                              >
+                                View
+                              </button>
                             </>
                           )}
                         </div>
