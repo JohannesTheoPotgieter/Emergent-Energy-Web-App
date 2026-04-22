@@ -1,0 +1,66 @@
+#3 - Hardening Pass — Foundation
+What & Why
+The user requested a full functional hardening pass (CRUD, roles, permissions, route protection) across the Emergent Energy app. The honest scope of that request is multi-day work across 117 pages, ~80 backend route files, and 17 roles. This task delivers the foundation layer of that audit — the work that must be done before any per-domain CRUD pass or role-by-role runtime simulation can be honestly executed.
+
+The output is a single chat-only deliverable in the format the user specified (Sections 1, 3, 4, 5, 6, 8 — see "Done looks like"). Section 2 (full CRUD verification matrix) and Section 7 (retest results) are explicitly not in scope here because they require runtime per-role testing of every form on every page, which is its own engagement.
+
+Done looks like
+A single chat reply with these sections, every claim grounded in code/log evidence (file path + line range), no inferred or invented behaviour:
+
+Screen + route inventory — Built mechanically from client/src/config/page-registry.ts, client/src/config/app-navigation.ts, client/src/config/navigation-permissions.ts, client/src/config/route-components.ts, and client/src/App.tsx. For every registered page: route, component file, sidebar visibility roles (from navigation-permissions), declared permission gate, the backend endpoints the page actually calls (extracted from useQuery/useMutation/apiRequest call sites), and the DB tables those endpoints touch.
+Role + permission alignment matrix — For all 17 COMPANY_ROLES, a static comparison of (a) sidebar visibility per navigation-permissions.ts, (b) ProtectedRoute / requireExecRole page-level gate, (c) backend requirePermission/requireRole on each endpoint the page calls. Every mismatch is listed with file+line evidence. Examples of mismatches we are looking for:
+Page visible in sidebar to a role whose API calls would 403
+Page hidden in sidebar but route directly accessible (no ProtectedRoute guard)
+Mutation endpoints with requireAuth only (no role check) on screens marketed as exec-only
+Routes registered in register-*-routes.ts files but never linked from the UI (orphan endpoints) or vice-versa
+Broken or misleading functionality to hide now — Concrete, evidence-backed list. For each: file+line, why misleading, recommended hide method (feature flag, nav removal, route guard, backend guard), and whether a backend guard is also needed. Categories we will look for specifically:
+Buttons calling apiRequest on endpoints that don't exist server-side (mismatch between client URL and any registered route)
+Mutations whose response is awaited but never used to refresh/invalidate (stale-state risk — same class as the OPEX/Priorities bugs already fixed this week)
+Nav items pointing to pages that 404 or render only <NotFound/>
+Pages rendering only "Coming soon" / hardcoded mock data
+Form onSubmit handlers with no await or no error toast (silent fail — same class as the cashflow OPEX bug)
+Safe fixes applied — Empty in this task (Build mode required, and we want findings reviewed before any change ships).
+Items not fixed — Every Section 4 item, with risk and recommended next step, since nothing is touched in this pass.
+Final truth check — Plain summary: what we now have evidence for, what we don't, and what the next phases need to cover (per-domain CRUD runtime tests, role simulation walkthroughs, business-rule audits like COS/PO/payment-receipt logic).
+Sections 2 and 7 are explicitly out of scope and will be flagged as "deferred to follow-up tasks" in Section 8.
+
+Out of scope
+Section 2 (full CRUD verification matrix) — requires runtime per-role testing on every screen; covered by follow-up domain tasks.
+Section 7 (retest results) — same reason.
+Any code changes, hides, or fixes (Build mode required and findings need review first).
+Business-rule deep audit of finance logic (COS realisation, invoice/PO red flags, payment-receipt revenue rule) — this needs the Excel source-of-truth review and is a separate engagement.
+Pipedrive ↔ Opportunities sync semantics audit.
+SharePoint document-pointer integrity audit.
+Microsoft 365 token/encryption audit (already partially flagged in production logs — TOKEN_ENCRYPTION_KEY missing; will be noted in Section 4 but not fixed here).
+Steps
+Build the inventory mechanically — Parse page-registry.ts, app-navigation.ts, navigation-permissions.ts, route-components.ts, and App.tsx to produce the canonical screen list. For each page, statically extract every apiRequest/fetch/useQuery/useMutation URL using grep. Cross-reference each URL against backend route registrations (app.<verb>(...) and router.<verb>(...) in server/**).
+Extract permission gates — For each page, read its ProtectedRoute props (or absence). For each backend endpoint, read its middleware chain and capture every requireRole/requirePermission/requireExecRole/requireAuth argument. Build the alignment matrix from this raw data only — no inference.
+Find orphans — Endpoints with no client caller; client URLs with no server route; routes with no requireAuth; mutating routes (POST/PUT/PATCH/DELETE) with no role/permission check.
+Find misleading UI patterns — grep for: toast.*success immediately after an unawaited mutation; mutation onSuccess without invalidateQueries; <NotFound/> or "Coming soon" strings; nav items whose target route is missing from the page registry.
+Cross-check against production deployment logs — pull the latest production logs for ERROR, 5\d\d, 403, and FK-violation patterns; surface the top recurring failures.
+Compose the chat deliverable in the exact section order the user requested, with file+line evidence for every claim and explicit "no evidence" tags where runtime data would be required.
+Relevant files
+client/src/App.tsx
+client/src/config/page-registry.ts
+client/src/config/app-navigation.ts
+client/src/config/navigation-permissions.ts
+client/src/config/route-components.ts
+client/src/config/runtime-access.ts
+client/src/config/role-aware-ux.ts
+client/src/config/admin-surfaces.ts
+client/src/components/ProtectedRoute.tsx
+client/src/components/layout/AppLayout.tsx
+shared/schema/users.ts
+shared/schema/role-based-upgrade.ts
+shared/config/priorities.ts
+server/middleware/requireAuth.ts
+server/middleware/requireRole.ts
+server/permission-middleware.ts
+server/routes/route-registry.ts
+server/routes/register-all-routes.ts
+server/departments/
+server/routes/
+Critical constraints
+This is a read-only audit. No code is changed. All fixes/hides become Section 6 items for a follow-up task.
+Findings must be evidence-grounded (file path + line range, or production log timestamp). Anything inferred is flagged as such.
+No invented coverage. If a section can't be honestly populated from static analysis, it's marked as "deferred to runtime task" — this is what differentiates this pass from the dishonest fake-coverage version.
