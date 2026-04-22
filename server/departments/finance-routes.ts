@@ -1944,7 +1944,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
 
     const months: any[] = [];
     const startMonth = new Date(Date.UTC(2025, 8, 1));
-    let ytdCOS = 0, ytdBudget = 0, ytdRealised = 0, ytdCommitted = 0, ytdPlanned = 0, ytdQbOnly = 0, ytdAppOnlyPending = 0, ytdCosPlanned = 0;
+    let ytdCOS = 0, ytdBudget = 0, ytdRealised = 0, ytdCommitted = 0, ytdPlanned = 0, ytdQbOnly = 0, ytdAppOnlyPending = 0, ytdCosPlanned = 0, ytdCosUnrealised = 0;
 
     for (let i = 0; i < 12; i++) {
       const monthDate = new Date(startMonth);
@@ -1971,6 +1971,11 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       // baseline. totalCOS (= R+C, "recognised") is retained only for the
       // QB-vs-App reconciliation metric below.
       const cosPlanned = realisedCOS + committedCOS + plannedCOS;
+      // cosUnrealised = the part of the baseline that is NOT yet realised
+      // = lines with no invoice (planned bucket) + lines whose invoice date
+      // is still red/unconfirmed (committed bucket). Mirrors finance rule
+      // "all planned without an invoice and invoice date red".
+      const cosUnrealised = plannedCOS + committedCOS;
       const qbOnlyActual = qbCosByMonth.get(monthKey) ?? 0;
       const appOnlyPendingBucket = appOnlyPendingByMonth.get(monthKey);
       const appOnlyPending = appOnlyPendingBucket?.total ?? 0;
@@ -1991,6 +1996,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
 
       ytdCOS += cosPlanned;
       ytdCosPlanned += cosPlanned;
+      ytdCosUnrealised += cosUnrealised;
       ytdRealised += realisedCOS;
       ytdCommitted += committedCOS;
       ytdPlanned += plannedCOS;
@@ -2005,6 +2011,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
         monthLabel: monthDate.toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }),
         totalCOS,
         cosPlanned,
+        cosUnrealised,
         realisedCOS,
         committedCOS,
         plannedCOS,
@@ -2018,6 +2025,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
         qbVsAppVariancePct,
         ytdCOS,
         ytdCosPlanned,
+        ytdCosUnrealised,
         ytdRealised,
         ytdCommitted,
         ytdPlanned,
@@ -2034,6 +2042,16 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
         cosPlannedProjects: (() => {
           const merged = new Map<string, number>();
           for (const bucket of [realisedBucket, committedBucket, plannedBucket]) {
+            for (const [name, val] of bucket?.projects ?? new Map()) {
+              merged.set(name, (merged.get(name) ?? 0) + val);
+            }
+          }
+          return mapToSortedArray(merged);
+        })(),
+        // Per-project breakdown for the "COS Unrealised" row = Planned + Committed.
+        cosUnrealisedProjects: (() => {
+          const merged = new Map<string, number>();
+          for (const bucket of [plannedBucket, committedBucket]) {
             for (const [name, val] of bucket?.projects ?? new Map()) {
               merged.set(name, (merged.get(name) ?? 0) + val);
             }
@@ -2281,6 +2299,7 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
     // state=recognised, which on this route now means "all app states"
     // (every cost line regardless of stage). This is intentionally a
     // superset of realised+committed; QB-only bills are still excluded.
+    // "unrealised" filter = planned + committed (everything not yet realised).
     const stateFilterNorm = stateFilter === "recognised" ? "recognised" : stateFilter;
 
     for (const row of allCostLines) {
@@ -2333,6 +2352,7 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       if (stateFilterNorm === "realised" && cosState !== "realised") continue;
       if (stateFilterNorm === "committed" && cosState !== "committed") continue;
       if (stateFilterNorm === "planned" && cosState !== "planned") continue;
+      if (stateFilterNorm === "unrealised" && !(cosState === "planned" || cosState === "committed")) continue;
       // "recognised" filter = all app-side states (R+C+P) so it matches the
       // "COS Planned" row total. QB-only bills are always excluded for this
       // filter (handled by the includeQbOnly gate further down).
@@ -2417,12 +2437,15 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
     // recognisedTotal = full app-side baseline (R+C+P) to match the
     // "COS Planned" grid row that drills down with state=recognised.
     const recognisedTotal = realisedTotal + committedTotal + plannedTotal;
+    // unrealisedTotal = planned + committed = everything not yet realised.
+    const unrealisedTotal = plannedTotal + committedTotal;
     // expectedTotal = sum of contributions for the active filter — this is what
     // the cell shows, so the drawer header can verify the math out of the box.
     const expectedTotal =
       stateFilterNorm === "realised" ? realisedTotal
       : stateFilterNorm === "committed" ? committedTotal
       : stateFilterNorm === "planned" ? plannedTotal
+      : stateFilterNorm === "unrealised" ? unrealisedTotal
       : stateFilterNorm === "qb_actual" ? qbOnlyTotal
       : stateFilterNorm === "recognised" ? recognisedTotal
       : (realisedTotal + committedTotal + plannedTotal + qbOnlyTotal);
@@ -2439,6 +2462,7 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       committedTotal,
       plannedTotal,
       recognisedTotal,
+      unrealisedTotal,
       qbOnlyTotal,
       expectedTotal,
       appOnlyPendingTotal: plannedTotal,
