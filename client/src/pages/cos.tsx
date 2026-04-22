@@ -704,17 +704,21 @@ export default function CosTracker() {
   //   planned/committed/realised come from the App pipeline (no QB or Budget mixed in)
   //   quickbooks is QB-only; budget is Budget-only; variance/variancePct are derived (App vs Budget).
   const fyTotals = useMemo(() => {
-    const planned = months.reduce((s, m) => s + (m.plannedCOS ?? 0), 0);
+    const plannedOnly = months.reduce((s, m) => s + (m.plannedCOS ?? 0), 0);
     const committed = months.reduce((s, m) => s + (m.committedCOS ?? 0), 0);
     const realised = months.reduce((s, m) => s + (m.realisedCOS ?? 0), 0);
     const quickbooks = months.reduce((s, m) => s + (m.qbOnlyActual ?? 0), 0);
     const budget = months.reduce((s, m) => s + (m.budget ?? 0), 0);
-    const totalApp = planned + committed + realised;
-    const variance = totalApp - budget;
+    // FY Planned = baseline of EVERY cost line scheduled in the FY, regardless
+    // of whether it has since progressed to Committed or Realised. Otherwise
+    // the headline shrinks as POs/invoices land — and Realised can exceed
+    // Planned, which is nonsensical for a baseline.
+    const planned = plannedOnly + committed + realised;
+    const variance = planned - budget;
     const variancePct = budget !== 0 ? (variance / budget) * 100 : 0;
     // Outstanding to budget = what's left of the FY budget after Realised spend.
     const outstanding = budget - realised;
-    return { planned, committed, realised, quickbooks, budget, variance, variancePct, outstanding };
+    return { planned, plannedOnly, committed, realised, quickbooks, budget, variance, variancePct, outstanding };
   }, [months]);
 
   // YTD variance-to-budget % running through the FY (single tracker line shown under the KPI strip).
@@ -838,7 +842,11 @@ export default function CosTracker() {
 
   const ytdRealised = lastMonth?.ytdRealised ?? 0;
   const ytdCommitted = lastMonth?.ytdCommitted ?? 0;
-  const ytdPlanned = lastMonth?.ytdPlanned ?? 0;
+  // YTD Planned is the baseline of every cost line scheduled YTD, regardless
+  // of whether it has progressed to Committed/Realised — same definition as
+  // the FY Planned KPI card. Without this, Realised could exceed "Planned"
+  // and the realisation % could read >100% which is nonsensical for a baseline.
+  const ytdPlanned = (lastMonth?.ytdPlanned ?? 0) + (lastMonth?.ytdCommitted ?? 0) + (lastMonth?.ytdRealised ?? 0);
   const ytdQbCos = lastMonth?.ytdQbOnly ?? 0;
   const realisationRate = ytdPlanned > 0 ? Math.round((ytdRealised / ytdPlanned) * 100) : 0;
 
@@ -1034,7 +1042,7 @@ export default function CosTracker() {
     description?: string;
   }> = {
     budget:      { label: "FY Budget",      source: "Budget",  icon: Wallet,       iconBg: "bg-emerald-50 text-emerald-700 border border-emerald-200", accent: "text-emerald-700", getValue: (m) => m.budget ?? 0 },
-    planned:     { label: "FY Planned",     source: "App",     icon: ListChecks,   iconBg: "bg-emerald-50 text-emerald-700 border border-emerald-200", accent: "text-emerald-700", getValue: (m) => m.plannedCOS ?? 0 },
+    planned:     { label: "FY Planned",     source: "App",     icon: ListChecks,   iconBg: "bg-emerald-50 text-emerald-700 border border-emerald-200", accent: "text-emerald-700", getValue: (m) => (m.plannedCOS ?? 0) + (m.committedCOS ?? 0) + (m.realisedCOS ?? 0), description: "Planned + Committed + Realised" },
     realised:    { label: "FY Realised",    source: "App",     icon: CheckCircle2, iconBg: "bg-foreground/8 text-foreground",                          accent: "text-foreground",  getValue: (m) => m.realisedCOS ?? 0 },
     outstanding: { label: "FY Outstanding", source: "Derived", icon: TrendingUp,   iconBg: "bg-slate-100 text-slate-700",                              accent: "text-slate-800",   getValue: (m) => (m.budget ?? 0) - (m.realisedCOS ?? 0), description: "Budget − Realised" },
   };
