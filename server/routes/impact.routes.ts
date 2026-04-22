@@ -22,7 +22,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth } from "../auth-context";
 import { db } from "../db";
-import { projectInfo } from "@shared/schema/projects";
+import { projectInfo, clients, sites, opportunities } from "@shared/schema/projects";
 import { workItems } from "@shared/schema/tasks";
 import { approvals } from "@shared/schema/collaboration";
 import { controlledDocuments } from "@shared/schema/documents";
@@ -96,6 +96,53 @@ async function getProjectDeleteImpact(projectId: number): Promise<{ subject: str
   return { subject: project.projectName, rows };
 }
 
+/**
+ * Client delete impact. Clients are referenced by projects, sites and
+ * opportunities — deleting a client is usually a mistake (user means to
+ * archive it) so the dialog makes the cascade very visible.
+ */
+async function getClientDeleteImpact(clientId: number): Promise<{ subject: string; rows: ImpactRow[] } | null> {
+  const [client] = await db
+    .select({ id: clients.id, name: clients.name })
+    .from(clients)
+    .where(eq(clients.id, clientId))
+    .limit(1);
+  if (!client) return null;
+
+  const [projectCount, siteCount, opportunityCount] = await Promise.all([
+    countRows(projectInfo, eq(projectInfo.clientId, clientId)),
+    countRows(sites, eq(sites.clientId, clientId)),
+    countRows(opportunities, eq(opportunities.clientId, clientId)),
+  ]);
+
+  const rows: ImpactRow[] = [];
+  if (projectCount > 0) {
+    rows.push({
+      label: "Projects linked to this client",
+      count: projectCount,
+      severity: "high",
+      note: "Projects will be orphaned",
+    });
+  }
+  if (siteCount > 0) {
+    rows.push({
+      label: "Sites",
+      count: siteCount,
+      severity: siteCount > 5 ? "high" : "medium",
+    });
+  }
+  if (opportunityCount > 0) {
+    rows.push({
+      label: "Sales opportunities",
+      count: opportunityCount,
+      severity: "medium",
+      note: "Includes historical closed deals",
+    });
+  }
+
+  return { subject: client.name, rows };
+}
+
 export function registerImpactRoutes(app: Express): void {
   // ------------------------------------------------------------------
   // GET /api/projects/:id/delete-impact
@@ -113,6 +160,27 @@ export function registerImpactRoutes(app: Express): void {
       } catch (err) {
         if (err instanceof ApiError) throw err;
         console.error("[impact] project delete-impact error:", err);
+        throw serverError("Failed to compute delete impact");
+      }
+    },
+  );
+
+  // ------------------------------------------------------------------
+  // GET /api/clients/:id/delete-impact
+  // ------------------------------------------------------------------
+  app.get(
+    "/api/clients/:id/delete-impact",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      const parsed = projectIdParam.safeParse(req.params.id); // same shape: positive int
+      if (!parsed.success) throw badRequest("Invalid client id");
+      try {
+        const impact = await getClientDeleteImpact(parsed.data);
+        if (!impact) throw notFound(`Client ${parsed.data} not found`);
+        res.json(impact);
+      } catch (err) {
+        if (err instanceof ApiError) throw err;
+        console.error("[impact] client delete-impact error:", err);
         throw serverError("Failed to compute delete impact");
       }
     },
