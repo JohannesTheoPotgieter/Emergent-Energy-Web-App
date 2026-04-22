@@ -14,6 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Copy, CheckCircle, Loader2, Trash2, Edit, Eye, Power, History, ChevronDown, ChevronRight, Shield, ListChecks, FileText, AlertTriangle, Users, Wrench } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
+import { QueryLoading, QueryError } from "@/components/ui/query-states";
 import { PageLayout } from "@/components/layout";
 
 interface PhaseTemplateData {
@@ -101,7 +102,7 @@ export default function PhaseTemplatesPage() {
   const [selectedPhaseForEng, setSelectedPhaseForEng] = useState<string | null>(null);
   const [expandedEngId, setExpandedEngId] = useState<number | null>(null);
 
-  const { data: engData } = useQuery({
+  const { data: engData, isLoading: engLoading, isError: engIsError, error: engError, refetch: refetchEngTemplates } = useQuery({
     queryKey: ["eng-stage-templates"],
     queryFn: async () => {
       const res = await authFetch("/api/eng-stages/templates");
@@ -110,6 +111,9 @@ export default function PhaseTemplatesPage() {
     },
   });
   const engTemplates: any[] = engData?.templates || [];
+
+  if (engLoading) return <QueryLoading />;
+  if (engIsError) return <QueryError error={engError} onRetry={() => refetchEngTemplates()} />;
 
   const toggleEngActive = async (id: number, isActive: boolean) => {
     try {
