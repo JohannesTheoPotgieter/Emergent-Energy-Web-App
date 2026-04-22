@@ -800,17 +800,6 @@ function VendorsMappingView({ isConnected }: { isConnected: boolean }) {
     [cpList],
   );
 
-  if (!isConnected) {
-    return (
-      <Card>
-        <CardContent className="p-6 text-sm text-muted-foreground text-center">
-          Connect QuickBooks to manage vendor mappings.
-        </CardContent>
-      </Card>
-    );
-  }
-
-  const unmappedVendors = qbVendors.filter((v) => !mappingByVendor.has(v.Id));
   const mappedCounterpartyIds = useMemo(
     () => new Set(mappings.map((m) => m.counterpartyId)),
     [mappings],
@@ -822,6 +811,18 @@ function VendorsMappingView({ isConnected }: { isConnected: boolean }) {
         .slice(0, 50),
     [cpList, mappedCounterpartyIds],
   );
+
+  if (!isConnected) {
+    return (
+      <Card>
+        <CardContent className="p-6 text-sm text-muted-foreground text-center">
+          Connect QuickBooks to manage vendor mappings.
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const unmappedVendors = qbVendors.filter((v) => !mappingByVendor.has(v.Id));
 
   return (
     <div className="space-y-3">
