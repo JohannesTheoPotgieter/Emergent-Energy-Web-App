@@ -2175,6 +2175,18 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
     const monthStart = `${monthKey}-01`;
     const lastDay = new Date(Number(match[1]), Number(match[2]), 0).getDate();
     const monthEnd = `${monthKey}-${String(lastDay).padStart(2, '0')}`;
+
+    // The drilldown MUST classify lines using the same app-side rules the
+    // aggregate /api/cos-tracker uses, otherwise drawer rows won't sum to the
+    // clicked cell value. Bucketing rules (mirror of aggregate):
+    //   realised  = hasInvoice && invoiceDateConfirmed (with past-month auto-promote)
+    //   committed = !realised && (hasInvoice || hasPo)
+    //   planned   = !realised && !committed (no invoice, no PO)
+    // QB linkage is a separate concern surfaced via matchStatus only — it does
+    // NOT change which bucket the line falls into.
+    const nowAnchor = new Date();
+    const cosCurrentMonthKey = `${nowAnchor.getUTCFullYear()}-${String(nowAnchor.getUTCMonth() + 1).padStart(2, '0')}`;
+
     const [allCostLines, links, rawBills] = await Promise.all([
       db.select().from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
       db.select().from(quickbooksInvoiceLinks).where(and(
@@ -2195,6 +2207,11 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       lineItem: string | null;
       appAmount: number | null;
       qbAmount: number | null;
+      // contributionAmount is the value this row contributes to the bucket
+      // shown in the grid cell. For app states (realised/committed/planned) it
+      // equals appAmount; for qb_actual it equals qbAmount. The drawer sums
+      // contributionAmount so the displayed total always equals the cell.
+      contributionAmount: number;
       invoiceNumber: string | null;
       qbBillNumber: string | null;
       invoiceDate: string | null;
@@ -2224,46 +2241,55 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
     const billById = new Map<string, any>();
     for (const bill of bills) billById.set(String(bill.id), bill);
 
+    // Accept "recognised" alias for realised+committed (the row labelled
+    // "COS Planned" in the grid actually shows totalCOS = realised+committed,
+    // so it drills down with state=recognised).
+    const stateFilterNorm = stateFilter === "recognised" ? "recognised" : stateFilter;
+
     for (const row of allCostLines) {
       const appAmount = row.amountExVat ? Number(row.amountExVat) : 0;
       if (!Number.isFinite(appAmount) || appAmount === 0) continue;
       const projectName = (row.projectName || '').replace(/_Tracker$/i, '') || null;
-      // Skip rows without a project association (OPEX / admin lines) to keep the
-      // drill-down project-scoped and consistent with the aggregate tracker.
       if (!projectName) continue;
-      const hasInvoice = !!(row.invoiceNumber && String(row.invoiceNumber).trim());
-      const invoiceDateConfirmed =
-        !!row.invoiceDate && (row.invoiceDateFontColor === 'black' || row.invoiceDateConfirmed === true);
-      const link = linksByCostLineId.get(row.id);
-      const linkedBill = link ? billById.get(String(link.qbEntityId)) : null;
-      const linkedBillMonth = linkedBill?.txnDate?.slice(0, 7) ?? null;
-      // COS bucketing — invoice_date only (see /api/cos-tracker comment).
+
+      // Month bucket — invoice_date only, identical to the aggregate.
       const appMonth = String(row.invoiceDate || '').slice(0, 7) || null;
-      const inTargetMonth = linkedBillMonth === monthKey || (!linkedBill && appMonth === monthKey);
-      if (!inTargetMonth) continue;
+      if (appMonth !== monthKey) continue;
       if (project && projectName !== project) continue;
 
-      let matchStatus: "matched" | "qb_only" | "app_only" = "app_only";
-      let cosState: "realised" | "committed" | "planned" | "qb_actual" = "planned";
-      let reasonBucket: "matched realised" | "matched committed" | "QB-only actual" | "app-only pending" | "planned" = "planned";
-      if (linkedBill) {
-        matchStatus = "matched";
-        if (hasInvoice && invoiceDateConfirmed) {
-          cosState = "realised";
-          reasonBucket = "matched realised";
-        } else {
-          cosState = "committed";
-          reasonBucket = "matched committed";
-        }
-      } else {
-        if (hasInvoice && !invoiceDateConfirmed) reasonBucket = "app-only pending";
-        else reasonBucket = "planned";
-      }
+      const hasInvoice = !!(row.invoiceNumber && String(row.invoiceNumber).trim());
+      const hasPo = !!(row.poNumber && String(row.poNumber).trim());
+      const isPastMonth = monthKey < cosCurrentMonthKey;
+      const invoiceDateConfirmed =
+        !!row.invoiceDate && (
+          (row as any).invoiceDateFontColor === 'black' ||
+          (row as any).invoiceDateConfirmed === true ||
+          (isPastMonth && hasInvoice)
+        );
 
-      if (stateFilter === "realised" && cosState !== "realised") continue;
-      if (stateFilter === "committed" && cosState !== "committed") continue;
-      if (stateFilter === "planned" && cosState !== "planned") continue;
-      if (stateFilter === "qb_actual" && matchStatus === "app_only") continue;
+      // App-side classification (matches aggregate exactly).
+      let cosState: "realised" | "committed" | "planned";
+      if (hasInvoice && invoiceDateConfirmed) cosState = "realised";
+      else if (hasInvoice || hasPo) cosState = "committed";
+      else cosState = "planned";
+
+      const link = linksByCostLineId.get(row.id);
+      const linkedBill = link ? billById.get(String(link.qbEntityId)) : null;
+      const matchStatus: "matched" | "app_only" = linkedBill ? "matched" : "app_only";
+
+      const reasonBucket: LineItem["reasonBucket"] =
+        cosState === "realised" ? "matched realised"
+        : cosState === "committed" ? "matched committed"
+        : (hasInvoice && !invoiceDateConfirmed) ? "app-only pending"
+        : "planned";
+
+      // App-side filters: only keep rows whose cosState matches.
+      if (stateFilterNorm === "realised" && cosState !== "realised") continue;
+      if (stateFilterNorm === "committed" && cosState !== "committed") continue;
+      if (stateFilterNorm === "planned" && cosState !== "planned") continue;
+      if (stateFilterNorm === "recognised" && !(cosState === "realised" || cosState === "committed")) continue;
+      // qb_actual filter only returns QB-only bills (handled below); skip app rows.
+      if (stateFilterNorm === "qb_actual") continue;
 
       items.push({
         id: `app-${row.id}`,
@@ -2272,12 +2298,13 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
         lineItem: row.description || null,
         appAmount,
         qbAmount: linkedBill?.totalAmount ?? null,
+        contributionAmount: appAmount,
         invoiceNumber: row.invoiceNumber || null,
         qbBillNumber: linkedBill?.docNumber ?? null,
         invoiceDate: row.invoiceDate ? String(row.invoiceDate) : null,
         invoiceDateConfirmed,
         supplier: row.counterpartyName || linkedBill?.vendorName || null,
-        month: linkedBillMonth || appMonth || monthKey,
+        month: appMonth || monthKey,
         poNumber: row.poNumber || null,
         qbTransactionType: linkedBill ? "Bill" : null,
         qbTransactionDate: linkedBill?.txnDate ?? null,
@@ -2290,50 +2317,59 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       });
     }
 
-    for (const bill of bills) {
-      if (linkedBillIds.has(String(bill.id))) continue;
-      const billMonth = bill.txnDate?.slice(0, 7);
-      if (billMonth !== monthKey) continue;
-      items.push({
-        id: `qb-${bill.id}`,
-        projectName: null,
-        category: null,
-        lineItem: null,
-        appAmount: null,
-        qbAmount: bill.totalAmount ?? 0,
-        invoiceNumber: null,
-        qbBillNumber: bill.docNumber,
-        invoiceDate: bill.txnDate,
-        invoiceDateConfirmed: true,
-        supplier: bill.vendorName || null,
-        month: billMonth,
-        poNumber: null,
-        qbTransactionType: "Bill",
-        qbTransactionDate: bill.txnDate,
-        recognitionDate: bill.txnDate,
-        syncSource: "quickbooks",
-        sourceTraceId: `qb-bill:${bill.id}`,
-        matchStatus: "qb_only",
-        cosState: "qb_actual",
-        reasonBucket: "QB-only actual",
-      });
+    // QB-only bills are only relevant when the user clicked the QuickBooks COS
+    // cell (state=qb_actual) or opened the drawer with no filter (state=all).
+    // For app-side filters they would dilute the displayed total.
+    const includeQbOnly = !stateFilterNorm || stateFilterNorm === "all" || stateFilterNorm === "qb_actual";
+    if (includeQbOnly) {
+      for (const bill of bills) {
+        if (linkedBillIds.has(String(bill.id))) continue;
+        const billMonth = bill.txnDate?.slice(0, 7);
+        if (billMonth !== monthKey) continue;
+        const qbAmt = bill.totalAmount ?? 0;
+        items.push({
+          id: `qb-${bill.id}`,
+          projectName: null,
+          category: null,
+          lineItem: null,
+          appAmount: null,
+          qbAmount: qbAmt,
+          contributionAmount: qbAmt,
+          invoiceNumber: null,
+          qbBillNumber: bill.docNumber,
+          invoiceDate: bill.txnDate,
+          invoiceDateConfirmed: true,
+          supplier: bill.vendorName || null,
+          month: billMonth,
+          poNumber: null,
+          qbTransactionType: "Bill",
+          qbTransactionDate: bill.txnDate,
+          recognitionDate: bill.txnDate,
+          syncSource: "quickbooks",
+          sourceTraceId: `qb-bill:${bill.id}`,
+          matchStatus: "qb_only",
+          cosState: "qb_actual",
+          reasonBucket: "QB-only actual",
+        });
+      }
     }
 
-    items.sort((a, b) => (b.qbAmount ?? b.appAmount ?? 0) - (a.qbAmount ?? a.appAmount ?? 0));
+    items.sort((a, b) => (b.contributionAmount ?? 0) - (a.contributionAmount ?? 0));
 
-    const realisedTotal = items
-      .filter(i => i.reasonBucket === "matched realised")
-      .reduce((s, i) => s + (i.qbAmount ?? 0), 0);
-    const committedTotal = items
-      .filter(i => i.reasonBucket === "matched committed")
-      .reduce((s, i) => s + (i.qbAmount ?? 0), 0);
-    const plannedTotal = items
-      .filter(i => i.reasonBucket === "app-only pending")
-      .reduce((s, i) => s + (i.appAmount ?? 0), 0);
-    const qbOnlyTotal = items
-      .filter(i => i.reasonBucket === "QB-only actual")
-      .reduce((s, i) => s + (i.qbAmount ?? 0), 0);
-    const totalActual = items.reduce((s, i) => s + (i.qbAmount ?? 0), 0);
+    const realisedTotal = items.filter(i => i.cosState === "realised").reduce((s, i) => s + (i.appAmount ?? 0), 0);
+    const committedTotal = items.filter(i => i.cosState === "committed").reduce((s, i) => s + (i.appAmount ?? 0), 0);
+    const plannedTotal = items.filter(i => i.cosState === "planned").reduce((s, i) => s + (i.appAmount ?? 0), 0);
+    const qbOnlyTotal = items.filter(i => i.cosState === "qb_actual").reduce((s, i) => s + (i.qbAmount ?? 0), 0);
+    const recognisedTotal = realisedTotal + committedTotal;
+    // expectedTotal = sum of contributions for the active filter — this is what
+    // the cell shows, so the drawer header can verify the math out of the box.
+    const expectedTotal =
+      stateFilterNorm === "realised" ? realisedTotal
+      : stateFilterNorm === "committed" ? committedTotal
+      : stateFilterNorm === "planned" ? plannedTotal
+      : stateFilterNorm === "qb_actual" ? qbOnlyTotal
+      : stateFilterNorm === "recognised" ? recognisedTotal
+      : (realisedTotal + committedTotal + plannedTotal + qbOnlyTotal);
 
     setFinanceTrustHeaders(res, {
       sourceLayer: "canonical",
@@ -2342,15 +2378,17 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
     res.json({
       monthKey,
       lineCount: items.length,
-      totalAmount: totalActual,
+      totalAmount: realisedTotal + committedTotal + qbOnlyTotal,
       realisedTotal,
       committedTotal,
       plannedTotal,
+      recognisedTotal,
       qbOnlyTotal,
+      expectedTotal,
       appOnlyPendingTotal: plannedTotal,
-      realisedCount: items.filter(i => i.reasonBucket === "matched realised").length,
-      committedCount: items.filter(i => i.reasonBucket === "matched committed").length,
-      plannedCount: items.filter(i => i.reasonBucket === "app-only pending").length,
+      realisedCount: items.filter(i => i.cosState === "realised").length,
+      committedCount: items.filter(i => i.cosState === "committed").length,
+      plannedCount: items.filter(i => i.cosState === "planned").length,
       items,
     });
   } catch (error) {

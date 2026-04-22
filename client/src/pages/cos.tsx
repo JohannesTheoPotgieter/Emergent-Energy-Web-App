@@ -99,6 +99,9 @@ interface MonthDetailItem {
   lineItem: string | null;
   appAmount: number | null;
   qbAmount: number | null;
+  // contributionAmount is what this row contributes to the clicked cell.
+  // Server sets this to appAmount for app states, qbAmount for qb_actual.
+  contributionAmount?: number | null;
   invoiceNumber: string | null;
   qbBillNumber: string | null;
   invoiceDate: string | null;
@@ -123,13 +126,19 @@ interface MonthDetail {
   realisedTotal: number;
   committedTotal: number;
   plannedTotal: number;
+  recognisedTotal?: number;
   qbOnlyTotal: number;
   appOnlyPendingTotal: number;
+  // expectedTotal is what the cell on the grid showed when the user clicked.
+  // Drawer sums contributionAmount and asserts it matches this value.
+  expectedTotal?: number;
   realisedCount: number;
   committedCount: number;
   plannedCount: number;
   items: MonthDetailItem[];
 }
+
+type DrawerStateFilter = "all" | "realised" | "committed" | "planned" | "recognised" | "qb_actual";
 
 function formatRand(val: number | null | undefined): string {
   if (val == null) return "R 0";
@@ -235,10 +244,10 @@ function MatchStatusBadge({ status }: { status: "matched" | "qb_only" | "app_onl
   );
 }
 
-function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all", defaultProject = "all" }: { monthKey: string; monthLabel: string; onClose: () => void; defaultFilter?: "all" | "realised" | "committed" | "planned" | "qb_actual"; defaultProject?: string }) {
+function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all", defaultProject = "all" }: { monthKey: string; monthLabel: string; onClose: () => void; defaultFilter?: DrawerStateFilter; defaultProject?: string }) {
   const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
-  const [stateFilter, setStateFilter] = useState<"all" | "realised" | "committed" | "planned" | "qb_actual">(defaultFilter);
+  const [stateFilter, setStateFilter] = useState<DrawerStateFilter>(defaultFilter);
   const [projectFilter, setProjectFilter] = useState<string>(defaultProject);
   const stateParam = stateFilter !== "all" ? `&state=${stateFilter}` : "";
   const projectParam = projectFilter !== "all" ? `&project=${encodeURIComponent(projectFilter)}` : "";
@@ -279,6 +288,13 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
     () => filtered.reduce((sum, item) => sum + (item.qbAmount ?? 0), 0),
     [filtered],
   );
+  // Sum of each row's contribution to the active filter — this is what should
+  // equal the clicked cell value (server sends expectedTotal as the source of
+  // truth for the grid cell).
+  const totalContribution = useMemo(
+    () => filtered.reduce((sum, item) => sum + (item.contributionAmount ?? item.appAmount ?? 0), 0),
+    [filtered],
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex" role="dialog" aria-modal="true" aria-label={`COS detail for ${monthLabel}`}>
@@ -304,17 +320,21 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
           </button>
         </div>
 
-        {/* Summary chips — only show the total that matches what was clicked, so
-            "click R328" → "this drawer adds up to R328", with no cross-source noise. */}
+        {/* Summary chips — show the headline total matching what was clicked.
+            The drawer sums each row's contributionAmount, which equals the
+            grid-cell value (server's expectedTotal). A small "= cell" tag
+            confirms the math; if a search filter trims rows the displayed
+            sum drops accordingly so the user always sees the math holding. */}
         {!isLoading && !isError && data && (() => {
-          const showApp = stateFilter === "all" || stateFilter === "realised" || stateFilter === "committed" || stateFilter === "planned";
-          const showQb = stateFilter === "all" || stateFilter === "qb_actual";
           const headlineLabel =
             stateFilter === "realised" ? "Realised total"
             : stateFilter === "committed" ? "Committed total"
             : stateFilter === "planned" ? "Planned total"
+            : stateFilter === "recognised" ? "Recognised total (Realised + Committed)"
             : stateFilter === "qb_actual" ? "QuickBooks total"
             : null;
+          const expected = data.expectedTotal;
+          const allRowsShown = filtered.length === (data.items?.length ?? 0);
           return (
             <div className="px-4 sm:px-6 py-3 border-b bg-muted/20 flex flex-wrap gap-3 text-xs items-center">
               <div className="flex items-center gap-1.5">
@@ -330,22 +350,27 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                   <div className="flex items-center gap-1.5">
                     <span className="text-muted-foreground">{headlineLabel}:</span>
                     <span className="font-semibold font-mono text-emerald-700" data-testid="text-drawer-headline-total">
-                      {formatRand(stateFilter === "qb_actual" ? totalQbAmount : totalAppAmount)}
+                      {formatRand(totalContribution)}
                     </span>
+                    {expected != null && allRowsShown && (
+                      <span
+                        className="ml-1 px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-medium"
+                        title={`Cell value: ${formatRand(expected)}`}
+                        data-testid="badge-cell-match"
+                      >
+                        = cell
+                      </span>
+                    )}
                   </div>
                 </>
               )}
-              {stateFilter === "all" && showApp && (
+              {stateFilter === "all" && (
                 <>
                   <div className="h-4 w-px bg-border" />
                   <div className="flex items-center gap-1.5">
                     <span className="text-muted-foreground">App total:</span>
                     <span className="font-semibold font-mono">{formatRand(totalAppAmount)}</span>
                   </div>
-                </>
-              )}
-              {stateFilter === "all" && showQb && (
-                <>
                   <div className="h-4 w-px bg-border" />
                   <div className="flex items-center gap-1.5">
                     <span className="text-muted-foreground">QB total:</span>
@@ -380,6 +405,7 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                 <option value="all">All statuses</option>
                 <option value="realised">Realised</option>
                 <option value="committed">Committed</option>
+                <option value="recognised">Recognised (Realised + Committed)</option>
                 <option value="planned">Planned</option>
                 <option value="qb_actual">QB Actual</option>
               </select>
@@ -532,7 +558,7 @@ export default function CosTracker() {
   const qc = useQueryClient();
   const [editing, setEditing] = useState<EditingCell | null>(null);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
-  const [drawerMonth, setDrawerMonth] = useState<{ monthKey: string; monthLabel: string; defaultFilter?: "all" | "realised" | "committed" | "planned" | "qb_actual"; defaultProject?: string } | null>(null);
+  const [drawerMonth, setDrawerMonth] = useState<{ monthKey: string; monthLabel: string; defaultFilter?: DrawerStateFilter; defaultProject?: string } | null>(null);
 
   const [activeTab, setActiveTab] = useState<"recon" | "trend" | "gap">("recon");
   const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
@@ -923,7 +949,7 @@ export default function CosTracker() {
                           onClick={isClickable ? () => setDrawerMonth({
                             monthKey: m.monthKey,
                             monthLabel: m.monthLabel,
-                            defaultFilter: row.key === "realisedCOS" ? "realised" : row.key === "committedCOS" ? "committed" : row.key === "totalCOS" ? "planned" : row.key === "qbOnlyActual" ? "qb_actual" : "all",
+                            defaultFilter: row.key === "realisedCOS" ? "realised" : row.key === "committedCOS" ? "committed" : row.key === "totalCOS" ? "recognised" : row.key === "qbOnlyActual" ? "qb_actual" : "all",
                           }) : undefined}
                           data-testid={`cell-${row.key}-${m.monthKey}`}
                         >
@@ -952,7 +978,7 @@ export default function CosTracker() {
                         const projArr = row.projectsKey ? (m as any)[row.projectsKey] as ProjectBreakdown[] : [];
                         const proj = projArr?.find((p: ProjectBreakdown) => p.projectName === pName);
                         const val = proj?.value ?? 0;
-                        const drillFilter = row.key === "realisedCOS" ? "realised" as const : row.key === "committedCOS" ? "committed" as const : row.key === "totalCOS" ? "planned" as const : row.key === "qbOnlyActual" ? "qb_actual" as const : "all" as const;
+                        const drillFilter = row.key === "realisedCOS" ? "realised" as const : row.key === "committedCOS" ? "committed" as const : row.key === "totalCOS" ? "recognised" as const : row.key === "qbOnlyActual" ? "qb_actual" as const : "all" as const;
                         return (
                           <td
                             key={m.monthKey}
