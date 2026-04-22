@@ -290,4 +290,116 @@ Documented in `docs/overhaul/05-department-audit.md`. Seven departments walked (
 
 **Commits**: `0f0363e0` · `da62f1fd` · `eb08f6ad` · `f696bc68`.
 
-(Section C — deferred — continues in the next piece.)
+---
+
+## C. Deferred / not done
+
+Each item has an explicit reason + next step.
+
+### C1. `AppLayout → AppShell` chrome swap (R1 Phase 2)
+
+**What**: the existing `AppShell` + `LensNav` primitives aren't wired at the router level. `AppLayout.tsx` (3-stripe header) is still the active chrome.
+
+**Why deferred**: high-risk refactor. AppLayout contains five stripes of chrome — mobile menu, logo, search, MS shortcuts, lens switcher, user menu, section nav, breadcrumbs, sub-nav pills, quick actions bar, simulation banner. Replacing it needs careful visual regression testing against every page and a per-role walk-through. I won't do it without a focused session where the result can be clicked through in dev.
+
+**Next step**: build a concrete visual target (one reference page) on the new AppShell, agree the aesthetic, then port. ~3-4 hour session.
+
+### C2. Real MS Graph integration (D3.5 real path + email Graph webhook)
+
+**What**: the SharePoint file move, Excel cell read, and inbound email subscription all have their mock-mode paths working end-to-end in dev. Real-mode throws an informative error.
+
+**Why deferred**: requires tenant credentials (`REPLIT_CONNECTORS_HOSTNAME` + MS Graph app registration). The consumer code for `/me/messages` delta subscription plugs into `server/ms-sync-service.ts` + calls `autoLinkInboundEmail` — straightforward 60-90 min once creds are there.
+
+**Next step**: configure tokens, then wire three functions in `sharepoint-doc-control-service.ts` (driveItems list + move + folder-create), one function in `excel-extraction-service.ts` (workbook range read), and a delta-subscription consumer calling `autoLinkInboundEmail`.
+
+### C3. Journal drift on pre-baseline migrations
+
+**What**: `migrations/_journal.json` ends at idx 8 (`0008_qb_recon_tables`). Migrations 0009 through 0015 exist on disk but aren't in the journal.
+
+**Why**: drift existed before this session — migrations 0009-0011 were there when I started. I added 0012-0015 following the same filesystem-first convention used by the team.
+
+**Next step**: when the team does a drizzle-kit regenerate cycle, the journal gets rebuilt. Or hand-patch the journal to include the entries the DB has already applied. Not blocking.
+
+### C4. Work-items delete button not yet wired to DeleteWorkItemDialog
+
+**What**: the `DeleteWorkItemDialog` + `/api/work-items/:id/delete-impact` endpoint exist (R4.6), but I didn't wire them into a specific work-item delete button on `engineering-tasks.tsx` or similar.
+
+**Why deferred**: touching those large task-board pages requires careful inspection of existing delete flows. The primitive + endpoint are ready; the wiring is a one-liner once the target page is picked.
+
+**Next step**: add the dialog to `engineering-tasks.tsx` (or wherever task delete currently lives) with the same 3-line consumer pattern used for projects/clients.
+
+### C5. Handover-control board verification
+
+**What**: audit flagged "verify that `/handover-control` rows link to `/handover/:id/live`" — not actually inspected.
+
+**Next step**: 10-minute read of `client/src/pages/handover-control.tsx` and add the link if missing.
+
+### C6. `/pm/approvals` D3 inclusion verification
+
+**What**: audit flagged "verify `/pm/approvals` includes D3 controlled-document approvals (likely already does)".
+
+**Next step**: read `pm-approvals.tsx` and confirm its query includes `approvalType='controlled_document'` rows.
+
+### C7. `DeleteClientDialog` not wired on `/clients`
+
+**What**: `/clients` has no delete button today (only inline rename), so the R4.3 dialog isn't wired. Dialog is ready to drop in when/if a client-delete button is added.
+
+---
+
+## D. How to test in dev
+
+### Migrations
+
+```bash
+npm run db:migrate
+```
+
+Applies 0012 (controlled documents) · 0013 (client email domains) · 0014 (handover meeting capture) · 0015 (email/Teams project links).
+
+### Boot
+
+```bash
+npm run dev
+```
+
+Vite + Express on port 5000.
+
+### Mock-connector mode
+
+If you don't have MS Graph creds:
+```
+USE_MOCK_CONNECTORS=true npm run dev
+```
+
+Everything that touches Graph (SharePoint drafts, Excel extraction, email auto-linker) returns fixture data.
+
+### Click-through checklist
+
+1. **CEO home** (`/ceo` — log in as CEO_ADMIN): pre-execution pipeline columns, upcoming handovers, portfolio stage tiles. Click a deal card → project detail. Click Live room → handover live. Click a stage count → Gates pipeline filtered.
+2. **COO home** (`/coo` — log in as COO_ADMIN): approval queue, priorities, red/blocked/amber project lists, drill tiles, financial pulse column. Click any red project → project detail.
+3. **Settings** (`/settings` — super user only): 14 cards across 5 groups. Click "Document types & approvers" → `/admin/document-types` — add a new type, edit an existing one, deactivate one.
+4. **QuickBooks** (`/quickbooks`): status card, primary actions, jump-to cards, recent syncs.
+5. **⌘K palette**: open anywhere, type a project / client / invoice / filename — federated results group by entity.
+6. **Keyboard nav**: `g h` home, `g p` projects, `g s` settings, `?` help.
+7. **Project detail** (`/project/:name` → PD section):
+   - "Controlled docs" subtab — set the SharePoint root (super user), submit a doc (mock-mode returns 3 fixture drafts), approve it as the configured approver (Costing auto-extracts fixture headline numbers).
+   - "Communications" subtab — empty until a message is linked.
+8. **Mock email ingest** (dev only):
+   ```
+   POST /api/dev/email-links/mock-ingest
+   { "emails": [{ "graphMessageId": "m1", "senderEmail": "info@clientabc.com",
+                  "subject": "Project [PRJ-42] update", "graphConversationId": "c1" }] }
+   ```
+   Watch rows land in `email_project_links` and the project's Communications tab.
+9. **Live handover** (`/handover/:projectId/live`): tick attendees, walk the 6 steps, capture per-section notes, record decision. Attendees + notes persist on `stage_acceptances`.
+10. **Cascade-delete preview**: hit `GET /api/projects/:id/delete-impact` (or clients/invoices/purchase-orders/work-items/documents) to see the blast-radius response that feeds `ConfirmDestructive`.
+
+### Verify compile
+
+```bash
+npm run check   # server + client TS — should be green
+```
+
+---
+
+*End of review. See also `docs/overhaul/04-overnight-progress.md` for chronological progress index + `docs/overhaul/05-department-audit.md` for the department-by-department audit findings.*
