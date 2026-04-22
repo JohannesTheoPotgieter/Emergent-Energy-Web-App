@@ -1,15 +1,20 @@
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   approvals,
   auditEvents,
   clients,
   deliverables,
+  derivedProjectKpis,
   projectEditableFields,
+  projectExecutionState,
+  projectInfo,
   projectPhaseHistory,
   users,
   workItemAssignments,
   workItems,
 } from "@shared/schema";
+import { computeEffectiveRag } from "@shared/utils/effective-rag";
+import { computeScheduleRag } from "@shared/kpi-definitions";
 import {
   createDepartmentWorkspaceContracts,
   normalizeLifecycleStage,
@@ -483,4 +488,278 @@ export async function getPlatformProjectSummaryMap(params?: {
 export async function getPlatformProjectSummary(projectId: number): Promise<PlatformProjectSummaryContract | null> {
   const summaryMap = await getPlatformProjectSummaryMap({ projectIds: [projectId] });
   return summaryMap.get(projectId) || null;
+}
+
+// ===================================================================
+// Project list summaries (foundation read for "linked projects" lists)
+// ===================================================================
+// Used by the Priority detail page Projects tab, the Strategic Chain
+// detail tab, and the Opportunity drawer's projects list. Returns the
+// canonical per-project view-row shape with three layers of fallback so
+// readers never have to repeat the cache→live derivation themselves:
+//
+//   ragStatus           — projectExecutionState.ragStatus
+//                       → derived from work_items overdue (Schedule RAG)
+//                       → null
+//                       (then computeEffectiveRag for DLP override)
+//   percentComplete     — derivedProjectKpis.avgActualPctComplete
+//                       → AVG(work_items.percent_complete) live
+//                       → null
+//   totalRevenue/COS    — derivedProjectKpis cache row
+//                       → SUM(normalized_cost_lines …) live
+//                       → 0
+//
+// Each row carries provenance fields (`ragSource`, `percentCompleteSource`,
+// `kpiSource`) so the UI can show data-quality badges and the API
+// surface stays explicit about cache misses instead of silently returning
+// zeros for projects with real data.
+
+export type RagSource = "manual" | "derived" | "missing";
+export type PercentCompleteSource = "cache" | "live" | "missing";
+export type FinanceKpiSource = "cache" | "live" | "missing";
+
+export interface ProjectListSummary {
+  id: number;
+  name: string;
+  phase: string | null;
+  ragStatus: "green" | "amber" | "red" | null;
+  ragSource: RagSource;
+  ragReason: string | null;
+  percentComplete: number | null;
+  percentCompleteSource: PercentCompleteSource;
+  pmUserId: number | null;
+  pmName: string | null;
+  inDlp: boolean;
+  totalRevenue: number;
+  totalCos: number;
+  grossProfit: number;
+  grossMarginPct: number;
+  revenueRealised: number;
+  cosRealised: number;
+  kpiSource: FinanceKpiSource;
+}
+
+export async function getProjectListSummaries(
+  args: { projectIds: number[] },
+): Promise<Map<number, ProjectListSummary>> {
+  const out = new Map<number, ProjectListSummary>();
+  const ids = Array.from(new Set((args.projectIds || []).filter((n) => Number.isFinite(n) && n > 0)));
+  if (ids.length === 0) return out;
+
+  // 1. Foundation read — project_info + execution state + cached KPIs in one round-trip.
+  const baseRows = await db
+    .select({
+      id: projectInfo.id,
+      name: projectInfo.projectName,
+      pmUserId: projectInfo.pmUserId,
+      pmName: projectInfo.pm,
+      inDlp: projectInfo.inDlp,
+      phase: projectExecutionState.phase,
+      ragStatus: projectExecutionState.ragStatus,
+      percentComplete: derivedProjectKpis.avgActualPctComplete,
+      totalRevenue: derivedProjectKpis.totalPlannedRevenue,
+      totalCos: derivedProjectKpis.totalPlannedExpenses,
+      grossProfit: derivedProjectKpis.grossProfit,
+      grossMarginPct: derivedProjectKpis.grossMarginPct,
+      revenueRealised: derivedProjectKpis.revenueRealised,
+      cosRealised: derivedProjectKpis.cosRealised,
+    })
+    .from(projectInfo)
+    .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
+    .leftJoin(derivedProjectKpis, eq(derivedProjectKpis.projectId, projectInfo.id))
+    .where(inArray(projectInfo.id, ids));
+
+  // 2. Live work_items aggregation — used as fallback for both % Complete
+  //    and the schedule-derived RAG when the cache row is missing.
+  const liveTaskByProject = new Map<number, { avgPct: number | null; overdueCount: number; totalCount: number }>();
+  try {
+    const liveTaskRows: any = await db.execute(sql`
+      SELECT
+        project_id,
+        AVG(NULLIF(percent_complete, NULL)) AS avg_pct,
+        COUNT(*) FILTER (
+          WHERE end_date IS NOT NULL
+            AND end_date < CURRENT_DATE
+            AND COALESCE(LOWER(status), '') NOT IN ('complete','completed','done','closed','cancelled','canceled')
+        ) AS overdue_count,
+        COUNT(*) AS total_count
+      FROM work_items
+      WHERE project_id = ANY(${`{${ids.join(",")}}`}::int[])
+        AND deleted_at IS NULL
+      GROUP BY project_id
+    `);
+    const rows = liveTaskRows.rows || liveTaskRows;
+    for (const r of rows) {
+      liveTaskByProject.set(Number(r.project_id), {
+        avgPct: r.avg_pct == null ? null : Number(r.avg_pct),
+        overdueCount: Number(r.overdue_count || 0),
+        totalCount: Number(r.total_count || 0),
+      });
+    }
+  } catch (err: any) {
+    // Defensive — if the live aggregation fails we still serve the cache values
+    // rather than 500'ing the whole list.
+    console.warn("[project-list-summaries] live task aggregation failed:", err?.message);
+  }
+
+  // 3. Live finance aggregation from normalized_cost_lines.
+  const liveFinanceByProject = new Map<number, { plannedRevenue: number; realisedRevenue: number; plannedCost: number; realisedCost: number }>();
+  try {
+    const liveFinRows: any = await db.execute(sql`
+      SELECT
+        project_id,
+        COALESCE(SUM(NULLIF(revenue_recognition_amount, '')::numeric), 0)::float8 AS planned_revenue,
+        COALESCE(SUM(CASE WHEN cos_realised THEN NULLIF(revenue_recognition_amount, '')::numeric ELSE 0 END), 0)::float8 AS realised_revenue,
+        COALESCE(SUM(NULLIF(amount_ex_vat, '')::numeric), 0)::float8 AS planned_cost,
+        COALESCE(SUM(CASE WHEN cos_realised THEN NULLIF(amount_ex_vat, '')::numeric ELSE 0 END), 0)::float8 AS realised_cost
+      FROM normalized_cost_lines
+      WHERE project_id = ANY(${`{${ids.join(",")}}`}::int[])
+        AND (effective_to IS NULL OR effective_to > NOW())
+        AND deleted_at IS NULL
+      GROUP BY project_id
+    `);
+    const rows = liveFinRows.rows || liveFinRows;
+    for (const r of rows) {
+      liveFinanceByProject.set(Number(r.project_id), {
+        plannedRevenue: Number(r.planned_revenue || 0),
+        realisedRevenue: Number(r.realised_revenue || 0),
+        plannedCost: Number(r.planned_cost || 0),
+        realisedCost: Number(r.realised_cost || 0),
+      });
+    }
+  } catch (err: any) {
+    console.warn("[project-list-summaries] live finance aggregation failed:", err?.message);
+  }
+
+  for (const row of baseRows) {
+    const summary = composeProjectListSummaryRow({
+      base: {
+        id: row.id,
+        name: row.name,
+        phase: row.phase ?? null,
+        pmUserId: row.pmUserId ?? null,
+        pmName: row.pmName ?? null,
+        inDlp: !!row.inDlp,
+        ragStatus: row.ragStatus ? String(row.ragStatus) : null,
+        cachedPercentComplete: row.percentComplete == null ? null : Number(row.percentComplete),
+        cachedFinance: {
+          totalRevenue: Number(row.totalRevenue || 0),
+          totalCos: Number(row.totalCos || 0),
+          grossProfit: Number(row.grossProfit || 0),
+          grossMarginPct: Number(row.grossMarginPct || 0),
+          revenueRealised: Number(row.revenueRealised || 0),
+          cosRealised: Number(row.cosRealised || 0),
+        },
+      },
+      liveTask: liveTaskByProject.get(row.id) || null,
+      liveFinance: liveFinanceByProject.get(row.id) || null,
+    });
+    out.set(row.id, summary);
+  }
+
+  return out;
+}
+
+// Pure composer — extracted for unit-testability. Given a project's
+// foundation row plus optional live aggregations, returns the canonical
+// view-row with provenance. Has no I/O, no side-effects.
+export interface ComposeProjectListSummaryInput {
+  base: {
+    id: number;
+    name: string;
+    phase: string | null;
+    pmUserId: number | null;
+    pmName: string | null;
+    inDlp: boolean;
+    ragStatus: string | null;
+    cachedPercentComplete: number | null;
+    cachedFinance: {
+      totalRevenue: number;
+      totalCos: number;
+      grossProfit: number;
+      grossMarginPct: number;
+      revenueRealised: number;
+      cosRealised: number;
+    };
+  };
+  liveTask: { avgPct: number | null; overdueCount: number; totalCount: number } | null;
+  liveFinance: { plannedRevenue: number; realisedRevenue: number; plannedCost: number; realisedCost: number } | null;
+}
+
+export function composeProjectListSummaryRow(input: ComposeProjectListSummaryInput): ProjectListSummary {
+  const { base, liveTask, liveFinance } = input;
+
+  // ── % Complete fallback: cache → live AVG(work_items) → null
+  let percentComplete: number | null;
+  let percentCompleteSource: PercentCompleteSource;
+  if (base.cachedPercentComplete != null && Number.isFinite(base.cachedPercentComplete)) {
+    percentComplete = Math.round(base.cachedPercentComplete);
+    percentCompleteSource = "cache";
+  } else if (liveTask && liveTask.avgPct != null && Number.isFinite(liveTask.avgPct)) {
+    percentComplete = Math.round(liveTask.avgPct);
+    percentCompleteSource = "live";
+  } else {
+    percentComplete = null;
+    percentCompleteSource = "missing";
+  }
+
+  // ── RAG fallback: stored → derived (overdue→schedule RAG) → null,
+  //    then DLP override applied via computeEffectiveRag.
+  let ragForEffective: string | null = base.ragStatus;
+  let ragSource: RagSource = base.ragStatus ? "manual" : "missing";
+  if (!base.ragStatus && liveTask && liveTask.totalCount > 0) {
+    ragForEffective = computeScheduleRag(liveTask.overdueCount);
+    ragSource = "derived";
+  }
+  const effective = computeEffectiveRag({ ragStatus: ragForEffective, inDlp: base.inDlp });
+
+  // ── Finance fallback: cache row with any non-zero figure → cache,
+  //    else live normalized_cost_lines, else zero (kpiSource="missing").
+  const c = base.cachedFinance;
+  const cacheHasData = c.totalRevenue > 0 || c.totalCos > 0 || c.revenueRealised > 0 || c.cosRealised > 0;
+  let totalRevenue = 0;
+  let totalCos = 0;
+  let revenueRealised = 0;
+  let cosRealised = 0;
+  let grossProfit = 0;
+  let grossMarginPct = 0;
+  let kpiSource: FinanceKpiSource = "missing";
+  if (cacheHasData) {
+    totalRevenue = c.totalRevenue;
+    totalCos = c.totalCos;
+    revenueRealised = c.revenueRealised;
+    cosRealised = c.cosRealised;
+    grossProfit = c.grossProfit;
+    grossMarginPct = c.grossMarginPct;
+    kpiSource = "cache";
+  } else if (liveFinance) {
+    totalRevenue = liveFinance.plannedRevenue;
+    totalCos = liveFinance.plannedCost;
+    revenueRealised = liveFinance.realisedRevenue;
+    cosRealised = liveFinance.realisedCost;
+    grossProfit = totalRevenue - totalCos;
+    grossMarginPct = totalRevenue > 0 ? (totalRevenue - totalCos) / totalRevenue : 0;
+    kpiSource = "live";
+  }
+
+  return {
+    id: base.id,
+    name: base.name,
+    phase: base.phase,
+    ragStatus: effective.value,
+    ragSource,
+    ragReason: effective.reason,
+    percentComplete,
+    percentCompleteSource,
+    pmUserId: base.pmUserId,
+    pmName: base.pmName,
+    inDlp: base.inDlp,
+    totalRevenue,
+    totalCos,
+    grossProfit,
+    grossMarginPct,
+    revenueRealised,
+    cosRealised,
+    kpiSource,
+  };
 }

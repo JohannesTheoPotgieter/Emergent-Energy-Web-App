@@ -29,6 +29,7 @@ import { recordActivity, computeUpdateActivities } from "./priority-activity-log
 import { computePriorityProgress } from "../lib/priorities/progress-source";
 import { attachProjectScope, getProjectScope } from "../middleware/project-scope-middleware";
 import { isProjectAccessible } from "../services/project-access-service";
+import { getProjectListSummaries } from "../services/project-platform-summary-service";
 import { priorityActivity } from "@shared/schema";
 
 const router = Router();
@@ -593,123 +594,63 @@ router.get("/api/priorities/:id", requireAuth, asyncHandler(async (req: Request,
 
     const { descendantPriorityIds, directProjectIds, rolledUpProjectIds } = await resolveRolledUpScope(priorityId);
 
-    // Fetch project detail for every project in the rolled-up set (direct + via
-    // descendants). Each row includes the priority it was linked through and
-    // the linkedAt timestamp closest to the root — useful when surfacing
-    // "linked via sub-priority X" in the UI.
-    const linkedProjectRows = rolledUpProjectIds.length === 0 ? [] : await db
+    // Fetch project detail for every project in the rolled-up set (direct +
+    // via descendants). The link-level rows give us the linkedAt timestamp
+    // and which priority each project was linked through; the foundation
+    // helper (`getProjectListSummaries`) gives us the canonical view-row
+    // shape with three layers of fallback (RAG: stored→derived,
+    // % Complete: cache→live, Finance: cache→live) so this route doesn't
+    // have to repeat that logic — see project-platform-summary-service.ts.
+    const linkedRows = rolledUpProjectIds.length === 0 ? [] : await db
       .select({
-        id: projectInfo.id,
-        name: projectInfo.projectName,
-        phase: projectExecutionState.phase,
-        ragStatus: projectExecutionState.ragStatus,
-        pmUserId: projectInfo.pmUserId,
-        pmName: projectInfo.pm,
+        projectId: priorityProjects.projectId,
         linkedAt: priorityProjects.linkedAt,
         linkedViaPriorityId: priorityProjects.priorityId,
-        percentComplete: derivedProjectKpis.avgActualPctComplete,
-        totalRevenue: derivedProjectKpis.totalPlannedRevenue,
-        totalCos: derivedProjectKpis.totalPlannedExpenses,
-        grossProfit: derivedProjectKpis.grossProfit,
-        grossMarginPct: derivedProjectKpis.grossMarginPct,
-        revenueRealised: derivedProjectKpis.revenueRealised,
-        cosRealised: derivedProjectKpis.cosRealised,
       })
       .from(priorityProjects)
-      .innerJoin(projectInfo, eq(priorityProjects.projectId, projectInfo.id))
-      .leftJoin(projectExecutionState, eq(projectInfo.id, projectExecutionState.projectId))
-      .leftJoin(derivedProjectKpis, eq(projectInfo.id, derivedProjectKpis.projectId))
       .where(inArray(priorityProjects.projectId, rolledUpProjectIds));
 
     // Dedupe by project id — a project linked at both parent and child level
     // should appear once. Prefer the row linked directly to this priority
     // when both exist (so the UI shows "direct" not "via sub-priority").
-    const byProjectId = new Map<number, typeof linkedProjectRows[number]>();
-    for (const row of linkedProjectRows) {
-      const existing = byProjectId.get(row.id);
-      if (!existing) byProjectId.set(row.id, row);
-      else if (row.linkedViaPriorityId === priorityId) byProjectId.set(row.id, row);
+    const linkRowByProjectId = new Map<number, typeof linkedRows[number]>();
+    for (const row of linkedRows) {
+      const existing = linkRowByProjectId.get(row.projectId);
+      if (!existing) linkRowByProjectId.set(row.projectId, row);
+      else if (row.linkedViaPriorityId === priorityId) linkRowByProjectId.set(row.projectId, row);
     }
-    const dedupedProjects = Array.from(byProjectId.values());
 
-    // Live-compute fallback: derivedProjectKpis is a materialized cache that
-    // can be empty (or stale) for newly-imported projects. When it's missing
-    // we read straight from normalized_cost_lines so the priority detail page
-    // never shows R0 for a project that actually has data. Revenue uses POC
-    // (revenue_recognition_amount) — the canonical method — and realised lines
-    // use the cos_realised flag set by the smart-import normalizer.
-    const projectIdsForKpi = dedupedProjects.map(p => p.id);
-    const liveKpiByProject = new Map<number, { plannedRevenue: number; realisedRevenue: number; plannedCost: number; realisedCost: number }>();
-    if (projectIdsForKpi.length > 0) {
-      const liveRows: any = await db.execute(sql`
-        SELECT
-          project_id,
-          COALESCE(SUM(NULLIF(revenue_recognition_amount, '')::numeric), 0)::float8 AS planned_revenue,
-          COALESCE(SUM(CASE WHEN cos_realised THEN NULLIF(revenue_recognition_amount, '')::numeric ELSE 0 END), 0)::float8 AS realised_revenue,
-          COALESCE(SUM(NULLIF(amount_ex_vat, '')::numeric), 0)::float8 AS planned_cost,
-          COALESCE(SUM(CASE WHEN cos_realised THEN NULLIF(amount_ex_vat, '')::numeric ELSE 0 END), 0)::float8 AS realised_cost
-        FROM normalized_cost_lines
-        WHERE project_id IN ${projectIdsForKpi}
-          AND (effective_to IS NULL OR effective_to > NOW())
-          AND deleted_at IS NULL
-        GROUP BY project_id
-      `).then((r: any) => r.rows || r).catch(() => []);
-      for (const r of liveRows) {
-        liveKpiByProject.set(Number(r.project_id), {
-          plannedRevenue: Number(r.planned_revenue || 0),
-          realisedRevenue: Number(r.realised_revenue || 0),
-          plannedCost: Number(r.planned_cost || 0),
-          realisedCost: Number(r.realised_cost || 0),
-        });
-      }
-    }
+    const dedupedProjectIds = Array.from(linkRowByProjectId.keys());
+    const summaryByProjectId = await getProjectListSummaries({ projectIds: dedupedProjectIds });
 
     const directSet = new Set(directProjectIds);
-    const projectsWithPm = await Promise.all(dedupedProjects.map(async (p) => {
-      const pm = p.pmUserId ? await getUserById(p.pmUserId) : null;
-      const cached = {
-        totalRevenue: Number(p.totalRevenue || 0),
-        totalCos: Number(p.totalCos || 0),
-        grossProfit: Number(p.grossProfit || 0),
-        grossMarginPct: Number(p.grossMarginPct || 0),
-        revenueRealised: Number(p.revenueRealised || 0),
-        cosRealised: Number(p.cosRealised || 0),
-      };
-      const live = liveKpiByProject.get(p.id);
-      // Prefer the materialized cache when it has any non-zero figure.
-      // When the cache row is missing (or fully zeroed) fall back to the
-      // live aggregation so we don't show R0 for projects with real data.
-      const cacheHasData = cached.totalRevenue > 0 || cached.totalCos > 0 || cached.revenueRealised > 0 || cached.cosRealised > 0;
-      const totalRevenue = cacheHasData ? cached.totalRevenue : (live?.plannedRevenue ?? 0);
-      const totalCos = cacheHasData ? cached.totalCos : (live?.plannedCost ?? 0);
-      const revenueRealised = cacheHasData ? cached.revenueRealised : (live?.realisedRevenue ?? 0);
-      const cosRealised = cacheHasData ? cached.cosRealised : (live?.realisedCost ?? 0);
-      // GP / GM% must use the same basis as the cache contract:
-      //   - grossProfit = totalRevenue - totalCos  (planned-vs-planned)
-      //   - grossMarginPct is a RATIO (0–1) — UI multiplies by 100 itself
-      const grossProfit = cacheHasData ? cached.grossProfit : (totalRevenue - totalCos);
-      const grossMarginPct = cacheHasData
-        ? cached.grossMarginPct
-        : (totalRevenue > 0 ? (totalRevenue - totalCos) / totalRevenue : 0);
+    const projectsWithPm = await Promise.all(dedupedProjectIds.map(async (pid) => {
+      const link = linkRowByProjectId.get(pid)!;
+      const summary = summaryByProjectId.get(pid);
+      if (!summary) return null;
+      const pm = summary.pmUserId ? await getUserById(summary.pmUserId) : null;
       return {
-        id: p.id,
-        name: p.name,
-        phase: p.phase,
-        ragStatus: p.ragStatus,
-        pm: pm || (p.pmName ? { id: 0, name: p.pmName } : null),
-        percentComplete: Math.round(Number(p.percentComplete || 0)),
-        linkedAt: p.linkedAt,
-        linkedDirectly: directSet.has(p.id),
-        linkedViaPriorityId: p.linkedViaPriorityId,
-        totalRevenue,
-        totalCos,
-        grossProfit,
-        grossMarginPct,
-        revenueRealised,
-        cosRealised,
-        kpiSource: cacheHasData ? "cache" : (live ? "live" : "missing"),
+        id: summary.id,
+        name: summary.name,
+        phase: summary.phase,
+        ragStatus: summary.ragStatus,
+        ragSource: summary.ragSource,
+        ragReason: summary.ragReason,
+        pm: pm || (summary.pmName ? { id: 0, name: summary.pmName } : null),
+        percentComplete: summary.percentComplete ?? 0,
+        percentCompleteSource: summary.percentCompleteSource,
+        linkedAt: link.linkedAt,
+        linkedDirectly: directSet.has(pid),
+        linkedViaPriorityId: link.linkedViaPriorityId,
+        totalRevenue: summary.totalRevenue,
+        totalCos: summary.totalCos,
+        grossProfit: summary.grossProfit,
+        grossMarginPct: summary.grossMarginPct,
+        revenueRealised: summary.revenueRealised,
+        cosRealised: summary.cosRealised,
+        kpiSource: summary.kpiSource,
       };
-    }));
+    })).then(rows => rows.filter((r): r is NonNullable<typeof r> => r !== null));
 
     // Aggregate rolled-up metrics from the deduped project set.
     const rolledUpTotalRevenue = projectsWithPm.reduce((s, p) => s + p.totalRevenue, 0);
