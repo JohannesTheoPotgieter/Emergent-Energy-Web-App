@@ -25,6 +25,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { POGenerator } from "@/components/POGenerator";
 import UserPicker from "@/components/UserPicker";
 import CaptureDeliverable from "@/components/CaptureDeliverable";
+import { OwnerName } from "@/components/OwnerName";
 import {
   Loader2,
   Plus,
@@ -733,7 +734,13 @@ function ExpandedProcurementDetail({
         </div>
         <div>
           <span className="text-[10px] font-medium text-muted-foreground uppercase block">Owner</span>
-          <p className="text-foreground mt-0.5" data-testid={`text-owner-${item.id}`}>{item.owner_name || "—"}</p>
+          <p className="text-foreground mt-0.5">
+            <OwnerName
+              ownerUserId={item.owner_user_id}
+              fallbackName={item.owner_name}
+              testId={`text-owner-${item.id}`}
+            />
+          </p>
         </div>
         <div>
           <span className="text-[10px] font-medium text-muted-foreground uppercase block">Notes</span>
