@@ -17,6 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageLayout, TableLayout } from "@/components/layout";
+import { OwnerName } from "@/components/OwnerName";
 import {
   Table,
   TableBody,
@@ -223,7 +224,14 @@ export default function GatesExceptionsPage() {
                   {e.status?.replace(/_/g, " ")}
                 </Badge>
               </TableCell>
-              <TableCell className="text-xs text-muted-foreground">{e.owner_name || "-"}</TableCell>
+              <TableCell className="text-xs text-muted-foreground">
+                <OwnerName
+                  ownerUserId={e.owner_user_id}
+                  fallbackName={e.owner_name}
+                  emptyLabel="-"
+                  testId={`text-owner-${e.id}`}
+                />
+              </TableCell>
               <TableCell className="text-xs text-muted-foreground">{e.approver_name || "-"}</TableCell>
               <TableCell className="text-right tabular-nums">
                 <span className={`inline-flex items-center gap-1 text-xs ${isOverdue ? "text-red-600 font-medium" : ""}`}>

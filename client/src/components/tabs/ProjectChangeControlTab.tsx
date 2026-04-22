@@ -28,6 +28,7 @@ import {
   CalendarDays,
   User,
 } from "lucide-react";
+import { OwnerName } from "@/components/OwnerName";
 
 interface ProjectChangeControlTabProps {
   projectId: number;
@@ -41,6 +42,7 @@ interface ChangeRequest {
   description: string;
   change_type: string;
   requested_by_name: string;
+  owner_user_id: number | null;
   owner_name: string;
   impact_summary: string;
   // C4 (audit closeout): server now returns cost_impact as decimal string
@@ -259,7 +261,12 @@ function ChangeRequestCard({
               </span>
               <span className="flex items-center gap-1">
                 <User className="w-3 h-3" />
-                <span data-testid={`cr-owner-${cr.id}`}>{cr.owner_name || "Unassigned"}</span>
+                <OwnerName
+                  ownerUserId={cr.owner_user_id}
+                  fallbackName={cr.owner_name}
+                  emptyLabel="Unassigned"
+                  testId={`cr-owner-${cr.id}`}
+                />
               </span>
               <span data-testid={`cr-date-${cr.id}`}>{formatDate(cr.created_at)}</span>
             </div>

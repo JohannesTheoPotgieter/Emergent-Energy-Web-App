@@ -2,6 +2,7 @@ import { useGateReports } from "@/hooks/use-performance";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Clock, AlertTriangle } from "lucide-react";
+import { OwnerName } from "@/components/OwnerName";
 
 const RISK_COLORS: Record<string, string> = {
   CRITICAL: "bg-red-100 text-red-800",
@@ -46,7 +47,13 @@ export function GateReports() {
                     <tr key={i} className="border-b">
                       <td className="p-2 font-medium">{g.project_name}</td>
                       <td className="p-2">{g.stage_code}</td>
-                      <td className="p-2 text-muted-foreground">{g.owner_name || "-"}</td>
+                      <td className="p-2 text-muted-foreground">
+                        <OwnerName
+                          ownerUserId={g.owner_user_id}
+                          fallbackName={g.owner_name}
+                          emptyLabel="-"
+                        />
+                      </td>
                       <td className="p-2 text-muted-foreground">{g.waiting_on_department || "-"}</td>
                       <td className="p-2 text-right">
                         <span className="flex items-center justify-end gap-0.5">
