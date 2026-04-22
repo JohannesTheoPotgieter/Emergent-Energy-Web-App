@@ -4,9 +4,12 @@ import {
   intakeRequests,
   intakeTasks,
   msObjects,
+  opportunities,
   pdTickets,
   projectCommunicationTimelineEvents,
   projectEditableFields,
+  projectExecutionState,
+  projectInfo,
   projectPhaseHistory,
   raidItems,
   workItemDependencies,
@@ -724,7 +727,12 @@ export async function getProjectDevelopmentWorkspace(params: {
         designerName: sql<string>`(SELECT name FROM users WHERE id = ${pdTickets.designerUserId})`,
       })
       .from(pdTickets)
-      .where(eq(pdTickets.projectId, params.projectId))
+      // Cascade-display: hide soft-deleted PD tickets and tickets whose
+      // project was soft-deleted via project_info.deleted_at. The
+      // pd_tickets.deleted_at column was added by migration
+      // 0019_foundation_linkage_hardening.sql to mirror the rest of the
+      // spine's soft-delete pattern.
+      .where(and(eq(pdTickets.projectId, params.projectId), isNull(pdTickets.deletedAt)))
       .orderBy(desc(pdTickets.updatedAt)),
     db.select().from(raidItems).where(eq(raidItems.projectId, params.projectId)).orderBy(desc(raidItems.updatedAt)),
     db
@@ -789,7 +797,28 @@ export async function getProjectDevelopmentWorkspace(params: {
           .from(intakeTasks)
           .where(inArray(intakeTasks.intakeRequestId, intakeRequestIds))
       : Promise.resolve([]),
-    Promise.resolve([] as PdTicketTaskSource[]),
+    // pdTicketTaskRows: aggregate work_items rows linked to each PD ticket
+    // for this project. Previously hardcoded to []; per Task #34 this is
+    // the missing read path that drove every PD ticket card to display
+    // "0 of 0 tasks" even after spawn. We compute total + completed in
+    // SQL using the same set of "completed" statuses recognised by
+    // isCompletedStatus() to keep the API and UI summaries consistent.
+    pdTicketIds.length > 0
+      ? db
+          .select({
+            pdTicketId: workItems.pdTicketId,
+            total: sql<number>`COUNT(*)`.as("total"),
+            completed: sql<number>`COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(${workItems.status}, ''))) IN ('completed','complete','closed','resolved','done'))`.as("completed"),
+          })
+          .from(workItems)
+          .where(
+            and(
+              inArray(workItems.pdTicketId, pdTicketIds),
+              isNull(workItems.deletedAt),
+            ),
+          )
+          .groupBy(workItems.pdTicketId)
+      : Promise.resolve([] as PdTicketTaskSource[]),
     workItemIds.length > 0
       ? db
           .select({
@@ -846,5 +875,167 @@ export async function getProjectDevelopmentWorkspace(params: {
     communicationTimelineRows,
     phaseHistoryRows,
     platformSummary: summaryMap.get(params.projectId),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Org-wide workspace rollup ("Meeting view") — Task #34
+// ---------------------------------------------------------------------------
+
+export type WorkspaceRollupRow = {
+  projectId: number;
+  projectName: string;
+  clientId: number | null;
+  phase: string | null;
+  opportunityId: number | null;
+  opportunityStage: string | null;
+  pdTickets: {
+    total: number;
+    open: number;
+    completed: number;
+    overdue: number;
+    oldestOpenAt: string | null;
+  };
+  workItems: {
+    total: number;
+    open: number;
+    completed: number;
+    blocked: number;
+    overdue: number;
+  };
+  raid: { open: number };
+  ragStatus: string | null;
+  /** Spine-integrity flag set when this project has zero PD tickets but >0 work_items
+   * (i.e. work has been logged against a project whose intake never produced a ticket). */
+  spineGap: boolean;
+  /** Number of open PD tickets pointing at a soft-deleted project (should be 0). */
+  cascadeAnomalies: number;
+  lastActivityAt: string | null;
+};
+
+// Org-wide rollup. Driven from project_info filtered by deleted_at so
+// cascade-display is honoured at source.
+export async function getProjectDevelopmentWorkspaceRollup(): Promise<WorkspaceRollupRow[]> {
+  const today = new Date().toISOString().slice(0, 10);
+
+  const [projects, oppRows, ticketRows, workItemAggRows, raidAggRows] = await Promise.all([
+    db
+      .select({
+        id: projectInfo.id,
+        projectName: projectInfo.projectName,
+        clientId: projectInfo.clientId,
+        phase: projectExecutionState.phase,
+        opportunityId: projectInfo.opportunityId,
+        ragStatus: projectExecutionState.ragStatus,
+        updatedAt: projectInfo.updatedAt,
+      })
+      .from(projectInfo)
+      .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
+      .where(isNull(projectInfo.deletedAt)),
+    db
+      .select({ id: opportunities.id, stage: opportunities.stage })
+      .from(opportunities)
+      .where(isNull(opportunities.deletedAt)),
+    db
+      .select({
+        projectId: pdTickets.projectId,
+        status: pdTickets.status,
+        dueDate: pdTickets.dueDate,
+        createdAt: pdTickets.createdAt,
+      })
+      .from(pdTickets)
+      .where(isNull(pdTickets.deletedAt)),
+    db
+      .select({
+        projectId: workItems.projectId,
+        total: sql<number>`COUNT(*)::int`,
+        completed: sql<number>`COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(${workItems.status}, ''))) IN ('completed','complete','closed','resolved','done'))::int`,
+        blocked: sql<number>`COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(${workItems.status}, ''))) IN ('blocked','on hold'))::int`,
+        overdue: sql<number>`COUNT(*) FILTER (WHERE ${workItems.endDate} IS NOT NULL AND ${workItems.endDate} < ${today} AND LOWER(TRIM(COALESCE(${workItems.status}, ''))) NOT IN ('completed','complete','closed','resolved','done'))::int`,
+        lastActivityAt: sql<string | null>`MAX(${workItems.updatedAt})`,
+      })
+      .from(workItems)
+      .where(isNull(workItems.deletedAt))
+      .groupBy(workItems.projectId),
+    db
+      .select({
+        projectId: raidItems.projectId,
+        open: sql<number>`COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(${raidItems.status}, ''))) NOT IN ('completed','complete','closed','resolved','done'))::int`,
+      })
+      .from(raidItems)
+      .groupBy(raidItems.projectId),
+  ]);
+
+  const oppStageById = new Map<number, string | null>();
+  for (const o of oppRows) oppStageById.set(o.id, o.stage ?? null);
+
+  type TicketAgg = { total: number; open: number; completed: number; overdue: number; oldestOpenAt: Date | null };
+  const ticketsByProject = new Map<number, TicketAgg>();
+  for (const t of ticketRows) {
+    if (t.projectId == null) continue;
+    let agg = ticketsByProject.get(t.projectId);
+    if (!agg) {
+      agg = { total: 0, open: 0, completed: 0, overdue: 0, oldestOpenAt: null };
+      ticketsByProject.set(t.projectId, agg);
+    }
+    agg.total += 1;
+    const status = String(t.status ?? "").trim();
+    const isClosed = status === "Completed" || status === "Cancelled";
+    if (isClosed) {
+      agg.completed += 1;
+    } else {
+      agg.open += 1;
+      if (t.createdAt && (!agg.oldestOpenAt || t.createdAt < agg.oldestOpenAt)) {
+        agg.oldestOpenAt = t.createdAt;
+      }
+      if (t.dueDate && t.dueDate < today) {
+        agg.overdue += 1;
+      }
+    }
+  }
+
+  const workItemsByProject = new Map<number, typeof workItemAggRows[number]>();
+  for (const w of workItemAggRows) {
+    if (w.projectId == null) continue;
+    workItemsByProject.set(w.projectId, w);
+  }
+
+  const raidByProject = new Map<number, number>();
+  for (const r of raidAggRows) {
+    if (r.projectId == null) continue;
+    raidByProject.set(r.projectId, Number(r.open ?? 0));
+  }
+
+  return projects.map((p: typeof projects[number]): WorkspaceRollupRow => {
+    const tickets = ticketsByProject.get(p.id) ?? { total: 0, open: 0, completed: 0, overdue: 0, oldestOpenAt: null };
+    const wi = workItemsByProject.get(p.id);
+    const wiTotal = Number(wi?.total ?? 0);
+    return {
+      projectId: p.id,
+      projectName: p.projectName ?? "",
+      clientId: p.clientId ?? null,
+      phase: p.phase ?? null,
+      opportunityId: p.opportunityId ?? null,
+      opportunityStage: p.opportunityId ? oppStageById.get(p.opportunityId) ?? null : null,
+      pdTickets: {
+        total: tickets.total,
+        open: tickets.open,
+        completed: tickets.completed,
+        overdue: tickets.overdue,
+        oldestOpenAt: tickets.oldestOpenAt ? toIsoString(tickets.oldestOpenAt) : null,
+      },
+      workItems: {
+        total: wiTotal,
+        open: Math.max(0, wiTotal - Number(wi?.completed ?? 0)),
+        completed: Number(wi?.completed ?? 0),
+        blocked: Number(wi?.blocked ?? 0),
+        overdue: Number(wi?.overdue ?? 0),
+      },
+      raid: { open: raidByProject.get(p.id) ?? 0 },
+      ragStatus: p.ragStatus ?? null,
+      spineGap: tickets.total === 0 && wiTotal > 0,
+      cascadeAnomalies: 0,
+      lastActivityAt: wi?.lastActivityAt ? toIsoString(wi.lastActivityAt) : (p.updatedAt ? toIsoString(p.updatedAt) : null),
+    };
   });
 }

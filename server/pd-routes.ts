@@ -346,6 +346,14 @@ export function registerPdRoutes(app: Express) {
         .from(pdTickets)
         .leftJoin(clients, eq(pdTickets.clientId, clients.id))
         .leftJoin(projectInfo, eq(pdTickets.projectId, projectInfo.id))
+        // Cascade-display: hide soft-deleted PD tickets and tickets whose
+        // project was soft-deleted (Task #34). For unlinked tickets
+        // (projectId IS NULL), the joined project_info row is NULL and
+        // the IS NULL check passes — they remain visible.
+        .where(and(
+          isNull(pdTickets.deletedAt),
+          or(isNull(pdTickets.projectId), isNull(projectInfo.deletedAt)),
+        ))
         .orderBy(desc(pdTickets.createdAt));
 
       const ticketIds = rows.map((r: any) => r.ticket.id);
@@ -399,7 +407,13 @@ export function registerPdRoutes(app: Express) {
         .leftJoin(clients, eq(pdTickets.clientId, clients.id))
         .leftJoin(projectInfo, eq(pdTickets.projectId, projectInfo.id))
         .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
-        .where(eq(pdTickets.id, id));
+        // Cascade-display: 404 a soft-deleted ticket OR a ticket whose
+        // project_info parent has been soft-deleted (Task #34).
+        .where(and(
+          eq(pdTickets.id, id),
+          isNull(pdTickets.deletedAt),
+          sql`(${pdTickets.projectId} IS NULL OR ${projectInfo.deletedAt} IS NULL)`,
+        ));
 
       if (!ticket) return res.status(404).json({ error: "Ticket not found" });
 
@@ -509,6 +523,8 @@ export function registerPdRoutes(app: Express) {
             eq(pdTickets.projectId, Number(body.projectId)),
             eq(pdTickets.requestType, body.requestType),
             sql`${pdTickets.status} NOT IN ('Completed', 'Cancelled')`,
+            // Cascade-display: ignore soft-deleted tickets in dup guard (Task #34).
+            isNull(pdTickets.deletedAt),
           ))
           .limit(1);
         if (existingOpen.length > 0) {
@@ -589,7 +605,8 @@ export function registerPdRoutes(app: Express) {
       const id = parseInt(paramStr(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ticket ID" });
 
-      const [existing] = await db.select().from(pdTickets).where(eq(pdTickets.id, id));
+      // Cascade-display: PATCH on a soft-deleted ticket should 404 (Task #34).
+      const [existing] = await db.select().from(pdTickets).where(and(eq(pdTickets.id, id), isNull(pdTickets.deletedAt)));
       if (!existing) return res.status(404).json({ error: "Ticket not found" });
 
       if (!canViewAllTickets(role) && existing.createdBy !== user?.id && existing.projectDeveloperUserId !== user?.id) {
@@ -645,40 +662,59 @@ export function registerPdRoutes(app: Express) {
       const id = parseInt(paramStr(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ticket ID" });
 
-      const [existing] = await db.select().from(pdTickets).where(eq(pdTickets.id, id));
+      // Cascade-display: a re-DELETE on an already soft-deleted ticket
+      // should be idempotent, not 200-with-spurious-cascade. Filter to
+      // active rows only (Task #34).
+      const [existing] = await db.select().from(pdTickets).where(and(eq(pdTickets.id, id), isNull(pdTickets.deletedAt)));
       if (!existing) return res.status(404).json({ error: "Ticket not found" });
 
       if (!canViewAllTickets(role) && existing.createdBy !== user?.id && existing.projectDeveloperUserId !== user?.id) {
         return res.status(403).json({ error: "Not authorized to delete this ticket" });
       }
 
-      const linkedTasks = await db.select({ id: workItems.id }).from(workItems).where(eq(workItems.pdTicketId, id));
+      // Soft-delete only (Task #34). The previous implementation hard-deleted
+      // the pd_ticket and CASCADE-deleted every work_item linked to it
+      // (along with expense_task_links, intake_tasks, project_eng_tasks,
+      // documents, qc_item_instances, deliverables, task_activity_log).
+      // That destroyed historical project-development data the moment a
+      // PD ticket was removed in error and required a checkpoint rollback
+      // to recover. We now mark the ticket and all its linked work_items
+      // as soft-deleted; the new FK on work_items.pd_ticket_id stays
+      // intact (ON DELETE SET NULL is only used when the ticket is
+      // physically removed by an out-of-band admin sweep). All cascade
+      // peripheral cleanups are skipped — those rows are now hidden via
+      // the existing isNull(workItems.deletedAt) read filters.
+      const linkedTasks = await db.select({ id: workItems.id }).from(workItems)
+        .where(and(eq(workItems.pdTicketId, id), isNull(workItems.deletedAt)));
       const deletedTaskIds = linkedTasks.map((t: any) => t.id);
 
+      const now = new Date();
       await db.transaction(async (tx: typeof db) => {
         if (deletedTaskIds.length > 0) {
-          await tx.execute(sql`DELETE FROM expense_task_links WHERE canonical_task_id IN ${sql.raw(`(${deletedTaskIds.join(",")})`)}`);
-          await tx.execute(sql`DELETE FROM intake_tasks WHERE linked_work_item_id IN ${sql.raw(`(${deletedTaskIds.join(",")})`)}`);
-          await tx.execute(sql`DELETE FROM project_eng_tasks WHERE linked_work_item_id IN ${sql.raw(`(${deletedTaskIds.join(",")})`)}`);
-          await tx.execute(sql`DELETE FROM "_deliverables_legacy" WHERE linked_work_item_id IN ${sql.raw(`(${deletedTaskIds.join(",")})`)}`);
-          await tx.execute(sql`DELETE FROM documents WHERE linked_work_item_id IN ${sql.raw(`(${deletedTaskIds.join(",")})`)}`);
-          await tx.execute(sql`DELETE FROM qc_item_instances WHERE linked_work_item_id IN ${sql.raw(`(${deletedTaskIds.join(",")})`)}`);
-          await tx.execute(sql`UPDATE work_items SET parent_id = NULL WHERE parent_id IN ${sql.raw(`(${deletedTaskIds.join(",")})`)}`);
-          await tx.delete(taskActivityLog).where(inArray(taskActivityLog.workItemId, deletedTaskIds));
-          await tx.delete(workItems).where(inArray(workItems.id, deletedTaskIds));
+          await tx
+            .update(workItems)
+            .set({ deletedAt: now, updatedAt: now })
+            .where(inArray(workItems.id, deletedTaskIds));
         }
-
-        await tx.delete(pdTickets).where(eq(pdTickets.id, id));
+        await tx
+          .update(pdTickets)
+          .set({ deletedAt: now, updatedAt: now })
+          .where(eq(pdTickets.id, id));
       });
 
       logAuditFromReq(req, {
         entityType: "pd_ticket",
         entityId: String(id),
         action: "delete",
-        changesJson: { projectSiteName: existing.projectSiteName, deletedTaskCount: deletedTaskIds.length },
+        changesJson: {
+          projectSiteName: existing.projectSiteName,
+          softDeleted: true,
+          cascadeWorkItemIds: deletedTaskIds,
+          cascadeWorkItemCount: deletedTaskIds.length,
+        },
       });
 
-      res.json({ success: true, deletedTaskCount: deletedTaskIds.length });
+      res.json({ success: true, softDeleted: true, deletedTaskCount: deletedTaskIds.length });
     } catch (err: any) {
       throw err;
     }
@@ -687,7 +723,8 @@ export function registerPdRoutes(app: Express) {
   app.get("/api/pd/tickets/:id/task-templates", requireAuth, requirePermission('pd_tickets', 'view'), async (req: Request, res: Response) => {
     try {
       const id = parseInt(paramStr(req.params.id));
-      const [ticket] = await db.select().from(pdTickets).where(eq(pdTickets.id, id));
+      // Cascade-display: hide soft-deleted tickets from template lookup (Task #34).
+      const [ticket] = await db.select().from(pdTickets).where(and(eq(pdTickets.id, id), isNull(pdTickets.deletedAt)));
       if (!ticket) return res.status(404).json({ error: "Ticket not found" });
       const templates = PD_REQUEST_TYPE_TASK_TEMPLATES[ticket.requestType] || [];
       res.json({ requestType: ticket.requestType, templates });
@@ -701,7 +738,8 @@ export function registerPdRoutes(app: Express) {
       const user = req.user as any;
       // NOTE: `canCreatePdTicket` double-gate removed — see POST /api/pd/tickets.
       const id = parseInt(paramStr(req.params.id));
-      const [ticket] = await db.select().from(pdTickets).where(eq(pdTickets.id, id));
+      // Cascade-display: refuse spawn-tasks on a soft-deleted ticket (Task #34).
+      const [ticket] = await db.select().from(pdTickets).where(and(eq(pdTickets.id, id), isNull(pdTickets.deletedAt)));
       if (!ticket) return res.status(404).json({ error: "Ticket not found" });
 
       if (ticket.tasksSpawnedAt) {
@@ -723,7 +761,8 @@ export function registerPdRoutes(app: Express) {
       const id = parseInt(paramStr(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ticket ID" });
 
-      const [ticket] = await db.select().from(pdTickets).where(eq(pdTickets.id, id));
+      // Cascade-display: refuse engineering-task creation on soft-deleted ticket (Task #34).
+      const [ticket] = await db.select().from(pdTickets).where(and(eq(pdTickets.id, id), isNull(pdTickets.deletedAt)));
       if (!ticket) return res.status(404).json({ error: "Ticket not found" });
       if (!ticket.projectId) return res.status(400).json({ error: "Ticket is not linked to a project" });
 
@@ -789,7 +828,8 @@ export function registerPdRoutes(app: Express) {
       const user = req.user as any;
       const role = user?.companyRole || user?.role || "";
 
-      const allTicketsRaw = await db.select().from(pdTickets);
+      // Cascade-display: ignore soft-deleted PD tickets in dashboard counts (Task #34).
+      const allTicketsRaw = await db.select().from(pdTickets).where(isNull(pdTickets.deletedAt));
       const allTickets = await filterTicketsByRole(allTicketsRaw, user, role);
       const today = todaySast();
 
@@ -828,6 +868,12 @@ export function registerPdRoutes(app: Express) {
         .from(pdTickets)
         .leftJoin(clients, eq(pdTickets.clientId, clients.id))
         .leftJoin(projectInfo, eq(pdTickets.projectId, projectInfo.id))
+        // Cascade-display: hide soft-deleted PD tickets and tickets whose
+        // project was soft-deleted from the pipeline (Task #34).
+        .where(and(
+          isNull(pdTickets.deletedAt),
+          or(isNull(pdTickets.projectId), isNull(projectInfo.deletedAt)),
+        ))
         .orderBy(desc(pdTickets.createdAt));
 
       const allTickets = await filterTicketsByRole(allTicketsRaw, user, role);
@@ -1014,7 +1060,8 @@ export function registerPdRoutes(app: Express) {
       const currentMonth = today.slice(0, 7); // YYYY-MM (SAST)
 
       // ===== DATA FETCH =====
-      const allTickets = await db.select().from(pdTickets);
+      // Cascade-display: ignore soft-deleted PD tickets in reports (Task #34).
+      const allTickets = await db.select().from(pdTickets).where(isNull(pdTickets.deletedAt));
       const fyTickets = allTickets.filter((t: any) => t.createdAt >= fyStart && t.createdAt <= fyEnd);
 
       const allHandovers = await db.select().from(projectPdPmHandover);

@@ -10,6 +10,8 @@ import { AlertTriangle, CheckCircle2, Loader2, Plug, RefreshCw } from "lucide-re
 import { apiRequest } from "@/lib/queryClient";
 import { formatRand } from "@/lib/safeMoney";
 import { ReportTrustNotice } from "@/components/reports/ReportTrustNotice";
+import { useAuth } from "@/hooks/use-auth";
+import { useLocation } from "wouter";
 
 type IntegrationHealthState = "healthy" | "stale" | "failing" | "unknown";
 
@@ -102,6 +104,28 @@ function formatDateTime(iso: string | null | undefined): string {
 export default function AdminQuickBooksPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { isAdmin, isLoading: authLoading } = useAuth();
+  const [, setLocation] = useLocation();
+
+  // Task #30 — Page-level admin guard. Previously the page rendered for any
+  // authenticated user and relied on individual button-level permission
+  // checks (which were inconsistent). Now non-admins are redirected to the
+  // primary surface (Throughput) and never see admin-only OAuth controls.
+  useEffect(() => {
+    if (!authLoading && !isAdmin) {
+      setLocation("/finance/quickbooks/throughput");
+    }
+  }, [authLoading, isAdmin, setLocation]);
+
+  if (!authLoading && !isAdmin) {
+    return (
+      <PageShell className="p-4 md:p-6">
+        <div className="rounded border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">
+          QuickBooks admin actions are restricted to CEO / COO admins. Redirecting…
+        </div>
+      </PageShell>
+    );
+  }
 
   const {
     data: status,

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +16,7 @@ import {
   DollarSign,
   Target,
   Trophy,
+  Users as UsersIcon,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageLayout } from "@/components/layout";
@@ -478,9 +480,246 @@ export default function PdDashboardPage() {
         </CardContent>
       </Card>
 
+      <MeetingViewSection />
+
       <p className="text-[10px] text-muted-foreground" data-testid="generated-at">
         Snapshot generated {new Date(data.generatedAt).toLocaleString()}
       </p>
     </PageLayout>
+  );
+}
+
+type WorkspaceRollupResponse = {
+  generatedAt: string;
+  asOf?: string;
+  totals: {
+    opportunities?: number;
+    linkedProjects?: number;
+    linkedWorkItems?: number;
+    projects: number;
+    spineGap: number;
+    cascadeAnomalies: number;
+    openPdTickets: number;
+    overduePdTickets: number;
+    openWorkItems: number;
+    blockedWorkItems: number;
+    overdueWorkItems: number;
+    openRaid: number;
+    ticketsDueThisWeek?: number;
+    tasksDueThisWeek?: number;
+    projectsWithoutTickets?: number;
+    ticketsWithoutValidLinkage?: number;
+    workItemsWithInvalidLinkage?: number;
+  };
+  lists?: {
+    projectsWithoutTickets: Array<{ id: number; projectName: string }>;
+    ticketsWithoutValidLinkage: Array<{ id: number; projectSiteName: string; projectId: number | null; opportunityId: number | null }>;
+    workItemsWithInvalidLinkage: Array<{ id: number; title: string; projectId: number | null }>;
+    ticketsDueThisWeek: Array<{ id: number; projectSiteName: string; dueDate: string | null; projectId: number | null }>;
+    tasksDueThisWeek: Array<{ id: number; title: string; endDate: string | null; projectId: number | null }>;
+  };
+  rows: Array<{
+    projectId: number;
+    projectName: string;
+    phase: string | null;
+    opportunityStage: string | null;
+    pdTickets: { total: number; open: number; completed: number; overdue: number; oldestOpenAt: string | null };
+    workItems: { total: number; open: number; completed: number; blocked: number; overdue: number };
+    raid: { open: number };
+    ragStatus: string | null;
+    spineGap: boolean;
+    lastActivityAt: string | null;
+  }>;
+};
+
+function MeetingViewSection() {
+  const { data, isLoading, error } = useQuery<WorkspaceRollupResponse>({
+    queryKey: ["/api/project-development/workspace/rollup"],
+  });
+
+  if (isLoading) {
+    return (
+      <Card data-testid="meeting-view-loading">
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2"><UsersIcon className="h-4 w-4" /> Meeting view</CardTitle>
+          <p className="text-xs text-muted-foreground">Org-wide PD workspace rollup across all active projects.</p>
+        </CardHeader>
+        <CardContent><Skeleton className="h-48" /></CardContent>
+      </Card>
+    );
+  }
+  if (error || !data) {
+    return (
+      <Card data-testid="meeting-view-error">
+        <CardContent className="p-6">
+          <p className="text-sm text-rose-700">Failed to load Meeting view rollup.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const sortedRows = [...data.rows].sort((a, b) => {
+    const aSpan = a.workItems.overdue + a.pdTickets.overdue + (a.spineGap ? 100 : 0);
+    const bSpan = b.workItems.overdue + b.pdTickets.overdue + (b.spineGap ? 100 : 0);
+    return bSpan - aSpan;
+  });
+
+  return (
+    <Card data-testid="meeting-view">
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2"><UsersIcon className="h-4 w-4" /> Meeting view</CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Org-wide PD workspace rollup across {data.totals.projects} active projects.
+          Generated {new Date(data.generatedAt).toLocaleString()}.
+        </p>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 text-xs">
+          <div data-testid="rollup-total-open-pd-tickets" className="rounded-md bg-muted/40 p-2">
+            <p className="text-muted-foreground">Open PD tickets</p>
+            <p className="text-lg font-semibold">{data.totals.openPdTickets}</p>
+            <p className="text-[10px] text-amber-700">{data.totals.overduePdTickets} overdue</p>
+          </div>
+          <div data-testid="rollup-total-work-items" className="rounded-md bg-muted/40 p-2">
+            <p className="text-muted-foreground">Open work items</p>
+            <p className="text-lg font-semibold">{data.totals.openWorkItems}</p>
+            <p className="text-[10px] text-amber-700">{data.totals.overdueWorkItems} overdue · {data.totals.blockedWorkItems} blocked</p>
+          </div>
+          <div data-testid="rollup-total-raid" className="rounded-md bg-muted/40 p-2">
+            <p className="text-muted-foreground">Open RAID</p>
+            <p className="text-lg font-semibold">{data.totals.openRaid}</p>
+          </div>
+          <div data-testid="rollup-spine-gap" className={`rounded-md p-2 ${data.totals.spineGap > 0 ? "bg-rose-50" : "bg-muted/40"}`}>
+            <p className="text-muted-foreground">Spine gaps</p>
+            <p className={`text-lg font-semibold ${data.totals.spineGap > 0 ? "text-rose-700" : ""}`}>{data.totals.spineGap}</p>
+            <p className="text-[10px] text-muted-foreground">work_items but no PD ticket</p>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs" data-testid="meeting-view-table">
+            <thead>
+              <tr className="text-left text-muted-foreground border-b">
+                <th className="py-2 pr-3">Project</th>
+                <th className="py-2 pr-3">Phase</th>
+                <th className="py-2 pr-3 text-right">PD tickets</th>
+                <th className="py-2 pr-3 text-right">Work items</th>
+                <th className="py-2 pr-3 text-right">RAID</th>
+                <th className="py-2 pr-3">Flags</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedRows.map((r) => (
+                <tr key={r.projectId} className="border-b hover:bg-muted/30" data-testid={`row-project-${r.projectId}`}>
+                  <td className="py-2 pr-3 font-medium">{r.projectName || `#${r.projectId}`}</td>
+                  <td className="py-2 pr-3 text-muted-foreground">{r.phase || "—"}</td>
+                  <td className="py-2 pr-3 text-right">
+                    <span data-testid={`text-pd-open-${r.projectId}`}>{r.pdTickets.open}</span>
+                    {r.pdTickets.overdue > 0 && (
+                      <span className="ml-1 text-amber-700" data-testid={`text-pd-overdue-${r.projectId}`}>({r.pdTickets.overdue} od)</span>
+                    )}
+                  </td>
+                  <td className="py-2 pr-3 text-right">
+                    <span data-testid={`text-wi-open-${r.projectId}`}>{r.workItems.open}</span>
+                    {r.workItems.overdue > 0 && (
+                      <span className="ml-1 text-amber-700">({r.workItems.overdue} od)</span>
+                    )}
+                    {r.workItems.blocked > 0 && (
+                      <span className="ml-1 text-rose-700">({r.workItems.blocked} blk)</span>
+                    )}
+                  </td>
+                  <td className="py-2 pr-3 text-right">{r.raid.open}</td>
+                  <td className="py-2 pr-3">
+                    {r.spineGap && (
+                      <Badge variant="destructive" className="text-[10px]" data-testid={`badge-spine-gap-${r.projectId}`}>spine gap</Badge>
+                    )}
+                    {r.ragStatus && (
+                      <Badge variant="outline" className="text-[10px] ml-1">{r.ragStatus}</Badge>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {sortedRows.length === 0 && (
+                <tr><td colSpan={6} className="py-4 text-center text-muted-foreground">No active projects.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        {data.lists && (
+          <div className="mt-6 space-y-3">
+            <RiskList
+              testId="risk-projects-without-tickets"
+              title="Projects without PD tickets"
+              count={data.lists.projectsWithoutTickets.length}
+              items={data.lists.projectsWithoutTickets.map((p) => ({ id: p.id, label: p.projectName || `#${p.id}` }))}
+            />
+            <RiskList
+              testId="risk-tickets-invalid-linkage"
+              title="PD tickets with invalid linkage"
+              count={data.lists.ticketsWithoutValidLinkage.length}
+              items={data.lists.ticketsWithoutValidLinkage.map((t) => ({
+                id: t.id,
+                label: `${t.projectSiteName || `Ticket #${t.id}`} — project=${t.projectId ?? "—"}, opp=${t.opportunityId ?? "—"}`,
+              }))}
+            />
+            <RiskList
+              testId="risk-work-items-invalid-linkage"
+              title="Work items with invalid linkage"
+              count={data.lists.workItemsWithInvalidLinkage.length}
+              items={data.lists.workItemsWithInvalidLinkage.map((w) => ({ id: w.id, label: w.title || `Work item #${w.id}` }))}
+            />
+            <RiskList
+              testId="risk-tickets-due-this-week"
+              title="PD tickets due this week"
+              count={data.lists.ticketsDueThisWeek.length}
+              items={data.lists.ticketsDueThisWeek.map((t) => ({
+                id: t.id,
+                label: `${t.projectSiteName || `Ticket #${t.id}`}${t.dueDate ? ` (due ${t.dueDate})` : ""}`,
+              }))}
+            />
+            <RiskList
+              testId="risk-tasks-due-this-week"
+              title="Work items due this week"
+              count={data.lists.tasksDueThisWeek.length}
+              items={data.lists.tasksDueThisWeek.map((w) => ({
+                id: w.id,
+                label: `${w.title || `Work item #${w.id}`}${w.endDate ? ` (due ${w.endDate})` : ""}`,
+              }))}
+            />
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function RiskList({ testId, title, count, items }: { testId: string; title: string; count: number; items: Array<{ id: number; label: string }> }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="border rounded-md" data-testid={testId}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium hover:bg-muted/40"
+        data-testid={`${testId}-toggle`}
+      >
+        <span>{title}</span>
+        <span className={`px-2 py-0.5 rounded ${count > 0 ? "bg-amber-100 text-amber-800" : "bg-muted text-muted-foreground"}`} data-testid={`${testId}-count`}>
+          {count}
+        </span>
+      </button>
+      {open && (
+        <div className="border-t px-3 py-2 text-xs" data-testid={`${testId}-body`}>
+          {items.length === 0 ? (
+            <p className="text-muted-foreground" data-testid={`${testId}-empty`}>None.</p>
+          ) : (
+            <ul className="space-y-1 max-h-48 overflow-y-auto">
+              {items.map((it) => (
+                <li key={it.id} data-testid={`${testId}-item-${it.id}`} className="text-muted-foreground">{it.label}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

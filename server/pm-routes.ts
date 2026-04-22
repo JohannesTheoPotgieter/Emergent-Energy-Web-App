@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 import { projectInfo, projectExecutionState } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { getCanonicalFinanceByProjectIds, getCanonicalTaskSummaryByProjectIds } from "./services/canonical-dashboard-kpi-service";
+import { getProjectListSummaries } from "./services/project-platform-summary-service";
 import { jwtAuth, requireAuth } from "./auth-context";
 
 const PM_ALLOWED_ROLES = ["PROJECT_MANAGER_SITE", "PROGRAM_MANAGER", "COO_ADMIN", "CEO_ADMIN"];
@@ -101,9 +102,14 @@ export function registerPmRoutes(app: Express) {
 
       // Classification: CANONICAL_READ
       // PM dashboard rollups are keyed by project_id and sourced from canonical structures only.
-      const [financialsByProject, tasksByProject] = await Promise.all([
+      // The foundation summary supplies the same RAG / % Complete fallback
+      // (cache → live, with provenance) used by the priority detail page —
+      // so a PM project with no derived_project_kpis row no longer shows
+      // RAG="—" and 0% on this dashboard either.
+      const [financialsByProject, tasksByProject, summaryByProject] = await Promise.all([
         getCanonicalFinanceByProjectIds(projectIds),
         getCanonicalTaskSummaryByProjectIds(projectIds),
+        getProjectListSummaries({ projectIds }),
       ]);
 
       const enrichedProjects = projects.map((p) => {
@@ -113,13 +119,18 @@ export function registerPmRoutes(app: Express) {
         const tasks = tasksByProject.get(p.id) || {
           total: 0, inProgress: 0, completed: 0, onHold: 0, needsApproval: 0, overdue: 0, active: 0,
         };
+        const summary = summaryByProject.get(p.id);
         const cosPlanned = 0;
 
         return {
           id: p.id,
           projectName: p.projectName,
           phase: p.phase,
-          ragStatus: p.ragStatus,
+          ragStatus: summary?.ragStatus ?? p.ragStatus,
+          ragSource: summary?.ragSource ?? (p.ragStatus ? "manual" : "missing"),
+          ragReason: summary?.ragReason ?? null,
+          percentComplete: summary?.percentComplete ?? null,
+          percentCompleteSource: summary?.percentCompleteSource ?? "missing",
           contractValue: parseFloat(p.contractValue || "0") || 0,
           sizeKwp: parseFloat(String(p.sizeKwp || "0")) || 0,
           escalationLevel: p.escalationLevel,

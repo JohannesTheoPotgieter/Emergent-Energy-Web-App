@@ -229,6 +229,15 @@ export const workItems = pgTable("work_items", {
   uqWorkItemsExternalRefActive: uniqueIndex("uq_work_items_external_ref_active")
     .on(table.externalRef)
     .where(sql`${table.deletedAt} IS NULL`),
+  // Partial index supports the `getProjectDevelopmentWorkspaceRollup`
+  // pdTicketTaskRows aggregation. The matching FK on `pd_ticket_id` is
+  // hand-managed in migration 0019_foundation_linkage_hardening.sql
+  // (drizzle does not emit FKs for self-typed integer columns that lack
+  // a `references()` clause; we keep the schema declarative-only here
+  // and rely on the migration for referential integrity).
+  pdTicketIdIdx: index("idx_work_items_pd_ticket_id")
+    .on(table.pdTicketId)
+    .where(sql`${table.pdTicketId} IS NOT NULL`),
 }));
 export const insertWorkItemSchema = createInsertSchema(workItems).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertWorkItem = z.infer<typeof insertWorkItemSchema>;

@@ -24,6 +24,7 @@ vite.config.ts.*
 # ── Runtime data (developer machine state, not source) ───────
 uploads/
 data/
+!client/src/data/
 server/data-seed/.migrated
 server/.pd-seed-done
 backups/
@@ -61,3 +62,4 @@ tsc-all.txt
 tsc-errors.txt
 .cache/
 .migrations-drift-check/
+qa/reports/vitest-results.json
