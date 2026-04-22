@@ -76,10 +76,10 @@ const GROUPS: SettingsGroupDef[] = [
       {
         key: "document-types",
         title: "Document types & approvers",
-        description: "Edit the 13 controlled document types, change who approves what, configure multi-approver rules.",
-        href: "/admin-settings?section=document-types",
+        description: "Add / edit controlled document types, change default approver matrix, set multi-approver rules.",
+        href: "/admin/document-types",
         icon: FileText,
-        status: "beta",
+        status: "ready",
       },
       {
         key: "sharepoint-templates",

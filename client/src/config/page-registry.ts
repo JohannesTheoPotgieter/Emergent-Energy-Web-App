@@ -79,6 +79,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "settingsHome", path: "/settings", label: "Settings", iconKey: "SlidersHorizontal", navGroup: "SYSTEM", permissionEntity: "admin_roles", showInSidebar: true, routeComponentKey: "SettingsHomePage" },
   { id: "projectDocuments", path: "/projects/:projectId/documents", label: "Project Documents", permissionEntity: "projects", routeComponentKey: "ProjectDocumentsPage" },
   { id: "quickbooksHome", path: "/quickbooks", label: "QuickBooks", iconKey: "LinkIcon", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: true, routeComponentKey: "QuickBooksHomePage" },
+  { id: "adminDocumentTypes", path: "/admin/document-types", label: "Document types", iconKey: "FileText", navGroup: "SYSTEM", permissionEntity: "admin_roles", routeComponentKey: "AdminDocumentTypesPage" },
   { id: "projectLifecycle", path: "/project-lifecycle", label: "Project Lifecycle", iconKey: "Layers", navGroup: "PROJECTS", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "ProjectLifecyclePage" },
   { id: "projectLifecycleStageGates", path: "/project-lifecycle/stage-gates", label: "Stage Gates", permissionEntity: "lifecycle", routeComponentKey: "ProjectLifecyclePage" },
   { id: "projectLifecycleLatestUpdates", path: "/project-lifecycle/latest-updates", label: "Latest Updates", permissionEntity: "projects", routeComponentKey: "ProjectLifecyclePage" },
