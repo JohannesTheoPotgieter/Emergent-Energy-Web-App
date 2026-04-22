@@ -39,6 +39,7 @@ import { WeeklyReviewWizard } from "@/components/WeeklyReviewWizard";
 import { ProjectChatTab } from "@/components/tabs/ProjectChatTab";
 import { LocalFolderTab } from "@/components/tabs/LocalFolderTab";
 import { DocumentStrip, ProjectSharepointRootCard } from "@/components/controlled-documents";
+import { ProjectCommunicationsTab } from "@/components/email-links/ProjectCommunicationsTab";
 import { ProjectApprovalsTab } from "@/components/tabs/ProjectApprovalsTab";
 import { ProjectTimelineTab } from "@/components/tabs/ProjectTimelineTab";
 import { ProjectRaidTab } from "@/components/tabs/ProjectRaidTab";
@@ -1777,8 +1778,9 @@ export default function ProjectDetailPage() {
             {[
               { key: "changes", label: "Changes", icon: FileCheck, visible: true },
               { key: "controlled-docs", label: "Controlled docs", icon: ShieldCheck, visible: true },
+              { key: "communications", label: "Communications", icon: MessageSquare, visible: true },
               { key: "documents", label: "Folders", icon: FolderOpen, visible: true },
-              { key: "comms", label: "Comms", icon: MessageSquare, visible: true },
+              { key: "comms", label: "Chat", icon: MessageSquare, visible: true },
             ].filter(st => st.visible).map(st => (
               <Button key={st.key} size="sm" variant={activeSubTab === st.key ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab(st.key)} data-testid={`subtab-${st.key}`}>
                 <st.icon className="h-3 w-3 mr-1" /> {st.label}
@@ -1792,6 +1794,9 @@ export default function ProjectDetailPage() {
               <ProjectSharepointRootCard projectId={projectInfoId} />
               <DocumentStrip projectId={projectInfoId} title="Controlled documents" />
             </div>
+          )}
+          {activeSubTab === "communications" && projectInfoId && (
+            <ProjectCommunicationsTab projectId={projectInfoId} />
           )}
           {activeSubTab === "documents" && <LocalFolderTab projectName={projectName} />}
           {activeSubTab === "comms" && <ProjectChatTab projectName={projectName} projectInfoId={projectInfoId ?? null} />}
