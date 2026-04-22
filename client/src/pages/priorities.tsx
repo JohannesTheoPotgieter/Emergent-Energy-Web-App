@@ -10,6 +10,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
 import { isPriorityAdminRole, isDepartmentHeadRole, SCOPE_LABELS, DEPARTMENT_OPTIONS } from "@/config/priorities";
 import { ROLE_DEPARTMENT_MAP } from "@shared/schema/users";
+const ALL_DEPTS_KEY = "__ALL__";
 import type { PriorityRow } from "@/lib/priority-types";
 import { PriorityListSection } from "@/components/priorities/PriorityListSection";
 import { CreatePriorityDialog } from "@/components/priorities/CreatePriorityDialog";
@@ -56,6 +57,14 @@ export default function PrioritiesPage() {
   const [healthFilter, setHealthFilter] = useState("all");
   const [showClosed, setShowClosed] = useState(false);
   const [bulkSelected, setBulkSelected] = useState<Set<number>>(new Set());
+  // Admins can pick which department to view on the Department tab. Dept
+  // heads are pinned to their own department and never see the dropdown.
+  const [selectedDeptKey, setSelectedDeptKey] = useState<string>(
+    isAdmin ? ALL_DEPTS_KEY : (userDepartment || ""),
+  );
+  const effectiveDeptForQuery = isAdmin
+    ? (selectedDeptKey === ALL_DEPTS_KEY ? "" : selectedDeptKey)
+    : (userDepartment || "");
 
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
 
@@ -72,13 +81,13 @@ export default function PrioritiesPage() {
     showClosed ? `${base}&include_cancelled=true` : base;
 
   const deptQuery = useQuery<PriorityRow[]>({
-    queryKey: ["/api/priorities", "department", userDepartment, showClosed],
+    queryKey: ["/api/priorities", "department", effectiveDeptForQuery, showClosed],
     queryFn: () => fetchPriorities(
       listQueryParams(
-        `scope=department${userDepartment ? `&department=${userDepartment}` : ""}&include_team_roles=true`,
+        `scope=department${effectiveDeptForQuery ? `&department=${effectiveDeptForQuery}` : ""}&include_team_roles=true`,
       ),
     ),
-    enabled: activeTab === "department" && isDeptHead,
+    enabled: activeTab === "department" && (isDeptHead || isAdmin),
   });
 
   const companyQuery = useQuery<PriorityRow[]>({
@@ -250,7 +259,7 @@ export default function PrioritiesPage() {
       >
         <div className="flex items-center justify-between mb-4">
           <TabsList>
-            {isDeptHead && (
+            {(isDeptHead || isAdmin) && (
               <TabsTrigger value="department" className="text-xs" data-testid="tab-priorities-department">
                 <Users className="w-3.5 h-3.5 mr-1" />
                 {SCOPE_LABELS.department}
@@ -263,6 +272,19 @@ export default function PrioritiesPage() {
           </TabsList>
 
           <div className="flex items-center gap-2">
+            {isAdmin && activeTab === "department" && (
+              <Select value={selectedDeptKey} onValueChange={setSelectedDeptKey}>
+                <SelectTrigger className="w-[180px] h-8 text-xs" data-testid="select-dept-filter">
+                  <SelectValue placeholder="Department" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_DEPTS_KEY}>All departments</SelectItem>
+                  {DEPARTMENT_OPTIONS.map((d) => (
+                    <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             <Select value={levelFilter} onValueChange={setLevelFilter}>
               <SelectTrigger className="w-[120px] h-8 text-xs">
                 <SelectValue placeholder="Level" />
@@ -307,7 +329,7 @@ export default function PrioritiesPage() {
           </div>
         </div>
 
-        {isDeptHead && (
+        {(isDeptHead || isAdmin) && (
           <TabsContent value="department">
             <PriorityListSection
               priorities={filteredDept}
@@ -324,7 +346,11 @@ export default function PrioritiesPage() {
               selectable
               selectedIds={bulkSelected}
               onToggleSelect={toggleBulkSelect}
-              emptyMessage={`No priorities for ${DEPARTMENT_OPTIONS.find((d) => d.value === userDepartment)?.label || "your department"}`}
+              emptyMessage={
+                isAdmin && selectedDeptKey === ALL_DEPTS_KEY
+                  ? "No department priorities yet"
+                  : `No priorities for ${DEPARTMENT_OPTIONS.find((d) => d.value === effectiveDeptForQuery)?.label || "this department"}`
+              }
               emptyAction={
                 <Button size="sm" className="mt-3" onClick={() => setCreateDialogOpen(true)}>
                   <Plus className="w-4 h-4 mr-1" /> Create Department Priority
@@ -362,7 +388,11 @@ export default function PrioritiesPage() {
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
         defaultScope={activeTab === "department" ? "department" : "company"}
-        defaultDepartment={userDepartment}
+        defaultDepartment={
+          activeTab === "department"
+            ? (effectiveDeptForQuery || userDepartment || "")
+            : userDepartment
+        }
       />
 
       <AssignPriorityDialog
