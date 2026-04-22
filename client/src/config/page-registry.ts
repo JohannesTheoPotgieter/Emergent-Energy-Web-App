@@ -70,6 +70,18 @@ export const LEGACY_REDIRECTS: Array<{ path: string; redirectTo: string }> = [
   { path: "/project-lifecycle", redirectTo: "/lifecycle-board" },
   { path: "/command-center", redirectTo: "/my-work" },
   { path: "/sseg", redirectTo: "/handover?tab=sseg" },
+  // Hyphenated admin paths used by older code paths / bookmarks. Real
+  // routes use slash-separated paths (/admin/pipedrive). Redirect so
+  // mistyped or stale links don't dead-end on Access Denied.
+  { path: "/admin-pipedrive", redirectTo: "/admin/pipedrive" },
+  { path: "/admin-quickbooks", redirectTo: "/admin/quickbooks" },
+  { path: "/admin-workflow-config", redirectTo: "/admin/workflow-config" },
+  { path: "/admin-backfill", redirectTo: "/admin/data-migration-status" },
+  { path: "/admin-recovery", redirectTo: "/admin/recovery" },
+  { path: "/admin-roles", redirectTo: "/admin/roles" },
+  { path: "/admin-settings", redirectTo: "/admin/roles" },
+  { path: "/system-activity-log", redirectTo: "/admin/activity-log" },
+  { path: "/phase-templates", redirectTo: "/admin/phase-templates" },
 ];
 
 export const PAGE_REGISTRY: PageRegistryEntry[] = [
