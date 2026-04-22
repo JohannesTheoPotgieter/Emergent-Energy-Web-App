@@ -62,3 +62,4 @@ tsc-all.txt
 tsc-errors.txt
 .cache/
 .migrations-drift-check/
+qa/reports/vitest-results.json
