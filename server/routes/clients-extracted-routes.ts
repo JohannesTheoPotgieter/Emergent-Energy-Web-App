@@ -121,6 +121,11 @@ export function registerClientsExtractedRoutes(app: Express): void {
     secondaryContactEmail: z.string().email().optional().nullable().or(z.literal("")),
     industry: z.string().optional().nullable(),
     status: z.enum(["active", "inactive", "prospect"]).optional(),
+    // Email-linking foundations (migration 0013). Domain strings like
+    // "clientabc.com" — validated loosely (no protocol, no @, not empty
+    // when present). additional_email_domains is a list of the same.
+    primaryEmailDomain: z.string().min(1).max(253).regex(/^[^@\s/]+$/).optional().nullable().or(z.literal("")),
+    additionalEmailDomains: z.array(z.string().min(1).max(253).regex(/^[^@\s/]+$/)).max(10).optional(),
   }).strict();
 
   app.patch("/api/clients/:id", requireAuth, requireAdmin, async (req, res) => {
