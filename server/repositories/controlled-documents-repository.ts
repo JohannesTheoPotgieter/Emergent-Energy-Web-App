@@ -28,6 +28,7 @@ import {
 import { approvals, type Approval } from "@shared/schema/collaboration";
 import { users, type User } from "@shared/schema/users";
 import { projectInfo } from "@shared/schema/projects";
+import { extractCostingValues } from "../services/excel-extraction-service";
 
 // ---- Shapes returned to route handlers -----------------------------------
 
@@ -468,7 +469,7 @@ export async function recordApproval(input: ApprovalDecisionInput): Promise<Appr
     }
 
     // Promote.
-    const [promotedDoc] = await tx
+    let [promotedDoc] = await tx
       .update(controlledDocuments)
       .set({
         state: "approved",
@@ -477,6 +478,38 @@ export async function recordApproval(input: ApprovalDecisionInput): Promise<Appr
       })
       .where(eq(controlledDocuments.id, doc.id))
       .returning();
+
+    // D3.6 — auto-extract Excel headline values when the type has an
+    // extractSpec configured. Non-fatal: failures log + leave
+    // extractedValues null, so the approval still succeeds.
+    if (type.extractSpec && Object.keys(type.extractSpec.cells ?? {}).length > 0) {
+      try {
+        const extracted = await extractCostingValues({
+          driveId: promotedDoc.sharepointDriveId,
+          itemId: promotedDoc.sharepointItemId,
+          spec: type.extractSpec,
+        });
+        if (extracted) {
+          const [updated] = await tx
+            .update(controlledDocuments)
+            .set({
+              extractedValues: { ...extracted.values, marginPct: extracted.marginPct ?? null },
+              extractedAt: new Date(extracted.extractedAt),
+              extractedError: null,
+            })
+            .where(eq(controlledDocuments.id, promotedDoc.id))
+            .returning();
+          promotedDoc = updated;
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[controlled-documents] extract after approve failed for doc ${promotedDoc.id}:`, msg);
+        await tx
+          .update(controlledDocuments)
+          .set({ extractedError: msg, updatedAt: new Date() })
+          .where(eq(controlledDocuments.id, promotedDoc.id));
+      }
+    }
 
     return {
       document: promotedDoc,
