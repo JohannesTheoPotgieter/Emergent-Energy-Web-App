@@ -944,6 +944,38 @@ export default function OpportunitiesPage() {
         />
       ) : (
         <Tabs defaultValue="list" className="w-full">
+          {/* Risk-signal filter banner — always visible when a filter is
+              active, regardless of which tab (List/Kanban/Calendar). */}
+          {riskFilter && (
+            <div
+              className="mb-3 flex items-center justify-between rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+              data-testid="risk-filter-banner"
+            >
+              <span className="flex items-center gap-2">
+                <AlertTriangle className="h-3.5 w-3.5" />
+                <strong>Filter active:</strong>
+                {riskFilter === "stale-30" && "Deals with no activity for 30+ days"}
+                {riskFilter === "stale-60" && "Deals with no activity for 60+ days"}
+                {riskFilter === "high-value-quiet" && "High-value deals with 14+ days quiet"}
+                {riskFilter === "overdue-followups" && "Deals with overdue follow-ups"}
+                <span className="tabular-nums">· {riskFilteredRows.length} match{riskFilteredRows.length === 1 ? "" : "es"}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setRiskFilter(null);
+                  const params = new URLSearchParams(window.location.search);
+                  params.delete("filter");
+                  const qs = params.toString();
+                  window.history.replaceState(null, "", window.location.pathname + (qs ? `?${qs}` : ""));
+                }}
+                className="text-amber-900 underline hover:no-underline"
+                data-testid="btn-clear-risk-filter"
+              >
+                Clear filter
+              </button>
+            </div>
+          )}
           <TabsList className="bg-emerald-50/60 border border-emerald-200 h-9 p-0.5" data-testid="tabs-views">
             <TabsTrigger value="list" className="text-xs gap-1.5 data-[state=active]:bg-white data-[state=active]:text-emerald-800" data-testid="tab-list">
               <LayoutList className="h-3.5 w-3.5" /> List
@@ -958,35 +990,6 @@ export default function OpportunitiesPage() {
 
           {/* ── List view (compact) ───────────────────────────────────── */}
           <TabsContent value="list" className="mt-3">
-            {riskFilter && (
-              <div
-                className="mb-2 flex items-center justify-between rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
-                data-testid="risk-filter-banner"
-              >
-                <span>
-                  <strong>Filter active:</strong>{" "}
-                  {riskFilter === "stale-30" && "Deals with no activity for 30+ days"}
-                  {riskFilter === "stale-60" && "Deals with no activity for 60+ days"}
-                  {riskFilter === "high-value-quiet" && "High-value deals with 14+ days quiet"}
-                  {riskFilter === "overdue-followups" && "Deals with overdue follow-ups"}
-                  {" "}·{" "}<span className="tabular-nums">{riskFilteredRows.length} match{riskFilteredRows.length === 1 ? "" : "es"}</span>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRiskFilter(null);
-                    const params = new URLSearchParams(window.location.search);
-                    params.delete("filter");
-                    const qs = params.toString();
-                    window.history.replaceState(null, "", window.location.pathname + (qs ? `?${qs}` : ""));
-                  }}
-                  className="text-amber-900 underline hover:no-underline"
-                  data-testid="btn-clear-risk-filter"
-                >
-                  Clear filter
-                </button>
-              </div>
-            )}
             <div className="flex items-center justify-between gap-3 mb-2">
               <div className="relative w-full max-w-md">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />

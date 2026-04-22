@@ -117,6 +117,8 @@ export default function HandoverControlPage() {
                   <td className="p-2">{row.action_owner || '—'}</td>
                   <td className="p-2 whitespace-nowrap">
                     <Link href={`/pd/handover/${row.project_id}`} className="text-blue-600 underline">Detail</Link>
+                    {" · "}
+                    <Link href={`/handover/${row.project_id}/live`} className="text-primary underline" data-testid={`live-room-${row.project_id}`}>Live room</Link>
                   </td>
                 </tr>
               );

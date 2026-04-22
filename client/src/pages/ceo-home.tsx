@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useLocation } from "wouter";
-import { useGatesPipeline, useGatesHandovers, type GateProjectCard } from "@/hooks/use-gates";
+import { useGatesPipeline, type GateProjectCard } from "@/hooks/use-gates";
 import { ApprovalQueueCard } from "@/components/controlled-documents";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
@@ -49,7 +49,6 @@ const EXECUTION_STAGES = [
 
 export default function CeoHome() {
   const { data: gatesData, isLoading, error } = useGatesPipeline();
-  const { data: handoversData } = useGatesHandovers();
 
   const preExecByStage = useMemo(() => {
     const all = gatesData?.projects ?? [];
@@ -75,9 +74,17 @@ export default function CeoHome() {
     return counts;
   }, [gatesData]);
 
+  // CEO's "Upcoming handovers" card is specifically for PD -> PM handover
+  // (the charter-signing moment the CEO attends). O&M / Client handovers
+  // live elsewhere. Source from the gates pipeline filtered to the
+  // PD->PM stage codes (S03 post-merge, S04 legacy pre-merge).
   const upcomingHandovers = useMemo(() => {
-    return (handoversData?.projects ?? []).slice(0, 8);
-  }, [handoversData]);
+    const all = gatesData?.projects ?? [];
+    return all
+      .filter((p) => p.currentStageCode === "S03_SIGNATURE_FINANCIAL_CLOSE" || p.currentStageCode === "S04_PD_PM_HANDOVER")
+      .sort((a, b) => (b.gateReadinessPct ?? 0) - (a.gateReadinessPct ?? 0))
+      .slice(0, 8);
+  }, [gatesData]);
 
   if (isLoading) return <PageSkeleton />;
   if (error) return <PageError message="Failed to load CEO home" />;
@@ -203,52 +210,70 @@ function DealCard({ project }: { project: GateProjectCard }) {
   );
 }
 
-function UpcomingHandoversCard({ rows }: { rows: any[] }) {
+function UpcomingHandoversCard({ rows }: { rows: GateProjectCard[] }) {
   const [, navigate] = useLocation();
   return (
     <Card data-testid="upcoming-handovers-card" className="h-full">
       <CardHeader className="pb-3">
         <CardTitle className="text-sm flex items-center gap-2">
           <TrendingUp className="h-4 w-4 text-primary" />
-          Upcoming handovers
+          Upcoming PD → PM handovers
           <Badge variant="outline" className="text-[10px]">{rows.length}</Badge>
         </CardTitle>
       </CardHeader>
       <CardContent className="pt-0">
         {rows.length === 0 ? (
-          <p className="text-xs text-muted-foreground py-6 text-center">No handovers scheduled.</p>
+          <p className="text-xs text-muted-foreground py-6 text-center">No PD → PM handovers pending.</p>
         ) : (
           <ul className="divide-y divide-border/50">
-            {rows.map((r, i) => (
-              <li key={r.projectId ?? i} className="py-2.5 flex items-center justify-between gap-2">
-                <button
-                  onClick={() => navigate(`/project/${encodeURIComponent(r.projectName)}`)}
-                  className="flex-1 min-w-0 flex items-center justify-between gap-2 text-left hover:bg-[hsl(var(--surface-tint))] rounded px-2 -mx-2 py-1 transition-colors"
-                  data-testid={`upcoming-handover-${r.projectId ?? i}`}
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium truncate">{r.projectName}</p>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {r.clientName || ""} {r.pm ? `· PM: ${r.pm}` : ""}
-                    </p>
+            {rows.map((r) => {
+              const engineeringOwner = r.constructionManagerName || r.constructionManager || null;
+              const outstandingCount = r.openExceptionCount ?? 0;
+              const readiness = r.gateReadinessPct ?? 0;
+              const readinessTone =
+                readiness >= 95 ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                : readiness >= 70 ? "bg-amber-50 text-amber-700 border-amber-200"
+                : "bg-red-50 text-red-700 border-red-200";
+              return (
+                <li key={r.projectId} className="py-2.5" data-testid={`upcoming-handover-${r.projectId}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <button
+                      onClick={() => navigate(`/project/${encodeURIComponent(r.projectName)}`)}
+                      className="flex-1 min-w-0 text-left hover:bg-[hsl(var(--surface-tint))] rounded px-2 -mx-2 py-1 transition-colors"
+                    >
+                      <p className="text-sm font-medium truncate">{r.projectName}</p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {r.clientName || "—"}
+                      </p>
+                      <div className="flex items-center gap-2 mt-0.5 text-[11px] text-muted-foreground flex-wrap">
+                        {r.pd && <span>PD: <span className="text-foreground font-medium">{r.pd}</span></span>}
+                        {r.pm && <span>· PM: <span className="text-foreground font-medium">{r.pm}</span></span>}
+                        {engineeringOwner && <span>· Eng: <span className="text-foreground font-medium">{engineeringOwner}</span></span>}
+                      </div>
+                    </button>
+                    <div className="flex flex-col items-end gap-1 shrink-0">
+                      <Badge variant="outline" className={`text-[10px] tabular-nums ${readinessTone}`}>
+                        {readiness}% ready
+                      </Badge>
+                      {outstandingCount > 0 && (
+                        <Badge variant="outline" className="text-[10px] bg-muted">
+                          {outstandingCount} open item{outstandingCount === 1 ? "" : "s"}
+                        </Badge>
+                      )}
+                    </div>
                   </div>
-                  {r.gateReadinessPct != null && (
-                    <Badge variant="outline" className="text-[10px] tabular-nums shrink-0">
-                      {r.gateReadinessPct}% ready
-                    </Badge>
-                  )}
-                </button>
-                {r.projectId ? (
-                  <Link
-                    href={`/handover/${r.projectId}/live`}
-                    className="text-[11px] text-primary hover:underline shrink-0 px-2"
-                    data-testid={`open-live-room-${r.projectId}`}
-                  >
-                    Live room →
-                  </Link>
-                ) : null}
-              </li>
-            ))}
+                  <div className="mt-1 ml-1">
+                    <Link
+                      href={`/handover/${r.projectId}/live`}
+                      className="text-[11px] text-primary hover:underline"
+                      data-testid={`open-live-room-${r.projectId}`}
+                    >
+                      Open live meeting room →
+                    </Link>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         )}
       </CardContent>
