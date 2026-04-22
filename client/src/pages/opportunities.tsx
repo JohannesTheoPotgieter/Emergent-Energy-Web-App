@@ -1011,136 +1011,169 @@ export default function OpportunitiesPage() {
                 {sortKey && <span className="text-slate-400"> • sorted by {sortKey}{sortDir === "desc" ? " ↓" : " ↑"}</span>}
               </div>
             </div>
-            <div className="border rounded-lg overflow-hidden bg-white shadow-sm">
-              <div className="overflow-x-auto max-h-[calc(100vh-300px)]">
-                <table className="w-full text-xs border-collapse" data-testid="table-opportunities-working">
-                  <thead className="bg-emerald-50/60 text-[10px] uppercase tracking-wide text-emerald-900/80 sticky top-0 z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
-                    <tr>
-                      <th className={`text-left px-2.5 py-1.5 font-semibold cursor-pointer select-none hover:text-emerald-900 ${sortHeaderClass("dealName")}`} onClick={() => toggleSort("dealName")} data-testid="sort-dealName">Client / Project{sortIndicator("dealName")}</th>
-                      <th className={`text-left px-2 py-1.5 font-semibold cursor-pointer select-none hover:text-emerald-900 ${sortHeaderClass("stage")}`} onClick={() => toggleSort("stage")} data-testid="sort-stage">Stage{sortIndicator("stage")}</th>
-                      <th className={`text-left px-2 py-1.5 font-semibold cursor-pointer select-none hover:text-emerald-900 ${sortHeaderClass("projectDeveloper")}`} onClick={() => toggleSort("projectDeveloper")} data-testid="sort-projectDeveloper">Project Developer{sortIndicator("projectDeveloper")}</th>
-                      <th className={`text-left px-2 py-1.5 font-semibold cursor-pointer select-none hover:text-emerald-900 ${sortHeaderClass("province")}`} onClick={() => toggleSort("province")} data-testid="sort-province">Province{sortIndicator("province")}</th>
-                      <th className={`text-right px-2 py-1.5 font-semibold whitespace-nowrap cursor-pointer select-none hover:text-emerald-900 ${sortHeaderClass("estimatedKwp")}`} onClick={() => toggleSort("estimatedKwp")} data-testid="sort-estimatedKwp">Size{sortIndicator("estimatedKwp")}</th>
-                      <th className={`text-right px-2 py-1.5 font-semibold whitespace-nowrap cursor-pointer select-none hover:text-emerald-900 ${sortHeaderClass("estimatedValue")}`} onClick={() => toggleSort("estimatedValue")} data-testid="sort-estimatedValue">Value{sortIndicator("estimatedValue")}</th>
-                      <th className={`text-left px-2 py-1.5 font-semibold whitespace-nowrap cursor-pointer select-none hover:text-emerald-900 ${sortHeaderClass("expectedCloseDate")}`} onClick={() => toggleSort("expectedCloseDate")} data-testid="sort-expectedCloseDate">Est. Sig.{sortIndicator("expectedCloseDate")}</th>
-                      <th className={`text-left px-2 py-1.5 font-semibold whitespace-nowrap cursor-pointer select-none hover:text-emerald-900 ${sortHeaderClass("nextActivityDate")}`} onClick={() => toggleSort("nextActivityDate")} data-testid="sort-nextActivityDate">Next Activity{sortIndicator("nextActivityDate")}</th>
-                      <th className={`text-center px-2 py-1.5 font-semibold whitespace-nowrap cursor-pointer select-none hover:text-emerald-900 ${sortHeaderClass("openEngineeringTaskCount")}`} onClick={() => toggleSort("openEngineeringTaskCount")} title="Open engineering tasks" data-testid="sort-openEngineeringTaskCount">Eng.{sortIndicator("openEngineeringTaskCount")}</th>
-                      <th className="text-right px-2 py-1.5 font-semibold">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {displayRows.map((row, idx) => (
-                      <tr
-                        key={row.id}
-                        className={`border-t border-slate-100 cursor-pointer transition-colors hover:bg-emerald-50/50 ${idx % 2 === 1 ? "bg-slate-50/40" : "bg-white"}`}
-                        data-testid={`opportunity-row-${row.id}`}
-                        onClick={() => setDrawerOppId(row.id)}
-                      >
-                        <td className="px-2.5 py-1.5 align-middle min-w-[240px] max-w-[320px]">
-                          <p className="font-semibold text-slate-900 truncate leading-tight" title={row.dealName}>
+            <div className="flex items-center gap-1 mb-2 overflow-x-auto pb-1" data-testid="opportunity-sort-bar">
+              <span className="text-[10px] uppercase tracking-wide text-slate-400 font-semibold pr-1 shrink-0">Sort</span>
+              {([
+                ["dealName", "Name"],
+                ["stage", "Stage"],
+                ["estimatedValue", "Value"],
+                ["estimatedKwp", "Size"],
+                ["expectedCloseDate", "Est. Sig."],
+                ["nextActivityDate", "Next Act."],
+                ["openEngineeringTaskCount", "Eng."],
+                ["projectDeveloper", "PD"],
+                ["province", "Province"],
+              ] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => toggleSort(key)}
+                  data-testid={`sort-${key}`}
+                  className={`shrink-0 inline-flex items-center gap-0.5 rounded-full border px-2 h-6 text-[10px] font-medium transition-colors ${
+                    sortKey === key
+                      ? "bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
+                      : "bg-white text-slate-600 border-slate-200 hover:border-emerald-300 hover:text-emerald-700"
+                  }`}
+                >
+                  {label}
+                  {sortKey === key && <span className="text-[9px]">{sortDir === "desc" ? "↓" : "↑"}</span>}
+                </button>
+              ))}
+            </div>
+            <div
+              className="rounded-lg border border-slate-200 bg-white shadow-sm overflow-y-auto max-h-[calc(100vh-260px)]"
+              data-testid="table-opportunities-working"
+            >
+              <ul className="divide-y divide-slate-100">
+                {displayRows.map((row) => {
+                  const sizeLabel =
+                    row.estimatedKwp != null
+                      ? row.estimatedKwp >= 1000
+                        ? `${(row.estimatedKwp / 1000).toFixed(2)} MWp`
+                        : `${row.estimatedKwp.toFixed(0)} kWp`
+                      : null;
+                  const lifecycle = pdStageLifecycleLabel(row.stage);
+                  return (
+                    <li
+                      key={row.id}
+                      className="group cursor-pointer px-3 py-2.5 hover:bg-emerald-50/40 transition-colors"
+                      data-testid={`opportunity-row-${row.id}`}
+                      onClick={() => setDrawerOppId(row.id)}
+                    >
+                      {/* Row 1: title + status/lifecycle badge */}
+                      <div className="flex items-start justify-between gap-2 mb-1">
+                        <div className="min-w-0 flex-1">
+                          <p
+                            className="font-semibold text-[13px] text-slate-900 truncate leading-tight"
+                            title={row.dealName}
+                          >
                             {row.dealName || `Deal #${row.id}`}
                           </p>
-                          <p className="text-[10px] text-slate-500 truncate flex items-center gap-1 leading-tight" title={row.orgClientName || ""}>
+                          <p
+                            className="text-[10px] text-slate-500 truncate flex items-center gap-1 leading-tight mt-0.5"
+                            title={row.orgClientName || ""}
+                          >
                             <span className="truncate">{row.orgClientName || "Unlinked"}</span>
-                            {!row.hasLinkedClient && <AlertTriangle className="h-2.5 w-2.5 text-amber-500 shrink-0" />}
+                            {!row.hasLinkedClient && (
+                              <AlertTriangle className="h-2.5 w-2.5 text-amber-500 shrink-0" />
+                            )}
                             <span className="text-slate-300">·</span>
                             <span className="text-slate-400 shrink-0">#{row.pipedriveDealId || "—"}</span>
                           </p>
-                        </td>
-                        <td className="px-2 py-1.5 align-middle">
-                          <div className="flex flex-col items-start gap-0.5">
-                            {pdStageLifecycleLabel(row.stage) ? (
-                              <Badge
-                                className="text-[10px] font-medium px-1.5 py-0 bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-50"
-                                data-testid={`row-lifecycle-${row.id}`}
-                                title={`Company lifecycle phase: ${pdStageLifecycleLabel(row.stage)}`}
-                              >
-                                {pdStageLifecycleLabel(row.stage)}
-                              </Badge>
-                            ) : (
-                              <Badge className={`text-[10px] font-medium px-1.5 py-0 ${stageBadgeClass(row.stage)}`}>{appPhaseLabel(row.stage)}</Badge>
-                            )}
-                            {pdStageLifecycleLabel(row.stage) && row.stage && (
-                              <span
-                                className="text-[9px] lowercase text-slate-500 leading-none"
-                                title={`Pipedrive stage: ${row.stage}`}
-                              >
-                                {String(row.stage).toLowerCase()}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-2 py-1.5 align-middle min-w-[120px]">
-                          <p className="text-slate-800 truncate text-xs" title={row.projectDeveloper || ""}>{row.projectDeveloper || "—"}</p>
-                          {row.projectDeveloperOverridden && (
-                            <span className="text-[9px] text-emerald-700 font-medium">override</span>
-                          )}
-                        </td>
-                        <td className="px-2 py-1.5 align-middle">
-                          {row.province ? (
-                            <span className="inline-flex items-center px-1.5 py-0 rounded bg-sky-50 text-sky-700 text-[10px] font-medium border border-sky-100">
-                              {row.province}
-                            </span>
+                        </div>
+                        <div className="flex flex-col items-end gap-0.5 shrink-0">
+                          {lifecycle ? (
+                            <Badge
+                              className="text-[10px] font-medium px-1.5 py-0 bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-50"
+                              data-testid={`row-lifecycle-${row.id}`}
+                              title={`Company lifecycle phase: ${lifecycle}`}
+                            >
+                              {lifecycle}
+                            </Badge>
                           ) : (
-                            <span className="text-[10px] text-slate-300">—</span>
+                            <Badge
+                              className={`text-[10px] font-medium px-1.5 py-0 ${stageBadgeClass(row.stage)}`}
+                            >
+                              {appPhaseLabel(row.stage)}
+                            </Badge>
                           )}
-                        </td>
-                        <td className="px-2 py-1.5 align-middle text-right whitespace-nowrap">
-                          {row.estimatedKwp != null ? (
-                            <span className="tabular-nums font-medium text-slate-800">
-                              {row.estimatedKwp >= 1000 ? `${(row.estimatedKwp / 1000).toFixed(2)} MWp` : `${row.estimatedKwp.toFixed(0)} kWp`}
+                          {lifecycle && row.stage && (
+                            <span
+                              className="text-[9px] lowercase text-slate-500 leading-none"
+                              title={`Pipedrive stage: ${row.stage}`}
+                            >
+                              {String(row.stage).toLowerCase()}
                             </span>
-                          ) : (
-                            <span className="text-[10px] text-slate-300">—</span>
                           )}
-                        </td>
-                        <td className="px-2 py-1.5 align-middle text-right tabular-nums font-semibold text-slate-900 whitespace-nowrap">
+                        </div>
+                      </div>
+
+                      {/* Row 2: meta — value, size, est sig, next act, province, PD */}
+                      <div className="flex items-center flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-600">
+                        <span className="tabular-nums font-semibold text-slate-900">
                           {formatZAR(row.estimatedValue)}
-                        </td>
-                        <td className="px-2 py-1.5 align-middle text-[11px] text-slate-700 whitespace-nowrap">
-                          {formatDate(row.expectedCloseDate)}
-                        </td>
-                        <td className="px-2 py-1.5 align-middle min-w-[130px]">
-                          {row.nextActivityDate ? (
-                            <div className="leading-tight">
-                              <p className="text-[11px] font-medium text-slate-800 whitespace-nowrap">{formatDate(row.nextActivityDate)}</p>
-                              {row.nextActivitySubject && (
-                                <p className="text-[10px] text-slate-500 truncate max-w-[160px]" title={row.nextActivitySubject}>
-                                  {row.nextActivitySubject}
-                                </p>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-[10px] text-slate-300">—</span>
-                          )}
-                        </td>
-                        <td className="px-2 py-1.5 align-middle text-center">
-                          <EngCell row={row} />
-                        </td>
-                        <td className="px-2 py-1.5 align-middle text-right whitespace-nowrap">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="gap-1 h-6 text-[10px] px-1.5 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:border-emerald-300"
-                            data-testid={`btn-create-engineering-ticket-${row.id}`}
-                            onClick={(e) => { e.stopPropagation(); openMapping(row); }}
+                        </span>
+                        {sizeLabel && (
+                          <span className="tabular-nums text-slate-700" title="Size">
+                            {sizeLabel}
+                          </span>
+                        )}
+                        {row.expectedCloseDate && (
+                          <span className="tabular-nums" title="Expected signing">
+                            <span className="text-slate-400">sig</span> {formatDate(row.expectedCloseDate)}
+                          </span>
+                        )}
+                        {row.nextActivityDate && (
+                          <span
+                            className="tabular-nums"
+                            title={row.nextActivitySubject || "Next activity"}
                           >
-                            <TicketPlus className="h-3 w-3" />
-                            Eng.
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="px-3 py-1.5 bg-slate-50 border-t text-[11px] text-slate-500 flex items-center justify-between">
+                            <span className="text-slate-400">next</span> {formatDate(row.nextActivityDate)}
+                          </span>
+                        )}
+                        {row.province && (
+                          <span className="inline-flex items-center px-1.5 py-0 rounded bg-sky-50 text-sky-700 text-[10px] font-medium border border-sky-100">
+                            {row.province}
+                          </span>
+                        )}
+                        {row.projectDeveloper && (
+                          <span
+                            className="truncate max-w-[140px] text-slate-500"
+                            title={row.projectDeveloper}
+                          >
+                            <span className="text-slate-400">PD</span> {row.projectDeveloper}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Row 3: eng count + action button */}
+                      <div className="flex items-center justify-between mt-1.5">
+                        <EngCell row={row} />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-1 h-6 text-[10px] px-2 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:border-emerald-300"
+                          data-testid={`btn-create-engineering-ticket-${row.id}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openMapping(row);
+                          }}
+                        >
+                          <TicketPlus className="h-3 w-3" />
+                          Eng.
+                        </Button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+              <div className="px-3 py-1.5 bg-slate-50 border-t text-[11px] text-slate-500 flex items-center justify-between sticky bottom-0">
                 <span>
                   {searchTerm
                     ? `${displayRows.length} match${displayRows.length === 1 ? "" : "es"} of ${activeRows.length} active`
                     : `${activeRows.length} active opportunit${activeRows.length === 1 ? "y" : "ies"}`}
                 </span>
-                <span className="text-slate-400">Click any row for full detail</span>
+                <span className="text-slate-400">Click any card for detail</span>
               </div>
             </div>
           </TabsContent>
