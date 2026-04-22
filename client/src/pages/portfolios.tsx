@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageLayout } from "@/components/layout";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
+import { getMarginColour } from "@/lib/margin-colour";
 import {
   Briefcase, Plus, FolderOpen, TrendingUp, TrendingDown, AlertTriangle,
   Users, Zap, DollarSign, ShieldCheck, Search, ChevronRight, ChevronDown, Wrench,
@@ -225,7 +226,10 @@ function ProjectDrillTable({ portfolio }: { portfolio: any }) {
             const fin: any = financeByName.get(s.projectName) || {};
             const delta = s.delta || 0;
             return (
-              <tr key={s.projectName} className="border-t border-border/30 hover:bg-muted/20 transition-colors">
+              <tr
+                key={s.projectName}
+                className={`border-t border-border/30 hover:bg-muted/20 transition-colors ${getMarginColour(Number(fin.gpMarginPct || 0))}`}
+              >
                 <td className="py-2 px-3 font-medium truncate max-w-[180px]">{s.projectName}</td>
                 <td className="py-2 px-2 text-muted-foreground">{s.phase || "-"}</td>
                 <td className="py-2 px-2 text-right tabular-nums font-medium">{(s.actualPct ?? 0).toFixed(1)}%</td>
