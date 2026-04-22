@@ -181,11 +181,17 @@ export function registerDeliverableCaptureRoutes(app: Express) {
         if (linkType === "cost_line") {
           await db.update(normalizedCostLines)
             .set({ invoiceNumber: fileNameWithoutExt })
-            .where(eq(normalizedCostLines.id, lId));
+            .where(and(
+              eq(normalizedCostLines.id, lId),
+              isNull(normalizedCostLines.effectiveTo),
+            ));
         } else if (linkType === "revenue_line") {
           await db.update(normalizedRevenueLines)
             .set({ invoiceNumber: fileNameWithoutExt })
-            .where(eq(normalizedRevenueLines.id, lId));
+            .where(and(
+              eq(normalizedRevenueLines.id, lId),
+              isNull(normalizedRevenueLines.effectiveTo),
+            ));
         }
       }
 
