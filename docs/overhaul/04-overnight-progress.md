@@ -18,6 +18,12 @@ Navigation index for what landed on branch `claude/platform-overhaul-3WF1E` over
 
 | Commit | Scope | What it adds |
 |---|---|---|
+| `cf277388` | D4 | Live handover meeting interface — attendee check-in, 6-step guided charter walkthrough with facilitator prompts, live decision log, PM accept/reject. `/handover/:projectId/live`. Wired into CEO home upcoming-handovers. |
+| `d319ce80` | R6.1 | Global keyboard navigation — leader-key ("g" then letter) jumps + `?` shortcut dialog. `g h`, `g p`, `g s`, `g a`, `g q`, etc. |
+| `b10119ea` | R4.3 | Cascade-delete extended to clients — `/api/clients/:id/delete-impact` + `DeleteClientDialog` drop-in. Pattern proven. |
+| `03c0af01` | D5.3 | Per-project SharePoint root config — metadata layer for D3 plus `ProjectSharepointRootCard` wired into project-detail. |
+| `83e68fdb` | D5.2b | Document-types editor UI — `/admin/document-types` super-user surface with CRUD dialogs. |
+| `a40c3d71` | D5.2a | Document-types CRUD API — super-user gated. |
 | `e3310997` | R5 | `/quickbooks` — status → action → history front-door. Replaces the "half-cooked" feel of `/admin-quickbooks` (still accessible as Advanced admin). |
 | `3c2a3d4b` | R4.2 | `useDeleteImpact` hook + `DeleteProjectDialog` drop-in. Any page with a project delete button can now wire cascade-preview in 3 lines. |
 | `dff44e3a` | R4.1 | `GET /api/projects/:id/delete-impact` — scaffold endpoint feeding ConfirmDestructive. Pattern ready to replicate for clients, invoices, documents. |
@@ -38,14 +44,17 @@ Navigation index for what landed on branch `claude/platform-overhaul-3WF1E` over
 
 ## What you can look at in dev
 
-1. **`/ceo`** — pre-execution pipeline + waiting-on-me + upcoming handovers + portfolio strip.
+1. **`/ceo`** — pre-execution pipeline + waiting-on-me + upcoming handovers (each with "Live room →" link) + portfolio strip.
 2. **`/coo`** — morning check: approvals, priorities, red / blocked / amber projects, drill tiles, upcoming handovers, financial pulse column.
 3. **`/settings`** — clean grouped super-user landing.
-4. **`/quickbooks`** — new QB front-door (status, actions, sync log).
-5. **Any project** → PD section → "Controlled docs" subtab — D3 live on every project.
-6. **`/projects/:projectId/documents`** — standalone quick access to a project's docs + approval queue.
-7. **`⌘K`** — federated search across the app.
-8. **Any page** — hover states now emerald-tinted (R1).
+4. **`/admin/document-types`** — super-user CRUD editor for the document taxonomy.
+5. **`/quickbooks`** — clean QB front-door (status, actions, sync log).
+6. **`/handover/:projectId/live`** — live meeting workspace for PD → PM handovers.
+7. **Any project** → PD section → "Controlled docs" subtab — D3 live, plus the SharePoint root config card for super users.
+8. **`/projects/:projectId/documents`** — standalone quick access to a project's docs + approval queue.
+9. **`⌘K`** — federated search across the app.
+10. **Keyboard** — `g h`, `g p`, `g s`, etc. for nav. `?` for the shortcut help. (See `use-keyboard-nav.ts` for the full list.)
+11. **Any page** — hover states now emerald-tinted (R1).
 
 ## Document control (D3) — what exists vs what's still needed
 
