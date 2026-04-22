@@ -51,6 +51,7 @@ import {
 } from "lucide-react";
 import { PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
+import { ApprovalQueueCard } from "@/components/controlled-documents";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { engFetch, engPatch, engPost } from "@/lib/eng-fetch";
 import { PHASE_COLORS } from "@/lib/phase-colors";
@@ -1172,6 +1173,11 @@ export default function EngineeringDashboard() {
           </div>
         </div>
         <ProjectHealthGrid projects={projectHealth} />
+      </div>
+
+      {/* D3 controlled-document approvals waiting on this Engineering Manager */}
+      <div className="mt-6">
+        <ApprovalQueueCard />
       </div>
     </PageShell>
     </ErrorBoundary>
