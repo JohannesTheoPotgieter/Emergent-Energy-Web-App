@@ -90,3 +90,102 @@ e303c3f3  email auto-linker consumer + mock ingester
 ```
 
 Feature-by-theme breakdown continues in section B below.
+
+---
+
+## B. Features by theme
+
+### R1 — Visual direction (first pass)
+
+**What changed:**
+- `--accent` + `--sidebar-accent` tokens (light + dark) shifted to emerald-tinted HSL so every Radix primitive (dropdown, command palette, select, dialog) now reads as brand-aligned on hover/active rather than generic gray.
+- `LensNav` active item gets a 3px emerald left-rail accent.
+- `Table` row hover uses `surface-tint` (subtle emerald). Selected rows get a 3px emerald inset-shadow left-border.
+- `Button` hover on `default` + `destructive` adds `shadow-sm` for a subtle reactive lift; `outline` + `ghost` hover use `surface-tint`.
+- `AppLayout` chrome — leaf-only mark on mobile, full wordmark on desktop, both with hover motion cues. Hard border between section-nav stripe and top bar removed; breadcrumb strip uses `surface-tint/40` background.
+- `ee-subnav-pill` active state tightened (`primary/10` bg + `primary/20` border).
+
+**Files**: `client/src/index.css`, `client/src/components/layout/LensNav.tsx`, `client/src/components/ui/table.tsx`, `client/src/components/ui/button.tsx`, `client/src/components/layout/AppLayout.tsx`.
+
+**Commits**: `ec6eb2fc`.
+
+### D1 — CEO pre-execution home
+
+**What was built:**
+- `/ceo` route, role-landing for `CEO_ADMIN`.
+- Three-column pre-execution pipeline (First Assessment · Cost Proposal & Design · Signature & Financial Close) with deal cards per stage.
+- Upcoming handovers card with per-row "Live room →" link to the D4 meeting interface.
+- Overarching lifecycle strip with clickable counts for all 9 execution stages.
+- Approval queue card (Waiting on me).
+
+**Files**: `client/src/pages/ceo-home.tsx`.
+**Commits**: `7a02b84d`, `cf277388`.
+
+### D2 — COO morning check
+
+**What was built:**
+- `/coo` route, role-landing for `COO_ADMIN`.
+- Ordered around how COO's eyes move: Waiting on me · Priorities · Red/Blocked/Amber projects · Engineering/Quality/HSE/Finance drill tiles · Upcoming handovers · Financial pulse column.
+- Every row deep-links to the specific thing per the "actionable everywhere" rule.
+
+**Files**: `client/src/pages/coo-home.tsx`.
+**Commits**: `7a02b84d`.
+
+### D3 — Document control (Drafts / Approved / History)
+
+**Schema** (`shared/schema/documents.ts`):
+- `controlled_document_types` — taxonomy + default approver roles + `requiresAllApprovers` flag + extract spec for Excel cell mapping.
+- `controlled_documents` — metadata only (never bodies); state lifecycle `draft | submitted | approved | rejected | superseded | recalled`.
+- `project_sharepoint_roots` — per-project root folder path config.
+
+**Approval workflow** reuses the existing `approvals` table via `approvalType='controlled_document'` — zero new approval machinery.
+
+**Seed**: 13 document types with the locked approval matrix (Costing Excel → CEO; EPC Contract → COO; Financial Close Pack → CFO + COO; Project Charter → Program Manager + COO; etc.).
+
+**API**:
+- `GET /api/controlled-documents/types` · `GET /api/projects/:id/controlled-documents[/typeKey]`
+- `POST /api/projects/:id/controlled-documents/submit`
+- `POST /api/controlled-documents/:id/approve|reject|recall`
+- `GET /api/approvals/queue`
+- `GET /api/projects/:id/sharepoint-root` · `PUT` (super-user)
+- `GET /api/projects/:id/sharepoint-drafts/:typeKey` (D3.5 draft picker)
+
+**UI primitives** (in `components/controlled-documents/`):
+- `DocumentStrip` — per-project rows with version badges, pending/history counts, submit button.
+- `DocumentSubmitDialog` — one dropdown per required role; super-users always allowed as override approvers.
+- `DocumentApprovalDialog` — approve/reject tabs with SharePoint preview link.
+- `ApprovalQueueCard` — drop-in for any dashboard; now on CEO · COO · PM · Engineering · Quality · HSE.
+- `ProjectSharepointRootCard` — super-user config of the project's SharePoint root.
+- `DeleteControlledDocDialog` — R4.7 cascade-delete wrapper.
+
+**Integrations** (mock-connector aware):
+- `sharepoint-doc-control-service.ts` — `listDraftFiles`, `promoteDraftToApproved`, `ensureDocControlFolders`. Real Graph calls stubbed with informative errors so dev works end-to-end against fixtures.
+- `excel-extraction-service.ts` — `extractCostingValues` auto-runs inside `recordApproval` when the type has an `extractSpec`. Mock mode returns deterministic-per-file headline numbers so the CEO home shows realistic Revenue / CoS / Margin.
+
+**Commits**: `ee6d590c` · `f15d291d` · `7f7cdda0` · `beab94a7` · `a6bed286` · `c8745c45` · `c5e5063b` · `7eca2891`.
+
+### D4 — PD → PM live handover meeting
+
+**What was built:**
+- `/handover/:projectId/live` route.
+- Room bar with 9 attendee role chips (PD, PM, COO, CFO, Engineer, Construction Mgr, HSE, SSEG, Quality) — click to tick in/out.
+- Sequential 6-step walk through the existing project charter (Overview, Stakeholders, Scope, Schedule, Budget, Risks) with a facilitator-prompt box per step.
+- Per-step notes textarea (persisted with the acceptance row).
+- Right-column DecisionLog captures decisions live.
+- Final step: Accept / Accept-with-Reservations / Reject decision with reason capture. Posts to existing `/api/projects/:id/acceptances`; `stage_acceptances` got two new columns (migration 0014) so attendees + section_notes persist.
+- Entry point on CEO home Upcoming Handovers card.
+
+**Files**: `client/src/pages/handover-live.tsx`, migration `0014_handover_meeting_capture.sql`, `shared/schema/collaboration-workflow.ts` (schema extension), `server/services/collaboration-workflow-service.ts` (createAcceptance signature extension).
+
+**Commits**: `cf277388` · `80c9ca2d`.
+
+### D5 — Settings rewrite
+
+**What was built:**
+- `/settings` — super-user-only grouped landing with 5 concern areas (People · Documents · Integrations · Workflow · Operational), 14 named cards each with a one-line job description.
+- `/admin/document-types` — full CRUD editor for the doc-type taxonomy (add / edit / soft-deactivate, select approver roles from a 12-role checklist, multi-approver toggle, sort order).
+- Per-project `ProjectSharepointRootCard` on project-detail.
+
+**Commits**: `3f6c6547` · `a40c3d71` · `83e68fdb` · `03c0af01`.
+
+(Continues in the next review piece.)
