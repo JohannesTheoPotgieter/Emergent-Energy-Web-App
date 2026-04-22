@@ -2222,7 +2222,10 @@ export function registerLifecycleRoutes(app: Express) {
         await safeDel(sql`DELETE FROM deliverables WHERE project_id = ${pId}`);
         await safeDel(sql`DELETE FROM qc_checklist WHERE project_id = ${pId}`);
         await safeDel(sql`DELETE FROM project_phase_history WHERE project_id = ${pId}`);
-        await safeDel(sql`DELETE FROM pd_tickets WHERE project_id = ${pId}`);
+        // pd_tickets is intentionally deleted AFTER work_items below —
+        // work_items.pd_ticket_id FKs into pd_tickets so removing tickets
+        // first fails silently (savepoint swallow) and then the final
+        // DELETE FROM project_info hits pd_tickets_project_id_fkey.
         await safeDel(sql`DELETE FROM phase_template_application WHERE project_id = ${pId}`);
         await safeDel(sql`DELETE FROM execution_gate_log WHERE project_id = ${pId}`);
         await safeDel(sql`DELETE FROM smart_import_runs WHERE project_id = ${pId}`);
@@ -2243,6 +2246,11 @@ export function registerLifecycleRoutes(app: Express) {
         await safeDel(sql`DELETE FROM project_eng_tasks_legacy_archive WHERE work_item_id IN (SELECT id FROM work_items WHERE project_id = ${pId})`);
         await safeDel(sql`DELETE FROM expense_task_links WHERE canonical_task_id IN (SELECT id FROM work_items WHERE project_id = ${pId})`);
         await safeDel(sql`DELETE FROM work_items WHERE project_id = ${pId} OR external_ref LIKE ${pN + '::PLAN::%'}`);
+        // Detach any cross-project work_items still pointing at this
+        // project's pd_tickets, then drop the tickets. Must happen AFTER
+        // the work_items delete above so the FK is empty.
+        await safeDel(sql`UPDATE work_items SET pd_ticket_id = NULL WHERE pd_ticket_id IN (SELECT id FROM pd_tickets WHERE project_id = ${pId})`);
+        await safeDel(sql`DELETE FROM pd_tickets WHERE project_id = ${pId}`);
         // entity_assignments has a NO ACTION FK to project_info, so we
         // must clear it explicitly. (Was missing — caused SERVER_ERROR on
         // delete for any project with assignment rows.)
