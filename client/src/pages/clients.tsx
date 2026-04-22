@@ -1,6 +1,7 @@
 import { useState, useMemo, Fragment } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Search, Plus, Users, Building2, Pencil, X, Check, ChevronDown, ChevronRight, Link2, Unlink, ChevronsUpDown, FolderKanban, Workflow } from "lucide-react";
+import { ClientEditDialog, type ClientForEdit } from "@/components/clients/ClientEditDialog";
 import { Link } from "wouter";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -81,6 +82,7 @@ export default function ClientsPage() {
   const [newName, setNewName] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editName, setEditName] = useState("");
+  const [detailsEditClient, setDetailsEditClient] = useState<ClientForEdit | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
   const [assignClientId, setAssignClientId] = useState<number | null>(null);
@@ -403,17 +405,32 @@ export default function ClientsPage() {
                       <TableCell>
                         <div className="flex items-center gap-1">
                           {editingId !== client.id && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                startEdit(client);
-                              }}
-                              data-testid={`button-edit-client-${client.id}`}
-                            >
-                              <Pencil className="w-4 h-4" />
-                            </Button>
+                            <>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  startEdit(client);
+                                }}
+                                title="Rename client"
+                                data-testid={`button-edit-client-${client.id}`}
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDetailsEditClient(client);
+                                }}
+                                title="Edit details (contacts, billing, email domains)"
+                                data-testid={`button-edit-client-details-${client.id}`}
+                              >
+                                <Building2 className="w-4 h-4" />
+                              </Button>
+                            </>
                           )}
                         </div>
                       </TableCell>
@@ -594,6 +611,15 @@ export default function ClientsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Super-user full-fidelity client edit (contacts, billing, domains) */}
+      {detailsEditClient && (
+        <ClientEditDialog
+          open={detailsEditClient !== null}
+          onOpenChange={(o) => { if (!o) setDetailsEditClient(null); }}
+          client={detailsEditClient}
+        />
+      )}
     </PageShell>
   );
 }
