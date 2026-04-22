@@ -209,9 +209,10 @@ export function TrackerGapTab() {
       toast({ title: "Marked as ignored" });
       qc.invalidateQueries({ queryKey: ["/api/cos-tracker/tracker-gap", start, end] });
     },
-    onError: (e: any) => {
-      if (String(e?.message) !== "cancelled") {
-        toast({ title: "Failed to ignore", description: String(e?.message ?? e), variant: "destructive" });
+    onError: (e: unknown) => {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg !== "cancelled") {
+        toast({ title: "Failed to ignore", description: msg, variant: "destructive" });
       }
     },
   });
@@ -228,16 +229,29 @@ export function TrackerGapTab() {
       toast({ title: "Class mapping saved" });
       qc.invalidateQueries({ queryKey: ["/api/cos-tracker/tracker-gap", start, end] });
     },
-    onError: (e: any) => {
-      toast({ title: "Failed to save mapping", description: String(e?.message ?? e), variant: "destructive" });
+    onError: (e: unknown) => {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast({ title: "Failed to save mapping", description: msg, variant: "destructive" });
     },
   });
 
   const overrideDeleteMutation = useMutation({
-    mutationFn: async (id: number) => apiRequest("DELETE", `/api/cos-tracker/tracker-gap/class-override/${id}`),
+    mutationFn: async (id: number) => {
+      // Server requires a mandatory `reason` on undo so the audit trail records *why* the
+      // mapping is being retracted (not just *who* did it).
+      const reason = window.prompt("Reason for removing this class→project mapping?\n\nThis will be recorded in the audit log.");
+      if (!reason || !reason.trim()) throw new Error("cancelled");
+      return apiRequest("DELETE", `/api/cos-tracker/tracker-gap/class-override/${id}`, { reason: reason.trim() });
+    },
     onSuccess: () => {
       toast({ title: "Mapping removed" });
       qc.invalidateQueries({ queryKey: ["/api/cos-tracker/tracker-gap", start, end] });
+    },
+    onError: (e: unknown) => {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg !== "cancelled") {
+        toast({ title: "Failed to remove mapping", description: msg, variant: "destructive" });
+      }
     },
   });
 
@@ -276,8 +290,10 @@ export function TrackerGapTab() {
       suggestedProject ?? "",
     );
     if (!projectName || !projectName.trim()) return;
-    const note = window.prompt("Optional note (e.g. 'typo of correct class')") ?? undefined;
-    overrideMutation.mutate({ classRefName: cls, projectName: projectName.trim(), note });
+    // Note is mandatory server-side per COS hardening brief — every override must record *why*.
+    const note = window.prompt("Reason for this mapping (mandatory — recorded in audit log).\nE.g. 'typo of correct class' or 'site lead confirmed Mondi billing class'");
+    if (!note || !note.trim()) return;
+    overrideMutation.mutate({ classRefName: cls, projectName: projectName.trim(), note: note.trim() });
   }
 
   return (
@@ -364,7 +380,7 @@ export function TrackerGapTab() {
       {isError && (
         <Card>
           <CardContent className="p-6 text-sm text-destructive">
-            Failed to load Tracker Gap report. This endpoint requires admin and a connected QuickBooks integration.
+            Failed to load Tracker Gap report. This workspace requires the COS-edit permission (CFO, Accountant, Program Finance Manager, Construction Manager, or COO/CEO admin) and a connected QuickBooks integration.
           </CardContent>
         </Card>
       )}
