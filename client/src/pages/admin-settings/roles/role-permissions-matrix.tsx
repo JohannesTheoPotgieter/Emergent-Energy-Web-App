@@ -14,6 +14,8 @@ interface RolePermissionsMatrixProps {
   onUpdateDraft: (update: Partial<RoleSummary>) => void;
   canManageRoles: boolean;
   enabledNavSections: string[];
+  /** Permission entities corresponding to disabled screens — filtered out of the matrix. */
+  disabledEntityIds?: Set<string>;
 }
 
 const ACTION_ICONS: Record<string, React.ReactNode> = {
@@ -50,7 +52,7 @@ function getPermissionState(
   return { allowed: false, source: "none" };
 }
 
-export function RolePermissionsMatrix({ role, draft, onUpdateDraft, canManageRoles, enabledNavSections }: RolePermissionsMatrixProps) {
+export function RolePermissionsMatrix({ role, draft, onUpdateDraft, canManageRoles, enabledNavSections, disabledEntityIds }: RolePermissionsMatrixProps) {
   const [permSearch, setPermSearch] = useState("");
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
@@ -94,13 +96,16 @@ export function RolePermissionsMatrix({ role, draft, onUpdateDraft, canManageRol
     const assigned = new Set<string>();
     const result: { key: string; label: string; entities: string[] }[] = [];
     Object.entries(ENTITY_CATEGORIES).forEach(([key, cat]) => {
-      cat.entities.forEach((e) => assigned.add(e));
-      result.push({ key, label: cat.label, entities: cat.entities });
+      const entities = disabledEntityIds
+        ? cat.entities.filter((e) => !disabledEntityIds.has(e))
+        : cat.entities;
+      entities.forEach((e) => assigned.add(e));
+      if (entities.length > 0) result.push({ key, label: cat.label, entities });
     });
-    const uncategorized = allKnownEntities.filter((e) => !assigned.has(e));
+    const uncategorized = allKnownEntities.filter((e) => !assigned.has(e) && !(disabledEntityIds?.has(e)));
     if (uncategorized.length > 0) result.push({ key: "uncategorized", label: "Other Permissions", entities: uncategorized });
     return result;
-  }, [allKnownEntities]);
+  }, [allKnownEntities, disabledEntityIds]);
 
   const filteredCategories = useMemo(() => {
     if (!permSearch) return categorizedEntities;

@@ -8,6 +8,7 @@ import { registerPdIntakeRoutes } from './pd-intake.routes';
 import { registerControlledDocumentRoutes } from './documents.routes';
 import { registerImpactRoutes } from './impact.routes';
 import { registerEmailLinksRoutes } from './email-links.routes';
+import { registerScreenSettingsRoutes } from './admin-screen-settings.routes';
 
 export async function registerRoutes(httpServer: Server, app: Express) {
   registerTemplateGovernanceRoutes(app);
@@ -17,5 +18,6 @@ export async function registerRoutes(httpServer: Server, app: Express) {
   registerControlledDocumentRoutes(app);
   registerImpactRoutes(app);
   registerEmailLinksRoutes(app);
+  registerScreenSettingsRoutes(app);
   return registerLegacyRoutes(httpServer, app);
 }
