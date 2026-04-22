@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { usePermission } from "@/hooks/use-permissions";
 import { useLocation } from "wouter";
 import { format } from "date-fns";
+import * as Checkbox from "@radix-ui/react-checkbox";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ import {
   ThumbsUp,
   ThumbsDown,
   Loader2,
+  Check,
 } from "lucide-react";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 
@@ -90,6 +92,76 @@ function getAuthHeaders(): Record<string, string> {
   const csrf = document.cookie.split(";").map(c => c.trim()).find(c => c.startsWith("csrf-token="))?.split("=")[1];
   if (csrf) headers["X-CSRF-Token"] = csrf;
   return headers;
+}
+
+async function performApprovalAction(item: ApprovalItem, action: "approve" | "reject", comment: string) {
+  if (item.type === "general") {
+    const approvalId = item.meta.generalApprovalId || item.id.replace("gen-", "");
+    const res = await fetch(`/api/approvals/general/${approvalId}`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        status: action === "approve" ? "approved" : "rejected",
+        decisionNote: comment || undefined,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || err.message || "Failed to update general approval");
+    }
+    return res.json();
+  }
+  if (item.type === "engineering") {
+    const approvalId = item.meta.approvalId;
+    const res = await fetch(`/api/eng-stages/approvals/${approvalId}`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        status: action === "approve" ? "approved" : "rejected",
+        comments: comment || undefined,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || err.message || "Failed to update engineering approval");
+    }
+    return res.json();
+  }
+  if (item.type === "quality") {
+    const itemInstanceId = item.meta.itemInstanceId;
+    const res = await fetch(`/api/quality/project/${encodeURIComponent(item.projectName)}/item/${itemInstanceId}/approve`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        approved: action === "approve",
+        comment: comment || undefined,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || err.message || "Failed to update quality approval");
+    }
+    return res.json();
+  }
+  const deliverableId = item.meta.deliverableId;
+  const newStatus = action === "approve" ? "COMPLETE" : "PROVIDE FEEDBACK";
+  const res = await fetch(`/api/deliverables/${deliverableId}`, {
+    method: "PATCH",
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ status: newStatus }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || err.message || "Failed to update deliverable");
+  }
+  if (action === "reject" && comment) {
+    await fetch(`/api/deliverables/${deliverableId}/feedback`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ feedbackText: comment }),
+    }).catch(() => {});
+  }
+  return res.json();
 }
 
 export default function AdminApprovalsPage() {
@@ -247,6 +319,13 @@ export default function AdminApprovalsPage() {
   const items = data?.items || [];
   const counts = data?.counts || { engineering: 0, quality: 0, deliverable: 0, general: 0, total: 0 };
   const filtered = filter === "all" ? items : items.filter(i => i.type === filter);
+  const filteredIds = useMemo(() => new Set(filtered.map((item) => item.id)), [filtered]);
+  const selectedItems = useMemo(
+    () => filtered.filter((item) => selectedIds.has(item.id)),
+    [filtered, selectedIds],
+  );
+  const allRowsSelected = filtered.length > 0 && selectedItems.length === filtered.length;
+  const someRowsSelected = selectedItems.length > 0 && selectedItems.length < filtered.length;
   const isPmWorkspace = location.startsWith("/pm/");
   const subtitle = isPmWorkspace
     ? "Execution approvals queue for post-handover delivery work. Approval-required items must use Send for Approval only."
@@ -298,6 +377,54 @@ export default function AdminApprovalsPage() {
       navigate(`/project/${encodeURIComponent(item.projectName)}`);
     }
   }
+
+  function toggleSelected(itemId: string, checked: boolean) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(itemId);
+      else next.delete(itemId);
+      return next;
+    });
+  }
+
+  function toggleSelectAll(checked: boolean) {
+    setSelectedIds((prev) => {
+      if (!checked) {
+        const next = new Set(prev);
+        filtered.forEach((item) => next.delete(item.id));
+        return next;
+      }
+      const next = new Set(prev);
+      filtered.forEach((item) => next.add(item.id));
+      return next;
+    });
+  }
+
+  async function approveSelected() {
+    if (selectedItems.length === 0) return;
+    if (!canApprove) {
+      toast({ title: "Permission required", description: "You do not have approval permission for this queue.", variant: "destructive" });
+      return;
+    }
+    try {
+      await Promise.all(selectedItems.map((item) => performApprovalAction(item, "approve", "")));
+      setSelectedIds(new Set());
+      await queryClient.invalidateQueries({ queryKey: ["/api/approvals/pending"] });
+      sonnerToast.success(`Approved ${selectedItems.length} item${selectedItems.length === 1 ? "" : "s"}.`);
+    } catch (err: any) {
+      sonnerToast.error(err?.message || "Bulk approve failed.");
+    }
+  }
+
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      const next = new Set<string>();
+      prev.forEach((id) => {
+        if (filteredIds.has(id)) next.add(id);
+      });
+      return next.size === prev.size ? prev : next;
+    });
+  }, [filteredIds]);
 
   if (!canView) {
     return (

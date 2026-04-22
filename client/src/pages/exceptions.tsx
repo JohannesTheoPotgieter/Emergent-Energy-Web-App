@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { PageHeader } from "@/components/ui/page-header";
+import { QueryLoading, QueryError } from "@/components/ui/query-states";
 import { PageLayout } from "@/components/layout";
 
 type ExceptionItem = {
@@ -51,7 +52,7 @@ function fetchExceptions(): Promise<ExceptionResponse> {
 }
 
 export default function ExceptionsPage() {
-  const { data, isLoading, isError } = useQuery({ queryKey: ["exceptions-page"], queryFn: fetchExceptions });
+  const { data, isLoading, isError, error, refetch } = useQuery({ queryKey: ["exceptions-page"], queryFn: fetchExceptions });
   const [search, setSearch] = useState("");
   const [severityFilter, setSeverityFilter] = useState("all");
   const [ownerFilter, setOwnerFilter] = useState("all");
@@ -184,8 +185,8 @@ export default function ExceptionsPage() {
         </CardContent>
       </Card>
 
-      {isLoading ? <p className="text-sm text-muted-foreground">Loading exceptions...</p> : null}
-      {isError ? <p className="text-sm text-red-600">Could not load exceptions.</p> : null}
+      {isLoading ? <QueryLoading /> : null}
+      {isError ? <QueryError error={error} onRetry={() => refetch()} /> : null}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>

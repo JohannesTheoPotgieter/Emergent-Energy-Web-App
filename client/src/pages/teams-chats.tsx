@@ -15,6 +15,7 @@ import {
 import { formatDistanceToNow } from "date-fns";
 import { useLocation } from "wouter";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
+import { QueryLoading, QueryError } from "@/components/ui/query-states";
 import { fetchRolloutFeatureFlags } from "@/lib/feature-flags";
 
 function authHeaders(): Record<string, string> {
@@ -101,7 +102,7 @@ function MessagePanel({ selected, currentUserName }: { selected: SelectedItem | 
       : `/api/ms-teams/channels/${encodeURIComponent(selected.teamId)}/${encodeURIComponent(selected.channelId)}/messages`
     : null;
 
-  const { data, isLoading, refetch } = useQuery<{ messages: any[]; ssoRequired?: boolean }>({
+  const { data, isLoading, isError, error, refetch } = useQuery<{ messages: any[]; ssoRequired?: boolean }>({
     queryKey,
     queryFn: async () => {
       if (!apiUrl) return { messages: [] };
@@ -214,6 +215,10 @@ function MessagePanel({ selected, currentUserName }: { selected: SelectedItem | 
           <div className="flex items-center justify-center py-20">
             <Loader2 className="h-6 w-6 animate-spin text-emerald-500" />
           </div>
+        ) : isError ? (
+          <div className="p-4">
+            <QueryError error={error} onRetry={() => refetch()} />
+          </div>
         ) : data?.ssoRequired ? (
           <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
             <AlertTriangle className="h-8 w-8 text-amber-500 mb-3" />
@@ -276,7 +281,7 @@ function Sidebar({ selected, onSelect }: { selected: SelectedItem | null; onSele
   const [expandedSections, setExpandedSections] = useState({ teams: true, chats: true });
   const qc = useQueryClient();
 
-  const { data: teamsData, isLoading: teamsLoading } = useQuery<any>({
+  const { data: teamsData, isLoading: teamsLoading, isError: teamsIsError, error: teamsError, refetch: refetchTeams } = useQuery<any>({
     queryKey: ["ms-teams-joined"],
     queryFn: async () => {
       const res = await fetch("/api/ms-teams/joined", { headers: authHeaders(), credentials: "include" });
@@ -286,7 +291,7 @@ function Sidebar({ selected, onSelect }: { selected: SelectedItem | null; onSele
     staleTime: 60_000,
   });
 
-  const { data: chatsData, isLoading: chatsLoading } = useQuery<any>({
+  const { data: chatsData, isLoading: chatsLoading, isError: chatsIsError, error: chatsError, refetch: refetchChats } = useQuery<any>({
     queryKey: ["ms-teams-chats"],
     queryFn: async () => {
       const res = await fetch("/api/ms-teams/chats", { headers: authHeaders(), credentials: "include" });
@@ -362,6 +367,14 @@ function Sidebar({ selected, onSelect }: { selected: SelectedItem | null; onSele
         <p className="text-xs text-slate-500 mt-1">Sign in with Microsoft to see your Teams.</p>
       </div>
     );
+  }
+
+  if (teamsIsError) {
+    return <div className="w-72 border-r p-3"><QueryError error={teamsError} onRetry={() => refetchTeams()} /></div>;
+  }
+
+  if (chatsIsError) {
+    return <div className="w-72 border-r p-3"><QueryError error={chatsError} onRetry={() => refetchChats()} /></div>;
   }
 
   return (
@@ -511,12 +524,15 @@ export default function TeamsChatsPage() {
   const currentUserName = user?.name || user?.username || "";
   const isMyWorkRoute = location.startsWith("/my-work/");
 
-  const { data: rolloutFlags } = useQuery({
+  const { data: rolloutFlags, isLoading: rolloutFlagsLoading, isError: rolloutFlagsError, error: rolloutFlagsQueryError, refetch: refetchRolloutFlags } = useQuery({
     queryKey: ["rollout-feature-flags"],
     queryFn: fetchRolloutFeatureFlags,
     staleTime: 60_000,
   });
   const contextualMsSurfacesEnabled = rolloutFlags?.find((flag) => flag.key === "contextual_ms_surfaces")?.value === true;
+
+  if (rolloutFlagsLoading) return <QueryLoading />;
+  if (rolloutFlagsError) return <QueryError error={rolloutFlagsQueryError} onRetry={() => refetchRolloutFlags()} />;
 
   return (
     <div className="flex h-[calc(100vh-56px)] bg-white overflow-hidden page-enter" data-testid="teams-chats-page">

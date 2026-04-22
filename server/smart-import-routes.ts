@@ -2587,12 +2587,18 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
                 categoryKey: match.key,
                 categoryAllocationId: match.id,
               })
-              .where(eq(normalizedCostLines.id, row.id));
+              .where(and(
+                eq(normalizedCostLines.id, row.id),
+                isNull(normalizedCostLines.effectiveTo),
+              ));
           } else if (match && !row.categoryKey) {
             // Row already has the right categoryKey but is missing the FK
             await tx.update(normalizedCostLines)
               .set({ categoryAllocationId: match.id })
-              .where(eq(normalizedCostLines.id, row.id));
+              .where(and(
+                eq(normalizedCostLines.id, row.id),
+                isNull(normalizedCostLines.effectiveTo),
+              ));
           }
         }
       }
