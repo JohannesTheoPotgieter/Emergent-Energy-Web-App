@@ -304,28 +304,58 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
           </button>
         </div>
 
-        {/* Summary chips */}
-        {!isLoading && !isError && data && (
-          <div className="px-4 sm:px-6 py-3 border-b bg-muted/20 flex flex-wrap gap-3 text-xs">
-            <div className="flex items-center gap-1.5">
-              <span className="text-muted-foreground">Lines:</span>
-              <span className="font-semibold">{filtered.length}</span>
-              {filtered.length !== (data.items?.length ?? 0) && (
-                <span className="text-muted-foreground">/ {data.items?.length ?? 0}</span>
+        {/* Summary chips — only show the total that matches what was clicked, so
+            "click R328" → "this drawer adds up to R328", with no cross-source noise. */}
+        {!isLoading && !isError && data && (() => {
+          const showApp = stateFilter === "all" || stateFilter === "realised" || stateFilter === "committed" || stateFilter === "planned";
+          const showQb = stateFilter === "all" || stateFilter === "qb_actual";
+          const headlineLabel =
+            stateFilter === "realised" ? "Realised total"
+            : stateFilter === "committed" ? "Committed total"
+            : stateFilter === "planned" ? "Planned total"
+            : stateFilter === "qb_actual" ? "QuickBooks total"
+            : null;
+          return (
+            <div className="px-4 sm:px-6 py-3 border-b bg-muted/20 flex flex-wrap gap-3 text-xs items-center">
+              <div className="flex items-center gap-1.5">
+                <span className="text-muted-foreground">Lines:</span>
+                <span className="font-semibold">{filtered.length}</span>
+                {filtered.length !== (data.items?.length ?? 0) && (
+                  <span className="text-muted-foreground">/ {data.items?.length ?? 0}</span>
+                )}
+              </div>
+              {headlineLabel && (
+                <>
+                  <div className="h-4 w-px bg-border" />
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-muted-foreground">{headlineLabel}:</span>
+                    <span className="font-semibold font-mono text-emerald-700" data-testid="text-drawer-headline-total">
+                      {formatRand(stateFilter === "qb_actual" ? totalQbAmount : totalAppAmount)}
+                    </span>
+                  </div>
+                </>
+              )}
+              {stateFilter === "all" && showApp && (
+                <>
+                  <div className="h-4 w-px bg-border" />
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-muted-foreground">App total:</span>
+                    <span className="font-semibold font-mono">{formatRand(totalAppAmount)}</span>
+                  </div>
+                </>
+              )}
+              {stateFilter === "all" && showQb && (
+                <>
+                  <div className="h-4 w-px bg-border" />
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-muted-foreground">QB total:</span>
+                    <span className="font-semibold font-mono text-foreground">{formatRand(totalQbAmount)}</span>
+                  </div>
+                </>
               )}
             </div>
-            <div className="h-4 w-px bg-border" />
-            <div className="flex items-center gap-1.5">
-              <span className="text-muted-foreground">App total:</span>
-              <span className="font-semibold font-mono">{formatRand(totalAppAmount)}</span>
-            </div>
-            <div className="h-4 w-px bg-border" />
-            <div className="flex items-center gap-1.5">
-              <span className="text-muted-foreground">QB total:</span>
-              <span className="font-semibold font-mono text-foreground">{formatRand(totalQbAmount)}</span>
-            </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Filters */}
         <div className="px-4 sm:px-6 py-3 border-b flex flex-col sm:flex-row gap-2">
@@ -655,7 +685,21 @@ export default function CosTracker() {
     const totalApp = planned + committed + realised;
     const variance = totalApp - budget;
     const variancePct = budget !== 0 ? (variance / budget) * 100 : 0;
-    return { planned, committed, realised, quickbooks, budget, variance, variancePct };
+    // Outstanding to budget = what's left of the FY budget after Realised spend.
+    const outstanding = budget - realised;
+    return { planned, committed, realised, quickbooks, budget, variance, variancePct, outstanding };
+  }, [months]);
+
+  // YTD variance-to-budget % running through the FY (single tracker line shown under the KPI strip).
+  const ytdVariancePctSeries = useMemo(() => {
+    let runningApp = 0;
+    let runningBudget = 0;
+    return months.map((m) => {
+      runningApp += (m.plannedCOS ?? 0) + (m.committedCOS ?? 0) + (m.realisedCOS ?? 0);
+      runningBudget += m.budget ?? 0;
+      const pct = runningBudget !== 0 ? ((runningApp - runningBudget) / runningBudget) * 100 : 0;
+      return { x: m.monthLabel, y: Number(pct.toFixed(1)) };
+    });
   }, [months]);
 
   // Collect all project names per row from the months data, then narrow by tracker-loaded set
@@ -936,28 +980,23 @@ export default function CosTracker() {
     );
   };
 
-  // 7-card FY KPI strip in the exact order required by the COS hardening brief:
-  //   Planned (App-only) → Committed (App-only) → Realised (App-only) → QuickBooks COS (QB-only)
-  //   → Budget (Budget-only) → Variance to Budget → Variance to Budget %
-  // App-only and QB-only sources are deliberately separated so each card is source-pure.
-  type FyCardKey = "planned" | "committed" | "realised" | "quickbooks" | "budget" | "variance" | "variancePct";
+  // 4-card FY KPI strip (per user spec): Budget · Planned · Realised · Outstanding — all FY-to-date.
+  // Sparklines removed; a single YTD variance-to-budget tracker line is rendered separately below the strip.
+  type FyCardKey = "budget" | "planned" | "realised" | "outstanding";
   const FY_CARD_META: Record<FyCardKey, {
     label: string;
     source: "App" | "QB" | "Budget" | "Derived";
     icon: React.ComponentType<{ className?: string }>;
     iconBg: string;
     accent: string;
-    sparkColor: string;
     getValue: (m: MonthData) => number;
     format?: (v: number) => string;
+    description?: string;
   }> = {
-    planned:    { label: "FY COS Planned",     source: "App",     icon: ListChecks,   iconBg: "bg-emerald-50 text-emerald-700 border border-emerald-200", accent: "text-emerald-700", sparkColor: "#16a34a", getValue: (m) => m.plannedCOS ?? 0 },
-    committed:  { label: "FY COS Committed",   source: "App",     icon: ListChecks,   iconBg: "bg-amber-50 text-amber-700 border border-amber-200",       accent: "text-amber-700",  sparkColor: "#f59e0b", getValue: (m) => m.committedCOS ?? 0 },
-    realised:   { label: "FY COS Realised",    source: "App",     icon: CheckCircle2, iconBg: "bg-foreground/8 text-foreground",                          accent: "text-foreground", sparkColor: "#0f172a", getValue: (m) => m.realisedCOS ?? 0 },
-    quickbooks: { label: "FY QuickBooks COS",  source: "QB",      icon: DollarSign,   iconBg: "bg-emerald-50 text-emerald-700 border border-emerald-200", accent: "text-emerald-700", sparkColor: "#16a34a", getValue: (m) => m.qbOnlyActual ?? 0 },
-    budget:     { label: "FY Budget",          source: "Budget",  icon: Wallet,       iconBg: "bg-emerald-50 text-emerald-700 border border-emerald-200", accent: "text-emerald-700", sparkColor: "#16a34a", getValue: (m) => m.budget ?? 0 },
-    variance:   { label: "FY Variance to Budget", source: "Derived", icon: TrendingUp, iconBg: "bg-slate-100 text-slate-700",                              accent: "text-slate-800",  sparkColor: "#64748b", getValue: (m) => (m.variance ?? 0) },
-    variancePct:{ label: "FY Variance to Budget %", source: "Derived", icon: TrendingUp, iconBg: "bg-slate-100 text-slate-700",                            accent: "text-slate-800",  sparkColor: "#64748b", getValue: (m) => (m.variancePct ?? 0), format: (v) => `${v.toFixed(1)}%` },
+    budget:      { label: "FY Budget",      source: "Budget",  icon: Wallet,       iconBg: "bg-emerald-50 text-emerald-700 border border-emerald-200", accent: "text-emerald-700", getValue: (m) => m.budget ?? 0 },
+    planned:     { label: "FY Planned",     source: "App",     icon: ListChecks,   iconBg: "bg-emerald-50 text-emerald-700 border border-emerald-200", accent: "text-emerald-700", getValue: (m) => m.plannedCOS ?? 0 },
+    realised:    { label: "FY Realised",    source: "App",     icon: CheckCircle2, iconBg: "bg-foreground/8 text-foreground",                          accent: "text-foreground",  getValue: (m) => m.realisedCOS ?? 0 },
+    outstanding: { label: "FY Outstanding", source: "Derived", icon: TrendingUp,   iconBg: "bg-slate-100 text-slate-700",                              accent: "text-slate-800",   getValue: (m) => (m.budget ?? 0) - (m.realisedCOS ?? 0), description: "Budget − Realised" },
   };
 
   const renderFyKpiCard = (key: FyCardKey) => {
@@ -969,54 +1008,85 @@ export default function CosTracker() {
     const delta = lastValue - prevValue;
     const deltaPct = prevValue !== 0 ? (delta / Math.abs(prevValue)) * 100 : 0;
     const deltaPositive = delta >= 0;
-    const cardSpark = months.map((m) => ({ x: m.monthKey, y: meta.getValue(m) }));
     const fmt = meta.format ?? formatRand;
     return (
       <Card key={key} className="border-border shadow-sm">
         <CardContent className="p-3 sm:p-4">
-          <div className="flex items-center gap-2 mb-1.5">
-            <div className={`h-7 w-7 rounded-lg flex items-center justify-center ${meta.iconBg}`}>
-              <Icon className="h-3.5 w-3.5" />
+          <div className="flex items-center gap-2 mb-2">
+            <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${meta.iconBg}`}>
+              <Icon className="h-4 w-4" />
             </div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{meta.label}</p>
-            {/* Source-purity badge so a viewer can always see whether a number is App / QB / Budget / derived. */}
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground leading-tight">{meta.label}</p>
+              {meta.description && (
+                <p className="text-[10px] text-muted-foreground/80 leading-tight">{meta.description}</p>
+              )}
+            </div>
             <Badge variant="outline" className="ml-auto text-[9px] font-medium px-1.5 py-0 border-border bg-card text-muted-foreground" data-testid={`badge-source-${key}`}>
               {meta.source}
             </Badge>
           </div>
-          <p className={`text-lg sm:text-xl font-bold font-mono tracking-tight ${meta.accent}`} data-testid={`text-fy-${key}-value`}>
+          <p className={`text-2xl sm:text-3xl font-bold font-mono tracking-tight ${meta.accent}`} data-testid={`text-fy-${key}-value`}>
             {fmt(fyValue)}
           </p>
-          <div className="flex items-center justify-between mt-1.5">
-            <div className="flex flex-col">
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Last mo.</span>
-              <span className="font-mono font-semibold text-xs">{fmt(lastValue)}</span>
-              {prevMonth && (
-                <span className={`inline-flex items-center gap-0.5 text-[10px] font-medium ${deltaPositive ? "text-emerald-700" : "text-destructive"}`}>
-                  {deltaPositive ? <ArrowUpRight className="h-2.5 w-2.5" /> : <ArrowDownRight className="h-2.5 w-2.5" />}
-                  {Math.abs(deltaPct).toFixed(1)}%
-                </span>
-              )}
-            </div>
-            <div className="h-10 w-28 sm:w-36">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={cardSpark} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
-                  <Line type="monotone" dataKey="y" stroke={meta.sparkColor} strokeWidth={1.5} dot={false} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
+          <div className="flex items-center gap-2 mt-2 text-[11px]">
+            <span className="text-muted-foreground">Last mo.</span>
+            <span className="font-mono font-semibold">{fmt(lastValue)}</span>
+            {prevMonth && (
+              <span className={`inline-flex items-center gap-0.5 font-medium ${deltaPositive ? "text-emerald-700" : "text-destructive"}`}>
+                {deltaPositive ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                {Math.abs(deltaPct).toFixed(1)}%
+              </span>
+            )}
           </div>
         </CardContent>
       </Card>
     );
   };
 
+  // Single tracking line beneath the KPI cards: YTD Variance to Budget % over the FY.
+  const renderYtdVarianceTracker = () => (
+    <Card className="border-border shadow-sm">
+      <CardContent className="p-3 sm:p-4">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="flex items-center gap-2">
+            <div className="h-7 w-7 rounded-lg flex items-center justify-center bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <LineChartIcon className="h-3.5 w-3.5" />
+            </div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              YTD Variance to Budget %
+            </p>
+          </div>
+          <span
+            className={`font-mono text-sm font-bold ${fyTotals.variancePct >= 0 ? "text-emerald-700" : "text-destructive"}`}
+            data-testid="text-ytd-variance-pct"
+          >
+            {fyTotals.variancePct >= 0 ? "+" : ""}{fyTotals.variancePct.toFixed(1)}%
+          </span>
+        </div>
+        <div className="h-16 w-full" data-testid="chart-ytd-variance-tracker">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={ytdVariancePctSeries} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+              <XAxis dataKey="x" tick={{ fontSize: 10, fill: "#94a3b8" }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+              <YAxis hide domain={["auto", "auto"]} />
+              <Tooltip
+                formatter={(v: number) => [`${v.toFixed(1)}%`, "YTD Variance %"]}
+                contentStyle={{ borderRadius: "8px", border: "1px solid #e2e8f0", fontSize: "11px" }}
+              />
+              <Line type="monotone" dataKey="y" stroke="#dc2626" strokeWidth={2} dot={{ r: 2.5, fill: "#dc2626" }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </CardContent>
+    </Card>
+  );
+
   const renderTrend = () => (
     <Card className="shadow-sm overflow-hidden">
       <CardHeader className="bg-muted/30 border-b border-border px-3 sm:px-5 py-2.5 sm:py-3">
         <CardTitle className="text-sm font-semibold tracking-tight flex items-center gap-2">
           <LineChartIcon className="h-4 w-4 text-muted-foreground" />
-          COS trend — Planned · Committed · Realised · QB (bars) + Tracking vs Budget % · YTD Variance % (lines)
+          COS trend — Budget · Planned · Realised · QuickBooks (bars) + YTD Variance to Budget % (line)
         </CardTitle>
       </CardHeader>
       <CardContent className="p-3 sm:p-6">
@@ -1043,43 +1113,23 @@ export default function CosTracker() {
               />
               <Tooltip
                 formatter={(value: number, name: string) =>
-                  name === "Tracking vs Budget %" || name === "YTD Variance %"
+                  name === "YTD Variance %"
                     ? [value == null ? "—" : `${value.toFixed(1)}%`, name]
                     : [formatRand(value), name]
                 }
                 contentStyle={{ borderRadius: "12px", border: "1px solid #e2e8f0", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", fontSize: "12px" }}
               />
               <Legend iconType="circle" wrapperStyle={{ fontSize: "12px", paddingTop: "12px" }} />
-              <Bar yAxisId="left" dataKey="COS Planned (Budget)" fill="#a7f3d0" radius={[4, 4, 0, 0]} />
-              <Bar yAxisId="left" dataKey="COS Committed" stackId="app" fill="#f59e0b" radius={[0, 0, 0, 0]} />
-              <Bar yAxisId="left" dataKey="COS Realised" stackId="app" fill="#0f172a" radius={[4, 4, 0, 0]} />
-              <Bar yAxisId="left" dataKey="Quickbooks COS" fill="#16a34a" radius={[4, 4, 0, 0]} />
-              <Line
-                yAxisId="left"
-                type="monotone"
-                dataKey="Budget"
-                stroke="#16a34a"
-                strokeWidth={2}
-                strokeDasharray="4 3"
-                dot={{ r: 2.5, fill: "#16a34a" }}
-                connectNulls={false}
-              />
-              <Line
-                yAxisId="right"
-                type="monotone"
-                dataKey="Tracking vs Budget %"
-                stroke="#0f766e"
-                strokeWidth={2}
-                dot={{ r: 3, fill: "#0f766e" }}
-                connectNulls={false}
-              />
+              <Bar yAxisId="left" name="Budget" dataKey="Budget" fill="#16a34a" radius={[4, 4, 0, 0]} />
+              <Bar yAxisId="left" name="Planned" dataKey="COS Planned (Budget)" fill="#a7f3d0" radius={[4, 4, 0, 0]} />
+              <Bar yAxisId="left" name="Realised" dataKey="COS Realised" fill="#0f172a" radius={[4, 4, 0, 0]} />
+              <Bar yAxisId="left" name="QuickBooks" dataKey="Quickbooks COS" fill="#34d399" radius={[4, 4, 0, 0]} />
               <Line
                 yAxisId="right"
                 type="monotone"
                 dataKey="YTD Variance %"
                 stroke="#dc2626"
                 strokeWidth={2}
-                strokeDasharray="6 3"
                 dot={{ r: 3, fill: "#dc2626" }}
                 connectNulls={false}
               />
@@ -1212,17 +1262,15 @@ export default function CosTracker() {
           </aside>
 
           <div className="flex-1 min-w-0 space-y-3">
-            {/* 7-card FY KPI strip — exact order per COS hardening brief: */}
-            {/*   Planned · Committed · Realised · QuickBooks COS · Budget · Variance · Variance % */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-7 gap-2 sm:gap-3" data-testid="kpi-strip-cos">
-              {renderFyKpiCard("planned")}
-              {renderFyKpiCard("committed")}
-              {renderFyKpiCard("realised")}
-              {renderFyKpiCard("quickbooks")}
+            {/* 4-card FY KPI strip: Budget · Planned · Realised · Outstanding (all FY-to-date) */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3" data-testid="kpi-strip-cos">
               {renderFyKpiCard("budget")}
-              {renderFyKpiCard("variance")}
-              {renderFyKpiCard("variancePct")}
+              {renderFyKpiCard("planned")}
+              {renderFyKpiCard("realised")}
+              {renderFyKpiCard("outstanding")}
             </div>
+            {/* Single tracker line: YTD Variance to Budget % across the FY */}
+            {renderYtdVarianceTracker()}
 
             <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "recon" | "trend" | "gap")}>
               <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
