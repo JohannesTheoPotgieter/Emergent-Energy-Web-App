@@ -45,7 +45,13 @@ export const clients = pgTable("clients", {
   // See docs/overhaul/04-overnight-progress.md for the email-linking design.
   primaryEmailDomain: text("primary_email_domain"),     // e.g. "clientabc.com"
   additionalEmailDomains: jsonb("additional_email_domains").$type<string[]>().default([]),
-});
+}, (table) => ({
+  // Defence-in-depth against duplicate clients for the same Pipedrive org.
+  // Backed by migration 0018_clients_unique_pipedrive_org.sql.
+  pipedriveOrgIdUniq: uniqueIndex("clients_pipedrive_org_id_uniq")
+    .on(table.pipedriveOrgId)
+    .where(sql`${table.pipedriveOrgId} IS NOT NULL`),
+}));
 export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertClient = z.infer<typeof insertClientSchema>;
 export type Client = typeof clients.$inferSelect;
