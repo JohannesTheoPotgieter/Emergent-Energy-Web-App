@@ -106,6 +106,7 @@ const FinanceQuickBooksThroughputPage = lazyWithRetry(
   () => import("@/pages/finance-quickbooks-throughput"),
 );
 const AdminBackfillPage = lazyWithRetry(() => import("@/pages/admin-backfill"));
+const AdminWorkItemLinkagePage = lazyWithRetry(() => import("@/pages/admin-work-item-linkage"));
 const AdminWorkflowConfigPage = lazyWithRetry(() => import("@/pages/admin-workflow-config"));
 
 const CommissioningDashboardPage = lazyWithRetry(() => import("@/pages/commissioning-dashboard"));
@@ -221,6 +222,7 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   FinanceQuickBooksCustomerMappingPage,
   FinanceQuickBooksThroughputPage,
   AdminBackfillPage,
+  AdminWorkItemLinkagePage,
   AdminWorkflowConfigPage,
   MilestoneTrackerPage,
   GatesPipelinePage,

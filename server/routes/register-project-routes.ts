@@ -43,4 +43,9 @@ export async function registerProjectRoutes(app: Express) {
     "./project-development-workspace-rollup.routes"
   );
   registerProjectDevelopmentWorkspaceRollupRoutes(app);
+  // Linkage repair UI for orphan work_items (Task #41).
+  const { registerAdminWorkItemLinkageRoutes } = await import(
+    "./admin-work-item-linkage.routes"
+  );
+  registerAdminWorkItemLinkageRoutes(app);
 }
