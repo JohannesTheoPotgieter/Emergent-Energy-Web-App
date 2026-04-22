@@ -28,6 +28,7 @@ import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { useAuth } from "@/hooks/use-auth";
 import { format } from "date-fns";
 import { CashflowTab } from "@/components/tabs/CashflowTab";
+import { getMarginColour } from "@/lib/margin-colour";
 
 const MILESTONE_CONFIG = [
   { name: "PD Handover", color: "#6366f1", bgColor: "#eef2ff" },
@@ -647,7 +648,11 @@ export default function PortfolioDetailPage() {
                     };
 
                     return (
-                      <tr key={projectId || name} className="border-b hover:bg-muted/50 transition-colors" data-testid={`row-project-${projectId}`}>
+                      <tr
+                        key={projectId || name}
+                        className={`border-b hover:bg-muted/50 transition-colors ${gpPct != null ? getMarginColour(gpPct) : ""}`}
+                        data-testid={`row-project-${projectId}`}
+                      >
                         <td className="px-2 py-2 sticky left-0 bg-card z-10">
                           <Link href={`/project/${encodeURIComponent(name)}`}>
                             <span className="font-semibold text-blue-700 hover:text-blue-900 hover:underline truncate max-w-[140px] block" title={cleanName(name)} data-testid={`link-project-${name}`}>
@@ -803,7 +808,11 @@ export default function PortfolioDetailPage() {
                         const pGp = (p.actualRevenue || 0) - (p.actualExpenses || 0);
                         const pGpPct = (p.actualRevenue || 0) > 0 ? (pGp / (p.actualRevenue || 1)) * 100 : 0;
                         return (
-                          <TableRow key={p.id} className="hover:bg-muted/60 transition-colors" data-testid={`row-finance-${p.id}`}>
+                          <TableRow
+                            key={p.id}
+                            className={`hover:bg-muted/60 transition-colors ${getMarginColour(pGpPct)}`}
+                            data-testid={`row-finance-${p.id}`}
+                          >
                             <TableCell className="py-3">
                               <Link href={`/project/${encodeURIComponent(p.projectName)}`}>
                                 <span className="text-blue-700 hover:text-blue-900 hover:underline font-medium">{cleanName(p.projectName)}</span>
