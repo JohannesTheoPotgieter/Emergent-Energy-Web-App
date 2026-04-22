@@ -66,6 +66,14 @@ export async function listActiveDocumentTypes(): Promise<ControlledDocumentType[
     .orderBy(asc(controlledDocumentTypes.sortOrder), asc(controlledDocumentTypes.displayName));
 }
 
+/** Admin view — includes inactive types so super users can reactivate. */
+export async function listAllDocumentTypes(): Promise<ControlledDocumentType[]> {
+  return db
+    .select()
+    .from(controlledDocumentTypes)
+    .orderBy(asc(controlledDocumentTypes.sortOrder), asc(controlledDocumentTypes.displayName));
+}
+
 export async function getDocumentType(typeKey: string): Promise<ControlledDocumentType | null> {
   const rows = await db
     .select()
@@ -672,4 +680,99 @@ export async function getApprovalQueueForUser(userId: number): Promise<ApprovalQ
     ))
     .orderBy(asc(approvals.requestedAt));
   return rows;
+}
+
+// =========================================================================
+// Document-type taxonomy CRUD (D5.2 — super-user editor)
+// =========================================================================
+
+export interface DocumentTypeCreate {
+  typeKey: string;
+  displayName: string;
+  description?: string | null;
+  folderSubPath: string;
+  defaultApproverRoles: string[];
+  requiresAllApprovers: boolean;
+  extractSpec?: { sheetName?: string; cells?: Record<string, string> } | null;
+  sortOrder?: number;
+}
+
+export interface DocumentTypeUpdate {
+  displayName?: string;
+  description?: string | null;
+  folderSubPath?: string;
+  defaultApproverRoles?: string[];
+  requiresAllApprovers?: boolean;
+  extractSpec?: { sheetName?: string; cells?: Record<string, string> } | null;
+  active?: boolean;
+  sortOrder?: number;
+}
+
+export async function createDocumentType(input: DocumentTypeCreate): Promise<ControlledDocumentType> {
+  // Guard: typeKey must not already exist.
+  const existing = await getDocumentType(input.typeKey);
+  if (existing) throw new Error(`Document type '${input.typeKey}' already exists.`);
+  if (!/^[a-z0-9_]+$/.test(input.typeKey)) {
+    throw new Error("typeKey must be lowercase letters, numbers, and underscores only.");
+  }
+  if (!input.defaultApproverRoles?.length) {
+    throw new Error("At least one default approver role is required.");
+  }
+  const [row] = await db
+    .insert(controlledDocumentTypes)
+    .values({
+      typeKey: input.typeKey,
+      displayName: input.displayName,
+      description: input.description ?? null,
+      folderSubPath: input.folderSubPath,
+      defaultApproverRoles: input.defaultApproverRoles,
+      requiresAllApprovers: input.requiresAllApprovers,
+      extractSpec: input.extractSpec ?? null,
+      sortOrder: input.sortOrder ?? 999,
+      active: true,
+    })
+    .returning();
+  return row;
+}
+
+export async function updateDocumentType(
+  typeKey: string,
+  patch: DocumentTypeUpdate,
+): Promise<ControlledDocumentType> {
+  const existing = await getDocumentType(typeKey);
+  if (!existing) throw new Error(`Document type '${typeKey}' not found.`);
+  if (patch.defaultApproverRoles && patch.defaultApproverRoles.length === 0) {
+    throw new Error("defaultApproverRoles must not be empty.");
+  }
+
+  const setClause: Record<string, unknown> = { updatedAt: new Date() };
+  if (patch.displayName !== undefined) setClause.displayName = patch.displayName;
+  if (patch.description !== undefined) setClause.description = patch.description;
+  if (patch.folderSubPath !== undefined) setClause.folderSubPath = patch.folderSubPath;
+  if (patch.defaultApproverRoles !== undefined) setClause.defaultApproverRoles = patch.defaultApproverRoles;
+  if (patch.requiresAllApprovers !== undefined) setClause.requiresAllApprovers = patch.requiresAllApprovers;
+  if (patch.extractSpec !== undefined) setClause.extractSpec = patch.extractSpec;
+  if (patch.active !== undefined) setClause.active = patch.active;
+  if (patch.sortOrder !== undefined) setClause.sortOrder = patch.sortOrder;
+
+  const [row] = await db
+    .update(controlledDocumentTypes)
+    .set(setClause)
+    .where(eq(controlledDocumentTypes.typeKey, typeKey))
+    .returning();
+  return row;
+}
+
+/**
+ * Soft-delete a document type by setting active=false. We never hard-delete
+ * because existing controlled_documents rows still reference the typeKey
+ * (FK) and historical approvals depend on the display name for audit.
+ *
+ * A deactivated type:
+ *   - hides from new-submission dropdowns
+ *   - keeps all existing documents visible in history
+ *   - can be reactivated via PATCH active=true
+ */
+export async function deactivateDocumentType(typeKey: string): Promise<ControlledDocumentType> {
+  return updateDocumentType(typeKey, { active: false });
 }

@@ -22,21 +22,60 @@
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { requireAuth, getEffectiveUser } from "../auth-context";
+import { requireRole } from "../middleware/requireRole";
 import {
+  createDocumentType,
   createSubmission,
+  deactivateDocumentType,
   getApprovalQueueForUser,
   getProjectDocumentDetail,
   getProjectDocumentSummary,
   listActiveDocumentTypes,
+  listAllDocumentTypes,
   recordApproval,
   recordRecall,
   recordRejection,
+  updateDocumentType,
 } from "../repositories/controlled-documents-repository";
 import { ApiError, badRequest, conflict, forbidden, notFound, serverError, unauthorized } from "../lib/api-error";
 
 const projectIdParam = z.coerce.number().int().positive();
 const typeKeyParam = z.string().min(1).max(64).regex(/^[a-z0-9_]+$/);
 const documentIdParam = z.coerce.number().int().positive();
+
+const SUPER_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
+
+const createTypeBodySchema = z.object({
+  typeKey: z.string().min(1).max(64).regex(/^[a-z0-9_]+$/),
+  displayName: z.string().min(1).max(128),
+  description: z.string().max(1024).nullish(),
+  folderSubPath: z.string().min(1).max(512),
+  defaultApproverRoles: z.array(z.string().min(1).max(64)).min(1).max(8),
+  requiresAllApprovers: z.boolean().default(false),
+  extractSpec: z
+    .object({
+      sheetName: z.string().optional(),
+      cells: z.record(z.string(), z.string()).optional(),
+    })
+    .nullish(),
+  sortOrder: z.number().int().min(0).max(9999).optional(),
+});
+
+const updateTypeBodySchema = z.object({
+  displayName: z.string().min(1).max(128).optional(),
+  description: z.string().max(1024).nullish(),
+  folderSubPath: z.string().min(1).max(512).optional(),
+  defaultApproverRoles: z.array(z.string().min(1).max(64)).min(1).max(8).optional(),
+  requiresAllApprovers: z.boolean().optional(),
+  extractSpec: z
+    .object({
+      sheetName: z.string().optional(),
+      cells: z.record(z.string(), z.string()).optional(),
+    })
+    .nullish(),
+  active: z.boolean().optional(),
+  sortOrder: z.number().int().min(0).max(9999).optional(),
+});
 
 const submitBodySchema = z.object({
   typeKey: z.string().min(1).max(64).regex(/^[a-z0-9_]+$/),
@@ -278,6 +317,93 @@ export function registerControlledDocumentRoutes(app: Express): void {
         if (err instanceof ApiError) throw err;
         console.error("[controlled-documents] queue error:", err);
         throw serverError("Failed to load approval queue");
+      }
+    },
+  );
+
+  // ====================================================================
+  // D5.2 — document-type taxonomy CRUD (super-user only)
+  //   GET    /api/admin/controlled-document-types        — including inactive
+  //   POST   /api/admin/controlled-document-types        — create
+  //   PATCH  /api/admin/controlled-document-types/:typeKey — edit
+  //   DELETE /api/admin/controlled-document-types/:typeKey — soft-delete
+  // ====================================================================
+
+  app.get(
+    "/api/admin/controlled-document-types",
+    requireAuth,
+    requireRole(SUPER_ROLES),
+    async (_req: Request, res: Response) => {
+      try {
+        const types = await listAllDocumentTypes();
+        res.json({ types });
+      } catch (err) {
+        if (err instanceof ApiError) throw err;
+        console.error("[controlled-documents] admin list error:", err);
+        throw serverError("Failed to load document types");
+      }
+    },
+  );
+
+  app.post(
+    "/api/admin/controlled-document-types",
+    requireAuth,
+    requireRole(SUPER_ROLES),
+    async (req: Request, res: Response) => {
+      const parsed = createTypeBodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        throw badRequest("Invalid document type payload", {
+          issues: parsed.error.issues.map((i) => i.message).join("; "),
+        });
+      }
+      try {
+        const row = await createDocumentType(parsed.data);
+        res.status(201).json({ type: row });
+      } catch (err) {
+        console.error("[controlled-documents] create type error:", err);
+        const msg = err instanceof Error ? err.message : "Create failed";
+        if (/already exists/i.test(msg)) throw conflict(msg);
+        throw badRequest(msg);
+      }
+    },
+  );
+
+  app.patch(
+    "/api/admin/controlled-document-types/:typeKey",
+    requireAuth,
+    requireRole(SUPER_ROLES),
+    async (req: Request, res: Response) => {
+      const parsedKey = typeKeyParam.safeParse(req.params.typeKey);
+      if (!parsedKey.success) throw badRequest("Invalid typeKey");
+      const parsedBody = updateTypeBodySchema.safeParse(req.body);
+      if (!parsedBody.success) throw badRequest("Invalid update payload");
+      try {
+        const row = await updateDocumentType(parsedKey.data, parsedBody.data);
+        res.json({ type: row });
+      } catch (err) {
+        console.error("[controlled-documents] update type error:", err);
+        const msg = err instanceof Error ? err.message : "Update failed";
+        if (/not found/i.test(msg)) throw notFound(msg);
+        throw badRequest(msg);
+      }
+    },
+  );
+
+  app.delete(
+    "/api/admin/controlled-document-types/:typeKey",
+    requireAuth,
+    requireRole(SUPER_ROLES),
+    async (req: Request, res: Response) => {
+      const parsedKey = typeKeyParam.safeParse(req.params.typeKey);
+      if (!parsedKey.success) throw badRequest("Invalid typeKey");
+      try {
+        const row = await deactivateDocumentType(parsedKey.data);
+        res.json({ type: row });
+      } catch (err) {
+        console.error("[controlled-documents] deactivate type error:", err);
+        const msg = err instanceof Error ? err.message : "Deactivate failed";
+        if (/not found/i.test(msg)) throw notFound(msg);
+        throw badRequest(msg);
       }
     },
   );
