@@ -138,12 +138,20 @@ const ROW_DEFS: RowDef[] = [
   { key: "totalRevenue", label: "Revenue Planned", dataKey: "totalRevenue", colorClass: "text-emerald-700 font-semibold", group: "monthly", expandable: true, projectsKey: "revProjects" },
   { key: "budget", label: "Budget (Manual)", dataKey: "budget", editable: true, colorClass: "text-emerald-700/60", group: "monthly" },
   { key: "unrealisedRevenue", label: "Revenue Committed", dataKey: "unrealisedRevenue", colorClass: "text-amber-700 font-semibold", group: "monthly", expandable: true, projectsKey: "unrealisedProjects" },
+  // "Revenue Unrealised" row mirrors the COS grid layout (Planned → Committed →
+  // Unrealised → Realised). Revenue currently has no separate planned-vs-
+  // committed breakdown, so its Unrealised value equals the Committed total
+  // above (everything not yet realised). The row exists for look-and-feel
+  // parity with the COS grid; the value will diverge once revenue gains a
+  // finer-grained classification.
+  { key: "unrealisedRevenueRow", label: "Revenue Unrealised", dataKey: "unrealisedRevenue", colorClass: "text-amber-800 font-semibold", group: "monthly", expandable: true, projectsKey: "unrealisedProjects" },
   { key: "realisedRevenue", label: "Revenue Realised", dataKey: "realisedRevenue", colorClass: "text-foreground font-bold", group: "monthly", expandable: true, projectsKey: "realisedProjects" },
   { key: "qbRevenueActual", label: "Quickbooks Revenue", dataKey: "qbRevenueActual", colorClass: "text-emerald-600 font-semibold", group: "monthly", expandable: true, projectsKey: "qbRevenueProjects" },
   { key: "variance", label: "Budget Variance", dataKey: "variance", colorClass: "", group: "monthly", colorCoded: true },
   { key: "variancePct", label: "Budget Variance %", dataKey: "variancePct", colorClass: "", group: "monthly", colorCoded: true },
   { key: "ytdBudget", label: "YTD Planned (Budget)", dataKey: "ytdBudget", colorClass: "text-emerald-700", group: "ytd" },
   { key: "ytdUnrealised", label: "YTD Committed", dataKey: "ytdUnrealised", colorClass: "text-amber-700", group: "ytd" },
+  { key: "ytdUnrealisedRow", label: "YTD Unrealised", dataKey: "ytdUnrealised", colorClass: "text-amber-800", group: "ytd" },
   { key: "ytdRealised", label: "YTD Realised", dataKey: "ytdRealised", colorClass: "text-foreground font-bold", group: "ytd" },
   { key: "ytdQbRevenueActual", label: "YTD QB Revenue", dataKey: "ytdQbRevenueActual", colorClass: "text-emerald-600", group: "ytd" },
   { key: "ytdVariance", label: "YTD Variance", dataKey: "ytdVariance", colorClass: "", group: "ytd", colorCoded: true },

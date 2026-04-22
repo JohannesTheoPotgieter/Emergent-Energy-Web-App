@@ -67,6 +67,9 @@ interface MonthData {
   cosPlanned: number;
   ytdCosPlanned: number;
   cosPlannedProjects: ProjectBreakdown[];
+  cosUnrealised: number;
+  ytdCosUnrealised: number;
+  cosUnrealisedProjects: ProjectBreakdown[];
   realisedCOS: number;
   committedCOS: number;
   plannedCOS: number;
@@ -141,7 +144,7 @@ interface MonthDetail {
   items: MonthDetailItem[];
 }
 
-type DrawerStateFilter = "all" | "realised" | "committed" | "planned" | "recognised" | "qb_actual";
+type DrawerStateFilter = "all" | "realised" | "committed" | "planned" | "unrealised" | "recognised" | "qb_actual";
 
 function formatRand(val: number | null | undefined): string {
   if (val == null) return "R 0";
@@ -171,7 +174,7 @@ interface RowDef {
   group: "monthly" | "ytd";
   colorCoded?: boolean;
   expandable?: boolean;
-  projectsKey?: "cosProjects" | "cosPlannedProjects" | "realisedProjects" | "committedProjects" | "plannedProjects" | "qbOnlyProjects" | "appOnlyPendingProjects";
+  projectsKey?: "cosProjects" | "cosPlannedProjects" | "cosUnrealisedProjects" | "realisedProjects" | "committedProjects" | "plannedProjects" | "qbOnlyProjects" | "appOnlyPendingProjects";
   tabs: CosTab[];
 }
 
@@ -181,6 +184,9 @@ const ROW_DEFS: RowDef[] = [
   { key: "budget", label: "Budget (Manual)", dataKey: "budget", editable: true, colorClass: "text-emerald-700/60", group: "monthly", tabs: ["planned"] },
   // Committed tab: planned with invoice captured but date unconfirmed
   { key: "committedCOS", label: "COS Committed", dataKey: "committedCOS", editable: false, colorClass: "text-amber-700 font-semibold", group: "monthly", expandable: true, projectsKey: "committedProjects", tabs: ["committed"] },
+  // Unrealised = Planned + Committed (everything not yet realised: lines with
+  // no invoice OR invoice with red/unconfirmed date).
+  { key: "cosUnrealised", label: "COS Unrealised", dataKey: "cosUnrealised", editable: false, colorClass: "text-amber-800 font-semibold", group: "monthly", expandable: true, projectsKey: "cosUnrealisedProjects", tabs: ["committed", "planned"] },
   // Realised tab: invoice date confirmed AND invoice linked, plus QB reconciliation
   { key: "realisedCOS", label: "COS Realised", dataKey: "realisedCOS", editable: false, colorClass: "text-foreground font-bold", group: "monthly", expandable: true, projectsKey: "realisedProjects", tabs: ["realised"] },
   { key: "qbOnlyActual", label: "Quickbooks COS", dataKey: "qbOnlyActual", editable: false, colorClass: "text-emerald-600 font-semibold", group: "monthly", expandable: true, projectsKey: "qbOnlyProjects", tabs: ["realised"] },
@@ -188,6 +194,7 @@ const ROW_DEFS: RowDef[] = [
   { key: "variancePct", label: "Budget Variance %", dataKey: "variancePct", editable: false, colorClass: "", group: "monthly", colorCoded: true, tabs: ["realised", "committed", "planned"] },
   { key: "ytdBudget", label: "YTD Planned (Budget)", dataKey: "ytdBudget", editable: false, colorClass: "text-emerald-700", group: "ytd", tabs: ["planned"] },
   { key: "ytdCommitted", label: "YTD Committed", dataKey: "ytdCommitted", editable: false, colorClass: "text-amber-700", group: "ytd", tabs: ["committed"] },
+  { key: "ytdCosUnrealised", label: "YTD Unrealised", dataKey: "ytdCosUnrealised", editable: false, colorClass: "text-amber-800", group: "ytd", tabs: ["committed", "planned"] },
   { key: "ytdRealised", label: "YTD Realised", dataKey: "ytdRealised", editable: false, colorClass: "text-foreground font-bold", group: "ytd", tabs: ["realised"] },
   { key: "ytdQbOnly", label: "YTD QB Actual", dataKey: "ytdQbOnly", editable: false, colorClass: "text-emerald-600", group: "ytd", tabs: ["realised"] },
   { key: "ytdVariance", label: "YTD Variance", dataKey: "ytdVariance", editable: false, colorClass: "", group: "ytd", colorCoded: true, tabs: ["realised", "committed", "planned"] },
@@ -335,6 +342,7 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
             : stateFilter === "committed" ? "Committed total"
             : stateFilter === "planned" ? "Planned total"
             : stateFilter === "recognised" ? "COS Planned total (Planned + Committed + Realised)"
+            : stateFilter === "unrealised" ? "Unrealised total (Planned + Committed)"
             : stateFilter === "qb_actual" ? "QuickBooks total"
             : null;
           const expected = data.expectedTotal;
@@ -409,6 +417,7 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                 <option value="all">All statuses</option>
                 <option value="realised">Realised</option>
                 <option value="committed">Committed</option>
+                <option value="unrealised">Unrealised (Planned + Committed)</option>
                 <option value="recognised">All app states (Planned + Committed + Realised)</option>
                 <option value="planned">Planned</option>
                 <option value="qb_actual">QB Actual</option>
@@ -604,7 +613,7 @@ export default function CosTracker() {
       (arr ?? []).filter((p) => sel.has(p.projectName)).reduce((s, p) => s + (p.value ?? 0), 0);
     const filterProjects = (arr: ProjectBreakdown[] | undefined) =>
       (arr ?? []).filter((p) => sel.has(p.projectName));
-    let ytdCOS = 0, ytdRealised = 0, ytdCommitted = 0, ytdPlanned = 0, ytdQbOnly = 0, ytdAppOnlyPending = 0, ytdCosPlanned = 0;
+    let ytdCOS = 0, ytdRealised = 0, ytdCommitted = 0, ytdPlanned = 0, ytdQbOnly = 0, ytdAppOnlyPending = 0, ytdCosPlanned = 0, ytdCosUnrealised = 0;
     const ytdBudget = 0;
     return rawMonths.map((m) => {
       const realisedCOS = sumProjects(m.realisedProjects);
@@ -612,6 +621,7 @@ export default function CosTracker() {
       const plannedCOS = sumProjects(m.plannedProjects);
       const totalCOS = realisedCOS + committedCOS;
       const cosPlanned = realisedCOS + committedCOS + plannedCOS;
+      const cosUnrealised = plannedCOS + committedCOS;
       const qbOnlyActual = sumProjects(m.qbOnlyProjects);
       const appOnlyPending = sumProjects(m.appOnlyPendingProjects);
       const budget = 0;
@@ -621,6 +631,7 @@ export default function CosTracker() {
       const variancePct = 0;
       ytdCOS += cosPlanned;
       ytdCosPlanned += cosPlanned;
+      ytdCosUnrealised += cosUnrealised;
       ytdRealised += realisedCOS;
       ytdCommitted += committedCOS;
       ytdPlanned += plannedCOS;
@@ -639,10 +650,22 @@ export default function CosTracker() {
       const cosPlannedProjects = Array.from(merged.entries())
         .map(([projectName, value]) => ({ projectName, value }))
         .sort((a, b) => b.value - a.value);
+      // cosUnrealisedProjects = combined Planned + Committed per project.
+      const mergedUn = new Map<string, number>();
+      for (const arr of [m.plannedProjects, m.committedProjects]) {
+        for (const p of arr ?? []) {
+          if (!sel.has(p.projectName)) continue;
+          mergedUn.set(p.projectName, (mergedUn.get(p.projectName) ?? 0) + (p.value ?? 0));
+        }
+      }
+      const cosUnrealisedProjects = Array.from(mergedUn.entries())
+        .map(([projectName, value]) => ({ projectName, value }))
+        .sort((a, b) => b.value - a.value);
       return {
         ...m,
         totalCOS,
         cosPlanned,
+        cosUnrealised,
         realisedCOS,
         committedCOS,
         plannedCOS,
@@ -655,6 +678,7 @@ export default function CosTracker() {
         qbVsAppVariancePct: qbOnlyActual !== 0 ? ((qbOnlyActual - totalCOS) / qbOnlyActual) * 100 : 0,
         ytdCOS,
         ytdCosPlanned,
+        ytdCosUnrealised,
         ytdRealised,
         ytdCommitted,
         ytdPlanned,
@@ -665,6 +689,7 @@ export default function CosTracker() {
         ytdVariancePct,
         cosProjects: filterProjects(m.cosProjects),
         cosPlannedProjects,
+        cosUnrealisedProjects,
         realisedProjects: filterProjects(m.realisedProjects),
         committedProjects: filterProjects(m.committedProjects),
         plannedProjects: filterProjects(m.plannedProjects),
@@ -761,7 +786,7 @@ export default function CosTracker() {
     const result: Record<string, string[]> = {};
     const trackerSet = new Set(trackerProjectNames);
     const selectedSet = new Set(selectedProjects);
-    for (const key of ["cosProjects", "cosPlannedProjects", "realisedProjects", "committedProjects", "plannedProjects", "qbOnlyProjects", "appOnlyPendingProjects"] as const) {
+    for (const key of ["cosProjects", "cosPlannedProjects", "cosUnrealisedProjects", "realisedProjects", "committedProjects", "plannedProjects", "qbOnlyProjects", "appOnlyPendingProjects"] as const) {
       const names = new Set<string>();
       for (const m of months) {
         for (const p of m[key] || []) {
@@ -913,12 +938,13 @@ export default function CosTracker() {
               // the cumulative range from FY26 start (Sep 2025) through the
               // clicked month so the drawer total matches the YTD figure.
               const FY_START = "2025-09";
-              const isMonthlyDrill = ["totalCOS", "realisedCOS", "committedCOS", "qbOnlyActual"].includes(row.key);
-              const isYtdDrill = ["ytdRealised", "ytdCommitted", "ytdQbOnly"].includes(row.key);
+              const isMonthlyDrill = ["totalCOS", "realisedCOS", "committedCOS", "cosUnrealised", "qbOnlyActual"].includes(row.key);
+              const isYtdDrill = ["ytdRealised", "ytdCommitted", "ytdCosUnrealised", "ytdQbOnly"].includes(row.key);
               const isClickable = isMonthlyDrill || isYtdDrill;
               const drillFilterForRow: DrawerStateFilter =
                 row.key === "realisedCOS" || row.key === "ytdRealised" ? "realised"
                 : row.key === "committedCOS" || row.key === "ytdCommitted" ? "committed"
+                : row.key === "cosUnrealised" || row.key === "ytdCosUnrealised" ? "unrealised"
                 : row.key === "totalCOS" ? "recognised"
                 : row.key === "qbOnlyActual" || row.key === "ytdQbOnly" ? "qb_actual"
                 : "all";
@@ -1022,7 +1048,7 @@ export default function CosTracker() {
                         const projArr = row.projectsKey ? (m as any)[row.projectsKey] as ProjectBreakdown[] : [];
                         const proj = projArr?.find((p: ProjectBreakdown) => p.projectName === pName);
                         const val = proj?.value ?? 0;
-                        const drillFilter = row.key === "realisedCOS" ? "realised" as const : row.key === "committedCOS" ? "committed" as const : row.key === "totalCOS" ? "recognised" as const : row.key === "qbOnlyActual" ? "qb_actual" as const : "all" as const;
+                        const drillFilter = row.key === "realisedCOS" ? "realised" as const : row.key === "committedCOS" ? "committed" as const : row.key === "cosUnrealised" ? "unrealised" as const : row.key === "totalCOS" ? "recognised" as const : row.key === "qbOnlyActual" ? "qb_actual" as const : "all" as const;
                         return (
                           <td
                             key={m.monthKey}
