@@ -13,6 +13,7 @@ import { isApiError } from "@/lib/api-error";
 import { formatRand } from "@/lib/safeMoney";
 import { ReportTrustNotice } from "@/components/reports/ReportTrustNotice";
 import { FinanceLimitedBetaBanner } from "@/components/reports/FinanceLimitedBetaBanner";
+import { FieldHint } from "@/components/ui/field-hint";
 
 interface QbBillRaw {
   Id: string;
@@ -252,7 +253,7 @@ export default function FinanceQuickBooksLinksPage() {
       {selectedBill && (
         <section>
           <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
-            2. Pick a project cost line to link{" "}
+            2. Pick a project cost line to link <FieldHint hint="Auto-generated hash ID — do not edit manually" />{" "}
             <Badge variant="outline">{costLineSearchResp?.costLines.length ?? 0}</Badge>
             <Button
               size="sm"
