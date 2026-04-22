@@ -469,7 +469,7 @@ function TaskCompletionPopover({ projectName, currentPct }: { projectName: strin
               </tbody>
             </table>
           ) : (
-            <EmptyState title="No tasks found" className="my-4" />
+            <EmptyState title="No tasks found" description="Try adjusting project, owner, or status filters to see matching tasks." className="my-4" />
           )}
         </div>
         {hasEdits && (
@@ -1745,7 +1745,7 @@ export default function ProjectsSummary() {
           description="Execution project management list"
         />
         <EmptyState
-          icon={<AlertCircle className="w-6 h-6 text-muted-foreground" />}
+          icon={AlertCircle}
           title="No projects available"
           description="Upload tracker files to populate the execution project list with trusted tracker-linked dates, latest updates, and operational signals."
         />
