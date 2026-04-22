@@ -77,7 +77,13 @@ export const sites = pgTable("sites", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   deletedAt: timestamp("deleted_at"),
-});
+}, (table) => ({
+  // Defence-in-depth against duplicate sites for the same client+name.
+  // Backed by migration 0022_sites_pdtickets_natural_key_uniques.sql.
+  clientSiteNameUniq: uniqueIndex("sites_client_site_name_uniq")
+    .on(table.clientId, table.siteName)
+    .where(sql`${table.deletedAt} IS NULL AND ${table.clientId} IS NOT NULL AND ${table.siteName} IS NOT NULL`),
+}));
 
 export const insertSiteSchema = createInsertSchema(sites).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertSite = z.infer<typeof insertSiteSchema>;
@@ -698,7 +704,16 @@ export const pdTickets = pgTable("pd_tickets", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   deletedAt: timestamp("deleted_at"),
-});
+}, (table) => ({
+  // Defence-in-depth against duplicate project-bound PD tickets for the
+  // same (opportunity, project, request_type). Complements the existing
+  // shadow-ticket unique index (`pd_tickets_opportunity_shadow_unique`,
+  // migrations 0019/0020) by covering project-bound tickets.
+  // Backed by migration 0022_sites_pdtickets_natural_key_uniques.sql.
+  phasePerProjectUniq: uniqueIndex("pd_tickets_phase_per_project_uniq")
+    .on(table.opportunityId, table.projectId, table.requestType)
+    .where(sql`${table.deletedAt} IS NULL AND ${table.opportunityId} IS NOT NULL AND ${table.projectId} IS NOT NULL AND ${table.requestType} IS NOT NULL`),
+}));
 export const insertPdTicketSchema = createInsertSchema(pdTickets).omit({ id: true, createdAt: true, updatedAt: true, tasksSpawnedAt: true, deletedAt: true } as any);
 export type InsertPdTicket = z.infer<typeof insertPdTicketSchema>;
 export type PdTicket = typeof pdTickets.$inferSelect;
