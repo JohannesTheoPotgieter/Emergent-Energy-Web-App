@@ -222,6 +222,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "hseDashboard", path: "/hse", label: "Health, Safety & Environment", iconKey: "ShieldAlert", navGroup: "HSE", permissionEntity: "hse", showInSidebar: true, routeComponentKey: "HseDashboardPage", roleLandingEligibility: ["HSE_MANAGER", "SSEG_MANAGER"] },
   { id: "hseCompliance", path: "/hse/compliance", label: "Compliance / SSEG", type: "alias", redirectTo: "/hse?tab=compliance", navGroup: "HSE", permissionEntity: "hse_compliance", showInSidebar: false },
   { id: "handoverDashboard", path: "/handover", label: "Handover & Closeout", iconKey: "Handshake", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "handover", showInSidebar: true, routeComponentKey: "HandoverDashboardPage" },
+  { id: "ssegSubmissions", path: "/sseg-submissions", label: "SSEG Submissions", iconKey: "ClipboardList", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "hse_sseg", showInSidebar: true, routeComponentKey: "SsegSubmissionsPage" },
   // PD-PM Handover V2 extensions
   { id: "lessonsLearnt", path: "/admin/lessons", label: "Lessons Learnt", iconKey: "BookOpen", navGroup: "SYSTEM", permissionEntity: "handover", showInSidebar: false, routeComponentKey: "LessonsLearntPage" },
   { id: "handoverHealth", path: "/admin/handover-health", label: "Handover Health Score", iconKey: "Handshake", navGroup: "SYSTEM", permissionEntity: "handover", showInSidebar: false, routeComponentKey: "HandoverControlPage" },

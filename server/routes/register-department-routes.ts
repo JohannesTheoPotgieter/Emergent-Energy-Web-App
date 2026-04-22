@@ -141,6 +141,14 @@ export async function registerDepartmentRoutes(app: Express) {
     console.error("[Routes] Failed to register handover-routes:", err);
   }
 
+  // SSEG Submissions (Project Delivery)
+  try {
+    const { registerSsegSubmissionsRoutes } = await import("./sseg-submissions.routes");
+    registerSsegSubmissionsRoutes(app);
+  } catch (err) {
+    console.error("[Routes] Failed to register sseg-submissions.routes:", err);
+  }
+
   // C5: Notification Triggers
   try {
     const { registerNotificationTriggerRoutes } = await import("../departments/notification-trigger-routes");
