@@ -1893,9 +1893,6 @@ export function registerLifecycleRoutes(app: Express) {
       // Post-merge: the trigger phase set includes the legacy PD-PM codes plus the
       // merged S03 Financial Close, since the handover is now a sub-step of S03.
       const PD_PM_HANDOVER_PHASES = [
-        "P2_PD_PM_HANDOVER",
-        "S04_PD_PM_HANDOVER",
-        "S03_SIGNATURE_FINANCIAL_CLOSE",
         "Financial Close",
         "Planning",
       ];
