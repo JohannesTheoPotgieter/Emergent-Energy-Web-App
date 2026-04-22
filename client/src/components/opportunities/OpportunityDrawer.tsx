@@ -384,9 +384,14 @@ export function OpportunityDrawer({ opportunityId, open, onClose }: Props) {
                 </Field>
               </section>
 
-              {/* === Engineering tickets (tracking) === */}
+              {/* === Engineering task board (tickets + project board merged) === */}
               {(data.tickets ?? []).length > 0 ? (
-                <>
+                <section className="rounded-md border p-3 space-y-3" data-testid="section-engineering-task-board">
+                  <header className="flex items-center justify-between">
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-foreground flex items-center gap-1.5">
+                      <Zap className="h-3 w-3 text-emerald-600" /> Engineering task board
+                    </h3>
+                  </header>
                   <EngineeringTicketsSection tickets={data.tickets ?? []} />
                   {(data.tickets ?? []).some((t) => t.projectId) && (
                     <ProjectTaskBoard
@@ -395,7 +400,7 @@ export function OpportunityDrawer({ opportunityId, open, onClose }: Props) {
                       projectName={(data.tickets ?? []).find((t) => t.projectName)?.projectName ?? null}
                     />
                   )}
-                </>
+                </section>
               ) : (
                 /* Legacy "spawn tasks for the shadow PD ticket" surface — only
                    shown when the opportunity has NO real tickets yet. Once the
@@ -478,6 +483,41 @@ export function OpportunityDrawer({ opportunityId, open, onClose }: Props) {
                     </section>
                   );
                 }
+                // Recognize when the engineering intake ticket is already
+                // engaged (status moved off Draft, or a request type / due
+                // date / comments have been filled in). In that case the
+                // "Ready to start the project?" framing is misleading —
+                // work has begun, we just haven't materialized a project
+                // shell yet. Reframe the CTA around the existing ticket.
+                const activeTicket = (data.tickets ?? []).find(
+                  (t) => t.status !== "Draft" && t.status !== "Cancelled" && t.status !== "Completed",
+                );
+                if (activeTicket) {
+                  return (
+                    <section
+                      className="rounded-md border border-emerald-200 bg-emerald-50/60 p-3 flex items-center justify-between"
+                      data-testid="section-convert-from-ticket"
+                    >
+                      <div className="text-xs">
+                        <p className="font-medium text-emerald-900">
+                          Engineering ticket in progress — no project shell yet
+                        </p>
+                        <p className="text-emerald-800/80">
+                          Materialize a project from "{activeTicket.requestType}" so this ticket's tasks
+                          have a home and the team can track progress on a project page.
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        className="bg-emerald-600 hover:bg-emerald-700"
+                        onClick={() => setConvertOpen(true)}
+                        data-testid="btn-open-convert-wizard"
+                      >
+                        Create project from ticket <ArrowRight className="h-3 w-3 ml-1" />
+                      </Button>
+                    </section>
+                  );
+                }
                 return (
                   <section className="rounded-md border border-emerald-200 bg-emerald-50/60 p-3 flex items-center justify-between">
                     <div className="text-xs">
@@ -543,21 +583,21 @@ function EngineeringTicketsSection({ tickets }: { tickets: OpportunityTicket[] }
   const open = tickets.filter((t) => t.status !== "Completed" && t.status !== "Cancelled").length;
   const closed = tickets.length - open;
   return (
-    <section className="rounded-md border p-3 space-y-2" data-testid="section-engineering-tickets">
-      <header className="flex items-center justify-between">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-foreground flex items-center gap-1.5">
-          <Zap className="h-3 w-3 text-emerald-600" /> Engineering tickets
+    <div className="space-y-1.5" data-testid="section-engineering-tickets">
+      <div className="flex items-center justify-between">
+        <h4 className="text-[11px] font-semibold uppercase tracking-wide text-slate-600 flex items-center gap-1.5">
+          Tickets
           <span className="text-[10px] font-normal text-muted-foreground tabular-nums">
             • {open} open / {closed} closed
           </span>
-        </h3>
-      </header>
+        </h4>
+      </div>
       <ul className="text-xs space-y-1.5" data-testid="list-engineering-tickets">
         {tickets.map((t) => (
           <TicketRow key={t.id} ticket={t} />
         ))}
       </ul>
-    </section>
+    </div>
   );
 }
 
@@ -681,90 +721,175 @@ function ProjectTaskBoard({
   const ticketLabelById = new Map<number, string>();
   for (const t of tickets) ticketLabelById.set(t.id, t.requestType);
 
-  const phases = new Map<string, ProjectTask[]>();
-  for (const t of tasks) {
-    const key = t.phase?.trim() || "Unassigned";
-    const list = phases.get(key) ?? [];
-    list.push(t);
-    phases.set(key, list);
+  // Promote each engineering ticket to a first-class board item under its
+  // requestType (e.g. "First Assessment") so the ticket itself shows up
+  // even when no work_items have been spawned. If the ticket DOES have
+  // spawned work_items, those render as additional rows in the same phase
+  // column. Tickets linked to a different project (rare) are skipped so
+  // we don't pollute this board.
+  const linkedProjectId = tickets.find((t) => t.projectId)?.projectId ?? null;
+  const ticketsAsTasks: ProjectTask[] = tickets
+    .filter((t) => t.projectId == null || t.projectId === linkedProjectId)
+    .map((t) => ({
+      id: -t.id, // negative id → distinct from real work_items.id
+      pdTicketId: t.id,
+      title: `Ticket: ${t.requestType}`,
+      status: ticketStatusToWorkItemStatus(t.status),
+      phase: t.requestType,
+      priority: t.priority,
+      endDate: t.dueDate,
+      percentComplete: null,
+      ownerUserId: t.designerUserId ?? t.projectDeveloperUserId ?? null,
+      ownerName: t.designerName ?? t.projectDeveloperName ?? null,
+    }));
+  const allItems: ProjectTask[] = [...ticketsAsTasks, ...tasks];
+
+  // Kanban swimlanes by status. Items keep their phase as a small chip
+  // on each card so engineers can still see which phase each task belongs
+  // to without losing the at-a-glance "where is each item" board view.
+  const lanes: Array<{ key: string; label: string; match: (s: string) => boolean }> = [
+    { key: "todo", label: "To do", match: (s) => isTodoStatus(s) },
+    { key: "in_progress", label: "In progress", match: (s) => isInProgressStatus(s) },
+    { key: "blocked", label: "Blocked", match: (s) => isBlockedStatus(s) },
+    { key: "done", label: "Done", match: (s) => isDoneStatus(s) || isCancelledStatus(s) },
+  ];
+  const itemsByLane = new Map<string, ProjectTask[]>();
+  for (const lane of lanes) itemsByLane.set(lane.key, []);
+  for (const it of allItems) {
+    const lane = lanes.find((l) => l.match(it.status))?.key ?? "todo";
+    itemsByLane.get(lane)!.push(it);
   }
-  const total = tasks.length;
-  const done = tasks.filter((t) => isDoneStatus(t.status)).length;
+  const total = allItems.length;
+  const done = allItems.filter((t) => isDoneStatus(t.status)).length;
 
   return (
-    <section className="rounded-md border p-3 space-y-2" data-testid="section-project-board">
-      <header className="flex items-center justify-between gap-2 flex-wrap">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-foreground flex items-center gap-1.5">
-          <Zap className="h-3 w-3 text-emerald-600" /> Project task board
+    <div className="space-y-1.5" data-testid="section-project-board">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <h4 className="text-[11px] font-semibold uppercase tracking-wide text-slate-600 flex items-center gap-1.5">
+          Board
           {projectName && (
             <span className="text-[10px] font-normal text-muted-foreground normal-case">
               · {projectName}
             </span>
           )}
-        </h3>
+        </h4>
         <span className="text-[10px] text-muted-foreground tabular-nums">
           {done}/{total} done
         </span>
-      </header>
+      </div>
       {total === 0 ? (
         <p className="text-[11px] text-muted-foreground italic" data-testid="empty-project-board">
           No engineering tasks on the project yet — spawn tasks from a ticket to populate the board.
         </p>
       ) : (
-        <div className="grid gap-1.5 sm:grid-cols-2" data-testid="project-board">
-          {Array.from(phases.entries()).map(([phase, items]) => {
-            const phaseDone = items.filter((i) => isDoneStatus(i.status)).length;
+        <div className="grid gap-1.5 grid-cols-2 sm:grid-cols-4" data-testid="project-board">
+          {lanes.map((lane) => {
+            const items = itemsByLane.get(lane.key) ?? [];
             return (
               <div
-                key={phase}
-                className="rounded border border-slate-200 bg-slate-50/50 p-1.5"
-                data-testid={`project-board-phase-${phase}`}
+                key={lane.key}
+                className="rounded border border-slate-200 bg-slate-50/50 p-1.5 min-h-[60px]"
+                data-testid={`project-board-lane-${lane.key}`}
               >
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-700 truncate" title={phase}>
-                    {phase}
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-700 truncate" title={lane.label}>
+                    {lane.label}
                   </span>
-                  <span className="text-[9px] tabular-nums text-muted-foreground">{phaseDone}/{items.length}</span>
+                  <span className="text-[9px] tabular-nums text-muted-foreground">{items.length}</span>
                 </div>
-                <ul className="space-y-0.5">
-                  {items.map((it) => {
-                    const ticketLabel = it.pdTicketId != null ? ticketLabelById.get(it.pdTicketId) ?? null : null;
-                    return (
-                      <li
-                        key={it.id}
-                        className="flex items-center gap-1 text-[10px]"
-                        data-testid={`project-board-task-${it.id}`}
-                      >
-                        <span
-                          className={`inline-block h-1.5 w-1.5 rounded-full flex-shrink-0 ${workItemStatusDot(it.status)}`}
-                          title={it.status}
-                        />
-                        <span className="flex-1 truncate text-foreground" title={it.title}>{it.title}</span>
-                        {ticketLabel && (
-                          <span
-                            className="text-[9px] px-1 rounded bg-emerald-50 text-emerald-700 border border-emerald-100 truncate max-w-[80px]"
-                            title={`From ticket: ${ticketLabel}`}
-                          >
-                            {ticketLabel}
-                          </span>
-                        )}
-                        <span
-                          className={`text-[9px] truncate max-w-[60px] ${it.ownerName ? "text-slate-600" : "italic text-muted-foreground"}`}
-                          title={it.ownerName ? `Assigned to ${it.ownerName}` : "Unassigned"}
+                <ul className="space-y-1">
+                  {items.length === 0 ? (
+                    <li className="text-[9px] italic text-muted-foreground">—</li>
+                  ) : (
+                    items.map((it) => {
+                      const ticketLabel = it.pdTicketId != null ? ticketLabelById.get(it.pdTicketId) ?? null : null;
+                      const phase = it.phase?.trim() || null;
+                      return (
+                        <li
+                          key={it.id}
+                          className="rounded border border-slate-200 bg-white px-1 py-1 space-y-0.5"
+                          data-testid={`project-board-task-${it.id}`}
                         >
-                          {it.ownerName ?? "—"}
-                        </span>
-                      </li>
-                    );
-                  })}
+                          <div className="flex items-center gap-1">
+                            <span
+                              className={`inline-block h-1.5 w-1.5 rounded-full flex-shrink-0 ${workItemStatusDot(it.status)}`}
+                              title={it.status}
+                            />
+                            <span className="flex-1 text-[10px] text-foreground truncate" title={it.title}>{it.title}</span>
+                          </div>
+                          <div className="flex items-center gap-1 flex-wrap">
+                            {phase && (
+                              <span
+                                className="text-[9px] px-1 rounded bg-slate-100 text-slate-700 truncate max-w-[80px]"
+                                title={`Phase: ${phase}`}
+                              >
+                                {phase}
+                              </span>
+                            )}
+                            {ticketLabel && phase !== ticketLabel && (
+                              <span
+                                className="text-[9px] px-1 rounded bg-emerald-50 text-emerald-700 border border-emerald-100 truncate max-w-[80px]"
+                                title={`From ticket: ${ticketLabel}`}
+                              >
+                                {ticketLabel}
+                              </span>
+                            )}
+                            <span
+                              className={`ml-auto text-[9px] truncate max-w-[80px] ${it.ownerName ? "text-slate-600" : "italic text-muted-foreground"}`}
+                              title={it.ownerName ? `Assigned to ${it.ownerName}` : "Unassigned"}
+                            >
+                              {it.ownerName ?? "—"}
+                            </span>
+                          </div>
+                        </li>
+                      );
+                    })
+                  )}
                 </ul>
               </div>
             );
           })}
         </div>
       )}
-    </section>
+    </div>
   );
+}
+
+function isTodoStatus(status: string): boolean {
+  const s = status.toLowerCase();
+  return s === "not_started" || s === "draft" || s === "todo" || s === "to_do" || s === "open";
+}
+
+function isInProgressStatus(status: string): boolean {
+  const s = status.toLowerCase();
+  return s === "in_progress" || s === "in progress" || s === "doing" || s === "started";
+}
+
+function isBlockedStatus(status: string): boolean {
+  const s = status.toLowerCase();
+  return s === "blocked" || s === "on_hold" || s === "on hold" || s === "waiting";
+}
+
+function isCancelledStatus(status: string): boolean {
+  const s = status.toLowerCase();
+  return s === "cancelled" || s === "canceled";
+}
+
+/** Map a pd_ticket status onto the work_item status vocabulary so the
+ *  status-dot helpers below treat ticket items consistently with tasks. */
+function ticketStatusToWorkItemStatus(status: string): string {
+  switch (status) {
+    case "Completed":
+      return "done";
+    case "Cancelled":
+      return "cancelled";
+    case "In Progress":
+      return "in_progress";
+    case "On Hold":
+      return "on_hold";
+    default:
+      return "not_started";
+  }
 }
 
 function isDoneStatus(status: string): boolean {

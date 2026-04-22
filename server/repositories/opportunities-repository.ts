@@ -590,11 +590,18 @@ export class OpportunitiesRepository {
       .where(eq(workItems.pdTicketId, shadow.id))
       .orderBy(asc(workItems.sortOrder));
 
-    // All other engineering tickets attached to this opportunity (i.e. real
-    // tickets created via the working-list "+ ticket" flow). The lazy shadow
-    // is excluded so the UI shows tickets the user actually created and can
-    // track. For each ticket we surface enough to render a tracking row:
-    // status, request type, priority, due date, owner names, linked project.
+    // All engineering tickets attached to this opportunity. We INCLUDE the
+    // lazy shadow row here (rather than excluding it) because the partial
+    // unique index `pd_tickets_opportunity_shadow_unique` guarantees there
+    // is exactly one row per opportunity with project_id IS NULL — and
+    // that row IS the engineering intake ticket the user has been editing
+    // through the PD form above. Filtering it out caused opportunities
+    // that have a real, in-progress engineering ticket but no separate
+    // project-linked ticket to render as "No engineering tickets yet"
+    // (see prod opp #247 / Steelcorp 54 Moore Road, which had exactly
+    // one ticket #28 and no project link). For each ticket we surface
+    // enough to render a tracking row: status, request type, priority,
+    // due date, owner names, linked project.
     const pdUser = aliasedTable(users, "pd_user");
     const designUser = aliasedTable(users, "design_user");
     const tickets = await db
@@ -620,12 +627,7 @@ export class OpportunitiesRepository {
       .leftJoin(projectInfo, eq(projectInfo.id, pdTickets.projectId))
       .leftJoin(pdUser, eq(pdUser.id, pdTickets.projectDeveloperUserId))
       .leftJoin(designUser, eq(designUser.id, pdTickets.designerUserId))
-      .where(
-        and(
-          eq(pdTickets.opportunityId, opportunityId),
-          sql`${pdTickets.id} <> ${shadow.id}`,
-        ),
-      )
+      .where(eq(pdTickets.opportunityId, opportunityId))
       .orderBy(desc(pdTickets.createdAt));
 
     // Project-level task board for the drawer. The board is rendered once
