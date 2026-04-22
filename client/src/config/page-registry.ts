@@ -82,6 +82,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   // Kept as a redirect so any bookmarked link still lands in the right place.
   { id: "quickbooksHomeRedirect", path: "/quickbooks", label: "QuickBooks (moved)", type: "alias", permissionEntity: "financials", redirectTo: "/finance/quickbooks" },
   { id: "adminDocumentTypes", path: "/admin/document-types", label: "Document types", iconKey: "FileText", navGroup: "SYSTEM", permissionEntity: "admin_roles", routeComponentKey: "AdminDocumentTypesPage" },
+  { id: "adminEmailLinkerDev", path: "/admin/email-linker-dev", label: "Email auto-linker (dev)", iconKey: "Mail", navGroup: "SYSTEM", permissionEntity: "admin_roles", routeComponentKey: "AdminEmailLinkerDevPage" },
   { id: "handoverLive", path: "/handover/:projectId/live", label: "Handover live meeting", permissionEntity: "projects", routeComponentKey: "HandoverLivePage" },
   { id: "projectLifecycle", path: "/project-lifecycle", label: "Project Lifecycle", iconKey: "Layers", navGroup: "PROJECTS", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "ProjectLifecyclePage" },
   { id: "projectLifecycleStageGates", path: "/project-lifecycle/stage-gates", label: "Stage Gates", permissionEntity: "lifecycle", routeComponentKey: "ProjectLifecyclePage" },

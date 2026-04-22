@@ -423,22 +423,31 @@ function UpcomingHandoversCard({ rows }: { rows: any[] }) {
           <ul className="divide-y divide-border/50">
             {rows.map((r, i) => (
               <li key={r.projectId ?? i} className="py-2">
-                <Link
-                  href={`/project/${encodeURIComponent(r.projectName)}`}
-                  className="flex items-center justify-between gap-2 hover:bg-[hsl(var(--surface-tint))] -mx-2 px-2 py-1 rounded transition-colors"
-                >
-                  <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-2">
+                  <Link
+                    href={`/project/${encodeURIComponent(r.projectName)}`}
+                    className="flex-1 min-w-0 hover:bg-[hsl(var(--surface-tint))] -mx-2 px-2 py-1 rounded transition-colors"
+                  >
                     <p className="text-sm font-medium truncate">{r.projectName}</p>
                     <p className="text-[11px] text-muted-foreground truncate">
                       {r.clientName || ""} {r.pm ? `· PM: ${r.pm}` : ""}
                     </p>
-                  </div>
+                  </Link>
                   {r.gateReadinessPct != null && (
                     <Badge variant="outline" className="text-[10px] tabular-nums shrink-0">
                       {r.gateReadinessPct}% ready
                     </Badge>
                   )}
-                </Link>
+                  {r.projectId && (
+                    <Link
+                      href={`/handover/${r.projectId}/live`}
+                      className="text-[11px] text-primary underline hover:no-underline shrink-0"
+                      data-testid={`coo-live-room-${r.projectId}`}
+                    >
+                      Live room →
+                    </Link>
+                  )}
+                </div>
               </li>
             ))}
           </ul>

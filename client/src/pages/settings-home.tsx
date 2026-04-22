@@ -119,6 +119,14 @@ const GROUPS: SettingsGroupDef[] = [
         icon: Mail,
         status: "beta",
       },
+      {
+        key: "email-linker-dev",
+        title: "Email auto-linker (dev)",
+        description: "Synthesise inbound emails + run the layered-signal auto-linker to verify domain match, subject tags, thread inheritance without a real Graph webhook.",
+        href: "/admin/email-linker-dev",
+        icon: Mail,
+        status: "beta",
+      },
     ],
   },
   {
