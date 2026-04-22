@@ -18,6 +18,9 @@ Navigation index for what landed on branch `claude/platform-overhaul-3WF1E` over
 
 | Commit | Scope | What it adds |
 |---|---|---|
+| `5cdb63a1` | clients | **ClientEditDialog** — full enriched-field edit (legal name, type, industry, contacts, billing, primary + additional email domains). Two buttons per row now: pencil rename + building-icon full details. |
+| `fec21d3c` | R4.5 | Cascade-delete extended to **invoices**. `DeleteInvoiceDialog` + `/api/invoices/:id/delete-impact` — high severity when a payment request is raised from the invoice. |
+| `80c9ca2d` | D4 | **Handover meeting persistence** — attendees + section notes now land on `stage_acceptances` via migration 0014. Previously dropped when the dialog closed. |
 | `75cb170c` | R4.4 | Cascade-delete extended to **purchase orders**. `DeletePoDialog` drop-in + `/api/purchase-orders/:id/delete-impact`. High-severity signal when a payment request is raised against the PO. |
 | `c971fb83` | clients | `primaryEmailDomain` + `additionalEmailDomains` accepted on PATCH `/api/clients/:id`. |
 | `c417d66d` | schema | Email-domain columns on clients — migration 0013 + schema update. Foundation for email-linking feature. |
