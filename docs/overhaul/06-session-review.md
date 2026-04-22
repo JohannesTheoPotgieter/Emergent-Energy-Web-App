@@ -188,4 +188,106 @@ Feature-by-theme breakdown continues in section B below.
 
 **Commits**: `3f6c6547` · `a40c3d71` · `83e68fdb` · `03c0af01`.
 
-(Continues in the next review piece.)
+### R2 — Universal ⌘K command palette (federated search)
+
+- Existing `GlobalCommandPalette` extended with a debounced (200 ms) fetch to `/api/search`.
+- Results grouped by entity kind: **Projects · Clients / Installers · Invoices & POs · Work Items · Finance lines · Documents · People**. Each group uses its own Lucide icon for fast visual parsing.
+- Rows that carry a `url` click-through; rows without land disabled.
+- Page / quick-action groups still render beneath — one surface for "go to page" + "find a specific thing".
+
+**Files**: `client/src/components/GlobalCommandPalette.tsx`.
+**Commits**: `ef3079ac`.
+
+### R3 — Cascade-delete primitive
+
+- `ConfirmDestructive` primitive (`client/src/components/ui/confirm-destructive.tsx`) takes a subject + impact rows + loading flag. Displays blast-radius in a destructive-tinted box with severity-coded badges (high/medium/low).
+- Typed-confirm requirement opt-in (defaults to ON when impact > 0).
+- Action verb override so same primitive serves Delete / Archive / Recall.
+
+**Commits**: `e8ce0eb0`.
+
+### R4 — Super-user CRUD + cascade coverage
+
+Six entities now have `/delete-impact` endpoints + drop-in `Delete*Dialog` wrappers:
+
+| Entity | Endpoint | Dialog | Commit |
+|---|---|---|---|
+| Projects | `/api/projects/:id/delete-impact` | `DeleteProjectDialog` | `dff44e3a` + `3c2a3d4b` |
+| Clients | `/api/clients/:id/delete-impact` | `DeleteClientDialog` | `b10119ea` |
+| Purchase orders | `/api/purchase-orders/:id/delete-impact` | `DeletePoDialog` | `75cb170c` |
+| Invoices | `/api/invoices/:id/delete-impact` | `DeleteInvoiceDialog` | `fec21d3c` |
+| Work items | `/api/work-items/:id/delete-impact` | `DeleteWorkItemDialog` | `e1362b74` |
+| Controlled docs | `/api/documents/:id/delete-impact` | `DeleteControlledDocDialog` | `e1362b74` |
+
+Also: `ClientEditDialog` (commit `5cdb63a1`) gives super users full-fidelity edit on `/clients` for identity, contacts, billing, industry, and **email domains** (new `primaryEmailDomain` + `additionalEmailDomains` columns from migration 0013).
+
+**Files**: `server/routes/impact.routes.ts`, `client/src/hooks/use-delete-impact.ts`, `client/src/components/{projects,clients,finance,work-items,controlled-documents}/Delete*Dialog.tsx`.
+
+### R5 — QuickBooks clean front-door
+
+- `/quickbooks` page replacing the "half-cooked" feel of `/admin-quickbooks`.
+- Status card (Connected / Stale / Failing badge + company + last sync age + token expiry + last failure banner).
+- Primary actions card (Sync now · Reconnect · Disconnect).
+- Jump-to card (Invoice linking · Customer mapping · Throughput / recon · Advanced admin → old page).
+- Recent syncs list (colour-coded status dots + relative ages).
+- Linked from Settings home (replaces the old `/admin-quickbooks` link).
+
+**Files**: `client/src/pages/quickbooks-home.tsx`.
+**Commits**: `e3310997`.
+
+### R6 — Navigation polish
+
+- Global leader-key nav: `g h` · `g p` · `g s` · `g a` · `g q` · `g l` · `g f` · `g c` · `g i` · `g d` · `g e` · `g g` for twelve common surfaces. Leader expires after 1500 ms. Suppressed while typing in inputs.
+- `?` key opens `KeyboardShortcutsDialog` (auto-documents the shortcut map).
+- Installed globally via `KeyboardNavActivator` component inside `AppLayout`.
+- PD risk drill-ins now have their own "actionable" layer: `/opportunities?filter=stale-30|stale-60|high-value-quiet|overdue-followups` applies an in-memory filter with an amber "Filter active · Clear filter" banner.
+
+**Files**: `client/src/hooks/use-keyboard-nav.ts`, `client/src/components/KeyboardShortcutsDialog.tsx`, `client/src/components/layout/AppLayout.tsx`, `client/src/pages/opportunities.tsx`, `client/src/pages/pd-dashboard.tsx`.
+**Commits**: `d319ce80` · `99c18527` · `0f0363e0`.
+
+### Email + Teams project-linking (new theme, E)
+
+Not originally on the R-list; carved out during the conversation and built end-to-end.
+
+**Schema** (migration 0013 + 0015):
+- `clients.primaryEmailDomain` + `clients.additionalEmailDomains` (jsonb array).
+- `email_project_links` table — attributes a Graph message to a project/client via one of six signals (`client_domain` · `client_contact` · `subject_tag` · `thread_inheritance` · `pipedrive` · `manual`). Carries `phaseAtLinkTime` snapshot per the user's "always keep all history but under its phase" rule.
+- `teams_project_links` table — mirror shape with three signals (`project_channel` · `user_mention` · `manual`).
+- Unique index on `(graph_message_id, project_id)` prevents duplicate writes on webhook retries.
+
+**Service layer** (`server/services/email-auto-linker.ts`):
+- `autoLinkInboundEmail(meta)` — runs the three implemented layered signals in order (`thread_inheritance` → `subject_tag` regex → `client_domain` match), writes rows, idempotent.
+- `mockIngestInboundEmails(batch)` — dev-only mock webhook; NODE_ENV-gated.
+
+**Repository** (`server/repositories/email-links-repository.ts`):
+- `extractDomain`, `matchClientByDomain` (primary + additional domains, jsonb containment for additional).
+- `createEmailLink` / `createTeamsLink` / list / remove.
+
+**API** (`server/routes/email-links.routes.ts`):
+- `GET /api/projects/:id/emails` · `/teams-messages`
+- `GET /api/email-domain-match?email=...` (layered-signal test)
+- `POST /api/email-links` · `POST /api/teams-links` (manual)
+- `DELETE /api/email-links/:id` · `/teams-links/:id` (super-user)
+- `POST /api/dev/email-links/mock-ingest` (dev-only batch driver)
+
+**UI** (`client/src/components/email-links/ProjectCommunicationsTab.tsx`):
+- New "Communications" subtab on `project-detail.tsx` PD section.
+- Groups linked emails + Teams messages by `phaseAtLinkTime` (First Assessment · Cost Proposal · Construction · …).
+- Signal-coded badges (manual=blue · pipedrive=violet · domain/channel=emerald · other=neutral).
+- Outlook deep-link on each email row.
+
+**What's missing**: the real Graph change-notification consumer that subscribes to `/me/messages` and calls `autoLinkInboundEmail` on each delta. Everything downstream of that is built — the consumer goes alongside `ms-sync-service.ts` in a follow-up commit once tenant tokens are configured.
+
+**Commits**: `c417d66d` · `c971fb83` · `5cdb63a1` · `e55f9196` · `c7e87859` · `f029a0e4` · `e303c3f3`.
+
+### Audit — department-by-department
+
+Documented in `docs/overhaul/05-department-audit.md`. Seven departments walked (PD · PM · Engineering · Quality · HSE · Finance · Handover) against the four business questions. Small fixes shipped inline:
+- PD Dashboard risk signals clickable.
+- `ApprovalQueueCard` on PM · Engineering · Quality · HSE dashboards (matches the "familiar feel" rule).
+- Opportunities filter wiring (see R6).
+- Optional SharePoint root input on `/project-create`.
+
+**Commits**: `0f0363e0` · `da62f1fd` · `eb08f6ad` · `f696bc68`.
+
+(Section C — deferred — continues in the next piece.)
