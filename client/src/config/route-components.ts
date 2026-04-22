@@ -9,6 +9,7 @@ const SettingsHomePage = lazyWithRetry(() => import("@/pages/settings-home"));
 const ProjectDocumentsPage = lazyWithRetry(() => import("@/pages/project-documents"));
 const QuickBooksHomePage = lazyWithRetry(() => import("@/pages/quickbooks-home"));
 const AdminDocumentTypesPage = lazyWithRetry(() => import("@/pages/admin-document-types"));
+const HandoverLivePage = lazyWithRetry(() => import("@/pages/handover-live"));
 const ProjectLifecyclePage = lazyWithRetry(() => import("@/pages/project-lifecycle"));
 const ProjectsSummary = lazyWithRetry(() => import("@/pages/projects"));
 const CashflowPage = lazyWithRetry(() => import("@/pages/cashflow"));
@@ -236,6 +237,7 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   ProjectDocumentsPage,
   QuickBooksHomePage,
   AdminDocumentTypesPage,
+  HandoverLivePage,
 };
 
 export const ROUTE_COMPONENT_KEYS: ReadonlySet<string> = new Set(Object.keys(ROUTE_COMPONENTS));
