@@ -98,8 +98,8 @@ const GROUPS: SettingsGroupDef[] = [
       {
         key: "quickbooks",
         title: "QuickBooks",
-        description: "Sync status, invoice + vendor mapping, class → project overrides. Recon dashboard lives here.",
-        href: "/admin-quickbooks",
+        description: "Connection health, one-click sync, mappings and reconciliation jump-offs.",
+        href: "/quickbooks",
         icon: LinkIcon,
         status: "ready",
       },
