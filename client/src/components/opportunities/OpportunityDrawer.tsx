@@ -392,7 +392,7 @@ export function OpportunityDrawer({ opportunityId, open, onClose }: Props) {
                       <Zap className="h-3 w-3 text-emerald-600" /> Engineering task board
                     </h3>
                   </header>
-                  <EngineeringTicketsSection tickets={data.tickets ?? []} />
+                  <EngineeringTicketsSection tickets={data.tickets ?? []} opportunityId={opportunityId} />
                   {(data.tickets ?? []).some((t) => t.projectId) && (
                     <ProjectTaskBoard
                       tasks={data.projectTasks ?? []}
@@ -579,9 +579,27 @@ function ReadField({ label, value }: { label: string; value: string | null | und
  * link to the project page), and an optional first line of the comments so
  * engineering can leave/track feedback at a glance.
  */
-function EngineeringTicketsSection({ tickets }: { tickets: OpportunityTicket[] }) {
+function EngineeringTicketsSection({
+  tickets,
+  opportunityId,
+}: {
+  tickets: OpportunityTicket[];
+  opportunityId: number;
+}) {
   const open = tickets.filter((t) => t.status !== "Completed" && t.status !== "Cancelled").length;
   const closed = tickets.length - open;
+  // Resolve the canonical sibling project for this opportunity. When any
+  // ticket on the opp is already linked to a working project, that same
+  // project is the natural target for the opp's *other* unlinked tickets
+  // — they all belong to the same physical site and engineering effort.
+  // We surface a one-click "Link to <project>" affordance on each
+  // unlinked ticket so users don't need to navigate elsewhere.
+  const siblingProject = tickets.find((t) => t.projectId && t.projectName)
+    ? {
+        id: tickets.find((t) => t.projectId && t.projectName)!.projectId!,
+        name: tickets.find((t) => t.projectId && t.projectName)!.projectName!,
+      }
+    : null;
   return (
     <div className="space-y-1.5" data-testid="section-engineering-tickets">
       <div className="flex items-center justify-between">
@@ -594,7 +612,12 @@ function EngineeringTicketsSection({ tickets }: { tickets: OpportunityTicket[] }
       </div>
       <ul className="text-xs space-y-1.5" data-testid="list-engineering-tickets">
         {tickets.map((t) => (
-          <TicketRow key={t.id} ticket={t} />
+          <TicketRow
+            key={t.id}
+            ticket={t}
+            siblingProject={siblingProject}
+            opportunityId={opportunityId}
+          />
         ))}
       </ul>
     </div>
@@ -636,7 +659,28 @@ function ticketAgeDays(iso: string | null): number | null {
   return Math.max(0, Math.floor((Date.now() - t) / (1000 * 60 * 60 * 24)));
 }
 
-function TicketRow({ ticket }: { ticket: OpportunityTicket }) {
+function TicketRow({
+  ticket,
+  siblingProject,
+  opportunityId,
+}: {
+  ticket: OpportunityTicket;
+  siblingProject: { id: number; name: string } | null;
+  opportunityId: number;
+}) {
+  const queryClient = useQueryClient();
+  const linkToProject = useMutation({
+    mutationFn: async (projectId: number) => {
+      const res = await apiRequest("PATCH", `/api/pd/tickets/${ticket.id}`, { projectId });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/opportunities", opportunityId, "workflow"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/opportunities/working"] });
+    },
+  });
+  const canOfferSiblingLink =
+    !ticket.projectId && siblingProject != null && siblingProject.id !== ticket.projectId;
   const isClosed = ticket.status === "Completed" || ticket.status === "Cancelled";
   const ageDays = ticketAgeDays(ticket.createdAt);
   const owner = ticket.projectDeveloperName || ticket.designerName || null;
@@ -684,11 +728,31 @@ function TicketRow({ ticket }: { ticket: OpportunityTicket }) {
           >
             {ticket.projectName} <ExternalLink className="h-2.5 w-2.5" />
           </a>
+        ) : canOfferSiblingLink ? (
+          <span className="inline-flex items-center gap-1.5">
+            <span className="italic">Not yet linked to a project</span>
+            <button
+              type="button"
+              disabled={linkToProject.isPending}
+              onClick={() => linkToProject.mutate(siblingProject!.id)}
+              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-60 text-[10px] font-medium"
+              data-testid={`btn-link-ticket-to-project-${ticket.id}`}
+              title={`Link this ticket to the same project as the sibling ticket: ${siblingProject!.name}`}
+            >
+              {linkToProject.isPending ? "Linking…" : `Link to ${siblingProject!.name}`}
+              {!linkToProject.isPending && <ArrowRight className="h-2.5 w-2.5" />}
+            </button>
+          </span>
         ) : (
           <span className="italic">Not yet linked to a project</span>
         )}
         {ticket.tasksSpawnedAt && <span className="text-emerald-700">Tasks spawned</span>}
       </div>
+      {linkToProject.isError && (
+        <p className="mt-1 text-[10px] text-red-700" data-testid={`error-link-ticket-${ticket.id}`}>
+          Failed to link to project. Please try again.
+        </p>
+      )}
       {commentPreview && (
         <p className="mt-1 text-[10px] text-muted-foreground line-clamp-2" title={ticket.comments ?? undefined}>
           {commentPreview}
