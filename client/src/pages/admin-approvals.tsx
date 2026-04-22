@@ -1,13 +1,15 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { usePermission } from "@/hooks/use-permissions";
 import { useLocation } from "wouter";
 import { format } from "date-fns";
+import * as Checkbox from "@radix-ui/react-checkbox";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { toast as sonnerToast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -30,6 +32,7 @@ import {
   ThumbsUp,
   ThumbsDown,
   Loader2,
+  Check,
 } from "lucide-react";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 
@@ -100,6 +103,76 @@ function getAuthHeaders(): Record<string, string> {
   return headers;
 }
 
+async function performApprovalAction(item: ApprovalItem, action: "approve" | "reject", comment: string) {
+  if (item.type === "general") {
+    const approvalId = item.meta.generalApprovalId || item.id.replace("gen-", "");
+    const res = await fetch(`/api/approvals/general/${approvalId}`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        status: action === "approve" ? "approved" : "rejected",
+        decisionNote: comment || undefined,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || err.message || "Failed to update general approval");
+    }
+    return res.json();
+  }
+  if (item.type === "engineering") {
+    const approvalId = item.meta.approvalId;
+    const res = await fetch(`/api/eng-stages/approvals/${approvalId}`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        status: action === "approve" ? "approved" : "rejected",
+        comments: comment || undefined,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || err.message || "Failed to update engineering approval");
+    }
+    return res.json();
+  }
+  if (item.type === "quality") {
+    const itemInstanceId = item.meta.itemInstanceId;
+    const res = await fetch(`/api/quality/project/${encodeURIComponent(item.projectName)}/item/${itemInstanceId}/approve`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        approved: action === "approve",
+        comment: comment || undefined,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || err.message || "Failed to update quality approval");
+    }
+    return res.json();
+  }
+  const deliverableId = item.meta.deliverableId;
+  const newStatus = action === "approve" ? "COMPLETE" : "PROVIDE FEEDBACK";
+  const res = await fetch(`/api/deliverables/${deliverableId}`, {
+    method: "PATCH",
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ status: newStatus }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || err.message || "Failed to update deliverable");
+  }
+  if (action === "reject" && comment) {
+    await fetch(`/api/deliverables/${deliverableId}/feedback`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ feedbackText: comment }),
+    }).catch(() => {});
+  }
+  return res.json();
+}
+
 export default function AdminApprovalsPage() {
   const { allowed: canView } = usePermission('approvals', 'view');
   const { allowed: canApprove } = usePermission('approvals', 'approve');
@@ -108,6 +181,7 @@ export default function AdminApprovalsPage() {
   const [showAll, setShowAll] = useState(false);
   const [actionDialog, setActionDialog] = useState<{ item: ApprovalItem; action: "approve" | "reject" } | null>(null);
   const [reason, setReason] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -126,73 +200,7 @@ export default function AdminApprovalsPage() {
 
   const actionMutation = useMutation({
     mutationFn: async ({ item, action, comment }: { item: ApprovalItem; action: "approve" | "reject"; comment: string }) => {
-      if (item.type === "general") {
-        const approvalId = item.meta.generalApprovalId || item.id.replace("gen-", "");
-        const res = await fetch(`/api/approvals/general/${approvalId}`, {
-          method: "PATCH",
-          headers: getAuthHeaders(),
-          body: JSON.stringify({
-            status: action === "approve" ? "approved" : "rejected",
-            decisionNote: comment || undefined,
-          }),
-        });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.error || err.message || "Failed to update general approval");
-        }
-        return res.json();
-      }
-      if (item.type === "engineering") {
-        const approvalId = item.meta.approvalId;
-        const res = await fetch(`/api/eng-stages/approvals/${approvalId}`, {
-          method: "PATCH",
-          headers: getAuthHeaders(),
-          body: JSON.stringify({
-            status: action === "approve" ? "approved" : "rejected",
-            comments: comment || undefined,
-          }),
-        });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.error || err.message || "Failed to update engineering approval");
-        }
-        return res.json();
-      } else if (item.type === "quality") {
-        const itemInstanceId = item.meta.itemInstanceId;
-        const res = await fetch(`/api/quality/project/${encodeURIComponent(item.projectName)}/item/${itemInstanceId}/approve`, {
-          method: "POST",
-          headers: getAuthHeaders(),
-          body: JSON.stringify({
-            approved: action === "approve",
-            comment: comment || undefined,
-          }),
-        });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.error || err.message || "Failed to update quality approval");
-        }
-        return res.json();
-      } else if (item.type === "deliverable") {
-        const deliverableId = item.meta.deliverableId;
-        const newStatus = action === "approve" ? "COMPLETE" : "PROVIDE FEEDBACK";
-        const res = await fetch(`/api/deliverables/${deliverableId}`, {
-          method: "PATCH",
-          headers: getAuthHeaders(),
-          body: JSON.stringify({ status: newStatus }),
-        });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.error || err.message || "Failed to update deliverable");
-        }
-        if (action === "reject" && comment) {
-          await fetch(`/api/deliverables/${deliverableId}/feedback`, {
-            method: "POST",
-            headers: getAuthHeaders(),
-            body: JSON.stringify({ feedbackText: comment }),
-          }).catch(() => {});
-        }
-        return res.json();
-      }
+      return performApprovalAction(item, action, comment);
     },
     onSuccess: (_data, variables) => {
       const verb = variables.action === "approve" ? "approved" : "rejected";
@@ -209,41 +217,19 @@ export default function AdminApprovalsPage() {
   const items = data?.items || [];
   const counts = data?.counts || { engineering: 0, quality: 0, deliverable: 0, general: 0, total: 0 };
   const filtered = filter === "all" ? items : items.filter(i => i.type === filter);
+  const filteredIds = useMemo(() => new Set(filtered.map((item) => item.id)), [filtered]);
+  const selectedItems = useMemo(
+    () => filtered.filter((item) => selectedIds.has(item.id)),
+    [filtered, selectedIds],
+  );
+  const allRowsSelected = filtered.length > 0 && selectedItems.length === filtered.length;
+  const someRowsSelected = selectedItems.length > 0 && selectedItems.length < filtered.length;
   const isPmWorkspace = location.startsWith("/pm/");
   const subtitle = isPmWorkspace
     ? "Execution approvals queue for post-handover delivery work. Approval-required items must use Send for Approval only."
     : showAll
       ? "All pending approvals across all projects"
       : "Your pending approvals";
-
-  // A6: Group by urgency
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const weekEnd = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
-
-  const urgencyGroups = (() => {
-    const overdue: ApprovalItem[] = [];
-    const dueToday: ApprovalItem[] = [];
-    const thisWeek: ApprovalItem[] = [];
-    const later: ApprovalItem[] = [];
-
-    for (const item of filtered) {
-      const created = new Date(item.createdAt);
-      const ageDays = Math.floor((now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24));
-
-      if (ageDays > 3) overdue.push(item);
-      else if (ageDays >= 1) dueToday.push(item);
-      else if (created >= today && created < weekEnd) thisWeek.push(item);
-      else later.push(item);
-    }
-
-    return [
-      { label: "Overdue (>3 days)", items: overdue, color: "text-red-600" },
-      { label: "Aging (1-3 days)", items: dueToday, color: "text-amber-600" },
-      { label: "Recent", items: thisWeek, color: "text-blue-600" },
-      { label: "New Today", items: later, color: "text-muted-foreground" },
-    ].filter(g => g.items.length > 0);
-  })();
 
   function openAction(item: ApprovalItem, action: "approve" | "reject", e: { stopPropagation: () => void }) {
     e.stopPropagation();
@@ -275,6 +261,54 @@ export default function AdminApprovalsPage() {
       navigate(`/project/${encodeURIComponent(item.projectName)}`);
     }
   }
+
+  function toggleSelected(itemId: string, checked: boolean) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(itemId);
+      else next.delete(itemId);
+      return next;
+    });
+  }
+
+  function toggleSelectAll(checked: boolean) {
+    setSelectedIds((prev) => {
+      if (!checked) {
+        const next = new Set(prev);
+        filtered.forEach((item) => next.delete(item.id));
+        return next;
+      }
+      const next = new Set(prev);
+      filtered.forEach((item) => next.add(item.id));
+      return next;
+    });
+  }
+
+  async function approveSelected() {
+    if (selectedItems.length === 0) return;
+    if (!canApprove) {
+      toast({ title: "Permission required", description: "You do not have approval permission for this queue.", variant: "destructive" });
+      return;
+    }
+    try {
+      await Promise.all(selectedItems.map((item) => performApprovalAction(item, "approve", "")));
+      setSelectedIds(new Set());
+      await queryClient.invalidateQueries({ queryKey: ["/api/approvals/pending"] });
+      sonnerToast.success(`Approved ${selectedItems.length} item${selectedItems.length === 1 ? "" : "s"}.`);
+    } catch (err: any) {
+      sonnerToast.error(err?.message || "Bulk approve failed.");
+    }
+  }
+
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      const next = new Set<string>();
+      prev.forEach((id) => {
+        if (filteredIds.has(id)) next.add(id);
+      });
+      return next.size === prev.size ? prev : next;
+    });
+  }, [filteredIds]);
 
   if (!canView) {
     return (
@@ -422,170 +456,134 @@ export default function AdminApprovalsPage() {
         )}
 
         {!isLoading && !error && filtered.length > 0 && (
-          <div className="space-y-4">
-            {/* A6: Urgency-grouped approval cards */}
-            {urgencyGroups.map(group => (
-              <div key={group.label} className="space-y-2">
-                <h3 className={`text-xs font-semibold uppercase tracking-wide ${group.color}`}>
-                  {group.label} ({group.items.length})
-                </h3>
-                {group.items.map(item => {
-                  const config = typeConfig[item.type];
-                  const Icon = config.icon;
-                  const ageDays = Math.floor((now.getTime() - new Date(item.createdAt).getTime()) / (1000 * 60 * 60 * 24));
-                  return (
-                    <Card
-                      key={item.id}
-                      className="hover:shadow-md transition-shadow cursor-pointer"
-                      onClick={() => navigateToItem(item)}
-                      data-testid={`card-approval-${item.id}`}
-                    >
-                      <CardContent className="p-4">
-                        <div className="flex items-start gap-3">
-                          <div className={`p-2 rounded-lg ${config.bg} mt-0.5`}>
-                            <Icon className={`w-4 h-4 ${config.color}`} />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-medium text-sm truncate" data-testid={`text-title-${item.id}`}>
-                                {item.title}
-                              </span>
-                              <Badge className={`text-[10px] ${config.badgeClass}`}>
-                                {config.label}
-                              </Badge>
-                              <Badge variant="secondary" className="text-[10px]">
-                                {ageDays === 0 ? "today" : `${ageDays}d ago`}
-                              </Badge>
-                            </div>
-                            <div className="flex items-center gap-4 mt-1.5 text-xs text-muted-foreground">
-                              <span className="flex items-center gap-1">
-                                <FolderOpen className="w-3 h-3" />
-                                {item.projectName}
-                              </span>
-                              <span className="flex items-center gap-1">
-                                <User className="w-3 h-3" />
-                                {item.assignee}
-                              </span>
-                            </div>
-                          </div>
-                          {canApprove ? (
-                            <div className="flex gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-                              <Button
-                                variant="outline" size="sm" className="h-7 text-xs gap-1 text-emerald-600 hover:text-emerald-700"
-                                onClick={(e) => openAction(item, "approve", e)}
-                                data-testid={`btn-approve-${item.id}`}
-                              >
-                                <ThumbsUp className="w-3 h-3" />
-                                Approve
-                              </Button>
-                              <Button
-                                variant="outline" size="sm" className="h-7 text-xs gap-1 text-red-600 hover:text-red-700"
-                                onClick={(e) => openAction(item, "reject", e)}
-                                data-testid={`btn-reject-${item.id}`}
-                              >
-                                <ThumbsDown className="w-3 h-3" />
-                              </Button>
-                            </div>
-                          ) : (
-                            <Badge variant="outline" className="text-[10px]">View only</Badge>
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-            ))}
-            {/* Legacy flat list fallback — hidden when urgency groups render */}
-            {urgencyGroups.length === 0 && filtered.map(item => {
-              const config = typeConfig[item.type];
-              const Icon = config.icon;
-
-              return (
-                <Card
-                  key={item.id}
-                  className="hover:shadow-md transition-shadow"
-                  data-testid={`card-approval-${item.id}`}
-                >
-                  <CardContent className="p-4">
-                    <div className="flex items-start gap-3">
-                      <div className={`p-2 rounded-lg ${config.bg} mt-0.5`}>
-                        <Icon className={`w-4 h-4 ${config.color}`} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-medium text-sm truncate" data-testid={`text-title-${item.id}`}>
-                            {item.title}
-                          </span>
-                          <Badge className={`text-[10px] ${config.badgeClass}`}>
-                            {config.label}
-                          </Badge>
-                          <Badge variant="secondary" className="text-[10px]">
-                            {item.status}
-                          </Badge>
-                        </div>
-                        <div className="flex items-center gap-4 mt-1.5 text-xs text-muted-foreground">
-                          <span className="flex items-center gap-1">
-                            <FolderOpen className="w-3 h-3" />
-                            {item.projectName}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <User className="w-3 h-3" />
-                            {item.assignee}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
-                            {format(new Date(item.createdAt), "dd MMM yyyy")}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        {canApprove ? (
-                          <>
-                            <Button
-                              variant="default"
-                              size="sm"
-                              className="h-7 text-xs bg-green-600 hover:bg-green-700 gap-1"
-                              onClick={(e) => openAction(item, "approve", e)}
-                              data-testid={`btn-approve-${item.id}`}
-                            >
-                              <ThumbsUp className="w-3 h-3" />
-                              Approve
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700 gap-1"
-                              onClick={(e) => openAction(item, "reject", e)}
-                              data-testid={`btn-reject-${item.id}`}
-                            >
-                              <ThumbsDown className="w-3 h-3" />
-                              Reject
-                            </Button>
-                          </>
-                        ) : (
-                          <Badge variant="outline" className="text-[10px]">View only</Badge>
-                        )}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 w-7 p-0"
-                          onClick={() => navigateToItem(item)}
-                          title="View in project"
-                          data-testid={`btn-navigate-${item.id}`}
+          <Card>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/50 border-b">
+                    <tr>
+                      <th className="px-4 py-3 w-12 text-left">
+                        <Checkbox.Root
+                          className="grid place-content-center h-5 w-5 rounded border border-primary shadow-sm data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
+                          checked={allRowsSelected ? true : someRowsSelected ? "indeterminate" : false}
+                          onCheckedChange={(checked) => toggleSelectAll(checked === true)}
+                          aria-label="Select all approvals"
                         >
-                          <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
+                          <Checkbox.Indicator className="flex items-center justify-center">
+                            <Check className="h-4 w-4" />
+                          </Checkbox.Indicator>
+                        </Checkbox.Root>
+                      </th>
+                      <th className="px-4 py-3 text-left">Approval</th>
+                      <th className="px-4 py-3 text-left">Project</th>
+                      <th className="px-4 py-3 text-left">Assignee</th>
+                      <th className="px-4 py-3 text-left">Created</th>
+                      <th className="px-4 py-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map((item) => {
+                      const config = typeConfig[item.type];
+                      const isSelected = selectedIds.has(item.id);
+                      return (
+                        <tr key={item.id} className={`border-b last:border-0 ${isSelected ? "bg-primary/5" : ""}`}>
+                          <td className="px-4 py-3">
+                            <Checkbox.Root
+                              className="grid place-content-center h-5 w-5 rounded border border-primary shadow-sm data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
+                              checked={isSelected}
+                              onCheckedChange={(checked) => toggleSelected(item.id, checked === true)}
+                              aria-label={`Select ${item.title}`}
+                            >
+                              <Checkbox.Indicator className="flex items-center justify-center">
+                                <Check className="h-4 w-4" />
+                              </Checkbox.Indicator>
+                            </Checkbox.Root>
+                          </td>
+                          <td className="px-4 py-3 min-w-[280px]">
+                            <div className="font-medium">{item.title}</div>
+                            <Badge className={`text-[10px] mt-1 ${config.badgeClass}`}>{config.label}</Badge>
+                          </td>
+                          <td className="px-4 py-3">
+                            <button className="inline-flex items-center gap-1 text-left hover:underline" onClick={() => navigateToItem(item)}>
+                              <FolderOpen className="w-3 h-3" />
+                              {item.projectName}
+                            </button>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="inline-flex items-center gap-1">
+                              <User className="w-3 h-3" />
+                              {item.assignee}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-muted-foreground">{format(new Date(item.createdAt), "dd MMM yyyy")}</td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center justify-end gap-1.5">
+                              {canApprove ? (
+                                <>
+                                  <Button
+                                    variant="default"
+                                    size="sm"
+                                    className="h-7 text-xs bg-green-600 hover:bg-green-700 gap-1"
+                                    onClick={(e) => openAction(item, "approve", e)}
+                                    data-testid={`btn-approve-${item.id}`}
+                                  >
+                                    <ThumbsUp className="w-3 h-3" />
+                                    Approve
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700 gap-1"
+                                    onClick={(e) => openAction(item, "reject", e)}
+                                    data-testid={`btn-reject-${item.id}`}
+                                  >
+                                    <ThumbsDown className="w-3 h-3" />
+                                    Reject
+                                  </Button>
+                                </>
+                              ) : (
+                                <Badge variant="outline" className="text-[10px]">View only</Badge>
+                              )}
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0"
+                                onClick={() => navigateToItem(item)}
+                                title="View in project"
+                                data-testid={`btn-navigate-${item.id}`}
+                              >
+                                <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
         )}
         </div>
       </PageShell>
+
+      {selectedItems.length > 0 && canApprove && (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur">
+          <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
+            <p className="text-sm text-muted-foreground">
+              {selectedItems.length} selected
+            </p>
+            <Button
+              className="bg-green-600 hover:bg-green-700"
+              onClick={approveSelected}
+              disabled={actionMutation.isPending}
+            >
+              Approve Selected
+            </Button>
+          </div>
+        </div>
+      )}
 
       <Dialog open={!!actionDialog} onOpenChange={(open) => { if (!open) { setActionDialog(null); setReason(""); } }}>
         <DialogContent className="sm:max-w-[440px]">
