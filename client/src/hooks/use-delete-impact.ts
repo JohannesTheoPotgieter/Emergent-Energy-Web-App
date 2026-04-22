@@ -23,7 +23,7 @@ export interface DeleteImpactResponse {
  *   const { data, isLoading } = useDeleteImpact("projects", projectId, open);
  */
 export function useDeleteImpact(
-  entityPath: "projects" | "clients" | "invoices" | "documents",
+  entityPath: "projects" | "clients" | "invoices" | "documents" | "purchase-orders",
   entityId: number | null | undefined,
   enabled: boolean,
 ) {
