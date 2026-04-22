@@ -84,8 +84,8 @@ const GROUPS: SettingsGroupDef[] = [
       {
         key: "sharepoint-templates",
         title: "SharePoint folder templates",
-        description: "Define the folder structure applied to new projects (BD / Cost Proposal / Design / Handover, etc.).",
-        href: "/admin-settings?section=sharepoint",
+        description: "Per-project folder structure is set on each project's Controlled docs tab. A project-wide template editor is not yet shipped — open a project to configure.",
+        href: "/projects",
         icon: FolderTree,
         status: "beta",
       },
@@ -98,8 +98,8 @@ const GROUPS: SettingsGroupDef[] = [
       {
         key: "quickbooks",
         title: "QuickBooks",
-        description: "Connection health, one-click sync, mappings and reconciliation jump-offs.",
-        href: "/quickbooks",
+        description: "Connection health, mappings, reconciliation, invoice + bill linking — one surface.",
+        href: "/finance/quickbooks",
         icon: LinkIcon,
         status: "ready",
       },

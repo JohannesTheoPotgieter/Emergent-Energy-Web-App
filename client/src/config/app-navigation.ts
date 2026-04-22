@@ -199,14 +199,16 @@ export const TOP_SECTIONS: TopSection[] = [
   {
     label: "Admin",
     key: "ADMIN",
-    path: "/admin/control-center",
+    path: "/settings",
     match: (pathname) => startsWithAny(pathname, [
       "/admin", "/settings", "/ee-info", "/feedback", "/training",
       "/leaderboard", "/department-scores",
     ]),
     secondary: [
-      { label: "Control Center", path: "/admin/control-center" },
+      { label: "Settings", path: "/settings" },
+      { label: "Document types", path: "/admin/document-types" },
       { label: "Roles & Permissions", path: "/admin/roles" },
+      { label: "Control Center", path: "/admin/control-center" },
       { label: "Smart Import", path: "/admin/smart-import" },
       { label: "Audit Log", path: "/admin/activity-log" },
       { label: "Processes & SOPs", path: "/ee-info" },
