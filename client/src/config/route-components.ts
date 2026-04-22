@@ -92,6 +92,7 @@ const PaymentRequestBoardPage = lazyWithRetry(() => import("@/pages/payment-requ
 const PaymentBatchManagerPage = lazyWithRetry(() => import("@/pages/payment-batch-manager"));
 const HseDashboardPage = lazyWithRetry(() => import("@/pages/hse-dashboard"));
 const HandoverDashboardPage = lazyWithRetry(() => import("@/pages/handover-dashboard"));
+const SsegSubmissionsPage = lazyWithRetry(() => import("@/pages/sseg-submissions"));
 const LessonsLearntPage = lazyWithRetry(() => import("@/pages/lessons-learnt"));
 const SitesPage = lazyWithRetry(() => import("@/pages/sites"));
 const OpportunitiesPage = lazyWithRetry(() => import("@/pages/opportunities"));
@@ -212,6 +213,7 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   PaymentBatchManagerPage,
   HseDashboardPage,
   HandoverDashboardPage,
+  SsegSubmissionsPage,
   LessonsLearntPage,
   SitesPage,
   OpportunitiesPage,
