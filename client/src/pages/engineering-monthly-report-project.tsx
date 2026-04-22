@@ -5,8 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Loader2, Download } from "lucide-react";
+import { ArrowLeft, Download } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
+import { QueryLoading, QueryError } from "@/components/ui/query-states";
 import { PageLayout, DetailLayout } from "@/components/layout";
 
 function getAuthHeaders(): Record<string, string> {
@@ -91,7 +92,7 @@ export default function EngineeringMonthlyReportProject() {
   const projectId = params?.projectId || "";
   const [activeTab, setActiveTab] = useState("tasks");
 
-  const { data: report } = useQuery({
+  const { data: report, isLoading: reportLoading, isError: reportError, error: reportQueryError, refetch: refetchReport } = useQuery({
     queryKey: ["/api/reports/engineering/monthly", month],
     queryFn: async () => {
       const res = await fetch(`/api/reports/engineering/monthly?month=${month}`, { headers: getAuthHeaders() });
@@ -103,7 +104,7 @@ export default function EngineeringMonthlyReportProject() {
 
   const reportId = report?.id;
 
-  const { data: projectData, isLoading, error } = useQuery({
+  const { data: projectData, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["/api/reports/engineering/monthly/project", reportId, projectId],
     queryFn: async () => {
       const res = await fetch(`/api/reports/engineering/monthly/${reportId}/project/${projectId}`, { headers: getAuthHeaders() });
@@ -209,12 +210,14 @@ export default function EngineeringMonthlyReportProject() {
         />
       }
     >
-      {error && <p className="text-sm text-red-600">{(error as Error).message}</p>}
-
-      {isLoading ? (
-        <div className="flex items-center justify-center min-h-[30vh]">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
+      {reportLoading ? (
+        <QueryLoading />
+      ) : reportError ? (
+        <QueryError error={reportQueryError} onRetry={() => refetchReport()} />
+      ) : isLoading ? (
+        <QueryLoading />
+      ) : isError ? (
+        <QueryError error={error} onRetry={() => refetch()} />
       ) : (
         <>
           {summary && (
