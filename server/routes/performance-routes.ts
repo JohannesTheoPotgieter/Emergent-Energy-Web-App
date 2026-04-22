@@ -124,7 +124,9 @@ app.get("/api/reports/gate-reports", jwtAuth, requireAuth, requirePermission("pe
       // Blocked gates with age and owner
       db.execute(sql`
         SELECT
-          pi.project_name, psi.stage_code, u.name AS owner_name,
+          pi.project_name, psi.stage_code,
+          psi.stage_owner_user_id AS owner_user_id,
+          u.name AS owner_name,
           COALESCE(EXTRACT(DAY FROM NOW() - psi.started_at)::int, 0) AS days_blocked,
           pes.waiting_on_department
         FROM project_stage_instances psi

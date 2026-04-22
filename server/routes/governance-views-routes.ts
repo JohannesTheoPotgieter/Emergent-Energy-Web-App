@@ -38,6 +38,7 @@ app.get("/api/governance/quality", jwtAuth, requireAuth, async (req, res) => {
           qi.qm_status, qi.approved, qi.is_applicable,
           ti.item_name, ti.default_severity AS severity,
           COALESCE(EXTRACT(DAY FROM NOW() - qi.last_updated_at)::int, 0) AS age_days,
+          qi.assignee_user_id AS owner_user_id,
           u.name AS owner_name
         FROM qc_item_instance qi
         JOIN qc_checklist cl ON cl.id = qi.checklist_id
