@@ -30,6 +30,9 @@ import { apiRequest, invalidateDashboardQueries } from "@/lib/queryClient";
 import { isApiError } from "@/lib/api-error";
 import { formatRand } from "@/lib/safeMoney";
 import { FinanceShell } from "@/components/layout/FinanceShell";
+import { useAuth } from "@/hooks/use-auth";
+import { SuggestMatchesDialog } from "@/components/quickbooks/SuggestMatchesDialog";
+import { Sparkles } from "lucide-react";
 
 
 type IntegrationHealthState = "healthy" | "stale" | "failing" | "unknown";
@@ -466,7 +469,9 @@ function SearchPicker({
 function CustomersMappingView({ isConnected }: { isConnected: boolean }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { isAdmin } = useAuth();
   const [search, setSearch] = useState("");
+  const [suggestFor, setSuggestFor] = useState<{ projectId: number; projectName: string } | null>(null);
 
   const { data: customersResp, isLoading: customersLoading } = useQuery<{
     QueryResponse?: { Customer?: QbCustomerRaw[] };
@@ -664,11 +669,26 @@ function CustomersMappingView({ isConnected }: { isConnected: boolean }) {
               <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
               <span className="text-xs font-medium">{unmappedProjects.length} app projects have no QB customer</span>
             </div>
-            <div className="flex flex-wrap gap-1">
+            <div className="flex flex-wrap gap-1.5">
               {unmappedProjects.slice(0, 50).map((r) => (
-                <Badge key={r.projectId} variant="outline" className="text-[10px]">
-                  {r.projectName}
-                </Badge>
+                <span key={r.projectId} className="inline-flex items-center gap-1">
+                  <Badge variant="outline" className="text-[10px]">
+                    {r.projectName}
+                  </Badge>
+                  {isAdmin && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-5 px-1.5 text-[10px] gap-0.5 text-amber-700 hover:text-amber-900"
+                      onClick={() => setSuggestFor({ projectId: r.projectId, projectName: r.projectName })}
+                      data-testid={`button-suggest-customer-${r.projectId}`}
+                      title="Suggest matches (admin)"
+                    >
+                      <Sparkles className="h-2.5 w-2.5" /> Suggest
+                    </Button>
+                  )}
+                </span>
               ))}
               {unmappedProjects.length > 50 && (
                 <Badge variant="outline" className="text-[10px]">+{unmappedProjects.length - 50} more</Badge>
@@ -677,6 +697,20 @@ function CustomersMappingView({ isConnected }: { isConnected: boolean }) {
           </CardContent>
         </Card>
       )}
+
+      {suggestFor && (
+        <SuggestMatchesDialog
+          open={!!suggestFor}
+          onOpenChange={(o) => !o && setSuggestFor(null)}
+          scope="customer"
+          appEntityId={suggestFor.projectId}
+          appEntityLabel={suggestFor.projectName}
+          invalidateOnSuccess={[
+            ["/api/quickbooks/customer-mappings"],
+            ["/api/quickbooks/links"],
+          ]}
+        />
+      )}
     </div>
   );
 }
@@ -684,7 +718,9 @@ function CustomersMappingView({ isConnected }: { isConnected: boolean }) {
 function VendorsMappingView({ isConnected }: { isConnected: boolean }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { isAdmin } = useAuth();
   const [search, setSearch] = useState("");
+  const [suggestFor, setSuggestFor] = useState<{ counterpartyId: number; counterpartyName: string } | null>(null);
 
   const { data: vendorsResp, isLoading: vendorsLoading } = useQuery<{
     QueryResponse?: { Vendor?: QbVendorRaw[] };
@@ -775,6 +811,17 @@ function VendorsMappingView({ isConnected }: { isConnected: boolean }) {
   }
 
   const unmappedVendors = qbVendors.filter((v) => !mappingByVendor.has(v.Id));
+  const mappedCounterpartyIds = useMemo(
+    () => new Set(mappings.map((m) => m.counterpartyId)),
+    [mappings],
+  );
+  const unmappedCounterparties = useMemo(
+    () =>
+      cpList
+        .filter((c) => c.isActive !== false && !mappedCounterpartyIds.has(c.id))
+        .slice(0, 50),
+    [cpList, mappedCounterpartyIds],
+  );
 
   return (
     <div className="space-y-3">
@@ -868,6 +915,48 @@ function VendorsMappingView({ isConnected }: { isConnected: boolean }) {
           )}
         </CardContent>
       </Card>
+
+      {isAdmin && unmappedCounterparties.length > 0 && (
+        <Card>
+          <CardContent className="p-3">
+            <div className="flex items-center gap-2 mb-2">
+              <Sparkles className="h-3.5 w-3.5 text-amber-500" />
+              <span className="text-xs font-medium">
+                {unmappedCounterparties.length} suppliers have no QuickBooks vendor — admins can request matches
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {unmappedCounterparties.map((cp) => (
+                <Button
+                  key={cp.id}
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-6 px-2 text-[10px] gap-1 text-amber-700 hover:text-amber-900"
+                  onClick={() => setSuggestFor({ counterpartyId: cp.id, counterpartyName: cp.nameCanonical })}
+                  data-testid={`button-suggest-vendor-${cp.id}`}
+                >
+                  <Sparkles className="h-2.5 w-2.5" /> {cp.nameCanonical}
+                </Button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {suggestFor && (
+        <SuggestMatchesDialog
+          open={!!suggestFor}
+          onOpenChange={(o) => !o && setSuggestFor(null)}
+          scope="vendor"
+          appEntityId={suggestFor.counterpartyId}
+          appEntityLabel={suggestFor.counterpartyName}
+          invalidateOnSuccess={[
+            ["/api/quickbooks/vendor-mappings"],
+            ["/api/quickbooks/links"],
+          ]}
+        />
+      )}
     </div>
   );
 }

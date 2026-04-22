@@ -44,6 +44,7 @@ interface ProjectInfo {
   pm: string | null;
   contractValue: string | null;
   phase: string | null;
+  projectStatus: string | null;
   isActive: boolean;
   escalationLevel: string | null;
   ragStatus: string | null;

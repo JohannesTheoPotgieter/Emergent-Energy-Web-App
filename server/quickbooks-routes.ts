@@ -31,6 +31,19 @@ import crypto from "crypto";
 import type { Express, Request, Response } from "express";
 import { requireAuth, getEffectiveUser } from "./auth-context";
 import { requireAdmin } from "./middleware/requireAdmin";
+import { normalizeRoleForPermissions } from "@shared/schema";
+
+// Lock-policy helper: once a mapping is locked (by an admin via the
+// "Suggest matches" cascade or the unlock-then-relock flow), only an
+// admin role can subsequently change or clear it. financials:edit alone
+// is no longer sufficient. See Task #30 — prevents non-admin editors
+// from silently overwriting reviewed/approved mappings.
+const QB_ADMIN_ROLES = new Set(["COO_ADMIN", "CEO_ADMIN"]);
+function isAdminRequest(req: Request): boolean {
+  const raw = req.user?.role;
+  const normalized = normalizeRoleForPermissions(raw);
+  return QB_ADMIN_ROLES.has(raw ?? "") || QB_ADMIN_ROLES.has(normalized);
+}
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
 import {
@@ -69,9 +82,31 @@ import {
   type QuickBooksBillSummary,
   type QuickBooksInvoiceSummary,
 } from "./services/quickbooks-reconciliation-service";
+import {
+  commitCustomerCascade,
+  commitVendorCascade,
+  previewCustomerCascade,
+  previewVendorCascade,
+  rankCandidates,
+  recordCascadePreview,
+  recordSuggestion,
+  unlockCustomerMapping,
+  unlockVendorMapping,
+  type SuggestScope,
+} from "./services/quickbooks-cascade-service";
 import { recordIntegrationRun } from "./services/integration-health-service";
 import { db } from "./db";
-import { integrations, integrationRunEvents, type IntegrationRunEvent } from "@shared/schema";
+import {
+  counterparties,
+  integrations,
+  integrationRunEvents,
+  projectInfo,
+  quickbooksCascadeRuns,
+  quickbooksCustomerMappings,
+  quickbooksMatchSuggestions,
+  quickbooksVendorMappings,
+  type IntegrationRunEvent,
+} from "@shared/schema";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { validateBody } from "./middleware/validateBody";
@@ -265,10 +300,14 @@ export function registerQuickBooksRoutes(app: Express): void {
   // Triggers a pull of bills, invoices, customers, vendors and P&L.
   // Logs the run to integration_run_events so the health tile and
   // sync log both update in real time.
+  // Sync-now performs writes (snapshot ingest, integration_run_events insert),
+  // so it must require an editor permission. Viewers get 403. Hardened in
+  // Task #30 (was previously gated as `financial_integration:view`, which let
+  // any viewer trigger writes against the integration).
   app.post(
     "/api/quickbooks/sync-now",
     requireAuth,
-    requirePermission("financial_integration", "view"),
+    requirePermission("financials", "edit"),
     async (req, res) => {
       const startedAt = new Date();
       const errors: string[] = [];
@@ -770,6 +809,22 @@ export function registerQuickBooksRoutes(app: Express): void {
         res.status(400).json({ error: "bad_request", message: "qbCustomerId is required" });
         return;
       }
+      // Lock policy: if there is an existing locked mapping for this project,
+      // only an admin role may overwrite it.
+      const { quickbooksCustomerMappings: qbcm } = await import("@shared/schema");
+      const [lockedExisting] = await db
+        .select({ id: qbcm.id, lockedAt: qbcm.lockedAt })
+        .from(qbcm)
+        .where(and(eq(qbcm.projectId, projectId), isNull(qbcm.deletedAt)))
+        .limit(1);
+      if (lockedExisting?.lockedAt && !isAdminRequest(req)) {
+        res.status(403).json({
+          error: "mapping_locked",
+          message: "This mapping is locked. Ask an admin to unlock or change it.",
+          mappingId: lockedExisting.id,
+        });
+        return;
+      }
       const user = getEffectiveUser(req);
       const mapping = await upsertCustomerMapping({
         projectId,
@@ -804,6 +859,20 @@ export function registerQuickBooksRoutes(app: Express): void {
       const id = Number(req.params.id);
       if (!Number.isFinite(id) || id <= 0) {
         res.status(400).json({ error: "bad_request", message: "Invalid mapping id" });
+        return;
+      }
+      // Lock policy: locked mappings can only be unmapped by admins.
+      const { quickbooksCustomerMappings: qbcm } = await import("@shared/schema");
+      const [pre] = await db
+        .select({ lockedAt: qbcm.lockedAt })
+        .from(qbcm)
+        .where(eq(qbcm.id, id))
+        .limit(1);
+      if (pre?.lockedAt && !isAdminRequest(req)) {
+        res.status(403).json({
+          error: "mapping_locked",
+          message: "This mapping is locked. Ask an admin to unlock or remove it.",
+        });
         return;
       }
       const previous = await softDeleteCustomerMapping(id);
@@ -903,6 +972,17 @@ export function registerQuickBooksRoutes(app: Express): void {
           )
           .limit(1);
 
+        // Lock policy: a locked vendor mapping can only be modified by an
+        // admin. financials:edit alone is no longer sufficient.
+        if (existing?.lockedAt && !isAdminRequest(req)) {
+          res.status(403).json({
+            error: "mapping_locked",
+            message: "This vendor mapping is locked. Ask an admin to unlock or change it.",
+            mappingId: existing.id,
+          });
+          return;
+        }
+
         let row;
         if (existing) {
           const [updated] = await db
@@ -964,6 +1044,19 @@ export function registerQuickBooksRoutes(app: Express): void {
           return;
         }
         const { quickbooksVendorMappings } = await import("@shared/schema");
+        // Lock policy: locked vendor mappings can only be unmapped by admins.
+        const [pre] = await db
+          .select({ lockedAt: quickbooksVendorMappings.lockedAt })
+          .from(quickbooksVendorMappings)
+          .where(eq(quickbooksVendorMappings.id, id))
+          .limit(1);
+        if (pre?.lockedAt && !isAdminRequest(req)) {
+          res.status(403).json({
+            error: "mapping_locked",
+            message: "This vendor mapping is locked. Ask an admin to unlock or remove it.",
+          });
+          return;
+        }
         const [row] = await db
           .update(quickbooksVendorMappings)
           .set({ deletedAt: new Date(), updatedAt: new Date() })
@@ -1125,7 +1218,295 @@ export function registerQuickBooksRoutes(app: Express): void {
     }
   });
 
+  // ===========================================================================
+  // Task #30 — Admin-only fuzzy match + cascade.
+  //
+  // Four endpoints, all gated by requireAdmin (CEO_ADMIN / COO_ADMIN):
+  //   POST /api/quickbooks/suggest-matches            → run the matcher
+  //   POST /api/quickbooks/suggest-matches/preview    → dry-run cascade
+  //   POST /api/quickbooks/suggest-matches/accept     → commit
+  //   POST /api/quickbooks/mappings/:scope/:id/unlock → admin override
+  //
+  // Safety contract enforced by the cascade service:
+  //   - Never mutates cos_realised, paid_date_confirmed, allocations.
+  //   - Skips reconciled / locked rows, surfacing them in the preview.
+  //   - Every accept writes audit + suggestion + cascade_run rows.
+  // ===========================================================================
+
+  // Scope is restricted to customer + vendor: those are the two primary
+  // mapping tables that drive both the customer/vendor mappings AND, via
+  // quickbooks_documents joins, the expense-invoice / incoming-invoice
+  // link re-pointing. Adding scope='expense_invoice' / 'incoming_invoice'
+  // as separate flows is tracked as a follow-up; we removed those values
+  // from the enum to keep dead-end paths off the contract.
+  const suggestMatchesBodySchema = z.object({
+    scope: z.enum(["customer", "vendor"]),
+    appEntityId: z.number().int().positive().optional(),
+  });
+
+  app.post(
+    "/api/quickbooks/suggest-matches",
+    requireAuth,
+    requireAdmin,
+    validateBody(suggestMatchesBodySchema),
+    async (req, res) => {
+      try {
+        const { scope, appEntityId } = req.body as z.infer<typeof suggestMatchesBodySchema>;
+        const status = await getQuickBooksConnectionStatus();
+        if (!status?.realmId) {
+          return res.status(409).json({ error: "quickbooks_not_connected" });
+        }
+        const qbRealmId = status.realmId;
+        const userId = getEffectiveUser(req)?.id ?? null;
+
+        let needleName = "";
+        let appEntityLabel: string | null = null;
+        let haystack: { id: string; name: string | null }[] = [];
+
+        if (scope === "customer") {
+          if (!appEntityId) return res.status(400).json({ error: "appEntityId (projectId) required" });
+          const [project] = await db
+            .select({ id: projectInfo.id, name: projectInfo.projectName })
+            .from(projectInfo)
+            .where(eq(projectInfo.id, appEntityId));
+          if (!project) return res.status(404).json({ error: "project_not_found" });
+          needleName = project.name ?? "";
+          appEntityLabel = needleName;
+          const customers: any = await getCustomers();
+          haystack = (customers?.QueryResponse?.Customer ?? []).map((c: any) => ({
+            id: String(c.Id),
+            name: String(c.DisplayName ?? c.CompanyName ?? c.FullyQualifiedName ?? ""),
+          }));
+        } else if (scope === "vendor") {
+          if (!appEntityId) return res.status(400).json({ error: "appEntityId (counterpartyId) required" });
+          const [cp] = await db
+            .select({ id: counterparties.id, name: counterparties.nameCanonical })
+            .from(counterparties)
+            .where(eq(counterparties.id, appEntityId));
+          if (!cp) return res.status(404).json({ error: "counterparty_not_found" });
+          needleName = cp.name ?? "";
+          appEntityLabel = needleName;
+          const vendors: any = await getVendors();
+          haystack = (vendors?.QueryResponse?.Vendor ?? []).map((v: any) => ({
+            id: String(v.Id),
+            name: String(v.DisplayName ?? v.CompanyName ?? ""),
+          }));
+        } else {
+          // Unreachable — Zod enum already restricts scope to
+          // 'customer' | 'vendor'. Defensive guard only.
+          return res.status(400).json({ error: "unsupported_scope" });
+        }
+
+        const candidates = rankCandidates(needleName, haystack, 5);
+        const suggestion = await recordSuggestion({
+          scope: scope as SuggestScope,
+          qbRealmId,
+          appEntityId: appEntityId ?? null,
+          appEntityLabel,
+          candidates,
+          requestedBy: userId,
+        });
+
+        logAuditFromReq(req, {
+          entityType: "qb_match_suggestion",
+          entityId: String(suggestion.id),
+          action: "suggest",
+          changesJson: { scope, appEntityId, needleName, candidateCount: candidates.length },
+          source: "SETTINGS",
+        });
+
+        res.json({ suggestion, candidates });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "suggest failed";
+        res.status(500).json({ error: "suggest_matches_failed", message });
+      }
+    },
+  );
+
+  const previewCascadeBody = z.object({
+    suggestionId: z.number().int().positive(),
+    candidateIndex: z.number().int().min(0),
+  });
+
+  app.post(
+    "/api/quickbooks/suggest-matches/preview-cascade",
+    requireAuth,
+    requireAdmin,
+    validateBody(previewCascadeBody),
+    async (req, res) => {
+      try {
+        const { suggestionId, candidateIndex } = req.body as z.infer<typeof previewCascadeBody>;
+        const userId = getEffectiveUser(req)?.id ?? null;
+
+        const [suggestion] = await db
+          .select()
+          .from(quickbooksMatchSuggestions)
+          .where(eq(quickbooksMatchSuggestions.id, suggestionId));
+        if (!suggestion) return res.status(404).json({ error: "suggestion_not_found" });
+
+        const candidates = (suggestion.candidates as MatchCandidateLite[]) ?? [];
+        const chosen = candidates[candidateIndex];
+        if (!chosen) return res.status(400).json({ error: "candidate_index_out_of_range" });
+
+        let preview;
+        let sourceEntityType: string;
+        if (suggestion.scope === "customer") {
+          if (!suggestion.appEntityId) return res.status(400).json({ error: "missing_app_entity_id" });
+          preview = await previewCustomerCascade(
+            suggestion.appEntityId,
+            chosen.qbId,
+            suggestion.qbRealmId,
+          );
+          sourceEntityType = "qb_customer_mapping";
+        } else if (suggestion.scope === "vendor") {
+          if (!suggestion.appEntityId) return res.status(400).json({ error: "missing_app_entity_id" });
+          preview = await previewVendorCascade(
+            suggestion.appEntityId,
+            chosen.qbId,
+            suggestion.qbRealmId,
+          );
+          sourceEntityType = "qb_vendor_mapping";
+        } else {
+          return res.status(400).json({ error: "unsupported_scope" });
+        }
+
+        const cascadeRun = await recordCascadePreview({
+          suggestionId: suggestion.id,
+          scope: suggestion.scope as SuggestScope,
+          qbRealmId: suggestion.qbRealmId,
+          sourceEntityType,
+          sourceEntityId: suggestion.appEntityId ?? null,
+          preview,
+          triggeredBy: userId,
+        });
+
+        res.json({ cascadeRunId: cascadeRun.id, candidate: chosen, preview });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "preview failed";
+        res.status(500).json({ error: "preview_cascade_failed", message });
+      }
+    },
+  );
+
+  const acceptBody = z.object({
+    suggestionId: z.number().int().positive(),
+    cascadeRunId: z.number().int().positive(),
+    candidateIndex: z.number().int().min(0),
+  });
+
+  app.post(
+    "/api/quickbooks/suggest-matches/accept",
+    requireAuth,
+    requireAdmin,
+    validateBody(acceptBody),
+    async (req, res) => {
+      try {
+        const { suggestionId, cascadeRunId, candidateIndex } =
+          req.body as z.infer<typeof acceptBody>;
+        const userId = getEffectiveUser(req)?.id ?? null;
+
+        const [suggestion] = await db
+          .select()
+          .from(quickbooksMatchSuggestions)
+          .where(eq(quickbooksMatchSuggestions.id, suggestionId));
+        if (!suggestion) return res.status(404).json({ error: "suggestion_not_found" });
+        if (suggestion.acceptedAt) {
+          return res.status(409).json({ error: "suggestion_already_accepted" });
+        }
+
+        const candidates = (suggestion.candidates as MatchCandidateLite[]) ?? [];
+        const chosen = candidates[candidateIndex];
+        if (!chosen) return res.status(400).json({ error: "candidate_index_out_of_range" });
+
+        const [cascade] = await db
+          .select()
+          .from(quickbooksCascadeRuns)
+          .where(eq(quickbooksCascadeRuns.id, cascadeRunId));
+        if (!cascade) return res.status(404).json({ error: "cascade_run_not_found" });
+        if (cascade.status !== "preview") {
+          return res.status(409).json({ error: "cascade_already_committed_or_aborted" });
+        }
+        const preview = cascade.preview as unknown as {
+          willUpdate: { linkId: number; reason: string }[];
+          willSkipLocked: any[];
+          willSkipReconciled: any[];
+        };
+
+        if (suggestion.scope === "customer") {
+          const result = await commitCustomerCascade({
+            req,
+            suggestionId: suggestion.id,
+            cascadeRunId: cascade.id,
+            projectId: suggestion.appEntityId!,
+            qbCustomerId: chosen.qbId,
+            qbCustomerName: chosen.qbName,
+            qbRealmId: suggestion.qbRealmId,
+            confidence: chosen.confidence,
+            preview,
+            userId,
+          });
+          return res.json({ ok: true, ...result });
+        }
+        if (suggestion.scope === "vendor") {
+          const [cp] = await db
+            .select({ name: counterparties.nameCanonical })
+            .from(counterparties)
+            .where(eq(counterparties.id, suggestion.appEntityId!));
+          const result = await commitVendorCascade({
+            req,
+            suggestionId: suggestion.id,
+            cascadeRunId: cascade.id,
+            counterpartyId: suggestion.appEntityId!,
+            counterpartyName: cp?.name ?? null,
+            qbVendorId: chosen.qbId,
+            qbVendorName: chosen.qbName,
+            qbRealmId: suggestion.qbRealmId,
+            confidence: chosen.confidence,
+            preview,
+            userId,
+          });
+          return res.json({ ok: true, ...result });
+        }
+        return res.status(400).json({ error: "unsupported_scope" });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "accept failed";
+        res.status(500).json({ error: "accept_cascade_failed", message });
+      }
+    },
+  );
+
+  app.post(
+    "/api/quickbooks/mappings/:scope/:id/unlock",
+    requireAuth,
+    requireAdmin,
+    async (req, res) => {
+      const scope = String(req.params.scope);
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: "bad_id" });
+      const userId = getEffectiveUser(req)?.id ?? null;
+      try {
+        let row;
+        if (scope === "customer") {
+          row = await unlockCustomerMapping(req, id, userId);
+        } else if (scope === "vendor") {
+          row = await unlockVendorMapping(req, id, userId);
+        } else {
+          return res.status(400).json({ error: "bad_scope" });
+        }
+        if (!row) return res.status(404).json({ error: "mapping_not_found" });
+        res.json({ ok: true, mappingId: row.id });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "unlock failed";
+        res.status(500).json({ error: "unlock_failed", message });
+      }
+    },
+  );
+
   // Suppress unused-import false-positives — createOrUpdateLink is the shared
   // helper used by future endpoints (revenue-line reconciliation).
   void createOrUpdateLink;
 }
+
+// Local type used by the cascade endpoints to read suggestion candidates
+// out of JSONB without importing the full MatchCandidate type.
+type MatchCandidateLite = { qbId: string; qbName: string; confidence: number; reasons: string[] };

@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { PageSkeleton } from "@/components/ui/page-states";
 import { FinanceLimitedBetaBanner } from "@/components/reports/FinanceLimitedBetaBanner";
+import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { Link2, Link2Off, Plug, Search, Users } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
@@ -162,8 +163,17 @@ export default function FinanceQuickBooksCustomerMappingPage() {
       />
 
       <FinanceLimitedBetaBanner
-        title="Limited beta — QuickBooks customer mapping"
-        body="Mapping changes are audited and enforced (one active mapping per project/realm) but QB-side customer data is NOT synced back to clients. Treat this as a per-project routing table, not a CRM."
+        title="Moved — use Finance → QuickBooks Throughput"
+        body={
+          <>
+            Customer mapping now lives inside the consolidated Throughput page (tab: Mappings → Customers → Projects),
+            with admin-only fuzzy <em>Suggest matches</em> + cascade. This standalone screen is kept as a fallback only.{" "}
+            <Link href="/finance/quickbooks/throughput" className="underline font-medium">
+              Open Throughput
+            </Link>
+            .
+          </>
+        }
       />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
