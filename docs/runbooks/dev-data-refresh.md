@@ -16,8 +16,11 @@ realistic data.
 - Dumps the entire PROD database (all schemas, all tables, all rows) using `pg_dump`.
 - Wipes the DEV database (drops every non-system schema, recreates `public`).
 - Restores the dump into DEV using `psql`.
-- Writes a `dev_data_sync_sentinel` row in DEV recording the sync time.
-- Verifies the restore succeeded by counting rows in 5 well-known tables.
+- Writes a `dev_data_sync_sentinel` row in DEV recording the sync time and
+  **source PROD host/database**.
+- Verifies the restore succeeded in two phases:
+  1) required tables exist, and
+  2) row counts can be queried from those tables.
 
 **Does NOT:**
 - Mask, redact, or filter any data. Per audit direction (internal-use,
@@ -141,6 +144,8 @@ session secrets and cookies don't match. They simply log in again.
 | `31` | Dump file is empty | PROD may be empty, or pg_dump is silently failing — check the workflow log |
 | `40` | psql restore failed | Usually a constraint violation or extension mismatch — check the workflow log |
 | `50` | Verification query failed after restore | Restore may have completed partially. Inspect the dev DB. |
+| `51` | Critical-table verification query failed | Check `psql` stderr in workflow logs for permission/connectivity/schema issues |
+| `52` | Restore completed but critical tables are missing | Dump/load succeeded technically, but expected application tables are absent (wrong DB, partial restore, or upstream schema issue) |
 | `99` | Unhandled error | Check the stack trace in the workflow log |
 
 ### Common issues

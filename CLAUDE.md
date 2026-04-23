@@ -226,19 +226,23 @@ qa/release-gate.ts  Must pass before any release
 
 ## CI Rules
 
-- **Required PR checks** (both `.github/workflows/ci.yml` and `pr-checks.yml`
-  compile job): `npm run ci:compile` → `npm run db:check` → `npm run test`.
-  Green on all three is required to merge. Red means fix-it-now.
+- **Authoritative PR workflow:** `.github/workflows/pr-checks.yml` on
+  `pull_request` to `main` only. It runs:
+  `npm run ci:compile` → `npm run db:check` → `npm run test` → `npm run test:api`
+  → `npm run release:gate` (`SKIP_SMOKE_TESTS=true` in CI).
+- **Push workflow:** `.github/workflows/ci.yml` runs on `push` to `main` only
+  and mirrors the same gate logic for post-merge confidence.
 - **Unit tests** (`npm run test`) run on every PR — no Postgres needed. A new
   regression in any pinned invariant (finance math, error leaks, schema
   drift, route inventory) fails at this stage.
 - **Schema-drift guard** (`npm run db:check`) — runs `drizzle-kit generate`
   in a sandbox; fails any PR that edited `shared/schema/*.ts` without a
   matching new migration file.
-- **Branch protection on `main`** is configured via GitHub UI:
-  `Settings → Branches → Branch protection rules`. Required status checks:
-  `compile` (both workflows). Pattern: `main`. Require linear history, no
-  force-push, no admin bypass on required checks.
+- **Replit deploy health is NOT CI health.** Replit deploy uses `.replit`
+  (`npm run build` / `npm run start`) and can be green while PR checks are red.
+  Treat GitHub PR checks as merge authority.
+- **Branch protection on `main`** is configured via GitHub UI. Docs in this
+  repo can describe intent, but only the GitHub settings are authoritative.
 - **Auth rate-limit loopback exemption** — `127.0.0.1` / `::1` are exempt
   from the auth rate-limiter when `NODE_ENV !== "production"`, so local
   `npm run test:api` and dev flows aren't blocked after 20 logins. The gate
