@@ -969,7 +969,11 @@ export async function getProjectDevelopmentWorkspaceRollup(): Promise<WorkspaceR
       db
         .select({
           projectId: raidItems.projectId,
-          open: sql<number>`COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(${raidItems.status}, ''))) NOT IN ('completed','complete','closed','resolved','done'))::int`,
+          // raid_items.status is a Postgres enum (raid_status); we must cast to
+          // text BEFORE COALESCE because the empty-string default '' would
+          // otherwise be coerced into the enum type and trigger
+          // "invalid input value for enum raid_status: ''" (22P02).
+          open: sql<number>`COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(${raidItems.status}::text, ''))) NOT IN ('completed','complete','closed','resolved','done'))::int`,
         })
         .from(raidItems)
         .groupBy(raidItems.projectId),

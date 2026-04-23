@@ -232,6 +232,76 @@ function DisclosurePanel({
   );
 }
 
+// Collapsible section wrapper. Each PD-dashboard section can be opened or
+// closed by the user as they work through the page; the open/closed state
+// for each section is persisted in localStorage so it survives reloads.
+type CollapsibleCardProps = {
+  id: string;
+  testId?: string;
+  defaultOpen?: boolean;
+  header: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+  bodyId?: string;
+};
+
+function CollapsibleCard({
+  id,
+  testId,
+  defaultOpen = true,
+  header,
+  children,
+  className,
+  bodyId,
+}: CollapsibleCardProps) {
+  const storageKey = `pd-dashboard:section:${id}`;
+  const [open, setOpen] = useState<boolean>(() => {
+    if (typeof window === "undefined") return defaultOpen;
+    try {
+      const stored = window.localStorage.getItem(storageKey);
+      if (stored === null) return defaultOpen;
+      return stored === "1";
+    } catch {
+      return defaultOpen;
+    }
+  });
+  const toggle = () => {
+    setOpen((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem(storageKey, next ? "1" : "0");
+      } catch {
+        /* ignore quota / privacy mode errors */
+      }
+      return next;
+    });
+  };
+  const contentId = bodyId ?? `${id}-body`;
+  const toggleTestId = testId ? `${testId}-toggle` : `${id}-toggle`;
+  return (
+    <Card data-testid={testId} className={className}>
+      <button
+        type="button"
+        onClick={toggle}
+        aria-expanded={open}
+        aria-controls={contentId}
+        className="w-full text-left rounded-t-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
+        data-testid={toggleTestId}
+      >
+        <CardHeader className="pb-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">{header}</div>
+            <span className="mt-1 shrink-0 text-muted-foreground" aria-hidden="true">
+              {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            </span>
+          </div>
+        </CardHeader>
+      </button>
+      {open && <div id={contentId}>{children}</div>}
+    </Card>
+  );
+}
+
 export default function PdDashboardPage() {
   const { data, isLoading, error } = useQuery<PdDashboard>({
     queryKey: ["/api/pd/dashboard"],
@@ -348,16 +418,21 @@ export default function PdDashboardPage() {
       </section>
 
       {/* 2. ACTION QUEUE — what to do right now */}
-      <Card data-testid="card-action-queue">
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <ListChecks className="h-4 w-4 text-emerald-700" />
-            Action queue
-          </CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Top {actionQueue.length} active opportunities ranked by overdue → very stale → high-value quiet → stale 30d, then by deal value.
-          </p>
-        </CardHeader>
+      <CollapsibleCard
+        id="action-queue"
+        testId="card-action-queue"
+        header={
+          <>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <ListChecks className="h-4 w-4 text-emerald-700" />
+              Action queue
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Top {actionQueue.length} active opportunities ranked by overdue → very stale → high-value quiet → stale 30d, then by deal value.
+            </p>
+          </>
+        }
+      >
         <CardContent>
           {actionQueue.length === 0 ? (
             <p className="text-sm text-muted-foreground" data-testid="action-queue-empty">No items need PD action right now.</p>
@@ -417,16 +492,21 @@ export default function PdDashboardPage() {
             </div>
           )}
         </CardContent>
-      </Card>
+      </CollapsibleCard>
 
       {/* 3. PD OPERATING BOARD — pipeline by lifecycle phase (operational, not vanity) */}
-      <Card data-testid="card-pipeline-by-phase">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">PD operating board · by lifecycle phase</CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Active opportunities grouped by the company's 10-stage lifecycle. Pipedrive stages roll up under each phase.
-          </p>
-        </CardHeader>
+      <CollapsibleCard
+        id="pipeline-by-phase"
+        testId="card-pipeline-by-phase"
+        header={
+          <>
+            <CardTitle className="text-base">PD operating board · by lifecycle phase</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Active opportunities grouped by the company's 10-stage lifecycle. Pipedrive stages roll up under each phase.
+            </p>
+          </>
+        }
+      >
         <CardContent className="space-y-4">
           {phaseBuckets.length === 0 ? (
             <p className="text-sm text-muted-foreground">No active opportunities.</p>
@@ -436,22 +516,27 @@ export default function PdDashboardPage() {
             ))
           )}
         </CardContent>
-      </Card>
+      </CollapsibleCard>
 
       {/* 4. CROSS-COMPANY INTERACTION — workspace rollup (engineering, finance, blockers, broken handovers) */}
       <MeetingViewSection />
 
       {/* 5. OWNERSHIP VIEW — by PD owner */}
-      <Card data-testid="card-by-owner">
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <UsersIcon className="h-4 w-4 text-muted-foreground" />
-            Ownership · per PD owner
-          </CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Source: <code className="rounded bg-muted px-1">opportunities.deal_owner_name</code> snapshot from Pipedrive sync. Counts only active opportunities.
-          </p>
-        </CardHeader>
+      <CollapsibleCard
+        id="by-owner"
+        testId="card-by-owner"
+        header={
+          <>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <UsersIcon className="h-4 w-4 text-muted-foreground" />
+              Ownership · per PD owner
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Source: <code className="rounded bg-muted px-1">opportunities.deal_owner_name</code> snapshot from Pipedrive sync. Counts only active opportunities.
+            </p>
+          </>
+        }
+      >
         <CardContent>
           {byOwner.length === 0 ? (
             <p className="text-sm text-muted-foreground">No owners to display — no active opportunities yet.</p>
@@ -486,7 +571,7 @@ export default function PdDashboardPage() {
             </div>
           )}
         </CardContent>
-      </Card>
+      </CollapsibleCard>
 
       {/* Handover-ready / linkage-gap inline lists (progressive disclosure) */}
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -546,11 +631,17 @@ export default function PdDashboardPage() {
       </div>
 
       {/* 6. COMMERCIAL CONTEXT — moved lower, intentionally summarized */}
-      <Card data-testid="card-commercial-context">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Commercial context</CardTitle>
-          <p className="text-xs text-muted-foreground">Pipeline value, weighted exposure, win rate, and recent deal motion. Reference only — do not use for forecasting without verification.</p>
-        </CardHeader>
+      <CollapsibleCard
+        id="commercial-context"
+        testId="card-commercial-context"
+        defaultOpen={false}
+        header={
+          <>
+            <CardTitle className="text-base">Commercial context</CardTitle>
+            <p className="text-xs text-muted-foreground">Pipeline value, weighted exposure, win rate, and recent deal motion. Reference only — do not use for forecasting without verification.</p>
+          </>
+        }
+      >
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <div className="rounded-md border border-border/60 p-3" data-testid="commercial-pipeline">
@@ -637,7 +728,7 @@ export default function PdDashboardPage() {
             </div>
           </div>
         </CardContent>
-      </Card>
+      </CollapsibleCard>
 
       <p className="text-[10px] text-muted-foreground" data-testid="generated-at">
         Snapshot generated {new Date(data.generatedAt).toLocaleString()}
@@ -728,14 +819,20 @@ function MeetingViewSection() {
   const hiddenRows = Math.max(sortedRows.length - topRows.length, 0);
 
   return (
-    <Card data-testid="meeting-view" id="cross-company" className="scroll-mt-20">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base flex items-center gap-2"><Activity className="h-4 w-4" /> Cross-company interaction</CardTitle>
-        <p className="text-xs text-muted-foreground">
-          Source: <code className="rounded bg-muted px-1">/api/project-development/workspace/rollup</code> across {data.totals.projects} active projects.
-          Generated {new Date(data.generatedAt).toLocaleString()}.
-        </p>
-      </CardHeader>
+    <CollapsibleCard
+      id="cross-company"
+      testId="meeting-view"
+      className="scroll-mt-20"
+      header={
+        <>
+          <CardTitle className="text-base flex items-center gap-2"><Activity className="h-4 w-4" /> Cross-company interaction</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Source: <code className="rounded bg-muted px-1">/api/project-development/workspace/rollup</code> across {data.totals.projects} active projects.
+            Generated {new Date(data.generatedAt).toLocaleString()}.
+          </p>
+        </>
+      }
+    >
       <CardContent>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 text-xs">
           <div data-testid="rollup-total-open-pd-tickets" className="rounded-md bg-muted/40 p-2">
@@ -865,7 +962,7 @@ function MeetingViewSection() {
           </div>
         )}
       </CardContent>
-    </Card>
+    </CollapsibleCard>
   );
 }
 
