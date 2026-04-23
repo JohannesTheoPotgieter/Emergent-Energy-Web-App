@@ -150,13 +150,11 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "training", path: "/training", label: "Training", iconKey: "GraduationCap", navGroup: "KNOWLEDGE", permissionEntity: "training", showInSidebar: false, routeComponentKey: "TrainingPage" },
   { id: "portfolios", path: "/portfolios", label: "Portfolios", iconKey: "FolderOpen", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "portfolios", showInSidebar: true, routeComponentKey: "PortfoliosPage" },
   { id: "portfolioDetail", path: "/portfolios/:id", label: "Portfolio Detail", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "portfolio_detail", routeComponentKey: "PortfolioDetailPage" },
-  // Engineering & Quality Dashboard. Path stays at /pd for one release so
-  // bookmarks and audit URLs keep working; /engineering-board and
-  // /engineering-dashboard redirect here. Vocabulary phase 1 (task #56) —
-  // the page itself was historically called "PD Dashboard"; the user no
-  // longer thinks of these tickets as "PD tickets", they're Engineering or
-  // Quality tickets.
-  { id: "pdDashboard", path: "/pd", label: "Engineering & Quality Dashboard", iconKey: "Sun", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_dashboard", showInSidebar: true, routeComponentKey: "PdDashboardPage", aliases: ["/pd/dashboard", "/engineering-board", "/engineering-dashboard"], roleLandingEligibility: ["CCO", "KEY_ACCOUNTS_MANAGER", "PROJECT_DEVELOPER"] },
+  // Project Development Dashboard. Path stays at /pd; /engineering-board
+  // and /engineering-dashboard remain as harmless URL aliases (task #68
+  // reverted the user-visible labels from "Engineering & Quality" back to
+  // "Project Development" while keeping the alias paths working).
+  { id: "pdDashboard", path: "/pd", label: "Project Development Dashboard", iconKey: "Sun", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_dashboard", showInSidebar: true, routeComponentKey: "PdDashboardPage", aliases: ["/pd/dashboard", "/engineering-board", "/engineering-dashboard"], roleLandingEligibility: ["CCO", "KEY_ACCOUNTS_MANAGER", "PROJECT_DEVELOPER"] },
   // Legacy ticket deep links → redirect to Opportunities so existing bookmarks/emails still resolve.
   { id: "pdTicketsRedirect", path: "/pd/tickets", label: "Project Development Tickets (moved)", type: "alias", permissionEntity: "pd_dashboard", redirectTo: "/opportunities" },
   { id: "pdTicketCreateRedirect", path: "/pd/tickets/create", label: "Create Ticket (moved)", type: "alias", permissionEntity: "pd_dashboard", redirectTo: "/opportunities" },
