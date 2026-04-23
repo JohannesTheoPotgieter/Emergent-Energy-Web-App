@@ -35,6 +35,7 @@ type PdDashboard = {
     overdueTickets: number;
     stale30Tickets: number;
     blockedTickets: number;
+    inApprovalTickets: number;
     completedTickets: number;
     activeKwp: number;
     openWorkItems: number;
@@ -378,7 +379,7 @@ export default function PdDashboardPage() {
             engineering_tickets and work_items — no Pipedrive metrics. */}
       <section data-testid="section-top-strip" aria-labelledby="top-strip-heading">
         <h2 id="top-strip-heading" className="sr-only">Exceptions and immediate actions</h2>
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-7">
           <ExceptionTile
             label="Active tickets"
             count={summary.activeTickets}
@@ -414,6 +415,15 @@ export default function PdDashboardPage() {
             icon={ShieldAlert}
             tone={summary.blockedTickets > 0 ? "rose" : "default"}
             testId="kpi-blocked-tickets"
+          />
+          <ExceptionTile
+            label="In approval"
+            count={summary.inApprovalTickets}
+            sub={summary.inApprovalTickets > 0 ? "Awaiting QC / sign-off" : "Nothing waiting on review"}
+            href={summary.inApprovalTickets > 0 ? "/engineering/tickets?filter=in-approval" : undefined}
+            icon={ShieldAlert}
+            tone={summary.inApprovalTickets > 0 ? "amber" : "default"}
+            testId="kpi-in-approval-tickets"
           />
           <ExceptionTile
             label="Handover-ready"

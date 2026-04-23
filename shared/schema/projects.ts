@@ -663,7 +663,11 @@ export const engineeringTickets = pgTable("engineering_tickets", {
   dueDate: text("due_date"),
   requestType: text("request_type").notNull(),
   priority: text("priority").notNull().default("Medium"),
-  status: text("status").notNull().default("Draft"),
+  // Canonical engineering-task status set (shared/engineering-ticket-status.ts).
+  // Default is 'to_do'. Migration 0027 backfills legacy values
+  // (Draft / In Progress / Completed / On Hold / Cancelled) to canonical
+  // forms and shifts the column default.
+  status: text("status").notNull().default("to_do"),
   numberOfReworks: integer("number_of_reworks").notNull().default(0),
   projectDeveloperUserId: integer("project_developer_user_id").references(() => users.id),
   designerUserId: integer("designer_user_id").references(() => users.id),
