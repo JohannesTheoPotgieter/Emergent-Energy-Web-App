@@ -5,7 +5,7 @@ import {
   clients,
   projectInfo,
   sites,
-  pdTickets,
+  engineeringTickets,
   projectPhaseHistory,
   phaseTemplate,
   phaseTemplateItem,
@@ -195,8 +195,8 @@ export class OpportunitiesRepository {
         nextActivityDate: opportunities.nextActivityDate,
         nextActivitySubject: opportunities.nextActivitySubject,
         // PD-shadow override fields:
-        pdProvince: pdTickets.province,
-        pdProjectDeveloperUserId: pdTickets.projectDeveloperUserId,
+        pdProvince: engineeringTickets.province,
+        pdProjectDeveloperUserId: engineeringTickets.projectDeveloperUserId,
         pdProjectDeveloperUserName: projectDeveloperUser.name,
       })
       .from(opportunities)
@@ -206,8 +206,8 @@ export class OpportunitiesRepository {
       // Safe to leftJoin without aggregation: `pd_tickets_opportunity_shadow_unique`
       // enforces 1:1 between opportunities ↔ pd_tickets shadow rows (partial unique
       // index where opportunity_id IS NOT NULL AND project_id IS NULL).
-      .leftJoin(pdTickets, and(eq(pdTickets.opportunityId, opportunities.id), isNull(pdTickets.deletedAt)))
-      .leftJoin(projectDeveloperUser, eq(projectDeveloperUser.id, pdTickets.projectDeveloperUserId))
+      .leftJoin(engineeringTickets, and(eq(engineeringTickets.opportunityId, opportunities.id), isNull(engineeringTickets.deletedAt)))
+      .leftJoin(projectDeveloperUser, eq(projectDeveloperUser.id, engineeringTickets.projectDeveloperUserId))
       .where(and(
         isNull(opportunities.deletedAt),
         eq(opportunities.source, "pipedrive"),
@@ -281,16 +281,16 @@ export class OpportunitiesRepository {
     if (opportunityIds.length === 0) return [];
     const rows = await db
       .select({
-        opportunityId: pdTickets.opportunityId,
-        status: pdTickets.status,
-        createdAt: pdTickets.createdAt,
-        clientId: pdTickets.clientId,
-        projectId: pdTickets.projectId,
+        opportunityId: engineeringTickets.opportunityId,
+        status: engineeringTickets.status,
+        createdAt: engineeringTickets.createdAt,
+        clientId: engineeringTickets.clientId,
+        projectId: engineeringTickets.projectId,
       })
-      .from(pdTickets)
+      .from(engineeringTickets)
       // Cascade-display: ignore soft-deleted PD tickets (Task #34).
-      .where(and(inArray(pdTickets.opportunityId, opportunityIds), isNull(pdTickets.deletedAt)))
-      .orderBy(desc(pdTickets.createdAt));
+      .where(and(inArray(engineeringTickets.opportunityId, opportunityIds), isNull(engineeringTickets.deletedAt)))
+      .orderBy(desc(engineeringTickets.createdAt));
     const TERMINAL = new Set(["Completed", "Cancelled"]);
     const byOpp = new Map<number, EngineeringTicketSummary>();
     for (const r of rows) {
@@ -351,17 +351,17 @@ export class OpportunitiesRepository {
     // IS engineering work, so the opp-scope alone is the correct filter.
     const rows = await db
       .select({
-        opportunityId: pdTickets.opportunityId,
+        opportunityId: engineeringTickets.opportunityId,
         count: sql<number>`count(*)`,
       })
-      .from(pdTickets)
+      .from(engineeringTickets)
       .where(and(
-        inArray(pdTickets.opportunityId, opportunityIds),
-        sql`${pdTickets.status} NOT IN ('Completed', 'Cancelled')`,
+        inArray(engineeringTickets.opportunityId, opportunityIds),
+        sql`${engineeringTickets.status} NOT IN ('Completed', 'Cancelled')`,
         // Cascade-display: ignore soft-deleted PD tickets (Task #34).
-        isNull(pdTickets.deletedAt),
+        isNull(engineeringTickets.deletedAt),
       ))
-      .groupBy(pdTickets.opportunityId);
+      .groupBy(engineeringTickets.opportunityId);
     return rows.map((r: { opportunityId: number | null; count: number }) => ({
       opportunityId: r.opportunityId,
       count: Number(r.count || 0),
@@ -438,9 +438,9 @@ export class OpportunitiesRepository {
     // disagree across views (working list vs. drawer / detail).
     const [row] = await db
       .select({ count: sql<number>`count(*)` })
-      .from(pdTickets)
+      .from(engineeringTickets)
       // Cascade-display: ignore soft-deleted PD tickets (Task #34).
-      .where(and(eq(pdTickets.opportunityId, opportunityId), isNull(pdTickets.deletedAt)));
+      .where(and(eq(engineeringTickets.opportunityId, opportunityId), isNull(engineeringTickets.deletedAt)));
     return Number(row?.count || 0);
   }
 
@@ -551,7 +551,7 @@ export class OpportunitiesRepository {
       opp.opp.dealName ||
       `Opportunity #${opp.opp.id}`;
     await db
-      .insert(pdTickets)
+      .insert(engineeringTickets)
       .values({
         opportunityId,
         clientId: opp.opp.clientId ?? null,
@@ -566,7 +566,7 @@ export class OpportunitiesRepository {
         createdBy: actingUserId,
       })
       .onConflictDoNothing({
-        target: pdTickets.opportunityId,
+        target: engineeringTickets.opportunityId,
         where: sql`opportunity_id IS NOT NULL AND project_id IS NULL AND deleted_at IS NULL`,
       });
 
@@ -575,13 +575,13 @@ export class OpportunitiesRepository {
     // an unrelated project-linked PD ticket that may share the opportunity.
     const [shadow] = await db
       .select()
-      .from(pdTickets)
+      .from(engineeringTickets)
       // Cascade-display: ignore soft-deleted shadow rows (Task #34) so a
       // tombstoned shadow does not block recreating the canonical one.
       .where(and(
-        eq(pdTickets.opportunityId, opportunityId),
-        isNull(pdTickets.projectId),
-        isNull(pdTickets.deletedAt),
+        eq(engineeringTickets.opportunityId, opportunityId),
+        isNull(engineeringTickets.projectId),
+        isNull(engineeringTickets.deletedAt),
       ))
       .limit(1);
     if (!shadow) {
@@ -597,7 +597,7 @@ export class OpportunitiesRepository {
         endDate: workItems.endDate,
       })
       .from(workItems)
-      .where(eq(workItems.pdTicketId, shadow.id))
+      .where(eq(workItems.engineeringTicketId, shadow.id))
       .orderBy(asc(workItems.sortOrder));
 
     // All engineering tickets attached to this opportunity. We INCLUDE the
@@ -616,30 +616,30 @@ export class OpportunitiesRepository {
     const designUser = aliasedTable(users, "design_user");
     const tickets = await db
       .select({
-        id: pdTickets.id,
-        status: pdTickets.status,
-        requestType: pdTickets.requestType,
-        priority: pdTickets.priority,
-        dueDate: pdTickets.dueDate,
-        comments: pdTickets.comments,
-        createdAt: pdTickets.createdAt,
-        updatedAt: pdTickets.updatedAt,
-        clientId: pdTickets.clientId,
-        projectId: pdTickets.projectId,
+        id: engineeringTickets.id,
+        status: engineeringTickets.status,
+        requestType: engineeringTickets.requestType,
+        priority: engineeringTickets.priority,
+        dueDate: engineeringTickets.dueDate,
+        comments: engineeringTickets.comments,
+        createdAt: engineeringTickets.createdAt,
+        updatedAt: engineeringTickets.updatedAt,
+        clientId: engineeringTickets.clientId,
+        projectId: engineeringTickets.projectId,
         projectName: projectInfo.projectName,
-        tasksSpawnedAt: pdTickets.tasksSpawnedAt,
-        projectDeveloperUserId: pdTickets.projectDeveloperUserId,
+        tasksSpawnedAt: engineeringTickets.tasksSpawnedAt,
+        projectDeveloperUserId: engineeringTickets.projectDeveloperUserId,
         projectDeveloperName: pdUser.name,
-        designerUserId: pdTickets.designerUserId,
+        designerUserId: engineeringTickets.designerUserId,
         designerName: designUser.name,
       })
-      .from(pdTickets)
-      .leftJoin(projectInfo, eq(projectInfo.id, pdTickets.projectId))
-      .leftJoin(pdUser, eq(pdUser.id, pdTickets.projectDeveloperUserId))
-      .leftJoin(designUser, eq(designUser.id, pdTickets.designerUserId))
+      .from(engineeringTickets)
+      .leftJoin(projectInfo, eq(projectInfo.id, engineeringTickets.projectId))
+      .leftJoin(pdUser, eq(pdUser.id, engineeringTickets.projectDeveloperUserId))
+      .leftJoin(designUser, eq(designUser.id, engineeringTickets.designerUserId))
       // Cascade-display: hide soft-deleted PD tickets from the drawer (Task #34).
-      .where(and(eq(pdTickets.opportunityId, opportunityId), isNull(pdTickets.deletedAt)))
-      .orderBy(desc(pdTickets.createdAt));
+      .where(and(eq(engineeringTickets.opportunityId, opportunityId), isNull(engineeringTickets.deletedAt)))
+      .orderBy(desc(engineeringTickets.createdAt));
 
     // Project-level task board for the drawer. The board is rendered once
     // per project (not per ticket) — every engineering ticket's spawned
@@ -670,7 +670,7 @@ export class OpportunitiesRepository {
       projectTasks = (await db
         .select({
           id: workItems.id,
-          pdTicketId: workItems.pdTicketId,
+          pdTicketId: workItems.engineeringTicketId,
           title: workItems.title,
           status: workItems.status,
           phase: workItems.phase,
@@ -711,7 +711,7 @@ export class OpportunitiesRepository {
   async updatePdShadow(
     opportunityId: number,
     fields: Partial<Pick<
-      typeof pdTickets.$inferInsert,
+      typeof engineeringTickets.$inferInsert,
       | "requestType"
       | "priority"
       | "status"
@@ -736,16 +736,16 @@ export class OpportunitiesRepository {
   ): Promise<PdTicket | null> {
     const [existing] = await db
       .select()
-      .from(pdTickets)
+      .from(engineeringTickets)
       // Cascade-display: never resurrect a soft-deleted shadow via update (Task #34).
-      .where(and(eq(pdTickets.opportunityId, opportunityId), isNull(pdTickets.deletedAt)))
-      .orderBy(desc(pdTickets.id))
+      .where(and(eq(engineeringTickets.opportunityId, opportunityId), isNull(engineeringTickets.deletedAt)))
+      .orderBy(desc(engineeringTickets.id))
       .limit(1);
     if (!existing) return null;
     const [updated] = await db
-      .update(pdTickets)
+      .update(engineeringTickets)
       .set({ ...fields, updatedAt: new Date() })
-      .where(eq(pdTickets.id, existing.id))
+      .where(eq(engineeringTickets.id, existing.id))
       .returning();
     return updated ?? null;
   }
@@ -802,13 +802,13 @@ export class OpportunitiesRepository {
   async countSamePhaseTickets(opportunityId: number, projectId: number, phase: string): Promise<number> {
     const [row] = await db
       .select({ count: sql<number>`count(*)` })
-      .from(pdTickets)
+      .from(engineeringTickets)
       .where(and(
-        eq(pdTickets.opportunityId, opportunityId),
-        eq(pdTickets.projectId, projectId),
-        eq(pdTickets.requestType, phase),
+        eq(engineeringTickets.opportunityId, opportunityId),
+        eq(engineeringTickets.projectId, projectId),
+        eq(engineeringTickets.requestType, phase),
         // Cascade-display: ignore soft-deleted same-phase tickets (Task #34).
-        isNull(pdTickets.deletedAt),
+        isNull(engineeringTickets.deletedAt),
       ));
     return Number(row?.count || 0);
   }
@@ -816,7 +816,7 @@ export class OpportunitiesRepository {
   // ---- Mutations (used inside transactions) ----
 
   async insertPdTicket(tx: typeof db, values: Record<string, unknown>): Promise<PdTicket> {
-    const [ticket] = await tx.insert(pdTickets).values(values as typeof pdTickets.$inferInsert).returning();
+    const [ticket] = await tx.insert(engineeringTickets).values(values as typeof engineeringTickets.$inferInsert).returning();
     return ticket;
   }
 
@@ -893,19 +893,19 @@ export class OpportunitiesRepository {
   async getIntakeTickets(): Promise<IntakeTicketRow[]> {
     const rows = await db
       .select({
-        id: pdTickets.id,
-        opportunityId: pdTickets.opportunityId,
-        clientId: pdTickets.clientId,
-        projectId: pdTickets.projectId,
-        projectSiteName: pdTickets.projectSiteName,
-        requestType: pdTickets.requestType,
-        priority: pdTickets.priority,
-        status: pdTickets.status,
-        dueDate: pdTickets.dueDate,
-        tasksSpawnedAt: pdTickets.tasksSpawnedAt,
-        createdAt: pdTickets.createdAt,
-        updatedAt: pdTickets.updatedAt,
-        projectDeveloperUserId: pdTickets.projectDeveloperUserId,
+        id: engineeringTickets.id,
+        opportunityId: engineeringTickets.opportunityId,
+        clientId: engineeringTickets.clientId,
+        projectId: engineeringTickets.projectId,
+        projectSiteName: engineeringTickets.projectSiteName,
+        requestType: engineeringTickets.requestType,
+        priority: engineeringTickets.priority,
+        status: engineeringTickets.status,
+        dueDate: engineeringTickets.dueDate,
+        tasksSpawnedAt: engineeringTickets.tasksSpawnedAt,
+        createdAt: engineeringTickets.createdAt,
+        updatedAt: engineeringTickets.updatedAt,
+        projectDeveloperUserId: engineeringTickets.projectDeveloperUserId,
         clientName: clients.name,
         projectName: projectInfo.projectName,
         developerName: users.name,
@@ -913,23 +913,23 @@ export class OpportunitiesRepository {
         subTasksDone: sql<number>`count(distinct ${workItems.id}) filter (where ${workItems.status} in ('Completed', 'DONE', 'Done'))`,
         nextAction: sql<string | null>`max(${workItems.nextStep})`,
       })
-      .from(pdTickets)
-      .leftJoin(clients, eq(clients.id, pdTickets.clientId))
-      .leftJoin(projectInfo, eq(projectInfo.id, pdTickets.projectId))
-      .leftJoin(users, eq(users.id, pdTickets.projectDeveloperUserId))
+      .from(engineeringTickets)
+      .leftJoin(clients, eq(clients.id, engineeringTickets.clientId))
+      .leftJoin(projectInfo, eq(projectInfo.id, engineeringTickets.projectId))
+      .leftJoin(users, eq(users.id, engineeringTickets.projectDeveloperUserId))
       .leftJoin(workItems, and(
-        eq(workItems.pdTicketId, pdTickets.id),
+        eq(workItems.engineeringTicketId, engineeringTickets.id),
         isNull(workItems.deletedAt),
       ))
       // Cascade-display: hide soft-deleted PD tickets from the intake board (Task #34).
-      .where(isNull(pdTickets.deletedAt))
+      .where(isNull(engineeringTickets.deletedAt))
       .groupBy(
-        pdTickets.id,
+        engineeringTickets.id,
         clients.name,
         projectInfo.projectName,
         users.name,
       )
-      .orderBy(desc(pdTickets.updatedAt));
+      .orderBy(desc(engineeringTickets.updatedAt));
     return rows.map((r: typeof rows[number]): IntakeTicketRow => ({
       ...r,
       subTasksTotal: Number(r.subTasksTotal || 0),
@@ -953,13 +953,13 @@ export class OpportunitiesRepository {
     const [ticketStats] = await db
       .select({
         total: sql<number>`count(*)`,
-        inProgress: sql<number>`count(*) filter (where ${pdTickets.status} = 'In Progress')`,
-        overdue: sql<number>`count(*) filter (where ${pdTickets.dueDate} < ${today} and ${pdTickets.status} not in ('Completed','Cancelled'))`,
-        completed: sql<number>`count(*) filter (where ${pdTickets.status} = 'Completed')`,
+        inProgress: sql<number>`count(*) filter (where ${engineeringTickets.status} = 'In Progress')`,
+        overdue: sql<number>`count(*) filter (where ${engineeringTickets.dueDate} < ${today} and ${engineeringTickets.status} not in ('Completed','Cancelled'))`,
+        completed: sql<number>`count(*) filter (where ${engineeringTickets.status} = 'Completed')`,
       })
-      .from(pdTickets)
+      .from(engineeringTickets)
       // Cascade-display: ignore soft-deleted PD tickets in stats (Task #34).
-      .where(isNull(pdTickets.deletedAt));
+      .where(isNull(engineeringTickets.deletedAt));
 
     return {
       opportunities: {

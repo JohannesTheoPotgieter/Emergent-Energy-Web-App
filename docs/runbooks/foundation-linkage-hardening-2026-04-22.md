@@ -333,3 +333,45 @@ Server routes under `/api/pd/*`, `/api/pd-pm-handover/*`, and
 `/api/project-development/workspace/*` are **unchanged in this phase**
 to avoid the risk of 308-redirect-on-POST issues with non-GET methods.
 They will be moved behind dual-mounted aliases in a follow-up.
+
+## Phase 2 — schema-side rename (task #58, migrations 0024 + 0025)
+
+After phase 1 (task #56) settled the user-facing vocabulary on
+"Engineering tickets", the schema caught up so the codebase itself stops
+using the legacy `pd_tickets` / `pd_ticket_id` symbols. Two
+hand-authored, idempotent migrations land the rollout:
+
+* `migrations/0024_engineering_tickets_view_alias.sql` — additive.
+  Creates `engineering_tickets` as an auto-updatable VIEW over
+  `pd_tickets`, plus a parallel `work_items.engineering_ticket_id`
+  STORED generated column derived from `pd_ticket_id`. Existing reads
+  and writes through the old names continue unchanged.
+* `migrations/0025_engineering_tickets_physical_rename.sql` — flip.
+  Drops the additive aliases, renames `pd_tickets` →
+  `engineering_tickets` (table, sequence, indexes, constraints), and
+  renames `work_items.pd_ticket_id` → `engineering_ticket_id` (FK from
+  migration 0019 retained, renamed to
+  `work_items_engineering_ticket_id_fkey`). Recreates the soft-delete
+  reject trigger from migration 0021 under the new column name. The
+  legacy names are republished as backwards-compat aliases (VIEW
+  `pd_tickets`; STORED generated column `work_items.pd_ticket_id`),
+  scheduled for removal one release later.
+
+Drizzle was updated in lockstep:
+
+* `shared/schema/projects.ts` exports `engineeringTickets` /
+  `EngineeringTicket` / `insertEngineeringTicketSchema` and re-exports
+  the old `pdTickets` / `PdTicket` / `insertPdTicketSchema` symbols as
+  aliases for one release.
+* `shared/schema/tasks.ts` renamed `workItems.pdTicketId` →
+  `workItems.engineeringTicketId` (column `engineering_ticket_id`).
+  The matching partial index follows the new name.
+* All server queries that read `pdTickets.*` were switched to
+  `engineeringTickets.*`. API response payload keys (`pdTickets:`,
+  `pdTicketId:`) are unchanged from phase 1 — clients still see both
+  the legacy and the new keys.
+
+Release-gate parity is asserted by
+`qa/tests/integration/foundation-linkage-cascades.test.ts`, which now
+covers both the legacy and new table/column names and confirms every
+`work_items.pd_ticket_id` value matches `engineering_ticket_id`.

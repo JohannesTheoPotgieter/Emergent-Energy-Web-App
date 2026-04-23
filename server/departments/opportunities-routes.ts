@@ -1275,7 +1275,7 @@ router.post(
       const opp = await opportunitiesRepo.getOpportunityById(opportunityId);
       if (!opp) return res.status(404).json({ error: "Opportunity not found" });
 
-      const { projectInfo, pdTickets, opportunities: oppTable } = await import("@shared/schema/projects");
+      const { projectInfo, engineeringTickets, opportunities: oppTable } = await import("@shared/schema/projects");
       const { eq, desc } = await import("drizzle-orm");
 
       // Idempotency: if this opportunity is already linked to a project,
@@ -1317,20 +1317,20 @@ router.post(
 
         const [shadow] = await tx
           .select()
-          .from(pdTickets)
+          .from(engineeringTickets)
           // Cascade-display: don't promote a soft-deleted shadow (Task #34).
-          .where(and(eq(pdTickets.opportunityId, opportunityId), isNull(pdTickets.deletedAt)))
+          .where(and(eq(engineeringTickets.opportunityId, opportunityId), isNull(engineeringTickets.deletedAt)))
           .limit(1);
         if (shadow) {
           await tx
-            .update(pdTickets)
+            .update(engineeringTickets)
             .set({
               projectId: project.id,
               status: "Completed",
               sizeKwp: parsed.data.sizeKwp ?? shadow.sizeKwp,
               updatedAt: new Date(),
             })
-            .where(eq(pdTickets.id, shadow.id));
+            .where(eq(engineeringTickets.id, shadow.id));
         }
 
         if (opp.status !== "won" && opp.status !== "lost") {

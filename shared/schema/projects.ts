@@ -641,7 +641,11 @@ export const PHASE_TO_ENG_STAGES: Record<string, string[]> = {
 
 // ===================== PROJECT DEVELOPMENT (PD) =====================
 
-export const pdTickets = pgTable("pd_tickets", {
+// ── Renamed from `pd_tickets` to `engineering_tickets` in vocabulary phase 2
+// (task #58, migrations 0024 + 0025). The old `pdTickets` export below is a
+// backwards-compat alias kept for one release. New code should use
+// `engineeringTickets`.
+export const engineeringTickets = pgTable("engineering_tickets", {
   id: serial("id").primaryKey(),
   clientId: integer("client_id").references(() => clients.id),
   clientNameSnapshot: text("client_name_snapshot"),
@@ -710,13 +714,23 @@ export const pdTickets = pgTable("pd_tickets", {
   // shadow-ticket unique index (`pd_tickets_opportunity_shadow_unique`,
   // migrations 0019/0020) by covering project-bound tickets.
   // Backed by migration 0022_sites_pdtickets_natural_key_uniques.sql.
-  phasePerProjectUniq: uniqueIndex("pd_tickets_phase_per_project_uniq")
+  // Index renamed alongside the table in migration 0025.
+  phasePerProjectUniq: uniqueIndex("engineering_tickets_phase_per_project_uniq")
     .on(table.opportunityId, table.projectId, table.requestType)
     .where(sql`${table.deletedAt} IS NULL AND ${table.opportunityId} IS NOT NULL AND ${table.projectId} IS NOT NULL AND ${table.requestType} IS NOT NULL`),
 }));
-export const insertPdTicketSchema = createInsertSchema(pdTickets).omit({ id: true, createdAt: true, updatedAt: true, tasksSpawnedAt: true, deletedAt: true } as any);
-export type InsertPdTicket = z.infer<typeof insertPdTicketSchema>;
-export type PdTicket = typeof pdTickets.$inferSelect;
+export const insertEngineeringTicketSchema = createInsertSchema(engineeringTickets).omit({ id: true, createdAt: true, updatedAt: true, tasksSpawnedAt: true, deletedAt: true } as any);
+export type InsertEngineeringTicket = z.infer<typeof insertEngineeringTicketSchema>;
+export type EngineeringTicket = typeof engineeringTickets.$inferSelect;
+
+// ── Backwards-compat re-exports (drop one release after migration 0025) ──
+// Vocabulary phase 2 (task #58). Allows any straggler import that still
+// references `pdTickets`/`PdTicket`/`insertPdTicketSchema` to compile
+// while the codebase migrates to the new names.
+export const pdTickets = engineeringTickets;
+export const insertPdTicketSchema = insertEngineeringTicketSchema;
+export type InsertPdTicket = InsertEngineeringTicket;
+export type PdTicket = EngineeringTicket;
 
 export const PD_REQUEST_TYPE_TASK_TEMPLATES: Record<string, { title: string; priority: string }[]> = {
   "Cost Proposal": [
