@@ -170,6 +170,7 @@ export default function AdminApprovalsPage() {
   const [location, navigate] = useLocation();
   const [filter, setFilter] = useState<ApprovalType>("all");
   const [showAll, setShowAll] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [rejectOpenById, setRejectOpenById] = useState<Record<string, boolean>>({});
   const [rejectReasonById, setRejectReasonById] = useState<Record<string, string>>({});
   const queryClient = useQueryClient();
@@ -403,16 +404,16 @@ export default function AdminApprovalsPage() {
   async function approveSelected() {
     if (selectedItems.length === 0) return;
     if (!canApprove) {
-      toast({ title: "Permission required", description: "You do not have approval permission for this queue.", variant: "destructive" });
+      toast.error("Permission required: You do not have approval permission for this queue.");
       return;
     }
     try {
       await Promise.all(selectedItems.map((item) => performApprovalAction(item, "approve", "")));
       setSelectedIds(new Set());
       await queryClient.invalidateQueries({ queryKey: ["/api/approvals/pending"] });
-      sonnerToast.success(`Approved ${selectedItems.length} item${selectedItems.length === 1 ? "" : "s"}.`);
+      toast.success(`Approved ${selectedItems.length} item${selectedItems.length === 1 ? "" : "s"}.`);
     } catch (err: any) {
-      sonnerToast.error(err?.message || "Bulk approve failed.");
+      toast.error(err?.message || "Bulk approve failed.");
     }
   }
 
