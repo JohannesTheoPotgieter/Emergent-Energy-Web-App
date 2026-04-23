@@ -61,7 +61,7 @@ import {
   fyeBudgets,
   forecastPipeline,
   lostDeals,
-  pdTickets,
+  engineeringTickets,
   fyeKpiCounters,
   fyeReportSnapshots,
   projectPlan,
@@ -676,11 +676,11 @@ router.get(
       let provinceMap = new Map<string, string>();
       try {
         const tickets = await db.select({
-          projectSiteName: pdTickets.projectSiteName,
-          province: pdTickets.province,
-        }).from(pdTickets)
+          projectSiteName: engineeringTickets.projectSiteName,
+          province: engineeringTickets.province,
+        }).from(engineeringTickets)
           // Cascade-display: ignore soft-deleted PD tickets (Task #34).
-          .where(isNull(pdTickets.deletedAt));
+          .where(isNull(engineeringTickets.deletedAt));
         for (const t of tickets) {
           if (t.province && t.projectSiteName) {
             provinceMap.set(t.projectSiteName, t.province);

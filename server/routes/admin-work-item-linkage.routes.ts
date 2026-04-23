@@ -5,7 +5,7 @@ import { requireAuth } from "../departments/shared-middleware";
 import { requirePermission } from "../permission-middleware";
 import { logAuditFromReq } from "../audit-logger";
 import { db } from "../db";
-import { pdTickets, projectInfo, workItems } from "@shared/schema";
+import { engineeringTickets, projectInfo, workItems } from "@shared/schema";
 
 type OrphanRow = {
   workItemId: number;
@@ -45,19 +45,19 @@ export function registerAdminWorkItemLinkageRoutes(app: Express) {
             ownerName: workItems.ownerName,
             projectId: workItems.projectId,
             projectName: projectInfo.projectName,
-            pdTicketId: workItems.pdTicketId,
-            pdTicketDeletedAt: pdTickets.deletedAt,
-            pdTicketIdResolved: pdTickets.id,
-            pdTicketRequestType: pdTickets.requestType,
+            pdTicketId: workItems.engineeringTicketId,
+            pdTicketDeletedAt: engineeringTickets.deletedAt,
+            pdTicketIdResolved: engineeringTickets.id,
+            pdTicketRequestType: engineeringTickets.requestType,
           })
           .from(workItems)
-          .leftJoin(pdTickets, eq(pdTickets.id, workItems.pdTicketId))
+          .leftJoin(engineeringTickets, eq(engineeringTickets.id, workItems.engineeringTicketId))
           .leftJoin(projectInfo, eq(projectInfo.id, workItems.projectId))
           .where(
             and(
               isNull(workItems.deletedAt),
-              isNotNull(workItems.pdTicketId),
-              sql`(${pdTickets.id} IS NULL OR ${pdTickets.deletedAt} IS NOT NULL)`,
+              isNotNull(workItems.engineeringTicketId),
+              sql`(${engineeringTickets.id} IS NULL OR ${engineeringTickets.deletedAt} IS NOT NULL)`,
             ),
           )
           .orderBy(asc(workItems.id))
@@ -79,8 +79,8 @@ export function registerAdminWorkItemLinkageRoutes(app: Express) {
           .where(
             and(
               isNull(workItems.deletedAt),
-              isNull(workItems.pdTicketId),
-              sql`EXISTS (SELECT 1 FROM ${pdTickets} pt WHERE pt.project_id = ${workItems.projectId} AND pt.deleted_at IS NULL)`,
+              isNull(workItems.engineeringTicketId),
+              sql`EXISTS (SELECT 1 FROM ${engineeringTickets} pt WHERE pt.project_id = ${workItems.projectId} AND pt.deleted_at IS NULL)`,
             ),
           )
           .orderBy(asc(workItems.id))
@@ -125,15 +125,15 @@ export function registerAdminWorkItemLinkageRoutes(app: Express) {
         if (projectIds.length > 0) {
           const liveTickets = await db
             .select({
-              id: pdTickets.id,
-              projectId: pdTickets.projectId,
-              requestType: pdTickets.requestType,
-              status: pdTickets.status,
-              dueDate: pdTickets.dueDate,
+              id: engineeringTickets.id,
+              projectId: engineeringTickets.projectId,
+              requestType: engineeringTickets.requestType,
+              status: engineeringTickets.status,
+              dueDate: engineeringTickets.dueDate,
             })
-            .from(pdTickets)
-            .where(and(isNull(pdTickets.deletedAt), inArray(pdTickets.projectId, projectIds)))
-            .orderBy(asc(pdTickets.id));
+            .from(engineeringTickets)
+            .where(and(isNull(engineeringTickets.deletedAt), inArray(engineeringTickets.projectId, projectIds)))
+            .orderBy(asc(engineeringTickets.id));
 
           for (const t of liveTickets) {
             if (t.projectId == null) continue;
@@ -202,7 +202,7 @@ export function registerAdminWorkItemLinkageRoutes(app: Express) {
           .select({
             id: workItems.id,
             projectId: workItems.projectId,
-            pdTicketId: workItems.pdTicketId,
+            pdTicketId: workItems.engineeringTicketId,
           })
           .from(workItems)
           .where(and(eq(workItems.id, workItemId), isNull(workItems.deletedAt)))
@@ -212,12 +212,12 @@ export function registerAdminWorkItemLinkageRoutes(app: Express) {
 
         const ticketRows = await db
           .select({
-            id: pdTickets.id,
-            projectId: pdTickets.projectId,
-            deletedAt: pdTickets.deletedAt,
+            id: engineeringTickets.id,
+            projectId: engineeringTickets.projectId,
+            deletedAt: engineeringTickets.deletedAt,
           })
-          .from(pdTickets)
-          .where(eq(pdTickets.id, pdTicketId))
+          .from(engineeringTickets)
+          .where(eq(engineeringTickets.id, pdTicketId))
           .limit(1);
         const ticket = ticketRows[0];
         if (!ticket || ticket.deletedAt) {
@@ -235,7 +235,7 @@ export function registerAdminWorkItemLinkageRoutes(app: Express) {
 
         await db
           .update(workItems)
-          .set({ pdTicketId: ticket.id, updatedAt: new Date() })
+          .set({ engineeringTicketId: ticket.id, updatedAt: new Date() })
           .where(eq(workItems.id, workItemId));
 
         logAuditFromReq(req, {
@@ -271,7 +271,7 @@ export function registerAdminWorkItemLinkageRoutes(app: Express) {
         const wiRows = await db
           .select({
             id: workItems.id,
-            pdTicketId: workItems.pdTicketId,
+            pdTicketId: workItems.engineeringTicketId,
             projectId: workItems.projectId,
           })
           .from(workItems)
@@ -285,7 +285,7 @@ export function registerAdminWorkItemLinkageRoutes(app: Express) {
         if (previousPdTicketId !== null) {
           await db
             .update(workItems)
-            .set({ pdTicketId: null, updatedAt: new Date() })
+            .set({ engineeringTicketId: null, updatedAt: new Date() })
             .where(eq(workItems.id, workItemId));
         }
 

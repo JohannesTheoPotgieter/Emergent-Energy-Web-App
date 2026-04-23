@@ -15,7 +15,7 @@ import {
   workItems,
   approvals,
   opportunities,
-  pdTickets,
+  engineeringTickets,
   raidItems,
 } from "@shared/schema";
 import { ROLE_DEPARTMENT_MAP } from "@shared/schema/users";
