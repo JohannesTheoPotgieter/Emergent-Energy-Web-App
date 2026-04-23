@@ -246,7 +246,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   return (
                     <div key={section.label} className="space-y-1">
                       <Link
-                        href={section.path}
+                        href={section.key === "HOME" ? homeHref : section.path}
                         className={cn("block rounded-md px-3 py-2 text-sm font-medium transition-colors", isActive ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground")}
                         onClick={() => trackNavClick(section.label)}
                         data-testid={`mobile-nav-section-${section.key}`}
@@ -419,7 +419,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               return (
                 <Link
                   key={section.label}
-                  href={section.path}
+                  href={section.key === "HOME" ? homeHref : section.path}
                   className={cn(
                     "relative px-3.5 py-2 text-[13px] font-medium whitespace-nowrap transition-colors rounded-md",
                     active ? "text-primary" : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
@@ -427,7 +427,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   onClick={() => trackNavClick(section.label)}
                   data-testid={`nav-section-${section.key}`}
                   data-active={active ? "true" : undefined}
-                  {...prefetch(section.path)}
+                  {...prefetch(section.key === "HOME" ? homeHref : section.path)}
                 >
                   {section.label}
                   {active && <span className="absolute bottom-0 left-3 right-3 h-[2px] bg-primary rounded-full" />}
