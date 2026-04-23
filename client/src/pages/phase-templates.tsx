@@ -112,9 +112,6 @@ export default function PhaseTemplatesPage() {
   });
   const engTemplates: any[] = engData?.templates || [];
 
-  if (engLoading) return <QueryLoading />;
-  if (engIsError) return <QueryError error={engError} onRetry={() => refetchEngTemplates()} />;
-
   const toggleEngActive = async (id: number, isActive: boolean) => {
     try {
       const res = await authFetch(`/api/eng-stages/templates/${id}`, {
@@ -150,6 +147,9 @@ export default function PhaseTemplatesPage() {
   }, []);
 
   useEffect(() => { loadTemplates(); }, [loadTemplates]);
+
+  if (engLoading) return <QueryLoading />;
+  if (engIsError) return <QueryError error={engError} onRetry={() => refetchEngTemplates()} />;
 
   const loadTemplateDetail = async (id: number) => {
     const res = await authFetch(`/api/phase-templates/${id}`);

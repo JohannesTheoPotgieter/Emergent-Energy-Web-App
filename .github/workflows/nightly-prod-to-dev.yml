@@ -18,6 +18,9 @@ concurrency:
   group: nightly-prod-to-dev
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   sync:
     name: Dump prod and restore into dev
@@ -34,21 +37,35 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Install PostgreSQL 16 client (matching server version)
+      - name: Preflight required secrets
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          DEV_DATABASE_URL: ${{ secrets.DEV_DATABASE_URL }}
         run: |
           set -euo pipefail
-          sudo install -d /usr/share/postgresql-common/pgdg
-          sudo curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
-            -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
-          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
-            | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          missing=0
+          if [ -z "${PROD_DATABASE_URL:-}" ]; then
+            echo "::error::Missing required secret: PROD_DATABASE_URL"
+            missing=1
+          fi
+          if [ -z "${DEV_DATABASE_URL:-}" ]; then
+            echo "::error::Missing required secret: DEV_DATABASE_URL"
+            missing=1
+          fi
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Install PostgreSQL client
+        run: |
+          set -euo pipefail
           sudo apt-get update -y
-          sudo apt-get install -y postgresql-client-16
+          sudo apt-get install -y postgresql-client
           pg_dump --version
           psql --version
 
       - name: Install npm dependencies
-        run: npm ci
+        run: npm ci --prefer-offline --no-audit
 
       - name: Run prod → dev sync
         env:

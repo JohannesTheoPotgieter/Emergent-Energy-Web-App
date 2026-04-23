@@ -1,9 +1,7 @@
 name: CI
 on:
   push:
-    branches: [main, develop]
-  pull_request:
-    branches: [main, develop]
+    branches: [main]
 
 jobs:
   # ── Stage 1: Compile integrity (no DB required) ───────────
