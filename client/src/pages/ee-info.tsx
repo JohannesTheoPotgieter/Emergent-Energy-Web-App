@@ -1492,7 +1492,7 @@ const ROLE_SIMULATIONS: RoleSimConfig[] = [
     roleLabel: "Project Developer",
     department: "Project Development",
     rhythm: [
-      { frequency: "Daily", activity: "Review PD ticket queue and incoming requests" },
+      { frequency: "Daily", activity: "Review engineering ticket queue and incoming requests" },
       { frequency: "Daily", activity: "Update development pipeline progress" },
       { frequency: "Weekly", activity: "Assess new project feasibility" },
       { frequency: "Weekly", activity: "Prepare cost proposals and first assessments" },
@@ -1503,7 +1503,7 @@ const ROLE_SIMULATIONS: RoleSimConfig[] = [
       "Prepare accurate cost proposals with supporting data",
       "Maintain development pipeline visibility",
       "Handover project packages with complete documentation",
-      "Track PD tickets and respond within 24 hours",
+      "Track engineering tickets and respond within 24 hours",
     ],
     inputs: [
       "New project leads and client enquiries",
@@ -1525,12 +1525,12 @@ const ROLE_SIMULATIONS: RoleSimConfig[] = [
       { role: "Engineering Manager", when: "Technical feasibility questions" },
     ],
     dashboards: [
-      { label: "PD Dashboard", path: "/pd-dashboard" },
+      { label: "Engineering & Quality Dashboard", path: "/pd" },
       { label: "Lifecycle Board", path: "/lifecycle-board" },
       { label: "Projects", path: "/projects" },
     ],
     topActions: [
-      { title: "Process PD ticket queue", description: "Review and respond to incoming development tickets", urgency: "high" },
+      { title: "Process engineering ticket queue", description: "Review and respond to incoming engineering tickets", urgency: "high" },
       { title: "Complete pending first assessments", description: "Finalize FA reports for projects in pipeline", urgency: "high" },
       { title: "Update cost proposals", description: "Refresh pricing on active proposals", urgency: "medium" },
       { title: "Prepare handover packages", description: "Document completed developments for PM transition", urgency: "medium" },

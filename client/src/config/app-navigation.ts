@@ -94,15 +94,16 @@ export const TOP_SECTIONS: TopSection[] = [
     secondary: [],
   },
   {
-    label: "Project Development",
+    label: "Engineering & Quality",
     key: "PROJECT_DEVELOPMENT",
     path: "/pd",
     match: (pathname) => startsWithAny(pathname, [
       "/pd", "/opportunities", "/clients",
       "/handover-control",
+      "/engineering-board", "/engineering-dashboard",
     ]),
     secondary: [
-      { label: "Project Development Dashboard", path: "/pd" },
+      { label: "Engineering & Quality Dashboard", path: "/pd" },
       { label: "Pipeline / Opportunities", path: "/opportunities" },
       { label: "Clients", path: "/clients" },
       { label: "Handover Queue", path: "/handover-control" },

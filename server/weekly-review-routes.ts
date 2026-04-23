@@ -1,19 +1,18 @@
 import type { Express, Request, Response, NextFunction } from "express";
-import { db } from "./db";
-import { weeklyReviews } from "@shared/schema";
-import { eq, desc } from "drizzle-orm";
+import { type InsertWeeklyReview } from "@shared/schema";
 import { z } from "zod";
 import { logAuditFromReq } from "./audit-logger";
 import { requirePermission } from "./permission-middleware";
 import { type AuthenticatedUser, getEffectiveUser, requireAuth } from "./auth-context";
+import { WeeklyReviewService } from "./services/weekly-review-service";
+import { type WeeklyReviewUpdate } from "./repositories/weekly-review.repository";
 
 export function registerWeeklyReviewRoutes(app: Express): void {
+  const weeklyReviewService = new WeeklyReviewService();
+
   app.get("/api/weekly-reviews-all", requireAuth, requirePermission('weekly_review_wizard', 'view'), async (req: Request, res: Response) => {
     try {
-      const reviews = await db
-        .select()
-        .from(weeklyReviews)
-        .orderBy(desc(weeklyReviews.weekStarting));
+      const reviews = await weeklyReviewService.listAll();
       res.json(reviews);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -24,11 +23,7 @@ export function registerWeeklyReviewRoutes(app: Express): void {
   app.get("/api/weekly-reviews/:projectName", requireAuth, requirePermission('weekly_review_wizard', 'view'), async (req: Request, res: Response) => {
     try {
       const { projectName } = req.params;
-      const reviews = await db
-        .select()
-        .from(weeklyReviews)
-        .where(eq(weeklyReviews.projectName, String(projectName)))
-        .orderBy(desc(weeklyReviews.weekStarting));
+      const reviews = await weeklyReviewService.listByProject(String(projectName));
       res.json(reviews);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -39,7 +34,7 @@ export function registerWeeklyReviewRoutes(app: Express): void {
   app.get("/api/weekly-reviews/:projectName/:id", requireAuth, requirePermission('weekly_review_wizard', 'view'), async (req: Request, res: Response) => {
     try {
       const id = Number(req.params.id);
-      const [review] = await db.select().from(weeklyReviews).where(eq(weeklyReviews.id, id));
+      const review = await weeklyReviewService.getById(id);
       if (!review) return res.status(404).json({ error: "Review not found" });
       res.json(review);
     } catch (err: unknown) {
@@ -58,16 +53,15 @@ export function registerWeeklyReviewRoutes(app: Express): void {
         snapshotMetrics: z.any().optional(),
       }).parse(req.body);
 
-      const [review] = await db
-        .insert(weeklyReviews)
-        .values({
-          projectName,
-          weekStarting: body.weekStarting,
-          reviewedBy: userId,
-          status: "draft",
-          snapshotMetrics: body.snapshotMetrics || null,
-        })
-        .returning();
+      const reviewValues: InsertWeeklyReview = {
+        projectName,
+        weekStarting: body.weekStarting,
+        reviewedBy: userId,
+        status: "draft",
+        snapshotMetrics: body.snapshotMetrics || null,
+      };
+
+      const review = await weeklyReviewService.create(reviewValues);
       logAuditFromReq(req, { entityType: "weekly_review", entityId: String(review.id), action: "create", projectName: String(projectName), changesJson: { description: "Weekly review created", weekStarting: body.weekStarting } });
       res.json(review);
     } catch (err: unknown) {
@@ -80,7 +74,7 @@ export function registerWeeklyReviewRoutes(app: Express): void {
     try {
       const id = Number(req.params.id);
       const body = req.body;
-      const updates: Record<string, unknown> = {};
+      const updates: WeeklyReviewUpdate = {};
 
       if (body.stepSchedule !== undefined) updates.stepSchedule = body.stepSchedule;
       if (body.stepBudget !== undefined) updates.stepBudget = body.stepBudget;
@@ -93,11 +87,7 @@ export function registerWeeklyReviewRoutes(app: Express): void {
         if (body.status === "completed") updates.completedAt = new Date();
       }
 
-      const [review] = await db
-        .update(weeklyReviews)
-        .set(updates)
-        .where(eq(weeklyReviews.id, id))
-        .returning();
+      const review = await weeklyReviewService.updateById(id, updates);
       logAuditFromReq(req, { entityType: "weekly_review", entityId: String(id), action: "update", projectName: String(req.params.projectName), changesJson: { description: "Weekly review updated", status: body.status } });
       res.json(review);
     } catch (err: unknown) {

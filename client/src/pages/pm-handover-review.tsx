@@ -12,7 +12,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { PageLayout } from "@/components/layout";
 
 async function loadQueue() {
-  const res = await fetch("/api/pd-pm-handover/submitted", { credentials: "include" });
+  const res = await fetch("/api/engineering-pm-handover/submitted", { credentials: "include" });
   const body = await res.json().catch(() => null);
   if (!res.ok) {
     throw new Error(
@@ -36,7 +36,7 @@ export default function PmHandoverReviewPage() {
   });
   const actionMutation = useMutation({
     mutationFn: async ({ projectId, action, reason }: { projectId: number; action: "accept" | "reject"; reason?: string }) => {
-      const res = await fetch(`/api/pd-pm-handover/${projectId}/${action}`, {
+      const res = await fetch(`/api/engineering-pm-handover/${projectId}/${action}`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -49,7 +49,7 @@ export default function PmHandoverReviewPage() {
     onSuccess: (_data, vars) => {
       toast({ title: vars.action === "accept" ? "Handover accepted" : "Handover rejected" });
       qc.invalidateQueries({ queryKey: ["pm-handover-review"] });
-      qc.invalidateQueries({ queryKey: ["/api/pd-pm-handover/control"] });
+      qc.invalidateQueries({ queryKey: ["/api/engineering-pm-handover/control"] });
     },
     onError: (err: any) => toast({ title: "Action failed", description: err?.message || "Please retry.", variant: "destructive" }),
   });

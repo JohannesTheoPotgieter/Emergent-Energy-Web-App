@@ -9,6 +9,7 @@ import { registerIntegrationRoutes } from "./register-integration-routes";
 import { registerInfoRoutes } from "./register-info-routes";
 import { registerSupportRoutes } from "./register-support-routes";
 import { registerExtractedRoutes } from "./route-registry";
+import { applyLegacyUrlAliases } from "../middleware/legacy-url-aliases";
 
 export async function registerAllRoutes(options: {
   app: Express;
@@ -16,6 +17,11 @@ export async function registerAllRoutes(options: {
   log: (message: string, source?: string) => void;
 }) {
   const { app, httpServer, log } = options;
+
+  // Task #61: alias /api/engineering-tickets/* -> /api/pd/tickets/* and
+  // /api/engineering-pm-handover/* -> /api/pd-pm-handover/* before any
+  // route handler runs, and log deprecation when legacy URLs are used.
+  applyLegacyUrlAliases(app);
 
   await registerCoreRoutes(app);
   await registerIntegrationRoutes(app);

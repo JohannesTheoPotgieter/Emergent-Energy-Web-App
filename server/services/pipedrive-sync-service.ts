@@ -200,11 +200,20 @@ const REQUIRED_COLUMNS: Array<{ table: string; column: string }> = [
 export async function checkSchemaParity(): Promise<StructuredSyncError | null> {
   try {
     const tables = Array.from(new Set(REQUIRED_COLUMNS.map(c => c.table)));
+    // Drizzle's sql template expands a bare JS array into a comma-separated
+    // list of bind parameters (`$1, $2`), which produced invalid SQL of the
+    // form `ANY($1, $2)` and broke every sync with a spurious
+    // "schema mismatch". Build an explicit IN(...) list using the codebase's
+    // standard sql.join pattern instead.
+    const tableList = drizzleSql.join(
+      tables.map((t) => drizzleSql`${t}`),
+      drizzleSql`, `,
+    );
     const rows = (await db.execute(drizzleSql`
       SELECT table_name, column_name
       FROM information_schema.columns
       WHERE table_schema = 'public'
-        AND table_name = ANY(${tables})
+        AND table_name IN (${tableList})
     `)) as unknown as { rows: Array<{ table_name: string; column_name: string }> };
     const present = new Set((rows.rows || []).map(r => `${r.table_name}.${r.column_name}`));
     const missing = REQUIRED_COLUMNS.filter(c => !present.has(`${c.table}.${c.column}`));
