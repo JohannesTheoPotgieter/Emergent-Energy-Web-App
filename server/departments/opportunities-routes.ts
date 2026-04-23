@@ -274,7 +274,6 @@ router.get("/api/opportunities/working", requireAuth, requirePermission("opportu
 // ============================================================================
 router.get("/api/pd/dashboard", requireAuth, requirePermission("pd_dashboard", "view"), async (_req: Request, res: Response) => {
   try {
-    const handoverCodes = PHASES.filter((p) => p.isHandover).map((p) => p.code);
     const [
       ticketTotalsRow,
       workItemTotalsRow,
@@ -460,7 +459,7 @@ router.get("/api/pd/dashboard", requireAuth, requirePermission("pd_dashboard", "
         SELECT
           code,
           (SELECT COUNT(*) FROM ticket_phase tp2 WHERE tp2.code = w.code) AS ticket_count,
-          -- IMPORTANT: gate counts on `wi_id IS NOT NULL` so the synthetic
+          -- IMPORTANT: gate counts on (w.wi_id IS NOT NULL) so the synthetic
           -- placeholder rows (used only to ensure phases with zero work
           -- items still appear) never inflate work-item totals.
           COUNT(*) FILTER (
@@ -476,7 +475,7 @@ router.get("/api/pd/dashboard", requireAuth, requirePermission("pd_dashboard", "
           -- Outer set: every active-ticket phase appears at least once
           -- so phases with zero work items still get a row (with the
           -- ticket count from ticket_phase). The placeholder rows are
-          -- distinguished from real work items by `wi_id IS NULL`.
+          -- distinguished from real work items by (w.wi_id IS NULL).
           SELECT code, NULL::int AS wi_id, NULL::text AS status, NULL::text AS end_date FROM ticket_phase
           UNION ALL
           SELECT code, wi_id, status, end_date FROM wi_rollup
