@@ -4,7 +4,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
 import { users } from "./users";
-import { projectInfo, clients, pdTickets } from "./projects";
+import { projectInfo, clients, engineeringTickets } from "./projects";
 
 // ===================== TASK CONSTANTS =====================
 
@@ -210,7 +210,10 @@ export const workItems = pgTable("work_items", {
   trackingRag: text("tracking_rag"),
   taskTypeTag: text("task_type_tag"),
   blockerReason: text("blocker_reason"),
-  pdTicketId: integer("pd_ticket_id"),
+  // Renamed from `pd_ticket_id` to `engineering_ticket_id` in migration 0025
+  // (vocabulary phase 2, task #58). A backwards-compat generated column
+  // named `pd_ticket_id` mirrors this for one release.
+  engineeringTicketId: integer("engineering_ticket_id"),
   // Personal-task columns (unified from mytool_tasks)
   bucket: text("bucket"),  // 'project' | 'company_ops' | 'personal'
   pinnedToday: boolean("pinned_today").default(false),
@@ -230,14 +233,13 @@ export const workItems = pgTable("work_items", {
     .on(table.externalRef)
     .where(sql`${table.deletedAt} IS NULL`),
   // Partial index supports the `getProjectDevelopmentWorkspaceRollup`
-  // pdTicketTaskRows aggregation. The matching FK on `pd_ticket_id` is
-  // hand-managed in migration 0019_foundation_linkage_hardening.sql
-  // (drizzle does not emit FKs for self-typed integer columns that lack
-  // a `references()` clause; we keep the schema declarative-only here
-  // and rely on the migration for referential integrity).
-  pdTicketIdIdx: index("idx_work_items_pd_ticket_id")
-    .on(table.pdTicketId)
-    .where(sql`${table.pdTicketId} IS NOT NULL`),
+  // engineeringTicketTaskRows aggregation. The matching FK on
+  // `engineering_ticket_id` is hand-managed in migrations
+  // 0019_foundation_linkage_hardening.sql (added) and
+  // 0025_engineering_tickets_physical_rename.sql (renamed).
+  engineeringTicketIdIdx: index("idx_work_items_engineering_ticket_id")
+    .on(table.engineeringTicketId)
+    .where(sql`${table.engineeringTicketId} IS NOT NULL`),
 }));
 export const insertWorkItemSchema = createInsertSchema(workItems).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertWorkItem = z.infer<typeof insertWorkItemSchema>;

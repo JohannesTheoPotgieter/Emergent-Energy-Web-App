@@ -95,22 +95,22 @@ describe("Foundation linkage hardening — cascades and spine integrity (Task #3
     }
   });
 
-  it("DB trigger rejects work_items linkage to a soft-deleted pd_ticket (write-path guard, migration 0021)", async () => {
+  it("DB trigger rejects work_items linkage to a soft-deleted ticket (write-path guard, migrations 0021 + 0025)", async () => {
     const { Pool } = await import("pg");
     const pool = new Pool({ connectionString: process.env.DATABASE_URL });
     try {
       const live = await pool.query(
-        `SELECT id FROM pd_tickets WHERE deleted_at IS NULL ORDER BY id DESC LIMIT 1`,
+        `SELECT id FROM engineering_tickets WHERE deleted_at IS NULL ORDER BY id DESC LIMIT 1`,
       );
       if (live.rowCount === 0) return;
       const ticketId = live.rows[0].id;
       await pool.query("BEGIN");
       try {
-        await pool.query(`UPDATE pd_tickets SET deleted_at = now() WHERE id = $1`, [ticketId]);
+        await pool.query(`UPDATE engineering_tickets SET deleted_at = now() WHERE id = $1`, [ticketId]);
         let threw = false;
         try {
           await pool.query(
-            `INSERT INTO work_items (title, status, pd_ticket_id) VALUES ('cascade-guard-test', 'Open', $1)`,
+            `INSERT INTO work_items (title, status, engineering_ticket_id) VALUES ('cascade-guard-test', 'Open', $1)`,
             [ticketId],
           );
         } catch (e: any) {
@@ -125,4 +125,11 @@ describe("Foundation linkage hardening — cascades and spine integrity (Task #3
       await pool.end();
     }
   });
+
+  // Vocabulary phase 2 alias-parity assertion was removed in task #60
+  // alongside migration 0026, which drops the backwards-compat
+  // `pd_tickets` VIEW and `work_items.pd_ticket_id` generated column.
+  // The new names (`engineering_tickets`, `engineering_ticket_id`)
+  // are now the only schema surface; the soft-delete write-path guard
+  // above already exercises both.
 });

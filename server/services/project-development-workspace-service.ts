@@ -5,7 +5,7 @@ import {
   intakeTasks,
   msObjects,
   opportunities,
-  pdTickets,
+  engineeringTickets,
   projectCommunicationTimelineEvents,
   projectEditableFields,
   projectExecutionState,
@@ -222,6 +222,27 @@ export interface ProjectDevelopmentWorkspacePayload {
     }>;
   };
   pdTickets: {
+    total: number;
+    open: number;
+    completed: number;
+    tickets: Array<{
+      id: number;
+      requestType: string;
+      status: string;
+      dueDate: string | null;
+      numberOfReworks: number;
+      developerName: string | null;
+      designerName: string | null;
+      taskTotal: number;
+      taskCompleted: number;
+    }>;
+  };
+  /**
+   * Canonical name for the PD/engineering ticket block (task #61). Mirrors
+   * `pdTickets` exactly; the legacy `pdTickets` key is kept for one release
+   * as a deprecated alias so existing clients keep working.
+   */
+  engineeringTickets: {
     total: number;
     open: number;
     completed: number;
@@ -517,6 +538,14 @@ export function buildProjectDevelopmentWorkspaceFromSources(params: {
       completed: pdTicketSummary.filter((row) => isCompletedStatus(row.status)).length,
       tickets: pdTicketSummary,
     },
+    // Task #61: canonical key. Mirrors `pdTickets` exactly; the legacy key
+    // above is kept for one release as a deprecated alias.
+    engineeringTickets: {
+      total: pdTicketSummary.length,
+      open: pdTicketSummary.filter((row) => !isCompletedStatus(row.status)).length,
+      completed: pdTicketSummary.filter((row) => isCompletedStatus(row.status)).length,
+      tickets: pdTicketSummary,
+    },
     dependencies: {
       total: dependencyItems.length,
       openWorkItems,
@@ -718,22 +747,22 @@ export async function getProjectDevelopmentWorkspace(params: {
       .orderBy(desc(intakeRequests.updatedAt)),
     db
       .select({
-        id: pdTickets.id,
-        requestType: pdTickets.requestType,
-        status: pdTickets.status,
-        dueDate: pdTickets.dueDate,
-        numberOfReworks: pdTickets.numberOfReworks,
-        developerName: sql<string>`(SELECT name FROM users WHERE id = ${pdTickets.projectDeveloperUserId})`,
-        designerName: sql<string>`(SELECT name FROM users WHERE id = ${pdTickets.designerUserId})`,
+        id: engineeringTickets.id,
+        requestType: engineeringTickets.requestType,
+        status: engineeringTickets.status,
+        dueDate: engineeringTickets.dueDate,
+        numberOfReworks: engineeringTickets.numberOfReworks,
+        developerName: sql<string>`(SELECT name FROM users WHERE id = ${engineeringTickets.projectDeveloperUserId})`,
+        designerName: sql<string>`(SELECT name FROM users WHERE id = ${engineeringTickets.designerUserId})`,
       })
-      .from(pdTickets)
+      .from(engineeringTickets)
       // Cascade-display: hide soft-deleted PD tickets and tickets whose
       // project was soft-deleted via project_info.deleted_at. The
       // pd_tickets.deleted_at column was added by migration
       // 0019_foundation_linkage_hardening.sql to mirror the rest of the
       // spine's soft-delete pattern.
-      .where(and(eq(pdTickets.projectId, params.projectId), isNull(pdTickets.deletedAt)))
-      .orderBy(desc(pdTickets.updatedAt)),
+      .where(and(eq(engineeringTickets.projectId, params.projectId), isNull(engineeringTickets.deletedAt)))
+      .orderBy(desc(engineeringTickets.updatedAt)),
     db.select().from(raidItems).where(eq(raidItems.projectId, params.projectId)).orderBy(desc(raidItems.updatedAt)),
     db
       .select({
@@ -806,18 +835,18 @@ export async function getProjectDevelopmentWorkspace(params: {
     pdTicketIds.length > 0
       ? db
           .select({
-            pdTicketId: workItems.pdTicketId,
+            pdTicketId: workItems.engineeringTicketId,
             total: sql<number>`COUNT(*)`.as("total"),
             completed: sql<number>`COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(${workItems.status}, ''))) IN ('completed','complete','closed','resolved','done'))`.as("completed"),
           })
           .from(workItems)
           .where(
             and(
-              inArray(workItems.pdTicketId, pdTicketIds),
+              inArray(workItems.engineeringTicketId, pdTicketIds),
               isNull(workItems.deletedAt),
             ),
           )
-          .groupBy(workItems.pdTicketId)
+          .groupBy(workItems.engineeringTicketId)
       : Promise.resolve([] as PdTicketTaskSource[]),
     workItemIds.length > 0
       ? db
@@ -896,6 +925,17 @@ export type WorkspaceRollupRow = {
     overdue: number;
     oldestOpenAt: string | null;
   };
+  /**
+   * Canonical alias for `pdTickets` (task #61). Mirrors the same data; the
+   * legacy `pdTickets` key is retained for one release.
+   */
+  engineeringTickets: {
+    total: number;
+    open: number;
+    completed: number;
+    overdue: number;
+    oldestOpenAt: string | null;
+  };
   workItems: {
     total: number;
     open: number;
@@ -947,13 +987,13 @@ export async function getProjectDevelopmentWorkspaceRollup(): Promise<WorkspaceR
         .where(isNull(opportunities.deletedAt)),
       db
         .select({
-          projectId: pdTickets.projectId,
-          status: pdTickets.status,
-          dueDate: pdTickets.dueDate,
-          createdAt: pdTickets.createdAt,
+          projectId: engineeringTickets.projectId,
+          status: engineeringTickets.status,
+          dueDate: engineeringTickets.dueDate,
+          createdAt: engineeringTickets.createdAt,
         })
-        .from(pdTickets)
-        .where(isNull(pdTickets.deletedAt)),
+        .from(engineeringTickets)
+        .where(isNull(engineeringTickets.deletedAt)),
       db
         .select({
           projectId: workItems.projectId,
@@ -1038,6 +1078,15 @@ export async function getProjectDevelopmentWorkspaceRollup(): Promise<WorkspaceR
       opportunityId: p.opportunityId ?? null,
       opportunityStage: p.opportunityId ? oppStageById.get(p.opportunityId) ?? null : null,
       pdTickets: {
+        total: tickets.total,
+        open: tickets.open,
+        completed: tickets.completed,
+        overdue: tickets.overdue,
+        oldestOpenAt: tickets.oldestOpenAt ? toIsoString(tickets.oldestOpenAt) : null,
+      },
+      // Task #61: canonical alias of `pdTickets`. Same numbers, friendlier
+      // name. Legacy key kept for one release.
+      engineeringTickets: {
         total: tickets.total,
         open: tickets.open,
         completed: tickets.completed,

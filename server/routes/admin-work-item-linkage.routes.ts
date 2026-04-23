@@ -5,7 +5,7 @@ import { requireAuth } from "../departments/shared-middleware";
 import { requirePermission } from "../permission-middleware";
 import { logAuditFromReq } from "../audit-logger";
 import { db } from "../db";
-import { pdTickets, projectInfo, workItems } from "@shared/schema";
+import { engineeringTickets, projectInfo, workItems } from "@shared/schema";
 
 type OrphanRow = {
   workItemId: number;
@@ -15,8 +15,16 @@ type OrphanRow = {
   ownerName: string | null;
   projectId: number | null;
   projectName: string | null;
+  // Task #61: canonical names. Legacy `pdTicket*` keys are mirrored below
+  // and kept for one release.
+  engineeringTicketId: number | null;
+  engineeringTicketDeleted: boolean;
+  engineeringTicketRequestType: string | null;
+  /** @deprecated Use `engineeringTicketId` (task #61). */
   pdTicketId: number | null;
+  /** @deprecated Use `engineeringTicketDeleted` (task #61). */
   pdTicketDeleted: boolean;
+  /** @deprecated Use `engineeringTicketRequestType` (task #61). */
   pdTicketRequestType: string | null;
   reason: "missing" | "soft_deleted" | "unlinked";
 };
@@ -45,19 +53,19 @@ export function registerAdminWorkItemLinkageRoutes(app: Express) {
             ownerName: workItems.ownerName,
             projectId: workItems.projectId,
             projectName: projectInfo.projectName,
-            pdTicketId: workItems.pdTicketId,
-            pdTicketDeletedAt: pdTickets.deletedAt,
-            pdTicketIdResolved: pdTickets.id,
-            pdTicketRequestType: pdTickets.requestType,
+            pdTicketId: workItems.engineeringTicketId,
+            pdTicketDeletedAt: engineeringTickets.deletedAt,
+            pdTicketIdResolved: engineeringTickets.id,
+            pdTicketRequestType: engineeringTickets.requestType,
           })
           .from(workItems)
-          .leftJoin(pdTickets, eq(pdTickets.id, workItems.pdTicketId))
+          .leftJoin(engineeringTickets, eq(engineeringTickets.id, workItems.engineeringTicketId))
           .leftJoin(projectInfo, eq(projectInfo.id, workItems.projectId))
           .where(
             and(
               isNull(workItems.deletedAt),
-              isNotNull(workItems.pdTicketId),
-              sql`(${pdTickets.id} IS NULL OR ${pdTickets.deletedAt} IS NOT NULL)`,
+              isNotNull(workItems.engineeringTicketId),
+              sql`(${engineeringTickets.id} IS NULL OR ${engineeringTickets.deletedAt} IS NOT NULL)`,
             ),
           )
           .orderBy(asc(workItems.id))
@@ -79,8 +87,8 @@ export function registerAdminWorkItemLinkageRoutes(app: Express) {
           .where(
             and(
               isNull(workItems.deletedAt),
-              isNull(workItems.pdTicketId),
-              sql`EXISTS (SELECT 1 FROM ${pdTickets} pt WHERE pt.project_id = ${workItems.projectId} AND pt.deleted_at IS NULL)`,
+              isNull(workItems.engineeringTicketId),
+              sql`EXISTS (SELECT 1 FROM ${engineeringTickets} pt WHERE pt.project_id = ${workItems.projectId} AND pt.deleted_at IS NULL)`,
             ),
           )
           .orderBy(asc(workItems.id))
@@ -94,6 +102,9 @@ export function registerAdminWorkItemLinkageRoutes(app: Express) {
           ownerName: r.ownerName ?? null,
           projectId: r.projectId ?? null,
           projectName: r.projectName ?? null,
+          engineeringTicketId: r.pdTicketId ?? null,
+          engineeringTicketDeleted: !!r.pdTicketDeletedAt,
+          engineeringTicketRequestType: r.pdTicketRequestType ?? null,
           pdTicketId: r.pdTicketId ?? null,
           pdTicketDeleted: !!r.pdTicketDeletedAt,
           pdTicketRequestType: r.pdTicketRequestType ?? null,
@@ -108,6 +119,9 @@ export function registerAdminWorkItemLinkageRoutes(app: Express) {
           ownerName: r.ownerName ?? null,
           projectId: r.projectId ?? null,
           projectName: r.projectName ?? null,
+          engineeringTicketId: null,
+          engineeringTicketDeleted: false,
+          engineeringTicketRequestType: null,
           pdTicketId: null,
           pdTicketDeleted: false,
           pdTicketRequestType: null,
@@ -125,15 +139,15 @@ export function registerAdminWorkItemLinkageRoutes(app: Express) {
         if (projectIds.length > 0) {
           const liveTickets = await db
             .select({
-              id: pdTickets.id,
-              projectId: pdTickets.projectId,
-              requestType: pdTickets.requestType,
-              status: pdTickets.status,
-              dueDate: pdTickets.dueDate,
+              id: engineeringTickets.id,
+              projectId: engineeringTickets.projectId,
+              requestType: engineeringTickets.requestType,
+              status: engineeringTickets.status,
+              dueDate: engineeringTickets.dueDate,
             })
-            .from(pdTickets)
-            .where(and(isNull(pdTickets.deletedAt), inArray(pdTickets.projectId, projectIds)))
-            .orderBy(asc(pdTickets.id));
+            .from(engineeringTickets)
+            .where(and(isNull(engineeringTickets.deletedAt), inArray(engineeringTickets.projectId, projectIds)))
+            .orderBy(asc(engineeringTickets.id));
 
           for (const t of liveTickets) {
             if (t.projectId == null) continue;
@@ -178,9 +192,22 @@ export function registerAdminWorkItemLinkageRoutes(app: Express) {
     },
   );
 
-  const relinkBody = z.object({
-    pdTicketId: z.number().int().positive(),
-  });
+  // Task #61: accept either the canonical `engineeringTicketId` or the
+  // legacy `pdTicketId`. Exactly one must be provided; if both are present
+  // they must agree.
+  const relinkBody = z
+    .object({
+      engineeringTicketId: z.number().int().positive().optional(),
+      pdTicketId: z.number().int().positive().optional(),
+    })
+    .refine(
+      (b) =>
+        (b.engineeringTicketId !== undefined || b.pdTicketId !== undefined) &&
+        (b.engineeringTicketId === undefined ||
+          b.pdTicketId === undefined ||
+          b.engineeringTicketId === b.pdTicketId),
+      { message: "Provide engineeringTicketId (or legacy pdTicketId)." },
+    );
 
   app.post(
     "/api/admin/work-item-linkage/:workItemId/relink",
@@ -196,13 +223,14 @@ export function registerAdminWorkItemLinkageRoutes(app: Express) {
         if (!parsed.success) {
           return res.status(400).json({ error: "invalid_body", details: parsed.error.flatten() });
         }
-        const { pdTicketId } = parsed.data;
+        const targetTicketId =
+          parsed.data.engineeringTicketId ?? (parsed.data.pdTicketId as number);
 
         const wiRows = await db
           .select({
             id: workItems.id,
             projectId: workItems.projectId,
-            pdTicketId: workItems.pdTicketId,
+            engineeringTicketId: workItems.engineeringTicketId,
           })
           .from(workItems)
           .where(and(eq(workItems.id, workItemId), isNull(workItems.deletedAt)))
@@ -212,12 +240,12 @@ export function registerAdminWorkItemLinkageRoutes(app: Express) {
 
         const ticketRows = await db
           .select({
-            id: pdTickets.id,
-            projectId: pdTickets.projectId,
-            deletedAt: pdTickets.deletedAt,
+            id: engineeringTickets.id,
+            projectId: engineeringTickets.projectId,
+            deletedAt: engineeringTickets.deletedAt,
           })
-          .from(pdTickets)
-          .where(eq(pdTickets.id, pdTicketId))
+          .from(engineeringTickets)
+          .where(eq(engineeringTickets.id, targetTicketId))
           .limit(1);
         const ticket = ticketRows[0];
         if (!ticket || ticket.deletedAt) {
@@ -231,11 +259,11 @@ export function registerAdminWorkItemLinkageRoutes(app: Express) {
           });
         }
 
-        const previousPdTicketId = wi.pdTicketId ?? null;
+        const previousEngineeringTicketId = wi.engineeringTicketId ?? null;
 
         await db
           .update(workItems)
-          .set({ pdTicketId: ticket.id, updatedAt: new Date() })
+          .set({ engineeringTicketId: ticket.id, updatedAt: new Date() })
           .where(eq(workItems.id, workItemId));
 
         logAuditFromReq(req, {
@@ -243,13 +271,23 @@ export function registerAdminWorkItemLinkageRoutes(app: Express) {
           entityId: String(workItemId),
           action: "linkage_repair_relink",
           changesJson: {
-            previousPdTicketId,
-            newPdTicketId: ticket.id,
+            previousEngineeringTicketId,
+            newEngineeringTicketId: ticket.id,
             projectId: wi.projectId,
           },
         });
 
-        res.json({ ok: true, workItemId, pdTicketId: ticket.id, previousPdTicketId });
+        // Task #61: emit canonical + legacy keys in the response.
+        res.json({
+          ok: true,
+          workItemId,
+          engineeringTicketId: ticket.id,
+          previousEngineeringTicketId,
+          /** @deprecated use `engineeringTicketId` */
+          pdTicketId: ticket.id,
+          /** @deprecated use `previousEngineeringTicketId` */
+          previousPdTicketId: previousEngineeringTicketId,
+        });
       } catch (err: any) {
         console.error("[admin-work-item-linkage] relink failed:", err);
         res.status(500).json({ error: "Failed to relink work item" });
@@ -271,7 +309,7 @@ export function registerAdminWorkItemLinkageRoutes(app: Express) {
         const wiRows = await db
           .select({
             id: workItems.id,
-            pdTicketId: workItems.pdTicketId,
+            engineeringTicketId: workItems.engineeringTicketId,
             projectId: workItems.projectId,
           })
           .from(workItems)
@@ -280,12 +318,12 @@ export function registerAdminWorkItemLinkageRoutes(app: Express) {
         const wi = wiRows[0];
         if (!wi) return res.status(404).json({ error: "work_item_not_found" });
 
-        const previousPdTicketId = wi.pdTicketId ?? null;
+        const previousEngineeringTicketId = wi.engineeringTicketId ?? null;
 
-        if (previousPdTicketId !== null) {
+        if (previousEngineeringTicketId !== null) {
           await db
             .update(workItems)
-            .set({ pdTicketId: null, updatedAt: new Date() })
+            .set({ engineeringTicketId: null, updatedAt: new Date() })
             .where(eq(workItems.id, workItemId));
         }
 
@@ -294,12 +332,19 @@ export function registerAdminWorkItemLinkageRoutes(app: Express) {
           entityId: String(workItemId),
           action: "linkage_repair_standalone",
           changesJson: {
-            previousPdTicketId,
+            previousEngineeringTicketId,
             projectId: wi.projectId ?? null,
           },
         });
 
-        res.json({ ok: true, workItemId, previousPdTicketId });
+        // Task #61: emit canonical + legacy keys.
+        res.json({
+          ok: true,
+          workItemId,
+          previousEngineeringTicketId,
+          /** @deprecated use `previousEngineeringTicketId` */
+          previousPdTicketId: previousEngineeringTicketId,
+        });
       } catch (err: any) {
         console.error("[admin-work-item-linkage] standalone failed:", err);
         res.status(500).json({ error: "Failed to convert work item to standalone" });

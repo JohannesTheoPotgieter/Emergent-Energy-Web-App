@@ -343,8 +343,8 @@ export default function PdDashboardPage() {
       data-testid="pd-dashboard"
       header={
         <PageHeader
-          title="Project Development"
-          subtitle="Operational control tower — what needs PD action today, and where handover and cross-team flow is breaking down."
+          title="Engineering & Quality"
+          subtitle="Operational control tower — what engineering and quality tickets need action today, and where handover and cross-team flow is breaking down."
           actions={
             <Link href="/opportunities">
               <Button variant="outline" size="sm" className="gap-2" data-testid="link-working-list">
@@ -747,8 +747,12 @@ type WorkspaceRollupResponse = {
     projects: number;
     spineGap: number;
     cascadeAnomalies: number;
-    openPdTickets: number;
-    overduePdTickets: number;
+    /** @deprecated use `openEngineeringTickets` (task #61) */
+    openPdTickets?: number;
+    /** @deprecated use `overdueEngineeringTickets` (task #61) */
+    overduePdTickets?: number;
+    openEngineeringTickets: number;
+    overdueEngineeringTickets: number;
     openWorkItems: number;
     blockedWorkItems: number;
     overdueWorkItems: number;
@@ -771,7 +775,9 @@ type WorkspaceRollupResponse = {
     projectName: string;
     phase: string | null;
     opportunityStage: string | null;
-    pdTickets: { total: number; open: number; completed: number; overdue: number; oldestOpenAt: string | null };
+    /** @deprecated use `engineeringTickets` (task #61) */
+    pdTickets?: { total: number; open: number; completed: number; overdue: number; oldestOpenAt: string | null };
+    engineeringTickets: { total: number; open: number; completed: number; overdue: number; oldestOpenAt: string | null };
     workItems: { total: number; open: number; completed: number; blocked: number; overdue: number };
     raid: { open: number };
     ragStatus: string | null;
@@ -788,8 +794,8 @@ function MeetingViewSection() {
   const sortedRows = useMemo(() => {
     if (!data) return [];
     return [...data.rows].sort((a, b) => {
-      const aSpan = a.workItems.overdue + a.pdTickets.overdue + a.workItems.blocked + (a.spineGap ? 100 : 0);
-      const bSpan = b.workItems.overdue + b.pdTickets.overdue + b.workItems.blocked + (b.spineGap ? 100 : 0);
+      const aSpan = a.workItems.overdue + a.engineeringTickets.overdue + a.workItems.blocked + (a.spineGap ? 100 : 0);
+      const bSpan = b.workItems.overdue + b.engineeringTickets.overdue + b.workItems.blocked + (b.spineGap ? 100 : 0);
       return bSpan - aSpan;
     });
   }, [data]);
@@ -836,9 +842,9 @@ function MeetingViewSection() {
       <CardContent>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 text-xs">
           <div data-testid="rollup-total-open-pd-tickets" className="rounded-md bg-muted/40 p-2">
-            <p className="text-muted-foreground">Open PD tickets</p>
-            <p className="text-lg font-semibold">{data.totals.openPdTickets}</p>
-            <p className="text-[10px] text-amber-700">{data.totals.overduePdTickets} overdue</p>
+            <p className="text-muted-foreground">Open engineering tickets</p>
+            <p className="text-lg font-semibold">{data.totals.openEngineeringTickets}</p>
+            <p className="text-[10px] text-amber-700">{data.totals.overdueEngineeringTickets} overdue</p>
           </div>
           <div data-testid="rollup-total-work-items" className="rounded-md bg-muted/40 p-2">
             <p className="text-muted-foreground">Open work items</p>
@@ -852,7 +858,7 @@ function MeetingViewSection() {
           <div data-testid="rollup-spine-gap" className={`rounded-md p-2 ${data.totals.spineGap > 0 ? "bg-rose-50" : "bg-muted/40"}`}>
             <p className="text-muted-foreground">Spine gaps</p>
             <p className={`text-lg font-semibold ${data.totals.spineGap > 0 ? "text-rose-700" : ""}`}>{data.totals.spineGap}</p>
-            <p className="text-[10px] text-muted-foreground">work_items but no PD ticket</p>
+            <p className="text-[10px] text-muted-foreground">work_items but no engineering ticket</p>
             <Link
               href="/admin/work-item-linkage"
               className="text-[10px] text-emerald-700 underline hover:no-underline"
@@ -868,7 +874,7 @@ function MeetingViewSection() {
               <tr className="text-left text-muted-foreground border-b">
                 <th className="py-2 pr-3">Project</th>
                 <th className="py-2 pr-3">Phase</th>
-                <th className="py-2 pr-3 text-right">PD tickets</th>
+                <th className="py-2 pr-3 text-right">Eng. tickets</th>
                 <th className="py-2 pr-3 text-right">Work items</th>
                 <th className="py-2 pr-3 text-right">RAID</th>
                 <th className="py-2 pr-3">Flags</th>
@@ -884,9 +890,9 @@ function MeetingViewSection() {
                   </td>
                   <td className="py-2 pr-3 text-muted-foreground">{r.phase || "—"}</td>
                   <td className="py-2 pr-3 text-right">
-                    <span data-testid={`text-pd-open-${r.projectId}`}>{r.pdTickets.open}</span>
-                    {r.pdTickets.overdue > 0 && (
-                      <span className="ml-1 text-amber-700" data-testid={`text-pd-overdue-${r.projectId}`}>({r.pdTickets.overdue} od)</span>
+                    <span data-testid={`text-pd-open-${r.projectId}`}>{r.engineeringTickets.open}</span>
+                    {r.engineeringTickets.overdue > 0 && (
+                      <span className="ml-1 text-amber-700" data-testid={`text-pd-overdue-${r.projectId}`}>({r.engineeringTickets.overdue} od)</span>
                     )}
                   </td>
                   <td className="py-2 pr-3 text-right">
@@ -922,13 +928,13 @@ function MeetingViewSection() {
           <div className="mt-6 space-y-3">
             <RiskList
               testId="risk-projects-without-tickets"
-              title="Projects without PD tickets"
+              title="Projects without engineering tickets"
               count={data.lists.projectsWithoutTickets.length}
               items={data.lists.projectsWithoutTickets.map((p) => ({ id: p.id, label: p.projectName || `#${p.id}` }))}
             />
             <RiskList
               testId="risk-tickets-invalid-linkage"
-              title="PD tickets with invalid linkage"
+              title="Engineering tickets with invalid linkage"
               count={data.lists.ticketsWithoutValidLinkage.length}
               items={data.lists.ticketsWithoutValidLinkage.map((t) => ({
                 id: t.id,
@@ -943,7 +949,7 @@ function MeetingViewSection() {
             />
             <RiskList
               testId="risk-tickets-due-this-week"
-              title="PD tickets due this week"
+              title="Engineering tickets due this week"
               count={data.lists.ticketsDueThisWeek.length}
               items={data.lists.ticketsDueThisWeek.map((t) => ({
                 id: t.id,

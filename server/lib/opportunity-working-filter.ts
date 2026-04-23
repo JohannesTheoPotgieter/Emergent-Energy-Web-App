@@ -6,8 +6,12 @@
  * - signedDate can be null even when stage/status imply terminal state.
  *
  * Rule summary:
- *  - INCLUDE only active/open pipedrive opportunities.
- *  - EXCLUDE lost, won/signed/closed, and converted opportunities.
+ *  - INCLUDE active/open pipedrive opportunities, **including** those
+ *    already linked to a project (so converting a deal to a project
+ *    no longer makes the opportunity disappear from the working list —
+ *    the linked project is surfaced as a chip in the UI instead).
+ *  - EXCLUDE lost and won/signed/closed opportunities (genuinely
+ *    terminal states).
  */
 
 export interface OpportunityWorkingFilterInput {
@@ -43,14 +47,16 @@ export function isActivePdWorkingOpportunity(input: OpportunityWorkingFilterInpu
   const source = norm(input.source);
   const status = norm(input.status);
   const stage = norm(input.stage);
-  const hasLinkedProject = Boolean(input.hasLinkedProject);
 
   // Working list is for CRM-synced pipeline only.
   if (source !== "pipedrive") return false;
 
-  // Converted deals already have a linked project and must not appear in
-  // the working list.
-  if (hasLinkedProject) return false;
+  // NOTE: a linked project is intentionally NOT a hide-reason. An
+  // opportunity that has spawned a project is still active business —
+  // PD owners need it to stay visible (with a "Linked: <project>"
+  // chip in the UI) so they can keep working it. Hiding on link was
+  // previously surprising users (deals "vanished" the moment a
+  // project was created from them).
 
   // Terminal outcomes: any explicit won/lost/closed marker excludes.
   if (isOpportunityIntakeTerminal({ status: input.status, stage: input.stage, signedDate: input.signedDate })) return false;

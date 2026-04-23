@@ -274,3 +274,159 @@ log alongside the view event.
 * Workspace `pdTicketTaskRows` returns real counts: confirmed.
 * Rollup endpoint live and audit-logged: confirmed.
 * Meeting view UI live in PD dashboard: confirmed.
+
+## Vocabulary update — 2026-04-23 (task #56, phase 1)
+
+The user-facing term **"PD ticket"** has been retired. Tickets surface
+as either **Engineering tickets** or **Quality tickets** depending on
+their `request_type`:
+
+* `request_type ∈ ENGINEERING_REQUEST_TYPES` (see
+  `shared/roles/pd-roles.ts`) → **Engineering ticket**
+* anything else → **Quality ticket**
+
+Helper: `getTicketKind(ticket)` in `shared/lib/ticket-kind.ts`.
+
+This is **phase 1 — vocabulary only**. The underlying table is still
+named `pd_tickets` and `work_items.pd_ticket_id` is unchanged. The
+following Phase 2 changes are explicitly out of scope and tracked
+separately:
+
+* Renaming the `pd_tickets` table or `work_items.pd_ticket_id` FK.
+* Splitting `pd_tickets` into two physical tables.
+* Removing the lazy-shadow ticket creation in
+  `opportunities-repository.ts`.
+
+### API payload aliases (additive, non-breaking)
+
+`GET /api/project-development/workspace/rollup` now returns the same
+data under both the old and new keys for one release:
+
+* `totals.openPdTickets` (old) **and** `totals.openEngineeringTickets`
+  (new) — same number.
+* `totals.overduePdTickets` (old) **and**
+  `totals.overdueEngineeringTickets` (new) — same number.
+* Each row in `rows[]` includes both `pdTickets` (old) and
+  `engineeringTickets` (new), pointing at the same `{ open, overdue }`
+  block.
+
+Old keys remain so Excel/Power BI consumers don't break. They will be
+removed in a follow-up release once consumers have switched.
+
+### UI nav rename
+
+* Sidebar / breadcrumb section "Project Development" → **Engineering
+  & Quality**.
+* `/pd` page title "Project Development" → **Engineering & Quality**.
+* `/pd` aliases extended: `/engineering-board` and
+  `/engineering-dashboard` both redirect to `/pd`. The primary path
+  stays `/pd` for one release so audit URLs and bookmarks keep
+  working.
+* The role/department label "Project Development" (used to describe
+  the *organisational department* that owns the PD workflow) is
+  **kept as-is**. Only the *ticket vocabulary* and the *page section
+  name* changed.
+
+### Server route URLs
+
+Server routes under `/api/pd/*`, `/api/pd-pm-handover/*`, and
+`/api/project-development/workspace/*` were **unchanged in phase 1** to
+avoid the risk of 308-redirect-on-POST issues with non-GET methods.
+
+Phase-3 follow-up (task #61) dual-mounts the ticket and handover paths
+under engineering-themed URLs without using HTTP redirects — the
+`server/middleware/legacy-url-aliases.ts` middleware rewrites incoming
+URLs in-process so cookies, CSRF state, and POST bodies all survive:
+
+  * `/api/engineering-tickets/*`     → handlers under `/api/pd/tickets/*`
+  * `/api/engineering-pm-handover/*` → handlers under `/api/pd-pm-handover/*`
+
+Whenever the legacy `/api/pd/tickets/*` or `/api/pd-pm-handover/*`
+prefixes are hit, a one-shot `[deprecated-url]` warning is logged
+(de-duplicated per method+prefix per process) so we can monitor
+residual traffic before retiring the legacy URLs in a later release.
+
+The `/api/project-development/workspace/*` rollup URL is unchanged —
+its response payload now emits both the legacy `pdTickets` block and
+the canonical `engineeringTickets` block on every row and on the
+totals object (same numbers, friendlier key).
+
+## Phase 2 — schema-side rename (task #58, migrations 0024 + 0025)
+
+After phase 1 (task #56) settled the user-facing vocabulary on
+"Engineering tickets", the schema caught up so the codebase itself stops
+using the legacy `pd_tickets` / `pd_ticket_id` symbols. Two
+hand-authored, idempotent migrations land the rollout:
+
+* `migrations/0024_engineering_tickets_view_alias.sql` — additive.
+  Creates `engineering_tickets` as an auto-updatable VIEW over
+  `pd_tickets`, plus a parallel `work_items.engineering_ticket_id`
+  STORED generated column derived from `pd_ticket_id`. Existing reads
+  and writes through the old names continue unchanged.
+* `migrations/0025_engineering_tickets_physical_rename.sql` — flip.
+  Drops the additive aliases, renames `pd_tickets` →
+  `engineering_tickets` (table, sequence, indexes, constraints), and
+  renames `work_items.pd_ticket_id` → `engineering_ticket_id` (FK from
+  migration 0019 retained, renamed to
+  `work_items_engineering_ticket_id_fkey`). Recreates the soft-delete
+  reject trigger from migration 0021 under the new column name. The
+  legacy names are republished as backwards-compat aliases (VIEW
+  `pd_tickets`; STORED generated column `work_items.pd_ticket_id`),
+  scheduled for removal one release later.
+
+Drizzle was updated in lockstep:
+
+* `shared/schema/projects.ts` exports `engineeringTickets` /
+  `EngineeringTicket` / `insertEngineeringTicketSchema` and re-exports
+  the old `pdTickets` / `PdTicket` / `insertPdTicketSchema` symbols as
+  aliases for one release.
+* `shared/schema/tasks.ts` renamed `workItems.pdTicketId` →
+  `workItems.engineeringTicketId` (column `engineering_ticket_id`).
+  The matching partial index follows the new name.
+* All server queries that read `pdTickets.*` were switched to
+  `engineeringTickets.*`. API response payload keys (`pdTickets:`,
+  `pdTicketId:`) are unchanged from phase 1 — clients still see both
+  the legacy and the new keys.
+
+Release-gate parity is asserted by
+`qa/tests/integration/foundation-linkage-cascades.test.ts`, which now
+covers both the legacy and new table/column names and confirms every
+`work_items.pd_ticket_id` value matches `engineering_ticket_id`.
+
+## Phase 2 cleanup — drop legacy aliases (task #60, migration 0026)
+
+After one full release on the dual-name setup from migration 0025,
+production telemetry confirmed zero traffic against the legacy
+`pd_tickets` / `pd_ticket_id` symbols. Migration
+`0026_drop_pd_tickets_legacy_aliases.sql` (hand-authored, idempotent)
+removes the remaining backwards-compat surface so future contributors
+are not misled by the duplication:
+
+* DROP VIEW `pd_tickets` (was a `SELECT * FROM engineering_tickets`).
+* DROP INDEX `idx_work_items_pd_ticket_id` (partial index on the
+  generated column).
+* DROP COLUMN `work_items.pd_ticket_id` (STORED generated from
+  `engineering_ticket_id`).
+* DROP FUNCTION `work_items_reject_softdeleted_pd_ticket()` — the
+  unreferenced PL/pgSQL function from migration 0021. Its trigger was
+  already replaced in migration 0025 by
+  `work_items_reject_softdeleted_engineering_ticket()`.
+
+Drizzle was updated in lockstep:
+
+* `shared/schema/projects.ts` no longer re-exports `pdTickets` /
+  `PdTicket` / `insertPdTicketSchema`. The single source of truth is
+  `engineeringTickets` / `EngineeringTicket` /
+  `insertEngineeringTicketSchema`.
+* `server/repositories/opportunities-repository.ts` switched the
+  remaining `PdTicket` type imports to `EngineeringTicket`.
+
+The Phase-2-rename alias-parity assertion in
+`qa/tests/integration/foundation-linkage-cascades.test.ts` was
+removed since the legacy names no longer exist; the soft-delete
+write-path guard against `engineering_tickets` /
+`engineering_ticket_id` continues to exercise the spine.
+
+API response payload keys (`pdTickets:`, `pdTicketId:`) are unrelated
+to this cleanup and remain in place — they belong to the Phase-1
+vocabulary rollout (task #56) and are tracked separately.

@@ -5,7 +5,7 @@ import { evaluatePermissionForRequest, logPermissionFailure } from "../permissio
 import { logAuditFromReq } from "../audit-logger";
 import { getProjectDevelopmentWorkspaceRollup } from "../services/project-development-workspace-service";
 import { db } from "../db";
-import { pdTickets, projectInfo, opportunities, workItems } from "@shared/schema";
+import { engineeringTickets, projectInfo, opportunities, workItems } from "@shared/schema";
 
 function parseDateParam(v: unknown): string | null {
   if (typeof v !== "string" || v.length === 0) return null;
@@ -67,11 +67,11 @@ export function registerProjectDevelopmentWorkspaceRollupRoutes(app: Express) {
           db
             .select({ n: sql<number>`COUNT(*)::int` })
             .from(workItems)
-            .innerJoin(pdTickets, and(eq(pdTickets.id, workItems.pdTicketId), isNull(pdTickets.deletedAt)))
-            .leftJoin(projectInfo, eq(projectInfo.id, pdTickets.projectId))
+            .innerJoin(engineeringTickets, and(eq(engineeringTickets.id, workItems.engineeringTicketId), isNull(engineeringTickets.deletedAt)))
+            .leftJoin(projectInfo, eq(projectInfo.id, engineeringTickets.projectId))
             .where(and(
               isNull(workItems.deletedAt),
-              sql`(${pdTickets.projectId} IS NULL OR ${projectInfo.deletedAt} IS NULL)`,
+              sql`(${engineeringTickets.projectId} IS NULL OR ${projectInfo.deletedAt} IS NULL)`,
             )),
         ]);
 
@@ -89,28 +89,28 @@ export function registerProjectDevelopmentWorkspaceRollupRoutes(app: Express) {
           db
             .select({ id: projectInfo.id, projectName: projectInfo.projectName })
             .from(projectInfo)
-            .leftJoin(pdTickets, and(eq(pdTickets.projectId, projectInfo.id), isNull(pdTickets.deletedAt)))
-            .where(and(isNull(projectInfo.deletedAt), isNull(pdTickets.id)))
+            .leftJoin(engineeringTickets, and(eq(engineeringTickets.projectId, projectInfo.id), isNull(engineeringTickets.deletedAt)))
+            .where(and(isNull(projectInfo.deletedAt), isNull(engineeringTickets.id)))
             .limit(500),
           db
             .select({
-              id: pdTickets.id,
-              projectSiteName: pdTickets.projectSiteName,
-              projectId: pdTickets.projectId,
-              opportunityId: pdTickets.opportunityId,
+              id: engineeringTickets.id,
+              projectSiteName: engineeringTickets.projectSiteName,
+              projectId: engineeringTickets.projectId,
+              opportunityId: engineeringTickets.opportunityId,
               projectDeletedAt: projectInfo.deletedAt,
               opportunityDeletedAt: opportunities.deletedAt,
             })
-            .from(pdTickets)
-            .leftJoin(projectInfo, eq(projectInfo.id, pdTickets.projectId))
-            .leftJoin(opportunities, eq(opportunities.id, pdTickets.opportunityId))
+            .from(engineeringTickets)
+            .leftJoin(projectInfo, eq(projectInfo.id, engineeringTickets.projectId))
+            .leftJoin(opportunities, eq(opportunities.id, engineeringTickets.opportunityId))
             .where(
               and(
-                isNull(pdTickets.deletedAt),
+                isNull(engineeringTickets.deletedAt),
                 sql`(
-                  (${pdTickets.projectId} IS NULL AND ${pdTickets.opportunityId} IS NULL)
-                  OR (${pdTickets.projectId} IS NOT NULL AND (${projectInfo.id} IS NULL OR ${projectInfo.deletedAt} IS NOT NULL))
-                  OR (${pdTickets.opportunityId} IS NOT NULL AND (${opportunities.id} IS NULL OR ${opportunities.deletedAt} IS NOT NULL))
+                  (${engineeringTickets.projectId} IS NULL AND ${engineeringTickets.opportunityId} IS NULL)
+                  OR (${engineeringTickets.projectId} IS NOT NULL AND (${projectInfo.id} IS NULL OR ${projectInfo.deletedAt} IS NOT NULL))
+                  OR (${engineeringTickets.opportunityId} IS NOT NULL AND (${opportunities.id} IS NULL OR ${opportunities.deletedAt} IS NOT NULL))
                 )`,
               ),
             )
@@ -122,31 +122,31 @@ export function registerProjectDevelopmentWorkspaceRollupRoutes(app: Express) {
               projectId: workItems.projectId,
             })
             .from(workItems)
-            .leftJoin(pdTickets, eq(pdTickets.id, workItems.pdTicketId))
+            .leftJoin(engineeringTickets, eq(engineeringTickets.id, workItems.engineeringTicketId))
             .where(
               and(
                 isNull(workItems.deletedAt),
-                sql`${workItems.pdTicketId} IS NOT NULL`,
-                sql`${pdTickets.id} IS NULL OR ${pdTickets.deletedAt} IS NOT NULL`,
+                sql`${workItems.engineeringTicketId} IS NOT NULL`,
+                sql`${engineeringTickets.id} IS NULL OR ${engineeringTickets.deletedAt} IS NOT NULL`,
               ),
             )
             .limit(500),
           db
             .select({
-              id: pdTickets.id,
-              projectSiteName: pdTickets.projectSiteName,
-              dueDate: pdTickets.dueDate,
-              projectId: pdTickets.projectId,
-              projectDeveloperUserId: pdTickets.projectDeveloperUserId,
+              id: engineeringTickets.id,
+              projectSiteName: engineeringTickets.projectSiteName,
+              dueDate: engineeringTickets.dueDate,
+              projectId: engineeringTickets.projectId,
+              projectDeveloperUserId: engineeringTickets.projectDeveloperUserId,
             })
-            .from(pdTickets)
-            .leftJoin(projectInfo, eq(projectInfo.id, pdTickets.projectId))
+            .from(engineeringTickets)
+            .leftJoin(projectInfo, eq(projectInfo.id, engineeringTickets.projectId))
             .where(
               and(
-                isNull(pdTickets.deletedAt),
-                sql`(${pdTickets.projectId} IS NULL OR ${projectInfo.deletedAt} IS NULL)`,
-                sql`${pdTickets.dueDate} IS NOT NULL AND ${pdTickets.dueDate} >= ${asOf} AND ${pdTickets.dueDate} <= ${weekIso}`,
-                ownerUserId ? eq(pdTickets.projectDeveloperUserId, ownerUserId) : sql`TRUE`,
+                isNull(engineeringTickets.deletedAt),
+                sql`(${engineeringTickets.projectId} IS NULL OR ${projectInfo.deletedAt} IS NULL)`,
+                sql`${engineeringTickets.dueDate} IS NOT NULL AND ${engineeringTickets.dueDate} >= ${asOf} AND ${engineeringTickets.dueDate} <= ${weekIso}`,
+                ownerUserId ? eq(engineeringTickets.projectDeveloperUserId, ownerUserId) : sql`TRUE`,
               ),
             )
             .limit(500),
@@ -156,17 +156,17 @@ export function registerProjectDevelopmentWorkspaceRollupRoutes(app: Express) {
               title: workItems.title,
               endDate: workItems.endDate,
               projectId: workItems.projectId,
-              pdTicketId: workItems.pdTicketId,
+              pdTicketId: workItems.engineeringTicketId,
               ownerUserId: workItems.ownerUserId,
             })
             .from(workItems)
-            .leftJoin(pdTickets, eq(pdTickets.id, workItems.pdTicketId))
+            .leftJoin(engineeringTickets, eq(engineeringTickets.id, workItems.engineeringTicketId))
             .leftJoin(projectInfo, eq(projectInfo.id, workItems.projectId))
             .where(
               and(
                 isNull(workItems.deletedAt),
                 sql`${workItems.endDate} IS NOT NULL AND ${workItems.endDate} >= ${asOf} AND ${workItems.endDate} <= ${weekIso}`,
-                sql`(${workItems.pdTicketId} IS NULL OR ${pdTickets.deletedAt} IS NULL)`,
+                sql`(${workItems.engineeringTicketId} IS NULL OR ${engineeringTickets.deletedAt} IS NULL)`,
                 sql`(${workItems.projectId} IS NULL OR ${projectInfo.deletedAt} IS NULL)`,
                 ownerUserId ? eq(workItems.ownerUserId, ownerUserId) : sql`TRUE`,
               ),
@@ -189,6 +189,17 @@ export function registerProjectDevelopmentWorkspaceRollupRoutes(app: Express) {
           },
         });
 
+        const openPdTickets = rollup.reduce((acc, r) => acc + r.pdTickets.open, 0);
+        const overduePdTickets = rollup.reduce((acc, r) => acc + r.pdTickets.overdue, 0);
+        // Vocabulary phase 1 (task #56): mirror each `engineeringTickets`-keyed
+        // row block as `engineeringTickets` so new clients can read the
+        // friendlier name. Old clients continue to read `engineeringTickets`. Both
+        // keys stay in the payload until the planned phase 2 cleanup.
+        const rowsWithKindAlias = rollup.map((r) => ({
+          ...r,
+          engineeringTickets: r.pdTickets,
+        }));
+
         res.json({
           generatedAt: new Date().toISOString(),
           asOf,
@@ -200,8 +211,12 @@ export function registerProjectDevelopmentWorkspaceRollupRoutes(app: Express) {
             projects: rollup.length,
             spineGap: spineGapCount,
             cascadeAnomalies: cascadeAnomalyCount,
-            openPdTickets: rollup.reduce((acc, r) => acc + r.pdTickets.open, 0),
-            overduePdTickets: rollup.reduce((acc, r) => acc + r.pdTickets.overdue, 0),
+            openPdTickets,
+            overduePdTickets,
+            // Phase-1 vocabulary aliases — see comment above. Same numbers,
+            // friendlier key. Old keys remain.
+            openEngineeringTickets: openPdTickets,
+            overdueEngineeringTickets: overduePdTickets,
             openWorkItems: rollup.reduce((acc, r) => acc + r.workItems.open, 0),
             blockedWorkItems: rollup.reduce((acc, r) => acc + r.workItems.blocked, 0),
             overdueWorkItems: rollup.reduce((acc, r) => acc + r.workItems.overdue, 0),
@@ -212,7 +227,7 @@ export function registerProjectDevelopmentWorkspaceRollupRoutes(app: Express) {
             ticketsWithoutValidLinkage: ticketsWithoutValidLinkageRows.length,
             workItemsWithInvalidLinkage: workItemsWithInvalidLinkageRows.length,
           },
-          rows: rollup,
+          rows: rowsWithKindAlias,
           lists: {
             projectsWithoutTickets: projectsWithoutTicketsRows,
             ticketsWithoutValidLinkage: ticketsWithoutValidLinkageRows,
