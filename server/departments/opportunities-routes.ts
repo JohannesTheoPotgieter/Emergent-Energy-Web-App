@@ -255,22 +255,9 @@ router.get("/api/opportunities/working", requireAuth, requirePermission("opportu
  */
 // ============================================================================
 // /api/pd/dashboard — App-internal Project Development dashboard.
-//
-// Reframed in task #71 (2026-04-23). Previously this endpoint surfaced
-// Pipedrive-synced commercial vanity (deal_name, deal_owner_name, stage,
-// estimated_value, win/loss). Those numbers belonged to the CRM mirror, not
-// to PD operational signal, and one of the SQL blocks still referenced the
-// legacy `pd_tickets` table that was renamed to `engineering_tickets` by
-// migrations 0024–0026, producing a hard 500 on every load.
-//
-// The new contract is built entirely from app-internal tables —
-// engineering_tickets, work_items, project_info, project_execution_state,
-// raid_items, users — and ranks the things a PD lead actually needs to see:
-// open / overdue / stale / blocked tickets, work-item action queue,
-// recently completed work, upcoming deadlines, at-risk tickets, handover-
-// ready projects (canonical phase band S08–S10), and linkage gaps.
-// All drilldowns now point at /engineering/tickets, /engineering/tasks, and
-// /project/<name> — never back at /opportunities or Pipedrive.
+// Task #71: app-internal sources (engineering_tickets, work_items, project_info,
+// project_execution_state, raid_items, om_handovers, users). Drilldowns target
+// /engineering/tickets, /engineering/tasks, /project/<name>.
 // ============================================================================
 router.get("/api/pd/dashboard", requireAuth, requirePermission("pd_dashboard", "view"), async (_req: Request, res: Response) => {
   try {
@@ -469,13 +456,12 @@ router.get("/api/pd/dashboard", requireAuth, requirePermission("pd_dashboard", "
           COUNT(*) FILTER (
             WHERE w.wi_id IS NOT NULL
               AND LOWER(COALESCE(w.status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done')
-              AND w.end_date IS NOT NULL AND w.end_date < CURRENT_DATE
+              AND NULLIF(w.end_date, '') IS NOT NULL
+              AND NULLIF(w.end_date, '')::date < CURRENT_DATE
           ) AS overdue_work_items
         FROM (
-          -- Outer set: every active-ticket phase appears at least once
-          -- so phases with zero work items still get a row (with the
-          -- ticket count from ticket_phase). The placeholder rows are
-          -- distinguished from real work items by (w.wi_id IS NULL).
+          -- Synthetic placeholder per phase keeps zero-work-item phases visible;
+          -- gated out of every COUNT FILTER above via (w.wi_id IS NOT NULL).
           SELECT code, NULL::int AS wi_id, NULL::text AS status, NULL::text AS end_date FROM ticket_phase
           UNION ALL
           SELECT code, wi_id, status, end_date FROM wi_rollup
@@ -659,16 +645,11 @@ router.get("/api/pd/dashboard", requireAuth, requirePermission("pd_dashboard", "
         ORDER BY (COALESCE(rw.red_count, 0) + COALESCE(cr.crit_count, 0)) DESC
         LIMIT 10
       `),
-      // Linkage gaps — four categories of spine breakage between
-      // opportunities, engineering tickets, and projects. Returned as
-      // one flat list with a `kind` discriminator. The first two kinds
-      // are kept mutually exclusive (a completed ticket without a
-      // project goes into completed_no_project, never into unlinked).
-      //
-      //   (a) unlinked_ticket       — active ticket with no project_id and no opportunity_id
-      //   (b) completed_no_project  — completed ticket with no project_id
-      //   (c) won_no_project        — opportunity with status='won' and no project_info row
-      //   (d) project_no_tickets    — active project with zero engineering tickets
+      // Linkage gaps: spine breakage between opportunities, tickets, projects.
+      //   unlinked_ticket / completed_no_project / won_no_project / project_no_tickets.
+      // For won_no_project the label is the opportunity's own name column
+      // (opportunities.deal_name is the canonical opportunity name post-merge,
+      // task #61); falls back to person_name then a synthetic id.
       db.execute(sql`
         SELECT 'unlinked_ticket' AS kind, et.id AS id, et.project_site_name AS label
         FROM engineering_tickets et
@@ -683,7 +664,8 @@ router.get("/api/pd/dashboard", requireAuth, requirePermission("pd_dashboard", "
           AND et.project_id IS NULL
           AND LOWER(COALESCE(et.status, '')) IN ('completed', 'complete', 'closed', 'resolved', 'done')
         UNION ALL
-        SELECT 'won_no_project' AS kind, opp.id AS id, opp.deal_name AS label
+        SELECT 'won_no_project' AS kind, opp.id AS id,
+               COALESCE(NULLIF(TRIM(opp.deal_name), ''), NULLIF(TRIM(opp.person_name), ''), 'Opportunity #' || opp.id) AS label
         FROM opportunities opp
         WHERE opp.deleted_at IS NULL
           AND LOWER(COALESCE(opp.status, '')) = 'won'
