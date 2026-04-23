@@ -186,14 +186,27 @@ export function OpportunitiesCalendar({
 }) {
   const [cursor, setCursor] = useState(() => startOfMonth(new Date()));
 
-  // Bucket events by yyyy-mm-dd of expectedCloseDate
+  // Calendar shows TWO event types per opportunity:
+  //   - "sig"  → expectedCloseDate (Expected Signature Date)
+  //   - "next" → nextActivityDate  (Next Action Date)
+  // A single opportunity can therefore appear on two days (or twice on
+  // the same day). Each event is rendered with its own colour so users
+  // can tell them apart at a glance.
+  type CalEventKind = "sig" | "next";
+  type CalEvent = { kind: CalEventKind; row: OpportunityCardRow };
   const eventsByDay = useMemo(() => {
-    const map = new Map<string, OpportunityCardRow[]>();
-    for (const r of rows) {
-      if (!r.expectedCloseDate) continue;
-      const key = String(r.expectedCloseDate).slice(0, 10);
+    const map = new Map<string, CalEvent[]>();
+    const push = (key: string, ev: CalEvent) => {
       if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(r);
+      map.get(key)!.push(ev);
+    };
+    for (const r of rows) {
+      if (r.expectedCloseDate) {
+        push(String(r.expectedCloseDate).slice(0, 10), { kind: "sig", row: r });
+      }
+      if (r.nextActivityDate) {
+        push(String(r.nextActivityDate).slice(0, 10), { kind: "next", row: r });
+      }
     }
     return map;
   }, [rows]);
@@ -216,7 +229,10 @@ export function OpportunitiesCalendar({
     return cells;
   }, [cursor]);
 
-  const undated = useMemo(() => rows.filter((r) => !r.expectedCloseDate), [rows]);
+  const undated = useMemo(
+    () => rows.filter((r) => !r.expectedCloseDate && !r.nextActivityDate),
+    [rows],
+  );
   const today = new Date();
   const monthLabel = `${MONTH_LABEL[cursor.getMonth()]} ${cursor.getFullYear()}`;
 
@@ -226,7 +242,17 @@ export function OpportunitiesCalendar({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <CalendarIcon className="h-4 w-4 text-emerald-600" />
-          <h3 className="text-sm font-semibold text-slate-800">Est. Signature Calendar</h3>
+          <h3 className="text-sm font-semibold text-slate-800">Opportunity Calendar</h3>
+          <div className="flex items-center gap-3 ml-3 text-[10px] text-slate-600">
+            <span className="inline-flex items-center gap-1">
+              <span className="inline-block h-2 w-2 rounded-sm bg-emerald-500" />
+              Est. Signature
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span className="inline-block h-2 w-2 rounded-sm bg-amber-500" />
+              Next Action
+            </span>
+          </div>
         </div>
         <div className="flex items-center gap-1">
           <Button size="sm" variant="outline" className="h-7 px-2" aria-label="Previous month" onClick={() => setCursor((c) => addMonths(c, -1))} data-testid="btn-cal-prev">
@@ -264,17 +290,24 @@ export function OpportunitiesCalendar({
                 {d.getDate()}
               </div>
               <div className="space-y-0.5">
-                {events.slice(0, 3).map((e) => (
-                  <button
-                    key={e.id}
-                    onClick={() => onEventClick(e.id)}
-                    className="w-full text-left text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 hover:bg-emerald-200 truncate font-medium"
-                    title={`${e.dealName} — ${formatZAR(e.estimatedValue)}`}
-                    data-testid={`cal-event-${e.id}`}
-                  >
-                    {e.dealName || `Deal #${e.id}`}
-                  </button>
-                ))}
+                {events.slice(0, 3).map((e, idx) => {
+                  const kindClasses =
+                    e.kind === "sig"
+                      ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
+                      : "bg-amber-100 text-amber-800 hover:bg-amber-200";
+                  const kindLabel = e.kind === "sig" ? "Est. Signature" : "Next Action";
+                  return (
+                    <button
+                      key={`${e.row.id}-${e.kind}-${idx}`}
+                      onClick={() => onEventClick(e.row.id)}
+                      className={`w-full text-left text-[10px] px-1.5 py-0.5 rounded truncate font-medium ${kindClasses}`}
+                      title={`${kindLabel} — ${e.row.dealName} — ${formatZAR(e.row.estimatedValue)}`}
+                      data-testid={`cal-event-${e.kind}-${e.row.id}`}
+                    >
+                      {e.row.dealName || `Deal #${e.row.id}`}
+                    </button>
+                  );
+                })}
                 {events.length > 3 && (
                   <p className="text-[9px] text-slate-500 px-1">+{events.length - 3} more</p>
                 )}
