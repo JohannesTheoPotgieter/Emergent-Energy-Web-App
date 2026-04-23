@@ -336,12 +336,13 @@ router.get("/api/pd/dashboard", requireAuth, requirePermission("pd_dashboard", "
           ) AS open_work_items,
           COUNT(*) FILTER (
             WHERE LOWER(COALESCE(status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done')
-              AND end_date IS NOT NULL AND end_date < CURRENT_DATE
+              AND NULLIF(end_date, '') IS NOT NULL
+              AND NULLIF(end_date, '')::date < CURRENT_DATE
           ) AS overdue_work_items,
           COUNT(*) FILTER (
             WHERE LOWER(COALESCE(status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done')
-              AND end_date IS NOT NULL
-              AND end_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
+              AND NULLIF(end_date, '') IS NOT NULL
+              AND NULLIF(end_date, '')::date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
           ) AS due_this_week_work_items,
           COUNT(*) FILTER (
             WHERE LOWER(COALESCE(status, '')) IN ('completed', 'complete', 'closed', 'resolved', 'done')
@@ -532,7 +533,7 @@ router.get("/api/pd/dashboard", requireAuth, requirePermission("pd_dashboard", "
             wi.updated_at,
             COALESCE(NULLIF(TRIM(u.name), ''), NULLIF(TRIM(wi.owner_name), ''), 'Unassigned') AS owner,
             CASE
-              WHEN wi.end_date IS NOT NULL AND wi.end_date < CURRENT_DATE THEN 'overdue'
+              WHEN NULLIF(wi.end_date, '') IS NOT NULL AND NULLIF(wi.end_date, '')::date < CURRENT_DATE THEN 'overdue'
               WHEN LOWER(COALESCE(wi.status, '')) IN ('hold', 'blocked', 'on_hold') THEN 'on_hold'
               WHEN wi.updated_at < NOW() - INTERVAL '30 days' THEN 'stale_30d'
               WHEN LOWER(COALESCE(wi.priority, '')) IN ('high', 'critical') AND wi.updated_at < NOW() - INTERVAL '7 days' THEN 'high_priority_quiet'
@@ -598,9 +599,9 @@ router.get("/api/pd/dashboard", requireAuth, requirePermission("pd_dashboard", "
         WHERE wi.deleted_at IS NULL
           AND wi.engineering_ticket_id IS NOT NULL
           AND LOWER(COALESCE(wi.status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done')
-          AND wi.end_date IS NOT NULL
-          AND wi.end_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
-        ORDER BY wi.end_date ASC
+          AND NULLIF(wi.end_date, '') IS NOT NULL
+          AND NULLIF(wi.end_date, '')::date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
+        ORDER BY NULLIF(wi.end_date, '')::date ASC
         LIMIT 10
       `),
       // At-risk tickets — engineering tickets that have either:
