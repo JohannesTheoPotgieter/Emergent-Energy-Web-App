@@ -40,6 +40,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { OPPORTUNITY_INTAKE_VIEW_ROLES } from "@shared/roles/pd-roles";
+import { PHASE_LABELS } from "@shared/phases";
 import { statusColorClasses, priorityColorClasses } from "@/lib/status-colors";
 import { useTablePagination } from "@/hooks/use-table-pagination";
 import { TablePagination } from "@/components/ui/table-pagination";
@@ -1390,7 +1391,16 @@ export default function OpportunitiesPage() {
                       </div>
                       <div className="space-y-1">
                         <Label className="text-xs">Phase <span className="text-red-600">*</span></Label>
-                        <Input value={dlg.customPhase} onChange={(e) => updateDlg({ customPhase: e.target.value })} placeholder="e.g. First Assessment" data-testid="input-custom-phase" />
+                        <select
+                          className="w-full border rounded-md h-9 px-2 text-sm bg-white"
+                          value={dlg.customPhase}
+                          onChange={(e) => updateDlg({ customPhase: e.target.value })}
+                          data-testid="select-custom-phase"
+                        >
+                          {PHASE_LABELS.map((label) => (
+                            <option key={label} value={label}>{label}</option>
+                          ))}
+                        </select>
                       </div>
                       <div className="space-y-1">
                         <Label className="text-xs">Description / Scope <span className="text-red-600">*</span></Label>
