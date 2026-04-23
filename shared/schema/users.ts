@@ -266,7 +266,8 @@ export type PermissionEntity = 'projects' | 'financials' | 'quality' | 'hse' | '
   | 'stage_gate' | 'exception' | 'stage_config' | 'gate_override'
   | 'project_charter' | 'client_update' | 'handover_acceptance'
   | 'performance' | 'project_access_mgmt'
-  | 'hse_dashboard' | 'hse_compliance' | 'hse_sseg' | 'hse_incidents';
+  | 'hse_dashboard' | 'hse_compliance' | 'hse_sseg' | 'hse_incidents'
+  | 'company_team';
 export type PermissionAction = 'view' | 'create' | 'edit' | 'approve' | 'override' | 'delete';
 export const AUTHORITY_ACTIONS = [
   'view',
@@ -787,6 +788,15 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+  },
+  {
+    entity: 'company_team',
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'ENGINEERING_MANAGER', 'QUALITY_MANAGER', 'HSE_MANAGER', 'SSEG_MANAGER'],
+    create_roles: [],
+    edit_roles: [],
+    approve_roles: [],
+    override_roles: [],
+    delete_roles: [],
   },
   {
     entity: 'portfolios',

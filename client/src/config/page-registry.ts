@@ -86,6 +86,7 @@ export const LEGACY_REDIRECTS: Array<{ path: string; redirectTo: string }> = [
 
 export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "companyOverview", path: "/company-overview", label: "Company Overview", iconKey: "Activity", navGroup: "PORTFOLIO", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "CompanyOverviewPage" },
+  { id: "companyTeam", path: "/company/team", label: "Team", iconKey: "Users", navGroup: "PORTFOLIO", permissionEntity: "company_team", showInSidebar: true, routeComponentKey: "CompanyTeamPage" },
   { id: "ceoHome", path: "/ceo", label: "CEO Dashboard", iconKey: "Sun", navGroup: "MY_WORK", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "CeoHomePage", roleLandingEligibility: ["CEO_ADMIN"] },
   { id: "cooHome", path: "/coo", label: "COO Dashboard", iconKey: "Activity", navGroup: "MY_WORK", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "CooHomePage", roleLandingEligibility: ["COO_ADMIN"] },
   { id: "settingsHome", path: "/settings", label: "Settings", iconKey: "SlidersHorizontal", navGroup: "SYSTEM", permissionEntity: "admin_roles", showInSidebar: true, routeComponentKey: "SettingsHomePage" },

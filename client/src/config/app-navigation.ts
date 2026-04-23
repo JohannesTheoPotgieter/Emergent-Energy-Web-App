@@ -69,12 +69,14 @@ export const TOP_SECTIONS: TopSection[] = [
     path: "/lifecycle-board",
     match: (pathname) => startsWithAny(pathname, [
       "/company-overview",
+      "/company/team",
       "/lifecycle-board",
       "/gates", "/exceptions",
       "/project-lifecycle",
     ]) && !matchesPathPrefix(pathname, "/gates/commitments"),
     secondary: [
       { label: "Company Overview", path: "/company-overview" },
+      { label: "Team", path: "/company/team" },
       { label: "Lifecycle Board", path: "/lifecycle-board" },
       { label: "Gate Tracker", path: "/gates" },
       { label: "Blocked Gates", path: "/gates/blocked" },

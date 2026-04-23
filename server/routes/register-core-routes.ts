@@ -67,4 +67,10 @@ export async function registerCoreRoutes(app: Express) {
   } catch (err: unknown) {
     console.error("[Startup:Routes] Failed to register Company Overview routes:", (err instanceof Error ? err.message : String(err)));
   }
+  try {
+    const { registerCompanyTeamRoutes } = await import("./company-team-routes");
+    registerCompanyTeamRoutes(app);
+  } catch (err: unknown) {
+    console.error("[Startup:Routes] Failed to register Company Team routes:", (err instanceof Error ? err.message : String(err)));
+  }
 }
