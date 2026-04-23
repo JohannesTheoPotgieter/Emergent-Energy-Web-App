@@ -691,11 +691,23 @@ export async function syncSingleDeal(
   }
 
   if (!existing) {
-    await db.insert(opportunities).values({
+    // Auto-creation gate: stage the new opportunity in the Pending Approval
+    // inbox instead of inserting directly. A user must release it from
+    // /pending-approvals before it appears as an opportunity. Re-running
+    // the sync before the proposal is decided is a no-op (deduped by
+    // (kind, source_ref) partial unique index in migration 0028).
+    const { proposeApproval } = await import("./pending-approvals-service");
+    const proposalPayload = {
       ...safePayload,
-      // Seed `notes` once on create so the row is recognisable in legacy
-      // surfaces. `notes` is app-owned thereafter.
       notes: `Pipedrive: ${deal.title || `Deal ${deal.id}`}`,
+    };
+    await proposeApproval({
+      kind: "pipedrive_opportunity_create",
+      targetTable: "opportunities",
+      summary: `Pipedrive deal #${deal.id}: ${deal.title || "(untitled)"}`,
+      payload: proposalPayload as Record<string, unknown>,
+      sourceLabel: "system:pipedrive-sync",
+      sourceRef: `pipedrive:${deal.id}`,
     });
     result.dealsCreated++;
     return;

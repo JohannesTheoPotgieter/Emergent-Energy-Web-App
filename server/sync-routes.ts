@@ -243,10 +243,22 @@ export function registerSyncRoutes(app: Express) {
             if (existing.length > 0) {
               projectId = existing[0].id;
             } else {
+              // Auto-creation gate: stage the new project shell in the
+              // Pending Approval inbox instead of creating it now. Until
+              // a user releases it, downstream intake_requests for this
+              // SharePoint item are also gated (see below) — both rows
+              // need to be released before either is live.
+              const { proposeApproval } = await import("./services/pending-approvals-service");
               const syncInsertFields = { projectName: clientName, phase: "First Assessment", isActive: true };
-              const [newProj] = await db.insert(projectInfo).values(syncInsertFields).returning();
-              await syncProjectSplitTablesAfterInsert(newProj.id, syncInsertFields);
-              projectId = newProj.id;
+              await proposeApproval({
+                kind: "sharepoint_project_shell_create",
+                targetTable: "project_info",
+                summary: `New project shell from SharePoint: ${clientName}`,
+                payload: syncInsertFields as Record<string, unknown>,
+                sourceLabel: "system:sharepoint-pull",
+                sourceRef: `sp-project:${clientName}`,
+              });
+              projectId = null; // shell not created yet — intake row staged with null projectId
               newProjects++;
             }
           } else {
@@ -260,7 +272,15 @@ export function registerSyncRoutes(app: Express) {
           const spFieldsHash = hashFields(mapped);
 
           if (existingReq.length === 0) {
-            await db.insert(intakeRequests).values({
+            // Auto-creation gate: stage in the Pending Approval inbox.
+            const { proposeApproval } = await import("./services/pending-approvals-service");
+            await proposeApproval({
+              kind: "sharepoint_intake_request_create",
+              targetTable: "intake_requests",
+              summary: `Intake from SharePoint #${item.id}: ${clientName} (${mapped.requestType || "no type"})`,
+              sourceLabel: "system:sharepoint-pull",
+              sourceRef: `sp-intake:${item.id}`,
+              payload: {
               spItemId: item.id,
               projectId,
               clientKey,
@@ -294,6 +314,7 @@ export function registerSyncRoutes(app: Express) {
               spRawJson: item.fields,
               lastPulledAt: new Date(),
               lastPulledHash: spFieldsHash,
+              } as Record<string, unknown>,
             });
             newRequests++;
           } else {
