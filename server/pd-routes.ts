@@ -14,6 +14,12 @@ import { canViewAllTickets, ENGINEERING_REQUEST_TYPES } from "@shared/roles/pd-r
 import { paramStr } from "./lib/req-params";
 import { insertClientWithGeneratedId } from "./lib/client-id-generator";
 import { logAuditFromReq } from "./audit-logger";
+import {
+  ENGINEERING_TICKET_DEFAULT_STATUS,
+  isTicketDoneForReporting,
+  isTicketBlocked,
+  normalizeEngineeringTicketStatus,
+} from "@shared/engineering-ticket-status";
 
 /**
  * Resolve the effective PD visibility config for a user.
@@ -522,7 +528,18 @@ export function registerPdRoutes(app: Express) {
           .where(and(
             eq(engineeringTickets.projectId, Number(body.projectId)),
             eq(engineeringTickets.requestType, body.requestType),
-            sql`${engineeringTickets.status} NOT IN ('Completed', 'Cancelled')`,
+            // Match both legacy (Draft / In Progress / On Hold / Completed /
+            // Cancelled) and canonical engineering-board values via LOWER().
+            // Anything in the terminal-synonym list is considered closed and
+            // therefore re-openable with a new ticket.
+            // Duplicate guard: a ticket only stops counting toward "active
+            // for this opportunity" once it reaches a true terminal state.
+            // Per shared/engineering-ticket-status.ts, only `complete` (and
+            // its legacy synonyms / Cancelled) is terminal — `qc_approved`
+            // is still in-flight (post-QC, pre-closeout) so it must remain
+            // counted, otherwise users can spawn a duplicate ticket while
+            // engineering is still finishing the existing one.
+            sql`LOWER(COALESCE(${engineeringTickets.status}, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done', 'cancelled', 'canceled')`,
             // Cascade-display: ignore soft-deleted tickets in dup guard (Task #34).
             isNull(engineeringTickets.deletedAt),
           ))
@@ -547,7 +564,7 @@ export function registerPdRoutes(app: Express) {
         dueDate: body.dueDate || null,
         requestType: body.requestType,
         priority: body.priority || "Medium",
-        status: body.status || "Draft",
+        status: body.status ? normalizeEngineeringTicketStatus(body.status) : ENGINEERING_TICKET_DEFAULT_STATUS,
         numberOfReworks: body.numberOfReworks || 0,
         projectDeveloperUserId: body.projectDeveloperUserId || user?.id || null,
         designerUserId: body.designerUserId || null,
@@ -809,7 +826,14 @@ export function registerPdRoutes(app: Express) {
 
       if (!ticket.tasksSpawnedAt) {
         await db.update(engineeringTickets)
-          .set({ tasksSpawnedAt: new Date(), status: ticket.status === "Draft" ? "In Progress" : ticket.status })
+          .set({
+            tasksSpawnedAt: new Date(),
+            // Bump from "haven't started" states to in_progress on first
+            // spawn; otherwise preserve whatever board state the ticket is in.
+            status: ["to_do", "not_started"].includes(normalizeEngineeringTicketStatus(ticket.status))
+              ? "in_progress"
+              : normalizeEngineeringTicketStatus(ticket.status),
+          })
           .where(eq(engineeringTickets.id, ticket.id));
       }
 
@@ -833,21 +857,29 @@ export function registerPdRoutes(app: Express) {
       const allTickets = await filterTicketsByRole(allTicketsRaw, user, role);
       const today = todaySast();
 
+      // All status comparisons go through the canonical normaliser so the
+      // tile counts work for both legacy text values and the new
+      // engineering-board states (task #71 follow-up).
       const total = allTickets.length;
-      const active = allTickets.filter(t => t.status === "In Progress" || t.status === "Draft").length;
-      const overdue = allTickets.filter(t => t.dueDate && t.dueDate < today && t.status !== "Completed" && t.status !== "Cancelled").length;
+      const isDone = (t: any) => isTicketDoneForReporting(t.status);
+      const active = allTickets.filter(t => !isDone(t)).length;
+      const overdue = allTickets.filter(t => t.dueDate && t.dueDate < today && !isDone(t)).length;
       const dueThisWeek = allTickets.filter(t => {
-        if (!t.dueDate || t.status === "Completed" || t.status === "Cancelled") return false;
+        if (!t.dueDate || isDone(t)) return false;
         const d = new Date(t.dueDate);
         const now = new Date();
         const weekEnd = new Date();
         weekEnd.setDate(now.getDate() + 7);
         return d >= now && d <= weekEnd;
       }).length;
-      const onHold = allTickets.filter(t => t.status === "On Hold").length;
-      const completed = allTickets.filter(t => t.status === "Completed").length;
+      const onHold = allTickets.filter(t => isTicketBlocked(t.status)).length;
+      const completed = allTickets.filter(isDone).length;
+      const inApproval = allTickets.filter(t => {
+        const c = normalizeEngineeringTicketStatus(t.status);
+        return c === "needs_approval" || c === "qc_approved" || c === "provide_feedback" || c === "operational_approval";
+      }).length;
 
-      res.json({ total, active, overdue, dueThisWeek, onHold, completed });
+      res.json({ total, active, overdue, dueThisWeek, onHold, completed, inApproval });
     } catch (err: any) {
       throw err;
     }
@@ -914,21 +946,23 @@ export function registerPdRoutes(app: Express) {
         const t = row.ticket;
         const handover = t.projectId ? handoverMap.get(t.projectId) : null;
         const tasks = taskCountMap.get(t.id) || { total: 0, completed: 0 };
-        // Map to Kanban column
+        // Map to Kanban column. The board now uses canonical status values
+        // (to_do, in_progress, hold, needs_approval, qc_approved,
+        // provide_feedback, operational_approval, complete, …); legacy
+        // free-form values are tolerated via the normaliser.
+        const canonical = normalizeEngineeringTicketStatus(t.status);
         let kanbanColumn = "New";
-        if (t.status === "Draft") kanbanColumn = "New";
-        else if (t.status === "In Progress") kanbanColumn = "In Progress";
-        else if (t.status === "On Hold") kanbanColumn = "In Progress";
-        else if (t.status === "Completed" || t.status === "Cancelled") {
-          kanbanColumn = handover?.status === "ACCEPTED" ? "Handed Over" : "Handed Over";
-          if (t.status === "Completed" && !handover) kanbanColumn = "Handed Over";
-        }
+        if (canonical === "to_do" || canonical === "not_started") kanbanColumn = "New";
+        else if (canonical === "in_progress" || canonical === "projects_assistance") kanbanColumn = "In Progress";
+        else if (canonical === "hold") kanbanColumn = "In Progress";
+        else if (canonical === "needs_approval" || canonical === "qc_approved" || canonical === "provide_feedback" || canonical === "operational_approval") kanbanColumn = "Under Review";
+        else if (canonical === "complete") kanbanColumn = "Handed Over";
         if (handover?.status === "SUBMITTED_FOR_PM_REVIEW") kanbanColumn = "Under Review";
         if (handover?.handoverReadinessStatus === "READY_FOR_HANDOVER" && handover?.status === "DRAFT") kanbanColumn = "Ready for Handover";
         if (handover?.status === "ACCEPTED") kanbanColumn = "Handed Over";
 
         const daysInStage = Math.max(0, Math.floor((Date.now() - new Date(t.updatedAt).getTime()) / 86400000));
-        const isOverdue = t.dueDate && t.dueDate < today && t.status !== "Completed" && t.status !== "Cancelled";
+        const isOverdue = t.dueDate && t.dueDate < today && !isTicketDoneForReporting(t.status);
 
         const enriched = {
           id: t.id,
@@ -955,7 +989,7 @@ export function registerPdRoutes(app: Express) {
         byStatus[kanbanColumn].tickets.push(enriched);
 
         // Aggregate by request type
-        byRequestType[t.requestType] = (byRequestType[t.requestType] || 0) + (t.status !== "Completed" && t.status !== "Cancelled" ? 1 : 0);
+        byRequestType[t.requestType] = (byRequestType[t.requestType] || 0) + (isTicketDoneForReporting(t.status) ? 0 : 1);
 
         // Overdue buckets
         if (isOverdue) {
@@ -979,7 +1013,7 @@ export function registerPdRoutes(app: Express) {
       // Pipeline value from financial estimates
       const activeTicketsRaw = allTickets.map(r => r.ticket);
       const totalPipelineValue = activeTicketsRaw
-        .filter(t => t.status !== "Completed" && t.status !== "Cancelled" && t.estimatedProjectValue)
+        .filter(t => !isTicketDoneForReporting(t.status) && t.estimatedProjectValue)
         .reduce((sum, t) => sum + parseFloat(t.estimatedProjectValue as string || "0"), 0);
 
       res.json({
@@ -1129,7 +1163,7 @@ export function registerPdRoutes(app: Express) {
 
       /** KPI: Tickets completed in FY. Count of pd_tickets with
        *  status="Completed" and createdAt within the FY window. */
-      const completedFy = fyTickets.filter((t: any) => t.status === "Completed");
+      const completedFy = fyTickets.filter((t: any) => isTicketDoneForReporting(t.status));
 
       /** KPI: Tickets completed this month. Subset of completedFy where
        *  updatedAt is in the current calendar month. */
@@ -1178,20 +1212,24 @@ export function registerPdRoutes(app: Express) {
       const activeByStatus: Record<string, number> = {};
       /** KPI: Active tickets by request type (FY-scoped). */
       const activeByType: Record<string, number> = {};
-      const fyActive = fyTickets.filter((t: any) => t.status !== "Completed" && t.status !== "Cancelled");
+      const fyActive = fyTickets.filter((t: any) => !isTicketDoneForReporting(t.status));
       for (const t of fyActive) {
-        activeByStatus[t.status] = (activeByStatus[t.status] || 0) + 1;
+        // Bucket under canonical key so the report shows engineering-board
+        // labels (in_progress, hold, needs_approval, …) instead of the old
+        // Title-Case text values.
+        const canonical = normalizeEngineeringTicketStatus(t.status);
+        activeByStatus[canonical] = (activeByStatus[canonical] || 0) + 1;
         activeByType[t.requestType] = (activeByType[t.requestType] || 0) + 1;
       }
 
       /** KPI: Overdue tickets (all-time). Count of tickets with dueDate
        *  before today and status not Completed/Cancelled. Not FY-scoped. */
-      const overdueCount = allTickets.filter((t: any) => t.dueDate && t.dueDate < today && t.status !== "Completed" && t.status !== "Cancelled").length;
+      const overdueCount = allTickets.filter((t: any) => t.dueDate && t.dueDate < today && !isTicketDoneForReporting(t.status)).length;
 
       /** KPI: Tickets per PD team member (all-time active). Count of
        *  non-completed, non-cancelled tickets grouped by developer. */
       const ticketsPerMember: Record<string, number> = {};
-      for (const t of allTickets.filter((t: any) => t.status !== "Completed" && t.status !== "Cancelled")) {
+      for (const t of allTickets.filter((t: any) => !isTicketDoneForReporting(t.status))) {
         const name = (t as any).projectDeveloperUserId ? (userMap.get((t as any).projectDeveloperUserId) || "Unassigned") : "Unassigned";
         ticketsPerMember[name as string] = (ticketsPerMember[name as string] || 0) + 1;
       }
@@ -1234,7 +1272,7 @@ export function registerPdRoutes(app: Express) {
       // hand-inlining the list here — the hand-inlined copy had already
       // drifted from the source constant.
       const engineeringTicketCount = allTickets.filter(
-        (t: any) => engineeringRequestTypesSet.has(t.requestType) && t.status !== "Cancelled",
+        (t: any) => engineeringRequestTypesSet.has(t.requestType) && !isTicketDoneForReporting(t.status),
       ).length;
 
       // W2: Surface Pipedrive sync freshness in the commercial funnel report
@@ -1341,7 +1379,14 @@ export async function spawnTasksForTicket(ticket: any, user: any, selectedTasks?
   return db.transaction(async (tx: typeof db) => {
     const claimed = await tx
       .update(engineeringTickets)
-      .set({ tasksSpawnedAt: new Date(), status: ticket.status === "Draft" ? "In Progress" : ticket.status })
+      .set({
+        tasksSpawnedAt: new Date(),
+        // Bump "haven't started" states to in_progress on first spawn;
+        // otherwise preserve the board state the ticket is currently in.
+        status: ["to_do", "not_started"].includes(normalizeEngineeringTicketStatus(ticket.status))
+          ? "in_progress"
+          : normalizeEngineeringTicketStatus(ticket.status),
+      })
       .where(and(eq(engineeringTickets.id, ticket.id), isNull(engineeringTickets.tasksSpawnedAt)))
       .returning({ id: engineeringTickets.id });
     if (claimed.length === 0) return [];

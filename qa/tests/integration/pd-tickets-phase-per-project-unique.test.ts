@@ -107,7 +107,7 @@ describeIfDb("pd_tickets_phase_per_project_uniq partial unique index", () => {
   it("raises a unique-violation when a second live ticket claims the same (opportunity, project, request_type)", async () => {
     await pool.query(
       `INSERT INTO pd_tickets (opportunity_id, project_id, project_site_name, request_type, priority, status)
-       VALUES ($1, $2, $3, $4, 'Medium', 'Draft')`,
+       VALUES ($1, $2, $3, $4, 'Medium', 'to_do')`,
       [opportunityId, projectId, PROJECT_SITE_NAME, REQUEST_TYPE],
     );
 
@@ -116,7 +116,7 @@ describeIfDb("pd_tickets_phase_per_project_uniq partial unique index", () => {
     try {
       await pool.query(
         `INSERT INTO pd_tickets (opportunity_id, project_id, project_site_name, request_type, priority, status)
-         VALUES ($1, $2, $3, $4, 'Medium', 'Draft')`,
+         VALUES ($1, $2, $3, $4, 'Medium', 'to_do')`,
         [opportunityId, projectId, PROJECT_SITE_NAME, REQUEST_TYPE],
       );
     } catch (e) {
@@ -138,7 +138,7 @@ describeIfDb("pd_tickets_phase_per_project_uniq partial unique index", () => {
     // Seed the row this test will soft-delete.
     await pool.query(
       `INSERT INTO pd_tickets (opportunity_id, project_id, project_site_name, request_type, priority, status)
-         VALUES ($1, $2, $3, $4, 'Medium', 'Draft')`,
+         VALUES ($1, $2, $3, $4, 'Medium', 'to_do')`,
       [opportunityId, projectId, PROJECT_SITE_NAME, ISOLATED_REQUEST_TYPE],
     );
 
@@ -156,7 +156,7 @@ describeIfDb("pd_tickets_phase_per_project_uniq partial unique index", () => {
     await expect(
       pool.query(
         `INSERT INTO pd_tickets (opportunity_id, project_id, project_site_name, request_type, priority, status)
-         VALUES ($1, $2, $3, $4, 'Medium', 'Draft')`,
+         VALUES ($1, $2, $3, $4, 'Medium', 'to_do')`,
         [opportunityId, projectId, PROJECT_SITE_NAME, ISOLATED_REQUEST_TYPE],
       ),
     ).resolves.toBeDefined();
@@ -170,7 +170,7 @@ describeIfDb("pd_tickets_phase_per_project_uniq partial unique index", () => {
     await expect(
       pool.query(
         `INSERT INTO pd_tickets (opportunity_id, project_id, project_site_name, request_type, priority, status)
-         VALUES ($1, NULL, $2, $3, 'Medium', 'Draft')
+         VALUES ($1, NULL, $2, $3, 'Medium', 'to_do')
          ON CONFLICT DO NOTHING`,
         [opportunityId, PROJECT_SITE_NAME, REQUEST_TYPE],
       ),

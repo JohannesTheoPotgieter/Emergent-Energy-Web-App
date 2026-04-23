@@ -19,6 +19,14 @@
  */
 import { useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  ENGINEERING_TICKET_STATUSES,
+  getEngineeringTicketStatusLabel,
+  getEngineeringTicketStatusBadgeClass,
+  normalizeEngineeringTicketStatus,
+  isTicketDoneForReporting,
+  isTicketBlocked,
+} from "@shared/engineering-ticket-status";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -125,7 +133,7 @@ interface WorkflowResponse {
   projectTasks?: ProjectTask[];
 }
 
-const PD_STATUSES = ["Draft", "In Progress", "On Hold", "Completed", "Cancelled"];
+const PD_STATUSES = [...ENGINEERING_TICKET_STATUSES];
 const PD_PRIORITIES = ["Low", "Medium", "High", "Urgent"];
 const PD_REQUEST_TYPES = [
   "Cost Proposal", "IFC Planning", "Construction Support",
@@ -308,17 +316,9 @@ export function OpportunityDetailBody({ opportunityId, active, variant = "inline
                 )}
                 <Badge
                   variant="outline"
-                  className={`text-[10px] ${
-                    merged.status === "Completed"
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                      : merged.status === "On Hold"
-                        ? "border-amber-200 bg-amber-50 text-amber-700"
-                        : merged.status === "Cancelled"
-                          ? "border-slate-200 bg-slate-50 text-slate-600"
-                          : "border-emerald-200 bg-emerald-50/70 text-emerald-700"
-                  }`}
+                  className={`text-[10px] ${getEngineeringTicketStatusBadgeClass(merged.status)}`}
                 >
-                  {merged.status}
+                  {getEngineeringTicketStatusLabel(merged.status)}
                 </Badge>
               </div>
             </div>
@@ -411,7 +411,9 @@ export function OpportunityDetailBody({ opportunityId, active, variant = "inline
                     >
                       <SelectTrigger className="h-8 text-xs" data-testid="select-pd-status"><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        {PD_STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                        {PD_STATUSES.map((s) => (
+                          <SelectItem key={s} value={s}>{getEngineeringTicketStatusLabel(s)}</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </Field>
@@ -627,9 +629,13 @@ export function OpportunityDetailBody({ opportunityId, active, variant = "inline
                 // "Ready to start the project?" framing is misleading —
                 // work has begun, we just haven't materialized a project
                 // shell yet. Reframe the CTA around the existing ticket.
-                const activeTicket = (data.tickets ?? []).find(
-                  (t) => t.status !== "Draft" && t.status !== "Cancelled" && t.status !== "Completed",
-                );
+                // "Engaged" = anything past the initial to-do/draft state and
+                // not yet terminal. Uses the canonical normaliser so legacy
+                // values still classify correctly during the transition.
+                const activeTicket = (data.tickets ?? []).find((t) => {
+                  const c = normalizeEngineeringTicketStatus(t.status);
+                  return c !== "to_do" && c !== "not_started" && !isTicketDoneForReporting(t.status);
+                });
                 if (activeTicket) {
                   return (
                     <section
@@ -764,7 +770,7 @@ function EngineeringTicketsSection({
   tickets: OpportunityTicket[];
   opportunityId: number | null;
 }) {
-  const open = tickets.filter((t) => t.status !== "Completed" && t.status !== "Cancelled").length;
+  const open = tickets.filter((t) => !isTicketDoneForReporting(t.status)).length;
   const closed = tickets.length - open;
   // Resolve the canonical sibling project for this opportunity. When any
   // ticket on the opp is already linked to a working project, that same
@@ -803,18 +809,9 @@ function EngineeringTicketsSection({
 }
 
 function ticketStatusClass(status: string): string {
-  switch (status) {
-    case "Completed":
-      return "bg-emerald-50 text-emerald-700 border-emerald-200";
-    case "Cancelled":
-      return "bg-slate-100 text-slate-600 border-slate-200";
-    case "In Progress":
-      return "bg-blue-50 text-blue-700 border-blue-200";
-    case "On Hold":
-      return "bg-amber-50 text-amber-700 border-amber-200";
-    default:
-      return "bg-slate-50 text-slate-700 border-slate-200";
-  }
+  // Delegate to the shared canonical-status helper so badge colours stay
+  // consistent with the engineering board.
+  return getEngineeringTicketStatusBadgeClass(status);
 }
 
 function ticketPriorityClass(priority: string): string {
@@ -859,7 +856,7 @@ function TicketRow({
   });
   const canOfferSiblingLink =
     !ticket.projectId && siblingProject != null && siblingProject.id !== ticket.projectId;
-  const isClosed = ticket.status === "Completed" || ticket.status === "Cancelled";
+  const isClosed = isTicketDoneForReporting(ticket.status);
   const ageDays = ticketAgeDays(ticket.createdAt);
   const owner = ticket.projectDeveloperName || ticket.designerName || null;
   const commentPreview = (ticket.comments || "")
@@ -1117,18 +1114,26 @@ function isCancelledStatus(status: string): boolean {
   return s === "cancelled" || s === "canceled";
 }
 
-/** Map a pd_ticket status onto the work_item status vocabulary so the
- *  status-dot helpers below treat ticket items consistently with tasks. */
+/** Map an engineering_ticket status onto the work_item status vocabulary so
+ *  the status-dot helpers below treat ticket items consistently with tasks.
+ *  Now status-aware on the canonical engineering-board 10-state set; legacy
+ *  free-form values still resolve correctly via the shared normaliser. */
 function ticketStatusToWorkItemStatus(status: string): string {
-  switch (status) {
-    case "Completed":
+  const c = normalizeEngineeringTicketStatus(status);
+  switch (c) {
+    case "complete":
       return "done";
-    case "Cancelled":
-      return "cancelled";
-    case "In Progress":
+    case "in_progress":
+    case "projects_assistance":
+    case "needs_approval":
+    case "qc_approved":
+    case "provide_feedback":
+    case "operational_approval":
       return "in_progress";
-    case "On Hold":
+    case "hold":
       return "on_hold";
+    case "to_do":
+    case "not_started":
     default:
       return "not_started";
   }

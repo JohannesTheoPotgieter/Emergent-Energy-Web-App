@@ -18,6 +18,7 @@ import { syncProjectSplitTablesAfterInsert } from "../lib/project-info-sync";
 import { buildOpportunityMappingPlan } from "../lib/opportunity-mapping-plan";
 import { buildCustomComments, buildSamePhaseDuplicateWarning, buildTemplateTicketDrafts } from "../lib/opportunity-engineering-ticket-flow";
 import { opportunitiesRepo } from "../repositories/opportunities-repository";
+import { ENGINEERING_TICKET_STATUSES } from "@shared/engineering-ticket-status";
 
 // Validation for user-driven opportunity create/update. Intentionally
 // narrower than the raw table schema:
@@ -316,6 +317,10 @@ router.get("/api/pd/dashboard", requireAuth, requirePermission("pd_dashboard", "
           (SELECT COUNT(*) FROM active WHERE due_date IS NOT NULL AND due_date::date < CURRENT_DATE) AS overdue_tickets,
           (SELECT COUNT(*) FROM active WHERE last_activity_at < NOW() - INTERVAL '30 days') AS stale30_tickets,
           (SELECT COUNT(*) FROM active WHERE has_blocker) AS blocked_tickets,
+          -- Engineering-board "in approval" sub-states: tickets that are
+          -- waiting on a human review gate before they can move to complete.
+          -- See shared/engineering-ticket-status.ts::TICKET_APPROVAL_STATUSES.
+          (SELECT COUNT(*) FROM active WHERE LOWER(COALESCE(status, '')) IN ('needs_approval', 'qc_approved', 'provide_feedback', 'operational_approval')) AS in_approval_tickets,
           (SELECT COUNT(*) FROM t WHERE LOWER(COALESCE(status, '')) IN ('completed', 'complete', 'closed', 'resolved', 'done')) AS completed_tickets,
           (SELECT COALESCE(SUM(size_kwp), 0) FROM active) AS active_kwp
       `),
@@ -722,6 +727,7 @@ router.get("/api/pd/dashboard", requireAuth, requirePermission("pd_dashboard", "
         overdueTickets: Number(tt.overdue_tickets ?? 0),
         stale30Tickets: Number(tt.stale30_tickets ?? 0),
         blockedTickets: Number(tt.blocked_tickets ?? 0),
+        inApprovalTickets: Number(tt.in_approval_tickets ?? 0),
         completedTickets: Number(tt.completed_tickets ?? 0),
         activeKwp: Number(tt.active_kwp ?? 0),
         openWorkItems: Number(wt.open_work_items ?? 0),
@@ -898,7 +904,7 @@ router.post("/api/opportunities/:id/create-engineering-tickets", requireAuth, re
         requestType: parsed.customTicket.phase,
         dueDate: parsed.customTicket.dueDate,
         priority: parsed.customTicket.priority,
-        status: "Draft",
+        status: "to_do",
         comments: buildCustomComments(parsed.customTicket),
         projectDeveloperUserId: userId,
         createdBy: userId,
@@ -934,7 +940,7 @@ router.post("/api/opportunities/:id/create-engineering-tickets", requireAuth, re
         requestType: draft.requestType,
         dueDate: draft.dueDate,
         priority: draft.priority,
-        status: "Draft",
+        status: "to_do",
         comments: draft.comments,
         projectDeveloperUserId: userId,
         createdBy: userId,
@@ -1301,7 +1307,10 @@ router.get(
 const pdShadowPatchSchema = z.object({
   requestType: z.string().optional(),
   priority: z.enum(["Low", "Medium", "High", "Urgent"]).optional(),
-  status: z.enum(["Draft", "In Progress", "On Hold", "Completed", "Cancelled"]).optional(),
+  // Engineering-board canonical statuses (shared/engineering-ticket-status.ts).
+  // Migration 0027 backfilled legacy free-form values, so the enum now only
+  // accepts the canonical 10-state set.
+  status: z.enum(ENGINEERING_TICKET_STATUSES).optional(),
   dueDate: z.string().nullable().optional(),
   projectDeveloperUserId: z.number().int().nullable().optional(),
   designerUserId: z.number().int().nullable().optional(),
@@ -1476,7 +1485,9 @@ router.post(
             .update(engineeringTickets)
             .set({
               projectId: project.id,
-              status: "Completed",
+              // Convert-to-project closes out the engineering shadow ticket
+              // (canonical engineering-board terminal state — migration 0027).
+              status: "complete",
               sizeKwp: parsed.data.sizeKwp ?? shadow.sizeKwp,
               updatedAt: new Date(),
             })
