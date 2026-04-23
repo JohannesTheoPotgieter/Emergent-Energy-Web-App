@@ -831,7 +831,7 @@ function MeetingViewSection() {
       <Card data-testid="meeting-view-loading">
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2"><Activity className="h-4 w-4" /> Cross-company interaction</CardTitle>
-          <p className="text-xs text-muted-foreground">PD tickets, work-item blockers, and workspace-rollup gaps across all active projects.</p>
+          <p className="text-xs text-muted-foreground">PD tickets, work-item blockers, and workspace-rollup gaps across active pre-handover projects (before Planning).</p>
         </CardHeader>
         <CardContent><Skeleton className="h-48" /></CardContent>
       </Card>
@@ -859,7 +859,7 @@ function MeetingViewSection() {
         <>
           <CardTitle className="text-base flex items-center gap-2"><Activity className="h-4 w-4" /> Cross-company interaction</CardTitle>
           <p className="text-xs text-muted-foreground">
-            Source: <code className="rounded bg-muted px-1">/api/project-development/workspace/rollup</code> across {data.totals.projects} active projects.
+            Source: <code className="rounded bg-muted px-1">/api/project-development/workspace/rollup</code> across {data.totals.projects} active pre-handover projects (before Planning).
             Generated {new Date(data.generatedAt).toLocaleString()}.
           </p>
         </>

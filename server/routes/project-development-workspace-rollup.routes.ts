@@ -6,6 +6,22 @@ import { logAuditFromReq } from "../audit-logger";
 import { getProjectDevelopmentWorkspaceRollup } from "../services/project-development-workspace-service";
 import { db } from "../db";
 import { engineeringTickets, projectInfo, opportunities, workItems } from "@shared/schema";
+import { tryResolveCanonicalCode } from "@shared/phases";
+
+// Cross-company Interaction is the PD-side rollup: it only covers projects
+// that are still BEFORE the PM-PD handover (i.e. before S04_PLANNING).
+// Once a project enters Planning, it is owned by PM and falls off this view.
+const PRE_HANDOVER_PHASES = new Set<string>([
+  "S01_FIRST_ASSESSMENT",
+  "S02_DESIGN_COST_PROPOSAL",
+  "S03_SIGNATURE_FINANCIAL_CLOSE",
+]);
+
+function isPreHandoverPhase(rawPhase: string | null | undefined): boolean {
+  const code = tryResolveCanonicalCode(rawPhase);
+  if (!code) return false;
+  return PRE_HANDOVER_PHASES.has(code);
+}
 
 function parseDateParam(v: unknown): string | null {
   if (typeof v !== "string" || v.length === 0) return null;
@@ -49,6 +65,10 @@ export function registerProjectDevelopmentWorkspaceRollupRoutes(app: Express) {
         // departmentFilter is a no-op (no canonical department column exists).
         const rollupAll = await getProjectDevelopmentWorkspaceRollup();
         const rollup = rollupAll.filter((r) => {
+          // Hard scope: Cross-company Interaction is the PD-side rollup. Only
+          // projects still BEFORE the PM-PD handover (S01-S03) belong here.
+          // Anything in S04_PLANNING or later is owned by PM and excluded.
+          if (!isPreHandoverPhase(r.phase)) return false;
           if (phaseFilter && r.phase !== phaseFilter) return false;
           if (statusFilter === "open" && r.pdTickets.open === 0 && r.workItems.open === 0) return false;
           if (statusFilter === "overdue" && r.pdTickets.overdue === 0 && r.workItems.overdue === 0) return false;
