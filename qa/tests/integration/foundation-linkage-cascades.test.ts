@@ -126,43 +126,10 @@ describe("Foundation linkage hardening — cascades and spine integrity (Task #3
     }
   });
 
-  // Vocabulary phase 2 (task #58): the rename from `pd_tickets` to
-  // `engineering_tickets` (migration 0025) leaves a backwards-compat
-  // VIEW + generated column for one release. This release-gate
-  // assertion makes sure both the legacy and the new names continue to
-  // resolve to the same logical row, so straggler code paths and
-  // analytics queries do not silently break before the alias is dropped.
-  it("Phase 2 rename: both legacy `pd_tickets` and new `engineering_tickets` resolve to the same row (migrations 0024 + 0025)", async () => {
-    const { Pool } = await import("pg");
-    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-    try {
-      const live = await pool.query(
-        `SELECT id, project_site_name FROM engineering_tickets WHERE deleted_at IS NULL ORDER BY id DESC LIMIT 1`,
-      );
-      if (live.rowCount === 0) {
-        console.warn("[skip] no live engineering_tickets rows — alias parity cannot be exercised");
-        return;
-      }
-      const { id, project_site_name } = live.rows[0];
-
-      const legacy = await pool.query(
-        `SELECT id, project_site_name FROM pd_tickets WHERE id = $1`,
-        [id],
-      );
-      expect(legacy.rowCount).toBe(1);
-      expect(legacy.rows[0].project_site_name).toBe(project_site_name);
-
-      // work_items column alias parity: every value in the legacy
-      // `pd_ticket_id` column must equal the new `engineering_ticket_id`
-      // column on the same row.
-      const cols = await pool.query(
-        `SELECT COUNT(*)::int AS mismatches
-           FROM work_items
-          WHERE pd_ticket_id IS DISTINCT FROM engineering_ticket_id`,
-      );
-      expect(cols.rows[0].mismatches).toBe(0);
-    } finally {
-      await pool.end();
-    }
-  });
+  // Vocabulary phase 2 alias-parity assertion was removed in task #60
+  // alongside migration 0026, which drops the backwards-compat
+  // `pd_tickets` VIEW and `work_items.pd_ticket_id` generated column.
+  // The new names (`engineering_tickets`, `engineering_ticket_id`)
+  // are now the only schema surface; the soft-delete write-path guard
+  // above already exercises both.
 });

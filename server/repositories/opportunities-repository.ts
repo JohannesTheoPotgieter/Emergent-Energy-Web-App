@@ -10,7 +10,7 @@ import {
   phaseTemplate,
   phaseTemplateItem,
   type Opportunity,
-  type PdTicket,
+  type EngineeringTicket,
 } from "@shared/schema/projects";
 import { workItems } from "@shared/schema/tasks";
 import { users } from "@shared/schema/users";
@@ -733,7 +733,7 @@ export class OpportunitiesRepository {
       | "estimatedMarginPercent"
       | "financialNotes"
     >>,
-  ): Promise<PdTicket | null> {
+  ): Promise<EngineeringTicket | null> {
     const [existing] = await db
       .select()
       .from(engineeringTickets)
@@ -815,7 +815,7 @@ export class OpportunitiesRepository {
 
   // ---- Mutations (used inside transactions) ----
 
-  async insertPdTicket(tx: typeof db, values: Record<string, unknown>): Promise<PdTicket> {
+  async insertPdTicket(tx: typeof db, values: Record<string, unknown>): Promise<EngineeringTicket> {
     const [ticket] = await tx.insert(engineeringTickets).values(values as typeof engineeringTickets.$inferInsert).returning();
     return ticket;
   }
