@@ -289,8 +289,9 @@ router.get("/api/pd/dashboard", requireAuth, requirePermission("pd_dashboard", "
     ] = await Promise.all([
       // Engineering-ticket totals. "Active" = not in a terminal status.
       // "Overdue" = active AND due_date in the past. "Stale 30d" =
-      // active AND updated_at older than 30d. "Blocked" = active AND
-      // has at least one open work_item in 'hold' status.
+      // active AND last activity (latest related work_items.updated_at,
+      // falling back to ticket updated_at) older than 30d. "Blocked" =
+      // active AND has at least one open work_item in 'hold' status.
       db.execute(sql`
         WITH t AS (
           SELECT
@@ -299,6 +300,18 @@ router.get("/api/pd/dashboard", requireAuth, requirePermission("pd_dashboard", "
             et.due_date,
             et.updated_at,
             et.size_kwp,
+            -- Latest activity = max work-item update for this ticket,
+            -- falling back to the ticket's own updated_at when no work
+            -- items exist. Used to compute the stale-30d signal so that
+            -- a quiet ticket with active work items isn't flagged stale.
+            GREATEST(
+              et.updated_at,
+              COALESCE(
+                (SELECT MAX(w2.updated_at) FROM work_items w2
+                 WHERE w2.engineering_ticket_id = et.id AND w2.deleted_at IS NULL),
+                et.updated_at
+              )
+            ) AS last_activity_at,
             EXISTS (
               SELECT 1 FROM work_items w
               WHERE w.engineering_ticket_id = et.id
@@ -315,7 +328,7 @@ router.get("/api/pd/dashboard", requireAuth, requirePermission("pd_dashboard", "
         SELECT
           (SELECT COUNT(*) FROM active) AS active_tickets,
           (SELECT COUNT(*) FROM active WHERE due_date IS NOT NULL AND due_date::date < CURRENT_DATE) AS overdue_tickets,
-          (SELECT COUNT(*) FROM active WHERE updated_at < NOW() - INTERVAL '30 days') AS stale30_tickets,
+          (SELECT COUNT(*) FROM active WHERE last_activity_at < NOW() - INTERVAL '30 days') AS stale30_tickets,
           (SELECT COUNT(*) FROM active WHERE has_blocker) AS blocked_tickets,
           (SELECT COUNT(*) FROM t WHERE LOWER(COALESCE(status, '')) IN ('completed', 'complete', 'closed', 'resolved', 'done')) AS completed_tickets,
           (SELECT COALESCE(SUM(size_kwp), 0) FROM active) AS active_kwp
@@ -350,10 +363,14 @@ router.get("/api/pd/dashboard", requireAuth, requirePermission("pd_dashboard", "
           ) AS completed_14d_work_items
         FROM w
       `),
-      // Handover-ready: count of active projects whose canonical phase is
-      // in the post-construction handover band (S08 / S09 / S9B / S10 —
-      // see shared/phases.ts:isHandoverPhase). Source: project_info joined
-      // to project_execution_state.current_stage_code.
+      // Handover-ready: count of active projects whose O&M handover
+      // record (om_handovers — the closest existing analogue of the
+      // task-spec "handover_meeting_capture") shows the deliverables are
+      // assembled but actual handover hasn't happened yet. Specifically:
+      // deleted_at IS NULL, actual_handover_date IS NULL, AND at least
+      // the three core packs are uploaded (as_builts + warranties +
+      // O&M manual). The project's canonical phase is also surfaced so
+      // the UI can label which handover band the project sits in.
       db.execute(sql`
         WITH hr AS (
           SELECT
@@ -362,44 +379,109 @@ router.get("/api/pd/dashboard", requireAuth, requirePermission("pd_dashboard", "
             pes.current_stage_code AS phase,
             pes.rag_status
           FROM project_info pi
-          JOIN project_execution_state pes ON pes.project_id = pi.id
+          JOIN om_handovers omh
+            ON omh.project_id = pi.id
+            AND omh.deleted_at IS NULL
+            AND omh.actual_handover_date IS NULL
+            AND COALESCE(omh.as_builts_uploaded, false) = true
+            AND COALESCE(omh.warranties_uploaded, false) = true
+            AND COALESCE(omh.om_manual_uploaded, false) = true
+          LEFT JOIN project_execution_state pes
+            ON pes.project_id = pi.id AND pes.deleted_at IS NULL
           WHERE pi.deleted_at IS NULL
-            AND COALESCE(pes.deleted_at, pi.deleted_at) IS NULL
             AND pi.project_status = 'active'
-            AND pes.current_stage_code = ANY(${handoverCodes})
         )
         SELECT
           (SELECT COUNT(*) FROM hr) AS total,
           COALESCE(json_agg(row_to_json(t) ORDER BY t.project_name) FILTER (WHERE t.id IS NOT NULL), '[]'::json) AS items
         FROM (SELECT * FROM hr ORDER BY project_name LIMIT 8) t
       `),
-      // By canonical phase: count tickets and roll up open / overdue
-      // work-items grouped by work_items.phase (which is already the
-      // canonical stage code). Tickets without a phase fall under
-      // "Unscoped".
+      // By canonical phase: scope to ACTIVE engineering tickets and
+      // roll up open / overdue work items by canonical stage code.
+      //
+      // Phase derivation per ticket:
+      //   1. If the ticket has any work items, use the most-recently
+      //      updated work item's `phase` (already canonical).
+      //   2. If that's missing, fall back to mapping the ticket's
+      //      `request_type` to a canonical phase (mirrors the static
+      //      table in shared/utils/phase-to-stage-map.ts so the SQL
+      //      doesn't need to import TS).
+      //   3. Otherwise '_UNSCOPED'.
+      //
+      // Open / overdue work-item counts also flow through the same
+      // active-ticket scoping so a phase row only reflects work that's
+      // actually in flight.
       db.execute(sql`
-        WITH wp AS (
+        WITH active_tickets AS (
           SELECT
-            COALESCE(wi.phase, '_UNSCOPED') AS code,
-            wi.engineering_ticket_id AS ticket_id,
+            et.id,
+            et.request_type,
+            -- (1) preferred: latest work-item phase for this ticket
+            (
+              SELECT wi.phase
+              FROM work_items wi
+              WHERE wi.engineering_ticket_id = et.id
+                AND wi.deleted_at IS NULL
+                AND wi.phase IS NOT NULL
+              ORDER BY wi.updated_at DESC NULLS LAST
+              LIMIT 1
+            ) AS wi_phase
+          FROM engineering_tickets et
+          WHERE et.deleted_at IS NULL
+            AND LOWER(COALESCE(et.status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done', 'cancelled', 'canceled')
+        ),
+        ticket_phase AS (
+          SELECT
+            id AS ticket_id,
+            COALESCE(
+              wi_phase,
+              -- (2) fallback: request_type → canonical phase
+              CASE
+                WHEN request_type ILIKE 'First Assessment%' THEN 'S01_FIRST_ASSESSMENT'
+                WHEN request_type IN ('Cost Proposal', 'CP - PVSOL', 'Feasibility Study', 'Sizing Rational Request', 'Design & Cost Proposal') THEN 'S02_DESIGN_COST_PROPOSAL'
+                WHEN request_type IN ('Site visit Report', 'Data Analysis Request', 'Meter installation') THEN 'S01_FIRST_ASSESSMENT'
+                ELSE NULL
+              END,
+              '_UNSCOPED'
+            ) AS code
+          FROM active_tickets
+        ),
+        wi_rollup AS (
+          SELECT
+            tp.code,
+            wi.id AS wi_id,
             wi.status,
             wi.end_date
-          FROM work_items wi
-          WHERE wi.deleted_at IS NULL
-            AND wi.engineering_ticket_id IS NOT NULL
+          FROM ticket_phase tp
+          JOIN work_items wi
+            ON wi.engineering_ticket_id = tp.ticket_id
+            AND wi.deleted_at IS NULL
         )
         SELECT
           code,
-          COUNT(DISTINCT ticket_id) AS ticket_count,
+          (SELECT COUNT(*) FROM ticket_phase tp2 WHERE tp2.code = w.code) AS ticket_count,
+          -- IMPORTANT: gate counts on `wi_id IS NOT NULL` so the synthetic
+          -- placeholder rows (used only to ensure phases with zero work
+          -- items still appear) never inflate work-item totals.
           COUNT(*) FILTER (
-            WHERE LOWER(COALESCE(status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done')
+            WHERE w.wi_id IS NOT NULL
+              AND LOWER(COALESCE(w.status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done')
           ) AS open_work_items,
           COUNT(*) FILTER (
-            WHERE LOWER(COALESCE(status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done')
-              AND end_date IS NOT NULL AND end_date < CURRENT_DATE
+            WHERE w.wi_id IS NOT NULL
+              AND LOWER(COALESCE(w.status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done')
+              AND w.end_date IS NOT NULL AND w.end_date < CURRENT_DATE
           ) AS overdue_work_items
-        FROM wp
-        GROUP BY 1
+        FROM (
+          -- Outer set: every active-ticket phase appears at least once
+          -- so phases with zero work items still get a row (with the
+          -- ticket count from ticket_phase). The placeholder rows are
+          -- distinguished from real work items by `wi_id IS NULL`.
+          SELECT code, NULL::int AS wi_id, NULL::text AS status, NULL::text AS end_date FROM ticket_phase
+          UNION ALL
+          SELECT code, wi_id, status, end_date FROM wi_rollup
+        ) w
+        GROUP BY code
       `),
       // By owner: per-PD-developer rollup of active engineering tickets.
       // Owner identity is the engineering_tickets.project_developer_user_id
@@ -418,7 +500,14 @@ router.get("/api/pd/dashboard", requireAuth, requirePermission("pd_dashboard", "
           ) AS overdue,
           COUNT(*) FILTER (
             WHERE LOWER(COALESCE(et.status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done', 'cancelled', 'canceled')
-              AND et.updated_at < NOW() - INTERVAL '30 days'
+              AND GREATEST(
+                et.updated_at,
+                COALESCE(
+                  (SELECT MAX(w2.updated_at) FROM work_items w2
+                   WHERE w2.engineering_ticket_id = et.id AND w2.deleted_at IS NULL),
+                  et.updated_at
+                )
+              ) < NOW() - INTERVAL '30 days'
           ) AS stale30,
           COUNT(*) FILTER (
             WHERE LOWER(COALESCE(et.status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done', 'cancelled', 'canceled')
@@ -440,7 +529,10 @@ router.get("/api/pd/dashboard", requireAuth, requirePermission("pd_dashboard", "
       `),
       // Action queue: top open work_items needing action right now,
       // ranked by reason. Each row carries a deterministic reason chip.
-      // Order: blocked → overdue → stale_30d → high-priority quiet.
+      // Order (per task spec): overdue → on-hold → stale_30d →
+      // high-priority quiet. Overdue is ranked first because it is the
+      // hardest commitment (a missed end_date), ahead of an explicit
+      // hold which at least carries a reason.
       db.execute(sql`
         WITH ranked AS (
           SELECT
@@ -455,8 +547,8 @@ router.get("/api/pd/dashboard", requireAuth, requirePermission("pd_dashboard", "
             wi.updated_at,
             COALESCE(NULLIF(TRIM(u.name), ''), NULLIF(TRIM(wi.owner_name), ''), 'Unassigned') AS owner,
             CASE
-              WHEN LOWER(COALESCE(wi.status, '')) IN ('hold', 'blocked', 'on_hold') THEN 'blocked'
               WHEN wi.end_date IS NOT NULL AND wi.end_date < CURRENT_DATE THEN 'overdue'
+              WHEN LOWER(COALESCE(wi.status, '')) IN ('hold', 'blocked', 'on_hold') THEN 'on_hold'
               WHEN wi.updated_at < NOW() - INTERVAL '30 days' THEN 'stale_30d'
               WHEN LOWER(COALESCE(wi.priority, '')) IN ('high', 'critical') AND wi.updated_at < NOW() - INTERVAL '7 days' THEN 'high_priority_quiet'
               ELSE NULL
@@ -475,8 +567,8 @@ router.get("/api/pd/dashboard", requireAuth, requirePermission("pd_dashboard", "
         WHERE reason IS NOT NULL
         ORDER BY
           CASE reason
-            WHEN 'blocked' THEN 1
-            WHEN 'overdue' THEN 2
+            WHEN 'overdue' THEN 1
+            WHEN 'on_hold' THEN 2
             WHEN 'stale_30d' THEN 3
             WHEN 'high_priority_quiet' THEN 4
           END ASC,
@@ -568,16 +660,17 @@ router.get("/api/pd/dashboard", requireAuth, requirePermission("pd_dashboard", "
         ORDER BY (COALESCE(rw.red_count, 0) + COALESCE(cr.crit_count, 0)) DESC
         LIMIT 10
       `),
-      // Linkage gaps — three categories of spine breakage:
-      //   (a) active engineering tickets with neither project_id nor opportunity_id
-      //   (b) active engineering tickets where status is 'Completed' but no project_id
-      //   (c) active projects with zero engineering tickets
-      // Returns one flat list with a `kind` discriminator.
+      // Linkage gaps — four categories of spine breakage between
+      // opportunities, engineering tickets, and projects. Returned as
+      // one flat list with a `kind` discriminator. The first two kinds
+      // are kept mutually exclusive (a completed ticket without a
+      // project goes into completed_no_project, never into unlinked).
+      //
+      //   (a) unlinked_ticket       — active ticket with no project_id and no opportunity_id
+      //   (b) completed_no_project  — completed ticket with no project_id
+      //   (c) won_no_project        — opportunity with status='won' and no project_info row
+      //   (d) project_no_tickets    — active project with zero engineering tickets
       db.execute(sql`
-        -- 'unlinked_ticket' and 'completed_no_project' are kept mutually
-        -- exclusive: a completed ticket without a project goes into
-        -- completed_no_project (more specific signal), never into the
-        -- generic unlinked bucket.
         SELECT 'unlinked_ticket' AS kind, et.id AS id, et.project_site_name AS label
         FROM engineering_tickets et
         WHERE et.deleted_at IS NULL
@@ -590,6 +683,15 @@ router.get("/api/pd/dashboard", requireAuth, requirePermission("pd_dashboard", "
         WHERE et.deleted_at IS NULL
           AND et.project_id IS NULL
           AND LOWER(COALESCE(et.status, '')) IN ('completed', 'complete', 'closed', 'resolved', 'done')
+        UNION ALL
+        SELECT 'won_no_project' AS kind, opp.id AS id, opp.deal_name AS label
+        FROM opportunities opp
+        WHERE opp.deleted_at IS NULL
+          AND LOWER(COALESCE(opp.status, '')) = 'won'
+          AND NOT EXISTS (
+            SELECT 1 FROM project_info pi
+            WHERE pi.opportunity_id = opp.id AND pi.deleted_at IS NULL
+          )
         UNION ALL
         SELECT 'project_no_tickets' AS kind, pi.id AS id, pi.project_name AS label
         FROM project_info pi
