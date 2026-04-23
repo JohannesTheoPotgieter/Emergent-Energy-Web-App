@@ -57,7 +57,11 @@ type PdDashboard = {
     owner: string | null;
     reason: ActionReason;
   }>;
-  recentlyCompleted: Array<{ workItemId: number; title: string | null; ticketId: number | null; ticketName: string | null; completedAt: string | null; owner: string | null }>;
+  recentlyCompleted: Array<{
+    ticketId: number | null;
+    ticketName: string | null;
+    items: Array<{ workItemId: number; title: string | null; completedAt: string | null; owner: string | null }>;
+  }>;
   upcomingThisWeek: Array<{ workItemId: number; title: string | null; ticketId: number | null; ticketName: string | null; endDate: string | null; priority: string | null; owner: string | null }>;
   atRiskTickets: Array<{ ticketId: number; ticketName: string | null; owner: string | null; redWorkItemCount: number; openCriticalRaidCount: number }>;
   linkageGaps: { total: number; items: Array<{ kind: string; id: number; label: string | null }> };
@@ -406,7 +410,7 @@ export default function PdDashboardPage() {
             label="Blocked tickets"
             count={summary.blockedTickets}
             sub={summary.blockedTickets > 0 ? "Have a work item on hold" : "No internal blockers"}
-            href={summary.blockedTickets > 0 ? "#cross-company" : undefined}
+            href={summary.blockedTickets > 0 ? "/engineering/tickets?filter=blocked" : undefined}
             icon={ShieldAlert}
             tone={summary.blockedTickets > 0 ? "rose" : "default"}
             testId="kpi-blocked-tickets"
@@ -415,7 +419,7 @@ export default function PdDashboardPage() {
             label="Handover-ready"
             count={handoverReady.total}
             sub={handoverReady.total > 0 ? "Projects in S08–S10 band" : "No projects at handover stage"}
-            href={handoverReady.total > 0 ? "/handover-control" : undefined}
+            href={handoverReady.total > 0 ? "/projects?filter=handover-ready" : undefined}
             icon={Handshake}
             tone={handoverReady.total > 0 ? "emerald" : "default"}
             testId="kpi-handover-ready"
@@ -424,7 +428,7 @@ export default function PdDashboardPage() {
             label="Linkage / data gaps"
             count={linkageGaps.total}
             sub={linkageGaps.total > 0 ? "Spine breaks across tickets/projects" : "Spine clean"}
-            href={linkageGaps.total > 0 ? "/admin/work-item-linkage" : undefined}
+            href={linkageGaps.total > 0 ? "/engineering/tickets?filter=linkage-gaps" : undefined}
             icon={Link2Off}
             tone={linkageGaps.total > 0 ? "rose" : "default"}
             testId="kpi-linkage-gaps"
@@ -663,17 +667,28 @@ export default function PdDashboardPage() {
               {recentlyCompleted.length === 0 ? (
                 <p className="text-xs text-muted-foreground">Nothing completed in the last 14 days.</p>
               ) : (
-                <ul className="space-y-2">
-                  {recentlyCompleted.map((w) => (
-                    <li key={w.workItemId} className="text-xs" data-testid={`completed-${w.workItemId}`}>
-                      <Link href={`/engineering/tasks?open=${w.workItemId}`} className="font-medium hover:text-emerald-700">
-                        {w.title || `Work item #${w.workItemId}`}
+                <ul className="space-y-3">
+                  {recentlyCompleted.map((g) => (
+                    <li key={g.ticketId ?? "orphan"} data-testid={`completed-ticket-${g.ticketId ?? "orphan"}`}>
+                      <Link
+                        href={g.ticketId != null ? `/engineering/tickets?open=${g.ticketId}` : "/engineering/tickets"}
+                        className="text-xs font-semibold hover:text-emerald-700"
+                      >
+                        {g.ticketName ?? (g.ticketId != null ? `Ticket #${g.ticketId}` : "Unlinked")}
                       </Link>
-                      <p className="text-muted-foreground">
-                        {w.owner ? `${w.owner} · ` : ""}
-                        {w.ticketName ?? "—"}
-                        {w.completedAt ? ` · ${formatDate(w.completedAt)}` : ""}
-                      </p>
+                      <ul className="mt-1 ml-3 space-y-1 border-l border-emerald-100 pl-3">
+                        {g.items.map((w) => (
+                          <li key={w.workItemId} className="text-xs" data-testid={`completed-${w.workItemId}`}>
+                            <Link href={`/engineering/tasks?open=${w.workItemId}`} className="hover:text-emerald-700">
+                              {w.title || `Work item #${w.workItemId}`}
+                            </Link>
+                            <span className="text-muted-foreground">
+                              {w.owner ? ` · ${w.owner}` : ""}
+                              {w.completedAt ? ` · ${formatDate(w.completedAt)}` : ""}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
                     </li>
                   ))}
                 </ul>
