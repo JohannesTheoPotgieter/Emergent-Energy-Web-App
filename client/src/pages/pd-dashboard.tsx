@@ -26,7 +26,7 @@ import {
 import { PageHeader } from "@/components/ui/page-header";
 import { PageLayout } from "@/components/layout";
 
-type ActionReason = "blocked" | "overdue" | "stale_30d" | "high_priority_quiet" | "";
+type ActionReason = "overdue" | "on_hold" | "stale_30d" | "high_priority_quiet" | "";
 
 type PdDashboard = {
   generatedAt: string;
@@ -64,8 +64,8 @@ type PdDashboard = {
 };
 
 const REASON_LABEL: Record<ActionReason, { label: string; tone: "rose" | "amber" | "slate" }> = {
-  blocked: { label: "Blocked", tone: "rose" },
   overdue: { label: "Overdue", tone: "rose" },
+  on_hold: { label: "On hold", tone: "rose" },
   stale_30d: { label: "Stale >30d", tone: "amber" },
   high_priority_quiet: { label: "High-priority quiet", tone: "amber" },
   "": { label: "—", tone: "slate" },
@@ -74,6 +74,7 @@ const REASON_LABEL: Record<ActionReason, { label: string; tone: "rose" | "amber"
 const LINKAGE_LABEL: Record<string, string> = {
   unlinked_ticket: "Ticket with no project or opportunity",
   completed_no_project: "Completed ticket — no project linked",
+  won_no_project: "Won opportunity — no project record",
   project_no_tickets: "Active project — no engineering tickets",
 };
 
@@ -443,7 +444,7 @@ export default function PdDashboardPage() {
               Action queue
             </CardTitle>
             <p className="text-xs text-muted-foreground">
-              Top {actionQueue.length} open work items ranked by blocked → overdue → stale &gt;30d → high-priority quiet.
+              Top {actionQueue.length} open work items ranked by overdue → on-hold → stale &gt;30d → high-priority quiet.
             </p>
           </>
         }
