@@ -665,7 +665,7 @@ router.get("/api/pd/dashboard", requireAuth, requirePermission("pd_dashboard", "
           AND LOWER(COALESCE(et.status, '')) IN ('completed', 'complete', 'closed', 'resolved', 'done')
         UNION ALL
         SELECT 'won_no_project' AS kind, opp.id AS id,
-               COALESCE(NULLIF(TRIM(opp.deal_name), ''), NULLIF(TRIM(opp.person_name), ''), 'Opportunity #' || opp.id) AS label
+               ('Opportunity #' || opp.id) AS label
         FROM opportunities opp
         WHERE opp.deleted_at IS NULL
           AND LOWER(COALESCE(opp.status, '')) = 'won'
@@ -760,14 +760,26 @@ router.get("/api/pd/dashboard", requireAuth, requirePermission("pd_dashboard", "
         owner: r.owner ?? null,
         reason: String(r.reason ?? ''),
       })),
-      recentlyCompleted: (recentlyCompletedRows.rows ?? []).map((r: any) => ({
-        workItemId: Number(r.work_item_id),
-        title: r.title ?? null,
-        ticketId: r.engineering_ticket_id != null ? Number(r.engineering_ticket_id) : null,
-        ticketName: r.project_site_name ?? null,
-        completedAt: r.completed_at ?? null,
-        owner: r.owner ?? null,
-      })),
+      // Recently completed (14d) — grouped by engineering ticket per task #71 spec.
+      recentlyCompleted: (() => {
+        const groups = new Map<string, { ticketId: number | null; ticketName: string | null; items: any[] }>();
+        for (const r of (recentlyCompletedRows.rows ?? []) as any[]) {
+          const ticketId = r.engineering_ticket_id != null ? Number(r.engineering_ticket_id) : null;
+          const key = ticketId == null ? "_orphan" : String(ticketId);
+          let g = groups.get(key);
+          if (!g) {
+            g = { ticketId, ticketName: r.project_site_name ?? null, items: [] };
+            groups.set(key, g);
+          }
+          g.items.push({
+            workItemId: Number(r.work_item_id),
+            title: r.title ?? null,
+            completedAt: r.completed_at ?? null,
+            owner: r.owner ?? null,
+          });
+        }
+        return Array.from(groups.values());
+      })(),
       upcomingThisWeek: (upcomingThisWeekRows.rows ?? []).map((r: any) => ({
         workItemId: Number(r.work_item_id),
         title: r.title ?? null,
