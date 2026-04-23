@@ -44,8 +44,6 @@ export async function registerSupportRoutes(app: Express) {
   const { registerInvoiceCaptureRoutes } = await import("../invoice-capture-routes");
   registerInvoiceCaptureRoutes(app);
 
-  const { registerExceptionDashboardRoutes } = await import("../exception-dashboard-routes");
-  registerExceptionDashboardRoutes(app);
 
   const { registerQualityNcrRoutes } = await import("../quality-ncr-routes");
   registerQualityNcrRoutes(app);
