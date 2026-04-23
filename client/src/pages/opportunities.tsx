@@ -48,11 +48,11 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ExportDropdown } from "@/components/ui/export-dropdown";
 import { PD_REQUEST_TYPES_FILTERABLE } from "@/lib/pd/request-types";
 import { OpportunityDrawer, OpportunityDetailBody } from "@/components/opportunities/OpportunityDrawer";
-import { OpportunitiesKanban, OpportunitiesCalendar } from "@/components/opportunities/OpportunityViews";
+import { OpportunitiesCalendar } from "@/components/opportunities/OpportunityViews";
 import { useBreakpoint } from "@/hooks/use-breakpoint";
 import { X, Link2 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { LayoutList, KanbanSquare, CalendarDays } from "lucide-react";
+import { LayoutList, CalendarDays } from "lucide-react";
 import { pdStageLifecycleLabel } from "@/lib/pdStageLifecycle";
 
 // App-phase label: capitalizes the stored stage value so the column reads
@@ -986,9 +986,6 @@ export default function OpportunitiesPage() {
             <TabsTrigger value="list" className="text-xs gap-1.5 data-[state=active]:bg-white data-[state=active]:text-emerald-800" data-testid="tab-list">
               <LayoutList className="h-3.5 w-3.5" /> List
             </TabsTrigger>
-            <TabsTrigger value="kanban" className="text-xs gap-1.5 data-[state=active]:bg-white data-[state=active]:text-emerald-800" data-testid="tab-kanban">
-              <KanbanSquare className="h-3.5 w-3.5" /> Kanban
-            </TabsTrigger>
             <TabsTrigger value="calendar" className="text-xs gap-1.5 data-[state=active]:bg-white data-[state=active]:text-emerald-800" data-testid="tab-calendar">
               <CalendarDays className="h-3.5 w-3.5" /> Calendar
             </TabsTrigger>
@@ -1202,14 +1199,6 @@ export default function OpportunitiesPage() {
                 <span className="text-slate-400">Click any card for detail</span>
               </div>
             </div>
-          </TabsContent>
-
-          {/* ── Kanban view ───────────────────────────────────────────── */}
-          <TabsContent value="kanban" className="mt-3">
-            <OpportunitiesKanban
-              rows={activeRows}
-              onCardClick={(id) => setDrawerOppId(id)}
-            />
           </TabsContent>
 
           {/* ── Calendar view ─────────────────────────────────────────── */}
