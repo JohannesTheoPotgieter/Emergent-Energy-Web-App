@@ -116,16 +116,7 @@ export default function AdminQuickBooksPage() {
       setLocation("/finance/quickbooks/throughput");
     }
   }, [authLoading, isAdmin, setLocation]);
-
-  if (!authLoading && !isAdmin) {
-    return (
-      <PageShell className="p-4 md:p-6">
-        <div className="rounded border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">
-          QuickBooks admin actions are restricted to CEO / COO admins. Redirecting…
-        </div>
-      </PageShell>
-    );
-  }
+  const isUnauthorized = !authLoading && !isAdmin;
 
   const {
     data: status,
@@ -137,6 +128,7 @@ export default function AdminQuickBooksPage() {
       const res = await apiRequest("GET", "/api/quickbooks/status");
       return res.json();
     },
+    enabled: !isUnauthorized,
   });
 
   const isConnected = status?.connected ?? false;
@@ -214,6 +206,16 @@ export default function AdminQuickBooksPage() {
     const nextUrl = `${window.location.pathname}${qs ? `?${qs}` : ""}`;
     window.history.replaceState({}, "", nextUrl);
   }, [toast, refetchStatus]);
+
+  if (isUnauthorized) {
+    return (
+      <PageShell className="p-4 md:p-6">
+        <div className="rounded border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">
+          QuickBooks admin actions are restricted to CEO / COO admins. Redirecting…
+        </div>
+      </PageShell>
+    );
+  }
 
   if (statusLoading) return <PageSkeleton lines={5} />;
 

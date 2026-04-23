@@ -1,7 +1,7 @@
 name: PR Checks
 on:
   pull_request:
-    branches: [main, develop]
+    branches: [main]
 
 jobs:
   # ── Fast gate: compile integrity (no DB required) ─────────
@@ -85,6 +85,8 @@ jobs:
             turbo-compile-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json') }}-
       - run: npx turbo run build test --cache-dir=.turbo
         if: hashFiles('**/*.test.ts') != ''
+      # Non-cacheable integration steps (need a live server + DB)
+      - run: npm run test:api
       - run: npm run release:gate
         env:
           SKIP_SMOKE_TESTS: "true"
