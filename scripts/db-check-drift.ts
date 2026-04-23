@@ -29,7 +29,41 @@ if (fs.existsSync(scratch)) fs.rmSync(scratch, { recursive: true, force: true })
 fs.mkdirSync(scratch, { recursive: true });
 const scratchMigrations = scratch;
 
+type Journal = {
+  entries?: Array<{ tag?: string }>;
+};
+
+function checkMigrationJournalIntegrity(): void {
+  const sqlFiles = fs
+    .readdirSync(migrationsDir)
+    .filter((name) => name.endsWith(".sql"))
+    .sort();
+
+  const journalPath = path.join(migrationsDir, "meta", "_journal.json");
+  const journalRaw = fs.readFileSync(journalPath, "utf8");
+  const journal = JSON.parse(journalRaw) as Journal;
+  const tracked = new Set((journal.entries ?? []).map((entry) => `${entry.tag ?? ""}.sql`));
+
+  const untracked = sqlFiles.filter((file) => !tracked.has(file));
+  if (untracked.length > 0) {
+    console.error("");
+    console.error("✖ Migration journal drift detected.");
+    console.error("");
+    console.error("These migration SQL files exist in /migrations but are missing");
+    console.error("from migrations/meta/_journal.json:");
+    console.error("");
+    for (const file of untracked) console.error(`    ${file}`);
+    console.error("");
+    console.error("Fix by regenerating/committing the matching journal+snapshot state");
+    console.error("for these migrations so CI and deploy use the same migration truth.");
+    console.error("");
+    process.exit(3);
+  }
+}
+
 try {
+  checkMigrationJournalIntegrity();
+
   // Mirror the journal + baseline so drizzle-kit compares against the
   // committed state. Hard-copy rather than symlink so the scratch run
   // can't accidentally write to the real directory.
