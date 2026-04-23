@@ -40,6 +40,18 @@ CREATE UNIQUE INDEX IF NOT EXISTS "controlled_document_types_type_key_idx"
   ON "controlled_document_types" ("type_key");
 --> statement-breakpoint
 
+-- PostgreSQL requires the referenced column of a foreign key to be backed by
+-- a UNIQUE CONSTRAINT (or PRIMARY KEY) — a plain unique index is not enough
+-- to satisfy `controlled_documents_type_fk` below. Add it explicitly so a
+-- fresh production database can build the FK. The CREATE UNIQUE INDEX above
+-- is retained for backward compatibility with dev databases that already
+-- have it; PostgreSQL keeps both happily.
+DO $$ BEGIN
+  ALTER TABLE "controlled_document_types"
+    ADD CONSTRAINT "controlled_document_types_type_key_unique" UNIQUE ("type_key");
+EXCEPTION WHEN duplicate_object THEN null; WHEN duplicate_table THEN null; END $$;
+--> statement-breakpoint
+
 -- Table: controlled_documents ---------------------------------------------
 CREATE TABLE IF NOT EXISTS "controlled_documents" (
   "id" serial PRIMARY KEY NOT NULL,
