@@ -111,12 +111,12 @@ const PD_CONFIG: RoleDashboardConfig = {
   ],
   attentionPriority: ["handovers_needing_prep", "returned_tickets", "stale_opportunities", "my_overdue"],
   quickActions: [
-    { label: "Project Development Dashboard", path: "/pd", iconKey: "Sun" },
+    { label: "Engineering & Quality Dashboard", path: "/pd", iconKey: "Sun" },
     { label: "Opportunities", path: "/opportunities", iconKey: "TrendingUp" },
     { label: "Clients", path: "/clients", iconKey: "Users" },
   ],
   cockpitPath: "/pd",
-  cockpitLabel: "Project Development Dashboard",
+  cockpitLabel: "Engineering & Quality Dashboard",
 };
 
 const FINANCE_CONFIG: RoleDashboardConfig = {

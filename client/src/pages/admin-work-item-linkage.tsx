@@ -97,7 +97,7 @@ export default function AdminWorkItemLinkagePage() {
     onSuccess: (_, workItemId) => {
       toast({
         title: "Converted to standalone",
-        description: `Work item #${workItemId} is no longer linked to any PD ticket.`,
+        description: `Work item #${workItemId} is no longer linked to any engineering ticket.`,
       });
       qc.invalidateQueries({ queryKey: ["/api/admin/work-item-linkage/orphans"] });
       qc.invalidateQueries({ queryKey: ["/api/project-development/workspace/rollup"] });
@@ -145,7 +145,7 @@ export default function AdminWorkItemLinkagePage() {
         icon={<LinkIcon className="h-5 w-5" />}
         eyebrow="Admin · Spine repair"
         title="Work item linkage"
-        description="Inspect and repair work_items whose PD ticket pointer is missing, soft-deleted, or never set despite live tickets on the project."
+        description="Inspect and repair work_items whose engineering ticket pointer is missing, soft-deleted, or never set despite live tickets on the project."
       />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3" data-testid="linkage-counts">
@@ -160,7 +160,7 @@ export default function AdminWorkItemLinkagePage() {
           <CardContent className="p-3">
             <p className="text-xs text-muted-foreground">Unlinked but project has tickets</p>
             <p className="text-2xl font-semibold" data-testid="count-unlinked">{data.counts.unlinkedButProjectHasTickets}</p>
-            <p className="text-[10px] text-muted-foreground">work_items.pd_ticket_id IS NULL on a project that still has live PD tickets</p>
+            <p className="text-[10px] text-muted-foreground">work_items.pd_ticket_id IS NULL on a project that still has live engineering tickets</p>
           </CardContent>
         </Card>
         <Card>

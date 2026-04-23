@@ -1,9 +1,10 @@
 /**
  * Unified Opportunity drawer (2026-04-20).
  *
- * Replaces the legacy "PD Ticket detail" page. Treats Pipedrive
- * opportunity + PD-shadow `pd_tickets` row as a single user-facing
- * record:
+ * Replaces the legacy "Engineering ticket detail" page (formerly
+ * called "PD Ticket detail"; vocabulary retired in task #56). Treats
+ * a Pipedrive opportunity + its shadow `pd_tickets` row as a single
+ * user-facing record:
  *   - CRM block (blue 🔵): read-only — Pipedrive sync owns these.
  *   - PD workflow block (emerald 🟢): editable — the app owns these.
  *   - Tasks block: spawned engineering tasks for this opportunity.
