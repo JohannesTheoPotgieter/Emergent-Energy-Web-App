@@ -49,7 +49,7 @@ import { PD_REQUEST_TYPES_FILTERABLE } from "@/lib/pd/request-types";
 import { OpportunityDrawer, OpportunityDetailBody } from "@/components/opportunities/OpportunityDrawer";
 import { OpportunitiesKanban, OpportunitiesCalendar } from "@/components/opportunities/OpportunityViews";
 import { useBreakpoint } from "@/hooks/use-breakpoint";
-import { X } from "lucide-react";
+import { X, Link2 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { LayoutList, KanbanSquare, CalendarDays } from "lucide-react";
 import { pdStageLifecycleLabel } from "@/lib/pdStageLifecycle";
@@ -640,16 +640,17 @@ export default function OpportunitiesPage() {
   });
 
   // The server (`server/lib/opportunity-working-filter.ts`) is the
-  // authoritative gate for which deals appear here — terminal status,
-  // signed date, and linked project all exclude. We re-apply the same
-  // checks client-side as a defensive safety net (cached responses,
-  // mid-flight mutations, role-stale data); in DEV we log when the
-  // safety net actually trips so any drift between client/server is
-  // visible. See review item C1 (2026-04-21).
+  // authoritative gate for which deals appear here — terminal status
+  // and signed date exclude. Linked-to-project is intentionally NOT
+  // a hide-reason any more (the row stays visible with a project
+  // chip). We re-apply the same checks client-side as a defensive
+  // safety net (cached responses, mid-flight mutations, role-stale
+  // data); in DEV we log when the safety net actually trips so any
+  // drift between client/server is visible. See review item C1
+  // (2026-04-21) and Task #55 (2026-04-23).
   const activeRows = useMemo(() => {
     const filtered = data.filter(
       (row) =>
-        !row.hasLinkedProject &&
         !hasTerminalMarker(row.status) &&
         !hasTerminalMarker(row.stage) &&
         !row.signedDate,
@@ -832,7 +833,7 @@ export default function OpportunitiesPage() {
         icon={<TrendingUp className="h-5 w-5" />}
         eyebrow="Project Development"
         title="Opportunities (Active Working List)"
-        description="Only active Pipedrive opportunities are shown here. Lost, won/signed/closed, and converted deals are excluded."
+        description="Active Pipedrive opportunities, including those already linked to a project (linked deals show a green project chip). Lost and won/signed/closed deals are excluded."
         actions={
           <div className="flex items-center gap-2">
             {lastPullAt && (
@@ -1135,6 +1136,30 @@ export default function OpportunitiesPage() {
                           <span className="inline-flex items-center px-1.5 py-0 rounded bg-sky-50 text-sky-700 text-[10px] font-medium border border-sky-100">
                             {row.province}
                           </span>
+                        )}
+                        {row.hasLinkedProject && (
+                          <Link
+                            href={`/project/${encodeURIComponent(
+                              row.linkedProjectName || String(row.linkedProjectId ?? ""),
+                            )}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center gap-1 px-1.5 py-0 rounded bg-emerald-50 text-emerald-700 text-[10px] font-medium border border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300 transition-colors max-w-[180px]"
+                            title={`Linked to project: ${row.linkedProjectName || `#${row.linkedProjectId}`}${row.linkedProjectCount > 1 ? ` (+${row.linkedProjectCount - 1} more)` : ""}`}
+                            data-testid={`opp-linked-project-chip-${row.id}`}
+                          >
+                            <Link2 className="h-2.5 w-2.5 shrink-0" />
+                            <span
+                              className="truncate"
+                              data-testid={`opp-linked-project-link-${row.id}`}
+                            >
+                              {row.linkedProjectName || `Project #${row.linkedProjectId}`}
+                            </span>
+                            {row.linkedProjectCount > 1 && (
+                              <span className="text-[9px] text-emerald-600 shrink-0">
+                                +{row.linkedProjectCount - 1}
+                              </span>
+                            )}
+                          </Link>
                         )}
                         {row.projectDeveloper && (
                           <span
