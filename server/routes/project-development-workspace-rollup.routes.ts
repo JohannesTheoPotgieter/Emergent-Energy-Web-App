@@ -189,6 +189,17 @@ export function registerProjectDevelopmentWorkspaceRollupRoutes(app: Express) {
           },
         });
 
+        const openPdTickets = rollup.reduce((acc, r) => acc + r.pdTickets.open, 0);
+        const overduePdTickets = rollup.reduce((acc, r) => acc + r.pdTickets.overdue, 0);
+        // Vocabulary phase 1 (task #56): mirror each `pdTickets`-keyed
+        // row block as `engineeringTickets` so new clients can read the
+        // friendlier name. Old clients continue to read `pdTickets`. Both
+        // keys stay in the payload until the planned phase 2 cleanup.
+        const rowsWithKindAlias = rollup.map((r) => ({
+          ...r,
+          engineeringTickets: r.pdTickets,
+        }));
+
         res.json({
           generatedAt: new Date().toISOString(),
           asOf,
@@ -200,8 +211,12 @@ export function registerProjectDevelopmentWorkspaceRollupRoutes(app: Express) {
             projects: rollup.length,
             spineGap: spineGapCount,
             cascadeAnomalies: cascadeAnomalyCount,
-            openPdTickets: rollup.reduce((acc, r) => acc + r.pdTickets.open, 0),
-            overduePdTickets: rollup.reduce((acc, r) => acc + r.pdTickets.overdue, 0),
+            openPdTickets,
+            overduePdTickets,
+            // Phase-1 vocabulary aliases — see comment above. Same numbers,
+            // friendlier key. Old keys remain.
+            openEngineeringTickets: openPdTickets,
+            overdueEngineeringTickets: overduePdTickets,
             openWorkItems: rollup.reduce((acc, r) => acc + r.workItems.open, 0),
             blockedWorkItems: rollup.reduce((acc, r) => acc + r.workItems.blocked, 0),
             overdueWorkItems: rollup.reduce((acc, r) => acc + r.workItems.overdue, 0),
@@ -212,7 +227,7 @@ export function registerProjectDevelopmentWorkspaceRollupRoutes(app: Express) {
             ticketsWithoutValidLinkage: ticketsWithoutValidLinkageRows.length,
             workItemsWithInvalidLinkage: workItemsWithInvalidLinkageRows.length,
           },
-          rows: rollup,
+          rows: rowsWithKindAlias,
           lists: {
             projectsWithoutTickets: projectsWithoutTicketsRows,
             ticketsWithoutValidLinkage: ticketsWithoutValidLinkageRows,
