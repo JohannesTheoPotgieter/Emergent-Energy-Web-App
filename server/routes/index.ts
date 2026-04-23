@@ -9,6 +9,7 @@ import { registerControlledDocumentRoutes } from './documents.routes';
 import { registerImpactRoutes } from './impact.routes';
 import { registerEmailLinksRoutes } from './email-links.routes';
 import { registerScreenSettingsRoutes } from './admin-screen-settings.routes';
+import { registerExceptionDashboardRoutes } from './exception-dashboard.routes';
 
 export async function registerRoutes(httpServer: Server, app: Express) {
   registerTemplateGovernanceRoutes(app);
@@ -19,5 +20,6 @@ export async function registerRoutes(httpServer: Server, app: Express) {
   registerImpactRoutes(app);
   registerEmailLinksRoutes(app);
   registerScreenSettingsRoutes(app);
+  registerExceptionDashboardRoutes(app);
   return registerLegacyRoutes(httpServer, app);
 }
