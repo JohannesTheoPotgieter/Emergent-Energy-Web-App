@@ -430,3 +430,60 @@ write-path guard against `engineering_tickets` /
 API response payload keys (`pdTickets:`, `pdTicketId:`) are unrelated
 to this cleanup and remain in place — they belong to the Phase-1
 vocabulary rollout (task #56) and are tracked separately.
+
+## 13. 2026-04-23 — Migrations 0024 / 0025 / 0026 applied to dev DB
+
+The vocabulary phase-2 migrations had landed on disk during tasks
+#58 and #60 but had never executed against the dev database — the
+post-merge hook that normally applies them was failing with
+`HOOK_NOT_FOUND`. This left the Drizzle schema (post-rename) and
+the live DB (pre-rename) out of sync, producing 500s on every
+endpoint that touched `engineering_tickets` or
+`work_items.engineering_ticket_id`. The visible symptoms were
+"Failed to load cross-company rollup" on `/pd` and "Unable to
+load cashflow" / "Failed to fetch cashflow data" on
+`/finance/cashflow`.
+
+Applied (in order, hand-authored, transactional):
+
+- `migrations/0024_engineering_tickets_view_alias.sql`
+- `migrations/0025_engineering_tickets_physical_rename.sql`
+- `migrations/0026_drop_pd_tickets_legacy_aliases.sql`
+
+Pre-flight snapshot:
+- `pd_tickets` (BASE TABLE) — 21 active rows, 21 total
+- `work_items.pd_ticket_id` — 1 non-null link
+
+Post-flight verification:
+- `engineering_tickets` (BASE TABLE) — 21 active rows, 21 total
+- `work_items.engineering_ticket_id` — 1 non-null link
+- `pg_typeof(engineering_tickets.id)` = `integer` (serial-backed
+  by the renamed `engineering_tickets_id_seq` — PK type preserved
+  as required by `replit.md` and the CI guard at
+  `qa/tests/unit/db-push-uses-drizzle.test.ts`)
+- `pd_tickets` table / view — gone
+- `work_items.pd_ticket_id` column — gone
+- Soft-delete reject trigger
+  `work_items_reject_softdeleted_engineering_ticket_trg` — present
+- Both previously-500 endpoints now return 401 to anonymous
+  callers (auth gate reached, no DB error).
+
+Migration journal `migrations/meta/_journal.json` updated to
+include entries for 0024, 0025, and 0026 so the journal mirrors
+disk reality.
+
+The release-gate test
+`qa/tests/integration/foundation-linkage-cascades.test.ts` could
+not run end-to-end here because the test harness's `loginAdmin`
+helper rejects with 401 in this dev environment (pre-existing
+harness gap, unrelated to the migration). Direct query
+verification through the SQL tool confirmed the table/column
+shape, row counts, and PK type match the plan.
+
+Tracked separately:
+- Fix the post-merge `HOOK_NOT_FOUND` so future merges auto-apply
+  migrations and this drift never recurs.
+- Catch the production database up on migrations 0007–0023, then
+  apply 0024-0026 in production using the same procedure.
+- Resolve the duplicate `0016_*.sql` file numbering (cosmetic).
+
