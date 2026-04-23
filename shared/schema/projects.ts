@@ -642,9 +642,10 @@ export const PHASE_TO_ENG_STAGES: Record<string, string[]> = {
 // ===================== PROJECT DEVELOPMENT (PD) =====================
 
 // ── Renamed from `pd_tickets` to `engineering_tickets` in vocabulary phase 2
-// (task #58, migrations 0024 + 0025). The old `pdTickets` export below is a
-// backwards-compat alias kept for one release. New code should use
-// `engineeringTickets`.
+// (task #58, migrations 0024 + 0025). The legacy `pdTickets` /
+// `PdTicket` / `insertPdTicketSchema` re-exports were dropped in task
+// #60 (migration 0026) once production telemetry confirmed zero
+// traffic against the old names for a full release.
 export const engineeringTickets = pgTable("engineering_tickets", {
   id: serial("id").primaryKey(),
   clientId: integer("client_id").references(() => clients.id),
@@ -722,15 +723,6 @@ export const engineeringTickets = pgTable("engineering_tickets", {
 export const insertEngineeringTicketSchema = createInsertSchema(engineeringTickets).omit({ id: true, createdAt: true, updatedAt: true, tasksSpawnedAt: true, deletedAt: true } as any);
 export type InsertEngineeringTicket = z.infer<typeof insertEngineeringTicketSchema>;
 export type EngineeringTicket = typeof engineeringTickets.$inferSelect;
-
-// ── Backwards-compat re-exports (drop one release after migration 0025) ──
-// Vocabulary phase 2 (task #58). Allows any straggler import that still
-// references `pdTickets`/`PdTicket`/`insertPdTicketSchema` to compile
-// while the codebase migrates to the new names.
-export const pdTickets = engineeringTickets;
-export const insertPdTicketSchema = insertEngineeringTicketSchema;
-export type InsertPdTicket = InsertEngineeringTicket;
-export type PdTicket = EngineeringTicket;
 
 export const PD_REQUEST_TYPE_TASK_TEMPLATES: Record<string, { title: string; priority: string }[]> = {
   "Cost Proposal": [

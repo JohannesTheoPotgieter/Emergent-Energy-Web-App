@@ -375,3 +375,41 @@ Release-gate parity is asserted by
 `qa/tests/integration/foundation-linkage-cascades.test.ts`, which now
 covers both the legacy and new table/column names and confirms every
 `work_items.pd_ticket_id` value matches `engineering_ticket_id`.
+
+## Phase 2 cleanup — drop legacy aliases (task #60, migration 0026)
+
+After one full release on the dual-name setup from migration 0025,
+production telemetry confirmed zero traffic against the legacy
+`pd_tickets` / `pd_ticket_id` symbols. Migration
+`0026_drop_pd_tickets_legacy_aliases.sql` (hand-authored, idempotent)
+removes the remaining backwards-compat surface so future contributors
+are not misled by the duplication:
+
+* DROP VIEW `pd_tickets` (was a `SELECT * FROM engineering_tickets`).
+* DROP INDEX `idx_work_items_pd_ticket_id` (partial index on the
+  generated column).
+* DROP COLUMN `work_items.pd_ticket_id` (STORED generated from
+  `engineering_ticket_id`).
+* DROP FUNCTION `work_items_reject_softdeleted_pd_ticket()` — the
+  unreferenced PL/pgSQL function from migration 0021. Its trigger was
+  already replaced in migration 0025 by
+  `work_items_reject_softdeleted_engineering_ticket()`.
+
+Drizzle was updated in lockstep:
+
+* `shared/schema/projects.ts` no longer re-exports `pdTickets` /
+  `PdTicket` / `insertPdTicketSchema`. The single source of truth is
+  `engineeringTickets` / `EngineeringTicket` /
+  `insertEngineeringTicketSchema`.
+* `server/repositories/opportunities-repository.ts` switched the
+  remaining `PdTicket` type imports to `EngineeringTicket`.
+
+The Phase-2-rename alias-parity assertion in
+`qa/tests/integration/foundation-linkage-cascades.test.ts` was
+removed since the legacy names no longer exist; the soft-delete
+write-path guard against `engineering_tickets` /
+`engineering_ticket_id` continues to exercise the spine.
+
+API response payload keys (`pdTickets:`, `pdTicketId:`) are unrelated
+to this cleanup and remain in place — they belong to the Phase-1
+vocabulary rollout (task #56) and are tracked separately.
