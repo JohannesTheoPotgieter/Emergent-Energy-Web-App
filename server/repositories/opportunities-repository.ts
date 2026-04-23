@@ -512,13 +512,16 @@ export class OpportunitiesRepository {
   /**
    * Unified opportunity workflow read used by the new merged
    * Opportunity drawer (2026-04-20). Returns the CRM record (Pipedrive
-   * truth) plus its 1:1 PD shadow row. If the shadow does not yet exist,
-   * one is lazy-created with sensible defaults the first time someone
-   * opens the opportunity. The lazy-create is what lets us treat
-   * "Pipedrive Opportunity" and "PD Ticket" as a single user-facing
-   * concept without back-filling a row for every imported deal.
+   * truth) plus its 1:1 PD shadow row when one exists.
+   *
+   * 2026-04-23: lazy auto-spawn of the shadow engineering ticket was
+   * removed. Engineering tickets must be created by an explicit user
+   * action (the "Spawn Cost Proposal" / convert flow), never by simply
+   * opening the drawer. If no PD shadow exists yet, `pd` is returned as
+   * `null` and `tasks` as `[]` so the UI can render the empty state.
+   * `actingUserId` is retained for signature compatibility but unused.
    */
-  async getOpportunityWithWorkflow(opportunityId: number, actingUserId: number | null) {
+  async getOpportunityWithWorkflow(opportunityId: number, _actingUserId: number | null) {
     const [opp] = await db
       .select({
         opp: opportunities,
@@ -531,74 +534,34 @@ export class OpportunitiesRepository {
       .where(eq(opportunities.id, opportunityId));
     if (!opp) return null;
 
-    // Race-safe lazy shadow create: relies on the partial unique index
-    // `pd_tickets_opportunity_shadow_unique` ON pd_tickets (opportunity_id)
-    // WHERE opportunity_id IS NOT NULL AND project_id IS NULL.
-    // Postgres requires the inference clause to repeat the predicate of a
-    // partial unique index, otherwise it raises 42P10 "no unique or
-    // exclusion constraint matching the ON CONFLICT specification".
-    // We only ever lazy-create unlinked shadows here (project_id is always
-    // NULL on insert), so the predicate is satisfied by construction.
-    //
-    // IMPORTANT: Drizzle's `onConflictDoNothing` only emits the predicate
-    // when passed via the (deprecated-but-functional) `where` key. The
-    // `targetWhere` property is silently ignored on DoNothing — it is only
-    // wired up for `onConflictDoUpdate`. See node_modules/drizzle-orm/
-    // pg-core/query-builders/insert.js (DoNothing branch uses `whereSql`).
-    const projectSiteName =
-      opp.siteName ||
-      opp.clientName ||
-      opp.opp.dealName ||
-      `Opportunity #${opp.opp.id}`;
-    await db
-      .insert(engineeringTickets)
-      .values({
-        opportunityId,
-        clientId: opp.opp.clientId ?? null,
-        clientNameSnapshot: opp.clientName ?? null,
-        projectSiteName,
-        requestType: "Cost Proposal",
-        priority: "Medium",
-        status: "Draft",
-        fundingType: opp.opp.fundingType ?? null,
-        sizeKwp: opp.opp.estimatedKwp ?? null,
-        estimatedProjectValue: opp.opp.estimatedValue ?? null,
-        createdBy: actingUserId,
-      })
-      .onConflictDoNothing({
-        target: engineeringTickets.opportunityId,
-        where: sql`opportunity_id IS NOT NULL AND project_id IS NULL AND deleted_at IS NULL`,
-      });
-
-    // Constrain re-select to the canonical shadow scope (project_id IS NULL)
-    // so we always return the row covered by the partial unique index, not
-    // an unrelated project-linked PD ticket that may share the opportunity.
+    // Read-only shadow lookup. We DO NOT auto-create here — engineering
+    // tickets are only ever spawned by an explicit user action (the
+    // convert / "Spawn Cost Proposal" CTA). If no shadow row exists yet,
+    // `shadow` stays null and the drawer renders the empty state with
+    // the spawn CTA visible.
     const [shadow] = await db
       .select()
       .from(engineeringTickets)
-      // Cascade-display: ignore soft-deleted shadow rows (Task #34) so a
-      // tombstoned shadow does not block recreating the canonical one.
       .where(and(
         eq(engineeringTickets.opportunityId, opportunityId),
         isNull(engineeringTickets.projectId),
         isNull(engineeringTickets.deletedAt),
       ))
       .limit(1);
-    if (!shadow) {
-      throw new Error(`PD shadow vanished for opportunity #${opportunityId}`);
-    }
 
-    const tasks = await db
-      .select({
-        id: workItems.id,
-        title: workItems.title,
-        status: workItems.status,
-        priority: workItems.priority,
-        endDate: workItems.endDate,
-      })
-      .from(workItems)
-      .where(eq(workItems.engineeringTicketId, shadow.id))
-      .orderBy(asc(workItems.sortOrder));
+    const tasks = shadow
+      ? await db
+          .select({
+            id: workItems.id,
+            title: workItems.title,
+            status: workItems.status,
+            priority: workItems.priority,
+            endDate: workItems.endDate,
+          })
+          .from(workItems)
+          .where(eq(workItems.engineeringTicketId, shadow.id))
+          .orderBy(asc(workItems.sortOrder))
+      : [];
 
     // All engineering tickets attached to this opportunity. We INCLUDE the
     // lazy shadow row here (rather than excluding it) because the partial
