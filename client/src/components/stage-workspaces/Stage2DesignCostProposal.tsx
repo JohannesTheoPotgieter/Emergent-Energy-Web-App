@@ -150,7 +150,7 @@ export function Stage2DesignCostProposal({ projectId, isAdmin }: Stage2Props) {
               <CardContent>
                 <p className="text-xs text-muted-foreground">
                   Proposal cannot be marked ready until PD and Design Engineer both confirm site accuracy, solution fit, and costing basis.
-                  This is a gate, not just an engineering ticket. Bypass allowed with admin override + reason.
+                  This is a gate, not just a PD ticket. Bypass allowed with admin override + reason.
                 </p>
               </CardContent>
             </Card>

@@ -253,7 +253,7 @@ export function OpportunityDetailBody({ opportunityId, active, variant = "inline
         <Inbox className="h-8 w-8 text-slate-300" />
         <p className="mt-3 text-sm font-medium text-slate-700">Select an opportunity</p>
         <p className="mt-1 max-w-xs text-xs text-slate-500">
-          Pick a deal from the list on the left to see its CRM details, internal readiness, engineering tickets, and activity.
+          Pick a deal from the list on the left to see its CRM details, internal readiness, PD tickets, and activity.
         </p>
       </div>
     );
@@ -563,7 +563,7 @@ export function OpportunityDetailBody({ opportunityId, active, variant = "inline
                   </header>
                   <div className="p-4 space-y-2">
                   {!merged.projectId ? (
-                    <p className="text-[11px] text-muted-foreground italic">No engineering tickets yet — create one from the working list, or convert this opportunity to a project first.</p>
+                    <p className="text-[11px] text-muted-foreground italic">No PD tickets yet — create one from the working list, or convert this opportunity to a project first.</p>
                   ) : data.tasks.length === 0 ? (
                     <p className="text-[11px] text-muted-foreground italic">No tasks yet.</p>
                   ) : (
@@ -638,7 +638,7 @@ export function OpportunityDetailBody({ opportunityId, active, variant = "inline
                     >
                       <div className="text-xs min-w-0">
                         <p className="font-medium text-emerald-900">
-                          Engineering ticket in progress — no project shell yet
+                          PD ticket in progress — no project shell yet
                         </p>
                         <p className="text-emerald-800/80">
                           Materialize a project from "{activeTicket.requestType}" so this ticket's tasks

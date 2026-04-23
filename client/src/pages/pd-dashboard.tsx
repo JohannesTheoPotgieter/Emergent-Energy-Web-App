@@ -343,8 +343,8 @@ export default function PdDashboardPage() {
       data-testid="pd-dashboard"
       header={
         <PageHeader
-          title="Engineering & Quality"
-          subtitle="Operational control tower — what engineering and quality tickets need action today, and where handover and cross-team flow is breaking down."
+          title="Project Development"
+          subtitle="Operational control tower — what PD tickets need action today, and where handover and cross-team flow is breaking down."
           actions={
             <Link href="/opportunities">
               <Button variant="outline" size="sm" className="gap-2" data-testid="link-working-list">
@@ -805,7 +805,7 @@ function MeetingViewSection() {
       <Card data-testid="meeting-view-loading">
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2"><Activity className="h-4 w-4" /> Cross-company interaction</CardTitle>
-          <p className="text-xs text-muted-foreground">Engineering tickets, work-item blockers, and workspace-rollup gaps across all active projects.</p>
+          <p className="text-xs text-muted-foreground">PD tickets, work-item blockers, and workspace-rollup gaps across all active projects.</p>
         </CardHeader>
         <CardContent><Skeleton className="h-48" /></CardContent>
       </Card>
@@ -842,7 +842,7 @@ function MeetingViewSection() {
       <CardContent>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 text-xs">
           <div data-testid="rollup-total-open-pd-tickets" className="rounded-md bg-muted/40 p-2">
-            <p className="text-muted-foreground">Open engineering tickets</p>
+            <p className="text-muted-foreground">Open PD tickets</p>
             <p className="text-lg font-semibold">{data.totals.openEngineeringTickets}</p>
             <p className="text-[10px] text-amber-700">{data.totals.overdueEngineeringTickets} overdue</p>
           </div>
@@ -858,7 +858,7 @@ function MeetingViewSection() {
           <div data-testid="rollup-spine-gap" className={`rounded-md p-2 ${data.totals.spineGap > 0 ? "bg-rose-50" : "bg-muted/40"}`}>
             <p className="text-muted-foreground">Spine gaps</p>
             <p className={`text-lg font-semibold ${data.totals.spineGap > 0 ? "text-rose-700" : ""}`}>{data.totals.spineGap}</p>
-            <p className="text-[10px] text-muted-foreground">work_items but no engineering ticket</p>
+            <p className="text-[10px] text-muted-foreground">work_items but no PD ticket</p>
             <Link
               href="/admin/work-item-linkage"
               className="text-[10px] text-emerald-700 underline hover:no-underline"
@@ -874,7 +874,7 @@ function MeetingViewSection() {
               <tr className="text-left text-muted-foreground border-b">
                 <th className="py-2 pr-3">Project</th>
                 <th className="py-2 pr-3">Phase</th>
-                <th className="py-2 pr-3 text-right">Eng. tickets</th>
+                <th className="py-2 pr-3 text-right">PD tickets</th>
                 <th className="py-2 pr-3 text-right">Work items</th>
                 <th className="py-2 pr-3 text-right">RAID</th>
                 <th className="py-2 pr-3">Flags</th>
@@ -928,13 +928,13 @@ function MeetingViewSection() {
           <div className="mt-6 space-y-3">
             <RiskList
               testId="risk-projects-without-tickets"
-              title="Projects without engineering tickets"
+              title="Projects without PD tickets"
               count={data.lists.projectsWithoutTickets.length}
               items={data.lists.projectsWithoutTickets.map((p) => ({ id: p.id, label: p.projectName || `#${p.id}` }))}
             />
             <RiskList
               testId="risk-tickets-invalid-linkage"
-              title="Engineering tickets with invalid linkage"
+              title="PD tickets with invalid linkage"
               count={data.lists.ticketsWithoutValidLinkage.length}
               items={data.lists.ticketsWithoutValidLinkage.map((t) => ({
                 id: t.id,
@@ -949,7 +949,7 @@ function MeetingViewSection() {
             />
             <RiskList
               testId="risk-tickets-due-this-week"
-              title="Engineering tickets due this week"
+              title="PD tickets due this week"
               count={data.lists.ticketsDueThisWeek.length}
               items={data.lists.ticketsDueThisWeek.map((t) => ({
                 id: t.id,
