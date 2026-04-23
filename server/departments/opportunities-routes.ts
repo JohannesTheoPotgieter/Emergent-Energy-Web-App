@@ -12,7 +12,7 @@ import { logAuditFromReq } from "../audit-logger";
 import { canCreatePdTicket, canViewOpportunityIntake } from "@shared/roles/pd-roles";
 import { isActivePdWorkingOpportunity, isOpportunityIntakeTerminal } from "../lib/opportunity-working-filter";
 import { canViewAllTickets } from "@shared/roles/pd-roles";
-import { pdStageLifecycleLabel, pdStageLifecycleCode } from "@shared/lib/pd-stage-lifecycle";
+import { PHASES, PHASE_BY_CODE } from "@shared/phases";
 import { insertClientWithGeneratedId } from "../lib/client-id-generator";
 import { syncProjectSplitTablesAfterInsert } from "../lib/project-info-sync";
 import { buildOpportunityMappingPlan } from "../lib/opportunity-mapping-plan";
@@ -253,408 +253,462 @@ router.get("/api/opportunities/working", requireAuth, requirePermission("opportu
  *   activity   — upcoming activities (next 14d) and overdue counts
  *   pipeline   — last 90d won-vs-lost weekly buckets (for sparkline)
  */
+// ============================================================================
+// /api/pd/dashboard — App-internal Project Development dashboard.
+//
+// Reframed in task #71 (2026-04-23). Previously this endpoint surfaced
+// Pipedrive-synced commercial vanity (deal_name, deal_owner_name, stage,
+// estimated_value, win/loss). Those numbers belonged to the CRM mirror, not
+// to PD operational signal, and one of the SQL blocks still referenced the
+// legacy `pd_tickets` table that was renamed to `engineering_tickets` by
+// migrations 0024–0026, producing a hard 500 on every load.
+//
+// The new contract is built entirely from app-internal tables —
+// engineering_tickets, work_items, project_info, project_execution_state,
+// raid_items, users — and ranks the things a PD lead actually needs to see:
+// open / overdue / stale / blocked tickets, work-item action queue,
+// recently completed work, upcoming deadlines, at-risk tickets, handover-
+// ready projects (canonical phase band S08–S10), and linkage gaps.
+// All drilldowns now point at /engineering/tickets, /engineering/tasks, and
+// /project/<name> — never back at /opportunities or Pipedrive.
+// ============================================================================
 router.get("/api/pd/dashboard", requireAuth, requirePermission("pd_dashboard", "view"), async (_req: Request, res: Response) => {
   try {
+    const handoverCodes = PHASES.filter((p) => p.isHandover).map((p) => p.code);
     const [
-      summaryRow,
-      byStage,
-      atRisk,
-      recentWins,
-      recentLost,
-      activity,
-      conversion,
-      byOwnerRows,
-      byOwnerHandoverRows,
+      ticketTotalsRow,
+      workItemTotalsRow,
       handoverRow,
-      linkageRows,
+      byPhaseRows,
+      byOwnerRows,
       actionQueueRows,
-      eligibleRow,
-      blockedRow,
+      recentlyCompletedRows,
+      upcomingThisWeekRows,
+      atRiskRows,
+      linkageGapRows,
     ] = await Promise.all([
+      // Engineering-ticket totals. "Active" = not in a terminal status.
+      // "Overdue" = active AND due_date in the past. "Stale 30d" =
+      // active AND updated_at older than 30d. "Blocked" = active AND
+      // has at least one open work_item in 'hold' status.
       db.execute(sql`
+        WITH t AS (
+          SELECT
+            et.id,
+            et.status,
+            et.due_date,
+            et.updated_at,
+            et.size_kwp,
+            EXISTS (
+              SELECT 1 FROM work_items w
+              WHERE w.engineering_ticket_id = et.id
+                AND w.deleted_at IS NULL
+                AND LOWER(COALESCE(w.status, '')) IN ('hold', 'blocked', 'on_hold')
+            ) AS has_blocker
+          FROM engineering_tickets et
+          WHERE et.deleted_at IS NULL
+        ),
+        active AS (
+          SELECT * FROM t
+          WHERE LOWER(COALESCE(status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done', 'cancelled', 'canceled')
+        )
         SELECT
-          COUNT(*) FILTER (WHERE status = 'active' OR status IS NULL) AS active_count,
-          COUNT(*) FILTER (WHERE status = 'won') AS won_count,
-          COUNT(*) FILTER (WHERE status = 'lost') AS lost_count,
-          COALESCE(SUM(estimated_value) FILTER (WHERE status = 'active' OR status IS NULL), 0) AS pipeline_value,
-          COALESCE(SUM(weighted_value) FILTER (WHERE status = 'active' OR status IS NULL), 0) AS weighted_value,
-          COALESCE(SUM(estimated_value) FILTER (WHERE status = 'won'), 0) AS won_value,
-          COALESCE(SUM(estimated_kwp) FILTER (WHERE status = 'active' OR status IS NULL), 0) AS pipeline_kwp,
-          AVG(probability) FILTER (WHERE (status = 'active' OR status IS NULL) AND probability IS NOT NULL) AS avg_probability
-        FROM opportunities
-        WHERE deleted_at IS NULL
+          (SELECT COUNT(*) FROM active) AS active_tickets,
+          (SELECT COUNT(*) FROM active WHERE due_date IS NOT NULL AND due_date::date < CURRENT_DATE) AS overdue_tickets,
+          (SELECT COUNT(*) FROM active WHERE updated_at < NOW() - INTERVAL '30 days') AS stale30_tickets,
+          (SELECT COUNT(*) FROM active WHERE has_blocker) AS blocked_tickets,
+          (SELECT COUNT(*) FROM t WHERE LOWER(COALESCE(status, '')) IN ('completed', 'complete', 'closed', 'resolved', 'done')) AS completed_tickets,
+          (SELECT COALESCE(SUM(size_kwp), 0) FROM active) AS active_kwp
       `),
+      // Work-item totals scoped to items linked to engineering tickets
+      // (the PD operating surface). Counts open / overdue / due-this-week /
+      // completed-last-14d for the top-strip context band.
       db.execute(sql`
+        WITH w AS (
+          SELECT
+            wi.id, wi.status, wi.end_date, wi.completed_at, wi.actual_end
+          FROM work_items wi
+          WHERE wi.deleted_at IS NULL
+            AND wi.engineering_ticket_id IS NOT NULL
+        )
         SELECT
-          COALESCE(stage, 'unknown') AS stage,
-          COUNT(*) AS count,
-          COALESCE(SUM(estimated_value), 0) AS value,
-          COALESCE(SUM(weighted_value), 0) AS weighted
-        FROM opportunities
-        WHERE deleted_at IS NULL AND (status = 'active' OR status IS NULL)
-        GROUP BY stage
-        ORDER BY value DESC
+          COUNT(*) FILTER (
+            WHERE LOWER(COALESCE(status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done')
+          ) AS open_work_items,
+          COUNT(*) FILTER (
+            WHERE LOWER(COALESCE(status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done')
+              AND end_date IS NOT NULL AND end_date < CURRENT_DATE
+          ) AS overdue_work_items,
+          COUNT(*) FILTER (
+            WHERE LOWER(COALESCE(status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done')
+              AND end_date IS NOT NULL
+              AND end_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
+          ) AS due_this_week_work_items,
+          COUNT(*) FILTER (
+            WHERE LOWER(COALESCE(status, '')) IN ('completed', 'complete', 'closed', 'resolved', 'done')
+              AND COALESCE(completed_at, actual_end::timestamp) >= NOW() - INTERVAL '14 days'
+          ) AS completed_14d_work_items
+        FROM w
       `),
-      db.execute(sql`
-        SELECT
-          COUNT(*) FILTER (WHERE last_activity_date IS NULL OR last_activity_date < CURRENT_DATE - INTERVAL '30 days') AS stale_activity,
-          COUNT(*) FILTER (WHERE last_activity_date < CURRENT_DATE - INTERVAL '60 days') AS very_stale,
-          COUNT(*) FILTER (WHERE estimated_value >= 500000 AND (last_activity_date IS NULL OR last_activity_date < CURRENT_DATE - INTERVAL '14 days')) AS high_value_no_recent,
-          COUNT(*) FILTER (WHERE next_activity_date IS NOT NULL AND next_activity_date < CURRENT_DATE) AS overdue_followups
-        FROM opportunities
-        WHERE deleted_at IS NULL AND (status = 'active' OR status IS NULL)
-      `),
-      db.execute(sql`
-        SELECT id, deal_name, estimated_value, deal_owner_name, signed_date, updated_at
-        FROM opportunities
-        WHERE deleted_at IS NULL AND status = 'won'
-        ORDER BY COALESCE(signed_date, updated_at) DESC NULLS LAST
-        LIMIT 5
-      `),
-      db.execute(sql`
-        SELECT id, deal_name, estimated_value, deal_owner_name, lost_reason, lost_time
-        FROM opportunities
-        WHERE deleted_at IS NULL AND status = 'lost'
-        ORDER BY lost_time DESC NULLS LAST
-        LIMIT 5
-      `),
-      db.execute(sql`
-        SELECT id, deal_name, deal_owner_name, next_activity_date, next_activity_subject, estimated_value
-        FROM opportunities
-        WHERE deleted_at IS NULL
-          AND (status = 'active' OR status IS NULL)
-          AND next_activity_date IS NOT NULL
-          AND next_activity_date <= CURRENT_DATE + INTERVAL '14 days'
-        ORDER BY next_activity_date ASC
-        LIMIT 10
-      `),
-      db.execute(sql`
-        SELECT
-          COUNT(*) FILTER (WHERE stage = 'prospect' AND (status = 'active' OR status IS NULL)) AS prospect,
-          COUNT(*) FILTER (WHERE stage = 'qualification' AND (status = 'active' OR status IS NULL)) AS qualification,
-          COUNT(*) FILTER (WHERE stage = 'proposal' AND (status = 'active' OR status IS NULL)) AS proposal,
-          COUNT(*) FILTER (WHERE stage = 'negotiation' AND (status = 'active' OR status IS NULL)) AS negotiation,
-          COUNT(*) FILTER (WHERE status = 'won') AS won,
-          COUNT(*) FILTER (WHERE status = 'lost') AS lost
-        FROM opportunities
-        WHERE deleted_at IS NULL
-      `),
-      // byOwner: per-owner operational rollup of *active* opportunities.
-      // Owners are the human-readable snapshot (deal_owner_name) which is
-      // populated from the Pipedrive sync. Rows with no owner roll up under
-      // "Unassigned" so they remain visible (and actionable).
-      db.execute(sql`
-        SELECT
-          COALESCE(NULLIF(TRIM(deal_owner_name), ''), 'Unassigned') AS owner,
-          COUNT(*) AS active,
-          COUNT(*) FILTER (WHERE next_activity_date IS NOT NULL AND next_activity_date < CURRENT_DATE) AS overdue,
-          COUNT(*) FILTER (WHERE last_activity_date IS NULL OR last_activity_date < CURRENT_DATE - INTERVAL '30 days') AS stale30,
-          COUNT(*) FILTER (WHERE next_activity_date IS NOT NULL AND next_activity_date >= CURRENT_DATE AND next_activity_date <= CURRENT_DATE + INTERVAL '7 days') AS due_this_week,
-          COALESCE(SUM(estimated_value), 0) AS pipeline_value
-        FROM opportunities
-        WHERE deleted_at IS NULL AND (status = 'active' OR status IS NULL)
-        GROUP BY 1
-        ORDER BY active DESC, owner ASC
-        LIMIT 25
-      `),
-      // byOwner handover-ready: per-owner count of won+signed deals whose
-      // handover_readiness has been advanced. Computed separately so we
-      // don't pollute the active-opportunity rollup with terminal rows.
-      db.execute(sql`
-        SELECT
-          COALESCE(NULLIF(TRIM(deal_owner_name), ''), 'Unassigned') AS owner,
-          COUNT(*) AS handover_ready
-        FROM opportunities
-        WHERE deleted_at IS NULL
-          AND status = 'won'
-          AND signed_date IS NOT NULL
-          AND handover_readiness IN ('ready', 'in_preparation', 'awaiting_approval', 'submitted')
-        GROUP BY 1
-      `),
-      // Handover-ready signal: deals that are won AND have a signed date
-      // AND have a non-default handover_readiness value. Strict to avoid
-      // surfacing stale/unmaintained signal. Returns the count and a top
-      // list (by signed_date desc).
+      // Handover-ready: count of active projects whose canonical phase is
+      // in the post-construction handover band (S08 / S09 / S9B / S10 —
+      // see shared/phases.ts:isHandoverPhase). Source: project_info joined
+      // to project_execution_state.current_stage_code.
       db.execute(sql`
         WITH hr AS (
-          SELECT id, deal_name, deal_owner_name, estimated_value, signed_date, handover_readiness
-          FROM opportunities
-          WHERE deleted_at IS NULL
-            AND status = 'won'
-            AND signed_date IS NOT NULL
-            AND handover_readiness IS NOT NULL
-            AND handover_readiness IN ('ready', 'in_preparation', 'awaiting_approval', 'submitted')
+          SELECT
+            pi.id,
+            pi.project_name,
+            pes.current_stage_code AS phase,
+            pes.rag_status
+          FROM project_info pi
+          JOIN project_execution_state pes ON pes.project_id = pi.id
+          WHERE pi.deleted_at IS NULL
+            AND COALESCE(pes.deleted_at, pi.deleted_at) IS NULL
+            AND pi.project_status = 'active'
+            AND pes.current_stage_code = ANY(${handoverCodes})
         )
         SELECT
           (SELECT COUNT(*) FROM hr) AS total,
-          COALESCE(json_agg(row_to_json(t)) FILTER (WHERE t.id IS NOT NULL), '[]'::json) AS items
-        FROM (SELECT * FROM hr ORDER BY signed_date DESC NULLS LAST LIMIT 5) t
+          COALESCE(json_agg(row_to_json(t) ORDER BY t.project_name) FILTER (WHERE t.id IS NOT NULL), '[]'::json) AS items
+        FROM (SELECT * FROM hr ORDER BY project_name LIMIT 8) t
       `),
-      // Linkage / data-gap signal: won opportunities that have no linked
-      // project_info row. These are real handover blockers — the deal is
-      // closed but not yet a project on our books.
+      // By canonical phase: count tickets and roll up open / overdue
+      // work-items grouped by work_items.phase (which is already the
+      // canonical stage code). Tickets without a phase fall under
+      // "Unscoped".
       db.execute(sql`
-        SELECT o.id, o.deal_name, o.deal_owner_name, o.estimated_value, o.signed_date
-        FROM opportunities o
-        WHERE o.deleted_at IS NULL
-          AND o.status = 'won'
-          AND NOT EXISTS (
-            SELECT 1 FROM project_info p
-            WHERE p.opportunity_id = o.id AND p.deleted_at IS NULL
-          )
-        ORDER BY o.signed_date DESC NULLS LAST
-        LIMIT 200
+        WITH wp AS (
+          SELECT
+            COALESCE(wi.phase, '_UNSCOPED') AS code,
+            wi.engineering_ticket_id AS ticket_id,
+            wi.status,
+            wi.end_date
+          FROM work_items wi
+          WHERE wi.deleted_at IS NULL
+            AND wi.engineering_ticket_id IS NOT NULL
+        )
+        SELECT
+          code,
+          COUNT(DISTINCT ticket_id) AS ticket_count,
+          COUNT(*) FILTER (
+            WHERE LOWER(COALESCE(status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done')
+          ) AS open_work_items,
+          COUNT(*) FILTER (
+            WHERE LOWER(COALESCE(status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done')
+              AND end_date IS NOT NULL AND end_date < CURRENT_DATE
+          ) AS overdue_work_items
+        FROM wp
+        GROUP BY 1
       `),
-      // Action queue: top items needing action right now, ranked by
-      // composite priority. Each item carries a deterministic `reason`
-      // chip so the dashboard never invents a justification.
-      // Priority order: overdue follow-up > very stale > high-value quiet > stale 30d.
+      // By owner: per-PD-developer rollup of active engineering tickets.
+      // Owner identity is the engineering_tickets.project_developer_user_id
+      // joined to users.name (no Pipedrive snapshot). Unassigned tickets
+      // bucket under "Unassigned" so they remain visible.
+      db.execute(sql`
+        SELECT
+          et.project_developer_user_id AS owner_user_id,
+          COALESCE(NULLIF(TRIM(u.name), ''), 'Unassigned') AS owner,
+          COUNT(*) FILTER (
+            WHERE LOWER(COALESCE(et.status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done', 'cancelled', 'canceled')
+          ) AS active,
+          COUNT(*) FILTER (
+            WHERE LOWER(COALESCE(et.status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done', 'cancelled', 'canceled')
+              AND et.due_date IS NOT NULL AND et.due_date::date < CURRENT_DATE
+          ) AS overdue,
+          COUNT(*) FILTER (
+            WHERE LOWER(COALESCE(et.status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done', 'cancelled', 'canceled')
+              AND et.updated_at < NOW() - INTERVAL '30 days'
+          ) AS stale30,
+          COUNT(*) FILTER (
+            WHERE LOWER(COALESCE(et.status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done', 'cancelled', 'canceled')
+              AND et.due_date IS NOT NULL
+              AND et.due_date::date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
+          ) AS due_this_week,
+          COALESCE(SUM(et.size_kwp) FILTER (
+            WHERE LOWER(COALESCE(et.status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done', 'cancelled', 'canceled')
+          ), 0) AS active_kwp
+        FROM engineering_tickets et
+        LEFT JOIN users u ON u.id = et.project_developer_user_id
+        WHERE et.deleted_at IS NULL
+        GROUP BY 1, 2
+        HAVING COUNT(*) FILTER (
+          WHERE LOWER(COALESCE(et.status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done', 'cancelled', 'canceled')
+        ) > 0
+        ORDER BY active DESC, owner ASC
+        LIMIT 25
+      `),
+      // Action queue: top open work_items needing action right now,
+      // ranked by reason. Each row carries a deterministic reason chip.
+      // Order: blocked → overdue → stale_30d → high-priority quiet.
       db.execute(sql`
         WITH ranked AS (
           SELECT
-            id,
-            deal_name,
-            deal_owner_name,
-            estimated_value,
-            next_activity_date,
-            last_activity_date,
+            wi.id AS work_item_id,
+            wi.title,
+            wi.engineering_ticket_id,
+            et.project_site_name,
+            wi.phase,
+            wi.priority,
+            wi.end_date,
+            wi.status,
+            wi.updated_at,
+            COALESCE(NULLIF(TRIM(u.name), ''), NULLIF(TRIM(wi.owner_name), ''), 'Unassigned') AS owner,
             CASE
-              WHEN next_activity_date IS NOT NULL AND next_activity_date < CURRENT_DATE THEN 'overdue_followup'
-              WHEN last_activity_date IS NOT NULL AND last_activity_date < CURRENT_DATE - INTERVAL '60 days' THEN 'very_stale'
-              WHEN estimated_value >= 500000 AND (last_activity_date IS NULL OR last_activity_date < CURRENT_DATE - INTERVAL '14 days') THEN 'high_value_quiet'
-              WHEN last_activity_date IS NULL OR last_activity_date < CURRENT_DATE - INTERVAL '30 days' THEN 'stale_30d'
+              WHEN LOWER(COALESCE(wi.status, '')) IN ('hold', 'blocked', 'on_hold') THEN 'blocked'
+              WHEN wi.end_date IS NOT NULL AND wi.end_date < CURRENT_DATE THEN 'overdue'
+              WHEN wi.updated_at < NOW() - INTERVAL '30 days' THEN 'stale_30d'
+              WHEN LOWER(COALESCE(wi.priority, '')) IN ('high', 'critical') AND wi.updated_at < NOW() - INTERVAL '7 days' THEN 'high_priority_quiet'
               ELSE NULL
             END AS reason
-          FROM opportunities
-          WHERE deleted_at IS NULL AND (status = 'active' OR status IS NULL)
+          FROM work_items wi
+          JOIN engineering_tickets et ON et.id = wi.engineering_ticket_id AND et.deleted_at IS NULL
+          LEFT JOIN users u ON u.id = wi.owner_user_id
+          WHERE wi.deleted_at IS NULL
+            AND wi.engineering_ticket_id IS NOT NULL
+            AND LOWER(COALESCE(wi.status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done')
         )
-        SELECT id, deal_name, deal_owner_name, estimated_value, next_activity_date, last_activity_date, reason
+        SELECT
+          work_item_id, title, engineering_ticket_id, project_site_name,
+          phase, priority, end_date, status, owner, reason
         FROM ranked
         WHERE reason IS NOT NULL
         ORDER BY
           CASE reason
-            WHEN 'overdue_followup' THEN 1
-            WHEN 'very_stale' THEN 2
-            WHEN 'high_value_quiet' THEN 3
-            WHEN 'stale_30d' THEN 4
+            WHEN 'blocked' THEN 1
+            WHEN 'overdue' THEN 2
+            WHEN 'stale_30d' THEN 3
+            WHEN 'high_priority_quiet' THEN 4
           END ASC,
-          COALESCE(estimated_value, 0) DESC
+          end_date ASC NULLS LAST,
+          updated_at ASC
         LIMIT 12
       `),
-      // Eligible active = exact set the /opportunities working list shows.
-      // Defined in server/lib/opportunity-working-filter.ts as:
-      //   source=pipedrive AND no linked project AND not terminal AND
-      //   (status contains an active marker OR stage contains an active
-      //    front-office stage marker).
-      // Mirroring all four conditions here in SQL — including the positive
-      // active-marker requirement — keeps the top-strip tile fully
-      // reconcilable: clicking "Active eligible" drills to /opportunities
-      // and the row counts match exactly.
+      // Recently completed (last 14d) — work items linked to engineering
+      // tickets, used as a "what got done" pulse. Resolves owner via FK
+      // first then falls back to denormalised owner_name.
       db.execute(sql`
-        SELECT COUNT(*) AS eligible
-        FROM opportunities o
-        WHERE o.deleted_at IS NULL
-          AND LOWER(COALESCE(o.source, '')) = 'pipedrive'
-          AND o.signed_date IS NULL
-          AND COALESCE(LOWER(o.status), '') NOT LIKE '%won%'
-          AND COALESCE(LOWER(o.status), '') NOT LIKE '%lost%'
-          AND COALESCE(LOWER(o.status), '') NOT LIKE '%closed%'
-          AND COALESCE(LOWER(o.status), '') NOT LIKE '%deleted%'
-          AND COALESCE(LOWER(o.status), '') NOT LIKE '%signed%'
-          AND COALESCE(LOWER(o.status), '') NOT LIKE '%contracted%'
-          AND COALESCE(LOWER(o.stage), '') NOT LIKE '%won%'
-          AND COALESCE(LOWER(o.stage), '') NOT LIKE '%lost%'
-          AND COALESCE(LOWER(o.stage), '') NOT LIKE '%closed%'
-          AND COALESCE(LOWER(o.stage), '') NOT LIKE '%deleted%'
-          AND COALESCE(LOWER(o.stage), '') NOT LIKE '%signed%'
-          AND COALESCE(LOWER(o.stage), '') NOT LIKE '%contracted%'
-          AND (
-            -- Primary include: open/active pipeline status
-            LOWER(COALESCE(o.status, '')) LIKE '%active%'
-            OR LOWER(COALESCE(o.status, '')) LIKE '%open%'
-            OR LOWER(COALESCE(o.status, '')) LIKE '%pipeline%'
-            OR LOWER(COALESCE(o.status, '')) LIKE '%in_progress%'
-            -- Fallback include: non-terminal stage in front-office pipeline
-            OR LOWER(COALESCE(o.stage, '')) LIKE '%prospect%'
-            OR LOWER(COALESCE(o.stage, '')) LIKE '%qualification%'
-            OR LOWER(COALESCE(o.stage, '')) LIKE '%proposal%'
-            OR LOWER(COALESCE(o.stage, '')) LIKE '%negotiation%'
-            OR LOWER(COALESCE(o.stage, '')) LIKE '%discovery%'
-            OR LOWER(COALESCE(o.stage, '')) LIKE '%assessment%'
-            OR LOWER(COALESCE(o.stage, '')) LIKE '%first assessment%'
-            OR LOWER(COALESCE(o.stage, '')) LIKE '%cost proposal%'
-          )
-          AND NOT EXISTS (
-            SELECT 1 FROM project_info p
-            WHERE p.opportunity_id = o.id AND p.deleted_at IS NULL
-          )
+        SELECT
+          wi.id AS work_item_id,
+          wi.title,
+          wi.engineering_ticket_id,
+          et.project_site_name,
+          COALESCE(wi.completed_at, wi.actual_end::timestamp) AS completed_at,
+          COALESCE(NULLIF(TRIM(u.name), ''), NULLIF(TRIM(wi.owner_name), ''), 'Unassigned') AS owner
+        FROM work_items wi
+        JOIN engineering_tickets et ON et.id = wi.engineering_ticket_id AND et.deleted_at IS NULL
+        LEFT JOIN users u ON u.id = wi.owner_user_id
+        WHERE wi.deleted_at IS NULL
+          AND wi.engineering_ticket_id IS NOT NULL
+          AND LOWER(COALESCE(wi.status, '')) IN ('completed', 'complete', 'closed', 'resolved', 'done')
+          AND COALESCE(wi.completed_at, wi.actual_end::timestamp) >= NOW() - INTERVAL '14 days'
+        ORDER BY COALESCE(wi.completed_at, wi.actual_end::timestamp) DESC
+        LIMIT 10
       `),
-      // Blocked-by-internal-dependency: count distinct active/won opps that
-      // have at least one work_item in 'hold' status. work_items has no
-      // direct opportunity_id so we traverse via two valid paths:
-      //   1) work_items.pd_ticket_id -> pd_tickets.opportunity_id
-      //   2) work_items.project_id   -> project_info.opportunity_id
-      // 'hold' is the work-item blocker semantic in this codebase (see
-      // shared/schema/work-items.ts).
+      // Upcoming this week — open work items due in the next 7 days.
       db.execute(sql`
-        SELECT COUNT(DISTINCT o.id) AS blocked
-        FROM opportunities o
-        WHERE o.deleted_at IS NULL
-          AND (o.status = 'active' OR o.status IS NULL OR o.status = 'won')
-          AND (
-            EXISTS (
-              SELECT 1 FROM work_items w
-              JOIN pd_tickets t ON t.id = w.pd_ticket_id AND t.deleted_at IS NULL
-              WHERE w.deleted_at IS NULL
-                AND LOWER(COALESCE(w.status, '')) = 'hold'
-                AND t.opportunity_id = o.id
-            )
-            OR EXISTS (
-              SELECT 1 FROM work_items w
-              JOIN project_info p ON p.id = w.project_id AND p.deleted_at IS NULL
-              WHERE w.deleted_at IS NULL
-                AND LOWER(COALESCE(w.status, '')) = 'hold'
-                AND p.opportunity_id = o.id
-            )
+        SELECT
+          wi.id AS work_item_id,
+          wi.title,
+          wi.engineering_ticket_id,
+          et.project_site_name,
+          wi.end_date,
+          wi.priority,
+          COALESCE(NULLIF(TRIM(u.name), ''), NULLIF(TRIM(wi.owner_name), ''), 'Unassigned') AS owner
+        FROM work_items wi
+        JOIN engineering_tickets et ON et.id = wi.engineering_ticket_id AND et.deleted_at IS NULL
+        LEFT JOIN users u ON u.id = wi.owner_user_id
+        WHERE wi.deleted_at IS NULL
+          AND wi.engineering_ticket_id IS NOT NULL
+          AND LOWER(COALESCE(wi.status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done')
+          AND wi.end_date IS NOT NULL
+          AND wi.end_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
+        ORDER BY wi.end_date ASC
+        LIMIT 10
+      `),
+      // At-risk tickets — engineering tickets that have either:
+      //   (a) at least one open work_item with tracking_rag = 'red', or
+      //   (b) a linked project_info with at least one open RAID item at
+      //       'high' or 'critical' priority.
+      db.execute(sql`
+        WITH red_wi AS (
+          SELECT
+            wi.engineering_ticket_id AS ticket_id,
+            COUNT(*) AS red_count
+          FROM work_items wi
+          WHERE wi.deleted_at IS NULL
+            AND wi.engineering_ticket_id IS NOT NULL
+            AND LOWER(COALESCE(wi.status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done')
+            AND LOWER(COALESCE(wi.tracking_rag, '')) = 'red'
+          GROUP BY 1
+        ),
+        crit_raid AS (
+          SELECT
+            ri.project_id,
+            COUNT(*) AS crit_count
+          FROM raid_items ri
+          WHERE ri.deleted_at IS NULL
+            AND ri.status IN ('open', 'mitigating')
+            AND ri.priority IN ('high', 'critical')
+          GROUP BY 1
+        )
+        SELECT
+          et.id AS ticket_id,
+          et.project_site_name,
+          COALESCE(NULLIF(TRIM(u.name), ''), 'Unassigned') AS owner,
+          COALESCE(rw.red_count, 0) AS red_work_item_count,
+          COALESCE(cr.crit_count, 0) AS open_critical_raid_count
+        FROM engineering_tickets et
+        LEFT JOIN users u ON u.id = et.project_developer_user_id
+        LEFT JOIN red_wi rw ON rw.ticket_id = et.id
+        LEFT JOIN crit_raid cr ON cr.project_id = et.project_id
+        WHERE et.deleted_at IS NULL
+          AND LOWER(COALESCE(et.status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done', 'cancelled', 'canceled')
+          AND (rw.red_count > 0 OR cr.crit_count > 0)
+        ORDER BY (COALESCE(rw.red_count, 0) + COALESCE(cr.crit_count, 0)) DESC
+        LIMIT 10
+      `),
+      // Linkage gaps — three categories of spine breakage:
+      //   (a) active engineering tickets with neither project_id nor opportunity_id
+      //   (b) active engineering tickets where status is 'Completed' but no project_id
+      //   (c) active projects with zero engineering tickets
+      // Returns one flat list with a `kind` discriminator.
+      db.execute(sql`
+        -- 'unlinked_ticket' and 'completed_no_project' are kept mutually
+        -- exclusive: a completed ticket without a project goes into
+        -- completed_no_project (more specific signal), never into the
+        -- generic unlinked bucket.
+        SELECT 'unlinked_ticket' AS kind, et.id AS id, et.project_site_name AS label
+        FROM engineering_tickets et
+        WHERE et.deleted_at IS NULL
+          AND et.project_id IS NULL
+          AND et.opportunity_id IS NULL
+          AND LOWER(COALESCE(et.status, '')) NOT IN ('cancelled', 'canceled', 'completed', 'complete', 'closed', 'resolved', 'done')
+        UNION ALL
+        SELECT 'completed_no_project' AS kind, et.id AS id, et.project_site_name AS label
+        FROM engineering_tickets et
+        WHERE et.deleted_at IS NULL
+          AND et.project_id IS NULL
+          AND LOWER(COALESCE(et.status, '')) IN ('completed', 'complete', 'closed', 'resolved', 'done')
+        UNION ALL
+        SELECT 'project_no_tickets' AS kind, pi.id AS id, pi.project_name AS label
+        FROM project_info pi
+        WHERE pi.deleted_at IS NULL
+          AND pi.project_status = 'active'
+          AND NOT EXISTS (
+            SELECT 1 FROM engineering_tickets et
+            WHERE et.project_id = pi.id AND et.deleted_at IS NULL
           )
+        ORDER BY 3
+        LIMIT 50
       `),
     ]);
 
-    const s = (summaryRow.rows?.[0] ?? {}) as Record<string, any>;
-    const c = (conversion.rows?.[0] ?? {}) as Record<string, any>;
-    const totalDecided = Number(c.won ?? 0) + Number(c.lost ?? 0);
-    const winRate = totalDecided > 0 ? Number(c.won) / totalDecided : null;
+    const tt = (ticketTotalsRow.rows?.[0] ?? {}) as Record<string, any>;
+    const wt = (workItemTotalsRow.rows?.[0] ?? {}) as Record<string, any>;
+    const hr = (handoverRow.rows?.[0] ?? {}) as Record<string, any>;
+
+    // byPhase — augment with display label from canonical PHASES.
+    const phaseAcc = new Map<string, { code: string; label: string; ticketCount: number; openWorkItems: number; overdueWorkItems: number }>();
+    for (const code of PHASES.map(p => p.code)) {
+      phaseAcc.set(code, { code, label: PHASE_BY_CODE[code]?.label ?? code, ticketCount: 0, openWorkItems: 0, overdueWorkItems: 0 });
+    }
+    for (const r of (byPhaseRows.rows ?? []) as any[]) {
+      const code = String(r.code ?? '_UNSCOPED');
+      const existing = phaseAcc.get(code);
+      const row = existing ?? { code, label: PHASE_BY_CODE[code]?.label ?? (code === '_UNSCOPED' ? 'Unscoped' : code), ticketCount: 0, openWorkItems: 0, overdueWorkItems: 0 };
+      row.ticketCount += Number(r.ticket_count ?? 0);
+      row.openWorkItems += Number(r.open_work_items ?? 0);
+      row.overdueWorkItems += Number(r.overdue_work_items ?? 0);
+      if (!existing) phaseAcc.set(code, row);
+    }
+    const byPhase = Array.from(phaseAcc.values()).sort((a, b) => {
+      const aIdx = PHASES.findIndex(p => p.code === a.code);
+      const bIdx = PHASES.findIndex(p => p.code === b.code);
+      // Unscoped/unknown go to the end
+      const aOrder = aIdx === -1 ? 99 : aIdx;
+      const bOrder = bIdx === -1 ? 99 : bIdx;
+      return aOrder - bOrder;
+    });
 
     res.json({
       generatedAt: new Date().toISOString(),
       summary: {
-        activeCount: Number(s.active_count ?? 0),
-        wonCount: Number(s.won_count ?? 0),
-        lostCount: Number(s.lost_count ?? 0),
-        pipelineValue: Number(s.pipeline_value ?? 0),
-        weightedValue: Number(s.weighted_value ?? 0),
-        wonValue: Number(s.won_value ?? 0),
-        pipelineKwp: Number(s.pipeline_kwp ?? 0),
-        avgProbability: s.avg_probability != null ? Number(s.avg_probability) : null,
-        winRate,
+        activeTickets: Number(tt.active_tickets ?? 0),
+        overdueTickets: Number(tt.overdue_tickets ?? 0),
+        stale30Tickets: Number(tt.stale30_tickets ?? 0),
+        blockedTickets: Number(tt.blocked_tickets ?? 0),
+        completedTickets: Number(tt.completed_tickets ?? 0),
+        activeKwp: Number(tt.active_kwp ?? 0),
+        openWorkItems: Number(wt.open_work_items ?? 0),
+        overdueWorkItems: Number(wt.overdue_work_items ?? 0),
+        dueThisWeekWorkItems: Number(wt.due_this_week_work_items ?? 0),
+        completed14dWorkItems: Number(wt.completed_14d_work_items ?? 0),
       },
-      byStage: (byStage.rows ?? []).map((r: any) => ({
-        stage: String(r.stage),
-        count: Number(r.count ?? 0),
-        value: Number(r.value ?? 0),
-        weighted: Number(r.weighted ?? 0),
+      byPhase,
+      byOwner: (byOwnerRows.rows ?? []).map((r: any) => ({
+        ownerUserId: r.owner_user_id != null ? Number(r.owner_user_id) : null,
+        owner: String(r.owner ?? 'Unassigned'),
+        active: Number(r.active ?? 0),
+        overdue: Number(r.overdue ?? 0),
+        stale30: Number(r.stale30 ?? 0),
+        dueThisWeek: Number(r.due_this_week ?? 0),
+        activeKwp: Number(r.active_kwp ?? 0),
       })),
-      byPhase: (() => {
-        // Aggregate the same active-opportunity rows by canonical company
-        // lifecycle phase (shared/phases.ts) using the PD-stage → phase
-        // mapping in shared/lib/pd-stage-lifecycle.ts. Pipedrive stages
-        // that don't map (e.g. unknown or null) bucket under "Unmapped".
-        const acc = new Map<string, { phase: string; count: number; value: number; weighted: number; stages: Set<string> }>();
-        for (const r of (byStage.rows ?? []) as any[]) {
-          const stage = String(r.stage ?? "");
-          const phase = pdStageLifecycleLabel(stage) || "Unmapped";
-          const key = pdStageLifecycleCode(stage) || "_UNMAPPED";
-          if (!acc.has(key)) acc.set(key, { phase, count: 0, value: 0, weighted: 0, stages: new Set<string>() });
-          const bucket = acc.get(key)!;
-          bucket.count += Number(r.count ?? 0);
-          bucket.value += Number(r.value ?? 0);
-          bucket.weighted += Number(r.weighted ?? 0);
-          if (stage) bucket.stages.add(stage);
-        }
-        return Array.from(acc.values())
-          .map(b => ({ phase: b.phase, count: b.count, value: b.value, weighted: b.weighted, stages: Array.from(b.stages).sort() }))
-          .sort((a, b) => b.value - a.value);
-      })(),
-      atRisk: {
-        staleActivity: Number((atRisk.rows?.[0] as any)?.stale_activity ?? 0),
-        veryStale: Number((atRisk.rows?.[0] as any)?.very_stale ?? 0),
-        highValueNoRecent: Number((atRisk.rows?.[0] as any)?.high_value_no_recent ?? 0),
-        overdueFollowups: Number((atRisk.rows?.[0] as any)?.overdue_followups ?? 0),
-      },
-      recentWins: (recentWins.rows ?? []).map((r: any) => ({
-        id: Number(r.id),
-        dealName: r.deal_name ?? null,
-        value: r.estimated_value != null ? Number(r.estimated_value) : null,
-        owner: r.deal_owner_name ?? null,
-        signedDate: r.signed_date ?? r.updated_at ?? null,
-      })),
-      recentLost: (recentLost.rows ?? []).map((r: any) => ({
-        id: Number(r.id),
-        dealName: r.deal_name ?? null,
-        value: r.estimated_value != null ? Number(r.estimated_value) : null,
-        owner: r.deal_owner_name ?? null,
-        reason: r.lost_reason ?? null,
-        lostTime: r.lost_time ?? null,
-      })),
-      upcomingActivity: (activity.rows ?? []).map((r: any) => ({
-        id: Number(r.id),
-        dealName: r.deal_name ?? null,
-        owner: r.deal_owner_name ?? null,
-        date: r.next_activity_date ?? null,
-        subject: r.next_activity_subject ?? null,
-        value: r.estimated_value != null ? Number(r.estimated_value) : null,
-      })),
-      conversion: {
-        prospect: Number(c.prospect ?? 0),
-        qualification: Number(c.qualification ?? 0),
-        proposal: Number(c.proposal ?? 0),
-        negotiation: Number(c.negotiation ?? 0),
-        won: Number(c.won ?? 0),
-        lost: Number(c.lost ?? 0),
-      },
-      // --- Operational additions (read-only). Backwards compatible: any
-      // consumer of the older /api/pd/dashboard contract continues to work
-      // because no existing field has been removed or renamed. ---
-      eligibleActiveCount: Number((eligibleRow.rows?.[0] as any)?.eligible ?? 0),
-      blockedDependencyCount: Number((blockedRow.rows?.[0] as any)?.blocked ?? 0),
-      byOwner: (() => {
-        const handoverByOwner = new Map<string, number>();
-        for (const r of (byOwnerHandoverRows.rows ?? []) as any[]) {
-          handoverByOwner.set(String(r.owner ?? "Unassigned"), Number(r.handover_ready ?? 0));
-        }
-        return (byOwnerRows.rows ?? []).map((r: any) => {
-          const owner = String(r.owner ?? "Unassigned");
-          return {
-            owner,
-            active: Number(r.active ?? 0),
-            overdue: Number(r.overdue ?? 0),
-            stale30: Number(r.stale30 ?? 0),
-            dueThisWeek: Number(r.due_this_week ?? 0),
-            pipelineValue: Number(r.pipeline_value ?? 0),
-            handoverReady: handoverByOwner.get(owner) ?? 0,
-          };
-        });
-      })(),
       handoverReady: {
-        total: Number((handoverRow.rows?.[0] as any)?.total ?? 0),
-        items: (((handoverRow.rows?.[0] as any)?.items ?? []) as any[]).map((it) => ({
+        total: Number(hr.total ?? 0),
+        items: (((hr.items ?? []) as any[])).map((it) => ({
           id: Number(it.id),
-          dealName: it.deal_name ?? null,
-          owner: it.deal_owner_name ?? null,
-          value: it.estimated_value != null ? Number(it.estimated_value) : null,
-          signedDate: it.signed_date ?? null,
-          handoverReadiness: it.handover_readiness ?? null,
-        })),
-      },
-      linkageGaps: {
-        total: linkageRows.rows?.length ?? 0,
-        items: (linkageRows.rows ?? []).slice(0, 8).map((r: any) => ({
-          id: Number(r.id),
-          dealName: r.deal_name ?? null,
-          owner: r.deal_owner_name ?? null,
-          value: r.estimated_value != null ? Number(r.estimated_value) : null,
-          signedDate: r.signed_date ?? null,
+          projectName: it.project_name ?? null,
+          phase: it.phase ?? null,
+          phaseLabel: it.phase ? (PHASE_BY_CODE[it.phase]?.label ?? it.phase) : null,
+          ragStatus: it.rag_status ?? null,
         })),
       },
       actionQueue: (actionQueueRows.rows ?? []).map((r: any) => ({
-        id: Number(r.id),
-        dealName: r.deal_name ?? null,
-        owner: r.deal_owner_name ?? null,
-        value: r.estimated_value != null ? Number(r.estimated_value) : null,
-        nextActivityDate: r.next_activity_date ?? null,
-        lastActivityDate: r.last_activity_date ?? null,
-        reason: String(r.reason ?? ""),
+        workItemId: Number(r.work_item_id),
+        title: r.title ?? null,
+        ticketId: r.engineering_ticket_id != null ? Number(r.engineering_ticket_id) : null,
+        ticketName: r.project_site_name ?? null,
+        phase: r.phase ?? null,
+        phaseLabel: r.phase ? (PHASE_BY_CODE[r.phase]?.label ?? r.phase) : null,
+        priority: r.priority ?? null,
+        endDate: r.end_date ?? null,
+        owner: r.owner ?? null,
+        reason: String(r.reason ?? ''),
       })),
+      recentlyCompleted: (recentlyCompletedRows.rows ?? []).map((r: any) => ({
+        workItemId: Number(r.work_item_id),
+        title: r.title ?? null,
+        ticketId: r.engineering_ticket_id != null ? Number(r.engineering_ticket_id) : null,
+        ticketName: r.project_site_name ?? null,
+        completedAt: r.completed_at ?? null,
+        owner: r.owner ?? null,
+      })),
+      upcomingThisWeek: (upcomingThisWeekRows.rows ?? []).map((r: any) => ({
+        workItemId: Number(r.work_item_id),
+        title: r.title ?? null,
+        ticketId: r.engineering_ticket_id != null ? Number(r.engineering_ticket_id) : null,
+        ticketName: r.project_site_name ?? null,
+        endDate: r.end_date ?? null,
+        priority: r.priority ?? null,
+        owner: r.owner ?? null,
+      })),
+      atRiskTickets: (atRiskRows.rows ?? []).map((r: any) => ({
+        ticketId: Number(r.ticket_id),
+        ticketName: r.project_site_name ?? null,
+        owner: r.owner ?? null,
+        redWorkItemCount: Number(r.red_work_item_count ?? 0),
+        openCriticalRaidCount: Number(r.open_critical_raid_count ?? 0),
+      })),
+      linkageGaps: (() => {
+        const items = (linkageGapRows.rows ?? []).map((r: any) => ({
+          kind: String(r.kind),
+          id: Number(r.id),
+          label: r.label ?? null,
+        }));
+        return { total: items.length, items: items.slice(0, 12) };
+      })(),
     });
   } catch (err) {
     console.error("[Opportunities] Failed to compute PD dashboard:", err);
