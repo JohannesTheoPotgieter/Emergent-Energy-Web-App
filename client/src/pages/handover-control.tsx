@@ -46,7 +46,7 @@ const STATUS_DISPLAY: Record<string, string> = {
 
 export default function HandoverControlPage() {
   const { data, isLoading, error } = useQuery<{ items: any[] }>({
-    queryKey: ["/api/pd-pm-handover/control"],
+    queryKey: ["/api/engineering-pm-handover/control"],
   });
 
   const totals = useMemo(() => {

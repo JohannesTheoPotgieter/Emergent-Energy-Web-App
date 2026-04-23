@@ -747,8 +747,12 @@ type WorkspaceRollupResponse = {
     projects: number;
     spineGap: number;
     cascadeAnomalies: number;
-    openPdTickets: number;
-    overduePdTickets: number;
+    /** @deprecated use `openEngineeringTickets` (task #61) */
+    openPdTickets?: number;
+    /** @deprecated use `overdueEngineeringTickets` (task #61) */
+    overduePdTickets?: number;
+    openEngineeringTickets: number;
+    overdueEngineeringTickets: number;
     openWorkItems: number;
     blockedWorkItems: number;
     overdueWorkItems: number;
@@ -771,7 +775,9 @@ type WorkspaceRollupResponse = {
     projectName: string;
     phase: string | null;
     opportunityStage: string | null;
-    pdTickets: { total: number; open: number; completed: number; overdue: number; oldestOpenAt: string | null };
+    /** @deprecated use `engineeringTickets` (task #61) */
+    pdTickets?: { total: number; open: number; completed: number; overdue: number; oldestOpenAt: string | null };
+    engineeringTickets: { total: number; open: number; completed: number; overdue: number; oldestOpenAt: string | null };
     workItems: { total: number; open: number; completed: number; blocked: number; overdue: number };
     raid: { open: number };
     ragStatus: string | null;
@@ -788,8 +794,8 @@ function MeetingViewSection() {
   const sortedRows = useMemo(() => {
     if (!data) return [];
     return [...data.rows].sort((a, b) => {
-      const aSpan = a.workItems.overdue + a.pdTickets.overdue + a.workItems.blocked + (a.spineGap ? 100 : 0);
-      const bSpan = b.workItems.overdue + b.pdTickets.overdue + b.workItems.blocked + (b.spineGap ? 100 : 0);
+      const aSpan = a.workItems.overdue + a.engineeringTickets.overdue + a.workItems.blocked + (a.spineGap ? 100 : 0);
+      const bSpan = b.workItems.overdue + b.engineeringTickets.overdue + b.workItems.blocked + (b.spineGap ? 100 : 0);
       return bSpan - aSpan;
     });
   }, [data]);
@@ -837,8 +843,8 @@ function MeetingViewSection() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 text-xs">
           <div data-testid="rollup-total-open-pd-tickets" className="rounded-md bg-muted/40 p-2">
             <p className="text-muted-foreground">Open engineering tickets</p>
-            <p className="text-lg font-semibold">{data.totals.openPdTickets}</p>
-            <p className="text-[10px] text-amber-700">{data.totals.overduePdTickets} overdue</p>
+            <p className="text-lg font-semibold">{data.totals.openEngineeringTickets}</p>
+            <p className="text-[10px] text-amber-700">{data.totals.overdueEngineeringTickets} overdue</p>
           </div>
           <div data-testid="rollup-total-work-items" className="rounded-md bg-muted/40 p-2">
             <p className="text-muted-foreground">Open work items</p>
@@ -884,9 +890,9 @@ function MeetingViewSection() {
                   </td>
                   <td className="py-2 pr-3 text-muted-foreground">{r.phase || "—"}</td>
                   <td className="py-2 pr-3 text-right">
-                    <span data-testid={`text-pd-open-${r.projectId}`}>{r.pdTickets.open}</span>
-                    {r.pdTickets.overdue > 0 && (
-                      <span className="ml-1 text-amber-700" data-testid={`text-pd-overdue-${r.projectId}`}>({r.pdTickets.overdue} od)</span>
+                    <span data-testid={`text-pd-open-${r.projectId}`}>{r.engineeringTickets.open}</span>
+                    {r.engineeringTickets.overdue > 0 && (
+                      <span className="ml-1 text-amber-700" data-testid={`text-pd-overdue-${r.projectId}`}>({r.engineeringTickets.overdue} od)</span>
                     )}
                   </td>
                   <td className="py-2 pr-3 text-right">

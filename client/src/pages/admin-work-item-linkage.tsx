@@ -25,9 +25,9 @@ type OrphanRow = {
   ownerName: string | null;
   projectId: number | null;
   projectName: string | null;
-  pdTicketId: number | null;
-  pdTicketDeleted: boolean;
-  pdTicketRequestType: string | null;
+  engineeringTicketId: number | null;
+  engineeringTicketDeleted: boolean;
+  engineeringTicketRequestType: string | null;
   reason: "missing" | "soft_deleted" | "unlinked";
 };
 
@@ -65,18 +65,18 @@ export default function AdminWorkItemLinkagePage() {
   });
 
   const relink = useMutation({
-    mutationFn: async (params: { workItemId: number; pdTicketId: number }) => {
+    mutationFn: async (params: { workItemId: number; engineeringTicketId: number }) => {
       const res = await apiRequest(
         "POST",
         `/api/admin/work-item-linkage/${params.workItemId}/relink`,
-        { pdTicketId: params.pdTicketId },
+        { engineeringTicketId: params.engineeringTicketId },
       );
       return res.json();
     },
     onSuccess: (_, vars) => {
       toast({
         title: "Work item re-linked",
-        description: `Work item #${vars.workItemId} now points at ticket #${vars.pdTicketId}.`,
+        description: `Work item #${vars.workItemId} now points at ticket #${vars.engineeringTicketId}.`,
       });
       qc.invalidateQueries({ queryKey: ["/api/admin/work-item-linkage/orphans"] });
       qc.invalidateQueries({ queryKey: ["/api/project-development/workspace/rollup"] });
@@ -237,7 +237,7 @@ export default function AdminWorkItemLinkagePage() {
                             <tr key={row.workItemId} className="border-b align-top" data-testid={`row-orphan-${row.workItemId}`}>
                               <td className="py-2 pr-3">
                                 <div className="font-medium">{row.workItemTitle || `Work item #${row.workItemId}`}</div>
-                                <div className="text-[10px] text-muted-foreground">#{row.workItemId}{row.pdTicketId ? ` · was → ticket #${row.pdTicketId}` : ""}</div>
+                                <div className="text-[10px] text-muted-foreground">#{row.workItemId}{row.engineeringTicketId ? ` · was → ticket #${row.engineeringTicketId}` : ""}</div>
                               </td>
                               <td className="py-2 pr-3">
                                 <div>{row.workItemStatus || "—"}</div>
@@ -278,7 +278,7 @@ export default function AdminWorkItemLinkagePage() {
                                     disabled={!pickedTicket || isBusy}
                                     onClick={() => {
                                       if (!pickedTicket) return;
-                                      relink.mutate({ workItemId: row.workItemId, pdTicketId: pickedTicket });
+                                      relink.mutate({ workItemId: row.workItemId, engineeringTicketId: pickedTicket });
                                     }}
                                     data-testid={`button-relink-${row.workItemId}`}
                                   >

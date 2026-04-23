@@ -237,6 +237,27 @@ export interface ProjectDevelopmentWorkspacePayload {
       taskCompleted: number;
     }>;
   };
+  /**
+   * Canonical name for the PD/engineering ticket block (task #61). Mirrors
+   * `pdTickets` exactly; the legacy `pdTickets` key is kept for one release
+   * as a deprecated alias so existing clients keep working.
+   */
+  engineeringTickets: {
+    total: number;
+    open: number;
+    completed: number;
+    tickets: Array<{
+      id: number;
+      requestType: string;
+      status: string;
+      dueDate: string | null;
+      numberOfReworks: number;
+      developerName: string | null;
+      designerName: string | null;
+      taskTotal: number;
+      taskCompleted: number;
+    }>;
+  };
   dependencies: {
     total: number;
     openWorkItems: number;
@@ -512,6 +533,14 @@ export function buildProjectDevelopmentWorkspaceFromSources(params: {
       requests: intakeRequestsSummary,
     },
     pdTickets: {
+      total: pdTicketSummary.length,
+      open: pdTicketSummary.filter((row) => !isCompletedStatus(row.status)).length,
+      completed: pdTicketSummary.filter((row) => isCompletedStatus(row.status)).length,
+      tickets: pdTicketSummary,
+    },
+    // Task #61: canonical key. Mirrors `pdTickets` exactly; the legacy key
+    // above is kept for one release as a deprecated alias.
+    engineeringTickets: {
       total: pdTicketSummary.length,
       open: pdTicketSummary.filter((row) => !isCompletedStatus(row.status)).length,
       completed: pdTicketSummary.filter((row) => isCompletedStatus(row.status)).length,
@@ -896,6 +925,17 @@ export type WorkspaceRollupRow = {
     overdue: number;
     oldestOpenAt: string | null;
   };
+  /**
+   * Canonical alias for `pdTickets` (task #61). Mirrors the same data; the
+   * legacy `pdTickets` key is retained for one release.
+   */
+  engineeringTickets: {
+    total: number;
+    open: number;
+    completed: number;
+    overdue: number;
+    oldestOpenAt: string | null;
+  };
   workItems: {
     total: number;
     open: number;
@@ -1038,6 +1078,15 @@ export async function getProjectDevelopmentWorkspaceRollup(): Promise<WorkspaceR
       opportunityId: p.opportunityId ?? null,
       opportunityStage: p.opportunityId ? oppStageById.get(p.opportunityId) ?? null : null,
       pdTickets: {
+        total: tickets.total,
+        open: tickets.open,
+        completed: tickets.completed,
+        overdue: tickets.overdue,
+        oldestOpenAt: tickets.oldestOpenAt ? toIsoString(tickets.oldestOpenAt) : null,
+      },
+      // Task #61: canonical alias of `pdTickets`. Same numbers, friendlier
+      // name. Legacy key kept for one release.
+      engineeringTickets: {
         total: tickets.total,
         open: tickets.open,
         completed: tickets.completed,

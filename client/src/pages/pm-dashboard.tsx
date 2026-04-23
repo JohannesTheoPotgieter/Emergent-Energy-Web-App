@@ -801,9 +801,9 @@ const COO_VIEW_ROLES = ["COO_ADMIN", "CEO_ADMIN", "admin"];
 function HandoverCompleteSection() {
   const [, navigate] = useLocation();
   const { data } = useQuery<{ items: any[] }>({
-    queryKey: ["/api/pd-pm-handover/completed"],
+    queryKey: ["/api/engineering-pm-handover/completed"],
     queryFn: async () => {
-      const res = await apiRequest("GET", "/api/pd-pm-handover/completed");
+      const res = await apiRequest("GET", "/api/engineering-pm-handover/completed");
       return res.json();
     },
   });
