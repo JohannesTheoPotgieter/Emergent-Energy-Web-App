@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import { lazyWithRetry } from "@/lib/lazy-with-retry";
 
 const CompanyOverviewPage = lazyWithRetry(() => import("@/pages/company-overview"));
+const CompanyTeamPage = lazyWithRetry(() => import("@/pages/company-team"));
 const Dashboard = lazyWithRetry(() => import("@/pages/dashboard"));
 const CeoHomePage = lazyWithRetry(() => import("@/pages/ceo-home"));
 const CooHomePage = lazyWithRetry(() => import("@/pages/coo-home"));
@@ -131,6 +132,7 @@ const GatesCommitmentsPage = lazyWithRetry(() => import("@/pages/gates/gates-com
  */
 export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   CompanyOverviewPage,
+  CompanyTeamPage,
   Dashboard,
   ProjectLifecyclePage,
   ProjectsSummary,

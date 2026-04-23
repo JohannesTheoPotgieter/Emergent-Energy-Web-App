@@ -256,6 +256,7 @@ export const ENTITY_DESCRIPTIONS: Record<string, string> = {
   admin_processes: "Processes & SOPs — process documentation management",
   admin_templates: "Templates — phase & document template management",
   admin_recovery: "Recovery — system recovery tools",
+  company_team: "Company > Team — workforce directory and utilisation summary",
 };
 
 export const ENTITY_CATEGORIES: Record<string, { label: string; entities: string[] }> = {
@@ -265,7 +266,7 @@ export const ENTITY_CATEGORIES: Record<string, { label: string; entities: string
   },
   portfolio: {
     label: "Company",
-    entities: ["lifecycle", "create_project", "stage_lifecycle", "stage_gate", "stage_exceptions", "stage_dependencies", "stage_config", "stage_admin", "gate_override", "exception"],
+    entities: ["lifecycle", "company_team", "create_project", "stage_lifecycle", "stage_gate", "stage_exceptions", "stage_dependencies", "stage_config", "stage_admin", "gate_override", "exception"],
   },
   project_dev: {
     label: "Project Development",
