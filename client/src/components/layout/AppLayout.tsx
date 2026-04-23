@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import { buildVisibleTopSections, getBreadcrumbs, linkIsActive } from "@/config/app-navigation";
 import { getAvailableQuickCreateActions } from "@/lib/action-access";
 import { useAccessMatrix } from "@/hooks/use-access-matrix";
+import { useRoleRedirect } from "@/hooks/useRoleRedirect";
 import { useNavPreferences } from "@/hooks/use-nav-preferences";
 import { NotificationBell } from "@/components/NotificationBell";
 import { LensSwitcher } from "@/components/layout/LensSwitcher";
@@ -57,6 +58,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [microsoftMenuOpen, setMicrosoftMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const { canAccessEntityAction, canViewPath, disabledSubPages } = useAccessMatrix();
+  // Resolve the role-aware home destination directly so the Home links navigate
+  // to a real, permitted page instead of round-tripping through "/" and the
+  // HomeRedirect component (which can no-op when the user is already on the
+  // role-landing page or when the access matrix briefly blocks "/").
+  const homeHref = useRoleRedirect();
   const { isScreenEnabled } = useScreenAvailability();
   const { enabled: actionLaunchpadEnabled } = useRolloutFlag("action_launchpad");
   const { enabled: onboardingTourEnabled } = useRolloutFlag("onboarding_tour");
@@ -273,7 +279,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </SheetContent>
           </Sheet>
 
-          <Link href="/" className="flex items-center min-w-fit group" aria-label="Emergent Energy home">
+          <Link href={homeHref} className="flex items-center min-w-fit group" aria-label="Emergent Energy home">
             <img
               src="/emergent-leaf.png"
               alt="Emergent Energy"
@@ -438,7 +444,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 <nav aria-label="breadcrumb" className="py-1.5">
                   <ol className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                     <li className="inline-flex items-center">
-                      <Link href="/" className="hover:text-foreground transition-colors inline-flex items-center" aria-label="Home">
+                      <Link href={homeHref} className="hover:text-foreground transition-colors inline-flex items-center" aria-label="Home">
                         <Home className="h-3.5 w-3.5" />
                       </Link>
                     </li>
