@@ -26,55 +26,66 @@ import {
 import { PageHeader } from "@/components/ui/page-header";
 import { PageLayout } from "@/components/layout";
 
-type ActionReason = "overdue_followup" | "very_stale" | "high_value_quiet" | "stale_30d" | "";
+type ActionReason = "blocked" | "overdue" | "stale_30d" | "high_priority_quiet" | "";
 
 type PdDashboard = {
   generatedAt: string;
   summary: {
-    activeCount: number;
-    wonCount: number;
-    lostCount: number;
-    pipelineValue: number;
-    weightedValue: number;
-    wonValue: number;
-    pipelineKwp: number;
-    avgProbability: number | null;
-    winRate: number | null;
+    activeTickets: number;
+    overdueTickets: number;
+    stale30Tickets: number;
+    blockedTickets: number;
+    completedTickets: number;
+    activeKwp: number;
+    openWorkItems: number;
+    overdueWorkItems: number;
+    dueThisWeekWorkItems: number;
+    completed14dWorkItems: number;
   };
-  byStage: Array<{ stage: string; count: number; value: number; weighted: number }>;
-  byPhase: Array<{ phase: string; count: number; value: number; weighted: number; stages: string[] }>;
-  atRisk: { staleActivity: number; veryStale: number; highValueNoRecent: number; overdueFollowups: number };
-  recentWins: Array<{ id: number; dealName: string | null; value: number | null; owner: string | null; signedDate: string | null }>;
-  recentLost: Array<{ id: number; dealName: string | null; value: number | null; owner: string | null; reason: string | null; lostTime: string | null }>;
-  upcomingActivity: Array<{ id: number; dealName: string | null; owner: string | null; date: string | null; subject: string | null; value: number | null }>;
-  conversion: { prospect: number; qualification: number; proposal: number; negotiation: number; won: number; lost: number };
-  // Operational additions
-  eligibleActiveCount: number;
-  blockedDependencyCount: number;
-  byOwner: Array<{ owner: string; active: number; overdue: number; stale30: number; dueThisWeek: number; pipelineValue: number; handoverReady: number }>;
-  handoverReady: { total: number; items: Array<{ id: number; dealName: string | null; owner: string | null; value: number | null; signedDate: string | null; handoverReadiness: string | null }> };
-  linkageGaps: { total: number; items: Array<{ id: number; dealName: string | null; owner: string | null; value: number | null; signedDate: string | null }> };
-  actionQueue: Array<{ id: number; dealName: string | null; owner: string | null; value: number | null; nextActivityDate: string | null; lastActivityDate: string | null; reason: ActionReason }>;
+  byPhase: Array<{ code: string; label: string; ticketCount: number; openWorkItems: number; overdueWorkItems: number }>;
+  byOwner: Array<{ ownerUserId: number | null; owner: string; active: number; overdue: number; stale30: number; dueThisWeek: number; activeKwp: number }>;
+  handoverReady: { total: number; items: Array<{ id: number; projectName: string | null; phase: string | null; phaseLabel: string | null; ragStatus: string | null }> };
+  actionQueue: Array<{
+    workItemId: number;
+    title: string | null;
+    ticketId: number | null;
+    ticketName: string | null;
+    phase: string | null;
+    phaseLabel: string | null;
+    priority: string | null;
+    endDate: string | null;
+    owner: string | null;
+    reason: ActionReason;
+  }>;
+  recentlyCompleted: Array<{ workItemId: number; title: string | null; ticketId: number | null; ticketName: string | null; completedAt: string | null; owner: string | null }>;
+  upcomingThisWeek: Array<{ workItemId: number; title: string | null; ticketId: number | null; ticketName: string | null; endDate: string | null; priority: string | null; owner: string | null }>;
+  atRiskTickets: Array<{ ticketId: number; ticketName: string | null; owner: string | null; redWorkItemCount: number; openCriticalRaidCount: number }>;
+  linkageGaps: { total: number; items: Array<{ kind: string; id: number; label: string | null }> };
 };
 
 const REASON_LABEL: Record<ActionReason, { label: string; tone: "rose" | "amber" | "slate" }> = {
-  overdue_followup: { label: "Overdue follow-up", tone: "rose" },
-  very_stale: { label: "Very stale (>60d)", tone: "rose" },
-  high_value_quiet: { label: "High-value quiet", tone: "amber" },
+  blocked: { label: "Blocked", tone: "rose" },
+  overdue: { label: "Overdue", tone: "rose" },
   stale_30d: { label: "Stale >30d", tone: "amber" },
+  high_priority_quiet: { label: "High-priority quiet", tone: "amber" },
   "": { label: "—", tone: "slate" },
 };
 
-function formatZAR(n: number | null | undefined): string {
+const LINKAGE_LABEL: Record<string, string> = {
+  unlinked_ticket: "Ticket with no project or opportunity",
+  completed_no_project: "Completed ticket — no project linked",
+  project_no_tickets: "Active project — no engineering tickets",
+};
+
+function formatNumber(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return "—";
-  if (Math.abs(n) >= 1_000_000) return `R ${(n / 1_000_000).toFixed(1)}M`;
-  if (Math.abs(n) >= 1_000) return `R ${(n / 1_000).toFixed(0)}k`;
-  return `R ${n.toFixed(0)}`;
+  return n.toLocaleString("en-ZA");
 }
 
-function formatPct(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return "—";
-  return `${(n * 100).toFixed(0)}%`;
+function formatKwp(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n) || n === 0) return "—";
+  if (n >= 1000) return `${(n / 1000).toFixed(1)} MWp`;
+  return `${n.toFixed(0)} kWp`;
 }
 
 function formatDate(s: string | null | undefined): string {
@@ -143,8 +154,6 @@ function ExceptionTile({
   );
 
   if (!href) return inner;
-  // In-page anchors (#cross-company) cannot be routed by wouter's Link — use a
-  // plain <a> so the browser scrolls to the section.
   if (href.startsWith("#")) return <a href={href}>{inner}</a>;
   return <Link href={href}>{inner}</Link>;
 }
@@ -163,23 +172,22 @@ function ReasonChip({ reason }: { reason: ActionReason }) {
   );
 }
 
-function PhaseBar({ phase, count, value, weighted, stages, maxValue }: { phase: string; count: number; value: number; weighted: number; stages: string[]; maxValue: number }) {
-  const pct = maxValue > 0 ? (value / maxValue) * 100 : 0;
+function PhaseRow({ row, maxOpen }: { row: { code: string; label: string; ticketCount: number; openWorkItems: number; overdueWorkItems: number }; maxOpen: number }) {
+  const pct = maxOpen > 0 ? (row.openWorkItems / maxOpen) * 100 : 0;
   return (
-    <div className="space-y-1.5" data-testid={`phase-row-${phase}`}>
+    <div className="space-y-1.5" data-testid={`phase-row-${row.code}`}>
       <div className="flex items-center justify-between text-sm">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="font-semibold text-emerald-800 truncate">{phase}</span>
-          <Badge variant="outline" className="text-[10px] shrink-0">{count} deals</Badge>
-          {stages.length > 0 && (
-            <span className="text-[10px] lowercase text-slate-500 truncate" title="Pipedrive stages rolled up into this phase">
-              {stages.map((s) => s.toLowerCase()).join(" · ")}
-            </span>
+          <span className="font-semibold text-emerald-800 truncate">{row.label}</span>
+          <Badge variant="outline" className="text-[10px] shrink-0">{row.ticketCount} tickets</Badge>
+          {row.overdueWorkItems > 0 && (
+            <Badge variant="outline" className="text-[10px] shrink-0 border-rose-300 text-rose-700">
+              {row.overdueWorkItems} overdue
+            </Badge>
           )}
         </div>
         <div className="flex items-center gap-3 text-xs shrink-0">
-          <span className="text-muted-foreground">Wtd {formatZAR(weighted)}</span>
-          <span className="font-medium text-foreground">{formatZAR(value)}</span>
+          <span className="text-muted-foreground">{row.openWorkItems} open work items</span>
         </div>
       </div>
       <Progress value={pct} className="h-2" />
@@ -232,9 +240,6 @@ function DisclosurePanel({
   );
 }
 
-// Collapsible section wrapper. Each PD-dashboard section can be opened or
-// closed by the user as they work through the page; the open/closed state
-// for each section is persisted in localStorage so it survives reloads.
 type CollapsibleCardProps = {
   id: string;
   testId?: string;
@@ -302,6 +307,15 @@ function CollapsibleCard({
   );
 }
 
+// Drilldown helper: link to the engineering ticket if known, else fall back
+// to /engineering/tasks. We never link back to /opportunities here — the PD
+// dashboard is now a view onto app-internal engineering & project work.
+function ticketHref(ticketId: number | null | undefined, ticketName: string | null | undefined): string {
+  if (ticketName) return `/engineering/tickets?open=${encodeURIComponent(ticketName)}`;
+  if (ticketId != null) return `/engineering/tickets?id=${ticketId}`;
+  return `/engineering/tickets`;
+}
+
 export default function PdDashboardPage() {
   const { data, isLoading, error } = useQuery<PdDashboard>({
     queryKey: ["/api/pd/dashboard"],
@@ -333,10 +347,9 @@ export default function PdDashboardPage() {
     );
   }
 
-  const { summary, byPhase, atRisk, recentWins, recentLost, upcomingActivity, conversion, eligibleActiveCount, blockedDependencyCount, byOwner, handoverReady, linkageGaps, actionQueue } = data;
-  const phaseBuckets = byPhase ?? [];
-  const maxPhaseValue = Math.max(...phaseBuckets.map((p) => p.value), 1);
-  const incompleteEligible = Math.max(summary.activeCount - eligibleActiveCount, 0);
+  const { summary, byPhase, byOwner, handoverReady, linkageGaps, actionQueue, recentlyCompleted, upcomingThisWeek, atRiskTickets } = data;
+  const phaseRows = (byPhase ?? []).filter((p) => p.ticketCount > 0 || p.openWorkItems > 0);
+  const maxPhaseOpen = Math.max(...phaseRows.map((p) => p.openWorkItems), 1);
 
   return (
     <PageLayout
@@ -344,11 +357,11 @@ export default function PdDashboardPage() {
       header={
         <PageHeader
           title="Project Development"
-          subtitle="Operational control tower — what PD tickets need action today, and where handover and cross-team flow is breaking down."
+          subtitle="Operational control tower — engineering tickets and work items needing PD action right now, sourced from app-internal data."
           actions={
-            <Link href="/opportunities">
-              <Button variant="outline" size="sm" className="gap-2" data-testid="link-working-list">
-                Open working list
+            <Link href="/engineering/tickets">
+              <Button variant="outline" size="sm" className="gap-2" data-testid="link-engineering-tickets">
+                Open engineering tickets
                 <ExternalLink className="h-3.5 w-3.5" />
               </Button>
             </Link>
@@ -356,50 +369,51 @@ export default function PdDashboardPage() {
         />
       }
     >
-      {/* 1. TOP STRIP — exception-first, drilldown-only */}
+      {/* 1. TOP STRIP — exception-first, drilldown-only. All counts come from
+            engineering_tickets and work_items — no Pipedrive metrics. */}
       <section data-testid="section-top-strip" aria-labelledby="top-strip-heading">
         <h2 id="top-strip-heading" className="sr-only">Exceptions and immediate actions</h2>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
           <ExceptionTile
-            label="Active eligible"
-            count={eligibleActiveCount}
-            sub={incompleteEligible > 0 ? `${incompleteEligible} excluded (terminal/linked)` : "Matches working list"}
-            href="/opportunities"
+            label="Active tickets"
+            count={summary.activeTickets}
+            sub={`${formatKwp(summary.activeKwp)} of design work`}
+            href="/engineering/tickets"
             icon={Briefcase}
             tone="emerald"
-            testId="kpi-eligible-active"
+            testId="kpi-active-tickets"
           />
           <ExceptionTile
-            label="Overdue follow-ups"
-            count={atRisk.overdueFollowups}
-            sub="Next-activity date in the past"
-            href="/opportunities?filter=overdue-followups"
+            label="Overdue tickets"
+            count={summary.overdueTickets}
+            sub="Past due_date, still open"
+            href="/engineering/tickets?filter=overdue"
             icon={AlertTriangle}
-            tone={atRisk.overdueFollowups > 0 ? "rose" : "default"}
-            testId="kpi-overdue-followups"
+            tone={summary.overdueTickets > 0 ? "rose" : "default"}
+            testId="kpi-overdue-tickets"
           />
           <ExceptionTile
             label="Stale > 30d"
-            count={atRisk.staleActivity}
-            sub={`${atRisk.veryStale} are >60d`}
-            href="/opportunities?filter=stale-30"
+            count={summary.stale30Tickets}
+            sub="No update in 30+ days"
+            href="/engineering/tickets?filter=stale-30"
             icon={Hourglass}
-            tone={atRisk.staleActivity > 0 ? "amber" : "default"}
-            testId="kpi-stale-30"
+            tone={summary.stale30Tickets > 0 ? "amber" : "default"}
+            testId="kpi-stale-tickets"
           />
           <ExceptionTile
-            label="Blocked by dependency"
-            count={blockedDependencyCount}
-            sub={blockedDependencyCount > 0 ? `${atRisk.highValueNoRecent} high-value also quiet` : "No internal blockers"}
-            href={blockedDependencyCount > 0 ? "#cross-company" : undefined}
+            label="Blocked tickets"
+            count={summary.blockedTickets}
+            sub={summary.blockedTickets > 0 ? "Have a work item on hold" : "No internal blockers"}
+            href={summary.blockedTickets > 0 ? "#cross-company" : undefined}
             icon={ShieldAlert}
-            tone={blockedDependencyCount > 0 ? "rose" : "default"}
-            testId="kpi-blocked-dependency"
+            tone={summary.blockedTickets > 0 ? "rose" : "default"}
+            testId="kpi-blocked-tickets"
           />
           <ExceptionTile
             label="Handover-ready"
             count={handoverReady.total}
-            sub={handoverReady.total > 0 ? "Won + signed + ready packet" : "No deals at handover stage"}
+            sub={handoverReady.total > 0 ? "Projects in S08–S10 band" : "No projects at handover stage"}
             href={handoverReady.total > 0 ? "/handover-control" : undefined}
             icon={Handshake}
             tone={handoverReady.total > 0 ? "emerald" : "default"}
@@ -408,7 +422,7 @@ export default function PdDashboardPage() {
           <ExceptionTile
             label="Linkage / data gaps"
             count={linkageGaps.total}
-            sub={linkageGaps.total > 0 ? "Won deals with no project link" : "Spine clean"}
+            sub={linkageGaps.total > 0 ? "Spine breaks across tickets/projects" : "Spine clean"}
             href={linkageGaps.total > 0 ? "/admin/work-item-linkage" : undefined}
             icon={Link2Off}
             tone={linkageGaps.total > 0 ? "rose" : "default"}
@@ -417,7 +431,8 @@ export default function PdDashboardPage() {
         </div>
       </section>
 
-      {/* 2. ACTION QUEUE — what to do right now */}
+      {/* 2. ACTION QUEUE — what to do right now. Source: open work_items
+            joined to engineering_tickets, ranked by reason. */}
       <CollapsibleCard
         id="action-queue"
         testId="card-action-queue"
@@ -428,57 +443,60 @@ export default function PdDashboardPage() {
               Action queue
             </CardTitle>
             <p className="text-xs text-muted-foreground">
-              Top {actionQueue.length} active opportunities ranked by overdue → very stale → high-value quiet → stale 30d, then by deal value.
+              Top {actionQueue.length} open work items ranked by blocked → overdue → stale &gt;30d → high-priority quiet.
             </p>
           </>
         }
       >
         <CardContent>
           {actionQueue.length === 0 ? (
-            <p className="text-sm text-muted-foreground" data-testid="action-queue-empty">No items need PD action right now.</p>
+            <p className="text-sm text-muted-foreground" data-testid="action-queue-empty">No work items need PD action right now.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm" data-testid="action-queue-table">
                 <thead>
                   <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
                     <th className="py-2 pr-3 font-medium">Reason</th>
-                    <th className="py-2 pr-3 font-medium">Deal</th>
+                    <th className="py-2 pr-3 font-medium">Work item</th>
+                    <th className="py-2 pr-3 font-medium">Ticket</th>
+                    <th className="py-2 pr-3 font-medium">Phase</th>
                     <th className="py-2 pr-3 font-medium">Owner</th>
-                    <th className="py-2 pr-3 font-medium text-right">Value</th>
-                    <th className="py-2 pr-3 font-medium">Last activity</th>
-                    <th className="py-2 pr-3 font-medium">Next activity</th>
+                    <th className="py-2 pr-3 font-medium">Due</th>
                     <th className="py-2 font-medium" />
                   </tr>
                 </thead>
                 <tbody>
                   {actionQueue.map((item) => {
-                    const lastAge = ageInDays(item.lastActivityDate);
-                    const nextAge = ageInDays(item.nextActivityDate);
+                    const dueAge = ageInDays(item.endDate);
                     return (
-                      <tr key={item.id} className="border-b last:border-0 hover:bg-muted/30" data-testid={`action-row-${item.id}`}>
+                      <tr key={item.workItemId} className="border-b last:border-0 hover:bg-muted/30" data-testid={`action-row-${item.workItemId}`}>
                         <td className="py-2 pr-3"><ReasonChip reason={item.reason} /></td>
                         <td className="py-2 pr-3 font-medium text-foreground">
-                          <Link href={`/opportunities?open=${item.id}`} className="hover:text-emerald-700" data-testid={`action-deal-${item.id}`}>
-                            {item.dealName || `Deal #${item.id}`}
+                          <Link href={`/engineering/tasks?open=${item.workItemId}`} className="hover:text-emerald-700" data-testid={`action-wi-${item.workItemId}`}>
+                            {item.title || `Work item #${item.workItemId}`}
                           </Link>
                         </td>
-                        <td className="py-2 pr-3 text-muted-foreground">{item.owner || "Unassigned"}</td>
-                        <td className="py-2 pr-3 text-right tabular-nums">{formatZAR(item.value)}</td>
                         <td className="py-2 pr-3 text-xs text-muted-foreground">
-                          {lastAge == null ? "Never" : `${lastAge}d ago`}
+                          {item.ticketName ? (
+                            <Link href={ticketHref(item.ticketId, item.ticketName)} className="hover:text-emerald-700">
+                              {item.ticketName}
+                            </Link>
+                          ) : "—"}
                         </td>
+                        <td className="py-2 pr-3 text-xs text-muted-foreground">{item.phaseLabel || "—"}</td>
+                        <td className="py-2 pr-3 text-muted-foreground">{item.owner || "Unassigned"}</td>
                         <td className="py-2 pr-3 text-xs">
-                          {item.nextActivityDate == null ? (
+                          {item.endDate == null ? (
                             <span className="text-muted-foreground">—</span>
-                          ) : nextAge != null && nextAge > 0 ? (
-                            <span className="text-rose-700">{nextAge}d overdue</span>
+                          ) : dueAge != null && dueAge > 0 ? (
+                            <span className="text-rose-700">{dueAge}d overdue</span>
                           ) : (
-                            <span className="text-muted-foreground">{formatDate(item.nextActivityDate)}</span>
+                            <span className="text-muted-foreground">{formatDate(item.endDate)}</span>
                           )}
                         </td>
                         <td className="py-2">
-                          <Link href={`/opportunities?open=${item.id}`}>
-                            <Button variant="ghost" size="sm" className="h-7 text-xs" data-testid={`action-open-${item.id}`}>
+                          <Link href={`/engineering/tasks?open=${item.workItemId}`}>
+                            <Button variant="ghost" size="sm" className="h-7 text-xs" data-testid={`action-open-${item.workItemId}`}>
                               Open
                               <ExternalLink className="ml-1 h-3 w-3" />
                             </Button>
@@ -494,7 +512,7 @@ export default function PdDashboardPage() {
         </CardContent>
       </CollapsibleCard>
 
-      {/* 3. PD OPERATING BOARD — pipeline by lifecycle phase (operational, not vanity) */}
+      {/* 3. PD OPERATING BOARD — engineering activity by canonical lifecycle phase */}
       <CollapsibleCard
         id="pipeline-by-phase"
         testId="card-pipeline-by-phase"
@@ -502,26 +520,26 @@ export default function PdDashboardPage() {
           <>
             <CardTitle className="text-base">PD operating board · by lifecycle phase</CardTitle>
             <p className="text-xs text-muted-foreground">
-              Active opportunities grouped by the company's 10-stage lifecycle. Pipedrive stages roll up under each phase.
+              Engineering tickets and work items grouped by the company's 10-stage canonical phase cycle (shared/phases.ts). Bar width = open work items.
             </p>
           </>
         }
       >
         <CardContent className="space-y-4">
-          {phaseBuckets.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No active opportunities.</p>
+          {phaseRows.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No engineering activity yet.</p>
           ) : (
-            phaseBuckets.map((p) => (
-              <PhaseBar key={p.phase} phase={p.phase} count={p.count} value={p.value} weighted={p.weighted} stages={p.stages} maxValue={maxPhaseValue} />
+            phaseRows.map((p) => (
+              <PhaseRow key={p.code} row={p} maxOpen={maxPhaseOpen} />
             ))
           )}
         </CardContent>
       </CollapsibleCard>
 
-      {/* 4. CROSS-COMPANY INTERACTION — workspace rollup (engineering, finance, blockers, broken handovers) */}
+      {/* 4. CROSS-COMPANY INTERACTION — workspace rollup */}
       <MeetingViewSection />
 
-      {/* 5. OWNERSHIP VIEW — by PD owner */}
+      {/* 5. OWNERSHIP VIEW — by PD developer */}
       <CollapsibleCard
         id="by-owner"
         testId="card-by-owner"
@@ -529,17 +547,17 @@ export default function PdDashboardPage() {
           <>
             <CardTitle className="flex items-center gap-2 text-base">
               <UsersIcon className="h-4 w-4 text-muted-foreground" />
-              Ownership · per PD owner
+              Ownership · per PD developer
             </CardTitle>
             <p className="text-xs text-muted-foreground">
-              Source: <code className="rounded bg-muted px-1">opportunities.deal_owner_name</code> snapshot from Pipedrive sync. Counts only active opportunities.
+              Source: <code className="rounded bg-muted px-1">engineering_tickets.project_developer_user_id</code> joined to <code className="rounded bg-muted px-1">users</code>. Counts only active tickets.
             </p>
           </>
         }
       >
         <CardContent>
           {byOwner.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No owners to display — no active opportunities yet.</p>
+            <p className="text-sm text-muted-foreground">No active engineering tickets.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm" data-testid="by-owner-table">
@@ -550,20 +568,18 @@ export default function PdDashboardPage() {
                     <th className="py-2 pr-3 font-medium text-right">Overdue</th>
                     <th className="py-2 pr-3 font-medium text-right">Stale 30d</th>
                     <th className="py-2 pr-3 font-medium text-right">Due this week</th>
-                    <th className="py-2 pr-3 font-medium text-right">Handover-ready</th>
-                    <th className="py-2 pr-3 font-medium text-right">Pipeline</th>
+                    <th className="py-2 pr-3 font-medium text-right">Active capacity</th>
                   </tr>
                 </thead>
                 <tbody>
                   {byOwner.map((row) => (
-                    <tr key={row.owner} className="border-b last:border-0 hover:bg-muted/30" data-testid={`owner-row-${row.owner}`}>
+                    <tr key={`${row.ownerUserId ?? 'na'}-${row.owner}`} className="border-b last:border-0 hover:bg-muted/30" data-testid={`owner-row-${row.owner}`}>
                       <td className="py-2 pr-3 font-medium">{row.owner}</td>
                       <td className="py-2 pr-3 text-right tabular-nums">{row.active}</td>
                       <td className={`py-2 pr-3 text-right tabular-nums ${row.overdue > 0 ? "text-rose-700 font-medium" : "text-muted-foreground"}`}>{row.overdue}</td>
                       <td className={`py-2 pr-3 text-right tabular-nums ${row.stale30 > 0 ? "text-amber-700" : "text-muted-foreground"}`}>{row.stale30}</td>
                       <td className="py-2 pr-3 text-right tabular-nums">{row.dueThisWeek}</td>
-                      <td className={`py-2 pr-3 text-right tabular-nums ${row.handoverReady > 0 ? "text-emerald-700 font-medium" : "text-muted-foreground"}`} data-testid={`owner-handover-${row.owner}`}>{row.handoverReady}</td>
-                      <td className="py-2 pr-3 text-right tabular-nums text-muted-foreground">{formatZAR(row.pipelineValue)}</td>
+                      <td className="py-2 pr-3 text-right tabular-nums text-muted-foreground">{formatKwp(row.activeKwp)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -573,29 +589,27 @@ export default function PdDashboardPage() {
         </CardContent>
       </CollapsibleCard>
 
-      {/* Handover-ready / linkage-gap inline lists (progressive disclosure) */}
+      {/* Handover-ready / linkage-gap inline lists */}
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <DisclosurePanel
           testId="disclosure-handover-ready"
-          title="Handover-ready deals"
+          title="Handover-ready projects"
           count={handoverReady.total}
           tone="emerald"
-          emptyText="No deals currently match the handover-ready signal (won + signed + handover_readiness in {ready, in_preparation, awaiting_approval, submitted})."
+          emptyText="No projects currently sit in the post-construction handover band (canonical phases S08, S09, S9B, S10)."
         >
           <ul className="space-y-2">
             {handoverReady.items.map((it) => (
               <li key={it.id} className="flex items-start justify-between gap-3 text-sm" data-testid={`handover-item-${it.id}`}>
                 <div className="min-w-0 flex-1">
-                  <Link href={`/handover-control`} className="font-medium hover:text-emerald-700">
-                    {it.dealName || `Deal #${it.id}`}
+                  <Link href={`/project/${encodeURIComponent(it.projectName ?? String(it.id))}`} className="font-medium hover:text-emerald-700">
+                    {it.projectName || `Project #${it.id}`}
                   </Link>
                   <p className="text-xs text-muted-foreground">
-                    {it.owner ? `${it.owner} · ` : ""}
-                    {it.handoverReadiness ?? "—"}
-                    {it.signedDate ? ` · signed ${formatDate(it.signedDate)}` : ""}
+                    {it.phaseLabel ?? "—"}
+                    {it.ragStatus ? ` · RAG ${it.ragStatus}` : ""}
                   </p>
                 </div>
-                <span className="shrink-0 text-sm font-semibold text-emerald-700">{formatZAR(it.value)}</span>
               </li>
             ))}
           </ul>
@@ -603,139 +617,125 @@ export default function PdDashboardPage() {
 
         <DisclosurePanel
           testId="disclosure-linkage-gaps"
-          title="Won deals with no linked project"
+          title="Linkage / data gaps"
           count={linkageGaps.total}
           tone="rose"
-          emptyText="Spine is clean — every won deal has a project_info row."
+          emptyText="Spine is clean — every active project has tickets and every ticket has a project or opportunity link."
         >
           <ul className="space-y-2">
-            {linkageGaps.items.map((it) => (
-              <li key={it.id} className="flex items-start justify-between gap-3 text-sm" data-testid={`linkage-item-${it.id}`}>
+            {linkageGaps.items.map((it, idx) => (
+              <li key={`${it.kind}-${it.id}-${idx}`} className="flex items-start justify-between gap-3 text-sm" data-testid={`linkage-item-${it.kind}-${it.id}`}>
                 <div className="min-w-0 flex-1">
-                  <Link href={`/opportunities?open=${it.id}`} className="font-medium hover:text-emerald-700">
-                    {it.dealName || `Deal #${it.id}`}
-                  </Link>
-                  <p className="text-xs text-muted-foreground">
-                    {it.owner ? `${it.owner} · ` : ""}
-                    {it.signedDate ? `signed ${formatDate(it.signedDate)}` : "no signed date"}
-                  </p>
+                  <p className="font-medium text-foreground truncate">{it.label || `#${it.id}`}</p>
+                  <p className="text-xs text-muted-foreground">{LINKAGE_LABEL[it.kind] ?? it.kind}</p>
                 </div>
-                <span className="shrink-0 text-sm font-medium text-muted-foreground">{formatZAR(it.value)}</span>
               </li>
             ))}
           </ul>
-          {linkageGaps.total > 8 && (
-            <p className="mt-2 text-[11px] text-muted-foreground">Showing top 8 of {linkageGaps.total}.</p>
+          {linkageGaps.total > linkageGaps.items.length && (
+            <p className="mt-2 text-[11px] text-muted-foreground">Showing top {linkageGaps.items.length} of {linkageGaps.total}.</p>
           )}
         </DisclosurePanel>
       </div>
 
-      {/* 6. COMMERCIAL CONTEXT — moved lower, intentionally summarized */}
+      {/* 6. ACTIVITY PULSE — recently completed and what's due this week */}
       <CollapsibleCard
-        id="commercial-context"
-        testId="card-commercial-context"
+        id="activity-pulse"
+        testId="card-activity-pulse"
         defaultOpen={false}
         header={
           <>
-            <CardTitle className="text-base">Commercial context</CardTitle>
-            <p className="text-xs text-muted-foreground">Pipeline value, weighted exposure, win rate, and recent deal motion. Reference only — do not use for forecasting without verification.</p>
+            <CardTitle className="text-base">Activity pulse</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              {summary.completed14dWorkItems} work items completed in the last 14 days · {summary.dueThisWeekWorkItems} due in the next 7.
+            </p>
           </>
         }
       >
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <div className="rounded-md border border-border/60 p-3" data-testid="commercial-pipeline">
-              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Pipeline value</p>
-              <p className="mt-1 text-lg font-semibold">{formatZAR(summary.pipelineValue)}</p>
-              <p className="text-[11px] text-muted-foreground">{summary.activeCount} active · {summary.pipelineKwp.toFixed(0)} kWp</p>
-            </div>
-            <div className="rounded-md border border-border/60 p-3" data-testid="commercial-weighted">
-              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Weighted</p>
-              <p className="mt-1 text-lg font-semibold">{formatZAR(summary.weightedValue)}</p>
-              <p className="text-[11px] text-muted-foreground">{summary.avgProbability != null ? `Avg ${summary.avgProbability.toFixed(0)}% probability` : "Probability not set"}</p>
-            </div>
-            <div className="rounded-md border border-border/60 p-3" data-testid="commercial-win-rate">
-              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Win rate</p>
-              <p className="mt-1 text-lg font-semibold">{formatPct(summary.winRate)}</p>
-              <p className="text-[11px] text-muted-foreground">{summary.wonCount} won · {summary.lostCount} lost</p>
-            </div>
-            <div className="rounded-md border border-border/60 p-3" data-testid="commercial-funnel">
-              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Funnel</p>
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                P {conversion.prospect} · Q {conversion.qualification} · Pr {conversion.proposal} · Neg {conversion.negotiation}
-              </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-            <div data-testid="commercial-upcoming">
-              <h3 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                <CalendarClock className="h-3.5 w-3.5" />
-                Upcoming activity (14d)
-              </h3>
-              {upcomingActivity.length === 0 ? (
-                <p className="text-xs text-muted-foreground">Nothing scheduled.</p>
-              ) : (
-                <ul className="space-y-2">
-                  {upcomingActivity.slice(0, 5).map((a) => (
-                    <li key={a.id} className="text-xs" data-testid={`activity-${a.id}`}>
-                      <Link href={`/opportunities?open=${a.id}`} className="font-medium hover:text-emerald-700">{a.dealName || `Deal #${a.id}`}</Link>
-                      <p className="text-muted-foreground">{a.subject || "—"}{a.date ? ` · ${formatDate(a.date)}` : ""}</p>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-            <div data-testid="commercial-wins">
+        <CardContent>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div data-testid="recently-completed">
               <h3 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 <CheckCircle2 className="h-3.5 w-3.5 text-emerald-700" />
-                Recent wins
+                Recently completed (14d)
               </h3>
-              {recentWins.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No wins recorded.</p>
+              {recentlyCompleted.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Nothing completed in the last 14 days.</p>
               ) : (
                 <ul className="space-y-2">
-                  {recentWins.slice(0, 5).map((w) => (
-                    <li key={w.id} className="flex items-center justify-between text-xs" data-testid={`win-${w.id}`}>
-                      <Link href={`/opportunities?open=${w.id}`} className="truncate font-medium hover:text-emerald-700">
-                        {w.dealName || `Deal #${w.id}`}
+                  {recentlyCompleted.map((w) => (
+                    <li key={w.workItemId} className="text-xs" data-testid={`completed-${w.workItemId}`}>
+                      <Link href={`/engineering/tasks?open=${w.workItemId}`} className="font-medium hover:text-emerald-700">
+                        {w.title || `Work item #${w.workItemId}`}
                       </Link>
-                      <span className="ml-2 shrink-0 text-emerald-700 font-semibold">{formatZAR(w.value)}</span>
+                      <p className="text-muted-foreground">
+                        {w.owner ? `${w.owner} · ` : ""}
+                        {w.ticketName ?? "—"}
+                        {w.completedAt ? ` · ${formatDate(w.completedAt)}` : ""}
+                      </p>
                     </li>
                   ))}
                 </ul>
               )}
             </div>
-            <div data-testid="commercial-losses">
+            <div data-testid="upcoming-this-week">
               <h3 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                <XCircle className="h-3.5 w-3.5 text-rose-700" />
-                Recent losses
+                <CalendarClock className="h-3.5 w-3.5 text-emerald-700" />
+                Due in the next 7 days
               </h3>
-              {recentLost.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No losses recorded.</p>
+              {upcomingThisWeek.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Nothing due this week.</p>
               ) : (
                 <ul className="space-y-2">
-                  {recentLost.slice(0, 5).map((l) => (
-                    <li key={l.id} className="text-xs" data-testid={`loss-${l.id}`}>
-                      <Link href={`/opportunities?open=${l.id}`} className="font-medium hover:text-emerald-700">
-                        {l.dealName || `Deal #${l.id}`}
+                  {upcomingThisWeek.map((w) => (
+                    <li key={w.workItemId} className="text-xs" data-testid={`upcoming-${w.workItemId}`}>
+                      <Link href={`/engineering/tasks?open=${w.workItemId}`} className="font-medium hover:text-emerald-700">
+                        {w.title || `Work item #${w.workItemId}`}
                       </Link>
-                      <p className="truncate text-muted-foreground">{l.reason || "Reason not recorded"}</p>
+                      <p className="text-muted-foreground">
+                        {w.owner ? `${w.owner} · ` : ""}
+                        {w.ticketName ?? "—"}
+                        {w.endDate ? ` · due ${formatDate(w.endDate)}` : ""}
+                      </p>
                     </li>
                   ))}
                 </ul>
               )}
             </div>
           </div>
+          {atRiskTickets.length > 0 && (
+            <div className="mt-4 border-t border-border/60 pt-4" data-testid="at-risk-tickets">
+              <h3 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <XCircle className="h-3.5 w-3.5 text-rose-700" />
+                At-risk tickets
+              </h3>
+              <ul className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                {atRiskTickets.map((t) => (
+                  <li key={t.ticketId} className="text-xs" data-testid={`at-risk-${t.ticketId}`}>
+                    <Link href={ticketHref(t.ticketId, t.ticketName)} className="font-medium hover:text-rose-700">
+                      {t.ticketName || `Ticket #${t.ticketId}`}
+                    </Link>
+                    <p className="text-muted-foreground">
+                      {t.owner ? `${t.owner} · ` : ""}
+                      {t.redWorkItemCount > 0 ? `${t.redWorkItemCount} red work items` : ""}
+                      {t.redWorkItemCount > 0 && t.openCriticalRaidCount > 0 ? " · " : ""}
+                      {t.openCriticalRaidCount > 0 ? `${t.openCriticalRaidCount} critical RAID` : ""}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </CardContent>
       </CollapsibleCard>
 
       <p className="text-[10px] text-muted-foreground" data-testid="generated-at">
-        Snapshot generated {new Date(data.generatedAt).toLocaleString()}
+        Snapshot generated {new Date(data.generatedAt).toLocaleString()} · {formatNumber(summary.activeTickets)} active tickets · {formatNumber(summary.openWorkItems)} open work items
       </p>
     </PageLayout>
   );
 }
+
 
 type WorkspaceRollupResponse = {
   generatedAt: string;
