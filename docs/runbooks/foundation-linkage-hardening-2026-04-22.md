@@ -330,9 +330,26 @@ removed in a follow-up release once consumers have switched.
 ### Server route URLs
 
 Server routes under `/api/pd/*`, `/api/pd-pm-handover/*`, and
-`/api/project-development/workspace/*` are **unchanged in this phase**
-to avoid the risk of 308-redirect-on-POST issues with non-GET methods.
-They will be moved behind dual-mounted aliases in a follow-up.
+`/api/project-development/workspace/*` were **unchanged in phase 1** to
+avoid the risk of 308-redirect-on-POST issues with non-GET methods.
+
+Phase-3 follow-up (task #61) dual-mounts the ticket and handover paths
+under engineering-themed URLs without using HTTP redirects — the
+`server/middleware/legacy-url-aliases.ts` middleware rewrites incoming
+URLs in-process so cookies, CSRF state, and POST bodies all survive:
+
+  * `/api/engineering-tickets/*`     → handlers under `/api/pd/tickets/*`
+  * `/api/engineering-pm-handover/*` → handlers under `/api/pd-pm-handover/*`
+
+Whenever the legacy `/api/pd/tickets/*` or `/api/pd-pm-handover/*`
+prefixes are hit, a one-shot `[deprecated-url]` warning is logged
+(de-duplicated per method+prefix per process) so we can monitor
+residual traffic before retiring the legacy URLs in a later release.
+
+The `/api/project-development/workspace/*` rollup URL is unchanged —
+its response payload now emits both the legacy `pdTickets` block and
+the canonical `engineeringTickets` block on every row and on the
+totals object (same numbers, friendlier key).
 
 ## Phase 2 — schema-side rename (task #58, migrations 0024 + 0025)
 
