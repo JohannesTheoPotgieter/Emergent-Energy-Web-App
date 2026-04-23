@@ -686,6 +686,7 @@ export function OpportunityDetailBody({ opportunityId, active, variant = "inline
                 opportunityId={data.crm.id}
                 defaultName={data.crm.dealName || data.clientName || `Opportunity ${data.crm.id}`}
                 clientId={null}
+                defaultStage={(data.crm.stage as any) || "won"}
                 onClose={() => setConvertOpen(false)}
                 onConverted={() => {
                   setConvertOpen(false);
@@ -1170,11 +1171,16 @@ function ConvertWizard({
   opportunityId: number;
   defaultName: string;
   clientId: number | null;
+  defaultStage?: string;
   onClose: () => void;
   onConverted: () => void;
 }) {
+  const STAGE_OPTIONS = ["prospect", "qualification", "proposal", "negotiation", "won", "lost"] as const;
   const [projectName, setProjectName] = useState(defaultName);
   const [sizeKwp, setSizeKwp] = useState("");
+  const [stage, setStage] = useState<string>(
+    defaultStage && (STAGE_OPTIONS as readonly string[]).includes(defaultStage) ? defaultStage : "won",
+  );
 
   const convert = useMutation({
     mutationFn: async () => {
@@ -1182,6 +1188,7 @@ function ConvertWizard({
         projectName,
         clientId,
         sizeKwp: sizeKwp ? Number(sizeKwp) : null,
+        stage,
       });
       const body = await res.json().catch(() => null);
       if (!res.ok) throw new Error(body?.error || `Convert failed (${res.status})`);
@@ -1203,6 +1210,18 @@ function ConvertWizard({
         </Field>
         <Field label="Starting kWp (optional)">
           <Input type="number" value={sizeKwp} onChange={(e) => setSizeKwp(e.target.value)} className="h-9 text-sm" data-testid="input-convert-kwp" />
+        </Field>
+        <Field label="Set CRM stage to">
+          <select
+            value={stage}
+            onChange={(e) => setStage(e.target.value)}
+            className="h-9 text-sm w-full rounded-md border border-input bg-background px-2"
+            data-testid="select-convert-stage"
+          >
+            {STAGE_OPTIONS.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
         </Field>
         {convert.isError && (
           <p className="text-xs text-red-600">{(convert.error as Error)?.message ?? "Failed"}</p>

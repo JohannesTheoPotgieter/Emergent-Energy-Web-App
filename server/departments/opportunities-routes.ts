@@ -1415,6 +1415,12 @@ const convertSchema = z.object({
   siteId: z.number().int().nullable().optional(),
   sizeKwp: z.union([z.string(), z.number()]).nullable().optional()
     .transform(v => v == null ? null : String(v)),
+  // Optional CRM stage override applied during convert. When provided,
+  // takes precedence over the auto-bump-to-"won" behaviour below so a PD
+  // can keep the deal in (e.g.) "negotiation" while a project shell is
+  // being scoped. Allowed values mirror the canonical app stages on
+  // opportunities.stage.
+  stage: z.enum(["prospect", "qualification", "proposal", "negotiation", "won", "lost"]).optional(),
 }).strict();
 
 router.post(
@@ -1494,7 +1500,15 @@ router.post(
             .where(eq(engineeringTickets.id, shadow.id));
         }
 
-        if (opp.status !== "won" && opp.status !== "lost") {
+        // Stage write: explicit override (from the convert dialog) wins;
+        // otherwise auto-bump to "won" only when the deal hasn't already
+        // landed in a terminal state.
+        if (parsed.data.stage) {
+          await tx
+            .update(oppTable)
+            .set({ stage: parsed.data.stage, updatedAt: new Date() })
+            .where(eq(oppTable.id, opportunityId));
+        } else if (opp.status !== "won" && opp.status !== "lost") {
           await tx
             .update(oppTable)
             .set({ status: "won", updatedAt: new Date() })
