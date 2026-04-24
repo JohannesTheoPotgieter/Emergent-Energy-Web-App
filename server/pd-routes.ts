@@ -12,6 +12,7 @@ import { getEffectiveWorkstreamVisibility } from "./workstream-visibility-middle
 import { requireAuth } from "./auth-context";
 import { canViewAllTickets, ENGINEERING_REQUEST_TYPES } from "@shared/roles/pd-roles";
 import { paramStr } from "./lib/req-params";
+import { getFyWindow } from "./lib/fy-window";
 import { insertClientWithGeneratedId } from "./lib/client-id-generator";
 import { logAuditFromReq } from "./audit-logger";
 import { registerClientsMergeRoutes } from "./routes/clients-merge-routes";
@@ -1084,13 +1085,14 @@ export function registerPdRoutes(app: Express) {
    */
   app.get("/api/pd/reports", requireAuth, requirePermission('pd_dashboard', 'view'), async (req: Request, res: Response) => {
     try {
-      // FY boundaries: Sep-Aug. FY2026 = 1 Sep 2025 → 31 Aug 2026
+      // FY boundaries: Sep-Aug. FY2026 = 1 Sep 2025 → 31 Aug 2026.
+      // Window math is shared with /api/pd/dashboard/won-deals via
+      // server/lib/fy-window.ts so the two surfaces never drift.
       const fyParam = req.query.fy ? parseInt(req.query.fy as string) : null;
-      const now = new Date();
-      const currentFY = now.getMonth() >= 8 ? now.getFullYear() + 1 : now.getFullYear(); // Month 8 = Sep
-      const fy = fyParam || currentFY;
-      const fyStart = new Date(`${fy - 1}-09-01T00:00:00Z`);
-      const fyEnd = new Date(`${fy}-08-31T23:59:59Z`);
+      const win = getFyWindow({ fy: fyParam });
+      const fy = win.fy;
+      const fyStart = win.fyStart;
+      const fyEnd = win.fyEnd;
 
       // Quarter boundaries within FY (Sep-Nov, Dec-Feb, Mar-May, Jun-Aug)
       const quarters = [
