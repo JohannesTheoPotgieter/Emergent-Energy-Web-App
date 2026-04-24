@@ -464,6 +464,11 @@ export function registerLifecycleRoutes(app: Express) {
       isSelectable: true,
       isActive: true,
       ownerRole: p.ownerRole,
+      // 0030_canonical_lifecycle_phases_v2.sql: expose terminal/sequential
+      // flags so the lifecycle board can render Hold and Done as separate
+      // columns next to the sequential cycle, rather than inline at the end.
+      isSequential: p.isSequential,
+      isTerminal: p.isTerminal,
     }));
     res.json({ lifecycle });
   });

@@ -17,6 +17,9 @@ import {
   advanceToStage,
   getStageGateHistory,
   computeCurrentStageGateReadiness,
+  placeProjectOnHold,
+  resumeProjectFromHold,
+  markProjectDone,
 } from "./services/stage-lifecycle-service";
 import {
   createException,
@@ -198,6 +201,18 @@ export function registerStageLifecycleRoutes(app: Express): void {
         const targetStageCode = p(req.params.targetStageCode);
         const { reason } = req.body || {};
 
+        // Terminal stages must go through their dedicated endpoints so the
+        // Hold/Done contract (preserve previous_phase, flip project_status,
+        // log audit decision) is honoured. The generic advance-to path is
+        // for sequential stages only.
+        if (targetStageCode === "S_HOLD" || targetStageCode === "S_DONE") {
+          return res.status(400).json({
+            error: `Use POST /api/projects/${projectId}/stages/${
+              targetStageCode === "S_HOLD" ? "hold" : "done"
+            } for terminal-branch transitions`,
+          });
+        }
+
         const result = await advanceToStage({
           projectId,
           targetStageCode: targetStageCode as any,
@@ -209,6 +224,106 @@ export function registerStageLifecycleRoutes(app: Express): void {
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
         console.error("[stage-lifecycle] advance-to error:", msg);
+        res.status(400).json({ error: msg });
+      }
+    },
+  );
+
+  // ── Terminal-branch transitions (Task #81) ──────────────────
+  // Three dedicated endpoints implement the canonical 12-phase
+  // model's terminal contract (10 sequential + Hold + Done).
+  // Routing through the service handlers keeps three invariants:
+  //   - Hold preserves current_stage_code on previous_phase so
+  //     resume can drop the project back to where it left off.
+  //   - Resume only succeeds when the project is on S_HOLD AND
+  //     has a previous_phase.
+  //   - Done is permanent (no resume) and flips status to closed.
+
+  // POST /api/projects/:projectId/stages/hold
+  app.post(
+    "/api/projects/:projectId/stages/hold",
+    jwtAuth,
+    requireAuth,
+    requirePermission("stage_gate", "edit"),
+    async (req: Request, res: Response) => {
+      try {
+        const projectId = parseProjectId(req, res);
+        if (!projectId) return;
+        const user = getUser(req);
+        const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
+        if (!ADMIN_ROLES.includes(user.role)) {
+          return res.status(403).json({ error: "Only admin roles can place a project on hold" });
+        }
+        const { reason } = req.body || {};
+        const result = await placeProjectOnHold({
+          projectId,
+          actorUserId: user.id,
+          reason,
+        });
+        res.json(result);
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        console.error("[stage-lifecycle] hold error:", msg);
+        res.status(400).json({ error: msg });
+      }
+    },
+  );
+
+  // POST /api/projects/:projectId/stages/resume
+  app.post(
+    "/api/projects/:projectId/stages/resume",
+    jwtAuth,
+    requireAuth,
+    requirePermission("stage_gate", "edit"),
+    async (req: Request, res: Response) => {
+      try {
+        const projectId = parseProjectId(req, res);
+        if (!projectId) return;
+        const user = getUser(req);
+        const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
+        if (!ADMIN_ROLES.includes(user.role)) {
+          return res.status(403).json({ error: "Only admin roles can resume a project" });
+        }
+        const { reason } = req.body || {};
+        const result = await resumeProjectFromHold({
+          projectId,
+          actorUserId: user.id,
+          reason,
+        });
+        res.json(result);
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        console.error("[stage-lifecycle] resume error:", msg);
+        res.status(400).json({ error: msg });
+      }
+    },
+  );
+
+  // POST /api/projects/:projectId/stages/done
+  app.post(
+    "/api/projects/:projectId/stages/done",
+    jwtAuth,
+    requireAuth,
+    requirePermission("stage_gate", "edit"),
+    async (req: Request, res: Response) => {
+      try {
+        const projectId = parseProjectId(req, res);
+        if (!projectId) return;
+        const user = getUser(req);
+        const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
+        if (!ADMIN_ROLES.includes(user.role)) {
+          return res.status(403).json({ error: "Only admin roles can mark a project done" });
+        }
+        const { reason } = req.body || {};
+        const result = await markProjectDone({
+          projectId,
+          actorUserId: user.id,
+          reason,
+        });
+        res.json(result);
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        console.error("[stage-lifecycle] done error:", msg);
         res.status(400).json({ error: msg });
       }
     },

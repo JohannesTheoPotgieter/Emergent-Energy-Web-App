@@ -1492,7 +1492,8 @@ router.get("/api/program-dashboard", requireAuth, async (req, res) => {
     }
     const PHASE_LIFECYCLE_ORDER = [
       "DLP", "Financial Close", "Planning", "Construction", "QA",
-      "Handover", "Commercial Close Out", "Compliance Handover", "Hold"
+      "Handover", "Commercial Close Out", "3 Months Post HO Review",
+      "Compliance Handover", "Hold", "Done"
     ];
     const projectsByPhase = Array.from(phaseCountMap.entries())
       .map(([phase, count]) => ({ phase, count }))

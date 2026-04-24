@@ -87,7 +87,7 @@ export function Stage10PostHandoverReview({ projectId, isAdmin }: Stage10Props) 
       <StageWorkspaceShell
         projectId={projectId}
         stageCode={STAGE_CODE}
-        stageName="Stage 10: 3-Month Post-Handover Review"
+        stageName="Stage 9: 3 Months Post HO Review"
         stage={stageDetail.stage}
         isAdmin={isAdmin}
         actions={
@@ -121,7 +121,7 @@ export function Stage10PostHandoverReview({ projectId, isAdmin }: Stage10Props) 
             <StageDataForm
               projectId={projectId}
               stageCode={STAGE_CODE}
-              title="Post-Handover Review Data"
+              title="3 Months Post HO Review Data"
               fields={FIELDS}
               data={stageData}
             />

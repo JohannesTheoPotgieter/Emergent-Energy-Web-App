@@ -1,8 +1,16 @@
 // ============================================================
 // CANONICAL PHASE CYCLE — single source of truth for the
-// company-wide 10-stage project lifecycle.
+// company-wide project lifecycle.
 // ============================================================
 // Established 2026-04-20 (migration 20260420_canonical_phase_cycle.sql).
+// Updated 2026-04-24 (migration 0030_canonical_lifecycle_phases_v2.sql):
+//   - Renamed "Design & Cost Proposal" -> "Cost Proposal & Design"
+//   - Renamed "Post-Handover Review"   -> "3 Months Post HO Review"
+//   - Swapped order so 3 Months Post HO Review sits at position 9
+//     and Compliance Handover sits at position 10 (final review of the
+//     project happens *after* compliance is signed off).
+//   - Added two terminal "branch" phases: Hold (resumable) and Done.
+//
 // Every screen, importer, report, and route should derive its phase
 // metadata from this module. Legacy constants in shared/schema/projects.ts
 // (LIFECYCLE_PHASES, PROJECT_PHASES, PROJECT_PHASE_LABELS, etc.) are
@@ -16,31 +24,45 @@ export interface CanonicalPhase {
   readonly code: StageCode;
   /** Human-facing label shown everywhere in the UI. */
   readonly label: string;
-  /** 1..10 display position the user sees. */
-  readonly displayNumber: number;
-  /** Default owning role for this phase. */
-  readonly ownerRole: 'PD' | 'ENGINEERING' | 'PM';
+  /** 1..10 display position the user sees. `null` for terminal/branch
+   *  phases (Hold/Done) which are not part of the sequential flow. */
+  readonly displayNumber: number | null;
+  /** Default owning role for this phase. `null` for terminal phases. */
+  readonly ownerRole: 'PD' | 'ENGINEERING' | 'PM' | null;
   /** Whether this phase is part of the post-construction handover band
    *  (used by the in-DLP RAG-red rule). */
   readonly isHandover: boolean;
+  /** Sequential phases participate in next/prev/order logic. Terminal
+   *  branch phases (Hold/Done) are not sequential. */
+  readonly isSequential: boolean;
+  /** Terminal phases finish the lifecycle. Done is permanent; Hold is
+   *  resumable (the prior sequential phase is preserved on the project
+   *  so it can pick up where it left off). */
+  readonly isTerminal: boolean;
 }
 
-/** The 10 active phases of the canonical company lifecycle. Order is the
- *  display order; index 0 is First Assessment, index 9 is Post-Handover Review.
- *  Codes are intentionally kept as the existing DB stage_code values so that
- *  every historical reference (project_stage_decisions, evidence snapshots,
- *  etc.) keeps resolving correctly. */
+/** The 10 active sequential phases plus 2 terminal branch phases of the
+ *  canonical company lifecycle. The first 10 entries (indices 0..9) are
+ *  the sequential lifecycle in display order. The last two (Hold, Done)
+ *  are terminal "branch" phases that sit alongside the sequence and are
+ *  rendered separately in UIs. Codes are intentionally kept as the
+ *  existing DB stage_code values so that every historical reference
+ *  (project_stage_decisions, evidence snapshots, etc.) keeps resolving
+ *  correctly. */
 export const PHASES: ReadonlyArray<CanonicalPhase> = [
-  { code: 'S01_FIRST_ASSESSMENT',          label: 'First Assessment',       displayNumber: 1,  ownerRole: 'PD',          isHandover: false },
-  { code: 'S02_DESIGN_COST_PROPOSAL',      label: 'Design & Cost Proposal', displayNumber: 2,  ownerRole: 'ENGINEERING', isHandover: false },
-  { code: 'S03_SIGNATURE_FINANCIAL_CLOSE', label: 'Financial Close',        displayNumber: 3,  ownerRole: 'PD',          isHandover: false },
-  { code: 'S04_PLANNING',                  label: 'Planning',               displayNumber: 4,  ownerRole: 'PM',          isHandover: false },
-  { code: 'S06_CONSTRUCTION',              label: 'Construction',           displayNumber: 5,  ownerRole: 'PM',          isHandover: false },
-  { code: 'S07_COMMISSIONING',             label: 'Commissioning',          displayNumber: 6,  ownerRole: 'ENGINEERING', isHandover: false },
-  { code: 'S08_OM_HANDOVER',               label: 'O&M Handover',           displayNumber: 7,  ownerRole: 'PM',          isHandover: true  },
-  { code: 'S09_CLIENT_HANDOVER',           label: 'Client Handover',        displayNumber: 8,  ownerRole: 'PM',          isHandover: true  },
-  { code: 'S9B_COMPLIANCE_HANDOVER',       label: 'Compliance Handover',    displayNumber: 9,  ownerRole: 'PM',          isHandover: true  },
-  { code: 'S10_POST_HANDOVER_REVIEW',      label: 'Post-Handover Review',   displayNumber: 10, ownerRole: 'PM',          isHandover: true  },
+  { code: 'S01_FIRST_ASSESSMENT',          label: 'First Assessment',         displayNumber: 1,    ownerRole: 'PD',          isHandover: false, isSequential: true,  isTerminal: false },
+  { code: 'S02_DESIGN_COST_PROPOSAL',      label: 'Cost Proposal & Design',   displayNumber: 2,    ownerRole: 'ENGINEERING', isHandover: false, isSequential: true,  isTerminal: false },
+  { code: 'S03_SIGNATURE_FINANCIAL_CLOSE', label: 'Financial Close',          displayNumber: 3,    ownerRole: 'PD',          isHandover: false, isSequential: true,  isTerminal: false },
+  { code: 'S04_PLANNING',                  label: 'Planning',                 displayNumber: 4,    ownerRole: 'PM',          isHandover: false, isSequential: true,  isTerminal: false },
+  { code: 'S06_CONSTRUCTION',              label: 'Construction',             displayNumber: 5,    ownerRole: 'PM',          isHandover: false, isSequential: true,  isTerminal: false },
+  { code: 'S07_COMMISSIONING',             label: 'Commissioning',            displayNumber: 6,    ownerRole: 'ENGINEERING', isHandover: false, isSequential: true,  isTerminal: false },
+  { code: 'S08_OM_HANDOVER',               label: 'O&M Handover',             displayNumber: 7,    ownerRole: 'PM',          isHandover: true,  isSequential: true,  isTerminal: false },
+  { code: 'S09_CLIENT_HANDOVER',           label: 'Client Handover',          displayNumber: 8,    ownerRole: 'PM',          isHandover: true,  isSequential: true,  isTerminal: false },
+  { code: 'S10_POST_HANDOVER_REVIEW',      label: '3 Months Post HO Review',  displayNumber: 9,    ownerRole: 'PM',          isHandover: true,  isSequential: true,  isTerminal: false },
+  { code: 'S9B_COMPLIANCE_HANDOVER',       label: 'Compliance Handover',      displayNumber: 10,   ownerRole: 'PM',          isHandover: true,  isSequential: true,  isTerminal: false },
+  // Terminal "branch" phases — not numbered, not part of next/prev.
+  { code: 'S_HOLD',                        label: 'Hold',                     displayNumber: null, ownerRole: null,          isHandover: false, isSequential: false, isTerminal: true  },
+  { code: 'S_DONE',                        label: 'Done',                     displayNumber: null, ownerRole: null,          isHandover: false, isSequential: false, isTerminal: true  },
 ] as const;
 
 /** Convenience alias used in iteration sites that expect "active" phases.
@@ -49,11 +71,30 @@ export const PHASES: ReadonlyArray<CanonicalPhase> = [
  *  stage-lifecycle module if a caller really needs them. */
 export const ACTIVE_PHASES: ReadonlyArray<CanonicalPhase> = PHASES;
 
-/** All canonical phase labels in display order. */
+/** Just the 10 sequential phases in display order. Use this for any
+ *  ordered UI (progress steppers, lifecycle boards, default kanban
+ *  columns) so terminal Hold/Done don't appear inline with the sequence. */
+export const SEQUENTIAL_PHASES: ReadonlyArray<CanonicalPhase> =
+  PHASES.filter((p) => p.isSequential);
+
+/** Just the terminal branch phases (Hold, Done). Use these when rendering
+ *  off-flow buckets next to the sequential board. */
+export const TERMINAL_PHASES: ReadonlyArray<CanonicalPhase> =
+  PHASES.filter((p) => p.isTerminal);
+
+/** All canonical phase labels (sequential then terminal). */
 export const PHASE_LABELS: ReadonlyArray<string> = PHASES.map((p) => p.label);
 
-/** All canonical stage codes in display order. */
+/** All canonical stage codes (sequential then terminal). */
 export const PHASE_CODES: ReadonlyArray<StageCode> = PHASES.map((p) => p.code);
+
+/** Just the sequential phase codes in display order. */
+export const SEQUENTIAL_PHASE_CODES: ReadonlyArray<StageCode> =
+  SEQUENTIAL_PHASES.map((p) => p.code);
+
+/** Just the terminal phase codes. */
+export const TERMINAL_PHASE_CODES: ReadonlyArray<StageCode> =
+  TERMINAL_PHASES.map((p) => p.code);
 
 /** Canonical phase by stage code. */
 export const PHASE_BY_CODE: Readonly<Record<string, CanonicalPhase>> =
@@ -68,13 +109,23 @@ const PHASE_BY_LABEL_LC: Readonly<Record<string, CanonicalPhase>> =
   Object.fromEntries(PHASES.map((p) => [p.label.toLowerCase(), p]));
 
 /** Aliases for legacy / tolerated input strings. Kept in sync with the
- *  stage_code_aliases table seeded by 20260420_canonical_phase_cycle.sql.
+ *  stage_code_aliases table seeded by 20260420_canonical_phase_cycle.sql
+ *  and extended by 0030_canonical_lifecycle_phases_v2.sql.
  *  Any string not in this map (case-insensitive) AND not a canonical
  *  label/code returns null from `resolveCanonicalPhase`. */
 const PHASE_ALIASES: Readonly<Record<string, StageCode>> = {
-  // Legacy LifecyclePhase labels that no longer match a canonical label
-  'cost proposal':                'S02_DESIGN_COST_PROPOSAL',
+  // Renamed canonical labels (kept as aliases for legacy input)
+  'design & cost proposal':       'S02_DESIGN_COST_PROPOSAL',
   'design and cost proposal':     'S02_DESIGN_COST_PROPOSAL',
+  'cost proposal':                'S02_DESIGN_COST_PROPOSAL',
+  'cost proposal and design':     'S02_DESIGN_COST_PROPOSAL',
+  'cost proposal/design':         'S02_DESIGN_COST_PROPOSAL',
+  'post-handover review':         'S10_POST_HANDOVER_REVIEW',
+  'post handover review':         'S10_POST_HANDOVER_REVIEW',
+  '3 months post ho review':      'S10_POST_HANDOVER_REVIEW',
+  '3 month post ho review':       'S10_POST_HANDOVER_REVIEW',
+  'three months post ho review':  'S10_POST_HANDOVER_REVIEW',
+  // Legacy LifecyclePhase labels that no longer match a canonical label
   'signature & financial close':  'S03_SIGNATURE_FINANCIAL_CLOSE',
   'pd-pm handover':               'S03_SIGNATURE_FINANCIAL_CLOSE',
   'financial review':             'S02_DESIGN_COST_PROPOSAL',
@@ -85,8 +136,18 @@ const PHASE_ALIASES: Readonly<Record<string, StageCode>> = {
   'commercial close-out':         'S10_POST_HANDOVER_REVIEW',
   'closeout':                     'S10_POST_HANDOVER_REVIEW',
   'close-out':                    'S10_POST_HANDOVER_REVIEW',
-  'post handover review':         'S10_POST_HANDOVER_REVIEW',
-  'post-handover review':         'S10_POST_HANDOVER_REVIEW',
+  // Terminal branch aliases
+  'hold':                         'S_HOLD',
+  'on hold':                      'S_HOLD',
+  'on-hold':                      'S_HOLD',
+  'parked':                       'S_HOLD',
+  'done':                         'S_DONE',
+  'closed':                       'S_DONE',
+  'gone':                         'S_DONE',
+  'complete':                     'S_DONE',
+  'completed':                    'S_DONE',
+  'cancelled':                    'S_DONE',
+  'canceled':                     'S_DONE',
   // Deprecated stage codes -> active replacements
   's04_pd_pm_handover':           'S03_SIGNATURE_FINANCIAL_CLOSE',
   's05_financial_review':         'S02_DESIGN_COST_PROPOSAL',
@@ -108,15 +169,13 @@ const PHASE_ALIASES: Readonly<Record<string, StageCode>> = {
   'p6_handover_client_matriarch':     'S08_OM_HANDOVER',
   'p7_post_handover':                 'S10_POST_HANDOVER_REVIEW',
   'p7_closeout_postmortem':           'S10_POST_HANDOVER_REVIEW',
-  // Removed-from-lifecycle states (now lives on project_status / in_dlp).
-  // We intentionally DO NOT alias these to a phase — callers should read
-  // project_status / in_dlp instead. Returning null forces the migration.
 };
 
 /**
  * Resolve any phase label / stage code / legacy code to a canonical phase.
- * Returns null for unrecognised input or for input that has been moved off
- * the lifecycle (Hold / Internal / Closed / TBC / DLP).
+ * Returns null for unrecognised input. Hold/Done resolve to their terminal
+ * branch phases; legacy "On Hold"/"Closed"/"Gone" inputs likewise route to
+ * the terminal branches rather than to a sequential phase.
  */
 export function resolveCanonicalPhase(input: string | null | undefined): CanonicalPhase | null {
   if (!input) return null;
@@ -140,8 +199,9 @@ export function resolveCanonicalCode(input: string | null | undefined): StageCod
   const phase = resolveCanonicalPhase(input);
   if (!phase) {
     throw new Error(
-      `Unrecognised or off-lifecycle phase input: ${JSON.stringify(input)}. ` +
-      `Hold/Internal/Closed/TBC are project_status values; DLP is the in_dlp flag.`,
+      `Unrecognised phase input: ${JSON.stringify(input)}. ` +
+      `Internal/TBC are project_status values; DLP is the in_dlp flag. ` +
+      `Hold/Done/Closed/Gone resolve to the terminal Hold/Done branch phases.`,
     );
   }
   return phase.code;
@@ -158,30 +218,50 @@ export function phaseLabel(code: string | null | undefined): string {
   return PHASE_BY_CODE[code]?.label ?? code;
 }
 
-/** Get the phase that comes after the given one in the canonical sequence. */
+/** Get the phase that comes after the given one in the canonical sequence.
+ *  Terminal phases (Hold/Done) and stages outside the sequential set return
+ *  null. */
 export function nextPhase(code: StageCode): CanonicalPhase | null {
-  const idx = PHASES.findIndex((p) => p.code === code);
-  if (idx < 0 || idx >= PHASES.length - 1) return null;
-  return PHASES[idx + 1] ?? null;
+  const idx = SEQUENTIAL_PHASES.findIndex((p) => p.code === code);
+  if (idx < 0 || idx >= SEQUENTIAL_PHASES.length - 1) return null;
+  return SEQUENTIAL_PHASES[idx + 1] ?? null;
 }
 
-/** Get the phase that comes before the given one. */
+/** Get the phase that comes before the given one in the sequential
+ *  cycle. Returns null at the start of the cycle and for non-sequential
+ *  (terminal) phases. */
 export function prevPhase(code: StageCode): CanonicalPhase | null {
-  const idx = PHASES.findIndex((p) => p.code === code);
+  const idx = SEQUENTIAL_PHASES.findIndex((p) => p.code === code);
   if (idx <= 0) return null;
-  return PHASES[idx - 1] ?? null;
+  return SEQUENTIAL_PHASES[idx - 1] ?? null;
 }
 
 /** True if this stage code is one of the post-construction handover phases
- *  (S07, S08, S9B, S10). Used by the in-DLP RAG-red rule. */
+ *  (S07, S08, S09, S10, S9B). Used by the in-DLP RAG-red rule. Terminal
+ *  Hold/Done phases are never handover phases. */
 export function isHandoverPhase(code: string | null | undefined): boolean {
   if (!code) return false;
   return PHASE_BY_CODE[code]?.isHandover ?? false;
 }
 
+/** True if the given code is a sequential lifecycle phase (i.e. one of
+ *  the 10 ordered phases, not a terminal branch). */
+export function isSequentialPhase(code: string | null | undefined): boolean {
+  if (!code) return false;
+  return PHASE_BY_CODE[code]?.isSequential ?? false;
+}
+
+/** True if the given code is a terminal branch phase (Hold or Done). */
+export function isTerminalPhase(code: string | null | undefined): boolean {
+  if (!code) return false;
+  return PHASE_BY_CODE[code]?.isTerminal ?? false;
+}
+
 // ===================== PROJECT STATUS =====================
-// Hold / Internal / Closed / TBC are no longer phases — they live on
-// project_info.project_status as a separate orthogonal dimension.
+// Hold / Internal / Closed / TBC remain on project_info.project_status as
+// an orthogonal dimension (kept for backward compatibility — Hold and
+// Closed now have a corresponding terminal phase that the lifecycle UI
+// renders directly).
 
 export const PROJECT_STATUSES = ['active', 'hold', 'internal', 'closed', 'tbc'] as const;
 export type ProjectStatus = typeof PROJECT_STATUSES[number];
@@ -200,9 +280,22 @@ export function resolveProjectStatus(input: string | null | undefined): ProjectS
   if (!input) return null;
   const lc = input.trim().toLowerCase();
   if (lc === 'active' || lc === '' ) return 'active';
-  if (lc === 'hold' || lc === 'on hold' || lc === 'on-hold') return 'hold';
+  if (lc === 'hold' || lc === 'on hold' || lc === 'on-hold' || lc === 'parked') return 'hold';
   if (lc === 'internal') return 'internal';
-  if (lc === 'closed' || lc === 'gone') return 'closed';
+  if (lc === 'closed' || lc === 'gone' || lc === 'done' || lc === 'cancelled' || lc === 'canceled' || lc === 'complete' || lc === 'completed') return 'closed';
   if (lc === 'tbc' || lc === 'unknown') return 'tbc';
+  return null;
+}
+
+// ===================== TERMINAL BRANCH HELPERS =====================
+
+/** The terminal stage code that corresponds to a project status, if any.
+ *  - 'hold'   -> S_HOLD (resumable terminal)
+ *  - 'closed' -> S_DONE (permanent terminal)
+ *  - others   -> null (no dedicated terminal phase)
+ */
+export function terminalCodeForStatus(status: ProjectStatus | null | undefined): StageCode | null {
+  if (status === 'hold') return 'S_HOLD';
+  if (status === 'closed') return 'S_DONE';
   return null;
 }

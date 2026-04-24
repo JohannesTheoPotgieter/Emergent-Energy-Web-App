@@ -304,7 +304,7 @@ const OUTCOME_TO_STAGE_STATUS: Record<ReviewOutcome, string> = {
 };
 
 // Post-merge (migration 20260413_stage_lifecycle_merge): the financial
-// review checklist lives under S02 Design & Cost Proposal as its closing
+// review checklist lives under S02 Cost Proposal & Design as its closing
 // step. The constant name is kept for backward compatibility with the
 // rest of this file; the value points at the active stage code.
 const S05_STAGE_CODE = "S02_DESIGN_COST_PROPOSAL";
