@@ -659,7 +659,12 @@ export class OpportunitiesRepository {
       crm: opp.opp,
       clientName: opp.clientName,
       siteName: opp.siteName,
-      pd: shadow,
+      // Coalesce undefined → null so the JSON contract matches the
+      // docstring above and the drawer's WorkflowResponse type. Without
+      // this, JSON.stringify drops the `pd` key entirely when no shadow
+      // exists, and the drawer falls through to its "Could not load
+      // opportunity" branch (Task #83 root cause).
+      pd: shadow ?? null,
       tasks,
       tickets,
       projectTasks,
