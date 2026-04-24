@@ -256,8 +256,10 @@ function PipelinePhaseRow({
 //     (next_activity_date is intentionally ignored for this section);
 //   - the "No close date set" tray is rendered ABOVE the grid and is
 //     populated by `expected_close_date IS NULL` only;
-//   - each event chip displays client name, kWp and a phase chip so the
-//     reader can scan the whole pipeline calendar without opening rows.
+//   - each event chip displays the deal name, kWp and a short phase code
+//     (e.g. `S02`) so the reader can scan the whole pipeline calendar
+//     without opening rows. The undated tray uses the same data contract
+//     with amber styling to flag unscheduled opportunities.
 const SD_WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const SD_MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
@@ -352,24 +354,35 @@ function SignDateCalendar({
             No close date set ({undated.length})
           </p>
           <div className="flex flex-wrap gap-1.5">
-            {undated.slice(0, 30).map((r) => (
-              <button
-                type="button"
-                key={r.id}
-                onClick={() => onEventClick(r.id)}
-                className="text-[10px] px-2 py-0.5 rounded bg-white border border-amber-200 hover:border-amber-400 truncate max-w-[260px] flex items-center gap-1"
-                title={`${r.dealName} — ${r.clientName ?? "No client"} — ${r.estimatedKwp != null ? formatKwp(r.estimatedKwp) : "kWp n/a"} — ${r.phaseLabel}`}
-                data-testid={`sd-undated-${r.id}`}
-              >
-                <span className="font-medium text-slate-700 truncate">{r.clientName || r.dealName}</span>
-                {r.estimatedKwp != null && (
-                  <span className="tabular-nums text-[9px] text-amber-800 shrink-0">{formatKwp(r.estimatedKwp)}</span>
-                )}
-                <span className="shrink-0 text-[9px] px-1 rounded bg-amber-200/80 font-semibold tracking-wide">
-                  {r.phaseCode ?? "—"}
-                </span>
-              </button>
-            ))}
+            {undated.slice(0, 30).map((r) => {
+              // Mirror SignEventChip's data contract: deal name as the primary
+              // label, full phase code compressed to its short S-code prefix,
+              // `_UNSCOPED` rendered as an em-dash. Tray styling stays amber
+              // so unscheduled opportunities remain visually distinct from
+              // dated chips inside the calendar grid.
+              const phaseCode = r.phaseCode ?? "_UNSCOPED";
+              const phaseChip = phaseCode === "_UNSCOPED"
+                ? "—"
+                : (phaseCode.split("_")[0] || phaseCode);
+              return (
+                <button
+                  type="button"
+                  key={r.id}
+                  onClick={() => onEventClick(r.id)}
+                  className="text-[10px] px-2 py-0.5 rounded bg-white border border-amber-200 hover:border-amber-400 max-w-[260px] flex items-center gap-1"
+                  title={`${r.dealName} — ${r.clientName ?? "No client"} — ${r.estimatedKwp != null ? formatKwp(r.estimatedKwp) : "kWp n/a"} — ${r.phaseLabel}`}
+                  data-testid={`sd-undated-${r.id}`}
+                >
+                  <span className="font-medium text-slate-700 truncate min-w-0">{r.dealName}</span>
+                  {r.estimatedKwp != null && (
+                    <span className="tabular-nums text-[9px] text-amber-800 shrink-0">{formatKwp(r.estimatedKwp)}</span>
+                  )}
+                  <span className="shrink-0 text-[9px] px-1 rounded bg-amber-200/80 font-semibold tracking-wide">
+                    {phaseChip}
+                  </span>
+                </button>
+              );
+            })}
             {undated.length > 30 && (
               <span className="text-[10px] text-amber-700 self-center">+{undated.length - 30} more</span>
             )}
