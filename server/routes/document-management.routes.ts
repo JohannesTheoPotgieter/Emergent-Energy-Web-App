@@ -30,6 +30,7 @@ import {
 } from "../repositories/company-sharepoint-roots-repository";
 import {
   getProjectRootById,
+  getProjectRootByProjectId,
   listProjectsWithRoots,
 } from "../repositories/project-sharepoint-roots-repository";
 import {
@@ -97,13 +98,30 @@ async function resolveRoot(
   };
 }
 
-function pathUnderRoot(fullPath: string, rootPath: string): string {
-  const normRoot = rootPath.replace(/^\/+|\/+$/g, "");
+export function pathUnderRoot(fullPath: string, rootDrivePath: string): string {
+  const normRoot = rootDrivePath.replace(/^\/+|\/+$/g, "");
   const normFull = fullPath.replace(/^\/+/g, "");
   if (normRoot && normFull.startsWith(normRoot)) {
     return normFull.slice(normRoot.length).replace(/^\/+/, "");
   }
   return normFull;
+}
+
+/**
+ * Returns the drive-relative path of the root item the user is currently
+ * browsing in — needed so ACL first-segment matching sees the top folder
+ * (Engineering, Contracts, …) rather than the project wrapper folder.
+ *
+ * For the mock the root item sits at drive root (path=""), so this
+ * always returns "". For real Graph, a project stored at
+ * `/drives/X/root:/Projects/Client/ProjectName` returns
+ * "Projects/Client/ProjectName" and callers strip that prefix from
+ * child item paths before ACL lookup.
+ */
+async function getRootDrivePath(root: ResolvedRoot): Promise<string> {
+  if (!root.rootItemId) return "";
+  const rootItem = await sp.getItem(root.driveId, root.rootItemId);
+  return rootItem?.path ?? "";
 }
 
 function assertAcl(
@@ -126,22 +144,27 @@ function assertAcl(
  * had access to a folder could still touch a document via its id.
  */
 async function assertDocumentAcl(
-  tracked: { id: number; rootScope: DocumentRootScope; projectId: number | null; companyRootId: number | null; path: string },
+  tracked: { id: number; rootScope: DocumentRootScope; projectId: number | null; companyRootId: number | null; driveId: string; path: string },
   role: string | null | undefined,
   action: DocumentAction,
 ): Promise<void> {
-  let rootPath = "";
+  // Derive the drive-relative path of the root item so we can strip it
+  // from `tracked.path` and get a folder first-segment the ACL can match.
+  let rootDrivePath = "";
   if (tracked.rootScope === "project" && tracked.projectId != null) {
-    // Use projectSharepointRoots lookup — root path is stored by project id,
-    // but we look it up via the projectSharepointRoots repo's getByProjectId
-    // alias. Avoid a second db call when we already have the path on the
-    // document (path is relative to the drive root in our mock + real Graph).
-    rootPath = "";
+    const projectRoot = await getProjectRootByProjectId(tracked.projectId);
+    if (projectRoot?.rootItemId) {
+      const rootItem = await sp.getItem(tracked.driveId, projectRoot.rootItemId);
+      rootDrivePath = rootItem?.path ?? "";
+    }
   } else if (tracked.rootScope === "company" && tracked.companyRootId != null) {
-    const r = await getCompanyRootById(tracked.companyRootId);
-    rootPath = r?.rootPath ?? "";
+    const companyRoot = await getCompanyRootById(tracked.companyRootId);
+    if (companyRoot?.rootItemId) {
+      const rootItem = await sp.getItem(tracked.driveId, companyRoot.rootItemId);
+      rootDrivePath = rootItem?.path ?? "";
+    }
   }
-  assertAcl(tracked.rootScope, pathUnderRoot(tracked.path, rootPath), role, action);
+  assertAcl(tracked.rootScope, pathUnderRoot(tracked.path, rootDrivePath), role, action);
 }
 
 // ----- upload (small) ----------------------------------------------------
@@ -234,7 +257,10 @@ export function registerDocumentManagementRoutes(app: Express): void {
       let pathForAcl = "";
       if (parentItemId && parentItemId !== root.rootItemId) {
         const parent = await sp.getItem(root.driveId, parentItemId);
-        if (parent) pathForAcl = pathUnderRoot(parent.path, root.rootPath);
+        if (parent) {
+          const rootDrivePath = await getRootDrivePath(root);
+          pathForAcl = pathUnderRoot(parent.path, rootDrivePath);
+        }
       }
       assertAcl(root.scope, pathForAcl, user.role, "read");
       try {
@@ -265,7 +291,8 @@ export function registerDocumentManagementRoutes(app: Express): void {
       const root = await resolveRoot(scope.data, rootId.data);
       const item = await sp.getItem(root.driveId, itemId.data);
       if (!item) throw notFound("Item");
-      assertAcl(root.scope, pathUnderRoot(item.path, root.rootPath), user.role, "read");
+      const rootDrivePath = await getRootDrivePath(root);
+      assertAcl(root.scope, pathUnderRoot(item.path, rootDrivePath), user.role, "read");
       const tracked = await getManagedDocumentByDriveItem(root.driveId, itemId.data);
       const lock = tracked ? await getLock(tracked.id) : null;
       res.json({
@@ -292,7 +319,8 @@ export function registerDocumentManagementRoutes(app: Express): void {
       const root = await resolveRoot(scope.data, rootId.data);
       const item = await sp.getItem(root.driveId, itemId.data);
       if (!item) throw notFound("Item");
-      assertAcl(root.scope, pathUnderRoot(item.path, root.rootPath), user.role, "read");
+      const rootDrivePath = await getRootDrivePath(root);
+      assertAcl(root.scope, pathUnderRoot(item.path, rootDrivePath), user.role, "read");
       const { buffer, fileName, contentType } = await sp.downloadBuffer(root.driveId, itemId.data);
       await recordActivity({
         userId: user.id,
@@ -342,7 +370,10 @@ export function registerDocumentManagementRoutes(app: Express): void {
       let pathForAcl = "";
       if (parentItemId) {
         const parent = await sp.getItem(root.driveId, parentItemId);
-        if (parent) pathForAcl = pathUnderRoot(parent.path, root.rootPath);
+        if (parent) {
+          const rootDrivePath = await getRootDrivePath(root);
+          pathForAcl = pathUnderRoot(parent.path, rootDrivePath);
+        }
       }
       assertAcl(root.scope, pathForAcl, user.role, "write");
 
@@ -393,7 +424,8 @@ export function registerDocumentManagementRoutes(app: Express): void {
 
       const uploaded = await sp.getItem(root.driveId, body.driveItemId);
       if (!uploaded) throw notFound("Uploaded item");
-      assertAcl(root.scope, pathUnderRoot(uploaded.path, root.rootPath), user.role, "write");
+      const rootDrivePathUc = await getRootDrivePath(root);
+      assertAcl(root.scope, pathUnderRoot(uploaded.path, rootDrivePathUc), user.role, "write");
 
       const result = await workflow.completeUpload({
         rootScope: root.scope,
@@ -430,7 +462,10 @@ export function registerDocumentManagementRoutes(app: Express): void {
       let pathForAcl = "";
       if (body.parentItemId) {
         const parent = await sp.getItem(root.driveId, body.parentItemId);
-        if (parent) pathForAcl = pathUnderRoot(parent.path, root.rootPath);
+        if (parent) {
+          const rootDrivePath = await getRootDrivePath(root);
+          pathForAcl = pathUnderRoot(parent.path, rootDrivePath);
+        }
       }
       assertAcl(root.scope, pathForAcl, user.role, "write");
 
@@ -473,7 +508,8 @@ export function registerDocumentManagementRoutes(app: Express): void {
 
       const before = await sp.getItem(root.driveId, graphItemId.data);
       if (!before) throw notFound("Item");
-      assertAcl(root.scope, pathUnderRoot(before.path, root.rootPath), user.role, "write");
+      const rootDrivePath = await getRootDrivePath(root);
+      assertAcl(root.scope, pathUnderRoot(before.path, rootDrivePath), user.role, "write");
 
       const tracked = await getManagedDocumentByDriveItem(root.driveId, graphItemId.data);
       if (tracked) await workflow.assertUnlockedForUser(tracked.id, user.id);

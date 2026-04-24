@@ -6,7 +6,7 @@
  * don't reach into the DB directly.
  */
 
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { eq, inArray, isNull } from "drizzle-orm";
 import { db } from "../db";
 import {
   projectSharepointRoots,
