@@ -481,7 +481,7 @@ function PipelineByPhaseSection() {
       <CollapsibleCard
         id="pipeline-sign-date-calendar"
         testId="card-sign-date-calendar"
-        defaultOpen={false}
+        defaultOpen={true}
         header={
           <>
             <CardTitle className="flex items-center gap-2 text-base">
