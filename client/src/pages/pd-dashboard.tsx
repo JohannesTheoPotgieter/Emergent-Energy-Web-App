@@ -268,9 +268,16 @@ function SignEventChip({
   row: PipelineByPhase["rows"][number];
   onClick: () => void;
 }) {
-  const phase = row.phaseCode ?? "_UNSCOPED";
-  const phaseChip = phase === "_UNSCOPED" ? "—" : phase;
-  const primary = row.clientName || row.dealName;
+  // Compress the canonical phase code (e.g. `S02_DESIGN_COST_PROPOSAL`) down
+  // to its short S-code prefix (`S02`) so the deal name has room to breathe
+  // inside narrow day cells. `_UNSCOPED` continues to render as an em-dash.
+  const phaseCode = row.phaseCode ?? "_UNSCOPED";
+  const phaseChip = phaseCode === "_UNSCOPED"
+    ? "—"
+    : (phaseCode.split("_")[0] || phaseCode);
+  // Always label the chip by the deal — server already COALESCEs deal_name →
+  // client name → "Opportunity #<id>", so this is never empty.
+  const primary = row.dealName;
   const kwpLabel = row.estimatedKwp != null ? formatKwp(row.estimatedKwp) : "";
   return (
     <button
@@ -280,7 +287,7 @@ function SignEventChip({
       title={`${row.dealName} — ${row.clientName ?? "No client"} — ${kwpLabel || "kWp n/a"} — ${row.phaseLabel}`}
       data-testid={`sd-event-${row.id}`}
     >
-      <span className="font-medium truncate flex-1">{primary}</span>
+      <span className="font-medium truncate flex-1 min-w-0">{primary}</span>
       {kwpLabel && <span className="tabular-nums shrink-0 text-[9px] text-emerald-800">{kwpLabel}</span>}
       <span className="shrink-0 text-[9px] px-1 rounded bg-emerald-200/80 font-semibold tracking-wide">{phaseChip}</span>
     </button>
