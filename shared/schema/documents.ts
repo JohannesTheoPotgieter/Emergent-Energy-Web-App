@@ -214,3 +214,254 @@ export const CONTROLLED_DOCUMENT_APPROVAL_TYPE = "controlled_document" as const;
 
 // Required to placate drizzle's pgTable type inference when imported-only in other files
 export const __controlledDocumentsSql = sql`${controlledDocuments.id}`;
+
+// =====================================================================
+// Document Management (DM) — generic SharePoint browsing + versioning +
+// comments + activity. Independent from Controlled Documents above.
+//
+// Source of truth for file bytes + native versions: SharePoint via Graph.
+// Source of truth for DM workflow state (tracked docs, revisions metadata,
+// comments, locks, activity): this DB.
+//
+// Approvals are NOT modelled here — when wired up later we reuse the
+// existing `approvals` engine via relatedEntityType='managed_document'.
+// =====================================================================
+
+/** Where a managed document lives: per-project tree or a company-wide root. */
+export const documentRootScopeEnum = pgEnum("document_root_scope_enum", [
+  "project",
+  "company",
+]);
+
+/** Audit actions recorded against document_activity. No move/delete in this build. */
+export const documentActivityActionEnum = pgEnum("document_activity_action_enum", [
+  "upload",
+  "download",
+  "rename",
+  "create_folder",
+  "view",
+  "checkout",
+  "checkin",
+  "discard_checkout",
+  "restore_revision",
+  "comment",
+]);
+
+/** Managed document lifecycle state (minus approvals). */
+export const managedDocumentStateEnum = pgEnum("managed_document_state_enum", [
+  "draft",
+  "in_review",
+  "approved",
+  "superseded",
+  "archived",
+]);
+
+// =====================================================================
+// Company-wide SharePoint roots — e.g. HR, Templates, Policies.
+// Project roots already exist via projectSharepointRoots above.
+// =====================================================================
+
+export const companySharepointRoots = pgTable("company_sharepoint_roots", {
+  id: serial("id").primaryKey(),
+  /** Stable logical key used in URLs + config, e.g. 'hr' | 'templates'. */
+  kind: text("kind").notNull().unique(),
+  displayName: text("display_name").notNull(),
+  driveId: text("drive_id"),
+  rootItemId: text("root_item_id"),
+  rootPath: text("root_path").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertCompanySharepointRootSchema = createInsertSchema(companySharepointRoots)
+  .omit({ id: true, createdAt: true, updatedAt: true } as any);
+export type InsertCompanySharepointRoot = z.infer<typeof insertCompanySharepointRootSchema>;
+export type CompanySharepointRoot = typeof companySharepointRoots.$inferSelect;
+
+// =====================================================================
+// managed_documents — one row per SharePoint file we're tracking for
+// versioning / comments / activity. Uniquely identified by (driveId, driveItemId).
+// =====================================================================
+
+export const managedDocuments = pgTable("managed_documents", {
+  id: serial("id").primaryKey(),
+  rootScope: documentRootScopeEnum("root_scope").notNull(),
+  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
+  companyRootId: integer("company_root_id").references(() => companySharepointRoots.id, { onDelete: "cascade" }),
+  driveId: text("drive_id").notNull(),
+  driveItemId: text("drive_item_id").notNull(),
+  name: text("name").notNull(),
+  /** Full path shown to users (e.g. 'Projects/ABC/Engineering/file.pdf'). */
+  path: text("path").notNull(),
+  /** Set after the first revision row is inserted. */
+  currentRevisionId: integer("current_revision_id"),
+  /** Document owner (defaults to uploader; editable by COO/CEO admin). */
+  ownerUserId: integer("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+  state: managedDocumentStateEnum("state").notNull().default("draft"),
+  createdByUserId: integer("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
+}, (t) => ({
+  driveItemIdx: uniqueIndex("managed_documents_drive_item_idx").on(t.driveId, t.driveItemId),
+  projectIdx: index("managed_documents_project_idx").on(t.projectId),
+  companyRootIdx: index("managed_documents_company_root_idx").on(t.companyRootId),
+  ownerIdx: index("managed_documents_owner_idx").on(t.ownerUserId),
+}));
+
+export const insertManagedDocumentSchema = createInsertSchema(managedDocuments)
+  .omit({ id: true, createdAt: true, updatedAt: true } as any);
+export type InsertManagedDocument = z.infer<typeof insertManagedDocumentSchema>;
+export type ManagedDocument = typeof managedDocuments.$inferSelect;
+
+// =====================================================================
+// document_revisions — per-doc version history (mirrors Graph version id).
+// =====================================================================
+
+export const documentRevisions = pgTable("document_revisions", {
+  id: serial("id").primaryKey(),
+  documentId: integer("document_id").notNull().references(() => managedDocuments.id, { onDelete: "cascade" }),
+  /** Monotonic per-doc counter (1..N). */
+  revisionNumber: integer("revision_number").notNull(),
+  /** Graph drive item version id (e.g. '1.0', '2.0', or a driveItem version GUID). */
+  sharepointVersionId: text("sharepoint_version_id"),
+  sizeBytes: integer("size_bytes"),
+  contentHash: text("content_hash"),
+  uploadedByUserId: integer("uploaded_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  uploadedAt: timestamp("uploaded_at").notNull().defaultNow(),
+  notes: text("notes"),
+  isCurrent: boolean("is_current").notNull().default(false),
+  /** Set true when a controlled-approval finalises (not in this build — reserved). */
+  isControlled: boolean("is_controlled").notNull().default(false),
+}, (t) => ({
+  docRevIdx: uniqueIndex("document_revisions_doc_rev_idx").on(t.documentId, t.revisionNumber),
+  currentIdx: index("document_revisions_current_idx").on(t.documentId, t.isCurrent),
+}));
+
+export const insertDocumentRevisionSchema = createInsertSchema(documentRevisions)
+  .omit({ id: true, uploadedAt: true } as any);
+export type InsertDocumentRevision = z.infer<typeof insertDocumentRevisionSchema>;
+export type DocumentRevision = typeof documentRevisions.$inferSelect;
+
+// =====================================================================
+// document_locks — mirrors Graph checkout state. PK == documentId.
+// =====================================================================
+
+export const documentLocks = pgTable("document_locks", {
+  documentId: integer("document_id").primaryKey().references(() => managedDocuments.id, { onDelete: "cascade" }),
+  lockedByUserId: integer("locked_by_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  lockedAt: timestamp("locked_at").notNull().defaultNow(),
+  expiresAt: timestamp("expires_at"),
+  clientAgent: text("client_agent"),
+});
+
+export const insertDocumentLockSchema = createInsertSchema(documentLocks)
+  .omit({ lockedAt: true } as any);
+export type InsertDocumentLock = z.infer<typeof insertDocumentLockSchema>;
+export type DocumentLock = typeof documentLocks.$inferSelect;
+
+// =====================================================================
+// document_comments + document_comment_mentions
+// =====================================================================
+
+export const documentComments = pgTable("document_comments", {
+  id: serial("id").primaryKey(),
+  documentId: integer("document_id").notNull().references(() => managedDocuments.id, { onDelete: "cascade" }),
+  /** Optional: comment pinned to a specific revision. Null = doc-level. */
+  revisionId: integer("revision_id").references(() => documentRevisions.id, { onDelete: "set null" }),
+  /** Optional: thread parent for replies. */
+  parentCommentId: integer("parent_comment_id"),
+  authorUserId: integer("author_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  body: text("body").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  editedAt: timestamp("edited_at"),
+  deletedAt: timestamp("deleted_at"),
+}, (t) => ({
+  docIdx: index("document_comments_doc_idx").on(t.documentId, t.createdAt),
+  parentIdx: index("document_comments_parent_idx").on(t.parentCommentId),
+}));
+
+export const insertDocumentCommentSchema = createInsertSchema(documentComments)
+  .omit({ id: true, createdAt: true } as any);
+export type InsertDocumentComment = z.infer<typeof insertDocumentCommentSchema>;
+export type DocumentComment = typeof documentComments.$inferSelect;
+
+export const documentCommentMentions = pgTable("document_comment_mentions", {
+  commentId: integer("comment_id").notNull().references(() => documentComments.id, { onDelete: "cascade" }),
+  mentionedUserId: integer("mentioned_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+}, (t) => ({
+  pk: uniqueIndex("document_comment_mentions_pk").on(t.commentId, t.mentionedUserId),
+  userIdx: index("document_comment_mentions_user_idx").on(t.mentionedUserId),
+}));
+
+export type DocumentCommentMention = typeof documentCommentMentions.$inferSelect;
+
+// =====================================================================
+// document_activity — full audit log for DM actions.
+// =====================================================================
+
+export const documentActivity = pgTable("document_activity", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
+  /** Snapshot of role code at time of action (e.g. 'COO_ADMIN'). */
+  actorRole: text("actor_role"),
+  rootScope: documentRootScopeEnum("root_scope").notNull(),
+  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "set null" }),
+  companyRootId: integer("company_root_id").references(() => companySharepointRoots.id, { onDelete: "set null" }),
+  documentId: integer("document_id").references(() => managedDocuments.id, { onDelete: "set null" }),
+  revisionId: integer("revision_id").references(() => documentRevisions.id, { onDelete: "set null" }),
+  driveId: text("drive_id").notNull(),
+  itemId: text("item_id"),
+  itemPath: text("item_path"),
+  itemName: text("item_name"),
+  action: documentActivityActionEnum("action").notNull(),
+  sizeBytes: integer("size_bytes"),
+  requestId: text("request_id"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => ({
+  projectIdx: index("document_activity_project_idx").on(t.projectId, t.createdAt),
+  documentIdx: index("document_activity_document_idx").on(t.documentId, t.createdAt),
+  userIdx: index("document_activity_user_idx").on(t.userId, t.createdAt),
+  actionIdx: index("document_activity_action_idx").on(t.action, t.createdAt),
+}));
+
+export const insertDocumentActivitySchema = createInsertSchema(documentActivity)
+  .omit({ id: true, createdAt: true } as any);
+export type InsertDocumentActivity = z.infer<typeof insertDocumentActivitySchema>;
+export type DocumentActivity = typeof documentActivity.$inferSelect;
+
+// =====================================================================
+// Type-safe enum exports for runtime use
+// =====================================================================
+
+export const DOCUMENT_ROOT_SCOPES = ["project", "company"] as const;
+export type DocumentRootScope = (typeof DOCUMENT_ROOT_SCOPES)[number];
+
+export const DOCUMENT_ACTIVITY_ACTIONS = [
+  "upload",
+  "download",
+  "rename",
+  "create_folder",
+  "view",
+  "checkout",
+  "checkin",
+  "discard_checkout",
+  "restore_revision",
+  "comment",
+] as const;
+export type DocumentActivityAction = (typeof DOCUMENT_ACTIVITY_ACTIONS)[number];
+
+export const MANAGED_DOCUMENT_STATES = [
+  "draft",
+  "in_review",
+  "approved",
+  "superseded",
+  "archived",
+] as const;
+export type ManagedDocumentState = (typeof MANAGED_DOCUMENT_STATES)[number];
+
+/** Approval handoff constant — used when the approvals integration lands in a later phase. */
+export const MANAGED_DOCUMENT_APPROVAL_TYPE = "managed_document" as const;
