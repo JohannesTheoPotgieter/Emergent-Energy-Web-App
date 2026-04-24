@@ -1,21 +1,33 @@
 /**
- * Unified Opportunity drawer (2026-04-20).
+ * Unified Opportunity drawer (2026-04-20; slimmed 2026-04-24, task #76).
  *
  * Replaces the legacy "Engineering ticket detail" page (formerly
  * called "PD Ticket detail"; vocabulary retired in task #56). Treats
  * a Pipedrive opportunity + its shadow `pd_tickets` row as a single
- * user-facing record:
- *   - CRM block (blue 🔵): read-only — Pipedrive sync owns these.
- *   - PD workflow block (emerald 🟢): editable — the app owns these.
- *   - Tasks block: spawned engineering tasks for this opportunity.
- *   - Convert-to-Project: opens a small wizard to materialise the
- *     project shell at S01_FIRST_ASSESSMENT.
+ * user-facing record. The drawer is now read-only at the body level —
+ * it renders three stacked sections, in this order:
+ *   - CRM details (blue 🔵): read-only — Pipedrive sync owns these.
+ *   - Activity: last/next CRM activity + a preview of the most
+ *     recent PD comment (sourced from `pd.comments` on the workflow
+ *     payload; no edit affordance).
+ *   - Tickets: engineering tickets attached to the opportunity, plus
+ *     the project-level Kanban board when at least one ticket has
+ *     been linked to a project.
+ * A "Convert-to-Project" wizard still lives below the three sections
+ * for opportunities that aren't yet linked to a project.
+ *
+ * The previously-editable "Internal readiness" block (request type /
+ * priority / status / due-date selects, the technical-readiness
+ * checklist, and the PD comments textarea) was removed in task #76.
+ * The underlying columns and the PATCH /api/opportunities/:id/pd
+ * endpoint remain in the schema/server for other surfaces that may
+ * still write them; the drawer simply no longer exposes them.
  *
  * Backed by:
- *   GET   /api/opportunities/:id/workflow   (lazy-creates PD shadow)
- *   PATCH /api/opportunities/:id/pd         (PD-side fields only)
- *   POST  /api/opportunities/:id/spawn-tasks
- *   POST  /api/opportunities/:id/convert-to-project
+ *   GET  /api/opportunities/:id/workflow   (lazy-creates PD shadow,
+ *                                           still feeds this drawer)
+ *   POST /api/opportunities/:id/spawn-tasks
+ *   POST /api/opportunities/:id/convert-to-project
  */
 import { useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
