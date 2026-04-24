@@ -131,9 +131,7 @@ describe("PD dashboard won-deals (Task #94)", () => {
     seeded.opportunityIds.push(oppB.rows[0].id);
     seeded.noneOppId = oppB.rows[0].id;
 
-    // (a-stub) won this FY with a project_info row that is missing
-    // pd_user_id / pm_user_id / phase — should resolve as `stub`.
-    // Mirrors the canonical Schaeffler shape (opp 29 in prod for FY26).
+    // (a-stub) project_info exists but missing pd/pm/phase → `stub`.
     const clientStub = await pool.query(
       `INSERT INTO clients (name, client_id) VALUES ($1, $2) RETURNING id`,
       [`Won-Tile Client Stub ${tag}`, `WT-S-${tag}`],
@@ -154,9 +152,8 @@ describe("PD dashboard won-deals (Task #94)", () => {
       [`WonTile Stub ${tag}`, oppStub.rows[0].id, clientStub.rows[0].id],
     );
     seeded.projectInfoIds.push(projStub.rows[0].id);
-    // No project_execution_state row → phase resolves to NULL (stub).
 
-    // (boundary-start) won EXACTLY on fyStart (Sep 1) — must be included.
+    // (boundary-start) signed_date = fyStart (Sep 1) — must be included.
     const clientBs = await pool.query(
       `INSERT INTO clients (name, client_id) VALUES ($1, $2) RETURNING id`,
       [`Won-Tile Client BS ${tag}`, `WT-BS-${tag}`],
@@ -171,7 +168,7 @@ describe("PD dashboard won-deals (Task #94)", () => {
     seeded.opportunityIds.push(oppBs.rows[0].id);
     seeded.boundaryStartOppId = oppBs.rows[0].id;
 
-    // (boundary-end) won EXACTLY on fyEnd (Aug 31) — must be included.
+    // (boundary-end) signed_date = fyEnd (Aug 31) — must be included.
     const clientBe = await pool.query(
       `INSERT INTO clients (name, client_id) VALUES ($1, $2) RETURNING id`,
       [`Won-Tile Client BE ${tag}`, `WT-BE-${tag}`],
@@ -280,9 +277,6 @@ describe("PD dashboard won-deals (Task #94)", () => {
     expect(rowStub.projectLinkState).toBe("stub");
     expect(rowStub.projectId).not.toBeNull();
     expect(rowStub.projectName).toMatch(/^WonTile Stub /);
-    // Phase is null (no project_execution_state row), and at least one of
-    // pd_user_id / pm_user_id / phase is missing — the server collapses all
-    // three "missing" cases into the same `stub` flag for the tile.
     expect(rowStub.projectPhase).toBeNull();
   });
 

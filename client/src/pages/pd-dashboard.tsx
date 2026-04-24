@@ -446,20 +446,8 @@ function SignDateCalendar({
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Won deals (this FY) tile (task #94, 2026-04-24)
-//   Reads /api/pd/dashboard/won-deals. FY-scoped (Sep–Aug, fixed window).
-//   Row deal-name click → opens the shared OpportunityDrawer (CRM context).
-//   projectLinkState badge clicks (per the task spec) route differently:
-//     linked → /project/<projectName>             (deep-link to project page)
-//     stub   → /project/<projectName>             (jump into the project so
-//                                                  the missing PD/PM/phase
-//                                                  gap can be closed — the
-//                                                  amber colour signals the
-//                                                  work-to-do, the destination
-//                                                  is the same as linked)
-//     none   → OpportunityDrawer (Convert-to-Project CTA visible)
-// ──────────────────────────────────────────────────────────────────────────
+// Won deals (this FY) tile — task #94. Row click → OpportunityDrawer.
+// Badge click: linked/stub → /project/<projectName>, none → OpportunityDrawer.
 
 type WonDeals = {
   generatedAt: string;
@@ -591,9 +579,6 @@ function WonDealsTile() {
 
   const SortHeader = ({ label, k, align = "left", testId }: { label: string; k: WonSortKey; align?: "left" | "right"; testId: string }) => {
     const active = sortKey === k;
-    // ARIA: a sortable column header should advertise its sort state via
-    // aria-sort. We say "ascending" / "descending" only for the active
-    // column and "none" for the others, per WAI-ARIA grid pattern.
     const ariaSort: "ascending" | "descending" | "none" = active
       ? sortDir === "asc"
         ? "ascending"
@@ -736,17 +721,6 @@ function WonDealsTile() {
                               {row.dealOwnerName ?? "—"}
                             </td>
                             <td className="py-2 px-3">
-                              {/* Badge routing (per task #94 spec):
-                                  - linked / stub: jump to project page
-                                    (project_info exists → projectName set);
-                                    stub badge stays amber so the work-to-do
-                                    is visually distinct from linked.
-                                  - none: open OpportunityDrawer with the
-                                    Convert-to-Project CTA (no project yet).
-                                  We branch on projectName presence rather
-                                  than on linkState directly, so that an
-                                  unexpected linked-without-name row
-                                  degrades safely to the drawer path. */}
                               {row.projectName && row.projectLinkState !== "none" ? (
                                 <Link
                                   href={`/project/${encodeURIComponent(row.projectName)}`}
