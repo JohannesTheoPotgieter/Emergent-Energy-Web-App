@@ -13,6 +13,7 @@ import { canCreatePdTicket, canViewOpportunityIntake } from "@shared/roles/pd-ro
 import { isActivePdWorkingOpportunity, isOpportunityIntakeTerminal } from "../lib/opportunity-working-filter";
 import { canViewAllTickets } from "@shared/roles/pd-roles";
 import { PHASES, PHASE_BY_CODE } from "@shared/phases";
+import { pdStageToLifecycle } from "@shared/lib/pd-stage-lifecycle";
 import { insertClientWithGeneratedId } from "../lib/client-id-generator";
 import { syncProjectSplitTablesAfterInsert } from "../lib/project-info-sync";
 import { buildOpportunityMappingPlan } from "../lib/opportunity-mapping-plan";
@@ -237,6 +238,155 @@ router.get("/api/opportunities/working", requireAuth, requirePermission("opportu
   } catch (err) {
     console.error("[Opportunities] Failed to fetch PD working rows:", err);
     res.status(500).json({ error: "Failed to fetch opportunities working list" });
+  }
+});
+
+/**
+ * GET /api/pd/dashboard/pipeline-by-phase
+ * Read-only roll-up of ACTIVE opportunities grouped by canonical
+ * lifecycle phase, plus the flat list of those opportunities (with
+ * expected close date) so the PD Dashboard can render both the
+ * Pipeline-by-phase KPI card and the Expected sign-dates calendar
+ * from a single round-trip.
+ *
+ * Excludes:
+ *   - opportunities.deleted_at IS NOT NULL
+ *   - opportunities.stage IN ('won','lost')
+ *   - opportunities.status IN ('won','lost')
+ *   - opportunities tied to a soft-deleted client
+ *
+ * Phase resolution:
+ *   - opportunities.stage (CRM stage like 'prospect' / 'proposal')
+ *     is mapped to a canonical CanonicalPhase via pdStageToLifecycle.
+ *   - Opportunities whose stage cannot be mapped fall under '_UNSCOPED'
+ *     so nothing is silently dropped.
+ *
+ * Added 2026-04-24 (task #77). Schema-additive zero — uses existing
+ * opportunities.estimated_kwp, expected_close_date and estimated_value
+ * columns.
+ */
+router.get("/api/pd/dashboard/pipeline-by-phase", requireAuth, requirePermission("pd_dashboard", "view"), async (_req: Request, res: Response) => {
+  try {
+    const result = await db.execute(sql`
+      SELECT
+        o.id,
+        COALESCE(NULLIF(TRIM(o.deal_name), ''), NULLIF(TRIM(c.name), ''), 'Opportunity #' || o.id::text) AS deal_name,
+        c.name AS client_name,
+        LOWER(COALESCE(o.stage, '')) AS stage,
+        o.pipedrive_deal_id,
+        o.estimated_kwp,
+        o.estimated_value,
+        o.expected_close_date::text AS expected_close_date,
+        o.next_activity_date::text  AS next_activity_date
+      FROM opportunities o
+      LEFT JOIN clients c ON c.id = o.client_id AND c.deleted_at IS NULL
+      WHERE o.deleted_at IS NULL
+        -- Substring match catches CRM variants like 'won - signed', ' WON ',
+        -- 'lost - no budget', etc. that exact equality would miss.
+        AND POSITION('won'  IN LOWER(COALESCE(o.stage,  ''))) = 0
+        AND POSITION('lost' IN LOWER(COALESCE(o.stage,  ''))) = 0
+        AND POSITION('won'  IN LOWER(COALESCE(o.status, ''))) = 0
+        AND POSITION('lost' IN LOWER(COALESCE(o.status, ''))) = 0
+        -- A signed deal is no longer in the active sales pipeline.
+        AND o.signed_date IS NULL
+        AND (o.client_id IS NULL OR c.id IS NOT NULL)
+      ORDER BY o.id
+    `);
+
+    type Row = {
+      id: number;
+      deal_name: string;
+      client_name: string | null;
+      stage: string | null;
+      pipedrive_deal_id: string | null;
+      estimated_kwp: string | number | null;
+      estimated_value: string | number | null;
+      expected_close_date: string | null;
+      next_activity_date: string | null;
+    };
+
+    const rawRows = (result.rows ?? []) as Row[];
+
+    const enriched = rawRows.map((r) => {
+      const phase = pdStageToLifecycle(r.stage ?? null);
+      const kwp = r.estimated_kwp == null ? null : Number(r.estimated_kwp);
+      const value = r.estimated_value == null ? null : Number(r.estimated_value);
+      return {
+        id: Number(r.id),
+        dealName: r.deal_name,
+        clientName: r.client_name,
+        stage: r.stage,
+        pipedriveDealId: r.pipedrive_deal_id,
+        phaseCode: phase?.code ?? null,
+        phaseLabel: phase?.label ?? "Unscoped",
+        phaseDisplayNumber: phase?.displayNumber ?? 99,
+        estimatedKwp: kwp != null && Number.isFinite(kwp) ? kwp : null,
+        estimatedValue: value != null && Number.isFinite(value) ? value : null,
+        expectedCloseDate: r.expected_close_date,
+        nextActivityDate: r.next_activity_date,
+      };
+    });
+
+    type PhaseAgg = {
+      code: string;
+      label: string;
+      displayNumber: number;
+      count: number;
+      totalKwp: number;
+      totalValue: number;
+    };
+    const phaseAgg = new Map<string, PhaseAgg>();
+    for (const r of enriched) {
+      const code = r.phaseCode ?? "_UNSCOPED";
+      const meta = code === "_UNSCOPED"
+        ? { label: "Unscoped", displayNumber: 99 }
+        : (PHASE_BY_CODE[code] ?? { label: r.phaseLabel, displayNumber: r.phaseDisplayNumber });
+      const existing = phaseAgg.get(code) ?? {
+        code,
+        label: meta.label,
+        displayNumber: meta.displayNumber,
+        count: 0,
+        totalKwp: 0,
+        totalValue: 0,
+      };
+      existing.count += 1;
+      existing.totalKwp += r.estimatedKwp ?? 0;
+      existing.totalValue += r.estimatedValue ?? 0;
+      phaseAgg.set(code, existing);
+    }
+
+    const totalKwp = Array.from(phaseAgg.values()).reduce((s, p) => s + p.totalKwp, 0);
+    const totalCount = enriched.length;
+    const totalValue = Array.from(phaseAgg.values()).reduce((s, p) => s + p.totalValue, 0);
+
+    const byPhase = Array.from(phaseAgg.values())
+      .map((p) => ({
+        ...p,
+        sharePct: totalKwp > 0 ? (p.totalKwp / totalKwp) * 100 : 0,
+      }))
+      .sort((a, b) => a.displayNumber - b.displayNumber);
+
+    res.json({
+      generatedAt: new Date().toISOString(),
+      totals: { count: totalCount, totalKwp, totalValue },
+      byPhase,
+      rows: enriched.map((r) => ({
+        id: r.id,
+        dealName: r.dealName,
+        clientName: r.clientName,
+        stage: r.stage,
+        pipedriveDealId: r.pipedriveDealId,
+        phaseCode: r.phaseCode,
+        phaseLabel: r.phaseLabel,
+        estimatedKwp: r.estimatedKwp,
+        estimatedValue: r.estimatedValue,
+        expectedCloseDate: r.expectedCloseDate,
+        nextActivityDate: r.nextActivityDate,
+      })),
+    });
+  } catch (err) {
+    console.error("[Opportunities] pipeline-by-phase failed:", err);
+    res.status(500).json({ error: "Failed to load pipeline-by-phase" });
   }
 });
 
