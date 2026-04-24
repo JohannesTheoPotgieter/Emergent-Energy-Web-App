@@ -1,33 +1,25 @@
 /**
- * Task #83 — Opportunity drawer must render successfully when no
- * engineering shadow ticket exists yet.
+ * Task #83 — `GET /api/opportunities/:id/workflow` must return `pd: null`
+ * (not undefined, not a 404, not a lazy-spawned shadow row) when the
+ * opportunity has no engineering shadow ticket.
  *
- * Regression guard for two coupled contracts:
+ * This test creates a deterministic fixture opportunity with no
+ * `engineering_tickets` row, hits the workflow endpoint, asserts the
+ * JSON contract that the drawer relies on, then cleans up. The
+ * partner Playwright spec at `qa/tests/e2e/opportunity-drawer-no-shadow.spec.ts`
+ * exercises the matching client-side render contract end-to-end.
  *
- *   1. Server contract: GET /api/opportunities/:id/workflow returns
- *      `pd: null` (not a 404, not a 500, not a lazy-spawned shadow)
- *      when the opportunity has no engineering shadow ticket. This
- *      was the deliberate outcome of the "stop auto-creating shadow
- *      tickets" refactor (2026-04-23) — engineering tickets are only
- *      ever created by an explicit user action.
- *
- *   2. Client contract: client/src/components/opportunities/
- *      OpportunityDrawer.tsx must render successfully in that case.
- *      Previously the drawer's gating expression included `!merged`
- *      and showed "Could not load opportunity." for every opportunity
- *      that didn't have a shadow yet — the user-reported bug. The
- *      fix removes `!merged` from the gate, makes every `merged.X`
- *      reference null-safe, and degrades the header status badge to
- *      "No engineering ticket" when `pd == null`.
- *
- * The first contract is exercised here against the live API. The
- * second is exercised by the static-source assertions further down,
- * which fail loudly if the gating expression or the null-safe
- * accessors regress.
+ * Bug context: before the fix, the server destructured
+ * `[shadow] = await db.select()...` and put the resulting `undefined`
+ * into the `pd` field. JSON.stringify dropped the key, the drawer's
+ * `merged = data.pd ?? null` was therefore `null`, the gate
+ * `isError || !data || !merged` fell through, and every opportunity
+ * without a shadow showed "Could not load opportunity." Auto-spawn of
+ * shadow tickets was deliberately removed 2026-04-23, so the
+ * no-shadow case is now the common case — this test is the canonical
+ * regression guard against the symptom returning.
  */
-import { describe, it, expect, beforeAll } from "vitest";
-import fs from "fs";
-import path from "path";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 
 const BASE_URL = process.env.API_URL || "http://localhost:5000";
 
@@ -47,125 +39,84 @@ async function apiRequest(method: string, p: string, body?: any, token?: string)
 
 async function loginAdmin(): Promise<string> {
   const res = await apiRequest("POST", "/api/auth/login", { username: "johannes", password: "2023" });
-  expect(res.status).toBe(200);
+  expect(res.status, `login failed: ${JSON.stringify(res.data)}`).toBe(200);
   return res.data.token as string;
 }
 
-describe("Opportunity drawer renders with no engineering shadow (Task #83)", () => {
+describe("Opportunity workflow returns pd: null when no engineering shadow exists (Task #83)", () => {
   let token: string;
+  let pool: any;
+  let fixtureOpportunityId: number;
+  // Sentinel deal name that's both unique-per-run (timestamp) and easy
+  // to identify if cleanup ever fails (the `TASK_83_NO_SHADOW_FIXTURE_`
+  // prefix can be grepped/swept by hand).
+  const sentinel = `TASK_83_NO_SHADOW_FIXTURE_${Date.now()}`;
 
   beforeAll(async () => {
+    const { Pool } = await import("pg");
+    pool = new Pool({ connectionString: process.env.DATABASE_URL });
     token = await loginAdmin();
-  });
-
-  describe("server contract — /api/opportunities/:id/workflow", () => {
-    it("requires authentication", async () => {
-      // Pick any plausible id — even if the row doesn't exist the route
-      // must reject the anonymous request first.
-      const res = await apiRequest("GET", "/api/opportunities/1/workflow");
-      expect([401, 403]).toContain(res.status);
-    });
-
-    it("returns pd: null for an opportunity that has no engineering shadow ticket", async () => {
-      const { Pool } = await import("pg");
-      const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-      try {
-        // Find an active opportunity that has no PD shadow row at all.
-        // The shadow is the partial-unique row keyed on opportunity_id
-        // with project_id IS NULL — that's what the drawer's `pd`
-        // block reads. Filter out soft-deleted opportunities and
-        // soft-deleted shadow tickets so we mirror the read path.
-        // The Drizzle table `engineeringTickets` maps to the SQL table
-        // `engineering_tickets` (despite various legacy `pd_*` aliases
-        // in CSS, index names and inline comments).
-        const candidate = await pool.query(`
-          SELECT o.id
-            FROM opportunities o
-           WHERE o.deleted_at IS NULL
-             AND NOT EXISTS (
-               SELECT 1 FROM engineering_tickets t
-                WHERE t.opportunity_id = o.id
-                  AND t.project_id IS NULL
-                  AND t.deleted_at IS NULL
-             )
-           ORDER BY o.id DESC
-           LIMIT 1
-        `);
-        if (candidate.rowCount === 0) {
-          // No suitable fixture in this DB — the contract is still
-          // exercised by the static-source assertion below, but we
-          // log a skip note so future debuggers know why the live
-          // path didn't run.
-          console.warn("[skip] no opportunity without a PD shadow ticket — server-side branch not exercised");
-          return;
-        }
-        const oppId = candidate.rows[0].id as number;
-
-        const res = await apiRequest("GET", `/api/opportunities/${oppId}/workflow`, undefined, token);
-        expect(res.status).toBe(200);
-        expect(res.data).toBeTruthy();
-        // The CRM block must always be present — that's the
-        // opportunity itself.
-        expect(res.data.crm).toBeTruthy();
-        expect(res.data.crm.id).toBe(oppId);
-        // The PD block must be exactly null (not undefined, not a
-        // lazily auto-spawned shadow row).
-        expect(res.data.pd).toBeNull();
-        // Tasks must be an empty array, not undefined — the drawer
-        // calls .length on it.
-        expect(Array.isArray(res.data.tasks)).toBe(true);
-        // Tickets is the engineering-tickets list; for an opportunity
-        // with no shadow it is also empty (the shadow row would have
-        // been the only entry).
-        expect(Array.isArray(res.data.tickets ?? [])).toBe(true);
-      } finally {
-        await pool.end().catch(() => {});
-      }
-    });
-  });
-
-  describe("client render contract — OpportunityDrawer.tsx", () => {
-    const drawerPath = path.join(
-      process.cwd(),
-      "client",
-      "src",
-      "components",
-      "opportunities",
-      "OpportunityDrawer.tsx",
+    // Insert a minimal opportunity row owned by no-one. All NOT NULL
+    // columns on `opportunities` have defaults (source='internal',
+    // currency='ZAR', activities_count=0, status='active', deleted_at
+    // null), so the only fields we set are the sentinel `deal_name`
+    // (used for cleanup safety) and `notes` (a human-readable hint).
+    const ins = await pool.query(
+      `INSERT INTO opportunities (deal_name, notes)
+            VALUES ($1, 'Created by qa/tests/integration/opportunity-drawer-no-shadow.test.ts (Task #83). Safe to delete.')
+       RETURNING id`,
+      [sentinel],
     );
-    const source = fs.readFileSync(drawerPath, "utf8");
+    fixtureOpportunityId = ins.rows[0].id as number;
+    // Belt-and-suspenders: confirm no engineering shadow exists for
+    // this id. The Drizzle table `engineeringTickets` maps to the SQL
+    // table `engineering_tickets`.
+    const shadowCheck = await pool.query(
+      `SELECT 1 FROM engineering_tickets WHERE opportunity_id = $1 AND deleted_at IS NULL LIMIT 1`,
+      [fixtureOpportunityId],
+    );
+    expect(shadowCheck.rowCount, "fixture pre-condition: opportunity must have NO engineering shadow ticket").toBe(0);
+  });
 
-    it("the data-load fallback gates only on isError or missing data — never on a null PD shadow", () => {
-      // The bug fix: `!merged` MUST NOT appear in the gating
-      // expression, otherwise every opportunity without a shadow
-      // ticket falls through to "Could not load opportunity."
-      expect(source).toMatch(/isError\s*\|\|\s*!data\s*\?/);
-      expect(source).not.toMatch(/isError\s*\|\|\s*!data\s*\|\|\s*!merged\s*\?/);
-    });
+  afterAll(async () => {
+    if (pool && fixtureOpportunityId) {
+      // Sweep any engineering shadow that may have been spawned by a
+      // future regression of the auto-spawn removal — leaving the row
+      // would re-create the historical lazy-create behaviour for the
+      // next test run.
+      await pool.query(`DELETE FROM engineering_tickets WHERE opportunity_id = $1`, [fixtureOpportunityId]).catch(() => {});
+      await pool.query(`DELETE FROM opportunities WHERE id = $1`, [fixtureOpportunityId]).catch(() => {});
+    }
+    await pool?.end().catch(() => {});
+  });
 
-    it("renders an explicit 'No engineering ticket' badge when the PD shadow is missing", () => {
-      // The header status badge degrades to a slate "No engineering
-      // ticket" pill so the user can see at a glance that no shadow
-      // has been spawned yet.
-      expect(source).toContain("badge-no-engineering-ticket");
-      expect(source).toContain("No engineering ticket");
-    });
+  it("requires authentication", async () => {
+    const res = await apiRequest("GET", `/api/opportunities/${fixtureOpportunityId}/workflow`);
+    expect([401, 403]).toContain(res.status);
+  });
 
-    it("the WorkflowResponse type acknowledges that `pd` is nullable", () => {
-      // Belt-and-suspenders: the client type that drives the drawer
-      // must explicitly include `null` in the `pd` union so a future
-      // edit can't silently re-tighten it to `PdBlock` (which was
-      // the original lie that made the bug easy to write).
-      expect(source).toMatch(/pd:\s*PdBlock\s*\|\s*null/);
-    });
+  it("returns pd: null, tasks: [], and the CRM block for an opportunity with no engineering shadow", async () => {
+    const res = await apiRequest("GET", `/api/opportunities/${fixtureOpportunityId}/workflow`, undefined, token);
+    expect(res.status, `expected 200 but got ${res.status}: ${JSON.stringify(res.data)}`).toBe(200);
+    expect(res.data, "response body must not be empty").toBeTruthy();
 
-    it("the file documents the no-shadow render contract so future edits know to keep it intact", () => {
-      // The file-header docblock should call out that `pd: null` is
-      // a valid state and that every `merged` reference is null-safe.
-      // This is the breadcrumb that prevents the bug from coming
-      // back the next time someone edits the gating expression.
-      expect(source).toContain("No-shadow render contract");
-      expect(source).toContain("pd: null");
-    });
+    // The CRM block must always be present — that's the opportunity itself.
+    expect(res.data.crm, "crm block missing — drawer relies on it for header / value / owner").toBeTruthy();
+    expect(res.data.crm.id).toBe(fixtureOpportunityId);
+    expect(res.data.crm.dealName).toBe(sentinel);
+
+    // The PD block MUST be exactly null (not undefined, not a lazily
+    // auto-spawned shadow row). This is the contract the drawer
+    // depends on after the Task #83 fix.
+    expect(res.data.pd, "pd must be null when no engineering shadow ticket exists").toBeNull();
+
+    // Tasks must be an array (not undefined) — the drawer calls
+    // .length on it unconditionally.
+    expect(Array.isArray(res.data.tasks), "tasks must be an array").toBe(true);
+    expect(res.data.tasks.length).toBe(0);
+
+    // tickets is also an array on the contract; for an opportunity
+    // with no shadow there is no engineering ticket to list.
+    expect(Array.isArray(res.data.tickets ?? []), "tickets must be an array (or omitted)").toBe(true);
   });
 });
