@@ -14,6 +14,7 @@ import { canViewAllTickets, ENGINEERING_REQUEST_TYPES } from "@shared/roles/pd-r
 import { paramStr } from "./lib/req-params";
 import { insertClientWithGeneratedId } from "./lib/client-id-generator";
 import { logAuditFromReq } from "./audit-logger";
+import { registerClientsMergeRoutes } from "./routes/clients-merge-routes";
 import {
   ENGINEERING_TICKET_DEFAULT_STATUS,
   isTicketDoneForReporting,
@@ -167,6 +168,10 @@ async function filterTicketsByRole<T extends Record<string, any>>(
 }
 
 export function registerPdRoutes(app: Express) {
+  // Merge / soft-delete / aliases endpoints (Task #73). Registered
+  // alongside the existing /api/pd/clients routes so they share the
+  // same `pd_clients` permission gate. See server/routes/clients-merge-routes.ts.
+  registerClientsMergeRoutes(app);
 
   app.get("/api/pd/clients", requireAuth, requirePermission('pd_clients', 'view'), async (req: Request, res: Response) => {
     try {
@@ -204,16 +209,21 @@ export function registerPdRoutes(app: Express) {
           primaryEmailDomain: clients.primaryEmailDomain,
           additionalEmailDomains: clients.additionalEmailDomains,
         };
+        // Cascade-display filter: hide soft-deleted clients (Task #73,
+        // migration 0029). Mirrors pd_tickets.deleted_at filtering from
+        // migration 0019.
+        const notDeleted = isNull(clients.deletedAt);
         rows = search
-          ? await db.select(full).from(clients).where(ilike(clients.name, `%${search}%`)).orderBy(asc(clients.name)).limit(50)
-          : await db.select(full).from(clients).orderBy(asc(clients.name)).limit(100);
+          ? await db.select(full).from(clients).where(and(ilike(clients.name, `%${search}%`), notDeleted)).orderBy(asc(clients.name)).limit(50)
+          : await db.select(full).from(clients).where(notDeleted).orderBy(asc(clients.name)).limit(100);
       } catch (err: any) {
         const msg = err?.message || String(err);
         if (/primary_email_domain|additional_email_domains|42703|does not exist/i.test(msg)) {
           console.warn("[pd-routes] clients: email-domain columns missing (migration 0013 not applied) — falling back to base columns");
+          const notDeleted = isNull(clients.deletedAt);
           rows = search
-            ? await db.select(baseCols).from(clients).where(ilike(clients.name, `%${search}%`)).orderBy(asc(clients.name)).limit(50)
-            : await db.select(baseCols).from(clients).orderBy(asc(clients.name)).limit(100);
+            ? await db.select(baseCols).from(clients).where(and(ilike(clients.name, `%${search}%`), notDeleted)).orderBy(asc(clients.name)).limit(50)
+            : await db.select(baseCols).from(clients).where(notDeleted).orderBy(asc(clients.name)).limit(100);
         } else {
           throw err;
         }
