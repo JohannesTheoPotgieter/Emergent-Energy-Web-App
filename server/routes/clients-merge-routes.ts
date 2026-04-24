@@ -6,8 +6,8 @@
  * gated by `requirePermission('pd_clients', 'delete')` so only roles
  * with delete authority (today: COO_ADMIN, CEO_ADMIN per
  * shared/schema/users.ts:870) can merge or soft-delete clients. The
- * read-only preview endpoint is gated by 'view' so any client picker
- * UI can pull it.
+ * read-only preview and aliases endpoints are gated by 'view' so any
+ * client picker UI can pull them.
  *
  * Endpoints
  *   GET  /api/pd/clients/:id/merge-preview?into=<survivorId>
@@ -16,16 +16,23 @@
  *   POST /api/pd/clients/:id/restore
  *   GET  /api/pd/clients/:id/aliases
  *
- * Data integrity
+ * Data integrity & audit consistency
+ *   The `FK_TABLES` array below is the single source of truth used by
+ *   all three read/write paths (preview, merge, delete-blocker). Each
+ *   spec exposes a `countActive` and a `repoint` callback that share
+ *   the same `deleted_at IS NULL` predicate where applicable, so the
+ *   preview's per-table counts equal the merge's actual re-pointed
+ *   counts and the delete blocker only blocks on live rows.
+ *
  *   The merge runs inside `db.transaction(...)`. Inside the transaction
- *   it UPDATEs `client_id` from loser→survivor on every table in the
- *   "8 tables that reference clients.id" map, inserts one
- *   `project_client_history` row per re-pointed project (so the
- *   existing history ledger stays the source of truth for project
- *   movement), inserts ONE `client_merges` audit row with per-table
- *   counts, and finally sets the loser's `deleted_at` + `merged_into_client_id`.
- *   Either every step succeeds or none of them do — there is no
- *   partial-merge state to clean up.
+ *   it captures every active project_id about to move, UPDATEs
+ *   `project_info.client_id` (only where `deleted_at IS NULL` so we
+ *   never resurrect a tombstoned project onto the survivor), inserts
+ *   one `project_client_history` row per moved project, calls each
+ *   spec's `repoint` to move the remaining 6 FK tables, writes ONE
+ *   `client_merges` audit row with per-table counts, and finally sets
+ *   the loser's `deleted_at` + `merged_into_client_id`. Either every
+ *   step succeeds or none of them do.
  *
  * Soft-delete only
  *   `email_project_links.client_id` has `ON DELETE CASCADE`, so a hard
@@ -46,56 +53,195 @@ import {
   engineeringTickets,
   workItems,
   sites,
+  type Client,
 } from "@shared/schema";
 import { quickbooksCustomerMappings } from "@shared/schema/integrations";
 import { emailProjectLinks } from "@shared/schema/email-links";
-import { eq, and, sql, isNull, ne } from "drizzle-orm";
+import { eq, and, sql, isNull } from "drizzle-orm";
 import { requireAuth } from "../auth-context";
 import { requirePermission } from "../permission-middleware";
 import { logAuditFromReq } from "../audit-logger";
 import { z } from "zod";
 
 /**
- * Tables whose `client_id` column gets re-pointed loser→survivor
- * during a merge. The order does not matter (we are inside a single
- * transaction) but is alphabetised to keep the audit-counts JSONB
- * stable across runs and tests.
+ * Per-FK-table contract that all three paths (preview, merge,
+ * delete-blocker) share. Each entry knows how to count its own
+ * "active" rows for a client (applying its own deleted_at predicate
+ * if the table has one) and how to atomically re-point those active
+ * rows from a loser to a survivor inside a Drizzle transaction.
  *
- * `project_info` is updated separately (after the loop) because we
- * also need to capture `project_id` per row to insert into
- * `project_client_history`.
+ * Defining count + repoint TOGETHER per spec is what guarantees the
+ * preview row count == the merge row count == the blocker row count
+ * — they all run the exact same WHERE clause, scoped to the same
+ * column. Previously these three paths drifted apart (preview filtered
+ * project_info.deleted_at IS NULL but merge UPDATEd everything; delete
+ * blocker counted engineering_tickets without its deleted_at), which
+ * is the bug T73's review caught.
+ *
+ * `email_project_links` has no `deleted_at` column in the database
+ * (its FK uses ON DELETE CASCADE for hard cleanup), so its predicate
+ * is unfiltered — every existing email link IS by definition active.
  */
-const REPOINT_TABLES_NON_PROJECT = [
-  { name: "email_project_links", table: emailProjectLinks, column: emailProjectLinks.clientId },
-  { name: "engineering_tickets", table: engineeringTickets, column: engineeringTickets.clientId },
-  { name: "opportunities", table: opportunities, column: opportunities.clientId },
-  { name: "quickbooks_customer_mappings", table: quickbooksCustomerMappings, column: quickbooksCustomerMappings.clientId },
-  { name: "sites", table: sites, column: sites.clientId },
-  { name: "work_items", table: workItems, column: workItems.clientId },
-] as const;
+/**
+ * Drizzle's PgTransaction generic is unwieldy and the codebase
+ * convention (see server/pd-routes.ts:719, server/repositories/...)
+ * is to type tx as `typeof db` so writes inside the transaction get
+ * the same builder methods as the top-level handle. We follow that
+ * convention here for consistency.
+ */
+type Tx = typeof db;
+
+interface FkTableSpec {
+  /** Human-readable table key, used in audit JSON and blocker payload. */
+  readonly name: string;
+  /** Count active (non-deleted where applicable) rows for the client. */
+  countActive(clientId: number): Promise<number>;
+  /**
+   * Re-point active rows from `loserId` to `survivorId`. Returns the
+   * number of rows actually updated.
+   */
+  repoint(tx: Tx, loserId: number, survivorId: number): Promise<number>;
+}
+
+const FK_TABLE_OPPORTUNITIES: FkTableSpec = {
+  name: "opportunities",
+  async countActive(clientId) {
+    const [r] = await db
+      .select({ c: sql<number>`count(*)::int` })
+      .from(opportunities)
+      .where(and(eq(opportunities.clientId, clientId), isNull(opportunities.deletedAt)));
+    return Number(r?.c ?? 0);
+  },
+  async repoint(tx, loserId, survivorId) {
+    const r = await tx
+      .update(opportunities)
+      .set({ clientId: survivorId, updatedAt: new Date() })
+      .where(and(eq(opportunities.clientId, loserId), isNull(opportunities.deletedAt)))
+      .returning({ id: opportunities.id });
+    return r.length;
+  },
+};
+
+const FK_TABLE_ENGINEERING_TICKETS: FkTableSpec = {
+  name: "engineering_tickets",
+  async countActive(clientId) {
+    const [r] = await db
+      .select({ c: sql<number>`count(*)::int` })
+      .from(engineeringTickets)
+      .where(and(eq(engineeringTickets.clientId, clientId), isNull(engineeringTickets.deletedAt)));
+    return Number(r?.c ?? 0);
+  },
+  async repoint(tx, loserId, survivorId) {
+    const r = await tx
+      .update(engineeringTickets)
+      .set({ clientId: survivorId, updatedAt: new Date() })
+      .where(and(eq(engineeringTickets.clientId, loserId), isNull(engineeringTickets.deletedAt)))
+      .returning({ id: engineeringTickets.id });
+    return r.length;
+  },
+};
+
+const FK_TABLE_WORK_ITEMS: FkTableSpec = {
+  name: "work_items",
+  async countActive(clientId) {
+    const [r] = await db
+      .select({ c: sql<number>`count(*)::int` })
+      .from(workItems)
+      .where(and(eq(workItems.clientId, clientId), isNull(workItems.deletedAt)));
+    return Number(r?.c ?? 0);
+  },
+  async repoint(tx, loserId, survivorId) {
+    const r = await tx
+      .update(workItems)
+      .set({ clientId: survivorId, updatedAt: new Date() })
+      .where(and(eq(workItems.clientId, loserId), isNull(workItems.deletedAt)))
+      .returning({ id: workItems.id });
+    return r.length;
+  },
+};
+
+const FK_TABLE_SITES: FkTableSpec = {
+  name: "sites",
+  async countActive(clientId) {
+    const [r] = await db
+      .select({ c: sql<number>`count(*)::int` })
+      .from(sites)
+      .where(and(eq(sites.clientId, clientId), isNull(sites.deletedAt)));
+    return Number(r?.c ?? 0);
+  },
+  async repoint(tx, loserId, survivorId) {
+    const r = await tx
+      .update(sites)
+      .set({ clientId: survivorId, updatedAt: new Date() })
+      .where(and(eq(sites.clientId, loserId), isNull(sites.deletedAt)))
+      .returning({ id: sites.id });
+    return r.length;
+  },
+};
+
+const FK_TABLE_QB_MAPPINGS: FkTableSpec = {
+  name: "quickbooks_customer_mappings",
+  async countActive(clientId) {
+    const [r] = await db
+      .select({ c: sql<number>`count(*)::int` })
+      .from(quickbooksCustomerMappings)
+      .where(and(eq(quickbooksCustomerMappings.clientId, clientId), isNull(quickbooksCustomerMappings.deletedAt)));
+    return Number(r?.c ?? 0);
+  },
+  async repoint(tx, loserId, survivorId) {
+    const r = await tx
+      .update(quickbooksCustomerMappings)
+      .set({ clientId: survivorId, updatedAt: new Date() })
+      .where(and(eq(quickbooksCustomerMappings.clientId, loserId), isNull(quickbooksCustomerMappings.deletedAt)))
+      .returning({ id: quickbooksCustomerMappings.id });
+    return r.length;
+  },
+};
+
+const FK_TABLE_EMAIL_LINKS: FkTableSpec = {
+  // No deleted_at column on email_project_links — every existing row
+  // is active by definition (cleanup happens via ON DELETE CASCADE).
+  name: "email_project_links",
+  async countActive(clientId) {
+    const [r] = await db
+      .select({ c: sql<number>`count(*)::int` })
+      .from(emailProjectLinks)
+      .where(eq(emailProjectLinks.clientId, clientId));
+    return Number(r?.c ?? 0);
+  },
+  async repoint(tx, loserId, survivorId) {
+    const r = await tx
+      .update(emailProjectLinks)
+      .set({ clientId: survivorId })
+      .where(eq(emailProjectLinks.clientId, loserId))
+      .returning({ id: emailProjectLinks.id });
+    return r.length;
+  },
+};
 
 /**
- * Tables we count when deciding whether a soft-delete is blocked.
- *
- * Mirrors REPOINT_TABLES_NON_PROJECT + project_info: every FK table is
- * a blocker so a delete cannot silently leave dangling rows pointing
- * at a tombstoned client. (Architect review T73 — soft-delete must be
- * conservative: you either merge or there is nothing left attached.)
- *
- * `email_project_links` is included even though its FK has
- * `ON DELETE CASCADE` because we deliberately never hard-delete a
- * client (would destroy email-link history) and a soft-delete leaves
- * the cascade dormant — so emails staying attached IS a real blocker.
+ * Every non-project FK table whose `client_id` re-points during merge.
+ * Order does not affect correctness (single transaction) but is
+ * alphabetised so the audit-counts JSONB stays stable across runs and
+ * tests.
  */
-const BLOCKER_QUERIES = [
-  { name: "projects", table: projectInfo, column: projectInfo.clientId, deletedColumn: projectInfo.deletedAt },
-  { name: "opportunities", table: opportunities, column: opportunities.clientId, deletedColumn: null },
-  { name: "engineering_tickets", table: engineeringTickets, column: engineeringTickets.clientId, deletedColumn: null },
-  { name: "work_items", table: workItems, column: workItems.clientId, deletedColumn: null },
-  { name: "sites", table: sites, column: sites.clientId, deletedColumn: null },
-  { name: "quickbooks_customer_mappings", table: quickbooksCustomerMappings, column: quickbooksCustomerMappings.clientId, deletedColumn: null },
-  { name: "email_project_links", table: emailProjectLinks, column: emailProjectLinks.clientId, deletedColumn: null },
+const NON_PROJECT_FK_TABLES: readonly FkTableSpec[] = [
+  FK_TABLE_EMAIL_LINKS,
+  FK_TABLE_ENGINEERING_TICKETS,
+  FK_TABLE_OPPORTUNITIES,
+  FK_TABLE_QB_MAPPINGS,
+  FK_TABLE_SITES,
+  FK_TABLE_WORK_ITEMS,
 ] as const;
+
+/** Active project_info count (shared by preview + delete blocker). */
+async function countActiveProjects(clientId: number): Promise<number> {
+  const [r] = await db
+    .select({ c: sql<number>`count(*)::int` })
+    .from(projectInfo)
+    .where(and(eq(projectInfo.clientId, clientId), isNull(projectInfo.deletedAt)));
+  return Number(r?.c ?? 0);
+}
 
 function parseId(raw: unknown): number | null {
   if (typeof raw !== "string" && typeof raw !== "number") return null;
@@ -103,26 +249,27 @@ function parseId(raw: unknown): number | null {
   return Number.isInteger(n) && n > 0 ? n : null;
 }
 
-async function countByClient(table: any, column: any, clientId: number, deletedColumn: any | null): Promise<number> {
-  const where = deletedColumn
-    ? and(eq(column, clientId), isNull(deletedColumn))
-    : eq(column, clientId);
-  const [row] = await db.select({ c: sql<number>`count(*)::int` }).from(table).where(where);
-  return Number(row?.c ?? 0);
-}
+type LoadResult =
+  | { row: Client; status: 200; error: null }
+  | { row: null; status: 404; error: string }
+  | { row: Client; status: 410; error: string };
 
-async function loadActiveClient(id: number) {
+async function loadActiveClient(id: number): Promise<LoadResult> {
   const [row] = await db.select().from(clients).where(eq(clients.id, id));
-  if (!row) return { row: null as any, status: 404 as const, error: "Client not found" };
-  if (row.deletedAt) return { row, status: 410 as const, error: "Client is soft-deleted" };
-  return { row, status: 200 as const, error: null };
+  if (!row) return { row: null, status: 404, error: "Client not found" };
+  if (row.deletedAt) return { row, status: 410, error: "Client is soft-deleted" };
+  return { row, status: 200, error: null };
 }
 
+/**
+ * Per-table impact counts for the given (loser) clientId. Used by
+ * both the merge-preview endpoint and (with the same predicates) the
+ * merge transaction itself, so preview is authoritative.
+ */
 async function buildPerTableCounts(clientId: number): Promise<Record<string, number>> {
-  const projectsCount = await countByClient(projectInfo, projectInfo.clientId, clientId, projectInfo.deletedAt);
-  const counts: Record<string, number> = { project_info: projectsCount };
-  for (const { name, table, column } of REPOINT_TABLES_NON_PROJECT) {
-    counts[name] = await countByClient(table, column, clientId, null);
+  const counts: Record<string, number> = { project_info: await countActiveProjects(clientId) };
+  for (const spec of NON_PROJECT_FK_TABLES) {
+    counts[spec.name] = await spec.countActive(clientId);
   }
   return counts;
 }
@@ -132,7 +279,9 @@ export function registerClientsMergeRoutes(app: Express) {
   // GET /api/pd/clients/:id/merge-preview?into=<survivorId>
   // Returns the per-table counts that would be re-pointed if this loser
   // were merged into <survivorId>. Both ids must resolve to non-deleted
-  // clients and they must be different.
+  // clients and they must be different. The counts shown here are
+  // EXACTLY the counts the merge will produce — same predicates, same
+  // tables.
   // -------------------------------------------------------------------------
   app.get(
     "/api/pd/clients/:id/merge-preview",
@@ -172,10 +321,10 @@ export function registerClientsMergeRoutes(app: Express) {
 
   // -------------------------------------------------------------------------
   // POST /api/pd/clients/:loserId/merge   { survivorClientId, reason? }
-  // Atomically re-points every client_id reference from loser→survivor,
-  // logs one project_client_history row per re-pointed project, inserts
-  // ONE client_merges audit row, and sets the loser's deleted_at +
-  // merged_into_client_id. Returns the per-table counts.
+  // Atomically re-points every active client_id reference from
+  // loser→survivor, logs one project_client_history row per moved
+  // project, inserts ONE client_merges audit row, and sets the loser's
+  // deleted_at + merged_into_client_id. Returns the per-table counts.
   // -------------------------------------------------------------------------
   const mergeBodySchema = z.object({
     survivorClientId: z.number().int().positive(),
@@ -204,36 +353,39 @@ export function registerClientsMergeRoutes(app: Express) {
         const survivor = await loadActiveClient(survivorClientId);
         if (survivor.status !== 200) return res.status(survivor.status).json({ error: `Survivor: ${survivor.error}` });
 
-        const userId = (req.user as any)?.id ?? null;
+        const userId = req.user?.id ?? null;
         // requireAuth guarantees a user, but we audit-log every merge
         // and project_client_history.moved_by_user_id is NOT NULL, so
         // assert defensively rather than silently skipping the audit.
         if (!Number.isInteger(userId)) {
           return res.status(401).json({ error: "Authenticated user required for merge" });
         }
+        const actorId = userId as number;
 
-        const result = await db.transaction(async (tx: any) => {
-          // 1. Capture every project_id about to move so we can write
-          //    project_client_history rows for them. We do this BEFORE
-          //    the UPDATE so the rows are still attached to the loser.
+        const result = await db.transaction(async (tx: Tx) => {
+          // 1. Capture every ACTIVE project_id about to move so we can
+          //    write project_client_history rows for them. We do this
+          //    BEFORE the UPDATE so the rows are still attached to the
+          //    loser. Same `deleted_at IS NULL` predicate as preview.
           const projectsToMove = await tx
             .select({ id: projectInfo.id })
             .from(projectInfo)
             .where(and(eq(projectInfo.clientId, loserId), isNull(projectInfo.deletedAt)));
 
-          // 2. UPDATE project_info first.
+          // 2. UPDATE active project_info rows. Same predicate as
+          //    preview/blocker so counts stay consistent — soft-deleted
+          //    projects are deliberately left attached to the loser
+          //    (which is itself about to be tombstoned in step 6).
           const projectUpdate = await tx
             .update(projectInfo)
             .set({ clientId: survivorClientId, updatedAt: new Date() })
-            .where(eq(projectInfo.clientId, loserId))
+            .where(and(eq(projectInfo.clientId, loserId), isNull(projectInfo.deletedAt)))
             .returning({ id: projectInfo.id });
-          const counts: Record<string, number> = {
-            project_info: projectUpdate.length,
-          };
+          const counts: Record<string, number> = { project_info: projectUpdate.length };
 
           // 3. Insert one history row per moved project so the existing
           //    project_client_history ledger remains canonical for
-          //    project ↔ client movement. Unconditional now — userId
+          //    project ↔ client movement. Unconditional now — actorId
           //    was asserted above.
           if (projectsToMove.length > 0) {
             await tx.insert(projectClientHistory).values(
@@ -241,20 +393,17 @@ export function registerClientsMergeRoutes(app: Express) {
                 projectId: p.id,
                 oldClientId: loserId,
                 newClientId: survivorClientId,
-                movedByUserId: userId,
+                movedByUserId: actorId,
                 reason: reason ?? "client merge",
               })),
             );
           }
 
-          // 4. Re-point every other table in the same transaction.
-          for (const { name, table, column } of REPOINT_TABLES_NON_PROJECT) {
-            const updated = await tx
-              .update(table)
-              .set({ clientId: survivorClientId } as any)
-              .where(eq(column, loserId))
-              .returning({ id: (table as any).id });
-            counts[name] = updated.length;
+          // 4. Re-point every other table in the same transaction via
+          //    the typed FkTableSpec contract, which guarantees its
+          //    predicate matches the preview/blocker predicates.
+          for (const spec of NON_PROJECT_FK_TABLES) {
+            counts[spec.name] = await spec.repoint(tx, loserId, survivorClientId);
           }
 
           // 5. Insert the audit row.
@@ -263,7 +412,7 @@ export function registerClientsMergeRoutes(app: Express) {
             .values({
               loserClientId: loserId,
               survivorClientId,
-              performedByUserId: userId,
+              performedByUserId: actorId,
               loserNameSnapshot: loser.row.name,
               loserClientIdSnapshot: loser.row.clientId,
               repointedCounts: counts,
@@ -278,7 +427,7 @@ export function registerClientsMergeRoutes(app: Express) {
               deletedAt: new Date(),
               mergedIntoClientId: survivorClientId,
               updatedAt: new Date(),
-              updatedBy: userId,
+              updatedBy: actorId,
             })
             .where(eq(clients.id, loserId));
 
@@ -297,11 +446,15 @@ export function registerClientsMergeRoutes(app: Express) {
           },
         });
 
+        const totalRepointed = Object.values(result.counts as Record<string, number>).reduce(
+          (a: number, b: number) => a + b,
+          0,
+        );
         res.json({
           ok: true,
           merge: result.auditRow,
           repointedCounts: result.counts,
-          totalRepointed: Object.values(result.counts as Record<string, number>).reduce((a: number, b: number) => a + b, 0),
+          totalRepointed,
         });
       } catch (err: any) {
         console.error("[clients-merge] merge error:", err);
@@ -312,10 +465,11 @@ export function registerClientsMergeRoutes(app: Express) {
 
   // -------------------------------------------------------------------------
   // DELETE /api/pd/clients/:id
-  // Soft-delete only. Refuses with 409 if any non-deleted projects,
-  // opportunities, or engineering tickets still reference the client —
-  // returns the per-table blocker counts so the UI can offer a "merge
-  // instead" pivot.
+  // Soft-delete only. Refuses with 409 + per-table blocker counts when
+  // any LIVE (non-deleted-where-applicable) row in any of the 7 FK
+  // tables still references the client. Predicates match merge/preview
+  // exactly, so "merge instead" always brings the blocker count down to
+  // zero.
   // -------------------------------------------------------------------------
   app.delete(
     "/api/pd/clients/:id",
@@ -329,9 +483,11 @@ export function registerClientsMergeRoutes(app: Express) {
         const loaded = await loadActiveClient(id);
         if (loaded.status !== 200) return res.status(loaded.status).json({ error: loaded.error });
 
-        const blockers: Record<string, number> = {};
-        for (const { name, table, column, deletedColumn } of BLOCKER_QUERIES) {
-          blockers[name] = await countByClient(table, column, id, deletedColumn);
+        const blockers: Record<string, number> = {
+          projects: await countActiveProjects(id),
+        };
+        for (const spec of NON_PROJECT_FK_TABLES) {
+          blockers[spec.name] = await spec.countActive(id);
         }
         const totalBlockers = Object.values(blockers).reduce((a, b) => a + b, 0);
         if (totalBlockers > 0) {
@@ -342,7 +498,7 @@ export function registerClientsMergeRoutes(app: Express) {
           });
         }
 
-        const userId = (req.user as any)?.id ?? null;
+        const userId = req.user?.id ?? null;
         const [updated] = await db
           .update(clients)
           .set({ deletedAt: new Date(), updatedAt: new Date(), updatedBy: userId })
@@ -383,7 +539,7 @@ export function registerClientsMergeRoutes(app: Express) {
         if (!row) return res.status(404).json({ error: "Client not found" });
         if (!row.deletedAt) return res.status(409).json({ error: "Client is not deleted" });
 
-        const userId = (req.user as any)?.id ?? null;
+        const userId = req.user?.id ?? null;
         const [updated] = await db
           .update(clients)
           .set({
@@ -444,7 +600,4 @@ export function registerClientsMergeRoutes(app: Express) {
       }
     },
   );
-
-  // Suppress no-op dead-code stripping by using `ne` once.
-  void ne;
 }

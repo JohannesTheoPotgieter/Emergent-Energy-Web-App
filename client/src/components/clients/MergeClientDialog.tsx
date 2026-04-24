@@ -36,6 +36,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
 
 interface ClientLite {
   id: number;
@@ -75,13 +76,17 @@ function prettyTable(name: string): string {
   return PRETTY_TABLE_LABELS[name] ?? name;
 }
 
-async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, { ...init, credentials: "include" });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(body.error || res.statusText);
-  }
-  return res.json();
+// All fetches go through `apiRequest` so they pick up the bearer
+// token + CSRF + correlation-id that the rest of the app sends. Raw
+// `fetch` with only `credentials: include` would fail under
+// token-only sessions.
+async function getJson<T>(url: string): Promise<T> {
+  const res = await apiRequest("GET", url);
+  return res.json() as Promise<T>;
+}
+async function postJson<T>(url: string, body: unknown): Promise<T> {
+  const res = await apiRequest("POST", url, body);
+  return res.json() as Promise<T>;
 }
 
 export function MergeClientDialog(props: MergeClientDialogProps) {
@@ -116,20 +121,16 @@ export function MergeClientDialog(props: MergeClientDialogProps) {
     queryKey: ["merge-preview", loser?.id, survivorId],
     enabled: !!(open && loser?.id && survivorId),
     queryFn: () =>
-      jsonFetch<MergePreviewResponse>(
+      getJson<MergePreviewResponse>(
         `/api/pd/clients/${loser!.id}/merge-preview?into=${survivorId}`,
       ),
   });
 
   const mergeMutation = useMutation({
     mutationFn: () =>
-      jsonFetch(`/api/pd/clients/${loser!.id}/merge`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          survivorClientId: survivorId,
-          reason: reason.trim() || undefined,
-        }),
+      postJson(`/api/pd/clients/${loser!.id}/merge`, {
+        survivorClientId: survivorId,
+        reason: reason.trim() || undefined,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["clients"] });
