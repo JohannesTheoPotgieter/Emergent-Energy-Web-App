@@ -45,6 +45,18 @@ export const clients = pgTable("clients", {
   // See docs/overhaul/04-overnight-progress.md for the email-linking design.
   primaryEmailDomain: text("primary_email_domain"),     // e.g. "clientabc.com"
   additionalEmailDomains: jsonb("additional_email_domains").$type<string[]>().default([]),
+  // Soft-delete + merge bookkeeping (Task #73, migration 0029).
+  //   - `deletedAt` is set when the row is soft-deleted via DELETE
+  //     /api/pd/clients/:id OR when the row is the loser of a merge.
+  //   - `mergedIntoClientId` is set only when this row was merged into
+  //     another client; deep links to the loser id can resolve to the
+  //     survivor by following this pointer.
+  // Both columns are filtered (`WHERE deleted_at IS NULL`) on every
+  // client read path so soft-deleted rows never appear in pickers,
+  // listings, or downstream joins. Mirrors pd_tickets.deleted_at from
+  // migration 0019 (Task #34).
+  deletedAt: timestamp("deleted_at"),
+  mergedIntoClientId: integer("merged_into_client_id").references((): any => clients.id, { onDelete: "set null" }),
 }, (table) => ({
   // Defence-in-depth against duplicate clients for the same Pipedrive org.
   // Backed by migration 0018_clients_unique_pipedrive_org.sql.
@@ -1064,6 +1076,32 @@ export const projectClientHistory = pgTable("project_client_history", {
 export const insertProjectClientHistorySchema = createInsertSchema(projectClientHistory).omit({ id: true, movedAt: true } as any);
 export type InsertProjectClientHistory = z.infer<typeof insertProjectClientHistorySchema>;
 export type ProjectClientHistory = typeof projectClientHistory.$inferSelect;
+
+// ===================== CLIENT MERGES (Task #73) =====================
+//
+// Audit ledger — one row per executed client merge. Backed by
+// migration 0029_clients_merge_and_soft_delete.sql.
+//
+// `loserNameSnapshot` and `loserClientIdSnapshot` are captured at
+// merge-time so the survivor's "previously known as" chip can render
+// the loser's identity even after the loser row is restored or
+// renamed. `repointedCounts` is a free-form jsonb keyed by table name,
+// e.g. `{ "project_info": 4, "opportunities": 7, "engineering_tickets": 12 }`.
+
+export const clientMerges = pgTable("client_merges", {
+  id: serial("id").primaryKey(),
+  loserClientId: integer("loser_client_id").notNull().references(() => clients.id),
+  survivorClientId: integer("survivor_client_id").notNull().references(() => clients.id),
+  performedByUserId: integer("performed_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  performedAt: timestamp("performed_at").notNull().defaultNow(),
+  loserNameSnapshot: text("loser_name_snapshot").notNull(),
+  loserClientIdSnapshot: text("loser_client_id_snapshot").notNull(),
+  repointedCounts: jsonb("repointed_counts").$type<Record<string, number>>().notNull().default({}),
+  reason: text("reason"),
+});
+export const insertClientMergeSchema = createInsertSchema(clientMerges).omit({ id: true, performedAt: true } as any);
+export type InsertClientMerge = z.infer<typeof insertClientMergeSchema>;
+export type ClientMerge = typeof clientMerges.$inferSelect;
 
 // ===================== USER PROJECT FOLDERS =====================
 
