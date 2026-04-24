@@ -25,6 +25,8 @@ import {
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageLayout } from "@/components/layout";
+import { OpportunityDrawer } from "@/components/opportunities/OpportunityDrawer";
+import { OpportunitiesCalendar, type OpportunityCardRow } from "@/components/opportunities/OpportunityViews";
 
 type ActionReason = "overdue" | "on_hold" | "stale_30d" | "high_priority_quiet" | "";
 
@@ -175,6 +177,189 @@ function ReasonChip({ reason }: { reason: ActionReason }) {
     <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${toneClass}`} data-testid={`reason-${reason}`}>
       {label}
     </span>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Pipeline-by-phase + sign-date calendar (task #77, 2026-04-24)
+//   Reads /api/pd/dashboard/pipeline-by-phase. Active opportunities only
+//   (deleted / soft-deleted-client / won / lost are excluded server-side).
+//   Both sections share one fetch — calendar rows are derived from the
+//   same payload so phase totals and event dots stay in sync.
+// ──────────────────────────────────────────────────────────────────────────
+
+type PipelineByPhase = {
+  generatedAt: string;
+  totals: { count: number; totalKwp: number; totalValue: number };
+  byPhase: Array<{
+    code: string;
+    label: string;
+    displayNumber: number;
+    count: number;
+    totalKwp: number;
+    totalValue: number;
+    sharePct: number;
+  }>;
+  rows: Array<{
+    id: number;
+    dealName: string;
+    clientName: string | null;
+    stage: string | null;
+    pipedriveDealId: string | null;
+    phaseCode: string | null;
+    phaseLabel: string;
+    estimatedKwp: number | null;
+    estimatedValue: number | null;
+    expectedCloseDate: string | null;
+    nextActivityDate: string | null;
+  }>;
+};
+
+function formatZARShort(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n) || n === 0) return "—";
+  if (Math.abs(n) >= 1_000_000) return `R ${(n / 1_000_000).toFixed(1)}M`;
+  if (Math.abs(n) >= 1_000) return `R ${(n / 1_000).toFixed(0)}k`;
+  return `R ${n.toFixed(0)}`;
+}
+
+function PipelinePhaseRow({
+  row,
+  maxKwp,
+}: {
+  row: { code: string; label: string; count: number; totalKwp: number; totalValue: number; sharePct: number };
+  maxKwp: number;
+}) {
+  // Bar width tracks the largest phase by kWp so phases compare visually
+  // rather than collapsing to a tiny share when one phase dominates.
+  const barPct = maxKwp > 0 ? (row.totalKwp / maxKwp) * 100 : 0;
+  return (
+    <div className="space-y-1.5" data-testid={`pipeline-phase-${row.code}`}>
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="font-semibold text-emerald-800 truncate">{row.label}</span>
+          <Badge variant="outline" className="text-[10px] shrink-0" data-testid={`pipeline-phase-count-${row.code}`}>
+            {row.count} opp{row.count === 1 ? "" : "s"}
+          </Badge>
+        </div>
+        <div className="flex items-center gap-3 text-xs shrink-0 text-muted-foreground">
+          <span className="tabular-nums" data-testid={`pipeline-phase-kwp-${row.code}`}>{formatKwp(row.totalKwp)}</span>
+          <span className="tabular-nums" data-testid={`pipeline-phase-value-${row.code}`}>{formatZARShort(row.totalValue)}</span>
+          <span className="tabular-nums w-12 text-right">{row.sharePct.toFixed(0)}%</span>
+        </div>
+      </div>
+      <Progress value={barPct} className="h-2" />
+    </div>
+  );
+}
+
+function PipelineByPhaseSection() {
+  const [openOppId, setOpenOppId] = useState<number | null>(null);
+  const { data, isLoading, isError, error, refetch } = useQuery<PipelineByPhase>({
+    queryKey: ["/api/pd/dashboard/pipeline-by-phase"],
+  });
+
+  const calendarRows = useMemo<OpportunityCardRow[]>(() => {
+    return (data?.rows ?? []).map((r) => ({
+      id: r.id,
+      dealName: r.dealName,
+      pipedriveDealId: r.pipedriveDealId,
+      orgClientName: r.clientName,
+      projectDeveloper: null,
+      stage: r.stage,
+      province: null,
+      estimatedValue: r.estimatedValue,
+      estimatedKwp: r.estimatedKwp,
+      expectedCloseDate: r.expectedCloseDate,
+      nextActivityDate: r.nextActivityDate,
+      openEngineeringTaskCount: 0,
+    }));
+  }, [data]);
+
+  const maxKwp = useMemo(() => {
+    return Math.max(...(data?.byPhase ?? []).map((p) => p.totalKwp), 1);
+  }, [data]);
+
+  return (
+    <>
+      <CollapsibleCard
+        id="pipeline-by-phase-opportunities"
+        testId="card-pipeline-by-phase-opps"
+        header={
+          <>
+            <CardTitle className="text-base">Pipeline by phase</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Active opportunities grouped by canonical lifecycle phase. Excludes won/lost and soft-deleted rows. Bar width = share of total kWp.
+            </p>
+          </>
+        }
+      >
+        <CardContent className="space-y-4">
+          {isLoading ? (
+            <Skeleton className="h-32" />
+          ) : isError ? (
+            <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800" data-testid="pipeline-phase-error">
+              <p className="font-medium">Could not load pipeline by phase.</p>
+              <p className="text-xs text-rose-700 mt-0.5">{(error as Error)?.message ?? "Request failed"}</p>
+              <Button size="sm" variant="outline" className="mt-2 h-7 text-xs" onClick={() => refetch()} data-testid="pipeline-phase-retry">
+                Retry
+              </Button>
+            </div>
+          ) : !data || data.byPhase.length === 0 ? (
+            <p className="text-sm text-muted-foreground" data-testid="pipeline-phase-empty">
+              No active opportunities in the pipeline.
+            </p>
+          ) : (
+            <>
+              <div className="flex items-center justify-between text-xs text-muted-foreground border-b pb-2">
+                <span>{data.totals.count} active opportunit{data.totals.count === 1 ? "y" : "ies"}</span>
+                <div className="flex items-center gap-3">
+                  <span className="tabular-nums">{formatKwp(data.totals.totalKwp)}</span>
+                  <span className="tabular-nums">{formatZARShort(data.totals.totalValue)}</span>
+                </div>
+              </div>
+              {data.byPhase.map((p) => (
+                <PipelinePhaseRow key={p.code} row={p} maxKwp={maxKwp} />
+              ))}
+            </>
+          )}
+        </CardContent>
+      </CollapsibleCard>
+
+      <CollapsibleCard
+        id="pipeline-sign-date-calendar"
+        testId="card-sign-date-calendar"
+        defaultOpen={false}
+        header={
+          <>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <CalendarClock className="h-4 w-4 text-emerald-700" />
+              Expected sign dates
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Active opportunities at their expected close date. Click an event to open the deal. Opportunities with no close date are listed in the tray below.
+            </p>
+          </>
+        }
+      >
+        <CardContent>
+          {isLoading ? (
+            <Skeleton className="h-64" />
+          ) : isError ? (
+            <p className="text-sm text-rose-700" data-testid="pipeline-calendar-error">
+              Could not load expected sign dates.
+            </p>
+          ) : (
+            <OpportunitiesCalendar rows={calendarRows} onEventClick={(id) => setOpenOppId(id)} />
+          )}
+        </CardContent>
+      </CollapsibleCard>
+
+      <OpportunityDrawer
+        opportunityId={openOppId}
+        open={openOppId != null}
+        onClose={() => setOpenOppId(null)}
+      />
+    </>
   );
 }
 
@@ -526,6 +711,11 @@ export default function PdDashboardPage() {
           )}
         </CardContent>
       </CollapsibleCard>
+
+      {/* 2b. PIPELINE BY PHASE + EXPECTED SIGN DATES (task #77).
+            Sales-side counterpart to the engineering operating board below;
+            placed adjacent so the two read as a pair. */}
+      <PipelineByPhaseSection />
 
       {/* 3. PD OPERATING BOARD — engineering activity by canonical lifecycle phase */}
       <CollapsibleCard
