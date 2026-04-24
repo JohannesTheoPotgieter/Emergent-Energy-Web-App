@@ -21,12 +21,12 @@ import {
   Hourglass,
   ShieldAlert,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageLayout } from "@/components/layout";
 import { OpportunityDrawer } from "@/components/opportunities/OpportunityDrawer";
-import { OpportunitiesCalendar, type OpportunityCardRow } from "@/components/opportunities/OpportunityViews";
 
 type ActionReason = "overdue" | "on_hold" | "stale_30d" | "high_priority_quiet" | "";
 
@@ -252,28 +252,188 @@ function PipelinePhaseRow({
   );
 }
 
+// Dashboard-specific sign-date calendar.
+//
+// Differs from OpportunitiesCalendar (used on /opportunities) on purpose:
+//   - exactly ONE event per opportunity, anchored at expected_close_date
+//     (next_activity_date is intentionally ignored for this section);
+//   - the "No close date set" tray is rendered ABOVE the grid and is
+//     populated by `expected_close_date IS NULL` only;
+//   - each event chip displays client name, kWp and a phase chip so the
+//     reader can scan the whole pipeline calendar without opening rows.
+const SD_WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const SD_MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+function SignEventChip({
+  row,
+  onClick,
+}: {
+  row: PipelineByPhase["rows"][number];
+  onClick: () => void;
+}) {
+  const phase = row.phaseCode ?? "_UNSCOPED";
+  const phaseChip = phase === "_UNSCOPED" ? "—" : phase;
+  const primary = row.clientName || row.dealName;
+  const kwpLabel = row.estimatedKwp != null ? formatKwp(row.estimatedKwp) : "";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full text-left text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-900 hover:bg-emerald-200 truncate flex items-center gap-1"
+      title={`${row.dealName} — ${row.clientName ?? "No client"} — ${kwpLabel || "kWp n/a"} — ${row.phaseLabel}`}
+      data-testid={`sd-event-${row.id}`}
+    >
+      <span className="font-medium truncate flex-1">{primary}</span>
+      {kwpLabel && <span className="tabular-nums shrink-0 text-[9px] text-emerald-800">{kwpLabel}</span>}
+      <span className="shrink-0 text-[9px] px-1 rounded bg-emerald-200/80 font-semibold tracking-wide">{phaseChip}</span>
+    </button>
+  );
+}
+
+function SignDateCalendar({
+  rows,
+  onEventClick,
+}: {
+  rows: PipelineByPhase["rows"];
+  onEventClick: (id: number) => void;
+}) {
+  const [cursor, setCursor] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
+
+  const eventsByDay = useMemo(() => {
+    const map = new Map<string, PipelineByPhase["rows"]>();
+    for (const r of rows) {
+      if (!r.expectedCloseDate) continue;
+      const key = String(r.expectedCloseDate).slice(0, 10);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(r);
+    }
+    return map;
+  }, [rows]);
+
+  const undated = useMemo(
+    () => rows.filter((r) => !r.expectedCloseDate),
+    [rows],
+  );
+
+  const days = useMemo(() => {
+    const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+    const last = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0);
+    // Mon=0 ... Sun=6
+    const offset = (first.getDay() + 6) % 7;
+    const start = new Date(first);
+    start.setDate(start.getDate() - offset);
+    const total = Math.ceil((offset + last.getDate()) / 7) * 7;
+    const cells: Date[] = [];
+    for (let i = 0; i < total; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      cells.push(d);
+    }
+    return cells;
+  }, [cursor]);
+
+  const today = new Date();
+  const monthLabel = `${SD_MONTHS[cursor.getMonth()]} ${cursor.getFullYear()}`;
+
+  return (
+    <div className="space-y-3" data-testid="sign-date-calendar">
+      {/* Tray ABOVE the grid: any opp with no expected close date is
+          surfaced here so it doesn't silently disappear from the view. */}
+      {undated.length > 0 && (
+        <div className="border rounded-md bg-amber-50/40 border-amber-200 p-3" data-testid="sign-date-undated">
+          <p className="text-xs font-semibold text-amber-800 mb-2">
+            No close date set ({undated.length})
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {undated.slice(0, 30).map((r) => (
+              <button
+                type="button"
+                key={r.id}
+                onClick={() => onEventClick(r.id)}
+                className="text-[10px] px-2 py-0.5 rounded bg-white border border-amber-200 hover:border-amber-400 truncate max-w-[260px] flex items-center gap-1"
+                title={`${r.dealName} — ${r.clientName ?? "No client"} — ${r.estimatedKwp != null ? formatKwp(r.estimatedKwp) : "kWp n/a"} — ${r.phaseLabel}`}
+                data-testid={`sd-undated-${r.id}`}
+              >
+                <span className="font-medium text-slate-700 truncate">{r.clientName || r.dealName}</span>
+                {r.estimatedKwp != null && (
+                  <span className="tabular-nums text-[9px] text-amber-800 shrink-0">{formatKwp(r.estimatedKwp)}</span>
+                )}
+                <span className="shrink-0 text-[9px] px-1 rounded bg-amber-200/80 font-semibold tracking-wide">
+                  {r.phaseCode ?? "—"}
+                </span>
+              </button>
+            ))}
+            {undated.length > 30 && (
+              <span className="text-[10px] text-amber-700 self-center">+{undated.length - 30} more</span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Month nav */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <CalendarClock className="h-4 w-4 text-emerald-600" />
+          <span className="text-xs text-slate-600">Each event = expected sign date</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => setCursor((c) => new Date(c.getFullYear(), c.getMonth() - 1, 1))} aria-label="Previous month" data-testid="btn-sd-prev">
+            <ChevronLeft className="h-3.5 w-3.5" aria-hidden="true" />
+          </Button>
+          <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => { const n = new Date(); setCursor(new Date(n.getFullYear(), n.getMonth(), 1)); }} data-testid="btn-sd-today">Today</Button>
+          <span className="text-sm font-medium text-slate-700 mx-2 min-w-[140px] text-center" data-testid="sd-month-label">{monthLabel}</span>
+          <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => setCursor((c) => new Date(c.getFullYear(), c.getMonth() + 1, 1))} aria-label="Next month" data-testid="btn-sd-next">
+            <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Weekday header */}
+      <div className="grid grid-cols-7 gap-px bg-slate-200 border border-slate-200 rounded-t-md overflow-hidden text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
+        {SD_WEEKDAYS.map((d) => (
+          <div key={d} className="bg-emerald-50/50 px-2 py-1.5 text-center">{d}</div>
+        ))}
+      </div>
+
+      {/* Day grid */}
+      <div className="grid grid-cols-7 gap-px bg-slate-200 border border-slate-200 border-t-0 rounded-b-md overflow-hidden -mt-3">
+        {days.map((d) => {
+          const inMonth = d.getMonth() === cursor.getMonth();
+          const isToday = d.toDateString() === today.toDateString();
+          const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+          const events = eventsByDay.get(key) || [];
+          return (
+            <div
+              key={d.toISOString()}
+              className={`min-h-[88px] p-1.5 ${inMonth ? "bg-white" : "bg-slate-50/60"} ${isToday ? "ring-2 ring-emerald-500 ring-inset" : ""}`}
+            >
+              <div className={`text-[11px] font-semibold mb-1 ${inMonth ? "text-slate-700" : "text-slate-400"} ${isToday ? "text-emerald-700" : ""}`}>
+                {d.getDate()}
+              </div>
+              <div className="space-y-0.5">
+                {events.slice(0, 3).map((r) => (
+                  <SignEventChip key={r.id} row={r} onClick={() => onEventClick(r.id)} />
+                ))}
+                {events.length > 3 && (
+                  <p className="text-[9px] text-slate-500 px-1">+{events.length - 3} more</p>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function PipelineByPhaseSection() {
   const [openOppId, setOpenOppId] = useState<number | null>(null);
   const { data, isLoading, isError, error, refetch } = useQuery<PipelineByPhase>({
     queryKey: ["/api/pd/dashboard/pipeline-by-phase"],
   });
-
-  const calendarRows = useMemo<OpportunityCardRow[]>(() => {
-    return (data?.rows ?? []).map((r) => ({
-      id: r.id,
-      dealName: r.dealName,
-      pipedriveDealId: r.pipedriveDealId,
-      orgClientName: r.clientName,
-      projectDeveloper: null,
-      stage: r.stage,
-      province: null,
-      estimatedValue: r.estimatedValue,
-      estimatedKwp: r.estimatedKwp,
-      expectedCloseDate: r.expectedCloseDate,
-      nextActivityDate: r.nextActivityDate,
-      openEngineeringTaskCount: 0,
-    }));
-  }, [data]);
 
   const maxKwp = useMemo(() => {
     return Math.max(...(data?.byPhase ?? []).map((p) => p.totalKwp), 1);
@@ -349,7 +509,7 @@ function PipelineByPhaseSection() {
               Could not load expected sign dates.
             </p>
           ) : (
-            <OpportunitiesCalendar rows={calendarRows} onEventClick={(id) => setOpenOppId(id)} />
+            <SignDateCalendar rows={data?.rows ?? []} onEventClick={(id) => setOpenOppId(id)} />
           )}
         </CardContent>
       </CollapsibleCard>
