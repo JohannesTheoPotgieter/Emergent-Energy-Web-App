@@ -449,11 +449,16 @@ function SignDateCalendar({
 // ──────────────────────────────────────────────────────────────────────────
 // Won deals (this FY) tile (task #94, 2026-04-24)
 //   Reads /api/pd/dashboard/won-deals. FY-scoped (Sep–Aug, fixed window).
-//   Click a row → opens shared OpportunityDrawer (same as the
-//   PipelineByPhaseSection above). projectLinkState badges:
-//     linked → green, deep-links to /project/<projectName>
-//     stub   → amber, drawer open (so the gap can be closed)
-//     none   → red,   drawer open (Convert-to-Project CTA visible)
+//   Row deal-name click → opens the shared OpportunityDrawer (CRM context).
+//   projectLinkState badge clicks (per the task spec) route differently:
+//     linked → /project/<projectName>             (deep-link to project page)
+//     stub   → /project/<projectName>             (jump into the project so
+//                                                  the missing PD/PM/phase
+//                                                  gap can be closed — the
+//                                                  amber colour signals the
+//                                                  work-to-do, the destination
+//                                                  is the same as linked)
+//     none   → OpportunityDrawer (Convert-to-Project CTA visible)
 // ──────────────────────────────────────────────────────────────────────────
 
 type WonDeals = {
@@ -731,11 +736,31 @@ function WonDealsTile() {
                               {row.dealOwnerName ?? "—"}
                             </td>
                             <td className="py-2 px-3">
-                              {row.projectLinkState === "linked" && row.projectName ? (
+                              {/* Badge routing (per task #94 spec):
+                                  - linked / stub: jump to project page
+                                    (project_info exists → projectName set);
+                                    stub badge stays amber so the work-to-do
+                                    is visually distinct from linked.
+                                  - none: open OpportunityDrawer with the
+                                    Convert-to-Project CTA (no project yet).
+                                  We branch on projectName presence rather
+                                  than on linkState directly, so that an
+                                  unexpected linked-without-name row
+                                  degrades safely to the drawer path. */}
+                              {row.projectName && row.projectLinkState !== "none" ? (
                                 <Link
                                   href={`/project/${encodeURIComponent(row.projectName)}`}
                                   className="inline-block"
-                                  data-testid={`won-project-link-${row.id}`}
+                                  data-testid={
+                                    row.projectLinkState === "stub"
+                                      ? `won-project-stub-link-${row.id}`
+                                      : `won-project-link-${row.id}`
+                                  }
+                                  aria-label={
+                                    row.projectLinkState === "stub"
+                                      ? `Open project ${row.projectName} to complete handover`
+                                      : `Open project ${row.projectName}`
+                                  }
                                 >
                                   <ProjectLinkBadge row={row} />
                                 </Link>
@@ -745,6 +770,7 @@ function WonDealsTile() {
                                   onClick={() => setOpenOppId(row.id)}
                                   className="inline-block"
                                   data-testid={`won-project-open-${row.id}`}
+                                  aria-label={`Open Convert-to-Project for ${row.dealName}`}
                                 >
                                   <ProjectLinkBadge row={row} />
                                 </button>
