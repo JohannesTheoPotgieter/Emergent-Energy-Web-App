@@ -370,6 +370,18 @@ export function registerAdminWorkItemLinkageRoutes(app: Express) {
         const actorUserId =
           (req as any).user?.id != null ? Number((req as any).user.id) : null;
 
+        // Self-bootstrap: ensure the partial unique index exists before
+        // the ON CONFLICT clause references it. This makes the endpoint
+        // safe to call on environments where migration 0032 has not been
+        // applied separately (e.g. production on first run). Idempotent.
+        await db.execute(sql`
+          CREATE UNIQUE INDEX IF NOT EXISTS work_items_active_eng_ticket_uniq
+            ON work_items (engineering_ticket_id)
+            WHERE workstream = 'ENG'
+              AND deleted_at IS NULL
+              AND engineering_ticket_id IS NOT NULL
+        `);
+
         const result = await db.execute(sql`
           INSERT INTO work_items (
             client_id, project_id, workstream, source, type,
