@@ -54,6 +54,22 @@ The project is organized as a monorepo, separating client-side (React SPA), serv
 ### Microsoft 365 Integration
 - Integration with Outlook, Teams, and SharePoint using `@microsoft/microsoft-graph-client`. A sync service stores calendar event metadata and deep links for emails and attachments.
 
+### Stage Gate Auto-Population (Task #84)
+- `server/services/gate-auto-evaluator-service.ts` houses the deterministic
+  evaluator registry that maps each canonical gate criterion (per phase, per
+  department) to a pure function reading from the existing data spine
+  (execution state, work items, deliverables, drawings, revenue/cost lines,
+  HSE, QC, commissioning, handover packs, comms links).
+- Auto-detected statuses persist on `project_stage_requirements.auto_*`
+  (status, source label, source ref, evidence URL, confidence, computed_at)
+  so they survive across page loads. Manual status always wins; auto only
+  surfaces when manual is `not_started`.
+- Endpoints: `GET /api/projects/:id/stage-gates/:phase/auto` (single project,
+  optional `?persist=true`) and bulk `GET /api/projects/stage-gates/auto?phase=&projectIds=`.
+- Stage detail (`GET /api/projects/:id/stages/:code`) auto-evaluates and
+  persists on read so the gate checklist UI always shows fresh detection.
+- Hold/Done are intentionally excluded; auto results never auto-pass a gate.
+
 ### Testing
 - **Unit & API Tests:** Vitest.
 - **E2E Tests:** Playwright.

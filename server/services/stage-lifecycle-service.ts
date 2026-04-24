@@ -61,7 +61,28 @@ type RequirementLike = {
   blocksGate: boolean;
   evidenceAttached: boolean;
   notes?: string | null;
+  // Task #84: Auto-evaluator output, surfaced into the snapshot so audit
+  // trails record which items were satisfied by app data vs by manual entry.
+  isAuto?: boolean;
+  autoStatus?: string | null;
+  autoSourceLabel?: string | null;
+  autoSourceRef?: string | null;
+  autoEvidenceUrl?: string | null;
+  autoConfidence?: string | null;
 };
+
+/** Manual status wins. If it's `not_started` and the auto-evaluator detected
+ *  something, the snapshot reflects the auto status with isAuto=true. */
+function effectiveSnapshotStatus(req: ProjectStageRequirement): { status: string; isAuto: boolean } {
+  const manual = req.status;
+  // Tolerate both casings while the migration to lowercase canonical
+  // statuses is still in flight elsewhere in the codebase.
+  const manualNormalized = manual?.toLowerCase();
+  if (manualNormalized === "not_started" && req.autoStatus) {
+    return { status: req.autoStatus, isAuto: true };
+  }
+  return { status: manual, isAuto: false };
+}
 
 function summarizeRequirements(reqs: ProjectStageRequirement[]): {
   gatesTotal: number;
@@ -74,7 +95,9 @@ function summarizeRequirements(reqs: ProjectStageRequirement[]): {
   let gatesPassed = 0;
   const missingItems: Array<{ itemCode: string; itemName: string; department: string; reason: string }> = [];
   const requirementsSnapshot: RequirementLike[] = reqs.map((r) => {
-    const isComplete = r.status === "COMPLETE";
+    const eff = effectiveSnapshotStatus(r);
+    const isComplete =
+      eff.status === "COMPLETE" || eff.status === "complete";
     if (isComplete) gatesPassed += 1;
     else {
       missingItems.push({
@@ -94,6 +117,12 @@ function summarizeRequirements(reqs: ProjectStageRequirement[]): {
       blocksGate: r.blocksGate,
       evidenceAttached: r.evidenceAttached,
       notes: r.notes ?? null,
+      isAuto: eff.isAuto,
+      autoStatus: r.autoStatus ?? null,
+      autoSourceLabel: r.autoSourceLabel ?? null,
+      autoSourceRef: r.autoSourceRef ?? null,
+      autoEvidenceUrl: r.autoEvidenceUrl ?? null,
+      autoConfidence: r.autoConfidence ?? null,
     };
   });
 
