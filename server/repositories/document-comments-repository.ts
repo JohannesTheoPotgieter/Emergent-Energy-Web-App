@@ -5,13 +5,14 @@
  * parsing (finding `@user` in the body) lives in the route/service layer.
  */
 
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, ilike, isNull, or, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
   documentComments,
   documentCommentMentions,
   type DocumentComment,
 } from "@shared/schema/documents";
+import { users } from "@shared/schema/users";
 
 type InsertDocumentComment = typeof documentComments.$inferInsert;
 
@@ -123,4 +124,55 @@ export async function listMentionedUserIdsForComment(
     if (isMissingTableError(err)) return [];
     throw err;
   }
+}
+
+export interface MentionUserRecord {
+  id: number;
+  username: string;
+  email: string;
+  name: string;
+}
+
+/**
+ * Look up candidate users for `@` mentions by username/email-prefix match.
+ * `handles` are expected to be escaped for ilike before being passed in.
+ */
+export async function findUsersByHandles(
+  handles: string[],
+): Promise<MentionUserRecord[]> {
+  if (handles.length === 0) return [];
+  const conditions = handles.map((h) =>
+    or(ilike(users.username, h), ilike(users.email, `${h}@%`)),
+  );
+  return (await db
+    .select({ id: users.id, username: users.username, email: users.email, name: users.name })
+    .from(users)
+    .where(and(isNull(users.deletedAt), or(...conditions) ?? sql`FALSE`))
+    .limit(50)) as MentionUserRecord[];
+}
+
+export interface UserSearchRecord {
+  id: number;
+  username: string;
+  name: string;
+}
+
+/** Simple prefix search used by the `@mention` autocomplete in the UI. */
+export async function searchUsersForMentionPicker(
+  escapedPrefix: string,
+  limit: number,
+): Promise<UserSearchRecord[]> {
+  return (await db
+    .select({ id: users.id, username: users.username, name: users.name })
+    .from(users)
+    .where(
+      and(
+        isNull(users.deletedAt),
+        or(
+          ilike(users.username, `${escapedPrefix}%`),
+          ilike(users.name, `${escapedPrefix}%`),
+        ) ?? sql`FALSE`,
+      ),
+    )
+    .limit(limit)) as UserSearchRecord[];
 }

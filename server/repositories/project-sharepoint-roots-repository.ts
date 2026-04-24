@@ -6,14 +6,46 @@
  * don't reach into the DB directly.
  */
 
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "../db";
 import {
   projectSharepointRoots,
   type ProjectSharepointRoot,
 } from "@shared/schema/documents";
+import { projectInfo } from "@shared/schema/projects";
 
 type InsertProjectSharepointRoot = typeof projectSharepointRoots.$inferInsert;
+
+export interface ProjectWithRoot {
+  projectId: number;
+  projectName: string;
+  projectCode: string | null;
+  root: ProjectSharepointRoot;
+}
+
+/**
+ * List every project that has a configured SharePoint root. Returns
+ * projects joined with their root config — used by /api/documents/roots.
+ */
+export async function listProjectsWithRoots(): Promise<ProjectWithRoot[]> {
+  try {
+    const rows = await db
+      .select({
+        projectId: projectInfo.id,
+        projectName: projectInfo.projectName,
+        projectCode: projectInfo.projectCode,
+        root: projectSharepointRoots,
+      })
+      .from(projectSharepointRoots)
+      .innerJoin(projectInfo, eq(projectSharepointRoots.projectId, projectInfo.id))
+      .where(isNull(projectInfo.deletedAt));
+    return rows as ProjectWithRoot[];
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/42P01|42703|does not exist|no such table/i.test(msg)) return [];
+    throw err;
+  }
+}
 
 function isMissingTableError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);

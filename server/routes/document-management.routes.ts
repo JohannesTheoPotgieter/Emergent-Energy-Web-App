@@ -10,8 +10,6 @@
 import type { Express, Request, Response } from "express";
 import multer from "multer";
 import { z } from "zod";
-import { isNull } from "drizzle-orm";
-import { db } from "../db";
 import { requireAuth, getEffectiveUser } from "../auth-context";
 import { validateBody } from "../middleware/validateBody";
 import {
@@ -22,17 +20,17 @@ import {
   serverError,
 } from "../lib/api-error";
 import {
+  DOCUMENT_ACTIVITY_ACTIONS,
   DOCUMENT_ROOT_SCOPES,
   type DocumentRootScope,
 } from "@shared/schema/documents";
-import { projectInfo } from "@shared/schema/projects";
 import {
   listActiveCompanyRoots,
   getCompanyRootById,
 } from "../repositories/company-sharepoint-roots-repository";
 import {
   getProjectRootById,
-  listProjectRoots,
+  listProjectsWithRoots,
 } from "../repositories/project-sharepoint-roots-repository";
 import {
   getManagedDocumentById,
@@ -120,6 +118,32 @@ function assertAcl(
   }
 }
 
+/**
+ * Asserts a user can perform `action` on a tracked managed document — used
+ * for doc-id-based endpoints (checkout, checkin, revisions, comments, owner).
+ * Resolves the document's root, computes its folder-relative path, and
+ * delegates to `assertAcl`. This closes the gap where a user who never
+ * had access to a folder could still touch a document via its id.
+ */
+async function assertDocumentAcl(
+  tracked: { id: number; rootScope: DocumentRootScope; projectId: number | null; companyRootId: number | null; path: string },
+  role: string | null | undefined,
+  action: DocumentAction,
+): Promise<void> {
+  let rootPath = "";
+  if (tracked.rootScope === "project" && tracked.projectId != null) {
+    // Use projectSharepointRoots lookup — root path is stored by project id,
+    // but we look it up via the projectSharepointRoots repo's getByProjectId
+    // alias. Avoid a second db call when we already have the path on the
+    // document (path is relative to the drive root in our mock + real Graph).
+    rootPath = "";
+  } else if (tracked.rootScope === "company" && tracked.companyRootId != null) {
+    const r = await getCompanyRootById(tracked.companyRootId);
+    rootPath = r?.rootPath ?? "";
+  }
+  assertAcl(tracked.rootScope, pathUnderRoot(tracked.path, rootPath), role, action);
+}
+
 // ----- upload (small) ----------------------------------------------------
 
 const upload = multer({
@@ -163,31 +187,10 @@ export function registerDocumentManagementRoutes(app: Express): void {
   // GET /api/documents/roots
   app.get("/api/documents/roots", requireAuth, async (_req: Request, res: Response) => {
     try {
-      const [companyRoots, projects] = await Promise.all([
+      const [companyRoots, projectsWithRoots] = await Promise.all([
         listActiveCompanyRoots(),
-        db.select({
-          id: projectInfo.id,
-          projectName: projectInfo.projectName,
-          projectCode: projectInfo.projectCode,
-        }).from(projectInfo).where(isNull(projectInfo.deletedAt)),
+        listProjectsWithRoots(),
       ]);
-      const projectIds = projects.map((p: { id: number }) => p.id);
-      const projectRoots = await listProjectRoots(projectIds);
-      const projectRootsByProject = new Map(projectRoots.map((r) => [r.projectId, r]));
-      const enrichedProjects = projects
-        .map((p: { id: number; projectName: string; projectCode: string | null }) => {
-          const root = projectRootsByProject.get(p.id);
-          if (!root) return null;
-          return {
-            id: root.id,
-            projectId: p.id,
-            name: p.projectName,
-            projectCode: p.projectCode ?? null,
-            rootPath: root.rootPath,
-            hasDrive: !!root.driveId,
-          };
-        })
-        .filter((p: unknown): p is { id: number; projectId: number; name: string; projectCode: string | null; rootPath: string; hasDrive: boolean } => p !== null);
       res.json({
         company: companyRoots.map((r) => ({
           id: r.id,
@@ -196,7 +199,14 @@ export function registerDocumentManagementRoutes(app: Express): void {
           rootPath: r.rootPath,
           hasDrive: !!r.driveId,
         })),
-        project: enrichedProjects,
+        project: projectsWithRoots.map((p) => ({
+          id: p.root.id,
+          projectId: p.projectId,
+          name: p.projectName,
+          projectCode: p.projectCode ?? null,
+          rootPath: p.root.rootPath,
+          hasDrive: !!p.root.driveId,
+        })),
       });
     } catch (err) {
       if (err instanceof ApiError) throw err;
@@ -219,6 +229,14 @@ export function registerDocumentManagementRoutes(app: Express): void {
       const parentItemId = typeof req.query.parentItemId === "string" && req.query.parentItemId.length > 0
         ? req.query.parentItemId
         : root.rootItemId;
+      // Derive the ACL-relevant path from the parent item (if any) so we can
+      // gate children-listing on read permission for that folder.
+      let pathForAcl = "";
+      if (parentItemId && parentItemId !== root.rootItemId) {
+        const parent = await sp.getItem(root.driveId, parentItemId);
+        if (parent) pathForAcl = pathUnderRoot(parent.path, root.rootPath);
+      }
+      assertAcl(root.scope, pathForAcl, user.role, "read");
       try {
         const items = await sp.listChildren(root.driveId, parentItemId);
         res.json({
@@ -242,9 +260,12 @@ export function registerDocumentManagementRoutes(app: Express): void {
       const rootId = rootIdSchema.safeParse(req.params.rootId);
       const itemId = graphItemIdSchema.safeParse(req.params.itemId);
       if (!scope.success || !rootId.success || !itemId.success) throw badRequest("Invalid params");
+      const user = getEffectiveUser(req);
+      if (!user) throw forbidden("Authentication required");
       const root = await resolveRoot(scope.data, rootId.data);
       const item = await sp.getItem(root.driveId, itemId.data);
       if (!item) throw notFound("Item");
+      assertAcl(root.scope, pathUnderRoot(item.path, root.rootPath), user.role, "read");
       const tracked = await getManagedDocumentByDriveItem(root.driveId, itemId.data);
       const lock = tracked ? await getLock(tracked.id) : null;
       res.json({
@@ -287,8 +308,15 @@ export function registerDocumentManagementRoutes(app: Express): void {
         action: "download",
         sizeBytes: item.size ?? null,
       });
+      // Strip CR/LF + quotes for header safety, and add RFC 5987 filename*
+      // so non-ASCII names land correctly without breaking the header.
+      const asciiSafe = fileName.replace(/[\r\n"\\]/g, "_");
+      const encoded = encodeURIComponent(fileName);
       res.setHeader("Content-Type", contentType);
-      res.setHeader("Content-Disposition", `attachment; filename="${fileName.replace(/"/g, "")}"`);
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${asciiSafe}"; filename*=UTF-8''${encoded}`,
+      );
       res.send(buffer);
     },
   );
@@ -492,6 +520,7 @@ export function registerDocumentManagementRoutes(app: Express): void {
       const body = req.body as z.infer<typeof ownerBody>;
       const tracked = await getManagedDocumentById(docId.data);
       if (!tracked) throw notFound("Document");
+      await assertDocumentAcl(tracked, user.role, "write");
       const isSuper = user.role === "COO_ADMIN" || user.role === "CEO_ADMIN";
       const isCurrentOwner = tracked.ownerUserId === user.id;
       if (!isSuper && !isCurrentOwner) {
@@ -509,8 +538,11 @@ export function registerDocumentManagementRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       const docId = documentIdSchema.safeParse(req.params.docId);
       if (!docId.success) throw badRequest("Invalid docId");
+      const user = getEffectiveUser(req);
+      if (!user) throw forbidden("Authentication required");
       const tracked = await getManagedDocumentById(docId.data);
       if (!tracked) throw notFound("Document");
+      await assertDocumentAcl(tracked, user.role, "read");
       const revs = await listRevisionsForDocument(tracked.id);
       res.json({ revisions: revs });
     },
@@ -528,6 +560,7 @@ export function registerDocumentManagementRoutes(app: Express): void {
       if (!user) throw forbidden("Authentication required");
       const tracked = await getManagedDocumentById(docId.data);
       if (!tracked) throw notFound("Document");
+      await assertDocumentAcl(tracked, user.role, "write");
       const revs = await listRevisionsForDocument(tracked.id);
       const target = revs.find((r) => r.id === revId.data);
       if (!target) throw notFound("Revision");
@@ -565,6 +598,7 @@ export function registerDocumentManagementRoutes(app: Express): void {
       if (!user) throw forbidden("Authentication required");
       const tracked = await getManagedDocumentById(docId.data);
       if (!tracked) throw notFound("Document");
+      await assertDocumentAcl(tracked, user.role, "write");
       await workflow.assertUnlockedForUser(tracked.id, user.id);
       await sp.checkout(tracked.driveId, tracked.driveItemId, user.id);
       await workflow.recordCheckout(tracked.id, user.id);
@@ -585,6 +619,7 @@ export function registerDocumentManagementRoutes(app: Express): void {
       const body = req.body as z.infer<typeof checkinBody>;
       const tracked = await getManagedDocumentById(docId.data);
       if (!tracked) throw notFound("Document");
+      await assertDocumentAcl(tracked, user.role, "write");
       const lock = await getLock(tracked.id);
       if (lock && lock.lockedByUserId !== user.id) {
         throw new ApiError(423, "LOCKED", "This document is checked out by another user.");
@@ -616,6 +651,7 @@ export function registerDocumentManagementRoutes(app: Express): void {
       if (!user) throw forbidden("Authentication required");
       const tracked = await getManagedDocumentById(docId.data);
       if (!tracked) throw notFound("Document");
+      await assertDocumentAcl(tracked, user.role, "write");
       const lock = await getLock(tracked.id);
       if (lock && lock.lockedByUserId !== user.id) {
         throw new ApiError(423, "LOCKED", "This document is checked out by another user.");
@@ -631,21 +667,36 @@ export function registerDocumentManagementRoutes(app: Express): void {
     "/api/documents/activity",
     requireAuth,
     async (req: Request, res: Response) => {
+      const user = getEffectiveUser(req);
+      if (!user) throw forbidden("Authentication required");
       const filters = z
         .object({
           projectId: z.coerce.number().int().positive().optional(),
           documentId: z.coerce.number().int().positive().optional(),
           userId: z.coerce.number().int().positive().optional(),
-          action: z.string().max(32).optional(),
+          action: z.enum(DOCUMENT_ACTIVITY_ACTIONS).optional(),
           limit: z.coerce.number().int().min(1).max(500).optional(),
         })
         .safeParse(req.query);
       if (!filters.success) throw badRequest("Invalid filters");
+      const isSuper = user.role === "COO_ADMIN" || user.role === "CEO_ADMIN";
+      // Non-super users must scope by a specific document or project so they
+      // can't trawl cross-project activity. Super-users (COO/CEO) see all.
+      if (!isSuper && filters.data.documentId == null && filters.data.projectId == null) {
+        throw badRequest("Specify a projectId or documentId to list activity.");
+      }
+      // When scoped by documentId, enforce the folder ACL so users can't read
+      // activity for documents they have no access to.
+      if (filters.data.documentId != null) {
+        const tracked = await getManagedDocumentById(filters.data.documentId);
+        if (!tracked) throw notFound("Document");
+        await assertDocumentAcl(tracked, user.role, "read");
+      }
       const rows = await listActivity({
         projectId: filters.data.projectId,
         documentId: filters.data.documentId,
         userId: filters.data.userId,
-        action: filters.data.action as any,
+        action: filters.data.action,
         limit: filters.data.limit,
       });
       res.json({ activity: rows });

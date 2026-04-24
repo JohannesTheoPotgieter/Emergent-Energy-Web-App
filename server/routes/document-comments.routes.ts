@@ -9,8 +9,6 @@
 
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
-import { and, ilike, isNull, or, sql } from "drizzle-orm";
-import { db } from "../db";
 import { requireAuth, getEffectiveUser } from "../auth-context";
 import { validateBody } from "../middleware/validateBody";
 import {
@@ -20,8 +18,10 @@ import {
   notFound,
   serverError,
 } from "../lib/api-error";
-import { users } from "@shared/schema/users";
+import type { DocumentRootScope } from "@shared/schema/documents";
 import { getManagedDocumentById } from "../repositories/managed-documents-repository";
+import { getCompanyRootById } from "../repositories/company-sharepoint-roots-repository";
+import { resolveFolderAcl, canPerform, type DocumentAction } from "../config/document-folder-rbac";
 import {
   listCommentsForDocument,
   getCommentById,
@@ -29,6 +29,8 @@ import {
   editComment,
   softDeleteComment,
   listMentionedUserIdsForComment,
+  findUsersByHandles,
+  searchUsersForMentionPicker,
 } from "../repositories/document-comments-repository";
 import { recordActivity } from "../repositories/document-activity-repository";
 import { createNotification } from "../services/notification-service";
@@ -49,36 +51,50 @@ const editCommentBody = z.object({
 });
 
 const userSearchQuery = z.object({
-  q: z.string().min(1).max(64),
-  limit: z.coerce.number().int().min(1).max(20).optional(),
+  q: z.string().min(2).max(64),
+  limit: z.coerce.number().int().min(1).max(10).optional(),
 });
 
 const MENTION_PATTERN = /@([a-zA-Z0-9._-]{2,64})/g;
 
-interface MentionCandidate { id: number; username: string; email: string; name: string }
+/** Escape `%` and `_` so an `@` handle can't match every row via ilike. */
+function escapeLike(input: string): string {
+  return input.replace(/[\\%_]/g, (m) => `\\${m}`);
+}
+
+function firstSegmentFromPath(path: string): string {
+  const trimmed = path.replace(/^\/+/, "").replace(/\\/g, "/");
+  const idx = trimmed.indexOf("/");
+  return idx < 0 ? trimmed : trimmed.slice(0, idx);
+}
+
+async function assertDocumentAcl(
+  tracked: { rootScope: DocumentRootScope; projectId: number | null; companyRootId: number | null; path: string },
+  role: string | null | undefined,
+  action: DocumentAction,
+): Promise<void> {
+  let rootPath = "";
+  if (tracked.rootScope === "company" && tracked.companyRootId != null) {
+    const r = await getCompanyRootById(tracked.companyRootId);
+    rootPath = r?.rootPath ?? "";
+  }
+  const relative = rootPath && tracked.path.startsWith(rootPath)
+    ? tracked.path.slice(rootPath.length).replace(/^\/+/, "")
+    : tracked.path;
+  const acl = resolveFolderAcl(tracked.rootScope, firstSegmentFromPath(relative));
+  if (!canPerform(action, role ?? null, acl)) {
+    throw forbidden("You don't have permission for that folder.");
+  }
+}
 
 async function resolveMentions(body: string, explicit: number[] | undefined): Promise<number[]> {
   const matches = Array.from(body.matchAll(MENTION_PATTERN)).map((m) => m[1].toLowerCase());
-  const unique = Array.from(new Set(matches));
+  const unique = Array.from(new Set(matches)).slice(0, 20).map(escapeLike);
   if (unique.length === 0) return explicit ?? [];
-  const found: MentionCandidate[] = await db
-    .select({ id: users.id, username: users.username, email: users.email, name: users.name })
-    .from(users)
-    .where(
-      and(
-        isNull(users.deletedAt),
-        or(...unique.map((handle) =>
-          or(
-            ilike(users.username, handle),
-            ilike(users.email, `${handle}@%`),
-          ),
-        )) ?? sql`FALSE`,
-      ),
-    )
-    .limit(50);
+  const found = await findUsersByHandles(unique);
   const ids = new Set<number>(explicit ?? []);
   for (const u of found) ids.add(u.id);
-  return Array.from(ids);
+  return Array.from(ids).slice(0, 50);
 }
 
 export function registerDocumentCommentsRoutes(app: Express): void {
@@ -87,21 +103,10 @@ export function registerDocumentCommentsRoutes(app: Express): void {
     const parsed = userSearchQuery.safeParse(req.query);
     if (!parsed.success) throw badRequest("Invalid query");
     const { q, limit } = parsed.data;
-    const prefix = q.toLowerCase();
-    const rows = await db
-      .select({ id: users.id, username: users.username, email: users.email, name: users.name })
-      .from(users)
-      .where(
-        and(
-          isNull(users.deletedAt),
-          or(
-            ilike(users.username, `${prefix}%`),
-            ilike(users.name, `${prefix}%`),
-            ilike(users.email, `${prefix}%`),
-          ) ?? sql`FALSE`,
-        ),
-      )
-      .limit(limit ?? 8);
+    const prefix = escapeLike(q.toLowerCase());
+    // Return the minimum identity fields needed to drive the @mention picker.
+    // Intentionally omitting `email` here to reduce enumeration surface.
+    const rows = await searchUsersForMentionPicker(prefix, limit ?? 8);
     res.json({ users: rows });
   });
 
@@ -112,8 +117,11 @@ export function registerDocumentCommentsRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       const docId = documentIdSchema.safeParse(req.params.docId);
       if (!docId.success) throw badRequest("Invalid docId");
+      const user = getEffectiveUser(req);
+      if (!user) throw forbidden("Authentication required");
       const tracked = await getManagedDocumentById(docId.data);
       if (!tracked) throw notFound("Document");
+      await assertDocumentAcl(tracked, user.role, "read");
       const comments = await listCommentsForDocument(tracked.id);
       res.json({ comments });
     },
@@ -132,6 +140,7 @@ export function registerDocumentCommentsRoutes(app: Express): void {
       const body = req.body as z.infer<typeof createCommentBody>;
       const tracked = await getManagedDocumentById(docId.data);
       if (!tracked) throw notFound("Document");
+      await assertDocumentAcl(tracked, user.role, "read");
 
       try {
         const mentionedUserIds = await resolveMentions(body.body, body.mentionedUserIds);
@@ -190,6 +199,9 @@ export function registerDocumentCommentsRoutes(app: Express): void {
       if (!user) throw forbidden("Authentication required");
       const existing = await getCommentById(commentId.data);
       if (!existing || existing.deletedAt) throw notFound("Comment");
+      const tracked = await getManagedDocumentById(existing.documentId);
+      if (!tracked) throw notFound("Document");
+      await assertDocumentAcl(tracked, user.role, "read");
       const isSuper = user.role === "COO_ADMIN" || user.role === "CEO_ADMIN";
       if (existing.authorUserId !== user.id && !isSuper) {
         throw forbidden("You can only edit your own comments.");
@@ -211,6 +223,9 @@ export function registerDocumentCommentsRoutes(app: Express): void {
       if (!user) throw forbidden("Authentication required");
       const existing = await getCommentById(commentId.data);
       if (!existing || existing.deletedAt) throw notFound("Comment");
+      const tracked = await getManagedDocumentById(existing.documentId);
+      if (!tracked) throw notFound("Document");
+      await assertDocumentAcl(tracked, user.role, "read");
       const isSuper = user.role === "COO_ADMIN" || user.role === "CEO_ADMIN";
       if (existing.authorUserId !== user.id && !isSuper) {
         throw forbidden("You can only delete your own comments.");
@@ -227,6 +242,13 @@ export function registerDocumentCommentsRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       const commentId = commentIdSchema.safeParse(req.params.commentId);
       if (!commentId.success) throw badRequest("Invalid commentId");
+      const user = getEffectiveUser(req);
+      if (!user) throw forbidden("Authentication required");
+      const existing = await getCommentById(commentId.data);
+      if (!existing) throw notFound("Comment");
+      const tracked = await getManagedDocumentById(existing.documentId);
+      if (!tracked) throw notFound("Document");
+      await assertDocumentAcl(tracked, user.role, "read");
       const ids = await listMentionedUserIdsForComment(commentId.data);
       res.json({ mentionedUserIds: ids });
     },

@@ -101,6 +101,13 @@ export function useUploadDocument() {
       const token = localStorage.getItem("auth_token");
       const headers: Record<string, string> = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
+      // Double-submit CSRF token (mirror of apiRequest); multer uploads
+      // bypass the JSON helper so we wire this in by hand.
+      const csrfToken = document.cookie
+        .split("; ")
+        .find((c) => c.startsWith("csrf-token="))
+        ?.split("=")[1];
+      if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
       const res = await fetch(
         `/api/documents/${input.scope}/${input.rootId}/upload`,
         { method: "POST", body: form, credentials: "include", headers },
