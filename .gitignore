@@ -38,6 +38,11 @@ backups/
 *.log
 *.err.log
 *.out.log
+
+# ── QA artifacts & reports (regenerated on every test run) ──
+qa/artifacts/
+qa/reports/
+**/.last-run.json
 combined.log
 error.log
 login-request.log
