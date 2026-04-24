@@ -19,9 +19,78 @@ export type TeamPerson = {
   location: string | null;
   utilisationPct: number | null;
   activeProjectCount: number | null;
+  /**
+   * Open work-item count fallback used **only** when no allocation_pct is
+   * recorded for this user (i.e. when `utilisationPct` is null). The two
+   * fields are mutually exclusive — exactly one is populated at a time, or
+   * both are null.
+   */
   activeWorkItemCount: number | null;
-  status: string;
+  status: "active" | "inactive";
 };
+
+type PersonInput = {
+  id: number;
+  name: string;
+  role: string | null;
+  location: string | null;
+  isActive: boolean;
+};
+
+/** Narrow a `db.execute` result to a typed row array regardless of driver. */
+function rowsOf<T>(result: unknown): T[] {
+  if (Array.isArray(result)) return result as T[];
+  if (
+    result !== null &&
+    typeof result === "object" &&
+    Array.isArray((result as { rows?: unknown }).rows)
+  ) {
+    return (result as { rows: T[] }).rows;
+  }
+  return [];
+}
+
+/**
+ * Pure mapping from raw aggregates to TeamPerson rows. Extracted for unit
+ * testing — covers `status` derivation from `isActive`, mutual exclusivity
+ * of `utilisationPct` vs `activeWorkItemCount`, and location passthrough.
+ */
+export function assembleTeamPeople(input: {
+  users: PersonInput[];
+  allocationByUser: Map<number, { totalAllocation: number | null; nonNullAllocCount: number }>;
+  activeProjectsByUser: Map<number, Set<number>>;
+  activeWorkItemsByUser: Map<number, number>;
+  hasAnyActiveProjects: boolean;
+  hasAnyActiveWorkItems: boolean;
+}): TeamPerson[] {
+  const labelMap = COMPANY_ROLE_LABELS as Record<string, string>;
+  return input.users.map((u) => {
+    const alloc = input.allocationByUser.get(u.id);
+    const totalAlloc = alloc?.totalAllocation ?? null;
+    const hasAlloc = !!alloc && alloc.nonNullAllocCount > 0 && totalAlloc != null;
+    const utilisationPct = hasAlloc ? Math.round(totalAlloc as number) : null;
+    const rawWorkItemCount = input.hasAnyActiveWorkItems
+      ? (input.activeWorkItemsByUser.get(u.id) ?? 0)
+      : null;
+    // Mutual exclusivity: only surface the work-item count fallback when
+    // we have no real utilisation %. This keeps the UI contract honest
+    // ("Utilisation" vs "Active Items" — never both).
+    const activeWorkItemCount = utilisationPct != null ? null : rawWorkItemCount;
+    return {
+      id: u.id,
+      fullName: u.name,
+      initials: computeInitials(u.name),
+      jobTitle: u.role && labelMap[u.role] ? labelMap[u.role] : null,
+      location: u.location ?? null,
+      utilisationPct,
+      activeProjectCount: input.hasAnyActiveProjects
+        ? (input.activeProjectsByUser.get(u.id)?.size ?? 0)
+        : null,
+      activeWorkItemCount,
+      status: u.isActive ? "active" : "inactive",
+    };
+  });
+}
 
 export type CompanyTeamData = {
   summary: TeamSummary;
@@ -44,6 +113,10 @@ function computeInitials(name: string): string {
 }
 
 export async function getCompanyTeamData(): Promise<CompanyTeamData> {
+  // Show every non-purged user. The codebase has no `is_active` column on
+  // `users` — soft-delete via `deleted_at` IS the source of truth, so we
+  // derive `status` from that and surface inactive users with a pill
+  // instead of hiding them.
   const allUsers = await db
     .select({
       id: users.id,
@@ -52,9 +125,9 @@ export async function getCompanyTeamData(): Promise<CompanyTeamData> {
       role: users.role,
       department: users.department,
       location: users.location,
+      deletedAt: users.deletedAt,
     })
-    .from(users)
-    .where(isNull(users.deletedAt));
+    .from(users);
 
   const allocationRows = await db
     .select({
@@ -96,9 +169,7 @@ export async function getCompanyTeamData(): Promise<CompanyTeamData> {
     ) AS x
     GROUP BY user_id
   `);
-  const activeWorkItemRowsArr: Array<{ user_id: number; cnt: number }> = Array.isArray(activeWorkItemRows)
-    ? (activeWorkItemRows as any)
-    : ((activeWorkItemRows as any).rows ?? []);
+  const activeWorkItemRowsArr = rowsOf<{ user_id: number; cnt: number }>(activeWorkItemRows);
   const activeWorkItemsByUser = new Map<number, number>();
   for (const r of activeWorkItemRowsArr) {
     if (r.user_id == null) continue;
@@ -191,9 +262,7 @@ export async function getCompanyTeamData(): Promise<CompanyTeamData> {
          AND wi.status NOT IN ('done','complete','completed','cancelled','closed')
     ) AS x
   `);
-  const membershipRowsArr: Array<{ user_id: number; project_id: number }> = Array.isArray(projectMembershipRows)
-    ? (projectMembershipRows as any)
-    : ((projectMembershipRows as any).rows ?? []);
+  const membershipRowsArr = rowsOf<{ user_id: number; project_id: number }>(projectMembershipRows);
   for (const r of membershipRowsArr) {
     const uid = Number(r.user_id);
     const pid = Number(r.project_id);
@@ -205,26 +274,28 @@ export async function getCompanyTeamData(): Promise<CompanyTeamData> {
   const hasAnyActiveProjects = activeProjects.length > 0;
   const hasAnyAllocationData = allocationRows.some((r) => Number(r.nonNullAllocCount ?? 0) > 0);
 
-  const people: TeamPerson[] = allUsers.map((u: typeof allUsers[number]) => {
-    const alloc = allocationByUser.get(u.id);
-    const totalAlloc = alloc?.totalAllocation ?? null;
-    const hasAlloc = !!alloc && alloc.nonNullAllocCount > 0 && totalAlloc != null;
-    const labelMap = COMPANY_ROLE_LABELS as Record<string, string>;
-    const jobTitle = u.role && labelMap[u.role] ? labelMap[u.role] : null;
-    return {
+  const people = assembleTeamPeople({
+    users: allUsers.map((u) => ({
       id: u.id,
-      fullName: u.name,
-      initials: computeInitials(u.name),
-      jobTitle,
+      name: u.name,
+      role: u.role ?? null,
       location: u.location ?? null,
-      utilisationPct: hasAlloc ? Math.round(totalAlloc as number) : null,
-      activeProjectCount: hasAnyActiveProjects ? (activeProjectsByUser.get(u.id)?.size ?? 0) : null,
-      activeWorkItemCount: hasAnyActiveWorkItems ? (activeWorkItemsByUser.get(u.id) ?? 0) : null,
-      status: "active",
-    };
+      // Active = not soft-deleted. There's no separate `is_active` flag
+      // in this codebase; `deleted_at IS NULL` is the source of truth.
+      isActive: u.deletedAt == null,
+    })),
+    allocationByUser,
+    activeProjectsByUser,
+    activeWorkItemsByUser,
+    hasAnyActiveProjects,
+    hasAnyActiveWorkItems,
   });
 
-  const headcount = people.length > 0 ? people.length : null;
+  // Headcount excludes soft-deleted (`status === "inactive"`) users so the
+  // KPI mirrors the previous "active-only" semantics. The full list still
+  // includes inactive users with a status pill so admins can see them.
+  const activePeople = people.filter((p) => p.status === "active");
+  const headcount = activePeople.length > 0 ? activePeople.length : null;
   const utilPeople = people.filter((p) => p.utilisationPct != null);
   const avgUtilisationPct =
     utilPeople.length > 0

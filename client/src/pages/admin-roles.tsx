@@ -1174,11 +1174,12 @@ function GlobalUsersView() {
     mutationFn: async ({ id, location }: { id: number; location: string | null }) => {
       const res = await fetch(`/api/admin/users/${id}/location`, { method: "PATCH", headers: authHeaders(), credentials: "include", body: JSON.stringify({ location: location ?? "" }) });
       if (!res.ok) throw new Error("Failed to update location");
-      return { id, location, data: await parseJsonSafe<UserRow>(res) };
+      const data = await parseJsonSafe<{ location?: string | null }>(res);
+      return { id, location, data };
     },
     onSuccess: ({ id, location, data }) => {
-      const next = (data as any)?.location ?? location ?? null;
-      setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, location: next || null } : u)));
+      const next: string | null = (data?.location ?? location) || null;
+      setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, location: next } : u)));
       toast({ title: next ? "Location updated" : "Location cleared" });
     },
     onError: () => toast({ title: "Failed to update location", variant: "destructive" }),
