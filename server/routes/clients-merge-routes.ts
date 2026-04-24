@@ -456,9 +456,9 @@ export function registerClientsMergeRoutes(app: Express) {
           repointedCounts: result.counts,
           totalRepointed,
         });
-      } catch (err: any) {
+      } catch (err) {
         console.error("[clients-merge] merge error:", err);
-        res.status(500).json({ error: "Failed to merge clients", message: err?.message });
+        res.status(500).json({ error: "Failed to merge clients" });
       }
     },
   );

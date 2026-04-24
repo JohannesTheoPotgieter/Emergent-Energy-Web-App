@@ -1,0 +1,68 @@
+import { useState, useEffect } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useRenameItem } from "./use-documents";
+import type { DocumentRootScope, GraphItem } from "./types";
+
+interface Props {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  scope: DocumentRootScope;
+  rootId: number;
+  item: GraphItem | null;
+}
+
+export function RenameDialog({ open, onOpenChange, scope, rootId, item }: Props) {
+  const [name, setName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const rename = useRenameItem();
+
+  useEffect(() => {
+    if (open && item) setName(item.name);
+  }, [open, item]);
+
+  async function submit() {
+    if (!item) return;
+    setError(null);
+    try {
+      await rename.mutateAsync({ scope, rootId, itemId: item.id, name: name.trim() });
+      onOpenChange(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Rename failed");
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent data-testid="documents-rename-dialog">
+        <DialogHeader>
+          <DialogTitle>Rename {item?.isFolder ? "folder" : "file"}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-2">
+          <Label htmlFor="rename-name">New name</Label>
+          <Input
+            id="rename-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            autoFocus
+            maxLength={200}
+            data-testid="documents-rename-input"
+          />
+          {error && <p className="text-xs text-destructive">{error}</p>}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button
+            onClick={submit}
+            disabled={!name.trim() || rename.isPending}
+            data-testid="documents-rename-submit"
+          >
+            {rename.isPending ? "Renaming…" : "Rename"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

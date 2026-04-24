@@ -245,3 +245,242 @@ export function mockSharePointListItems(_siteId: string, _listId: string) {
     },
   ];
 }
+
+// ── Document Management (DM) mock hierarchy ─────────────────────────
+//
+// Single in-memory tree shared across every DM Graph mock. Drives:
+//   "drive-project-mock"  — project root for project id 1
+//   "drive-company-mock"  — global/company root (HR, Templates, Policies)
+//
+// `mockDm*` helpers below mutate this structure so the UI feels alive
+// on a fresh clone. Uploads/checkouts/renames are reflected back on
+// subsequent reads within the same process.
+
+interface MockItem {
+  id: string;
+  name: string;
+  parentId: string | null;
+  driveId: string;
+  isFolder: boolean;
+  size?: number;
+  lastModifiedDateTime: string;
+  lastModifiedBy: { displayName: string; email: string };
+  versions: { id: string; sizeBytes?: number; lastModifiedDateTime: string; notes?: string }[];
+  buffer?: Buffer;
+  contentType?: string;
+  webUrl?: string;
+  eTag?: string;
+  checkedOutByUserEmail?: string | null;
+}
+
+let _dmIdCounter = 1_000;
+function nextId(prefix: string): string {
+  _dmIdCounter += 1;
+  return `${prefix}-${_dmIdCounter}`;
+}
+
+function seedDmStore(): Map<string, MockItem> {
+  const store = new Map<string, MockItem>();
+  const now = new Date().toISOString();
+  const add = (item: Omit<MockItem, "versions">) => {
+    store.set(item.id, { ...item, versions: [] });
+  };
+
+  // Project tree ─ drive-project-mock
+  add({ id: "proj-root", name: "Sandton Tower Solar", parentId: null, driveId: "drive-project-mock", isFolder: true, lastModifiedDateTime: now, lastModifiedBy: { displayName: "Mock", email: "mock@ee.local" } });
+  add({ id: "proj-engineering", name: "Engineering", parentId: "proj-root", driveId: "drive-project-mock", isFolder: true, lastModifiedDateTime: now, lastModifiedBy: { displayName: "Mock", email: "mock@ee.local" } });
+  add({ id: "proj-contracts", name: "Contracts", parentId: "proj-root", driveId: "drive-project-mock", isFolder: true, lastModifiedDateTime: now, lastModifiedBy: { displayName: "Mock", email: "mock@ee.local" } });
+  add({ id: "proj-photos", name: "Photos", parentId: "proj-root", driveId: "drive-project-mock", isFolder: true, lastModifiedDateTime: now, lastModifiedBy: { displayName: "Mock", email: "mock@ee.local" } });
+  add({ id: "proj-client", name: "Client Docs", parentId: "proj-root", driveId: "drive-project-mock", isFolder: true, lastModifiedDateTime: now, lastModifiedBy: { displayName: "Mock", email: "mock@ee.local" } });
+  add({ id: "proj-internal", name: "Internal Docs", parentId: "proj-root", driveId: "drive-project-mock", isFolder: true, lastModifiedDateTime: now, lastModifiedBy: { displayName: "Mock", email: "mock@ee.local" } });
+  add({ id: "proj-eng-spec", name: "design-spec-v2.pdf", parentId: "proj-engineering", driveId: "drive-project-mock", isFolder: false, size: 123456, lastModifiedDateTime: now, lastModifiedBy: { displayName: "Engineer", email: "eng@mock.ee.local" }, buffer: Buffer.from("%PDF-1.4 mock design spec\n"), contentType: "application/pdf", webUrl: "https://mock.sharepoint.com/sites/ee/proj/Engineering/design-spec-v2.pdf" });
+  add({ id: "proj-contract", name: "signed-epc-contract.pdf", parentId: "proj-contracts", driveId: "drive-project-mock", isFolder: false, size: 89012, lastModifiedDateTime: now, lastModifiedBy: { displayName: "CCO", email: "cco@mock.ee.local" }, buffer: Buffer.from("%PDF-1.4 mock contract\n"), contentType: "application/pdf", webUrl: "https://mock.sharepoint.com/sites/ee/proj/Contracts/signed-epc-contract.pdf" });
+
+  // Company tree ─ drive-company-mock
+  add({ id: "co-root", name: "Company", parentId: null, driveId: "drive-company-mock", isFolder: true, lastModifiedDateTime: now, lastModifiedBy: { displayName: "Mock", email: "mock@ee.local" } });
+  add({ id: "co-hr", name: "HR", parentId: "co-root", driveId: "drive-company-mock", isFolder: true, lastModifiedDateTime: now, lastModifiedBy: { displayName: "Mock", email: "mock@ee.local" } });
+  add({ id: "co-templates", name: "Templates", parentId: "co-root", driveId: "drive-company-mock", isFolder: true, lastModifiedDateTime: now, lastModifiedBy: { displayName: "Mock", email: "mock@ee.local" } });
+  add({ id: "co-policies", name: "Policies", parentId: "co-root", driveId: "drive-company-mock", isFolder: true, lastModifiedDateTime: now, lastModifiedBy: { displayName: "Mock", email: "mock@ee.local" } });
+  add({ id: "co-hr-handbook", name: "employee-handbook.pdf", parentId: "co-hr", driveId: "drive-company-mock", isFolder: false, size: 201000, lastModifiedDateTime: now, lastModifiedBy: { displayName: "COO", email: "coo@mock.ee.local" }, buffer: Buffer.from("%PDF-1.4 mock handbook\n"), contentType: "application/pdf" });
+  add({ id: "co-templates-sla", name: "SLA-template.docx", parentId: "co-templates", driveId: "drive-company-mock", isFolder: false, size: 34120, lastModifiedDateTime: now, lastModifiedBy: { displayName: "CCO", email: "cco@mock.ee.local" }, buffer: Buffer.from("mock docx"), contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
+
+  return store;
+}
+
+const _dmStore = seedDmStore();
+
+interface DmGraphItem {
+  id: string;
+  name: string;
+  path: string;
+  isFolder: boolean;
+  size?: number;
+  lastModifiedDateTime?: string;
+  lastModifiedBy?: { displayName?: string; email?: string };
+  webUrl?: string;
+  eTag?: string;
+  checkedOutBy?: { displayName?: string; email?: string } | null;
+}
+
+function buildItemPath(item: MockItem): string {
+  const segments: string[] = [];
+  let cursor: MockItem | undefined = item;
+  while (cursor && cursor.parentId != null) {
+    segments.unshift(cursor.name);
+    cursor = _dmStore.get(cursor.parentId) ?? undefined;
+  }
+  return segments.join("/");
+}
+
+function asGraphItem(item: MockItem): DmGraphItem {
+  return {
+    id: item.id,
+    name: item.name,
+    path: buildItemPath(item),
+    isFolder: item.isFolder,
+    size: item.size,
+    lastModifiedDateTime: item.lastModifiedDateTime,
+    lastModifiedBy: item.lastModifiedBy,
+    webUrl: item.webUrl,
+    eTag: item.eTag,
+    checkedOutBy: item.checkedOutByUserEmail
+      ? { email: item.checkedOutByUserEmail }
+      : null,
+  };
+}
+
+function rootIdFor(driveId: string): string {
+  if (driveId === "drive-project-mock") return "proj-root";
+  if (driveId === "drive-company-mock") return "co-root";
+  // Unknown drive — still return something so tests get a stable tree.
+  return "proj-root";
+}
+
+export function mockListChildren(driveId: string, parentItemId: string | null): DmGraphItem[] {
+  const parent = parentItemId ?? rootIdFor(driveId);
+  const out: DmGraphItem[] = [];
+  for (const it of _dmStore.values()) {
+    if (it.driveId === driveId && it.parentId === parent) {
+      out.push(asGraphItem(it));
+    }
+  }
+  return out;
+}
+
+export function mockGetItem(driveId: string, itemId: string): DmGraphItem | null {
+  const it = _dmStore.get(itemId);
+  if (!it || it.driveId !== driveId) return null;
+  return asGraphItem(it);
+}
+
+export function mockDownloadBuffer(driveId: string, itemId: string): { buffer: Buffer; fileName: string; contentType: string } {
+  const it = _dmStore.get(itemId);
+  if (!it || it.driveId !== driveId || it.isFolder) {
+    throw new Error(`Mock item ${itemId} not found or is a folder.`);
+  }
+  return {
+    buffer: it.buffer ?? Buffer.from(""),
+    fileName: it.name,
+    contentType: it.contentType ?? "application/octet-stream",
+  };
+}
+
+export function mockListVersions(driveId: string, itemId: string): { id: string; sizeBytes?: number; lastModifiedDateTime?: string }[] {
+  const it = _dmStore.get(itemId);
+  if (!it || it.driveId !== driveId) return [];
+  return it.versions.map((v) => ({ id: v.id, sizeBytes: v.sizeBytes, lastModifiedDateTime: v.lastModifiedDateTime }));
+}
+
+export function mockUploadSmall(input: { driveId: string; parentItemId: string | null; fileName: string; body: Buffer }): DmGraphItem {
+  const parent = input.parentItemId ?? rootIdFor(input.driveId);
+  // Replace existing (same name + parent) to simulate "new version"
+  const existing = [..._dmStore.values()].find(
+    (i) => i.driveId === input.driveId && i.parentId === parent && i.name === input.fileName && !i.isFolder,
+  );
+  if (existing) {
+    const versionId = nextId("ver");
+    existing.versions.unshift({
+      id: versionId,
+      sizeBytes: existing.size,
+      lastModifiedDateTime: existing.lastModifiedDateTime,
+    });
+    existing.size = input.body.length;
+    existing.buffer = input.body;
+    existing.lastModifiedDateTime = new Date().toISOString();
+    return asGraphItem(existing);
+  }
+  const id = nextId("file");
+  const created: MockItem = {
+    id,
+    name: input.fileName,
+    parentId: parent,
+    driveId: input.driveId,
+    isFolder: false,
+    size: input.body.length,
+    lastModifiedDateTime: new Date().toISOString(),
+    lastModifiedBy: { displayName: "You", email: "you@mock.ee.local" },
+    versions: [],
+    buffer: input.body,
+    contentType: "application/octet-stream",
+  };
+  _dmStore.set(id, created);
+  return asGraphItem(created);
+}
+
+export function mockCreateFolder(input: { driveId: string; parentItemId: string | null; name: string }): DmGraphItem {
+  const parent = input.parentItemId ?? rootIdFor(input.driveId);
+  const clash = [..._dmStore.values()].find(
+    (i) => i.driveId === input.driveId && i.parentId === parent && i.name === input.name,
+  );
+  if (clash) {
+    const err = new Error(`Folder "${input.name}" already exists.`);
+    (err as Error & { status?: number }).status = 409;
+    throw err;
+  }
+  const id = nextId("folder");
+  const created: MockItem = {
+    id,
+    name: input.name,
+    parentId: parent,
+    driveId: input.driveId,
+    isFolder: true,
+    lastModifiedDateTime: new Date().toISOString(),
+    lastModifiedBy: { displayName: "You", email: "you@mock.ee.local" },
+    versions: [],
+  };
+  _dmStore.set(id, created);
+  return asGraphItem(created);
+}
+
+export function mockRenameItem(input: { driveId: string; itemId: string; newName: string }): DmGraphItem {
+  const it = _dmStore.get(input.itemId);
+  if (!it || it.driveId !== input.driveId) throw new Error(`Mock item ${input.itemId} not found.`);
+  it.name = input.newName;
+  it.lastModifiedDateTime = new Date().toISOString();
+  return asGraphItem(it);
+}
+
+export function mockCheckout(driveId: string, itemId: string): void {
+  const it = _dmStore.get(itemId);
+  if (!it || it.driveId !== driveId) throw new Error(`Mock item ${itemId} not found.`);
+  it.checkedOutByUserEmail = "you@mock.ee.local";
+}
+
+export function mockCheckin(driveId: string, itemId: string, _comment?: string): void {
+  const it = _dmStore.get(itemId);
+  if (!it || it.driveId !== driveId) throw new Error(`Mock item ${itemId} not found.`);
+  it.checkedOutByUserEmail = null;
+}
+
+export function mockDiscardCheckout(driveId: string, itemId: string): void {
+  mockCheckin(driveId, itemId);
+}
+
+export function mockRestoreVersion(driveId: string, itemId: string, versionId: string): void {
+  const it = _dmStore.get(itemId);
+  if (!it || it.driveId !== driveId) throw new Error(`Mock item ${itemId} not found.`);
+  const ver = it.versions.find((v) => v.id === versionId);
+  if (!ver) throw new Error(`Version ${versionId} not found.`);
+  it.size = ver.sizeBytes ?? it.size;
+  it.lastModifiedDateTime = new Date().toISOString();
+}

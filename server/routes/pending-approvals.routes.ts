@@ -26,8 +26,9 @@ export function registerPendingApprovalRoutes(app: Express) {
       const rows = await listPendingApprovals({ status, kind });
       const summary = await summarizePendingApprovals();
       res.json({ rows, summary });
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message ?? "Failed to list pending approvals" });
+    } catch (err) {
+      console.error("[pending-approvals] list failed:", err);
+      res.status(500).json({ error: "Failed to list pending approvals" });
     }
   });
 
@@ -51,8 +52,9 @@ export function registerPendingApprovalRoutes(app: Express) {
           changesJson: { kind: row.kind, appliedRecordId: row.appliedRecordId, applyError: row.applyError },
         });
         res.json(row);
-      } catch (err: any) {
-        res.status(400).json({ error: err?.message ?? "approve failed" });
+      } catch (err) {
+        console.error("[pending-approvals] approve failed:", err);
+        res.status(400).json({ error: "approve failed" });
       }
     },
   );
@@ -77,8 +79,9 @@ export function registerPendingApprovalRoutes(app: Express) {
           changesJson: { kind: row.kind, reason: row.rejectionReason },
         });
         res.json(row);
-      } catch (err: any) {
-        res.status(400).json({ error: err?.message ?? "reject failed" });
+      } catch (err) {
+        console.error("[pending-approvals] reject failed:", err);
+        res.status(400).json({ error: "reject failed" });
       }
     },
   );
