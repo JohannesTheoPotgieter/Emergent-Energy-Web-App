@@ -103,7 +103,7 @@ function SummaryCard({
   );
 }
 
-function PersonCard({ person }: { person: TeamPerson }) {
+export function PersonCard({ person }: { person: TeamPerson }) {
   return (
     <Card
       className="overflow-hidden hover:shadow-sm transition-shadow"
