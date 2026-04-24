@@ -39,10 +39,18 @@ export interface DeleteClientDialogProps {
   onDeleted?: () => void;
 }
 
+// Plain-language label for every key the DELETE 409 payload may
+// emit (keep in sync with NON_PROJECT_FK_TABLES + the special
+// `projects` key in server/routes/clients-merge-routes.ts so users
+// never see a raw snake_case table name in the blocker list).
 const PRETTY_BLOCKER_LABELS: Record<string, string> = {
   projects: "linked projects",
   opportunities: "open opportunities",
   engineering_tickets: "engineering tickets",
+  work_items: "work items",
+  sites: "linked sites",
+  quickbooks_customer_mappings: "QuickBooks customer links",
+  email_project_links: "email links",
 };
 
 export function DeleteClientDialog(props: DeleteClientDialogProps) {

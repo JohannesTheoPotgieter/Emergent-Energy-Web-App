@@ -1,19 +1,28 @@
 # App Route Inventory
 
-**Generated** 2026-04-20T06:31:50.465Z by `script/test-routes.ts`. Do not hand-edit — regenerate with `npm run test:routes`.
+**Generated** 2026-04-24T05:32:16.854Z by `script/test-routes.ts`. Do not hand-edit — regenerate with `npm run test:routes`.
 
 Source: `client/src/config/page-registry.ts`
 
-Total registered paths: 141
+Total registered paths: 162
 
 | Path | Title | Nav group | Permission |
 |------|-------|-----------|------------|
 | `/actions/launchpad` | — | — | work_items |
 | `/admin` | — | — | — |
+| `/admin-backfill` | — | — | — |
+| `/admin-pipedrive` | — | — | — |
+| `/admin-quickbooks` | — | — | — |
+| `/admin-recovery` | — | — | — |
+| `/admin-roles` | — | — | — |
+| `/admin-settings` | — | — | — |
+| `/admin-workflow-config` | — | — | — |
 | `/admin/activity-log` | — | SYSTEM | activity_log |
 | `/admin/control-center` | — | SYSTEM | admin |
 | `/admin/data-migration-status` | — | SYSTEM | admin |
 | `/admin/database-migration` | — | — | database_migration |
+| `/admin/document-types` | — | SYSTEM | admin_roles |
+| `/admin/email-linker-dev` | — | SYSTEM | admin_roles |
 | `/admin/eng-templates` | — | SYSTEM | admin |
 | `/admin/handover-health` | — | SYSTEM | handover |
 | `/admin/import-control-tower` | — | SYSTEM | admin |
@@ -30,9 +39,11 @@ Total registered paths: 141
 | `/admin/sharepoint-intake` | — | SYSTEM | admin |
 | `/admin/smart-import` | — | SYSTEM | smart_import |
 | `/admin/stage-lifecycle` | — | SYSTEM | stage_admin |
+| `/admin/work-item-linkage` | — | SYSTEM | admin |
 | `/admin/workflow-config` | — | SYSTEM | admin |
 | `/cashflow` | — | FINANCE | cashflow |
 | `/cashflow-forecast` | — | — | cashflow |
+| `/ceo` | — | MY_WORK | execution_board |
 | `/clients` | — | PROJECTS | pd_clients |
 | `/clients/:clientId` | — | — | pd_clients |
 | `/clients/:clientId/project/:projectId` | — | — | pd_clients |
@@ -44,6 +55,8 @@ Total registered paths: 141
 | `/commissioning-dashboard/:projectId` | — | — | commissioning |
 | `/company-overview` | — | PORTFOLIO | execution_board |
 | `/company-priorities` | — | — | — |
+| `/company/team` | — | PORTFOLIO | company_team |
+| `/coo` | — | MY_WORK | execution_board |
 | `/cos` | — | FINANCE | cos |
 | `/cos-control` | — | — | cos |
 | `/counterparties` | — | FINANCE | counterparties |
@@ -74,6 +87,7 @@ Total registered paths: 141
 | `/governance/financial-reviews` | — | PROJECT_MANAGEMENT | approvals |
 | `/handover` | — | PROJECT_MANAGEMENT | handover |
 | `/handover-control` | — | PROJECT_MANAGEMENT | handover |
+| `/handover/:projectId/live` | — | — | projects |
 | `/hse` | — | HSE | hse |
 | `/hse/compliance` | — | HSE | hse_compliance |
 | `/inbox` | — | MY_WORK | home |
@@ -104,6 +118,8 @@ Total registered paths: 141
 | `/pd/tickets` | — | — | pd_dashboard |
 | `/pd/tickets/:id` | — | — | pd_dashboard |
 | `/pd/tickets/create` | — | — | pd_dashboard |
+| `/pending-approvals` | — | SYSTEM | admin_roles |
+| `/phase-templates` | — | — | — |
 | `/pm-dashboard` | — | PROJECT_MANAGEMENT | pm_dashboard |
 | `/pm/approvals` | — | PROJECT_MANAGEMENT | approvals |
 | `/pm/deliverables` | — | — | deliverables |
@@ -125,10 +141,12 @@ Total registered paths: 141
 | `/project/:projectName/financial-linking` | — | PROJECT_MANAGEMENT | financial_linking |
 | `/project/:projectName/gate/:stageCode` | — | PROJECT_MANAGEMENT | stage_lifecycle |
 | `/projects` | — | PROJECT_MANAGEMENT | projects |
+| `/projects/:projectId/documents` | — | — | projects |
 | `/quality` | — | QUALITY | quality |
 | `/quality/dashboard` | — | — | quality |
 | `/quality/ncr/:id` | — | — | quality |
 | `/quality/ncrs` | — | — | quality |
+| `/quickbooks` | — | — | financials |
 | `/reports/center` | — | REPORTS | reports |
 | `/reports/engineering/monthly` | — | REPORTS | reports |
 | `/reports/engineering/monthly/:month/project/:projectId` | — | — | reports |
@@ -142,10 +160,13 @@ Total registered paths: 141
 | `/reports/programme` | — | REPORTS | reports |
 | `/revenue` | — | — | — |
 | `/revenue-tracker` | — | FINANCE | revenue_tracker |
+| `/settings` | — | SYSTEM | admin_roles |
 | `/sites` | — | PROJECTS | projects |
 | `/sseg` | — | — | — |
+| `/sseg-submissions` | — | PROJECT_MANAGEMENT | hse_sseg |
 | `/standups` | — | PROJECT_MANAGEMENT | standups |
 | `/subcontractor-dashboard` | — | FINANCE | subcontractors |
+| `/system-activity-log` | — | — | — |
 | `/teams/chats` | — | — | teams_chat |
 | `/training` | — | KNOWLEDGE | training |
 | `/weekly-reviews` | — | PROJECT_MANAGEMENT | weekly_review_wizard |
