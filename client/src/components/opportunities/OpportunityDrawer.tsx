@@ -20,7 +20,6 @@
 import { useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ENGINEERING_TICKET_STATUSES,
   getEngineeringTicketStatusLabel,
   getEngineeringTicketStatusBadgeClass,
   normalizeEngineeringTicketStatus,
@@ -30,12 +29,8 @@ import {
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
 import { Loader2, ExternalLink, Lock, Sparkles, Zap, ArrowRight, CheckCircle2, Building2, Inbox } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -133,13 +128,6 @@ interface WorkflowResponse {
   projectTasks?: ProjectTask[];
 }
 
-const PD_STATUSES = [...ENGINEERING_TICKET_STATUSES];
-const PD_PRIORITIES = ["Low", "Medium", "High", "Urgent"];
-const PD_REQUEST_TYPES = [
-  "Cost Proposal", "IFC Planning", "Construction Support",
-  "Commissioning", "Handover", "Compliance",
-];
-
 function fmtMoney(v: string | null, ccy: string | null): string {
   if (!v) return "—";
   const n = Number(v);
@@ -204,29 +192,9 @@ export function OpportunityDetailBody({ opportunityId, active, variant = "inline
     staleTime: 30_000,
   });
 
-  const [pdDraft, setPdDraft] = useState<Partial<PdBlock>>({});
   useEffect(() => {
-    setPdDraft({});
     setConvertOpen(false);
   }, [opportunityId]);
-
-  const patchPd = useMutation({
-    mutationFn: async (fields: Partial<PdBlock>) => {
-      const res = await apiRequest("PATCH", `/api/opportunities/${opportunityId}/pd`, fields);
-      const body = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(body?.error || `Save failed (${res.status})`);
-      return body;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/opportunities", opportunityId, "workflow"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/opportunities/working"] });
-      setPdDraft({});
-      toast({ title: "PD workflow updated" });
-    },
-    onError: (err: Error) => {
-      toast({ title: "Save failed", description: err.message, variant: "destructive" });
-    },
-  });
 
   const spawnTasks = useMutation({
     mutationFn: async () => {
@@ -242,8 +210,12 @@ export function OpportunityDetailBody({ opportunityId, active, variant = "inline
     onError: (err: Error) => toast({ title: "Spawn failed", description: err.message, variant: "destructive" }),
   });
 
-  const merged = data ? { ...data.pd, ...pdDraft } : null;
-  const hasUnsavedPd = Object.keys(pdDraft).length > 0;
+  // Drawer is read-only after the 2026-04-24 simplification — the
+  // editable "Internal readiness" section was removed (task #76), so
+  // `merged` is now just the server's PD snapshot. We keep the alias
+  // so the surrounding sections (header badges, activity preview,
+  // project-linked card, tickets fallback) read identically to before.
+  const merged = data ? data.pd : null;
   const isPipedrive = data?.crm.source === "pipedrive";
   const daysInStage = daysBetween(data?.crm.pipedriveStageChangedAt ?? data?.crm.pipedriveUpdatedAt ?? null);
 
@@ -261,7 +233,7 @@ export function OpportunityDetailBody({ opportunityId, active, variant = "inline
         <Inbox className="h-8 w-8 text-slate-300" />
         <p className="mt-3 text-sm font-medium text-slate-700">Select an opportunity</p>
         <p className="mt-1 max-w-xs text-xs text-slate-500">
-          Pick a deal from the list on the left to see its CRM details, internal readiness, PD tickets, and activity.
+          Pick a deal from the list on the left to see its CRM details, recent activity, and engineering tickets.
         </p>
       </div>
     );
@@ -360,120 +332,6 @@ export function OpportunityDetailBody({ opportunityId, active, variant = "inline
                 </dl>
               </section>
 
-              {/* === Internal readiness (editable PD workflow) === */}
-              <section className="rounded-lg border border-slate-200 bg-white shadow-sm" data-testid="section-pd">
-                <header className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-100">
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-700 flex items-center gap-1.5">
-                    <Sparkles className="h-3 w-3 text-emerald-600" /> Internal readiness
-                  </h3>
-                  {hasUnsavedPd && (
-                    <Button
-                      size="sm"
-                      className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700"
-                      onClick={() => patchPd.mutate(pdDraft)}
-                      disabled={patchPd.isPending}
-                      data-testid="btn-save-pd"
-                    >
-                      {patchPd.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
-                      Save changes
-                    </Button>
-                  )}
-                </header>
-
-                <div className="p-4 space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Request type">
-                    <Select
-                      value={merged.requestType}
-                      onValueChange={(v) => setPdDraft((p) => ({ ...p, requestType: v }))}
-                    >
-                      <SelectTrigger className="h-8 text-xs" data-testid="select-pd-request-type"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {PD_REQUEST_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                  <Field label="Priority">
-                    <Select
-                      value={merged.priority}
-                      onValueChange={(v) => setPdDraft((p) => ({ ...p, priority: v }))}
-                    >
-                      <SelectTrigger className="h-8 text-xs" data-testid="select-pd-priority"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {PD_PRIORITIES.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                  <Field label="Status">
-                    <Select
-                      value={merged.status}
-                      onValueChange={(v) => setPdDraft((p) => ({ ...p, status: v }))}
-                    >
-                      <SelectTrigger className="h-8 text-xs" data-testid="select-pd-status"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {PD_STATUSES.map((s) => (
-                          <SelectItem key={s} value={s}>{getEngineeringTicketStatusLabel(s)}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                  <Field label="Due date">
-                    <Input
-                      type="date"
-                      className="h-8 text-xs"
-                      value={merged.dueDate ?? ""}
-                      onChange={(e) => setPdDraft((p) => ({ ...p, dueDate: e.target.value || null }))}
-                      data-testid="input-pd-due-date"
-                    />
-                  </Field>
-                </div>
-
-                <Field label="Technical readiness">
-                  <ul className="divide-y divide-slate-100 rounded-md border border-slate-200 bg-slate-50/40 text-xs">
-                    {([
-                      ["billsOrTariffData", "Bills / tariff data"],
-                      ["meteringDataAvailable", "Metering data"],
-                      ["siteInspectionForm", "Site inspection done"],
-                      ["hseDiscussed", "HSE discussed"],
-                      ["batteriesNeeded", "Batteries needed"],
-                      ["roofReplacementNeeded", "Roof replacement"],
-                    ] as const).map(([key, label]) => {
-                      const checked = Boolean((merged as PdBlock)[key]);
-                      return (
-                        <li key={key} className="flex items-center justify-between gap-2 px-3 py-2">
-                          <label className="flex items-center gap-2 cursor-pointer min-w-0 flex-1">
-                            <input
-                              type="checkbox"
-                              className="h-3.5 w-3.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                              checked={checked}
-                              onChange={(e) => setPdDraft((p) => ({ ...p, [key]: e.target.checked }))}
-                              data-testid={`check-pd-${key}`}
-                            />
-                            <span className={checked ? "text-slate-700" : "text-slate-600"}>{label}</span>
-                          </label>
-                          <Badge
-                            variant="outline"
-                            className={`text-[10px] ${checked ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-white text-slate-500"}`}
-                          >
-                            {checked ? "Done" : "Pending"}
-                          </Badge>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </Field>
-
-                <Field label="PD comments">
-                  <Textarea
-                    className="text-xs min-h-[60px]"
-                    value={merged.comments ?? ""}
-                    onChange={(e) => setPdDraft((p) => ({ ...p, comments: e.target.value }))}
-                    data-testid="textarea-pd-comments"
-                  />
-                </Field>
-                </div>
-              </section>
-
               {/* === Activity card (presentation of CRM activity + PD comments preview) === */}
               <section className="rounded-lg border border-slate-200 bg-white shadow-sm" data-testid="section-activity">
                 <header className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-100">
@@ -524,12 +382,12 @@ export function OpportunityDetailBody({ opportunityId, active, variant = "inline
                 </div>
               </section>
 
-              {/* === Engineering task board / Open requests === */}
+              {/* === Engineering task board / Tickets === */}
               {(data.tickets ?? []).length > 0 ? (
                 <section className="rounded-lg border border-slate-200 bg-white shadow-sm" data-testid="section-engineering-task-board">
                   <header className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-100">
                     <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-700 flex items-center gap-1.5">
-                      <Zap className="h-3 w-3 text-emerald-600" /> Open requests
+                      <Zap className="h-3 w-3 text-emerald-600" /> Tickets
                     </h3>
                   </header>
                   <div className="p-4 space-y-3">
@@ -547,7 +405,7 @@ export function OpportunityDetailBody({ opportunityId, active, variant = "inline
                 <section className="rounded-lg border border-slate-200 bg-white shadow-sm" data-testid="section-tasks">
                   <header className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-100">
                     <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-700 flex items-center gap-1.5">
-                      <Zap className="h-3 w-3 text-emerald-600" /> Open requests
+                      <Zap className="h-3 w-3 text-emerald-600" /> Tickets
                     </h3>
                     {!merged.tasksSpawnedAt && merged.projectId && (
                       <Button
@@ -1166,7 +1024,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 // --- Convert wizard (small modal-in-drawer) ---
 
 function ConvertWizard({
-  opportunityId, defaultName, clientId, onClose, onConverted,
+  opportunityId, defaultName, clientId, defaultStage, onClose, onConverted,
 }: {
   opportunityId: number;
   defaultName: string;
