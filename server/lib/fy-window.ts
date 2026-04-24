@@ -40,11 +40,8 @@ export function getFyWindow(input?: { fy?: number | null; date?: Date }): FyWind
   const ref = input?.date ?? new Date();
   // Sep–Aug window. Month is 0-indexed, so >= 8 means Sep–Dec → next FY.
   const currentFY = ref.getMonth() >= 8 ? ref.getFullYear() + 1 : ref.getFullYear();
-  // Reject null / undefined / NaN / 0 / negative / fractional — match the
-  // historical `fyParam || currentFY` behaviour from /api/pd/reports (which
-  // treated 0 / NaN as falsy and fell back to the current FY) and additionally
-  // reject negative or fractional years that would produce a nonsensical
-  // window like "FY-3 (Sep '04 – Aug '03)".
+  // Accept only positive integer FY; everything else (null/NaN/0/negative
+  // /fractional) falls back to currentFY, matching the legacy `||` fallback.
   const fyCandidate = input?.fy;
   const fy = fyCandidate != null
     && Number.isFinite(fyCandidate)
