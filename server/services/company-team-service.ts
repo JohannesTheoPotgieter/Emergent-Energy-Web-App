@@ -51,6 +51,31 @@ function rowsOf<T>(result: unknown): T[] {
 }
 
 /**
+ * Pure mapping from raw signal flags to a `confidence` label. Extracted
+ * for unit testing — covers the architect's edge case where active
+ * projects exist but no user-project membership signals do (which would
+ * otherwise overstate "high" confidence even though every active-project
+ * count would render as 0).
+ */
+export function computeConfidence(input: {
+  hasAnyAllocationData: boolean;
+  hasAnyProjectMembershipSignals: boolean;
+  hasAnyActiveWorkItems: boolean;
+}): "high" | "partial" | "low" {
+  if (input.hasAnyAllocationData && input.hasAnyProjectMembershipSignals) {
+    return "high";
+  }
+  if (
+    input.hasAnyAllocationData ||
+    input.hasAnyProjectMembershipSignals ||
+    input.hasAnyActiveWorkItems
+  ) {
+    return "partial";
+  }
+  return "low";
+}
+
+/**
  * Pure mapping from raw aggregates to TeamPerson rows. Extracted for unit
  * testing — covers `status` derivation from `isActive`, mutual exclusivity
  * of `utilisationPct` vs `activeWorkItemCount`, and location passthrough.
@@ -328,14 +353,12 @@ export async function getCompanyTeamData(): Promise<CompanyTeamData> {
   }
   sourceNotes.push("Location is captured on user profiles (users.location); editable from Admin > Roles & Permissions > Users.");
 
-  let confidence: "high" | "partial" | "low";
-  if (hasAnyAllocationData && hasAnyActiveProjects) {
-    confidence = "high";
-  } else if (hasAnyAllocationData || hasAnyActiveProjects || hasAnyActiveWorkItems) {
-    confidence = "partial";
-  } else {
-    confidence = "low";
-  }
+  const hasAnyProjectMembershipSignals = activeProjectsByUser.size > 0;
+  const confidence = computeConfidence({
+    hasAnyAllocationData,
+    hasAnyProjectMembershipSignals,
+    hasAnyActiveWorkItems,
+  });
 
   return {
     summary: {

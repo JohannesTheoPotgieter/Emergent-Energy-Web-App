@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { assembleTeamPeople } from "../../../server/services/company-team-service";
+import {
+  assembleTeamPeople,
+  computeConfidence,
+} from "../../../server/services/company-team-service";
 
 function makeUser(overrides: { id: number; name?: string; role?: string | null; location?: string | null; isActive?: boolean }) {
   return {
@@ -129,5 +132,64 @@ describe("assembleTeamPeople (company-team-service pure mapper)", () => {
       hasAnyActiveWorkItems: false,
     });
     expect(out[0].utilisationPct).toBe(67);
+  });
+});
+
+describe("computeConfidence (signal-presence rule)", () => {
+  it("returns 'high' only when allocation AND project membership signals exist", () => {
+    expect(
+      computeConfidence({
+        hasAnyAllocationData: true,
+        hasAnyProjectMembershipSignals: true,
+        hasAnyActiveWorkItems: true,
+      }),
+    ).toBe("high");
+  });
+
+  it("does NOT return 'high' when allocation exists but no user-project signals (architect edge case)", () => {
+    // This is the case where active projects exist but nobody is mapped to
+    // any of them — the active-project tile would render 0 for everyone,
+    // so claiming "high" confidence would be a lie. Must be 'partial'.
+    expect(
+      computeConfidence({
+        hasAnyAllocationData: true,
+        hasAnyProjectMembershipSignals: false,
+        hasAnyActiveWorkItems: true,
+      }),
+    ).toBe("partial");
+  });
+
+  it("returns 'partial' when exactly one signal is present", () => {
+    expect(
+      computeConfidence({
+        hasAnyAllocationData: true,
+        hasAnyProjectMembershipSignals: false,
+        hasAnyActiveWorkItems: false,
+      }),
+    ).toBe("partial");
+    expect(
+      computeConfidence({
+        hasAnyAllocationData: false,
+        hasAnyProjectMembershipSignals: true,
+        hasAnyActiveWorkItems: false,
+      }),
+    ).toBe("partial");
+    expect(
+      computeConfidence({
+        hasAnyAllocationData: false,
+        hasAnyProjectMembershipSignals: false,
+        hasAnyActiveWorkItems: true,
+      }),
+    ).toBe("partial");
+  });
+
+  it("returns 'low' when no signals are present", () => {
+    expect(
+      computeConfidence({
+        hasAnyAllocationData: false,
+        hasAnyProjectMembershipSignals: false,
+        hasAnyActiveWorkItems: false,
+      }),
+    ).toBe("low");
   });
 });
