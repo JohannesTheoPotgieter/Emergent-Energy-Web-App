@@ -536,9 +536,14 @@ export class OpportunitiesRepository {
 
     // Read-only shadow lookup. We DO NOT auto-create here — engineering
     // tickets are only ever spawned by an explicit user action (the
-    // convert / "Spawn Cost Proposal" CTA). If no shadow row exists yet,
-    // `shadow` stays null and the drawer renders the empty state with
-    // the spawn CTA visible.
+    // convert / "Spawn Cost Proposal" CTA). When no shadow row exists
+    // yet, `shadow` stays null, the drawer header shows the
+    // "No engineering ticket" pill, the spawn-from-template button is
+    // hidden, the Tickets section shows its standard "No PD tickets
+    // yet" empty state, and the Convert-to-Project CTA below remains
+    // available so the user can move the opportunity into delivery.
+    // The `pd: shadow ?? null` coalesce on the response builder below
+    // is the JSON-contract half of this contract (Task #83).
     const [shadow] = await db
       .select()
       .from(engineeringTickets)
