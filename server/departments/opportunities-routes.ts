@@ -21,6 +21,26 @@ import { buildOpportunityMappingPlan } from "../lib/opportunity-mapping-plan";
 import { buildCustomComments, buildSamePhaseDuplicateWarning, buildTemplateTicketDrafts } from "../lib/opportunity-engineering-ticket-flow";
 import { opportunitiesRepo } from "../repositories/opportunities-repository";
 import { ENGINEERING_TICKET_STATUSES } from "@shared/engineering-ticket-status";
+import { workItems } from "@shared/schema/tasks";
+
+/**
+ * Map a pd_ticket priority value (the create-engineering-tickets schema
+ * accepts "Critical" | "High" | "Medium" | "Low") onto the canonical
+ * work_items priority set ("Low" | "Med" | "High" | "Urgent"). Falls back
+ * to "Med" for unknown values so the engineering kanban card always
+ * renders a chip rather than a blank.
+ *
+ * Critical -> Urgent because the engineering board has no "Critical" lane;
+ * Urgent is the highest priority on that surface.
+ */
+function normalizeWorkItemPriority(raw: unknown): string {
+  if (typeof raw !== "string") return "Med";
+  const trimmed = raw.trim();
+  if (trimmed === "Medium") return "Med";
+  if (trimmed === "Critical") return "Urgent";
+  if (["Low", "Med", "High", "Urgent"].includes(trimmed)) return trimmed;
+  return "Med";
+}
 
 // Validation for user-driven opportunity create/update. Intentionally
 // narrower than the raw table schema:
@@ -1254,12 +1274,41 @@ router.post("/api/opportunities/:id/create-engineering-tickets", requireAuth, re
     }
 
     // --- Insert all tickets inside a single transaction ---
+    // Each pd_ticket also spawns a sibling work_items row (workstream='ENG')
+    // linked back via work_items.engineering_ticket_id. Without this, tickets
+    // born on the Opportunity drawer never surface on the Engineering Task
+    // Board (which reads exclusively from work_items WHERE workstream='ENG').
+    // The migration 0032_backfill_work_items_from_engineering_tickets.sql
+    // closes the same gap for tickets created before this code shipped.
     const createdTickets = await db.transaction(async (tx: typeof db) => {
       const results: CreatedTicket[] = [];
       for (const values of ticketValues) {
         const { _templateItemId, _templateId, _templateName, _templateVersion, _templatePhase, ...insertValues } = values;
         const ticket = await opportunitiesRepo.insertPdTicket(tx, insertValues);
         results.push(ticket);
+
+        // Spawn the engineering work_items row in the same transaction so
+        // the two surfaces stay in sync. requireAuth above guarantees
+        // userId is set; the cast satisfies the not-null created_by FK.
+        if (userId == null) {
+          throw new Error("authenticated user id required to spawn engineering work item");
+        }
+        await tx.insert(workItems).values({
+          workstream: "ENG",
+          source: "SYSTEM",
+          type: "task",
+          title: String(insertValues.projectSiteName ?? "Engineering ticket"),
+          description: (insertValues.comments as string | null | undefined) ?? null,
+          status: "to_do",
+          priority: normalizeWorkItemPriority(insertValues.priority),
+          phase: (insertValues.requestType as string | undefined) ?? null,
+          endDate: (insertValues.dueDate as string | undefined) || null,
+          projectId: (insertValues.projectId as number | undefined) ?? null,
+          clientId: (insertValues.clientId as number | undefined) ?? null,
+          ownerUserId: null,
+          engineeringTicketId: ticket.id,
+          createdBy: userId,
+        });
       }
       return results;
     });
@@ -1281,6 +1330,21 @@ router.post("/api/opportunities/:id/create-engineering-tickets", requireAuth, re
           ...(isTemplate ? { templateId: values._templateId, templateName: values._templateName, templateVersion: values._templateVersion, templateItemId: values._templateItemId } : {}),
           duplicateWarning: warnings.length > 0,
           traceability: "opportunity+client+project",
+        },
+      });
+      // Lineage audit for the spawned engineering work_item — closes the
+      // gap the architect flagged where the work_items insert had no
+      // dedicated audit trail.
+      logAuditFromReq(req, {
+        entityType: "work_item",
+        entityId: String(ticket.id),
+        action: "spawn_from_engineering_ticket",
+        changesJson: {
+          engineeringTicketId: ticket.id,
+          opportunityId,
+          projectId: parsed.projectId,
+          workstream: "ENG",
+          source: "SYSTEM",
         },
       });
     }
