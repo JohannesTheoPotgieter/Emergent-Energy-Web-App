@@ -26,6 +26,7 @@ type TeamPerson = {
   location: string | null;
   utilisationPct: number | null;
   activeProjectCount: number | null;
+  activeWorkItemCount: number | null;
   status: string;
 };
 
@@ -178,16 +179,26 @@ function PersonCard({ person }: { person: TeamPerson }) {
           </div>
           <div>
             <div className="text-[10px] uppercase text-muted-foreground tracking-wide">
-              Utilisation
+              {person.utilisationPct == null && person.activeWorkItemCount != null
+                ? "Active Items"
+                : "Utilisation"}
             </div>
             <div
               className={`text-sm font-semibold ${utilisationTone(person.utilisationPct)}`}
               data-testid={`text-person-utilisation-${person.id}`}
             >
-              {person.utilisationPct == null ? (
-                <span className="text-xs italic font-normal text-muted-foreground">{NA}</span>
-              ) : (
+              {person.utilisationPct != null ? (
                 `${person.utilisationPct}%`
+              ) : person.activeWorkItemCount != null ? (
+                <span
+                  className="text-foreground"
+                  data-testid={`text-person-workitems-${person.id}`}
+                  title="No allocation_pct recorded; showing open work item count instead"
+                >
+                  {person.activeWorkItemCount.toLocaleString()}
+                </span>
+              ) : (
+                <span className="text-xs italic font-normal text-muted-foreground">{NA}</span>
               )}
             </div>
           </div>

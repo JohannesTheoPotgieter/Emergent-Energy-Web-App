@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AdminPageShell, AdminQueryState } from "@/components/admin/admin-shell";
 import { Badge } from "@/components/ui/badge";
@@ -1066,6 +1066,55 @@ function RolesControlCenter() {
   );
 }
 
+function UserLocationField({
+  initialValue,
+  onSave,
+  testId,
+}: {
+  initialValue: string;
+  onSave: (value: string) => void;
+  testId: string;
+}) {
+  const [value, setValue] = useState<string>(initialValue);
+  const lastCommittedRef = useRef<string>(initialValue);
+  useEffect(() => { setValue(initialValue); lastCommittedRef.current = initialValue; }, [initialValue]);
+  const dirty = (value ?? "").trim() !== (initialValue ?? "").trim();
+  const commit = () => {
+    const next = (value ?? "").trim();
+    const last = (lastCommittedRef.current ?? "").trim();
+    if (next === last) return;
+    lastCommittedRef.current = value;
+    onSave(value);
+  };
+  return (
+    <div className="flex items-center gap-2">
+      <Input
+        value={value}
+        maxLength={200}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") { e.preventDefault(); commit(); (e.target as HTMLInputElement).blur(); }
+          if (e.key === "Escape") { setValue(initialValue); (e.target as HTMLInputElement).blur(); }
+        }}
+        placeholder="e.g. Cape Town"
+        className="h-9 text-sm"
+        data-testid={testId}
+      />
+      <Button
+        variant="outline"
+        size="sm"
+        className="gap-1.5 text-xs h-9"
+        disabled={!dirty}
+        onClick={commit}
+        data-testid={`${testId}-save`}
+      >
+        <Save className="h-3.5 w-3.5" /> Save
+      </Button>
+    </div>
+  );
+}
+
 function GlobalUsersView() {
   const { toast } = useToast();
   const [users, setUsers] = useState<UserRow[]>([]);
@@ -1120,6 +1169,21 @@ function GlobalUsersView() {
     onError: () => toast({ title: "Failed to update department", variant: "destructive" }),
   });
   const updateDepartment = (id: number, department: string) => updateDepartmentMutation.mutate({ id, department });
+
+  const updateLocationMutation = useMutation({
+    mutationFn: async ({ id, location }: { id: number; location: string | null }) => {
+      const res = await fetch(`/api/admin/users/${id}/location`, { method: "PATCH", headers: authHeaders(), credentials: "include", body: JSON.stringify({ location: location ?? "" }) });
+      if (!res.ok) throw new Error("Failed to update location");
+      return { id, location, data: await parseJsonSafe<UserRow>(res) };
+    },
+    onSuccess: ({ id, location, data }) => {
+      const next = (data as any)?.location ?? location ?? null;
+      setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, location: next || null } : u)));
+      toast({ title: next ? "Location updated" : "Location cleared" });
+    },
+    onError: () => toast({ title: "Failed to update location", variant: "destructive" }),
+  });
+  const updateLocation = (id: number, location: string | null) => updateLocationMutation.mutate({ id, location });
 
   const createUserMutation = useMutation({
     mutationFn: async (form: typeof createForm) => {
@@ -1273,6 +1337,17 @@ function GlobalUsersView() {
                           searchPlaceholder="Search departments..."
                           data-testid={`select-department-${u.id}`}
                         />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <Label className="text-xs font-medium text-gray-600 mb-1.5 block">Location</Label>
+                        <UserLocationField
+                          initialValue={u.location ?? ""}
+                          onSave={(val) => updateLocation(u.id, val.trim() ? val.trim() : null)}
+                          testId={`input-location-${u.id}`}
+                        />
+                        <p className="text-[11px] text-muted-foreground mt-1">
+                          Free-text office or region (e.g. "Cape Town", "Johannesburg", "Remote — South Africa"). Surfaced on the Team page.
+                        </p>
                       </div>
                     </div>
 
