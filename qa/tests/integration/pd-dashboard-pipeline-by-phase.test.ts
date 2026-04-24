@@ -63,6 +63,14 @@ describe("PD dashboard pipeline-by-phase (Task #77)", () => {
     }
   });
 
+  it("byPhase is sorted by canonical lifecycle display order (S01 < S02 < S03 < … < _UNSCOPED)", async () => {
+    const res = await apiRequest("GET", "/api/pd/dashboard/pipeline-by-phase", undefined, token);
+    expect(res.status).toBe(200);
+    const numbers = res.data.byPhase.map((p: any) => p.displayNumber);
+    const sortedAscending = [...numbers].sort((a, b) => a - b);
+    expect(numbers).toEqual(sortedAscending);
+  });
+
   it("excludes won/lost opportunities from rows (active sales pipeline only)", async () => {
     const res = await apiRequest("GET", "/api/pd/dashboard/pipeline-by-phase", undefined, token);
     expect(res.status).toBe(200);
