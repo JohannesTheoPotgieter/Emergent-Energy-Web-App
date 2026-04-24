@@ -282,12 +282,23 @@ export const projectStageRequirements = pgTable("project_stage_requirements", {
   // "template now at version M".
   sourceTemplateId: integer("source_template_id").references(() => stageChecklistTemplates.id, { onDelete: "set null" }),
   templateVersionAtHydrate: integer("template_version_at_hydrate"),
+  // Task #84: Gate auto-evaluator output. Persisted so the UI can render
+  // "Detected from <source>" badges and so transition snapshots can record
+  // which items were auto vs manual. Manual `status` continues to be the
+  // user's source of override — auto_* fields never write to `status`.
+  autoStatus: text("auto_status"),                        // RequirementStatus or null
+  autoSourceLabel: text("auto_source_label"),             // "Pipedrive deal #4123 — signed 12 Apr 2026"
+  autoSourceRef: text("auto_source_ref"),                 // "opportunity:4123" (machine-readable)
+  autoEvidenceUrl: text("auto_evidence_url"),             // deep-link URL
+  autoConfidence: text("auto_confidence"),                // 'high' | 'medium'
+  autoComputedAt: timestamp("auto_computed_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   stageInstanceIdx: index("psr_stage_instance_idx").on(table.stageInstanceId),
   departmentIdx: index("psr_department_idx").on(table.department),
   statusIdx: index("psr_status_idx").on(table.status),
+  autoStatusIdx: index("psr_auto_status_idx").on(table.autoStatus),
 }));
 
 export const insertProjectStageRequirementSchema = createInsertSchema(projectStageRequirements).omit({ id: true, createdAt: true, updatedAt: true } as any);
