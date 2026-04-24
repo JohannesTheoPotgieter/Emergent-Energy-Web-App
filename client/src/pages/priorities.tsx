@@ -360,28 +360,28 @@ export default function PrioritiesPage() {
           </TabsContent>
         )}
 
-        {isAdmin && (
-          <TabsContent value="company">
-            <PriorityListSection
-              priorities={filteredCompany}
-              isLoading={companyQuery.isLoading}
-              isError={companyQuery.isError}
-              error={companyQuery.error as Error}
-              refetch={companyQuery.refetch}
-              showReopen={showClosed}
-              onReopen={(id) => reopenMutation.mutate(id)}
-              selectable
-              selectedIds={bulkSelected}
-              onToggleSelect={toggleBulkSelect}
-              emptyMessage="No company priorities yet"
-              emptyAction={
+        <TabsContent value="company">
+          <PriorityListSection
+            priorities={filteredCompany}
+            isLoading={companyQuery.isLoading}
+            isError={companyQuery.isError}
+            error={companyQuery.error as Error}
+            refetch={companyQuery.refetch}
+            showReopen={showClosed && (isAdmin || isDeptHead)}
+            onReopen={(id) => reopenMutation.mutate(id)}
+            selectable={isAdmin}
+            selectedIds={bulkSelected}
+            onToggleSelect={toggleBulkSelect}
+            emptyMessage="No company priorities yet"
+            emptyAction={
+              (isAdmin || isDeptHead) ? (
                 <Button size="sm" className="mt-3" onClick={() => setCreateDialogOpen(true)}>
                   <Plus className="w-4 h-4 mr-1" /> Create Priority
                 </Button>
-              }
-            />
-          </TabsContent>
-        )}
+              ) : undefined
+            }
+          />
+        </TabsContent>
       </Tabs>
 
       <CreatePriorityDialog

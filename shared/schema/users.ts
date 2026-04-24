@@ -755,7 +755,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'company_priorities',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'HSE_MANAGER', 'SSEG_MANAGER'],
+    view_roles: [...ALL_STAFF_ROLES],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
