@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useProjectStages, useInitializeStages, useAdvanceToStage, type StageDashboardPayload } from "@/hooks/use-stage-lifecycle";
 import { STAGE_SEQUENCE } from "@shared/utils/stage-state-machine";
+import { PHASES } from "@shared/phases";
 import { useToast } from "@/hooks/use-toast";
 import {
   Clock,
@@ -47,17 +48,22 @@ const STATUS_LABELS: Record<string, string> = {
   BLOCKED: "Blocked",
 };
 
+// Stage labels are derived from the canonical lifecycle in
+// shared/phases.ts (single source of truth). Sequential phases are
+// prefixed with their displayNumber so the panel reads as "1. First
+// Assessment" / "10. Compliance Handover", and terminal branches
+// (Hold/Done) are shown without an ordinal. Legacy deprecated codes
+// (S04_PD_PM_HANDOVER, S05_FINANCIAL_REVIEW) are added afterwards
+// so historical project rows still render a recognisable label.
 const STAGE_LABELS: Record<string, string> = {
-  S01_FIRST_ASSESSMENT: "1. First Assessment",
-  S02_DESIGN_COST_PROPOSAL: "2. Design & Cost Proposal",
-  S03_SIGNATURE_FINANCIAL_CLOSE: "3. Financial Close",
-  S04_PD_PM_HANDOVER: "4. PD → PM Handover",
-  S05_FINANCIAL_REVIEW: "5. Financial Review",
-  S06_CONSTRUCTION: "6. Construction",
-  S07_COMMISSIONING: "7. Commissioning",
-  S08_OM_HANDOVER: "8. O&M Handover",
-  S09_CLIENT_HANDOVER: "9. Client Handover",
-  S10_POST_HANDOVER_REVIEW: "10. Post-Handover Review",
+  ...Object.fromEntries(
+    PHASES.map((p) => [
+      p.code,
+      p.isSequential && p.displayNumber !== null ? `${p.displayNumber}. ${p.label}` : p.label,
+    ]),
+  ),
+  S04_PD_PM_HANDOVER: "PD → PM Handover (legacy)",
+  S05_FINANCIAL_REVIEW: "Financial Review (legacy)",
 };
 
 const ORDERED_STAGE_CODES = Object.entries(STAGE_SEQUENCE)
@@ -116,11 +122,29 @@ export function CriticalControlPanel({ projectId, onViewGate, isAdmin = false }:
   const statusLabel = STATUS_LABELS[currentStage.stageStatus] || currentStage.stageStatus;
   const statusColor = STATUS_COLORS[currentStage.stageStatus] || "bg-gray-100 text-gray-700";
 
-  const currentSeq = STAGE_SEQUENCE[currentStage.stageCode as keyof typeof STAGE_SEQUENCE] || 1;
-  const advanceTargets = ORDERED_STAGE_CODES.filter(code => {
-    const seq = STAGE_SEQUENCE[code as keyof typeof STAGE_SEQUENCE];
-    return seq > currentSeq;
-  });
+  // Terminal-aware sequence resolution.
+  // STAGE_SEQUENCE assigns 0 to S_HOLD and S_DONE; the prior code used
+  // `|| 1` which silently coerced terminal stages to sequence 1, so the
+  // "Skip to Stage" dropdown would offer S02..S10 to a project on Done
+  // (violating the terminal contract from Task #81). We use `??` so 0
+  // remains 0, and explicitly branch terminal stages so:
+  //   - S_DONE projects show no advance targets at all (Done is
+  //     permanent — resume requires a separate Hold→Resume action).
+  //   - S_HOLD projects also show no advance targets here; they should
+  //     use the dedicated /stages/resume endpoint to restore previous_phase.
+  // Any future "advance from Hold" UI must call resumeProjectFromHold,
+  // not the generic advance-to-stage path.
+  const isTerminalStage = currentStage.stageCode === "S_HOLD" || currentStage.stageCode === "S_DONE";
+  const currentSeq = STAGE_SEQUENCE[currentStage.stageCode as keyof typeof STAGE_SEQUENCE] ?? -1;
+  const advanceTargets = isTerminalStage
+    ? []
+    : ORDERED_STAGE_CODES.filter(code => {
+        const seq = STAGE_SEQUENCE[code as keyof typeof STAGE_SEQUENCE];
+        // Skip terminal codes from the advance dropdown — they go through
+        // the dedicated Hold/Done endpoints, never through advance-to.
+        if (code === "S_HOLD" || code === "S_DONE") return false;
+        return seq > currentSeq;
+      });
 
   const handleAdvance = () => {
     if (!selectedTarget) return;

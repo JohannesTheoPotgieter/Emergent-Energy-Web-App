@@ -279,7 +279,7 @@ export async function parseTrackerFile(buffer: Buffer, fileName: string): Promis
     const VALID_PHASES = [
       "DLP", "Financial Close", "Planning", "Construction", "QA",
       "Handover", "Commercial Close Out", "Commercial Close out",
-      "Compliance Handover", "Hold", "TBC"
+      "Compliance Handover", "3 Months Post HO Review", "Hold", "Done", "TBC"
     ];
     const phaseStr = rawPhase ? String(rawPhase).trim() : null;
     const phase = phaseStr && VALID_PHASES.some(vp => vp.toLowerCase() === phaseStr.toLowerCase()) ? phaseStr : null;

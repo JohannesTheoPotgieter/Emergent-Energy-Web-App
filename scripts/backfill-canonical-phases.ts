@@ -48,15 +48,19 @@ interface ProjectRow {
 }
 
 // Off-lifecycle labels that may sit in `phase` or `execution_phase` but are
-// NOT phases — they live on project_status / in_dlp instead. We treat the
-// phase column as blank when it holds one of these and infer from history /
-// stages / suffix instead.
+// NOT *sequential* phases. Hold and Closed have first-class terminal phases
+// (S_HOLD / S_DONE) since 0030_canonical_lifecycle_phases_v2.sql, but for the
+// purposes of this backfill we still treat them as "off-lifecycle" so the
+// previous sequential phase can be inferred and preserved.
 const OFF_LIFECYCLE_LABELS = new Set([
   "hold",
   "on hold",
   "on-hold",
+  "parked",
   "internal",
   "closed",
+  "done",
+  "gone",
   "tbc",
   "dlp",
 ]);
@@ -97,7 +101,11 @@ function pickHighestStage(rows: StageRow[], statuses: string[]): CanonicalPhase 
   for (const r of matching) {
     const ph = PHASE_BY_CODE[r.stage_code];
     if (!ph) continue;
-    if (!best || ph.displayNumber > best.displayNumber) best = ph;
+    // Skip terminal Hold/Done — those have null displayNumber and are not
+    // part of the sequential cycle. We want to recover the sequential
+    // phase the project was actually in, not its terminal branch.
+    if (ph.displayNumber == null || best?.displayNumber == null && ph.displayNumber == null) continue;
+    if (!best || (best.displayNumber == null) || (ph.displayNumber != null && best.displayNumber != null && ph.displayNumber > best.displayNumber)) best = ph;
   }
   return best;
 }
@@ -258,11 +266,11 @@ async function main() {
       // a flag and does NOT change project_status.
       const phaseLc = (p.phase ?? "").trim().toLowerCase();
       let targetStatus: string | null = null;
-      if (phaseLc === "hold" || phaseLc === "on hold" || phaseLc === "on-hold") {
+      if (phaseLc === "hold" || phaseLc === "on hold" || phaseLc === "on-hold" || phaseLc === "parked") {
         targetStatus = "hold";
       } else if (phaseLc === "internal") {
         targetStatus = "internal";
-      } else if (phaseLc === "closed") {
+      } else if (phaseLc === "closed" || phaseLc === "done" || phaseLc === "gone") {
         targetStatus = "closed";
       } else if (phaseLc === "tbc") {
         targetStatus = "tbc";

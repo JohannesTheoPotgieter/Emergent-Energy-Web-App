@@ -5,18 +5,14 @@ import { Button } from "@/components/ui/button";
 import { useLocation } from "wouter";
 import { CheckCircle, XCircle, MessageSquare, UserPlus, Clock, AlertTriangle } from "lucide-react";
 import { PageSkeleton } from "@/components/ui/page-states";
+import { PHASES } from "@shared/phases";
 
+// Stage labels derive from the canonical lifecycle (shared/phases.ts).
+// Deprecated codes are appended for historical row rendering only.
 const STAGE_LABELS: Record<string, string> = {
-  S01_FIRST_ASSESSMENT: "First Assessment",
-  S02_DESIGN_COST_PROPOSAL: "Design & Cost",
-  S03_SIGNATURE_FINANCIAL_CLOSE: "Financial Close",
+  ...Object.fromEntries(PHASES.map((p) => [p.code, p.label])),
   S04_PD_PM_HANDOVER: "PD-PM Handover",
   S05_FINANCIAL_REVIEW: "Financial Review",
-  S06_CONSTRUCTION: "Construction",
-  S07_COMMISSIONING: "Commissioning",
-  S08_OM_HANDOVER: "O&M Handover",
-  S09_CLIENT_HANDOVER: "Client Handover",
-  S10_POST_HANDOVER_REVIEW: "Post-Handover",
 };
 
 const TYPE_LABELS: Record<string, string> = {

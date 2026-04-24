@@ -18,7 +18,7 @@ import {
 
 const STAGE_LABELS: Record<string, string> = {
   S01_FIRST_ASSESSMENT: "First Assessment",
-  S02_DESIGN_COST_PROPOSAL: "Design & Cost Proposal",
+  S02_DESIGN_COST_PROPOSAL: "Cost Proposal & Design",
   S03_SIGNATURE_FINANCIAL_CLOSE: "Signature & Financial Close",
   S04_PD_PM_HANDOVER: "PD-PM Handover",
   S04_PLANNING: "Planning",
@@ -28,7 +28,7 @@ const STAGE_LABELS: Record<string, string> = {
   S08_OM_HANDOVER: "O&M Handover",
   S09_CLIENT_HANDOVER: "Client Handover",
   S9B_COMPLIANCE_HANDOVER: "Compliance Handover",
-  S10_POST_HANDOVER_REVIEW: "Post-Handover Review",
+  S10_POST_HANDOVER_REVIEW: "3 Months Post HO Review",
 };
 
 function gateStatusColor(status: string | null) {

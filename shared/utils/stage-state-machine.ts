@@ -5,7 +5,7 @@
 // Every gate is a soft gate — admin can always override.
 
 import type { StageStatus, RequirementStatus, StageCode } from "../schema/stage-lifecycle";
-import { ACTIVE_STAGE_CODES, DEPRECATED_STAGE_CODES } from "../schema/stage-lifecycle";
+import { SEQUENTIAL_STAGE_CODES, DEPRECATED_STAGE_CODES, TERMINAL_STAGE_CODES } from "../schema/stage-lifecycle";
 
 // Valid state transitions (non-admin) — C6 canonical lowercase_underscore
 export const VALID_STAGE_TRANSITIONS: Record<StageStatus, StageStatus[]> = {
@@ -137,10 +137,26 @@ export function computeDaysInStage(startedAt: Date | string | null): number {
 /**
  * Stage sequence map for ordering.
  *
- * Deprecated stages (S04, S05) are kept in this map so legacy data
- * still resolves to a number, but they share the sequence of their
- * replacement stage. New iteration / next-stage logic uses
- * ACTIVE_STAGE_SEQUENCE which excludes them.
+ * Deprecated stages (S04 PD-PM Handover, S05 Financial Review) are kept
+ * in this map so legacy data still resolves to a number, but they share
+ * the sequence of their replacement stage. Terminal branch stages
+ * (S_HOLD, S_DONE) are NOT sequential — they get a sentinel value (0)
+ * so any caller that accidentally uses this for next-stage maths gets a
+ * value that obviously doesn't fit between two real stages. Use
+ * SEQUENTIAL_STAGE_CODES / getNextStageCode() for ordered traversal.
+ *
+ * Display order (after the 2026-04-24 swap):
+ *   1 First Assessment
+ *   2 Cost Proposal & Design
+ *   3 Financial Close
+ *   4 Planning
+ *   5 Construction
+ *   6 Commissioning
+ *   7 O&M Handover
+ *   8 Client Handover
+ *   9 3 Months Post HO Review
+ *  10 Compliance Handover
+ *   - Hold / Done — terminal branch, no sequence number
  */
 export const STAGE_SEQUENCE: Record<StageCode, number> = {
   S01_FIRST_ASSESSMENT: 1,
@@ -153,24 +169,29 @@ export const STAGE_SEQUENCE: Record<StageCode, number> = {
   S07_COMMISSIONING: 6,
   S08_OM_HANDOVER: 7,
   S09_CLIENT_HANDOVER: 8,
-  S9B_COMPLIANCE_HANDOVER: 9,
-  S10_POST_HANDOVER_REVIEW: 10,
+  S10_POST_HANDOVER_REVIEW: 9,
+  S9B_COMPLIANCE_HANDOVER: 10,
+  S_HOLD: 0,                          // terminal branch — not sequential
+  S_DONE: 0,                          // terminal branch — not sequential
 };
 
 /**
- * Active-only sequence (8 stages after the S03/S04 + S02/S05 merge).
+ * Active sequential stage list (10 stages after the S03/S04 + S02/S05
+ * merge, with Hold/Done excluded as terminal branches).
  */
-export const ACTIVE_STAGE_SEQUENCE: ReadonlyArray<StageCode> = ACTIVE_STAGE_CODES;
+export const ACTIVE_STAGE_SEQUENCE: ReadonlyArray<StageCode> = SEQUENTIAL_STAGE_CODES;
 
 /**
- * Get the next ACTIVE stage code given the current one. Deprecated
+ * Get the next sequential stage code given the current one. Deprecated
  * stages are first translated to their active replacement before the
  * lookup, so a stale reference to S04 still finds the correct next
- * stage (S06_CONSTRUCTION).
+ * stage (S06_CONSTRUCTION). Terminal stages (S_HOLD, S_DONE) have no
+ * "next" — they are off-flow branches and always return null.
  *
- * Returns null if at the final stage.
+ * Returns null if at the final stage or for any terminal/unknown code.
  */
 export function getNextStageCode(current: StageCode): StageCode | null {
+  if (TERMINAL_STAGE_CODES.has(current)) return null;
   const active: StageCode = DEPRECATED_STAGE_CODES.has(current)
     ? // S04_PD_PM_HANDOVER -> S03, S05_FINANCIAL_REVIEW -> S02. Inlined
       // to avoid pulling stage-lifecycle helpers into this file.

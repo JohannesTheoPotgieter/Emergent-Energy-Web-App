@@ -78,7 +78,7 @@ export function Stage2DesignCostProposal({ projectId, isAdmin }: Stage2Props) {
       <StageWorkspaceShell
         projectId={projectId}
         stageCode={STAGE_CODE}
-        stageName="Stage 2: Design & Cost Proposal"
+        stageName="Stage 2: Cost Proposal & Design"
         stage={stageDetail.stage}
         isAdmin={isAdmin}
         actions={
@@ -105,7 +105,7 @@ export function Stage2DesignCostProposal({ projectId, isAdmin }: Stage2Props) {
             <StageDataForm
               projectId={projectId}
               stageCode={STAGE_CODE}
-              title="Design & Cost Proposal Data"
+              title="Cost Proposal & Design Data"
               fields={FIELDS}
               data={stageData}
             />

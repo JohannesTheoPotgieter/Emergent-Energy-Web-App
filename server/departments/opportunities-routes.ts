@@ -330,7 +330,10 @@ router.get("/api/pd/dashboard/pipeline-by-phase", requireAuth, requirePermission
     type PhaseAgg = {
       code: string;
       label: string;
-      displayNumber: number;
+      // displayNumber is null for terminal branch phases (Hold/Done) since
+      // 0030_canonical_lifecycle_phases_v2.sql; "_UNSCOPED" uses 99 as a
+      // sentinel so unmapped rows always sort to the end.
+      displayNumber: number | null;
       count: number;
       totalKwp: number;
       totalValue: number;
@@ -364,7 +367,7 @@ router.get("/api/pd/dashboard/pipeline-by-phase", requireAuth, requirePermission
         ...p,
         sharePct: totalKwp > 0 ? (p.totalKwp / totalKwp) * 100 : 0,
       }))
-      .sort((a, b) => a.displayNumber - b.displayNumber);
+      .sort((a, b) => (a.displayNumber ?? 99) - (b.displayNumber ?? 99));
 
     res.json({
       generatedAt: new Date().toISOString(),
@@ -580,7 +583,7 @@ router.get("/api/pd/dashboard", requireAuth, requirePermission("pd_dashboard", "
               -- (2) fallback: request_type → canonical phase
               CASE
                 WHEN request_type ILIKE 'First Assessment%' THEN 'S01_FIRST_ASSESSMENT'
-                WHEN request_type IN ('Cost Proposal', 'CP - PVSOL', 'Feasibility Study', 'Sizing Rational Request', 'Design & Cost Proposal') THEN 'S02_DESIGN_COST_PROPOSAL'
+                WHEN request_type IN ('Cost Proposal', 'CP - PVSOL', 'Feasibility Study', 'Sizing Rational Request', 'Design & Cost Proposal', 'Cost Proposal & Design') THEN 'S02_DESIGN_COST_PROPOSAL'
                 WHEN request_type IN ('Site visit Report', 'Data Analysis Request', 'Meter installation') THEN 'S01_FIRST_ASSESSMENT'
                 ELSE NULL
               END,

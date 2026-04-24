@@ -242,6 +242,11 @@ export const projectExecutionState = pgTable("project_execution_state", {
   phaseUpdatedAt: timestamp("phase_updated_at"),
   phaseUpdatedByUserId: integer("phase_updated_by_user_id").references(() => users.id, { onDelete: "set null" }),
   phaseNotes: text("phase_notes"),
+  // Stores the prior sequential lifecycle phase when a project is parked
+  // in the terminal "Hold" branch. Cleared when the project resumes back
+  // into the sequential cycle. Added 2026-04-24 by migration
+  // 0030_canonical_lifecycle_phases_v2.sql.
+  previousPhase: text("previous_phase"),
 
   // Key dates (planned) — migrated from text to date in 20260331_convert_project_dates_to_date.sql
   pdHandoverDate: date("pd_handover_date"),
@@ -494,47 +499,64 @@ export type ProjectEditableFields = typeof projectEditableFields.$inferSelect;
  * DLP lives on `project_info.in_dlp` and forces RAG=red during handover.
  */
 export const LIFECYCLE_PHASES = [
-  // Canonical 10:
+  // Canonical 10 (sequential, in display order):
   "First Assessment",
-  "Design & Cost Proposal",
+  "Cost Proposal & Design",
   "Financial Close",
   "Planning",
   "Construction",
   "Commissioning",
   "O&M Handover",
   "Client Handover",
+  "3 Months Post HO Review",
   "Compliance Handover",
-  "Post-Handover Review",
+  // Terminal branches (not sequential):
+  "Hold",
+  "Done",
   // Legacy labels — DEPRECATED, kept for compile-time tolerance only:
+  "Design & Cost Proposal",
+  "Post-Handover Review",
   "Cost Proposal",
   "QA",
   "Handover",
   "Commercial Close Out",
   "DLP",
   "Internal",
-  "Hold",
   "Closed",
   "TBC",
 ] as const;
 export type LifecyclePhase = typeof LIFECYCLE_PHASES[number];
 
 /**
- * The canonical 10-phase cycle as a string-literal tuple. Use this
- * (and not LIFECYCLE_PHASES) in new code that needs the active list.
+ * The canonical 10-phase sequential cycle as a string-literal tuple.
+ * Use this (and not LIFECYCLE_PHASES) in new code that needs the active
+ * sequential list. Terminal Hold/Done are exposed via TERMINAL_LIFECYCLE_PHASES.
  */
 export const CANONICAL_LIFECYCLE_PHASES = [
   "First Assessment",
-  "Design & Cost Proposal",
+  "Cost Proposal & Design",
   "Financial Close",
   "Planning",
   "Construction",
   "Commissioning",
   "O&M Handover",
   "Client Handover",
+  "3 Months Post HO Review",
   "Compliance Handover",
-  "Post-Handover Review",
 ] as const satisfies ReadonlyArray<LifecyclePhase>;
 export type CanonicalLifecyclePhase = typeof CANONICAL_LIFECYCLE_PHASES[number];
+
+/**
+ * Terminal "branch" phases — Hold (resumable) and Done (permanent).
+ * Rendered as separate columns next to the sequential cycle on lifecycle
+ * boards. Hold preserves the prior sequential phase via
+ * project_info.previous_phase so the project can resume where it left off.
+ */
+export const TERMINAL_LIFECYCLE_PHASES = [
+  "Hold",
+  "Done",
+] as const satisfies ReadonlyArray<LifecyclePhase>;
+export type TerminalLifecyclePhase = typeof TERMINAL_LIFECYCLE_PHASES[number];
 
 export const PROJECT_PHASES = [
   ...LIFECYCLE_PHASES,
@@ -551,35 +573,39 @@ export type ProjectPhase = typeof PROJECT_PHASES[number];
 
 export const PROJECT_PHASE_LABELS: Record<string, string> = {
   // Canonical labels (preferred)
-  "First Assessment":       "First Assessment",
-  "Design & Cost Proposal": "Design & Cost Proposal",
-  "Financial Close":        "Financial Close",
-  "Planning":               "Planning",
-  "Construction":           "Construction",
-  "Commissioning":          "Commissioning",
-  "O&M Handover":           "O&M Handover",
-  "Client Handover":        "Client Handover",
-  "Compliance Handover":    "Compliance Handover",
-  "Post-Handover Review":   "Post-Handover Review",
+  "First Assessment":         "First Assessment",
+  "Cost Proposal & Design":   "Cost Proposal & Design",
+  "Financial Close":          "Financial Close",
+  "Planning":                 "Planning",
+  "Construction":             "Construction",
+  "Commissioning":            "Commissioning",
+  "O&M Handover":             "O&M Handover",
+  "Client Handover":          "Client Handover",
+  "3 Months Post HO Review":  "3 Months Post HO Review",
+  "Compliance Handover":      "Compliance Handover",
+  "Hold":                     "Hold",
+  "Done":                     "Done",
   // Legacy labels normalised to canonical display
-  "Cost Proposal":        "Design & Cost Proposal",
-  "QA":                   "Commissioning",
-  "Handover":             "O&M Handover",
-  "Commercial Close Out": "Post-Handover Review",
-  "DLP":                  "O&M Handover",  // surfaced as in_dlp badge
-  "Internal":             "Internal",      // surfaced via project_status badge
-  "Hold":                 "On Hold",       // surfaced via project_status badge
-  "Closed":               "Closed",        // surfaced via project_status badge
-  "TBC":                  "TBC",           // surfaced via project_status badge
+  "Design & Cost Proposal": "Cost Proposal & Design",
+  "Cost Proposal":          "Cost Proposal & Design",
+  "Post-Handover Review":   "3 Months Post HO Review",
+  "QA":                     "Commissioning",
+  "Handover":               "O&M Handover",
+  "Commercial Close Out":   "3 Months Post HO Review",
+  "DLP":                    "O&M Handover",  // surfaced as in_dlp badge
+  "Internal":               "Internal",      // surfaced via project_status badge
+  "Closed":                 "Done",          // canonical terminal label
+  "Gone":                   "Done",
+  "TBC":                    "TBC",           // surfaced via project_status badge
   // Legacy P-codes from import era
   P0_FIRST_ASSESSMENT:                "First Assessment",
-  P1_COST_PROPOSAL_DESIGN:            "Design & Cost Proposal",
+  P1_COST_PROPOSAL_DESIGN:            "Cost Proposal & Design",
   P2_PD_PM_HANDOVER:                  "Financial Close",
   P3_DETAILED_DESIGN_PROC_RELEASE:    "Planning",
   P4_CONSTRUCTION_INSTALLATION:       "Construction",
   P5_COMMISSIONING_TESTING:           "Commissioning",
   P6_HANDOVER_CLIENT_MATRIARCH:       "O&M Handover",
-  P7_CLOSEOUT_POSTMORTEM:             "Post-Handover Review",
+  P7_CLOSEOUT_POSTMORTEM:             "3 Months Post HO Review",
 };
 
 export const LEGACY_TO_LIFECYCLE: Record<string, LifecyclePhase> = {
@@ -635,20 +661,22 @@ export const PHASE_TEXT_TO_ENUM: Record<string, ProjectPhase> = {
 
 export const PHASE_TO_ENG_STAGES: Record<string, string[]> = {
   // Canonical labels:
-  "First Assessment":       ["First Assessment"],
-  "Design & Cost Proposal": ["Cost Proposal"],
-  "Financial Close":        ["Cost Proposal"],
-  "Planning":               ["IFC Planning"],
-  "Construction":           ["IFC Planning", "Construction Support"],
-  "Commissioning":          ["Handover Pack"],
-  "O&M Handover":           ["Handover Pack"],
-  "Client Handover":        ["Handover Pack"],
-  "Compliance Handover":    ["Handover Pack"],
-  "Post-Handover Review":   ["Handover Pack"],
+  "First Assessment":         ["First Assessment"],
+  "Cost Proposal & Design":   ["Cost Proposal"],
+  "Financial Close":          ["Cost Proposal"],
+  "Planning":                 ["IFC Planning"],
+  "Construction":             ["IFC Planning", "Construction Support"],
+  "Commissioning":            ["Handover Pack"],
+  "O&M Handover":             ["Handover Pack"],
+  "Client Handover":          ["Handover Pack"],
+  "3 Months Post HO Review":  ["Handover Pack"],
+  "Compliance Handover":      ["Handover Pack"],
   // Legacy labels (kept for tolerant lookup)
-  "Cost Proposal":        ["Cost Proposal"],
-  "QA":                   ["Handover Pack"],
-  "Handover":             ["Handover Pack"],
+  "Design & Cost Proposal": ["Cost Proposal"],
+  "Cost Proposal":          ["Cost Proposal"],
+  "Post-Handover Review":   ["Handover Pack"],
+  "QA":                     ["Handover Pack"],
+  "Handover":               ["Handover Pack"],
 };
 
 // ===================== PROJECT DEVELOPMENT (PD) =====================

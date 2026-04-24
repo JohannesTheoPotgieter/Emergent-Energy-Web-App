@@ -29,23 +29,27 @@ import { formatDistanceToNow } from "date-fns";
  * handover / approval — no dead landings.
  */
 
-const PRE_EXEC_STAGES = [
-  { code: "S01_FIRST_ASSESSMENT", label: "First Assessment", tint: "bg-sky-50 border-sky-200" },
-  { code: "S02_DESIGN_COST_PROPOSAL", label: "Cost Proposal & Design", tint: "bg-violet-50 border-violet-200" },
-  { code: "S03_SIGNATURE_FINANCIAL_CLOSE", label: "Signature & Financial Close", tint: "bg-emerald-50 border-emerald-200" },
-] as const;
+import { SEQUENTIAL_PHASES } from "@shared/phases";
 
-const EXECUTION_STAGES = [
-  { code: "S04_PD_PM_HANDOVER", label: "PD→PM Handover" },
-  { code: "S04_PLANNING", label: "Planning" },
-  { code: "S05_FINANCIAL_REVIEW", label: "Financial Review" },
-  { code: "S06_CONSTRUCTION", label: "Construction" },
-  { code: "S07_COMMISSIONING", label: "Commissioning" },
-  { code: "S08_OM_HANDOVER", label: "O&M Handover" },
-  { code: "S09_CLIENT_HANDOVER", label: "Client Handover" },
-  { code: "S9B_COMPLIANCE_HANDOVER", label: "Compliance" },
-  { code: "S10_POST_HANDOVER_REVIEW", label: "Post-Handover" },
-] as const;
+// Pre-execution = displayNumber 1..3 (First Assessment, Cost Proposal &
+// Design, Financial Close). The CEO home tints these distinctively, so
+// we keep the colour map local but pull labels & order from the
+// canonical lifecycle to avoid drift with shared/phases.ts.
+const PRE_EXEC_TINTS: Record<string, string> = {
+  S01_FIRST_ASSESSMENT: "bg-sky-50 border-sky-200",
+  S02_DESIGN_COST_PROPOSAL: "bg-violet-50 border-violet-200",
+  S03_SIGNATURE_FINANCIAL_CLOSE: "bg-emerald-50 border-emerald-200",
+};
+const PRE_EXEC_STAGES = SEQUENTIAL_PHASES
+  .filter((p) => p.displayNumber !== null && p.displayNumber <= 3)
+  .map((p) => ({ code: p.code, label: p.label, tint: PRE_EXEC_TINTS[p.code] ?? "" }));
+
+// Execution = displayNumber 4..10. Order is driven entirely by the
+// canonical SEQUENTIAL_PHASES list, which guarantees the post-Task #81
+// ordering (3 Months Post HO Review at #9, Compliance Handover at #10).
+const EXECUTION_STAGES = SEQUENTIAL_PHASES
+  .filter((p) => p.displayNumber !== null && p.displayNumber >= 4)
+  .map((p) => ({ code: p.code, label: p.label }));
 
 export default function CeoHome() {
   const { data: gatesData, isLoading, error } = useGatesPipeline();

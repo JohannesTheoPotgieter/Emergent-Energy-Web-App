@@ -17,7 +17,12 @@ import { projectInfo } from "./projects";
 
 // All stage codes that have ever existed. Kept stable for back-references
 // in historical data (stage_gate_evidence_snapshots, project_stage_decisions
-// for closed projects, etc.). New code should iterate ACTIVE_STAGE_CODES.
+// for closed projects, etc.). New code should iterate SEQUENTIAL_STAGE_CODES
+// (10 ordered phases) or ACTIVE_STAGE_CODES (sequential + terminal branches).
+//
+// Terminal branch codes (S_HOLD, S_DONE) were added 2026-04-24 by migration
+// 0030_canonical_lifecycle_phases_v2.sql to render Hold (resumable) and
+// Done (permanent) as first-class phases alongside the sequential cycle.
 export const STAGE_CODES = [
   'S01_FIRST_ASSESSMENT',
   'S02_DESIGN_COST_PROPOSAL',
@@ -29,10 +34,23 @@ export const STAGE_CODES = [
   'S07_COMMISSIONING',
   'S08_OM_HANDOVER',
   'S09_CLIENT_HANDOVER',
-  'S9B_COMPLIANCE_HANDOVER',
   'S10_POST_HANDOVER_REVIEW',
+  'S9B_COMPLIANCE_HANDOVER',
+  'S_HOLD',
+  'S_DONE',
 ] as const;
 export type StageCode = typeof STAGE_CODES[number];
+
+/**
+ * Terminal "branch" stage codes — Hold (resumable) and Done (permanent).
+ * These are not part of the sequential lifecycle order but are first-class
+ * stages in the database so that lifecycle boards, kanban renderers, and
+ * audit trails can treat them uniformly.
+ */
+export const TERMINAL_STAGE_CODES = new Set<StageCode>([
+  'S_HOLD',
+  'S_DONE',
+]);
 
 /**
  * Stage codes that are deprecated and merged into another stage. Kept in
@@ -59,11 +77,22 @@ export const DEPRECATED_STAGE_REPLACEMENTS: Record<string, StageCode> = {
 };
 
 /**
- * The 8 active stages — what every new code path should iterate.
- * Order matches STAGE_CODES so sequence-based logic still works.
+ * The active stages (10 sequential + 2 terminal branches) — what every
+ * new code path should iterate. Order matches STAGE_CODES so sequence-
+ * based logic still works.
  */
 export const ACTIVE_STAGE_CODES = STAGE_CODES.filter(
   (c) => !DEPRECATED_STAGE_CODES.has(c),
+) as readonly StageCode[];
+
+/**
+ * The 10 sequential lifecycle stages in display order — excludes deprecated
+ * codes AND terminal branch codes (S_HOLD, S_DONE). Use this for any
+ * progress stepper, ordered list, or "what is the next stage" calculation
+ * so terminal phases don't appear inline with the sequence.
+ */
+export const SEQUENTIAL_STAGE_CODES = STAGE_CODES.filter(
+  (c) => !DEPRECATED_STAGE_CODES.has(c) && !TERMINAL_STAGE_CODES.has(c),
 ) as readonly StageCode[];
 
 /**

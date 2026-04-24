@@ -53,7 +53,13 @@ import { apiRequest, invalidateDashboardQueries } from "@/lib/queryClient";
 import LatestUpdateEditor from "@/components/LatestUpdateEditor";
 import { useAuth } from "@/hooks/use-auth";
 import type { PlatformProjectSummaryContract } from "@shared/platform-contracts";
-import { PROJECT_PHASES, PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
+import {
+  PROJECT_PHASES,
+  PROJECT_PHASE_LABELS,
+  CANONICAL_LIFECYCLE_PHASES,
+  TERMINAL_LIFECYCLE_PHASES,
+  type ProjectPhase,
+} from "@shared/schema";
 import {
   Dialog,
   DialogContent,
@@ -817,19 +823,12 @@ function FinancialCloseCell({
   );
 }
 
-const EXECUTION_PHASES = [
-  "First Assessment",
-  "Cost Proposal",
-  "DLP",
-  "Financial Close",
-  "Planning",
-  "Construction",
-  "QA",
-  "Handover",
-  "Commercial Close Out",
-  "Compliance Handover",
-  "Hold",
-  "Gone",
+// Execution-phase dropdown options. Sourced from the canonical lifecycle
+// phases in shared/schema/projects.ts (CANONICAL_LIFECYCLE_PHASES + the
+// terminal Hold/Done branches) so the UI cannot drift from the model.
+const EXECUTION_PHASES: readonly string[] = [
+  ...CANONICAL_LIFECYCLE_PHASES,
+  ...TERMINAL_LIFECYCLE_PHASES,
 ];
 
 interface SavedView {
@@ -1487,9 +1486,14 @@ export default function ProjectsSummary() {
     return pmUsers.map(u => u.name).sort();
   }, [pmUsers]);
 
-  const PHASE_ORDER = [
-    "DLP", "Financial Close", "Planning", "Construction", "QA",
-    "Handover", "Commercial Close Out", "Compliance Handover", "Hold", "Gone"
+  // Phase sort order — canonical sequential phases first, then terminal
+  // Hold/Done. "Gone" is a legacy archival status appended at the end so
+  // historical rows still sort consistently. Sourced from
+  // shared/schema/projects.ts to prevent drift from the canonical model.
+  const PHASE_ORDER: readonly string[] = [
+    ...CANONICAL_LIFECYCLE_PHASES,
+    ...TERMINAL_LIFECYCLE_PHASES,
+    "Gone",
   ];
   const uniquePhases = useMemo(() => {
     const phases = new Set<string>();
