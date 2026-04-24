@@ -23,6 +23,11 @@ export const users = pgTable("users", {
   name: text("name").notNull(),
   role: text("role").notNull().default('member'),
   department: text("department"),
+  // Free-text office / region location (e.g. "Cape Town", "Johannesburg",
+  // "Remote — South Africa"). Surfaced on the Company Team page; editable
+  // by admins from the Roles & Permissions > Users tab. Added 2026-04-24
+  // by migration 0033_users_location.sql for task #97.
+  location: text("location"),
   microsoft_id: text("microsoft_id").unique(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   deletedAt: timestamp("deleted_at"),

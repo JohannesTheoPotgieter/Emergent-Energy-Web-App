@@ -602,6 +602,7 @@ export function registerRoleManagementRoutes(app: Express) {
         email: users.email,
         role: users.role,
         department: users.department,
+        location: users.location,
       }).from(users);
       const mapped = allUsers.map((u: any) => ({ ...u, role: mapRole(u.role) }));
       res.json(mapped);
@@ -701,6 +702,47 @@ export function registerRoleManagementRoutes(app: Express) {
           userName: updated.name,
           previousDepartment: userBefore.department,
           newDepartment: department,
+        },
+      });
+
+      res.json(updated);
+    } catch (err: any) {
+      throw err;
+    }
+  });
+
+  const locationBodySchema = z.object({
+    location: z.union([z.string(), z.null()]).optional(),
+  });
+  app.patch("/api/admin/users/:userId/location", jwtAuth, requireAuth, requireAdmin, validateBody(locationBodySchema), async (req: Request, res: Response) => {
+    try {
+      const userId = parseInt(req.params.userId as string);
+      if (!Number.isFinite(userId)) return res.status(400).json({ error: "Invalid user id" });
+      const body = req.body as { location?: string | null };
+      const raw = typeof body.location === "string" ? body.location.trim() : "";
+      const location = raw ? raw.slice(0, 200) : null;
+
+      const [userBefore] = await db
+        .select({ id: users.id, name: users.name, location: users.location })
+        .from(users)
+        .where(and(eq(users.id, userId), isNull(users.deletedAt)));
+      if (!userBefore) return res.status(404).json({ error: "User not found" });
+
+      const [updated] = await db
+        .update(users)
+        .set({ location })
+        .where(and(eq(users.id, userId), isNull(users.deletedAt)))
+        .returning({ id: users.id, name: users.name, email: users.email, role: users.role, department: users.department, location: users.location });
+
+      logAuditFromReq(req, {
+        entityType: "user",
+        action: "location_change",
+        entityId: String(userId),
+        changesJson: {
+          description: "User location changed",
+          userName: updated.name,
+          previousLocation: userBefore.location,
+          newLocation: location,
         },
       });
 
