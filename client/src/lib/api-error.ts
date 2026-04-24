@@ -13,6 +13,15 @@ export class ApiError extends Error {
   public code: ErrorCode;
   public status: number;
   public details?: Record<string, string>;
+  /**
+   * Full parsed JSON body of the failed response, when available.
+   * Routes that return structured non-`details` payloads (e.g. the
+   * client-delete blocker counts under `body.blockers`) can still
+   * surface that data to the caller without changing the canonical
+   * `details` shape (which is typed as `Record<string, string>` for
+   * field-level validation errors).
+   */
+  public body?: unknown;
   public retryable: boolean;
 
   constructor(opts: {
@@ -20,12 +29,14 @@ export class ApiError extends Error {
     status: number;
     message: string;
     details?: Record<string, string>;
+    body?: unknown;
   }) {
     super(opts.message);
     this.name = "ApiError";
     this.code = opts.code;
     this.status = opts.status;
     this.details = opts.details;
+    this.body = opts.body;
     this.retryable = opts.status >= 500 || opts.code === "NETWORK_ERROR" || opts.code === "TIMEOUT";
   }
 
@@ -67,6 +78,7 @@ export function parseApiError(response: Response, body: any): ApiError {
     status: response.status,
     message,
     details,
+    body,
   });
 }
 

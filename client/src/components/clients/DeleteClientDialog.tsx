@@ -20,6 +20,8 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
+import { ApiError } from "@/lib/api-error";
 
 interface ClientLite {
   id: number;
@@ -51,23 +53,23 @@ export function DeleteClientDialog(props: DeleteClientDialogProps) {
 
   const deleteMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`/api/pd/clients/${client!.id}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
-      if (res.status === 409) {
-        const body = await res.json().catch(() => ({}));
-        const err = new Error(body.error || "Delete blocked") as Error & {
-          blockers?: Record<string, number>;
-        };
-        err.blockers = body.blockers ?? {};
+      // `apiRequest` adds bearer + CSRF and throws an ApiError on non-2xx,
+      // so the 409-blocker payload arrives via the thrown error's body
+      // instead of a manual res.status branch.
+      try {
+        const res = await apiRequest("DELETE", `/api/pd/clients/${client!.id}`);
+        return res.json();
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 409) {
+          const body = (err.body ?? {}) as { error?: string; blockers?: Record<string, number> };
+          const wrapped = new Error(body.error || "Delete blocked") as Error & {
+            blockers?: Record<string, number>;
+          };
+          wrapped.blockers = body.blockers ?? {};
+          throw wrapped;
+        }
         throw err;
       }
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({ error: res.statusText }));
-        throw new Error(body.error || res.statusText);
-      }
-      return res.json();
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["clients"] });
