@@ -96,4 +96,78 @@ describe("PD dashboard pipeline-by-phase (Task #77)", () => {
     const sumOfPhaseCounts = res.data.byPhase.reduce((s: number, p: any) => s + p.count, 0);
     expect(sumOfPhaseCounts).toBe(res.data.rows.length);
   });
+
+  it("excludes soft-deleted opportunities (tombstoned via opportunities.deleted_at)", async () => {
+    const { Pool } = await import("pg");
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    let victimId: number | null = null;
+    try {
+      const before = await apiRequest("GET", "/api/pd/dashboard/pipeline-by-phase", undefined, token);
+      expect(before.status).toBe(200);
+      if (before.data.rows.length === 0) {
+        console.warn("[skip] no active opportunities to exercise soft-delete exclusion");
+        return;
+      }
+      victimId = before.data.rows[0].id as number;
+
+      // Tombstone the victim and verify it disappears from the response.
+      await pool.query(`UPDATE opportunities SET deleted_at = now() WHERE id = $1`, [victimId]);
+      const after = await apiRequest("GET", "/api/pd/dashboard/pipeline-by-phase", undefined, token);
+      expect(after.status).toBe(200);
+      const stillThere = after.data.rows.some((r: any) => r.id === victimId);
+      expect(stillThere).toBe(false);
+      // Per-phase counts should also exclude the victim.
+      expect(after.data.totals.count).toBe(before.data.totals.count - 1);
+    } finally {
+      if (victimId != null) {
+        await pool.query(`UPDATE opportunities SET deleted_at = NULL WHERE id = $1`, [victimId]).catch(() => {});
+      }
+      await pool.end().catch(() => {});
+    }
+  });
+
+  it("excludes opportunities tied to a soft-deleted client", async () => {
+    const { Pool } = await import("pg");
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    let victimClientId: number | null = null;
+    let victimOppId: number | null = null;
+    try {
+      // Find an active opportunity that has a client linked.
+      const candidate = await pool.query(
+        `SELECT o.id AS opp_id, o.client_id
+           FROM opportunities o
+           JOIN clients c ON c.id = o.client_id AND c.deleted_at IS NULL
+          WHERE o.deleted_at IS NULL
+            AND o.client_id IS NOT NULL
+            AND POSITION('won'  IN LOWER(COALESCE(o.stage,  ''))) = 0
+            AND POSITION('lost' IN LOWER(COALESCE(o.stage,  ''))) = 0
+            AND POSITION('won'  IN LOWER(COALESCE(o.status, ''))) = 0
+            AND POSITION('lost' IN LOWER(COALESCE(o.status, ''))) = 0
+            AND o.signed_date IS NULL
+          LIMIT 1`,
+      );
+      if (candidate.rowCount === 0) {
+        console.warn("[skip] no active opportunity with a client to exercise client-tombstone exclusion");
+        return;
+      }
+      victimOppId = candidate.rows[0].opp_id;
+      victimClientId = candidate.rows[0].client_id;
+
+      const before = await apiRequest("GET", "/api/pd/dashboard/pipeline-by-phase", undefined, token);
+      expect(before.status).toBe(200);
+      const wasThereBefore = before.data.rows.some((r: any) => r.id === victimOppId);
+      expect(wasThereBefore).toBe(true);
+
+      await pool.query(`UPDATE clients SET deleted_at = now() WHERE id = $1`, [victimClientId]);
+      const after = await apiRequest("GET", "/api/pd/dashboard/pipeline-by-phase", undefined, token);
+      expect(after.status).toBe(200);
+      const stillThere = after.data.rows.some((r: any) => r.id === victimOppId);
+      expect(stillThere).toBe(false);
+    } finally {
+      if (victimClientId != null) {
+        await pool.query(`UPDATE clients SET deleted_at = NULL WHERE id = $1`, [victimClientId]).catch(() => {});
+      }
+      await pool.end().catch(() => {});
+    }
+  });
 });
