@@ -1,5 +1,6 @@
 /**
- * Unified Opportunity drawer (2026-04-20; slimmed 2026-04-24, task #76).
+ * Unified Opportunity drawer (2026-04-20; slimmed 2026-04-24, task #76;
+ * no-shadow render contract hardened 2026-04-24, task #83).
  *
  * Replaces the legacy "Engineering ticket detail" page (formerly
  * called "PD Ticket detail"; vocabulary retired in task #56). Treats
@@ -23,9 +24,21 @@
  * endpoint remain in the schema/server for other surfaces that may
  * still write them; the drawer simply no longer exposes them.
  *
+ * No-shadow render contract (task #83):
+ *   `GET /api/opportunities/:id/workflow` returns `pd: null` when the
+ *   opportunity has no engineering shadow ticket yet (auto-spawn was
+ *   removed 2026-04-23 — tickets are only created by an explicit user
+ *   action). The drawer MUST render successfully in that case: only
+ *   the data-load failure (`isError || !data`) shows the "Could not
+ *   load opportunity" fallback. Every reference to the `merged` PD
+ *   block below is null-safe; when `merged == null` the header status
+ *   badge degrades to "No engineering ticket", margin renders "—",
+ *   the PD-note row is hidden, the spawn-from-template button is
+ *   hidden, and the empty-tickets section shows the standard "no PD
+ *   tickets yet" copy with the convert CTA below.
+ *
  * Backed by:
- *   GET  /api/opportunities/:id/workflow   (lazy-creates PD shadow,
- *                                           still feeds this drawer)
+ *   GET  /api/opportunities/:id/workflow   (read-only; pd may be null)
  *   POST /api/opportunities/:id/spawn-tasks
  *   POST /api/opportunities/:id/convert-to-project
  */
@@ -134,7 +147,9 @@ interface WorkflowResponse {
   crm: CrmBlock;
   clientName: string | null;
   siteName: string | null;
-  pd: PdBlock;
+  /** `null` when no engineering shadow ticket exists yet — see the
+   *  no-shadow render contract in the file-header docblock (Task #83). */
+  pd: PdBlock | null;
   tasks: Array<{ id: number; title: string; status: string; priority: string | null; endDate: string | null }>;
   tickets?: OpportunityTicket[];
   projectTasks?: ProjectTask[];
@@ -257,8 +272,11 @@ export function OpportunityDetailBody({ opportunityId, active, variant = "inline
         <div className="flex items-center justify-center h-[60vh]">
           <Loader2 className="h-6 w-6 animate-spin text-emerald-600" />
         </div>
-      ) : isError || !data || !merged ? (
-        <div className="p-6 text-sm text-muted-foreground">Could not load opportunity.</div>
+      ) : isError || !data ? (
+        // Task #83: only a true data-load failure shows this fallback.
+        // `merged == null` (no engineering shadow ticket yet) is a
+        // valid, expected state — every reference below is null-safe.
+        <div className="p-6 text-sm text-muted-foreground" data-testid="opportunity-detail-error">Could not load opportunity.</div>
       ) : (
         <>
           {/* === Header card === */}
@@ -298,17 +316,29 @@ export function OpportunityDetailBody({ opportunityId, active, variant = "inline
                     Pipedrive
                   </Badge>
                 )}
-                <Badge
-                  variant="outline"
-                  className={`text-[10px] ${getEngineeringTicketStatusBadgeClass(merged.status)}`}
-                >
-                  {getEngineeringTicketStatusLabel(merged.status)}
-                </Badge>
+                {merged ? (
+                  <Badge
+                    variant="outline"
+                    className={`text-[10px] ${getEngineeringTicketStatusBadgeClass(merged.status)}`}
+                    data-testid="badge-engineering-status"
+                  >
+                    {getEngineeringTicketStatusLabel(merged.status)}
+                  </Badge>
+                ) : (
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] border-slate-200 bg-slate-50 text-slate-600"
+                    data-testid="badge-no-engineering-ticket"
+                    title="No engineering shadow ticket has been created for this opportunity yet."
+                  >
+                    No engineering ticket
+                  </Badge>
+                )}
               </div>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-4 text-xs">
               <HeaderStat label="Value" value={fmtMoney(data.crm.estimatedValue, data.crm.currency)} />
-              <HeaderStat label="Margin" value={merged.estimatedMarginPercent ? `${merged.estimatedMarginPercent}%` : "—"} />
+              <HeaderStat label="Margin" value={merged?.estimatedMarginPercent ? `${merged.estimatedMarginPercent}%` : "—"} />
               <HeaderStat label="Owner" value={data.crm.dealOwnerName} />
               <HeaderStat label="CRM stage" value={data.crm.stage} />
             </div>
@@ -380,7 +410,7 @@ export function OpportunityDetailBody({ opportunityId, active, variant = "inline
                       </p>
                     </div>
                   </div>
-                  {(merged.comments ?? "").trim() && (
+                  {merged && (merged.comments ?? "").trim() && (
                     <div className="flex items-start gap-2 border-t border-slate-100 pt-2.5">
                       <div className="mt-0.5 h-6 w-6 shrink-0 rounded-full bg-slate-100 text-slate-700 grid place-items-center text-[10px] font-semibold">
                         PD
@@ -419,7 +449,7 @@ export function OpportunityDetailBody({ opportunityId, active, variant = "inline
                     <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-700 flex items-center gap-1.5">
                       <Zap className="h-3 w-3 text-emerald-600" /> Tickets
                     </h3>
-                    {!merged.tasksSpawnedAt && merged.projectId && (
+                    {merged && !merged.tasksSpawnedAt && merged.projectId && (
                       <Button
                         size="sm"
                         variant="outline"
@@ -434,8 +464,8 @@ export function OpportunityDetailBody({ opportunityId, active, variant = "inline
                     )}
                   </header>
                   <div className="p-4 space-y-2">
-                  {!merged.projectId ? (
-                    <p className="text-[11px] text-muted-foreground italic">No PD tickets yet — create one from the working list, or convert this opportunity to a project first.</p>
+                  {!merged?.projectId ? (
+                    <p className="text-[11px] text-muted-foreground italic" data-testid="text-no-pd-tickets-yet">No PD tickets yet — create one from the working list, or convert this opportunity to a project first.</p>
                   ) : data.tasks.length === 0 ? (
                     <p className="text-[11px] text-muted-foreground italic">No tasks yet.</p>
                   ) : (

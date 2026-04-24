@@ -1423,10 +1423,16 @@ router.get("/api/opportunities/:id", requireAuth, requirePermission("opportuniti
 });
 
 /**
- * Unified merged-Opportunity read used by the new drawer (2026-04-20).
- * Returns CRM truth + lazy-created PD shadow + spawned tasks in one
- * payload. The shadow row is materialised on first open so legacy
- * Pipedrive-imported deals do not need a back-fill migration.
+ * Unified merged-Opportunity read used by the new drawer (2026-04-20;
+ * no-shadow contract reaffirmed 2026-04-24, Task #83).
+ *
+ * Returns CRM truth + the engineering PD shadow ticket (or `null` if
+ * none exists yet) + spawned tasks in one payload. Auto-spawn was
+ * removed 2026-04-23 — engineering shadow tickets are created only by
+ * an explicit user action (the working list "create ticket" CTA),
+ * never on read. The drawer is built to render successfully when
+ * `pd === null`; see the file-header docblock in
+ * client/src/components/opportunities/OpportunityDrawer.tsx.
  */
 router.get(
   "/api/opportunities/:id/workflow",
