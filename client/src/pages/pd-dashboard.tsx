@@ -224,14 +224,11 @@ function formatZARShort(n: number | null | undefined): string {
 
 function PipelinePhaseRow({
   row,
-  maxKwp,
 }: {
   row: { code: string; label: string; count: number; totalKwp: number; totalValue: number; sharePct: number };
-  maxKwp: number;
 }) {
-  // Bar width tracks the largest phase by kWp so phases compare visually
-  // rather than collapsing to a tiny share when one phase dominates.
-  const barPct = maxKwp > 0 ? (row.totalKwp / maxKwp) * 100 : 0;
+  // The bar encodes literal share-of-total kWp (matches the % readout to
+  // its right and the card's "share of total kWp" label).
   return (
     <div className="space-y-1.5" data-testid={`pipeline-phase-${row.code}`}>
       <div className="flex items-center justify-between gap-3 text-sm">
@@ -247,7 +244,7 @@ function PipelinePhaseRow({
           <span className="tabular-nums w-12 text-right">{row.sharePct.toFixed(0)}%</span>
         </div>
       </div>
-      <Progress value={barPct} className="h-2" />
+      <Progress value={row.sharePct} className="h-2" />
     </div>
   );
 }
@@ -435,10 +432,6 @@ function PipelineByPhaseSection() {
     queryKey: ["/api/pd/dashboard/pipeline-by-phase"],
   });
 
-  const maxKwp = useMemo(() => {
-    return Math.max(...(data?.byPhase ?? []).map((p) => p.totalKwp), 1);
-  }, [data]);
-
   return (
     <>
       <CollapsibleCard
@@ -478,7 +471,7 @@ function PipelineByPhaseSection() {
                 </div>
               </div>
               {data.byPhase.map((p) => (
-                <PipelinePhaseRow key={p.code} row={p} maxKwp={maxKwp} />
+                <PipelinePhaseRow key={p.code} row={p} />
               ))}
             </>
           )}
