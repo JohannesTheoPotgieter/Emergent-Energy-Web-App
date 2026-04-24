@@ -351,4 +351,98 @@ export function registerAdminWorkItemLinkageRoutes(app: Express) {
       }
     },
   );
+
+  // One-shot, idempotent backfill: for every non-deleted engineering_tickets
+  // row that has no matching ENG work_items row, insert one. Mirrors the
+  // logic of migrations/0032_backfill_work_items_from_engineering_tickets.sql
+  // so production can be fixed via a single authenticated POST without
+  // requiring shell access. Safe to call repeatedly — the NOT EXISTS guard
+  // skips any ticket already linked.
+  app.post(
+    "/api/admin/work-item-linkage/backfill-from-tickets",
+    requireAuth,
+    requirePermission("admin", "edit"),
+    async (req: Request, res: Response) => {
+      try {
+        // Caller (admin) is the deterministic created_by fallback. Falls
+        // back to MIN(users.id) only if for any reason req.user.id is
+        // missing — both keep the FK satisfied and lineage auditable.
+        const actorUserId =
+          (req as any).user?.id != null ? Number((req as any).user.id) : null;
+
+        const result = await db.execute(sql`
+          INSERT INTO work_items (
+            client_id, project_id, workstream, source, type,
+            title, description, status, priority, phase, end_date,
+            owner_user_id, engineering_ticket_id, created_by,
+            created_at, updated_at
+          )
+          SELECT
+            et.client_id,
+            et.project_id,
+            'ENG'::work_item_workstream,
+            'SYSTEM'::work_item_source,
+            'task',
+            et.project_site_name,
+            et.comments,
+            'to_do',
+            CASE
+              WHEN et.priority = 'Medium' THEN 'Med'
+              WHEN et.priority = 'Critical' THEN 'Urgent'
+              WHEN et.priority IN ('Low', 'Med', 'High', 'Urgent') THEN et.priority
+              ELSE 'Med'
+            END,
+            et.request_type,
+            CASE
+              WHEN et.due_date ~ '^\d{4}-\d{2}-\d{2}$' THEN et.due_date::date
+              ELSE NULL
+            END,
+            NULL,
+            et.id,
+            COALESCE(${actorUserId}, et.created_by, (SELECT MIN(id) FROM users)),
+            COALESCE(et.created_at, now()),
+            now()
+          FROM engineering_tickets et
+          WHERE et.deleted_at IS NULL
+            AND et.project_id IS NOT NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM work_items wi
+              WHERE wi.engineering_ticket_id = et.id
+                AND wi.workstream = 'ENG'
+                AND wi.deleted_at IS NULL
+            )
+          ON CONFLICT (engineering_ticket_id)
+            WHERE workstream = 'ENG'
+              AND deleted_at IS NULL
+              AND engineering_ticket_id IS NOT NULL
+            DO NOTHING
+          RETURNING id, engineering_ticket_id, project_id
+        `);
+
+        const rows = (result as any).rows ?? (result as any) ?? [];
+        const inserted = Array.isArray(rows) ? rows.length : 0;
+
+        logAuditFromReq(req, {
+          entityType: "work_item",
+          entityId: "backfill",
+          action: "backfill_from_engineering_tickets",
+          changesJson: {
+            insertedCount: inserted,
+            insertedIds: Array.isArray(rows)
+              ? rows.slice(0, 100).map((r: any) => r.id)
+              : [],
+          },
+        });
+
+        res.json({
+          ok: true,
+          insertedCount: inserted,
+          inserted: Array.isArray(rows) ? rows : [],
+        });
+      } catch (err: any) {
+        console.error("[admin-work-item-linkage] backfill failed:", err);
+        res.status(500).json({ error: err?.message || "Backfill failed" });
+      }
+    },
+  );
 }
