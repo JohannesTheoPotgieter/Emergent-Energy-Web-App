@@ -39,6 +39,7 @@ const REQUIRED_COMMAND_CHECKS = [
   { name: "Foundation linkage cascades (Task #34)", command: "tsx script/run-with-app.ts \"vitest run -c qa/vitest.config.ts qa/tests/integration/foundation-linkage-cascades.test.ts\"" },
   { name: "Clients merge & soft-delete (Task #73)", command: "tsx script/run-with-app.ts \"vitest run -c qa/vitest.config.ts qa/tests/integration/clients-merge-and-delete.test.ts\"" },
   { name: "PD dashboard pipeline-by-phase (Task #77)", command: "tsx script/run-with-app.ts \"vitest run -c qa/vitest.config.ts qa/tests/integration/pd-dashboard-pipeline-by-phase.test.ts\"" },
+  { name: "PD dashboard won-deals tile (Task #94)", command: "tsx script/run-with-app.ts \"vitest run -c qa/vitest.config.ts qa/tests/integration/pd-dashboard-won-deals.test.ts\"" },
   { name: "Opportunity drawer no-shadow render — API contract (Task #83)", command: "tsx script/run-with-app.ts \"vitest run -c qa/vitest.config.ts qa/tests/integration/opportunity-drawer-no-shadow.test.ts\"" },
   { name: "Opportunity drawer no-shadow render — RTL component (Task #83)", command: "vitest run -c qa/vitest.config.ts qa/tests/integration/opportunity-drawer-no-shadow.component.test.tsx" },
   { name: "Workflow tests", command: WORKFLOW_TEST_COMMAND },

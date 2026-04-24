@@ -446,6 +446,331 @@ function SignDateCalendar({
   );
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// Won deals (this FY) tile (task #94, 2026-04-24)
+//   Reads /api/pd/dashboard/won-deals. FY-scoped (Sep–Aug, fixed window).
+//   Click a row → opens shared OpportunityDrawer (same as the
+//   PipelineByPhaseSection above). projectLinkState badges:
+//     linked → green, deep-links to /project/<projectName>
+//     stub   → amber, drawer open (so the gap can be closed)
+//     none   → red,   drawer open (Convert-to-Project CTA visible)
+// ──────────────────────────────────────────────────────────────────────────
+
+type WonDeals = {
+  generatedAt: string;
+  fy: number;
+  fyLabel: string;
+  fyStart: string;
+  fyEnd: string;
+  kpis: {
+    count: number;
+    totalValue: number;
+    totalKwp: number;
+    currency: string;
+  };
+  rows: Array<{
+    id: number;
+    dealName: string;
+    clientName: string | null;
+    pipedriveDealId: string | null;
+    estimatedValue: number | null;
+    estimatedKwp: number | null;
+    signedDate: string | null;
+    dealOwnerName: string | null;
+    updatedAt: string | null;
+    projectId: number | null;
+    projectName: string | null;
+    projectPhase: string | null;
+    projectLinkState: "linked" | "stub" | "none";
+  }>;
+};
+
+type WonSortKey = "signedDate" | "estimatedValue" | "estimatedKwp" | "daysSinceSign";
+
+function daysSince(dateIso: string | null): number | null {
+  if (!dateIso) return null;
+  const t = new Date(dateIso).getTime();
+  if (!Number.isFinite(t)) return null;
+  return Math.max(0, Math.floor((Date.now() - t) / 86_400_000));
+}
+
+function formatRelativeDays(d: number | null): string {
+  if (d == null) return "—";
+  if (d === 0) return "today";
+  if (d === 1) return "1d ago";
+  return `${d}d ago`;
+}
+
+function ProjectLinkBadge({ row }: { row: WonDeals["rows"][number] }) {
+  if (row.projectLinkState === "linked") {
+    return (
+      <Badge
+        variant="outline"
+        className="border-emerald-300 bg-emerald-50 text-emerald-800 text-[10px]"
+        data-testid={`won-link-state-linked-${row.id}`}
+      >
+        <CheckCircle2 className="h-3 w-3 mr-1" />
+        Project linked
+      </Badge>
+    );
+  }
+  if (row.projectLinkState === "stub") {
+    return (
+      <Badge
+        variant="outline"
+        className="border-amber-300 bg-amber-50 text-amber-800 text-[10px]"
+        data-testid={`won-link-state-stub-${row.id}`}
+      >
+        <AlertTriangle className="h-3 w-3 mr-1" />
+        Stub project
+      </Badge>
+    );
+  }
+  return (
+    <Badge
+      variant="outline"
+      className="border-rose-300 bg-rose-50 text-rose-800 text-[10px]"
+      data-testid={`won-link-state-none-${row.id}`}
+    >
+      <Link2Off className="h-3 w-3 mr-1" />
+      No project yet
+    </Badge>
+  );
+}
+
+function WonDealsTile() {
+  const [openOppId, setOpenOppId] = useState<number | null>(null);
+  const [sortKey, setSortKey] = useState<WonSortKey>("signedDate");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  const { data, isLoading, isError, error, refetch } = useQuery<WonDeals>({
+    queryKey: ["/api/pd/dashboard/won-deals"],
+  });
+
+  const sortedRows = useMemo(() => {
+    const rows = data?.rows ? [...data.rows] : [];
+    const dir = sortDir === "asc" ? 1 : -1;
+    const sortVal = (r: WonDeals["rows"][number]): number => {
+      if (sortKey === "estimatedValue") return r.estimatedValue ?? -Infinity;
+      if (sortKey === "estimatedKwp") return r.estimatedKwp ?? -Infinity;
+      if (sortKey === "daysSinceSign") return daysSince(r.signedDate) ?? -Infinity;
+      // signedDate (default)
+      return r.signedDate ? new Date(r.signedDate).getTime() : -Infinity;
+    };
+    rows.sort((a, b) => {
+      const va = sortVal(a);
+      const vb = sortVal(b);
+      if (va === vb) {
+        // tie-break on updatedAt desc, matching server default order.
+        const ua = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+        const ub = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+        return ub - ua;
+      }
+      return va < vb ? -1 * dir : 1 * dir;
+    });
+    return rows;
+  }, [data?.rows, sortKey, sortDir]);
+
+  const toggleSort = (key: WonSortKey) => {
+    if (sortKey === key) {
+      setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      // Default direction per column. For value/kWp/sign-date the
+      // most useful first view is "biggest / most-recent first";
+      // for "days since sign" the natural default is "freshest first"
+      // (smallest = today).
+      setSortDir(key === "daysSinceSign" ? "asc" : "desc");
+    }
+  };
+
+  const SortHeader = ({ label, k, align = "left", testId }: { label: string; k: WonSortKey; align?: "left" | "right"; testId: string }) => {
+    const active = sortKey === k;
+    // ARIA: a sortable column header should advertise its sort state via
+    // aria-sort. We say "ascending" / "descending" only for the active
+    // column and "none" for the others, per WAI-ARIA grid pattern.
+    const ariaSort: "ascending" | "descending" | "none" = active
+      ? sortDir === "asc"
+        ? "ascending"
+        : "descending"
+      : "none";
+    const nextDir = active && sortDir === "desc" ? "ascending" : "descending";
+    return (
+      <th
+        className={`py-2 px-3 font-medium ${align === "right" ? "text-right" : "text-left"}`}
+        aria-sort={ariaSort}
+        scope="col"
+      >
+        <button
+          type="button"
+          onClick={() => toggleSort(k)}
+          className={`inline-flex items-center gap-1 hover:text-emerald-700 ${active ? "text-emerald-700" : "text-muted-foreground"}`}
+          aria-label={`Sort by ${label.toLowerCase()} ${nextDir}`}
+          data-testid={testId}
+        >
+          <span className="uppercase tracking-wide text-xs">{label}</span>
+          {active && <span aria-hidden="true">{sortDir === "asc" ? "↑" : "↓"}</span>}
+        </button>
+      </th>
+    );
+  };
+
+  const fyLabel = data?.fyLabel ?? "current FY";
+
+  return (
+    <>
+      <CollapsibleCard
+        id="won-deals-tile"
+        testId="card-won-deals"
+        header={
+          <>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Handshake className="h-4 w-4 text-emerald-600" />
+              Won deals this FY · Pipedrive
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Pipedrive opportunities marked won with a sign date in {fyLabel}.
+              Click a row for the full CRM context. Project-link state shows
+              whether the deal has been picked up for delivery.
+            </p>
+          </>
+        }
+      >
+        <CardContent className="space-y-4">
+          {isLoading ? (
+            <Skeleton className="h-32" />
+          ) : isError ? (
+            <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800" data-testid="won-deals-error">
+              <p className="font-medium">Could not load won deals.</p>
+              <p className="text-xs text-rose-700 mt-0.5">{(error as Error)?.message ?? "Request failed"}</p>
+              <Button size="sm" variant="outline" className="mt-2 h-7 text-xs" onClick={() => refetch()} data-testid="won-deals-retry">
+                Retry
+              </Button>
+            </div>
+          ) : (
+            <>
+              {/* KPI strip */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3" data-testid="won-deals-kpis">
+                <div className="rounded-md border bg-emerald-50/40 border-emerald-200 p-3">
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-emerald-700">{fyLabel} · Won deals</p>
+                  <p className="mt-1 text-2xl font-semibold text-emerald-800 tabular-nums" data-testid="won-deals-kpi-count">{data?.kpis.count ?? 0}</p>
+                </div>
+                <div className="rounded-md border bg-emerald-50/40 border-emerald-200 p-3">
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-emerald-700">{fyLabel} · Total kWp</p>
+                  <p className="mt-1 text-2xl font-semibold text-emerald-800 tabular-nums" data-testid="won-deals-kpi-kwp">{formatKwp(data?.kpis.totalKwp ?? 0)}</p>
+                </div>
+                <div className="rounded-md border bg-emerald-50/40 border-emerald-200 p-3">
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-emerald-700">{fyLabel} · Total value</p>
+                  <p className="mt-1 text-2xl font-semibold text-emerald-800 tabular-nums" data-testid="won-deals-kpi-value">{formatZARShort(data?.kpis.totalValue ?? 0)}</p>
+                </div>
+              </div>
+
+              {/* Rows */}
+              {sortedRows.length === 0 ? (
+                <p className="text-sm text-muted-foreground italic" data-testid="won-deals-empty">
+                  No deals won in {fyLabel} yet.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm" data-testid="won-deals-table">
+                    <thead>
+                      <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
+                        <th className="py-2 px-3 font-medium">Deal</th>
+                        <th className="py-2 px-3 font-medium">Client</th>
+                        <SortHeader label="Sign date" k="signedDate" testId="won-sort-sign-date" />
+                        <SortHeader label="Days" k="daysSinceSign" align="right" testId="won-sort-days" />
+                        <SortHeader label="Value" k="estimatedValue" align="right" testId="won-sort-value" />
+                        <SortHeader label="kWp" k="estimatedKwp" align="right" testId="won-sort-kwp" />
+                        <th className="py-2 px-3 font-medium">Owner</th>
+                        <th className="py-2 px-3 font-medium">Project</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedRows.map((row) => {
+                        const days = daysSince(row.signedDate);
+                        return (
+                          <tr key={row.id} className="border-b last:border-0 hover:bg-muted/30" data-testid={`won-row-${row.id}`}>
+                            <td className="py-2 px-3">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <button
+                                  type="button"
+                                  onClick={() => setOpenOppId(row.id)}
+                                  className="font-medium text-emerald-800 hover:text-emerald-900 hover:underline truncate text-left"
+                                  title={row.dealName}
+                                  data-testid={`won-deal-name-${row.id}`}
+                                >
+                                  {row.dealName}
+                                </button>
+                                {row.pipedriveDealId && (
+                                  <code
+                                    className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200 shrink-0"
+                                    title={`Pipedrive deal #${row.pipedriveDealId}`}
+                                    data-testid={`won-deal-pd-id-${row.id}`}
+                                  >
+                                    PD #{row.pipedriveDealId}
+                                  </code>
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-2 px-3 text-muted-foreground truncate" title={row.clientName ?? ""}>
+                              {row.clientName ?? "—"}
+                            </td>
+                            <td className="py-2 px-3 tabular-nums" data-testid={`won-sign-date-${row.id}`}>
+                              {formatDate(row.signedDate)}
+                            </td>
+                            <td className="py-2 px-3 text-right tabular-nums text-muted-foreground">
+                              {formatRelativeDays(days)}
+                            </td>
+                            <td className="py-2 px-3 text-right tabular-nums" data-testid={`won-value-${row.id}`}>
+                              {formatZARShort(row.estimatedValue)}
+                            </td>
+                            <td className="py-2 px-3 text-right tabular-nums" data-testid={`won-kwp-${row.id}`}>
+                              {formatKwp(row.estimatedKwp)}
+                            </td>
+                            <td className="py-2 px-3 text-muted-foreground truncate" title={row.dealOwnerName ?? ""}>
+                              {row.dealOwnerName ?? "—"}
+                            </td>
+                            <td className="py-2 px-3">
+                              {row.projectLinkState === "linked" && row.projectName ? (
+                                <Link
+                                  href={`/project/${encodeURIComponent(row.projectName)}`}
+                                  className="inline-block"
+                                  data-testid={`won-project-link-${row.id}`}
+                                >
+                                  <ProjectLinkBadge row={row} />
+                                </Link>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setOpenOppId(row.id)}
+                                  className="inline-block"
+                                  data-testid={`won-project-open-${row.id}`}
+                                >
+                                  <ProjectLinkBadge row={row} />
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
+        </CardContent>
+      </CollapsibleCard>
+
+      <OpportunityDrawer
+        opportunityId={openOppId}
+        open={openOppId != null}
+        onClose={() => setOpenOppId(null)}
+      />
+    </>
+  );
+}
+
 function PipelineByPhaseSection() {
   const [openOppId, setOpenOppId] = useState<number | null>(null);
   const { data, isLoading, isError, error, refetch } = useQuery<PipelineByPhase>({
@@ -889,6 +1214,13 @@ export default function PdDashboardPage() {
             Sales-side counterpart to the engineering operating board below;
             placed adjacent so the two read as a pair. */}
       <PipelineByPhaseSection />
+
+      {/* 2c. WON DEALS THIS FY (task #94).
+            Shows what has just been won in CRM (Pipedrive) within the
+            current financial year, plus whether each deal has been
+            picked up for delivery (linked / stub / none). FY-scoped,
+            shares the FY helper with /api/pd/reports. */}
+      <WonDealsTile />
 
       {/* 3. PD OPERATING BOARD — engineering activity by canonical lifecycle phase */}
       <CollapsibleCard

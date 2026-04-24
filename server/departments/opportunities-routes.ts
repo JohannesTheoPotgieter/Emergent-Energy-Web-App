@@ -14,6 +14,7 @@ import { isActivePdWorkingOpportunity, isOpportunityIntakeTerminal } from "../li
 import { canViewAllTickets } from "@shared/roles/pd-roles";
 import { PHASES, PHASE_BY_CODE } from "@shared/phases";
 import { pdStageToLifecycle } from "@shared/lib/pd-stage-lifecycle";
+import { getFyWindow } from "../lib/fy-window";
 import { insertClientWithGeneratedId } from "../lib/client-id-generator";
 import { syncProjectSplitTablesAfterInsert } from "../lib/project-info-sync";
 import { buildOpportunityMappingPlan } from "../lib/opportunity-mapping-plan";
@@ -390,6 +391,153 @@ router.get("/api/pd/dashboard/pipeline-by-phase", requireAuth, requirePermission
   } catch (err) {
     console.error("[Opportunities] pipeline-by-phase failed:", err);
     res.status(500).json({ error: "Failed to load pipeline-by-phase" });
+  }
+});
+
+/**
+ * GET /api/pd/dashboard/won-deals  (Task #94, 2026-04-24)
+ *
+ * Read-only roll-up of Pipedrive opportunities that crossed into "won"
+ * within the current financial year (Sep–Aug). Powers the "Won deals
+ * this FY" tile on `/pd-dashboard`. The FY window is computed by the
+ * shared `getFyWindow()` helper so this endpoint and `/api/pd/reports`
+ * (which already exposes a `wonFy` KPI) cannot drift.
+ *
+ * Filter:
+ *   - `opportunities.deleted_at IS NULL`
+ *   - `source = 'pipedrive'`
+ *   - `LOWER(status) LIKE '%won%'` (substring catches "won - signed",
+ *     "WON", "won/closed", … variants)
+ *   - `signed_date BETWEEN <fyStart> AND <fyEnd>` — anchors the FY
+ *     scope on the contracted date so an opportunity flagged "won"
+ *     last FY but signed in the current FY shows up in the right year,
+ *     and an opp signed last FY never re-appears here when its CRM
+ *     timestamps churn.
+ *
+ * Each row carries the data the tile needs (deal name, client, value,
+ * kWp, sign date, owner, pipedrive deal id) plus a derived
+ * `projectLinkState` of `linked | stub | none`:
+ *   - `linked` — a non-deleted `project_info` row points at the
+ *     opportunity AND has both `pd_user_id` and `pm_user_id` set AND
+ *     the linked `project_execution_state.phase` is non-empty.
+ *   - `stub`   — a non-deleted `project_info` row exists but is
+ *     missing one or more of the above (Schaeffler is the canonical
+ *     case for FY26).
+ *   - `none`   — no non-deleted `project_info` references the
+ *     opportunity. The drawer surfaces the Convert-to-Project CTA.
+ *
+ * Auth: requireAuth + requirePermission('pd_dashboard','view').
+ * Schema-additive zero — uses existing columns only.
+ */
+router.get("/api/pd/dashboard/won-deals", requireAuth, requirePermission("pd_dashboard", "view"), async (_req: Request, res: Response) => {
+  try {
+    const win = getFyWindow();
+
+    const result = await db.execute(sql`
+      SELECT
+        o.id,
+        COALESCE(NULLIF(TRIM(o.deal_name), ''), NULLIF(TRIM(c.name), ''), 'Opportunity #' || o.id::text) AS deal_name,
+        c.name AS client_name,
+        o.pipedrive_deal_id,
+        o.estimated_value,
+        o.estimated_kwp,
+        o.signed_date::text AS signed_date,
+        o.deal_owner_name,
+        o.updated_at,
+        o.status,
+        pi.id            AS project_id,
+        pi.project_name  AS project_name,
+        pi.pd_user_id    AS pd_user_id,
+        pi.pm_user_id    AS pm_user_id,
+        pes.phase        AS project_phase
+      FROM opportunities o
+      LEFT JOIN clients c ON c.id = o.client_id AND c.deleted_at IS NULL
+      LEFT JOIN LATERAL (
+        SELECT pi.id, pi.project_name, pi.pd_user_id, pi.pm_user_id
+        FROM project_info pi
+        WHERE pi.opportunity_id = o.id AND pi.deleted_at IS NULL
+        ORDER BY pi.id DESC
+        LIMIT 1
+      ) pi ON TRUE
+      LEFT JOIN project_execution_state pes ON pes.project_id = pi.id
+      WHERE o.deleted_at IS NULL
+        AND o.source = 'pipedrive'
+        AND POSITION('won' IN LOWER(COALESCE(o.status, ''))) > 0
+        AND o.signed_date IS NOT NULL
+        AND o.signed_date >= ${win.fyStartIso}::date
+        AND o.signed_date <= ${win.fyEndIso}::date
+      ORDER BY o.signed_date DESC NULLS LAST, o.updated_at DESC NULLS LAST
+    `);
+
+    type Row = {
+      id: number;
+      deal_name: string;
+      client_name: string | null;
+      pipedrive_deal_id: string | null;
+      estimated_value: string | number | null;
+      estimated_kwp: string | number | null;
+      signed_date: string | null;
+      deal_owner_name: string | null;
+      updated_at: string | Date | null;
+      status: string | null;
+      project_id: number | null;
+      project_name: string | null;
+      pd_user_id: number | null;
+      pm_user_id: number | null;
+      project_phase: string | null;
+    };
+
+    const rawRows = (result.rows ?? []) as Row[];
+
+    const rows = rawRows.map((r) => {
+      const value = r.estimated_value == null ? null : Number(r.estimated_value);
+      const kwp = r.estimated_kwp == null ? null : Number(r.estimated_kwp);
+      const phaseTrim = (r.project_phase ?? "").trim();
+      let projectLinkState: "linked" | "stub" | "none";
+      if (r.project_id == null) {
+        projectLinkState = "none";
+      } else if (r.pd_user_id != null && r.pm_user_id != null && phaseTrim.length > 0) {
+        projectLinkState = "linked";
+      } else {
+        projectLinkState = "stub";
+      }
+      return {
+        id: Number(r.id),
+        dealName: r.deal_name,
+        clientName: r.client_name,
+        pipedriveDealId: r.pipedrive_deal_id,
+        estimatedValue: value != null && Number.isFinite(value) ? value : null,
+        estimatedKwp: kwp != null && Number.isFinite(kwp) ? kwp : null,
+        signedDate: r.signed_date,
+        dealOwnerName: r.deal_owner_name,
+        updatedAt: r.updated_at instanceof Date ? r.updated_at.toISOString() : r.updated_at,
+        projectId: r.project_id,
+        projectName: r.project_name,
+        projectPhase: phaseTrim || null,
+        projectLinkState,
+      };
+    });
+
+    const totalValue = rows.reduce((s, r) => s + (r.estimatedValue ?? 0), 0);
+    const totalKwp = rows.reduce((s, r) => s + (r.estimatedKwp ?? 0), 0);
+
+    res.json({
+      generatedAt: new Date().toISOString(),
+      fy: win.fy,
+      fyLabel: win.fyLabel,
+      fyStart: win.fyStartIso,
+      fyEnd: win.fyEndIso,
+      kpis: {
+        count: rows.length,
+        totalValue,
+        totalKwp,
+        currency: "ZAR",
+      },
+      rows,
+    });
+  } catch (err) {
+    console.error("[Opportunities] won-deals failed:", err);
+    res.status(500).json({ error: "Failed to load won-deals" });
   }
 });
 
