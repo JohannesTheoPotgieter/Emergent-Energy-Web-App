@@ -1,8 +1,9 @@
 import type { NextFunction, Request, Response } from "express";
 import { createHash } from "crypto";
-import { sql } from "drizzle-orm";
+import { sql, gt } from "drizzle-orm";
 import { db, dbMode } from "./db";
 import { verifyToken } from "./jwt";
+import { revokedTokens, revokedSessions } from "@shared/schema";
 
 export type AuthenticatedUser = {
   id: number;
@@ -77,8 +78,15 @@ export function extractBearerToken(req: Request): string | null {
 export function revokeBearerToken(token: string): void {
   cleanupRevokedBearerTokens();
   const digest = digestToken(token);
-  revokedBearerTokens.set(digest, Date.now() + REVOKED_TOKEN_TTL_MS);
+  const expiresAt = Date.now() + REVOKED_TOKEN_TTL_MS;
+  revokedBearerTokens.set(digest, expiresAt);
   authDebug("revokeBearerToken", { digest, revokedCount: revokedBearerTokens.size });
+  if (dbMode !== "sqlite") {
+    db.insert(revokedTokens)
+      .values({ tokenDigest: digest, expiresAt: new Date(expiresAt) })
+      .onConflictDoNothing()
+      .catch(() => {});
+  }
 }
 
 export function revokeSessionId(sessionId: string | null | undefined): void {
@@ -87,8 +95,15 @@ export function revokeSessionId(sessionId: string | null | undefined): void {
   }
 
   cleanupRevokedSessionIds();
-  revokedSessionIds.set(sessionId, Date.now() + REVOKED_SESSION_TTL_MS);
+  const expiresAt = Date.now() + REVOKED_SESSION_TTL_MS;
+  revokedSessionIds.set(sessionId, expiresAt);
   authDebug("revokeSessionId", { sessionId });
+  if (dbMode !== "sqlite") {
+    db.insert(revokedSessions)
+      .values({ sessionId, expiresAt: new Date(expiresAt) })
+      .onConflictDoNothing()
+      .catch(() => {});
+  }
 }
 
 export function clearRevokedSessionId(sessionId: string | null | undefined): void {
@@ -97,6 +112,26 @@ export function clearRevokedSessionId(sessionId: string | null | undefined): voi
   }
 
   revokedSessionIds.delete(sessionId);
+}
+
+export async function loadRevokedTokensFromDb(): Promise<void> {
+  if (dbMode === "sqlite") return;
+  try {
+    const now = new Date();
+    const [tokens, sessions] = await Promise.all([
+      db.select().from(revokedTokens).where(gt(revokedTokens.expiresAt, now)),
+      db.select().from(revokedSessions).where(gt(revokedSessions.expiresAt, now)),
+    ]);
+    for (const row of tokens) {
+      revokedBearerTokens.set(row.tokenDigest, row.expiresAt.getTime());
+    }
+    for (const row of sessions) {
+      revokedSessionIds.set(row.sessionId, row.expiresAt.getTime());
+    }
+    console.log(`[auth-context] loaded ${tokens.length} revoked tokens, ${sessions.length} revoked sessions from DB`);
+  } catch (err) {
+    console.warn("[auth-context] loadRevokedTokensFromDb failed (non-fatal):", err);
+  }
 }
 
 export function setRevokedUserTokenVersionFloor(userId: number, floor: number): void {
