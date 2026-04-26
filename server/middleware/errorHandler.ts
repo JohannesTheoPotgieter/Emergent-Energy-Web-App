@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { NextFunction, Request, Response } from 'express';
 import { ZodError } from 'zod';
-import { ApiError, logApiError, sendError } from '../lib/api-error';
+import { ApiError, logApiError, sendError, unauthorized } from '../lib/api-error';
 
 export function errorHandler(err: Error, req: Request, res: Response, next: NextFunction) {
   if (res.headersSent) return next(err);
@@ -26,13 +26,7 @@ export function errorHandler(err: Error, req: Request, res: Response, next: Next
   }
 
   if (err.name === 'UnauthorizedError') {
-    return res.status(401).json({
-      error: 'UNAUTHORIZED',
-      code: 'UNAUTHORIZED',
-      type: 'UNAUTHORIZED',
-      message: 'Authentication required',
-      traceId,
-    });
+    return sendError(res, unauthorized(), traceId);
   }
 
   return sendError(res, err, traceId);
