@@ -1396,6 +1396,24 @@ export const permissionAuditLog = pgTable("permission_audit_log", {
 });
 export type PermissionAuditLogEntry = typeof permissionAuditLog.$inferSelect;
 
+// ===================== PERSISTENT TOKEN REVOCATION =====================
+
+export const revokedTokens = pgTable("revoked_tokens", {
+  id: serial("id").primaryKey(),
+  tokenDigest: text("token_digest").notNull().unique(),
+  revokedAt: timestamp("revoked_at").notNull().defaultNow(),
+  expiresAt: timestamp("expires_at").notNull(),
+});
+export type RevokedToken = typeof revokedTokens.$inferSelect;
+
+export const revokedSessions = pgTable("revoked_sessions", {
+  id: serial("id").primaryKey(),
+  sessionId: text("session_id").notNull().unique(),
+  revokedAt: timestamp("revoked_at").notNull().defaultNow(),
+  expiresAt: timestamp("expires_at").notNull(),
+});
+export type RevokedSession = typeof revokedSessions.$inferSelect;
+
 // ===================== PD VISIBILITY CONFIG =====================
 
 /**

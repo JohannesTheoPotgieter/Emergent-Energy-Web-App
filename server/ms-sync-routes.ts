@@ -1253,9 +1253,26 @@ export function registerMsSyncRoutes(app: Express) {
   });
 
   app.post("/api/webhooks/graph", async (req: Request, res: Response) => {
+    // Subscription validation handshake — Microsoft POSTs this during
+    // subscription creation. Must respond with the token as plain text.
     if (req.query.validationToken) {
       return res.status(200).contentType("text/plain").send(req.query.validationToken as string);
     }
+
+    // Verify clientState on every notification delivery so only subscriptions
+    // created by this app (with the shared secret) are accepted.
+    const expectedClientState = process.env.GRAPH_WEBHOOK_CLIENT_STATE;
+    if (expectedClientState) {
+      const notifications: Array<{ clientState?: string }> = req.body?.value || [];
+      const allValid = notifications.every(
+        (n) => n.clientState === expectedClientState,
+      );
+      if (!allValid) {
+        console.warn("[Graph Webhook] Rejected: clientState mismatch");
+        return res.status(401).json({ error: "Invalid clientState" });
+      }
+    }
+
     try {
       const notifications = req.body?.value || [];
       for (const notification of notifications) {

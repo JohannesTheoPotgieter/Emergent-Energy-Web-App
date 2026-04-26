@@ -19,6 +19,22 @@ export function registerMeetingRoutes(app: Express) {
 
   // ==================== WEBHOOK - Read.ai ====================
   app.post("/api/webhooks/read-ai", async (req: Request, res: Response) => {
+    // Verify the shared secret sent by Read.ai in the Authorization header.
+    // Set READAI_WEBHOOK_SECRET in your environment and configure the same
+    // value in the Read.ai webhook settings. Requests without the correct
+    // secret are rejected before any DB writes occur.
+    const webhookSecret = process.env.READAI_WEBHOOK_SECRET;
+    if (webhookSecret) {
+      const authHeader = req.headers.authorization || "";
+      const providedSecret = authHeader.startsWith("Bearer ")
+        ? authHeader.slice(7)
+        : authHeader;
+      if (providedSecret !== webhookSecret) {
+        console.warn("[Read.ai Webhook] Rejected: invalid secret");
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+    }
+
     try {
       const body = req.body;
 
