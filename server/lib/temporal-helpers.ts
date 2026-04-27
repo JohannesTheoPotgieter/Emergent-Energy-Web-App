@@ -145,13 +145,23 @@ export function dedupeCostLineInserts<T extends {
 
 /**
  * Soft-close by projectId column (common pattern in smart-import).
+ * Uses Drizzle sql tagged template for safe parameterization.
  */
 export async function softCloseByProjectId(
   tx: any,
   tableName: string,
   projectId: number,
 ): Promise<number> {
-  return softCloseRows(tx, tableName, `project_id = ${projectId}`);
+  if (!TEMPORAL_TABLES.has(tableName)) {
+    throw new Error(`softCloseByProjectId: invalid table "${tableName}"`);
+  }
+  const result = await tx.execute(sql`
+    UPDATE ${sql.raw(`"${tableName}"`)}
+    SET effective_to = NOW()
+    WHERE (effective_to IS NULL)
+      AND (project_id = ${projectId})
+  `);
+  return (result as any).rowCount ?? 0;
 }
 
 /**
@@ -177,11 +187,21 @@ export async function softCloseByProjectName(
 
 /**
  * Soft-close by importRunId (used in rollback operations).
+ * Uses Drizzle sql tagged template for safe parameterization.
  */
 export async function softCloseByImportRunId(
   tx: any,
   tableName: string,
   importRunId: number,
 ): Promise<number> {
-  return softCloseRows(tx, tableName, `import_run_id = ${importRunId}`);
+  if (!TEMPORAL_TABLES.has(tableName)) {
+    throw new Error(`softCloseByImportRunId: invalid table "${tableName}"`);
+  }
+  const result = await tx.execute(sql`
+    UPDATE ${sql.raw(`"${tableName}"`)}
+    SET effective_to = NOW()
+    WHERE (effective_to IS NULL)
+      AND (import_run_id = ${importRunId})
+  `);
+  return (result as any).rowCount ?? 0;
 }

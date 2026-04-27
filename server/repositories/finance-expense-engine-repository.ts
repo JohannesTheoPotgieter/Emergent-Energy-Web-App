@@ -237,7 +237,7 @@ export class FinanceExpenseEngineRepository {
   async createManualExpense(data: InsertProgramExpense & { idempotencyKey?: string; projectId?: number; projectName?: string }, audit?: AuditCtx): Promise<ProgramExpense> {
     const d = data as any;
 
-    return this.dbInstance.transaction(async (tx) => {
+    return this.dbInstance.transaction(async (tx: typeof db) => {
       // Resolve projectId from projectName if not explicitly provided.
       // Runs inside the transaction so the project cannot be deleted between
       // lookup and insert.

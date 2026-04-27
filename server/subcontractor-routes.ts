@@ -6,8 +6,8 @@ import { paramStr } from "./lib/req-params";
 import { db } from "./db";
 import { normalizedCostLines, counterparties, projectInfo, invoicePatternRules } from "@shared/schema";
 import { encryptField, decryptField } from "./lib/field-encryption";
-import { eq, sql, and, isNull } from "drizzle-orm";
-import { softCloseRows, addTemporalColumns, dedupeCostLineInserts } from "./lib/temporal-helpers";
+import { eq, sql, and, isNull, or } from "drizzle-orm";
+import { softCloseRows, softCloseByCondition, addTemporalColumns, dedupeCostLineInserts } from "./lib/temporal-helpers";
 import { normalizeCostLineStatus } from "./lib/import/utils";
 import { extractSupplierName } from "./lib/calculations/supplierExtractor";
 import { requirePermission } from "./permission-middleware";
@@ -584,11 +584,22 @@ router.delete("/api/subcontractor-dashboard/counterparty/:name", requireAuth, re
       if (cpRows.length > 0) {
         const cpId = cpRows[0].id;
         // Temporal: soft-close cost lines instead of hard delete (Prompt 10)
-        await softCloseRows(tx, "normalized_cost_lines", `counterparty_id = ${cpId} OR LOWER(TRIM(counterparty_name)) = '${normalized.replace(/'/g, "''")}'`);
+        await softCloseByCondition(
+          tx,
+          normalizedCostLines,
+          or(
+            eq(normalizedCostLines.counterpartyId, cpId),
+            sql`LOWER(TRIM(${normalizedCostLines.counterpartyName})) = ${normalized}`,
+          ),
+        );
         await tx.delete(counterparties).where(eq(counterparties.id, cpId));
       } else {
         // Temporal: soft-close cost lines instead of hard delete (Prompt 10)
-        await softCloseRows(tx, "normalized_cost_lines", `LOWER(TRIM(counterparty_name)) = '${normalized.replace(/'/g, "''")}'`);
+        await softCloseByCondition(
+          tx,
+          normalizedCostLines,
+          sql`LOWER(TRIM(${normalizedCostLines.counterpartyName})) = ${normalized}`,
+        );
       }
     });
 
