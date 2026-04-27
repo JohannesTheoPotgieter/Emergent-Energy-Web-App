@@ -21,6 +21,7 @@ import { buildCanonicalResolver } from "../services/project-summary-helpers";
 import { getProjectHeaderKpis, recomputeHeaderKpiProjectionForActiveProjects } from "../services/project-header-kpi-service";
 import { evaluateRevenueArStatus } from "../lib/finance/revenue-ar-status";
 import { getCanonicalAllCurrentCostLines } from "../services/project-cost-line-read-service";
+import { parseIntParam } from "../lib/req-params";
 
 /**
  * Helper: derive the COS month-key (YYYY-MM, UTC anchor) for a cost line.
@@ -1204,7 +1205,7 @@ router.patch("/api/projects-summary/:projectName/latest-update", requireAuth, re
 
 router.patch("/api/projects-summary/:projectInfoId/escalation", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const id = parseInt(req.params.projectInfoId as string);
+    const id = parseIntParam(req.params.projectInfoId);
     const schema = z.object({
       escalationLevel: z.enum(["None", "Low", "Medium", "High", "Highest"]).nullable(),
     });
@@ -1883,7 +1884,7 @@ router.get("/api/projects", requireAuth, async (req, res) => {
 
 router.get("/api/projects/:id", requireAuth, async (req, res) => {
   try {
-    const id = parseInt(String(req.params.id));
+    const id = parseIntParam(req.params.id);
     const project = await storage.getProject(id);
     if (!project) {
       return res.status(404).json({ error: "Project not found", message: "Project not found" });
@@ -1993,7 +1994,7 @@ router.get("/api/pd-assignable-users", requireAuth, async (_req, res) => {
 
 router.patch("/api/project-info/:id/assign-pm", requireAuth, requirePermission('projects', 'edit'), async (req, res) => {
   try {
-    const id = parseInt(req.params.id as string);
+    const id = parseIntParam(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid project ID" });
 
     const schema = z.object({
@@ -2019,7 +2020,7 @@ router.patch("/api/project-info/:id/assign-pm", requireAuth, requirePermission('
 
 router.patch("/api/project-info/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const id = parseInt(req.params.id as string);
+    const id = parseIntParam(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid project ID" });
 
     const editSchema = z.object({
@@ -2074,7 +2075,7 @@ router.post("/api/key-date-mappings", requireAuth, requireAdmin, async (req: Req
 
 router.patch("/api/key-date-mappings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
-    const updated = await storage.updateKeyDateMapping(parseInt(req.params.id as string), req.body);
+    const updated = await storage.updateKeyDateMapping(parseIntParam(req.params.id), req.body);
     res.json(updated);
   } catch (err: unknown) {
     throw err;
@@ -2083,7 +2084,7 @@ router.patch("/api/key-date-mappings/:id", requireAuth, requireAdmin, async (req
 
 router.delete("/api/key-date-mappings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
-    await storage.deleteKeyDateMapping(parseInt(req.params.id as string));
+    await storage.deleteKeyDateMapping(parseIntParam(req.params.id));
     res.json({ success: true });
   } catch (err: unknown) {
     throw err;

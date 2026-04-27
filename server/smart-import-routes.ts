@@ -7,6 +7,7 @@ import crypto from "crypto";
 import { z } from "zod";
 import { validateBody } from "./middleware/validateBody";
 import { logAuditFromReq } from "./audit-logger";
+import { parseIntParam } from "./lib/req-params";
 
 // Zod schemas for smart-import write surface.
 // passthrough() keeps existing unknown keys flowing during the initial
@@ -711,7 +712,7 @@ router.get("/api/smart-import/project-matches/:name", requireAuth, requirePermis
 
 router.patch("/api/smart-import/:runId/assign-project", requireAuth, requirePermission("smart_import", "edit"), async (req: Request, res: Response) => {
   try {
-    const runId = parseInt(req.params.runId as string);
+    const runId = parseIntParam(req.params.runId);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
 
     const { projectId: targetProjectId } = req.body;
@@ -747,7 +748,7 @@ router.patch("/api/smart-import/:runId/assign-project", requireAuth, requirePerm
 // Optional query param: ?includePlan=true to include v2 planner output
 router.get("/api/smart-import/:runId", requireAuth, async (req: Request, res: Response) => {
   try {
-    const runId = parseInt(req.params.runId as string);
+    const runId = parseIntParam(req.params.runId);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
 
     const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));
@@ -782,7 +783,7 @@ router.get("/api/smart-import/:runId", requireAuth, async (req: Request, res: Re
 // GET /api/smart-import/:runId/diff — Compute delta between incoming data and existing DB records
 router.get("/api/smart-import/:runId/diff", requireAuth, async (req: Request, res: Response) => {
   try {
-    const runId = parseInt(req.params.runId as string);
+    const runId = parseIntParam(req.params.runId);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
 
     const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));
@@ -904,7 +905,7 @@ router.get("/api/smart-import/:runId/diff", requireAuth, async (req: Request, re
 //   NEW / CHANGED / UNCHANGED / MISSING_FROM_UPLOAD / CONFLICT_PLACEHOLDER
 router.get("/api/smart-import/:runId/plan", requireAuth, async (req: Request, res: Response) => {
   try {
-    const runId = parseInt(req.params.runId as string);
+    const runId = parseIntParam(req.params.runId);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
     console.log(`[smart-import] GET plan start: runId=${runId}`);
     const t0 = Date.now();
@@ -941,7 +942,7 @@ router.get("/api/smart-import/:runId/plan", requireAuth, async (req: Request, re
 // Used by the Smart Import v2 flow to show the user, before they commit, what
 // will and will NOT be touched on linked rows.
 router.get("/api/smart-import/:runId/qb-protections", requireAuth, async (req: Request, res: Response) => {
-  const runId = parseInt(req.params.runId as string);
+  const runId = parseIntParam(req.params.runId);
   if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
 
   const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));
@@ -1038,7 +1039,7 @@ router.get("/api/smart-import/:runId/qb-protections", requireAuth, async (req: R
 // Net change per side = newTotal + changedDelta − qbBlockedDelta − missingRemovedTotal.
 // All amounts are in ZAR. NULL/blank amounts are treated as 0.
 router.post("/api/smart-import/:runId/money-impact", requireAuth, validateBody(moneyImpactBodySchema), async (req: Request, res: Response) => {
-  const runId = parseInt(req.params.runId as string);
+  const runId = parseIntParam(req.params.runId);
   if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
 
     const decisions: Record<string, "keep_app" | "accept_file"> =
@@ -1240,7 +1241,7 @@ router.post("/api/smart-import/:runId/money-impact", requireAuth, validateBody(m
 // persisted blocker / acknowledgement table). This is a fresh dry-run on
 // the parsed file so it stays accurate even if persisted issues are stale.
 router.get("/api/smart-import/:runId/integrity-check", requireAuth, async (req: Request, res: Response) => {
-  const runId = parseInt(req.params.runId as string);
+  const runId = parseIntParam(req.params.runId);
   if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
 
   const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));
@@ -1446,7 +1447,7 @@ router.get("/api/smart-import/:runId/integrity-check", requireAuth, async (req: 
 // PATCH /api/smart-import/:runId/project-info
 router.patch("/api/smart-import/:runId/project-info", requireAuth, requirePermission("smart_import", "edit"), async (req: Request, res: Response) => {
   try {
-    const runId = parseInt(req.params.runId as string);
+    const runId = parseIntParam(req.params.runId);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
 
     const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));
@@ -1494,7 +1495,7 @@ router.patch("/api/smart-import/:runId/project-info", requireAuth, requirePermis
 // PATCH /api/smart-import/:runId/mapping
 router.patch("/api/smart-import/:runId/mapping", requireAuth, requirePermission("smart_import", "edit"), async (req: Request, res: Response) => {
   try {
-    const runId = parseInt(req.params.runId as string);
+    const runId = parseIntParam(req.params.runId);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
 
     const { section, colIndex, canonicalField } = req.body;
@@ -1635,8 +1636,8 @@ router.patch("/api/smart-import/:runId/mapping", requireAuth, requirePermission(
 // PATCH /api/smart-import/:runId/issue/:issueId/resolve
 router.patch("/api/smart-import/:runId/issue/:issueId/resolve", requireAuth, requirePermission("smart_import", "edit"), async (req: Request, res: Response) => {
   try {
-    const runId = parseInt(req.params.runId as string);
-    const issueId = parseInt(req.params.issueId as string);
+    const runId = parseIntParam(req.params.runId);
+    const issueId = parseIntParam(req.params.issueId);
     if (isNaN(runId) || isNaN(issueId)) return res.status(400).json({ error: "Invalid runId or issueId" });
 
     const { resolved, resolution, resolutionNote, rememberDecision, overrideData } = req.body;
@@ -1718,7 +1719,7 @@ router.patch("/api/smart-import/:runId/issue/:issueId/resolve", requireAuth, req
 // POST /api/smart-import/:runId/ignore-all-blockers
 router.post("/api/smart-import/:runId/ignore-all-blockers", requireAuth, requirePermission("smart_import", "edit"), async (req: Request, res: Response) => {
   try {
-    const runId = parseInt(req.params.runId as string);
+    const runId = parseIntParam(req.params.runId);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
 
     let userRole = (req as any).user?.role;
@@ -1774,7 +1775,7 @@ router.post("/api/smart-import/:runId/ignore-all-blockers", requireAuth, require
 // POST /api/smart-import/:runId/allow-all
 router.post("/api/smart-import/:runId/allow-all", requireAuth, requirePermission("smart_import", "edit"), async (req: Request, res: Response) => {
   try {
-    const runId = parseInt(req.params.runId as string);
+    const runId = parseIntParam(req.params.runId);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
 
     const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));
@@ -1821,7 +1822,7 @@ router.post("/api/smart-import/:runId/allow-all", requireAuth, requirePermission
 // POST /api/smart-import/:runId/apply-prior-resolutions
 router.post("/api/smart-import/:runId/apply-prior-resolutions", requireAuth, requirePermission("smart_import", "edit"), async (req: Request, res: Response) => {
   try {
-    const runId = parseInt(req.params.runId as string);
+    const runId = parseIntParam(req.params.runId);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
 
     const userId = (req as any).user?.id || null;
@@ -1893,7 +1894,7 @@ router.post("/api/smart-import/:runId/apply-prior-resolutions", requireAuth, req
 // POST /api/smart-import/:runId/commit
 router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("smart_import", "approve"), validateBody(commitBodySchema), async (req: Request, res: Response) => {
   try {
-    const runId = parseInt(req.params.runId as string);
+    const runId = parseIntParam(req.params.runId);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
 
     const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));
@@ -2935,7 +2936,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
     // Log failed import attempt
     try {
       const userId = (req as any).user?.id || null;
-      const runId = parseInt(req.params.runId as string);
+      const runId = parseIntParam(req.params.runId);
       if (!isNaN(runId)) {
         const causeMsg = pgCause ? ` | PG: ${pgCause.message || ''} [${pgCause.code || ''}] constraint=${pgCause.constraint || ''} detail=${pgCause.detail || ''}` : '';
         const [failedRun] = await db.select({ fileName: smartImportRuns.sourceFileName, projectName: smartImportRuns.projectName })
@@ -2967,7 +2968,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
 // POST /api/smart-import/:runId/rollback
 router.post("/api/smart-import/:runId/rollback", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
-    const runId = parseInt(req.params.runId as string);
+    const runId = parseIntParam(req.params.runId);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
 
     const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));
@@ -3418,7 +3419,7 @@ router.get("/api/import-control-tower/history", requireAuth, requirePermission("
 
 router.get("/api/import-control-tower/run/:runId/errors", requireAuth, requirePermission("admin", "view"), async (req: Request, res: Response) => {
   try {
-    const runId = parseInt(req.params.runId as string);
+    const runId = parseIntParam(req.params.runId);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
 
     const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));
@@ -3457,7 +3458,7 @@ router.get("/api/import-control-tower/run/:runId/errors", requireAuth, requirePe
 
 router.post("/api/import-control-tower/retry/:runId", requireAuth, requirePermission("admin", "edit"), async (req: Request, res: Response) => {
   try {
-    const runId = parseInt(req.params.runId as string);
+    const runId = parseIntParam(req.params.runId);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
 
     const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));

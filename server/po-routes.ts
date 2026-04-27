@@ -8,6 +8,7 @@ import { jwtAuth, requireAuth, getEffectiveUser } from "./auth-context";
 import { actorFromReq, createProjectEvent } from "./services/project-event-service";
 import { createPoApproval } from "./services/approval-service";
 import PDFDocument from "pdfkit";
+import { parseIntParam } from "./lib/req-params";
 
 // ===================== PO STATUS STATE MACHINE =====================
 
@@ -408,7 +409,7 @@ export function registerPoRoutes(app: Express) {
       const user = getEffectiveUser(req);
       if (!user?.id) return res.status(401).json({ error: "Not authenticated" });
 
-      const poIdNum = parseInt(String(req.params.poId));
+      const poIdNum = parseIntParam(req.params.poId);
       if (isNaN(poIdNum)) return res.status(400).json({ error: "Invalid PO ID" });
 
       // Get current PO
@@ -533,7 +534,7 @@ export function registerPoRoutes(app: Express) {
       if (!user?.id) return res.status(401).json({ error: "Not authenticated" });
       const userRole = String(user.role || "");
 
-      const poIdNum = parseInt(String(req.params.poId));
+      const poIdNum = parseIntParam(req.params.poId);
       if (isNaN(poIdNum)) return res.status(400).json({ error: "Invalid PO ID" });
 
       const { decision, notes } = req.body;
@@ -659,7 +660,7 @@ export function registerPoRoutes(app: Express) {
       if (!user?.id) return res.status(401).json({ error: "Not authenticated" });
       const userRole = String(user.role || "");
 
-      const poIdNum = parseInt(String(req.params.poId));
+      const poIdNum = parseIntParam(req.params.poId);
       if (isNaN(poIdNum)) return res.status(400).json({ error: "Invalid PO ID" });
 
       const toUserId = Number(req.body?.toUserId);
@@ -802,7 +803,7 @@ export function registerPoRoutes(app: Express) {
 
   app.patch("/api/po/:poId/status", jwtAuth, requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
     try {
-      const poIdNum = parseInt(String(req.params.poId));
+      const poIdNum = parseIntParam(req.params.poId);
       if (isNaN(poIdNum)) return res.status(400).json({ error: "Invalid PO ID" });
 
       const { status } = req.body;
@@ -852,7 +853,7 @@ export function registerPoRoutes(app: Express) {
 
   app.get("/api/po/:projectName/:poId/pdf", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const poIdNum = parseInt(String(req.params.poId));
+      const poIdNum = parseIntParam(req.params.poId);
       if (isNaN(poIdNum)) return res.status(400).json({ error: "Invalid PO ID" });
 
       const result = await db.execute(sql`
@@ -875,7 +876,7 @@ export function registerPoRoutes(app: Express) {
 
   app.delete("/api/po/:poId", jwtAuth, requireAuth, requirePermission('procurement', 'delete'), async (req: Request, res: Response) => {
     try {
-      const poIdNum = parseInt(String(req.params.poId));
+      const poIdNum = parseIntParam(req.params.poId);
       if (isNaN(poIdNum)) return res.status(400).json({ error: "Invalid PO ID" });
 
       await db.execute(sql`DELETE FROM purchase_orders WHERE id = ${poIdNum} AND status = 'draft'`);
@@ -899,7 +900,7 @@ export function registerPoRoutes(app: Express) {
 
   app.get("/api/po/detail/:poId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const poIdNum = parseInt(String(req.params.poId));
+      const poIdNum = parseIntParam(req.params.poId);
       if (isNaN(poIdNum)) return res.status(400).json({ error: "Invalid PO ID" });
 
       const poResult = await db.execute(sql`

@@ -1,4 +1,5 @@
 import type { Express, NextFunction, Request, Response } from "express";
+import { timingSafeEqual } from "crypto";
 import { z } from "zod";
 import { db } from "./db";
 import { eq, and, or, desc, asc, sql, inArray, isNull, ne } from "drizzle-orm";
@@ -40,6 +41,7 @@ import {
   requireMicrosoftSurfaceFromRequest,
   requireMicrosoftSyncSurfaceAccess,
 } from "./lib/microsoft-route-access";
+import { parseIntParam } from "./lib/req-params";
 
 const tagSchema = z.object({
   projectId: z.number(),
@@ -88,7 +90,7 @@ export function registerMsSyncRoutes(app: Express) {
 
   app.post("/api/ms-objects/:id/tag-project", jwtAuth, requireAuth, requireUnifiedWorkFlag, requireMicrosoftObjectSurfaceAccess(), async (req: Request, res: Response) => {
     try {
-      const msObjectId = parseInt(String(req.params.id));
+      const msObjectId = parseIntParam(req.params.id);
       if (isNaN(msObjectId)) return res.status(400).json({ error: "Invalid ms object id" });
 
       const parsed = tagSchema.safeParse(req.body);
@@ -107,7 +109,7 @@ export function registerMsSyncRoutes(app: Express) {
 
   app.delete("/api/ms-objects/:id/tag-project", jwtAuth, requireAuth, requireUnifiedWorkFlag, requireMicrosoftObjectSurfaceAccess(), async (req: Request, res: Response) => {
     try {
-      const msObjectId = parseInt(String(req.params.id));
+      const msObjectId = parseIntParam(req.params.id);
       if (isNaN(msObjectId)) return res.status(400).json({ error: "Invalid ms object id" });
 
       const userId = (req as any).user?.id;
@@ -145,7 +147,7 @@ export function registerMsSyncRoutes(app: Express) {
 
   app.get("/api/ms-objects/project/:projectId", jwtAuth, requireAuth, requirePermission("projects", "view"), async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(String(req.params.projectId));
+      const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project id" });
 
       const userId = (req as any).user?.id;
@@ -161,7 +163,7 @@ export function registerMsSyncRoutes(app: Express) {
 
   app.post("/api/ms-objects/:id/convert-to-task", jwtAuth, requireAuth, requireUnifiedWorkFlag, requireMicrosoftObjectSurfaceAccess(), async (req: Request, res: Response) => {
     try {
-      const msObjectId = parseInt(String(req.params.id));
+      const msObjectId = parseIntParam(req.params.id);
       if (isNaN(msObjectId)) return res.status(400).json({ error: "Invalid ms object id" });
 
       const userId = (req as any).user?.id;
@@ -180,7 +182,7 @@ export function registerMsSyncRoutes(app: Express) {
 
   app.post("/api/ms-objects/:id/create-follow-up", jwtAuth, requireAuth, requireUnifiedWorkFlag, requireMicrosoftObjectSurfaceAccess(), async (req: Request, res: Response) => {
     try {
-      const msObjectId = parseInt(String(req.params.id));
+      const msObjectId = parseIntParam(req.params.id);
       if (isNaN(msObjectId)) return res.status(400).json({ error: "Invalid ms object id" });
 
       const userId = (req as any).user?.id;
@@ -241,7 +243,7 @@ export function registerMsSyncRoutes(app: Express) {
 
   app.get("/api/projects/:projectId/communication-timeline", jwtAuth, requireAuth, requirePermission("projects", "view"), async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(String(req.params.projectId));
+      const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project id" });
 
       const userId = (req as any).user?.id;
@@ -262,7 +264,7 @@ export function registerMsSyncRoutes(app: Express) {
 
   app.patch("/api/ms-objects/:id/dismiss", jwtAuth, requireAuth, requireMicrosoftObjectSurfaceAccess(), async (req: Request, res: Response) => {
     try {
-      const msObjectId = parseInt(String(req.params.id));
+      const msObjectId = parseIntParam(req.params.id);
       if (isNaN(msObjectId)) return res.status(400).json({ error: "Invalid ms object id" });
       const userId = (req as any).user?.id;
       if (!userId) return res.status(401).json({ error: "auth_required" });
@@ -346,7 +348,7 @@ export function registerMsSyncRoutes(app: Express) {
       if (!entityType) {
         return res.status(400).json({ error: `Unknown entity type: ${req.params.entityType}` });
       }
-      const entityId = parseInt(req.params.entityId as string, 10);
+      const entityId = parseIntParam(req.params.entityId);
       if (!Number.isFinite(entityId) || entityId <= 0) {
         return res.status(400).json({ error: `Invalid entity ID: ${req.params.entityId}` });
       }
@@ -393,7 +395,7 @@ export function registerMsSyncRoutes(app: Express) {
       if (!actorId || !Number.isFinite(actorId)) {
         return res.status(401).json({ error: "Valid user session required" });
       }
-      console.log("[Reassign] Processing:", { taskId, taskSource, assigneeType, assigneeId, actorId, body: JSON.stringify(req.body) });
+      console.log("[Reassign] Processing:", { taskId, taskSource, assigneeType, assigneeId, actorId });
 
       if (taskSource === "plan_viewer" || taskSource === "remove_viewer") {
         const viewerUserId = assigneeType === "internal_user" ? assigneeId : parsed.data.userId ?? null;
@@ -1093,7 +1095,7 @@ export function registerMsSyncRoutes(app: Express) {
       const userId = (req as any).user?.id;
       if (!userId) return res.status(401).json({ error: "auth_required" });
 
-      const projectId = parseInt(String(req.params.projectId));
+      const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project id" });
 
       const [project] = await db.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, projectId));
@@ -1205,7 +1207,7 @@ export function registerMsSyncRoutes(app: Express) {
         return res.status(403).json({ error: "Only admin/COO can unlink Teams chats" });
       }
 
-      const projectId = parseInt(String(req.params.projectId));
+      const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project id" });
 
       await db.update(msObjects)
@@ -1259,14 +1261,30 @@ export function registerMsSyncRoutes(app: Express) {
       return res.status(200).contentType("text/plain").send(req.query.validationToken as string);
     }
 
-    // Verify clientState on every notification delivery so only subscriptions
-    // created by this app (with the shared secret) are accepted.
+    // Verify clientState on every notification delivery. GRAPH_WEBHOOK_CLIENT_STATE
+    // is REQUIRED in production — fail-closed if missing. In non-prod the check
+    // is skipped so local fixtures can POST without one.
     const expectedClientState = process.env.GRAPH_WEBHOOK_CLIENT_STATE;
-    if (expectedClientState) {
-      const notifications: Array<{ clientState?: string }> = req.body?.value || [];
-      const allValid = notifications.every(
-        (n) => n.clientState === expectedClientState,
-      );
+    if (!expectedClientState) {
+      if (process.env.NODE_ENV === "production") {
+        console.error("[Graph Webhook] Rejected: GRAPH_WEBHOOK_CLIENT_STATE not configured");
+        return res.status(503).json({ error: "Webhook not configured" });
+      }
+    } else {
+      const notifications: Array<{ clientState?: string }> = req.body?.value;
+      if (!Array.isArray(notifications) || notifications.length === 0) {
+        console.warn("[Graph Webhook] Rejected: empty or missing value array");
+        return res.status(400).json({ error: "Invalid payload" });
+      }
+      const expectedBuf = Buffer.from(expectedClientState);
+      const allValid = notifications.every((n) => {
+        const provided = typeof n.clientState === "string" ? n.clientState : "";
+        const providedBuf = Buffer.from(provided);
+        return (
+          providedBuf.length === expectedBuf.length &&
+          timingSafeEqual(providedBuf, expectedBuf)
+        );
+      });
       if (!allValid) {
         console.warn("[Graph Webhook] Rejected: clientState mismatch");
         return res.status(401).json({ error: "Invalid clientState" });

@@ -21,7 +21,7 @@ import {
   isSharePointListConfigured,
 } from "./sharepoint-list";
 import { getConnector } from "./intake-connector";
-import { paramStr } from "./lib/req-params";
+import { paramStr, parseIntParam } from "./lib/req-params";
 
 function isMissingTableError(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err ?? "");
@@ -697,7 +697,7 @@ export function registerSyncRoutes(app: Express) {
   app.get("/api/sp-sync/intake-requests/:id", jwtAuth, requireAuth, async (req, res) => {
     try {
       const [request] = await db.select().from(intakeRequests)
-        .where(eq(intakeRequests.id, parseInt(paramStr(req.params.id))));
+        .where(eq(intakeRequests.id, parseIntParam(req.params.id)));
       if (!request) return res.status(404).json({ error: "Not found" });
 
       const tasks = await db.select().from(intakeTasks)
@@ -713,7 +713,7 @@ export function registerSyncRoutes(app: Express) {
   app.get("/api/sp-sync/intake-requests/by-project/:projectId", jwtAuth, requireAuth, async (req, res) => {
     try {
       const requests = await db.select().from(intakeRequests)
-        .where(eq(intakeRequests.projectId, parseInt(paramStr(req.params.projectId))))
+        .where(eq(intakeRequests.projectId, parseIntParam(req.params.projectId)))
         .orderBy(desc(intakeRequests.updatedAt));
       res.json({ requests });
     } catch (err: any) {
@@ -734,7 +734,7 @@ export function registerSyncRoutes(app: Express) {
 
       const [updated] = await db.update(intakeRequests)
         .set(updates)
-        .where(eq(intakeRequests.id, parseInt(paramStr(req.params.id))))
+        .where(eq(intakeRequests.id, parseIntParam(req.params.id)))
         .returning();
 
       logAuditFromReq(req, { entityType: "intake_request", entityId: paramStr(req.params.id), action: "update", changesJson: { fieldsUpdated: Object.keys(updates).filter(k => k !== "updatedAt" && k !== "lastAppEditAt") } });
@@ -748,7 +748,7 @@ export function registerSyncRoutes(app: Express) {
   app.get("/api/sp-sync/intake-tasks/:requestId", jwtAuth, requireAuth, async (req, res) => {
     try {
       const tasks = await db.select().from(intakeTasks)
-        .where(eq(intakeTasks.intakeRequestId, parseInt(paramStr(req.params.requestId))))
+        .where(eq(intakeTasks.intakeRequestId, parseIntParam(req.params.requestId)))
         .orderBy(intakeTasks.sortOrder);
       res.json({ tasks });
     } catch (err: any) {
@@ -770,7 +770,7 @@ export function registerSyncRoutes(app: Express) {
 
       const [updated] = await db.update(intakeTasks)
         .set(updates)
-        .where(eq(intakeTasks.id, parseInt(paramStr(req.params.taskId))))
+        .where(eq(intakeTasks.id, parseIntParam(req.params.taskId)))
         .returning();
       logAuditFromReq(req, { entityType: "intake_task", entityId: paramStr(req.params.taskId), action: "update", changesJson: { status, assignedTo } });
       res.json({ task: updated });
@@ -783,7 +783,7 @@ export function registerSyncRoutes(app: Express) {
   app.post("/api/sp-sync/generate-tasks/:requestId", jwtAuth, requireAuth, requireCOO, async (req, res) => {
     try {
       const [request] = await db.select().from(intakeRequests)
-        .where(eq(intakeRequests.id, parseInt(paramStr(req.params.requestId))));
+        .where(eq(intakeRequests.id, parseIntParam(req.params.requestId)));
       if (!request) return res.status(404).json({ error: "Not found" });
       if (request.tasksGenerated) return res.status(400).json({ error: "Tasks already generated" });
 
@@ -799,7 +799,7 @@ export function registerSyncRoutes(app: Express) {
 
       for (const tmpl of templates) {
         await db.insert(intakeTasks).values({
-          intakeRequestId: parseInt(paramStr(req.params.requestId)),
+          intakeRequestId: parseIntParam(req.params.requestId),
           templateItemId: tmpl.id,
           title: tmpl.title,
           description: tmpl.description,
@@ -812,7 +812,7 @@ export function registerSyncRoutes(app: Express) {
         tasksGenerated: true,
         requestType: requestType,
         updatedAt: new Date(),
-      }).where(eq(intakeRequests.id, parseInt(paramStr(req.params.requestId))));
+      }).where(eq(intakeRequests.id, parseIntParam(req.params.requestId)));
 
       logAuditFromReq(req, { entityType: "intake_request", entityId: paramStr(req.params.requestId), action: "generate_tasks", changesJson: { tasksCreated: templates.length, requestType } });
       res.json({ success: true, tasksCreated: templates.length });

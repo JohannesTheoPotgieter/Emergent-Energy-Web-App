@@ -14,14 +14,14 @@ import { ApiError, sendError, badRequest, notFound, validationError, unauthorize
 import { validateTaskCreate, validateTaskUpdate } from "../lib/task-validation";
 import { normalizeStatus, normalizePriority } from "../lib/canonical-task-engine";
 import { getWorkItemsAsOperationalTasks } from "../work-items-adapter";
-import { paramStr } from "../lib/req-params";
+import { paramStr, parseIntParam } from "../lib/req-params";
 
 export function registerOperationalTasksRoutes(app: Express) {
   // ==================== OPERATIONAL TASKS ====================
 
   app.get("/api/operational-tasks/task/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       if (!Number.isFinite(id)) {
         return res.status(400).json({ error: `Invalid task ID: ${req.params.id}` });
       }
@@ -176,7 +176,7 @@ export function registerOperationalTasksRoutes(app: Express) {
 
   app.patch("/api/operational-tasks/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       if (!Number.isFinite(id)) {
         return res.status(400).json({ error: `Invalid task ID: ${req.params.id}` });
       }
@@ -291,7 +291,7 @@ export function registerOperationalTasksRoutes(app: Express) {
 
   app.delete("/api/operational-tasks/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       const task = await storage.getOperationalTask(id);
       if (task) {
         await storage.createTaskActivityLog({
@@ -314,7 +314,7 @@ export function registerOperationalTasksRoutes(app: Express) {
   // GC-008: Task type/workstream conversion endpoint
   app.post("/api/operational-tasks/:id/convert", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       const { targetWorkstream } = req.body;
       const validWorkstreams = ["PM", "Engineering", "Quality", "Procurement", "Construction", "Commissioning", "Handover", "PD"];
       if (!targetWorkstream || !validWorkstreams.includes(targetWorkstream)) {
@@ -447,7 +447,7 @@ export function registerOperationalTasksRoutes(app: Express) {
 
   app.get("/api/task-comments/:taskId", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const comments = await storage.getTaskComments(parseInt(paramStr(req.params.taskId)));
+      const comments = await storage.getTaskComments(parseIntParam(req.params.taskId));
       res.json(comments);
     } catch (err: any) {
       throw err;
@@ -466,7 +466,7 @@ export function registerOperationalTasksRoutes(app: Express) {
 
   app.delete("/api/task-comments/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
       await storage.deleteTaskComment(id);
       logAuditFromReq(req, { entityType: "task_comment", action: "delete", entityId: paramStr(req.params.id), changesJson: { description: "Task comment deleted" } });
@@ -480,7 +480,7 @@ export function registerOperationalTasksRoutes(app: Express) {
 
   app.get("/api/task-checklists/:taskId", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const checklists = await storage.getTaskChecklists(parseInt(paramStr(req.params.taskId)));
+      const checklists = await storage.getTaskChecklists(parseIntParam(req.params.taskId));
       const checklistsWithItems = await Promise.all(checklists.map(async cl => ({
         ...cl,
         items: await storage.getChecklistItems(cl.id),
@@ -503,7 +503,7 @@ export function registerOperationalTasksRoutes(app: Express) {
 
   app.delete("/api/task-checklists/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
       await storage.deleteTaskChecklist(id);
       logAuditFromReq(req, { entityType: "task_checklist", action: "delete", entityId: paramStr(req.params.id), changesJson: { description: "Task checklist deleted" } });
@@ -525,7 +525,7 @@ export function registerOperationalTasksRoutes(app: Express) {
 
   app.patch("/api/task-checklist-items/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
       const updated = await storage.updateChecklistItem(id, req.body);
       logAuditFromReq(req, { entityType: "checklist_item", action: "update", entityId: paramStr(req.params.id), changesJson: { description: "Checklist item updated" } });
@@ -537,7 +537,7 @@ export function registerOperationalTasksRoutes(app: Express) {
 
   app.delete("/api/task-checklist-items/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
       await storage.deleteChecklistItem(id);
       logAuditFromReq(req, { entityType: "checklist_item", action: "delete", entityId: paramStr(req.params.id), changesJson: { description: "Checklist item deleted" } });
@@ -551,7 +551,7 @@ export function registerOperationalTasksRoutes(app: Express) {
 
   app.get("/api/task-attachments/:taskId", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const attachments = await storage.getTaskAttachments(parseInt(paramStr(req.params.taskId)));
+      const attachments = await storage.getTaskAttachments(parseIntParam(req.params.taskId));
       res.json(attachments);
     } catch (err: any) {
       throw err;
@@ -570,7 +570,7 @@ export function registerOperationalTasksRoutes(app: Express) {
 
   app.delete("/api/task-attachments/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
       await storage.deleteTaskAttachment(id);
       logAuditFromReq(req, { entityType: "task_attachment", action: "delete", entityId: paramStr(req.params.id), changesJson: { description: "Task attachment deleted" } });
@@ -584,7 +584,7 @@ export function registerOperationalTasksRoutes(app: Express) {
 
   app.get("/api/task-activity/:taskId", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const activity = await storage.getTaskActivityLog(parseInt(paramStr(req.params.taskId)));
+      const activity = await storage.getTaskActivityLog(parseIntParam(req.params.taskId));
       res.json(activity);
     } catch (err: any) {
       throw err;

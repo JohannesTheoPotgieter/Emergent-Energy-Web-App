@@ -8,6 +8,7 @@ import { jwtAuth, requireAuth, getEffectiveUser } from "./auth-context";
 import { actorFromReq, createProjectEvent } from "./services/project-event-service";
 import { createVoApproval } from "./services/approval-service";
 import { z } from "zod";
+import { parseIntParam } from "./lib/req-params";
 
 const VALID_STATUSES = ['draft', 'submitted', 'under_review', 'approved', 'rejected', 'implemented', 'closed'] as const;
 
@@ -67,7 +68,7 @@ function rowsFromResult(result: unknown): Record<string, unknown>[] {
 export function registerChangeControlRoutes(app: Express): void {
   app.get("/api/change-requests/project/:projectId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(String(req.params.projectId));
+      const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
 
       const rows = await db.execute(sql.raw(`
@@ -93,7 +94,7 @@ export function registerChangeControlRoutes(app: Express): void {
 
   app.get("/api/change-requests/:id", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(String(req.params.id));
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
       const rows = await db.execute(sql.raw(`
         SELECT cr.*, u1.name as requested_by_name, u2.name as owner_name, pi.project_name
@@ -170,7 +171,7 @@ export function registerChangeControlRoutes(app: Express): void {
 
   app.patch("/api/change-requests/:id", jwtAuth, requireAuth, requirePermission("projects", "edit"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(String(req.params.id));
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
       const existing = await db.select().from(changeRequests).where(eq(changeRequests.id, id));
@@ -281,7 +282,7 @@ export function registerChangeControlRoutes(app: Express): void {
 
   app.delete("/api/change-requests/:id", jwtAuth, requireAuth, requirePermission("projects", "delete"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(String(req.params.id));
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
       const existing = await db.select().from(changeRequests).where(eq(changeRequests.id, id));

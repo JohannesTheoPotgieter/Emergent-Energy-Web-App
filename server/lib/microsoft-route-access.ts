@@ -4,6 +4,7 @@ import { msObjects, type PermissionAction, type PermissionEntity } from "@shared
 import { db } from "../db";
 import { logAuditFromReq } from "../audit-logger";
 import { evaluatePermissionForRequest } from "../permission-middleware";
+import { parseIntParam } from "./req-params";
 
 const MICROSOFT_ROUTE_FALLBACK_ENTITIES: PermissionEntity[] = ["home", "my_work", "collaboration_hub", "teams_chat"];
 const MICROSOFT_SYNC_FALLBACK_ENTITIES: PermissionEntity[] = ["my_work", "collaboration_hub", "teams_chat"];
@@ -121,7 +122,7 @@ export function requireMicrosoftSurfaceFromRequest(options?: {
 
 export function requireMicrosoftObjectSurfaceAccess(action: PermissionAction = "view") {
   return async (req: Request, res: Response, next: NextFunction) => {
-    const msObjectId = parseInt(String(req.params.id));
+    const msObjectId = parseIntParam(req.params.id);
     if (Number.isNaN(msObjectId)) {
       return res.status(400).json({ error: "Invalid ms object id" });
     }

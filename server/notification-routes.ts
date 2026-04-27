@@ -3,6 +3,7 @@ import { db } from "./db";
 import { notifications } from "@shared/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { requireAuth } from "./auth-context";
+import { parseIntParam } from "./lib/req-params";
 
 export function registerNotificationRoutes(app: Express) {
   // Get user's notifications (recent + unread)
@@ -81,7 +82,7 @@ export function registerNotificationRoutes(app: Express) {
   app.patch("/api/notifications/:id/read", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
-      const id = parseInt(req.params.id as string);
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid notification ID" });
 
       await db.update(notifications)

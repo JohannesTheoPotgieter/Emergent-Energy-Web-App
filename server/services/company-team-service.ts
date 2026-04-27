@@ -177,7 +177,7 @@ export async function getCompanyTeamData(): Promise<CompanyTeamData> {
   // a user is both owner and assignee on it (DISTINCT). Restricted to
   // work_items that are not soft-deleted and not in a closed status,
   // matching the same gating as the allocation aggregate.
-  const activeWorkItemRows = await db.execute<{ user_id: number; cnt: number }>(sql`
+  const activeWorkItemRows = await db.execute(sql`
     SELECT user_id, COUNT(DISTINCT work_item_id) AS cnt FROM (
       SELECT wi.id AS work_item_id, wi.owner_user_id AS user_id
         FROM work_items wi
@@ -263,7 +263,7 @@ export async function getCompanyTeamData(): Promise<CompanyTeamData> {
   // when they aren't on a functional lead column. This is what made the
   // previous version show 0 active projects for everyone other than a
   // handful of PMs — the lead columns are very sparsely populated today.
-  const projectMembershipRows = await db.execute<{ user_id: number; project_id: number }>(sql`
+  const projectMembershipRows = await db.execute(sql`
     SELECT DISTINCT user_id, project_id FROM (
       SELECT wi.owner_user_id AS user_id, wi.project_id AS project_id
         FROM work_items wi
@@ -297,10 +297,10 @@ export async function getCompanyTeamData(): Promise<CompanyTeamData> {
   }
 
   const hasAnyActiveProjects = activeProjects.length > 0;
-  const hasAnyAllocationData = allocationRows.some((r) => Number(r.nonNullAllocCount ?? 0) > 0);
+  const hasAnyAllocationData = allocationRows.some((r: any) => Number(r.nonNullAllocCount ?? 0) > 0);
 
   const people = assembleTeamPeople({
-    users: allUsers.map((u) => ({
+    users: allUsers.map((u: any) => ({
       id: u.id,
       name: u.name,
       role: u.role ?? null,

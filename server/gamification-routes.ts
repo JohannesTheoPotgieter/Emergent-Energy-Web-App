@@ -9,6 +9,7 @@ import {
   BADGE_DEFINITIONS,
 } from "@shared/schema";
 import { jwtAuth, requireAuth, getEffectiveUser } from "./auth-context";
+import { parseIntParam } from "./lib/req-params";
 
 const POINT_VALUES: Record<string, number> = {
   task_complete: 10,
@@ -476,7 +477,7 @@ export function registerGamificationRoutes(app: Express) {
 
   app.get("/api/gamification/user/:userId", jwtAuth, requireAuth, requirePermission("leaderboard", "view"), async (req: Request, res: Response) => {
     try {
-      const userId = parseInt(String(req.params.userId));
+      const userId = parseIntParam(req.params.userId);
       const [u] = await db.select({ id: users.id, name: users.name, role: users.role }).from(users).where(eq(users.id, userId));
       if (!u) return res.status(404).json({ error: "User not found" });
 
@@ -534,7 +535,7 @@ export function registerGamificationRoutes(app: Express) {
 
   app.get("/api/gamification/user/:userId/details", jwtAuth, requireAuth, requirePermission("leaderboard", "view"), async (req: Request, res: Response) => {
     try {
-      const userId = parseInt(String(req.params.userId));
+      const userId = parseIntParam(req.params.userId);
       const [u] = await db.select({ id: users.id, name: users.name, role: users.role }).from(users).where(eq(users.id, userId));
       if (!u) return res.status(404).json({ error: "User not found" });
       const userName = u.name || "";

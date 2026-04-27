@@ -27,7 +27,7 @@ import { requireAuth } from "../auth-context";
 import { requireAdmin } from "../middleware/requireAdmin";
 import { logAuditFromReq } from "../audit-logger";
 import { ApiError, sendError, logApiError } from "../lib/api-error";
-import { paramStr } from "../lib/req-params";
+import { paramStr, parseIntParam } from "../lib/req-params";
 import { getCanonicalAllCurrentCostLines } from "../services/project-cost-line-read-service";
 
 // ── generateCSV helper (moved from routes.ts) ──
@@ -342,7 +342,7 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
 
   app.patch("/api/writeback-mappings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
       const updated = await storage.updateWritebackMapping(id, req.body);
       logAuditFromReq(req, { entityType: "writeback_mapping", action: "update", entityId: paramStr(req.params.id), changesJson: { description: "Writeback mapping updated" } });
@@ -354,7 +354,7 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
 
   app.delete("/api/writeback-mappings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
       await storage.deleteWritebackMapping(id);
       logAuditFromReq(req, { entityType: "writeback_mapping", action: "delete", entityId: paramStr(req.params.id), changesJson: { description: "Writeback mapping deleted" } });
@@ -496,7 +496,7 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
 
   app.post("/api/writeback/rollback/:auditId", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const auditId = parseInt(paramStr(req.params.auditId));
+      const auditId = parseIntParam(req.params.auditId);
       const logs = await storage.getWritebackAuditLogs();
       const auditEntry = logs.find((l: any) => l.id === auditId);
       if (!auditEntry) return res.status(404).json({ error: "Audit entry not found" });
@@ -581,7 +581,7 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
 
   app.patch("/api/feedback/:id", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       const { status, adminNotes, priority } = req.body;
       const updates: any = { updatedAt: new Date() };
       if (status) updates.status = status;
@@ -598,7 +598,7 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
 
   app.delete("/api/feedback/:id", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       await db.delete(feedbackTickets).where(eq(feedbackTickets.id, id));
       logAuditFromReq(req, { entityType: "feedback", action: "delete", entityId: String(id), changesJson: { description: "Feedback ticket deleted" } });
       res.json({ success: true });

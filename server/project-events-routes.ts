@@ -1,11 +1,12 @@
 import { Express, Request, Response } from "express";
 import { jwtAuth, requireAuth } from "./auth-context";
 import { listProjectEvents } from "./services/project-event-service";
+import { parseIntParam } from "./lib/req-params";
 
 export function registerProjectEventsRoutes(app: Express): void {
   app.get("/api/project-events/project/:projectId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(String(req.params.projectId), 10);
+      const projectId = parseIntParam(req.params.projectId);
       if (Number.isNaN(projectId)) {
         return res.status(400).json({ error: "Invalid projectId" });
       }

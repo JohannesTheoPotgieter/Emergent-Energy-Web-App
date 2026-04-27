@@ -55,7 +55,7 @@ import { logAuditFromReq } from "../audit-logger";
 import { validateTaskCreate, validateTaskUpdate } from "../lib/task-validation";
 import { normalizeStatus, normalizePriority } from "../lib/canonical-task-engine";
 import { sendError, badRequest, validationError } from "../lib/api-error";
-import { paramStr } from "../lib/req-params";
+import { paramStr, parseIntParam } from "../lib/req-params";
 import { computeNextRecurrenceDate, isOverdue, shouldBlockTask, validateDependencyPair } from "../lib/mytool-work-engine";
 import { mytoolTaskIdempotencyStore } from "../lib/mytool-task-idempotency";
 
@@ -661,7 +661,7 @@ export function registerMytoolRoutes(app: Express): void {
 
   app.patch("/api/mytool/tasks/:id", requireAuth, async (req, res) => {
     try {
-      const taskId = parseInt(paramStr(req.params.id));
+      const taskId = parseIntParam(req.params.id);
       const userId = (req.user as any).id;
       const validationErrors = validateTaskUpdate(req.body);
       if (validationErrors.length > 0) {
@@ -756,7 +756,7 @@ export function registerMytoolRoutes(app: Express): void {
 
   app.delete("/api/mytool/tasks/:id", requireAuth, async (req, res) => {
     try {
-      const taskId = parseInt(paramStr(req.params.id));
+      const taskId = parseIntParam(req.params.id);
       const userId = (req.user as any).id;
       const existingTask = await storage.getMytoolTask(taskId);
       if (existingTask && existingTask.ownerUserId !== userId && !isMyToolOversightRole(req)) {
@@ -909,7 +909,7 @@ export function registerMytoolRoutes(app: Express): void {
 
   app.patch("/api/mytool/timeblocks/:id", requireAuth, async (req, res) => {
     try {
-      const block = await storage.updateMytoolTimeblock(parseInt(paramStr(req.params.id)), req.body);
+      const block = await storage.updateMytoolTimeblock(parseIntParam(req.params.id), req.body);
       logAuditFromReq(req, { entityType: "mytool_timeblock", action: "update", entityId: paramStr(req.params.id), changesJson: { description: "Timeblock updated" } });
       res.json(block);
     } catch (err: any) {
@@ -919,7 +919,7 @@ export function registerMytoolRoutes(app: Express): void {
 
   app.delete("/api/mytool/timeblocks/:id", requireAuth, async (req, res) => {
     try {
-      await storage.deleteMytoolTimeblock(parseInt(paramStr(req.params.id)));
+      await storage.deleteMytoolTimeblock(parseIntParam(req.params.id));
       logAuditFromReq(req, { entityType: "mytool_timeblock", action: "delete", entityId: paramStr(req.params.id), changesJson: { description: "Timeblock deleted" } });
       res.json({ success: true });
     } catch (err: any) {
@@ -1077,7 +1077,7 @@ export function registerMytoolRoutes(app: Express): void {
 
   app.delete("/api/mytool/email-links/:id", requireAuth, async (req, res) => {
     try {
-      await storage.deleteEmailLink(parseInt(paramStr(req.params.id)));
+      await storage.deleteEmailLink(parseIntParam(req.params.id));
       logAuditFromReq(req, { entityType: "email_link", action: "delete", entityId: paramStr(req.params.id), changesJson: { description: "Email link deleted" } });
       res.json({ success: true });
     } catch (err: any) {
@@ -1109,7 +1109,7 @@ export function registerMytoolRoutes(app: Express): void {
 
   app.delete("/api/mytool/dod-templates/:id", requireAuth, async (req, res) => {
     try {
-      await storage.deleteMytoolDodTemplate(parseInt(paramStr(req.params.id)));
+      await storage.deleteMytoolDodTemplate(parseIntParam(req.params.id));
       logAuditFromReq(req, { entityType: "dod_template", action: "delete", entityId: paramStr(req.params.id), changesJson: { description: "DoD template deleted" } });
       res.json({ success: true });
     } catch (err: any) {
@@ -1189,7 +1189,7 @@ export function registerMytoolRoutes(app: Express): void {
   app.patch("/api/mytool/triage-rules/:id", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
-      const ruleId = parseInt(paramStr(req.params.id));
+      const ruleId = parseIntParam(req.params.id);
       const { triageRules: triageRulesTable } = await import("@shared/schema");
       const [existing] = await db.select().from(triageRulesTable).where(eq(triageRulesTable.id, ruleId)).limit(1);
       if (existing && existing.ownerUserId !== userId && !isMyToolOversightRole(req)) {
@@ -1209,7 +1209,7 @@ export function registerMytoolRoutes(app: Express): void {
   app.delete("/api/mytool/triage-rules/:id", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
-      const ruleId = parseInt(paramStr(req.params.id));
+      const ruleId = parseIntParam(req.params.id);
       const { triageRules: triageRulesTable } = await import("@shared/schema");
       const [existing] = await db.select().from(triageRulesTable).where(eq(triageRulesTable.id, ruleId)).limit(1);
       if (existing && existing.ownerUserId !== userId && !isMyToolOversightRole(req)) {

@@ -33,6 +33,7 @@ import {
 } from "@shared/quality-governance";
 import { getProjectLinkedItems } from "./project-linking-service";
 import { computePdPmSubmitBlockers, getProjectDevelopmentWorkspace } from "./services/project-development-workspace-service";
+import { parseIntParam } from "./lib/req-params";
 
 const qmApprovalUploadsDir = path.join(process.cwd(), "uploads", "qm-approvals");
 if (!fs.existsSync(qmApprovalUploadsDir)) fs.mkdirSync(qmApprovalUploadsDir, { recursive: true });
@@ -553,7 +554,7 @@ export function registerQualityRoutes(app: Express) {
 
   app.get("/api/quality/templates/:templateId", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
-      const tid = parseInt(String(req.params.templateId), 10);
+      const tid = parseIntParam(req.params.templateId);
       const [tmpl] = await db.select().from(qcTemplate).where(eq(qcTemplate.id, tid));
       if (!tmpl) return res.status(404).json({ error: "Template not found" });
 
@@ -703,7 +704,7 @@ export function registerQualityRoutes(app: Express) {
 
   app.post("/api/quality/project/:projectName/item/:itemInstanceId", requireAuth, requireAdminOrQm, requirePermission('pd_quality', 'edit'), async (req, res) => {
     try {
-      const itemId = parseInt(String(req.params.itemInstanceId), 10);
+      const itemId = parseIntParam(req.params.itemInstanceId);
       const {
         startDate,
         endDate,
@@ -841,7 +842,7 @@ export function registerQualityRoutes(app: Express) {
 
   app.post("/api/quality/project/:projectName/item/:itemInstanceId/approve", requireAuth, requirePermission('quality', 'approve'), async (req, res) => {
     try {
-      const itemId = parseInt(String(req.params.itemInstanceId), 10);
+      const itemId = parseIntParam(req.params.itemInstanceId);
       const { approved, comment } = req.body;
       const [existing] = await db.select().from(qcItemInstance).where(eq(qcItemInstance.id, itemId));
 
@@ -910,7 +911,7 @@ export function registerQualityRoutes(app: Express) {
 
   app.post("/api/quality/project/:projectName/item/:itemInstanceId/evidence", requireAuth, requirePermission("quality", "edit"), async (req, res) => {
     try {
-      const itemId = parseInt(String(req.params.itemInstanceId), 10);
+      const itemId = parseIntParam(req.params.itemInstanceId);
       const { evidenceUrl, evidenceNote } = req.body;
       if (!evidenceUrl) return res.status(400).json({ error: "evidenceUrl required" });
 
@@ -931,7 +932,7 @@ export function registerQualityRoutes(app: Express) {
 
   app.post("/api/quality/project/:projectName/item/:itemInstanceId/evidence/upload", requireAuth, requirePermission("quality", "edit"), qmApprovalUpload.single("file"), async (req, res) => {
     try {
-      const itemId = parseInt(String(req.params.itemInstanceId), 10);
+      const itemId = parseIntParam(req.params.itemInstanceId);
       const file = req.file;
       if (!file) return res.status(400).json({ error: "No file uploaded" });
       const note = req.body.note || "";
@@ -997,7 +998,7 @@ export function registerQualityRoutes(app: Express) {
 
   app.post("/api/quality/project/:projectName/item/:itemInstanceId/send-for-approval", requireAuth, requirePermission("pd_quality", "edit"), qmApprovalUpload.single("file"), async (req, res) => {
     try {
-      const itemId = parseInt(String(req.params.itemInstanceId), 10);
+      const itemId = parseIntParam(req.params.itemInstanceId);
       const projectName = decodeURIComponent(String(req.params.projectName));
       const approverUserId = parseInt(req.body.approverUserId);
       if (!approverUserId) return res.status(400).json({ error: "Approver is required" });
@@ -1049,7 +1050,7 @@ export function registerQualityRoutes(app: Express) {
 
   app.delete("/api/quality/evidence/:evidenceId", requireAuth, requirePermission("quality", "delete"), async (req, res) => {
     try {
-      await db.update(qcItemEvidence).set({ deletedAt: new Date(), deletedBy: getUser(req).id }).where(eq(qcItemEvidence.id, parseInt(String(req.params.evidenceId), 10))).returning();
+      await db.update(qcItemEvidence).set({ deletedAt: new Date(), deletedBy: getUser(req).id }).where(eq(qcItemEvidence.id, parseIntParam(req.params.evidenceId))).returning();
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(req.params.evidenceId), action: "delete", changesJson: { description: "Evidence deleted" } });
       res.json({ success: true });
     } catch (err: unknown) {
@@ -1111,7 +1112,7 @@ export function registerQualityRoutes(app: Express) {
   app.delete("/api/quality/project/:projectName/item/:itemInstanceId", requireAuth, requireAdminOrQm, requirePermission('pd_quality', 'delete'), async (req, res) => {
     try {
       const pName = decodeURIComponent(String(req.params.projectName));
-      const itemId = parseInt(String(req.params.itemInstanceId), 10);
+      const itemId = parseIntParam(req.params.itemInstanceId);
 
       const [checklist] = await db.select().from(qcChecklist).where(eq(qcChecklist.projectName, pName));
       if (!checklist) return res.status(404).json({ error: "No checklist found for this project" });
@@ -1264,7 +1265,7 @@ export function registerQualityRoutes(app: Express) {
 
   app.post("/api/quality/warning/:warningId/acknowledge", requireAuth, requirePermission("quality", "approve"), async (req, res) => {
     try {
-      const warningId = parseInt(String(req.params.warningId), 10);
+      const warningId = parseIntParam(req.params.warningId);
       const { note } = req.body;
       await db.update(qcWarning).set({ status: "in_progress", updatedAt: new Date() }).where(eq(qcWarning.id, warningId));
       await db.insert(qcWarningEvent).values({
@@ -1285,7 +1286,7 @@ export function registerQualityRoutes(app: Express) {
 
   app.post("/api/quality/warning/:warningId/resolve", requireAuth, requirePermission("quality", "approve"), async (req, res) => {
     try {
-      const warningId = parseInt(String(req.params.warningId), 10);
+      const warningId = parseIntParam(req.params.warningId);
       const { note } = req.body;
       await db.update(qcWarning).set({ status: "resolved", updatedAt: new Date() }).where(eq(qcWarning.id, warningId));
       await db.insert(qcWarningEvent).values({
@@ -1337,8 +1338,8 @@ export function registerQualityRoutes(app: Express) {
 
   app.delete("/api/quality/plan-link/:linkId", requireAuth, requirePermission("quality", "delete"), async (req, res) => {
     try {
-      const [deletedLink] = await db.select().from(qcPlanLink).where(eq(qcPlanLink.id, parseInt(String(req.params.linkId), 10)));
-      await db.delete(qcPlanLink).where(eq(qcPlanLink.id, parseInt(String(req.params.linkId), 10)));
+      const [deletedLink] = await db.select().from(qcPlanLink).where(eq(qcPlanLink.id, parseIntParam(req.params.linkId)));
+      await db.delete(qcPlanLink).where(eq(qcPlanLink.id, parseIntParam(req.params.linkId)));
       if (deletedLink) recalculateWarnings(deletedLink.projectName).catch((err) => console.error("[Quality] Warning recalculation failed:", err?.message || err));
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(req.params.linkId), action: "delete", projectName: deletedLink?.projectName, changesJson: { description: "Plan link deleted" } });
       res.json({ success: true });
@@ -2236,7 +2237,7 @@ export function registerQualityRoutes(app: Express) {
 
   app.delete("/api/quality/holidays/:id", requireAuth, requireRole("COO_ADMIN", "CEO_ADMIN"), async (req, res) => {
     try {
-      await db.delete(calendarHoliday).where(eq(calendarHoliday.id, parseInt(String(req.params.id), 10)));
+      await db.delete(calendarHoliday).where(eq(calendarHoliday.id, parseIntParam(req.params.id)));
       logAuditFromReq(req, { entityType: "quality_template", entityId: String(req.params.id), action: "delete", changesJson: { description: "Holiday deleted" } });
       res.json({ success: true });
     } catch (err: unknown) {
@@ -2290,7 +2291,7 @@ export function registerQualityRoutes(app: Express) {
       if (!isAdminRole(role)) {
         return res.status(403).json({ error: "Admin access required" });
       }
-      const userId = parseInt(String(req.params.userId), 10);
+      const userId = parseIntParam(req.params.userId);
       const { role: newRole } = req.body;
       if (!newRole) return res.status(400).json({ error: "Role is required" });
       const { users } = await import("@shared/schema");

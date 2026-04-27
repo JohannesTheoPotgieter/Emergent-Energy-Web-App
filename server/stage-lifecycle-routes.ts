@@ -41,6 +41,7 @@ import {
   projectStageRequirements,
   projectStageDecisions,
 } from "@shared/schema";
+import { parseIntParam } from "./lib/req-params";
 
 function getUser(req: Request): { id: number; role: string } {
   const user = (req as any).user;
@@ -52,7 +53,7 @@ function p(v: string | string[] | undefined): string {
 }
 
 function parseProjectId(req: Request, res: Response): number | null {
-  const id = parseInt(p(req.params.projectId), 10);
+  const id = parseIntParam(req.params.projectId);
   if (Number.isNaN(id)) {
     res.status(400).json({ error: "Invalid projectId" });
     return null;
@@ -407,7 +408,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     requirePermission("stage_lifecycle", "edit"),
     async (req: Request, res: Response) => {
       try {
-        const requirementId = parseInt(p(req.params.requirementId), 10);
+        const requirementId = parseIntParam(req.params.requirementId);
         if (Number.isNaN(requirementId)) return res.status(400).json({ error: "Invalid requirementId" });
         const user = getUser(req);
         const { status, evidenceUrl, notes, contributors, reopenReason } = req.body;
@@ -561,7 +562,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     requirePermission("stage_exceptions", "edit"),
     async (req: Request, res: Response) => {
       try {
-        const id = parseInt(p(req.params.id), 10);
+        const id = parseIntParam(req.params.id);
         if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
         const user = getUser(req);
         const { conditions } = req.body;
@@ -582,7 +583,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     requirePermission("stage_exceptions", "edit"),
     async (req: Request, res: Response) => {
       try {
-        const id = parseInt(p(req.params.id), 10);
+        const id = parseIntParam(req.params.id);
         if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
         const user = getUser(req);
         const { reason } = req.body;
@@ -604,7 +605,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     requirePermission("stage_exceptions", "edit"),
     async (req: Request, res: Response) => {
       try {
-        const id = parseInt(p(req.params.id), 10);
+        const id = parseIntParam(req.params.id);
         if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
         const user = getUser(req);
         const exception = await closeException(id, user.id);
@@ -680,7 +681,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     requirePermission("stage_lifecycle", "edit"),
     async (req: Request, res: Response) => {
       try {
-        const id = parseInt(p(req.params.id), 10);
+        const id = parseIntParam(req.params.id);
         if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
         const user = getUser(req);
         const dependency = await resolveDependency(id, user.id);
@@ -700,7 +701,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     requirePermission("stage_lifecycle", "edit"),
     async (req: Request, res: Response) => {
       try {
-        const id = parseInt(p(req.params.id), 10);
+        const id = parseIntParam(req.params.id);
         if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
         const user = getUser(req);
         const { reason } = req.body;
@@ -781,7 +782,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     requireAuth,
     async (req: Request, res: Response) => {
       try {
-        const projectId = parseInt(p(req.params.projectId), 10);
+        const projectId = parseIntParam(req.params.projectId);
         if (Number.isNaN(projectId)) {
           return res.status(400).json({ error: "Invalid projectId" });
         }
@@ -906,7 +907,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     requireAuth,
     async (req: Request, res: Response) => {
       try {
-        const projectId = parseInt(p(req.params.projectId), 10);
+        const projectId = parseIntParam(req.params.projectId);
         const stageCode = p(req.params.stageCode);
         if (Number.isNaN(projectId) || !stageCode) {
           return res.status(400).json({ error: "Invalid projectId or stageCode" });

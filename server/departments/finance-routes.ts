@@ -17,7 +17,7 @@ import { storage } from "../storage";
 import { db } from "../db";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "@shared/schema";
-import { paramStr } from "../lib/req-params";
+import { paramStr, parseIntParam } from "../lib/req-params";
 import { requirePermission } from "../permission-middleware";
 import { requireTrackerPermission } from "../lib/finance-route-access";
 import { z } from "zod";
@@ -3905,7 +3905,7 @@ async function updateExpenseFieldsDualTable(
 
 router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const id = parseInt(String(req.params.id || ""), 10);
+    const id = parseIntParam(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid expense id" });
 
     const { realised, expectedUpdatedAt } = req.body as { realised: boolean; expectedUpdatedAt?: string };
@@ -4026,7 +4026,7 @@ router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, 
 
 router.patch("/api/cos-tracker/override-status/:id", requireAuth, requireCosOverrideRole, async (req, res) => {
   try {
-    const id = parseInt(String(req.params.id || ""), 10);
+    const id = parseIntParam(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid expense id" });
 
     const { cosStatus, invoiceDate, invoiceDateConfirmed: invoiceDateConfirmedOverride, reason, expectedUpdatedAt } = req.body as {
@@ -4291,7 +4291,7 @@ router.post("/api/cos-periods/:yyyyMm/unlock", requireAuth, requirePeriodLockRol
 
 router.patch("/api/cost-lines/:id/no-revenue-linked", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const id = parseInt(String(req.params.id || ""), 10);
+    const id = parseIntParam(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid cost line id" });
     const { noRevenueLinked, expectedUpdatedAt } = req.body as { noRevenueLinked: boolean; expectedUpdatedAt?: string };
     if (typeof noRevenueLinked !== 'boolean') return res.status(400).json({ error: "noRevenueLinked (boolean) required" });
@@ -6682,7 +6682,7 @@ router.post("/api/revenue-tab/:projectName/date-override", requireAuth, requireA
 router.delete("/api/revenue-tab/:projectName/link-task/:milestoneRowNumber", requireAuth, requireAdmin, async (req, res) => {
   try {
     const projectName = paramStr(req.params.projectName);
-    const milestoneRowNumber = parseInt(paramStr(req.params.milestoneRowNumber));
+    const milestoneRowNumber = parseIntParam(req.params.milestoneRowNumber);
     const existingLinks = await storage.getMilestoneTaskLinks(projectName);
     const previousLink = existingLinks.find((link: any) => link.milestoneRowNumber === milestoneRowNumber);
     await storage.deleteMilestoneTaskLink(projectName, milestoneRowNumber);
@@ -6896,7 +6896,7 @@ router.post("/api/expense-task-links/:projectName", requireAuth, requireAdminOrF
 
 router.delete("/api/expense-task-links/:projectName/:expenseId", requireAuth, requireAdminOrFinancialEditor, async (req, res) => {
   try {
-    const expenseId = parseInt(paramStr(req.params.expenseId));
+    const expenseId = parseIntParam(req.params.expenseId);
     await storage.deleteExpenseTaskLink(paramStr(req.params.projectName), expenseId);
 
     try {
@@ -6926,7 +6926,7 @@ router.post("/api/expense-task-links/:projectName/:expenseId/date-override", req
   try {
     const { dateOverride, reason } = req.body;
     const expProjectName = paramStr(req.params.projectName);
-    await storage.updateExpenseTaskLinkDateOverride(expProjectName, parseInt(paramStr(req.params.expenseId)), dateOverride, reason);
+    await storage.updateExpenseTaskLinkDateOverride(expProjectName, parseIntParam(req.params.expenseId), dateOverride, reason);
 
     res.json({ success: true });
 
