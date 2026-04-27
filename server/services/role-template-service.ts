@@ -155,6 +155,91 @@ function makeHeadline(
   return `Applying "${templateName}" to ${targetLabel} will ${parts.join(" and ")} across ${totals.entryCount} workspace${totals.entryCount === 1 ? "" : "s"}.`;
 }
 
+// ===================== Role-vs-role comparison =====================
+//
+// Used by the Roles tab "Compare with…" affordance. Walks the canonical
+// registry, classifies each (entity, action) into:
+//   • aOnly  — role A has it, role B does not
+//   • bOnly  — role B has it, role A does not
+//   • shared — both have it
+// Returns plain-English summary lines suitable for the COO/CEO UI.
+
+export interface RoleCompareEntry {
+  entity: PermissionEntity;
+  title: string;
+  category: string;
+  aOnly: PermissionAction[];
+  bOnly: PermissionAction[];
+  shared: PermissionAction[];
+}
+
+export interface RoleCompareResult {
+  roleA: string;
+  roleB: string;
+  entries: RoleCompareEntry[];
+  totalsAOnly: number;
+  totalsBOnly: number;
+  totalsShared: number;
+  englishHeadline: string;
+}
+
+export async function compareRoles(
+  roleA: string,
+  roleB: string,
+): Promise<RoleCompareResult> {
+  const [a] = await db.select().from(rolePermissions).where(eq(rolePermissions.role, roleA)).limit(1);
+  const [b] = await db.select().from(rolePermissions).where(eq(rolePermissions.role, roleB)).limit(1);
+  const aPerms = asPermissionMap(a?.entityPermissions);
+  const bPerms = asPermissionMap(b?.entityPermissions);
+
+  const entries: RoleCompareEntry[] = [];
+  let totalsAOnly = 0;
+  let totalsBOnly = 0;
+  let totalsShared = 0;
+
+  for (const entity of ENTITY_REGISTRY) {
+    const ap: Partial<Record<PermissionAction, boolean>> = aPerms[entity.entity] ?? {};
+    const bp: Partial<Record<PermissionAction, boolean>> = bPerms[entity.entity] ?? {};
+    const aOnly: PermissionAction[] = [];
+    const bOnly: PermissionAction[] = [];
+    const shared: PermissionAction[] = [];
+    for (const action of ALL_ACTIONS) {
+      const inA = !!ap[action];
+      const inB = !!bp[action];
+      if (inA && inB) shared.push(action);
+      else if (inA) aOnly.push(action);
+      else if (inB) bOnly.push(action);
+    }
+    if (aOnly.length || bOnly.length || shared.length) {
+      entries.push({
+        entity: entity.entity,
+        title: entity.title,
+        category: entity.category,
+        aOnly,
+        bOnly,
+        shared,
+      });
+      totalsAOnly += aOnly.length;
+      totalsBOnly += bOnly.length;
+      totalsShared += shared.length;
+    }
+  }
+
+  let englishHeadline: string;
+  if (roleA === roleB) {
+    englishHeadline = `"${roleA}" compared to itself — every permission is shared (${totalsShared} action${totalsShared === 1 ? "" : "s"}).`;
+  } else if (totalsAOnly === 0 && totalsBOnly === 0) {
+    englishHeadline = `"${roleA}" and "${roleB}" have identical permissions across ${entries.length} workspace${entries.length === 1 ? "" : "s"}.`;
+  } else {
+    const parts: string[] = [];
+    if (totalsAOnly > 0) parts.push(`"${roleA}" has ${totalsAOnly} action${totalsAOnly === 1 ? "" : "s"} the other does not`);
+    if (totalsBOnly > 0) parts.push(`"${roleB}" has ${totalsBOnly} action${totalsBOnly === 1 ? "" : "s"} the other does not`);
+    englishHeadline = `${parts.join("; ")} — they share ${totalsShared} action${totalsShared === 1 ? "" : "s"}.`;
+  }
+
+  return { roleA, roleB, entries, totalsAOnly, totalsBOnly, totalsShared, englishHeadline };
+}
+
 /** Diffs a role's current permissions against the template. */
 export async function previewApplyTemplate(role: string, templateKey: string): Promise<ApplyDiff> {
   const tpl = findRoleTemplate(templateKey);

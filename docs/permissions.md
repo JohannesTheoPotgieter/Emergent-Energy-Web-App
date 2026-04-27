@@ -84,11 +84,30 @@ summary you can read inside the app.
 ## For developers
 
 Backend handlers must use `requirePermission(entity, action)` from
-`server/permission-middleware.ts`. The CI guard at
-`qa/tests/unit/route-permission-coverage.test.ts` will fail the build if a
-new route is added without it (or without a documented `// permission-skip:`
-comment).
+`server/permission-middleware.ts`.
+
+**CI guard scope (read this carefully).** The route-permission coverage test
+at `qa/tests/unit/route-permission-coverage.test.ts` runs in two parts:
+
+1. **Hard fail — new routes.** Any *new* route added after the cutover that
+   isn't reached by `requirePermission` (or by a documented allow-list
+   entry, or annotated with `// permission-skip:` + reason) fails CI
+   immediately. This is the line the rework defends.
+2. **Baseline burndown — legacy routes.** The existing 606-route surface
+   that was already in the codebase before Task #101 is captured in a
+   *legacy baseline allow-list*. Those routes still get traffic and most
+   are gated by the older `requireAdmin` / `requireRole` shims (which now
+   delegate to `requirePermission` — same evaluator). Migrating each
+   legacy route over to the canonical decorator is **deferred to follow-up
+   Task #102** so the cutover stayed the size of one reviewable PR. The
+   burndown task drives that allow-list to zero.
+
+In other words: the rework guarantees no *regression* in route coverage
+and full coverage on every new route, but it does not flip every legacy
+route to the new decorator in this same change. That work is tracked.
 
 Frontend code must use `<PermissionGate>` or `usePermission()` from
 `client/src/components/PermissionGate.tsx` and `client/src/hooks/use-permissions.ts`.
 Avoid `user.role === "…"` checks in new code — they bypass overrides.
+A small first wave of legacy `user.role === "…"` call sites was migrated
+in this rework; the longer tail is tracked under follow-up Task #104.

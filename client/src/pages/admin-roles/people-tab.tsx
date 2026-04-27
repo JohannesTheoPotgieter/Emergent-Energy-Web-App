@@ -18,8 +18,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Search, Sparkles, Loader2, ShieldCheck } from "lucide-react";
+import { Search, Sparkles, Loader2, ShieldCheck, UserCog } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { COMPANY_ROLES } from "@shared/schema";
 
 interface UserRow { id: number; username: string; name?: string; role: string; email?: string }
 interface TemplateRow { id: number; key: string; name: string; summary: string; category: string }
@@ -87,6 +88,34 @@ export function PeopleTab() {
       toast({ title: "Apply failed", description: String(err?.message ?? err), variant: "destructive" }),
   });
 
+  // Reassign a user's underlying role. This is the "true role-template
+  // assignment" path — it changes which role baseline the user inherits,
+  // for example moving Lara from PROJECT_MANAGER to ENGINEERING_MANAGER.
+  // It does NOT touch user_permission_overrides; those stay layered on top
+  // of whatever role the user holds. Wire-up uses the existing endpoint
+  // PATCH /api/admin/users/:userId/role registered in role-management.ts.
+  const reassignRoleM = useMutation<{ ok: true } & Record<string, unknown>, Error, { userId: number; newRole: string }>({
+    mutationFn: async ({ userId, newRole }) =>
+      fetchJSON<{ ok: true } & Record<string, unknown>>(`/api/admin/users/${userId}/role`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: newRole }),
+      }),
+    onSuccess: (_data, variables) => {
+      toast({
+        title: "Role reassigned",
+        description: `User #${variables.userId} → ${variables.newRole}. Existing overrides remain in place.`,
+      });
+      qc.invalidateQueries({ queryKey: ["/api/admin/users"] });
+    },
+    onError: (err) =>
+      toast({
+        title: "Role change failed",
+        description: String(err?.message ?? err),
+        variant: "destructive",
+      }),
+  });
+
   const users = usersQ.data?.users ?? [];
   const templates = tplQ.data?.templates ?? [];
   const filtered = users.filter((u) => {
@@ -109,7 +138,7 @@ export function PeopleTab() {
           </CardTitle>
           <p className="text-xs text-slate-500 flex items-center gap-1">
             <ShieldCheck className="h-3 w-3" />
-            Applying a template here writes overrides for one person only — it does not change the role for everyone.
+            Two paths per person: <strong>Change role</strong> reassigns the user to a different role baseline; <strong>Apply template</strong> writes one-off overrides for that user only. Neither path changes the role for everyone.
           </p>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -132,7 +161,8 @@ export function PeopleTab() {
                   <tr>
                     <th className="px-3 py-2">Person</th>
                     <th className="px-3 py-2">Role today</th>
-                    <th className="px-3 py-2">Apply template (to this person)</th>
+                    <th className="px-3 py-2">Change role (reassign baseline)</th>
+                    <th className="px-3 py-2">Apply template (overrides only)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -144,6 +174,34 @@ export function PeopleTab() {
                       </td>
                       <td className="px-3 py-2">
                         <Badge variant="outline" data-testid={`badge-role-${u.id}`}>{u.role}</Badge>
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-1">
+                          <UserCog className="h-3 w-3 text-slate-400" />
+                          <select
+                            data-testid={`select-change-role-${u.id}`}
+                            className="rounded border px-2 py-1 text-sm"
+                            value={u.role}
+                            disabled={reassignRoleM.isPending}
+                            onChange={(e) => {
+                              const newRole = e.target.value;
+                              if (!newRole || newRole === u.role) return;
+                              const ok = window.confirm(
+                                `Reassign ${u.name ?? u.username} from "${u.role}" to "${newRole}"?\n\n` +
+                                  "This changes the user's role baseline. Any existing one-off overrides for this user remain in place on top of the new baseline.",
+                              );
+                              if (ok) {
+                                reassignRoleM.mutate({ userId: u.id, newRole });
+                              } else {
+                                e.currentTarget.value = u.role;
+                              }
+                            }}
+                          >
+                            {(COMPANY_ROLES as readonly string[]).map((r) => (
+                              <option key={r} value={r}>{r}</option>
+                            ))}
+                          </select>
+                        </div>
                       </td>
                       <td className="px-3 py-2">
                         <select
