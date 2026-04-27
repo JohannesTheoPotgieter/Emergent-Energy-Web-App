@@ -1376,3 +1376,47 @@ export function findEntityRegistry(entity: PermissionEntity): EntityRegistryEntr
 export function entityTitle(entity: PermissionEntity): string {
   return findEntityRegistry(entity)?.title ?? entity;
 }
+
+// ===================== Typed action accessor =====================
+//
+// Returns the role list for a single action on one registry entry.
+// This is the typed replacement for the previous untyped indexed
+// accessor pattern (`entry[action_roles_key]`) and is the canonical
+// bridge from registry to role arrays.
+
+export type PermissionActionKey = "view" | "create" | "edit" | "approve" | "override" | "delete";
+
+export function rolesForEntityAction(
+  entry: EntityRegistryEntry,
+  action: PermissionActionKey,
+): readonly string[] {
+  switch (action) {
+    case "view":     return entry.view_roles;
+    case "create":   return entry.create_roles;
+    case "edit":     return entry.edit_roles;
+    case "approve":  return entry.approve_roles;
+    case "override": return entry.override_roles;
+    case "delete":   return entry.delete_roles;
+  }
+}
+
+// ===================== Role-group derivation =====================
+//
+// Returns the union of `<action>_roles` across every registry entry whose
+// `category` matches. This is the SINGLE source-of-truth for the legacy
+// `FINANCE_VIEW_ROLES`, `ENG_EDIT_ROLES`, `PD_VIEW_ROLES`, etc. arrays
+// re-exported from `shared/schema/users.ts`. Adding a new entry to the
+// registry now automatically expands the matching role group with no
+// manual sync step. Result is sorted for stable serialization.
+
+export function rolesForCategoryAction(
+  category: PermissionCategoryKey,
+  action: PermissionActionKey,
+): string[] {
+  const set = new Set<string>();
+  for (const entry of ENTITY_REGISTRY) {
+    if (entry.category !== category) continue;
+    for (const role of rolesForEntityAction(entry, action)) set.add(role);
+  }
+  return Array.from(set).sort();
+}

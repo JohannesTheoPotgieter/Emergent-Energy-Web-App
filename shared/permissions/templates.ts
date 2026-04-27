@@ -10,10 +10,21 @@
 // Plain-English `summary` is shown to COO/CEO on the apply screen.
 // Categories drive the "gallery" grouping in the Roles tab.
 
-import { ENTITY_REGISTRY } from "./registry";
+import { ENTITY_REGISTRY, rolesForEntityAction, type PermissionActionKey } from "./registry";
 import type { PermissionAction, PermissionEntity, AppSection } from "../schema/users";
 
 export type EntityPermissionMap = Partial<Record<PermissionEntity, Record<PermissionAction, boolean>>>;
+
+function emptyActionRow(): Record<PermissionAction, boolean> {
+  return {
+    view: false,
+    create: false,
+    edit: false,
+    approve: false,
+    override: false,
+    delete: false,
+  };
+}
 
 export interface RoleTemplateDef {
   key: string;
@@ -28,7 +39,7 @@ export interface RoleTemplateDef {
   permissions: EntityPermissionMap;
 }
 
-const ALL_ACTIONS: PermissionAction[] = ["view", "create", "edit", "approve", "override", "delete"];
+const ALL_ACTIONS: PermissionActionKey[] = ["view", "create", "edit", "approve", "override", "delete"];
 
 /**
  * Snapshot the registry's defaults for a single role into the
@@ -39,11 +50,9 @@ const ALL_ACTIONS: PermissionAction[] = ["view", "create", "edit", "approve", "o
 export function buildPermissionsForRole(role: string): EntityPermissionMap {
   const out: EntityPermissionMap = {};
   for (const entry of ENTITY_REGISTRY) {
-    const row: Record<PermissionAction, boolean> = {} as any;
+    const row = emptyActionRow();
     for (const action of ALL_ACTIONS) {
-      const key = `${action}_roles` as const;
-      const list = (entry as any)[key] as string[] | undefined;
-      row[action] = !!list?.includes(role);
+      row[action] = rolesForEntityAction(entry, action).includes(role);
     }
     out[entry.entity] = row;
   }
@@ -58,9 +67,9 @@ export function buildPermissionsForRole(role: string): EntityPermissionMap {
 function unionPermissions(a: EntityPermissionMap, b: EntityPermissionMap): EntityPermissionMap {
   const out: EntityPermissionMap = { ...a };
   for (const entity of Object.keys(b) as PermissionEntity[]) {
-    const existing = out[entity] ?? ({} as Record<PermissionAction, boolean>);
+    const existing: Record<PermissionAction, boolean> = out[entity] ?? emptyActionRow();
     const incoming = b[entity]!;
-    const merged: Record<PermissionAction, boolean> = { ...existing } as any;
+    const merged: Record<PermissionAction, boolean> = { ...existing };
     for (const action of ALL_ACTIONS) {
       merged[action] = !!existing[action] || !!incoming[action];
     }
