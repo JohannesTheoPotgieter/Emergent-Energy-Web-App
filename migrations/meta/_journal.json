@@ -97,7 +97,7 @@
       "idx": 13,
       "version": "7",
       "when": 1776928563869,
-      "tag": "0012_controlled_documents",
+      "tag": "0033_controlled_documents",
       "breakpoints": true
     },
     {
@@ -245,6 +245,20 @@
       "version": "7",
       "when": 1777000000005,
       "tag": "0032_document_management",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1777100000001,
+      "tag": "0034_finance_table_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1777100000002,
+      "tag": "0035_revoked_tokens_table",
       "breakpoints": true
     }
   ]

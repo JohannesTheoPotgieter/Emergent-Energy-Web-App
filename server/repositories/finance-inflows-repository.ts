@@ -1,10 +1,17 @@
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, or, inArray, sql } from "drizzle-orm";
 import { softCloseByProjectName } from "../lib/temporal-helpers";
+import { logAudit } from "../audit-logger";
 import {
   normalizedRevenueLines, projectInfo,
   type ProgramInflows, type InsertProgramInflows,
 } from "@shared/schema";
 import { db } from "../db";
+
+interface AuditCtx {
+  userId?: number;
+  userName?: string;
+  actorRole?: string;
+}
 
 /**
  * Resolve a project name for every revenue-line row, falling back from the
@@ -112,23 +119,23 @@ export class FinanceInflowsRepository {
       .where(eq(projectInfo.projectName, projectName));
     const projectIds = projectMatches.map((p: { id: number }) => p.id);
 
-    const allActive = await this.dbInstance.select().from(normalizedRevenueLines)
-      .where(and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt)));
+    // Filter in the DB rather than fetching all rows and filtering in memory.
+    const projectNameFilter = eq(normalizedRevenueLines.projectName, projectName);
+    const projectIdFilter = projectIds.length > 0
+      ? inArray(normalizedRevenueLines.projectId, projectIds)
+      : sql`FALSE`;
 
-    const matched = (allActive as any[]).filter((r: any) => {
-      if (typeof r.projectName === "string" && r.projectName.length > 0 && r.projectName === projectName) {
-        return true;
-      }
-      if (r.projectId != null && projectIds.includes(r.projectId)) {
-        return true;
-      }
-      return false;
-    });
+    const matched = await this.dbInstance.select().from(normalizedRevenueLines)
+      .where(and(
+        isNull(normalizedRevenueLines.effectiveTo),
+        isNull(normalizedRevenueLines.deletedAt),
+        or(projectNameFilter, projectIdFilter),
+      ));
 
-    return matched.map((r: any) => adaptRevenueToInflow(r, projectName));
+    return (matched as any[]).map((r: any) => adaptRevenueToInflow(r, projectName));
   }
 
-  async updateProgramInflowFields(id: number, fields: Record<string, any>): Promise<any | undefined> {
+  async updateProgramInflowFields(id: number, fields: Record<string, any>, audit?: AuditCtx): Promise<any | undefined> {
     const fieldMap: Record<string, string> = {
       milestoneInvoiceNumber: 'invoiceNumber',
       invoiceRaisedDate: 'invoiceDate',
@@ -159,11 +166,19 @@ export class FinanceInflowsRepository {
       ))
       .returning();
     if (!result[0]) return undefined;
+    logAudit({
+      ...audit,
+      entityType: "revenue_line",
+      entityId: String(canonicalId),
+      action: "update",
+      source: "UI",
+      changesJson: { fields: mappedFields, projectName: result[0].projectName ?? null },
+    }).catch(() => {});
     const { adaptRevenueToInflow } = await import("../lib/data-merge");
     return adaptRevenueToInflow(result[0], result[0].projectName);
   }
 
-  async createManyProgramInflows(inflowList: InsertProgramInflows[]): Promise<ProgramInflows[]> {
+  async createManyProgramInflows(inflowList: InsertProgramInflows[], audit?: AuditCtx): Promise<ProgramInflows[]> {
     if (inflowList.length === 0) return [];
     const mapped = inflowList.map((i: any) => ({
       projectName: i.projectName,
@@ -178,6 +193,13 @@ export class FinanceInflowsRepository {
       importRunId: 0,
     }));
     const results = await this.dbInstance.insert(normalizedRevenueLines).values(mapped).returning();
+    logAudit({
+      ...audit,
+      entityType: "revenue_line",
+      action: "bulk_import",
+      source: "IMPORT",
+      changesJson: { count: results.length, projectName: (inflowList[0] as any)?.projectName ?? null },
+    }).catch(() => {});
     const { adaptRevenueToInflow } = await import("../lib/data-merge");
     return results.map((r: any) => adaptRevenueToInflow(r, r.projectName)) as any;
   }

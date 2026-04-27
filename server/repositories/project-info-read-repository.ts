@@ -1,4 +1,4 @@
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, sql } from "drizzle-orm";
 import { projectInfo, projectExecutionState, type ProjectInfo } from "@shared/schema";
 import { db } from "../db";
 import {
@@ -23,7 +23,8 @@ export class ProjectInfoReadRepository {
         .select()
         .from(projectInfo)
         .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
-        .orderBy(desc(projectInfo.updatedAt));
+        .orderBy(desc(projectInfo.updatedAt))
+        .limit(2000);
       return rows.map((r: any) => {
         // Filter out null values from execution state so they don't overwrite project_info fields
         const execState = r.project_execution_state ?? {};
