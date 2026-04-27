@@ -84,20 +84,7 @@ export function sendError(res: Response, error: unknown, traceId?: string) {
     return res.status(error.statusCode).json(body);
   }
 
-  if (error instanceof Error) {
-    logApiError("Unhandled", error);
-    return res.status(500).json({
-      error: "SERVER_ERROR",
-      code: "SERVER_ERROR",
-      type: "SERVER_ERROR",
-      message: "Something went wrong. Please try again.",
-      nextAction: "Retry shortly or contact support if this continues.",
-      detail: extractDebugDetail(error),
-      ...(traceId ? { traceId } : {}),
-    });
-  }
-
-  logApiError("Unknown", error);
+  logApiError(error instanceof Error ? "Unhandled" : "Unknown", error);
   return res.status(500).json({
     error: "SERVER_ERROR",
     code: "SERVER_ERROR",
