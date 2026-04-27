@@ -1,18 +1,6 @@
-// Role templates admin API — Task #101.
-//
-// All endpoints gated by requirePermission so only COO/CEO admins can
-// list, preview, or apply templates. Mirrors the canonical evaluator
-// path used everywhere else.
-//
-// GET    /api/admin/role-templates                         — list curated templates
-// GET    /api/admin/roles/compare?a=ROLE_A&b=ROLE_B        — plain-English role-vs-role diff
-// GET    /api/admin/roles/:role/preview-template/:tplKey   — plain-English diff vs role
-// POST   /api/admin/roles/:role/apply-template             — body { templateKey, reason }
-// GET    /api/admin/users/:userId/preview-template/:tplKey — plain-English diff vs user
-// POST   /api/admin/users/:userId/apply-template           — body { templateKey, reason }
-//
-// User-scoped applies write user_permission_overrides; they NEVER mutate
-// the role definition itself (security guarantee — see service docstring).
+// Role templates admin API. All endpoints require admin permission.
+// User-scoped applies write user_permission_overrides only; they never
+// mutate the role definition.
 
 import type { Express, Request, Response } from "express";
 import { requirePermission } from "../permission-middleware";
@@ -36,13 +24,6 @@ function actorFrom(req: Request): { id: number; role: string | null } {
   return { id: u?.id ?? 0, role: u?.role ?? null };
 }
 
-/**
- * Narrow an unknown thrown value into the { status, message } shape we
- * surface as JSON. Service functions throw `Object.assign(new Error(msg),
- * { status })`, so the runtime shape is { name, message, status? }.
- *
- * Replaces the previous `catch (err: any)` pattern — no `any` escape.
- */
 function errorToHttpResponse(err: unknown, fallbackMessage: string): {
   status: number;
   body: { error: string };

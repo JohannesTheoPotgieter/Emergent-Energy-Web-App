@@ -155,14 +155,7 @@ function makeHeadline(
   return `Applying "${templateName}" to ${targetLabel} will ${parts.join(" and ")} across ${totals.entryCount} workspace${totals.entryCount === 1 ? "" : "s"}.`;
 }
 
-// ===================== Role-vs-role comparison =====================
-//
-// Used by the Roles tab "Compare with…" affordance. Walks the canonical
-// registry, classifies each (entity, action) into:
-//   • aOnly  — role A has it, role B does not
-//   • bOnly  — role B has it, role A does not
-//   • shared — both have it
-// Returns plain-English summary lines suitable for the COO/CEO UI.
+// Role-vs-role comparison for the Roles tab Compare card.
 
 export interface RoleCompareEntry {
   entity: PermissionEntity;
