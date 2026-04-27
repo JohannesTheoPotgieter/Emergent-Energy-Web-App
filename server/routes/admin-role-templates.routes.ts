@@ -5,6 +5,7 @@
 // path used everywhere else.
 //
 // GET    /api/admin/role-templates                         — list curated templates
+// GET    /api/admin/roles/compare?a=ROLE_A&b=ROLE_B        — plain-English role-vs-role diff
 // GET    /api/admin/roles/:role/preview-template/:tplKey   — plain-English diff vs role
 // POST   /api/admin/roles/:role/apply-template             — body { templateKey, reason }
 // GET    /api/admin/users/:userId/preview-template/:tplKey — plain-English diff vs user
@@ -19,6 +20,7 @@ import { z } from "zod";
 import {
   applyTemplate,
   applyTemplateToUser,
+  compareRoles,
   listRoleTemplates,
   previewApplyTemplate,
   previewApplyTemplateToUser,
@@ -34,6 +36,33 @@ function actorFrom(req: Request): { id: number; role: string | null } {
   return { id: u?.id ?? 0, role: u?.role ?? null };
 }
 
+/**
+ * Narrow an unknown thrown value into the { status, message } shape we
+ * surface as JSON. Service functions throw `Object.assign(new Error(msg),
+ * { status })`, so the runtime shape is { name, message, status? }.
+ *
+ * Replaces the previous `catch (err: any)` pattern — no `any` escape.
+ */
+function errorToHttpResponse(err: unknown, fallbackMessage: string): {
+  status: number;
+  body: { error: string };
+} {
+  if (err instanceof Error) {
+    const status =
+      typeof (err as Error & { status?: unknown }).status === "number"
+        ? (err as Error & { status: number }).status
+        : 500;
+    return { status, body: { error: err.message || fallbackMessage } };
+  }
+  if (err && typeof err === "object") {
+    const rec = err as Record<string, unknown>;
+    const status = typeof rec.status === "number" ? rec.status : 500;
+    const message = typeof rec.message === "string" ? rec.message : fallbackMessage;
+    return { status, body: { error: message } };
+  }
+  return { status: 500, body: { error: fallbackMessage } };
+}
+
 export function registerRoleTemplateRoutes(app: Express) {
   app.get(
     "/api/admin/role-templates",
@@ -41,6 +70,26 @@ export function registerRoleTemplateRoutes(app: Express) {
     async (_req: Request, res: Response) => {
       const rows = await listRoleTemplates();
       res.json({ templates: rows });
+    },
+  );
+
+  // --- Role vs role comparison (Roles tab "Compare with…") -------------
+  app.get(
+    "/api/admin/roles/compare",
+    requirePermission("admin", "view"),
+    async (req: Request, res: Response) => {
+      const a = typeof req.query.a === "string" ? req.query.a : "";
+      const b = typeof req.query.b === "string" ? req.query.b : "";
+      if (!a || !b) {
+        return res.status(400).json({ error: "missing_a_or_b" });
+      }
+      try {
+        const result = await compareRoles(a, b);
+        res.json(result);
+      } catch (err: unknown) {
+        const { status, body } = errorToHttpResponse(err, "compare_failed");
+        res.status(status).json(body);
+      }
     },
   );
 
@@ -52,8 +101,9 @@ export function registerRoleTemplateRoutes(app: Express) {
       try {
         const diff = await previewApplyTemplate(req.params.role, req.params.templateKey);
         res.json(diff);
-      } catch (err: any) {
-        res.status(err?.status ?? 500).json({ error: err?.message ?? "preview_failed" });
+      } catch (err: unknown) {
+        const { status, body } = errorToHttpResponse(err, "preview_failed");
+        res.status(status).json(body);
       }
     },
   );
@@ -76,8 +126,9 @@ export function registerRoleTemplateRoutes(app: Express) {
           parsed.data.reason,
         );
         res.json(result);
-      } catch (err: any) {
-        res.status(err?.status ?? 500).json({ error: err?.message ?? "apply_failed" });
+      } catch (err: unknown) {
+        const { status, body } = errorToHttpResponse(err, "apply_failed");
+        res.status(status).json(body);
       }
     },
   );
@@ -94,8 +145,9 @@ export function registerRoleTemplateRoutes(app: Express) {
       try {
         const diff = await previewApplyTemplateToUser(userId, req.params.templateKey);
         res.json(diff);
-      } catch (err: any) {
-        res.status(err?.status ?? 500).json({ error: err?.message ?? "preview_failed" });
+      } catch (err: unknown) {
+        const { status, body } = errorToHttpResponse(err, "preview_failed");
+        res.status(status).json(body);
       }
     },
   );
@@ -122,8 +174,9 @@ export function registerRoleTemplateRoutes(app: Express) {
           parsed.data.reason,
         );
         res.json(result);
-      } catch (err: any) {
-        res.status(err?.status ?? 500).json({ error: err?.message ?? "apply_failed" });
+      } catch (err: unknown) {
+        const { status, body } = errorToHttpResponse(err, "apply_failed");
+        res.status(status).json(body);
       }
     },
   );
