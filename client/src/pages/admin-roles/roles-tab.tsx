@@ -43,7 +43,6 @@ export function RolesTab() {
     queryFn: () =>
       fetchJSON<DiffPayload>(
         `/api/admin/roles/${target!.role}/preview-template/${target!.template.key}`,
-        { method: "POST" },
       ),
     enabled: !!target,
   });

@@ -1,6 +1,14 @@
 // People tab — Task #101.
-// Lightweight user list with one-click "Apply template" so a COO can grant
-// a sensible permission set without learning the matrix.
+//
+// Lightweight user list with one-click "Apply template". CRITICAL safety
+// guarantee: applying a template here writes USER OVERRIDES for the
+// selected person only. The role definition is NEVER mutated — that lives
+// in the Roles tab, where it changes permissions for everyone with that
+// role at once.
+//
+// Endpoints used:
+//   GET /api/admin/users/:userId/preview-template/:templateKey
+//   POST /api/admin/users/:userId/apply-template   { templateKey, reason }
 
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -10,7 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Search, Sparkles, Loader2 } from "lucide-react";
+import { Search, Sparkles, Loader2, ShieldCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface UserRow { id: number; username: string; name?: string; role: string; email?: string }
@@ -20,10 +28,14 @@ interface DiffRow {
   gained: string[]; lost: string[];
 }
 interface DiffPayload {
-  role: string; templateKey: string; templateName: string; templateSummary: string;
+  targetKind: "user";
+  targetUserId: number;
+  currentRole: string;
+  templateKey: string; templateName: string; templateSummary: string;
   entries: DiffRow[]; totalsGained: number; totalsLost: number;
   englishHeadline: string;
 }
+interface ApplyResponse { ok: true; written: number; cleared: number }
 
 async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, { credentials: "include", ...init });
@@ -48,28 +60,31 @@ export function PeopleTab() {
   });
 
   const previewQ = useQuery<DiffPayload>({
-    queryKey: ["preview-template", target?.user.role, target?.template.key],
+    queryKey: ["preview-template-user", target?.user.id, target?.template.key],
     queryFn: () =>
       fetchJSON<DiffPayload>(
-        `/api/admin/roles/${target!.user.role}/preview-template/${target!.template.key}`,
-        { method: "POST" },
+        `/api/admin/users/${target!.user.id}/preview-template/${target!.template.key}`,
       ),
     enabled: !!target,
   });
 
-  const applyM = useMutation({
+  const applyM = useMutation<ApplyResponse, Error>({
     mutationFn: () =>
-      fetchJSON(`/api/admin/roles/${target!.user.role}/apply-template`, {
+      fetchJSON<ApplyResponse>(`/api/admin/users/${target!.user.id}/apply-template`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ templateKey: target!.template.key, reason }),
       }),
-    onSuccess: () => {
-      toast({ title: "Template applied", description: `${target?.template.name} → ${target?.user.role}` });
+    onSuccess: (r) => {
+      toast({
+        title: "Template applied to user",
+        description: `${target?.template.name} → ${target?.user.name ?? target?.user.username} (${r.written} override${r.written === 1 ? "" : "s"} written, ${r.cleared} cleared)`,
+      });
       qc.invalidateQueries({ queryKey: ["/api/admin/users"] });
       setTarget(null); setReason("");
     },
-    onError: (err: any) => toast({ title: "Apply failed", description: String(err?.message ?? err), variant: "destructive" }),
+    onError: (err) =>
+      toast({ title: "Apply failed", description: String(err?.message ?? err), variant: "destructive" }),
   });
 
   const users = usersQ.data?.users ?? [];
@@ -92,6 +107,10 @@ export function PeopleTab() {
           <CardTitle className="flex items-center gap-2">
             <Sparkles className="h-4 w-4 text-emerald-600" /> People
           </CardTitle>
+          <p className="text-xs text-slate-500 flex items-center gap-1">
+            <ShieldCheck className="h-3 w-3" />
+            Applying a template here writes overrides for one person only — it does not change the role for everyone.
+          </p>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="relative">
@@ -113,7 +132,7 @@ export function PeopleTab() {
                   <tr>
                     <th className="px-3 py-2">Person</th>
                     <th className="px-3 py-2">Role today</th>
-                    <th className="px-3 py-2">Apply template</th>
+                    <th className="px-3 py-2">Apply template (to this person)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -134,6 +153,7 @@ export function PeopleTab() {
                           onChange={(e) => {
                             const tpl = templates.find((t) => t.key === e.target.value);
                             if (tpl) setTarget({ user: u, template: tpl });
+                            e.currentTarget.value = "";
                           }}
                         >
                           <option value="" disabled>Choose a template…</option>
@@ -155,8 +175,13 @@ export function PeopleTab() {
         <DialogContent className="max-w-2xl" data-testid="dialog-apply-template">
           <DialogHeader>
             <DialogTitle>
-              {target ? `Apply "${target.template.name}" to role "${target.user.role}"` : ""}
+              {target ? `Apply "${target.template.name}" to ${target.user.name ?? target.user.username}` : ""}
             </DialogTitle>
+            {target && (
+              <p className="text-xs text-slate-500">
+                Writes overrides for this user only. Their role ({target.user.role}) is unchanged.
+              </p>
+            )}
           </DialogHeader>
           {previewQ.isLoading || !previewQ.data ? (
             <div className="flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Calculating diff…</div>
@@ -200,7 +225,7 @@ export function PeopleTab() {
             <Button variant="outline" onClick={() => setTarget(null)} data-testid="button-cancel-apply">Cancel</Button>
             <Button
               data-testid="button-confirm-apply"
-              disabled={!reason.trim() || applyM.isPending}
+              disabled={!reason.trim() || applyM.isPending || previewQ.isLoading}
               onClick={() => applyM.mutate()}
             >
               {applyM.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Apply template"}
