@@ -9,7 +9,7 @@ Phase 1 — Mechanical regeneration (steps 01-15)
   (descriptions, purpose text) are preserved by keying on a stable identifier
   (SQL table name, URL, file path, etc.) where possible.
 
-Phase 2 — Cleanup / truth-checking (steps 17-21)
+Phase 2 — Cleanup / truth-checking (steps 17-22)
   Prune narrative sheets that can't be fully regenerated but CAN be partially
   verified:
     17 — Screen Actions: remove rows whose URL no longer matches a live screen
@@ -17,6 +17,7 @@ Phase 2 — Cleanup / truth-checking (steps 17-21)
     19 — File-path sheets: remove rows whose source file no longer exists
     20 — React Query Cache Keys: remove rows with unresolvable ${...} key names
     21 — Role & Permission Matrix: resolve spread notation; remove fully-invalid rows
+    22 — Toasts: remove rows whose line number drifted away from any toast code
 
 Phase 3 — README (step 16, must run last)
   Reads live row counts from the workbook to build the summary sheet.
@@ -51,6 +52,7 @@ STEPS = [
     "step19_drop_missing_files",
     "step20_clean_rq_cache_keys",
     "step21_clean_role_matrix",
+    "step22_clean_toasts",
     # Phase 3: readme (must be last — reads live counts)
     "step16_readme",
 ]
