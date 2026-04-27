@@ -11,4 +11,7 @@ export async function registerAdminSupportRoutes(app: Express) {
   registerKpiTraceabilityRoutes(app);
   const { registerTemplateGovernanceRoutes } = await import("./template-governance-routes");
   registerTemplateGovernanceRoutes(app);
+  // Task #101 — role templates (curated permission "starter packs").
+  const { registerRoleTemplateRoutes } = await import("./admin-role-templates.routes");
+  registerRoleTemplateRoutes(app);
 }
