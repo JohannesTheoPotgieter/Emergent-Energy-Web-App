@@ -42,6 +42,15 @@ const REQUIRED_COMMAND_CHECKS = [
   { name: "PD dashboard won-deals tile (Task #94)", command: "tsx script/run-with-app.ts \"vitest run -c qa/vitest.config.ts qa/tests/integration/pd-dashboard-won-deals.test.ts\"" },
   { name: "Opportunity drawer no-shadow render — API contract (Task #83)", command: "tsx script/run-with-app.ts \"vitest run -c qa/vitest.config.ts qa/tests/integration/opportunity-drawer-no-shadow.test.ts\"" },
   { name: "Opportunity drawer no-shadow render — RTL component (Task #83)", command: "vitest run -c qa/vitest.config.ts qa/tests/integration/opportunity-drawer-no-shadow.component.test.tsx" },
+  // Task #103: Roles & Permissions UI. Browser-driven, so they share
+  // SKIP_SMOKE_TESTS with the smoke suite (CI runs them; local boxes
+  // without playwright system libs can opt out).
+  ...(SKIP_SMOKE
+    ? []
+    : [
+        { name: "Admin Roles shell — COO end-to-end (Task #103)", command: "tsx script/run-with-app.ts \"playwright test -c qa/playwright.config.ts qa/tests/e2e/admin-roles-shell.spec.ts\"" },
+        { name: "Admin Roles shell — non-admin blocked (Task #103)", command: "tsx script/run-with-app.ts \"playwright test -c qa/playwright.config.ts qa/tests/e2e/admin-roles-non-admin-blocked.spec.ts\"" },
+      ]),
   { name: "Workflow tests", command: WORKFLOW_TEST_COMMAND },
 ] as const;
 
