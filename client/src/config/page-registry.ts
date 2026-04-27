@@ -63,8 +63,13 @@ export const LEGACY_REDIRECTS: Array<{ path: string; redirectTo: string }> = [
   { path: "/my-tool/help", redirectTo: "/" },
   { path: "/my-tool/meetings", redirectTo: "/my-work/meetings" },
   { path: "/company-priorities", redirectTo: "/priorities" },
-  { path: "/admin", redirectTo: "/admin/control-center" },
-  { path: "/admin/legacy-utilities", redirectTo: "/admin/control-center" },
+  { path: "/admin", redirectTo: "/admin/roles" },
+  { path: "/admin/legacy-utilities", redirectTo: "/admin/roles" },
+  // Task #101 — Control Center retired; "Roles & Permissions" is the new
+  // single landing page for everything access-related (People / Roles /
+  // Advanced tabs). The legacy admin-control-center.tsx is kept on disk as
+  // a fallback but no longer routed.
+  { path: "/admin/control-center", redirectTo: "/admin/roles" },
   // Prompt 2 — old nav destinations that moved
   { path: "/exceptions", redirectTo: "/gates/exceptions" },
   { path: "/project-lifecycle", redirectTo: "/lifecycle-board" },
@@ -198,7 +203,10 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "engMonthlyReportProject", path: "/reports/engineering/monthly/:month/project/:projectId", label: "Engineering Report Project", permissionEntity: "reports", routeComponentKey: "EngMonthlyReportProjectPage" },
   { id: "adminRecovery", path: "/admin/recovery", label: "Recovery Center", iconKey: "ShieldAlert", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminRecoveryPage" },
   { id: "stageAdmin", path: "/admin/stage-lifecycle", label: "Stage Lifecycle", iconKey: "Milestone", navGroup: "SYSTEM", permissionEntity: "stage_admin", showInSidebar: false, routeComponentKey: "StageAdminPage" },
-  { id: "adminControlCenter", path: "/admin/control-center", label: "Control Center", iconKey: "Gauge", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminControlCenterPage" },
+  // Task #101: Control Center page retired in favour of /admin/roles tabs.
+  // The redirect lives in the legacy redirects block above so old bookmarks
+  // land on the new home.
+  // { id: "adminControlCenter", path: "/admin/control-center", ... }
   { id: "clientProjectDepartments", path: "/clients/:clientId/project/:projectId", label: "Project Departments", permissionEntity: "pd_clients", routeComponentKey: "ClientProjectDepartmentsPage" },
   { id: "clientDetail", path: "/clients/:clientId", label: "Client Detail", permissionEntity: "pd_clients", routeComponentKey: "ClientDetailPage" },
   { id: "clients", path: "/clients", label: "Clients", iconKey: "Users", navGroup: "PROJECTS", permissionEntity: "pd_clients", showInSidebar: true, routeComponentKey: "ClientsPage", aliases: ["/pd/clients"] },

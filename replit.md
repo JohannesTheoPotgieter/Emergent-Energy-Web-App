@@ -49,7 +49,18 @@ The project uses a monorepo structure, separating client (React SPA), server (Ex
 - **Primary:** Microsoft SSO via Azure MSAL, mapping MS accounts to internal users and roles.
 - **Fallback:** Username/password authentication using `bcryptjs`.
 - **Role Management:** Authoritative role list defined in `shared/schema/users.ts`.
-- **Security:** Server-side enforcement with `requireAuth` and `requireRole` middleware, Azure Key Vault for secrets, and encryption.
+- **Security:** Server-side enforcement with `requireAuth`, `requireRole`, and the canonical `requirePermission(entity, action)` middleware, Azure Key Vault for secrets, and encryption.
+
+### Roles & Permissions Big-Bang Rework (Task #101)
+- **Canonical evaluator:** every server route reaches `requirePermission` from `server/permission-middleware.ts`. `requireAdmin` and `requireRole` are kept as **thin shims** that delegate to the same evaluator (preserving 394 existing call sites).
+- **Canonical entity registry:** `shared/permissions/registry.ts` carries every entity with plain-English `title`, `description`, and `category` (Finance / Engineering / Project Delivery / Project Development / Quality & HSE / Admin / Reporting / Personal Workspace). `shared/schema/users.ts` re-exports `ENTITY_PERMISSION_DEFAULTS` from the registry — single source of truth.
+- **Role templates:** `shared/permissions/templates.ts` ships 13 curated templates (Executive, CFO Full, Finance Read-Only, Program Manager, Project Manager, Project Developer, Engineer, Engineering Manager, Construction Manager, QA / HSE, Accountant, SSEG Manager, Read-Only Viewer). Idempotent seeder (`server/services/role-template-service.ts`) writes them into the new `role_templates` table on boot.
+- **API:** `GET /api/admin/role-templates`, `POST /api/admin/roles/:role/preview-template/:templateKey` (returns plain-English diff), `POST /api/admin/roles/:role/apply-template` — all gated by `requirePermission("admin","edit")`.
+- **Admin UI:** `/admin/roles` is rebuilt as three tabs — **People** (template-first per-user apply), **Roles** (template gallery), **Advanced** (the legacy matrix). `/admin/control-center` 301-redirects here.
+- **Frontend gate:** `<PermissionGate>` + `usePermission()` are the canonical client-side gates; `client/src/lib/access-control.ts` is documented as legacy-only.
+- **Migration:** `migrations/0036_role_templates_and_notes.sql` (additive `IF NOT EXISTS` only) creates `role_templates` and adds `notes text` to `role_permissions` and `user_permission_overrides`.
+- **CI guards:** `qa/tests/unit/route-permission-coverage.test.ts` fails on any unguarded route; `qa/tests/unit/permission-snapshot-no-drift.test.ts` asserts byte-equality against `qa/fixtures/permission-snapshot-pre-rework.json` so no user loses access on cutover.
+- **Docs:** [`docs/permissions.md`](docs/permissions.md) is the COO/CEO guide.
 
 ### Microsoft 365 Integration
 - Integration with Outlook, Teams, and SharePoint using `@microsoft/microsoft-graph-client` for calendar event metadata, emails, and attachments.

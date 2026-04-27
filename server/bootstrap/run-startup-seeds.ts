@@ -39,6 +39,14 @@ export async function runStartupSeeds(options: {
   const { seedRolePermissions } = await import("../role-management");
   await seedRolePermissions().catch((err) => log(`[Seed] Role permissions error: ${err}`, "Startup"));
 
+  // Task #101 — curated role templates (idempotent upsert).
+  const { seedRoleTemplates } = await import("../services/role-template-service");
+  await seedRoleTemplates()
+    .then(({ inserted, updated }) =>
+      log(`[Seed] Role templates: inserted=${inserted} updated=${updated}`, "Startup"),
+    )
+    .catch((err) => log(`[Seed] Role templates error: ${err}`, "Startup"));
+
   try {
     const {
       setFeatureFlag,
