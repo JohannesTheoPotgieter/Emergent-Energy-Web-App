@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import { createHash } from "crypto";
-import { sql, gt } from "drizzle-orm";
+import { eq, gt, sql } from "drizzle-orm";
 import { db, dbMode } from "./db";
 import { verifyToken } from "./jwt";
 import { revokedTokens, revokedSessions } from "@shared/schema";
@@ -112,6 +112,11 @@ export function clearRevokedSessionId(sessionId: string | null | undefined): voi
   }
 
   revokedSessionIds.delete(sessionId);
+  if (dbMode !== "sqlite") {
+    db.delete(revokedSessions)
+      .where(eq(revokedSessions.sessionId, sessionId))
+      .catch(() => {});
+  }
 }
 
 export async function loadRevokedTokensFromDb(): Promise<void> {

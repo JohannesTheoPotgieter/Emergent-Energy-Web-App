@@ -25,7 +25,7 @@
 //   await persistGateAutoEvaluation(projectId, "S03_SIGNATURE_FINANCIAL_CLOSE", results);
 // ============================================================
 
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "../db";
 import {
   projectStageInstances,
@@ -186,7 +186,11 @@ export async function loadEvaluatorContext(projectId: number): Promise<ProjectEv
   const [revenueSummary] = await db
     .select()
     .from(projectRevenueSummary)
-    .where(eq(projectRevenueSummary.projectId, projectId))
+    .where(and(
+      eq(projectRevenueSummary.projectId, projectId),
+      isNull(projectRevenueSummary.effectiveTo),
+    ))
+    .orderBy(desc(projectRevenueSummary.capturedAt))
     .limit(1);
 
   const opportunity = project?.opportunityId
@@ -221,8 +225,16 @@ export async function loadEvaluatorContext(projectId: number): Promise<ProjectEv
     db.select().from(deliverables).where(eq(deliverables.projectId, projectId)),
     db.select().from(drawingRegister).where(eq(drawingRegister.projectId, projectId)),
     db.select().from(engTransmittals).where(eq(engTransmittals.projectId, projectId)),
-    db.select().from(normalizedRevenueLines).where(eq(normalizedRevenueLines.projectId, projectId)),
-    db.select().from(normalizedCostLines).where(eq(normalizedCostLines.projectId, projectId)),
+    db.select().from(normalizedRevenueLines).where(and(
+      eq(normalizedRevenueLines.projectId, projectId),
+      isNull(normalizedRevenueLines.effectiveTo),
+      isNull(normalizedRevenueLines.deletedAt),
+    )),
+    db.select().from(normalizedCostLines).where(and(
+      eq(normalizedCostLines.projectId, projectId),
+      isNull(normalizedCostLines.effectiveTo),
+      isNull(normalizedCostLines.deletedAt),
+    )),
     db.select().from(handoverPacks).where(eq(handoverPacks.projectId, projectId)),
     db.select().from(omHandovers).where(eq(omHandovers.projectId, projectId)),
     db.select().from(safetyFileItems).where(eq(safetyFileItems.projectId, projectId)),

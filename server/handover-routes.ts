@@ -16,7 +16,7 @@ import { PM_REVIEW_ROLES } from "@shared/roles/pd-roles";
 import { z } from "zod";
 import { jwtAuth, requireAuth } from "./auth-context";
 import { requireAdmin } from "./middleware/requireAdmin";
-import { paramStr } from "./lib/req-params";
+import { paramStr, parseIntParam } from "./lib/req-params";
 
 const deliverableItemSchema = z.object({
   reference: z.string().optional(),
@@ -135,7 +135,7 @@ export function registerHandoverRoutes(app: Express) {
 
   app.get("/api/projects/:id/handover-gates", requireAuth, requirePermission("handover", "view"), async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(paramStr(req.params.id));
+      const projectId = parseIntParam(req.params.id);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
 
       const [project] = await db.select({
@@ -192,7 +192,7 @@ export function registerHandoverRoutes(app: Express) {
 
   app.post("/api/projects/:id/handover-gates/:gateId/complete", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(paramStr(req.params.id));
+      const projectId = parseIntParam(req.params.id);
       const gateId = paramStr(req.params.gateId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
 
@@ -259,7 +259,7 @@ export function registerHandoverRoutes(app: Express) {
 
   app.post("/api/projects/:id/handover-gates/:gateId/update-checklist", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(paramStr(req.params.id));
+      const projectId = parseIntParam(req.params.id);
       const gateId = paramStr(req.params.gateId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
 
@@ -296,7 +296,7 @@ export function registerHandoverRoutes(app: Express) {
 
   app.post("/api/projects/:id/handover-gates/:gateId/reopen", requireAuth, requirePermission("handover", "override"), async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(paramStr(req.params.id));
+      const projectId = parseIntParam(req.params.id);
       const gateId = paramStr(req.params.gateId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
 
@@ -341,7 +341,7 @@ export function registerHandoverRoutes(app: Express) {
 
   app.get("/api/projects/:id/handover-history", requireAuth, requirePermission("handover", "view"), async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(paramStr(req.params.id));
+      const projectId = parseIntParam(req.params.id);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
 
       const rows: any[] = await db.execute(
@@ -481,7 +481,7 @@ export function registerHandoverRoutes(app: Express) {
 
   app.get("/api/pd-pm-handover/:projectId", requireAuth, requirePermission("handover", "view"), async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(paramStr(req.params.projectId), 10);
+      const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
       const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
       if (!project) return res.status(404).json({ error: "Project not found" });
@@ -547,7 +547,7 @@ export function registerHandoverRoutes(app: Express) {
 
   app.put("/api/pd-pm-handover/:projectId/draft", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(paramStr(req.params.projectId), 10);
+      const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
       const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
       if (!project) return res.status(404).json({ error: "Project not found" });
@@ -644,7 +644,7 @@ export function registerHandoverRoutes(app: Express) {
 
   app.post("/api/pd-pm-handover/:projectId/submit", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(paramStr(req.params.projectId), 10);
+      const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
       const submitRows = await db.select().from(projectPdPmHandover).where(eq(projectPdPmHandover.projectId, projectId)).limit(1);
       const handover = normalizeHandoverRow(submitRows[0]);
@@ -802,7 +802,7 @@ export function registerHandoverRoutes(app: Express) {
   // submit. Non-blocking — pure read of the current handover record.
   app.get("/api/pd-pm-handover/:projectId/readiness", requireAuth, requirePermission("handover", "view"), async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(paramStr(req.params.projectId), 10);
+      const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
       const [handoverRow] = await db.select().from(projectPdPmHandover).where(eq(projectPdPmHandover.projectId, projectId)).limit(1);
       const handover = normalizeHandoverRow(handoverRow);
@@ -875,7 +875,7 @@ export function registerHandoverRoutes(app: Express) {
 
   app.post("/api/pd-pm-handover/:projectId/accept", requireAuth, requirePermission("handover", "approve"), async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(paramStr(req.params.projectId), 10);
+      const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
       const user = (req as any).user as any;
       if (!PM_REVIEW_ROLES.includes(user?.role)) {
@@ -977,7 +977,7 @@ export function registerHandoverRoutes(app: Express) {
 
   app.post("/api/pd-pm-handover/:projectId/reject", requireAuth, requirePermission("handover", "approve"), async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(paramStr(req.params.projectId), 10);
+      const projectId = parseIntParam(req.params.projectId);
       const reason = String(req.body?.reason || "").trim();
       if (!reason) return res.status(400).json({ error: "Rejection reason is required." });
       const user = (req as any).user as any;
@@ -1042,7 +1042,7 @@ export function registerHandoverRoutes(app: Express) {
 
   app.put("/api/pd-pm-handover/:projectId/excel-tracker", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(paramStr(req.params.projectId), 10);
+      const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
 
       const user = (req as any).user as any;
@@ -1078,7 +1078,7 @@ export function registerHandoverRoutes(app: Express) {
 
   app.post("/api/pd-pm-handover/:projectId/evidence", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(paramStr(req.params.projectId), 10);
+      const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
       const user = (req as any).user as any;
       const payload = req.body || {};
@@ -1124,7 +1124,7 @@ export function registerHandoverRoutes(app: Express) {
 
   app.post("/api/pd-pm-handover/:projectId/pd-sign-off", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(paramStr(req.params.projectId), 10);
+      const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
       const user = (req as any).user as any;
       const PD_ROLES = ["PROJECT_DEVELOPER", "COO_ADMIN", "CEO_ADMIN", "admin"];
@@ -1160,7 +1160,7 @@ export function registerHandoverRoutes(app: Express) {
 
   app.post("/api/pd-pm-handover/:projectId/pm-sign-off", requireAuth, requirePermission("handover", "approve"), async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(paramStr(req.params.projectId), 10);
+      const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
       const user = (req as any).user as any;
       if (!PM_REVIEW_ROLES.includes(user?.role)) {
@@ -1266,7 +1266,7 @@ export function registerHandoverRoutes(app: Express) {
 
   app.patch("/api/lessons-learnt/:id", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(paramStr(req.params.id), 10);
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
       const body = req.body || {};
       const updates: Record<string, any> = { updatedAt: new Date() };
@@ -1286,7 +1286,7 @@ export function registerHandoverRoutes(app: Express) {
 
   app.delete("/api/lessons-learnt/:id", requireAuth, requirePermission("handover", "delete"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(paramStr(req.params.id), 10);
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
       const [row] = await db.update(lessonsLearnt).set({ deletedAt: new Date() }).where(eq(lessonsLearnt.id, id)).returning();
       if (!row) return res.status(404).json({ error: "Lesson not found" });
@@ -1301,7 +1301,7 @@ export function registerHandoverRoutes(app: Express) {
 
   app.get("/api/pd-pm-handover/:projectId/stakeholders", requireAuth, requirePermission("handover", "view"), async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(paramStr(req.params.projectId), 10);
+      const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
       const handoverRows = await db.select({ id: projectPdPmHandover.id }).from(projectPdPmHandover).where(eq(projectPdPmHandover.projectId, projectId)).limit(1);
       if (!handoverRows[0]) return res.json({ items: [] });
@@ -1315,7 +1315,7 @@ export function registerHandoverRoutes(app: Express) {
 
   app.post("/api/pd-pm-handover/:projectId/stakeholders", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(paramStr(req.params.projectId), 10);
+      const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
       const handoverRows = await db.select({ id: projectPdPmHandover.id }).from(projectPdPmHandover).where(eq(projectPdPmHandover.projectId, projectId)).limit(1);
       if (!handoverRows[0]) return res.status(404).json({ error: "Handover not found. Save a draft first." });
@@ -1340,7 +1340,7 @@ export function registerHandoverRoutes(app: Express) {
 
   app.patch("/api/pd-pm-handover/:projectId/stakeholders/:id", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(paramStr(req.params.id), 10);
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid stakeholder ID" });
       const body = req.body || {};
       const updates: Record<string, any> = {};
@@ -1362,7 +1362,7 @@ export function registerHandoverRoutes(app: Express) {
 
   app.delete("/api/pd-pm-handover/:projectId/stakeholders/:id", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(paramStr(req.params.id), 10);
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid stakeholder ID" });
       const deleted = await db.update(handoverStakeholders).set({ deletedAt: new Date(), deletedBy: req.user?.id }).where(eq(handoverStakeholders.id, id)).returning();
       if (deleted.length === 0) return res.status(404).json({ error: "Stakeholder not found" });
@@ -1407,7 +1407,7 @@ export function registerHandoverRoutes(app: Express) {
 
   app.put("/api/pd-pm-handover/:projectId/admin-override", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(paramStr(req.params.projectId), 10);
+      const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
       const handoverRows = await db.select().from(projectPdPmHandover).where(eq(projectPdPmHandover.projectId, projectId)).limit(1);
       const handover = handoverRows[0];

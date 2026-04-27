@@ -29,7 +29,7 @@ import { invalidateEntityPermCache, invalidateUserOverrideCache } from "./permis
 import bcrypt from "bcryptjs";
 import { logAuditFromReq } from "./audit-logger";
 import { logPermissionAudit, type PermissionAuditEventType } from "./permission-audit";
-import { paramStr } from "./lib/req-params";
+import { paramStr, parseIntParam } from "./lib/req-params";
 import { z } from "zod";
 import { validateBody } from "./middleware/validateBody";
 
@@ -613,7 +613,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
   app.patch("/api/admin/users/:userId/role", jwtAuth, requireAuth, requireAdmin, validateBody(updateUserRoleSchema), async (req: Request, res: Response) => {
     try {
-      const userId = parseInt(req.params.userId as string);
+      const userId = parseIntParam(req.params.userId);
       const { role } = req.body;
       if (!role) return res.status(400).json({ error: "Role is required" });
 
@@ -677,7 +677,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
   app.patch("/api/admin/users/:userId/department", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const userId = parseInt(req.params.userId as string);
+      const userId = parseIntParam(req.params.userId);
       const rawDepartment = typeof req.body?.department === "string" ? req.body.department.trim() : "";
       const department = rawDepartment || null;
 
@@ -716,7 +716,7 @@ export function registerRoleManagementRoutes(app: Express) {
   });
   app.patch("/api/admin/users/:userId/location", jwtAuth, requireAuth, requireAdmin, validateBody(locationBodySchema), async (req: Request, res: Response) => {
     try {
-      const userId = parseInt(req.params.userId as string);
+      const userId = parseIntParam(req.params.userId);
       if (!Number.isFinite(userId)) return res.status(400).json({ error: "Invalid user id" });
       const body = req.body as { location?: string | null };
       const raw = typeof body.location === "string" ? body.location.trim() : "";
@@ -754,7 +754,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
   app.patch("/api/admin/users/:userId/password", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const userId = parseInt(req.params.userId as string);
+      const userId = parseIntParam(req.params.userId);
       const { password } = req.body;
       if (!password || password.length < 8) {
         return res.status(400).json({ error: "Password must be at least 8 characters" });
@@ -777,7 +777,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
   app.delete("/api/admin/users/:userId", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const userId = parseInt(req.params.userId as string);
+      const userId = parseIntParam(req.params.userId);
       const currentUser = getEffectiveUser(req);
       if (currentUser?.id === userId) {
         return res.status(400).json({ error: "Cannot delete your own account" });
@@ -860,7 +860,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
   app.get("/api/admin/user-overrides/:userId", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const userId = parseInt(paramStr(req.params.userId));
+      const userId = parseIntParam(req.params.userId);
       if (isNaN(userId)) return res.status(400).json({ error: "Invalid userId" });
 
       const overrides = await db.select().from(userPermissionOverrides)
@@ -925,7 +925,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
   app.delete("/api/admin/user-overrides/:id", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const overrideId = parseInt(paramStr(req.params.id));
+      const overrideId = parseIntParam(req.params.id);
       if (isNaN(overrideId)) return res.status(400).json({ error: "Invalid override ID" });
 
       const [existing] = await db.select().from(userPermissionOverrides)
@@ -1085,7 +1085,7 @@ export function registerRoleManagementRoutes(app: Express) {
   // Delete a visibility config by ID
   app.delete("/api/admin/pd-visibility/:id", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const configId = parseInt(paramStr(req.params.id));
+      const configId = parseIntParam(req.params.id);
       if (isNaN(configId)) return res.status(400).json({ error: "Invalid config ID" });
 
       const [existing] = await db.select().from(pdVisibilityConfig)
@@ -1220,7 +1220,7 @@ export function registerRoleManagementRoutes(app: Express) {
   // Delete a workstream visibility config by ID
   app.delete("/api/admin/workstream-visibility/:id", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const configId = parseInt(paramStr(req.params.id));
+      const configId = parseIntParam(req.params.id);
       if (isNaN(configId)) return res.status(400).json({ error: "Invalid config ID" });
 
       const [existing] = await db.select().from(workstreamVisibilityConfig)
@@ -1249,7 +1249,7 @@ export function registerRoleManagementRoutes(app: Express) {
   // 3. User-level overrides (userPermissionOverrides)
   app.get("/api/admin/users/:id/effective-permissions", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const userId = parseInt(paramStr(req.params.id));
+      const userId = parseIntParam(req.params.id);
       if (isNaN(userId)) return res.status(400).json({ error: "Invalid user ID" });
 
       const [user] = await db.select().from(users).where(eq(users.id, userId));

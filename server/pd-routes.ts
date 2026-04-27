@@ -11,7 +11,7 @@ import { getEffectiveWorkstreamVisibility } from "./workstream-visibility-middle
 
 import { requireAuth } from "./auth-context";
 import { canViewAllTickets, ENGINEERING_REQUEST_TYPES } from "@shared/roles/pd-roles";
-import { paramStr } from "./lib/req-params";
+import { paramStr, parseIntParam } from "./lib/req-params";
 import { getFyWindow } from "./lib/fy-window";
 import { insertClientWithGeneratedId } from "./lib/client-id-generator";
 import { logAuditFromReq } from "./audit-logger";
@@ -304,7 +304,7 @@ export function registerPdRoutes(app: Express) {
     try {
       const user = req.user as any;
       // NOTE: hardcoded `isPdRole` double-gate removed — see POST above.
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid client ID" });
 
       const { name } = req.body;
@@ -409,7 +409,7 @@ export function registerPdRoutes(app: Express) {
 
   app.get("/api/pd/tickets/:id", requireAuth, requirePermission('pd_tickets', 'view'), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ticket ID" });
 
       const [ticket] = await db
@@ -630,7 +630,7 @@ export function registerPdRoutes(app: Express) {
     try {
       const user = req.user as any;
       const role = user?.companyRole || user?.role || "";
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ticket ID" });
 
       // Cascade-display: PATCH on a soft-deleted ticket should 404 (Task #34).
@@ -687,7 +687,7 @@ export function registerPdRoutes(app: Express) {
     try {
       const user = req.user as any;
       const role = user?.companyRole || user?.role || "";
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ticket ID" });
 
       // Cascade-display: a re-DELETE on an already soft-deleted ticket
@@ -750,7 +750,7 @@ export function registerPdRoutes(app: Express) {
 
   app.get("/api/pd/tickets/:id/task-templates", requireAuth, requirePermission('pd_tickets', 'view'), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       // Cascade-display: hide soft-deleted tickets from template lookup (Task #34).
       const [ticket] = await db.select().from(engineeringTickets).where(and(eq(engineeringTickets.id, id), isNull(engineeringTickets.deletedAt)));
       if (!ticket) return res.status(404).json({ error: "Ticket not found" });
@@ -765,7 +765,7 @@ export function registerPdRoutes(app: Express) {
     try {
       const user = req.user as any;
       // NOTE: `canCreatePdTicket` double-gate removed — see POST /api/pd/tickets.
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       // Cascade-display: refuse spawn-tasks on a soft-deleted ticket (Task #34).
       const [ticket] = await db.select().from(engineeringTickets).where(and(eq(engineeringTickets.id, id), isNull(engineeringTickets.deletedAt)));
       if (!ticket) return res.status(404).json({ error: "Ticket not found" });
@@ -786,7 +786,7 @@ export function registerPdRoutes(app: Express) {
     try {
       const user = req.user as any;
       // NOTE: `canCreatePdTicket` double-gate removed — see POST /api/pd/tickets.
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ticket ID" });
 
       // Cascade-display: refuse engineering-task creation on soft-deleted ticket (Task #34).

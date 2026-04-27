@@ -12,7 +12,7 @@ import multer from "multer";
 import { verifyToken } from "./jwt";
 import { sanitizeFilename, allowedFileFilter } from "./lib/upload-security";
 import { requireAuth } from "./auth-context";
-import { paramStr } from "./lib/req-params";
+import { paramStr, parseIntParam } from "./lib/req-params";
 import { blockInProduction } from "./middleware/production-safety";
 
 const SEED_ZIP_PATH = path.join(process.cwd(), "seed", "ee-info", "Emergent Energy.zip");
@@ -1610,7 +1610,7 @@ export function registerEeInfoRoutes(app: Express) {
 
   app.delete("/api/ee-info/nodes/:nodeId/editors/:editorId", requireAuth, requireCOO, async (req, res) => {
     try {
-      const editorId = parseInt(paramStr(req.params.editorId), 10);
+      const editorId = parseIntParam(req.params.editorId);
       if (isNaN(editorId)) return res.status(400).json({ error: "Invalid editor ID" });
       await db.delete(eeInfoNodeEditors).where(eq(eeInfoNodeEditors.id, editorId));
       res.json({ success: true });
@@ -1659,7 +1659,7 @@ export function registerEeInfoRoutes(app: Express) {
 
   app.delete("/api/ee-info/nodes/:nodeId/metrics/:metricId", requireAuth, requireCOO, async (req, res) => {
     try {
-      const metricId = parseInt(paramStr(req.params.metricId), 10);
+      const metricId = parseIntParam(req.params.metricId);
       if (isNaN(metricId)) return res.status(400).json({ error: "Invalid metric ID" });
       await db.delete(eeInfoNodeMetrics).where(eq(eeInfoNodeMetrics.id, metricId));
       res.json({ success: true });

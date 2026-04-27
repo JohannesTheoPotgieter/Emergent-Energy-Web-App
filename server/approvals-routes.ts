@@ -22,6 +22,7 @@ import { logAuditFromReq } from "./audit-logger";
 import { actorFromReq, createProjectEvent } from "./services/project-event-service";
 import { getAssignmentsForEntity, getAssignmentsForEntities, setEntityAssignment } from "./services/assignment-service";
 import { badRequest, forbidden, notFound, sendError } from "./lib/api-error";
+import { parseIntParam } from "./lib/req-params";
 
 const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
 
@@ -527,7 +528,7 @@ export function registerApprovalsRoutes(app: Express) {
 
   app.patch("/api/approvals/general/:id", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(String(req.params.id), 10);
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) {
         throw badRequest("Invalid approval ID");
       }
@@ -646,7 +647,7 @@ export function registerApprovalsRoutes(app: Express) {
 
   app.delete("/api/approvals/general/:id", jwtAuth, requireAuth, requirePermission("approvals", "delete"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(String(req.params.id), 10);
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
 
       // Soft-delete: mark approval as deleted instead of removing the row

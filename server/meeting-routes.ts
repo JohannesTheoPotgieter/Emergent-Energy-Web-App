@@ -1,4 +1,5 @@
 import type { Express, Request, Response, NextFunction } from "express";
+import { timingSafeEqual } from "crypto";
 import { db } from "./db";
 import { eq, desc, sql, inArray, isNull } from "drizzle-orm";
 import {
@@ -14,22 +15,32 @@ import { z } from "zod";
 import { requirePermission } from "./permission-middleware";
 import { jwtAuth, requireAuth, getEffectiveUser } from "./auth-context";
 import { requireAdmin } from "./middleware/requireAdmin";
+import { parseIntParam } from "./lib/req-params";
 
 export function registerMeetingRoutes(app: Express) {
 
   // ==================== WEBHOOK - Read.ai ====================
   app.post("/api/webhooks/read-ai", async (req: Request, res: Response) => {
     // Verify the shared secret sent by Read.ai in the Authorization header.
-    // Set READAI_WEBHOOK_SECRET in your environment and configure the same
-    // value in the Read.ai webhook settings. Requests without the correct
-    // secret are rejected before any DB writes occur.
+    // READAI_WEBHOOK_SECRET is REQUIRED in production — fail-closed if missing.
+    // In non-prod the secret is optional so local fixtures can POST without one.
     const webhookSecret = process.env.READAI_WEBHOOK_SECRET;
-    if (webhookSecret) {
+    if (!webhookSecret) {
+      if (process.env.NODE_ENV === "production") {
+        console.error("[Read.ai Webhook] Rejected: READAI_WEBHOOK_SECRET not configured");
+        return res.status(503).json({ error: "Webhook not configured" });
+      }
+    } else {
       const authHeader = req.headers.authorization || "";
       const providedSecret = authHeader.startsWith("Bearer ")
         ? authHeader.slice(7)
         : authHeader;
-      if (providedSecret !== webhookSecret) {
+      const providedBuf = Buffer.from(providedSecret);
+      const expectedBuf = Buffer.from(webhookSecret);
+      const ok =
+        providedBuf.length === expectedBuf.length &&
+        timingSafeEqual(providedBuf, expectedBuf);
+      if (!ok) {
         console.warn("[Read.ai Webhook] Rejected: invalid secret");
         return res.status(401).json({ error: "Unauthorized" });
       }
@@ -191,7 +202,7 @@ export function registerMeetingRoutes(app: Express) {
 
   app.get("/api/meetings/:id", requireAuth, requirePermission("meetings", "view"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(String(req.params.id));
+      const id = parseIntParam(req.params.id);
       const [meeting] = await db.select().from(meetingSummaries).where(eq(meetingSummaries.id, id));
       if (!meeting) return res.status(404).json({ error: "Meeting not found" });
 
@@ -224,7 +235,7 @@ export function registerMeetingRoutes(app: Express) {
 
   app.delete("/api/meetings/:id", requireAuth, requirePermission("meetings", "delete"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(String(req.params.id));
+      const id = parseIntParam(req.params.id);
       const [deleted] = await db.update(meetingSummaries).set({ deletedAt: new Date(), deletedBy: req.user?.id }).where(eq(meetingSummaries.id, id)).returning();
       res.json({ ok: true, record: deleted });
     } catch (err: unknown) {
@@ -236,7 +247,7 @@ export function registerMeetingRoutes(app: Express) {
 
   app.patch("/api/meetings/action-items/:id/dismiss", requireAuth, requirePermission("meetings", "edit"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(String(req.params.id));
+      const id = parseIntParam(req.params.id);
       const [updated] = await db
         .update(meetingActionItems)
         .set({ status: "dismissed" })
@@ -253,7 +264,7 @@ export function registerMeetingRoutes(app: Express) {
 
   app.post("/api/meetings/action-items/:id/convert-to-task", requireAuth, requirePermission("meetings", "edit"), async (req: Request, res: Response) => {
     try {
-      const actionItemId = parseInt(String(req.params.id));
+      const actionItemId = parseIntParam(req.params.id);
       const userId = getEffectiveUser(req)?.id;
 
       const [actionItem] = await db.select().from(meetingActionItems).where(eq(meetingActionItems.id, actionItemId));
@@ -340,7 +351,7 @@ export function registerMeetingRoutes(app: Express) {
 
   app.post("/api/meetings/action-items/:id/convert-to-priority", requireAuth, requirePermission("meetings", "edit"), async (req: Request, res: Response) => {
     try {
-      const actionItemId = parseInt(String(req.params.id));
+      const actionItemId = parseIntParam(req.params.id);
       const [actionItem] = await db.select().from(meetingActionItems).where(eq(meetingActionItems.id, actionItemId));
       if (!actionItem) return res.status(404).json({ error: "Action item not found" });
       if (actionItem.status === "converted") return res.status(400).json({ error: "Already converted" });
@@ -375,7 +386,7 @@ export function registerMeetingRoutes(app: Express) {
 
   app.post("/api/meetings/action-items/:id/convert-to-project", requireAuth, requirePermission("meetings", "edit"), async (req: Request, res: Response) => {
     try {
-      const actionItemId = parseInt(String(req.params.id));
+      const actionItemId = parseIntParam(req.params.id);
       const [actionItem] = await db.select().from(meetingActionItems).where(eq(meetingActionItems.id, actionItemId));
       if (!actionItem) return res.status(404).json({ error: "Action item not found" });
       if (actionItem.status === "converted") return res.status(400).json({ error: "Already converted" });

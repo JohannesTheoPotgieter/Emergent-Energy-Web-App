@@ -8,6 +8,7 @@ import { requirePermission } from "./permission-middleware";
 import { db } from "./db";
 import { and, eq } from "drizzle-orm";
 import { projectStageData, projectCharters } from "@shared/schema";
+import { parseIntParam } from "./lib/req-params";
 
 function getUser(req: Request): { id: number; role: string } {
   const user = (req as any).user;
@@ -15,7 +16,7 @@ function getUser(req: Request): { id: number; role: string } {
 }
 
 function parseProjectId(req: Request, res: Response): number | null {
-  const id = parseInt(String(req.params.projectId), 10);
+  const id = parseIntParam(req.params.projectId);
   if (Number.isNaN(id)) {
     res.status(400).json({ error: "Invalid projectId" });
     return null;

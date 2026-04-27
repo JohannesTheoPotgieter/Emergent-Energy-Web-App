@@ -41,7 +41,7 @@ import { requireAdmin } from "../middleware/requireAdmin";
 import { requirePermission } from "../permission-middleware";
 import { logAuditFromReq } from "../audit-logger";
 import { ApiError, sendError, badRequest, logApiError } from "../lib/api-error";
-import { paramStr } from "../lib/req-params";
+import { paramStr, parseIntParam } from "../lib/req-params";
 import { getCanonicalProjectCostLinesByName } from "../services/project-cost-line-read-service";
 
 // Ensure uploads directory exists
@@ -1510,7 +1510,7 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
   // Admin: Get single import run + ledger entries
   app.get("/api/admin/import/runs/:id", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const runId = parseInt(paramStr(req.params.id));
+      const runId = parseIntParam(req.params.id);
       const run = await storage.getImportRun(runId);
       if (!run) return res.status(404).json({ error: "Run not found" });
       const entries = await storage.getAllChangeLedger({ runId });

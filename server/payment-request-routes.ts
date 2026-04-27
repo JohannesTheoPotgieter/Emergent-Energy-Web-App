@@ -5,6 +5,7 @@ import { requirePermission } from "./permission-middleware";
 import { jwtAuth, requireAuth, getEffectiveUser } from "./auth-context";
 import { logAuditFromReq } from "./audit-logger";
 import { actorFromReq, createProjectEvent } from "./services/project-event-service";
+import { parseIntParam } from "./lib/req-params";
 
 // ===================== PAYMENT REQUEST STATE MACHINE =====================
 
@@ -195,7 +196,7 @@ export function registerPaymentRequestRoutes(app: Express) {
 
   app.patch("/api/payment-requests/:id/status", jwtAuth, requireAuth, requirePermission("procurement", "edit"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(String(req.params.id));
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
 
       const { status, notes } = req.body;
@@ -237,7 +238,7 @@ export function registerPaymentRequestRoutes(app: Express) {
   app.post("/api/payment-requests/:id/review", jwtAuth, requireAuth, requirePermission("procurement", "approve"), async (req: Request, res: Response) => {
     try {
       const user = getEffectiveUser(req);
-      const id = parseInt(String(req.params.id));
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
 
       const { decision, notes } = req.body;
@@ -277,7 +278,7 @@ export function registerPaymentRequestRoutes(app: Express) {
 
   app.get("/api/payment-requests/:id", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(String(req.params.id));
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
 
       const rows = await db.execute(sql`
