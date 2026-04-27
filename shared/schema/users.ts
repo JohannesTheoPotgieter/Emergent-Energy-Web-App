@@ -1,9 +1,9 @@
 import { pgTable, pgSchema, text, integer, timestamp, serial, boolean, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
-import { ENTITY_PERMISSION_DEFAULTS } from "../permissions/registry";
+import { ENTITY_PERMISSION_DEFAULTS, rolesForCategoryAction } from "../permissions/registry";
 export { ENTITY_PERMISSION_DEFAULTS } from "../permissions/registry";
-export { ENTITY_REGISTRY, PERMISSION_CATEGORIES, findEntityRegistry, entityTitle } from "../permissions/registry";
+export { ENTITY_REGISTRY, PERMISSION_CATEGORIES, findEntityRegistry, entityTitle, rolesForCategoryAction } from "../permissions/registry";
 export type { EntityRegistryEntry, PermissionCategoryKey } from "../permissions/registry";
 
 /**
@@ -142,32 +142,49 @@ export const ADMIN_ROLES: CompanyRole[] = ['COO_ADMIN', 'CEO_ADMIN'];
 /** Every company role — use for entities all staff should access (home, feedback, my_work, etc.) */
 export const ALL_STAFF_ROLES: string[] = [...COMPANY_ROLES];
 
+// ===================== DERIVED ROLE GROUPS (Task #101) =====================
+//
+// These nine groups used to be hand-maintained literal arrays that drifted
+// out of sync with `shared/permissions/registry.ts`. They are now DERIVED
+// from the registry at module-load time via `rolesForCategoryAction()`,
+// which unions the `<action>_roles` of every entry whose `category` matches.
+//
+// Adding (or removing) a registry entry now automatically expands (or
+// contracts) the matching group. Export NAMES are preserved so the 394
+// existing call sites continue to work; values are now registry-derived.
+//
+// NOTE: these arrays are no longer the authoritative gate — every backend
+// route reaches `requirePermission(entity, action)`, which consults
+// `entityPermissions` directly. These groups remain useful as plain-English
+// shorthands for fallback / legacy display code, with the guarantee that
+// they cannot drift from the registry.
+
 /** Finance-view roles — can see financial dashboards, cashflow, revenue, COS, GP */
-export const FINANCE_VIEW_ROLES = ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'ACCOUNTANT'] as const;
+export const FINANCE_VIEW_ROLES: readonly string[] = rolesForCategoryAction('FINANCE', 'view');
 
 /** Finance-edit roles — can create/edit financial records */
-export const FINANCE_EDIT_ROLES = ['COO_ADMIN', 'CEO_ADMIN', 'CFO', 'PROGRAM_FINANCE_MANAGER', 'ACCOUNTANT'] as const;
+export const FINANCE_EDIT_ROLES: readonly string[] = rolesForCategoryAction('FINANCE', 'edit');
 
 /** Engineering-view roles — can see engineering dashboards, tasks, stages */
-export const ENG_VIEW_ROLES = ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'ENGINEERING_MANAGER', 'ENGINEER', 'QUALITY_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'CONSTRUCTION_MANAGER', 'SSEG_MANAGER'] as const;
+export const ENG_VIEW_ROLES: readonly string[] = rolesForCategoryAction('ENGINEERING', 'view');
 
 /** Engineering-edit roles — can create/edit engineering items */
-export const ENG_EDIT_ROLES = ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER', 'PROGRAM_MANAGER', 'ENGINEER', 'SSEG_MANAGER'] as const;
+export const ENG_EDIT_ROLES: readonly string[] = rolesForCategoryAction('ENGINEERING', 'edit');
 
 /** Quality & HSE view roles — can see quality, HSE, compliance dashboards */
-export const QUALITY_HSE_VIEW_ROLES = ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'HSE_MANAGER', 'SSEG_MANAGER'] as const;
+export const QUALITY_HSE_VIEW_ROLES: readonly string[] = rolesForCategoryAction('QUALITY_HSE', 'view');
 
 /** Quality & HSE edit roles — can create/edit quality/HSE items */
-export const QUALITY_HSE_EDIT_ROLES = ['COO_ADMIN', 'CEO_ADMIN', 'QUALITY_MANAGER', 'CONSTRUCTION_MANAGER', 'HSE_MANAGER'] as const;
+export const QUALITY_HSE_EDIT_ROLES: readonly string[] = rolesForCategoryAction('QUALITY_HSE', 'edit');
 
 /** Project delivery view roles — can see projects, construction, tasks, milestones */
-export const DELIVERY_VIEW_ROLES = ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT', 'HSE_MANAGER', 'SSEG_MANAGER'] as const;
+export const DELIVERY_VIEW_ROLES: readonly string[] = rolesForCategoryAction('DELIVERY', 'view');
 
 /** Project development view roles — can see PD dashboard, tickets, pipeline */
-export const PD_VIEW_ROLES = ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_DEVELOPER', 'PROGRAM_FINANCE_MANAGER'] as const;
+export const PD_VIEW_ROLES: readonly string[] = rolesForCategoryAction('PD', 'view');
 
 /** Project development edit roles — can create/edit PD items */
-export const PD_EDIT_ROLES = ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_DEVELOPER'] as const;
+export const PD_EDIT_ROLES: readonly string[] = rolesForCategoryAction('PD', 'edit');
 
 export const roleCredentials = pgTable("role_credentials", {
   id: serial("id").primaryKey(),
