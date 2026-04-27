@@ -6,6 +6,15 @@ export { ENTITY_PERMISSION_DEFAULTS } from "../permissions/registry";
 export { ENTITY_REGISTRY, PERMISSION_CATEGORIES, findEntityRegistry, entityTitle } from "../permissions/registry";
 export type { EntityRegistryEntry, PermissionCategoryKey } from "../permissions/registry";
 
+/**
+ * Task #101 — structural type for the JSONB permission map columns
+ * (`role_permissions.entity_permissions`, `role_templates.permissions`).
+ * Declared inline so this file does not depend on `permissions/templates.ts`
+ * (which would create a circular import). Service-layer code can cast its
+ * own typed `EntityPermissionMap` to this without resorting to `as any`.
+ */
+export type EntityPermissionsJson = Record<string, Partial<Record<string, boolean>>>;
+
 // ===================== ORGANIZATIONS (Prompt 11 — Multi-tenancy) =====================
 export const organizations = pgTable("organizations", {
   id: serial("id").primaryKey(),
@@ -343,7 +352,8 @@ export const rolePermissions = pgTable("role_permissions", {
   canManageUsers: boolean("can_manage_users").notNull().default(false),
   canManageRoles: boolean("can_manage_roles").notNull().default(false),
   canEditData: boolean("can_edit_data").notNull().default(true),
-  entityPermissions: jsonb("entity_permissions"),
+  // Task #101: typed wrapper so callers don't need `as any` to write the JSON.
+  entityPermissions: jsonb("entity_permissions").$type<EntityPermissionsJson>(),
   authorityModel: jsonb("authority_model"),
   isSystem: boolean("is_system").notNull().default(false),
   permissionVersion: integer("permission_version").notNull().default(1),
@@ -372,7 +382,7 @@ export const roleTemplates = pgTable("role_templates", {
   name: text("name").notNull(),
   summary: text("summary").notNull(),
   category: text("category").notNull(),
-  permissions: jsonb("permissions").notNull(),
+  permissions: jsonb("permissions").$type<EntityPermissionsJson>().notNull(),
   sections: text("sections").array().notNull().default([]),
   isSystem: boolean("is_system").notNull().default(true),
   seededAt: timestamp("seeded_at").notNull().defaultNow(),
