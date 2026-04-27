@@ -1,14 +1,5 @@
-// People tab — Task #101.
-//
-// Lightweight user list with one-click "Apply template". CRITICAL safety
-// guarantee: applying a template here writes USER OVERRIDES for the
-// selected person only. The role definition is NEVER mutated — that lives
-// in the Roles tab, where it changes permissions for everyone with that
-// role at once.
-//
-// Endpoints used:
-//   GET /api/admin/users/:userId/preview-template/:templateKey
-//   POST /api/admin/users/:userId/apply-template   { templateKey, reason }
+// People tab. Apply-template writes USER OVERRIDES only; the role
+// definition is never mutated here.
 
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -51,9 +42,15 @@ export function PeopleTab() {
   const { toast } = useToast();
   const qc = useQueryClient();
 
-  const usersQ = useQuery<{ users: UserRow[] }>({
+  // /api/admin/users returns a raw array; normalise to handle either shape.
+  const usersQ = useQuery<UserRow[]>({
     queryKey: ["/api/admin/users"],
-    queryFn: () => fetchJSON("/api/admin/users"),
+    queryFn: async () => {
+      const raw = await fetchJSON<UserRow[] | { users: UserRow[] }>("/api/admin/users");
+      if (Array.isArray(raw)) return raw;
+      if (raw && Array.isArray(raw.users)) return raw.users;
+      return [];
+    },
   });
   const tplQ = useQuery<{ templates: TemplateRow[] }>({
     queryKey: ["/api/admin/role-templates"],
@@ -88,12 +85,7 @@ export function PeopleTab() {
       toast({ title: "Apply failed", description: String(err?.message ?? err), variant: "destructive" }),
   });
 
-  // Reassign a user's underlying role. This is the "true role-template
-  // assignment" path — it changes which role baseline the user inherits,
-  // for example moving Lara from PROJECT_MANAGER to ENGINEERING_MANAGER.
-  // It does NOT touch user_permission_overrides; those stay layered on top
-  // of whatever role the user holds. Wire-up uses the existing endpoint
-  // PATCH /api/admin/users/:userId/role registered in role-management.ts.
+  // Reassign a user's role baseline (separate from override application).
   const reassignRoleM = useMutation<{ ok: true } & Record<string, unknown>, Error, { userId: number; newRole: string }>({
     mutationFn: async ({ userId, newRole }) =>
       fetchJSON<{ ok: true } & Record<string, unknown>>(`/api/admin/users/${userId}/role`, {
@@ -116,7 +108,7 @@ export function PeopleTab() {
       }),
   });
 
-  const users = usersQ.data?.users ?? [];
+  const users = usersQ.data ?? [];
   const templates = tplQ.data?.templates ?? [];
   const filtered = users.filter((u) => {
     const q = filter.trim().toLowerCase();

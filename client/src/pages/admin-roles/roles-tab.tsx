@@ -1,13 +1,4 @@
-// Roles tab — Task #101.
-//
-// Three sections:
-//   1. Compare two roles — picks A and B and lists what each can/can't do
-//      in plain English, grouped by registry category.
-//   2. Curated template gallery — apply a template to a role.
-//   3. (Implicit) Detail view appears inside the Compare card so the COO
-//      can see a single role's full grant list by picking the same role on
-//      both sides — every action falls into "shared" and renders as a
-//      grouped, plain-English permission list.
+// Roles tab: compare two roles + curated template gallery.
 
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
