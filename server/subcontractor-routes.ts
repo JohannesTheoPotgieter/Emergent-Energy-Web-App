@@ -557,6 +557,7 @@ router.patch("/api/subcontractor-dashboard/rename", requireAuth, requirePermissi
           .where(eq(counterparties.id, oldCp[0].id));
       }
 
+      // Intentional: rewrites historical snapshots so renamed counterparty is consistent in past invoices.
       const updated = await tx.update(normalizedCostLines)
         .set({ counterpartyName: trimmedNew })
         .where(sql`LOWER(TRIM(${normalizedCostLines.counterpartyName})) = LOWER(${oldName.trim()})`);
@@ -633,10 +634,12 @@ router.patch("/api/subcontractor-dashboard/counterparty/:name/type", requireAuth
           .set({ typeDefault: type, lastSeenAt: new Date() })
           .where(eq(counterparties.id, cpId));
 
+        // Intentional: rewrites historical snapshots so type reclassification flows through to past reports.
         await tx.update(normalizedCostLines)
           .set({ counterpartyType: type })
           .where(sql`${normalizedCostLines.counterpartyId} = ${cpId} OR LOWER(TRIM(${normalizedCostLines.counterpartyName})) = ${normalized}`);
       } else {
+        // Intentional: same as above for the no-counterparty-row branch.
         await tx.update(normalizedCostLines)
           .set({ counterpartyType: type })
           .where(sql`LOWER(TRIM(${normalizedCostLines.counterpartyName})) = ${normalized}`);
@@ -709,12 +712,14 @@ router.post("/api/subcontractor-dashboard/merge", requireAuth, requirePermission
           const srcAliases = Array.isArray(srcCp[0].nameAliases) ? srcCp[0].nameAliases as string[] : [];
           mergedAliases.push(...srcAliases);
 
+          // Intentional: rewrites historical snapshots to point at the merged counterparty.
           await tx.update(normalizedCostLines)
             .set({ counterpartyName: trimmedTarget, counterpartyId: targetCpId })
             .where(sql`${normalizedCostLines.counterpartyId} = ${srcId} OR LOWER(TRIM(${normalizedCostLines.counterpartyName})) = ${srcNorm}`);
 
           await tx.delete(counterparties).where(eq(counterparties.id, srcId));
         } else {
+          // Intentional: same as above for the source-counterparty-not-found branch.
           await tx.update(normalizedCostLines)
             .set({ counterpartyName: trimmedTarget, counterpartyId: targetCpId })
             .where(sql`LOWER(TRIM(${normalizedCostLines.counterpartyName})) = ${srcNorm}`);

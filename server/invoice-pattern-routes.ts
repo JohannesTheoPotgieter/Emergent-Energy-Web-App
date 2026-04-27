@@ -342,6 +342,8 @@ router.delete("/api/invoice-patterns/:id", requireAuth, requirePermission('procu
     const id = parseInt(paramStr(req.params.id));
     if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
     await db.transaction(async (tx: any) => {
+      // Intentional: clears patternRuleId on all snapshots (current + historical) so deleting
+      // the parent rule doesn't leave dangling references.
       await tx.update(normalizedCostLines)
         .set({ patternRuleId: null, patternClassifiedAt: null, patternInferredType: null })
         .where(eq(normalizedCostLines.patternRuleId, id));
@@ -743,6 +745,9 @@ router.post("/api/procurement-analysis/reset-tags", requireAuth, requirePermissi
     const matchesBefore = await db.select({ count: sql<number>`count(*)` }).from(invoicePatternMatches);
 
     await db.transaction(async (tx: any) => {
+      // Intentional: explicit COO/CEO admin reset — clears pattern tags across all snapshots
+      // (current + historical). taggedBefore counter only reflects active rows for reporting,
+      // so logged "cleared" count understates the historical rows touched. That's accepted.
       await tx.update(normalizedCostLines).set({
         patternRuleId: null,
         patternClassifiedAt: null,
@@ -1178,6 +1183,8 @@ router.delete("/api/counterparties/:id", requireAuth, requirePermission('procure
       throw badRequest("Invalid counterparty ID");
     }
     await db.transaction(async (tx: any) => {
+      // Intentional: clears counterpartyId on all snapshots (current + historical) so deleting
+      // the parent counterparty doesn't leave dangling references.
       await tx.update(normalizedCostLines)
         .set({ counterpartyId: null })
         .where(eq(normalizedCostLines.counterpartyId, id));
