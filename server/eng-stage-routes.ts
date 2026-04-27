@@ -8,7 +8,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { sanitizeFilename, allowedFileFilter } from "./lib/upload-security";
-import { paramStr } from "./lib/req-params";
+import { paramStr, parseIntParam } from "./lib/req-params";
 import {
   engStageTemplates,
   engTaskTemplates,
@@ -182,7 +182,7 @@ export function registerEngStageRoutes(app: Express) {
 
   app.get("/api/eng-stages/templates/:id", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       const [template] = await db.select().from(engStageTemplates).where(eq(engStageTemplates.id, id));
       if (!template) return res.status(404).json({ error: "Template not found" });
 
@@ -201,7 +201,7 @@ export function registerEngStageRoutes(app: Express) {
       const user = getUser(req);
       if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required" });
 
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       const { isActive } = req.body;
       await db.update(engStageTemplates).set({ isActive }).where(eq(engStageTemplates.id, id));
       logAuditFromReq(req, { entityType: "eng_stage_template", entityId: String(id), action: "update", changesJson: { description: "Stage template updated", isActive } });
@@ -216,7 +216,7 @@ export function registerEngStageRoutes(app: Express) {
     try {
       const user = getUser(req);
       if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required" });
-      const stageTemplateId = parseInt(paramStr(req.params.id));
+      const stageTemplateId = parseIntParam(req.params.id);
       const { title, description, isRequired, sequence, defaultOwnerRole } = req.body;
       if (!title) return res.status(400).json({ error: "Title is required" });
       const maxSeq = await db.select({ max: sql<number>`COALESCE(MAX(sequence), 0)` }).from(engTaskTemplates).where(eq(engTaskTemplates.stageTemplateId, stageTemplateId));
@@ -240,7 +240,7 @@ export function registerEngStageRoutes(app: Express) {
     try {
       const user = getUser(req);
       if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required" });
-      const taskId = parseInt(paramStr(req.params.taskId));
+      const taskId = parseIntParam(req.params.taskId);
       const { title, description, isRequired, sequence, defaultOwnerRole } = req.body;
       const updates: any = {};
       if (title !== undefined) updates.title = title;
@@ -262,7 +262,7 @@ export function registerEngStageRoutes(app: Express) {
     try {
       const user = getUser(req);
       if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required" });
-      const taskId = parseInt(paramStr(req.params.taskId));
+      const taskId = parseIntParam(req.params.taskId);
       const [deleted] = await db.update(engTaskTemplates).set({ deletedAt: new Date(), deletedBy: req.user?.id }).where(eq(engTaskTemplates.id, taskId)).returning();
       if (!deleted) return res.status(404).json({ error: "Task template not found" });
       logAuditFromReq(req, { entityType: "eng_stage_item", entityId: String(taskId), action: "delete", changesJson: { description: "Task template deleted", title: deleted.title } });
@@ -277,7 +277,7 @@ export function registerEngStageRoutes(app: Express) {
     try {
       const user = getUser(req);
       if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required" });
-      const stageTemplateId = parseInt(paramStr(req.params.id));
+      const stageTemplateId = parseIntParam(req.params.id);
       const { name, description, isRequired, allowedFileTypes, requiredCount } = req.body;
       if (!name) return res.status(400).json({ error: "Name is required" });
       const [deliverable] = await db.insert(engDeliverableTemplates).values({
@@ -300,7 +300,7 @@ export function registerEngStageRoutes(app: Express) {
     try {
       const user = getUser(req);
       if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required" });
-      const delId = parseInt(paramStr(req.params.delId));
+      const delId = parseIntParam(req.params.delId);
       const { name, description, isRequired, allowedFileTypes, requiredCount } = req.body;
       const updates: any = {};
       if (name !== undefined) updates.name = name;
@@ -322,7 +322,7 @@ export function registerEngStageRoutes(app: Express) {
     try {
       const user = getUser(req);
       if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required" });
-      const delId = parseInt(paramStr(req.params.delId));
+      const delId = parseIntParam(req.params.delId);
       const [deleted] = await db.update(engDeliverableTemplates).set({ deletedAt: new Date(), deletedBy: req.user?.id }).where(eq(engDeliverableTemplates.id, delId)).returning();
       if (!deleted) return res.status(404).json({ error: "Deliverable template not found" });
       logAuditFromReq(req, { entityType: "eng_stage_item", entityId: String(delId), action: "delete", changesJson: { description: "Deliverable template deleted", name: deleted.name } });
@@ -337,7 +337,7 @@ export function registerEngStageRoutes(app: Express) {
   app.post("/api/projects/:projectId/eng-stages/generate", jwtAuth, requireAuth, requirePermission("eng_stages", "create"), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
-      const projectId = parseInt(paramStr(req.params.projectId));
+      const projectId = parseIntParam(req.params.projectId);
 
       const [project] = await db.select({ id: projectInfo.id, projectName: projectInfo.projectName })
         .from(projectInfo).where(eq(projectInfo.id, projectId));
@@ -390,7 +390,7 @@ export function registerEngStageRoutes(app: Express) {
 
   app.get("/api/projects/:projectId/eng-stages", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(paramStr(req.params.projectId));
+      const projectId = parseIntParam(req.params.projectId);
 
       const stages = await db.select({
         id: projectEngStages.id,
@@ -470,7 +470,7 @@ export function registerEngStageRoutes(app: Express) {
 
   app.get("/api/projects/:projectId/eng-stages/:stageId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const stageId = parseInt(paramStr(req.params.stageId));
+      const stageId = parseIntParam(req.params.stageId);
 
       const [stage] = await db.select({
         id: projectEngStages.id,
@@ -560,7 +560,7 @@ export function registerEngStageRoutes(app: Express) {
   // Permission: changing stage task status is an edit to eng_tasks.
   app.patch("/api/eng-stages/tasks/:taskId", jwtAuth, requireAuth, requirePermission("eng_tasks", "edit"), async (req: Request, res: Response) => {
     try {
-      const taskId = parseInt(paramStr(req.params.taskId));
+      const taskId = parseIntParam(req.params.taskId);
       const user = getUser(req);
       const { status, notes, ownerUserId, hasDeliverable } = req.body;
 
@@ -662,7 +662,7 @@ export function registerEngStageRoutes(app: Express) {
   // Permission: uploading a deliverable is a create on deliverables.
   app.post("/api/eng-stages/tasks/:taskId/deliverables", jwtAuth, requireAuth, requirePermission("deliverables", "create"), upload.single("file"), async (req: Request, res: Response) => {
     try {
-      const taskId = parseInt(paramStr(req.params.taskId));
+      const taskId = parseIntParam(req.params.taskId);
       const user = getUser(req);
       const file = req.file;
       if (!file) return res.status(400).json({ error: "No file uploaded" });
@@ -698,7 +698,7 @@ export function registerEngStageRoutes(app: Express) {
   // + inline role check (defense-in-depth) + self-review block.
   app.patch("/api/eng-stages/deliverables/:id/approve", jwtAuth, requireAuth, requirePermission("deliverables", "approve"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       const user = getUser(req);
       const { status } = req.body;
 
@@ -767,7 +767,7 @@ export function registerEngStageRoutes(app: Express) {
   // + inline engineer/COO check (defense-in-depth) + self-issue block.
   app.post("/api/eng-stages/deliverables/:id/issue-for-construction", jwtAuth, requireAuth, requirePermission("deliverables", "approve"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       const user = getUser(req);
       const { notes } = req.body || {};
 
@@ -834,7 +834,7 @@ export function registerEngStageRoutes(app: Express) {
   // + inline engineer/COO/construction_manager check.
   app.post("/api/eng-stages/deliverables/:id/mark-as-built", jwtAuth, requireAuth, requirePermission("deliverables", "approve"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       const user = getUser(req);
       const { notes } = req.body || {};
 
@@ -889,7 +889,7 @@ export function registerEngStageRoutes(app: Express) {
   // Permission: uploading a stage-level deliverable is a create on deliverables.
   app.post("/api/eng-stages/stages/:stageId/deliverables", jwtAuth, requireAuth, requirePermission("deliverables", "create"), upload.single("file"), async (req: Request, res: Response) => {
     try {
-      const stageId = parseInt(paramStr(req.params.stageId));
+      const stageId = parseIntParam(req.params.stageId);
       const user = getUser(req);
       const file = req.file;
       if (!file) return res.status(400).json({ error: "No file uploaded" });
@@ -922,7 +922,7 @@ export function registerEngStageRoutes(app: Express) {
 
   app.get("/api/eng-stages/deliverables/:id/download", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       const [deliverable] = await db.select().from(projectEngDeliverables).where(eq(projectEngDeliverables.id, id));
       if (!deliverable) return res.status(404).json({ error: "Deliverable not found" });
 
@@ -941,7 +941,7 @@ export function registerEngStageRoutes(app: Express) {
   // Permission: deleting a deliverable requires delete on deliverables. CRITICAL fix.
   app.delete("/api/eng-stages/deliverables/:id", jwtAuth, requireAuth, requirePermission("deliverables", "delete"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       const [deliverable] = await db.select().from(projectEngDeliverables).where(eq(projectEngDeliverables.id, id));
       if (!deliverable) return res.status(404).json({ error: "Deliverable not found" });
 
@@ -962,7 +962,7 @@ export function registerEngStageRoutes(app: Express) {
   app.patch("/api/eng-stages/approvals/:id", jwtAuth, requireAuth, requirePermission("eng_stages", "approve"), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       const { status, comments } = req.body;
 
       const [approval] = await db.select().from(projectEngApprovals).where(eq(projectEngApprovals.id, id));
@@ -1015,7 +1015,7 @@ export function registerEngStageRoutes(app: Express) {
   // Permission: completing a stage is an approve-level action on eng_stages.
   app.post("/api/eng-stages/stages/:stageId/complete", jwtAuth, requireAuth, requirePermission("eng_stages", "approve"), async (req: Request, res: Response) => {
     try {
-      const stageId = parseInt(paramStr(req.params.stageId));
+      const stageId = parseIntParam(req.params.stageId);
 
       const [stage] = await db.select({
         id: projectEngStages.id,
@@ -1235,7 +1235,7 @@ export function registerEngStageRoutes(app: Express) {
       const user = getUser(req);
       if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required for override" });
 
-      const stageId = parseInt(paramStr(req.params.stageId));
+      const stageId = parseIntParam(req.params.stageId);
       const { reason } = req.body;
       if (!reason || reason.trim().length === 0) {
         return res.status(400).json({ error: "Override reason is mandatory" });
@@ -1286,7 +1286,7 @@ export function registerEngStageRoutes(app: Express) {
   // Permission: changing stage status is an edit on eng_stages.
   app.patch("/api/eng-stages/stages/:stageId/status", jwtAuth, requireAuth, requirePermission("eng_stages", "edit"), async (req: Request, res: Response) => {
     try {
-      const stageId = parseInt(paramStr(req.params.stageId));
+      const stageId = parseIntParam(req.params.stageId);
       const { status } = req.body;
       const updates: any = { status };
       if (status === "in_progress" || status === "blocked" || status === "ready_for_review") {
@@ -1418,7 +1418,7 @@ export function registerEngStageRoutes(app: Express) {
 
   app.get("/api/eng-stages/transmittals/:id", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       const [transmittal] = await db.select().from(engTransmittals).where(eq(engTransmittals.id, id));
       if (!transmittal) return res.status(404).json({ error: "Transmittal not found" });
 
@@ -1436,7 +1436,7 @@ export function registerEngStageRoutes(app: Express) {
 
   app.post("/api/eng-stages/deliverables/:id/supersede", jwtAuth, requireAuth, requirePermission("deliverables", "edit"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       const user = getUser(req);
       const { supersededById, reason } = req.body;
 
@@ -1486,7 +1486,7 @@ export function registerEngStageRoutes(app: Express) {
 
   app.get("/api/projects/:projectId/eng-handover-readiness", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(paramStr(req.params.projectId));
+      const projectId = parseIntParam(req.params.projectId);
 
       // 1. Stage completion
       const stages = await db.select({

@@ -5,6 +5,7 @@ import { workItemDependencies, workItems, insertWorkItemDependencySchema } from 
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
 import { jwtAuth, requireAuth } from "./auth-context";
+import { parseIntParam } from "./lib/req-params";
 
 async function detectCircular(predecessorId: number, successorId: number): Promise<boolean> {
   const allDeps = await db.select({
@@ -58,7 +59,7 @@ export function registerDependencyRoutes(app: Express): void {
   // DependenciesTab in the engineering task detail drawer.
   app.get("/api/dependencies/task/:taskId", requireAuth, async (req: Request, res: Response) => {
     try {
-      const taskId = parseInt(req.params.taskId as string);
+      const taskId = parseIntParam(req.params.taskId);
       if (isNaN(taskId)) return res.status(400).json({ error: "Invalid task ID" });
 
       const deps = await db.select({
@@ -126,7 +127,7 @@ export function registerDependencyRoutes(app: Express): void {
 
   app.get("/api/dependencies/project/:projectId", requireAuth, requirePermission("projects", "view"), async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(req.params.projectId as string);
+      const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
 
       const projectTasks = await db.select({ id: workItems.id })
@@ -269,7 +270,7 @@ export function registerDependencyRoutes(app: Express): void {
 
   app.patch("/api/dependencies/:id", requireAuth, requirePermission("projects", "edit"), async (req: Request, res: Response) => {
     try {
-      const depId = parseInt(req.params.id as string);
+      const depId = parseIntParam(req.params.id);
       if (isNaN(depId)) return res.status(400).json({ error: "Invalid dependency ID" });
 
       const [existing] = await db.select().from(workItemDependencies).where(eq(workItemDependencies.id, depId));
@@ -313,7 +314,7 @@ export function registerDependencyRoutes(app: Express): void {
 
   app.delete("/api/dependencies/:id", requireAuth, requirePermission("projects", "edit"), async (req: Request, res: Response) => {
     try {
-      const depId = parseInt(req.params.id as string);
+      const depId = parseIntParam(req.params.id);
       if (isNaN(depId)) return res.status(400).json({ error: "Invalid dependency ID" });
 
       const [existing] = await db.select().from(workItemDependencies).where(eq(workItemDependencies.id, depId));

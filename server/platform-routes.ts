@@ -8,6 +8,7 @@ import { requireAuth } from "./auth-context";
 import { logApiError, badRequest, notFound, sendError, serverError } from "./lib/api-error";
 import { PLATFORM_ROUTE_OWNERSHIP } from "./platform/route-ownership";
 import { getPlatformProjectSummary } from "./services/project-platform-summary-service";
+import { parseIntParam } from "./lib/req-params";
 
 export function registerPlatformRoutes(app: Express) {
   app.get("/api/platform/contracts", requireAuth, async (_req, res) => {
@@ -26,7 +27,7 @@ export function registerPlatformRoutes(app: Express) {
 
   app.get("/api/platform/projects/:projectId/summary", requireAuth, async (req, res) => {
     try {
-      const projectId = parseInt(String(req.params.projectId), 10);
+      const projectId = parseIntParam(req.params.projectId);
       if (!Number.isFinite(projectId)) {
         return sendError(res, badRequest("Valid projectId is required"));
       }

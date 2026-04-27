@@ -25,6 +25,7 @@ import {
   calculateOverallStatus,
   calculateCompletionPercent,
 } from "./services/commissioning-workbook-parser";
+import { parseIntParam } from "./lib/req-params";
 
 // Multer for manual upload — memory storage, workbook files only
 const WORKBOOK_EXTENSIONS = new Set([".xlsx", ".xlsm"]);
@@ -184,7 +185,7 @@ export function registerCommissioningDashboardRoutes(app: Express): void {
   app.get("/api/commissioning-dashboard/:projectId", jwtAuth, requireAuth, requirePermission("commissioning", "view"), async (req: Request, res: Response) => {
     try {
       await ensureCommissioningDashboardSchema();
-      const projectId = parseInt(String(req.params.projectId));
+      const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
 
       const [project] = await db.select({ id: projectInfo.id, projectName: projectInfo.projectName })
@@ -247,7 +248,7 @@ export function registerCommissioningDashboardRoutes(app: Express): void {
   app.post("/api/commissioning-dashboard/:projectId/refresh", jwtAuth, requireAuth, requirePermission("commissioning", "edit"), async (req: Request, res: Response) => {
     try {
       await ensureCommissioningDashboardSchema();
-      const projectId = parseInt(String(req.params.projectId));
+      const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
 
       const [source] = await db.select()
@@ -359,7 +360,7 @@ export function registerCommissioningDashboardRoutes(app: Express): void {
   app.get("/api/commissioning-dashboard/:projectId/source", jwtAuth, requireAuth, requirePermission("commissioning", "view"), async (req: Request, res: Response) => {
     try {
       await ensureCommissioningDashboardSchema();
-      const projectId = parseInt(String(req.params.projectId));
+      const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
       const [source] = await db.select()
         .from(commissioningSources)
@@ -374,7 +375,7 @@ export function registerCommissioningDashboardRoutes(app: Express): void {
   app.put("/api/commissioning-dashboard/:projectId/source", jwtAuth, requireAuth, requirePermission("commissioning", "edit"), async (req: Request, res: Response) => {
     try {
       await ensureCommissioningDashboardSchema();
-      const projectId = parseInt(String(req.params.projectId));
+      const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
       const user = getEffectiveUser(req);
       const { sourceType, sourceFormat, driveId, itemId, filePath, workbookUrl, folderUrl } = req.body;
@@ -431,7 +432,7 @@ export function registerCommissioningDashboardRoutes(app: Express): void {
   app.post("/api/commissioning-dashboard/:projectId/upload", jwtAuth, requireAuth, requirePermission("commissioning", "edit"), workbookUploadSingle, async (req: Request, res: Response) => {
     try {
       await ensureCommissioningDashboardSchema();
-      const projectId = parseInt(String(req.params.projectId));
+      const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
       if (!req.file) return res.status(400).json({ error: "No file uploaded. Send multipart/form-data with field 'file'." });
 

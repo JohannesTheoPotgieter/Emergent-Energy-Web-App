@@ -17,6 +17,7 @@ import {
   projectStageFinancialCloseTracks,
   projectStageInstances,
 } from "@shared/schema";
+import { parseIntParam } from "./lib/req-params";
 
 function getUser(req: Request): { id: number; role: string } {
   const user = (req as any).user;
@@ -28,7 +29,7 @@ function p(v: string | string[] | undefined): string {
 }
 
 function parseProjectId(req: Request, res: Response): number | null {
-  const id = parseInt(p(req.params.projectId), 10);
+  const id = parseIntParam(req.params.projectId);
   if (Number.isNaN(id)) {
     res.status(400).json({ error: "Invalid projectId" });
     return null;
@@ -37,7 +38,7 @@ function parseProjectId(req: Request, res: Response): number | null {
 }
 
 function parseId(req: Request, res: Response): number | null {
-  const id = parseInt(p(req.params.id), 10);
+  const id = parseIntParam(req.params.id);
   if (Number.isNaN(id)) {
     res.status(400).json({ error: "Invalid id" });
     return null;

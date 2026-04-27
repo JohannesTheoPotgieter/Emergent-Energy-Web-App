@@ -8,7 +8,7 @@ import { db } from "../db";
 import { financialEditRequests, financialIntegrationRules, users, workItems, projectInfo, expenseTaskLinks, milestoneTaskLinks } from "@shared/schema";
 import { createNotification } from "../services/notification-service";
 import { eq, and, inArray, isNull, desc, sql } from "drizzle-orm";
-import { paramStr } from "../lib/req-params";
+import { paramStr, parseIntParam } from "../lib/req-params";
 import { getCanonicalProjectCostLinesByName } from "../services/project-cost-line-read-service";
 
 const router = Router();
@@ -280,7 +280,7 @@ router.get("/api/financial-edit-requests/pending-count", requireAuth, async (req
 
 router.post("/api/financial-edit-requests/:id/approve", requireAuth, requireFinancialApprover, async (req: Request, res: Response) => {
   try {
-    const requestId = parseInt(paramStr(req.params.id));
+    const requestId = parseIntParam(req.params.id);
     const userId = req.user!.id;
     const { comment } = req.body;
 
@@ -374,7 +374,7 @@ router.post("/api/financial-edit-requests/:id/approve", requireAuth, requireFina
 
 router.post("/api/financial-edit-requests/:id/reject", requireAuth, requireFinancialApprover, async (req: Request, res: Response) => {
   try {
-    const requestId = parseInt(paramStr(req.params.id));
+    const requestId = parseIntParam(req.params.id);
     const userId = req.user!.id;
     const { comment } = req.body;
 
@@ -690,7 +690,7 @@ router.post("/api/financial-integration/rules", requireAuth, requireFinancialApp
 
 router.patch("/api/financial-integration/rules/:ruleId", requireAuth, requireFinancialApprover, async (req: Request, res: Response) => {
   try {
-    const ruleId = parseInt(paramStr(req.params.ruleId));
+    const ruleId = parseIntParam(req.params.ruleId);
     const { ruleConfig, isActive } = req.body;
 
     const updates: any = { updatedAt: new Date() };
@@ -716,7 +716,7 @@ router.patch("/api/financial-integration/rules/:ruleId", requireAuth, requireFin
 
 router.delete("/api/financial-integration/rules/:ruleId", requireAuth, requireFinancialApprover, async (req: Request, res: Response) => {
   try {
-    const ruleId = parseInt(paramStr(req.params.ruleId));
+    const ruleId = parseIntParam(req.params.ruleId);
     const [deleted] = await db.delete(financialIntegrationRules)
       .where(eq(financialIntegrationRules.id, ruleId))
       .returning();

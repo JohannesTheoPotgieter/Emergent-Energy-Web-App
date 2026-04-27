@@ -14,7 +14,7 @@ import path from "path";
 import fs from "fs";
 import multer from "multer";
 import { sanitizeFilename, allowedFileFilter } from "../lib/upload-security";
-import { paramStr } from "../lib/req-params";
+import { paramStr, parseIntParam } from "../lib/req-params";
 
 const router = Router();
 
@@ -180,7 +180,7 @@ router.post("/api/mytool/tasks", requireAuth, requireAdmin, async (req, res) => 
 
 router.patch("/api/mytool/tasks/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const taskId = parseInt(paramStr(req.params.id));
+    const taskId = parseIntParam(req.params.id);
     const userId = (req.user as any).id;
     const existingTask = await storage.getMytoolTask(taskId);
 
@@ -250,7 +250,7 @@ router.patch("/api/mytool/tasks/:id", requireAuth, requireAdmin, async (req, res
 
 router.delete("/api/mytool/tasks/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    await storage.deleteMytoolTask(parseInt(paramStr(req.params.id)));
+    await storage.deleteMytoolTask(parseIntParam(req.params.id));
     res.json({ success: true });
   } catch (err: any) {
     throw err;
@@ -285,7 +285,7 @@ router.post("/api/mytool/timeblocks", requireAuth, requireAdmin, async (req, res
 
 router.patch("/api/mytool/timeblocks/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const block = await storage.updateMytoolTimeblock(parseInt(paramStr(req.params.id)), req.body);
+    const block = await storage.updateMytoolTimeblock(parseIntParam(req.params.id), req.body);
     res.json(block);
   } catch (err: any) {
     throw err;
@@ -294,7 +294,7 @@ router.patch("/api/mytool/timeblocks/:id", requireAuth, requireAdmin, async (req
 
 router.delete("/api/mytool/timeblocks/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    await storage.deleteMytoolTimeblock(parseInt(paramStr(req.params.id)));
+    await storage.deleteMytoolTimeblock(parseIntParam(req.params.id));
     res.json({ success: true });
   } catch (err: any) {
     throw err;
@@ -413,7 +413,7 @@ router.patch("/api/mytool/company-priorities/:id", requireAuth, requirePriorityA
     if (!parsed.success) {
       return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
     }
-    const priority = await storage.updateMytoolCompanyPriority(parseInt(paramStr(req.params.id)), parsed.data as any);
+    const priority = await storage.updateMytoolCompanyPriority(parseIntParam(req.params.id), parsed.data as any);
     res.json(priority);
   } catch (err: any) {
     throw err;
@@ -422,7 +422,7 @@ router.patch("/api/mytool/company-priorities/:id", requireAuth, requirePriorityA
 
 router.delete("/api/mytool/company-priorities/:id", requireAuth, requirePriorityAdmin, async (req, res) => {
   try {
-    await storage.updateMytoolCompanyPriority(parseInt(paramStr(req.params.id)), { status: "closed" } as any);
+    await storage.updateMytoolCompanyPriority(parseIntParam(req.params.id), { status: "closed" } as any);
     res.json({ success: true, mode: "soft_close" });
   } catch (err: any) {
     throw err;
@@ -433,7 +433,7 @@ router.delete("/api/mytool/company-priorities/:id", requireAuth, requirePriority
 
 router.get("/api/mytool/company-priorities/:id/links", requireAuth, async (req, res) => {
   try {
-    const priorityId = parseInt(paramStr(req.params.id));
+    const priorityId = parseIntParam(req.params.id);
     const links = await db.select().from(priorityLinks).where(eq(priorityLinks.priorityId, priorityId));
     const projects = await db.select({
       id: priorityProjects.id,
@@ -477,7 +477,7 @@ router.get("/api/mytool/priority-links", requireAuth, async (_req, res) => {
 
 router.post("/api/mytool/company-priorities/:id/links", requireAuth, requirePriorityAdmin, async (req, res) => {
   try {
-    const priorityId = parseInt(paramStr(req.params.id));
+    const priorityId = parseIntParam(req.params.id);
     const { linkType, projectName, taskId, taskType } = req.body;
     if (!linkType) return res.status(400).json({ error: "linkType is required" });
     let resolvedProjectId: number | null = req.body.projectId ? parseInt(req.body.projectId) : null;
@@ -517,7 +517,7 @@ router.post("/api/mytool/company-priorities/:id/links", requireAuth, requirePrio
 
 router.delete("/api/mytool/priority-links/:linkId", requireAuth, requirePriorityAdmin, async (req, res) => {
   try {
-    const linkId = parseInt(paramStr(req.params.linkId));
+    const linkId = parseIntParam(req.params.linkId);
     const [existing] = await db.select().from(priorityLinks).where(eq(priorityLinks.id, linkId)).limit(1);
     await db.delete(priorityLinks).where(eq(priorityLinks.id, linkId));
     if (existing?.projectId) {
@@ -646,7 +646,7 @@ router.post("/api/mytool/email-links", requireAuth, requireAdmin, async (req, re
 
 router.delete("/api/mytool/email-links/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    await storage.deleteEmailLink(parseInt(paramStr(req.params.id)));
+    await storage.deleteEmailLink(parseIntParam(req.params.id));
     res.json({ success: true });
   } catch (err: any) {
     throw err;
@@ -675,7 +675,7 @@ router.post("/api/mytool/dod-templates", requireAuth, requireAdmin, async (req, 
 
 router.delete("/api/mytool/dod-templates/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    await storage.deleteMytoolDodTemplate(parseInt(paramStr(req.params.id)));
+    await storage.deleteMytoolDodTemplate(parseIntParam(req.params.id));
     res.json({ success: true });
   } catch (err: any) {
     throw err;
@@ -1116,7 +1116,7 @@ router.post("/api/mytool/triage-rules", requireAuth, requireAdmin, async (req, r
 
 router.patch("/api/mytool/triage-rules/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const ruleId = parseInt(paramStr(req.params.id));
+    const ruleId = parseIntParam(req.params.id);
     const { triageRules: triageRulesTable } = await import("@shared/schema");
     const updates: any = {};
     if (req.body.value !== undefined) updates.value = req.body.value.trim();
@@ -1130,7 +1130,7 @@ router.patch("/api/mytool/triage-rules/:id", requireAuth, requireAdmin, async (r
 
 router.delete("/api/mytool/triage-rules/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const ruleId = parseInt(paramStr(req.params.id));
+    const ruleId = parseIntParam(req.params.id);
     const { triageRules: triageRulesTable } = await import("@shared/schema");
     await db.delete(triageRulesTable).where(eq(triageRulesTable.id, ruleId));
     res.json({ success: true });
@@ -1257,7 +1257,7 @@ router.patch("/api/admin/users/:id/microsoft-id", requireAuth, async (req, res) 
     const userRole = (req.user as any).role;
     if (!COO_ROLES.includes(userRole)) return res.status(403).json({ error: "Admin access required" });
 
-    const userId = parseInt(paramStr(req.params.id));
+    const userId = parseIntParam(req.params.id);
     const { microsoftId, email } = req.body;
 
     const { users: usersTable } = await import("@shared/schema");
@@ -1377,7 +1377,7 @@ router.post("/api/teams/groups", requireAuth, async (req, res) => {
 router.delete("/api/teams/groups/:id", requireAuth, async (req, res) => {
   try {
     const { teamsChatGroups, teamsChatMembers } = await import("@shared/schema");
-    const groupId = parseInt(paramStr(req.params.id));
+    const groupId = parseIntParam(req.params.id);
     const userId = (req.user as any).id;
     const userRole = (req.user as any).role;
     const isCoo = COO_ROLES.includes(userRole);
@@ -1404,7 +1404,7 @@ router.delete("/api/teams/groups/:id", requireAuth, async (req, res) => {
 router.post("/api/teams/groups/:id/members", requireAuth, async (req, res) => {
   try {
     const { teamsChatGroups, teamsChatMembers } = await import("@shared/schema");
-    const groupId = parseInt(paramStr(req.params.id));
+    const groupId = parseIntParam(req.params.id);
     const actingUserId = (req.user as any).id;
     const actingRole = (req.user as any).role;
     const isCoo = COO_ROLES.includes(actingRole);
@@ -1461,8 +1461,8 @@ router.post("/api/teams/groups/:id/members", requireAuth, async (req, res) => {
 router.delete("/api/teams/groups/:id/members/:userId", requireAuth, async (req, res) => {
   try {
     const { teamsChatGroups, teamsChatMembers } = await import("@shared/schema");
-    const groupId = parseInt(paramStr(req.params.id));
-    const targetUserId = parseInt(paramStr(req.params.userId));
+    const groupId = parseIntParam(req.params.id);
+    const targetUserId = parseIntParam(req.params.userId);
     const actingUserId = (req.user as any).id;
     const actingRole = (req.user as any).role;
     const isCoo = COO_ROLES.includes(actingRole);
@@ -1507,7 +1507,7 @@ async function checkGroupMembership(groupId: number, userId: number): Promise<bo
 router.get("/api/teams/groups/:id/messages", requireAuth, async (req, res) => {
   try {
     const { teamsChatMessages, users: usersTable } = await import("@shared/schema");
-    const groupId = parseInt(paramStr(req.params.id));
+    const groupId = parseIntParam(req.params.id);
     const limit = parseInt(req.query.limit as string) || 50;
 
     const messages = await db.select({
@@ -1541,7 +1541,7 @@ router.get("/api/teams/groups/:id/messages", requireAuth, async (req, res) => {
 router.post("/api/teams/groups/:id/messages", requireAuth, async (req, res) => {
   try {
     const { teamsChatMessages } = await import("@shared/schema");
-    const groupId = parseInt(paramStr(req.params.id));
+    const groupId = parseIntParam(req.params.id);
     const userId = (req.user as any).id;
     const userName = (req.user as any).name;
     const userRole = (req.user as any).role;
@@ -1588,7 +1588,7 @@ const chatUpload = multer({ storage: chatStorage, limits: { fileSize: 25 * 1024 
 router.post("/api/teams/groups/:id/files", requireAuth, chatUpload.single("file"), async (req: any, res) => {
   try {
     const { teamsChatMessages } = await import("@shared/schema");
-    const groupId = parseInt(req.params.id);
+    const groupId = parseIntParam(req.params.id);
     const userId = (req.user as any).id;
     const userName = (req.user as any).name;
     const userRole = (req.user as any).role;

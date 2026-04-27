@@ -2,7 +2,7 @@
 // Fix guide: use queryStr/queryInt from server/lib/req-parse for query params,
 // add explicit ': any' to .map/.filter callback params on db result rows.
 import { Router, Request, Response, NextFunction } from "express";
-import { paramStr } from "./lib/req-params";
+import { paramStr, parseIntParam } from "./lib/req-params";
 import { db } from "./db";
 import { normalizedCostLines, counterparties, projectInfo, invoicePatternRules } from "@shared/schema";
 import { encryptField, decryptField } from "./lib/field-encryption";
@@ -1071,7 +1071,7 @@ router.get("/api/subcontractor-dashboard/supplier-list", requireAuth, async (_re
 
 router.get("/api/subcontractor-assignments/project/:projectId", requireAuth, async (req: Request, res: Response) => {
   try {
-    const projectId = parseInt(paramStr(req.params.projectId));
+    const projectId = parseIntParam(req.params.projectId);
     if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
     const rows = await db.execute(sql`
       SELECT sa.*, c.name_canonical as supplier_name, u.name as owner_name, p.project_name
@@ -1161,7 +1161,7 @@ router.patch("/api/subcontractor-assignments/:id", requireAuth, requirePermissio
 
 router.delete("/api/subcontractor-assignments/:id", requireAuth, requirePermission("procurement", "delete"), async (req: Request, res: Response) => {
   try {
-    const id = parseInt(paramStr(req.params.id));
+    const id = parseIntParam(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
     await db.execute(sql`DELETE FROM project_subcontractor_assignments WHERE id = ${id}`);

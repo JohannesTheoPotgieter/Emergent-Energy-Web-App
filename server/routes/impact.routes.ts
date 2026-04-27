@@ -17,6 +17,7 @@
  * by role (usually super-user).
  */
 
+/* eslint-disable no-restricted-syntax -- legacy direct db.* calls; tracked tech debt for migration to repository layer (CLAUDE.md). Do not extend. */
 import type { Express, Request, Response } from "express";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";

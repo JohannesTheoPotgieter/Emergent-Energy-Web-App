@@ -1,3 +1,4 @@
+/* eslint-disable no-restricted-syntax -- legacy direct db.* calls; tracked tech debt for migration to repository layer (CLAUDE.md). Do not extend. */
 import type { Express, Request, Response, NextFunction } from "express";
 import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { requireAuth } from "../departments/shared-middleware";

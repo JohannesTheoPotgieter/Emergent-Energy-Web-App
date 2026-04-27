@@ -40,7 +40,7 @@ import {
 } from "../lib/finance/revenue-recognition";
 import { getCosEffectiveDateAndSource } from "../lib/expense-row-selector";
 import { actorFromReq, createProjectEvent } from "../services/project-event-service";
-import { paramStr } from "../lib/req-params";
+import { paramStr, parseIntParam } from "../lib/req-params";
 import { classifyProjectInfoPayload } from "../services/source-of-truth-policy";
 import { listImportSyncState } from "../services/imports-governance-service";
 import {
@@ -347,7 +347,7 @@ export function registerProjectInfoExtractedRoutes(app: Express): void {
 
   app.patch("/api/projects-summary/:projectInfoId/escalation", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const id = parseInt(req.params.projectInfoId as string);
+      const id = parseIntParam(req.params.projectInfoId);
       const schema = z.object({
         escalationLevel: z.enum(["None", "Low", "Medium", "High", "Highest"]).nullable(),
       });
@@ -482,7 +482,7 @@ export function registerProjectInfoExtractedRoutes(app: Express): void {
 
   app.patch("/api/project-info/:id", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid project ID" });
 
       const editSchema = z.object({

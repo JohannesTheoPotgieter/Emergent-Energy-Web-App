@@ -10,7 +10,7 @@ import { calculateCPM, applyOverridesToTasks, applyOverridesToDependencies } fro
 import { logAuditFromReq } from "../audit-logger";
 import { requireAuth } from "../auth-context";
 import { requireAdmin } from "../middleware/requireAdmin";
-import { paramStr } from "../lib/req-params";
+import { paramStr, parseIntParam } from "../lib/req-params";
 
 export function registerWorkingPlanRoutes(app: Express) {
   // ==================== PROJECT PLAN SCHEDULING API ====================
@@ -426,7 +426,7 @@ export function registerWorkingPlanRoutes(app: Express) {
   // Delete dependency
   app.delete("/api/dependencies/:depId", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const depId = parseInt(paramStr(req.params.depId));
+      const depId = parseIntParam(req.params.depId);
       if (isNaN(depId)) return res.status(400).json({ error: "Invalid dependency ID" });
       await storage.deleteDependency(depId);
       logAuditFromReq(req, { entityType: "dependency", action: "delete", entityId: String(depId), changesJson: { description: "Dependency deleted" } });
@@ -485,7 +485,7 @@ export function registerWorkingPlanRoutes(app: Express) {
   // Update schedule change notice (mark as notified/documented)
   app.patch("/api/change-notices/:noticeId", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const noticeId = parseInt(paramStr(req.params.noticeId));
+      const noticeId = parseIntParam(req.params.noticeId);
       if (isNaN(noticeId)) return res.status(400).json({ error: "Invalid notice ID" });
       const { clientNotified, documentationUpdated, userNote } = req.body;
 

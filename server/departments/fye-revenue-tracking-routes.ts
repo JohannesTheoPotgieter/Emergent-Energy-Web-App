@@ -71,6 +71,7 @@ import ExcelJS from "exceljs";
 import { extractMonthKey, normalizeProjectName, isCosRealised, classifyCosStatusFull, currentMonthKey } from "../lib/calculations/financeUtils";
 import { isCanonicalCosRealised } from "../lib/finance/cos-realisation";
 import { getCosEffectiveDateAndSource } from "../lib/expense-row-selector";
+import { parseIntParam } from "../lib/req-params";
 
 const router = Router();
 
@@ -1101,7 +1102,7 @@ router.put(
   requirePermission("fye_revenue_tracking", "edit"),
   async (req, res) => {
     try {
-      const id = parseInt(String(req.params.id), 10);
+      const id = parseIntParam(req.params.id);
       const userId = (req as any).user?.id;
       const data = req.body;
 
@@ -1131,7 +1132,7 @@ router.delete(
   requirePermission("fye_revenue_tracking", "delete"),
   async (req, res) => {
     try {
-      const id = parseInt(String(req.params.id), 10);
+      const id = parseIntParam(req.params.id);
       // Soft delete - set status to archived
       await db
         .update(forecastPipeline)
@@ -1205,7 +1206,7 @@ router.put(
   requirePermission("fye_revenue_tracking", "edit"),
   async (req, res) => {
     try {
-      const id = parseInt(String(req.params.id), 10);
+      const id = parseIntParam(req.params.id);
       const userId = (req as any).user?.id;
       const data = req.body;
 
@@ -1232,7 +1233,7 @@ router.delete(
   requirePermission("fye_revenue_tracking", "delete"),
   async (req, res) => {
     try {
-      const id = parseInt(String(req.params.id), 10);
+      const id = parseIntParam(req.params.id);
       await db.delete(lostDeals).where(eq(lostDeals.id, id));
       res.json({ ok: true });
     } catch (error: any) {
@@ -1509,7 +1510,7 @@ router.get(
   requirePermission("fye_revenue_tracking", "view"),
   async (req, res) => {
     try {
-      const id = parseInt(String(req.params.id), 10);
+      const id = parseIntParam(req.params.id);
       const [row] = await db.select().from(fyeReportSnapshots).where(eq(fyeReportSnapshots.id, id));
       if (!row) return res.status(404).json({ error: "Snapshot not found" });
       res.json({ ...row, snapshotData: JSON.parse(row.snapshotData) });
@@ -1525,7 +1526,7 @@ router.put(
   requirePermission("fye_revenue_tracking", "edit"),
   async (req, res) => {
     try {
-      const id = parseInt(String(req.params.id), 10);
+      const id = parseIntParam(req.params.id);
       const userId = (req as any).user?.id;
       const [row] = await db.select({ status: fyeReportSnapshots.status }).from(fyeReportSnapshots).where(eq(fyeReportSnapshots.id, id));
       if (!row) return res.status(404).json({ error: "Snapshot not found" });
@@ -1545,7 +1546,7 @@ router.put(
   requirePermission("fye_revenue_tracking", "edit"),
   async (req, res) => {
     try {
-      const id = parseInt(String(req.params.id), 10);
+      const id = parseIntParam(req.params.id);
       const userId = (req as any).user?.id;
       const [row] = await db.select({ status: fyeReportSnapshots.status }).from(fyeReportSnapshots).where(eq(fyeReportSnapshots.id, id));
       if (!row) return res.status(404).json({ error: "Snapshot not found" });
@@ -1565,7 +1566,7 @@ router.get(
   requirePermission("fye_revenue_tracking", "view"),
   async (req, res) => {
     try {
-      const id = parseInt(String(req.params.id), 10);
+      const id = parseIntParam(req.params.id);
       const [row] = await db.select().from(fyeReportSnapshots).where(eq(fyeReportSnapshots.id, id));
       if (!row) return res.status(404).json({ error: "Snapshot not found" });
 

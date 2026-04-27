@@ -20,7 +20,7 @@ import {
 import { PHASES as CANONICAL_PHASES } from "../shared/phases";
 import { syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { requirePermission } from "./permission-middleware";
-import { paramStr } from "./lib/req-params";
+import { paramStr, parseIntParam } from "./lib/req-params";
 import { generateEngStagesForProject } from "./eng-stage-routes";
 import { createHash } from "crypto";
 import { logAuditFromReq } from "./audit-logger";
@@ -317,7 +317,7 @@ export function registerTemplateRoutes(app: Express) {
 
   app.get("/api/phase-templates/:id", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       const [tmpl] = await db.select().from(phaseTemplate).where(eq(phaseTemplate.id, id));
       if (!tmpl) return res.status(404).json({ error: "Template not found" });
 
@@ -360,7 +360,7 @@ export function registerTemplateRoutes(app: Express) {
 
   app.patch("/api/phase-templates/:id/activate", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       const [tmpl] = await db.select().from(phaseTemplate).where(eq(phaseTemplate.id, id));
       if (!tmpl) return res.status(404).json({ error: "Template not found" });
 
@@ -381,7 +381,7 @@ export function registerTemplateRoutes(app: Express) {
   app.post("/api/phase-templates/:id/clone", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
       const user = getUser(req);
-      const sourceId = parseInt(paramStr(req.params.id));
+      const sourceId = parseIntParam(req.params.id);
       const { targetPhase } = req.body;
 
       const [source] = await db.select().from(phaseTemplate).where(eq(phaseTemplate.id, sourceId));
@@ -453,7 +453,7 @@ export function registerTemplateRoutes(app: Express) {
   app.post("/api/phase-templates/:id/items", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
       const user = getUser(req);
-      const templateId = parseInt(paramStr(req.params.id));
+      const templateId = parseIntParam(req.params.id);
       const [tmpl] = await db.select().from(phaseTemplate).where(eq(phaseTemplate.id, templateId));
       if (!tmpl) return res.status(404).json({ error: "Template not found" });
 
@@ -508,7 +508,7 @@ export function registerTemplateRoutes(app: Express) {
   app.patch("/api/phase-template-items/:itemId", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
       const user = getUser(req);
-      const itemId = parseInt(paramStr(req.params.itemId));
+      const itemId = parseIntParam(req.params.itemId);
       const [existing] = await db.select().from(phaseTemplateItem).where(eq(phaseTemplateItem.id, itemId));
       if (!existing) return res.status(404).json({ error: "Item not found" });
 
@@ -544,7 +544,7 @@ export function registerTemplateRoutes(app: Express) {
   app.delete("/api/phase-template-items/:itemId", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
       const user = getUser(req);
-      const itemId = parseInt(paramStr(req.params.itemId));
+      const itemId = parseIntParam(req.params.itemId);
 
       await db.update(phaseTemplateItem)
         .set({ isDeleted: true })
@@ -566,7 +566,7 @@ export function registerTemplateRoutes(app: Express) {
 
   app.get("/api/phase-templates/:id/preview", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
-      const templateId = parseInt(paramStr(req.params.id));
+      const templateId = parseIntParam(req.params.id);
       const items = await db.select().from(phaseTemplateItem)
         .where(and(eq(phaseTemplateItem.templateId, templateId), eq(phaseTemplateItem.isDeleted, false)))
         .orderBy(asc(phaseTemplateItem.sortOrder));
@@ -594,7 +594,7 @@ export function registerTemplateRoutes(app: Express) {
 
   app.post("/api/projects/:projectId/phase-preview", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
-      const projectId = parseInt(paramStr(req.params.projectId));
+      const projectId = parseIntParam(req.params.projectId);
       const { toPhase } = req.body;
       const canonicalToPhase = toCanonicalPhaseOrNull(toPhase);
       if (!canonicalToPhase) {
@@ -633,7 +633,7 @@ export function registerTemplateRoutes(app: Express) {
   app.post("/api/projects/:projectId/apply-template", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
       const user = getUser(req);
-      const projectId = parseInt(paramStr(req.params.projectId));
+      const projectId = parseIntParam(req.params.projectId);
       const { phase } = req.body;
 
       const canonicalPhase = toCanonicalPhaseOrNull(phase);
@@ -659,7 +659,7 @@ export function registerTemplateRoutes(app: Express) {
 
   app.get("/api/phase-template-items/:itemId/history", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
-      const itemId = parseInt(paramStr(req.params.itemId));
+      const itemId = parseIntParam(req.params.itemId);
       const history = await db.select({
         id: phaseTemplateItemHistory.id,
         changedAt: phaseTemplateItemHistory.changedAt,
@@ -680,7 +680,7 @@ export function registerTemplateRoutes(app: Express) {
 
   app.get("/api/projects/:projectId/template-applications", jwtAuth, requireAuth, async (req, res) => {
     try {
-      const projectId = parseInt(paramStr(req.params.projectId));
+      const projectId = parseIntParam(req.params.projectId);
       const apps = await db.select({
         id: phaseTemplateApplication.id,
         phase: phaseTemplateApplication.phase,
@@ -978,7 +978,7 @@ export function registerTemplateRoutes(app: Express) {
 
   app.get("/api/exec/portfolio/:projectId", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
-      const projectId = parseInt(paramStr(req.params.projectId));
+      const projectId = parseIntParam(req.params.projectId);
       const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
       if (!project) return res.status(404).json({ error: "Project not found" });
 

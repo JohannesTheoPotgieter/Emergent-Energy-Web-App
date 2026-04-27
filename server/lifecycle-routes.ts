@@ -23,7 +23,7 @@ import { jwtAuth, requireAuth } from "./auth-context";
 import { bridgeCatch } from "./bridge/bridge-writer";
 import { computeMarginPct } from "./lib/finance/margin";
 import { isCanonicalCosRealised, OVERRIDE_REALISED, OVERRIDE_NOT_REALISED } from "./lib/finance/cos-realisation";
-import { paramStr } from "./lib/req-params";
+import { paramStr, parseIntParam } from "./lib/req-params";
 import { setFinanceTrustHeaders } from "./lib/finance-trust/envelope";
 import { notFound } from "./lib/api-error";
 
@@ -367,7 +367,7 @@ export function registerLifecycleRoutes(app: Express) {
       if (!RAG_ROLES.includes(role)) {
         return res.status(403).json({ error: "forbidden", message: "Only COO, CEO, or CCO can update RAG status" });
       }
-      const projectId = parseInt(paramStr(req.params.id));
+      const projectId = parseIntParam(req.params.id);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
 
       const { rag, comment } = req.body;
@@ -414,7 +414,7 @@ export function registerLifecycleRoutes(app: Express) {
 
   app.get("/api/lifecycle-board/projects/:id/rag-history", requireAuth, async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(paramStr(req.params.id));
+      const projectId = parseIntParam(req.params.id);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
 
       const history = await db.select({
@@ -1718,7 +1718,7 @@ export function registerLifecycleRoutes(app: Express) {
 
   app.get("/api/lifecycle-board/projects/:id/stage-gates/evaluate", requireAuth, requirePermission('projects', 'view'), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id as string);
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid project id" });
       const targetStage = String(req.query.targetStage || "").trim();
       if (!targetStage) {
@@ -1740,7 +1740,7 @@ export function registerLifecycleRoutes(app: Express) {
 
   app.post("/api/lifecycle-board/projects/:id/stage-gates/override", requireAuth, requirePermission('projects', 'edit'), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id as string);
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid project id" });
 
       const user = (req as any).user as any;
@@ -1965,7 +1965,7 @@ export function registerLifecycleRoutes(app: Express) {
 
   app.get("/api/lifecycle-board/projects/:id/execution-gate", requireAuth, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id as string);
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid project id" });
 
       const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, id));
@@ -2005,7 +2005,7 @@ export function registerLifecycleRoutes(app: Express) {
 
   app.patch("/api/lifecycle-board/projects/:id/execution-gate", requireAuth, requireExecRole, requirePermission('projects', 'edit'), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id as string);
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid project id" });
 
       const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, id));
@@ -2202,7 +2202,7 @@ export function registerLifecycleRoutes(app: Express) {
 
   app.patch("/api/lifecycle-board/projects/:id/restore", requireAuth, requireExecRole, requirePermission('projects', 'edit'), async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(req.params.id as string, 10);
+      const projectId = parseIntParam(req.params.id);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
 
       const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
@@ -2242,7 +2242,7 @@ export function registerLifecycleRoutes(app: Express) {
 
   app.delete("/api/lifecycle-board/projects/:id", requireAuth, requireExecRole, requirePermission('projects', 'delete'), async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(req.params.id as string, 10);
+      const projectId = parseIntParam(req.params.id);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
 
       const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
