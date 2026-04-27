@@ -25,6 +25,7 @@ import { computeMarginPct } from "./lib/finance/margin";
 import { isCanonicalCosRealised, OVERRIDE_REALISED, OVERRIDE_NOT_REALISED } from "./lib/finance/cos-realisation";
 import { paramStr } from "./lib/req-params";
 import { setFinanceTrustHeaders } from "./lib/finance-trust/envelope";
+import { notFound } from "./lib/api-error";
 
 const EXEC_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"];
 const STAGE_GATE_OVERRIDE_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"];
@@ -1563,9 +1564,11 @@ export function registerLifecycleRoutes(app: Express) {
       res.json(result);
     } catch (err: any) {
       console.error("[lifecycle-board] POST merge error:", err);
-      if (err.message === "Source project not found" || err.message === "Target project not found") {
-        // eslint-disable-next-line no-restricted-syntax -- intentional: comparison proves err.message is one of two literals
-        return res.status(404).json({ error: err.message });
+      if (err.message === "Source project not found") {
+        throw notFound("Source project");
+      }
+      if (err.message === "Target project not found") {
+        throw notFound("Target project");
       }
       throw err;
     }

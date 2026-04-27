@@ -1,4 +1,5 @@
 import type { Express, Request, Response, NextFunction } from "express";
+import { timingSafeEqual } from "crypto";
 import { db } from "./db";
 import { eq, desc, sql, inArray, isNull } from "drizzle-orm";
 import {
@@ -20,16 +21,25 @@ export function registerMeetingRoutes(app: Express) {
   // ==================== WEBHOOK - Read.ai ====================
   app.post("/api/webhooks/read-ai", async (req: Request, res: Response) => {
     // Verify the shared secret sent by Read.ai in the Authorization header.
-    // Set READAI_WEBHOOK_SECRET in your environment and configure the same
-    // value in the Read.ai webhook settings. Requests without the correct
-    // secret are rejected before any DB writes occur.
+    // READAI_WEBHOOK_SECRET is REQUIRED in production — fail-closed if missing.
+    // In non-prod the secret is optional so local fixtures can POST without one.
     const webhookSecret = process.env.READAI_WEBHOOK_SECRET;
-    if (webhookSecret) {
+    if (!webhookSecret) {
+      if (process.env.NODE_ENV === "production") {
+        console.error("[Read.ai Webhook] Rejected: READAI_WEBHOOK_SECRET not configured");
+        return res.status(503).json({ error: "Webhook not configured" });
+      }
+    } else {
       const authHeader = req.headers.authorization || "";
       const providedSecret = authHeader.startsWith("Bearer ")
         ? authHeader.slice(7)
         : authHeader;
-      if (providedSecret !== webhookSecret) {
+      const providedBuf = Buffer.from(providedSecret);
+      const expectedBuf = Buffer.from(webhookSecret);
+      const ok =
+        providedBuf.length === expectedBuf.length &&
+        timingSafeEqual(providedBuf, expectedBuf);
+      if (!ok) {
         console.warn("[Read.ai Webhook] Rejected: invalid secret");
         return res.status(401).json({ error: "Unauthorized" });
       }

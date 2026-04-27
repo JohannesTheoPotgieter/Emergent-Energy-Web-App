@@ -12,7 +12,9 @@ import { normalizeCostLineStatus } from "./lib/import/utils";
 import { extractSupplierName } from "./lib/calculations/supplierExtractor";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
-import { jwtAuth, requireAuth } from "./auth-context";
+import { jwtAuth, requireAuth, getEffectiveUser } from "./auth-context";
+
+const BANK_DETAIL_ROLES = new Set(["COO_ADMIN", "CEO_ADMIN", "CFO", "ACCOUNTANT"]);
 const router = Router();
 
 function toPositiveInt(value: unknown): number | null {
@@ -955,13 +957,28 @@ router.get("/api/subcontractor-dashboard/supplier-details/:name", requireAuth, a
     if (!row) {
       return res.json({ exists: false, name: req.params.name });
     }
-    // Phase 3: Decrypt bank fields before returning to caller.
-    // decryptField() is safe for unencrypted legacy values (returns as-is).
+    // Bank fields are sensitive — only return decrypted values to finance roles.
+    // Non-finance callers receive null in those slots so the existing UI fields
+    // (name, contacts, address, payment_terms, etc.) keep working.
+    const callerRole = getEffectiveUser(req)?.role ?? "";
+    const canSeeBankDetails = BANK_DETAIL_ROLES.has(callerRole);
+    if (canSeeBankDetails) {
+      logAuditFromReq(req, {
+        entityType: "counterparty",
+        entityId: String(row.id ?? ""),
+        action: "read_bank_details",
+        changesJson: { name: row.name_canonical },
+      });
+    }
     res.json({
       exists: true,
       ...row,
-      bank_account_number: decryptField(row.bank_account_number as string | null),
-      bank_branch_code: decryptField(row.bank_branch_code as string | null),
+      bank_account_number: canSeeBankDetails
+        ? decryptField(row.bank_account_number as string | null)
+        : null,
+      bank_branch_code: canSeeBankDetails
+        ? decryptField(row.bank_branch_code as string | null)
+        : null,
     });
   } catch (err: any) {
     console.error("[Procurement] Supplier details error:", err.message);

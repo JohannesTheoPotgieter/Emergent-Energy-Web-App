@@ -65,13 +65,13 @@ async function getProjectsWithStageData(filter?: {
   `;
 
   if (filter?.gateStatuses?.length) {
-    const statuses = filter.gateStatuses.map((s) => `'${s}'`).join(",");
-    query = sql`${query} AND pes.gate_status IN (${sql.raw(statuses)})`;
+    const statuses = sql.join(filter.gateStatuses.map((s) => sql`${s}`), sql`, `);
+    query = sql`${query} AND pes.gate_status IN (${statuses})`;
   }
 
   if (filter?.stageCodes?.length) {
-    const codes = filter.stageCodes.map((s) => `'${s}'`).join(",");
-    query = sql`${query} AND pes.current_stage_code IN (${sql.raw(codes)})`;
+    const codes = sql.join(filter.stageCodes.map((s) => sql`${s}`), sql`, `);
+    query = sql`${query} AND pes.current_stage_code IN (${codes})`;
   }
 
   query = sql`${query} ORDER BY days_in_stage DESC`;
