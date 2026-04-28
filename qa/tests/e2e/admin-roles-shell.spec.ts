@@ -257,5 +257,9 @@ test.describe("Admin Roles single-screen — COO end-to-end (Task #107)", () => 
       timeout: 10_000,
     });
     await expect(page.getByTestId("button-compare-role"), "Compare-with-another-role CTA visible").toBeVisible();
+    await expect(
+      page.getByTestId("apply-template-role-section"),
+      "Role-side Apply template control is exposed",
+    ).toBeVisible();
   });
 });
