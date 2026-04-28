@@ -209,11 +209,8 @@ export async function createInvoice(projectId: number, payload: any, userId: num
 }
 
 export async function getProjectFinanceSummary(projectId: number) {
-  // Enum domains (see shared/schema/finance.ts):
-  //   cost_line_status    = {planned, invoiced, approved, paid}     — lowercase
-  //   revenue_line_status = {planned, invoiced, paid, in_bank, realised} — lowercase
-  // Comparing against UPPERCASE literals raises
-  // `invalid input value for enum ...` and 500s the endpoint (Task #124).
+  // Task #124: cost_line_status / revenue_line_status enums are lowercase
+  // (see shared/schema/finance.ts). Keep IN-list literals lowercase.
   const [cos, revenue, budgetAgg, costedSummary] = await Promise.all([
     db.select({ planned: sql<number>`coalesce(sum(cast(${normalizedCostLines.amountExVat} as numeric)),0)`, actual: sql<number>`coalesce(sum(case when ${normalizedCostLines.status} in ('approved','paid') then cast(${normalizedCostLines.amountExVat} as numeric) else 0 end),0)` }).from(normalizedCostLines).where(and(eq(normalizedCostLines.projectId, projectId), and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)))),
     db.select({ planned: sql<number>`coalesce(sum(cast(${normalizedRevenueLines.amountExVat} as numeric)),0)`, actual: sql<number>`coalesce(sum(case when ${normalizedRevenueLines.status} in ('invoiced','paid','in_bank','realised') then cast(${normalizedRevenueLines.amountExVat} as numeric) else 0 end),0)` }).from(normalizedRevenueLines).where(and(eq(normalizedRevenueLines.projectId, projectId), and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt)))),
@@ -229,17 +226,11 @@ export async function getProjectFinanceSummary(projectId: number) {
 }
 
 /**
- * Builder split out from `getFinanceCashflow` so tests can call `.toSQL()`
- * on the live Drizzle query and verify the generated SQL — instead of
- * grep-ing the source file. This is the hot path behind
- * `/api/v2/projects/:id/finance`; if it produces SQL Postgres rejects, the
- * Commercial tab on every project breaks.
+ * Builder for the cashflow aggregate. Split from `getFinanceCashflow` so
+ * tests can call `.toSQL()` on the live Drizzle query.
  *
- * NOTE: `cost_line_status` is a Postgres enum with the lowercase domain
- * {planned, invoiced, approved, paid}. Comparing to UPPERCASE literals here
- * raises `invalid input value for enum cost_line_status: "APPROVED"` and
- * turns the entire endpoint into a generic 500 (Task #124). Keep the IN
- * list lowercase to match the enum domain.
+ * Task #124: keep the IN list lowercase — `cost_line_status` enum domain
+ * is {planned, invoiced, approved, paid}.
  */
 export function buildFinanceCashflowQuery(projectId: number) {
   return db.select({

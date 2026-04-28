@@ -1,23 +1,6 @@
-// Behavioral DB-backed regression test — Task #124.
-//
-// Companion to `v2-finance-cashflow-enum-case.test.ts` (which inspects the
-// generated SQL via `.toSQL()`). This file exercises the full repository
-// function against the live Postgres connection with seeded fixtures, and
-// asserts that `actual` (the SUM of approved + paid amounts) is non-zero
-// — the symptom the validator wanted pinned: any future regression that
-// re-introduces UPPERCASE enum literals would fail HERE before the
-// endpoint ever reaches a user.
-//
-// Strategy:
-//   • Skip the test gracefully if DATABASE_URL is unset (CI without PG).
-//   • Create an isolated test project + import run with a marker name so
-//     parallel test runs cannot collide.
-//   • Insert two normalized_cost_lines: one `approved`, one `paid`.
-//   • Call `getFinanceCashflow(projectId)` and assert the aggregate row
-//     for each status carries the seeded amount and that the combined
-//     `actual` across approved+paid is > 0.
-//   • Cleanup is unconditional: DELETE on project_info cascades to cost
-//     lines, then drop the import run.
+// Task #124 — DB-backed behavioral guard for getFinanceCashflow.
+// Seeds approved/paid/planned cost lines on an isolated project, asserts
+// the aggregates are correct, and cleans up. Skips if DATABASE_URL unset.
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq, sql } from "drizzle-orm";
@@ -26,9 +9,8 @@ const hasDb = !!process.env.DATABASE_URL;
 const d = hasDb ? describe : describe.skip;
 
 d("v2 finance cashflow — DB-backed behavioral guard (Task #124)", () => {
-  // Use module namespaces (not destructured snapshots) because `db` is a
-  // `let` in `server/db.ts` that only gets assigned inside
-  // `initializeDatabase()` — destructuring before init captures `undefined`.
+  // Module namespaces (not destructured) — `db` in server/db.ts is a `let`
+  // assigned inside initializeDatabase().
   let dbModule: typeof import("../../../server/db");
   let financeSchema: typeof import("../../../shared/schema/finance");
   let importsSchema: typeof import("../../../shared/schema/imports");
@@ -40,16 +22,13 @@ d("v2 finance cashflow — DB-backed behavioral guard (Task #124)", () => {
   const MARKER = `__task_124_test_${Date.now()}_${Math.random().toString(36).slice(2, 8)}__`;
 
   beforeAll(async () => {
-    // Lazy imports so the module-level db connection only opens when this
-    // suite actually runs (it's `describe.skip`'d when DATABASE_URL is unset).
     dbModule = await import("../../../server/db");
     financeSchema = await import("../../../shared/schema/finance");
     importsSchema = await import("../../../shared/schema/imports");
     projectsSchema = await import("../../../shared/schema/projects");
     await dbModule.initializeDatabase();
-    // Re-import the repository AFTER the db module has been initialized so
-    // its top-level `import { db }` binding resolves to the live drizzle
-    // instance.
+    // Import repo AFTER initializeDatabase() so its `import { db }` binding
+    // resolves to the live drizzle instance.
     repo = await import("../../../server/api/v2/repositories/project-v2-repository");
 
     const [p] = await dbModule.db
@@ -80,7 +59,6 @@ d("v2 finance cashflow — DB-backed behavioral guard (Task #124)", () => {
         importRunId,
       },
       {
-        // Sanity: a `planned` row should NOT contribute to `actual`.
         projectId,
         projectName: MARKER,
         amountExVat: "9999.00",
@@ -92,10 +70,8 @@ d("v2 finance cashflow — DB-backed behavioral guard (Task #124)", () => {
 
   afterAll(async () => {
     if (!dbModule?.db) return;
-    // The Drizzle schema declares `onDelete: cascade` on
-    // normalized_cost_lines.project_id, but the production FK constraint
-    // does not enforce it (legacy migration). Delete children first so the
-    // parent delete doesn't trip the FK and leave orphan rows behind.
+    // Delete children first — production FK on normalized_cost_lines.project_id
+    // does not enforce ON DELETE CASCADE despite the Drizzle declaration.
     if (projectId) {
       await dbModule.db
         .delete(financeSchema.normalizedCostLines)
@@ -112,12 +88,8 @@ d("v2 finance cashflow — DB-backed behavioral guard (Task #124)", () => {
   });
 
   it("does NOT throw an enum-input error and returns aggregated rows", async () => {
-    // Before the Task #124 fix, this call raised
-    //   `invalid input value for enum cost_line_status: "APPROVED"`
-    // which the v2 asyncHandler turned into a 500 + UI toast.
     const rows = await repo.getFinanceCashflow(projectId);
     expect(Array.isArray(rows)).toBe(true);
-    // 3 distinct statuses seeded → 3 GROUP BY buckets.
     expect(rows.length).toBe(3);
   });
 
@@ -143,13 +115,10 @@ d("v2 finance cashflow — DB-backed behavioral guard (Task #124)", () => {
     expect(approved!.actual).toBe(1000);
     expect(paid!.actual).toBe(500);
 
-    // The bug reported in Task #124 caused `actual` to be 0 for every row
-    // (when it didn't 500 outright). Pin actual > 0 explicitly.
     const totalActual = (approved!.actual ?? 0) + (paid!.actual ?? 0);
     expect(totalActual).toBeGreaterThan(0);
     expect(totalActual).toBe(1500);
 
-    // Sanity: `planned` must contribute to `projected` but never to `actual`.
     expect(planned!.projected).toBe(9999);
     expect(planned!.actual).toBe(0);
   });

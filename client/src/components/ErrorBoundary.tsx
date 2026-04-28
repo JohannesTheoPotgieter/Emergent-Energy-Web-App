@@ -6,14 +6,8 @@ import { getErrorMessage } from "@/lib/errors";
 
 interface Props {
   children: React.ReactNode;
-  /**
-   * Optional render-prop fallback. When provided, the boundary renders
-   * this instead of the default full-page error card — used by callers
-   * that need section-level containment (e.g. wrapping a single tab so
-   * one tab's render crash doesn't take down the whole page). Receives
-   * the captured error and a `reset` callback that clears `hasError`
-   * so the consumer can offer a "Try again" affordance.
-   */
+  /** Optional section-level fallback. When provided, the boundary renders
+   *  this instead of the default full-page card. */
   fallback?: (args: { error: Error | undefined; reset: () => void }) => React.ReactNode;
 }
 
