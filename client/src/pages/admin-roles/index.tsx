@@ -14,39 +14,52 @@
 // audit from header). Visibility is delegated to /admin/settings.
 
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { ShieldCheck, History, Eye, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { useToast } from "@/hooks/use-toast";
 import * as api from "../admin-settings/settings-api";
-import type { UserSummary } from "../admin-settings/settings-types";
+import type { RoleSummary, UserSummary } from "../admin-settings/settings-types";
+import { DEPARTMENTS } from "../admin-settings/settings-types";
 import { PickerRail, type PickerMode } from "./picker-rail";
 import { RightPanelUser } from "./right-panel-user";
 import { RightPanelRole } from "./right-panel-role";
 import { AuditLogDrawer } from "./audit-log-drawer";
 import { ManageAccountDrawer } from "./manage-account-drawer";
 
-const PARAM_MODE = "mode";
-const PARAM_SELECTED = "selected";
+// Deep-link contract:
+//   /admin/roles?user=<id>   → People mode, user <id> selected
+//   /admin/roles?role=<KEY>  → Roles mode, role <KEY> selected
+//   /admin/roles             → People mode, nothing selected
+// `?user` and `?role` are mutually exclusive — the param implies the mode.
+const PARAM_USER = "user";
+const PARAM_ROLE = "role";
 
 function readInitial(): { mode: PickerMode; selected: string | null } {
   if (typeof window === "undefined") return { mode: "people", selected: null };
   const url = new URL(window.location.href);
-  const mode = url.searchParams.get(PARAM_MODE);
-  const selected = url.searchParams.get(PARAM_SELECTED);
-  return {
-    mode: mode === "roles" ? "roles" : "people",
-    selected: selected || null,
-  };
+  const userId = url.searchParams.get(PARAM_USER);
+  const roleKey = url.searchParams.get(PARAM_ROLE);
+  if (roleKey) return { mode: "roles", selected: roleKey };
+  if (userId) return { mode: "people", selected: userId };
+  return { mode: "people", selected: null };
 }
 
 function writeUrl(mode: PickerMode, selected: string | null, replace: boolean) {
   if (typeof window === "undefined") return;
   const url = new URL(window.location.href);
-  url.searchParams.set(PARAM_MODE, mode);
-  if (selected) url.searchParams.set(PARAM_SELECTED, selected);
-  else url.searchParams.delete(PARAM_SELECTED);
+  // Always clear the other side so the params stay mutually exclusive.
+  url.searchParams.delete(PARAM_USER);
+  url.searchParams.delete(PARAM_ROLE);
+  if (selected) {
+    url.searchParams.set(mode === "people" ? PARAM_USER : PARAM_ROLE, selected);
+  }
   const next = url.toString();
   if (next === window.location.href) return;
   if (replace) window.history.replaceState({}, "", next);
@@ -60,8 +73,24 @@ export default function AdminRolesPage() {
   const [search, setSearch] = useState("");
   const [auditOpen, setAuditOpen] = useState(false);
   const [accountDrawerOpen, setAccountDrawerOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   // Track whether the next URL update should replace (initial / popstate) or push (user nav).
   const [shouldReplace, setShouldReplace] = useState(true);
+  const { toast } = useToast();
+  const qc = useQueryClient();
+
+  // Permissions gate — used to decide whether to surface the "+ New user" affordance.
+  const permsQ = useQuery({
+    queryKey: ["/api/auth/permissions"],
+    queryFn: api.fetchPermissions,
+  });
+  const canManageUsers = Boolean(permsQ.data?.canManageUsers);
+
+  // Roles list — needed by the create-user dialog (role picker).
+  const rolesQ = useQuery({
+    queryKey: ["/api/roles/control-center"],
+    queryFn: api.fetchRolesControlCenter,
+  });
 
   // Keep the URL in sync so deep-links work and back-button is preserved.
   useEffect(() => {
@@ -163,6 +192,7 @@ export default function AdminRolesPage() {
           onQueryChange={setSearch}
           selectedKey={selected}
           onSelect={setSelected}
+          onCreateUser={canManageUsers ? () => setCreateOpen(true) : undefined}
         />
 
         <div className="min-w-0 flex-1">
@@ -210,6 +240,153 @@ export default function AdminRolesPage() {
         onOpenChange={setAccountDrawerOpen}
         onDeleted={() => setSelected(null)}
       />
+      <CreateUserDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        roles={rolesQ.data?.roles ?? []}
+        onCreated={(id) => {
+          qc.invalidateQueries({ queryKey: ["/api/admin/users"] });
+          setCreateOpen(false);
+          // Open the new account in the right panel so the COO can immediately edit it.
+          setMode("people");
+          setSelected(String(id));
+          toast({ title: "User created" });
+        }}
+      />
     </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────────────────
+// CreateUserDialog — folded in here so it can share the page-level query
+// invalidation hook and immediately select the new account on the rail.
+// Only the fields exposed by the existing `api.createUser` contract are
+// surfaced (username, name, email, password, role, department); broader
+// HRIS-style fields (location, manager) are not part of the current data
+// model and would require a schema change beyond the scope of Task #107.
+// ───────────────────────────────────────────────────────────────────────
+interface CreateUserDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  roles: RoleSummary[];
+  onCreated: (newUserId: number) => void;
+}
+
+function CreateUserDialog({ open, onOpenChange, roles, onCreated }: CreateUserDialogProps) {
+  const { toast } = useToast();
+  const [form, setForm] = useState({
+    username: "",
+    name: "",
+    email: "",
+    password: "",
+    role: "",
+    department: "",
+  });
+
+  // Reset form whenever the dialog re-opens so stale data does not leak across uses.
+  useEffect(() => {
+    if (open) setForm({ username: "", name: "", email: "", password: "", role: "", department: "" });
+  }, [open]);
+
+  const createM = useMutation({
+    mutationFn: async () => {
+      const res = await api.createUser(form);
+      if (!res.ok) throw new Error(res.error || "Create failed");
+      return res.data;
+    },
+    onSuccess: (data: any) => {
+      const newId = Number(data?.id ?? data?.user?.id);
+      if (Number.isFinite(newId)) onCreated(newId);
+      else onOpenChange(false);
+    },
+    onError: (e: Error) =>
+      toast({ title: "Create user failed", description: e.message, variant: "destructive" }),
+  });
+
+  const ready = Boolean(form.username && form.name && form.email && form.password.length >= 8);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent data-testid="dialog-create-user" className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Create new user</DialogTitle>
+        </DialogHeader>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="space-y-1">
+            <Label className="text-xs">Full name *</Label>
+            <Input
+              value={form.name}
+              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+              placeholder="Jane Smith"
+              data-testid="input-create-name"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Username *</Label>
+            <Input
+              value={form.username}
+              onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
+              placeholder="jsmith"
+              data-testid="input-create-username"
+            />
+          </div>
+          <div className="space-y-1 sm:col-span-2">
+            <Label className="text-xs">Email *</Label>
+            <Input
+              type="email"
+              value={form.email}
+              onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+              placeholder="jane@company.com"
+              data-testid="input-create-email"
+            />
+          </div>
+          <div className="space-y-1 sm:col-span-2">
+            <Label className="text-xs">Password * (min 8 chars)</Label>
+            <Input
+              type="password"
+              value={form.password}
+              onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+              placeholder="Set initial password"
+              data-testid="input-create-password"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Role</Label>
+            <SearchableSelect
+              options={roles.map((r) => ({ value: r.role, label: r.label }))}
+              value={form.role}
+              onValueChange={(v) => setForm((f) => ({ ...f, role: v }))}
+              placeholder="Pick a role"
+              searchPlaceholder="Search roles…"
+              data-testid="select-create-role"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Department</Label>
+            <SearchableSelect
+              options={DEPARTMENTS.map((d) => ({ value: d, label: d }))}
+              value={form.department}
+              onValueChange={(v) => setForm((f) => ({ ...f, department: v }))}
+              placeholder="Pick department"
+              searchPlaceholder="Search departments…"
+              data-testid="select-create-department"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} data-testid="button-cancel-create-user">
+            Cancel
+          </Button>
+          <Button
+            onClick={() => createM.mutate()}
+            disabled={!ready || createM.isPending}
+            className="bg-emerald-600 hover:bg-emerald-700"
+            data-testid="button-confirm-create-user"
+          >
+            {createM.isPending ? "Creating…" : "Create user"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

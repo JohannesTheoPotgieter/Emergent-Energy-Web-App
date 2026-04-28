@@ -9,7 +9,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Search, Users, Shield, Loader2 } from "lucide-react";
+import { Search, Users, Shield, Loader2, UserPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import * as api from "../admin-settings/settings-api";
 import type { RoleSummary, UserSummary } from "../admin-settings/settings-types";
@@ -23,9 +23,11 @@ interface PickerRailProps {
   onQueryChange: (q: string) => void;
   selectedKey: string | null; // userId stringified or role key
   onSelect: (key: string) => void;
+  /** When set, surfaces a "+ New user" affordance in People mode. Hidden when caller has no permission. */
+  onCreateUser?: () => void;
 }
 
-export function PickerRail({ mode, onModeChange, query, onQueryChange, selectedKey, onSelect }: PickerRailProps) {
+export function PickerRail({ mode, onModeChange, query, onQueryChange, selectedKey, onSelect, onCreateUser }: PickerRailProps) {
   const usersQ = useQuery<UserSummary[]>({
     queryKey: ["/api/admin/users"],
     queryFn: api.fetchUsers,
@@ -101,9 +103,20 @@ export function PickerRail({ mode, onModeChange, query, onQueryChange, selectedK
         />
       </div>
 
-      {/* Count strip */}
-      <div className="border-b border-gray-100 px-3 py-1 text-[11px] text-muted-foreground" data-testid="rail-count">
-        Showing {visibleCount} of {totalCount}
+      {/* Count strip + (people) "+ New user" affordance */}
+      <div className="flex items-center justify-between gap-2 border-b border-gray-100 px-3 py-1 text-[11px] text-muted-foreground">
+        <span data-testid="rail-count">Showing {visibleCount} of {totalCount}</span>
+        {mode === "people" && onCreateUser && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 gap-1 px-1.5 text-[11px] text-emerald-700 hover:text-emerald-800"
+            onClick={onCreateUser}
+            data-testid="button-create-user"
+          >
+            <UserPlus className="h-3 w-3" /> New user
+          </Button>
+        )}
       </div>
 
       {/* List */}
