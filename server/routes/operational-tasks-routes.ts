@@ -190,6 +190,34 @@ export function registerOperationalTasksRoutes(app: Express) {
       if (updates.status) updates.status = normalizeStatus(updates.status);
       if (updates.priority) updates.priority = normalizePriority(updates.priority);
 
+      const linkPlanRowIdRaw =
+        updates.importedTaskId !== undefined ? updates.importedTaskId :
+        updates.linkedPlanItemId !== undefined ? updates.linkedPlanItemId :
+        undefined;
+      if (linkPlanRowIdRaw !== undefined) {
+        const linkPlanRowId = linkPlanRowIdRaw === null ? null : Number(linkPlanRowIdRaw);
+        if (linkPlanRowId !== null && !Number.isFinite(linkPlanRowId)) {
+          return res.status(400).json({ error: "Invalid plan row id" });
+        }
+        if (linkPlanRowId !== null && id > 0) {
+          try {
+            const { db } = await import("../db");
+            const { workItems } = await import("@shared/schema");
+            const { eq } = await import("drizzle-orm");
+            const [task] = await db.select({ projectId: workItems.projectId }).from(workItems).where(eq(workItems.id, id));
+            const [target] = await db.select({ projectId: workItems.projectId }).from(workItems).where(eq(workItems.id, linkPlanRowId));
+            if (!target) return res.status(400).json({ error: "Plan row not found" });
+            if (task && target.projectId && task.projectId && target.projectId !== task.projectId) {
+              return res.status(400).json({ error: "Plan row belongs to a different project" });
+            }
+          } catch (e) {
+            console.warn("[operational-tasks-routes] link guard error:", e instanceof Error ? e.message : e);
+          }
+        }
+        delete updates.importedTaskId;
+        updates.linkedPlanItemId = linkPlanRowId;
+      }
+
       if (updates.status && id > 0) {
         const oldTaskForGuard = await storage.getOperationalTask(id);
         if (!oldTaskForGuard) return sendError(res, notFound("Operational task"));
@@ -273,7 +301,7 @@ export function registerOperationalTasksRoutes(app: Express) {
       for (const [key, value] of Object.entries(updates)) {
         if ((oldTask as any)[key] !== value) {
           await storage.createTaskActivityLog({
-            taskId: id,
+            workItemId: id,
             actorId: (req.user as any)?.id || null,
             actionType: 'updated',
             fieldName: key,
