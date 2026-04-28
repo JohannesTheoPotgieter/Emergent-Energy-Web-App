@@ -6,6 +6,15 @@ import { getErrorMessage } from "@/lib/errors";
 
 interface Props {
   children: React.ReactNode;
+  /**
+   * Optional render-prop fallback. When provided, the boundary renders
+   * this instead of the default full-page error card — used by callers
+   * that need section-level containment (e.g. wrapping a single tab so
+   * one tab's render crash doesn't take down the whole page). Receives
+   * the captured error and a `reset` callback that clears `hasError`
+   * so the consumer can offer a "Try again" affordance.
+   */
+  fallback?: (args: { error: Error | undefined; reset: () => void }) => React.ReactNode;
 }
 
 interface State {
@@ -52,6 +61,14 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
   render() {
     if (this.state.hasError) {
+      // Caller-provided section-level fallback wins over the full-page card.
+      if (this.props.fallback) {
+        return this.props.fallback({
+          error: this.state.error,
+          reset: () => this.setState({ hasError: false, error: undefined, errorPath: undefined }),
+        });
+      }
+
       const errorMessage = getErrorMessage(this.state.error, "An unexpected error occurred");
       const chunkError = isChunkLoadError(this.state.error);
 
