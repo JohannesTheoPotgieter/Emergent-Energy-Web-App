@@ -42,6 +42,12 @@ export const users = pgTable("users", {
   // by migration 0033_users_location.sql for task #97.
   location: text("location"),
   microsoft_id: text("microsoft_id").unique(),
+  // Task #110 — admin-controlled active/inactive flag. `true` (default)
+  // means the account can sign in normally; `false` blocks login at the
+  // password and Microsoft callback paths and rejects bearer/session
+  // checks. Distinct from `deletedAt` (full soft-delete): an inactive
+  // user is temporarily disabled and can be re-enabled with one click.
+  isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   deletedAt: timestamp("deleted_at"),
 });

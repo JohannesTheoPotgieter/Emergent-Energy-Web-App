@@ -14,10 +14,12 @@ export type AuthenticatedUser = {
 };
 
 const TOKEN_VERSION_COLUMN_CACHE_MS = 5 * 60_000;
+const IS_ACTIVE_COLUMN_CACHE_MS = 5 * 60_000;
 const REVOKED_TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
 const REVOKED_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 let tokenVersionColumnState: { checkedAt: number; exists: boolean } | null = null;
+let isActiveColumnState: { checkedAt: number; exists: boolean } | null = null;
 const revokedBearerTokens = new Map<string, number>();
 const revokedSessionIds = new Map<string, number>();
 const revokedUserTokenVersionFloors = new Map<number, number>();
@@ -322,33 +324,95 @@ async function hasTokenVersionColumn(): Promise<boolean> {
   }
 }
 
+// Task #110 — column existence cache for `is_active`. Mirrors the
+// `hasTokenVersionColumn` pattern so legacy test fixtures (and pre-0037
+// upgrades) keep working without an `is_active` column.
+async function hasIsActiveColumn(): Promise<boolean> {
+  const now = Date.now();
+  if (isActiveColumnState && now - isActiveColumnState.checkedAt < IS_ACTIVE_COLUMN_CACHE_MS) {
+    return isActiveColumnState.exists;
+  }
+  try {
+    let exists = false;
+    if (dbMode === "sqlite") {
+      const sqliteClient = getSqliteClient();
+      if (sqliteClient) {
+        const rows = sqliteClient.prepare("PRAGMA table_info(users)").all() as Array<{ name?: string }>;
+        exists = rows.some((row) => String(row.name ?? "") === "is_active");
+      } else {
+        const rows = await queryRows(sql.raw("PRAGMA table_info(users)"));
+        exists = rows.some((row) => String(row.name ?? "") === "is_active");
+      }
+    } else {
+      const rows = await queryRows(
+        sql`
+          SELECT EXISTS (
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'users'
+              AND column_name = 'is_active'
+          ) AS present
+        `,
+      );
+      exists = normalizeBoolean(rows[0]?.present);
+    }
+    isActiveColumnState = { checkedAt: now, exists };
+    return exists;
+  } catch {
+    isActiveColumnState = { checkedAt: now, exists: false };
+    return false;
+  }
+}
+
 async function fetchUserById(userId: number): Promise<AuthenticatedUser | null> {
   const tokenVersionEnabled = await hasTokenVersionColumn();
+  const isActiveEnabled = await hasIsActiveColumn();
   const sqliteClient = getSqliteClient();
   if (sqliteClient) {
+    const isActiveSelect = isActiveEnabled ? "COALESCE(is_active, 1) AS is_active" : "1 AS is_active";
     const query = tokenVersionEnabled
-      ? "SELECT id, email, name, role, COALESCE(token_version, 0) AS token_version FROM users WHERE id = ? LIMIT 1"
-      : "SELECT id, email, name, role, 0 AS token_version FROM users WHERE id = ? LIMIT 1";
+      ? `SELECT id, email, name, role, ${isActiveSelect}, COALESCE(token_version, 0) AS token_version FROM users WHERE id = ? LIMIT 1`
+      : `SELECT id, email, name, role, ${isActiveSelect}, 0 AS token_version FROM users WHERE id = ? LIMIT 1`;
     const row = sqliteClient.prepare(query).get(userId) as Record<string, unknown> | undefined;
+    // Task #110 — bounce deactivated users at the bearer/session resolver
+    // so a flipped flag takes effect on the next request.
+    if (row && !toBooleanish(row.is_active ?? 1)) {
+      return null;
+    }
     return normalizeUser(row);
   }
 
+  const isActiveExpr = isActiveEnabled ? sql`COALESCE(is_active, true)` : sql`true`;
   const query = tokenVersionEnabled
     ? sql`
-        SELECT id, email, name, role, COALESCE(token_version, 0) AS token_version
+        SELECT id, email, name, role, ${isActiveExpr} AS is_active, COALESCE(token_version, 0) AS token_version
         FROM users
         WHERE id = ${userId}
         LIMIT 1
       `
     : sql`
-        SELECT id, email, name, role, 0 AS token_version
+        SELECT id, email, name, role, ${isActiveExpr} AS is_active, 0 AS token_version
         FROM users
         WHERE id = ${userId}
         LIMIT 1
       `;
 
   const [row] = await queryRows(query);
+  if (row && !toBooleanish(row.is_active ?? true)) {
+    return null;
+  }
   return normalizeUser(row);
+}
+
+function toBooleanish(value: unknown): boolean {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") {
+    const v = value.trim().toLowerCase();
+    return v === "1" || v === "true" || v === "t";
+  }
+  return Boolean(value);
 }
 
 async function resolveBearerUser(req: Request): Promise<AuthenticatedUser | null> {

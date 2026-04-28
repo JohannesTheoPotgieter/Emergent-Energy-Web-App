@@ -35,6 +35,8 @@ import { validateBody } from "./middleware/validateBody";
 
 // ── Admin user/role write schemas (Phase 2b-PR2) ──
 const updateUserRoleSchema = z.object({ role: z.string().min(1) }).passthrough();
+// Task #110 — flip an account active/inactive from the Manage Account drawer.
+const updateUserActiveSchema = z.object({ isActive: z.boolean() }).strict();
 const createUserSchema = z
   .object({
     username: z.string().min(1).max(64),
@@ -603,6 +605,7 @@ export function registerRoleManagementRoutes(app: Express) {
         role: users.role,
         department: users.department,
         location: users.location,
+        isActive: users.isActive,
       }).from(users);
       const mapped = allUsers.map((u: any) => ({ ...u, role: mapRole(u.role) }));
       res.json(mapped);
@@ -774,6 +777,87 @@ export function registerRoleManagementRoutes(app: Express) {
       throw err;
     }
   });
+
+  // Task #110 — admin-controlled active/inactive toggle.
+  // Mirrors the same gate as the rest of the Manage Account writes
+  // (`requireAdmin` → `requirePermission('admin', 'edit')`). Flipping
+  // `isActive: false` is honoured by `fetchUserById` in
+  // server/auth-context.ts and by the LocalStrategy in
+  // server/bootstrap/auth.ts, so the next request from that account is
+  // rejected. We also revoke existing tokens via the
+  // `setRevokedUserTokenVersionFloor` floor used by other admin writes.
+  app.patch(
+    "/api/admin/users/:userId/active",
+    jwtAuth,
+    requireAuth,
+    requireAdmin,
+    validateBody(updateUserActiveSchema),
+    async (req: Request, res: Response) => {
+      try {
+        const userId = parseIntParam(req.params.userId);
+        if (!Number.isFinite(userId)) {
+          return res.status(400).json({ error: "Invalid user id" });
+        }
+        const { isActive } = req.body as { isActive: boolean };
+        const currentUser = getEffectiveUser(req);
+        if (currentUser?.id === userId && !isActive) {
+          return res.status(400).json({ error: "Cannot deactivate your own account" });
+        }
+
+        const [userBefore] = await db
+          .select({ id: users.id, name: users.name, email: users.email, isActive: users.isActive })
+          .from(users)
+          .where(and(eq(users.id, userId), isNull(users.deletedAt)));
+        if (!userBefore) return res.status(404).json({ error: "User not found" });
+
+        const [updated] = await db
+          .update(users)
+          .set({ isActive })
+          .where(and(eq(users.id, userId), isNull(users.deletedAt)))
+          .returning({
+            id: users.id,
+            name: users.name,
+            email: users.email,
+            role: users.role,
+            department: users.department,
+            location: users.location,
+            isActive: users.isActive,
+          });
+        if (!updated) return res.status(404).json({ error: "User not found" });
+
+        // Invalidate existing tokens so a deactivated user is bounced
+        // immediately on their next request (without waiting for token expiry).
+        setRevokedUserTokenVersionFloor(userId, Date.now());
+
+        logAuditFromReq(req, {
+          entityType: "user",
+          action: isActive ? "activate" : "deactivate",
+          entityId: String(userId),
+          changesJson: {
+            description: isActive ? "User activated" : "User deactivated",
+            userName: updated.name,
+            email: updated.email,
+            previousIsActive: userBefore.isActive,
+            newIsActive: isActive,
+          },
+        });
+        logPermissionAudit(req, {
+          eventType: isActive ? "user_activated" : "user_deactivated",
+          targetUserId: userId,
+          changeDetail: {
+            userName: updated.name,
+            email: updated.email,
+            previousIsActive: userBefore.isActive,
+            newIsActive: isActive,
+          },
+        });
+
+        res.json(updated);
+      } catch (err: any) {
+        throw err;
+      }
+    },
+  );
 
   app.delete("/api/admin/users/:userId", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {

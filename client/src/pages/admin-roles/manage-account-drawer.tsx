@@ -11,7 +11,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useToast } from "@/hooks/use-toast";
-import { Eye, EyeOff, Lock, Trash2, UserCog, Loader2 } from "lucide-react";
+import { Eye, EyeOff, Lock, Trash2, UserCog, Loader2, ShieldOff, ShieldCheck } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import * as api from "../admin-settings/settings-api";
 import { DEPARTMENTS } from "../admin-settings/settings-types";
 import type { UserSummary } from "../admin-settings/settings-types";
@@ -46,6 +47,42 @@ export function ManageAccountDrawer({ user, open, onOpenChange, onDeleted }: Man
     setShowPassword(false);
     setConfirmDelete(false);
   }, [user?.id]);
+
+  // Task #110 — admin-controlled active/inactive toggle. Optimistically
+  // flips the cached user list so the UI feels instant; on error we roll
+  // back to whatever was there before the mutation started.
+  const activeM = useMutation({
+    mutationFn: async (next: boolean) => {
+      if (!user) throw new Error("No user");
+      const r = await api.setUserActive(user.id, next);
+      if (!r.ok) throw new Error(r.error || "Failed to update active state");
+      return r.data;
+    },
+    onMutate: async (next: boolean) => {
+      await qc.cancelQueries({ queryKey: ["/api/admin/users"] });
+      const previous = qc.getQueryData<UserSummary[]>(["/api/admin/users"]);
+      if (previous && user) {
+        qc.setQueryData<UserSummary[]>(
+          ["/api/admin/users"],
+          previous.map((u) => (u.id === user.id ? { ...u, isActive: next } : u)),
+        );
+      }
+      return { previous };
+    },
+    onError: (e: Error, _next, ctx) => {
+      if (ctx?.previous) qc.setQueryData(["/api/admin/users"], ctx.previous);
+      toast({ title: "Update failed", description: e.message, variant: "destructive" });
+    },
+    onSuccess: (_data, next) => {
+      toast({
+        title: next ? "Account activated" : "Account deactivated",
+        description: next
+          ? `${user?.name} can sign in again.`
+          : `${user?.name} can no longer sign in.`,
+      });
+      qc.invalidateQueries({ queryKey: ["/api/admin/users"] });
+    },
+  });
 
   const deptM = useMutation({
     mutationFn: async (dep: string) => {
@@ -116,6 +153,49 @@ export function ManageAccountDrawer({ user, open, onOpenChange, onDeleted }: Man
           <div className="py-8 text-center text-sm text-gray-400">No user selected.</div>
         ) : (
           <div className="mt-6 space-y-6">
+            {/* Active / inactive toggle (Task #110).
+                Hidden entirely for non-admins — the section never renders for
+                read-only viewers, so they cannot see or call the control.
+                The backend still enforces the same `requireAdmin` gate. */}
+            {canManage && (
+              <section
+                className="flex items-start justify-between gap-4 rounded-md border border-gray-100 bg-gray-50/40 p-3"
+                data-testid="account-section-active"
+              >
+                <div className="space-y-1">
+                  <Label className="flex items-center gap-1 text-xs font-medium text-gray-600">
+                    {(user.isActive ?? true) ? (
+                      <ShieldCheck className="h-3 w-3 text-emerald-600" />
+                    ) : (
+                      <ShieldOff className="h-3 w-3 text-amber-600" />
+                    )}
+                    Account active
+                  </Label>
+                  <p
+                    className="text-[11px] text-muted-foreground"
+                    data-testid="text-active-status"
+                  >
+                    {(user.isActive ?? true)
+                      ? "User can sign in normally."
+                      : "User is blocked from signing in. Existing sessions are revoked."}
+                  </p>
+                </div>
+                <div className="pt-0.5">
+                  {activeM.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                  ) : (
+                    <Switch
+                      checked={user.isActive ?? true}
+                      onCheckedChange={(next) => activeM.mutate(next)}
+                      disabled={activeM.isPending}
+                      aria-label="Toggle account active"
+                      data-testid="switch-account-active"
+                    />
+                  )}
+                </div>
+              </section>
+            )}
+
             {/* Department */}
             <section className="space-y-2" data-testid="account-section-department">
               <Label className="text-xs font-medium text-gray-600">Department</Label>
