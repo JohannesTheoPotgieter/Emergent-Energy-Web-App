@@ -1,8 +1,10 @@
 // Task #103 — Negative coverage for /admin/roles.
+// Updated for Task #107: assertions target the new single-screen shell
+// (rail + right panel, no tabs) instead of the retired People/Roles tabs.
 //
 // A non-admin (ENGINEER) must be blocked at two layers:
 //   1. UI: navigating to /admin/roles renders the AccessDenied page
-//      (no template selectors, no apply dialog).
+//      (no rail, no template selectors, no apply dialog).
 //   2. API: POST /api/admin/users/:id/apply-template returns 403 even
 //      when invoked with the engineer's own session, so a curl-savvy
 //      user can't bypass the UI.
@@ -29,11 +31,22 @@ test.describe("Admin Roles shell — non-admin blocked (Task #103)", () => {
     await page.goto("/admin/roles");
     // The route guard renders an AccessDenied panel for users without
     // admin_roles.view; assert that and that none of the privileged
-    // surfaces (people-tab, roles-tab) ever mounted.
+    // surfaces of the new single-screen shell ever mounted.
     await expect(page.getByText(/Access Denied/i)).toBeVisible({ timeout: 10_000 });
+    // New shell test IDs — these are the only mount points on the screen,
+    // so if any of them are present the AccessDenied gate has been bypassed.
+    await expect(page.getByTestId("admin-roles-page")).toHaveCount(0);
+    await expect(page.getByTestId("picker-rail")).toHaveCount(0);
+    await expect(page.getByTestId("right-panel-user")).toHaveCount(0);
+    await expect(page.getByTestId("right-panel-role")).toHaveCount(0);
+    await expect(page.getByTestId("apply-template-section")).toHaveCount(0);
+    await expect(page.getByTestId("apply-template-role-section")).toHaveCount(0);
+    await expect(page.getByTestId("dialog-apply-template")).toHaveCount(0);
+    await expect(page.getByTestId("dialog-apply-template-role")).toHaveCount(0);
+    // And the legacy tab IDs must remain absent — defence in depth in case
+    // the old surface ever sneaks back in via a routing regression.
     await expect(page.getByTestId("people-tab")).toHaveCount(0);
     await expect(page.getByTestId("roles-tab")).toHaveCount(0);
-    await expect(page.getByTestId("dialog-apply-template")).toHaveCount(0);
   });
 
   test("ENGINEER session gets 403 from apply-template API", async ({ page }) => {
