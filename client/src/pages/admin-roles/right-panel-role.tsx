@@ -8,13 +8,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Loader2, Shield } from "lucide-react";
+import { Loader2, Shield, GitCompareArrows } from "lucide-react";
 import { queryClient as appQueryClient } from "@/lib/queryClient";
 import * as api from "../admin-settings/settings-api";
 import type { RoleSummary, UserSummary } from "../admin-settings/settings-types";
 import { canManageRoleActions } from "../admin-settings/settings-types";
 import { RoleDetailPanel } from "../admin-settings/roles/role-detail-panel";
+import { RoleComparisonDialog } from "../admin-settings/roles/role-comparison-dialog";
 import {
   CreateRoleDialog,
   CloneRoleDialog,
@@ -34,6 +36,7 @@ export function RightPanelRole({ roleKey, onRoleDeleted }: RightPanelRoleProps) 
   const [showClone, setShowClone] = useState(false);
   const [showArchive, setShowArchive] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
+  const [showCompare, setShowCompare] = useState(false);
   // Create dialog is reachable from the parent page (rail "+" button).
   const [showCreate] = useState(false);
 
@@ -151,7 +154,21 @@ export function RightPanelRole({ roleKey, onRoleDeleted }: RightPanelRoleProps) 
   }
 
   return (
-    <div data-testid="right-panel-role">
+    <div className="space-y-3" data-testid="right-panel-role">
+      {/* Compare against another role — uses the existing comparison dialog
+          so the COO/CEO can see exactly what differs side-by-side. */}
+      <div className="flex justify-end">
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-1.5"
+          onClick={() => setShowCompare(true)}
+          data-testid="button-compare-role"
+        >
+          <GitCompareArrows className="h-3.5 w-3.5" /> Compare with another role
+        </Button>
+      </div>
+
       <RoleDetailPanel
         role={role}
         users={usersQ.data ?? []}
@@ -164,6 +181,12 @@ export function RightPanelRole({ roleKey, onRoleDeleted }: RightPanelRoleProps) 
         onDelete={() => setShowDelete(true)}
         canManageRoles={canManage}
         isSaving={saveM.isPending}
+      />
+
+      <RoleComparisonDialog
+        open={showCompare}
+        onOpenChange={setShowCompare}
+        roles={rolesQ.data?.roles ?? []}
       />
 
       <CloneRoleDialog

@@ -62,6 +62,21 @@ The project uses a monorepo structure, separating client (React SPA), server (Ex
 - **CI guards:** `qa/tests/unit/route-permission-coverage.test.ts` fails on any unguarded route; `qa/tests/unit/permission-snapshot-no-drift.test.ts` asserts byte-equality against `qa/fixtures/permission-snapshot-pre-rework.json` so no user loses access on cutover.
 - **Docs:** [`docs/permissions.md`](docs/permissions.md) is the COO/CEO guide.
 
+### Roles & Permissions Single-Screen Rebuild (Task #107)
+- `/admin/roles` is now ONE screen — no tabs. Layout: 320px left rail picker (People|Roles toggle + search + list) and a right detail panel that swaps between user-view and role-view based on the selection.
+- **Files** under `client/src/pages/admin-roles/`:
+  - `index.tsx` — page shell, URL state, dialogs.
+  - `picker-rail.tsx` — left-rail toggle + search + list, with optional "+ New user" affordance gated by `canManageUsers`.
+  - `right-panel-user.tsx` — reassign-role + apply-template (with plain-English diff) + exceptions table + effective permissions.
+  - `right-panel-role.tsx` — wraps the existing `admin-settings/roles/RoleDetailPanel` and adds Compare / Clone / Archive / Delete dialogs.
+  - `audit-log-drawer.tsx` — Sheet-wrapped change history.
+  - `manage-account-drawer.tsx` — folds department / reset-password / delete behind a single "Manage account" button on the user view.
+- **Header** carries: a `Change history` Sheet trigger, a real `<Link>` to `/admin/settings?section=visibility` (the visibility surface is intentionally NOT duplicated here), and a link to the COO/CEO guide.
+- **Deep-link contract:** `/admin/roles?user=<id>` → People mode, user selected; `/admin/roles?role=<KEY>` → Roles mode, role selected; the params are mutually exclusive and back/forward navigation re-hydrates from the URL via `popstate`.
+- **Permissions gating:** every mutation control (reassign, apply template, manage account, create user, exceptions add/remove) is disabled when the signed-in user lacks `canManageRoles` / `canManageUsers` from `/api/auth/permissions`.
+- **Retired:** `client/src/pages/admin-roles.tsx` (~2638 lines), `admin-roles-shell.tsx`, and the legacy `admin-roles/{people-tab,roles-tab}.tsx` files. Route `client/src/config/route-components.ts` now lazy-imports `@/pages/admin-roles`.
+- **Tests:** `qa/tests/e2e/admin-roles-shell.spec.ts` exercises the full COO walk — deep-link `?user=`, header CTAs, mode toggle, search + select, apply-template diff + reason + audit-row assertion, change-history slide-over, and `?role=` deep-link with the Compare CTA. The two #101 unit guards (`route-permission-coverage`, `permission-snapshot-no-drift`) still pass — schema and endpoints are unchanged.
+
 ### Microsoft 365 Integration
 - Integration with Outlook, Teams, and SharePoint using `@microsoft/microsoft-graph-client` for calendar event metadata, emails, and attachments.
 

@@ -129,6 +129,16 @@ test.describe("Admin Roles single-screen — COO end-to-end (Task #107)", () => 
     const target = await fetchTargetUser(page);
     restoreTargetId = target.id;
 
+    // ── Deep-link contract: ?user=<id> opens the user directly ─────
+    // Verify the documented URL param wakes up the right panel without
+    // any clicks on the rail. This is the published contract for
+    // hand-rolled links from email/Slack/etc.
+    await page.goto(`/admin/roles?user=${target.id}`);
+    await expect(page.getByTestId("admin-roles-page")).toBeVisible();
+    await expect(page.getByTestId("right-panel-user"), "?user= deep-link selects person").toBeVisible({
+      timeout: 10_000,
+    });
+
     await page.goto("/admin/roles");
 
     // ── 1. Header + picker rail render ────────────────────────────
@@ -137,7 +147,11 @@ test.describe("Admin Roles single-screen — COO end-to-end (Task #107)", () => 
     await expect(page.getByTestId("rail-mode-people")).toBeVisible();
     await expect(page.getByTestId("rail-mode-roles")).toBeVisible();
     await expect(page.getByTestId("button-change-history")).toBeVisible();
-    await expect(page.getByTestId("button-visibility-settings")).toBeVisible();
+    const visibilityLink = page.getByTestId("button-visibility-settings");
+    await expect(visibilityLink).toBeVisible();
+    // The header CTA must point at the dedicated visibility surface so the
+    // single-screen page does not duplicate its functionality.
+    await expect(visibilityLink).toHaveAttribute("href", "/admin/settings?section=visibility");
 
     // ── 2. Toggle to Roles, confirm role rows render, switch back ─
     await page.getByTestId("rail-mode-roles").click();
@@ -227,5 +241,21 @@ test.describe("Admin Roles single-screen — COO end-to-end (Task #107)", () => 
     // ── 8. Change history slide-over opens from header button ─────
     await page.getByTestId("button-change-history").click();
     await expect(page.getByTestId("audit-log-drawer")).toBeVisible();
+
+    // ── 9. Roles deep-link contract: ?role=<KEY> ──────────────────
+    // The rail must remember which mode is active when the user opens
+    // a role-scoped link, and the role detail panel must render without
+    // a click on the rail.
+    const sampleRole = (await (await apiCtx.get("/api/roles/control-center")).json()) as {
+      roles: Array<{ role: string }>;
+    };
+    const someRole = sampleRole.roles?.[0]?.role;
+    expect(someRole, "expected at least one role from /api/roles/control-center").toBeTruthy();
+    await page.goto(`/admin/roles?role=${someRole}`);
+    await expect(page.getByTestId("rail-mode-roles"), "Roles tab is active for ?role= deep-link").toBeVisible();
+    await expect(page.getByTestId("right-panel-role"), "?role= deep-link selects role").toBeVisible({
+      timeout: 10_000,
+    });
+    await expect(page.getByTestId("button-compare-role"), "Compare-with-another-role CTA visible").toBeVisible();
   });
 });
