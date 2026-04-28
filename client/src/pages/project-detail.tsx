@@ -1824,6 +1824,7 @@ export default function ProjectDetailPage() {
             <QuickBooksReconciliationTab projectId={projectInfoId} projectName={projectName} />
           )}
         </div>
+        </ErrorBoundary>
       )}
 
       {/* ════════════════════════════════════════════════════════════
@@ -1855,7 +1856,6 @@ export default function ProjectDetailPage() {
           {activeSubTab === "documents" && <LocalFolderTab projectName={projectName} />}
           {activeSubTab === "comms" && <ProjectChatTab projectName={projectName} projectInfoId={projectInfoId ?? null} />}
         </div>
-        </ErrorBoundary>
       )}
 
       <TaskDetailDrawer
