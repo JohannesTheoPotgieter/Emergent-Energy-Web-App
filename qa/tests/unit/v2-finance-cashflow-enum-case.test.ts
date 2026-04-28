@@ -7,15 +7,23 @@ import { describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { drizzle } from "drizzle-orm/node-postgres";
+import type { Pool } from "pg";
 import * as schema from "../../../shared/schema";
 
 // No-op pg client so importing the repository doesn't open a real connection.
+// Typed as `pg.Pool` (one branch of Drizzle's `NodePgClient` union) — we
+// implement the only method Drizzle needs to bind a session, and surface a
+// loud error if any test accidentally hits the wire instead of `.toSQL()`.
+type FakePgPool = Pick<Pool, "query">;
+
 vi.mock("../../../server/db", () => {
-  const fakeClient = {
-    query: () => { throw new Error("test stub: query() must not be called — toSQL() only"); },
+  const fakeClient: FakePgPool = {
+    query: (() => {
+      throw new Error("test stub: query() must not be called — toSQL() only");
+    }) as unknown as Pool["query"],
   };
   return {
-    db: drizzle(fakeClient as any, { schema }),
+    db: drizzle(fakeClient as unknown as Pool, { schema }),
     dbMode: "postgres" as const,
     dbConfig: {},
     initializeDatabase: () => {},
