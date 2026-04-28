@@ -15,7 +15,9 @@ export type PermissionAuditEventType =
   | "user_override_updated"
   | "user_created"
   | "user_deleted"
-  | "user_password_reset";
+  | "user_password_reset"
+  | "user_activated"
+  | "user_deactivated";
 
 export interface PermissionAuditParams {
   eventType: PermissionAuditEventType;

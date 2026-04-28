@@ -57,6 +57,10 @@ function ensureSqliteAuthFixtures(): void {
     if (!columnNames.has("token_version")) {
       db.exec("ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0");
     }
+    // Task #110 — keep SQLite test fixture aligned with Drizzle schema.
+    if (!columnNames.has("is_active")) {
+      db.exec("ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1");
+    }
 
     const upsertUser = db.transaction((user: { username: string; email: string; password: string; name: string; role: string }) => {
       const existing = db

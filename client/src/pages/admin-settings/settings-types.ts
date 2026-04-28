@@ -32,6 +32,12 @@ export type UserSummary = {
   email: string;
   role: string;
   department?: string | null;
+  // Task #110 — admin-controlled active/inactive toggle. The API
+  // (GET /api/admin/users) always returns this field post-migration 0037,
+  // so it is required on the client type. `true` means the account can
+  // sign in; `false` blocks login at the LocalStrategy / bearer / session
+  // gates and at the Microsoft OAuth callback.
+  isActive: boolean;
 };
 
 export type AdminSettingsSection = "roles" | "users" | "visibility" | "screens" | "audit";

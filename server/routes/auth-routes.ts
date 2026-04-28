@@ -313,6 +313,13 @@ export async function registerAuthRoutes(app: Express): Promise<void> {
       }
 
       const dbUser = matchedUser[0];
+      // Task #110 — Microsoft OAuth path also honours the active flag.
+      // `isActive` defaults to true in the schema, so explicit `=== false`
+      // is the safe check (legacy rows pre-migration return undefined and
+      // are treated as active).
+      if (dbUser.isActive === false) {
+        return res.redirect(`/auth/login?error=account_inactive&email=${encodeURIComponent(msEmail)}`);
+      }
       const sessionUser = { id: dbUser.id, email: dbUser.email, name: dbUser.name, role: dbUser.role };
 
       req.logIn(sessionUser, async (loginError) => {
