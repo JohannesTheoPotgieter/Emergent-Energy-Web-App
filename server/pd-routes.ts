@@ -10,6 +10,7 @@ import { requirePermission } from "./permission-middleware";
 import { getEffectiveWorkstreamVisibility } from "./workstream-visibility-middleware";
 
 import { requireAuth } from "./auth-context";
+import { requireRole } from "./middleware/requireRole";
 import { canViewAllTickets, ENGINEERING_REQUEST_TYPES } from "@shared/roles/pd-roles";
 import { paramStr, parseIntParam } from "./lib/req-params";
 import { getFyWindow } from "./lib/fy-window";
@@ -407,6 +408,47 @@ export function registerPdRoutes(app: Express) {
     }
   });
 
+  // Task #108 — exec-only one-click bulk-spawn from PD dashboard.
+  // Eligible = ticket has projectId set, tasksSpawnedAt is null, not soft-deleted.
+  // Role-gated via the legacy requireRole shim (no new permission entity per task scope).
+  // IMPORTANT: this GET must be registered ABOVE the dynamic /:id route below,
+  // otherwise Express matches "spawn-eligible" against the :id param.
+  const SPAWN_EXEC_ROLES = ['CFO', 'CEO_ADMIN', 'COO_ADMIN'];
+
+  app.get("/api/pd/tickets/spawn-eligible", requireAuth, requireRole(SPAWN_EXEC_ROLES), async (_req: Request, res: Response) => {
+    try {
+      const rows = await db
+        .select({
+          id: engineeringTickets.id,
+          projectId: engineeringTickets.projectId,
+          requestType: engineeringTickets.requestType,
+          projectSiteName: engineeringTickets.projectSiteName,
+          projectName: projectInfo.projectName,
+        })
+        .from(engineeringTickets)
+        .leftJoin(projectInfo, eq(engineeringTickets.projectId, projectInfo.id))
+        .where(and(
+          isNull(engineeringTickets.deletedAt),
+          isNull(engineeringTickets.tasksSpawnedAt),
+          sql`${engineeringTickets.projectId} is not null`,
+        ))
+        .orderBy(asc(engineeringTickets.id));
+
+      const projectNames = Array.from(new Set(
+        rows.map(r => r.projectName || r.projectSiteName).filter(Boolean) as string[]
+      ));
+
+      res.json({
+        ticketCount: rows.length,
+        projectCount: projectNames.length,
+        projectNames,
+        tickets: rows,
+      });
+    } catch (err: any) {
+      throw err;
+    }
+  });
+
   app.get("/api/pd/tickets/:id", requireAuth, requirePermission('pd_tickets', 'view'), async (req: Request, res: Response) => {
     try {
       const id = parseIntParam(req.params.id);
@@ -777,6 +819,55 @@ export function registerPdRoutes(app: Express) {
       const { selectedTasks, customTasks } = req.body || {};
       const spawned = await spawnTasksForTicket(ticket, user, selectedTasks, customTasks);
       res.json({ spawned: spawned.length, tasks: spawned });
+    } catch (err: any) {
+      throw err;
+    }
+  });
+
+  // Task #108 — companion bulk-spawn POST. Paired with GET
+  // /api/pd/tickets/spawn-eligible above (registered before /:id to avoid
+  // route-collision). Reuses SPAWN_EXEC_ROLES declared with the GET.
+  app.post("/api/pd/tickets/bulk-spawn-tasks", requireAuth, requireRole(SPAWN_EXEC_ROLES), async (req: Request, res: Response) => {
+    try {
+      const user = req.user as any;
+      const eligible = await db
+        .select()
+        .from(engineeringTickets)
+        .where(and(
+          isNull(engineeringTickets.deletedAt),
+          isNull(engineeringTickets.tasksSpawnedAt),
+          sql`${engineeringTickets.projectId} is not null`,
+        ));
+
+      let workItemsCreated = 0;
+      let ticketsProcessed = 0;
+      let skipped = 0;
+
+      for (const ticket of eligible) {
+        // spawnTasksForTicket performs its own atomic claim — if another caller
+        // beat us to this ticket it returns []; we record that as "skipped".
+        const spawned = await spawnTasksForTicket(ticket, user);
+        if (spawned.length > 0) {
+          ticketsProcessed += 1;
+          workItemsCreated += spawned.length;
+        } else {
+          skipped += 1;
+        }
+      }
+
+      logAuditFromReq(req, {
+        entityType: "engineering_ticket",
+        entityId: "bulk-spawn",
+        action: "bulk_spawn_tasks",
+        changesJson: {
+          eligibleConsidered: eligible.length,
+          ticketsProcessed,
+          workItemsCreated,
+          skipped,
+        },
+      });
+
+      res.json({ ticketsProcessed, workItemsCreated, skipped });
     } catch (err: any) {
       throw err;
     }
