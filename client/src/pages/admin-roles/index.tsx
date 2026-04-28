@@ -288,15 +288,32 @@ function CreateUserDialog({ open, onOpenChange, roles, onCreated }: CreateUserDi
     if (open) setForm({ username: "", name: "", email: "", password: "", role: "", department: "" });
   }, [open]);
 
-  const createM = useMutation({
+  // The /api/admin/users POST handler returns the new user record at the top
+  // level on success (id, name, email, role, ...). Some legacy paths nest it
+  // under a `user` key, so we narrow against both shapes without resorting to `any`.
+  type CreateUserResponse =
+    | { id: number; [k: string]: unknown }
+    | { user: { id: number; [k: string]: unknown } };
+
+  function extractNewUserId(payload: unknown): number | null {
+    if (payload && typeof payload === "object") {
+      const direct = (payload as { id?: unknown }).id;
+      if (typeof direct === "number" && Number.isFinite(direct)) return direct;
+      const nested = (payload as { user?: { id?: unknown } }).user?.id;
+      if (typeof nested === "number" && Number.isFinite(nested)) return nested;
+    }
+    return null;
+  }
+
+  const createM = useMutation<CreateUserResponse | undefined>({
     mutationFn: async () => {
       const res = await api.createUser(form);
       if (!res.ok) throw new Error(res.error || "Create failed");
-      return res.data;
+      return res.data as CreateUserResponse | undefined;
     },
-    onSuccess: (data: any) => {
-      const newId = Number(data?.id ?? data?.user?.id);
-      if (Number.isFinite(newId)) onCreated(newId);
+    onSuccess: (data) => {
+      const newId = extractNewUserId(data);
+      if (newId !== null) onCreated(newId);
       else onOpenChange(false);
     },
     onError: (e: Error) =>

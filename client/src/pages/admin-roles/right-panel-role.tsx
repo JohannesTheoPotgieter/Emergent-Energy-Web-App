@@ -10,6 +10,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Shield, GitCompareArrows } from "lucide-react";
 import { queryClient as appQueryClient } from "@/lib/queryClient";
 import * as api from "../admin-settings/settings-api";
@@ -18,11 +22,40 @@ import { canManageRoleActions } from "../admin-settings/settings-types";
 import { RoleDetailPanel } from "../admin-settings/roles/role-detail-panel";
 import { RoleComparisonDialog } from "../admin-settings/roles/role-comparison-dialog";
 import {
-  CreateRoleDialog,
   CloneRoleDialog,
   ArchiveRoleDialog,
   DeleteRoleDialog,
 } from "../admin-settings/roles/create-role-dialog";
+
+// Shape of /api/admin/role-templates and /api/admin/roles/:role/preview-template/:key.
+interface TemplateRow {
+  id: number;
+  key: string;
+  name: string;
+  summary: string;
+  category: string;
+}
+interface RoleDiffEntry {
+  entity: string;
+  title: string;
+  category: string;
+  gained: string[];
+  lost: string[];
+}
+interface RoleDiffPayload {
+  templateName: string;
+  templateSummary: string;
+  englishHeadline: string;
+  entries: RoleDiffEntry[];
+  totalsGained: number;
+  totalsLost: number;
+}
+
+async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, { credentials: "include", ...init });
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json();
+}
 
 interface RightPanelRoleProps {
   roleKey: string;
@@ -37,12 +70,27 @@ export function RightPanelRole({ roleKey, onRoleDeleted }: RightPanelRoleProps) 
   const [showArchive, setShowArchive] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [showCompare, setShowCompare] = useState(false);
-  // Create dialog is reachable from the parent page (rail "+" button).
-  const [showCreate] = useState(false);
+  // Apply-template state — mirrors the user-side flow but writes onto the role itself.
+  const [pendingTemplate, setPendingTemplate] = useState<TemplateRow | null>(null);
+  const [applyReason, setApplyReason] = useState("");
 
   const rolesQ = useQuery({
     queryKey: ["/api/roles/control-center"],
     queryFn: api.fetchRolesControlCenter,
+  });
+
+  const tplQ = useQuery<{ templates: TemplateRow[] }>({
+    queryKey: ["/api/admin/role-templates"],
+    queryFn: () => fetchJSON("/api/admin/role-templates"),
+  });
+
+  const previewQ = useQuery<RoleDiffPayload>({
+    queryKey: ["preview-template-role", roleKey, pendingTemplate?.key],
+    queryFn: () =>
+      fetchJSON<RoleDiffPayload>(
+        `/api/admin/roles/${encodeURIComponent(roleKey)}/preview-template/${pendingTemplate!.key}`,
+      ),
+    enabled: !!pendingTemplate,
   });
 
   const usersQ = useQuery<UserSummary[]>({
@@ -64,9 +112,11 @@ export function RightPanelRole({ roleKey, onRoleDeleted }: RightPanelRoleProps) 
     rolesQ.data?.ok ?? false,
   );
 
-  // Reset draft when the picked role changes.
+  // Reset draft + transient apply state when the picked role changes.
   useEffect(() => {
     setDraft({});
+    setPendingTemplate(null);
+    setApplyReason("");
   }, [roleKey]);
 
   const refetchAll = () => {
@@ -132,6 +182,35 @@ export function RightPanelRole({ roleKey, onRoleDeleted }: RightPanelRoleProps) 
     onError: (e: Error) => toast({ title: "Delete failed", description: e.message, variant: "destructive" }),
   });
 
+  // Apply-template mutation — uses the canonical Task #101 endpoint and writes
+  // an audit row server-side (event_type=template_applied_to_role).
+  const applyTplM = useMutation({
+    mutationFn: () => {
+      if (!pendingTemplate || !canManage) throw new Error("Not allowed");
+      return fetchJSON(
+        `/api/admin/roles/${encodeURIComponent(roleKey)}/apply-template`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ templateKey: pendingTemplate.key, reason: applyReason }),
+        },
+      );
+    },
+    onSuccess: () => {
+      toast({
+        title: "Template applied to role",
+        description: `${pendingTemplate?.name} → ${role?.label ?? roleKey}`,
+      });
+      setPendingTemplate(null);
+      setApplyReason("");
+      refetchAll();
+    },
+    onError: (e: Error) =>
+      toast({ title: "Apply failed", description: e.message, variant: "destructive" }),
+  });
+
+  const templates = tplQ.data?.templates ?? [];
+
   if (rolesQ.isLoading || permsQ.isLoading) {
     return (
       <Card className="border-gray-200 shadow-sm">
@@ -155,9 +234,25 @@ export function RightPanelRole({ roleKey, onRoleDeleted }: RightPanelRoleProps) 
 
   return (
     <div className="space-y-3" data-testid="right-panel-role">
-      {/* Compare against another role — uses the existing comparison dialog
-          so the COO/CEO can see exactly what differs side-by-side. */}
-      <div className="flex justify-end">
+      {/* Role-side header: Apply-template + Compare. Apply writes onto the
+          role itself (and audit-logs as template_applied_to_role); Compare
+          opens the existing side-by-side comparison dialog. */}
+      <div className="flex flex-wrap items-center justify-end gap-2" data-testid="apply-template-role-section">
+        <SearchableSelect
+          options={templates.map((t) => ({ value: t.key, label: t.name }))}
+          value=""
+          disabled={!canManage || templates.length === 0}
+          onValueChange={(val) => {
+            const tpl = templates.find((t) => t.key === val);
+            if (tpl) {
+              setPendingTemplate(tpl);
+              setApplyReason("");
+            }
+          }}
+          placeholder="Apply template…"
+          searchPlaceholder="Search templates…"
+          data-testid="select-apply-template-role"
+        />
         <Button
           size="sm"
           variant="outline"
@@ -212,15 +307,98 @@ export function RightPanelRole({ roleKey, onRoleDeleted }: RightPanelRoleProps) 
         userCount={role.userCount || 0}
         isPending={deleteM.isPending}
       />
-      {/* CreateRoleDialog rendered here for completeness; controlled by parent
-          if we ever surface a "+" affordance for roles in the rail. */}
-      <CreateRoleDialog
-        open={showCreate}
-        onOpenChange={() => {}}
-        onConfirm={() => {}}
-        canManageRoles={canManage}
-        isPending={false}
-      />
+
+      {/* Apply-template-to-role preview + confirm dialog ────────────────── */}
+      <Dialog
+        open={!!pendingTemplate}
+        onOpenChange={(o) => {
+          if (!o) {
+            setPendingTemplate(null);
+            setApplyReason("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-2xl" data-testid="dialog-apply-template-role">
+          <DialogHeader>
+            <DialogTitle>
+              {pendingTemplate ? `Apply "${pendingTemplate.name}" to ${role.label}` : ""}
+            </DialogTitle>
+            {pendingTemplate && (
+              <p className="text-xs text-muted-foreground">
+                Writes the template's permissions onto the {role.label} role itself. Every user
+                with this role is affected. The change is recorded in the change log.
+              </p>
+            )}
+          </DialogHeader>
+          {previewQ.isLoading || !previewQ.data ? (
+            <div className="flex items-center gap-2 py-6">
+              <Loader2 className="h-4 w-4 animate-spin" /> Calculating diff…
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="rounded bg-emerald-50 p-3 text-sm" data-testid="text-role-diff-headline">
+                {previewQ.data.englishHeadline}
+              </div>
+              {previewQ.data.entries.length > 0 && (
+                <div className="max-h-72 overflow-y-auto rounded border text-xs">
+                  <table className="w-full">
+                    <thead className="bg-slate-50 text-left">
+                      <tr>
+                        <th className="px-2 py-1">Workspace</th>
+                        <th className="px-2 py-1 text-emerald-700">Will gain</th>
+                        <th className="px-2 py-1 text-rose-700">Will lose</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {previewQ.data.entries.map((e) => (
+                        <tr key={e.entity} className="border-t" data-testid={`role-diff-row-${e.entity}`}>
+                          <td className="px-2 py-1">{e.title}</td>
+                          <td className="px-2 py-1 text-emerald-700">{e.gained.join(", ") || "—"}</td>
+                          <td className="px-2 py-1 text-rose-700">{e.lost.join(", ") || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <div className="space-y-1">
+                <Label htmlFor="role-apply-reason" className="text-xs">
+                  Reason for change *
+                </Label>
+                <Textarea
+                  id="role-apply-reason"
+                  value={applyReason}
+                  onChange={(e) => setApplyReason(e.target.value)}
+                  placeholder="Why are you applying this template to the role?"
+                  className="text-xs"
+                  rows={2}
+                  data-testid="input-role-apply-reason"
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setPendingTemplate(null);
+                setApplyReason("");
+              }}
+              data-testid="button-cancel-apply-role"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => applyTplM.mutate()}
+              disabled={!applyReason.trim() || applyTplM.isPending || !canManage}
+              className="bg-emerald-600 hover:bg-emerald-700"
+              data-testid="button-confirm-apply-role"
+            >
+              {applyTplM.isPending ? "Applying…" : "Apply template"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
