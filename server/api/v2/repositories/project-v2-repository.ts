@@ -223,16 +223,35 @@ export async function getProjectFinanceSummary(projectId: number) {
   };
 }
 
-export async function getFinanceCashflow(projectId: number) {
-  // NOTE: cost_line_status is a Postgres enum with lowercase domain
-  // {planned, invoiced, approved, paid}. Comparing to UPPERCASE literals
-  // here raises `invalid input value for enum cost_line_status: "APPROVED"`
-  // and turns the entire /api/v2/projects/:id/finance call into a 500.
-  // Keep the IN list lowercase to match the enum domain.
-  return db.select({ status: normalizedCostLines.status, projected: sql<number>`coalesce(sum(cast(${normalizedCostLines.amountExVat} as numeric)),0)`, actual: sql<number>`coalesce(sum(case when ${normalizedCostLines.status} in ('approved','paid') then cast(${normalizedCostLines.amountExVat} as numeric) else 0 end),0)` })
+/**
+ * Builder split out from `getFinanceCashflow` so tests can call `.toSQL()`
+ * on the live Drizzle query and verify the generated SQL — instead of
+ * grep-ing the source file. This is the hot path behind
+ * `/api/v2/projects/:id/finance`; if it produces SQL Postgres rejects, the
+ * Commercial tab on every project breaks.
+ *
+ * NOTE: `cost_line_status` is a Postgres enum with the lowercase domain
+ * {planned, invoiced, approved, paid}. Comparing to UPPERCASE literals here
+ * raises `invalid input value for enum cost_line_status: "APPROVED"` and
+ * turns the entire endpoint into a generic 500 (Task #124). Keep the IN
+ * list lowercase to match the enum domain.
+ */
+export function buildFinanceCashflowQuery(projectId: number) {
+  return db.select({
+    status: normalizedCostLines.status,
+    projected: sql<number>`coalesce(sum(cast(${normalizedCostLines.amountExVat} as numeric)),0)`,
+    actual: sql<number>`coalesce(sum(case when ${normalizedCostLines.status} in ('approved','paid') then cast(${normalizedCostLines.amountExVat} as numeric) else 0 end),0)`,
+  })
     .from(normalizedCostLines)
-    .where(and(eq(normalizedCostLines.projectId, projectId), and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))))
+    .where(and(
+      eq(normalizedCostLines.projectId, projectId),
+      and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)),
+    ))
     .groupBy(normalizedCostLines.status);
+}
+
+export async function getFinanceCashflow(projectId: number) {
+  return buildFinanceCashflowQuery(projectId);
 }
 
 export async function getFinanceRevenueLines(projectId: number) {
