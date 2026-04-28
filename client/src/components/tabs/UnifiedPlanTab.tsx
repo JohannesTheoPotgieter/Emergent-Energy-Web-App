@@ -7,7 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { SearchableSelect } from "@/components/ui/searchable-select";
+import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
@@ -388,6 +388,18 @@ interface DependencyRecord {
   lagDays: number;
 }
 
+interface UnlinkedOpTask {
+  id: number;
+  workItemId: number;
+  title: string;
+  status: string | null;
+  priority: string | null;
+  dueDate: string | null;
+  assigneeNames: string[];
+  ownerName: string | null;
+  workstream: string | null;
+}
+
 function InlinePredecessorEditor({
   task,
   allTasks,
@@ -612,6 +624,10 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
   const [dropTarget, setDropTarget] = useState<{ taskId: number; position: "above" | "below" | "child" } | null>(null);
   const [convertMilestoneDialogOpen, setConvertMilestoneDialogOpen] = useState(false);
   const [convertMilestoneTask, setConvertMilestoneTask] = useState<any>(null);
+  const [linkUnlinkedDialogOpen, setLinkUnlinkedDialogOpen] = useState(false);
+  const [unlinkedRowSelections, setUnlinkedRowSelections] = useState<Record<number, number | null>>({});
+  const [linkingRowId, setLinkingRowId] = useState<number | null>(null);
+  const [unlinkedRowFeedback, setUnlinkedRowFeedback] = useState<Record<number, { kind: "success" | "error"; message: string }>>({});
   const [groupUnderDialogOpen, setGroupUnderDialogOpen] = useState(false);
   const [groupUnderTask, setGroupUnderTask] = useState<any>(null);
   const [visibleColumns, setVisibleColumns] = useState<string[]>(loadVisibleColumns);
@@ -690,7 +706,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     document.addEventListener("mouseup", onUp);
   }, []);
 
-  const { data: planData, isLoading } = useQuery<{ tasks: any[]; unlinkedOperationalCount: number }>({
+  const { data: planData, isLoading } = useQuery<{ tasks: any[]; unlinkedOperationalCount: number; unlinkedOperationalTasks: UnlinkedOpTask[] }>({
     queryKey: ["planning-tasks", projectName],
     queryFn: async () => {
       const token = localStorage.getItem('auth_token');
@@ -699,17 +715,22 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
       const res = await fetch(`/api/planning-tasks/${encodeURIComponent(projectName)}`, { credentials: "include", headers });
       if (!res.ok) {
         const fallback = await fetch(`/api/operational-tasks/${encodeURIComponent(projectName)}`, { credentials: "include", headers });
-        if (!fallback.ok) return { tasks: [], unlinkedOperationalCount: 0 };
+        if (!fallback.ok) return { tasks: [], unlinkedOperationalCount: 0, unlinkedOperationalTasks: [] };
         const fallbackData = await fallback.json();
-        return { tasks: Array.isArray(fallbackData) ? fallbackData : [], unlinkedOperationalCount: 0 };
+        return { tasks: Array.isArray(fallbackData) ? fallbackData : [], unlinkedOperationalCount: 0, unlinkedOperationalTasks: [] };
       }
       const data = await res.json();
-      if (Array.isArray(data)) return { tasks: data, unlinkedOperationalCount: 0 };
-      return { tasks: data.tasks || [], unlinkedOperationalCount: data.unlinkedOperationalCount || 0 };
+      if (Array.isArray(data)) return { tasks: data, unlinkedOperationalCount: 0, unlinkedOperationalTasks: [] };
+      return {
+        tasks: data.tasks || [],
+        unlinkedOperationalCount: data.unlinkedOperationalCount || 0,
+        unlinkedOperationalTasks: Array.isArray(data.unlinkedOperationalTasks) ? data.unlinkedOperationalTasks : [],
+      };
     },
   });
   const tasks = planData?.tasks ?? [];
   const unlinkedOperationalCount = planData?.unlinkedOperationalCount ?? 0;
+  const unlinkedOperationalTasks: UnlinkedOpTask[] = planData?.unlinkedOperationalTasks ?? [];
 
   const { data: keyDates = [] } = useQuery<ResolvedKeyDate[]>({
     queryKey: ["key-dates", projectId || projectName],
@@ -780,6 +801,43 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     },
     onError: () => {
       toast({ title: "Update failed", description: "Could not save the change", variant: "destructive" });
+    },
+  });
+
+  const linkUnlinkedMutation = useMutation({
+    mutationFn: async ({ opTaskId, planRowId }: { opTaskId: number; planRowId: number }) => {
+      await apiRequest("PATCH", `/api/operational-tasks/${opTaskId}`, { importedTaskId: planRowId });
+    },
+    onMutate: ({ opTaskId }) => {
+      setLinkingRowId(opTaskId);
+      setUnlinkedRowFeedback(prev => {
+        if (!(opTaskId in prev)) return prev;
+        const next = { ...prev };
+        delete next[opTaskId];
+        return next;
+      });
+    },
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["planning-tasks", projectName] });
+      invalidateProjectQueries(qc, projectName);
+      setUnlinkedRowSelections(prev => {
+        const next = { ...prev };
+        delete next[variables.opTaskId];
+        return next;
+      });
+      setUnlinkedRowFeedback(prev => ({
+        ...prev,
+        [variables.opTaskId]: { kind: "success", message: "Linked to plan row" },
+      }));
+    },
+    onError: (err: any, variables) => {
+      setUnlinkedRowFeedback(prev => ({
+        ...prev,
+        [variables.opTaskId]: { kind: "error", message: err?.message || "Could not link task" },
+      }));
+    },
+    onSettled: () => {
+      setLinkingRowId(null);
     },
   });
 
@@ -1741,7 +1799,20 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
       {unlinkedOperationalCount > 0 && (
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-blue-50 border border-blue-200 text-xs text-blue-700" data-testid="unlinked-ops-banner">
           <Info className="h-3.5 w-3.5 flex-shrink-0" />
-          <span>{unlinkedOperationalCount} operational task{unlinkedOperationalCount !== 1 ? "s" : ""} not linked to the project plan — view in My Tasks</span>
+          <span data-testid="text-unlinked-count">
+            {unlinkedOperationalCount} operational task{unlinkedOperationalCount !== 1 ? "s" : ""} not linked to the project plan
+          </span>
+          {isAdmin && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-6 ml-2 text-[11px] border-blue-300 text-blue-700 hover:bg-blue-100"
+              onClick={() => setLinkUnlinkedDialogOpen(true)}
+              data-testid="button-open-unlinked-panel"
+            >
+              Link to plan
+            </Button>
+          )}
         </div>
       )}
 
@@ -2462,6 +2533,133 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => { setGroupUnderDialogOpen(false); setGroupUnderTask(null); }}>Cancel</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={linkUnlinkedDialogOpen} onOpenChange={(open) => {
+        if (!open) {
+          setLinkUnlinkedDialogOpen(false);
+          setUnlinkedRowSelections({});
+        }
+      }}>
+        <DialogContent className="max-w-3xl" data-testid="dialog-unlinked-tasks">
+          <DialogHeader>
+            <DialogTitle>Link operational tasks to plan rows</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Pick a plan row for each operational task and click Link. The list updates as tasks are linked.
+            </p>
+            {(() => {
+              const planOptions: SearchableSelectOption[] = tasks
+                .filter((t: any) => {
+                  if (t.isVirtualMilestone) return false;
+                  if (t.isBaseline === false) return false;
+                  const candidate = typeof t.workItemId === "number"
+                    ? t.workItemId
+                    : (typeof t.id === "number" ? t.id : null);
+                  return typeof candidate === "number" && candidate > 0;
+                })
+                .map((t: any) => {
+                  const planId = (typeof t.workItemId === "number" ? t.workItemId : t.id) as number;
+                  const wbs = t.taskNumber || t.taskNo ? `${t.taskNumber || t.taskNo} — ` : "";
+                  return { value: String(planId), label: `${wbs}${t.title || t.taskName || `Row ${planId}`}` };
+                });
+              if (unlinkedOperationalTasks.length === 0) {
+                return (
+                  <div className="text-sm text-muted-foreground text-center py-6" data-testid="text-no-unlinked-tasks">
+                    All operational tasks are linked to the plan.
+                  </div>
+                );
+              }
+              if (planOptions.length === 0) {
+                return (
+                  <div className="text-sm text-muted-foreground text-center py-6">
+                    No plan rows available to link to. Add a plan row first.
+                  </div>
+                );
+              }
+              return (
+                <div className="max-h-[60vh] overflow-y-auto border rounded-md divide-y">
+                  {unlinkedOperationalTasks.map((u) => {
+                    const selectedRaw = unlinkedRowSelections[u.id];
+                    const selected = selectedRaw != null ? String(selectedRaw) : undefined;
+                    const isLinking = linkingRowId === u.id;
+                    const feedback = unlinkedRowFeedback[u.id];
+                    return (
+                      <div
+                        key={u.id}
+                        className="p-3 flex items-start gap-3"
+                        data-testid={`row-unlinked-task-${u.id}`}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium truncate" data-testid={`text-unlinked-title-${u.id}`}>{u.title}</div>
+                          <div className="text-[11px] text-muted-foreground flex items-center gap-2 flex-wrap mt-0.5">
+                            {u.status && <span className="inline-flex items-center gap-1"><Circle className="h-2.5 w-2.5" />{u.status}</span>}
+                            {u.priority && <span>· {u.priority}</span>}
+                            {u.dueDate && <span>· Due {String(u.dueDate).substring(0, 10)}</span>}
+                            {u.workstream && <span>· {u.workstream}</span>}
+                            {u.assigneeNames.length > 0 && <span>· {u.assigneeNames.join(", ")}</span>}
+                            {!u.assigneeNames.length && u.ownerName && <span>· Owner: {u.ownerName}</span>}
+                          </div>
+                          {feedback && (
+                            <div
+                              className={`text-[11px] mt-1 ${feedback.kind === "success" ? "text-green-600" : "text-red-600"}`}
+                              data-testid={`text-link-${feedback.kind}-${u.id}`}
+                              role={feedback.kind === "error" ? "alert" : "status"}
+                            >
+                              {feedback.message}
+                            </div>
+                          )}
+                        </div>
+                        <div className="w-64 flex-shrink-0">
+                          <SearchableSelect
+                            options={planOptions}
+                            value={selected}
+                            onValueChange={(v) => {
+                              setUnlinkedRowSelections(prev => ({ ...prev, [u.id]: v ? Number(v) : null }));
+                              if (unlinkedRowFeedback[u.id]?.kind === "error") {
+                                setUnlinkedRowFeedback(prev => {
+                                  const next = { ...prev };
+                                  delete next[u.id];
+                                  return next;
+                                });
+                              }
+                            }}
+                            placeholder="Select plan row..."
+                            searchPlaceholder="Search plan rows..."
+                            emptyText="No matching plan rows"
+                            disabled={isLinking}
+                            data-testid={`select-plan-row-${u.id}`}
+                          />
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="default"
+                          className="h-8"
+                          disabled={!selected || isLinking}
+                          onClick={() => {
+                            const planRowId = unlinkedRowSelections[u.id];
+                            if (planRowId == null) return;
+                            linkUnlinkedMutation.mutate({ opTaskId: u.id, planRowId });
+                          }}
+                          data-testid={`button-confirm-link-${u.id}`}
+                        >
+                          {isLinking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link2 className="h-3.5 w-3.5" />}
+                          <span className="ml-1">Link</span>
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setLinkUnlinkedDialogOpen(false); setUnlinkedRowSelections({}); }} data-testid="button-close-unlinked-panel">
+              Close
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

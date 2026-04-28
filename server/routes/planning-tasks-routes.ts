@@ -139,13 +139,15 @@ export function registerPlanningTasksRoutes(app: Express) {
       let baselineTasks: any[] = [];
       let operationalTasks: any[] = [];
       let unlinkedOperationalCount = 0;
+      let unlinkedOperationalRaw: any[] = [];
 
       if (useCanonical) {
         const canonicalTasks = await getAllWorkItemsForPlanTab(projectName);
         if (canonicalTasks.length > 0) {
           const allOps = await storage.getOperationalTasksByProject(projectName);
           const nonClickupOps = allOps.filter((t: any) => t.externalSource !== "clickup");
-          unlinkedOperationalCount = nonClickupOps.filter((t: any) => t.importedTaskId == null).length;
+          unlinkedOperationalRaw = nonClickupOps.filter((t: any) => t.importedTaskId == null && t.linkedPlanItemId == null);
+          unlinkedOperationalCount = unlinkedOperationalRaw.length;
 
           const filteredCanonical = canonicalTasks.filter((ct: any) => {
             const ws = ct.workstream || "PM";
@@ -248,8 +250,9 @@ export function registerPlanningTasksRoutes(app: Express) {
         ]);
 
         const nonClickupOps = allOperationalTasks.filter((t: any) => t.externalSource !== "clickup");
-        operationalTasks = nonClickupOps.filter((t: any) => t.importedTaskId != null);
-        unlinkedOperationalCount = nonClickupOps.length - operationalTasks.length;
+        operationalTasks = nonClickupOps.filter((t: any) => t.importedTaskId != null || t.linkedPlanItemId != null);
+        unlinkedOperationalRaw = nonClickupOps.filter((t: any) => t.importedTaskId == null && t.linkedPlanItemId == null);
+        unlinkedOperationalCount = unlinkedOperationalRaw.length;
 
         const rawPlanTasks = planTasksDirect.length > 0 ? planTasksDirect : planTasksTracker;
 
@@ -591,7 +594,58 @@ export function registerPlanningTasksRoutes(app: Express) {
         } catch (e) { console.warn("[planning-tasks-routes] non-critical error:", e instanceof Error ? e.message : e); }
       }
 
-      res.json({ tasks: result, unlinkedOperationalCount });
+      let unlinkedOperationalTasks: any[] = [];
+      if (unlinkedOperationalRaw.length > 0) {
+        try {
+          const { buildUserMap } = await import("../user-resolver");
+          const userMap = await buildUserMap();
+          const ids = unlinkedOperationalRaw.map((t: any) => t.id).filter((n: any) => Number.isFinite(n));
+          const assignmentsByItem = new Map<number, number[]>();
+          if (ids.length > 0) {
+            const rows = await db
+              .select({ workItemId: workItemAssignments.workItemId, userId: workItemAssignments.userId, role: workItemAssignments.role })
+              .from(workItemAssignments)
+              .where(and(inArray(workItemAssignments.workItemId, ids), eq(workItemAssignments.role, "ASSIGNEE" as any)));
+            for (const r of rows) {
+              if (!assignmentsByItem.has(r.workItemId)) assignmentsByItem.set(r.workItemId, []);
+              assignmentsByItem.get(r.workItemId)!.push(r.userId);
+            }
+          }
+          unlinkedOperationalTasks = unlinkedOperationalRaw.map((t: any) => {
+            const aIds = assignmentsByItem.get(t.id) || [];
+            const assigneeNames = aIds
+              .map((uid: number) => userMap.get(uid)?.name)
+              .filter((n: any): n is string => !!n);
+            const ownerName = t.ownerUserId ? userMap.get(t.ownerUserId)?.name || null : null;
+            return {
+              id: t.id,
+              workItemId: t.id,
+              title: t.title || t.taskName || `Task ${t.id}`,
+              status: t.status || null,
+              priority: t.priority || null,
+              dueDate: t.endDate || t.dueDate || null,
+              assigneeNames,
+              ownerName,
+              workstream: t.workstream || null,
+            };
+          });
+        } catch (e) {
+          console.warn("[planning-tasks-routes] failed to enrich unlinked tasks:", e instanceof Error ? e.message : e);
+          unlinkedOperationalTasks = unlinkedOperationalRaw.map((t: any) => ({
+            id: t.id,
+            workItemId: t.id,
+            title: t.title || t.taskName || `Task ${t.id}`,
+            status: t.status || null,
+            priority: t.priority || null,
+            dueDate: t.endDate || t.dueDate || null,
+            assigneeNames: [],
+            ownerName: null,
+            workstream: t.workstream || null,
+          }));
+        }
+      }
+
+      res.json({ tasks: result, unlinkedOperationalCount, unlinkedOperationalTasks });
     } catch (err: any) {
       console.error("Planning tasks error:", err);
       throw err;
