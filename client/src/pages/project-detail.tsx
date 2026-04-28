@@ -65,7 +65,7 @@ import { PROJECT_PHASE_LABELS, TASK_STATUSES, type ProjectPhase, checkPermission
 import { computeScheduleRag, computeCostRag, computeQualityRag, computeOverallRag } from "@shared/kpi-definitions";
 import { usePermission } from "@/hooks/use-permissions";
 import { type NextMilestoneSummary } from "@/lib/next-milestone";
-import { useProjectDetail, useProjectFinance, useProjectPlan, useProjectQuality, useProjectEngineering } from "@/hooks/use-project-v2";
+import { useProjectDetail, useProjectPlan, useProjectQuality, useProjectEngineering } from "@/hooks/use-project-v2";
 import type { ProjectPermissions } from "@shared/api-types/project-v2";
 import { buildProjectSummaryChipDestinations, type ProjectSummaryChipKey } from "@/lib/project-summary-chip-navigation";
 
@@ -1025,8 +1025,8 @@ export default function ProjectDetailPage() {
   const { data: v2Detail } = useProjectDetail(projectInfoId);
   const v2Perms: ProjectPermissions | null = v2Detail?.permissions ?? null;
 
-  // V2 lazy-load hooks — each tab domain loads on demand
-  const { data: v2Finance } = useProjectFinance(projectInfoId, activeSection === "commercial");
+  // V2 lazy-load hooks — each tab domain loads on demand.
+  // Task #124: removed orphan `useProjectFinance` (data fetched but never read).
   const { data: v2Plan } = useProjectPlan(projectInfoId, activeSection === "delivery");
   const { data: v2Quality } = useProjectQuality(projectInfoId, activeSection === "quality");
   const { data: v2Engineering } = useProjectEngineering(projectInfoId, activeSection === "engineering");
@@ -1752,11 +1752,8 @@ export default function ProjectDetailPage() {
            Permission guard: activeSection === "commercial" && canViewTab.finance
          ════════════════════════════════════════════════════════════ */}
       {activeDept === "finance" && (
-        // Task #124 — section-scoped ErrorBoundary so a render crash inside
-        // any Commercial child (e.g. minified React #310 surfacing from a
-        // future hook-order regression, or an unmapped finance API error)
-        // is contained to this section and shown as a localized fallback,
-        // instead of taking down the whole project page.
+        // Task #124 — section-scoped fallback so a Commercial render crash
+        // doesn't take down the whole page.
         <ErrorBoundary
           fallback={({ error, reset }) => (
             <div

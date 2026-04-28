@@ -1,22 +1,7 @@
-// Behavioral regression guard — Task #124.
-//
-// `cost_line_status` is a Postgres enum whose domain is lowercase
-// {planned, invoiced, approved, paid}. The `getFinanceCashflow` query in
-// `server/api/v2/repositories/project-v2-repository.ts` previously compared
-// the column to UPPERCASE literals ('APPROVED','PAID'), which caused Postgres
-// to throw `invalid input value for enum cost_line_status: "APPROVED"` and
-// turned every `/api/v2/projects/:id/finance` call into a 500 — surfacing in
-// the UI as a "Server Error / Request failed" toast on the project Commercial
-// tab.
-//
-// This file pins the bug at TWO layers:
-//   1. **Behavioral** — call `buildFinanceCashflowQuery` and inspect the
-//      Drizzle `.toSQL()` output to assert that the IN-list rendered into
-//      the actual SQL string is lowercase. This catches *runtime* SQL drift,
-//      not just source-text drift.
-//   2. **Source-text** — keep a cheap, fast static check on the function body
-//      itself, matching the convention of the sibling
-//      `qa/tests/unit/finance-snapshot-guards.test.ts`.
+// Task #124 — behavioral toSQL + source-text guards for getFinanceCashflow.
+// `cost_line_status` is a lowercase Postgres enum {planned, invoiced,
+// approved, paid}. UPPERCASE literals in the IN-list raise an enum-input
+// error at query time, so we pin BOTH the rendered SQL and the source.
 
 import { describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
@@ -24,11 +9,7 @@ import path from "node:path";
 import { drizzle } from "drizzle-orm/node-postgres";
 import * as schema from "../../../shared/schema";
 
-// Mock the db module so importing the repository doesn't try to open a real
-// Postgres connection. Drizzle's `.toSQL()` only needs a query builder — it
-// never touches the underlying pool — so a no-op pg client is enough to
-// exercise the actual `buildFinanceCashflowQuery` builder against the real
-// schema and dialect.
+// No-op pg client so importing the repository doesn't open a real connection.
 vi.mock("../../../server/db", () => {
   const fakeClient = {
     query: () => { throw new Error("test stub: query() must not be called — toSQL() only"); },
