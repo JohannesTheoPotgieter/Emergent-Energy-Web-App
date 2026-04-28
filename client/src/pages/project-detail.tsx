@@ -60,6 +60,7 @@ import { StageTimeline } from "@/components/stage-lifecycle/StageTimeline";
 import { useProjectStages } from "@/hooks/use-stage-lifecycle";
 import { Milestone } from "lucide-react";
 import { PageShell } from "@/components/layout/page-shell";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { PROJECT_PHASE_LABELS, TASK_STATUSES, type ProjectPhase, checkPermission } from "@shared/schema";
 import { computeScheduleRag, computeCostRag, computeQualityRag, computeOverallRag } from "@shared/kpi-definitions";
 import { usePermission } from "@/hooks/use-permissions";
@@ -1751,6 +1752,32 @@ export default function ProjectDetailPage() {
            Permission guard: activeSection === "commercial" && canViewTab.finance
          ════════════════════════════════════════════════════════════ */}
       {activeDept === "finance" && (
+        // Task #124 — section-scoped ErrorBoundary so a render crash inside
+        // any Commercial child (e.g. minified React #310 surfacing from a
+        // future hook-order regression, or an unmapped finance API error)
+        // is contained to this section and shown as a localized fallback,
+        // instead of taking down the whole project page.
+        <ErrorBoundary
+          fallback={({ error, reset }) => (
+            <div
+              className="rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900"
+              data-testid="commercial-section-error"
+            >
+              <div className="font-semibold mb-1">Commercial section failed to render</div>
+              <div className="text-xs opacity-80 mb-2">
+                {error?.message ?? "Unknown render error"}
+              </div>
+              <button
+                type="button"
+                onClick={reset}
+                className="text-xs underline hover:no-underline"
+                data-testid="button-commercial-retry"
+              >
+                Try again
+              </button>
+            </div>
+          )}
+        >
         <div className="space-y-3" data-testid="dept-finance-section">
           {/* Finance KPI strip */}
           <div className="flex items-center gap-4 flex-wrap rounded-md border bg-muted/30 px-3 py-2 text-xs">
@@ -1828,6 +1855,7 @@ export default function ProjectDetailPage() {
           {activeSubTab === "documents" && <LocalFolderTab projectName={projectName} />}
           {activeSubTab === "comms" && <ProjectChatTab projectName={projectName} projectInfoId={projectInfoId ?? null} />}
         </div>
+        </ErrorBoundary>
       )}
 
       <TaskDetailDrawer
