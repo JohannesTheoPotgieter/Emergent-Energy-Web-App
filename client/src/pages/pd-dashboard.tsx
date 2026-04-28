@@ -1,11 +1,21 @@
 import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   AlertTriangle,
   CalendarClock,
@@ -23,10 +33,16 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Loader2,
+  Zap,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageLayout } from "@/components/layout";
 import { OpportunityDrawer } from "@/components/opportunities/OpportunityDrawer";
+import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { normalizeRoleForPermissions } from "@shared/schema";
 
 type ActionReason = "overdue" | "on_hold" | "stale_30d" | "high_priority_quiet" | "";
 
@@ -1005,6 +1021,161 @@ function ticketHref(ticketId: number | null | undefined, ticketName: string | nu
   return `/engineering/tickets`;
 }
 
+// Task #108 — exec-only one-click "Spawn engineering tasks" header CTA.
+// Hidden entirely for non-execs (server enforces requireRole as the
+// authoritative gate). Reuses GET /api/pd/tickets/spawn-eligible for the
+// preview and POST /api/pd/tickets/bulk-spawn-tasks for the apply.
+const SPAWN_EXEC_ROLES = new Set(["CFO", "CEO_ADMIN", "COO_ADMIN"]);
+
+type SpawnEligibleResponse = {
+  ticketCount: number;
+  projectCount: number;
+  projectNames: string[];
+  tickets: Array<{ id: number; projectId: number | null; requestType: string; projectSiteName: string | null; projectName: string | null }>;
+};
+
+function SpawnEngineeringTasksButton() {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const role = normalizeRoleForPermissions(user?.role);
+  const allowed = !!user && SPAWN_EXEC_ROLES.has(role);
+
+  const eligibleQuery = useQuery<SpawnEligibleResponse>({
+    queryKey: ["/api/pd/tickets/spawn-eligible"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/pd/tickets/spawn-eligible");
+      return res.json();
+    },
+    enabled: allowed && open,
+    staleTime: 0,
+  });
+
+  const bulkSpawn = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/pd/tickets/bulk-spawn-tasks", {});
+      const body = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(body?.error || `Failed (${res.status})`);
+      return body as { ticketsProcessed: number; workItemsCreated: number; skipped: number };
+    },
+    onSuccess: (r) => {
+      const skippedNote = r.skipped > 0 ? ` · ${r.skipped} already done` : "";
+      toast({
+        title: `Spawned ${r.workItemsCreated} task${r.workItemsCreated === 1 ? "" : "s"} across ${r.ticketsProcessed} ticket${r.ticketsProcessed === 1 ? "" : "s"}${skippedNote}`,
+      });
+      // Invalidate everything that surfaces ticket spawn state or work items.
+      queryClient.invalidateQueries({ queryKey: ["/api/pd/dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/pd/tickets/spawn-eligible"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/engineering-tickets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/work-items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/opportunities"] });
+      setOpen(false);
+    },
+    onError: (err: any) => {
+      toast({
+        title: "Could not spawn tasks",
+        description: err?.message || "An unexpected error occurred",
+        variant: "destructive",
+      });
+    },
+  });
+
+  if (!allowed) return null;
+
+  const eligible = eligibleQuery.data;
+  const eligibleCount = eligible?.ticketCount ?? 0;
+  const previewNames = (eligible?.projectNames ?? []).slice(0, 5);
+  const moreCount = Math.max(0, (eligible?.projectNames.length ?? 0) - previewNames.length);
+
+  return (
+    <>
+      <Button
+        variant="default"
+        size="sm"
+        className="gap-2"
+        onClick={() => setOpen(true)}
+        data-testid="button-spawn-eng-tasks"
+      >
+        <Zap className="h-3.5 w-3.5" />
+        Spawn engineering tasks
+      </Button>
+
+      <AlertDialog open={open} onOpenChange={(next) => !bulkSpawn.isPending && setOpen(next)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Spawn engineering tasks for all eligible tickets?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                {eligibleQuery.isLoading ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Counting eligible tickets…
+                  </div>
+                ) : eligibleQuery.error ? (
+                  <div className="text-sm text-destructive">
+                    Couldn't load eligible tickets. Please try again.
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-sm">
+                      This will spawn the standard engineering task list for{" "}
+                      <span className="font-semibold" data-testid="text-spawn-eligible-count">
+                        {eligibleCount}
+                      </span>{" "}
+                      eligible ticket{eligibleCount === 1 ? "" : "s"} (linked to a project, no tasks spawned yet).
+                    </p>
+                    {previewNames.length > 0 ? (
+                      <div className="text-sm">
+                        <div className="text-muted-foreground mb-1">Includes projects such as:</div>
+                        <ul className="list-disc pl-5 space-y-0.5" data-testid="list-spawn-preview-projects">
+                          {previewNames.map((name) => (
+                            <li key={name} className="truncate">{name}</li>
+                          ))}
+                        </ul>
+                        {moreCount > 0 ? (
+                          <div className="text-xs text-muted-foreground mt-1">
+                            +{moreCount} more project{moreCount === 1 ? "" : "s"}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : eligibleCount === 0 ? (
+                      <div className="text-sm text-muted-foreground">
+                        Nothing to do — no tickets are currently eligible.
+                      </div>
+                    ) : null}
+                  </>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkSpawn.isPending} data-testid="button-cancel-spawn">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={bulkSpawn.isPending || eligibleQuery.isLoading || eligibleCount === 0}
+              onClick={(e) => {
+                e.preventDefault();
+                bulkSpawn.mutate();
+              }}
+              data-testid="button-confirm-spawn"
+            >
+              {bulkSpawn.isPending ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin mr-2" />
+                  Spawning…
+                </>
+              ) : (
+                `Spawn for ${eligibleCount} ticket${eligibleCount === 1 ? "" : "s"}`
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
 export default function PdDashboardPage() {
   const { data, isLoading, error } = useQuery<PdDashboard>({
     queryKey: ["/api/pd/dashboard"],
@@ -1048,12 +1219,15 @@ export default function PdDashboardPage() {
           title="Project Development"
           subtitle="Operational control tower — engineering tickets and work items needing PD action right now, sourced from app-internal data."
           actions={
-            <Link href="/engineering/tickets">
-              <Button variant="outline" size="sm" className="gap-2" data-testid="link-engineering-tickets">
-                Open engineering tickets
-                <ExternalLink className="h-3.5 w-3.5" />
-              </Button>
-            </Link>
+            <div className="flex items-center gap-2">
+              <SpawnEngineeringTasksButton />
+              <Link href="/engineering/tickets">
+                <Button variant="outline" size="sm" className="gap-2" data-testid="link-engineering-tickets">
+                  Open engineering tickets
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </Button>
+              </Link>
+            </div>
           }
         />
       }
