@@ -15,42 +15,62 @@ Every screen and every save button maps to an **entity** (e.g. *Financials*,
 appear?" on the screen and "is the save allowed?" on the server, so what the
 user sees is what they can actually do.
 
-## The three tabs of `/admin/roles`
+## The single screen at `/admin/roles`
 
-| Tab          | Use it when…                                                                  |
-| ------------ | ----------------------------------------------------------------------------- |
-| **People**   | One person needs more (or less) access. Pick them, pick a template, apply.    |
-| **Roles**    | A whole team's permissions need to change. Pick a template, apply to a role.  |
-| **Advanced** | You want the full matrix (entity × role × action) — the old admin-roles UI.   |
+There are **no tabs**. The page is one screen with two columns:
+
+| Column                     | What lives there                                                          |
+| -------------------------- | ------------------------------------------------------------------------- |
+| **Left rail (the picker)** | A `People ↔ Roles` toggle, a search box, and the list of matching items.  |
+| **Right panel (detail)**   | Detail for whatever you picked — a person on the left, a role on the left. |
+
+The page header carries three things you can reach from anywhere on the
+screen: a **Change history** slide-over (every apply, reassign, exception
+add/remove), a link to **/admin/settings → Visibility** (workflow visibility
+lives there, not here), and a link back to this guide.
+
+You can also jump straight to a person or a role by URL:
+
+- `/admin/roles?user=42` → People mode, user 42 selected.
+- `/admin/roles?role=PROJECT_MANAGER` → Roles mode, that role selected.
 
 ## Recipes
 
 ### "I just hired a new project manager"
-1. Open **People**.
-2. Search their name.
-3. In the *Apply template* dropdown, pick **Project Manager**.
-4. Read the plain-English diff (e.g. "*Will gain edit on Engineering, Project
+1. Make sure the rail's **People** toggle is on, search their name, click them.
+2. In the right panel, open the *Apply template* dropdown and pick
+   **Project Manager**.
+3. Read the plain-English diff (e.g. "*Will gain edit on Engineering, Project
    Phases, Stage Gates*").
-5. Type a short reason ("New hire — Sept intake") — this goes into the audit
+4. Type a short reason ("New hire — Sept intake") — this goes into the audit
    log — and click **Apply template**.
 
 ### "I want every Engineering Manager to be able to approve POs"
-1. Open **Roles**.
-2. Find the **Engineering Manager** template.
-3. Pick **Apply to role → ENGINEERING_MANAGER**.
-4. The diff will show "*Will gain approve on Procurement*". Apply.
+1. Flip the rail to **Roles**, search and click **Engineering Manager**.
+2. In the right panel header, open the *Apply template* dropdown and pick the
+   **Engineering Manager** template (or whichever template you want to apply
+   to the whole role).
+3. The diff will show "*Will gain approve on Procurement*". Type a reason
+   and apply — every user with that role inherits the change immediately.
 
 ### "Someone from Finance needs read-only access to a few projects"
-1. Open **Roles**.
-2. Apply the **Finance Read-Only** template to their role.
-3. Use **Advanced → User Overrides** to grant `projects:view` on the specific
-   projects they need.
+1. Flip the rail to **People**, click the user.
+2. Apply the **Finance Read-Only** template to write the baseline exceptions.
+3. In the **Exceptions** card on the right, click **+ Add exception** to grant
+   `projects:view` on the specific projects they need.
 
 ### "An employee left — revoke everything"
-1. Open the user in **People**.
+1. Find the user in **People**, click them.
 2. Apply the **Read-Only Viewer** template (they can still log in but cannot
    change anything).
-3. Disable the user via the SSO console (Azure / Microsoft 365).
+3. Click **Manage account** in the user header to delete the local user record,
+   then disable the user in the SSO console (Azure / Microsoft 365).
+
+### "I need to compare two roles side-by-side"
+1. Flip the rail to **Roles** and click one of the two roles you want to
+   compare.
+2. In the right panel header, click **Compare with another role** and pick
+   the other role from the dropdown.
 
 ## Templates we ship
 
@@ -74,9 +94,10 @@ summary you can read inside the app.
 ## Audit & rollback
 
 - Every apply writes a row to the audit log with **who**, **what** (template
-  name + diff), **why** (your reason), and **when**.
-- The Advanced tab includes per-row **notes** so you can leave context next to
-  any custom override.
+  name + diff), **why** (your reason), and **when**. Open it from the
+  **Change history** button in the page header.
+- The role detail panel exposes per-row **notes** on each role-permission and
+  user-override so you can leave context next to any custom change.
 - A rework-day snapshot (`qa/fixtures/permission-snapshot-pre-rework.json`)
   is checked into the repo and a CI test fails on any drift, so you have an
   irrefutable baseline of "what worked the day we cut over".
