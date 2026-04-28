@@ -37,10 +37,10 @@ const SubcontractorDashboardPage = lazyWithRetry(() => import("@/pages/subcontra
 const CounterpartiesPage = lazyWithRetry(() => import("@/pages/counterparties"));
 const SystemActivityLogPage = lazyWithRetry(() => import("@/pages/system-activity-log"));
 const WeeklyReviewsPage = lazyWithRetry(() => import("@/pages/weekly-reviews"));
-// Task #101: AdminRolesPage now resolves to the People/Roles/Advanced shell.
-// The original admin-roles.tsx component is still imported by the shell as
-// the "Advanced" tab body — see client/src/pages/admin-roles-shell.tsx.
-const AdminRolesPage = lazyWithRetry(() => import("@/pages/admin-roles-shell"));
+// Task #107: AdminRolesPage is the new single-screen rail + right-panel layout
+// (no tabs). Retired the tabbed admin-roles-shell.tsx and the 2638-line
+// admin-roles.tsx — both deleted in this task.
+const AdminRolesPage = lazyWithRetry(() => import("@/pages/admin-roles/index"));
 const AdminSettingsPage = lazyWithRetry(() => import("@/pages/admin-settings"));
 const LeaderboardPage = lazyWithRetry(() => import("@/pages/leaderboard"));
 const FeedbackPage = lazyWithRetry(() => import("@/pages/feedback"));

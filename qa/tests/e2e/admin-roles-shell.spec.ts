@@ -1,28 +1,25 @@
-// Task #103 — End-to-end coverage for the rebuilt /admin/roles screen.
+// Task #107 — End-to-end coverage for the rebuilt single-screen /admin/roles.
 //
-// Walks a COO_ADMIN user through the People tab the way they would on a
-// normal day:
+// Walks a COO_ADMIN through the new layout the way they would on a normal
+// day:
 //   1. Log in via the standard form.
-//   2. Open /admin/roles and confirm the three-tab shell rendered.
-//   3. Switch between Roles, Advanced and back to People — every tab
-//      surfaces its primary content (no blank panes).
-//   4. Filter the People table to a *known, deterministic* test user
-//      (defaults to "paul", a seeded ENGINEER fixture used by the rest
-//      of the qa/ suite).
-//   5. Pick a permission template from that user's row.
-//   6. Wait for the apply dialog to render, including the plain-English
+//   2. Open /admin/roles and confirm the page header + picker rail are visible.
+//   3. Toggle the rail to Roles, confirm role rows render, then back to People.
+//   4. Search the rail for the deterministic test user (defaults to "paul",
+//      a seeded ENGINEER fixture used by the rest of the qa/ suite).
+//   5. Click the user's row → right panel mounts with reassign/apply controls.
+//   6. Pick a divergent template from the Apply-template select.
+//   7. Wait for the apply dialog to render, including the plain-English
 //      diff headline.
-//   7. Type a reason, confirm "Apply template", wait for the dialog to
-//      close.
-//   8. Hit /api/admin/permission-audit-log and assert that a fresh
+//   8. Type a reason, confirm "Apply template", wait for the dialog to close.
+//   9. Hit /api/admin/permission-audit-log and assert that a fresh
 //      `template_applied_to_user` row exists for our target user/template
 //      with the reason text we typed.
-//   9. afterEach: re-apply the user's *natural baseline* template
+//  10. Open the "Change history" slide-over from the page header and assert
+//      it surfaces the audit table.
+//  11. afterEach: re-apply the user's *natural baseline* template
 //      (engineer for an ENGINEER) so every divergent override written
-//      during the test is removed. applyTemplateToUser deletes any
-//      override whose template value matches the role baseline, so this
-//      restores the test user to a clean state regardless of test
-//      outcome — keeping the release-gate idempotent.
+//      during the test is removed.
 
 import { test, expect, type Page } from "@playwright/test";
 
@@ -35,18 +32,8 @@ import { test, expect, type Page } from "@playwright/test";
 const COO_USERNAME = process.env.E2E_COO_USERNAME || "johannes";
 const COO_PASSWORD = process.env.E2E_COO_PASSWORD || "2023";
 
-// Deterministic target user. Defaults to "paul" — a seeded ENGINEER
-// fixture already used by the smoke spec — so the COO walkthrough is
-// fully repeatable. Override via env in CI if a different fixture is
-// preferred.
 const TARGET_USERNAME = process.env.E2E_TARGET_USERNAME || "paul";
-// Template to APPLY during the test. Must diverge from the target
-// user's role baseline so the diff has real content; project_manager
-// vs ENGINEER guarantees plenty of deltas without granting admin rights.
 const APPLY_TEMPLATE_KEY = process.env.E2E_APPLY_TEMPLATE || "project_manager";
-// Template that MATCHES the target user's natural role baseline. After
-// the test we apply this to clear every override the test wrote, since
-// applyTemplateToUser drops overrides that match the role baseline.
 const BASELINE_TEMPLATE_KEY = process.env.E2E_TARGET_BASELINE_TEMPLATE || "engineer";
 
 interface AdminUser {
@@ -72,7 +59,7 @@ async function loginAsCoo(page: Page) {
   await page.fill('[data-testid="input-username"]', COO_USERNAME);
   await page.fill('[data-testid="input-password"]', COO_PASSWORD);
   await page.click('[data-testid="button-login"]');
-  await page.waitForURL((url) => !url.pathname.includes("/auth/login"), { timeout: 10000 });
+  await page.waitForURL((url) => !url.pathname.includes("/auth/login"), { timeout: 10_000 });
 }
 
 async function readCsrfToken(page: Page): Promise<string> {
@@ -82,13 +69,6 @@ async function readCsrfToken(page: Page): Promise<string> {
   return csrf;
 }
 
-// Fetch the deterministic target user. We deliberately do NOT pick
-// "first non-admin" — that was the original design, but it meant a real
-// seeded user could be silently mutated by every gate run. The
-// /api/admin/users endpoint returns id/name/email/role (no username
-// field), so we match the configured identifier against username (if
-// the API ever exposes it), name (case-insensitive) and the local-part
-// of email — whichever hits first wins.
 async function fetchTargetUser(page: Page): Promise<AdminUser> {
   const apiCtx = page.context().request;
   const res = await apiCtx.get("/api/admin/users");
@@ -104,25 +84,18 @@ async function fetchTargetUser(page: Page): Promise<AdminUser> {
   });
   expect(
     target,
-    `expected dedicated test user "${TARGET_USERNAME}" in /api/admin/users (matched against username/name/email-local-part) — set E2E_TARGET_USERNAME if your env uses a different fixture`,
+    `expected dedicated test user "${TARGET_USERNAME}" in /api/admin/users — set E2E_TARGET_USERNAME if your env uses a different fixture`,
   ).toBeTruthy();
   return target as AdminUser;
 }
 
-test.describe("Admin Roles shell — COO end-to-end (Task #103)", () => {
+test.describe("Admin Roles single-screen — COO end-to-end (Task #107)", () => {
   test.setTimeout(60_000);
 
-  // Cleanup is keyed off whatever target the test resolves; remember it
-  // here so the afterEach hook can restore baseline regardless of which
-  // assertion failed.
   let restoreTargetId: number | null = null;
 
   test.afterEach(async ({ page }) => {
     if (restoreTargetId === null) return;
-    // Best-effort cleanup: re-apply the role-matching template so every
-    // override written during the test is dropped. Errors here must not
-    // mask the test result, but we log them so a broken cleanup is
-    // visible in CI output.
     try {
       const csrf = await readCsrfToken(page);
       const apiCtx = page.context().request;
@@ -131,7 +104,7 @@ test.describe("Admin Roles shell — COO end-to-end (Task #103)", () => {
         {
           data: {
             templateKey: BASELINE_TEMPLATE_KEY,
-            reason: "E2E Task #103 cleanup — restore role baseline",
+            reason: "E2E Task #107 cleanup — restore role baseline",
           },
           headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
           failOnStatusCode: false,
@@ -149,7 +122,7 @@ test.describe("Admin Roles shell — COO end-to-end (Task #103)", () => {
     }
   });
 
-  test("COO walks People tab → applies template → audit row written", async ({ page }) => {
+  test("COO walks single-screen → applies template → audit row written → change history slide-over visible", async ({ page }) => {
     await loginAsCoo(page);
 
     const apiCtx = page.context().request;
@@ -157,42 +130,64 @@ test.describe("Admin Roles shell — COO end-to-end (Task #103)", () => {
     restoreTargetId = target.id;
 
     await page.goto("/admin/roles");
-    await expect(page.getByTestId("admin-roles-shell"), "shell rendered").toBeVisible();
-    await expect(page.getByTestId("tabs-admin-roles"), "tabs rendered").toBeVisible();
-    await expect(page.getByTestId("tab-people")).toBeVisible();
-    await expect(page.getByTestId("tab-roles")).toBeVisible();
-    await expect(page.getByTestId("tab-advanced")).toBeVisible();
 
-    // Cross-tab smoke: every tab surfaces its primary content.
-    await page.getByTestId("tab-roles").click();
-    await expect(page.getByTestId("roles-tab")).toBeVisible();
-    await page.getByTestId("tab-advanced").click();
-    // Advanced tab hosts the legacy matrix; assert it actually mounted by
-    // looking for any data-testid produced by that page rather than coupling
-    // to specific copy.
+    // ── 1. Header + picker rail render ────────────────────────────
+    await expect(page.getByTestId("admin-roles-page"), "page mounted").toBeVisible();
+    await expect(page.getByTestId("picker-rail"), "left rail visible").toBeVisible();
+    await expect(page.getByTestId("rail-mode-people")).toBeVisible();
+    await expect(page.getByTestId("rail-mode-roles")).toBeVisible();
+    await expect(page.getByTestId("button-change-history")).toBeVisible();
+    await expect(page.getByTestId("button-visibility-settings")).toBeVisible();
+
+    // ── 2. Toggle to Roles, confirm role rows render, switch back ─
+    await page.getByTestId("rail-mode-roles").click();
     await expect(
-      page.locator('[data-testid="card-compare-roles"], [data-testid="people-tab"], table, [role="tabpanel"]').first(),
-    ).toBeVisible();
-    await page.getByTestId("tab-people").click();
-    await expect(page.getByTestId("people-tab")).toBeVisible();
+      page.locator('[data-testid^="rail-item-role-"]').first(),
+      "at least one role row in rail",
+    ).toBeVisible({ timeout: 10_000 });
 
-    // Filter to our target user — name first, then username, then email,
-    // since the PeopleTab.filter handler matches across all of them.
+    await page.getByTestId("rail-mode-people").click();
+    await expect(
+      page.locator('[data-testid^="rail-item-user-"]').first(),
+      "at least one user row in rail",
+    ).toBeVisible({ timeout: 10_000 });
+
+    // ── 3. Search the rail and pick our target user ───────────────
     const filterValue = target.name || target.username || target.email || String(target.id);
-    await page.getByTestId("input-people-filter").fill(filterValue);
-    const userRow = page.getByTestId(`row-user-${target.id}`);
-    await expect(userRow, "filtered user row visible").toBeVisible();
+    await page.getByTestId("rail-search").fill(filterValue);
+    const userRow = page.getByTestId(`rail-item-user-${target.id}`);
+    await expect(userRow, "filtered user row visible in rail").toBeVisible();
+    await userRow.click();
 
-    // Pick the divergent template from the row's apply-template select.
-    const templateSelect = page.getByTestId(`select-template-${target.id}`);
-    await templateSelect.selectOption(APPLY_TEMPLATE_KEY);
+    // ── 4. Right panel mounts ─────────────────────────────────────
+    await expect(page.getByTestId("right-panel-user")).toBeVisible();
+    await expect(page.getByTestId("apply-template-section")).toBeVisible();
+    await expect(page.getByTestId("button-manage-account")).toBeVisible();
 
-    // Dialog opens, diff calculates.
+    // ── 5. Apply template via the right-panel select ──────────────
+    // Look up the human label for APPLY_TEMPLATE_KEY so the test stays
+    // consistent if the env override changes (e.g. CI uses a different key).
+    const tplListRes = await apiCtx.get("/api/admin/role-templates");
+    expect(tplListRes.status(), "GET /api/admin/role-templates should succeed for COO").toBe(200);
+    const tplBody = (await tplListRes.json()) as { templates: { key: string; name: string }[] };
+    const targetTemplate = tplBody.templates.find((t) => t.key === APPLY_TEMPLATE_KEY);
+    expect(
+      targetTemplate,
+      `template key "${APPLY_TEMPLATE_KEY}" should exist in /api/admin/role-templates — set E2E_APPLY_TEMPLATE if your env uses a different key`,
+    ).toBeTruthy();
+    const templateLabel = targetTemplate!.name;
+
+    const applySection = page.getByTestId("apply-template-section");
+    // SearchableSelect renders as a button trigger; click then choose the option.
+    await applySection.locator("button").first().click();
+    await page.getByRole("option", { name: new RegExp(templateLabel, "i") }).first().click();
+
+    // ── 6. Dialog opens, diff calculates ──────────────────────────
     const dialog = page.getByTestId("dialog-apply-template");
     await expect(dialog).toBeVisible();
     await expect(page.getByTestId("text-diff-headline")).toBeVisible();
 
-    const reason = `E2E Task #103 verification @ ${new Date().toISOString()}`;
+    const reason = `E2E Task #107 verification @ ${new Date().toISOString()}`;
     await page.getByTestId("input-apply-reason").fill(reason);
 
     const confirmButton = page.getByTestId("button-confirm-apply");
@@ -207,12 +202,9 @@ test.describe("Admin Roles shell — COO end-to-end (Task #103)", () => {
     const apiRes = await applyResponse;
     expect(apiRes.status(), "apply-template API succeeds").toBe(200);
 
-    // Dialog closes on success.
     await expect(dialog).toBeHidden({ timeout: 10_000 });
 
-    // Audit-log assertion: the freshest template_applied_to_user row must
-    // reference our target user, the divergent template and the reason
-    // we typed in the dialog.
+    // ── 7. Audit-log API assertion ────────────────────────────────
     const auditRes = await apiCtx.get(
       "/api/admin/permission-audit-log?eventType=template_applied_to_user&limit=20",
     );
@@ -231,5 +223,9 @@ test.describe("Admin Roles shell — COO end-to-end (Task #103)", () => {
       match,
       `audit row for user#${target.id} + ${APPLY_TEMPLATE_KEY} + reason "${reason}" should exist`,
     ).toBeTruthy();
+
+    // ── 8. Change history slide-over opens from header button ─────
+    await page.getByTestId("button-change-history").click();
+    await expect(page.getByTestId("audit-log-drawer")).toBeVisible();
   });
 });
