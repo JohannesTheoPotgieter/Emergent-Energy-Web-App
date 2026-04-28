@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,7 +13,7 @@ import {
 import {
   Wrench, ShieldCheck, FileCheck, Clock, CheckCircle2,
   AlertTriangle, ThumbsUp, ThumbsDown, Loader2, ExternalLink,
-  Filter, Inbox,
+  Filter, Inbox, Send,
 } from "lucide-react";
 
 function engFetch(url: string, options?: RequestInit) {
@@ -46,13 +47,32 @@ const TYPE_CONFIG: Record<string, { icon: any; color: string; label: string }> =
   general: { icon: Clock, color: "text-violet-600 bg-violet-50 border-violet-200", label: "General Approval" },
 };
 
-export function ProjectApprovalsTab({ projectName, projectInfoId }: { projectName: string; projectInfoId: number | null }) {
+export function ProjectApprovalsTab({
+  projectName,
+  projectInfoId,
+  onNavigateSubTab,
+}: {
+  projectName: string;
+  projectInfoId: number | null;
+  onNavigateSubTab?: (sub: string) => void;
+}) {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
   const [filter, setFilter] = useState<FilterType>("all");
   const [selectedApproval, setSelectedApproval] = useState<ApprovalItem | null>(null);
   const [comment, setComment] = useState("");
+
+  const openCreateFromQualityFlow = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("dept", "quality");
+    url.searchParams.set("sub", "checklist");
+    url.searchParams.set("qualityFilter", "actionable_for_approval");
+    url.searchParams.set("chip", "create-from-quality");
+    setLocation(url.pathname + url.search);
+    onNavigateSubTab && onNavigateSubTab("checklist");
+  };
 
   const { data: approvals = [], isLoading } = useQuery<ApprovalItem[]>({
     queryKey: ["project-approvals", projectName, projectInfoId],
@@ -219,6 +239,15 @@ export function ProjectApprovalsTab({ projectName, projectInfoId }: { projectNam
             {f === "all" ? "All" : TYPE_CONFIG[f].label}
           </Button>
         ))}
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 text-xs gap-1 border-emerald-300 text-emerald-700 hover:bg-emerald-50 ml-2"
+          onClick={openCreateFromQualityFlow}
+          data-testid="btn-create-from-quality"
+        >
+          <Send className="h-3 w-3" /> Create from Quality items
+        </Button>
         <Badge variant="secondary" className="ml-auto text-xs" data-testid="badge-pending-count">
           {pending.length} pending
         </Badge>
@@ -226,9 +255,18 @@ export function ProjectApprovalsTab({ projectName, projectInfoId }: { projectNam
 
       {pending.length === 0 && resolved.length === 0 && (
         <Card>
-          <CardContent className="py-12 text-center">
-            <Inbox className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+          <CardContent className="py-12 text-center space-y-4">
+            <Inbox className="h-10 w-10 text-muted-foreground mx-auto" />
             <p className="text-sm text-muted-foreground">No approvals or deliverables for this project</p>
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1 mx-auto border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+              onClick={openCreateFromQualityFlow}
+              data-testid="btn-create-from-quality-empty"
+            >
+              <Send className="h-3 w-3" /> Create from Quality items
+            </Button>
           </CardContent>
         </Card>
       )}

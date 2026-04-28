@@ -962,6 +962,7 @@ export default function ProjectDetailPage() {
   const urlSub = searchParams.get("sub");
   const engFilter = searchParams.get("engFilter");
   const qualityFilter = searchParams.get("qualityFilter");
+  const qualityChip = searchParams.get("chip");
   const costFilter = searchParams.get("costFilter");
   const handoverFilter = searchParams.get("handoverFilter");
   const procurementFilter = searchParams.get("procurementFilter");
@@ -1399,7 +1400,7 @@ export default function ProjectDetailPage() {
   const topAlerts: TopAlert[] = ([
     { key: "overdue-plan-tasks" as ProjectSummaryChipKey, label: "Overdue plan tasks", count: overduePlanTasks.length, action: () => setLocation(chipDestinations["overdue-plan-tasks"]?.path || ""), title: chipDestinations["overdue-plan-tasks"]?.title || "Open plan tasks", ariaLabel: chipDestinations["overdue-plan-tasks"]?.ariaLabel || "Open plan tasks" },
     { key: "overdue-engineering-tasks" as ProjectSummaryChipKey, label: "Overdue engineering tasks", count: overdueEngineeringCount, action: () => setLocation(chipDestinations["overdue-engineering-tasks"]?.path || ""), title: chipDestinations["overdue-engineering-tasks"]?.title || "Open overdue engineering tasks", ariaLabel: chipDestinations["overdue-engineering-tasks"]?.ariaLabel || "Open overdue engineering tasks" },
-    { key: "pending-quality-approvals" as ProjectSummaryChipKey, label: "Pending quality approvals", count: Math.max(qualityTotalItems - qualityApprovedItems, 0), action: () => setLocation(chipDestinations["pending-quality-approvals"]?.path || ""), title: chipDestinations["pending-quality-approvals"]?.title || "Open pending quality approvals", ariaLabel: chipDestinations["pending-quality-approvals"]?.ariaLabel || "Open quality approvals" },
+    { key: "pending-quality-approvals" as ProjectSummaryChipKey, label: "Pending quality approvals", count: Number(qualitySummaryLegacy?.governance?.pendingReviewCount ?? 0), action: () => setLocation(chipDestinations["pending-quality-approvals"]?.path || ""), title: chipDestinations["pending-quality-approvals"]?.title || "Open pending quality approvals", ariaLabel: chipDestinations["pending-quality-approvals"]?.ariaLabel || "Open quality approvals" },
     { key: "overdue-supplier-costs" as ProjectSummaryChipKey, label: "Overdue supplier costs", count: unpaidExpenseCount, action: () => setLocation(chipDestinations["overdue-supplier-costs"]?.path || ""), title: chipDestinations["overdue-supplier-costs"]?.title || "Open overdue supplier costs", ariaLabel: chipDestinations["overdue-supplier-costs"]?.ariaLabel || "Open overdue supplier costs" },
   ] as TopAlert[]).filter((alert) => alert.count > 0);
   const collaborationSignals = {
@@ -1724,7 +1725,7 @@ export default function ProjectDetailPage() {
             ))}
           </div>
 
-          {activeSubTab === "checklist" && <QualityTab projectName={projectName} initialStatusFilter={qualityFilter || undefined} />}
+          {activeSubTab === "checklist" && <QualityTab projectName={projectName} projectInfoId={projectInfoId ?? null} initialStatusFilter={qualityFilter || undefined} chip={qualityChip || undefined} onNavigateSubTab={(sub) => setActiveSubTab(sub)} />}
           {activeSubTab === "history" && (
             <div className="space-y-2">
               <WeeklyReviewWizard
@@ -1741,7 +1742,7 @@ export default function ProjectDetailPage() {
               <ProjectHistoryTab projectName={projectName} />
             </div>
           )}
-          {activeSubTab === "approvals" && <ProjectApprovalsTab projectName={projectName} projectInfoId={projectInfoId ?? null} />}
+          {activeSubTab === "approvals" && <ProjectApprovalsTab projectName={projectName} projectInfoId={projectInfoId ?? null} onNavigateSubTab={(sub) => setActiveSubTab(sub)} />}
         </div>
       )}
 

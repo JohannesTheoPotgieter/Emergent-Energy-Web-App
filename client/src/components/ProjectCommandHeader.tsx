@@ -146,6 +146,8 @@ function useAlertStripData(projectInfoId: number | null, projectName?: string) {
       riskLevel?: string;
       pendingReviewCount?: number;
       overdueCount?: number;
+      handoverBlockingItemCount?: number;
+      criticalContributorItemCount?: number;
     };
   }>({
     queryKey: ["alert-quality-summary", projectName],
@@ -179,10 +181,24 @@ function useAlertStripData(projectInfoId: number | null, projectName?: string) {
 
   const gov = qualitySummary.data?.governance;
   const evidenceGaps = gov?.evidenceGapCount ?? 0;
-  const blockedHandover = gov?.blockedHandover === true;
-  const qualityRiskCritical = gov?.riskLevel === "critical";
+  // Use item-level counts that exactly match the QualityTab drill-down sets
+  // so badge counts equal the number of rows shown after click-through.
+  const handoverBlockingItems = gov?.handoverBlockingItemCount ?? 0;
+  const criticalContributorItems = gov?.criticalContributorItemCount ?? 0;
+  // A "Handover Blocked" badge only appears when there is at least one item
+  // contributing to the block; the underlying handover may also be blocked
+  // for non-item reasons but those have their own indicators elsewhere.
+  const handoverBlockedBadgeCount = (gov?.blockedHandover === true) ? handoverBlockingItems : 0;
+  // A "Quality CRITICAL" badge only appears when the risk level is critical
+  // AND there is at least one item-level contributor to drill into; this
+  // keeps the badge count and drill-down list in sync.
+  const qualityCriticalBadgeCount = (gov?.riskLevel === "critical") ? criticalContributorItems : 0;
   const pendingApprovals = gov?.pendingReviewCount ?? 0;
-  const qualityAlertCount = evidenceGaps + (blockedHandover ? 1 : 0) + (qualityRiskCritical ? 1 : 0) + (pendingApprovals > 0 ? 1 : 0);
+  const qualityAlertCount =
+    evidenceGaps +
+    (handoverBlockedBadgeCount > 0 ? 1 : 0) +
+    (qualityCriticalBadgeCount > 0 ? 1 : 0) +
+    (pendingApprovals > 0 ? 1 : 0);
 
   const allLoading = procurement.isLoading && raid.isLoading && changes.isLoading && commissioning.isLoading && qualitySummary.isLoading;
   const allFailed = procurement.isError && raid.isError && changes.isError && commissioning.isError && qualitySummary.isError;
@@ -194,8 +210,8 @@ function useAlertStripData(projectInfoId: number | null, projectName?: string) {
     activeChanges,
     incompleteCommissioning,
     evidenceGaps,
-    blockedHandover,
-    qualityRiskCritical,
+    handoverBlockedBadgeCount,
+    qualityCriticalBadgeCount,
     pendingApprovals,
     qualityAlertCount,
     allLoading,
@@ -212,8 +228,8 @@ function AlertStrip({ projectInfoId, projectName }: { projectInfoId: number | nu
     activeChanges,
     incompleteCommissioning,
     evidenceGaps,
-    blockedHandover,
-    qualityRiskCritical,
+    handoverBlockedBadgeCount,
+    qualityCriticalBadgeCount,
     pendingApprovals,
     qualityAlertCount,
     allLoading,
@@ -241,11 +257,11 @@ function AlertStrip({ projectInfoId, projectName }: { projectInfoId: number | nu
   const badges: { key: ProjectSummaryChipKey; count: number; label: string; icon: React.ReactNode; color: "red" | "amber" }[] = [];
   const destinations = projectName ? buildProjectSummaryChipDestinations(projectName) : {};
 
-  if (blockedHandover) {
-    badges.push({ key: "handover-blocked", count: 1, label: "Handover Blocked", icon: <Ban className="h-3 w-3" />, color: "red" });
+  if (handoverBlockedBadgeCount > 0) {
+    badges.push({ key: "handover-blocked", count: handoverBlockedBadgeCount, label: "Handover Blocked", icon: <Ban className="h-3 w-3" />, color: "red" });
   }
-  if (qualityRiskCritical) {
-    badges.push({ key: "quality-risk", count: 1, label: "Quality CRITICAL", icon: <AlertTriangle className="h-3 w-3" />, color: "red" });
+  if (qualityCriticalBadgeCount > 0) {
+    badges.push({ key: "quality-risk", count: qualityCriticalBadgeCount, label: "Quality CRITICAL", icon: <AlertTriangle className="h-3 w-3" />, color: "red" });
   }
   if (evidenceGaps > 0) {
     badges.push({ key: "evidence-gaps", count: evidenceGaps, label: "Evidence Gaps", icon: <FileWarning className="h-3 w-3" />, color: "red" });

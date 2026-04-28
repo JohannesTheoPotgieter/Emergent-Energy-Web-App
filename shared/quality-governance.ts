@@ -107,6 +107,12 @@ export interface QualityRiskSummary {
     unansweredRiskCount: number;
     triggeredRiskCount: number;
     highTriggeredRiskCount: number;
+    // Item-level counts that match QualityTab drill-down predicates so badge
+    // counts in the alert strip exactly equal the items listed when the user
+    // clicks through.
+    handoverBlockingItemCount: number;
+    criticalContributorItemCount: number;
+    actionableForApprovalCount: number;
   };
 }
 
@@ -259,6 +265,20 @@ export function computeQualityRiskSummary(params: {
   const resubmissionCount = evaluations.filter((item) => item.resubmissionNeeded).length;
   const evidenceGapCount = evaluations.filter((item) => item.evidenceMissing).length;
   const pendingReviewCount = evaluations.filter((item) => item.approvalState === "pending_review").length;
+  // Item-level set counts mirroring QualityTab drill-down predicates.
+  const handoverBlockingItemCount = evaluations.filter(
+    (item) => item.evidenceMissing || item.resubmissionNeeded || item.overdue || item.approvalState === "pending_review",
+  ).length;
+  const criticalContributorItemCount = evaluations.filter(
+    (item) => item.evidenceMissing || item.resubmissionNeeded || item.overdue,
+  ).length;
+  const actionableForApprovalCount = params.items.filter((rawItem, index) => {
+    if (rawItem.isApplicable === false) return false;
+    const evaluation = evaluations[index];
+    if (evaluation.approvalState === "pending_review" || evaluation.approvalState === "approved") return false;
+    if (rawItem.approved) return false;
+    return true;
+  }).length;
   const highWarningCount = warnings.filter((warning) => String(warning.severity ?? "").toLowerCase() === "high").length;
   const openWarningCount = warnings.length;
   const unansweredRiskCount = riskAnswers.filter((answer) => {
@@ -332,6 +352,9 @@ export function computeQualityRiskSummary(params: {
       unansweredRiskCount,
       triggeredRiskCount,
       highTriggeredRiskCount,
+      handoverBlockingItemCount,
+      criticalContributorItemCount,
+      actionableForApprovalCount,
     },
   };
 }
