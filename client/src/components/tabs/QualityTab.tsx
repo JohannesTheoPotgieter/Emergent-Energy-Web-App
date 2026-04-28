@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,7 +14,8 @@ import { Label } from "@/components/ui/label";
 import {
   AlertCircle, CheckCircle, ChevronDown, ChevronRight, FileText, Shield,
   AlertTriangle, Clock, User, Lock, Link2, X, Plus, Trash2, Send, Loader2,
-  CheckCircle2, Upload, Paperclip, ExternalLink, UserPlus, SquareCheck
+  CheckCircle2, Upload, Paperclip, ExternalLink, UserPlus, SquareCheck,
+  Ban, FileWarning, ClipboardCheck, PackagePlus,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { usePermission } from "@/hooks/use-permissions";
@@ -76,8 +78,64 @@ function getStatusConfig(status: string) {
 
 interface QualityTabProps {
   projectName: string;
+  projectInfoId?: number | null;
   initialStatusFilter?: string;
+  chip?: string;
+  onNavigateSubTab?: (sub: string) => void;
 }
+
+const CHIP_DRILLDOWN_CONFIG: Record<string, {
+  label: string;
+  description: string;
+  icon: any;
+  color: string;
+  filter: string;
+  showHandoverPackAction?: boolean;
+}> = {
+  "handover-blocked": {
+    label: "Handover Blocked",
+    description: "QC items contributing to the blocked handover",
+    icon: Ban,
+    color: "border-red-300 bg-red-50 text-red-800",
+    filter: "handover_blocking",
+    showHandoverPackAction: true,
+  },
+  "quality-critical": {
+    label: "Quality CRITICAL",
+    description: "QC items contributing to critical quality risk",
+    icon: AlertTriangle,
+    color: "border-red-300 bg-red-50 text-red-800",
+    filter: "critical_contributors",
+  },
+  "quality-evidence-gaps": {
+    label: "Evidence Gaps",
+    description: "Applicable QC items missing required evidence",
+    icon: FileWarning,
+    color: "border-red-300 bg-red-50 text-red-800",
+    filter: "evidence_gap",
+  },
+  "quality-pending-approvals": {
+    label: "Pending quality approvals",
+    description: "QC items currently awaiting reviewer sign-off",
+    icon: ClipboardCheck,
+    color: "border-amber-300 bg-amber-50 text-amber-800",
+    filter: "review",
+  },
+  "pending-quality-approvals": {
+    label: "Pending quality approvals",
+    description: "QC items currently awaiting reviewer sign-off",
+    icon: ClipboardCheck,
+    color: "border-amber-300 bg-amber-50 text-amber-800",
+    filter: "review",
+  },
+  "create-from-quality": {
+    label: "Create from Quality items",
+    description: "Select applicable QC items not yet sent for review and submit them in bulk",
+    icon: Send,
+    color: "border-blue-300 bg-blue-50 text-blue-800",
+    filter: "actionable_for_approval",
+  },
+};
 
 interface QualityWorkspaceData {
   projectId: number | null;
@@ -147,20 +205,28 @@ interface QualityWorkspaceData {
   }>;
 }
 
-export function QualityTab({ projectName, initialStatusFilter }: QualityTabProps) {
+export function QualityTab({ projectName, projectInfoId, initialStatusFilter, chip, onNavigateSubTab }: QualityTabProps) {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
   const [selectedPhaseId, setSelectedPhaseId] = useState<number | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Record<number, boolean>>({});
   const [expandedItems, setExpandedItems] = useState<Record<number, boolean>>({});
   const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [activeChip, setActiveChip] = useState<string | null>(null);
   const [showRiskQuestions, setShowRiskQuestions] = useState(false);
   const [linkingItemId, setLinkingItemId] = useState<number | null>(null);
   const [linkingPhaseId, setLinkingPhaseId] = useState<number | null>(null);
   const [sendForApprovalItem, setSendForApprovalItem] = useState<number | null>(null);
   const [sfaApprover, setSfaApprover] = useState("");
+  const [bulkApproverDialogOpen, setBulkApproverDialogOpen] = useState(false);
+  const [bulkApprover, setBulkApprover] = useState("");
+  const [bulkSubmitting, setBulkSubmitting] = useState(false);
+  const [createPackDialogOpen, setCreatePackDialogOpen] = useState(false);
+  const [packType, setPackType] = useState<string>("practical_completion");
+  const [creatingPack, setCreatingPack] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [showAddItem, setShowAddItem] = useState<number | null>(null);
   const [newItemName, setNewItemName] = useState("");
@@ -176,6 +242,32 @@ export function QualityTab({ projectName, initialStatusFilter }: QualityTabProps
     if (!initialStatusFilter) return;
     setStatusFilter(initialStatusFilter);
   }, [initialStatusFilter]);
+
+  useEffect(() => {
+    setActiveChip(chip || null);
+  }, [chip]);
+
+  const chipConfig = activeChip ? CHIP_DRILLDOWN_CONFIG[activeChip] : null;
+
+  // When a chip is active, the chip's predicate is the source of truth for
+  // what the user expects to see. Force `statusFilter` to match the chip's
+  // filter on every render so the URL `qualityFilter` and any manual filter
+  // change cannot drift from the chip's set.
+  useEffect(() => {
+    if (chipConfig && chipConfig.filter && statusFilter !== chipConfig.filter) {
+      setStatusFilter(chipConfig.filter);
+    }
+  }, [activeChip, chipConfig, statusFilter]);
+
+  const clearChipFilter = useCallback(() => {
+    setActiveChip(null);
+    setStatusFilter("all");
+    setSelectedItems(new Set());
+    const url = new URL(window.location.href);
+    url.searchParams.delete("chip");
+    url.searchParams.delete("qualityFilter");
+    setLocation(url.pathname + (url.search ? url.search : ""));
+  }, [setLocation]);
 
   const { data: checklistData, isLoading, error } = useQuery({
     queryKey: ["quality-checklist", projectName],
@@ -258,6 +350,10 @@ export function QualityTab({ projectName, initialStatusFilter }: QualityTabProps
     queryClient.invalidateQueries({ queryKey: ["quality-checklists"] });
     queryClient.invalidateQueries({ queryKey: ["quality-all-items"] });
     queryClient.invalidateQueries({ queryKey: ["quality-dashboard"] });
+    queryClient.invalidateQueries({ queryKey: ["alert-quality-summary", projectName] });
+    queryClient.invalidateQueries({ queryKey: ["project-approvals"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/handover/packs"] });
+    queryClient.invalidateQueries({ queryKey: ["handover-packs"] });
   };
 
   const updateItemMutation = useMutation({
@@ -609,6 +705,48 @@ export function QualityTab({ projectName, initialStatusFilter }: QualityTabProps
     t.taskNo && t.highLevelProgramme && t.taskNo !== "No." && t.highLevelProgramme !== "HIGH LEVEL PROGRAMME"
   );
 
+  const buildGovernanceItemLike = (instance: any) => {
+    const ti = (checklistData?.templateItems || []).find((t: any) => t.id === instance.templateItemId);
+    const evidenceCount = (checklistData?.evidence || []).filter((e: any) => e.itemInstanceId === instance.id).length;
+    return {
+      isApplicable: instance.isApplicable,
+      isEvidenceRequired: ti?.isEvidenceRequired ?? false,
+      evidenceCount,
+      approved: instance.approved,
+      qmStatus: instance.qmStatus,
+      approvalState: instance.approvalState,
+      approvalStatus: instance.approvalStatus,
+      endDate: instance.endDate,
+      scheduledDate: instance.scheduledDate,
+    };
+  };
+
+  const isHandoverBlockingItem = (instance: any) => {
+    if (instance.isApplicable === false) return false;
+    const ev = evaluateQualityGovernanceItem(buildGovernanceItemLike(instance));
+    return ev.evidenceMissing || ev.resubmissionNeeded || ev.overdue || ev.approvalState === "pending_review";
+  };
+
+  // Items contributing to CRITICAL risk score are the higher-weighted ones in
+  // computeQualityRiskSummary (overdue x2, resubmission x3, evidence gap x2).
+  // Pending review alone is weighted 1 and does not push the level to critical.
+  const isCriticalContributorItem = (instance: any) => {
+    if (instance.isApplicable === false) return false;
+    const ev = evaluateQualityGovernanceItem(buildGovernanceItemLike(instance));
+    return ev.evidenceMissing || ev.resubmissionNeeded || ev.overdue;
+  };
+
+  // Items the user can actionably submit for approval right now: applicable,
+  // not already approved, and not already pending review. This matches the
+  // server-side `actionableForApprovalCount`.
+  const isActionableForApprovalItem = (instance: any) => {
+    if (instance.isApplicable === false) return false;
+    if (instance.approved) return false;
+    const ev = evaluateQualityGovernanceItem(buildGovernanceItemLike(instance));
+    if (ev.approvalState === "pending_review" || ev.approvalState === "approved") return false;
+    return true;
+  };
+
   const shouldShowItem = (instance: any) => {
     if (statusFilter === "all") return true;
     if (statusFilter === "unassigned") return !instance.primaryAssignment;
@@ -621,8 +759,18 @@ export function QualityTab({ projectName, initialStatusFilter }: QualityTabProps
       return due < new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime();
     }
     if (statusFilter === "evidence_gap") {
+      if (instance.isApplicable === false) return false;
       const ti = (checklistData?.templateItems || []).find((t: any) => t.id === instance.templateItemId);
       return ti?.isEvidenceRequired && (checklistData?.evidence || []).filter((e: any) => e.itemInstanceId === instance.id).length === 0;
+    }
+    if (statusFilter === "handover_blocking") {
+      return isHandoverBlockingItem(instance);
+    }
+    if (statusFilter === "critical_contributors") {
+      return isCriticalContributorItem(instance);
+    }
+    if (statusFilter === "actionable_for_approval") {
+      return isActionableForApprovalItem(instance);
     }
     return getItemQmStatus(instance) === statusFilter;
   };
@@ -651,6 +799,161 @@ export function QualityTab({ projectName, initialStatusFilter }: QualityTabProps
     }
   };
 
+  // Compute drill-down items across ALL phases (matches badge counts)
+  const allInstances: any[] = checklistData?.itemInstances || [];
+  const drillDownInstances = useMemo(() => {
+    if (!chipConfig) return [];
+    const filterValue = chipConfig.filter;
+    return allInstances.filter((instance: any) => {
+      if (filterValue === "evidence_gap") {
+        if (instance.isApplicable === false) return false;
+        const ti = (checklistData?.templateItems || []).find((t: any) => t.id === instance.templateItemId);
+        return ti?.isEvidenceRequired && (checklistData?.evidence || []).filter((e: any) => e.itemInstanceId === instance.id).length === 0;
+      }
+      if (filterValue === "handover_blocking") {
+        return isHandoverBlockingItem(instance);
+      }
+      if (filterValue === "critical_contributors") {
+        return isCriticalContributorItem(instance);
+      }
+      if (filterValue === "actionable_for_approval") {
+        return isActionableForApprovalItem(instance);
+      }
+      if (filterValue === "review") {
+        return getItemQmStatus(instance) === "review";
+      }
+      return false;
+    });
+  }, [chipConfig, allInstances, checklistData?.templateItems, checklistData?.evidence]);
+
+  const drillDownInPhase = useMemo(() => {
+    if (!chipConfig || !selectedPhaseId) return drillDownInstances;
+    const phaseTemplateIds = templateItems
+      .filter((ti: any) => groups.find((g: any) => g.id === ti.templateGroupId)?.templatePhaseId === selectedPhaseId)
+      .map((ti: any) => ti.id);
+    return drillDownInstances.filter((i: any) => phaseTemplateIds.includes(i.templateItemId));
+  }, [chipConfig, drillDownInstances, selectedPhaseId, templateItems, groups]);
+
+  const selectAllVisibleDrillDown = () => {
+    setSelectedItems(new Set(drillDownInPhase.map((i: any) => i.id)));
+  };
+
+  const sendForApprovalRaw = async (itemInstanceId: number, approverUserId: string) => {
+    const formData = new FormData();
+    formData.append("approverUserId", approverUserId);
+    const token = localStorage.getItem("auth_token");
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const res = await fetch(`/api/quality/project/${encodeURIComponent(projectName)}/item/${itemInstanceId}/send-for-approval`, {
+      method: "POST",
+      headers,
+      body: formData,
+      credentials: "include",
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || err.message || "Failed");
+    }
+    return res.json();
+  };
+
+  const handleBulkSendForApproval = async () => {
+    if (!bulkApprover || selectedItems.size === 0) return;
+    const ids = Array.from(selectedItems);
+    setBulkSubmitting(true);
+    let failCount = 0;
+    let successCount = 0;
+    for (const id of ids) {
+      try {
+        // Bypass mutation hook to avoid per-item toasts/invalidations
+        await sendForApprovalRaw(id, bulkApprover);
+        successCount++;
+      } catch {
+        failCount++;
+      }
+    }
+    setBulkSubmitting(false);
+    setBulkApproverDialogOpen(false);
+    setBulkApprover("");
+    setSelectedItems(new Set());
+    invalidateAll();
+    if (failCount > 0) {
+      toast({
+        title: failCount === ids.length ? "Send for approval failed" : "Partial submission",
+        description: `${successCount} submitted, ${failCount} failed. Items with missing evidence cannot be submitted.`,
+        variant: failCount === ids.length ? "destructive" : "default",
+      });
+    } else {
+      toast({
+        title: "Sent for approval",
+        description: `${successCount} item${successCount !== 1 ? "s" : ""} submitted for review. Open the Approvals tab to review them.`,
+      });
+      onNavigateSubTab && setTimeout(() => onNavigateSubTab("approvals"), 800);
+    }
+  };
+
+  const handleCreateHandoverPack = async () => {
+    if (!projectInfoId || selectedItems.size === 0) return;
+    const ids = Array.from(selectedItems);
+    setCreatingPack(true);
+    try {
+      const packRes = await qFetch("/api/handover/packs", {
+        method: "POST",
+        body: JSON.stringify({
+          projectId: projectInfoId,
+          packType: packType,
+          status: "draft",
+          checklistStatus: "in_progress",
+          notes: `Seeded from Quality drill-down (${chipConfig?.label || "Quality items"}) on ${new Date().toLocaleDateString()}`,
+        }),
+      });
+      if (!packRes.ok) {
+        const err = await packRes.json().catch(() => ({}));
+        throw new Error(err.error || err.message || "Failed to create handover pack");
+      }
+      const pack = await packRes.json();
+      let itemFailures = 0;
+      for (const id of ids) {
+        const instance = allInstances.find((i: any) => i.id === id);
+        const ti = templateItems.find((t: any) => t.id === instance?.templateItemId);
+        const itemName = ti?.itemName || `QC item #${id}`;
+        try {
+          const res = await qFetch(`/api/handover/packs/${pack.id}/items`, {
+            method: "POST",
+            body: JSON.stringify({
+              itemName: itemName,
+              category: "inspection",
+              required: true,
+              status: "pending",
+              notes: `Linked QC item instance #${id}`,
+            }),
+          });
+          if (!res.ok) itemFailures++;
+        } catch {
+          itemFailures++;
+        }
+      }
+      setCreatingPack(false);
+      setCreatePackDialogOpen(false);
+      setSelectedItems(new Set());
+      invalidateAll();
+      toast({
+        title: "Handover pack created",
+        description: `Pack created with ${ids.length - itemFailures} of ${ids.length} item${ids.length !== 1 ? "s" : ""}.${itemFailures > 0 ? ` (${itemFailures} failed)` : ""}`,
+      });
+      // Navigate to handover tab
+      const url = new URL(window.location.href);
+      url.searchParams.set("dept", "pm");
+      url.searchParams.set("sub", "handover");
+      url.searchParams.delete("chip");
+      url.searchParams.delete("qualityFilter");
+      setTimeout(() => setLocation(url.pathname + url.search), 600);
+    } catch (err: any) {
+      setCreatingPack(false);
+      toast({ title: "Error", description: err.message || "Failed to create handover pack", variant: "destructive" });
+    }
+  };
+
   const toggleItemSelection = (id: number) => {
     setSelectedItems(prev => {
       const next = new Set(prev);
@@ -671,6 +974,54 @@ export function QualityTab({ projectName, initialStatusFilter }: QualityTabProps
           <span className="text-sm text-blue-700">View-only mode - editing requires Quality Manager access</span>
         </div>
       )}
+
+      {chipConfig && (() => {
+        const ChipIcon = chipConfig.icon;
+        return (
+        <div
+          className={`rounded-lg border px-4 py-3 flex items-center gap-3 flex-wrap ${chipConfig.color}`}
+          data-testid={`drilldown-banner-${activeChip}`}
+        >
+          <ChipIcon className="w-4 h-4 shrink-0" />
+          <div className="flex-1 min-w-[200px]">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-semibold text-sm">Drill-down: {chipConfig.label}</span>
+              <Badge variant="outline" className="bg-white/70 text-[11px]" data-testid={`drilldown-count-total`}>
+                {drillDownInstances.length} total
+              </Badge>
+              {selectedPhaseId && (
+                <Badge variant="outline" className="bg-white/70 text-[11px]" data-testid={`drilldown-count-phase`}>
+                  {drillDownInPhase.length} in this phase
+                </Badge>
+              )}
+            </div>
+            <div className="text-xs opacity-90 mt-0.5">{chipConfig.description}</div>
+          </div>
+          <div className="flex items-center gap-1.5">
+            {drillDownInPhase.length > 0 && canEdit && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs gap-1 bg-white/70"
+                onClick={selectAllVisibleDrillDown}
+                data-testid="btn-drilldown-select-all"
+              >
+                <SquareCheck className="w-3 h-3" /> Select all in this phase
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs gap-1 bg-white/70"
+              onClick={clearChipFilter}
+              data-testid="btn-drilldown-clear"
+            >
+              <X className="w-3 h-3" /> Clear filter
+            </Button>
+          </div>
+        </div>
+        );
+      })()}
 
       <QualityGovernanceSummary
         counts={governanceCounts}
@@ -887,7 +1238,25 @@ export function QualityTab({ projectName, initialStatusFilter }: QualityTabProps
             <div className="rounded-lg border border-blue-200 bg-blue-50/80 px-4 py-3 flex items-center gap-3 flex-wrap" data-testid="bulk-actions-bar">
               <SquareCheck className="w-4 h-4 text-blue-600" />
               <span className="text-sm font-medium text-blue-700">{selectedItems.size} item{selectedItems.size !== 1 ? "s" : ""} selected</span>
-              <div className="flex items-center gap-1.5 ml-auto">
+              <div className="flex items-center gap-1.5 ml-auto flex-wrap">
+                <Button
+                  size="sm"
+                  className="h-7 text-xs bg-amber-500 hover:bg-amber-600 gap-1"
+                  onClick={() => { setBulkApprover(""); setBulkApproverDialogOpen(true); }}
+                  data-testid="bulk-send-for-approval"
+                >
+                  <Send className="w-3 h-3" /> Send for approval
+                </Button>
+                {chipConfig?.showHandoverPackAction && projectInfoId && (
+                  <Button
+                    size="sm"
+                    className="h-7 text-xs bg-red-600 hover:bg-red-700 gap-1"
+                    onClick={() => setCreatePackDialogOpen(true)}
+                    data-testid="bulk-create-handover-pack"
+                  >
+                    <PackagePlus className="w-3 h-3" /> Create handover pack
+                  </Button>
+                )}
                 <Button size="sm" className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700" onClick={() => handleBulkStatusChange("pass")} data-testid="bulk-pass">
                   <CheckCircle className="w-3 h-3 mr-1" /> Pass
                 </Button>
@@ -896,6 +1265,98 @@ export function QualityTab({ projectName, initialStatusFilter }: QualityTabProps
                 <Button size="sm" className="h-7 text-xs" variant="outline" onClick={() => handleBulkStatusChange("na")} data-testid="bulk-na">N/A</Button>
                 <Button size="sm" className="h-7 text-xs" variant="ghost" onClick={() => setSelectedItems(new Set())} data-testid="bulk-clear">
                   <X className="w-3 h-3 mr-1" /> Clear
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {bulkApproverDialogOpen && (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 space-y-2" data-testid="bulk-approver-dialog">
+              <div className="flex items-center gap-2">
+                <Send className="w-4 h-4 text-amber-700" />
+                <span className="text-sm font-semibold text-amber-800">
+                  Send {selectedItems.size} item{selectedItems.size !== 1 ? "s" : ""} for approval
+                </span>
+              </div>
+              <p className="text-xs text-amber-700">
+                Select a reviewer for all selected items. Items with missing required evidence will be skipped.
+              </p>
+              <div className="flex items-center gap-2 flex-wrap">
+                <SearchableSelect
+                  value={bulkApprover}
+                  onValueChange={setBulkApprover}
+                  placeholder="Select reviewer..."
+                  triggerClassName="h-8 text-xs flex-1 min-w-[200px]"
+                  data-testid="select-bulk-approver"
+                  options={teamMembers.map((m: any) => ({ value: String(m.id), label: m.name }))}
+                />
+                <Button
+                  size="sm"
+                  className="h-8 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700"
+                  disabled={!bulkApprover || bulkSubmitting}
+                  onClick={handleBulkSendForApproval}
+                  data-testid="btn-confirm-bulk-approval"
+                >
+                  {bulkSubmitting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />} Submit all
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 text-xs"
+                  onClick={() => { setBulkApproverDialogOpen(false); setBulkApprover(""); }}
+                  data-testid="btn-cancel-bulk-approval"
+                  disabled={bulkSubmitting}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {createPackDialogOpen && (
+            <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 space-y-2" data-testid="create-pack-dialog">
+              <div className="flex items-center gap-2">
+                <PackagePlus className="w-4 h-4 text-red-700" />
+                <span className="text-sm font-semibold text-red-800">
+                  Create handover pack from {selectedItems.size} blocking item{selectedItems.size !== 1 ? "s" : ""}
+                </span>
+              </div>
+              <p className="text-xs text-red-700">
+                A new handover pack will be created and seeded with the selected QC items as checklist entries.
+              </p>
+              <div className="flex items-center gap-2 flex-wrap">
+                <SearchableSelect
+                  value={packType}
+                  onValueChange={setPackType}
+                  placeholder="Pack type..."
+                  triggerClassName="h-8 text-xs min-w-[220px]"
+                  data-testid="select-pack-type"
+                  options={[
+                    { value: "practical_completion", label: "Practical Completion" },
+                    { value: "client_handover", label: "Client Handover" },
+                    { value: "matriarch_handover", label: "Matriarch Handover" },
+                    { value: "pd_to_pm", label: "PD → PM Handover" },
+                    { value: "sseg_closeout", label: "SSEG Closeout" },
+                  ]}
+                />
+                <Button
+                  size="sm"
+                  className="h-8 text-xs gap-1 bg-red-600 hover:bg-red-700"
+                  disabled={creatingPack}
+                  onClick={handleCreateHandoverPack}
+                  data-testid="btn-confirm-create-pack"
+                >
+                  {creatingPack ? <Loader2 className="w-3 h-3 animate-spin" /> : <PackagePlus className="w-3 h-3" />} Create pack
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 text-xs"
+                  onClick={() => setCreatePackDialogOpen(false)}
+                  data-testid="btn-cancel-create-pack"
+                  disabled={creatingPack}
+                >
+                  Cancel
                 </Button>
               </div>
             </div>
