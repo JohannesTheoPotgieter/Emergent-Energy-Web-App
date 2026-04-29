@@ -274,6 +274,13 @@
       "when": 1777100000004,
       "tag": "0037_users_is_active",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1777200000001,
+      "tag": "0038_document_management_v2_taxonomy",
+      "breakpoints": true
     }
   ]
 }
