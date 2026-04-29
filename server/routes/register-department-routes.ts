@@ -188,4 +188,12 @@ export async function registerDepartmentRoutes(app: Express) {
   } catch (err) {
     console.error("[Routes] Failed to register pipedrive-routes:", err);
   }
+
+  // Finance Analysis (Cashflow + COS analytical endpoints)
+  try {
+    const { registerFinanceAnalysisRoutes } = await import("./finance-analysis.routes");
+    registerFinanceAnalysisRoutes(app);
+  } catch (err) {
+    console.error("[Routes] Failed to register finance-analysis.routes:", err);
+  }
 }
