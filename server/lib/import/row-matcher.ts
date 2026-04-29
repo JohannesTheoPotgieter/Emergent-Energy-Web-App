@@ -287,11 +287,20 @@ export const PLAN_COMPARE_FIELDS = [
   "actualStartDate", "actualEndDate", "actualDurationDays",
   "owner", "status", "pctComplete", "expectedPctComplete",
   "comment", "isMilestone", "parentTaskNo",
+  // Tracker columns wired in PR2A (synonym split). Conflict detection
+  // now extends to manual edits on these fields too — previously a user
+  // edit on Lead / Resource 1 / Resource 2 / Tracker Comments / Work Days
+  // would be silently overwritten on re-import because they weren't on
+  // this list.
+  "lead", "resource1", "resource2", "trackerComments", "workDays",
 ];
 
 export const REVENUE_COMPARE_FIELDS = [
   "amountExVat", "vat", "milestonePercent", "invoiceNumber", "invoiceDate",
   "expectedPaymentDate", "paidDate", "inBankDate", "status",
+  // Tracker col R wired in PR2A — manual edits on Milestone Notes &
+  // Comments now produce a conflict instead of being silently lost.
+  "milestoneNotes",
 ];
 
 export const EXPENDITURE_COMPARE_FIELDS = [
@@ -299,6 +308,13 @@ export const EXPENDITURE_COMPARE_FIELDS = [
   "invoiceNumber", "invoiceDate", "approvedDate", "paidDate",
   "forecastPaymentDate", "poNumber", "costCategory", "status",
   "counterpartyName", "revenueRecognitionAmount",
+  // Tracker columns wired in PR2A. Conflict detection extends to:
+  // actual-side QTY / Rate (previously colliding with budget pane),
+  // line comments (col AA), CHECK validation flag (col V),
+  // Saving / Overrun (col Z, occasionally manually overridden), and the
+  // sidebar values USD Exchange Rate / Price per Watt (cols AB-AE).
+  "actualQty", "actualRate", "comments", "checkFlag",
+  "savingOverrun", "usdExchangeRate", "pricePerWatt",
 ];
 
 // ---------------------------------------------------------------------------
