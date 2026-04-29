@@ -90,6 +90,7 @@ The project uses a monorepo structure, separating client (React SPA), server (Ex
 - **Unit & API Tests:** Vitest.
 - **E2E Tests:** Playwright.
 - **Release Gate:** `qa/release-gate.ts` script ensures critical test validation.
+- **Rules-of-Hooks Guard:** `qa/tests/unit/client-rules-of-hooks.test.ts` runs `eslint-plugin-react-hooks` across every file in `client/src` and fails the suite on any `react-hooks/rules-of-hooks` violation. Companion CLI `node script/lint-hooks.mjs` is the same check for local dev. Added 2026-04-29 after a hook-after-early-return regression in `QualityTab.tsx` crashed the `/quality` route with React error #310 ("Rendered more hooks than during the previous render"). The fix hoisted `drillDownInstances` / `drillDownInPhase` (and their helper functions `buildGovernanceItemLike`, `isHandoverBlockingItem`, `isCriticalContributorItem`, `isActionableForApprovalItem`) above the `if (isLoading) return …` / `if (!checklistData) return …` early returns, with each block guarding its own data access via optional chaining so they remain safe to invoke during the loading render.
 
 ### PD Dashboard Features
 - **Pipeline by Phase + Sign-Date Calendar:** `/pd-dashboard` displays a "Pipeline by phase" KPI card and an "Expected sign dates" calendar, both sourced from `GET /api/pd/dashboard/pipeline-by-phase`.
