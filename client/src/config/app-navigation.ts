@@ -155,7 +155,9 @@ export const TOP_SECTIONS: TopSection[] = [
     ]),
     secondary: [
       { label: "Cashflow", path: "/cashflow" },
+      { label: "Cashflow Analysis", path: "/cashflow/analysis" },
       { label: "COS", path: "/cos" },
+      { label: "COS Analysis", path: "/cos/analysis" },
       { label: "Revenue", path: "/revenue-tracker" },
       { label: "QB Throughput", path: "/finance/quickbooks" },
     ],

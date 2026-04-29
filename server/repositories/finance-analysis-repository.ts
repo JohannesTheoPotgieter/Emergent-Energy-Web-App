@@ -43,13 +43,35 @@ export interface OutstandingCostRow {
   invoiceNumber: string | null;
 }
 
-const REVENUE_OUTSTANDING_STATES = ["planned", "invoiced"] as const;
-const COST_OUTSTANDING_STATES = ["planned", "invoiced", "approved"] as const;
+// Match the enum literal types in shared/schema/finance.ts so Drizzle's
+// inArray() inference accepts them without casts.
+const REVENUE_OUTSTANDING_STATES: Array<"planned" | "invoiced"> = ["planned", "invoiced"];
+const COST_OUTSTANDING_STATES: Array<"planned" | "invoiced" | "approved"> = [
+  "planned",
+  "invoiced",
+  "approved",
+];
+const COST_INVOICED_OR_PAID: Array<"invoiced" | "approved" | "paid"> = [
+  "invoiced",
+  "approved",
+  "paid",
+];
 
 // AR — outstanding revenue lines (anything not yet "paid", "in_bank" or "realised").
 export async function listOutstandingRevenueLines(): Promise<OutstandingRevenueRow[]> {
   const projectTermsMap = await loadCustomerTermsByProject();
-  const rows = await db
+  type Row = {
+    id: number;
+    projectId: number;
+    projectName: string;
+    amount: string | null;
+    invoiceDate: string | null;
+    expectedDate: string | null;
+    adminOverride: string | null;
+    status: string;
+    invoiceNumber: string | null;
+  };
+  const rows = (await db
     .select({
       id: normalizedRevenueLines.id,
       projectId: normalizedRevenueLines.projectId,
@@ -66,11 +88,11 @@ export async function listOutstandingRevenueLines(): Promise<OutstandingRevenueR
       and(
         isNull(normalizedRevenueLines.effectiveTo),
         isNull(normalizedRevenueLines.deletedAt),
-        inArray(normalizedRevenueLines.status, REVENUE_OUTSTANDING_STATES as unknown as string[]),
+        inArray(normalizedRevenueLines.status, REVENUE_OUTSTANDING_STATES),
       ),
-    );
+    )) as Row[];
 
-  return rows.map((r) => ({
+  return rows.map((r): OutstandingRevenueRow => ({
     id: r.id,
     projectId: r.projectId,
     projectName: r.projectName,
@@ -87,7 +109,20 @@ export async function listOutstandingRevenueLines(): Promise<OutstandingRevenueR
 // AP — outstanding cost lines (anything not yet "paid").
 export async function listOutstandingCostLines(): Promise<OutstandingCostRow[]> {
   const counterpartyTermsMap = await loadCounterpartyTerms();
-  const rows = await db
+  type Row = {
+    id: number;
+    projectId: number;
+    projectName: string;
+    counterpartyId: number | null;
+    counterpartyName: string | null;
+    amount: string | null;
+    invoiceDate: string | null;
+    forecastDate: string | null;
+    adminOverride: string | null;
+    status: string;
+    invoiceNumber: string | null;
+  };
+  const rows = (await db
     .select({
       id: normalizedCostLines.id,
       projectId: normalizedCostLines.projectId,
@@ -106,11 +141,11 @@ export async function listOutstandingCostLines(): Promise<OutstandingCostRow[]> 
       and(
         isNull(normalizedCostLines.effectiveTo),
         isNull(normalizedCostLines.deletedAt),
-        inArray(normalizedCostLines.status, COST_OUTSTANDING_STATES as unknown as string[]),
+        inArray(normalizedCostLines.status, COST_OUTSTANDING_STATES),
       ),
-    );
+    )) as Row[];
 
-  return rows.map((r) => ({
+  return rows.map((r): OutstandingCostRow => ({
     id: r.id,
     projectId: r.projectId,
     projectName: r.projectName,
@@ -137,10 +172,10 @@ export interface ProjectCosRow {
 }
 
 export async function listProjectCosRows(): Promise<ProjectCosRow[]> {
-  const projects = await db
+  const projects = (await db
     .select({ id: projectInfo.id, projectName: projectInfo.projectName })
     .from(projectInfo)
-    .where(isNull(projectInfo.deletedAt));
+    .where(isNull(projectInfo.deletedAt))) as Array<{ id: number; projectName: string }>;
 
   const planRows = await db
     .select({
@@ -168,7 +203,7 @@ export async function listProjectCosRows(): Promise<ProjectCosRow[]> {
       and(
         isNull(normalizedCostLines.effectiveTo),
         isNull(normalizedCostLines.deletedAt),
-        inArray(normalizedCostLines.status, ["invoiced", "approved", "paid"] as unknown as string[]),
+        inArray(normalizedCostLines.status, COST_INVOICED_OR_PAID),
       ),
     );
 
@@ -193,7 +228,7 @@ export async function listProjectCosRows(): Promise<ProjectCosRow[]> {
     invoicedByProject.set(i.projectId, (invoicedByProject.get(i.projectId) ?? 0) + numeric(i.amount));
   }
 
-  return projects.map((p) => {
+  return projects.map((p): ProjectCosRow => {
     const plan = planByProject.get(p.id);
     const pct = plan && plan.dur > 0 ? plan.weighted / plan.dur : 0;
     return {
@@ -232,7 +267,7 @@ export async function listCounterpartyMonthlyCos(monthsBack: number): Promise<Co
       and(
         isNull(normalizedCostLines.effectiveTo),
         isNull(normalizedCostLines.deletedAt),
-        inArray(normalizedCostLines.status, ["invoiced", "approved", "paid"] as unknown as string[]),
+        inArray(normalizedCostLines.status, COST_INVOICED_OR_PAID),
         sql`${normalizedCostLines.invoiceDate} IS NOT NULL`,
         sql`${normalizedCostLines.invoiceDate} >= ${cutoffIso}`,
       ),
@@ -359,7 +394,8 @@ export interface CashflowSeriesPoint {
 }
 
 export async function listCashflowPointsForRange(fromIso: string, toIso: string): Promise<CashflowSeriesPoint[]> {
-  const rows = await db
+  type Row = { pointDate: string | null; series: string; value: string | null };
+  const rows = (await db
     .select({
       pointDate: cashflowPoints.pointDate,
       series: cashflowPoints.seriesName,
@@ -372,9 +408,9 @@ export async function listCashflowPointsForRange(fromIso: string, toIso: string)
         sql`${cashflowPoints.pointDate} >= ${fromIso}`,
         sql`${cashflowPoints.pointDate} <= ${toIso}`,
       ),
-    );
+    )) as Row[];
 
-  return rows.map((r) => ({
+  return rows.map((r): CashflowSeriesPoint => ({
     pointDate: dateToIso(r.pointDate) ?? "",
     series: r.series,
     value: numeric(r.value),
@@ -406,17 +442,19 @@ async function loadCustomerTermsByProject(): Promise<Map<number, number>> {
     .select({ entityType: paymentTerms.entityType, entityName: paymentTerms.entityName, terms: paymentTerms.termsDays })
     .from(paymentTerms);
 
-  const projects = await db
+  const projects = (await db
     .select({ id: projectInfo.id, name: projectInfo.projectName })
     .from(projectInfo)
-    .where(isNull(projectInfo.deletedAt));
+    .where(isNull(projectInfo.deletedAt))) as Array<{ id: number; name: string }>;
 
-  const projectByName = new Map(projects.map((p) => [p.name.toLowerCase(), p.id] as const));
+  const projectByName = new Map<string, number>(
+    projects.map((p): [string, number] => [p.name.toLowerCase(), p.id]),
+  );
   const map = new Map<number, number>();
   for (const r of rows) {
     if (r.entityType !== "project" || !r.entityName) continue;
     const id = projectByName.get(r.entityName.toLowerCase());
-    if (id != null && Number.isFinite(r.terms)) map.set(id, r.terms);
+    if (id != null && Number.isFinite(Number(r.terms))) map.set(id, Number(r.terms));
   }
   return map;
 }
