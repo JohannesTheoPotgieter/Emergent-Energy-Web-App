@@ -141,10 +141,16 @@ describe("§5 commit-executor — single-project write scope", () => {
     }
   });
 
-  it("missing rows are kept (not deleted) — policy comment is present", () => {
-    // Pins the explicit "keep missing" policy; a future refactor replacing
-    // it with a destructive delete would break this test.
-    expect(src).toMatch(/Policy:\s*keep missing rows\s*[—-]\s*do not delete/i);
+  it("PR2C — missing rows are soft-closed via the hash-cleanup sweep, not hard-deleted", () => {
+    // PR2C replaced the "keep missing rows indefinitely" policy with a
+    // hash-based end-of-pass sweep that soft-closes any active row whose
+    // row_hash is no longer in the workbook. Soft-close means
+    // effectiveTo / deletedAt — never tx.delete().
+    expect(src).toMatch(/end-of-pass cleanup/i);
+    expect(src).toMatch(/seenRowHashes/);
+    expect(src).not.toMatch(/tx\.delete\(workItems\)/);
+    expect(src).not.toMatch(/tx\.delete\(normalizedCostLines\)/);
+    expect(src).not.toMatch(/tx\.delete\(normalizedRevenueLines\)/);
   });
 
   it("temporal tables are soft-closed with effectiveTo, never hard-deleted", () => {

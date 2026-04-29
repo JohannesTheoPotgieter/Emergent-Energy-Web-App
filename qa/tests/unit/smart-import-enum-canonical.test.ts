@@ -202,19 +202,25 @@ describe("smart-import commit write sites never use raw uppercase enum literals"
     // go through the canonical lowercase normalizer. These are the four
     // specific sites that must stay normalized. Any future write that adds
     // a status field to either table should reuse the same helper.
+    //
+    // PR2C — the CHANGED-path field-update vocabulary moved from the v1
+    // `fieldUpdates` map to the merge-engine's `resolved.values` map, but
+    // the normalizer wrapping requirement is unchanged.
     expect(commitExecutor).toContain("status: normalizeCostLineStatus(f.status)");
     expect(commitExecutor).toContain("status: normalizeRevenueLineStatus(f.status)");
     expect(commitExecutor).toContain(
-      "status: normalizeRevenueLineStatus(fieldUpdates.status ?? existingRow.status)",
+      "status: normalizeRevenueLineStatus(resolved.values.status ?? existingRow.status)",
     );
     expect(commitExecutor).toContain(
-      "status: normalizeCostLineStatus(fieldUpdates.status ?? existing.status)",
+      "status: normalizeCostLineStatus(resolved.values.status ?? existing.status)",
     );
 
     // Guard: no raw "status: f.status" or "status: fileRow.status" left
     // in the cost/revenue section writers — every occurrence must be
     // wrapped in a normalizer call.
     expect(commitExecutor).not.toContain("status: f.status,");
+    expect(commitExecutor).not.toContain("status: fileRow.status,");
+    expect(commitExecutor).not.toContain("status: resolved.values.status,");
     // PLAN section still uses fileRow.status || 'Not Started' because
     // work_items.status is a text column, not a pgEnum. That write is
     // exempt by design and is covered by the plan tests.
