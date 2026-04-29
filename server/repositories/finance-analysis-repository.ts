@@ -7,7 +7,7 @@
 // All db.* calls live here per the route → repository discipline in
 // CLAUDE.md. Routes import the named functions below.
 
-import { and, eq, isNull, sql, inArray } from "drizzle-orm";
+import { and, eq, isNull, isNotNull, inArray, gte, lte } from "drizzle-orm";
 import { db } from "../db";
 import {
   normalizedRevenueLines,
@@ -19,6 +19,7 @@ import {
   financialIntegrationRules,
 } from "@shared/schema/finance";
 import { projectInfo, projectRevenueSummary } from "@shared/schema/projects";
+import { diffDays } from "@shared/lib/financeAnalysis";
 
 const COS_TOLERANCE_RULE_TYPE = "cos_tolerance_band_pct";
 
@@ -276,8 +277,8 @@ export async function listCounterpartyMonthlyCos(monthsBack: number): Promise<Co
         isNull(normalizedCostLines.effectiveTo),
         isNull(normalizedCostLines.deletedAt),
         inArray(normalizedCostLines.status, COST_INVOICED_OR_PAID),
-        sql`${normalizedCostLines.invoiceDate} IS NOT NULL`,
-        sql`${normalizedCostLines.invoiceDate} >= ${cutoffIso}`,
+        isNotNull(normalizedCostLines.invoiceDate),
+        gte(normalizedCostLines.invoiceDate, cutoffIso),
       ),
     );
 
@@ -328,9 +329,9 @@ export async function computeDsoDpoTrend(weeks: number): Promise<DsoDpoPoint[]> 
         and(
           isNull(normalizedRevenueLines.effectiveTo),
           isNull(normalizedRevenueLines.deletedAt),
-          sql`${normalizedRevenueLines.paidDate} IS NOT NULL`,
-          sql`${normalizedRevenueLines.invoiceDate} IS NOT NULL`,
-          sql`${normalizedRevenueLines.paidDate} >= ${cutoffIso}`,
+          isNotNull(normalizedRevenueLines.paidDate),
+          isNotNull(normalizedRevenueLines.invoiceDate),
+          gte(normalizedRevenueLines.paidDate, cutoffIso),
         ),
       ),
     db
@@ -340,9 +341,9 @@ export async function computeDsoDpoTrend(weeks: number): Promise<DsoDpoPoint[]> 
         and(
           isNull(normalizedCostLines.effectiveTo),
           isNull(normalizedCostLines.deletedAt),
-          sql`${normalizedCostLines.paidDate} IS NOT NULL`,
-          sql`${normalizedCostLines.invoiceDate} IS NOT NULL`,
-          sql`${normalizedCostLines.paidDate} >= ${cutoffIso}`,
+          isNotNull(normalizedCostLines.paidDate),
+          isNotNull(normalizedCostLines.invoiceDate),
+          gte(normalizedCostLines.paidDate, cutoffIso),
         ),
       ),
   ]);
@@ -379,7 +380,10 @@ function bucketByWeek(
     const paid = parseDate(r.paidDate);
     const invoice = parseDate(r.invoiceDate);
     if (!paid || !invoice) continue;
-    const days = Math.max(0, Math.round((paid.getTime() - invoice.getTime()) / 86_400_000));
+    // diffDays strips time-of-day, so a paid_date stored as a full datetime
+    // (e.g. "2026-04-01T14:30:00Z") doesn't drift by ±1 day vs an invoice_date
+    // stored as a date-only string ("2026-03-01").
+    const days = Math.max(0, diffDays(paid, invoice));
     const dayOfWeek = paid.getUTCDay() || 7;
     const wkStart = new Date(paid);
     wkStart.setUTCDate(paid.getUTCDate() - (dayOfWeek - 1));
@@ -414,8 +418,8 @@ export async function listCashflowPointsForRange(fromIso: string, toIso: string)
     .where(
       and(
         isNull(cashflowPoints.effectiveTo),
-        sql`${cashflowPoints.pointDate} >= ${fromIso}`,
-        sql`${cashflowPoints.pointDate} <= ${toIso}`,
+        gte(cashflowPoints.pointDate, fromIso),
+        lte(cashflowPoints.pointDate, toIso),
       ),
     )) as Row[];
 

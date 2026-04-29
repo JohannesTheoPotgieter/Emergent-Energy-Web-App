@@ -37,7 +37,7 @@ import {
   type AgingBucketCounts,
   type AgingBucketKey,
   type OverdueMode,
-} from "../lib/calculations/financeAnalysis";
+} from "@shared/lib/financeAnalysis";
 
 const FINANCE_ANALYSIS_ROLES = [
   "COO_ADMIN",

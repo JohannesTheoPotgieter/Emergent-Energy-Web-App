@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { FinanceShell } from "@/components/layout/FinanceShell";
 import { Loader2, AlertTriangle, TrendingUp, TrendingDown, Wallet, Users, FlaskConical, RotateCcw, CheckCircle2 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import { bucketForDaysOverdue } from "@/lib/finance-analysis-helpers";
+import { bucketForDaysOverdue } from "@shared/lib/financeAnalysis";
 
 type OverdueMode = "expected_date" | "payment_terms";
 type Side = "ar" | "ap" | "both";

@@ -10,7 +10,7 @@ import {
   rollupAging,
   topNConcentration,
   totalOutstanding,
-} from "../../../server/lib/calculations/financeAnalysis";
+} from "@shared/lib/financeAnalysis";
 
 const TODAY = new Date(Date.UTC(2026, 3, 29)); // 2026-04-29
 

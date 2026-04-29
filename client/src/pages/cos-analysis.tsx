@@ -10,7 +10,7 @@ import { FinanceShell } from "@/components/layout/FinanceShell";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, AlertTriangle, CheckCircle2, MinusCircle, Pencil, FlaskConical, RotateCcw } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import { computeEarnedVsInvoiced } from "@/lib/finance-analysis-helpers";
+import { computeEarnedVsInvoiced } from "@shared/lib/financeAnalysis";
 
 interface EarnedRow {
   projectId: number;
@@ -85,7 +85,13 @@ export default function CosAnalysisPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ bandPct }),
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) {
+        // Surface the structured ApiError message only — not the raw response
+        // body, which can carry server stack/schema details when the
+        // EXPOSE_ERROR_DETAIL flag is on.
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `${res.status} ${res.statusText}`);
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -93,7 +99,11 @@ export default function CosAnalysisPage() {
       setEditing(null);
       qc.invalidateQueries({ queryKey: ["finance", "analysis", "cos", "earned-vs-invoiced"] });
     },
-    onError: (err: any) => toast({ title: "Failed to update", description: String(err?.message ?? err), variant: "destructive" }),
+    onError: (err: Error) => toast({
+      title: "Failed to update tolerance band",
+      description: err.message,
+      variant: "destructive",
+    }),
   });
 
   // Sandbox-aware view rows. When sandbox is OFF this is identity; when ON it
