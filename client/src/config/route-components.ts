@@ -16,8 +16,10 @@ const HandoverLivePage = lazyWithRetry(() => import("@/pages/handover-live"));
 const ProjectLifecyclePage = lazyWithRetry(() => import("@/pages/project-lifecycle"));
 const ProjectsSummary = lazyWithRetry(() => import("@/pages/projects"));
 const CashflowPage = lazyWithRetry(() => import("@/pages/cashflow"));
+const CashflowAnalysisPage = lazyWithRetry(() => import("@/pages/cashflow-analysis"));
 const RevenueTrackerPage = lazyWithRetry(() => import("@/pages/revenue-tracker"));
 const CostTracker = lazyWithRetry(() => import("@/pages/cos"));
+const CosAnalysisPage = lazyWithRetry(() => import("@/pages/cos-analysis"));
 const ProjectDetailPage = lazyWithRetry(() => import("@/pages/project-detail"));
 const ProjectStageGatePage = lazyWithRetry(() => import("@/pages/project-stage-gate"));
 const MyWorkAdminSettingsPage = lazyWithRetry(() => import("@/pages/my-work-admin-settings"));
@@ -145,7 +147,9 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   ProjectDetailPage,
   ProjectStageGatePage,
   CashflowPage,
+  CashflowAnalysisPage,
   CostTracker,
+  CosAnalysisPage,
   RevenueTrackerPage,
   MyWorkAdminSettingsPage,
   QmDashboardPage,

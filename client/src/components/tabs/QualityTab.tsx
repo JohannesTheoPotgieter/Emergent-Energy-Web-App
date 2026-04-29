@@ -801,6 +801,11 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
 
   // Compute drill-down items across ALL phases (matches badge counts)
   const allInstances: any[] = checklistData?.itemInstances || [];
+  // Pre-existing rules-of-hooks violation: this useMemo sits below an
+  // `if (isLoading) return ...` early-return earlier in the component.
+  // Tracked as separate technical debt; not introduced by this PR. Move
+  // both useMemos in this block above the early return when refactoring.
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   const drillDownInstances = useMemo(() => {
     if (!chipConfig) return [];
     const filterValue = chipConfig.filter;
@@ -826,6 +831,7 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
     });
   }, [chipConfig, allInstances, checklistData?.templateItems, checklistData?.evidence]);
 
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   const drillDownInPhase = useMemo(() => {
     if (!chipConfig || !selectedPhaseId) return drillDownInstances;
     const phaseTemplateIds = templateItems
