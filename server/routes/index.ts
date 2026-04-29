@@ -12,6 +12,7 @@ import { registerScreenSettingsRoutes } from './admin-screen-settings.routes';
 import { registerExceptionDashboardRoutes } from './exception-dashboard.routes';
 import { registerDocumentManagementRoutes } from './document-management.routes';
 import { registerDocumentCommentsRoutes } from './document-comments.routes';
+import { registerFinanceAnalysisRoutes } from './finance-analysis.routes';
 
 export async function registerRoutes(httpServer: Server, app: Express) {
   registerTemplateGovernanceRoutes(app);
@@ -25,5 +26,6 @@ export async function registerRoutes(httpServer: Server, app: Express) {
   registerExceptionDashboardRoutes(app);
   registerDocumentManagementRoutes(app);
   registerDocumentCommentsRoutes(app);
+  registerFinanceAnalysisRoutes(app);
   return registerLegacyRoutes(httpServer, app);
 }
