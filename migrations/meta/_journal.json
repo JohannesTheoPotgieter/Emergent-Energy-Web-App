@@ -295,6 +295,13 @@
       "when": 1777467017947,
       "tag": "0042_tracker_replica_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1777473618645,
+      "tag": "0043_tracker_stable_ids_and_merge",
+      "breakpoints": true
     }
   ]
 }

@@ -526,6 +526,22 @@ export const normalizedRevenueLines = pgTable("normalized_revenue_lines", {
   // field name, e.g. { invoice_date: { font: "#FF0000", fill: "#FFFF00" } }.
   // The legacy `*_font_color` text columns are kept for backward compat.
   cellFormat: jsonb("cell_format"),
+  // Stable hash-based row identity. Computed deterministically from the
+  // row's identity columns so the same logical row keeps the same hash
+  // across re-imports, even when its serial id changes. Lookups go through
+  // (project_id, row_hash) which has a partial index for active rows only.
+  rowHash: text("row_hash"),
+  // Snapshot of the row exactly as it was written by the most recent
+  // import. Used as the "common ancestor" in 3-way merge against (a) the
+  // current DB state and (b) the new file row, to distinguish a manual
+  // edit from an import update.
+  importSnapshot: jsonb("import_snapshot"),
+  // Per-field manual-override audit. Keyed by canonical field name with
+  // metadata about who edited what when, e.g.:
+  //   { "milestone_notes": { "value": "...", "editedBy": 7, "editedAt": "..." } }
+  // The 3-way merge consults this map to decide whether to surface a
+  // conflict, accept the file value, or preserve the manual edit.
+  manualOverrides: jsonb("manual_overrides"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   // Soft-delete column (column already present in DB; mirroring it here
@@ -535,7 +551,12 @@ export const normalizedRevenueLines = pgTable("normalized_revenue_lines", {
   effectiveFrom: timestamp("effective_from").notNull().defaultNow(),
   effectiveTo: timestamp("effective_to"),
   snapshotRunId: integer("snapshot_run_id").references(() => smartImportRuns.id, { onDelete: "set null" }),
-});
+}, (table) => ({
+  // Partial index — only active rows participate in stable-ID lookups.
+  rowHashActiveIdx: index("normalized_revenue_lines_row_hash_active_idx")
+    .on(table.projectId, table.rowHash)
+    .where(sql`${table.effectiveTo} IS NULL`),
+}));
 export const insertNormalizedRevenueLineSchema = createInsertSchema(normalizedRevenueLines).omit({ id: true, createdAt: true, updatedAt: true, effectiveFrom: true, effectiveTo: true, amountExVatLegacy: true, vatLegacy: true, deletedAt: true } as any);
 export type InsertNormalizedRevenueLine = z.infer<typeof insertNormalizedRevenueLineSchema>;
 export type NormalizedRevenueLine = typeof normalizedRevenueLines.$inferSelect;
@@ -661,7 +682,16 @@ export const normalizedCostLines = pgTable("normalized_cost_lines", {
   pricePerWatt: decimal("price_per_watt", { precision: 12, scale: 6 }),
   // Per-cell font/fill colour. See cellFormat note on normalizedRevenueLines.
   cellFormat: jsonb("cell_format"),
-});
+  // Stable-ID + 3-way-merge support. See identical fields on
+  // normalizedRevenueLines for documentation of intent and shape.
+  rowHash: text("row_hash"),
+  importSnapshot: jsonb("import_snapshot"),
+  manualOverrides: jsonb("manual_overrides"),
+}, (table) => ({
+  rowHashActiveIdx: index("normalized_cost_lines_row_hash_active_idx")
+    .on(table.projectId, table.rowHash)
+    .where(sql`${table.effectiveTo} IS NULL`),
+}));
 export const insertNormalizedCostLineSchema = createInsertSchema(normalizedCostLines).omit({ id: true, createdAt: true, updatedAt: true, effectiveFrom: true, effectiveTo: true, amountExVatLegacy: true, deletedAt: true } as any);
 export type InsertNormalizedCostLine = z.infer<typeof insertNormalizedCostLineSchema>;
 export type NormalizedCostLine = typeof normalizedCostLines.$inferSelect;
@@ -692,6 +722,11 @@ export const normalizedCostLineActuals = pgTable("normalized_cost_line_actuals",
   checkFlag: text("check_flag"),
   savingOverrun: decimal("saving_overrun", { precision: 15, scale: 2 }),
   cellFormat: jsonb("cell_format"),
+  // Stable-ID + 3-way-merge support. See identical fields on
+  // normalizedRevenueLines for documentation of intent and shape.
+  rowHash: text("row_hash"),
+  importSnapshot: jsonb("import_snapshot"),
+  manualOverrides: jsonb("manual_overrides"),
   sourceSheet: text("source_sheet"),
   sourceRow: integer("source_row"),
   importRunId: integer("import_run_id").notNull().references(() => smartImportRuns.id),
@@ -706,6 +741,9 @@ export const normalizedCostLineActuals = pgTable("normalized_cost_line_actuals",
   costLineIdIdx: index("normalized_cost_line_actuals_cost_line_id_idx").on(table.costLineId),
   projectIdIdx: index("normalized_cost_line_actuals_project_id_idx").on(table.projectId),
   effectiveToIdx: index("normalized_cost_line_actuals_effective_to_idx").on(table.effectiveTo),
+  rowHashActiveIdx: index("normalized_cost_line_actuals_row_hash_active_idx")
+    .on(table.costLineId, table.rowHash)
+    .where(sql`${table.effectiveTo} IS NULL`),
 }));
 export const insertNormalizedCostLineActualSchema = createInsertSchema(normalizedCostLineActuals).omit({ id: true, createdAt: true, updatedAt: true, effectiveFrom: true, effectiveTo: true, deletedAt: true } as any);
 export type InsertNormalizedCostLineActual = z.infer<typeof insertNormalizedCostLineActualSchema>;

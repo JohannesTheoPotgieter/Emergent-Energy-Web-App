@@ -241,12 +241,23 @@ export const workItems = pgTable("work_items", {
   trackerComments: text("tracker_comments"),
   workDays: integer("work_days"),
   cellFormat: jsonb("cell_format"),
+  // Stable-ID + 3-way-merge support. See identical fields on
+  // normalizedRevenueLines (in shared/schema/finance.ts) for full
+  // documentation. work_items uses deletedAt soft-delete (not the
+  // effectiveFrom/To temporal model), so the partial index filters on
+  // deletedAt IS NULL.
+  rowHash: text("row_hash"),
+  importSnapshot: jsonb("import_snapshot"),
+  manualOverrides: jsonb("manual_overrides"),
 }, (table) => ({
   projectIdIdx: index("work_items_project_id_idx").on(table.projectId),
   ownerUserIdIdx: index("work_items_owner_user_id_idx").on(table.ownerUserId),
   statusIdx: index("work_items_status_idx").on(table.status),
   endDateIdx: index("work_items_end_date_idx").on(table.endDate),
   parentIdIdx: index("work_items_parent_id_idx").on(table.parentId),
+  rowHashActiveIdx: index("work_items_row_hash_active_idx")
+    .on(table.projectId, table.rowHash)
+    .where(sql`${table.deletedAt} IS NULL`),
   uqWorkItemsExternalRefActive: uniqueIndex("uq_work_items_external_ref_active")
     .on(table.externalRef)
     .where(sql`${table.deletedAt} IS NULL`),
