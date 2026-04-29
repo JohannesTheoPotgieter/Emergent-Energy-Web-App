@@ -74,6 +74,33 @@ CREATE INDEX IF NOT EXISTS "folder_taxonomy_lifecycle_idx"
   ON "folder_taxonomy" ("lifecycle_mode");
 --> statement-breakpoint
 
+CREATE INDEX IF NOT EXISTS "folder_taxonomy_stage_idx"
+  ON "folder_taxonomy" ("stage_code");
+--> statement-breakpoint
+
+-- Self-referential FK: parent_key -> internal_key. ON DELETE SET NULL so
+-- removing a parent promotes its children to top-level rather than
+-- cascading the whole subtree (admins can re-parent).
+DO $$ BEGIN
+  ALTER TABLE "folder_taxonomy"
+    ADD CONSTRAINT "folder_taxonomy_parent_fk"
+    FOREIGN KEY ("parent_key") REFERENCES "folder_taxonomy"("internal_key") ON DELETE SET NULL;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+--> statement-breakpoint
+
+-- FK to stage_definitions.stage_code (which is unique). Cross-stage rows
+-- have stage_code = NULL.
+DO $$ BEGIN
+  ALTER TABLE "folder_taxonomy"
+    ADD CONSTRAINT "folder_taxonomy_stage_fk"
+    FOREIGN KEY ("stage_code") REFERENCES "stage_definitions"("stage_code") ON DELETE SET NULL;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+--> statement-breakpoint
+
 -- Table: project_folders --------------------------------------------------
 CREATE TABLE IF NOT EXISTS "project_folders" (
   "id" serial PRIMARY KEY NOT NULL,
@@ -171,3 +198,15 @@ ALTER TABLE "managed_documents"
 
 CREATE INDEX IF NOT EXISTS "managed_documents_parent_folder_idx"
   ON "managed_documents" ("parent_folder_id");
+--> statement-breakpoint
+
+-- FK to project_folders.id. ON DELETE SET NULL so deleting a project
+-- folder leaves its files as untracked (still browsable, just no longer
+-- linked to a taxonomy slot) rather than deleting the file rows.
+DO $$ BEGIN
+  ALTER TABLE "managed_documents"
+    ADD CONSTRAINT "managed_documents_parent_folder_fk"
+    FOREIGN KEY ("parent_folder_id") REFERENCES "project_folders"("id") ON DELETE SET NULL;
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;

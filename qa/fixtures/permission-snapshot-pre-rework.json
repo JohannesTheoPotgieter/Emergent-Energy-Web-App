@@ -168,6 +168,30 @@
       "override": false,
       "delete": false
     },
+    "documents": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "documents_admin": {
+      "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "documents_provision": {
+      "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "ee_info": {
       "view": true,
       "create": false,
@@ -1044,6 +1068,30 @@
     },
     "department_scores": {
       "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "documents": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": true,
+      "override": false,
+      "delete": false
+    },
+    "documents_admin": {
+      "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "documents_provision": {
+      "view": false,
       "create": false,
       "edit": false,
       "approve": false,
@@ -1932,6 +1980,30 @@
       "override": true,
       "delete": true
     },
+    "documents": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": true,
+      "override": true,
+      "delete": true
+    },
+    "documents_admin": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": true,
+      "override": false,
+      "delete": false
+    },
+    "documents_provision": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": true,
+      "override": false,
+      "delete": false
+    },
     "ee_info": {
       "view": true,
       "create": true,
@@ -2808,6 +2880,30 @@
     },
     "department_scores": {
       "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "documents": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": true,
+      "override": false,
+      "delete": false
+    },
+    "documents_admin": {
+      "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "documents_provision": {
+      "view": false,
       "create": false,
       "edit": false,
       "approve": false,
@@ -3696,6 +3792,30 @@
       "override": false,
       "delete": false
     },
+    "documents": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": true,
+      "override": false,
+      "delete": false
+    },
+    "documents_admin": {
+      "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "documents_provision": {
+      "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "ee_info": {
       "view": true,
       "create": false,
@@ -4571,6 +4691,30 @@
       "delete": true
     },
     "department_scores": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": true,
+      "override": true,
+      "delete": true
+    },
+    "documents": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": true,
+      "override": true,
+      "delete": true
+    },
+    "documents_admin": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": true,
+      "override": true,
+      "delete": true
+    },
+    "documents_provision": {
       "view": true,
       "create": true,
       "edit": true,
@@ -5460,6 +5604,30 @@
       "override": false,
       "delete": false
     },
+    "documents": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "documents_admin": {
+      "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "documents_provision": {
+      "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "ee_info": {
       "view": true,
       "create": false,
@@ -6336,6 +6504,30 @@
     },
     "department_scores": {
       "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "documents": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": true,
+      "override": false,
+      "delete": false
+    },
+    "documents_admin": {
+      "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "documents_provision": {
+      "view": false,
       "create": false,
       "edit": false,
       "approve": false,
@@ -7224,6 +7416,30 @@
       "override": false,
       "delete": false
     },
+    "documents": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": true,
+      "override": false,
+      "delete": false
+    },
+    "documents_admin": {
+      "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "documents_provision": {
+      "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "ee_info": {
       "view": true,
       "create": false,
@@ -8100,6 +8316,30 @@
     },
     "department_scores": {
       "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "documents": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "documents_admin": {
+      "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "documents_provision": {
+      "view": false,
       "create": false,
       "edit": false,
       "approve": false,
@@ -8988,6 +9228,30 @@
       "override": false,
       "delete": false
     },
+    "documents": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "documents_admin": {
+      "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "documents_provision": {
+      "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "ee_info": {
       "view": true,
       "create": false,
@@ -9864,6 +10128,30 @@
     },
     "department_scores": {
       "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "documents": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": true,
+      "override": false,
+      "delete": false
+    },
+    "documents_admin": {
+      "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "documents_provision": {
+      "view": false,
       "create": false,
       "edit": false,
       "approve": false,
@@ -10752,6 +11040,30 @@
       "override": false,
       "delete": false
     },
+    "documents": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "documents_admin": {
+      "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "documents_provision": {
+      "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "ee_info": {
       "view": true,
       "create": false,
@@ -11628,6 +11940,30 @@
     },
     "department_scores": {
       "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "documents": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "documents_admin": {
+      "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "documents_provision": {
+      "view": false,
       "create": false,
       "edit": false,
       "approve": false,
@@ -12516,6 +12852,30 @@
       "override": false,
       "delete": false
     },
+    "documents": {
+      "view": true,
+      "create": true,
+      "edit": true,
+      "approve": true,
+      "override": false,
+      "delete": false
+    },
+    "documents_admin": {
+      "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "documents_provision": {
+      "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "ee_info": {
       "view": true,
       "create": false,
@@ -13392,6 +13752,30 @@
     },
     "department_scores": {
       "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "documents": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "documents_admin": {
+      "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "documents_provision": {
+      "view": false,
       "create": false,
       "edit": false,
       "approve": false,

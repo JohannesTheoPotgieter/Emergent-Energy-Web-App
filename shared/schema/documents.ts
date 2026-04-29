@@ -19,11 +19,13 @@
 import { sql } from "drizzle-orm";
 import {
   pgTable, text, integer, timestamp, pgEnum, serial, boolean, jsonb, index, uniqueIndex,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
-import { users } from "./users";
+import { users, COMPANY_ROLES } from "./users";
 import { projectInfo } from "./projects";
+import { stageDefinitions, LIFECYCLE_DEPARTMENTS } from "./stage-lifecycle";
 
 // =====================================================================
 // Enums
@@ -315,8 +317,11 @@ export const managedDocuments = pgTable("managed_documents", {
    * path (legacy folders, manually-created subfolders, etc.). Discipline /
    * stage / approval requirements are derived from the parent folder's
    * taxonomy row when set.
+   *
+   * FK is declared lazily via the typed callback below to avoid the
+   * forward reference; `projectFolders` is defined later in this file.
    */
-  parentFolderId: integer("parent_folder_id"),
+  parentFolderId: integer("parent_folder_id").references((): AnyPgColumn => projectFolders.id, { onDelete: "set null" }),
   driveId: text("drive_id").notNull(),
   driveItemId: text("drive_item_id").notNull(),
   name: text("name").notNull(),
@@ -513,11 +518,14 @@ export const MANAGED_DOCUMENT_APPROVAL_TYPE = "managed_document" as const;
 // code changes when the operating model evolves.
 // =====================================================================
 
-export const folderLifecycleModeEnum = pgEnum("folder_lifecycle_mode_enum", [
+export const FOLDER_LIFECYCLE_MODES = [
   "pre_construction",
   "full_lifecycle",
   "both",
-]);
+] as const;
+export type FolderLifecycleMode = (typeof FOLDER_LIFECYCLE_MODES)[number];
+
+export const folderLifecycleModeEnum = pgEnum("folder_lifecycle_mode_enum", FOLDER_LIFECYCLE_MODES);
 
 export const folderTaxonomy = pgTable("folder_taxonomy", {
   id: serial("id").primaryKey(),
@@ -525,19 +533,27 @@ export const folderTaxonomy = pgTable("folder_taxonomy", {
   internalKey: text("internal_key").notNull().unique(),
   /** Folder name as it appears in SharePoint, e.g. '07_Construction'. */
   displayName: text("display_name").notNull(),
-  /** Parent taxonomy key, null for top-level folders. */
-  parentKey: text("parent_key"),
+  /**
+   * Parent taxonomy key, null for top-level folders. Self-referential FK
+   * so the tree cannot point at non-existent parents. ON DELETE SET NULL
+   * promotes orphans to top-level rather than cascading the whole subtree
+   * (admins can re-parent).
+   */
+  parentKey: text("parent_key").references((): AnyPgColumn => folderTaxonomy.internalKey, { onDelete: "set null" }),
   /** Which template tree this folder belongs to. */
   lifecycleMode: folderLifecycleModeEnum("lifecycle_mode").notNull(),
   /**
-   * Owning stage code (FK to stage_definitions.stageCode). Null for
-   * cross-stage folders like 06_HSE, 13_Project Photos.
+   * Owning stage code. FK to stage_definitions.stageCode (which is unique).
+   * Null for cross-stage folders like 06_HSE, 13_Project Photos. ON DELETE
+   * SET NULL keeps the taxonomy intact if a stage code is ever retired.
    */
-  stageCode: text("stage_code"),
+  stageCode: text("stage_code").references(() => stageDefinitions.stageCode, { onDelete: "set null" }),
   /**
    * LIFECYCLE_DEPARTMENTS codes that own this folder (multi-discipline
    * supported — e.g. Construction is owned by ENGINEERING + CONSTRUCTION
    * + QUALITY). Drives which department pages surface this folder.
+   * Validated at the Zod layer below against the LIFECYCLE_DEPARTMENTS
+   * constant so admin-set values can't drift from the canonical list.
    */
   disciplines: jsonb("disciplines").$type<string[]>().notNull().default([]),
   description: text("description"),
@@ -549,10 +565,35 @@ export const folderTaxonomy = pgTable("folder_taxonomy", {
   internalKeyIdx: uniqueIndex("folder_taxonomy_internal_key_idx").on(t.internalKey),
   parentIdx: index("folder_taxonomy_parent_idx").on(t.parentKey),
   lifecycleIdx: index("folder_taxonomy_lifecycle_idx").on(t.lifecycleMode),
+  stageIdx: index("folder_taxonomy_stage_idx").on(t.stageCode),
 }));
 
-export const insertFolderTaxonomySchema = createInsertSchema(folderTaxonomy)
-  .omit({ id: true, createdAt: true, updatedAt: true } as any);
+/** Runtime guard for the disciplines[] JSONB array. */
+const disciplineEnum = z.enum(LIFECYCLE_DEPARTMENTS);
+
+/**
+ * Authored as an explicit z.object rather than `createInsertSchema(...)`
+ * so the Zod refinements (regex, min/max, discipline enum) actually run
+ * at parse time. drizzle-zod 0.7's refinement helper drops typed shape
+ * inference when the column is a typed jsonb array.
+ */
+export const insertFolderTaxonomySchema = z.object({
+  internalKey: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(/^[a-z0-9_/]+$/, {
+      message: "internalKey must be lowercase letters, numbers, underscores, or '/' (path separator).",
+    }),
+  displayName: z.string().min(1).max(256),
+  parentKey: z.string().min(1).max(128).nullable().optional(),
+  lifecycleMode: z.enum(FOLDER_LIFECYCLE_MODES),
+  stageCode: z.string().min(1).max(64).nullable().optional(),
+  disciplines: z.array(disciplineEnum).default([]),
+  description: z.string().max(2048).nullable().optional(),
+  sortOrder: z.number().int().min(0).max(99999).default(0),
+  active: z.boolean().default(true),
+});
 export type InsertFolderTaxonomy = z.infer<typeof insertFolderTaxonomySchema>;
 export type FolderTaxonomy = typeof folderTaxonomy.$inferSelect;
 
@@ -639,21 +680,52 @@ export const documentApprovalRequirements = pgTable("document_approval_requireme
   activeIdx: index("doc_approval_req_active_idx").on(t.active),
 }));
 
-export const insertDocumentApprovalRequirementSchema = createInsertSchema(documentApprovalRequirements)
-  .omit({ id: true, createdAt: true, updatedAt: true } as any);
+/** Runtime guard for the approverRoles[] JSONB array. */
+const approverRoleEnum = z.enum(COMPANY_ROLES);
+
+/** Optional regex string — empty/null allowed, otherwise must compile. */
+const fileNameRegexSchema = z
+  .string()
+  .max(512)
+  .nullish()
+  .refine(
+    (v) => {
+      if (v == null || v === "") return true;
+      try {
+        new RegExp(v, "i");
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    { message: "fileNamePattern must be a valid case-insensitive regex." },
+  );
+
+export const insertDocumentApprovalRequirementSchema = z.object({
+  taxonomyKey: z.string().min(1).max(128),
+  fileNamePattern: fileNameRegexSchema,
+  displayName: z.string().min(1).max(256),
+  description: z.string().max(2048).nullable().optional(),
+  approverRoles: z.array(approverRoleEnum).min(1, {
+    message: "At least one approver role is required.",
+  }),
+  requiresAllApprovers: z.boolean().default(false),
+  extractSpec: z
+    .object({
+      sheetName: z.string().optional(),
+      cells: z.record(z.string(), z.string()).optional(),
+    })
+    .nullable()
+    .optional(),
+  active: z.boolean().default(true),
+  sortOrder: z.number().int().min(0).max(99999).default(0),
+});
 export type InsertDocumentApprovalRequirement = z.infer<typeof insertDocumentApprovalRequirementSchema>;
 export type DocumentApprovalRequirement = typeof documentApprovalRequirements.$inferSelect;
 
 // =====================================================================
-// Type-safe enum exports
+// Type-safe constants
 // =====================================================================
-
-export const FOLDER_LIFECYCLE_MODES = [
-  "pre_construction",
-  "full_lifecycle",
-  "both",
-] as const;
-export type FolderLifecycleMode = (typeof FOLDER_LIFECYCLE_MODES)[number];
 
 /** Permission key for users authorised to provision SharePoint folders. */
 export const PROVISION_DOCUMENTS_PERMISSION = "provision_documents" as const;
