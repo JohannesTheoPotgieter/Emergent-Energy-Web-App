@@ -25,6 +25,13 @@ export interface NormalizationResult {
     sourceSheet: string;
     sourceRow: number;
     subProjectName: string | null;
+    // Tracker columns wired in PR2A — see synonyms.ts comments. All optional;
+    // older trackers without these columns import unchanged.
+    lead: string | null;
+    resource1: string | null;
+    resource2: string | null;
+    trackerComments: string | null;
+    workDays: number | null;
   }>;
   revenueLines: Array<{
     description: string | null;
@@ -47,6 +54,8 @@ export interface NormalizationResult {
     sourceRow: number;
     turnaroundDays: number | null;
     subProjectName: string | null;
+    // Tracker col R — Milestone Notes & Comments (PR2A wiring).
+    milestoneNotes: string | null;
   }>;
   costLines: Array<{
     costCategory: string | null;
@@ -78,6 +87,16 @@ export interface NormalizationResult {
     sourceRow: number;
     turnaroundDays: number | null;
     subProjectName: string | null;
+    // Tracker columns wired in PR2A. Numeric fields stored as text (matches
+    // the existing budgetTotal/amountExVat pattern — actual numeric coercion
+    // happens at insert time).
+    actualQty: string | null;
+    actualRate: string | null;
+    comments: string | null;
+    checkFlag: string | null;
+    savingOverrun: string | null;
+    usdExchangeRate: string | null;
+    pricePerWatt: string | null;
   }>;
   executionPhases: Array<{
     phaseName: string;
@@ -428,6 +447,11 @@ function extractPlanTasks(
     sourceSheet: string;
     sourceRow: number;
     subProjectName: string | null;
+    lead: string | null;
+    resource1: string | null;
+    resource2: string | null;
+    trackerComments: string | null;
+    workDays: number | null;
   }> = [];
   const phases: NormalizationResult["executionPhases"] = [];
 
@@ -443,7 +467,15 @@ function extractPlanTasks(
   const expectedPctCol = getColIndex(mapping, "expected_pct");
   const ownerCol = getColIndex(mapping, "owner");
   const phaseCol = getColIndex(mapping, "phase");
-  const commentCol = getColIndex(mapping, "comment");
+  // The legacy `comment` synonym was renamed to `tracker_comments` in PR1
+  // (it was previously conflated with Resource 2). We resolve via the new
+  // canonical name and dual-write into the existing `comment` field
+  // (preserved for downstream readers) AND the new `trackerComments` field.
+  const commentCol = getColIndex(mapping, "tracker_comments");
+  const leadCol = getColIndex(mapping, "lead");
+  const resource1Col = getColIndex(mapping, "resource_1");
+  const resource2Col = getColIndex(mapping, "resource_2");
+  const workDaysCol = getColIndex(mapping, "work_days");
 
   let currentPhase: string | null = null;
   let currentSubProject: string | null = null;
@@ -510,6 +542,14 @@ function extractPlanTasks(
       else statusStr = "Not Started";
     }
 
+    const trackerCommentVal = commentCol >= 0 ? cellStr(row, commentCol) : null;
+
+    let workDaysVal: number | null = null;
+    if (workDaysCol >= 0 && row[workDaysCol] != null) {
+      const parsed = parseInt(String(row[workDaysCol]));
+      if (!isNaN(parsed)) workDaysVal = parsed;
+    }
+
     rawTasks.push({
       taskName: taskName || taskNo || "",
       taskNo: taskNo || null,
@@ -524,10 +564,19 @@ function extractPlanTasks(
       status: statusStr,
       pctComplete: pctRaw,
       expectedPctComplete: expectedPctRaw,
-      comment: commentCol >= 0 ? cellStr(row, commentCol) : null,
+      // Dual-write tracker comments: keep the existing `comment` field
+      // populated for downstream readers that haven't migrated yet, AND
+      // surface it on the new `trackerComments` field so the executor
+      // can write to work_items.tracker_comments.
+      comment: trackerCommentVal,
       sourceSheet: sheetName,
       sourceRow: i + 1,
       subProjectName: currentSubProject,
+      lead: leadCol >= 0 ? cellStr(row, leadCol) : null,
+      resource1: resource1Col >= 0 ? cellStr(row, resource1Col) : null,
+      resource2: resource2Col >= 0 ? cellStr(row, resource2Col) : null,
+      trackerComments: trackerCommentVal,
+      workDays: workDaysVal,
     });
   }
 
@@ -611,6 +660,8 @@ function extractRevenueLines(
   const plannedDateCol = getColIndex(mapping, "planned_payment_date");
   const paidDateCol = getColIndex(mapping, "payment_received_date");
   const inBankDateCol = getColIndex(mapping, "in_bank_date");
+  // Tracker col R "MILESTONE NOTES & COMMENTS" (PR2A wiring).
+  const milestoneNotesCol = getColIndex(mapping, "milestone_notes");
 
   const invoiceNumbers = new Set<string>();
 
@@ -754,6 +805,8 @@ function extractRevenueLines(
       }
     }
 
+    const milestoneNotes = milestoneNotesCol >= 0 ? cellStr(row, milestoneNotesCol) : null;
+
     lines.push({
       description: milestoneName,
       milestoneName,
@@ -775,6 +828,7 @@ function extractRevenueLines(
       sourceRow: i + 1,
       turnaroundDays,
       subProjectName,
+      milestoneNotes,
     });
   }
 
@@ -825,6 +879,14 @@ function extractCostLines(
   const poCol = getColIndex(mapping, "po_number");
   const actualCosCol = getColIndex(mapping, "actual_cos");
   const revenueRecogCol = getColIndex(mapping, "revenue_recognition_amount");
+  // Tracker columns wired in PR2A — see synonyms.ts comments.
+  const actualQtyCol = getColIndex(mapping, "actual_qty");
+  const actualRateCol = getColIndex(mapping, "actual_rate");
+  const commentsCol = getColIndex(mapping, "comments");
+  const checkFlagCol = getColIndex(mapping, "check_flag");
+  const savingOverrunCol = getColIndex(mapping, "saving_overrun");
+  const usdExchangeRateCol = getColIndex(mapping, "usd_exchange_rate");
+  const pricePerWattCol = getColIndex(mapping, "price_per_watt");
 
   const bm = mapping.budgetMappings;
   const budgetQtyCol = getBudgetColIndex(bm, "budget_qty") >= 0 ? getBudgetColIndex(bm, "budget_qty") : getColIndex(mapping, "budget_qty");
@@ -1114,6 +1176,17 @@ function extractCostLines(
     // Extract sub-project name from category in multi-project trackers
     const subProjectName = isMultiProject ? extractSubProjectFromCategory(rawCategory) : null;
 
+    // PR2A tracker columns. Text fields stored verbatim via cellStr; numeric
+    // fields go through parseNumber so the executor can pass either to a
+    // decimal column without further coercion.
+    const actualQty = actualQtyCol >= 0 ? cellStr(row, actualQtyCol) : null;
+    const actualRate = actualRateCol >= 0 ? cellStr(row, actualRateCol) : null;
+    const comments = commentsCol >= 0 ? cellStr(row, commentsCol) : null;
+    const checkFlag = checkFlagCol >= 0 ? cellStr(row, checkFlagCol) : null;
+    const savingOverrun = savingOverrunCol >= 0 ? parseNumber(row[savingOverrunCol]) : null;
+    const usdExchangeRate = usdExchangeRateCol >= 0 ? parseNumber(row[usdExchangeRateCol]) : null;
+    const pricePerWatt = pricePerWattCol >= 0 ? parseNumber(row[pricePerWattCol]) : null;
+
     lines.push({
       costCategory: category,
       categoryKey,
@@ -1143,6 +1216,13 @@ function extractCostLines(
       sourceRow: i + 1,
       turnaroundDays,
       subProjectName,
+      actualQty,
+      actualRate,
+      comments,
+      checkFlag,
+      savingOverrun,
+      usdExchangeRate,
+      pricePerWatt,
     });
   }
 

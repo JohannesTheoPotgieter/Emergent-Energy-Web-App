@@ -299,6 +299,12 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
           sourceSheet: fileRow.sourceSheet || null,
           subProjectName: fileRow.subProjectName || null,
           externalRef: canonicalRef,
+          // PR2A tracker columns (see normalizer.ts).
+          lead: fileRow.lead ?? null,
+          resource1: fileRow.resource1 ?? null,
+          resource2: fileRow.resource2 ?? null,
+          trackerComments: fileRow.trackerComments ?? null,
+          workDays: fileRow.workDays ?? null,
         }).where(eq(workItems.id, existingId));
         updatedIds.push(existingId);
         counts.updated++;
@@ -338,6 +344,12 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
         importRunId: runId,
         subProjectName: fileRow.subProjectName || null,
         createdBy: userId || 1,
+        // PR2A tracker columns (see normalizer.ts).
+        lead: fileRow.lead ?? null,
+        resource1: fileRow.resource1 ?? null,
+        resource2: fileRow.resource2 ?? null,
+        trackerComments: fileRow.trackerComments ?? null,
+        workDays: fileRow.workDays ?? null,
       };
 
       const [inserted] = await tx
@@ -399,6 +411,16 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
         // unexpected legacy state.
         wiUpdates.externalRef = await resolveSafeRef(canonicalRef, existingId, mr.businessKey.key);
       }
+
+      // PR2A tracker columns. These are additive fields not yet covered by
+      // the conflict engine's compare-list, so we always carry the file
+      // value through on a CHANGED row (matching the existing pattern for
+      // other passthrough fields like sourceRow / subProjectName).
+      if (fileRow.lead !== undefined) wiUpdates.lead = fileRow.lead ?? null;
+      if (fileRow.resource1 !== undefined) wiUpdates.resource1 = fileRow.resource1 ?? null;
+      if (fileRow.resource2 !== undefined) wiUpdates.resource2 = fileRow.resource2 ?? null;
+      if (fileRow.trackerComments !== undefined) wiUpdates.trackerComments = fileRow.trackerComments ?? null;
+      if (fileRow.workDays !== undefined) wiUpdates.workDays = fileRow.workDays ?? null;
 
       await tx.update(workItems).set(wiUpdates).where(eq(workItems.id, existingId));
       updatedIds.push(existingId);
@@ -616,6 +638,8 @@ export async function writeRevenueIncremental(ctx: TemporalWriteContext): Promis
         importRunId: runId,
         turnaroundDays: f.turnaroundDays,
         subProjectName: f.subProjectName || null,
+        // PR2A tracker column.
+        milestoneNotes: f.milestoneNotes ?? null,
         effectiveFrom: commitTimestamp,
         effectiveTo: null,
         snapshotRunId: runId,
@@ -709,6 +733,10 @@ export async function writeRevenueIncremental(ctx: TemporalWriteContext): Promis
         importRunId: runId,
         turnaroundDays: fileRow.turnaroundDays,
         subProjectName: existingRow.subProjectName,
+        // PR2A tracker column. Prefer the file value (additive field, not in
+        // conflict-engine compare list), falling back to the existing value
+        // so we never null out a previously-imported note.
+        milestoneNotes: fileRow.milestoneNotes ?? existingRow.milestoneNotes ?? null,
         effectiveFrom: commitTimestamp,
         effectiveTo: null,
         snapshotRunId: runId,
@@ -943,6 +971,16 @@ export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Pr
         revenueRecognitionAmount: f.revenueRecognitionAmount || null,
         forecastPaymentDate: f.forecastPaymentDate || null,
         subProjectName: f.subProjectName || null,
+        // PR2A tracker columns. Text fields stored verbatim; numeric fields
+        // are passed through the same `?? null` pattern so a missing value
+        // becomes a NULL in the decimal column rather than an empty string.
+        actualQty: f.actualQty ?? null,
+        actualRate: f.actualRate ?? null,
+        comments: f.comments ?? null,
+        checkFlag: f.checkFlag ?? null,
+        savingOverrun: f.savingOverrun ?? null,
+        usdExchangeRate: f.usdExchangeRate ?? null,
+        pricePerWatt: f.pricePerWatt ?? null,
         effectiveFrom: commitTimestamp,
         effectiveTo: null,
         snapshotRunId: runId,
@@ -1056,6 +1094,17 @@ export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Pr
         revenueRecognitionAmount: fieldUpdates.revenueRecognitionAmount ?? existing.revenueRecognitionAmount,
         forecastPaymentDate: fieldUpdates.forecastPaymentDate ?? existing.forecastPaymentDate,
         subProjectName: existing.subProjectName,
+        // PR2A tracker columns. Additive fields not in conflict-engine compare
+        // list — prefer the file value, falling back to the existing row so
+        // we never null out a previously-imported value when the workbook
+        // happens to omit the column.
+        actualQty: fileRow.actualQty ?? existing.actualQty ?? null,
+        actualRate: fileRow.actualRate ?? existing.actualRate ?? null,
+        comments: fileRow.comments ?? existing.comments ?? null,
+        checkFlag: fileRow.checkFlag ?? existing.checkFlag ?? null,
+        savingOverrun: fileRow.savingOverrun ?? existing.savingOverrun ?? null,
+        usdExchangeRate: fileRow.usdExchangeRate ?? existing.usdExchangeRate ?? null,
+        pricePerWatt: fileRow.pricePerWatt ?? existing.pricePerWatt ?? null,
         // Carry forward app-owned fields (admin overrides survive re-imports
         // for CHANGED rows just as they do for the NEW key-shift path).
         noRevenueLinked: existing.noRevenueLinked,
