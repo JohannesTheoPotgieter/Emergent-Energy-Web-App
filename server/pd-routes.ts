@@ -439,7 +439,9 @@ export function registerPdRoutes(app: Express) {
         .orderBy(asc(engineeringTickets.id));
 
       const projectNames = Array.from(new Set(
-        rows.map(r => r.projectName || r.projectSiteName).filter(Boolean) as string[]
+        rows.map((r: { projectName: string | null; projectSiteName: string | null }) =>
+          r.projectName || r.projectSiteName
+        ).filter(Boolean) as string[]
       ));
 
       res.json({
