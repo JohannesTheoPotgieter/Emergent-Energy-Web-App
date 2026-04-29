@@ -4,11 +4,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { FinanceShell } from "@/components/layout/FinanceShell";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, AlertTriangle, CheckCircle2, MinusCircle, Pencil } from "lucide-react";
+import { Loader2, AlertTriangle, CheckCircle2, MinusCircle, Pencil, FlaskConical, RotateCcw } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { computeEarnedVsInvoiced } from "@/lib/finance-analysis-helpers";
 
 interface EarnedRow {
   projectId: number;
@@ -52,6 +54,15 @@ export default function CosAnalysisPage() {
   const qc = useQueryClient();
   const [editing, setEditing] = useState<{ projectId: number; bandPct: number } | null>(null);
 
+  // Sandbox: client-side what-if. Override pctComplete, invoiced amount, or
+  // tolerance band per project. Nothing is written to the DB.
+  type SandboxOverride = { pctComplete?: number; invoiced?: number; bandPct?: number };
+  const [sandboxOn, setSandboxOn] = useState(false);
+  const [overrides, setOverrides] = useState<Record<number, SandboxOverride>>({});
+  const setOverride = (projectId: number, patch: SandboxOverride) =>
+    setOverrides((prev) => ({ ...prev, [projectId]: { ...prev[projectId], ...patch } }));
+  const resetSandbox = () => setOverrides({});
+
   const earned = useQuery<EarnedResponse>({
     queryKey: ["finance", "analysis", "cos", "earned-vs-invoiced"],
     queryFn: () => fetch("/api/finance/analysis/cos/earned-vs-invoiced").then((r) => r.json()),
@@ -80,9 +91,37 @@ export default function CosAnalysisPage() {
     onError: (err: any) => toast({ title: "Failed to update", description: String(err?.message ?? err), variant: "destructive" }),
   });
 
-  const summary = useMemo(() => {
+  // Sandbox-aware view rows. When sandbox is OFF this is identity; when ON it
+  // re-runs computeEarnedVsInvoiced() with the user's overrides applied.
+  const earnedView: EarnedRow[] = useMemo(() => {
     const rows = earned.data?.rows ?? [];
-    const totals = rows.reduce(
+    if (!sandboxOn) return rows;
+    return rows.map((r) => {
+      const ov = overrides[r.projectId] ?? {};
+      const pct = ov.pctComplete ?? r.pctComplete;
+      const invoiced = ov.invoiced ?? r.invoiced;
+      const band = ov.bandPct ?? r.toleranceBandPct;
+      const ev = computeEarnedVsInvoiced({
+        plannedExpenditure: r.plannedExpenditure,
+        pctComplete: pct,
+        invoicedToDate: invoiced,
+        toleranceBandPct: band,
+      });
+      return {
+        ...r,
+        pctComplete: pct,
+        invoiced,
+        toleranceBandPct: band,
+        earned: ev.earned,
+        variance: ev.variance,
+        variancePct: ev.variancePct,
+        flag: ev.flag,
+      };
+    });
+  }, [earned.data, sandboxOn, overrides]);
+
+  const summary = useMemo(() => {
+    return earnedView.reduce(
       (acc, r) => ({
         earned: acc.earned + r.earned,
         invoiced: acc.invoiced + r.invoiced,
@@ -91,8 +130,7 @@ export default function CosAnalysisPage() {
       }),
       { earned: 0, invoiced: 0, over: 0, under: 0 },
     );
-    return totals;
-  }, [earned.data]);
+  }, [earnedView]);
 
   // Pivot counterparty trend → wide format for the chart.
   const trendChartData = useMemo(() => {
@@ -121,14 +159,36 @@ export default function CosAnalysisPage() {
 
   return (
     <FinanceShell>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
         <div>
           <h2 className="text-xl font-semibold tracking-tight" data-testid="page-title">COS Analysis</h2>
           <p className="text-sm text-muted-foreground">
             Compares COS invoices against project plan progress. Per-project tolerance band determines the "in line" zone.
           </p>
         </div>
+        <div className="flex items-center gap-2 border-l pl-3">
+          <FlaskConical className="w-4 h-4 text-amber-600" />
+          <span className="text-xs">Sandbox</span>
+          <Switch checked={sandboxOn} onCheckedChange={setSandboxOn} data-testid="sandbox-toggle" />
+        </div>
       </div>
+
+      {sandboxOn && (
+        <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950 dark:border-amber-700 p-3" data-testid="sandbox-banner">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-2 text-sm">
+              <FlaskConical className="w-4 h-4 text-amber-600" />
+              <strong>Sandbox mode</strong>
+              <span className="text-muted-foreground">
+                Hypothetical: {Object.keys(overrides).length} project{Object.keys(overrides).length === 1 ? "" : "s"} overridden. Nothing is saved.
+              </span>
+            </div>
+            <Button size="sm" variant="ghost" onClick={resetSandbox} data-testid="sandbox-reset">
+              <RotateCcw className="w-3 h-3 mr-1" /> Reset
+            </Button>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
         <KpiCard title="Total earned (to date)" value={formatZar(summary.earned)} loading={earned.isLoading} />
@@ -154,7 +214,7 @@ export default function CosAnalysisPage() {
         <CardContent className="overflow-x-auto">
           {earned.isLoading || !earned.data ? (
             <Loader2 className="w-4 h-4 animate-spin" />
-          ) : earned.data.rows.length === 0 ? (
+          ) : earnedView.length === 0 ? (
             <p className="text-sm text-muted-foreground">No active projects to analyse.</p>
           ) : (
             <Table>
@@ -162,31 +222,71 @@ export default function CosAnalysisPage() {
                 <TableRow>
                   <TableHead>Project</TableHead>
                   <TableHead className="text-right">Planned COS</TableHead>
-                  <TableHead className="text-right">% Complete</TableHead>
+                  <TableHead className="text-right">% Complete{sandboxOn && <span className="text-amber-600"> (sim)</span>}</TableHead>
                   <TableHead className="text-right">Earned</TableHead>
-                  <TableHead className="text-right">Invoiced</TableHead>
+                  <TableHead className="text-right">Invoiced{sandboxOn && <span className="text-amber-600"> (sim)</span>}</TableHead>
                   <TableHead className="text-right">Variance</TableHead>
                   <TableHead className="text-right">Variance %</TableHead>
-                  <TableHead>Tolerance ±</TableHead>
+                  <TableHead>Tolerance ±{sandboxOn && <span className="text-amber-600"> (sim)</span>}</TableHead>
                   <TableHead>Flag</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {earned.data.rows
+                {[...earnedView]
                   .sort((a, b) => Math.abs(b.variancePct) - Math.abs(a.variancePct))
                   .map((row) => (
                     <TableRow key={row.projectId} data-testid={`cos-row-${row.projectId}`}>
                       <TableCell className="font-medium">{row.projectName}</TableCell>
                       <TableCell className="text-right font-mono">{formatZar(row.plannedExpenditure)}</TableCell>
-                      <TableCell className="text-right">{formatPct(row.pctComplete)}</TableCell>
+                      <TableCell className="text-right">
+                        {sandboxOn ? (
+                          <Input
+                            type="number"
+                            step={1}
+                            min={0}
+                            max={100}
+                            className="w-20 h-7 ml-auto text-right"
+                            value={Math.round(row.pctComplete * 100)}
+                            onChange={(e) => setOverride(row.projectId, { pctComplete: Number(e.target.value) / 100 })}
+                            data-testid={`sandbox-pct-${row.projectId}`}
+                          />
+                        ) : (
+                          formatPct(row.pctComplete)
+                        )}
+                      </TableCell>
                       <TableCell className="text-right font-mono">{formatZar(row.earned)}</TableCell>
-                      <TableCell className="text-right font-mono">{formatZar(row.invoiced)}</TableCell>
+                      <TableCell className="text-right font-mono">
+                        {sandboxOn ? (
+                          <Input
+                            type="number"
+                            step={1000}
+                            min={0}
+                            className="w-32 h-7 ml-auto text-right"
+                            value={Math.round(row.invoiced)}
+                            onChange={(e) => setOverride(row.projectId, { invoiced: Number(e.target.value) })}
+                            data-testid={`sandbox-invoiced-${row.projectId}`}
+                          />
+                        ) : (
+                          formatZar(row.invoiced)
+                        )}
+                      </TableCell>
                       <TableCell className={`text-right font-mono ${row.variance > 0 ? "text-rose-600" : row.variance < 0 ? "text-amber-600" : ""}`}>
                         {formatZar(row.variance)}
                       </TableCell>
                       <TableCell className="text-right">{formatPct(row.variancePct)}</TableCell>
                       <TableCell>
-                        {editing?.projectId === row.projectId ? (
+                        {sandboxOn ? (
+                          <Input
+                            type="number"
+                            step={1}
+                            min={0}
+                            max={100}
+                            className="w-16 h-7"
+                            value={row.toleranceBandPct}
+                            onChange={(e) => setOverride(row.projectId, { bandPct: Number(e.target.value) })}
+                            data-testid={`sandbox-band-${row.projectId}`}
+                          />
+                        ) : editing?.projectId === row.projectId ? (
                           <div className="flex items-center gap-1">
                             <Input
                               type="number"

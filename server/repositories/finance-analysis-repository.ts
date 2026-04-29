@@ -339,8 +339,9 @@ export async function computeDsoDpoTrend(weeks: number): Promise<DsoDpoPoint[]> 
       ),
   ]);
 
-  const dsoBuckets = bucketByWeek(paidRev, monday, weeks);
-  const dpoBuckets = bucketByWeek(paidCost, monday, weeks);
+  type PaidRow = { paidDate: string | null; invoiceDate: string | null };
+  const dsoBuckets = bucketByWeek(paidRev as PaidRow[], monday, weeks);
+  const dpoBuckets = bucketByWeek(paidCost as PaidRow[], monday, weeks);
 
   const out: DsoDpoPoint[] = [];
   for (let i = 0; i < weeks; i += 1) {
@@ -361,7 +362,7 @@ export async function computeDsoDpoTrend(weeks: number): Promise<DsoDpoPoint[]> 
 }
 
 function bucketByWeek(
-  rows: Array<{ paidDate: any; invoiceDate: any }>,
+  rows: Array<{ paidDate: string | Date | null; invoiceDate: string | Date | null }>,
   thisMonday: Date,
   weeks: number,
 ): Map<string, { sum: number; count: number }> {

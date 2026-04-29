@@ -3,11 +3,14 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { FinanceShell } from "@/components/layout/FinanceShell";
-import { Loader2, AlertTriangle, TrendingUp, TrendingDown, Wallet, Users } from "lucide-react";
+import { Loader2, AlertTriangle, TrendingUp, TrendingDown, Wallet, Users, FlaskConical, RotateCcw, CheckCircle2 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { bucketForDaysOverdue } from "@/lib/finance-analysis-helpers";
 
 type OverdueMode = "expected_date" | "payment_terms";
 type Side = "ar" | "ap" | "both";
@@ -79,6 +82,19 @@ export default function CashflowAnalysisPage() {
   const [mode, setMode] = useState<OverdueMode>("expected_date");
   const [side, setSide] = useState<Side>("both");
 
+  // Sandbox: client-side simulation. Never writes to the DB.
+  // - paidIds: invoices the user has hypothetically marked paid.
+  // - dateShiftDays: shift every due date by N days (positive = later → less overdue).
+  const [sandboxOn, setSandboxOn] = useState(false);
+  const [paidIds, setPaidIds] = useState<Set<string>>(new Set());
+  const [dateShiftDays, setDateShiftDays] = useState(0);
+  const togglePaid = (key: string) => setPaidIds((prev) => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+  const resetSandbox = () => { setPaidIds(new Set()); setDateShiftDays(0); };
+
   const aging = useQuery<AgingResponse>({
     queryKey: ["finance", "analysis", "cashflow", "aging", mode],
     queryFn: () => fetch(`/api/finance/analysis/cashflow/aging?mode=${mode}`).then((r) => r.json()),
@@ -109,6 +125,34 @@ export default function CashflowAnalysisPage() {
     queryFn: () => fetch("/api/finance/analysis/cashflow/forecast-actual").then((r) => r.json()),
   });
 
+  // Sandbox-aware derived rows. When sandbox is OFF this is identity; when ON it
+  // (a) drops rows the user has marked paid and (b) re-applies dateShiftDays.
+  const overdueRowsView = useMemo(() => {
+    const raw = overdue.data?.rows ?? [];
+    if (!sandboxOn) return raw;
+    return raw
+      .filter((r) => !paidIds.has(`${r.kind}-${r.id}`))
+      .map((r) => {
+        const adjusted = Math.max(0, r.daysOverdue - dateShiftDays);
+        return { ...r, daysOverdue: adjusted, bucket: bucketForDaysOverdue(adjusted) };
+      })
+      .filter((r) => r.daysOverdue > 0)
+      .sort((a, b) => b.daysOverdue - a.daysOverdue);
+  }, [overdue.data, sandboxOn, paidIds, dateShiftDays]);
+
+  const atRiskRowsView = useMemo(() => {
+    const raw = atRisk.data?.rows ?? [];
+    if (!sandboxOn) return raw;
+    return raw
+      .filter((r) => !paidIds.has(`ar-${r.id}`))
+      .map((r) => {
+        const adjusted = Math.max(0, r.daysOverdue - dateShiftDays);
+        return { ...r, daysOverdue: adjusted, riskScore: r.amount * Math.log(1 + adjusted) };
+      })
+      .filter((r) => r.daysOverdue > 0)
+      .sort((a, b) => b.riskScore - a.riskScore);
+  }, [atRisk.data, sandboxOn, paidIds, dateShiftDays]);
+
   const dsoChartData = useMemo(() => dso.data?.points ?? [], [dso.data]);
   const forecastChartData = useMemo(() => {
     if (!forecast.data) return [];
@@ -123,21 +167,60 @@ export default function CashflowAnalysisPage() {
 
   return (
     <FinanceShell>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
         <div>
           <h2 className="text-xl font-semibold tracking-tight" data-testid="page-title">Cashflow Analysis</h2>
           <p className="text-sm text-muted-foreground">AR/AP aging, overdue, DSO/DPO, and concentration risk.</p>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">Overdue mode:</span>
-          <Tabs value={mode} onValueChange={(v) => setMode(v as OverdueMode)}>
-            <TabsList>
-              <TabsTrigger value="expected_date" data-testid="tab-mode-expected">Expected date</TabsTrigger>
-              <TabsTrigger value="payment_terms" data-testid="tab-mode-terms">Payment terms</TabsTrigger>
-            </TabsList>
-          </Tabs>
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Overdue mode:</span>
+            <Tabs value={mode} onValueChange={(v) => setMode(v as OverdueMode)}>
+              <TabsList>
+                <TabsTrigger value="expected_date" data-testid="tab-mode-expected">Expected date</TabsTrigger>
+                <TabsTrigger value="payment_terms" data-testid="tab-mode-terms">Payment terms</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
+          <div className="flex items-center gap-2 border-l pl-3">
+            <FlaskConical className="w-4 h-4 text-amber-600" />
+            <span className="text-xs">Sandbox</span>
+            <Switch checked={sandboxOn} onCheckedChange={setSandboxOn} data-testid="sandbox-toggle" />
+          </div>
         </div>
       </div>
+
+      {sandboxOn && (
+        <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950 dark:border-amber-700 p-3" data-testid="sandbox-banner">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-2 text-sm">
+              <FlaskConical className="w-4 h-4 text-amber-600" />
+              <strong>Sandbox mode</strong>
+              <span className="text-muted-foreground">
+                Hypothetical: {paidIds.size} marked paid, due dates shifted +{dateShiftDays}d. Nothing is saved.
+              </span>
+            </div>
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-2 min-w-[260px]">
+                <span className="text-xs whitespace-nowrap">Shift due dates by</span>
+                <Slider
+                  value={[dateShiftDays]}
+                  min={0}
+                  max={90}
+                  step={1}
+                  onValueChange={(v) => setDateShiftDays(v[0] ?? 0)}
+                  className="w-32"
+                  data-testid="sandbox-slider-shift"
+                />
+                <span className="text-xs font-mono w-10 text-right">{dateShiftDays}d</span>
+              </div>
+              <Button size="sm" variant="ghost" onClick={resetSandbox} data-testid="sandbox-reset">
+                <RotateCcw className="w-3 h-3 mr-1" /> Reset
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Headline cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
@@ -196,8 +279,8 @@ export default function CashflowAnalysisPage() {
         <CardContent className="overflow-x-auto">
           {overdue.isLoading || !overdue.data ? (
             <Loader2 className="w-4 h-4 animate-spin" />
-          ) : overdue.data.rows.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No overdue items 🎉</p>
+          ) : overdueRowsView.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{sandboxOn ? "Sandbox cleared all overdue items 🎉" : "No overdue items 🎉"}</p>
           ) : (
             <Table>
               <TableHeader>
@@ -209,10 +292,11 @@ export default function CashflowAnalysisPage() {
                   <TableHead>Invoice #</TableHead>
                   <TableHead>Due</TableHead>
                   <TableHead className="text-right">Days overdue</TableHead>
+                  {sandboxOn && <TableHead className="text-right">Sandbox</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {overdue.data.rows.slice(0, 100).map((row) => (
+                {overdueRowsView.slice(0, 100).map((row) => (
                   <TableRow key={`${row.kind}-${row.id}`} data-testid={`overdue-row-${row.kind}-${row.id}`}>
                     <TableCell><Badge variant={row.kind === "ar" ? "default" : "secondary"}>{row.kind.toUpperCase()}</Badge></TableCell>
                     <TableCell>{row.projectName}</TableCell>
@@ -223,6 +307,19 @@ export default function CashflowAnalysisPage() {
                     <TableCell className="text-right">
                       <Badge variant="destructive">{row.daysOverdue} days</Badge>
                     </TableCell>
+                    {sandboxOn && (
+                      <TableCell className="text-right">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7"
+                          onClick={() => togglePaid(`${row.kind}-${row.id}`)}
+                          data-testid={`sandbox-mark-paid-${row.kind}-${row.id}`}
+                        >
+                          <CheckCircle2 className="w-3 h-3 mr-1" /> Mark paid
+                        </Button>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>
@@ -288,8 +385,8 @@ export default function CashflowAnalysisPage() {
         <CardContent className="overflow-x-auto">
           {atRisk.isLoading || !atRisk.data ? (
             <Loader2 className="w-4 h-4 animate-spin" />
-          ) : atRisk.data.rows.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nothing flagged.</p>
+          ) : atRiskRowsView.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{sandboxOn ? "Sandbox cleared all at-risk items." : "Nothing flagged."}</p>
           ) : (
             <Table>
               <TableHeader>
@@ -300,10 +397,11 @@ export default function CashflowAnalysisPage() {
                   <TableHead className="text-right">Amount</TableHead>
                   <TableHead className="text-right">Days overdue</TableHead>
                   <TableHead className="text-right">Risk score</TableHead>
+                  {sandboxOn && <TableHead className="text-right">Sandbox</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {atRisk.data.rows.map((r) => (
+                {atRiskRowsView.slice(0, 10).map((r) => (
                   <TableRow key={r.id} data-testid={`at-risk-${r.id}`}>
                     <TableCell>{r.projectName}</TableCell>
                     <TableCell>{r.invoiceNumber ?? "—"}</TableCell>
@@ -311,6 +409,19 @@ export default function CashflowAnalysisPage() {
                     <TableCell className="text-right font-mono">{formatZar(r.amount)}</TableCell>
                     <TableCell className="text-right"><Badge variant="destructive">{r.daysOverdue}d</Badge></TableCell>
                     <TableCell className="text-right font-mono">{Math.round(r.riskScore).toLocaleString("en-ZA")}</TableCell>
+                    {sandboxOn && (
+                      <TableCell className="text-right">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7"
+                          onClick={() => togglePaid(`ar-${r.id}`)}
+                          data-testid={`sandbox-mark-paid-ar-${r.id}`}
+                        >
+                          <CheckCircle2 className="w-3 h-3 mr-1" /> Mark paid
+                        </Button>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>

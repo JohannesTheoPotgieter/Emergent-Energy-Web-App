@@ -8,9 +8,12 @@ import type { Express, Request, Response } from "express";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole } from "../departments/shared-middleware";
+import { getEffectiveUser } from "../auth-context";
 import { db } from "../db";
 import { financialIntegrationRules } from "@shared/schema/finance";
-import { ApiError, badRequest, sendError } from "../lib/api-error";
+import { projectInfo } from "@shared/schema/projects";
+import { badRequest, sendError, unauthorized } from "../lib/api-error";
+import { withTrust } from "../lib/finance-trust/envelope";
 import {
   computeDsoDpoTrend,
   listCashflowPointsForRange,
@@ -96,6 +99,10 @@ export function registerFinanceAnalysisRoutes(app: Express): void {
           ap: serializeAging(apAging),
           arTotal: totalOutstanding(arAging),
           apTotal: totalOutstanding(apAging),
+          trust: withTrust(res, {
+            sourceLayer: "canonical",
+            canonicalTable: "normalized_revenue_lines, normalized_cost_lines",
+          }),
         });
       } catch (err) {
         sendError(res, err);
@@ -164,7 +171,16 @@ export function registerFinanceAnalysisRoutes(app: Express): void {
           .filter((r) => r.daysOverdue > 0);
 
         const all = [...arRows, ...apRows].sort((a, b) => b.daysOverdue - a.daysOverdue);
-        res.json({ mode, side, rows: all, count: all.length });
+        res.json({
+          mode,
+          side,
+          rows: all,
+          count: all.length,
+          trust: withTrust(res, {
+            sourceLayer: "canonical",
+            canonicalTable: "normalized_revenue_lines, normalized_cost_lines",
+          }),
+        });
       } catch (err) {
         sendError(res, err);
       }
@@ -180,7 +196,14 @@ export function registerFinanceAnalysisRoutes(app: Express): void {
       try {
         const weeks = z.coerce.number().int().min(4).max(52).default(12).parse(req.query.weeks ?? 12);
         const points = await computeDsoDpoTrend(weeks);
-        res.json({ weeks, points });
+        res.json({
+          weeks,
+          points,
+          trust: withTrust(res, {
+            sourceLayer: "canonical",
+            canonicalTable: "normalized_revenue_lines, normalized_cost_lines",
+          }),
+        });
       } catch (err) {
         sendError(res, err);
       }
@@ -224,7 +247,15 @@ export function registerFinanceAnalysisRoutes(app: Express): void {
           .sort((a, b) => b.riskScore - a.riskScore)
           .slice(0, limit);
 
-        res.json({ mode, limit, rows: scored });
+        res.json({
+          mode,
+          limit,
+          rows: scored,
+          trust: withTrust(res, {
+            sourceLayer: "canonical",
+            canonicalTable: "normalized_revenue_lines",
+          }),
+        });
       } catch (err) {
         sendError(res, err);
       }
@@ -257,6 +288,10 @@ export function registerFinanceAnalysisRoutes(app: Express): void {
           apTopSuppliers: topNConcentration(apByCounterparty, topN),
           arRanked: arByProject.sort((a, b) => b.amount - a.amount).slice(0, topN),
           apRanked: apByCounterparty.sort((a, b) => b.amount - a.amount).slice(0, topN),
+          trust: withTrust(res, {
+            sourceLayer: "canonical",
+            canonicalTable: "normalized_revenue_lines, normalized_cost_lines",
+          }),
         });
       } catch (err) {
         sendError(res, err);
@@ -285,6 +320,10 @@ export function registerFinanceAnalysisRoutes(app: Express): void {
           to: to.toISOString().slice(0, 10),
           today: today.toISOString().slice(0, 10),
           points,
+          trust: withTrust(res, {
+            sourceLayer: "derived",
+            derivedTable: "cashflow_points",
+          }),
         });
       } catch (err) {
         sendError(res, err);
@@ -324,7 +363,15 @@ export function registerFinanceAnalysisRoutes(app: Express): void {
             ...ev,
           };
         });
-        res.json({ rows: result, defaultToleranceBandPct: DEFAULT_TOLERANCE_BAND_PCT });
+        res.json({
+          rows: result,
+          defaultToleranceBandPct: DEFAULT_TOLERANCE_BAND_PCT,
+          trust: withTrust(res, {
+            sourceLayer: "canonical",
+            canonicalTable: "project_revenue_summary, project_plan, normalized_cost_lines",
+            overrideInEffect: tolerances.size > 0,
+          }),
+        });
       } catch (err) {
         sendError(res, err);
       }
@@ -340,7 +387,14 @@ export function registerFinanceAnalysisRoutes(app: Express): void {
       try {
         const months = z.coerce.number().int().min(1).max(24).default(6).parse(req.query.months ?? 6);
         const points = await listCounterpartyMonthlyCos(months);
-        res.json({ months, points });
+        res.json({
+          months,
+          points,
+          trust: withTrust(res, {
+            sourceLayer: "canonical",
+            canonicalTable: "normalized_cost_lines",
+          }),
+        });
       } catch (err) {
         sendError(res, err);
       }
@@ -360,7 +414,15 @@ export function registerFinanceAnalysisRoutes(app: Express): void {
       try {
         const map = await loadTolerancesByProject();
         const rows = Array.from(map.entries()).map(([projectId, bandPct]) => ({ projectId, bandPct }));
-        res.json({ defaultBandPct: DEFAULT_TOLERANCE_BAND_PCT, rows });
+        res.json({
+          defaultBandPct: DEFAULT_TOLERANCE_BAND_PCT,
+          rows,
+          trust: withTrust(res, {
+            sourceLayer: "override",
+            canonicalTable: "financial_integration_rules",
+            overrideInEffect: rows.length > 0,
+          }),
+        });
       } catch (err) {
         sendError(res, err);
       }
@@ -377,8 +439,8 @@ export function registerFinanceAnalysisRoutes(app: Express): void {
       try {
         const projectId = positiveInt.parse(req.params.projectId);
         const { bandPct } = toleranceBody.parse(req.body);
-        const userId = (req.session as any)?.userId;
-        if (!userId) throw badRequest("Missing user session");
+        const userId = getEffectiveUser(req)?.id;
+        if (!userId) throw unauthorized();
 
         const existing = await db
           .select({ id: financialIntegrationRules.id })
@@ -400,7 +462,6 @@ export function registerFinanceAnalysisRoutes(app: Express): void {
             .where(eq(financialIntegrationRules.id, existing[0].id));
         } else {
           // projectName is a NOT NULL legacy column — populate from projectInfo.
-          const { projectInfo } = await import("@shared/schema/projects");
           const proj = await db
             .select({ name: projectInfo.projectName })
             .from(projectInfo)
@@ -420,7 +481,6 @@ export function registerFinanceAnalysisRoutes(app: Express): void {
 
         res.json({ projectId, bandPct });
       } catch (err) {
-        if (err instanceof ApiError) return sendError(res, err);
         sendError(res, err);
       }
     },
