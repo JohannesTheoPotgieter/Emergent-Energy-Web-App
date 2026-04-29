@@ -47,6 +47,14 @@ export async function runStartupSeeds(options: {
     )
     .catch((err) => log(`[Seed] Role templates error: ${err}`, "Startup"));
 
+  // D6 — Active Clients folder taxonomy (idempotent upsert by internal_key).
+  const { seedFolderTaxonomy } = await import("../seed-folder-taxonomy");
+  await seedFolderTaxonomy()
+    .then(({ inserted, skipped }) =>
+      log(`[Seed] Folder taxonomy: inserted=${inserted} skipped=${skipped}`, "Startup"),
+    )
+    .catch((err) => log(`[Seed] Folder taxonomy error: ${err}`, "Startup"));
+
   try {
     const {
       setFeatureFlag,
