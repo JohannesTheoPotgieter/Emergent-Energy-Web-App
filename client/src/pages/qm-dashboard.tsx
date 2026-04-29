@@ -882,11 +882,7 @@ export default function QmDashboardPage() {
                             <tr
                               key={checklist.id}
                               data-testid={`qm-project-row-${checklist.id}`}
-                              className="border-b last:border-0 hover:bg-emerald-50/40 cursor-pointer transition-colors group"
-                              role="button"
-                              tabIndex={0}
-                              onClick={() => setSelectedProjectName(checklist.projectName)}
-                              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedProjectName(checklist.projectName); }}}
+                              className="border-b last:border-0 hover:bg-emerald-50/40 transition-colors group"
                             >
                               <td className="py-2.5 px-3">
                                 <span className="font-medium text-sm group-hover:text-emerald-600 transition-colors" data-testid={`text-project-name-${checklist.id}`}>
@@ -991,8 +987,7 @@ export default function QmDashboardPage() {
                                     variant="ghost"
                                     size="icon"
                                     className="h-7 w-7"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
+                                    onClick={() => {
                                       setLocation(`/project/${encodeURIComponent(checklist.projectName)}?mode=execution&section=quality&subTab=quality`);
                                     }}
                                     aria-label={`Open ${checklist.projectName} project details`}
@@ -1006,8 +1001,7 @@ export default function QmDashboardPage() {
                                       variant="ghost"
                                       size="icon"
                                       className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
+                                      onClick={() => {
                                         setDeleteTarget(checklist);
                                       }}
                                       aria-label={`Delete quality process for ${checklist.projectName}`}
@@ -1016,7 +1010,17 @@ export default function QmDashboardPage() {
                                       <Trash2 className="h-3.5 w-3.5" />
                                     </Button>
                                   )}
-                                  <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-emerald-500 transition-colors" />
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7"
+                                    onClick={() => setSelectedProjectName(checklist.projectName)}
+                                    aria-label={`Expand quality details for ${checklist.projectName}`}
+                                    data-testid={`btn-expand-project-${checklist.id}`}
+                                  >
+                                    <ChevronRight className="h-4 w-4 text-muted-foreground/60 group-hover:text-emerald-500 transition-colors" />
+                                  </Button>
                                 </div>
                               </td>
                             </tr>
