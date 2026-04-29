@@ -235,6 +235,12 @@ export const workItems = pgTable("work_items", {
   gpsCoordinates: text("gps_coordinates"),
   batteriesNeeded: boolean("batteries_needed").default(false),
   batterySize: decimal("battery_size", { precision: 12, scale: 2 }),
+  lead: text("lead"),
+  resource1: text("resource_1"),
+  resource2: text("resource_2"),
+  trackerComments: text("tracker_comments"),
+  workDays: integer("work_days"),
+  cellFormat: jsonb("cell_format"),
 }, (table) => ({
   projectIdIdx: index("work_items_project_id_idx").on(table.projectId),
   ownerUserIdIdx: index("work_items_owner_user_id_idx").on(table.ownerUserId),

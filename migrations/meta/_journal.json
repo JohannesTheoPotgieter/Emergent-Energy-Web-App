@@ -288,6 +288,13 @@
       "when": 1777370000002,
       "tag": "0039_drop_work_items_active_eng_ticket_uniq",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1777467017947,
+      "tag": "0042_tracker_replica_columns",
+      "breakpoints": true
     }
   ]
 }
