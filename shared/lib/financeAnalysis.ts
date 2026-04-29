@@ -1,5 +1,7 @@
 // Pure helpers for the Finance Analysis pages.
 // No DB, no IO — all functions are deterministic and unit-testable.
+// Shared between server (route handlers) and client (sandbox what-if mode)
+// so the math never drifts.
 
 export type AgingBucketKey = "not_due" | "0_30" | "31_60" | "61_90" | "over_90";
 
@@ -150,12 +152,15 @@ function round2(value: number): number {
 }
 
 // Concentration — what fraction of total outstanding is held by the top N entities.
+// `topN` is clamped to >= 1 so callers can't accidentally request the top-0
+// concentration (which would silently return zero regardless of input).
 export function topNConcentration(
   rows: Array<{ key: string; amount: number }>,
   topN: number,
 ): { topAmount: number; totalAmount: number; sharePct: number } {
+  const safeTopN = Math.max(1, Math.floor(topN));
   const total = rows.reduce((sum, r) => sum + r.amount, 0);
-  const sorted = [...rows].sort((a, b) => b.amount - a.amount).slice(0, topN);
+  const sorted = [...rows].sort((a, b) => b.amount - a.amount).slice(0, safeTopN);
   const topAmount = sorted.reduce((sum, r) => sum + r.amount, 0);
   const sharePct = total === 0 ? 0 : topAmount / total;
   return { topAmount: round2(topAmount), totalAmount: round2(total), sharePct };
