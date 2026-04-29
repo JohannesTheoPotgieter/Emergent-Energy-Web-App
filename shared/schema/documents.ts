@@ -44,6 +44,12 @@ export const controlledDocumentStateEnum = pgEnum("controlled_document_state_enu
 // =====================================================================
 
 /**
+ * @deprecated Replaced by `documentApprovalRequirements` (D6) under the
+ * Active Clients taxonomy. New code MUST NOT read or write this table.
+ * Kept in the schema for additive-migration safety; it carries no
+ * production data (D6 was rebuilt before any controlled docs were filed).
+ * Will be dropped in a follow-up destructive migration once D6 ships.
+ *
  * Document types under version control (Costing Excel, Design Pack, etc.).
  * Seeded from the locked approval matrix. Super users can edit/add via
  * the Settings rewrite (D5).
@@ -102,6 +108,12 @@ export type ControlledDocumentType = typeof controlledDocumentTypes.$inferSelect
 // =====================================================================
 
 /**
+ * @deprecated Replaced by `managedDocuments` + the existing `approvals`
+ * engine (relatedEntityType='managed_document') under the Active Clients
+ * taxonomy (D6). New code MUST NOT read or write this table. Kept in the
+ * schema for additive-migration safety; it carries no production data.
+ * Will be dropped in a follow-up destructive migration once D6 ships.
+ *
  * One row per controlled file in SharePoint for a given project.
  *
  * Invariant: at most one row with state='approved' per (projectId, typeKey).
@@ -176,6 +188,13 @@ export type ControlledDocument = typeof controlledDocuments.$inferSelect;
 // co-located in this file.
 // =====================================================================
 
+/**
+ * @deprecated Subsumed by `projectFolders` (D6). The project root is now
+ * the row in `projectFolders` whose `taxonomyKey` is the project-root
+ * taxonomy entry. New code MUST NOT read or write this table. Kept in the
+ * schema for additive-migration safety; carries no production data. Will
+ * be dropped in a follow-up destructive migration once D6 ships.
+ */
 export const projectSharepointRoots = pgTable("project_sharepoint_roots", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").notNull().unique().references(() => projectInfo.id, { onDelete: "cascade" }),
@@ -290,6 +309,14 @@ export const managedDocuments = pgTable("managed_documents", {
   rootScope: documentRootScopeEnum("root_scope").notNull(),
   projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
   companyRootId: integer("company_root_id").references(() => companySharepointRoots.id, { onDelete: "cascade" }),
+  /**
+   * Active Clients taxonomy linkage — set when the file lives inside a
+   * provisioned taxonomy folder. Null means the file sits in an untracked
+   * path (legacy folders, manually-created subfolders, etc.). Discipline /
+   * stage / approval requirements are derived from the parent folder's
+   * taxonomy row when set.
+   */
+  parentFolderId: integer("parent_folder_id"),
   driveId: text("drive_id").notNull(),
   driveItemId: text("drive_item_id").notNull(),
   name: text("name").notNull(),
@@ -309,6 +336,7 @@ export const managedDocuments = pgTable("managed_documents", {
   projectIdx: index("managed_documents_project_idx").on(t.projectId),
   companyRootIdx: index("managed_documents_company_root_idx").on(t.companyRootId),
   ownerIdx: index("managed_documents_owner_idx").on(t.ownerUserId),
+  parentFolderIdx: index("managed_documents_parent_folder_idx").on(t.parentFolderId),
 }));
 
 export const insertManagedDocumentSchema = createInsertSchema(managedDocuments)
@@ -465,3 +493,167 @@ export type ManagedDocumentState = (typeof MANAGED_DOCUMENT_STATES)[number];
 
 /** Approval handoff constant — used when the approvals integration lands in a later phase. */
 export const MANAGED_DOCUMENT_APPROVAL_TYPE = "managed_document" as const;
+
+// =====================================================================
+// Active Clients folder taxonomy (D6) — replaces the controlled-document
+// type registry above.
+//
+// Source of truth for the canonical SharePoint folder tree under
+// `01 - Clients/01 - active projects (1)/{Project}/`. Two lifecycle modes
+// coexist:
+//   - pre_construction: PRE_First Assessment, PRE_Cost Proposal, PM
+//   - full_lifecycle:   01_Financial Close … 14_Contractor Shared Folder
+//
+// A project keeps its pre-construction folders even after the full-lifecycle
+// tree is provisioned. Provisioning is fully manual — COO (or any user with
+// the `provision_documents` permission) triggers it from the admin console.
+//
+// Discipline mapping per top-level folder is editable by admin so the app
+// can drive per-discipline panels (Engineering, HSE, Quality, …) without
+// code changes when the operating model evolves.
+// =====================================================================
+
+export const folderLifecycleModeEnum = pgEnum("folder_lifecycle_mode_enum", [
+  "pre_construction",
+  "full_lifecycle",
+  "both",
+]);
+
+export const folderTaxonomy = pgTable("folder_taxonomy", {
+  id: serial("id").primaryKey(),
+  /** Stable logical key, e.g. '07_construction', 'pre_cost_proposal/cp_costing'. */
+  internalKey: text("internal_key").notNull().unique(),
+  /** Folder name as it appears in SharePoint, e.g. '07_Construction'. */
+  displayName: text("display_name").notNull(),
+  /** Parent taxonomy key, null for top-level folders. */
+  parentKey: text("parent_key"),
+  /** Which template tree this folder belongs to. */
+  lifecycleMode: folderLifecycleModeEnum("lifecycle_mode").notNull(),
+  /**
+   * Owning stage code (FK to stage_definitions.stageCode). Null for
+   * cross-stage folders like 06_HSE, 13_Project Photos.
+   */
+  stageCode: text("stage_code"),
+  /**
+   * LIFECYCLE_DEPARTMENTS codes that own this folder (multi-discipline
+   * supported — e.g. Construction is owned by ENGINEERING + CONSTRUCTION
+   * + QUALITY). Drives which department pages surface this folder.
+   */
+  disciplines: jsonb("disciplines").$type<string[]>().notNull().default([]),
+  description: text("description"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => ({
+  internalKeyIdx: uniqueIndex("folder_taxonomy_internal_key_idx").on(t.internalKey),
+  parentIdx: index("folder_taxonomy_parent_idx").on(t.parentKey),
+  lifecycleIdx: index("folder_taxonomy_lifecycle_idx").on(t.lifecycleMode),
+}));
+
+export const insertFolderTaxonomySchema = createInsertSchema(folderTaxonomy)
+  .omit({ id: true, createdAt: true, updatedAt: true } as any);
+export type InsertFolderTaxonomy = z.infer<typeof insertFolderTaxonomySchema>;
+export type FolderTaxonomy = typeof folderTaxonomy.$inferSelect;
+
+// =====================================================================
+// project_folders — instance rows. One row per (projectId, taxonomyKey)
+// once provisioned. Holds the Graph driveId/itemId so the app can deep-
+// link into SharePoint.
+// =====================================================================
+
+export const projectFolders = pgTable("project_folders", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
+  taxonomyKey: text("taxonomy_key").notNull().references(() => folderTaxonomy.internalKey),
+  // SharePoint references — populated after a successful Graph create.
+  driveId: text("drive_id"),
+  itemId: text("item_id"),
+  sharepointPath: text("sharepoint_path"),
+  // Provisioning audit
+  provisionedAt: timestamp("provisioned_at"),
+  provisionedByUserId: integer("provisioned_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  // Reconciliation — last time we verified the folder still exists on Graph.
+  lastVerifiedAt: timestamp("last_verified_at"),
+  verifyError: text("verify_error"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => ({
+  projectTaxonomyUq: uniqueIndex("project_folders_project_taxonomy_uq").on(t.projectId, t.taxonomyKey),
+  projectIdx: index("project_folders_project_idx").on(t.projectId),
+  taxonomyIdx: index("project_folders_taxonomy_idx").on(t.taxonomyKey),
+}));
+
+export const insertProjectFolderSchema = createInsertSchema(projectFolders)
+  .omit({ id: true, createdAt: true, updatedAt: true } as any);
+export type InsertProjectFolder = z.infer<typeof insertProjectFolderSchema>;
+export type ProjectFolder = typeof projectFolders.$inferSelect;
+
+// =====================================================================
+// document_approval_requirements — admin-editable list of files/folders
+// that need formal approval (replaces controlled_document_types).
+//
+// A requirement attaches to a taxonomy folder and optionally narrows by
+// filename pattern (regex). When a file matching the requirement lands in
+// the folder, the existing `approvals` engine is invoked with
+// relatedEntityType='managed_document'.
+// =====================================================================
+
+export const documentApprovalRequirements = pgTable("document_approval_requirements", {
+  id: serial("id").primaryKey(),
+  /** Folder this requirement targets. */
+  taxonomyKey: text("taxonomy_key").notNull().references(() => folderTaxonomy.internalKey),
+  /**
+   * Optional case-insensitive regex narrowing. Null means every file in
+   * the folder requires this approval. Example: '^costing.*\\.xlsx$'.
+   */
+  fileNamePattern: text("file_name_pattern"),
+  /** Human label, e.g. 'Costing Excel', 'EPC Contract — Signed'. */
+  displayName: text("display_name").notNull(),
+  description: text("description"),
+  /**
+   * Approver roles (COMPANY_ROLES codes). At submit time the submitter
+   * picks an approver who holds one of these roles.
+   */
+  approverRoles: jsonb("approver_roles").$type<string[]>().notNull().default([]),
+  /**
+   * When true, ALL listed approvers must sign off independently (e.g.
+   * financial close pack = CFO + COO). When false, ANY single one suffices.
+   */
+  requiresAllApprovers: boolean("requires_all_approvers").notNull().default(false),
+  /**
+   * Optional headline-numbers extraction spec for preview chips on the
+   * project page. Shape: { sheetName: string, cells: { revenue: 'B12', ... } }.
+   * Null when no extraction configured.
+   */
+  extractSpec: jsonb("extract_spec").$type<{
+    sheetName?: string;
+    cells?: Record<string, string>;
+  } | null>(),
+  active: boolean("active").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => ({
+  taxonomyIdx: index("doc_approval_req_taxonomy_idx").on(t.taxonomyKey),
+  activeIdx: index("doc_approval_req_active_idx").on(t.active),
+}));
+
+export const insertDocumentApprovalRequirementSchema = createInsertSchema(documentApprovalRequirements)
+  .omit({ id: true, createdAt: true, updatedAt: true } as any);
+export type InsertDocumentApprovalRequirement = z.infer<typeof insertDocumentApprovalRequirementSchema>;
+export type DocumentApprovalRequirement = typeof documentApprovalRequirements.$inferSelect;
+
+// =====================================================================
+// Type-safe enum exports
+// =====================================================================
+
+export const FOLDER_LIFECYCLE_MODES = [
+  "pre_construction",
+  "full_lifecycle",
+  "both",
+] as const;
+export type FolderLifecycleMode = (typeof FOLDER_LIFECYCLE_MODES)[number];
+
+/** Permission key for users authorised to provision SharePoint folders. */
+export const PROVISION_DOCUMENTS_PERMISSION = "provision_documents" as const;
