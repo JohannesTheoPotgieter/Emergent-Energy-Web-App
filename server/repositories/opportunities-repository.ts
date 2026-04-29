@@ -1,4 +1,4 @@
-import { eq, desc, isNull, and, inArray, sql, ilike, asc } from "drizzle-orm";
+import { eq, desc, isNull, isNotNull, and, inArray, sql, ilike, asc } from "drizzle-orm";
 import { alias as aliasedTable } from "drizzle-orm/pg-core";
 import {
   opportunities,
@@ -635,6 +635,19 @@ export class OpportunitiesRepository {
     let projectTasks: ProjectTask[] = [];
     if (linkedProjectId != null) {
       const ownerUser = aliasedTable(users, "wi_owner_user");
+      // Path 2 (Task: opportunity-drawer phantom duplicate fix):
+      //   The drawer's task board renders ONE card per engineering ticket
+      //   on this opportunity. Each ticket has a sibling work_items row
+      //   inserted by `POST /api/opportunities/:id/create-engineering-tickets`
+      //   with workstream='ENG' AND engineering_ticket_id=ticket.id.
+      //   We scope this query to those sibling rows only — anything else
+      //   on the project (PD/QUALITY/PM lanes, ad-hoc tasks, soft-deleted
+      //   rows) is intentionally invisible here.
+      //
+      //   The drawer USED to also union the whole project's work_items
+      //   list, which produced two cards per ticket (the synthetic
+      //   ticket-promoted card AND its sibling). Backed by index
+      //   `idx_work_items_eng_ticket_active` from migration 0040.
       projectTasks = (await db
         .select({
           id: workItems.id,
@@ -654,6 +667,8 @@ export class OpportunitiesRepository {
         .where(
           and(
             eq(workItems.projectId, linkedProjectId),
+            eq(workItems.workstream, "ENG"),
+            isNotNull(workItems.engineeringTicketId),
             isNull(workItems.deletedAt),
           ),
         )
