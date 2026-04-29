@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { eq, and, isNull, sql, asc, desc, inArray } from "drizzle-orm";
-import { workItems, workItemAssignments, projectInfo, TASK_STATUSES, type WorkItem, type WorkItemAssignment } from "@shared/schema";
+import { workItems, workItemAssignments, projectInfo, TASK_STATUSES, engineeringTickets, type WorkItem, type WorkItemAssignment } from "@shared/schema";
+import { normalizeEngineeringTicketStatus } from "@shared/engineering-ticket-status";
 import { getFeatureFlag } from "./lib/feature-flags";
 import { queryWorkItems, getAssignmentsByWorkItemIds } from "./lib/work-item-queries";
 import type { UnifiedTask } from "@shared/types/unified-task";
@@ -883,7 +884,164 @@ export async function updateEngineeringWorkItem(workItemId: number, updates: {
     }).onConflictDoNothing();
   }
 
+  // Path 2 forward-sync: when the engineering board mutates a sibling
+  // row that's linked to an engineering_ticket, mirror the user-visible
+  // fields (status / priority / dueDate / title) back to the ticket row
+  // so finance/FYE rollup, PD dashboard, gate auto-evaluator and
+  // Pipedrive — all of which still read from engineering_tickets — stay
+  // consistent with what engineers actually see on their board.
+  // Forward-only: work_items is canonical; we never sync the other way.
+  if (updated.engineeringTicketId != null) {
+    const ticketSet: Record<string, unknown> = { updatedAt: new Date() };
+    if (updates.status !== undefined) {
+      ticketSet.status = normalizeEngineeringTicketStatus(setData.status);
+    }
+    if (updates.priority !== undefined) {
+      const mapped = workItemPriorityToTicketPriority((setData.priority as string | null | undefined) ?? null);
+      if (mapped !== null) ticketSet.priority = mapped;
+    }
+    if (updates.dueDate !== undefined) ticketSet.dueDate = setData.endDate;
+    if (updates.title !== undefined) ticketSet.projectSiteName = setData.title;
+    // Skip if status/priority/title/dueDate were not in this update —
+    // avoids touching the ticket row on no-op edits (e.g. owner-only
+    // changes), which would still bump updated_at but carry no change.
+    if (Object.keys(ticketSet).length > 1) {
+      await db.update(engineeringTickets)
+        .set(ticketSet)
+        .where(and(eq(engineeringTickets.id, updated.engineeringTicketId), isNull(engineeringTickets.deletedAt)));
+    }
+  }
+
   return updated;
+}
+
+/**
+ * Path 2 priority normalisers — bidirectional between the two enums.
+ *
+ *   work_items.priority canonical:        Urgent | High | Med | Low
+ *   engineering_tickets.priority enum:    Critical | High | Medium | Low
+ *
+ * History: the work_items.priority column is `text` so the database has
+ * accumulated noise (Critical, Medium, CRITICAL, Normal, "" alongside
+ * the canonical four). These helpers normalise inbound values from the
+ * ticket side AND outbound values to the ticket side, so the two
+ * tables can never drift on a "Medium" vs "Med" technicality.
+ *
+ * Both helpers preserve `null` (do-not-touch) and unrecognised strings
+ * pass through unchanged so legacy data is never silently rewritten.
+ */
+export function workItemPriorityToTicketPriority(p: string | null | undefined): string | null {
+  if (p == null || p === "") return null;
+  const v = String(p).trim();
+  switch (v) {
+    case "Urgent":
+    case "Critical":
+    case "CRITICAL":
+      return "Critical";
+    case "High":
+      return "High";
+    case "Med":
+    case "Medium":
+    case "Normal":
+      return "Medium";
+    case "Low":
+      return "Low";
+    default:
+      return v;
+  }
+}
+
+export function ticketPriorityToWorkItemPriority(p: string | null | undefined): string | null {
+  if (p == null || p === "") return null;
+  const v = String(p).trim();
+  switch (v) {
+    case "Critical":
+    case "CRITICAL":
+    case "Urgent":
+      return "Urgent";
+    case "High":
+      return "High";
+    case "Medium":
+    case "Med":
+    case "Normal":
+      return "Med";
+    case "Low":
+      return "Low";
+    default:
+      return v;
+  }
+}
+
+/**
+ * Path 2 reverse-direction sync: when an engineering_tickets row is
+ * mutated directly (PATCH /api/pd/tickets/:id), mirror the user-visible
+ * fields onto the canonical sibling work_items row so the drawer board
+ * and the engineering kanban don't go stale.
+ *
+ * This is NOT a violation of the "work_items is canonical" invariant —
+ * it's the inverse leg of the same one-row-per-ticket contract.
+ * Without it, edits made via the PD ticket detail UI would silently
+ * skip the canonical store.
+ *
+ * Pass the FULL post-update ticket row (the `returning()` from the
+ * PATCH handler) plus the set of fields the user actually changed.
+ * Fields not in `changedFields` are skipped so unrelated touches
+ * (audit-only re-saves, owner-only edits) don't bump the work_item.
+ */
+export async function syncTicketEditToWorkItem(
+  ticket: typeof engineeringTickets.$inferSelect,
+  changedFields: Set<string>,
+): Promise<void> {
+  const wiSet: Record<string, unknown> = {};
+
+  if (changedFields.has("status")) {
+    // Pass through the canonical normaliser so legacy text statuses
+    // ("To Do", "Done", "in_progress") all collapse to the new
+    // engineering-board enum before we try to mirror.
+    wiSet.status = normalizeEngineeringTicketStatus(ticket.status);
+  }
+  if (changedFields.has("priority")) {
+    const mapped = ticketPriorityToWorkItemPriority(ticket.priority);
+    if (mapped !== null) wiSet.priority = mapped;
+  }
+  if (changedFields.has("dueDate")) {
+    wiSet.endDate = ticket.dueDate;
+  }
+  // Identity / linkage — when a PD edit re-titles or re-links the ticket
+  // we MUST mirror onto the canonical work_items row, otherwise the
+  // engineering board card and the PD ticket detail will display
+  // different titles / project contexts. The creation site
+  // (server/departments/opportunities-routes.ts:1311) uses the same
+  // `String(projectSiteName ?? "Engineering ticket")` fallback so the
+  // edit path stays in lockstep with the insert path.
+  if (changedFields.has("projectSiteName")) {
+    wiSet.title = String(ticket.projectSiteName ?? "Engineering ticket");
+  }
+  if (changedFields.has("projectId")) {
+    wiSet.projectId = ticket.projectId;
+  }
+  if (changedFields.has("clientId")) {
+    wiSet.clientId = ticket.clientId;
+  }
+  // Solar/site metadata — these now live on work_items as the canonical
+  // store (see migration 0040). Mirror the 6 fields when they change.
+  if (changedFields.has("fundingType")) wiSet.fundingType = ticket.fundingType;
+  if (changedFields.has("sizeKwp")) wiSet.sizeKwp = ticket.sizeKwp;
+  if (changedFields.has("province")) wiSet.province = ticket.province;
+  if (changedFields.has("gpsCoordinates")) wiSet.gpsCoordinates = ticket.gpsCoordinates;
+  if (changedFields.has("batteriesNeeded")) wiSet.batteriesNeeded = ticket.batteriesNeeded;
+  if (changedFields.has("batterySize")) wiSet.batterySize = ticket.batterySize;
+
+  if (Object.keys(wiSet).length === 0) return;
+  wiSet.updatedAt = new Date();
+
+  await db.update(workItems)
+    .set(wiSet)
+    .where(and(
+      eq(workItems.engineeringTicketId, ticket.id),
+      eq(workItems.workstream, "ENG"),
+      isNull(workItems.deletedAt),
+    ));
 }
 
 export async function deleteEngineeringWorkItem(workItemId: number): Promise<boolean> {
