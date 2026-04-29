@@ -99,7 +99,8 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   // /quickbooks merged into the existing /finance/quickbooks (Throughput).
   // Kept as a redirect so any bookmarked link still lands in the right place.
   { id: "quickbooksHomeRedirect", path: "/quickbooks", label: "QuickBooks (moved)", type: "alias", permissionEntity: "financials", redirectTo: "/finance/quickbooks" },
-  { id: "adminDocumentTypes", path: "/admin/document-types", label: "Document types", iconKey: "FileText", navGroup: "SYSTEM", permissionEntity: "admin_roles", routeComponentKey: "AdminDocumentTypesPage" },
+  { id: "adminDocumentTypes", path: "/admin/document-types", label: "Document types (legacy)", iconKey: "FileText", navGroup: "SYSTEM", permissionEntity: "admin_roles", showInSidebar: false, routeComponentKey: "AdminDocumentTypesPage" },
+  { id: "adminDocumentManagement", path: "/admin/document-management", label: "Document management", iconKey: "FolderTree", navGroup: "SYSTEM", permissionEntity: "documents_admin", routeComponentKey: "AdminDocumentManagementPage" },
   { id: "adminEmailLinkerDev", path: "/admin/email-linker-dev", label: "Email auto-linker (dev)", iconKey: "Mail", navGroup: "SYSTEM", permissionEntity: "admin_roles", routeComponentKey: "AdminEmailLinkerDevPage" },
   { id: "pendingApprovals", path: "/pending-approvals", label: "Pending Approvals", iconKey: "Inbox", navGroup: "SYSTEM", permissionEntity: "admin_roles", showInSidebar: true, routeComponentKey: "PendingApprovalsPage" },
   { id: "handoverLive", path: "/handover/:projectId/live", label: "Handover live meeting", permissionEntity: "projects", routeComponentKey: "HandoverLivePage" },
