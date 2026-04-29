@@ -68,6 +68,11 @@ interface ForecastActualResponse {
   points: Array<{ pointDate: string; series: string; value: number }>;
 }
 
+async function okJson(r: Response) {
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  return r.json();
+}
+
 function formatZar(value: number): string {
   if (!Number.isFinite(value)) return "R 0";
   return `R ${Math.round(value).toLocaleString("en-ZA")}`;
@@ -97,32 +102,32 @@ export default function CashflowAnalysisPage() {
 
   const aging = useQuery<AgingResponse>({
     queryKey: ["finance", "analysis", "cashflow", "aging", mode],
-    queryFn: () => fetch(`/api/finance/analysis/cashflow/aging?mode=${mode}`).then((r) => r.json()),
+    queryFn: () => fetch(`/api/finance/analysis/cashflow/aging?mode=${mode}`).then(okJson),
   });
 
   const overdue = useQuery<OverdueResponse>({
     queryKey: ["finance", "analysis", "cashflow", "overdue", mode, side],
-    queryFn: () => fetch(`/api/finance/analysis/cashflow/overdue?mode=${mode}&side=${side}`).then((r) => r.json()),
+    queryFn: () => fetch(`/api/finance/analysis/cashflow/overdue?mode=${mode}&side=${side}`).then(okJson),
   });
 
   const dso = useQuery<DsoDpoResponse>({
     queryKey: ["finance", "analysis", "cashflow", "dso-dpo"],
-    queryFn: () => fetch("/api/finance/analysis/cashflow/dso-dpo?weeks=12").then((r) => r.json()),
+    queryFn: () => fetch("/api/finance/analysis/cashflow/dso-dpo?weeks=12").then(okJson),
   });
 
   const atRisk = useQuery<{ rows: AtRiskRow[] }>({
     queryKey: ["finance", "analysis", "cashflow", "at-risk", mode],
-    queryFn: () => fetch(`/api/finance/analysis/cashflow/at-risk?mode=${mode}&limit=10`).then((r) => r.json()),
+    queryFn: () => fetch(`/api/finance/analysis/cashflow/at-risk?mode=${mode}&limit=10`).then(okJson),
   });
 
   const concentration = useQuery<ConcentrationResponse>({
     queryKey: ["finance", "analysis", "cashflow", "concentration"],
-    queryFn: () => fetch("/api/finance/analysis/cashflow/concentration?top=5").then((r) => r.json()),
+    queryFn: () => fetch("/api/finance/analysis/cashflow/concentration?top=5").then(okJson),
   });
 
   const forecast = useQuery<ForecastActualResponse>({
     queryKey: ["finance", "analysis", "cashflow", "forecast-actual"],
-    queryFn: () => fetch("/api/finance/analysis/cashflow/forecast-actual").then((r) => r.json()),
+    queryFn: () => fetch("/api/finance/analysis/cashflow/forecast-actual").then(okJson),
   });
 
   // Sandbox-aware derived rows. When sandbox is OFF this is identity; when ON it

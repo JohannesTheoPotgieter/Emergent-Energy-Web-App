@@ -28,6 +28,11 @@ interface EarnedResponse { rows: EarnedRow[]; defaultToleranceBandPct: number }
 interface CounterpartyPoint { counterpartyId: number | null; counterpartyName: string; monthKey: string; amount: number }
 interface CounterpartyResponse { months: number; points: CounterpartyPoint[] }
 
+async function okJson(r: Response) {
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  return r.json();
+}
+
 function formatZar(value: number): string {
   if (!Number.isFinite(value)) return "R 0";
   return `R ${Math.round(value).toLocaleString("en-ZA")}`;
@@ -65,12 +70,12 @@ export default function CosAnalysisPage() {
 
   const earned = useQuery<EarnedResponse>({
     queryKey: ["finance", "analysis", "cos", "earned-vs-invoiced"],
-    queryFn: () => fetch("/api/finance/analysis/cos/earned-vs-invoiced").then((r) => r.json()),
+    queryFn: () => fetch("/api/finance/analysis/cos/earned-vs-invoiced").then(okJson),
   });
 
   const counterparty = useQuery<CounterpartyResponse>({
     queryKey: ["finance", "analysis", "cos", "counterparty-trend"],
-    queryFn: () => fetch("/api/finance/analysis/cos/counterparty-trend?months=6").then((r) => r.json()),
+    queryFn: () => fetch("/api/finance/analysis/cos/counterparty-trend?months=6").then(okJson),
   });
 
   const updateTolerance = useMutation({

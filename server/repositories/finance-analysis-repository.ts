@@ -257,8 +257,10 @@ export interface CounterpartyMonthlyTotal {
 
 export async function listCounterpartyMonthlyCos(monthsBack: number): Promise<CounterpartyMonthlyTotal[]> {
   const cutoff = new Date();
-  cutoff.setUTCMonth(cutoff.getUTCMonth() - monthsBack);
+  // Set day-of-month to 1 BEFORE subtracting months to avoid month-end overflow
+  // (e.g. Mar 31 - 1 month → Apr 3, not Mar 1, if order is reversed).
   cutoff.setUTCDate(1);
+  cutoff.setUTCMonth(cutoff.getUTCMonth() - monthsBack);
   const cutoffIso = cutoff.toISOString().slice(0, 10);
 
   const rows = await db

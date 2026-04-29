@@ -29,6 +29,17 @@ describe("financeAnalysis — date helpers", () => {
     expect(parseIsoDate("not a date")).toBeNull();
   });
 
+  it("accepts a Date instance directly", () => {
+    const d = new Date(Date.UTC(2026, 0, 15)); // 2026-01-15
+    const result = parseIsoDate(d);
+    expect(result).not.toBeNull();
+    expect(result!.toISOString()).toBe("2026-01-15T00:00:00.000Z");
+  });
+
+  it("returns null for an invalid Date instance", () => {
+    expect(parseIsoDate(new Date("invalid"))).toBeNull();
+  });
+
   it("computes whole-day diffs ignoring timezone drift", () => {
     expect(diffDays(parseIsoDate("2026-04-29")!, parseIsoDate("2026-04-01")!)).toBe(28);
   });
@@ -49,6 +60,10 @@ describe("financeAnalysis — overdue bucketing", () => {
 
   it("days overdue is zero for future-dated invoices", () => {
     expect(daysOverdueOn(TODAY, parseIsoDate("2026-05-01"))).toBe(0);
+  });
+
+  it("returns 0 when due date is null (no due date set)", () => {
+    expect(daysOverdueOn(TODAY, null)).toBe(0);
   });
 
   it("days overdue counts whole days past the due date", () => {
@@ -101,6 +116,14 @@ describe("financeAnalysis — rollups", () => {
     expect(counts["31_60"]).toEqual({ count: 1, amount: 200 });
     expect(counts.over_90).toEqual({ count: 1, amount: 100 });
     expect(totalOutstanding(counts)).toBe(1800);
+  });
+
+  it("returns all-zero buckets for an empty input", () => {
+    const counts = rollupAging([]);
+    expect(totalOutstanding(counts)).toBe(0);
+    for (const v of Object.values(counts)) {
+      expect(v).toEqual({ count: 0, amount: 0 });
+    }
   });
 
   it("emptyAgingCounts has all keys at zero", () => {
@@ -165,6 +188,38 @@ describe("financeAnalysis — earned vs invoiced", () => {
     expect(result.earned).toBe(0);
     expect(result.variancePct).toBe(1);
     expect(result.flag).toBe("over_billed");
+  });
+
+  it("toleranceBandPct of 0 flags any non-zero variance as out-of-line", () => {
+    // Even a tiny variance is over_billed when band is 0%
+    const over = computeEarnedVsInvoiced({
+      plannedExpenditure: 1_000_000,
+      pctComplete: 0.5,
+      invoicedToDate: 500_001,
+      toleranceBandPct: 0,
+    });
+    expect(over.flag).toBe("over_billed");
+
+    // Exact match is in_line
+    const exact = computeEarnedVsInvoiced({
+      plannedExpenditure: 1_000_000,
+      pctComplete: 0.5,
+      invoicedToDate: 500_000,
+      toleranceBandPct: 0,
+    });
+    expect(exact.flag).toBe("in_line");
+  });
+
+  it("plannedExpenditure of 0 with zero invoiced is in_line", () => {
+    const result = computeEarnedVsInvoiced({
+      plannedExpenditure: 0,
+      pctComplete: 0.5,
+      invoicedToDate: 0,
+      toleranceBandPct: 10,
+    });
+    expect(result.earned).toBe(0);
+    expect(result.variancePct).toBe(0);
+    expect(result.flag).toBe("in_line");
   });
 });
 
