@@ -1,8 +1,11 @@
-// Read-only repository for the Finance / Analysis pages (cashflow & COS).
+// Repository for the Finance / Analysis pages (cashflow & COS).
 //
 // All snapshot-table reads filter by `effectiveTo IS NULL` to avoid
 // double-counting historical snapshots — see the finance-snapshot-queries
 // skill in CLAUDE.md.
+//
+// All db.* calls live here per the route → repository discipline in
+// CLAUDE.md. Routes import the named functions below.
 
 import { and, eq, isNull, sql, inArray } from "drizzle-orm";
 import { db } from "../db";
@@ -13,8 +16,11 @@ import {
   counterparties,
   projectPlan,
   cashflowPoints,
+  financialIntegrationRules,
 } from "@shared/schema/finance";
 import { projectInfo, projectRevenueSummary } from "@shared/schema/projects";
+
+const COS_TOLERANCE_RULE_TYPE = "cos_tolerance_band_pct";
 
 export interface OutstandingRevenueRow {
   id: number;
@@ -494,6 +500,84 @@ function parseDate(value: unknown): Date | null {
 function dateToIso(value: unknown): string | null {
   const d = parseDate(value);
   return d ? d.toISOString().slice(0, 10) : null;
+}
+
+// COS tolerance band per project — stored in financial_integration_rules
+// with rule_type = 'cos_tolerance_band_pct'.
+
+export async function loadCosToleranceBandsByProject(): Promise<Map<number, number>> {
+  const rows = (await db
+    .select({
+      projectId: financialIntegrationRules.projectId,
+      ruleConfig: financialIntegrationRules.ruleConfig,
+    })
+    .from(financialIntegrationRules)
+    .where(
+      and(
+        eq(financialIntegrationRules.ruleType, COS_TOLERANCE_RULE_TYPE),
+        eq(financialIntegrationRules.isActive, true),
+      ),
+    )) as Array<{ projectId: number | null; ruleConfig: string }>;
+
+  const map = new Map<number, number>();
+  for (const r of rows) {
+    if (r.projectId == null) continue;
+    try {
+      const parsed = JSON.parse(r.ruleConfig);
+      if (typeof parsed?.bandPct === "number" && Number.isFinite(parsed.bandPct)) {
+        map.set(r.projectId, parsed.bandPct);
+      }
+    } catch {
+      // Skip malformed entries — defaults are applied by the route.
+    }
+  }
+  return map;
+}
+
+// Returns null when the project does not exist or is soft-deleted.
+export async function loadProjectName(projectId: number): Promise<string | null> {
+  const rows = (await db
+    .select({ name: projectInfo.projectName })
+    .from(projectInfo)
+    .where(and(eq(projectInfo.id, projectId), isNull(projectInfo.deletedAt)))
+    .limit(1)) as Array<{ name: string }>;
+  return rows[0]?.name ?? null;
+}
+
+export async function upsertCosToleranceBand(
+  projectId: number,
+  bandPct: number,
+  userId: number,
+  projectName: string,
+): Promise<void> {
+  const existing = (await db
+    .select({ id: financialIntegrationRules.id })
+    .from(financialIntegrationRules)
+    .where(
+      and(
+        eq(financialIntegrationRules.projectId, projectId),
+        eq(financialIntegrationRules.ruleType, COS_TOLERANCE_RULE_TYPE),
+      ),
+    )
+    .limit(1)) as Array<{ id: number }>;
+
+  const ruleConfig = JSON.stringify({ bandPct });
+
+  if (existing[0]) {
+    await db
+      .update(financialIntegrationRules)
+      .set({ ruleConfig, updatedAt: new Date(), isActive: true, deletedAt: null })
+      .where(eq(financialIntegrationRules.id, existing[0].id));
+  } else {
+    await db.insert(financialIntegrationRules).values({
+      projectId,
+      projectName,
+      ruleType: COS_TOLERANCE_RULE_TYPE,
+      ruleConfig,
+      createdByUserId: userId,
+      isActive: true,
+    });
+  }
 }
 
 // Re-export `eq` so route file callers don't need both imports.

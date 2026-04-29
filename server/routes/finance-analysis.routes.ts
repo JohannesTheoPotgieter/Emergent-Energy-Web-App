@@ -5,13 +5,9 @@
 // finance-analysis-repository — see the finance-snapshot-queries skill.
 
 import type { Express, Request, Response } from "express";
-import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole } from "../departments/shared-middleware";
 import { getEffectiveUser } from "../auth-context";
-import { db } from "../db";
-import { financialIntegrationRules } from "@shared/schema/finance";
-import { projectInfo } from "@shared/schema/projects";
 import { badRequest, sendError, unauthorized } from "../lib/api-error";
 import { withTrust } from "../lib/finance-trust/envelope";
 import {
@@ -21,6 +17,9 @@ import {
   listOutstandingCostLines,
   listOutstandingRevenueLines,
   listProjectCosRows,
+  loadCosToleranceBandsByProject,
+  loadProjectName,
+  upsertCosToleranceBand,
 } from "../repositories/finance-analysis-repository";
 import {
   AGING_BUCKET_KEYS,
@@ -48,7 +47,6 @@ const FINANCE_ANALYSIS_ROLES = [
   "PROGRAM_MANAGER",
 ];
 
-const COS_TOLERANCE_RULE_TYPE = "cos_tolerance_band_pct";
 const DEFAULT_TOLERANCE_BAND_PCT = 10;
 
 const overdueModeQuery = z.enum(["expected_date", "payment_terms"]).default("expected_date");
@@ -344,7 +342,7 @@ export function registerFinanceAnalysisRoutes(app: Express): void {
       try {
         const [rows, tolerances] = await Promise.all([
           listProjectCosRows(),
-          loadTolerancesByProject(),
+          loadCosToleranceBandsByProject(),
         ]);
         const result = rows.map((r) => {
           const band = tolerances.get(r.projectId) ?? DEFAULT_TOLERANCE_BAND_PCT;
@@ -412,7 +410,7 @@ export function registerFinanceAnalysisRoutes(app: Express): void {
     requireRole(...FINANCE_ANALYSIS_ROLES),
     async (_req: Request, res: Response) => {
       try {
-        const map = await loadTolerancesByProject();
+        const map = await loadCosToleranceBandsByProject();
         const rows = Array.from(map.entries()).map(([projectId, bandPct]) => ({ projectId, bandPct }));
         res.json({
           defaultBandPct: DEFAULT_TOLERANCE_BAND_PCT,
@@ -442,42 +440,10 @@ export function registerFinanceAnalysisRoutes(app: Express): void {
         const userId = getEffectiveUser(req)?.id;
         if (!userId) throw unauthorized();
 
-        const existing = await db
-          .select({ id: financialIntegrationRules.id })
-          .from(financialIntegrationRules)
-          .where(
-            and(
-              eq(financialIntegrationRules.projectId, projectId),
-              eq(financialIntegrationRules.ruleType, COS_TOLERANCE_RULE_TYPE),
-            ),
-          )
-          .limit(1);
+        const projectName = await loadProjectName(projectId);
+        if (!projectName) throw badRequest("Project not found");
 
-        const ruleConfig = JSON.stringify({ bandPct });
-
-        if (existing[0]) {
-          await db
-            .update(financialIntegrationRules)
-            .set({ ruleConfig, updatedAt: new Date(), isActive: true, deletedAt: null })
-            .where(eq(financialIntegrationRules.id, existing[0].id));
-        } else {
-          // projectName is a NOT NULL legacy column — populate from projectInfo.
-          const proj = await db
-            .select({ name: projectInfo.projectName })
-            .from(projectInfo)
-            .where(eq(projectInfo.id, projectId))
-            .limit(1);
-          if (!proj[0]) throw badRequest("Project not found");
-
-          await db.insert(financialIntegrationRules).values({
-            projectId,
-            projectName: proj[0].name,
-            ruleType: COS_TOLERANCE_RULE_TYPE,
-            ruleConfig,
-            createdByUserId: userId,
-            isActive: true,
-          });
-        }
+        await upsertCosToleranceBand(projectId, bandPct, userId, projectName);
 
         res.json({ projectId, bandPct });
       } catch (err) {
@@ -510,35 +476,6 @@ function aggregate<T>(
     map.set(key, (map.get(key) ?? 0) + amountFn(r));
   }
   return Array.from(map.entries()).map(([key, amount]) => ({ key, amount }));
-}
-
-async function loadTolerancesByProject(): Promise<Map<number, number>> {
-  const rows = await db
-    .select({
-      projectId: financialIntegrationRules.projectId,
-      ruleConfig: financialIntegrationRules.ruleConfig,
-    })
-    .from(financialIntegrationRules)
-    .where(
-      and(
-        eq(financialIntegrationRules.ruleType, COS_TOLERANCE_RULE_TYPE),
-        eq(financialIntegrationRules.isActive, true),
-      ),
-    );
-
-  const map = new Map<number, number>();
-  for (const r of rows) {
-    if (r.projectId == null) continue;
-    try {
-      const parsed = JSON.parse(r.ruleConfig);
-      if (typeof parsed?.bandPct === "number" && Number.isFinite(parsed.bandPct)) {
-        map.set(r.projectId, parsed.bandPct);
-      }
-    } catch {
-      // Skip malformed entries — defaults are applied by the route.
-    }
-  }
-  return map;
 }
 
 // Suppress lint nag — `parseIsoDate` is exposed for symmetry with helpers.
