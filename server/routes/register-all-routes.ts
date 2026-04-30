@@ -1,6 +1,14 @@
 import type { Express } from "express";
 import type { Server } from "http";
-import { registerRoutes } from "../routes";
+// Switched from `../routes` (the legacy shell) to `./index` so the
+// previously-orphaned route domain registry actually runs. routes/index.ts
+// registers a dozen new-pattern domains (template-governance, quickbooks,
+// finance-trust, pd-intake, controlled-documents, impact, email-links,
+// admin-screen-settings, exception-dashboard, document-management,
+// document-comments, tracker-replica) AND calls back to the legacy
+// registerRoutes — so this swap is additive: nothing that worked before
+// stops working, and the previously-dead endpoints come online.
+import { registerRoutes } from "./index";
 import { registerCoreRoutes } from "./register-core-routes";
 import { registerProjectRoutes } from "./register-project-routes";
 import { registerDepartmentRoutes } from "./register-department-routes";
@@ -10,7 +18,6 @@ import { registerInfoRoutes } from "./register-info-routes";
 import { registerSupportRoutes } from "./register-support-routes";
 import { registerExtractedRoutes } from "./route-registry";
 import { applyLegacyUrlAliases } from "../middleware/legacy-url-aliases";
-import { registerTrackerReplicaRoutes } from "./tracker-replica.routes";
 
 export async function registerAllRoutes(options: {
   app: Express;
@@ -32,12 +39,9 @@ export async function registerAllRoutes(options: {
   await registerDepartmentRoutes(app);
   await registerAdminSupportRoutes(app);
   await registerExtractedRoutes(app);
-  // Tracker replica read-only endpoints feeding the per-project replica
-  // screens. Wired here directly because server/routes/index.ts is an
-  // orphan file (not invoked by the bootstrap), which would silently
-  // 404 these routes — see "Pre-existing orphan registry" note in the
-  // PR description.
-  registerTrackerReplicaRoutes(app);
+  // Calls the orphan-registry's registerRoutes which now activates
+  // tracker-replica + 11 sibling domains, then chains to the legacy
+  // shell.
   await registerRoutes(httpServer, app);
 
   log("All route groups registered", "Startup:Routes");
