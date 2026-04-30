@@ -8,6 +8,7 @@
  * attach to it.
  */
 
+import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
@@ -43,9 +44,14 @@ import {
   useCreateRequirement,
   useUpdateRequirement,
   useDeactivateRequirement,
+  useProvisionProjectFolders,
+  useProjectFolders,
+  useVerifyProjectFolders,
   type CreateTaxonomyPayload,
   type CreateRequirementPayload,
+  type ProvisionResult,
 } from "@/hooks/use-document-management-admin";
+import { useProjectsSummary } from "@/hooks/use-projects-summary";
 import { isSuperAdmin } from "@/lib/access-control";
 import {
   COMPANY_ROLES,
@@ -56,7 +62,10 @@ import {
   type DocumentApprovalRequirement,
   type FolderLifecycleMode,
 } from "@shared/schema";
-import { Plus, Pencil, PowerOff, AlertTriangle, FolderTree, ShieldCheck, Loader2 } from "lucide-react";
+import {
+  Plus, Pencil, PowerOff, AlertTriangle, FolderTree, ShieldCheck, Loader2,
+  HardDriveUpload, RefreshCw, CheckCircle2, XCircle, FolderPlus, Link as LinkIcon,
+} from "lucide-react";
 
 const LIFECYCLE_LABELS: Record<FolderLifecycleMode, string> = {
   pre_construction: "Pre-construction",
@@ -99,7 +108,7 @@ export default function AdminDocumentManagementPage() {
       }
     >
       <Tabs defaultValue="taxonomy" className="w-full">
-        <TabsList className="grid w-full grid-cols-2 max-w-md">
+        <TabsList className="grid w-full grid-cols-3 max-w-2xl">
           <TabsTrigger value="taxonomy" data-testid="tab-doc-taxonomy">
             <FolderTree className="h-4 w-4 mr-2" />
             Folder taxonomy
@@ -107,6 +116,10 @@ export default function AdminDocumentManagementPage() {
           <TabsTrigger value="requirements" data-testid="tab-doc-requirements">
             <ShieldCheck className="h-4 w-4 mr-2" />
             Approval requirements
+          </TabsTrigger>
+          <TabsTrigger value="provisioning" data-testid="tab-doc-provisioning">
+            <HardDriveUpload className="h-4 w-4 mr-2" />
+            Provisioning
           </TabsTrigger>
         </TabsList>
 
@@ -116,6 +129,10 @@ export default function AdminDocumentManagementPage() {
 
         <TabsContent value="requirements" className="mt-4">
           <RequirementsTab />
+        </TabsContent>
+
+        <TabsContent value="provisioning" className="mt-4">
+          <ProvisioningTab />
         </TabsContent>
       </Tabs>
     </PageLayout>
@@ -866,5 +883,311 @@ function RequirementDialog(props: {
         </AlertDialogContent>
       </AlertDialog>
     </Dialog>
+  );
+}
+
+// =========================================================================
+// Provisioning tab
+// =========================================================================
+
+function ProvisioningTab() {
+  const { projectsSummary, isLoading: projectsLoading } = useProjectsSummary();
+  const [projectId, setProjectId] = useState<number | null>(null);
+  const [lifecycleMode, setLifecycleMode] = useState<ProvisionResult["lifecycleMode"]>("full_lifecycle");
+  const [lastResult, setLastResult] = useState<ProvisionResult | null>(null);
+
+  const folders = useProjectFolders(projectId);
+  const provision = useProvisionProjectFolders();
+  const verify = useVerifyProjectFolders();
+
+  const projectName = useMemo(() => {
+    if (!projectId || !projectsSummary) return null;
+    const match = projectsSummary.find((p) => p.project_info_id === projectId);
+    return match?.project_name ?? null;
+  }, [projectId, projectsSummary]);
+
+  async function handleProvision() {
+    if (!projectId) return;
+    try {
+      const result = await provision.mutateAsync({ projectId, lifecycleMode });
+      setLastResult(result);
+      const total =
+        result.summary.created + result.summary.alreadyPresent + result.summary.linkedExisting;
+      toast({
+        title: "Provisioning complete",
+        description: `${total} folder${total === 1 ? "" : "s"} resolved · ${result.summary.errors} error${result.summary.errors === 1 ? "" : "s"}`,
+        variant: result.summary.errors > 0 ? "destructive" : undefined,
+      });
+    } catch (err) {
+      toast({
+        title: "Provisioning failed",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      });
+    }
+  }
+
+  async function handleVerify() {
+    if (!projectId) return;
+    try {
+      const result = await verify.mutateAsync(projectId);
+      toast({
+        title: "Verify complete",
+        description: `${result.verified} verified · ${result.missing} missing`,
+        variant: result.missing > 0 ? "destructive" : undefined,
+      });
+    } catch (err) {
+      toast({
+        title: "Verify failed",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      });
+    }
+  }
+
+  return (
+    <Card>
+      <CardContent className="pt-6 space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <Label>Project</Label>
+            <Select
+              value={projectId ? String(projectId) : ""}
+              onValueChange={(v) => {
+                setProjectId(Number(v));
+                setLastResult(null);
+              }}
+              disabled={projectsLoading}
+            >
+              <SelectTrigger data-testid="select-provisioning-project">
+                <SelectValue placeholder={projectsLoading ? "Loading..." : "Choose a project"} />
+              </SelectTrigger>
+              <SelectContent>
+                {(projectsSummary ?? [])
+                  .filter((p) => typeof p.project_info_id === "number")
+                  .map((p) => (
+                    <SelectItem
+                      key={p.project_info_id as number}
+                      value={String(p.project_info_id)}
+                    >
+                      {p.project_name}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label>Tree to provision</Label>
+            <Select
+              value={lifecycleMode}
+              onValueChange={(v) => setLifecycleMode(v as ProvisionResult["lifecycleMode"])}
+            >
+              <SelectTrigger data-testid="select-provisioning-lifecycle">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="pre_construction">Pre-construction (PRE_*, PM)</SelectItem>
+                <SelectItem value="full_lifecycle">Full lifecycle (01_…14_)</SelectItem>
+                <SelectItem value="both">Both — pre + full</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={handleProvision}
+            disabled={!projectId || provision.isPending}
+            data-testid="btn-provision-folders"
+          >
+            {provision.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+            ) : (
+              <FolderPlus className="h-3.5 w-3.5 mr-1" />
+            )}
+            Provision folders
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleVerify}
+            disabled={!projectId || verify.isPending}
+            data-testid="btn-verify-folders"
+          >
+            {verify.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3.5 w-3.5 mr-1" />
+            )}
+            Verify
+          </Button>
+          {projectName && (
+            <span className="ml-auto text-xs text-muted-foreground">
+              Target: <strong>{projectName}</strong>
+            </span>
+          )}
+        </div>
+
+        {lastResult && <ProvisioningResultPanel result={lastResult} />}
+
+        {projectId && !lastResult && (
+          <ProjectFoldersTable
+            folders={folders.data?.folders ?? []}
+            isLoading={folders.isLoading}
+          />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ProvisioningResultPanel({ result }: { result: ProvisionResult }) {
+  return (
+    <div className="space-y-3 rounded-md border p-4">
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-medium">Provisioning report</span>
+        <span className="text-xs text-muted-foreground">{result.projectFolderPath}</span>
+      </div>
+      <div className="flex flex-wrap gap-2 text-xs">
+        <Badge variant="outline" className="bg-emerald-50 text-emerald-700">
+          {result.summary.created} created
+        </Badge>
+        <Badge variant="outline" className="bg-sky-50 text-sky-700">
+          {result.summary.alreadyPresent} already present
+        </Badge>
+        <Badge variant="outline" className="bg-amber-50 text-amber-800">
+          {result.summary.linkedExisting} linked existing
+        </Badge>
+        <Badge variant="outline">{result.summary.skipped} skipped</Badge>
+        <Badge variant="outline" className="bg-rose-50 text-rose-700">
+          {result.summary.errors} errors
+        </Badge>
+      </div>
+      <Table data-testid="provisioning-result-table">
+        <TableHeader>
+          <TableRow>
+            <TableHead>Folder</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead>SharePoint path</TableHead>
+            <TableHead>Notes</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {result.rows.map((r) => (
+            <TableRow key={r.taxonomyKey}>
+              <TableCell className="font-mono text-xs">{r.taxonomyKey}</TableCell>
+              <TableCell>
+                <ProvisionStatusBadge status={r.status} />
+              </TableCell>
+              <TableCell className="text-xs font-mono text-muted-foreground">
+                {r.sharepointPath ?? "—"}
+              </TableCell>
+              <TableCell className="text-xs text-muted-foreground">{r.error ?? ""}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+function ProvisionStatusBadge({ status }: { status: ProvisionResult["rows"][number]["status"] }) {
+  const map: Record<
+    typeof status,
+    { label: string; className: string; icon: ReactNode }
+  > = {
+    created: {
+      label: "Created",
+      className: "bg-emerald-50 text-emerald-700",
+      icon: <FolderPlus className="h-3 w-3" />,
+    },
+    already_present: {
+      label: "Already present",
+      className: "bg-sky-50 text-sky-700",
+      icon: <CheckCircle2 className="h-3 w-3" />,
+    },
+    linked_existing: {
+      label: "Linked existing",
+      className: "bg-amber-50 text-amber-800",
+      icon: <LinkIcon className="h-3 w-3" />,
+    },
+    skipped: {
+      label: "Skipped",
+      className: "",
+      icon: <XCircle className="h-3 w-3" />,
+    },
+    error: {
+      label: "Error",
+      className: "bg-rose-50 text-rose-700",
+      icon: <XCircle className="h-3 w-3" />,
+    },
+  };
+  const { label, className, icon } = map[status];
+  return (
+    <Badge variant="outline" className={`text-[10px] gap-1 ${className}`}>
+      {icon}
+      {label}
+    </Badge>
+  );
+}
+
+function ProjectFoldersTable(props: {
+  folders: Array<{
+    id: number;
+    taxonomyKey: string;
+    driveId: string | null;
+    itemId: string | null;
+    sharepointPath: string | null;
+    provisionedAt: string | null;
+    lastVerifiedAt: string | null;
+    verifyError: string | null;
+  }>;
+  isLoading: boolean;
+}) {
+  const { folders, isLoading } = props;
+  if (isLoading) {
+    return (
+      <div className="rounded-md border p-4 text-sm text-muted-foreground">
+        <Loader2 className="inline-block h-3.5 w-3.5 mr-1 animate-spin" />
+        Loading folders…
+      </div>
+    );
+  }
+  if (folders.length === 0) {
+    return (
+      <div className="rounded-md border p-4 text-sm text-muted-foreground">
+        No folders provisioned for this project yet. Click <strong>Provision folders</strong> to
+        create the canonical Active Clients tree on SharePoint.
+      </div>
+    );
+  }
+  return (
+    <Table data-testid="project-folders-table">
+      <TableHeader>
+        <TableRow>
+          <TableHead>Taxonomy key</TableHead>
+          <TableHead>SharePoint path</TableHead>
+          <TableHead>Provisioned</TableHead>
+          <TableHead>Last verified</TableHead>
+          <TableHead>Verify error</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {folders.map((f) => (
+          <TableRow key={f.id} data-testid={`project-folder-row-${f.taxonomyKey}`}>
+            <TableCell className="font-mono text-xs">{f.taxonomyKey}</TableCell>
+            <TableCell className="text-xs font-mono text-muted-foreground">
+              {f.sharepointPath ?? "—"}
+            </TableCell>
+            <TableCell className="text-xs">
+              {f.provisionedAt ? new Date(f.provisionedAt).toLocaleString() : "—"}
+            </TableCell>
+            <TableCell className="text-xs">
+              {f.lastVerifiedAt ? new Date(f.lastVerifiedAt).toLocaleString() : "—"}
+            </TableCell>
+            <TableCell className="text-xs text-rose-700">{f.verifyError ?? ""}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }
