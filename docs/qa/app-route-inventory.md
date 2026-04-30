@@ -1,10 +1,10 @@
 # App Route Inventory
 
-**Generated** 2026-04-24T05:32:16.854Z by `script/test-routes.ts`. Do not hand-edit — regenerate with `npm run test:routes`.
+**Generated** 2026-04-30T08:19:15.975Z by `script/test-routes.ts`. Do not hand-edit — regenerate with `npm run test:routes`.
 
 Source: `client/src/config/page-registry.ts`
 
-Total registered paths: 162
+Total registered paths: 169
 
 | Path | Title | Nav group | Permission |
 |------|-------|-----------|------------|
@@ -18,7 +18,7 @@ Total registered paths: 162
 | `/admin-settings` | — | — | — |
 | `/admin-workflow-config` | — | — | — |
 | `/admin/activity-log` | — | SYSTEM | activity_log |
-| `/admin/control-center` | — | SYSTEM | admin |
+| `/admin/control-center` | — | — | — |
 | `/admin/data-migration-status` | — | SYSTEM | admin |
 | `/admin/database-migration` | — | — | database_migration |
 | `/admin/document-types` | — | SYSTEM | admin_roles |
@@ -43,6 +43,7 @@ Total registered paths: 162
 | `/admin/workflow-config` | — | SYSTEM | admin |
 | `/cashflow` | — | FINANCE | cashflow |
 | `/cashflow-forecast` | — | — | cashflow |
+| `/cashflow/analysis` | — | FINANCE | cashflow |
 | `/ceo` | — | MY_WORK | execution_board |
 | `/clients` | — | PROJECTS | pd_clients |
 | `/clients/:clientId` | — | — | pd_clients |
@@ -59,9 +60,11 @@ Total registered paths: 162
 | `/coo` | — | MY_WORK | execution_board |
 | `/cos` | — | FINANCE | cos |
 | `/cos-control` | — | — | cos |
+| `/cos/analysis` | — | FINANCE | cos |
 | `/counterparties` | — | FINANCE | counterparties |
 | `/dashboard` | — | — | — |
 | `/department-scores` | — | KNOWLEDGE | leaderboard |
+| `/documents` | — | KNOWLEDGE | ee_info |
 | `/ee-info` | — | KNOWLEDGE | ee_info |
 | `/engineering` | — | ENGINEERING | engineering |
 | `/engineering/audit` | — | SYSTEM | admin |
@@ -142,6 +145,10 @@ Total registered paths: 162
 | `/project/:projectName/gate/:stageCode` | — | PROJECT_MANAGEMENT | stage_lifecycle |
 | `/projects` | — | PROJECT_MANAGEMENT | projects |
 | `/projects/:projectId/documents` | — | — | projects |
+| `/projects/:projectId/expenditure-breakdown` | — | FINANCE | cos |
+| `/projects/:projectId/manual-overrides` | — | FINANCE | revenue_tracker |
+| `/projects/:projectId/program-plan` | — | PROJECT_MANAGEMENT | work_items |
+| `/projects/:projectId/revenue-tracking` | — | FINANCE | revenue_tracker |
 | `/quality` | — | QUALITY | quality |
 | `/quality/dashboard` | — | — | quality |
 | `/quality/ncr/:id` | — | — | quality |
