@@ -277,3 +277,53 @@ before merge.
 
 Both are temporal (effectiveFrom/effectiveTo). The new replica screens
 render them as a header summary card.
+
+---
+
+## 14. Inline UI refresh — coverage and deferred items
+
+**Status:** Mostly done (2026-04-30)
+
+The 2026-04-30 follow-up surfaced Smart Import v2 tracker columns +
+`cell_format` font/fill colours on the existing screens (alongside the
+3 dedicated replica pages). What landed:
+
+- **Project-detail Expenditure tab** (`ExpenditureEditableTab`):
+  `actualQty`, `actualRate`, `comments`, `checkFlag`, `savingOverrun`
+  added as default-hidden columns (visible via the columns dropdown).
+  `cellFormat` applied to every column via `styleForCell` so per-cell
+  font/fill colour matches the Mondi tracker workbook.
+- **Project-detail Revenue tab** (`RevenueTrackingTab`): a new "NOTES"
+  column renders `milestoneNotes`, with `cellFormat` applied to the
+  milestone#, milestone name, %, value, and notes columns.
+- **Project-detail Plan tab** (`UnifiedPlanTab`): `lead`, `resource1`,
+  `resource2`, `trackerComments`, `workDays` added as default-hidden
+  columns; per-cell colours via `styleForCell`. Source of these fields
+  is `work_items` — surfaced via a thin parallel query in
+  `server/routes/planning-tasks-routes.ts` so the legacy
+  `work-items-adapter.ts` (read-only by CLAUDE.md policy) is
+  untouched.
+- **Portfolio COS tracker** (`cos.tsx`): the month-detail drawer now
+  shows a "Check" column for `checkFlag` on app-side rows.
+- **Programme reports** (`programme-reports.tsx`): the Project Plan
+  report shows lead/resource1/resource2/workDays/trackerComments;
+  the Cost report shows checkFlag/savingOverrun/comments. XLSX
+  exports include the same fields.
+
+**Deferred / structurally NA:**
+
+- **Portfolio revenue-tracker** (`revenue-tracker.tsx`): the
+  month-detail drawer renders **expense-derived revenue recognition**
+  items (one row per cost line that contributes revenue recognition),
+  not milestone rows. `milestoneNotes` lives on revenue lines and so
+  doesn't structurally attach to this drawer. Showing it would
+  require either a milestone-level drilldown (new endpoint) or a
+  cost-line→milestone cross-link that doesn't currently exist. Users
+  who need notes context can drill into the per-project Revenue tab
+  via the "Project" link in each drawer row, which now renders notes
+  inline.
+- **`cellFormat` on portfolio + report screens:** these aggregate
+  across many projects, so applying one workbook's per-cell colours
+  in a shared table would produce inconsistent rows. The tracker
+  colour conventions are project-scoped by design and stay on the
+  per-project tabs.

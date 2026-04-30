@@ -51,6 +51,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { styleForCell } from "@/lib/tracker-cell-format";
 
 interface FinanceFieldAudit {
   fieldName: string;
@@ -137,6 +138,17 @@ interface EnrichedExpense {
   dateOverrideReason: string | null;
   cosOverride: { reason: string; overriddenBy: string | null; originalStatus: string; overrideStatus: string } | null;
   noRevenueLinked: boolean;
+  // Smart Import v2 tracker columns surfaced from normalized_cost_lines.
+  actualQty: string | null;
+  actualRate: string | null;
+  comments: string | null;
+  checkFlag: string | null;
+  savingOverrun: string | null;
+  usdExchangeRate: string | null;
+  pricePerWatt: string | null;
+  // Per-cell font/fill colour map keyed by canonical field name.
+  // See client/src/lib/tracker-cell-format.ts for the helper.
+  cellFormat: unknown;
   trust?: {
     sourceSheet: string;
     sourceRow: number;
@@ -175,7 +187,25 @@ interface ExpenditureEditableTabProps {
 type ColumnKey =
   | "description" | "actualTotal" | "poNumber" | "invoiceNo"
   | "invoiceDate" | "paymentDate" | "linkedTask" | "cosStatus"
-  | "paymentStatus" | "plannedMonth" | "budgetTotal" | "variance" | "revenueAmount" | "supplier" | "noRevLinked";
+  | "paymentStatus" | "plannedMonth" | "budgetTotal" | "variance" | "revenueAmount" | "supplier" | "noRevLinked"
+  // Smart Import v2 tracker columns. Default-hidden so the existing
+  // table layout is unchanged for users who haven't opted in.
+  | "actualQty" | "actualRate" | "checkFlag" | "savingOverrun" | "comments";
+
+/** Map a UI ColumnKey to the canonical schema field name used by the
+ *  cell_format JSONB. Keys not in the map fall through to the column key
+ *  itself, which is correct for tracker columns named identically. */
+const COLUMN_TO_CELL_FORMAT_FIELD: Partial<Record<ColumnKey, string>> = {
+  actualTotal: "amountExVat",
+  budgetTotal: "budgetTotal",
+  poNumber: "poNumber",
+  invoiceNo: "invoiceNumber",
+  invoiceDate: "invoiceDate",
+  paymentDate: "paidDate",
+  description: "description",
+  supplier: "counterpartyName",
+  revenueAmount: "revenueRecognitionAmount",
+};
 
 interface ColumnDef {
   key: ColumnKey;
@@ -201,6 +231,14 @@ const COLUMNS: ColumnDef[] = [
   { key: "noRevLinked", label: "No Rev", defaultVisible: true, align: "center", minWidth: "70px" },
   { key: "revenueAmount", label: "Rev Recognition", defaultVisible: false, align: "right", minWidth: "130px" },
   { key: "variance", label: "Variance", defaultVisible: false, align: "right", minWidth: "110px" },
+  // Smart Import v2 tracker columns. Off by default to keep the existing
+  // layout stable; visible via the columns dropdown when an operator
+  // wants the tracker view inline.
+  { key: "actualQty", label: "Actual Qty", defaultVisible: false, align: "right", minWidth: "90px" },
+  { key: "actualRate", label: "Actual Rate", defaultVisible: false, align: "right", minWidth: "100px" },
+  { key: "checkFlag", label: "Check", defaultVisible: false, align: "center", minWidth: "70px" },
+  { key: "savingOverrun", label: "Saving / Overrun", defaultVisible: false, align: "right", minWidth: "120px" },
+  { key: "comments", label: "Comments", defaultVisible: false, align: "left", minWidth: "180px" },
 ];
 
 const formatCurrency = (value: string | number | null): string => {
@@ -1327,6 +1365,36 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
             {formatCurrency(variance)}
           </span>
         );
+      // Smart Import v2 tracker columns. Read-only — these flow straight
+      // from normalized_cost_lines on each import; manual edits live on
+      // the budget/actual cells already covered above.
+      case "actualQty":
+        return <span className="text-xs font-mono">{exp.actualQty ?? "-"}</span>;
+      case "actualRate":
+        return <span className="text-xs font-mono">{exp.actualRate ?? "-"}</span>;
+      case "checkFlag":
+        return <span className="text-xs font-mono">{exp.checkFlag ?? "-"}</span>;
+      case "savingOverrun":
+        return (
+          <span className="text-xs font-mono">
+            {exp.savingOverrun !== null && exp.savingOverrun !== undefined && exp.savingOverrun !== ""
+              ? formatCurrency(exp.savingOverrun)
+              : "-"}
+          </span>
+        );
+      case "comments":
+        return (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="text-xs block max-w-[220px] truncate">{exp.comments ?? "-"}</span>
+              </TooltipTrigger>
+              {exp.comments && exp.comments.length > 30 && (
+                <TooltipContent side="left" className="max-w-[320px]"><p className="text-xs">{exp.comments}</p></TooltipContent>
+              )}
+            </Tooltip>
+          </TooltipProvider>
+        );
       default:
         return "-";
     }
@@ -1657,14 +1725,21 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
                           <TableCell className="px-2 py-1.5 text-center text-[10px] text-muted-foreground font-mono sticky left-0 z-10 bg-inherit">
                             {exp.rowNumber}
                           </TableCell>
-                          {activeColumns.map((col) => (
-                            <TableCell key={col.key}
-                              className={`px-3 py-1.5
-                                ${col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left"}`}
-                              style={{ minWidth: col.minWidth }}>
-                              {renderCellValue(exp, col)}
-                            </TableCell>
-                          ))}
+                          {activeColumns.map((col) => {
+                            // Apply per-cell font/fill colour from
+                            // cell_format JSONB (Smart Import v2). Map UI
+                            // ColumnKey → canonical schema field name; for
+                            // tracker columns the keys match 1:1.
+                            const fmtField = COLUMN_TO_CELL_FORMAT_FIELD[col.key] ?? col.key;
+                            return (
+                              <TableCell key={col.key}
+                                className={`px-3 py-1.5
+                                  ${col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left"}`}
+                                style={{ minWidth: col.minWidth, ...styleForCell(exp.cellFormat, fmtField) }}>
+                                {renderCellValue(exp, col)}
+                              </TableCell>
+                            );
+                          })}
                           <TableCell className="px-2 py-1.5 text-center">
                             {getRowStatusBadge(exp)}
                           </TableCell>
