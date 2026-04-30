@@ -151,3 +151,14 @@ Each cell renders the source workbook's font and fill colours: red text for unco
 ### Can I undo an import?
 
 Contact your administrator. The system keeps a full history of all imports and can roll back to a previous state if needed.
+
+
+## Rollback safety toggle (operators)
+
+If a production incident is suspected in the 3-way merge path, the backend kill switch remains available:
+
+- Set `USE_THREE_WAY_MERGE=false` and restart the API process.
+- This disables the per-row 3-way merge decisioning for commits while keeping row identity capture (`row_hash`) and snapshot capture (`import_snapshot`) in place.
+- Re-enable later by removing the variable or setting it back to `true`.
+
+This is intended as an emergency rollback control only; normal operation should keep the flag enabled.
