@@ -16,63 +16,7 @@ import { isRevenueSettled } from "../lib/finance/revenue-ar-status";
 import { evaluateRevenueArStatus } from "../lib/finance/revenue-ar-status";
 import { setFinanceTrustHeaders, buildTrustMeta } from "../lib/finance-trust/envelope";
 import { getCanonicalAllCurrentCostLines } from "../services/project-cost-line-read-service";
-
-async function getMergedExpensesAndInflows(expenses: any[], inflows: any[]) {
-  return { expenses, inflows };
-}
-
-function resolveInflowEffectiveDates(
-  inflows: any[],
-  taskLinks: any[],
-  operationalTasks: any[],
-  planTasks: any[]
-): any[] {
-  if (taskLinks.length === 0) {
-    return inflows.map(inf => ({
-      ...inf,
-      effectiveDate: inf.adminDateOverride || inf.paymentReceivedDate || inf.computedForecastReceiptDate || inf.plannedPaymentDate || null,
-    }));
-  }
-  const linkMap = new Map<string, any>();
-  for (const link of taskLinks) {
-    linkMap.set(`${link.projectName}::${link.milestoneRowNumber}`, link);
-  }
-  const opTaskMap = new Map<number, any>();
-  for (const t of operationalTasks) opTaskMap.set(t.id, t);
-  const planTaskMap = new Map<number, any>();
-  for (const t of planTasks) planTaskMap.set(t.id, t);
-
-  return inflows.map(inf => {
-    // Admin date override takes highest priority
-    if (inf.adminDateOverride && /^\d{4}-\d{2}-\d{2}/.test(inf.adminDateOverride)) {
-      return { ...inf, effectiveDate: inf.adminDateOverride };
-    }
-    const key = `${inf.projectName}::${inf.rowNumber}`;
-    const link = linkMap.get(key);
-    if (inf.paymentReceivedDate && /^\d{4}-\d{2}-\d{2}/.test(inf.paymentReceivedDate)) {
-      return { ...inf, effectiveDate: inf.paymentReceivedDate };
-    }
-    if (link) {
-      if (link.dateOverride && /^\d{4}-\d{2}-\d{2}/.test(link.dateOverride)) {
-        return { ...inf, effectiveDate: link.dateOverride };
-      }
-      const taskId = link.taskId;
-      if (taskId > 0) {
-        const opTask = opTaskMap.get(taskId);
-        if (opTask?.dueDate && /^\d{4}-\d{2}-\d{2}/.test(opTask.dueDate)) {
-          return { ...inf, effectiveDate: opTask.dueDate };
-        }
-      } else if (taskId < 0) {
-        const planTask = planTaskMap.get(Math.abs(taskId));
-        const dueDate = (planTask as any)?.actualEnd || (planTask as any)?.baselineEnd || null;
-        if (dueDate && /^\d{4}-\d{2}-\d{2}/.test(dueDate)) {
-          return { ...inf, effectiveDate: dueDate };
-        }
-      }
-    }
-    return { ...inf, effectiveDate: inf.computedForecastReceiptDate || inf.plannedPaymentDate || null };
-  });
-}
+import { getMergedExpensesAndInflows, resolveInflowEffectiveDates } from "../lib/cashflow-helpers";
 
 // SA working days helpers
 function formatDateKey(y: number, m: number, d: number): string {
