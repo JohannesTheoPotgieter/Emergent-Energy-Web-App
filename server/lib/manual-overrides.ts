@@ -249,3 +249,53 @@ export async function getManualOverrides(
   if (!row) return {};
   return readOverridesMap(row.manualOverrides);
 }
+
+// ---------------------------------------------------------------------------
+// Read-side overlay
+// ---------------------------------------------------------------------------
+//
+// Operational tabs render the operator's chosen value when an override
+// exists, and the live column otherwise. Replica routes and reporting
+// queries continue to read the live column raw — the overlay is a
+// presentation concern for the cell-edit surface only.
+//
+// Pure function, no DB. Callers (e.g. the cost / revenue / plan tab
+// route handlers) call this on each row they return to the client.
+
+/**
+ * Return a shallow clone of `row` with override values overlaid on
+ * the listed fields. For each field in `fields`:
+ *   - If `row.manualOverrides[field]` exists, the returned row has
+ *     `row[field]` replaced by the override's `value`.
+ *   - Otherwise the field is left at its live (Excel-truth) value.
+ *
+ * The `manualOverrides` JSONB column on the input is preserved in the
+ * output untouched, so the client can also surface override metadata
+ * (editor, timestamp, original value) when it wants to.
+ *
+ * Type parameter `T` lets the caller keep its specific row shape; the
+ * overlay only changes the values of the listed string-keyed fields.
+ */
+export function withOverridesOverlay<T extends { manualOverrides?: unknown }>(
+  row: T,
+  fields: readonly string[],
+): T {
+  const overrides = readOverridesMap(row.manualOverrides);
+  if (Object.keys(overrides).length === 0) return row;
+  const out = { ...row } as Record<string, unknown>;
+  for (const f of fields) {
+    const entry = overrides[f];
+    if (entry) {
+      out[f] = entry.value;
+    }
+  }
+  return out as T;
+}
+
+/** Convenience: apply `withOverridesOverlay` over an array. */
+export function applyOverridesOverlay<T extends { manualOverrides?: unknown }>(
+  rows: T[],
+  fields: readonly string[],
+): T[] {
+  return rows.map(r => withOverridesOverlay(r, fields));
+}
