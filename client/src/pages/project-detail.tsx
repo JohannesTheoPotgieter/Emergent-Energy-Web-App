@@ -69,6 +69,7 @@ import { type NextMilestoneSummary } from "@/lib/next-milestone";
 import { useProjectDetail, useProjectPlan, useProjectQuality, useProjectEngineering } from "@/hooks/use-project-v2";
 import type { ProjectPermissions } from "@shared/api-types/project-v2";
 import { buildProjectSummaryChipDestinations, type ProjectSummaryChipKey } from "@/lib/project-summary-chip-navigation";
+import { findProjectById, findProjectByName } from "@/lib/project-route-identity";
 
 const PHASE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   P0_FIRST_ASSESSMENT: { bg: "bg-muted", text: "text-foreground", border: "border-border" },
@@ -882,11 +883,18 @@ function RagDot({ color }: { color: "green" | "amber" | "red" }) {
 
 
 export default function ProjectDetailPage() {
-  const [, params] = useRoute("/project/:projectName");
+  const [isNameRoute, nameParams] = useRoute("/project/:projectName");
+  const [isIdRoute, idParams] = useRoute("/project/id/:projectId");
   const [, setLocation] = useLocation();
   const searchString = useSearch();
-  const projectName = params?.projectName ? decodeURIComponent(params.projectName) : "";
+  const routeProjectName = isNameRoute && nameParams?.projectName ? decodeURIComponent(nameParams.projectName) : "";
+  const routeProjectId = isIdRoute && idParams?.projectId ? Number(idParams.projectId) : null;
   const { projectsSummary, isLoading: programDataLoading } = useProjectsSummary();
+  const projectByName = findProjectByName(projectsSummary as any[] | undefined, routeProjectName);
+  const projectById = findProjectById(projectsSummary as any[] | undefined, routeProjectId);
+  const projectInfo = projectById ?? projectByName;
+  const projectInfoId = projectInfo?.project_info_id ?? undefined;
+  const projectName = projectInfo?.project_name ?? routeProjectName;
   const { user } = useAuth();
 
   useEffect(() => {
@@ -1015,9 +1023,12 @@ export default function ProjectDetailPage() {
   };
 
   const queryClient = useQueryClient();
-  const projectInfo = projectsSummary?.find((p: any) => p.project_name === projectName);
-  // Coerce null to undefined so this can be passed to hooks that expect `number | undefined`
-  const projectInfoId = projectInfo?.project_info_id ?? undefined;
+
+  useEffect(() => {
+    if (!projectInfoId || !projectName || isIdRoute) return;
+    const qs = searchString ? `?${searchString}` : "";
+    setLocation(`/project/id/${projectInfoId}${qs}`, { replace: true });
+  }, [projectInfoId, projectName, isIdRoute, searchString, setLocation]);
 
   // Stage lifecycle data for CriticalControlPanel and Lifecycle tab
   const { data: stageData } = useProjectStages(projectInfoId);
