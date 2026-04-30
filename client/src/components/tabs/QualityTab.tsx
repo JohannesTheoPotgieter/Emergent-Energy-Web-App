@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { invalidateProjectV2Queries } from "@/hooks/use-project-v2";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -393,6 +394,7 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
     },
     onSuccess: () => {
       invalidateAll();
+      invalidateProjectV2Queries(queryClient, projectInfoId ?? null);
       setSendForApprovalItem(null);
       setSfaApprover("");
       toast({ title: "Submitted for review", description: "The item is now in review. The reviewer will pass or fail it." });
@@ -427,6 +429,7 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
     },
     onSuccess: () => {
       invalidateAll();
+      invalidateProjectV2Queries(queryClient, projectInfoId ?? null);
       setNewItemName("");
       setShowAddItem(null);
     },
@@ -446,6 +449,7 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
     },
     onSuccess: () => {
       invalidateAll();
+      invalidateProjectV2Queries(queryClient, projectInfoId ?? null);
       setDeleteConfirmId(null);
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
@@ -468,6 +472,7 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["quality-plan-links", projectName] });
       invalidateAll();
+      invalidateProjectV2Queries(queryClient, projectInfoId ?? null);
       setLinkingPhaseId(null);
       setLinkingItemId(null);
     },
@@ -483,6 +488,7 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["quality-plan-links", projectName] });
       invalidateAll();
+      invalidateProjectV2Queries(queryClient, projectInfoId ?? null);
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
@@ -525,6 +531,7 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
       }
       queryClient.invalidateQueries({ queryKey: ["quality-checklist", projectName] });
       invalidateAll();
+      invalidateProjectV2Queries(queryClient, projectInfoId ?? null);
       toast({ title: "Evidence uploaded" });
     } catch (err: any) {
       toast({ title: "Upload failed", description: err.message, variant: "destructive" });
@@ -895,6 +902,7 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
     setBulkApprover("");
     setSelectedItems(new Set());
     invalidateAll();
+      invalidateProjectV2Queries(queryClient, projectInfoId ?? null);
     if (failCount > 0) {
       toast({
         title: failCount === ids.length ? "Send for approval failed" : "Partial submission",
@@ -955,6 +963,7 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
       setCreatePackDialogOpen(false);
       setSelectedItems(new Set());
       invalidateAll();
+      invalidateProjectV2Queries(queryClient, projectInfoId ?? null);
       toast({
         title: "Handover pack created",
         description: `Pack created with ${ids.length - itemFailures} of ${ids.length} item${ids.length !== 1 ? "s" : ""}.${itemFailures > 0 ? ` (${itemFailures} failed)` : ""}`,
