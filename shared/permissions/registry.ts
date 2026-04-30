@@ -99,6 +99,18 @@ export const ENTITY_REGISTRY: EntityRegistryEntry[] = [
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
+    entity: 'excel_vs_app',
+    title: "Excel-vs-App Diff",
+    description: "Surfaces drift between the imported Tracker workbook and live app state. View is broad; edit / override / approve are gated to per-section drift resolvers (see DRIFT_RESOLVER_ROLES in shared/excel-vs-app/contract.ts).",
+    category: 'FINANCE',
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'ACCOUNTANT', 'PROJECT_MANAGER_SITE', 'ENGINEER', 'PROJECT_DEVELOPER', 'HSE_MANAGER', 'SSEG_MANAGER'],
+    create_roles: [],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CCO', 'CFO'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO', 'CCO'],
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+  },
+  {
     entity: 'gp_tracker',
     title: "Gp Tracker",
     description: "Gross Profit Tracker — GP% & margins",

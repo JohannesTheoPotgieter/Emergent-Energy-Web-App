@@ -250,6 +250,200 @@ export class TrackerReplicaRepository {
     out.sort((a, b) => (a.editedAt < b.editedAt ? 1 : a.editedAt > b.editedAt ? -1 : 0));
     return out;
   }
+
+  /**
+   * Excel-vs-App drift detail for a project. For each tracked field on
+   * each active canonical row, classifies the field as `none` /
+   * `verified` / `unverified` drift by comparing:
+   *   - liveValue       = row[field]
+   *   - snapshotValue   = importSnapshot[field]
+   *   - overrideValue   = manualOverrides[field]?.value (or null)
+   *   - displayValue    = override ?? live
+   *
+   *   - none       — valuesEqual(displayValue, snapshotValue).
+   *   - verified   — drift AND manual_overrides[field] present.
+   *   - unverified — drift AND manual_overrides[field] absent
+   *                  (live column was changed via a path that bypassed
+   *                  the override pipeline; needs operator
+   *                  resolution).
+   *
+   * Pure read; reuses `valuesEqual` from `merge-engine.ts` so the
+   * loose-equality semantics (1500 vs "1,500.00", ISO vs Excel
+   * date) match what the import engine considers a conflict.
+   */
+  async getDriftDetail(projectId: number): Promise<DriftDetail> {
+    const { valuesEqual } = await import("../lib/import/merge-engine");
+    const {
+      PLAN_TRACKED_FIELDS,
+      REVENUE_TRACKED_FIELDS,
+      EXPENDITURE_TRACKED_FIELDS,
+    } = await import("@shared/excel-vs-app/contract");
+
+    function readJsonbObject(v: unknown): Record<string, any> {
+      if (!v || typeof v !== "object" || Array.isArray(v)) return {};
+      return v as Record<string, any>;
+    }
+
+    function classify(
+      live: unknown,
+      snapshot: unknown,
+      override: unknown,
+      hasOverrideEntry: boolean,
+    ): "none" | "verified" | "unverified" {
+      const display = hasOverrideEntry ? override : live;
+      if (valuesEqual(display as any, snapshot as any)) return "none";
+      return hasOverrideEntry ? "verified" : "unverified";
+    }
+
+    function buildRowFields(
+      row: Record<string, any>,
+      trackedFields: readonly string[],
+    ) {
+      const snapshot = readJsonbObject(row.importSnapshot);
+      const overrides = readJsonbObject(row.manualOverrides);
+      const cellFormat = row.cellFormat ?? null;
+      const fields: DriftRowField[] = [];
+      for (const f of trackedFields) {
+        const live = row[f] ?? null;
+        const snap = snapshot[f] ?? null;
+        const overrideEntry = overrides[f];
+        const hasOverride = overrideEntry != null && typeof overrideEntry === "object" && "value" in overrideEntry;
+        const overrideValue = hasOverride ? overrideEntry.value : null;
+        const driftClass = classify(live, snap, overrideValue, hasOverride);
+        fields.push({
+          fieldName: f,
+          liveValue: live as any,
+          snapshotValue: snap as any,
+          overrideValue: hasOverride ? (overrideValue as any) : null,
+          overrideEditor: hasOverride ? (overrideEntry.editedBy ?? null) : null,
+          overrideEditedAt: hasOverride ? (overrideEntry.editedAt ?? null) : null,
+          overrideReason: hasOverride ? (overrideEntry.note ?? null) : null,
+          cellFormat: cellFormat && typeof cellFormat === "object" && (cellFormat as any)[f]
+            ? (cellFormat as any)[f]
+            : null,
+          drift: driftClass,
+        });
+      }
+      return fields;
+    }
+
+    function summarise(rows: DriftRow[]): { verified: number; unverified: number } {
+      let verified = 0, unverified = 0;
+      for (const r of rows) {
+        for (const f of r.fields) {
+          if (f.drift === "verified") verified++;
+          else if (f.drift === "unverified") unverified++;
+        }
+      }
+      return { verified, unverified };
+    }
+
+    const [costRows, revRows, planRows] = await Promise.all([
+      this.dbInstance
+        .select()
+        .from(normalizedCostLines)
+        .where(
+          and(
+            eq(normalizedCostLines.projectId, projectId),
+            isNull(normalizedCostLines.effectiveTo),
+            isNull(normalizedCostLines.deletedAt),
+          ),
+        )
+        .orderBy(asc(normalizedCostLines.sourceRow)),
+      this.dbInstance
+        .select()
+        .from(normalizedRevenueLines)
+        .where(
+          and(
+            eq(normalizedRevenueLines.projectId, projectId),
+            isNull(normalizedRevenueLines.effectiveTo),
+            isNull(normalizedRevenueLines.deletedAt),
+          ),
+        )
+        .orderBy(asc(normalizedRevenueLines.sourceRow)),
+      this.dbInstance
+        .select()
+        .from(workItems)
+        .where(
+          and(
+            eq(workItems.projectId, projectId),
+            isNull(workItems.deletedAt),
+          ),
+        )
+        .orderBy(asc(workItems.sortOrder), asc(workItems.sourceRow)),
+    ]);
+
+    const costLines: DriftRow[] = costRows.map((r: any) => ({
+      id: r.id,
+      rowHash: r.rowHash ?? null,
+      displayLabel: r.description ?? `Row ${r.sourceRow ?? r.id}`,
+      sourceRow: r.sourceRow ?? null,
+      fields: buildRowFields(r, EXPENDITURE_TRACKED_FIELDS),
+    }));
+    const revenueLines: DriftRow[] = revRows.map((r: any) => ({
+      id: r.id,
+      rowHash: r.rowHash ?? null,
+      displayLabel: r.milestoneName ?? `Row ${r.sourceRow ?? r.id}`,
+      sourceRow: r.sourceRow ?? null,
+      fields: buildRowFields(r, REVENUE_TRACKED_FIELDS),
+    }));
+    const planTasks: DriftRow[] = planRows.map((r: any) => ({
+      id: r.id,
+      rowHash: r.rowHash ?? null,
+      displayLabel: r.title ?? `Task ${r.sourceRow ?? r.id}`,
+      sourceRow: r.sourceRow ?? null,
+      fields: buildRowFields(r, PLAN_TRACKED_FIELDS),
+    }));
+
+    return {
+      projectId,
+      costLines,
+      revenueLines,
+      planTasks,
+      summary: {
+        EXPENDITURE: summarise(costLines),
+        REVENUE: summarise(revenueLines),
+        PLAN: summarise(planTasks),
+      },
+    };
+  }
+}
+
+export interface DriftRowField {
+  fieldName: string;
+  liveValue: string | number | boolean | null;
+  snapshotValue: string | number | boolean | null;
+  overrideValue: string | number | boolean | null;
+  overrideEditor: number | null;
+  overrideEditedAt: string | null;
+  overrideReason: string | null;
+  cellFormat: { font?: string | null; fill?: string | null; bold?: boolean | null } | null;
+  drift: "none" | "verified" | "unverified";
+}
+
+export interface DriftRow {
+  id: number;
+  rowHash: string | null;
+  displayLabel: string;
+  sourceRow: number | null;
+  fields: DriftRowField[];
+}
+
+export interface DriftSectionSummary {
+  verified: number;
+  unverified: number;
+}
+
+export interface DriftDetail {
+  projectId: number;
+  costLines: DriftRow[];
+  revenueLines: DriftRow[];
+  planTasks: DriftRow[];
+  summary: {
+    EXPENDITURE: DriftSectionSummary;
+    REVENUE: DriftSectionSummary;
+    PLAN: DriftSectionSummary;
+  };
 }
 
 export interface ManualOverrideEntry {
