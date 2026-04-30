@@ -1885,3 +1885,333 @@ export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Pr
 
   return { canonicalSource: CANONICAL_SOURCES.EXPENDITURE, counts, insertedIds, updatedIds, warnings, mergeConflicts };
 }
+
+// ===========================================================================
+// PR2C — auxiliary writers for the new capture tables.
+//
+// Each of these writers persists data that the normalizer extracts but that
+// the three section writers above do NOT touch:
+//   - 1:N actual-row batches against a parent cost line
+//   - Project Plan rows 1–7 (baseline / forecasted completion + durations)
+//   - Revenue Tracking rows 4–7 (Planned Revenue / Expenditure / Profit /
+//     Margin × Costed / Actual)
+//
+// Idempotent: each writer compares the new payload against the current
+// active row and skips the write when nothing material changed.
+// ===========================================================================
+
+import { hashActualRow } from "./row-hasher";
+
+export interface AuxWriteContext {
+  tx: any;
+  projectId: number;
+  runId: number;
+  commitTimestamp: Date;
+}
+
+export interface ActualLineRowsContext extends AuxWriteContext {
+  /**
+   * Orphan actual rows extracted by the normalizer when the actual side
+   * of the Expenditure Breakdown sheet has more rows than the costed
+   * side (multiple invoice batches against one costed line).
+   */
+  actualLineRows: Array<{
+    parentCategoryKey: string | null;
+    parentSourceRow: number;
+    actualNo: number;
+    description: string | null;
+    qty: string | null;
+    rate: string | null;
+    actualTotal: string | null;
+    poNumber: string | null;
+    invoiceNumber: string | null;
+    invoiceDate: string | null;
+    revenueRecognitionAmount: string | null;
+    financePaymentDate: string | null;
+    comments: string | null;
+    checkFlag: string | null;
+    savingOverrun: string | null;
+    cellFormat: Record<string, unknown> | null;
+    sourceSheet: string;
+    sourceRow: number;
+  }>;
+}
+
+/**
+ * Writes orphan actual-line rows to `normalized_cost_line_actuals`.
+ *
+ * Strategy:
+ *   1. Look up each parent cost line by `(projectId, sourceRow=parentSourceRow)`
+ *      among the currently active rows. Skip orphans whose parent can't be
+ *      resolved (the normalizer should never emit those, but defensive).
+ *   2. Compute a stable `row_hash` via `hashActualRow`.
+ *   3. If an existing active actual row already has the same hash, soft-close
+ *      it (`effective_to = commitTimestamp`) before inserting the new
+ *      version. Otherwise insert as new.
+ *   4. Capture an `import_snapshot` JSONB so the next merge pass can detect
+ *      manual edits.
+ *
+ * Returns counts so the route can include them in the import result.
+ */
+export async function writeActualLineRows(
+  ctx: ActualLineRowsContext,
+): Promise<{ inserted: number; skipped: number; orphaned: number }> {
+  const { tx, projectId, runId, commitTimestamp, actualLineRows } = ctx;
+  if (!actualLineRows || actualLineRows.length === 0) {
+    return { inserted: 0, skipped: 0, orphaned: 0 };
+  }
+
+  const { normalizedCostLines, normalizedCostLineActuals } = await import("@shared/schema");
+  const { eq, and, isNull } = await import("drizzle-orm");
+
+  let inserted = 0;
+  let skipped = 0;
+  let orphaned = 0;
+
+  for (const row of actualLineRows) {
+    // Resolve parent cost line by (project, sourceRow). Active rows only.
+    const [parent] = await tx
+      .select({ id: normalizedCostLines.id })
+      .from(normalizedCostLines)
+      .where(
+        and(
+          eq(normalizedCostLines.projectId, projectId),
+          eq(normalizedCostLines.sourceRow, row.parentSourceRow),
+          isNull(normalizedCostLines.effectiveTo),
+        ),
+      )
+      .limit(1);
+
+    if (!parent) {
+      orphaned++;
+      continue;
+    }
+
+    const rowHash = hashActualRow({
+      costLineId: parent.id,
+      actualNo: row.actualNo,
+      invoiceNumber: row.invoiceNumber,
+      invoiceDate: row.invoiceDate,
+    });
+
+    // Soft-close any existing active row with the same hash.
+    await tx
+      .update(normalizedCostLineActuals)
+      .set({ effectiveTo: commitTimestamp })
+      .where(
+        and(
+          eq(normalizedCostLineActuals.costLineId, parent.id),
+          eq(normalizedCostLineActuals.rowHash, rowHash),
+          isNull(normalizedCostLineActuals.effectiveTo),
+        ),
+      );
+
+    // Build the import_snapshot from the writeable fields so subsequent
+    // imports can detect manual edits via the merge engine.
+    const importSnapshot = {
+      description: row.description,
+      qty: row.qty,
+      rate: row.rate,
+      actualTotal: row.actualTotal,
+      poNumber: row.poNumber,
+      invoiceNumber: row.invoiceNumber,
+      invoiceDate: row.invoiceDate,
+      revenueRecognitionAmount: row.revenueRecognitionAmount,
+      financePaymentDate: row.financePaymentDate,
+      comments: row.comments,
+      checkFlag: row.checkFlag,
+      savingOverrun: row.savingOverrun,
+    };
+
+    await tx.insert(normalizedCostLineActuals).values({
+      costLineId: parent.id,
+      projectId,
+      actualNo: row.actualNo,
+      description: row.description,
+      qty: row.qty,
+      rate: row.rate,
+      actualTotal: row.actualTotal,
+      poNumber: row.poNumber,
+      invoiceNumber: row.invoiceNumber,
+      invoiceDate: row.invoiceDate,
+      revenueRecognitionAmount: row.revenueRecognitionAmount,
+      financePaymentDate: row.financePaymentDate,
+      comments: row.comments,
+      checkFlag: row.checkFlag,
+      savingOverrun: row.savingOverrun,
+      cellFormat: row.cellFormat,
+      sourceSheet: row.sourceSheet,
+      sourceRow: row.sourceRow,
+      importRunId: runId,
+      rowHash,
+      importSnapshot,
+      manualOverrides: null,
+      effectiveFrom: commitTimestamp,
+      effectiveTo: null,
+      snapshotRunId: runId,
+    });
+    inserted++;
+  }
+
+  return { inserted, skipped, orphaned };
+}
+
+export interface ProjectMetadataContext extends AuxWriteContext {
+  metadata: {
+    baselineCompletionDate: string | null;
+    forecastedCompletionDate: string | null;
+    projectStartDate: string | null;
+    durationMonthsFromSiteEstab: number | null;
+    durationMonthsToCapacityTest: number | null;
+    cellFormat: Record<string, unknown> | null;
+  } | null;
+  sourceSheet?: string | null;
+}
+
+/**
+ * Writes the top-of-Project-Plan metadata block (baseline / forecasted
+ * completion + duration metrics) to `tracker_project_metadata`.
+ *
+ * Idempotent: skips the write entirely when the new values match the
+ * current active row exactly. Otherwise soft-closes the active row and
+ * inserts a new one.
+ */
+export async function writeProjectMetadata(
+  ctx: ProjectMetadataContext,
+): Promise<{ written: boolean }> {
+  const { tx, projectId, runId, commitTimestamp, metadata, sourceSheet } = ctx;
+  if (!metadata) return { written: false };
+
+  const { trackerProjectMetadata } = await import("@shared/schema");
+  const { eq, and, isNull } = await import("drizzle-orm");
+
+  // Compare against current active row. Skip if all five values match.
+  const [current] = await tx
+    .select()
+    .from(trackerProjectMetadata)
+    .where(
+      and(
+        eq(trackerProjectMetadata.projectId, projectId),
+        isNull(trackerProjectMetadata.effectiveTo),
+      ),
+    )
+    .limit(1);
+
+  if (current) {
+    const sameDates =
+      String(current.baselineCompletionDate ?? "") === String(metadata.baselineCompletionDate ?? "")
+      && String(current.forecastedCompletionDate ?? "") === String(metadata.forecastedCompletionDate ?? "")
+      && String(current.projectStartDate ?? "") === String(metadata.projectStartDate ?? "");
+    const sameDurations =
+      String(current.durationMonthsFromSiteEstab ?? "") === String(metadata.durationMonthsFromSiteEstab ?? "")
+      && String(current.durationMonthsToCapacityTest ?? "") === String(metadata.durationMonthsToCapacityTest ?? "");
+    if (sameDates && sameDurations) {
+      return { written: false };
+    }
+
+    await tx
+      .update(trackerProjectMetadata)
+      .set({ effectiveTo: commitTimestamp })
+      .where(eq(trackerProjectMetadata.id, current.id));
+  }
+
+  await tx.insert(trackerProjectMetadata).values({
+    projectId,
+    importRunId: runId,
+    baselineCompletionDate: metadata.baselineCompletionDate,
+    forecastedCompletionDate: metadata.forecastedCompletionDate,
+    projectStartDate: metadata.projectStartDate,
+    durationMonthsFromSiteEstab: metadata.durationMonthsFromSiteEstab !== null
+      ? String(metadata.durationMonthsFromSiteEstab)
+      : null,
+    durationMonthsToCapacityTest: metadata.durationMonthsToCapacityTest !== null
+      ? String(metadata.durationMonthsToCapacityTest)
+      : null,
+    cellFormat: metadata.cellFormat,
+    sourceSheet: sourceSheet ?? null,
+    effectiveFrom: commitTimestamp,
+    effectiveTo: null,
+    snapshotRunId: runId,
+  });
+  return { written: true };
+}
+
+export interface RevenueSummaryContext extends AuxWriteContext {
+  costedSummary: {
+    plannedRevenue: number | null;
+    plannedExpenditure: number | null;
+    plannedProfit: number | null;
+    plannedMargin: number | null;
+    actualRevenue: number | null;
+    actualExpenditure: number | null;
+    actualProfit: number | null;
+    actualMargin: number | null;
+  } | null;
+  costedSummarySource?: { sourceSheet: string; cellFormat: Record<string, unknown> | null } | null;
+}
+
+/**
+ * Writes the top-of-Revenue-Tracking summary block (Planned Revenue /
+ * Expenditure / Profit / Margin × Costed / Actual) to
+ * `tracker_revenue_summary`.
+ *
+ * Same idempotency model as writeProjectMetadata.
+ */
+export async function writeRevenueSummary(
+  ctx: RevenueSummaryContext,
+): Promise<{ written: boolean }> {
+  const { tx, projectId, runId, commitTimestamp, costedSummary, costedSummarySource } = ctx;
+  if (!costedSummary) return { written: false };
+
+  const { trackerRevenueSummary } = await import("@shared/schema");
+  const { eq, and, isNull } = await import("drizzle-orm");
+
+  const decFromNum = (v: number | null): string | null =>
+    v === null || !isFinite(v) ? null : String(v);
+
+  const next = {
+    plannedRevenueCosted: decFromNum(costedSummary.plannedRevenue),
+    plannedRevenueActual: decFromNum(costedSummary.actualRevenue),
+    plannedExpenditureCosted: decFromNum(costedSummary.plannedExpenditure),
+    plannedExpenditureActual: decFromNum(costedSummary.actualExpenditure),
+    plannedProfitCosted: decFromNum(costedSummary.plannedProfit),
+    plannedProfitActual: decFromNum(costedSummary.actualProfit),
+    plannedMarginCosted: decFromNum(costedSummary.plannedMargin),
+    plannedMarginActual: decFromNum(costedSummary.actualMargin),
+  };
+
+  const [current] = await tx
+    .select()
+    .from(trackerRevenueSummary)
+    .where(
+      and(
+        eq(trackerRevenueSummary.projectId, projectId),
+        isNull(trackerRevenueSummary.effectiveTo),
+      ),
+    )
+    .limit(1);
+
+  if (current) {
+    const same = (Object.keys(next) as Array<keyof typeof next>).every(
+      (k) => String(current[k] ?? "") === String(next[k] ?? ""),
+    );
+    if (same) return { written: false };
+
+    await tx
+      .update(trackerRevenueSummary)
+      .set({ effectiveTo: commitTimestamp })
+      .where(eq(trackerRevenueSummary.id, current.id));
+  }
+
+  await tx.insert(trackerRevenueSummary).values({
+    projectId,
+    importRunId: runId,
+    ...next,
+    cellFormat: costedSummarySource?.cellFormat ?? null,
+    sourceSheet: costedSummarySource?.sourceSheet ?? null,
+    effectiveFrom: commitTimestamp,
+    effectiveTo: null,
+    snapshotRunId: runId,
+  });
+  return { written: true };
+}

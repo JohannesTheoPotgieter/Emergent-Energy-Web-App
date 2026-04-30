@@ -32,7 +32,7 @@ import { requireAdmin } from "./middleware/requireAdmin";
 import { runSmartImportPreview } from "./lib/import/index";
 import { runPreflightValidator } from "./lib/import/preflight-validator";
 import { runImportPlanner, type PlannerResult } from "./lib/import/planner";
-import { writePlanIncremental, writeRevenueIncremental, writeExpenditureIncremental, type IncrementalCommitResult } from "./lib/import/commit-executor";
+import { writePlanIncremental, writeRevenueIncremental, writeExpenditureIncremental, writeActualLineRows, writeProjectMetadata, writeRevenueSummary, type IncrementalCommitResult } from "./lib/import/commit-executor";
 import { matchRows, generateBusinessKey, type SectionType, type MatchedRow } from "./lib/import/row-matcher";
 import { runConflictEngine, type RowMergeResult } from "./lib/import/conflict-engine";
 import { loadCurrentPlanRows, loadCurrentRevenueRows, loadCurrentCostRows, loadBaselineNormalization, detectImportMode } from "./lib/import/baseline";
@@ -2503,6 +2503,42 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           commitTimestamp,
         });
         counts.costLines = costResult.counts.inserted + costResult.counts.updated;
+      }
+
+      // ── PR2C: Auxiliary captures from the source workbook ──
+      // These three writers persist data the section writers above don't
+      // touch: 1:N orphan actual rows for Expenditure, the
+      // top-of-Project-Plan metadata block, and the top-of-Revenue-Tracking
+      // summary block. Each writer is idempotent — re-importing an
+      // unchanged workbook produces zero writes here.
+      try {
+        if (Array.isArray(norm.actualLineRows) && norm.actualLineRows.length > 0) {
+          const actualResult = await writeActualLineRows({
+            tx, projectId, runId, commitTimestamp,
+            actualLineRows: norm.actualLineRows,
+          });
+          if (actualResult.orphaned > 0) {
+            console.warn(`[SmartImport] ${actualResult.orphaned} actual-line row(s) had no parent costed line and were skipped.`);
+          }
+        }
+        if (norm.projectPlanMetadata) {
+          await writeProjectMetadata({
+            tx, projectId, runId, commitTimestamp,
+            metadata: norm.projectPlanMetadata,
+            sourceSheet: (norm.projectPlanMetadata as any)?.sourceSheet ?? null,
+          });
+        }
+        if (norm.costedSummary) {
+          await writeRevenueSummary({
+            tx, projectId, runId, commitTimestamp,
+            costedSummary: norm.costedSummary,
+            costedSummarySource: norm.costedSummarySource ?? null,
+          });
+        }
+      } catch (auxErr) {
+        // Auxiliary writes are non-blocking — the import has already
+        // succeeded for the canonical tables. Surface as warnings.
+        console.error("[SmartImport] Auxiliary writer failure (non-blocking):", auxErr);
       }
 
       // ── S09: Write category_revenue_allocations ──
