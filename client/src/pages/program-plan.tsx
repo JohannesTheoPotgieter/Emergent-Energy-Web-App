@@ -17,12 +17,15 @@
  */
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "wouter";
+import { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { fetchQueryFn } from "@/lib/queryClient";
 import { styleForCell } from "@/lib/tracker-cell-format";
-import { Loader2 } from "lucide-react";
+import { Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface ProgramPlanResponse {
   projectId: number;
@@ -122,6 +125,18 @@ export default function ProgramPlanPage() {
         </CardContent>
       </Card>
 
+      <Tabs defaultValue="tasks" className="w-full">
+        <TabsList>
+          <TabsTrigger value="tasks">Task List</TabsTrigger>
+          <TabsTrigger value="gantt">Daily Gantt</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="gantt">
+          <GanttSection tasks={data.tasks} startDate={m?.projectStartDate ?? null} />
+        </TabsContent>
+
+        <TabsContent value="tasks">
+
       <Card>
         <CardHeader><CardTitle className="text-base">Tasks (WBS-indented)</CardTitle></CardHeader>
         <CardContent className="overflow-x-auto">
@@ -171,6 +186,177 @@ export default function ProgramPlanPage() {
           </Table>
         </CardContent>
       </Card>
+
+        </TabsContent>
+      </Tabs>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Daily Gantt strip
+// ---------------------------------------------------------------------------
+
+const DAY_MS = 86400_000;
+const DEFAULT_WINDOW_DAYS = 84; // 12 weeks
+const CELL_WIDTH = 18;          // px per day cell
+const TASK_LABEL_WIDTH = 360;   // px for the WBS + name column
+
+/** Strip the time component and return a UTC midnight Date. */
+function asDay(input: string | Date | null): Date | null {
+  if (!input) return null;
+  const d = input instanceof Date ? input : new Date(input);
+  if (isNaN(d.getTime())) return null;
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+}
+
+function addDays(d: Date, n: number): Date {
+  return new Date(d.getTime() + n * DAY_MS);
+}
+
+function diffDays(a: Date, b: Date): number {
+  return Math.round((a.getTime() - b.getTime()) / DAY_MS);
+}
+
+function shortMonth(d: Date): string {
+  return d.toLocaleDateString("en-ZA", { month: "short", day: "numeric" });
+}
+
+function dayOfWeekLetter(d: Date): string {
+  return ["S", "M", "T", "W", "T", "F", "S"][d.getUTCDay()];
+}
+
+function isWeekend(d: Date): boolean {
+  const dow = d.getUTCDay();
+  return dow === 0 || dow === 6;
+}
+
+interface GanttSectionProps {
+  tasks: ProgramPlanResponse["tasks"];
+  startDate: string | null;
+}
+
+function GanttSection({ tasks, startDate }: GanttSectionProps) {
+  // Window anchor: project start, or earliest task start, or today.
+  const anchor = useMemo(() => {
+    const candidates: Date[] = [];
+    const projStart = asDay(startDate);
+    if (projStart) candidates.push(projStart);
+    for (const t of tasks) {
+      const s = asDay(t.startDate);
+      if (s) candidates.push(s);
+    }
+    if (candidates.length === 0) return asDay(new Date()) ?? new Date();
+    return new Date(Math.min(...candidates.map(d => d.getTime())));
+  }, [tasks, startDate]);
+
+  const [windowStartOffset, setWindowStartOffset] = useState(0);
+  const windowStart = useMemo(() => addDays(anchor, windowStartOffset), [anchor, windowStartOffset]);
+  const windowEnd = useMemo(() => addDays(windowStart, DEFAULT_WINDOW_DAYS - 1), [windowStart]);
+
+  const days = useMemo(() => {
+    const out: Date[] = [];
+    for (let i = 0; i < DEFAULT_WINDOW_DAYS; i++) {
+      out.push(addDays(windowStart, i));
+    }
+    return out;
+  }, [windowStart]);
+
+  const today = asDay(new Date());
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <CardTitle className="text-base">Daily Gantt — 12-week window</CardTitle>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => setWindowStartOffset(o => o - 28)} data-testid="gantt-back-4w">
+              <ChevronLeft className="h-3.5 w-3.5" /> 4w
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setWindowStartOffset(0)} data-testid="gantt-reset">
+              Project start
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setWindowStartOffset(o => o + 28)} data-testid="gantt-fwd-4w">
+              4w <ChevronRight className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
+        <div className="text-xs text-muted-foreground">
+          {shortMonth(windowStart)} — {shortMonth(windowEnd)}
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-x-auto" data-testid="gantt-scroll">
+          <div style={{ width: TASK_LABEL_WIDTH + days.length * CELL_WIDTH }}>
+            {/* Header rows: week start + day-of-week */}
+            <div className="flex sticky top-0 bg-background z-10 border-b">
+              <div className="font-semibold text-xs px-2 py-1 border-r" style={{ width: TASK_LABEL_WIDTH }}>WBS · Task</div>
+              {days.map((d, i) => {
+                const isWeekStart = d.getUTCDay() === 1 || i === 0;
+                return (
+                  <div
+                    key={`hdr-${i}`}
+                    className={`text-[10px] text-center border-r ${isWeekend(d) ? "bg-muted/40" : ""}`}
+                    style={{ width: CELL_WIDTH }}
+                  >
+                    <div className={`font-mono ${isWeekStart ? "font-semibold" : "text-muted-foreground"}`}>
+                      {isWeekStart ? d.getUTCDate() : ""}
+                    </div>
+                    <div className="text-muted-foreground">{dayOfWeekLetter(d)}</div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Task rows */}
+            {tasks.map((t) => {
+              const start = asDay(t.startDate);
+              const end = asDay(t.endDate);
+              const pct = t.percentComplete ?? 0;
+              const isComplete = pct >= 1;
+              const overdue = end !== null && today !== null && end.getTime() < today.getTime() && !isComplete;
+
+              return (
+                <div key={t.id} className="flex items-stretch border-b hover:bg-muted/20" data-testid={`gantt-row-${t.id}`}>
+                  <div className="text-xs px-2 py-1 border-r flex items-center gap-1.5" style={{ width: TASK_LABEL_WIDTH, paddingLeft: `${0.5 + (t.indentLevel ?? 0) * 0.75}rem` }}>
+                    <span className="font-mono text-muted-foreground shrink-0">{t.wbsCode ?? t.outlineNumber ?? "—"}</span>
+                    <span className="truncate" title={t.title}>{t.title}</span>
+                  </div>
+                  {days.map((d, i) => {
+                    const inRange = start && end && d.getTime() >= start.getTime() && d.getTime() <= end.getTime();
+                    const isToday = today && d.getTime() === today.getTime();
+                    let bg = "bg-transparent";
+                    if (inRange) {
+                      bg = isComplete ? "bg-emerald-300" : overdue ? "bg-red-300" : "bg-emerald-200";
+                    } else if (isWeekend(d)) {
+                      bg = "bg-muted/30";
+                    }
+                    return (
+                      <div
+                        key={`cell-${t.id}-${i}`}
+                        className={`border-r ${bg} ${isToday ? "outline outline-blue-500 outline-2 outline-offset-[-2px]" : ""}`}
+                        style={{ width: CELL_WIDTH, minHeight: 24 }}
+                        title={inRange ? `${shortMonth(d)} — ${t.title}` : ""}
+                      />
+                    );
+                  })}
+                </div>
+              );
+            })}
+
+            {tasks.length === 0 && (
+              <div className="text-center text-sm text-muted-foreground py-6">No tasks to plot.</div>
+            )}
+          </div>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+          <span className="inline-flex items-center gap-1"><span className="inline-block w-3 h-3 bg-emerald-200 rounded-sm" /> In progress</span>
+          <span className="inline-flex items-center gap-1"><span className="inline-block w-3 h-3 bg-emerald-300 rounded-sm" /> Complete</span>
+          <span className="inline-flex items-center gap-1"><span className="inline-block w-3 h-3 bg-red-300 rounded-sm" /> Overdue</span>
+          <span className="inline-flex items-center gap-1"><span className="inline-block w-3 h-3 bg-muted/40 border rounded-sm" /> Weekend</span>
+          <span className="inline-flex items-center gap-1"><span className="inline-block w-3 h-3 outline outline-blue-500 outline-2 rounded-sm" /> Today</span>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
