@@ -12,7 +12,19 @@ export async function runStartupSeeds(options: {
 
   if (!startupDataSeedEnabled) return;
 
-  // One-time guard: skip if all seeds have already completed
+  // D6 — Active Clients folder taxonomy. Runs OUTSIDE the startup_seeds_v1
+  // one-shot guard so it executes on every boot (idempotent insert keyed
+  // on internal_key). New rows added to the seed picked up automatically;
+  // admin-edited rows preserved (we only insert when missing).
+  try {
+    const { seedFolderTaxonomy } = await import("../seed-folder-taxonomy");
+    const { inserted, skipped } = await seedFolderTaxonomy();
+    log(`[Seed] Folder taxonomy: inserted=${inserted} skipped=${skipped}`, "Startup");
+  } catch (err) {
+    log(`[Seed] Folder taxonomy error: ${err}`, "Startup");
+  }
+
+  // One-time guard: skip the v1 batch if all original seeds have already completed
   if (await hasBackfillRun("startup_seeds_v1")) return;
 
   const { seedQualityTemplate } = await import("../seed-quality-template");
@@ -46,14 +58,6 @@ export async function runStartupSeeds(options: {
       log(`[Seed] Role templates: inserted=${inserted} updated=${updated}`, "Startup"),
     )
     .catch((err) => log(`[Seed] Role templates error: ${err}`, "Startup"));
-
-  // D6 — Active Clients folder taxonomy (idempotent upsert by internal_key).
-  const { seedFolderTaxonomy } = await import("../seed-folder-taxonomy");
-  await seedFolderTaxonomy()
-    .then(({ inserted, skipped }) =>
-      log(`[Seed] Folder taxonomy: inserted=${inserted} skipped=${skipped}`, "Startup"),
-    )
-    .catch((err) => log(`[Seed] Folder taxonomy error: ${err}`, "Startup"));
 
   try {
     const {
