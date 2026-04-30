@@ -455,6 +455,33 @@ export function registerHandoverRoutes(app: Express) {
           actionOwner = "Operations";
         }
 
+        const missingInputs: string[] = [];
+        if (!row.pd_owner && !row.pd) missingInputs.push("PD owner");
+        if (!row.pm_owner && !row.pm) missingInputs.push("PM owner");
+        if (!row.submitted_date) missingInputs.push("Submitted date");
+        if (!row.updated_at) missingInputs.push("Last update");
+        if (!row.kickoff_date) missingInputs.push("Kickoff date");
+        if (!row.handover_form_data) missingInputs.push("Handover form");
+
+        const blockers = [
+          !deliverablesComplete ? "Missing deliverables evidence" : null,
+          !trackerLinked ? "Tracker not linked" : null,
+          !executionEnabled && status === "HANDOVER_COMPLETE" ? "Execution not enabled" : null,
+        ].filter(Boolean) as string[];
+
+        const healthScore =
+          missingInputs.length > 0
+            ? null
+            : Math.max(
+                0,
+                Math.min(
+                  100,
+                  Number(row.readiness_score ?? 0) -
+                    blockers.length * 15 -
+                    (daysInStatus > 7 ? 10 : 0),
+                ),
+              );
+
         return {
           ...row,
           handover_status: status,
@@ -464,6 +491,10 @@ export function registerHandoverRoutes(app: Express) {
           days_in_status: daysInStatus,
           next_action: nextAction,
           action_owner: actionOwner,
+          health_score: healthScore,
+          health_blockers: blockers,
+          health_missing_inputs: missingInputs,
+          health_not_enough_data: missingInputs.length > 0,
         };
       });
 
