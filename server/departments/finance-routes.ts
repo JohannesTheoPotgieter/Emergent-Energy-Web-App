@@ -84,6 +84,8 @@ const revenueTrackingOverridesSchema = z
     overrideComment: z.string().min(3).max(1000),
   })
   .passthrough();
+import { applyManualOverride, manualOverridesEnabled } from "../lib/manual-overrides";
+import { EXPENDITURE_TRACKED_FIELDS, REVENUE_TRACKED_FIELDS } from "@shared/excel-vs-app/contract";
 import {
   approvals,
   auditEvents,
@@ -160,14 +162,20 @@ import { QuickBooksLinksRepository } from "../repositories/quickbooks-links-repo
 const FINANCIAL_APPROVER_ROLES = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"];
 
 async function getHighRiskProjectCostReadRows(projectName: string, projectIdParam?: number | null): Promise<any[]> {
+  // Operational-tab read: overlay manual_overrides on top of the live
+  // column for tracked fields so the operator sees their override.
+  // Gated by USE_MANUAL_OVERRIDES — when off (legacy mode), the live
+  // column already holds the operator's value (writes still go to the
+  // live column), so the overlay is a no-op anyway.
+  const opts = { applyOverrides: manualOverridesEnabled() };
   if (projectIdParam != null && Number.isFinite(projectIdParam)) {
-    return getCanonicalProjectCostLines(projectIdParam as number);
+    return getCanonicalProjectCostLines(projectIdParam as number, opts);
   }
-  return getCanonicalProjectCostLinesByName(projectName).then((r) => r.rows);
+  return getCanonicalProjectCostLinesByName(projectName, opts).then((r) => r.rows);
 }
 
 async function getHighRiskAllCostReadRows(): Promise<any[]> {
-  return getCanonicalAllCurrentCostLines();
+  return getCanonicalAllCurrentCostLines({ applyOverrides: manualOverridesEnabled() });
 }
 
 /**
@@ -6799,8 +6807,35 @@ router.post("/api/expenditure/overrides", requireAuth, requireAdminOrFinancialEd
       supplierName: "supplierName",
     };
 
+    // Workstream B (live=Excel invariant): map legacy client field names
+    // to canonical normalized_cost_lines column names so we can route
+    // tracked fields into manual_overrides instead of the live column.
+    // Fields not in this map (or not in EXPENDITURE_TRACKED_FIELDS)
+    // continue writing to the live column via the legacy
+    // updateProgramExpenseFields path.
+    const legacyToCanonical: Record<string, string> = {
+      expenseLineItem: "description",
+      expenseActualTotal: "amountExVat",
+      expenseInvoiceNumber: "invoiceNumber",
+      expenseInvoicedDate: "invoiceDate",
+      expensePaymentDate: "paidDate",
+      expensePoNumber: "poNumber",
+      forecastPaymentDate: "forecastPaymentDate",
+      supplierName: "counterpartyName",
+      budgetTotal: "budgetTotal",
+      budgetQty: "budgetQty",
+      budgetRateUnit: "budgetRate",
+      // boolean confirmation flags
+      invoiceDateConfirmed: "invoiceDateConfirmed",
+      paymentDateConfirmed: "paidDateConfirmed",
+    };
+    const trackedSet = new Set<string>(EXPENDITURE_TRACKED_FIELDS as readonly string[]);
+    const useOverrides = manualOverridesEnabled();
+
     for (const pn of projectNames) {
       const projectOverrides = overrides.filter((o: any) => o.projectName === pn);
+      // Use the raw (no-overlay) canonical reader here so the lookup
+      // sees actual row IDs, not overlaid display values.
       const { rows: expenses } = await getCanonicalProjectCostLinesByName(pn as string);
       const rowMap = new Map(expenses.map((e: any) => [e.rowNumber, e]));
 
@@ -6823,8 +6858,37 @@ router.post("/api/expenditure/overrides", requireAuth, requireAdminOrFinancialEd
       }
 
       for (const [expenseId, fields] of rowGroups.entries()) {
-        if (Object.keys(fields).length > 0) {
+        if (Object.keys(fields).length === 0) continue;
+        if (!useOverrides) {
+          // Feature flag off: legacy behaviour — write everything to the
+          // live column.
           await storage.updateProgramExpenseFields(expenseId, fields);
+          continue;
+        }
+        // Split tracked fields → manual_overrides; untracked fields →
+        // legacy live-column write.
+        const trackedEntries: [string, any][] = [];
+        const untrackedFields: Record<string, any> = {};
+        for (const [legacyKey, value] of Object.entries(fields)) {
+          const canonicalKey = legacyToCanonical[legacyKey] ?? legacyKey;
+          if (trackedSet.has(canonicalKey)) {
+            trackedEntries.push([canonicalKey, value]);
+          } else {
+            untrackedFields[legacyKey] = value;
+          }
+        }
+        for (const [canonicalKey, value] of trackedEntries) {
+          await applyManualOverride({
+            table: "normalized_cost_lines",
+            rowId: expenseId,
+            fieldName: canonicalKey,
+            value: value as any,
+            editedBy: userId ?? null,
+            note: overrideComment.trim(),
+          });
+        }
+        if (Object.keys(untrackedFields).length > 0) {
+          await storage.updateProgramExpenseFields(expenseId, untrackedFields);
         }
       }
     }

@@ -299,3 +299,19 @@ export function applyOverridesOverlay<T extends { manualOverrides?: unknown }>(
 ): T[] {
   return rows.map(r => withOverridesOverlay(r, fields));
 }
+
+// ---------------------------------------------------------------------------
+// Feature flag
+// ---------------------------------------------------------------------------
+//
+// `USE_MANUAL_OVERRIDES=false` disables the cell-edit-side override path:
+//   - Cell-edit handlers continue writing to the live column (legacy
+//     behaviour).
+//   - Read overlay is bypassed (the live column is what the operator
+//     edited, so no overlay needed).
+//
+// Default ON — graceful degradation is already designed.
+
+export function manualOverridesEnabled(): boolean {
+  return process.env.USE_MANUAL_OVERRIDES !== "false";
+}
