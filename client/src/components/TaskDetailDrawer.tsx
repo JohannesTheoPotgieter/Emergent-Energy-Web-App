@@ -1,9 +1,15 @@
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, invalidateProjectQueries } from "@/lib/queryClient";
 import { invalidateAllTaskCaches } from "@/lib/task-cache";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
+import { useUserNames } from "@/hooks/use-user-names";
 import { getTaskWorkflowBlockReason } from "@/lib/task-workflow-guard";
+import {
+  WORKSTREAM_OPTIONS,
+  resolveWorkstream,
+} from "@/lib/workstream-options";
 import { format, formatDistanceToNow, differenceInDays } from "date-fns";
 import {
   hasDeliverableRequirementFlag,
@@ -81,11 +87,6 @@ interface TaskDetailResponse {
 
 const STATUS_OPTIONS = ["Not Started", "In Progress", "Blocked", "Done"];
 const PRIORITY_OPTIONS = ["Urgent", "High", "Normal", "Low"];
-const WORKSTREAM_OPTIONS = [
-  { value: "PM", label: "Project", color: "bg-emerald-100 text-emerald-800" },
-  { value: "ENG", label: "Engineering", color: "bg-blue-100 text-blue-800" },
-  { value: "QUALITY", label: "Quality", color: "bg-purple-100 text-purple-800" },
-];
 
 const statusColor: Record<string, string> = {
   "Not Started": "bg-muted text-foreground",
@@ -189,11 +190,22 @@ export default function TaskDetailDrawer({
     enabled: open && taskId !== null,
   });
 
+  const { toast } = useToast();
+
   const invalidateAll = () => {
     invalidateAllTaskCaches(queryClient);
     queryClient.invalidateQueries({ queryKey: detailQueryKey });
-    queryClient.invalidateQueries({
-      queryKey: ["working-plan", projectName],
+    queryClient.invalidateQueries({ queryKey: ["operational-task-detail"] });
+    queryClient.invalidateQueries({ queryKey: ["baseline-task-detail"] });
+    queryClient.invalidateQueries({ queryKey: ["planning-tasks", projectName] });
+    queryClient.invalidateQueries({ queryKey: ["working-plan", projectName] });
+  };
+
+  const toastMutationError = (action: string) => (err: any) => {
+    toast({
+      title: `${action} failed`,
+      description: err?.message || `Could not ${action.toLowerCase()}`,
+      variant: "destructive",
     });
   };
 
@@ -206,6 +218,7 @@ export default function TaskDetailDrawer({
       }
     },
     onSuccess: invalidateAll,
+    onError: toastMutationError("Save"),
   });
 
   const addCommentMutation = useMutation({
@@ -213,6 +226,15 @@ export default function TaskDetailDrawer({
       await apiRequest("POST", "/api/task-comments", { taskId, body });
     },
     onSuccess: invalidateAll,
+    onError: toastMutationError("Add comment"),
+  });
+
+  const deleteCommentMutation = useMutation({
+    mutationFn: async (commentId: number) => {
+      await apiRequest("DELETE", `/api/task-comments/${commentId}`);
+    },
+    onSuccess: invalidateAll,
+    onError: toastMutationError("Delete comment"),
   });
 
   const addChecklistMutation = useMutation({
@@ -220,6 +242,15 @@ export default function TaskDetailDrawer({
       await apiRequest("POST", "/api/task-checklists", { taskId, title });
     },
     onSuccess: invalidateAll,
+    onError: toastMutationError("Add checklist"),
+  });
+
+  const deleteChecklistMutation = useMutation({
+    mutationFn: async (checklistId: number) => {
+      await apiRequest("DELETE", `/api/task-checklists/${checklistId}`);
+    },
+    onSuccess: invalidateAll,
+    onError: toastMutationError("Delete checklist"),
   });
 
   const addChecklistItemMutation = useMutation({
@@ -236,6 +267,7 @@ export default function TaskDetailDrawer({
       });
     },
     onSuccess: invalidateAll,
+    onError: toastMutationError("Add item"),
   });
 
   const toggleChecklistItemMutation = useMutation({
@@ -251,6 +283,15 @@ export default function TaskDetailDrawer({
       });
     },
     onSuccess: invalidateAll,
+    onError: toastMutationError("Update item"),
+  });
+
+  const deleteChecklistItemMutation = useMutation({
+    mutationFn: async (itemId: number) => {
+      await apiRequest("DELETE", `/api/task-checklist-items/${itemId}`);
+    },
+    onSuccess: invalidateAll,
+    onError: toastMutationError("Delete item"),
   });
 
   const addAttachmentMutation = useMutation({
@@ -268,9 +309,16 @@ export default function TaskDetailDrawer({
       });
     },
     onSuccess: invalidateAll,
+    onError: toastMutationError("Add attachment"),
   });
 
-  const { toast } = useToast();
+  const deleteAttachmentMutation = useMutation({
+    mutationFn: async (attachmentId: number) => {
+      await apiRequest("DELETE", `/api/task-attachments/${attachmentId}`);
+    },
+    onSuccess: invalidateAll,
+    onError: toastMutationError("Delete attachment"),
+  });
 
   const deleteTaskMutation = useMutation({
     mutationFn: async () => {
@@ -339,7 +387,10 @@ export default function TaskDetailDrawer({
   });
 
 
-  const guardedUpdateTask = (updates: Record<string, unknown>) => {
+  const guardedUpdateTask = (
+    updates: Record<string, unknown>,
+    options?: { onSuccess?: () => void; onError?: (err: any) => void },
+  ) => {
     if (typeof updates.status === "string" && data?.task) {
       const blockedReason = getTaskWorkflowBlockReason(data.task as any, updates.status);
       if (blockedReason) {
@@ -347,8 +398,30 @@ export default function TaskDetailDrawer({
         return;
       }
     }
-    updateTaskMutation.mutate(updates);
+    updateTaskMutation.mutate(updates, options);
   };
+
+  // Direct flush helper that targets a specific task id (used to flush dirty edits
+  // for the OUTGOING task when the drawer switches to a different task).
+  const flushTaskUpdate = useCallback(
+    (id: number, updates: Record<string, unknown>) => {
+      if (!id || Object.keys(updates).length === 0) return;
+      const isBaseline = id < 0;
+      const promise = isBaseline
+        ? apiRequest("PATCH", `/api/planning-tasks/${id}`, { projectName, ...updates })
+        : apiRequest("PATCH", `/api/operational-tasks/${id}`, updates);
+      promise
+        .then(() => invalidateAll())
+        .catch((err: any) => {
+          toast({
+            title: "Save failed",
+            description: err?.message || "Could not save edits",
+            variant: "destructive",
+          });
+        });
+    },
+    [projectName],
+  );
 
   if (!open || taskId === null) return null;
 
@@ -387,14 +460,23 @@ export default function TaskDetailDrawer({
               <TaskDetailContent
                 data={data}
                 updateTask={guardedUpdateTask}
+                flushTaskUpdate={flushTaskUpdate}
                 addComment={addCommentMutation.mutate}
+                deleteComment={deleteCommentMutation.mutate}
                 addChecklist={addChecklistMutation.mutate}
+                deleteChecklist={deleteChecklistMutation.mutate}
                 addChecklistItem={addChecklistItemMutation.mutate}
                 toggleChecklistItem={toggleChecklistItemMutation.mutate}
+                deleteChecklistItem={deleteChecklistItemMutation.mutate}
                 addAttachment={addAttachmentMutation.mutate}
+                deleteAttachment={deleteAttachmentMutation.mutate}
                 onClose={onClose}
                 onDeleteTask={() => deleteTaskMutation.mutate()}
-                onConvertToMilestone={() => convertToMilestoneMutation.mutate()}
+                onConvertToMilestone={() =>
+                  convertToMilestoneMutation.mutate(undefined, {
+                    onSuccess: () => onClose(),
+                  })
+                }
                 onUpdateDuration={(d) => updateDurationMutation.mutate(d)}
                 isDeleting={deleteTaskMutation.isPending}
                 isConverting={convertToMilestoneMutation.isPending}
@@ -412,11 +494,16 @@ export default function TaskDetailDrawer({
 function TaskDetailContent({
   data,
   updateTask,
+  flushTaskUpdate,
   addComment,
+  deleteComment,
   addChecklist,
+  deleteChecklist,
   addChecklistItem,
   toggleChecklistItem,
+  deleteChecklistItem,
   addAttachment,
+  deleteAttachment,
   onClose,
   onDeleteTask,
   onConvertToMilestone,
@@ -427,12 +514,20 @@ function TaskDetailContent({
   trackingRole,
 }: {
   data: TaskDetailResponse;
-  updateTask: (updates: Record<string, unknown>) => void;
+  updateTask: (
+    updates: Record<string, unknown>,
+    options?: { onSuccess?: () => void; onError?: (err: any) => void },
+  ) => void;
+  flushTaskUpdate: (id: number, updates: Record<string, unknown>) => void;
   addComment: (body: string) => void;
+  deleteComment: (commentId: number) => void;
   addChecklist: (title: string) => void;
+  deleteChecklist: (checklistId: number) => void;
   addChecklistItem: (p: { checklistId: number; content: string }) => void;
   toggleChecklistItem: (p: { itemId: number; isDone: boolean }) => void;
+  deleteChecklistItem: (itemId: number) => void;
   addAttachment: (p: { filename: string; url: string }) => void;
+  deleteAttachment: (attachmentId: number) => void;
   onClose: () => void;
   onDeleteTask: () => void;
   onConvertToMilestone: () => void;
@@ -462,8 +557,100 @@ function TaskDetailContent({
   const [linkName, setLinkName] = useState("");
 
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmConvert, setConfirmConvert] = useState(false);
   const [editingDuration, setEditingDuration] = useState(false);
   const [durationVal, setDurationVal] = useState(String((task as any).durationDays || 0));
+  const [confirmDeleteChecklist, setConfirmDeleteChecklist] = useState<number | null>(null);
+  const [confirmDeleteItem, setConfirmDeleteItem] = useState<number | null>(null);
+  const [confirmDeleteComment, setConfirmDeleteComment] = useState<number | null>(null);
+  const [confirmDeleteAttachment, setConfirmDeleteAttachment] = useState<number | null>(null);
+
+  const { isAdmin } = useAuth();
+  const { resolveName } = useUserNames();
+
+  // Refs to support flushing pending edits when the drawer switches tasks or
+  // unmounts. We track current dirty values, the last server-known values,
+  // and the task id those values belong to.
+  const titleRef = useRef(titleVal);
+  const descRef = useRef(descVal);
+  const taskIdRef = useRef<number>(task.id);
+  const baselineTitleRef = useRef<string>(task.title);
+  const baselineDescRef = useRef<string>(task.description ?? "");
+  const flushRef = useRef(flushTaskUpdate);
+  useEffect(() => {
+    titleRef.current = titleVal;
+  }, [titleVal]);
+  useEffect(() => {
+    descRef.current = descVal;
+  }, [descVal]);
+  useEffect(() => {
+    flushRef.current = flushTaskUpdate;
+  }, [flushTaskUpdate]);
+
+  const computePendingUpdates = (): Record<string, unknown> => {
+    const updates: Record<string, unknown> = {};
+    const t = (titleRef.current || "").trim();
+    if (t && t !== baselineTitleRef.current) updates.title = t;
+    if (descRef.current !== baselineDescRef.current) updates.description = descRef.current;
+    return updates;
+  };
+
+  // Re-sync local edit state when the drawer switches to a different task.
+  // Flush pending edits to the OUTGOING task before resetting.
+  useEffect(() => {
+    if (taskIdRef.current !== task.id) {
+      const pending = computePendingUpdates();
+      if (Object.keys(pending).length > 0) {
+        flushRef.current(taskIdRef.current, pending);
+      }
+      taskIdRef.current = task.id;
+      baselineTitleRef.current = task.title;
+      baselineDescRef.current = task.description ?? "";
+      setTitleVal(task.title);
+      setDescVal(task.description ?? "");
+      setEditingTitle(false);
+      setEditingDuration(false);
+      setDurationVal(String((task as any).durationDays || 0));
+      setCommentText("");
+      setShowNewChecklist(false);
+      setNewChecklistTitle("");
+      setNewItemInputs({});
+      setShowAddLink(false);
+      setLinkUrl("");
+      setLinkName("");
+      setConfirmDelete(false);
+      setConfirmConvert(false);
+      setConfirmDeleteChecklist(null);
+      setConfirmDeleteItem(null);
+      setConfirmDeleteComment(null);
+      setConfirmDeleteAttachment(null);
+    } else {
+      // Same task — pick up upstream changes if user hasn't dirtied locally.
+      if (task.title !== baselineTitleRef.current) {
+        if (titleRef.current === baselineTitleRef.current) {
+          setTitleVal(task.title);
+        }
+        baselineTitleRef.current = task.title;
+      }
+      const newDesc = task.description ?? "";
+      if (newDesc !== baselineDescRef.current) {
+        if (descRef.current === baselineDescRef.current) {
+          setDescVal(newDesc);
+        }
+        baselineDescRef.current = newDesc;
+      }
+    }
+  }, [task.id, task.title, task.description]);
+
+  // Flush dirty edits when the drawer unmounts (close).
+  useEffect(() => {
+    return () => {
+      const pending = computePendingUpdates();
+      if (Object.keys(pending).length > 0) {
+        flushRef.current(taskIdRef.current, pending);
+      }
+    };
+  }, []);
 
   const isBaseline = task.isBaseline || task.importedTaskId !== null;
   const isPlanTask = isBaselineTask || isBaseline;
@@ -500,15 +687,33 @@ function TaskDetailContent({
         : "Not Started";
 
   const saveTitle = () => {
-    if (titleVal.trim() && titleVal !== task.title) {
-      updateTask({ title: titleVal.trim() });
+    const t = titleVal.trim();
+    if (t && t !== baselineTitleRef.current) {
+      updateTask(
+        { title: t },
+        {
+          onSuccess: () => {
+            // Only advance the baseline once the server has accepted the value;
+            // failed saves stay dirty so they can be retried on close/switch/unmount.
+            baselineTitleRef.current = t;
+          },
+        },
+      );
     }
     setEditingTitle(false);
   };
 
   const saveDescription = () => {
-    if (descVal !== (task.description ?? "")) {
-      updateTask({ description: descVal });
+    if (descVal !== baselineDescRef.current) {
+      const snapshot = descVal;
+      updateTask(
+        { description: snapshot },
+        {
+          onSuccess: () => {
+            baselineDescRef.current = snapshot;
+          },
+        },
+      );
     }
   };
 
@@ -535,7 +740,7 @@ function TaskDetailContent({
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
-          {editingTitle ? (
+          {editingTitle && isAdmin ? (
             <Input
               data-testid="input-task-title"
               value={titleVal}
@@ -548,8 +753,9 @@ function TaskDetailContent({
           ) : (
             <h2
               data-testid="text-task-title"
-              className="text-lg font-semibold cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1"
-              onClick={() => setEditingTitle(true)}
+              className={`text-lg font-semibold rounded px-1 -mx-1 ${isAdmin ? "cursor-pointer hover:bg-muted/50" : ""}`}
+              onClick={() => { if (isAdmin) setEditingTitle(true); }}
+              title={!isAdmin ? "Admins only" : undefined}
             >
               {task.title}
             </h2>
@@ -614,13 +820,13 @@ function TaskDetailContent({
               </Badge>
             )}
             {(() => {
-              const wsOpt = WORKSTREAM_OPTIONS.find(w => w.value === (taskAny.workstream || "PM"));
-              return wsOpt ? (
-                <Badge className={`text-xs gap-1 ${wsOpt.color}`} variant="secondary" data-testid="badge-workstream">
+              const wsOpt = resolveWorkstream(taskAny.workstream);
+              return (
+                <Badge className={`text-xs gap-1 ${wsOpt.badgeClass}`} variant="secondary" data-testid="badge-workstream">
                   <Layers className="h-3 w-3" />
                   {wsOpt.label}
                 </Badge>
-              ) : null;
+              );
             })()}
             <Badge
               className={`text-xs gap-1 ${
@@ -671,9 +877,10 @@ function TaskDetailContent({
                   </div>
                 ) : (
                   <span
-                    className="text-sm font-medium cursor-pointer hover:text-primary"
-                    onClick={() => { setDurationVal(String(durationDays)); setEditingDuration(true); }}
+                    className={`text-sm font-medium ${isAdmin ? "cursor-pointer hover:text-primary" : ""}`}
+                    onClick={() => { if (isAdmin) { setDurationVal(String(durationDays)); setEditingDuration(true); } }}
                     data-testid="text-duration"
+                    title={!isAdmin ? "Admins only" : undefined}
                   >
                     {durationDays > 0 ? `${durationDays} working days` : "—"}
                   </span>
@@ -787,6 +994,7 @@ function TaskDetailContent({
             data-testid="select-status"
             triggerClassName="h-8 text-xs"
             options={STATUS_OPTIONS.map((s) => ({ value: s, label: s }))}
+            disabled={!isAdmin}
           />
         </div>
 
@@ -800,6 +1008,7 @@ function TaskDetailContent({
             data-testid="select-priority"
             triggerClassName="h-8 text-xs"
             options={PRIORITY_OPTIONS.map((p) => ({ value: p, label: p }))}
+            disabled={!isAdmin}
           />
         </div>
 
@@ -814,6 +1023,7 @@ function TaskDetailContent({
               data-testid="select-workstream"
               triggerClassName="h-8 text-xs"
               options={WORKSTREAM_OPTIONS.map((w) => ({ value: w.value, label: w.label }))}
+              disabled={!isAdmin}
             />
           </div>
         )}
@@ -831,6 +1041,8 @@ function TaskDetailContent({
               mode="multi"
               size="sm"
               invalidateKeys={[`baseline-task-detail`, `planning-tasks`]}
+              disabled={!isAdmin}
+              disabledReason="Admins only"
             />
           ) : (
             <UserAssignmentPicker
@@ -841,6 +1053,8 @@ function TaskDetailContent({
               mode="multi"
               size="sm"
               invalidateKeys={[`/api/operational-tasks/task/${task.id}`, "/api/my-work/all-tasks"]}
+              disabled={!isAdmin}
+              disabledReason="Admins only"
             />
           )}
         </div>
@@ -861,13 +1075,14 @@ function TaskDetailContent({
                   checked={!!task.approvalRequired}
                   onCheckedChange={(checked) => updateTask({ approvalRequired: checked === true })}
                   data-testid="checkbox-approval-required"
+                  disabled={!isAdmin}
                 />
                 Approval required
               </label>
               <label className="flex items-center gap-2 rounded-md border bg-card px-3 py-2 text-xs text-muted-foreground">
                 <Checkbox
                   checked={deliverableRequired}
-                  disabled={deliverableRequirementLocked}
+                  disabled={deliverableRequirementLocked || !isAdmin}
                   onCheckedChange={(checked) =>
                     updateTask({
                       tags: withDeliverableRequirementTag(taskAny.tags, checked === true),
@@ -901,6 +1116,8 @@ function TaskDetailContent({
             key={`start-${task.id}-${task.startDate}`}
             defaultValue={task.startDate ? String(task.startDate).substring(0, 10) : ""}
             onBlur={(e) => updateTask({ startDate: e.target.value || null })}
+            disabled={!isAdmin}
+            title={!isAdmin ? "Admins only" : undefined}
           />
         </div>
 
@@ -915,6 +1132,8 @@ function TaskDetailContent({
             key={`due-${task.id}-${task.dueDate}`}
             defaultValue={task.dueDate ? String(task.dueDate).substring(0, 10) : ""}
             onBlur={(e) => updateTask({ dueDate: e.target.value || null })}
+            disabled={!isAdmin}
+            title={!isAdmin ? "Admins only" : undefined}
           />
         </div>
 
@@ -931,6 +1150,7 @@ function TaskDetailContent({
               step={5}
               value={[task.percentComplete ?? 0]}
               onValueCommit={(v) => updateTask({ percentComplete: v[0] })}
+              disabled={!isAdmin}
             />
             <Input
               data-testid="input-percent-complete"
@@ -951,6 +1171,8 @@ function TaskDetailContent({
                   (e.target as HTMLInputElement).blur();
                 }
               }}
+              disabled={!isAdmin}
+              title={!isAdmin ? "Admins only" : undefined}
             />
             <span className="text-xs text-muted-foreground">%</span>
           </div>
@@ -987,21 +1209,47 @@ function TaskDetailContent({
             <label className="text-xs text-muted-foreground mb-2 block font-medium">Plan Actions</label>
             <div className="flex flex-wrap gap-2">
               {!isMilestone && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-xs gap-1"
-                  onClick={onConvertToMilestone}
-                  disabled={isConverting}
-                  data-testid="button-convert-milestone"
-                >
-                  <Diamond className="h-3 w-3" />
-                  {isConverting ? "Converting…" : "Convert to Milestone"}
-                </Button>
+                confirmConvert ? (
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs text-amber-700 font-medium">Convert this task to a milestone?</span>
+                    <Button
+                      variant="default"
+                      size="sm"
+                      className="text-xs h-7"
+                      onClick={() => { onConvertToMilestone(); setConfirmConvert(false); }}
+                      disabled={isConverting}
+                      data-testid="button-confirm-convert-milestone"
+                    >
+                      {isConverting ? "Converting…" : "Yes, Convert"}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs h-7"
+                      onClick={() => setConfirmConvert(false)}
+                      data-testid="button-cancel-convert-milestone"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-xs gap-1"
+                    onClick={() => setConfirmConvert(true)}
+                    disabled={isConverting || !isAdmin}
+                    title={!isAdmin ? "Admins only" : undefined}
+                    data-testid="button-convert-milestone"
+                  >
+                    <Diamond className="h-3 w-3" />
+                    Convert to Milestone
+                  </Button>
+                )
               )}
               {confirmDelete ? (
                 <div className="flex items-center gap-1">
-                  <span className="text-xs text-red-600 font-medium">Confirm?</span>
+                  <span className="text-xs text-red-600 font-medium">Delete this task permanently?</span>
                   <Button
                     variant="destructive"
                     size="sm"
@@ -1028,6 +1276,8 @@ function TaskDetailContent({
                   size="sm"
                   className="text-xs gap-1 text-red-600 hover:text-red-700 hover:bg-red-50"
                   onClick={() => setConfirmDelete(true)}
+                  disabled={!isAdmin}
+                  title={!isAdmin ? "Admins only" : undefined}
                   data-testid="button-delete-task"
                 >
                   <Trash2 className="h-3 w-3" />
@@ -1052,7 +1302,15 @@ function TaskDetailContent({
           value={descVal}
           onChange={(e) => setDescVal(e.target.value)}
           onBlur={saveDescription}
-          placeholder="Add a description…"
+          onKeyDown={(e) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+              e.preventDefault();
+              saveDescription();
+            }
+          }}
+          placeholder={isAdmin ? "Add a description…" : "Read-only"}
+          disabled={!isAdmin}
+          title={!isAdmin ? "Admins only" : undefined}
         />
       </div>
 
@@ -1076,18 +1334,56 @@ function TaskDetailContent({
               className="mb-4 last:mb-0"
               data-testid={`checklist-${cl.id}`}
             >
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-sm font-medium">{cl.title}</span>
-                <span className="text-xs text-muted-foreground">
+              <div className="flex items-center justify-between mb-1 gap-2">
+                <span className="text-sm font-medium flex-1 min-w-0 truncate">{cl.title}</span>
+                <span className="text-xs text-muted-foreground tabular-nums">
                   {done}/{total}
                 </span>
+                {isAdmin && (
+                  confirmDeleteChecklist === cl.id ? (
+                    <span className="flex items-center gap-1">
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        className="h-6 px-2 text-[11px]"
+                        onClick={() => {
+                          deleteChecklist(cl.id);
+                          setConfirmDeleteChecklist(null);
+                        }}
+                        data-testid={`button-confirm-delete-checklist-${cl.id}`}
+                      >
+                        Delete
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 px-2 text-[11px]"
+                        onClick={() => setConfirmDeleteChecklist(null)}
+                        data-testid={`button-cancel-delete-checklist-${cl.id}`}
+                      >
+                        Cancel
+                      </Button>
+                    </span>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 w-6 p-0 text-muted-foreground hover:text-red-600"
+                      onClick={() => setConfirmDeleteChecklist(cl.id)}
+                      title="Delete checklist"
+                      data-testid={`button-delete-checklist-${cl.id}`}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  )
+                )}
               </div>
               <Progress value={pct} className="h-1.5 mb-2" />
               <div className="space-y-1">
                 {cl.items.map((item) => (
                   <div
                     key={item.id}
-                    className="flex items-center gap-2"
+                    className="flex items-center gap-2 group"
                     data-testid={`checklist-item-${item.id}`}
                   >
                     <Checkbox
@@ -1099,12 +1395,51 @@ function TaskDetailContent({
                           isDone: !!checked,
                         })
                       }
+                      disabled={!isAdmin}
                     />
                     <span
-                      className={`text-sm ${item.isDone ? "line-through text-muted-foreground" : ""}`}
+                      className={`text-sm flex-1 ${item.isDone ? "line-through text-muted-foreground" : ""}`}
                     >
                       {item.content}
                     </span>
+                    {isAdmin && (
+                      confirmDeleteItem === item.id ? (
+                        <span className="flex items-center gap-1">
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            className="h-6 px-2 text-[11px]"
+                            onClick={() => {
+                              deleteChecklistItem(item.id);
+                              setConfirmDeleteItem(null);
+                            }}
+                            data-testid={`button-confirm-delete-item-${item.id}`}
+                          >
+                            Delete
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 px-2 text-[11px]"
+                            onClick={() => setConfirmDeleteItem(null)}
+                            data-testid={`button-cancel-delete-item-${item.id}`}
+                          >
+                            Cancel
+                          </Button>
+                        </span>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-600"
+                          onClick={() => setConfirmDeleteItem(item.id)}
+                          title="Delete item"
+                          data-testid={`button-delete-item-${item.id}`}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      )
+                    )}
                   </div>
                 ))}
               </div>
@@ -1163,17 +1498,19 @@ function TaskDetailContent({
                     </Button>
                   </div>
                 ) : (
-                  <Button
-                    data-testid={`button-add-item-${cl.id}`}
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 text-xs"
-                    onClick={() =>
-                      setNewItemInputs((p) => ({ ...p, [cl.id]: "" }))
-                    }
-                  >
-                    <Plus className="h-3 w-3 mr-1" /> Add Item
-                  </Button>
+                  isAdmin && (
+                    <Button
+                      data-testid={`button-add-item-${cl.id}`}
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() =>
+                        setNewItemInputs((p) => ({ ...p, [cl.id]: "" }))
+                      }
+                    >
+                      <Plus className="h-3 w-3 mr-1" /> Add Item
+                    </Button>
+                  )
                 )}
               </div>
             </div>
@@ -1214,15 +1551,17 @@ function TaskDetailContent({
             </Button>
           </div>
         ) : (
-          <Button
-            data-testid="button-add-checklist"
-            variant="outline"
-            size="sm"
-            className="mt-2 text-xs"
-            onClick={() => setShowNewChecklist(true)}
-          >
-            <Plus className="h-3 w-3 mr-1" /> Add Checklist
-          </Button>
+          isAdmin && (
+            <Button
+              data-testid="button-add-checklist"
+              variant="outline"
+              size="sm"
+              className="mt-2 text-xs"
+              onClick={() => setShowNewChecklist(true)}
+            >
+              <Plus className="h-3 w-3 mr-1" /> Add Checklist
+            </Button>
+          )
         )}
       </CollapsibleSection>
 
@@ -1237,52 +1576,97 @@ function TaskDetailContent({
         onToggle={() => setCommentsOpen(!commentsOpen)}
       >
         <div className="space-y-3">
-          {comments.map((c) => (
-            <div
-              key={c.id}
-              className="text-sm"
-              data-testid={`comment-${c.id}`}
-            >
-              <div className="flex items-center gap-2 mb-0.5">
-                <span className="font-medium text-xs">
-                  {c.authorId ? `User #${c.authorId}` : "System"}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  <Clock className="h-3 w-3 inline mr-0.5" />
-                  {timeAgo(c.createdAt)}
-                </span>
+          {comments.map((c) => {
+            const authorName = c.authorId
+              ? resolveName(c.authorId, null) || `User #${c.authorId}`
+              : "System";
+            return (
+              <div
+                key={c.id}
+                className="text-sm group"
+                data-testid={`comment-${c.id}`}
+              >
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className="font-medium text-xs">{authorName}</span>
+                  <span className="text-xs text-muted-foreground">
+                    <Clock className="h-3 w-3 inline mr-0.5" />
+                    {timeAgo(c.createdAt)}
+                  </span>
+                  <span className="ml-auto">
+                    {isAdmin && (
+                      confirmDeleteComment === c.id ? (
+                        <span className="flex items-center gap-1">
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            className="h-6 px-2 text-[11px]"
+                            onClick={() => {
+                              deleteComment(c.id);
+                              setConfirmDeleteComment(null);
+                            }}
+                            data-testid={`button-confirm-delete-comment-${c.id}`}
+                          >
+                            Delete
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 px-2 text-[11px]"
+                            onClick={() => setConfirmDeleteComment(null)}
+                            data-testid={`button-cancel-delete-comment-${c.id}`}
+                          >
+                            Cancel
+                          </Button>
+                        </span>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-600"
+                          onClick={() => setConfirmDeleteComment(c.id)}
+                          title="Delete comment"
+                          data-testid={`button-delete-comment-${c.id}`}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      )
+                    )}
+                  </span>
+                </div>
+                <p className="text-muted-foreground whitespace-pre-wrap break-words">{c.body}</p>
               </div>
-              <p className="text-muted-foreground">{c.body}</p>
-            </div>
-          ))}
+            );
+          })}
         </div>
-        <div className="flex gap-1 mt-3">
-          <Input
-            data-testid="input-comment"
-            className="h-8 text-xs"
-            placeholder="Add a comment…"
-            value={commentText}
-            onChange={(e) => setCommentText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && commentText.trim()) {
+        {isAdmin && (
+          <div className="flex gap-1 mt-3">
+            <Input
+              data-testid="input-comment"
+              className="h-8 text-xs"
+              placeholder="Add a comment…"
+              value={commentText}
+              onChange={(e) => setCommentText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && commentText.trim()) {
+                  addComment(commentText.trim());
+                  setCommentText("");
+                }
+              }}
+            />
+            <Button
+              data-testid="button-add-comment"
+              size="sm"
+              className="h-8"
+              disabled={!commentText.trim()}
+              onClick={() => {
                 addComment(commentText.trim());
                 setCommentText("");
-              }
-            }}
-          />
-          <Button
-            data-testid="button-add-comment"
-            size="sm"
-            className="h-8"
-            disabled={!commentText.trim()}
-            onClick={() => {
-              addComment(commentText.trim());
-              setCommentText("");
-            }}
-          >
-            Send
-          </Button>
-        </div>
+              }}
+            >
+              Send
+            </Button>
+          </div>
+        )}
       </CollapsibleSection>
 
       <Separator />
@@ -1299,24 +1683,62 @@ function TaskDetailContent({
           {attachments.map((a) => (
             <div
               key={a.id}
-              className="flex items-center gap-2 text-sm"
+              className="flex items-center gap-2 text-sm group"
               data-testid={`attachment-${a.id}`}
             >
-              <Paperclip className="h-3 w-3 text-muted-foreground" />
+              <Paperclip className="h-3 w-3 text-muted-foreground shrink-0" />
               <a
                 href={a.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-blue-600 hover:underline truncate"
+                className="text-blue-600 hover:underline truncate flex-1 min-w-0"
                 data-testid={`link-attachment-${a.id}`}
               >
                 {a.filename}
               </a>
+              {isAdmin && (
+                confirmDeleteAttachment === a.id ? (
+                  <span className="flex items-center gap-1">
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      className="h-6 px-2 text-[11px]"
+                      onClick={() => {
+                        deleteAttachment(a.id);
+                        setConfirmDeleteAttachment(null);
+                      }}
+                      data-testid={`button-confirm-delete-attachment-${a.id}`}
+                    >
+                      Delete
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 px-2 text-[11px]"
+                      onClick={() => setConfirmDeleteAttachment(null)}
+                      data-testid={`button-cancel-delete-attachment-${a.id}`}
+                    >
+                      Cancel
+                    </Button>
+                  </span>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-600"
+                    onClick={() => setConfirmDeleteAttachment(a.id)}
+                    title="Delete attachment"
+                    data-testid={`button-delete-attachment-${a.id}`}
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                )
+              )}
             </div>
           ))}
         </div>
 
-        {showAddLink ? (
+        {!isAdmin ? null : showAddLink ? (
           <div className="mt-2 space-y-1">
             <Input
               data-testid="input-link-name"

@@ -1,4 +1,10 @@
 import { isTaskComplete } from "@shared/task-status";
+import {
+  deriveDueLabel,
+  getOwnerInitials,
+  toIsoDate,
+  type DueLabelUrgency,
+} from "@shared/lib/engineering-ticket-view";
 import type { Task } from "@/components/tasks/types";
 
 const avatarColors = [
@@ -13,12 +19,7 @@ const avatarColors = [
 ];
 
 export function getInitials(name: string) {
-  return name
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
+  return getOwnerInitials(name) ?? "";
 }
 
 export function getAvatarColor(name: string) {
@@ -62,11 +63,18 @@ export function isDueThisWeek(dueDate: string | null, status: string) {
 
 export function daysLabel(d: string | null) {
   if (!d) return null;
-  const diff = Math.round((new Date(d).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-  if (diff < 0) return `${Math.abs(diff)}d late`;
-  if (diff === 0) return "Today";
-  if (diff === 1) return "Tomorrow";
-  return `${diff}d`;
+  return deriveDueLabel(toIsoDate(d), false).label || null;
+}
+
+export const daysFromNow = daysLabel;
+
+export type { DueLabelUrgency };
+
+export function smartDueLabel(
+  due: string | null | undefined,
+  status?: string | null,
+): { label: string; urgency: DueLabelUrgency } {
+  return deriveDueLabel(toIsoDate(due ?? null), status ? isTaskComplete(status) : false);
 }
 
 export const priorityOrder: Record<string, number> = { Critical: 0, Urgent: 1, High: 2, Medium: 3, Low: 4 };

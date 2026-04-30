@@ -16,6 +16,7 @@ import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { TASK_PRIORITIES } from "@shared/schema";
 import { TASK_STATUSES, getTaskStatusBadgeClass, getTaskStatusBarClass, getTaskStatusLabel, isTaskComplete } from "@shared/task-status";
+import { getInitials, getAvatarColor, daysFromNow } from "@/lib/task-formatters";
 import {
   AlertTriangle,
   Wrench,
@@ -136,34 +137,16 @@ const priorityBorderDash: Record<string, string> = {
   Low: "border-l-gray-300",
 };
 
-function getInitials(name: string) {
-  return name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
-}
-
-function getAvatarColor(name: string) {
-  const colors = [
-    "bg-blue-500", "bg-emerald-500", "bg-purple-500", "bg-amber-500",
-    "bg-rose-500", "bg-cyan-500", "bg-indigo-500", "bg-teal-500",
-  ];
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  return colors[Math.abs(hash) % colors.length];
-}
+// getInitials / getAvatarColor / daysFromNow now live in
+// client/src/lib/task-formatters.ts so the Engineering Board avatar +
+// due-pill match Standup, My Work and the Opportunity drawer Tickets
+// section for the same row.
 
 function formatDate(d: string | null) {
   if (!d) return "";
   try {
     return new Date(d).toLocaleDateString("en-ZA", { day: "2-digit", month: "short" });
   } catch { return d; }
-}
-
-function daysFromNow(d: string | null) {
-  if (!d) return null;
-  const diff = Math.round((new Date(d).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-  if (diff < 0) return `${Math.abs(diff)}d overdue`;
-  if (diff === 0) return "Today";
-  if (diff === 1) return "Tomorrow";
-  return `${diff}d`;
 }
 
 function displayProject(name: string | null | undefined) {

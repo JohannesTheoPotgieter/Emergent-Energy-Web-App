@@ -66,10 +66,11 @@ interface ForecastActualResponse {
   to: string;
   today: string;
   points: Array<{ pointDate: string; series: string; value: number }>;
+  trust?: { sourceLayer?: string; basis?: string; asOf?: string };
 }
 
 async function okJson(r: Response) {
-  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  if (!r.ok) throw new Error("Unable to load cashflow analysis data right now.");
   return r.json();
 }
 
@@ -176,6 +177,9 @@ export default function CashflowAnalysisPage() {
         <div>
           <h2 className="text-xl font-semibold tracking-tight" data-testid="page-title">Cashflow Analysis</h2>
           <p className="text-sm text-muted-foreground">AR/AP aging, overdue, DSO/DPO, and concentration risk.</p>
+          <p className="text-xs text-muted-foreground mt-1" data-testid="analysis-metadata">
+            Source: {forecast.data?.trust?.sourceLayer ?? "canonical"} · Basis: payment dates · Last updated: {forecast.data?.trust?.asOf ?? forecast.data?.today ?? "N/A"}
+          </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-2">
@@ -193,6 +197,12 @@ export default function CashflowAnalysisPage() {
             <Switch checked={sandboxOn} onCheckedChange={setSandboxOn} data-testid="sandbox-toggle" />
           </div>
         </div>
+      </div>
+
+      <div className="mb-4 rounded-md border border-slate-200 bg-slate-50/70 p-3" data-testid="cashflow-analysis-trust-note">
+        <p className="text-sm text-slate-800">Cashflow actuals use payment received / paid dates.</p>
+        <p className="mt-1 text-sm text-slate-700">Forecast dates may use planned-payment fallback where no canonical payment date exists.</p>
+        <p className="mt-1 text-xs text-slate-600">Use forecast values as planning data until reconciled.</p>
       </div>
 
       {sandboxOn && (

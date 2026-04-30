@@ -61,6 +61,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, ExternalLink, Lock, Sparkles, Zap, ArrowRight, CheckCircle2, Building2, Inbox } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { invalidateEngineeringTicketCaches } from "@/lib/task-cache";
 import { useToast } from "@/hooks/use-toast";
 
 // --- Types matching /api/opportunities/:id/workflow shape ---
@@ -734,7 +735,12 @@ function TicketRow({
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/opportunities", opportunityId, "workflow"] });
+      // Linking the ticket changes its project assignment, which the
+      // Engineering Board / Standup / Plan tab all read. Use the
+      // engineering-scoped invalidator so every consumer surface picks
+      // up the new project link without requiring a full task-cache
+      // sweep.
+      invalidateEngineeringTicketCaches(queryClient);
       queryClient.invalidateQueries({ queryKey: ["/api/opportunities/working"] });
     },
   });

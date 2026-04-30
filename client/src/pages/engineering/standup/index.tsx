@@ -8,7 +8,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { PageSkeleton, PageError } from "@/components/ui/page-states";
 import { useToast } from "@/hooks/use-toast";
-import { invalidateAllTaskCaches } from "@/lib/task-cache";
+import { invalidateAllTaskCaches, invalidateEngineeringTicketCaches } from "@/lib/task-cache";
 import { standupLaneToCanonicalStatus, toStandupLaneStatus } from "@/lib/task-status-compat";
 import {
   Users, Play, Pause, Square, CheckCircle2, Timer, Rocket, Keyboard, ShieldCheck,
@@ -349,9 +349,12 @@ export default function EngineeringStandupPage() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["eng-tasks-standup", activeSpeaker?.userId] });
-      queryClient.invalidateQueries({ queryKey: ["eng-tasks-all-standup"] });
-      invalidateAllTaskCaches(queryClient);
+      // Status-only standup move — fan out via the engineering-ticket
+      // invalidator so the Engineering Board, Plan tab, Opportunity
+      // drawer, Milestone Tracker, Action Launchpad and Execution
+      // Dashboard all re-read the new canonical status without
+      // disturbing personal-task caches that don't surface this row.
+      invalidateEngineeringTicketCaches(queryClient);
     },
     onError: (err: Error) => {
       toast({ title: "Failed to update task", description: err.message, variant: "destructive" });
@@ -385,8 +388,9 @@ export default function EngineeringStandupPage() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["eng-tasks-standup", activeSpeaker?.userId] });
-      queryClient.invalidateQueries({ queryKey: ["eng-tasks-all-standup"] });
+      // Edit may touch fields beyond status (assignee, dates, notes),
+      // so use the broader task-cache sweep to also refresh My Work
+      // / Mytool views that key off the same row.
       invalidateAllTaskCaches(queryClient);
       toast({ title: "Task updated" });
     },

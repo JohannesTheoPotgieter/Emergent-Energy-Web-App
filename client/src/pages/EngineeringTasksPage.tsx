@@ -121,7 +121,7 @@ import { engFetch } from "@/lib/eng-fetch";
 import { TaskDependenciesPanel } from "./engineering/panels/TaskDependenciesPanel";
 import { DocumentControlBadge } from "@/components/engineering/DocumentControlBadge";
 import { PHASE_COLORS } from "@/lib/phase-colors";
-import { invalidateAllTaskCaches } from "@/lib/task-cache";
+import { invalidateAllTaskCaches, engineeringTicketKeys } from "@/lib/task-cache";
 import { canonicalizeTaskStatus } from "@/lib/task-status-compat";
 import {
   TASK_PRIORITY_VALUES,
@@ -1343,7 +1343,7 @@ export function TaskDetailDrawer({
                 textNames={task.assignees || null}
                 mode="multi"
                 size="sm"
-                invalidateKeys={["eng-tasks", "/api/my-work/all-tasks"]}
+                invalidateKeys={["engineering-tickets", "eng-tasks", "/api/my-work/all-tasks"]}
                 disableRemove={user?.role === "ENGINEER"}
               />
               {task.assignees && task.assignees.length > 1 && (
@@ -3676,7 +3676,7 @@ export default function EngineeringTasksPage() {
   }, [selectedTask, showShortcuts]);
 
   const { data: tasks = [], isLoading, error, refetch } = useQuery<Task[]>({
-    queryKey: ["eng-tasks"],
+    queryKey: engineeringTicketKeys.scope("board"),
     queryFn: () => engFetch("/api/eng/tasks"),
     refetchOnMount: "always",
     staleTime: 10_000,

@@ -38,6 +38,11 @@ import {
 } from "date-fns";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { styleForCell } from "@/lib/tracker-cell-format";
+import {
+  WORKSTREAM_OPTIONS,
+  resolveWorkstream,
+  workstreamMatchesFilter,
+} from "@/lib/workstream-options";
 
 const getSAPublicHolidays = (year: number): Set<string> => {
   const holidays = new Set<string>();
@@ -203,7 +208,7 @@ const getTaskDepth = (task: any, taskMap: Map<number, any>): number => {
   return depth;
 };
 
-function InlinePctEditor({ pct, onCommit }: { pct: number; onCommit: (v: number) => void }) {
+function InlinePctEditor({ pct, onCommit, disabled = false }: { pct: number; onCommit: (v: number) => void; disabled?: boolean }) {
   const [editing, setEditing] = useState(false);
   const [localVal, setLocalVal] = useState(String(pct));
 
@@ -215,7 +220,7 @@ function InlinePctEditor({ pct, onCommit }: { pct: number; onCommit: (v: number)
     onCommit(parsed);
   };
 
-  if (editing) {
+  if (editing && !disabled) {
     return (
       <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
         <input
@@ -237,9 +242,9 @@ function InlinePctEditor({ pct, onCommit }: { pct: number; onCommit: (v: number)
 
   return (
     <div
-      className="flex items-center gap-1.5 cursor-pointer group"
-      onClick={(e) => { e.stopPropagation(); setEditing(true); }}
-      title="Click to edit"
+      className={`flex items-center gap-1.5 group ${disabled ? "" : "cursor-pointer"}`}
+      onClick={(e) => { e.stopPropagation(); if (!disabled) setEditing(true); }}
+      title={disabled ? "Admins only" : "Click to edit"}
       data-testid="inline-pct-display"
     >
       <div className="flex-1 h-[5px] rounded-full bg-muted overflow-hidden min-w-[30px]">
@@ -252,7 +257,7 @@ function InlinePctEditor({ pct, onCommit }: { pct: number; onCommit: (v: number)
   );
 }
 
-function InlineWbsEditor({ value, onCommit }: { value: string; onCommit: (v: string) => void }) {
+function InlineWbsEditor({ value, onCommit, disabled = false }: { value: string; onCommit: (v: string) => void; disabled?: boolean }) {
   const [editing, setEditing] = useState(false);
   const [localVal, setLocalVal] = useState(value);
 
@@ -263,7 +268,7 @@ function InlineWbsEditor({ value, onCommit }: { value: string; onCommit: (v: str
     if (localVal.trim() !== value) onCommit(localVal.trim());
   };
 
-  if (editing) {
+  if (editing && !disabled) {
     return (
       <input
         data-testid="inline-wbs-input"
@@ -280,16 +285,16 @@ function InlineWbsEditor({ value, onCommit }: { value: string; onCommit: (v: str
 
   return (
     <span
-      className="cursor-pointer hover:text-primary hover:underline"
-      onClick={(e) => { e.stopPropagation(); setEditing(true); }}
-      title="Click to edit WBS number"
+      className={disabled ? "" : "cursor-pointer hover:text-primary hover:underline"}
+      onClick={(e) => { e.stopPropagation(); if (!disabled) setEditing(true); }}
+      title={disabled ? "Admins only" : "Click to edit WBS number"}
     >
       {value || "—"}
     </span>
   );
 }
 
-function InlineDateEditor({ value, onCommit }: { value: string | null; onCommit: (v: string) => void }) {
+function InlineDateEditor({ value, onCommit, disabled = false }: { value: string | null; onCommit: (v: string) => void; disabled?: boolean }) {
   const [editing, setEditing] = useState(false);
   const displayVal = value ? value.substring(0, 10) : "";
   const [localVal, setLocalVal] = useState(displayVal);
@@ -313,7 +318,7 @@ function InlineDateEditor({ value, onCommit }: { value: string | null; onCommit:
     latestVal.current = v;
   };
 
-  if (editing) {
+  if (editing && !disabled) {
     return (
       <input
         data-testid="inline-date-input"
@@ -331,16 +336,16 @@ function InlineDateEditor({ value, onCommit }: { value: string | null; onCommit:
 
   return (
     <span
-      className="cursor-pointer hover:text-primary hover:underline"
-      onClick={(e) => { e.stopPropagation(); setEditing(true); }}
-      title="Click to edit date"
+      className={disabled ? "" : "cursor-pointer hover:text-primary hover:underline"}
+      onClick={(e) => { e.stopPropagation(); if (!disabled) setEditing(true); }}
+      title={disabled ? "Admins only" : "Click to edit date"}
     >
       {formatDateCompact(value) || "—"}
     </span>
   );
 }
 
-function InlineDurationEditor({ value, onCommit }: { value: number | string; onCommit: (v: number) => void }) {
+function InlineDurationEditor({ value, onCommit, disabled = false }: { value: number | string; onCommit: (v: number) => void; disabled?: boolean }) {
   const numVal = typeof value === 'number' ? value : parseInt(String(value)) || 0;
   const [editing, setEditing] = useState(false);
   const [localVal, setLocalVal] = useState(String(numVal));
@@ -353,7 +358,7 @@ function InlineDurationEditor({ value, onCommit }: { value: number | string; onC
     onCommit(parsed);
   };
 
-  if (editing) {
+  if (editing && !disabled) {
     return (
       <input
         data-testid="inline-duration-input"
@@ -372,9 +377,9 @@ function InlineDurationEditor({ value, onCommit }: { value: number | string; onC
 
   return (
     <span
-      className="cursor-pointer hover:text-primary hover:underline"
-      onClick={(e) => { e.stopPropagation(); setEditing(true); }}
-      title="Click to edit duration (working days)"
+      className={disabled ? "" : "cursor-pointer hover:text-primary hover:underline"}
+      onClick={(e) => { e.stopPropagation(); if (!disabled) setEditing(true); }}
+      title={disabled ? "Admins only" : "Click to edit duration (working days)"}
     >
       {numVal > 0 ? `${numVal}d` : "—"}
     </span>
@@ -408,6 +413,7 @@ function InlinePredecessorEditor({
   onAdd,
   onRemove,
   isPending,
+  disabled = false,
 }: {
   task: any;
   allTasks: any[];
@@ -415,6 +421,7 @@ function InlinePredecessorEditor({
   onAdd: (predecessorWorkItemId: number, successorWorkItemId: number) => void;
   onRemove: (depId: number) => void;
   isPending: boolean;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -458,6 +465,20 @@ function InlinePredecessorEditor({
   useEffect(() => {
     if (open && inputRef.current) setTimeout(() => inputRef.current?.focus(), 50);
   }, [open]);
+
+  if (disabled) {
+    // Match DependencyManager (drawer): non-admins simply see the read-only
+    // value with no add/remove controls and no tooltip nag.
+    return (
+      <span
+        className="block truncate text-muted-foreground"
+        title={predDisplay || ""}
+        data-testid={`pred-trigger-${task.id}`}
+      >
+        {predDisplay || "—"}
+      </span>
+    );
+  }
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -536,6 +557,80 @@ function InlinePredecessorEditor({
   );
 }
 
+function InlineWorkstreamEditor({
+  value,
+  onCommit,
+  disabled = false,
+}: {
+  value: string | null | undefined;
+  onCommit: (v: string) => void;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const ws = resolveWorkstream(value);
+
+  if (disabled) {
+    return (
+      <Badge
+        variant="outline"
+        className={`text-[9px] px-1.5 py-0 ${ws.filterClass}`}
+        title={`${ws.label} — Admins only`}
+      >
+        {ws.label}
+      </Badge>
+    );
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex"
+          onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+          title={`${ws.label} — Click to edit`}
+          data-testid="inline-workstream-trigger"
+        >
+          <Badge
+            variant="outline"
+            className={`text-[9px] px-1.5 py-0 cursor-pointer hover:ring-1 hover:ring-primary/40 ${ws.filterClass}`}
+          >
+            {ws.label}
+          </Badge>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        className="w-40 p-1"
+        align="start"
+        side="bottom"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="space-y-0.5">
+          {WORKSTREAM_OPTIONS.map((opt) => {
+            const isCurrent = opt.value === ws.value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                className={`w-full text-left text-[11px] px-2 py-1 rounded hover:bg-muted flex items-center justify-between ${isCurrent ? "bg-muted/60 font-medium" : ""}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOpen(false);
+                  if (opt.value !== ws.value) onCommit(opt.value);
+                }}
+                data-testid={`inline-workstream-option-${opt.value}`}
+              >
+                <span>{opt.label}</span>
+                {isCurrent && <span className="text-[10px] text-muted-foreground">current</span>}
+              </button>
+            );
+          })}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 type ZoomLevel = "week" | "month";
 
 interface PlanColumn {
@@ -583,6 +678,10 @@ interface SavedView {
 const STORAGE_KEY_COLUMNS = "planTab_visibleColumns";
 const STORAGE_KEY_VIEWS = "planTab_savedViews";
 
+// Module-level holder for non-fatal localStorage load errors so the component
+// can surface them to the user via a toast on mount.
+const __unifiedPlanLoadErrors: string[] = [];
+
 function loadVisibleColumns(): string[] {
   const alwaysOn = ALL_COLUMNS.filter(c => c.alwaysVisible).map(c => c.id);
   try {
@@ -594,36 +693,73 @@ function loadVisibleColumns(): string[] {
         return merged;
       }
     }
-  } catch (err) {
-    console.error("[UnifiedPlan] Error loading visible columns from storage:", err);
+  } catch (err: any) {
+    __unifiedPlanLoadErrors.push(`Could not restore column visibility (${err?.message || err}); defaults applied.`);
   }
   return DEFAULT_VISIBLE_COLUMNS;
 }
 
-function saveVisibleColumns(cols: string[]) {
-  localStorage.setItem(STORAGE_KEY_COLUMNS, JSON.stringify(cols));
+function saveVisibleColumns(cols: string[]): string | null {
+  try {
+    localStorage.setItem(STORAGE_KEY_COLUMNS, JSON.stringify(cols));
+    return null;
+  } catch (err: any) {
+    return `Could not save column visibility (${err?.message || err}); changes will not persist.`;
+  }
 }
 
 function loadSavedViews(): SavedView[] {
   try {
     const stored = localStorage.getItem(STORAGE_KEY_VIEWS);
     if (stored) return JSON.parse(stored);
-  } catch (err) {
-    console.error("[UnifiedPlan] Error loading saved views from storage:", err);
+  } catch (err: any) {
+    __unifiedPlanLoadErrors.push(`Could not restore saved views (${err?.message || err}); starting with no saved views.`);
   }
   return [];
 }
 
-function saveSavedViews(views: SavedView[]) {
-  localStorage.setItem(STORAGE_KEY_VIEWS, JSON.stringify(views));
+function saveSavedViews(views: SavedView[]): string | null {
+  try {
+    localStorage.setItem(STORAGE_KEY_VIEWS, JSON.stringify(views));
+    return null;
+  } catch (err: any) {
+    return `Could not save view list (${err?.message || err}); changes will not persist.`;
+  }
 }
 
 export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: UnifiedPlanTabProps) {
   const { isAdmin } = useAuth();
   const qc = useQueryClient();
   const { toast } = useToast();
+
+  // Surface any localStorage load failures (column visibility / saved views) once on mount.
+  useEffect(() => {
+    if (__unifiedPlanLoadErrors.length === 0) return;
+    const messages = __unifiedPlanLoadErrors.splice(0, __unifiedPlanLoadErrors.length);
+    for (const message of messages) {
+      toast({
+        title: "Plan view preferences",
+        description: message,
+        variant: "default",
+      });
+    }
+  }, [toast]);
+
+  // Invalidate every cache that may surface this project's tasks: the grid
+  // (via invalidateProjectQueries) AND any open Task Detail Drawer queries
+  // (operational + baseline detail). Detail keys are prefix-invalidated so
+  // every cached task id refetches after a structural mutation.
+  const invalidateTaskCaches = useCallback(() => {
+    invalidateProjectQueries(qc, projectName);
+    qc.invalidateQueries({ queryKey: ["operational-task-detail"] });
+    qc.invalidateQueries({ queryKey: ["baseline-task-detail"] });
+    qc.invalidateQueries({ queryKey: ["planning-tasks", projectName] });
+  }, [qc, projectName]);
+
   const [statusFilter, setStatusFilter] = useState("All");
-  const [workstreamFilter, setWorkstreamFilter] = useState("Project");
+  // Workstream filter uses canonical codes ("All" | "PM" | "ENG" | "QUALITY") to
+  // stay aligned with the values stored on tasks and shown in the detail drawer.
+  const [workstreamFilter, setWorkstreamFilter] = useState<string>("PM");
   const [searchText, setSearchText] = useState("");
   const [collapsedParents, setCollapsedParents] = useState<Set<number>>(new Set());
   const [newTaskTitle, setNewTaskTitle] = useState("");
@@ -653,38 +789,45 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     if (col?.alwaysVisible) return true;
     return visibleColumns.includes(id);
   }, [visibleColumns]);
+  const reportPrefSaveError = useCallback((msg: string | null) => {
+    if (msg) toast({ title: "Preference not saved", description: msg, variant: "destructive" });
+  }, [toast]);
   const toggleColumn = useCallback((id: string) => {
     const col = ALL_COLUMNS.find(c => c.id === id);
     if (col?.alwaysVisible) return;
     setVisibleColumns(prev => {
       const next = prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id];
-      saveVisibleColumns(next);
+      reportPrefSaveError(saveVisibleColumns(next));
       return next;
     });
-  }, []);
+  }, [reportPrefSaveError]);
   const resetColumns = useCallback(() => {
     setVisibleColumns(DEFAULT_VISIBLE_COLUMNS);
-    saveVisibleColumns(DEFAULT_VISIBLE_COLUMNS);
-  }, []);
+    reportPrefSaveError(saveVisibleColumns(DEFAULT_VISIBLE_COLUMNS));
+  }, [reportPrefSaveError]);
   const saveCurrentView = useCallback((name: string) => {
     if (!name.trim()) return;
     const existing = savedViews.filter(v => v.name !== name.trim());
     const updated = [...existing, { name: name.trim(), columns: visibleColumns }];
     setSavedViews(updated);
-    saveSavedViews(updated);
+    const err = saveSavedViews(updated);
+    if (err) {
+      reportPrefSaveError(err);
+      return;
+    }
     setNewViewName("");
     toast({ title: `View "${name.trim()}" saved` });
-  }, [visibleColumns, savedViews, toast]);
+  }, [visibleColumns, savedViews, toast, reportPrefSaveError]);
   const loadView = useCallback((view: SavedView) => {
     setVisibleColumns(view.columns);
-    saveVisibleColumns(view.columns);
+    reportPrefSaveError(saveVisibleColumns(view.columns));
     toast({ title: `View "${view.name}" loaded` });
-  }, [toast]);
+  }, [toast, reportPrefSaveError]);
   const deleteView = useCallback((name: string) => {
     const updated = savedViews.filter(v => v.name !== name);
     setSavedViews(updated);
-    saveSavedViews(updated);
-  }, [savedViews]);
+    reportPrefSaveError(saveSavedViews(updated));
+  }, [savedViews, reportPrefSaveError]);
   const visibleColCount = useMemo(() => {
     let count = visibleColumns.length;
     if (isAdmin) count += 2;
@@ -781,6 +924,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["project-dependencies", projectName] });
+      invalidateTaskCaches();
       toast({ title: "Predecessor added" });
     },
     onError: (err: any) => {
@@ -794,6 +938,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["project-dependencies", projectName] });
+      invalidateTaskCaches();
       toast({ title: "Predecessor removed" });
     },
     onError: (err: any) => {
@@ -806,7 +951,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
       await apiRequest("PATCH", `/api/planning-tasks/${id}`, { projectName, ...updates });
     },
     onSuccess: (_data, variables) => {
-      invalidateProjectQueries(qc, projectName);
+      invalidateTaskCaches();
     invalidateMilestoneCreationQueries((queryKey) => qc.invalidateQueries({ queryKey }), projectName);
       const field = Object.keys(variables.updates)[0];
       if (field === "percentComplete") toast({ title: "Progress updated" });
@@ -832,7 +977,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     },
     onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: ["planning-tasks", projectName] });
-      invalidateProjectQueries(qc, projectName);
+      invalidateTaskCaches();
       setUnlinkedRowSelections(prev => {
         const next = { ...prev };
         delete next[variables.opTaskId];
@@ -859,7 +1004,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
       await apiRequest("POST", "/api/planning-tasks", { projectName, title, status: "Not Started" });
     },
     onSuccess: () => {
-      invalidateProjectQueries(qc, projectName);
+      invalidateTaskCaches();
       setNewTaskTitle("");
       toast({ title: "Task created" });
     },
@@ -873,7 +1018,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
       await apiRequest("POST", "/api/project-plan/structure", { operation, projectName, data });
     },
     onSuccess: () => {
-      invalidateProjectQueries(qc, projectName);
+      invalidateTaskCaches();
     },
     onError: (err: any) => {
       toast({ title: "Structure change failed", description: err?.message || "Could not update plan structure", variant: "destructive" });
@@ -885,7 +1030,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
       await apiRequest("POST", "/api/project-plan/structure", { operation: "renumberWI", projectName, data: {} });
     },
     onSuccess: () => {
-      invalidateProjectQueries(qc, projectName);
+      invalidateTaskCaches();
       toast({ title: "WBS numbering refreshed" });
     },
     onError: (err: any) => {
@@ -922,7 +1067,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
       }
     },
     onSuccess: (_data, ids) => {
-      invalidateProjectQueries(qc, projectName);
+      invalidateTaskCaches();
       setSelectedIds(new Set());
       toast({ title: `${ids.length} task(s) deleted` });
     },
@@ -941,15 +1086,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     let result = [...tasks];
     if (statusFilter !== "All") result = result.filter(t => t.status === statusFilter);
     if (workstreamFilter !== "All") {
-      const wsMap: Record<string, string> = { "Project": "PM", "Engineering": "ENG", "Quality": "QUALITY" };
-      const targetWs = wsMap[workstreamFilter];
-      if (targetWs) {
-        result = result.filter(t => {
-          const ws = t.workstream || "PM";
-          if (targetWs === "PM") return ws === "PM" || ws === "SMART_IMPORT" || !ws;
-          return ws === targetWs;
-        });
-      }
+      result = result.filter(t => workstreamMatchesFilter(t.workstream, workstreamFilter));
     }
     if (searchText) {
       const lower = searchText.toLowerCase();
@@ -1183,7 +1320,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
       return;
     }
 
-    invalidateProjectQueries(qc, projectName);
+    invalidateTaskCaches();
     invalidateMilestoneCreationQueries((queryKey) => qc.invalidateQueries({ queryKey }), projectName);
     toast({ title: "Milestone created" });
     setMilestoneDialogOpen(false);
@@ -1197,7 +1334,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
       });
     },
     onSuccess: () => {
-      invalidateProjectQueries(qc, projectName);
+      invalidateTaskCaches();
       toast({ title: "Task number updated" });
     },
     onError: (err: any) => {
@@ -1216,7 +1353,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
       });
     },
     onSuccess: () => {
-      invalidateProjectQueries(qc, projectName);
+      invalidateTaskCaches();
       toast({ title: "Converted to milestone" });
       setConvertMilestoneDialogOpen(false);
       setConvertMilestoneTask(null);
@@ -1234,7 +1371,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
       });
     },
     onSuccess: () => {
-      invalidateProjectQueries(qc, projectName);
+      invalidateTaskCaches();
       toast({ title: "Converted to regular task" });
     },
     onError: (err: any) => {
@@ -1253,7 +1390,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
       });
     },
     onSuccess: () => {
-      invalidateProjectQueries(qc, projectName);
+      invalidateTaskCaches();
       toast({ title: "Tasks grouped & WBS renumbered" });
       setGroupUnderDialogOpen(false);
       setGroupUnderTask(null);
@@ -1274,7 +1411,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
       });
     },
     onSuccess: () => {
-      invalidateProjectQueries(qc, projectName);
+      invalidateTaskCaches();
       toast({ title: "Task ungrouped & WBS renumbered" });
     },
     onError: (err: any) => {
@@ -1292,7 +1429,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
       });
     },
     onSuccess: () => {
-      invalidateProjectQueries(qc, projectName);
+      invalidateTaskCaches();
       toast({ title: "Tasks reordered" });
     },
     onError: (err: any) => {
@@ -1343,7 +1480,16 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     const dragWiId = draggedTask.workItemId;
     const targetWiId = targetTask.workItemId;
     if (!dragWiId || !targetWiId) {
-      toast({ title: "Cannot reorder", description: "This task is missing its work item reference.", variant: "destructive" });
+      const missing = !dragWiId && !targetWiId
+        ? `"${draggedTask.title || `Row ${dragTaskId}`}" and "${targetTask.title || `Row ${targetTask.id}`}"`
+        : !dragWiId
+          ? `"${draggedTask.title || `Row ${dragTaskId}`}"`
+          : `"${targetTask.title || `Row ${targetTask.id}`}"`;
+      toast({
+        title: "Cannot reorder",
+        description: `Missing work item reference for ${missing}. Try refreshing the plan and reordering again.`,
+        variant: "destructive",
+      });
       setDragTaskId(null);
       setDropTarget(null);
       return;
@@ -1510,9 +1656,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
           data-testid="select-workstream-filter"
           options={[
             { value: "All", label: "All Workstreams" },
-            { value: "Project", label: "Project" },
-            { value: "Engineering", label: "Engineering" },
-            { value: "Quality", label: "Quality" },
+            ...WORKSTREAM_OPTIONS.map((w) => ({ value: w.value, label: w.label })),
           ]}
         />
 
@@ -2088,6 +2232,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
                           <InlineDurationEditor
                             value={taskDuration}
                             onCommit={(v) => updateMutation.mutate({ id: task.id, updates: { duration: v } })}
+                            disabled={!isAdmin}
                           />
                         )}
                       </td>
@@ -2100,6 +2245,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
                           <InlineDateEditor
                             value={taskStart}
                             onCommit={(v) => updateMutation.mutate({ id: task.id, updates: { startDate: v } })}
+                            disabled={!isAdmin}
                           />
                         )}
                       </td>
@@ -2112,6 +2258,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
                           <InlineDateEditor
                             value={taskFinish}
                             onCommit={(v) => updateMutation.mutate({ id: task.id, updates: { dueDate: v } })}
+                            disabled={!isAdmin}
                           />
                         )}
                       </td>
@@ -2125,26 +2272,61 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
                           onAdd={(predWI, succWI) => addDependencyMutation.mutate({ predecessorId: predWI, successorId: succWI })}
                           onRemove={(depId) => removeDependencyMutation.mutate(depId)}
                           isPending={addDependencyMutation.isPending || removeDependencyMutation.isPending}
+                          disabled={!isAdmin}
                         />
                       </td>
                       )}
                       {isColumnVisible("resource") && (
-                      <td className="px-1 text-center border-r text-[10px] text-muted-foreground truncate" data-testid={`lead-${task.id}`}>
-                        {task.assignees ? (
-                          <span className="truncate" title={Array.isArray(task.assignees) ? task.assignees.join(', ') : String(task.assignees)}>
-                            {Array.isArray(task.assignees) ? (task.assignees[0] || '—') : (typeof task.assignees === 'string' ? task.assignees.split(',')[0] : '—')}
-                          </span>
-                        ) : "—"}
+                      <td className="px-1 text-center border-r text-[10px] text-muted-foreground truncate" onClick={(e) => e.stopPropagation()} data-testid={`lead-${task.id}`}>
+                        {(() => {
+                          // Require a real work_items id — never fall back to Math.abs(task.id),
+                          // which can collide with the wrong canonical row for legacy/baseline rows.
+                          const wiIdRaw = (task as any).workItemId;
+                          const wiId = typeof wiIdRaw === "number" && Number.isFinite(wiIdRaw) && wiIdRaw > 0 ? wiIdRaw : null;
+                          const textNames = Array.isArray(task.assignees)
+                            ? task.assignees
+                            : (typeof task.assignees === "string" && task.assignees ? task.assignees.split(",").map((s: string) => s.trim()) : null);
+                          const display = textNames && textNames.length > 0 ? textNames[0] : "—";
+                          const tooltip = textNames && textNames.length > 0 ? textNames.join(", ") : "Unassigned";
+                          if (!isAdmin) {
+                            return <span className="truncate" title={tooltip}>{display}</span>;
+                          }
+                          if (!wiId) {
+                            const rowLabel = task.title ? `"${task.title}"` : `row #${task.rowNumber ?? "?"}`;
+                            return (
+                              <span
+                                className="truncate text-amber-700"
+                                title={`Cannot edit assignees: ${rowLabel} is missing a work item id`}
+                                data-testid={`lead-missing-wi-${task.id}`}
+                              >
+                                {display}
+                              </span>
+                            );
+                          }
+                          return (
+                            <UserAssignmentPicker
+                              taskId={wiId}
+                              taskSource="plan"
+                              resolvedUsers={(task as any).resolvedAssignees || null}
+                              textNames={textNames}
+                              mode="multi"
+                              size="xs"
+                              invalidateKeys={["baseline-task-detail", "planning-tasks", "operational-task-detail"]}
+                              onSuccess={() => invalidateTaskCaches()}
+                              disabled={!isAdmin}
+                              disabledReason="Admins only"
+                            />
+                          );
+                        })()}
                       </td>
                       )}
                       {isColumnVisible("workstream") && (
-                      <td className="px-1 text-center border-r" data-testid={`workstream-${task.id}`}>
-                        {(() => {
-                          const ws = task.workstream || "PM";
-                          if (ws === "ENG") return <Badge variant="outline" className="text-[9px] px-1.5 py-0 bg-blue-50 text-blue-700 border-blue-200">Engineering</Badge>;
-                          if (ws === "QUALITY") return <Badge variant="outline" className="text-[9px] px-1.5 py-0 bg-purple-50 text-purple-700 border-purple-200">Quality</Badge>;
-                          return <Badge variant="outline" className="text-[9px] px-1.5 py-0 bg-emerald-50 text-emerald-700 border-emerald-200">Project</Badge>;
-                        })()}
+                      <td className="px-1 text-center border-r" onClick={(e) => e.stopPropagation()} data-testid={`workstream-${task.id}`}>
+                        <InlineWorkstreamEditor
+                          value={task.workstream}
+                          onCommit={(v) => updateMutation.mutate({ id: task.id, updates: { workstream: v } })}
+                          disabled={!isAdmin}
+                        />
                       </td>
                       )}
                       {isColumnVisible("pctComplete") && (
@@ -2160,6 +2342,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
                           <InlinePctEditor
                             pct={pct}
                             onCommit={(v) => updateMutation.mutate({ id: task.id, updates: { percentComplete: v } })}
+                            disabled={!isAdmin}
                           />
                         )}
                       </td>
