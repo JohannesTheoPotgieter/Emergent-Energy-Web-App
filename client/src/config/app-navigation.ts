@@ -386,28 +386,27 @@ export function buildVisibleTopSections(options: {
 }
 
 export function linkIsActive(current: string, target: string) {
-  if (target === "/") return current === "/";
-  const targetBase = target.split("?")[0];
-  const targetQuery = target.includes("?") ? target.split("?")[1] : null;
+  const [currentPath, currentQuery = ""] = current.split("?");
+  const [targetBase, targetQuery = ""] = target.split("?");
 
-  if (current === targetBase || current.startsWith(`${targetBase}/`)) {
-    if (targetQuery) {
-      const params = new URLSearchParams(window.location.search);
-      const targetParams = new URLSearchParams(targetQuery);
-      for (const [key, val] of targetParams.entries()) {
-        if (params.get(key) !== val) return false;
-      }
-      return true;
+  if (targetBase === "/") return currentPath === "/";
+
+  const currentParams = new URLSearchParams(currentQuery);
+  const targetParams = new URLSearchParams(targetQuery);
+
+  if (currentPath === targetBase || currentPath.startsWith(`${targetBase}/`)) {
+    for (const [key, val] of targetParams.entries()) {
+      if (currentParams.get(key) !== val) return false;
     }
-    if (target === "/my-work" && current === "/my-work/tasks") {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get("source") === "approvals") return false;
+
+    if (targetBase === "/my-work" && currentPath === "/my-work/tasks") {
+      if (currentParams.get("source") === "approvals") return false;
     }
     return true;
   }
-  if (target === "/my-work/approvals" && current === "/my-work/tasks") {
-    const params = new URLSearchParams(window.location.search);
-    return params.get("source") === "approvals";
+
+  if (targetBase === "/my-work/approvals" && currentPath === "/my-work/tasks") {
+    return currentParams.get("source") === "approvals";
   }
   return false;
 }
