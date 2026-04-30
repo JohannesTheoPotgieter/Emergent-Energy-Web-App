@@ -195,11 +195,12 @@ export async function applyManualOverride(
   }
 
   const current = readOverridesMap(row.manualOverrides);
+  const liveValue = row[input.fieldName] as OverrideValue | undefined;
   const next = buildOverrideMap(
     current,
     input.fieldName,
     input.value,
-    row[input.fieldName] as OverrideValue | undefined,
+    liveValue,
     input.editedBy,
     new Date(),
     input.note,
@@ -207,6 +208,22 @@ export async function applyManualOverride(
 
   const t = tableFor(input.table) as any;
   await tx.update(t).set({ manualOverrides: next }).where(eq(t.id, input.rowId));
+
+  // Structured log line — observability for "how often is the cell-edit
+  // path firing vs the import path". One JSON line per write.
+  console.log(JSON.stringify({
+    tag: "manual-overrides",
+    op: "apply",
+    table: input.table,
+    rowId: input.rowId,
+    field: input.fieldName,
+    editedBy: input.editedBy,
+    fromValue: next[input.fieldName].fromValue ?? null,
+    toValue: next[input.fieldName].value ?? null,
+    hadPrior: input.fieldName in current,
+    note: input.note ?? null,
+    source: "cell-edit",
+  }));
 }
 
 /**
@@ -233,6 +250,16 @@ export async function clearManualOverride(
 
   const t = tableFor(table) as any;
   await tx.update(t).set({ manualOverrides: next }).where(eq(t.id, rowId));
+
+  console.log(JSON.stringify({
+    tag: "manual-overrides",
+    op: "clear",
+    table,
+    rowId,
+    field: fieldName,
+    clearedValue: current[fieldName]?.value ?? null,
+    source: "cell-edit",
+  }));
 }
 
 /**

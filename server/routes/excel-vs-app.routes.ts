@@ -37,6 +37,7 @@ import { db } from "../db";
 import { projectInfo } from "@shared/schema/projects";
 import { financialEditRequests } from "@shared/schema/finance";
 import { applyManualOverride, clearManualOverride } from "../lib/manual-overrides";
+import { recordOverride } from "../lib/audit/diff-engine";
 import {
   DRIFT_RESOLVER_ROLES,
   type DiffSection,
@@ -206,10 +207,39 @@ export function registerExcelVsAppRoutes(app: Express): void {
           }
         }
 
+        // Project name for audit-log tagging on resolved entries.
+        const [projectRow] = await db
+          .select({ projectName: projectInfo.projectName })
+          .from(projectInfo)
+          .where(eq(projectInfo.id, projectId))
+          .limit(1);
+        const projectName = projectRow?.projectName ?? `Project ${projectId}`;
+
         if (body.action === "accept_excel") {
           let resolved = 0;
           for (const e of body.entries) {
+            // Capture the override value being cleared so the audit row
+            // shows "operator chose Excel value X over previous override Y".
+            const beforeOverride = await readManualOverrideValue(e.table, e.rowId, e.fieldName);
+            const liveValue = await readLiveValue(e.table, e.rowId, e.fieldName);
             await clearManualOverride(e.table, e.rowId, e.fieldName);
+            try {
+              await recordOverride({
+                actorUserId: actorId ?? undefined,
+                actorRole,
+                entityType: `excel_vs_app::${e.table}`,
+                entityId: `${projectId}|row${e.rowId}|${e.fieldName}`,
+                projectId,
+                projectName,
+                action: "ACCEPT_EXCEL",
+                overrideCategory: "DATA_CORRECTION",
+                overrideComment: `Accepted Excel value for ${e.fieldName} on ${e.table} row ${e.rowId}`,
+                oldRecord: { [e.fieldName]: beforeOverride },
+                newRecord: { [e.fieldName]: liveValue },
+              });
+            } catch (auditErr: any) {
+              console.warn("[excel-vs-app] accept_excel audit failed:", auditErr.message);
+            }
             resolved++;
           }
           res.json({ status: "ok", action: body.action, resolved });
@@ -223,15 +253,32 @@ export function registerExcelVsAppRoutes(app: Express): void {
             // captures it. The helper preserves fromValue from the live
             // (Excel-truth) column so a later "Reset to Excel" remains
             // correct.
-            const overrideEntry = await readLiveValue(e.table, e.rowId, e.fieldName);
+            const liveValue = await readLiveValue(e.table, e.rowId, e.fieldName);
             await applyManualOverride({
               table: e.table,
               rowId: e.rowId,
               fieldName: e.fieldName,
-              value: overrideEntry as any,
+              value: liveValue as any,
               editedBy: actorId,
               note: body.reason,
             });
+            try {
+              await recordOverride({
+                actorUserId: actorId ?? undefined,
+                actorRole,
+                entityType: `excel_vs_app::${e.table}`,
+                entityId: `${projectId}|row${e.rowId}|${e.fieldName}`,
+                projectId,
+                projectName,
+                action: "KEEP_APP",
+                overrideCategory: "DATA_CORRECTION",
+                overrideComment: body.reason,
+                oldRecord: { [e.fieldName]: null },
+                newRecord: { [e.fieldName]: liveValue },
+              });
+            } catch (auditErr: any) {
+              console.warn("[excel-vs-app] keep_app audit failed:", auditErr.message);
+            }
             resolved++;
           }
           res.json({ status: "ok", action: body.action, resolved });
@@ -246,12 +293,6 @@ export function registerExcelVsAppRoutes(app: Express): void {
             : body.section === "REVENUE"
               ? "excel_vs_app_unverified_drift_revenue"
               : "excel_vs_app_unverified_drift_plan";
-        const projectRow = await db
-          .select({ projectName: projectInfo.projectName })
-          .from(projectInfo)
-          .where(eq(projectInfo.id, projectId))
-          .limit(1);
-        const projectName = projectRow[0]?.projectName ?? `Project ${projectId}`;
         const editPayload = JSON.stringify({
           section: body.section,
           entries: body.entries,
@@ -274,6 +315,23 @@ export function registerExcelVsAppRoutes(app: Express): void {
             affectsQuality: false,
           })
           .returning();
+        try {
+          await recordOverride({
+            actorUserId: actorId ?? undefined,
+            actorRole,
+            entityType: `excel_vs_app_request::${body.section}`,
+            entityId: `${projectId}|request${saved.id}`,
+            projectId,
+            projectName,
+            action: "REQUEST_APPROVAL",
+            overrideCategory: "DATA_CORRECTION",
+            overrideComment: body.reason,
+            oldRecord: {},
+            newRecord: { entries: body.entries.length, requestId: saved.id },
+          });
+        } catch (auditErr: any) {
+          console.warn("[excel-vs-app] request_approval audit failed:", auditErr.message);
+        }
         res.json({
           status: "pending_approval",
           requestId: saved.id,
@@ -310,4 +368,28 @@ async function readLiveValue(
   const [row] = await db.select().from(t as any).where(eq((t as any).id, rowId)).limit(1);
   if (!row) return null;
   return (row as any)[fieldName] ?? null;
+}
+
+/**
+ * Read the current `manual_overrides[fieldName].value` for an audit
+ * trail entry. Returns null when no override exists.
+ */
+async function readManualOverrideValue(
+  table: "normalized_cost_lines" | "normalized_revenue_lines" | "work_items",
+  rowId: number,
+  fieldName: string,
+): Promise<unknown> {
+  const { normalizedCostLines, normalizedRevenueLines } = await import("@shared/schema/finance");
+  const { workItems } = await import("@shared/schema/tasks");
+  const t =
+    table === "normalized_cost_lines"
+      ? normalizedCostLines
+      : table === "normalized_revenue_lines"
+        ? normalizedRevenueLines
+        : workItems;
+  const [row] = await db.select({ manualOverrides: (t as any).manualOverrides }).from(t as any).where(eq((t as any).id, rowId)).limit(1);
+  const overrides = row?.manualOverrides;
+  if (!overrides || typeof overrides !== "object") return null;
+  const entry = (overrides as Record<string, any>)[fieldName];
+  return entry && typeof entry === "object" && "value" in entry ? entry.value : null;
 }
