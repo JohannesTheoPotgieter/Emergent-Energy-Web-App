@@ -58,7 +58,7 @@ export default function GatesHandoversPage() {
   }, [data?.projects, search]);
 
   if (isLoading) return <PageSkeleton />;
-  if (error) return <PageError message="Failed to load handover queue" />;
+  if (error) return <PageError message="Failed to load handover queue. Please retry or refine filters." />;
 
   const subtitle = filtered.length === 0
     ? "No projects in this handover view"
@@ -107,6 +107,7 @@ export default function GatesHandoversPage() {
         <div className="flex flex-col items-center gap-2 text-muted-foreground">
           <Handshake className="h-8 w-8" />
           <p className="text-sm font-medium">No projects in this handover view</p>
+          <p className="text-xs">Try another queue tab or clear your search.</p>
         </div>
       </TableCell>
     </TableRow>
@@ -159,7 +160,7 @@ export default function GatesHandoversPage() {
             <TableCell className="text-xs">{p.acceptanceStatus || "pending"}</TableCell>
             <TableCell>
               <Badge variant="outline" className={`text-[10px] ${slaStatusBadge(p.slaStatus)}`}>
-                {p.slaStatus}
+                {String(p.slaStatus || "unknown").replace(/_/g, " ")}
               </Badge>
             </TableCell>
             <TableCell className="text-right tabular-nums">
