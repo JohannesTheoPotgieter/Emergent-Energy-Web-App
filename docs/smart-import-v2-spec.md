@@ -1,9 +1,33 @@
 # Smart Import v2 — Implementation Specification
 
-> **Status:** DRAFT  
-> **Created:** 2026-04-08  
-> **Authors:** Claude (AI-assisted), pending human review  
-> **Scope:** Behaviour spec only — no runtime changes included in this PR.
+> **Status:** IMPLEMENTED (Option D landed 2026-04-29 on branch
+> `claude/replicate-imported-sheets-DS6BD`).
+> **Created:** 2026-04-08
+> **Last updated:** 2026-04-29
+> **Authors:** Claude (AI-assisted), pending human review
+> **Scope:** This document originally specified the target behaviour;
+> the 2026-04-29 release wires the spec into runtime. Sections marked
+> "implemented" describe live behaviour; sections marked "deferred"
+> describe what's intentionally out of scope until a follow-up PR.
+
+> ## Implementation summary (2026-04-29)
+>
+> | Section | Status | Notes |
+> |---|---|---|
+> | Stable hash-based row identity (§5) | ✅ Implemented | `server/lib/import/row-hasher.ts`; `row_hash` columns on the canonical tables |
+> | 3-way merge engine (§6) | ✅ Implemented | `server/lib/import/merge-engine.ts` + existing `conflict-engine.ts` (both wired; consolidation deferred) |
+> | Per-row import snapshot (§5, §6) | ✅ Implemented | `import_snapshot` JSONB on every active row |
+> | Manual-override tracking (§6) | ✅ Implemented | `manual_overrides` JSONB on every active row |
+> | Conflict-resolution wizard UI (§8) | ✅ Implemented | New v2 conflict cards in `client/src/pages/smart-import.tsx` |
+> | 1:N Expenditure actuals child table | ✅ Implemented | `normalized_cost_line_actuals` |
+> | Top-of-sheet metadata capture | ✅ Implemented | `tracker_project_metadata` + `tracker_revenue_summary` |
+> | Per-cell font / fill colour (`cell_format`) | ✅ Implemented | JSONB on every active row + 3 replica screens render it |
+> | 3 Tracker replica screens | ✅ Implemented | `/projects/:id/{revenue-tracking,expenditure-breakdown,program-plan}` |
+> | Feature flag `USE_THREE_WAY_MERGE` | ✅ Implemented | Default ON; set to `false` to fall back to v1-style behaviour |
+> | Structured `[SmartImport.metrics]` log | ✅ Implemented | One JSON line per import |
+> | Daily-resolution Gantt strip | ⏸️ Deferred | Program Plan replica shows tasks; daily Gantt strip is follow-up |
+> | Engine consolidation (one engine, not two) | ⏸️ Deferred | Both `conflict-engine.ts` + `merge-engine.ts` run in parallel; trust-correct but redundant |
+> | Manual-override audit-log read surface | ⏸️ Deferred | `manual_overrides` JSONB is captured but no UI yet |
 
 ---
 

@@ -92,7 +92,11 @@ describe("S06: J_cat extraction from budget pane", () => {
   });
 
   it("extractCostLines returns categoryAllocations", () => {
-    expect(normalizerCode).toContain("return { lines, counterparties: Array.from(counterpartySet), categoryAllocations };");
+    // PR2C added `actualLineRows` to the return tuple to support 1:N
+    // orphan-actual extraction. The categoryAllocations contract is
+    // unchanged — still in the return shape, just alongside one more
+    // field.
+    expect(normalizerCode).toContain("return { lines, counterparties: Array.from(counterpartySet), categoryAllocations, actualLineRows };");
   });
 
   it("normalizeData wires categoryAllocations into the output", () => {

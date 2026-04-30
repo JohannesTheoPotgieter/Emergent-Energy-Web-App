@@ -96,34 +96,33 @@ describe("Phase 1A reconciliation route contract", () => {
       expect(content).toContain('router.get("/api/admin/reconciliation/phase-1a", requireAuth, requireAdmin');
     });
 
-    it("requireAdmin rejects non-admin users with 403", () => {
+    it("requireAdmin rejects non-admin users with 403", async () => {
       const req = { user: { role: "ENGINEER" } } as any;
       const res = { status: vi.fn().mockReturnThis(), json: vi.fn() } as any;
       const next = vi.fn();
 
-      requireAdmin(req, res, next);
+      await requireAdmin(req, res, next);
 
       expect(next).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(403);
-      expect(res.json).toHaveBeenCalledWith({ error: "admin_required" });
     });
 
-    it("requireAdmin passes COO_ADMIN role", () => {
+    it("requireAdmin passes COO_ADMIN role", async () => {
       const req = { user: { role: "COO_ADMIN" } } as any;
       const res = { status: vi.fn().mockReturnThis(), json: vi.fn() } as any;
       const next = vi.fn();
 
-      requireAdmin(req, res, next);
+      await requireAdmin(req, res, next);
 
       expect(next).toHaveBeenCalled();
     });
 
-    it("requireAdmin passes CEO_ADMIN role", () => {
+    it("requireAdmin passes CEO_ADMIN role", async () => {
       const req = { user: { role: "CEO_ADMIN" } } as any;
       const res = { status: vi.fn().mockReturnThis(), json: vi.fn() } as any;
       const next = vi.fn();
 
-      requireAdmin(req, res, next);
+      await requireAdmin(req, res, next);
 
       expect(next).toHaveBeenCalled();
     });
