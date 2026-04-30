@@ -32,7 +32,7 @@ import { requireAdmin } from "./middleware/requireAdmin";
 import { runSmartImportPreview } from "./lib/import/index";
 import { runPreflightValidator } from "./lib/import/preflight-validator";
 import { runImportPlanner, type PlannerResult } from "./lib/import/planner";
-import { writePlanIncremental, writeRevenueIncremental, writeExpenditureIncremental, writeActualLineRows, writeProjectMetadata, writeRevenueSummary, type IncrementalCommitResult } from "./lib/import/commit-executor";
+import { writePlanIncremental, writeRevenueIncremental, writeExpenditureIncremental, writeActualLineRows, writeProjectMetadata, writeRevenueSummary, mergeConflictsToWizardRows, type IncrementalCommitResult } from "./lib/import/commit-executor";
 import { newImportMetrics, emitImportMetrics, threeWayMergeEnabled } from "./lib/import/feature-flags";
 import { matchRows, generateBusinessKey, type SectionType, type MatchedRow } from "./lib/import/row-matcher";
 import { runConflictEngine, type RowMergeResult } from "./lib/import/conflict-engine";
@@ -2506,6 +2506,32 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         counts.costLines = costResult.counts.inserted + costResult.counts.updated;
       }
 
+      // ── Engine consolidation Phase 1 ──
+      // The pre-commit `runImportPlanner` (conflict-engine.ts, summaryJson
+      // baseline) already 409'd if it detected blocking conflicts above.
+      // The writer-engine (merge-engine.ts, per-row import_snapshot
+      // baseline) has finer precision and may surface field-level conflicts
+      // the existing engine missed. Fold its output into the same
+      // v2_conflicts_detected envelope so the wizard sees a single,
+      // consistent conflict list. Throwing here aborts the transaction so
+      // no partial writes leak through.
+      const writerEngineConflicts = [
+        ...(planResult?.mergeConflicts ?? []),
+        ...(revenueResult?.mergeConflicts ?? []),
+        ...(costResult?.mergeConflicts ?? []),
+      ];
+      if (writerEngineConflicts.length > 0) {
+        const wizardRows = mergeConflictsToWizardRows(writerEngineConflicts);
+        const err = new Error(
+          `Three-way merge surfaced ${writerEngineConflicts.length} unresolved field-level conflict(s) on ${wizardRows.length} row(s). ` +
+            `Resolve via v2ConflictResolutions and re-submit.`,
+        );
+        (err as any).status = 409;
+        (err as any).code = "v2_conflicts_detected";
+        (err as any).conflicts = wizardRows;
+        throw err;
+      }
+
       // ── PR2C: Auxiliary captures from the source workbook ──
       // These three writers persist data the section writers above don't
       // touch: 1:N orphan actual rows for Expenditure, the
@@ -3026,6 +3052,18 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
     // the global error handler which sanitises and attaches a traceId. PG
     // error details were logged server-side above and are never returned.
     if ((err as any)?.status === 409) {
+      // Engine consolidation Phase 1 — writer-engine surfaced field-level
+      // conflicts. Emit the same v2_conflicts_detected envelope as the
+      // pre-commit existing engine so the wizard parser is unchanged.
+      if ((err as any)?.code === "v2_conflicts_detected") {
+        // eslint-disable-next-line no-restricted-syntax -- intentional: 409 business error with structured conflict payload for the wizard
+        return res.status(409).json({
+          error: "v2_conflicts_detected",
+          message: (err instanceof Error ? err.message : "Three-way merge conflicts detected."),
+          conflicts: (err as any).conflicts ?? [],
+          hint: "Resolve conflicts via v2ConflictResolutions: { 'rowKey::fieldName': 'keep_app' | 'accept_file' }",
+        });
+      }
       // eslint-disable-next-line no-restricted-syntax -- intentional: 409 business error message is user-authored
       return res.status(409).json({ error: "COMMIT_CONFLICT", message: (err instanceof Error ? err.message : "Commit conflict") });
     }

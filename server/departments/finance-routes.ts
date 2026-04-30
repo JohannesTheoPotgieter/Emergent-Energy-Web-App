@@ -2286,6 +2286,10 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       matchStatus: "matched" | "qb_only" | "app_only";
       cosState: "realised" | "committed" | "planned" | "qb_actual";
       reasonBucket: "matched realised" | "matched committed" | "QB-only actual" | "app-only pending" | "planned";
+      // Smart Import v2 tracker check flag from normalized_cost_lines.
+      // Surfaced so the COS drawer can show whether a line was flagged
+      // for review on the source workbook.
+      checkFlag: string | null;
     }
 
     const items: LineItem[] = [];
@@ -2381,6 +2385,7 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
         supplier: row.counterpartyName || linkedBill?.vendorName || null,
         month: appMonth || monthKey,
         poNumber: row.poNumber || null,
+        checkFlag: (row as any).checkFlag ?? null,
         qbTransactionType: linkedBill ? "Bill" : null,
         qbTransactionDate: linkedBill?.txnDate ?? null,
         recognitionDate: row.invoiceDate ? String(row.invoiceDate) : (linkedBill?.txnDate ?? null),
@@ -2422,6 +2427,7 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
           supplier: bill.vendorName || null,
           month: billMonth,
           poNumber: null,
+          checkFlag: null,
           qbTransactionType: "Bill",
           qbTransactionDate: bill.txnDate,
           recognitionDate: bill.txnDate,
@@ -6212,6 +6218,10 @@ router.get("/api/revenue-tab/:projectName", requireAuth, async (req, res) => {
         flags,
         hasOverride,
         milestoneNotes: r.milestoneNotes,
+        // Smart Import v2 cell formatting (font/fill colour) for the
+        // milestone row. Surfaced so the existing Revenue tab can render
+        // the same per-cell colours as the new revenue-tracking replica.
+        cellFormat: r.cellFormat ?? null,
         dependentTask: linkedTask ? { id: linkedTask.id, title: linkedTask.title, status: linkedTask.status, dueDate: linkedTask.dueDate } : null,
         dateOverride: link?.dateOverride || null,
         dateOverrideReason: link?.dateOverrideReason || null,

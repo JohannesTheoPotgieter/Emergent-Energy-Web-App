@@ -150,6 +150,48 @@ export function registerPlanningTasksRoutes(app: Express) {
           unlinkedOperationalRaw = nonClickupOps.filter((t: any) => t.importedTaskId == null && t.linkedPlanItemId == null);
           unlinkedOperationalCount = unlinkedOperationalRaw.length;
 
+          // Smart Import v2 tracker columns + cellFormat live on
+          // work_items but the legacy adapter (work-items-adapter.ts) is
+          // marked read-only and doesn't surface them. Pull a thin
+          // tracker-fields lookup directly from work_items here so the
+          // existing Plan tab can render lead / resource_1 / resource_2
+          // / tracker_comments / work_days inline alongside per-cell
+          // colours, without extending the legacy adapter.
+          const trackerWorkItemRows = await db
+            .select({
+              id: workItems.id,
+              lead: workItems.lead,
+              resource1: workItems.resource1,
+              resource2: workItems.resource2,
+              trackerComments: workItems.trackerComments,
+              workDays: workItems.workDays,
+              cellFormat: workItems.cellFormat,
+            })
+            .from(workItems)
+            .where(
+              and(
+                isNull(workItems.deletedAt),
+                sql`EXISTS (SELECT 1 FROM project_info pi WHERE pi.id = ${workItems.projectId} AND pi.project_name = ${projectName})`,
+              ),
+            );
+          const trackerByWorkItemId = new Map<number, {
+            lead: string | null;
+            resource1: string | null;
+            resource2: string | null;
+            trackerComments: string | null;
+            workDays: number | null;
+            cellFormat: unknown;
+          }>(
+            trackerWorkItemRows.map((row: any) => [row.id, {
+              lead: row.lead ?? null,
+              resource1: row.resource1 ?? null,
+              resource2: row.resource2 ?? null,
+              trackerComments: row.trackerComments ?? null,
+              workDays: row.workDays ?? null,
+              cellFormat: row.cellFormat ?? null,
+            }]),
+          );
+
           const filteredCanonical = canonicalTasks.filter((ct: any) => {
             const ws = ct.workstream || "PM";
             if (ws === "ENG" || ws === "QUALITY") return true;
@@ -167,6 +209,15 @@ export function registerPlanningTasksRoutes(app: Express) {
             let taskId = Number.isFinite(ct.id) && ct.id > 0 ? ct.id : (idx + 1);
             while (usedIds.has(taskId)) taskId = taskId + 100000;
             usedIds.add(taskId);
+
+            // Tracker fields keyed by the underlying work_items.id.
+            // ct.workItemId is the canonical work_items row when present;
+            // ct.id can be the legacyId so the lookup falls back through
+            // both keys before defaulting to nulls.
+            const trackerKey: number | undefined = (typeof ct.workItemId === "number" && ct.workItemId > 0)
+              ? ct.workItemId
+              : (typeof ct.id === "number" && ct.id > 0 ? ct.id : undefined);
+            const tracker = trackerKey != null ? trackerByWorkItemId.get(trackerKey) : undefined;
 
             const rawPct = ct.pctComplete != null ? Number(ct.pctComplete) : 0;
             const pctComplete = rawPct > 1 ? Math.round(rawPct) : Math.round(rawPct * 100);
@@ -265,6 +316,14 @@ export function registerPlanningTasksRoutes(app: Express) {
               createdBy: null,
               createdAt: null,
               updatedAt: null,
+              // Smart Import v2 tracker columns. See the trackerByWorkItemId
+              // lookup above. Null when the row isn't in work_items.
+              lead: tracker?.lead ?? null,
+              resource1: tracker?.resource1 ?? null,
+              resource2: tracker?.resource2 ?? null,
+              trackerComments: tracker?.trackerComments ?? null,
+              workDays: tracker?.workDays ?? null,
+              cellFormat: tracker?.cellFormat ?? null,
             };
           });
         }

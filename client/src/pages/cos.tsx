@@ -123,6 +123,9 @@ interface MonthDetailItem {
   matchStatus: "matched" | "qb_only" | "app_only";
   cosState: "realised" | "committed" | "planned" | "qb_actual";
   reasonBucket: "matched realised" | "matched committed" | "QB-only actual" | "app-only pending" | "planned";
+  // Smart Import v2 tracker check_flag from the source workbook —
+  // surfaced so reviewers can see which lines were flagged for review.
+  checkFlag: string | null;
 }
 
 interface MonthDetail {
@@ -483,6 +486,7 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                       <th className="text-right px-3 py-2.5 font-semibold text-muted-foreground">App</th>
                       <th className="text-right px-3 py-2.5 font-semibold text-muted-foreground">QB</th>
                       <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">Recognised</th>
+                      <th className="text-center px-3 py-2.5 font-semibold text-muted-foreground" title="Smart Import v2 check_flag column from the source workbook.">Check</th>
                       <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">Match</th>
                       <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground">Status</th>
                     </tr>
@@ -508,6 +512,15 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                         <td className="px-3 py-2 text-right font-mono">{item.appAmount == null ? <span className="text-muted-foreground">—</span> : formatRand(item.appAmount)}</td>
                         <td className="px-3 py-2 text-right font-mono text-foreground">{item.qbAmount == null ? <span className="text-muted-foreground">—</span> : formatRand(item.qbAmount)}</td>
                         <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">{item.recognitionDate || "—"}</td>
+                        <td className="px-3 py-2 text-center text-[11px] font-mono" title={item.checkFlag ?? undefined}>
+                          {item.checkFlag ? (
+                            <span className="inline-flex items-center justify-center min-w-[24px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-300">
+                              {item.checkFlag}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </td>
                         <td className="px-3 py-2"><MatchStatusBadge status={item.matchStatus} /></td>
                         <td className="px-3 py-2"><CosStateBadge state={item.cosState} /></td>
                       </tr>
