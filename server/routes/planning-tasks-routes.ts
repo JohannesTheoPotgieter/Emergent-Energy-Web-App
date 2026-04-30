@@ -849,8 +849,12 @@ export function registerPlanningTasksRoutes(app: Express) {
         if (updates.percentComplete != null) {
           notifFields.push({ field: "percentComplete", old: basePlanTask?.actualPctComplete != null ? String(Math.round(basePlanTask.actualPctComplete * 100)) : null, new_: String(updates.percentComplete) });
         }
-        if (updates.comment != null) {
-          overrideData.overrideComment = updates.comment;
+        // Treat description and comment as a unified "notes" field for plan rows
+        // so the drawer's description editor persists for legacy/project-plan
+        // baselines (previously updates.description was silently dropped here).
+        const noteVal = updates.comment != null ? updates.comment : updates.description;
+        if (noteVal != null) {
+          overrideData.overrideComment = noteVal;
         }
 
         if (existing) {
@@ -867,6 +871,27 @@ export function registerPlanningTasksRoutes(app: Express) {
             deletedFlag: 0,
             isNewTask: 0,
           });
+        }
+
+        // Mirror notes/title onto the canonical work_items row so the grid +
+        // drawer detail fetch (which reads work_items) immediately reflect the
+        // saved value. The grid + detail panels both read work_items as their
+        // source of truth, so a silent mirror failure would leave the user
+        // looking at stale data after a "successful" save. Make this part of
+        // the request-success contract: if the update affects no canonical
+        // row, fail the request so the client surfaces a save-failed toast.
+        const wiMirror: any = {};
+        if (noteVal != null) wiMirror.description = noteVal;
+        if (updates.title != null) wiMirror.title = updates.title;
+        if (Object.keys(wiMirror).length > 0) {
+          const mirrorResult = await db.update(workItems).set(wiMirror).where(
+            and(eq(workItems.legacyTable, "project_plan"), eq(workItems.legacyId, actualTaskId))
+          ).returning({ id: workItems.id });
+          if (mirrorResult.length === 0) {
+            return res.status(409).json({
+              error: `Could not persist title/description for plan task ${actualTaskId}: no canonical work_items row found. Please retry after the next plan sync.`,
+            });
+          }
         }
 
         if (updates.workstream != null) {
@@ -1071,7 +1096,9 @@ export function registerPlanningTasksRoutes(app: Express) {
         if (updates.startDate != null) wiUpdateFields.startDate = updates.startDate;
         if (updates.dueDate != null) wiUpdateFields.endDate = updates.dueDate;
         if (updates.percentComplete != null) wiUpdateFields.percentComplete = updates.percentComplete / 100;
-        if (updates.comment != null) wiUpdateFields.description = updates.comment;
+        if (updates.comment != null || updates.description != null) {
+          wiUpdateFields.description = updates.comment != null ? updates.comment : updates.description;
+        }
 
         if (Object.keys(wiUpdateFields).length > 0 && isWorkItemTask) {
           await db.update(workItems).set(wiUpdateFields).where(eq(workItems.id, wi.id));
