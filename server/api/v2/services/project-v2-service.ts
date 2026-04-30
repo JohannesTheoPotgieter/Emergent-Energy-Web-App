@@ -128,12 +128,16 @@ export async function patchFinanceVariationService(projectId: number, id: number
 }
 
 export const listEngineeringDesignsService = repo.listEngineeringDesigns;
-export async function createEngineeringDesignService(_projectId: number, payload: any, userId: number) {
+export async function createEngineeringDesignService(projectId: number, payload: any, userId: number) {
+  const stage = await repo.getEngineeringStageByProject(projectId, payload.projectEngStageId);
+  if (!stage) throw new ApiV2Error("NOT_FOUND", 404, "Engineering stage not found for project");
   const created = await repo.createEngineeringDesign(payload, userId);
   if (!created) throw new ApiV2Error("VALIDATION_ERROR", 400, "Engineering stage does not exist");
   return created;
 }
-export async function patchEngineeringDesignService(_projectId: number, id: number, payload: any, userId: number) {
+export async function patchEngineeringDesignService(projectId: number, id: number, payload: any, userId: number) {
+  const scopeMatch = await repo.listEngineeringDesigns(projectId);
+  if (!scopeMatch.some((d: any) => d.id === id)) throw new ApiV2Error("NOT_FOUND", 404, "Design not found");
   const updated = await repo.patchEngineeringDesign(id, payload, userId);
   if (!updated) throw new ApiV2Error("NOT_FOUND", 404, "Design not found");
   return updated;
@@ -145,7 +149,9 @@ export async function createQualityCheckService(projectId: number, payload: any)
   if (!checklist) throw new ApiV2Error("VALIDATION_ERROR", 400, "Checklist does not belong to project");
   return repo.createQualityCheck(payload);
 }
-export async function patchQualityCheckService(_projectId: number, id: number, payload: any) {
+export async function patchQualityCheckService(projectId: number, id: number, payload: any) {
+  const scopeMatch = await repo.getQualityCheckByProject(projectId, id);
+  if (!scopeMatch) throw new ApiV2Error("NOT_FOUND", 404, "Quality check not found");
   const updated = await repo.patchQualityCheck(id, payload);
   if (!updated) throw new ApiV2Error("NOT_FOUND", 404, "Quality check not found");
   return updated;

@@ -3,6 +3,7 @@
  */
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { invalidateProjectV2Queries } from "@/hooks/use-project-v2";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -52,6 +53,7 @@ export function DrawingRegisterTab({ projectId, projectName }: Props) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/drawings", projectId] });
+      invalidateProjectV2Queries(queryClient, projectId);
       toast({ title: "Drawing registered" });
       setShowCreate(false);
       setForm({ drawingNumber: "", title: "", discipline: "", status: "draft", sharepointLink: "" });

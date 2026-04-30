@@ -308,6 +308,14 @@ export async function createEngineeringDesign(payload: any, userId: number) {
   return created;
 }
 
+export async function getEngineeringStageByProject(projectId: number, stageId: number) {
+  const [stage] = await db.select({ id: projectEngStages.id })
+    .from(projectEngStages)
+    .where(and(eq(projectEngStages.id, stageId), eq(projectEngStages.projectId, projectId)))
+    .limit(1);
+  return stage ?? null;
+}
+
 export async function patchEngineeringDesign(id: number, payload: any, userId: number) {
   const [updated] = await db.update(projectEngDeliverables).set({ ...payload, approvedBy: payload.approvalStatus === "approved" ? userId : undefined, approvedAt: payload.approvalStatus === "approved" ? new Date() : undefined }).where(eq(projectEngDeliverables.id, id)).returning();
   return updated ?? null;
@@ -341,6 +349,15 @@ export async function getChecklistByProject(projectId: number, checklistId: numb
 export async function patchQualityCheck(id: number, payload: any) {
   const [updated] = await db.update(qcItemInstance).set({ ...payload, lastUpdatedAt: new Date(), approvedAt: payload.approved ? new Date() : undefined }).where(eq(qcItemInstance.id, id)).returning();
   return updated ?? null;
+}
+
+export async function getQualityCheckByProject(projectId: number, itemInstanceId: number) {
+  const [row] = await db.select({ id: qcItemInstance.id })
+    .from(qcItemInstance)
+    .innerJoin(qcChecklist, eq(qcChecklist.id, qcItemInstance.checklistId))
+    .where(and(eq(qcItemInstance.id, itemInstanceId), eq(qcChecklist.projectId, projectId)))
+    .limit(1);
+  return row ?? null;
 }
 
 export async function listImportsByDomain(domain: string) {
