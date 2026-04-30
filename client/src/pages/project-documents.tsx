@@ -31,6 +31,7 @@ import {
   useProjectFolders,
 } from "@/hooks/use-document-management-admin";
 import { DisciplinePanel } from "@/components/documents/DisciplinePanel";
+import { ManagedDocumentApprovalQueue } from "@/components/documents/ManagedDocumentApprovalQueue";
 import { LIFECYCLE_DEPARTMENTS } from "@shared/schema";
 import { CheckCircle2, FolderX, AlertTriangle } from "lucide-react";
 
@@ -121,6 +122,10 @@ export default function ProjectDocumentsPage() {
           )}
         </CardContent>
       </Card>
+
+      <div className="mt-4">
+        <ManagedDocumentApprovalQueue projectId={projectId} title="Approvals waiting on you" />
+      </div>
 
       <div className="mt-4">
         <Tabs defaultValue={disciplinesWithRows[0] ?? "ALL"} className="w-full">
