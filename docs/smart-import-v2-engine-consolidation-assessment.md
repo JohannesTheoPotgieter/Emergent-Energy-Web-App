@@ -1,7 +1,9 @@
 # Smart Import v2 — Engine Consolidation Assessment
 
-> **Status:** Decision documented; consolidation deferred to a follow-up PR.
-> **Date:** 2026-04-29
+> **Status:** Phase 1 IMPLEMENTED 2026-04-30 on
+> `claude/continue-tracker-replica-followups-cojuK`. Phases 2–4 still
+> pending.
+> **Date:** 2026-04-29 (assessment); 2026-04-30 (Phase 1 delivery)
 > **Decision owner:** Pending human review (Item 13 of the production-ready
 > work for the 2026-04-29 release).
 
@@ -81,12 +83,12 @@ Three reasons:
 
 ## Recommended follow-up plan
 
-| Phase | Scope | Risk |
-|---|---|---|
-| 1 | Wire `mergeConflicts` through the 409 envelope alongside the existing engine. Wizard sees BOTH; dedup by `(rowKey, fieldName)`. | Low |
-| 2 | Add a one-shot script to backfill `import_snapshot` on every active row from the latest `summaryJson` for that row's project. | Low — read-only of summaryJson + JSONB upsert. |
-| 3 | Switch the route to consume `mergeConflicts` ONLY; keep `conflict-engine.ts` available for one release as `USE_LEGACY_CONFLICT_ENGINE` rollback toggle. | Medium — touches the wizard contract. |
-| 4 | Remove `conflict-engine.ts`. | Low after phase 3 has been live for a release. |
+| Phase | Scope | Risk | Status |
+|---|---|---|---|
+| 1 | Wire `mergeConflicts` through the 409 envelope alongside the existing engine. Wizard sees BOTH; dedup by `(rowKey, fieldName)`. | Low | **Done** (2026-04-30). Writer-engine entries now carry `rowKey` / `displayLabel` / `section` so they flow through `mergeConflictsToWizardRows` into the same `v2_conflicts_detected` 409 envelope; the route throws inside the transaction so partial writes abort. Covered by `qa/tests/unit/engine-consolidation-phase1.test.ts`. |
+| 2 | Add a one-shot script to backfill `import_snapshot` on every active row from the latest `summaryJson` for that row's project. | Low — read-only of summaryJson + JSONB upsert. | Pending |
+| 3 | Switch the route to consume `mergeConflicts` ONLY; keep `conflict-engine.ts` available for one release as `USE_LEGACY_CONFLICT_ENGINE` rollback toggle. | Medium — touches the wizard contract. | Pending |
+| 4 | Remove `conflict-engine.ts`. | Low after phase 3 has been live for a release. | Pending |
 
 ## Mitigations in the meantime
 
@@ -108,3 +110,38 @@ Three reasons:
 in the same change would expand its scope and review surface in a way
 that's disproportionate to the user-visible benefit (zero behavioural
 change). Document the plan above and execute over phases 1–4.
+
+## Phase 1 implementation notes (2026-04-30)
+
+**What changed:**
+- `MergeConflictEntry` (in `server/lib/import/commit-executor.ts`) now
+  carries `rowKey` / `displayLabel` / `section` alongside the original
+  `rowHash` / `existingRowId` / field values. The new fields mirror the
+  vocabulary the wizard already speaks via the conflict-engine output.
+- All three section writers (`writePlanIncremental`,
+  `writeRevenueIncremental`, `writeExpenditureIncremental`) populate the
+  three new fields when they push to `mergeConflicts`.
+- A pure helper `mergeConflictsToWizardRows()` translates the per-field
+  entries into the wizard's grouped-by-row `WizardConflictRow[]` shape
+  and dedupes by `(rowKey, fieldName)`.
+- `server/smart-import-routes.ts` now combines `mergeConflicts` from the
+  three section results immediately after the writers run. If any
+  unresolved conflicts remain, it throws a sentinel error
+  (`status: 409`, `code: "v2_conflicts_detected"`) inside the
+  transaction so partial writes abort cleanly. The top-level catch
+  inspects the sentinel and emits the same `v2_conflicts_detected`
+  envelope the pre-commit conflict-engine already emits.
+
+**Why this preserves behaviour:**
+- The conflict-engine path runs first and continues to 409 on its own
+  pre-commit detections; nothing on that path changed.
+- The writer-engine's previously-silent-skipping behaviour (a row with
+  unresolved field conflicts was dropped from the sheet without
+  surfacing) is now an explicit 409 — closer to the user's expectation.
+- Wizard parser is unchanged: same envelope shape, same `rowKey ::
+  fieldName` resolution-key contract.
+
+**Coverage:** 14 unit tests in
+`qa/tests/unit/engine-consolidation-phase1.test.ts`. Existing
+merge-engine, smart-import, and tracker-replica suites unchanged
+(338 tests across 17 files green after the change).
