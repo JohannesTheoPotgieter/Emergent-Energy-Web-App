@@ -154,8 +154,15 @@ export function registerExcelVsAppRoutes(app: Express): void {
       try {
         const exists = await trackerReplicaRepository.projectExists(projectId);
         if (!exists) throw notFound("Project");
-        const detail = await trackerReplicaRepository.getDriftDetail(projectId);
-        res.json(detail);
+        const [detail, projectRow] = await Promise.all([
+          trackerReplicaRepository.getDriftDetail(projectId),
+          db
+            .select({ projectName: projectInfo.projectName })
+            .from(projectInfo)
+            .where(eq(projectInfo.id, projectId))
+            .limit(1),
+        ]);
+        res.json({ ...detail, projectName: projectRow[0]?.projectName ?? null });
       } catch (err) {
         if (err instanceof ApiError) throw err;
         console.error("[excel-vs-app] project error:", err);
