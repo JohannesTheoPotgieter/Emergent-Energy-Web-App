@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { invalidateAllTaskCaches } from "@/lib/task-cache";
+import { smartDueLabel, getInitials } from "@/lib/task-formatters";
 import { createTaskRequestId } from "@/lib/idempotency";
 import { useToast } from "@/hooks/use-toast";
 import { getTaskWorkflowBlockReason } from "@/lib/task-workflow-guard";
@@ -203,20 +204,9 @@ const PRIORITY_BADGE: Record<string, { label: string; class: string }> = {
   low: { label: "P4", class: "bg-muted text-slate-500 border border-border" },
 };
 
-function smartDueLabel(dueAt: string | null): { label: string; urgency: "overdue" | "today" | "tomorrow" | "soon" | "future" | "none" } {
-  if (!dueAt) return { label: "", urgency: "none" };
-  try {
-    const d = parseISO(dueAt);
-    const now = startOfDay(new Date());
-    const diff = differenceInCalendarDays(d, now);
-    if (diff < -1) return { label: `${Math.abs(diff)}d overdue`, urgency: "overdue" };
-    if (diff === -1) return { label: "Yesterday", urgency: "overdue" };
-    if (diff === 0) return { label: "Today", urgency: "today" };
-    if (diff === 1) return { label: "Tomorrow", urgency: "tomorrow" };
-    if (diff <= 7) return { label: `${diff}d`, urgency: "soon" };
-    return { label: format(d, "dd MMM"), urgency: "future" };
-  } catch { return { label: "", urgency: "none" }; }
-}
+// smartDueLabel moved to client/src/lib/task-formatters.ts so
+// the same row reads identically on My Work, Engineering Board, Standup
+// and the Opportunity drawer Tickets section.
 
 const DUE_URGENCY_STYLES: Record<string, string> = {
   overdue: "text-red-600 bg-red-50 border-red-200 font-bold",
@@ -1787,8 +1777,6 @@ function ViewerManagement({ taskId, onInvalidate }: { taskId: number; onInvalida
     }
     return true;
   });
-
-  const getInitials = (name: string) => name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
 
   return (
     <div>

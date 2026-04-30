@@ -1102,27 +1102,49 @@ export async function generateDefaultEngineeringWorkItemsForProject(projectId: n
   return created;
 }
 
+// Both helpers route the input through `toCanonicalStatus` first so they
+// recognise legacy Title-Case AND the canonical lower_snake wire format
+// (post-migration 20260413). Without this normalisation, canonical rows
+// collapsed to the default and produced "NOT_STARTED" / "inbox"
+// everywhere.
 function mapToEngStatus(status: string): string {
-  const map: Record<string, string> = {
-    "Not Started": "NOT_STARTED",
-    "In Progress": "IN_PROGRESS",
-    "Complete": "COMPLETE",
-    "Done": "COMPLETE",
-    "On Hold": "ON_HOLD",
-    "Blocked": "ON_HOLD",
-  };
-  return map[status] || "NOT_STARTED";
+  const canonical = toCanonicalStatus(status);
+  switch (canonical) {
+    case "in_progress":
+      return "IN_PROGRESS";
+    case "complete":
+    case "qc_approved":
+      return "COMPLETE";
+    case "hold":
+    case "projects_assistance":
+      return "ON_HOLD";
+    case "needs_approval":
+    case "operational_approval":
+    case "provide_feedback":
+      return "IN_PROGRESS";
+    default:
+      return "NOT_STARTED";
+  }
 }
 
 function mapToMytoolStatus(status: string): string {
-  const map: Record<string, string> = {
-    "Not Started": "inbox",
-    "In Progress": "in_progress",
-    "Complete": "done",
-    "Done": "done",
-    "On Hold": "blocked",
-    "Blocked": "blocked",
-    "Planned": "planned",
-  };
-  return map[status] || "inbox";
+  const canonical = toCanonicalStatus(status);
+  switch (canonical) {
+    case "in_progress":
+      return "in_progress";
+    case "complete":
+    case "qc_approved":
+      return "done";
+    case "hold":
+    case "projects_assistance":
+      return "blocked";
+    case "needs_approval":
+    case "operational_approval":
+    case "provide_feedback":
+      return "in_progress";
+    case "to_do":
+      return "planned";
+    default:
+      return "inbox";
+  }
 }

@@ -15,6 +15,7 @@ import {
 import { workItems } from "@shared/schema/tasks";
 import { users } from "@shared/schema/users";
 import { db } from "../db";
+import { projectEngineeringTicket } from "@shared/lib/engineering-ticket-view";
 
 // ---- Inferred row shapes for select projections ----
 
@@ -554,8 +555,15 @@ export class OpportunitiesRepository {
       ))
       .limit(1);
 
-    const tasks = shadow
-      ? await db
+    type ShadowTaskRow = {
+      id: number;
+      title: string;
+      status: string;
+      priority: string | null;
+      endDate: string | null;
+    };
+    const tasks: ShadowTaskRow[] = shadow
+      ? ((await db
           .select({
             id: workItems.id,
             title: workItems.title,
@@ -565,7 +573,7 @@ export class OpportunitiesRepository {
           })
           .from(workItems)
           .where(eq(workItems.engineeringTicketId, shadow.id))
-          .orderBy(asc(workItems.sortOrder))
+          .orderBy(asc(workItems.sortOrder))) as ShadowTaskRow[])
       : [];
 
     // All engineering tickets attached to this opportunity. We INCLUDE the
@@ -609,13 +617,6 @@ export class OpportunitiesRepository {
       .where(and(eq(engineeringTickets.opportunityId, opportunityId), isNull(engineeringTickets.deletedAt)))
       .orderBy(desc(engineeringTickets.createdAt));
 
-    // Project-level task board for the drawer. The board is rendered once
-    // per project (not per ticket) — every engineering ticket's spawned
-    // work_items end up on the same project, so grouping them at the
-    // project level is the more honest view. Each ticket itself is also
-    // surfaced as a board column-header chip so users can see which
-    // tasks came from which ticket. Owner name prefers the joined
-    // users.name, falling back to the denormalized work_items.owner_name.
     type ProjectTask = {
       id: number;
       pdTicketId: number | null;
@@ -675,6 +676,87 @@ export class OpportunitiesRepository {
         .orderBy(asc(workItems.sortOrder), asc(workItems.id))) as ProjectTask[];
     }
 
+    const projectTaskViews = projectTasks.map((row) => {
+      const view = projectEngineeringTicket({
+        id: row.id,
+        title: row.title,
+        status: row.status,
+        priority: row.priority,
+        endDate: row.endDate,
+        dueDate: row.endDate,
+        percentComplete: row.percentComplete,
+        ownerUserId: row.ownerUserId,
+        ownerName: row.ownerName,
+        projectId: linkedProjectId,
+      });
+      return {
+        ...row,
+        status: view.status,
+        statusLabel: view.statusLabel,
+        statusBadgeClass: view.statusBadgeClass,
+        statusColour: view.statusColour,
+        dueLabel: view.dueLabel,
+        dueUrgency: view.dueUrgency,
+        ownerInitials: view.ownerInitials,
+        tags: view.tags,
+        isOverdue: view.isOverdue,
+        isComplete: view.isComplete,
+        isBlocked: view.isBlocked,
+        isApprovalPending: view.isApprovalPending,
+      };
+    });
+
+    const ticketsCanonical = tickets.map((row: TicketRow) => {
+      const ownerName = row.projectDeveloperName ?? row.designerName ?? null;
+      const view = projectEngineeringTicket({
+        id: row.id,
+        title: row.requestType ?? `Ticket ${row.id}`,
+        status: row.status,
+        priority: row.priority,
+        dueDate: row.dueDate,
+        endDate: row.dueDate,
+        ownerUserId: row.projectDeveloperUserId ?? row.designerUserId ?? null,
+        ownerName,
+        projectId: row.projectId,
+        projectName: row.projectName,
+      });
+      return {
+        ...row,
+        status: view.status,
+        statusLabel: view.statusLabel,
+        statusBadgeClass: view.statusBadgeClass,
+        statusColour: view.statusColour,
+        dueLabel: view.dueLabel,
+        dueUrgency: view.dueUrgency,
+        ownerInitials: view.ownerInitials,
+        isOverdue: view.isOverdue,
+        isComplete: view.isComplete,
+        isBlocked: view.isBlocked,
+        isApprovalPending: view.isApprovalPending,
+      };
+    });
+    const tasksCanonical = tasks.map((row) => {
+      const view = projectEngineeringTicket({
+        id: row.id,
+        title: row.title,
+        status: row.status,
+        priority: row.priority,
+        endDate: row.endDate,
+        dueDate: row.endDate,
+      });
+      return {
+        ...row,
+        status: view.status,
+        statusLabel: view.statusLabel,
+        statusBadgeClass: view.statusBadgeClass,
+        statusColour: view.statusColour,
+        dueLabel: view.dueLabel,
+        dueUrgency: view.dueUrgency,
+        isOverdue: view.isOverdue,
+        isComplete: view.isComplete,
+      };
+    });
+
     return {
       crm: opp.opp,
       clientName: opp.clientName,
@@ -685,9 +767,9 @@ export class OpportunitiesRepository {
       // exists, and the drawer falls through to its "Could not load
       // opportunity" branch (Task #83 root cause).
       pd: shadow ?? null,
-      tasks,
-      tickets,
-      projectTasks,
+      tasks: tasksCanonical,
+      tickets: ticketsCanonical,
+      projectTasks: projectTaskViews,
     };
   }
 

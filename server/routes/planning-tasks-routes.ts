@@ -9,7 +9,8 @@ import { requireAdmin } from "../middleware/requireAdmin";
 import { ApiError, sendError, badRequest, notFound, validationError, unauthorized, serverError, forbidden } from "../lib/api-error";
 import { validateTaskCreate, validateTaskUpdate } from "../lib/task-validation";
 import { normalizeStatus, normalizePriority } from "../lib/canonical-task-engine";
-import { isWorkItemsEnabled, getAllWorkItemsForPlanTab } from "../work-items-adapter";
+import { isWorkItemsEnabled, getAllWorkItemsForPlanTab, toCanonicalStatus } from "../work-items-adapter";
+import { projectEngineeringTicket } from "@shared/lib/engineering-ticket-view";
 import { softDeleteCanonicalWorkItemByLegacyTaskId } from "../canonical-boundaries";
 import { runCascadesAfterUpdate, validateParentCompletion } from "../services/task-cascade-service";
 import { queryStr, queryInt, paramStr, paramInt } from "../lib/req-parse";
@@ -161,6 +162,7 @@ export function registerPlanningTasksRoutes(app: Express) {
           });
 
           const usedIds = new Set<number>();
+          const isEngWorkstream = (ws?: string | null) => ws === "ENG" || ws === "QUALITY";
           baselineTasks = filteredCanonical.map((ct: any, idx: number) => {
             let taskId = Number.isFinite(ct.id) && ct.id > 0 ? ct.id : (idx + 1);
             while (usedIds.has(taskId)) taskId = taskId + 100000;
@@ -168,9 +170,17 @@ export function registerPlanningTasksRoutes(app: Express) {
 
             const rawPct = ct.pctComplete != null ? Number(ct.pctComplete) : 0;
             const pctComplete = rawPct > 1 ? Math.round(rawPct) : Math.round(rawPct * 100);
-            let status = "Not Started";
-            if (pctComplete >= 100) status = "Done";
-            else if (pctComplete > 0) status = "In Progress";
+            // Prefer the canonical work_items.status the row already
+            // carries (post-migration 20260413 lower_snake) instead of deriving
+            // from %, so the Plan tab and Engineering Board show the same status
+            // pill for the same row. Fall back to the % heuristic only when the
+            // canonical row is missing a status (legacy plan-only rows).
+            let status = ct.status ? toCanonicalStatus(ct.status) : "";
+            if (!status || status === "not_started") {
+              if (pctComplete >= 100) status = "complete";
+              else if (pctComplete > 0) status = "in_progress";
+              else status = status || "not_started";
+            }
 
             let computedExpPct = 0;
             const tPlannedStart = (ct.startDate || "").substring(0, 10);
@@ -192,12 +202,32 @@ export function registerPlanningTasksRoutes(app: Express) {
               }
             }
 
+            const ticketView = isEngWorkstream(ct.workstream)
+              ? projectEngineeringTicket({
+                  id: ct.id,
+                  workItemId: ct.workItemId || taskId,
+                  title: ct.taskName || `Task ${ct.taskNo || idx + 1}`,
+                  description: ct.comment ?? null,
+                  status,
+                  projectId: ct.projectId ?? null,
+                  projectName,
+                  startDate: tPlannedStart || null,
+                  endDate: tPlannedEnd || null,
+                  dueDate: tPlannedEnd || null,
+                  percentComplete: pctComplete,
+                  expectedPctComplete: computedExpPct,
+                  ownerName: Array.isArray(ct.assignees) ? (ct.assignees[0] ?? null) : null,
+                  assignees: Array.isArray(ct.assignees) ? ct.assignees : null,
+                })
+              : null;
+
             return {
               id: -taskId,
               workItemId: ct.workItemId || taskId,
               projectName,
               planProjectName: projectName,
               importedTaskId: ct.id,
+              ticketView,
               taskNumber: ct.taskNo || String(idx + 1),
               parentTaskId: null as number | null,
               parentWorkItemId: ct.parentWorkItemId || null,
@@ -274,9 +304,12 @@ export function registerPlanningTasksRoutes(app: Express) {
           })
           .map((pt: any) => {
             const pctComplete = pt.actualPctComplete != null ? Math.round(pt.actualPctComplete * 100) : 0;
-            let status = "Not Started";
-            if (pctComplete >= 100) status = "Done";
-            else if (pctComplete > 0) status = "In Progress";
+            // Emit canonical lower_snake to match the Engineering
+            // Board / Standup wire format. The legacy plan rows here have no
+            // canonical status of their own, so we still derive from %.
+            let status = "not_started";
+            if (pctComplete >= 100) status = "complete";
+            else if (pctComplete > 0) status = "in_progress";
 
             let computedExpPct: number = pt.expectedPctComplete != null ? Math.round(pt.expectedPctComplete * 100) : 0;
             if (pt.expectedPctComplete == null && !pt.isVirtual) {
@@ -309,7 +342,7 @@ export function registerPlanningTasksRoutes(app: Express) {
               parentTaskId: null as number | null,
               title: pt.highLevelProgramme || `Task ${pt.taskNo || pt.rowNumber}`,
               description: null,
-              status: isVirtualMilestone ? "Not Started" : status,
+              status: isVirtualMilestone ? "not_started" : status,
               priority: "Normal",
               startDate: pt.actualStart || null,
               dueDate: pt.actualEnd || null,
@@ -526,7 +559,10 @@ export function registerPlanningTasksRoutes(app: Express) {
           if (!isNaN(actualEnd.getTime()) && actualEnd.getTime() <= todayMs) {
             t.percentComplete = 100;
             t.storedActualPct = 100;
-            if (t.status === "Not Started" || t.status === "active") t.status = "Done";
+            // Emit canonical lower_snake.
+            if (t.status === "not_started" || t.status === "to_do" || t.status === "active" || !t.status) {
+              t.status = "complete";
+            }
           }
         }
       }
@@ -543,14 +579,18 @@ export function registerPlanningTasksRoutes(app: Express) {
           if (!isNaN(actualEnd.getTime()) && actualEnd.getTime() <= todayMs) {
             t.percentComplete = 100;
             t.storedActualPct = 100;
-            if (t.status === "Not Started" || t.status === "active" || t.status === "In Progress") t.status = "Done";
+            // Emit canonical lower_snake.
+            if (t.status === "not_started" || t.status === "to_do" || t.status === "in_progress" || t.status === "active" || !t.status) {
+              t.status = "complete";
+            }
           }
         }
         if (t.isVirtualMilestone && (t.isParent || t.childCount > 0)) {
           const pct = t.percentComplete || 0;
-          if (pct >= 100) t.status = "Done";
-          else if (pct > 0) t.status = "In Progress";
-          else t.status = "Not Started";
+          // Emit canonical lower_snake.
+          if (pct >= 100) t.status = "complete";
+          else if (pct > 0) t.status = "in_progress";
+          else t.status = "not_started";
         }
         const pct = t.percentComplete || 0;
         const exp = t.computedExpectedPct ?? 0;
