@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { invalidateProjectV2Queries } from "@/hooks/use-project-v2";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
@@ -294,6 +295,7 @@ export function RevenueTrackerTab({ projectName, projectId }: RevenueTrackerTabP
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["revenue-tracker-project", projectName] });
+      invalidateProjectV2Queries(qc, projectId ?? null);
     },
   });
 
