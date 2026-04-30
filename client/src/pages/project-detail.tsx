@@ -1827,7 +1827,7 @@ export default function ProjectDetailPage() {
             <BudgetBaselineStrip projectId={projectInfoId} actualRevenue={totalRevenueActual} />
           )}
 
-          {activeSubTab === "revenue" && canViewSubTab.revenue && <RevenueTrackingTab projectName={projectName} highlightId={highlightType === 'revenue' ? highlightId : null} />}
+          {activeSubTab === "revenue" && canViewSubTab.revenue && <RevenueTrackingTab projectName={projectName} projectId={projectInfoId ?? null} highlightId={highlightType === 'revenue' ? highlightId : null} />}
           {activeSubTab === "cost-lines" && canViewSubTab.expenditure && <ExpenditureEditableTab projectName={projectName} projectId={projectInfoId ?? null} highlightId={highlightType === 'expense' ? highlightId : null} initialFilter={costFilter || undefined} />}
           {activeSubTab === "cos-tracker" && canViewSubTab.expenditure && <MonthlyRealisationTab projectName={projectName} projectId={projectInfoId ?? null} />}
           {activeSubTab === "rev-tracker" && canViewSubTab.revenue && <RevenueTrackerTab projectName={projectName} projectId={projectInfoId ?? null} />}
