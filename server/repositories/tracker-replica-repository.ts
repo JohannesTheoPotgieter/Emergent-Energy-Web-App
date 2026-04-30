@@ -145,6 +145,123 @@ export class TrackerReplicaRepository {
       )
       .orderBy(asc(workItems.sortOrder), asc(workItems.sourceRow));
   }
+
+  /**
+   * Flatten the per-row `manual_overrides` JSONB columns across all three
+   * canonical tables into a single audit-style list. Used by the
+   * "manual overrides" read surface so an auditor can answer "who edited
+   * what when" for a given project without diving into raw SQL.
+   *
+   * The shape per entry:
+   *   { table, rowId, sourceRow, displayLabel, fieldName, value,
+   *     fromValue, editedBy, editedAt }
+   *
+   * Sorted by editedAt DESC so the most recent edit is first.
+   */
+  async getManualOverrides(projectId: number): Promise<ManualOverrideEntry[]> {
+    const out: ManualOverrideEntry[] = [];
+
+    // Helper that turns one row's JSONB map into N flat entries.
+    const flatten = (
+      table: ManualOverrideEntry["table"],
+      rowId: number,
+      sourceRow: number | null,
+      displayLabel: string,
+      overrides: unknown,
+    ) => {
+      if (!overrides || typeof overrides !== "object") return;
+      for (const [fieldName, raw] of Object.entries(overrides as Record<string, unknown>)) {
+        if (!raw || typeof raw !== "object") continue;
+        const entry = raw as Record<string, unknown>;
+        out.push({
+          table,
+          rowId,
+          sourceRow,
+          displayLabel,
+          fieldName,
+          value: entry.value as string | number | boolean | null,
+          fromValue: entry.fromValue as string | number | boolean | null,
+          editedBy: typeof entry.editedBy === "number" ? entry.editedBy : null,
+          editedAt: typeof entry.editedAt === "string" ? entry.editedAt : "",
+        });
+      }
+    };
+
+    // Revenue
+    const revRows = await this.dbInstance
+      .select({
+        id: normalizedRevenueLines.id,
+        sourceRow: normalizedRevenueLines.sourceRow,
+        milestoneName: normalizedRevenueLines.milestoneName,
+        manualOverrides: normalizedRevenueLines.manualOverrides,
+      })
+      .from(normalizedRevenueLines)
+      .where(
+        and(
+          eq(normalizedRevenueLines.projectId, projectId),
+          isNull(normalizedRevenueLines.effectiveTo),
+        ),
+      );
+    for (const r of revRows) {
+      flatten("normalized_revenue_lines", r.id, r.sourceRow, r.milestoneName ?? `Row ${r.sourceRow ?? r.id}`, r.manualOverrides);
+    }
+
+    // Cost lines
+    const costRows = await this.dbInstance
+      .select({
+        id: normalizedCostLines.id,
+        sourceRow: normalizedCostLines.sourceRow,
+        description: normalizedCostLines.description,
+        manualOverrides: normalizedCostLines.manualOverrides,
+      })
+      .from(normalizedCostLines)
+      .where(
+        and(
+          eq(normalizedCostLines.projectId, projectId),
+          isNull(normalizedCostLines.effectiveTo),
+        ),
+      );
+    for (const r of costRows) {
+      flatten("normalized_cost_lines", r.id, r.sourceRow, r.description ?? `Row ${r.sourceRow ?? r.id}`, r.manualOverrides);
+    }
+
+    // Plan tasks
+    const planRows = await this.dbInstance
+      .select({
+        id: workItems.id,
+        sourceRow: workItems.sourceRow,
+        title: workItems.title,
+        manualOverrides: workItems.manualOverrides,
+      })
+      .from(workItems)
+      .where(
+        and(
+          eq(workItems.projectId, projectId),
+          eq(workItems.source, "SMART_IMPORT"),
+          eq(workItems.workstream, "PM"),
+          isNull(workItems.deletedAt),
+        ),
+      );
+    for (const r of planRows) {
+      flatten("work_items", r.id, r.sourceRow, r.title ?? `Task ${r.sourceRow ?? r.id}`, r.manualOverrides);
+    }
+
+    // Newest edits first.
+    out.sort((a, b) => (a.editedAt < b.editedAt ? 1 : a.editedAt > b.editedAt ? -1 : 0));
+    return out;
+  }
+}
+
+export interface ManualOverrideEntry {
+  table: "normalized_revenue_lines" | "normalized_cost_lines" | "work_items";
+  rowId: number;
+  sourceRow: number | null;
+  displayLabel: string;
+  fieldName: string;
+  value: string | number | boolean | null;
+  fromValue: string | number | boolean | null;
+  editedBy: number | null;
+  editedAt: string;
 }
 
 export const trackerReplicaRepository = new TrackerReplicaRepository();

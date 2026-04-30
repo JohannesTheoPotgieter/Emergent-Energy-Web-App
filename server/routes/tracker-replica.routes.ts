@@ -107,6 +107,32 @@ export function registerTrackerReplicaRoutes(app: Express): void {
     },
   );
 
+  // ---- Manual-override audit log (read surface) ---------------------
+  // Flattens the manual_overrides JSONB across all three canonical
+  // tables into a single chronological list. Used by the "Manual Edits"
+  // tab so auditors can answer "who edited what when" without writing
+  // SQL. Read-only.
+  app.get(
+    "/api/tracker-replica/:projectId/manual-overrides",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      const projectId = parseProjectId(req.params.projectId);
+
+      try {
+        const exists = await trackerReplicaRepository.projectExists(projectId);
+        if (!exists) throw notFound("Project");
+
+        const entries = await trackerReplicaRepository.getManualOverrides(projectId);
+
+        res.json({ projectId, entries });
+      } catch (err) {
+        if (err instanceof ApiError) throw err;
+        console.error("[tracker-replica] manual-overrides error:", err);
+        throw serverError("Failed to load manual override log");
+      }
+    },
+  );
+
   // ---- Project / Program Plan sheet ---------------------------------
   app.get(
     "/api/tracker-replica/:projectId/program-plan",
