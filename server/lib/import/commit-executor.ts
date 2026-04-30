@@ -166,14 +166,76 @@ const EXPENDITURE_MERGE_FIELDS = [
   "savingOverrun", "usdExchangeRate", "pricePerWatt",
 ] as const;
 
-/** Per-row hash-based merge outcome surfaced by the executor. */
+/** Per-row hash-based merge outcome surfaced by the executor.
+ *
+ * `rowKey` / `displayLabel` / `section` mirror the wizard-shape produced by
+ * the existing `conflict-engine.ts`, so the route can fold both engines'
+ * output into the same `v2_conflicts_detected` 409 envelope. `rowKey` is the
+ * matcher's `rowUid` (or `businessKey.key` fallback) — the same key the
+ * existing engine uses, and the same one `v2ConflictResolutions` maps to. */
 export interface MergeConflictEntry {
+  rowKey: string;
+  displayLabel: string;
+  section: "PLAN" | "REVENUE" | "EXPENDITURE";
   rowHash: string;
   existingRowId: number;
   fieldName: string;
   snapshotValue: FieldValue;
   existingValue: FieldValue;
   importValue: FieldValue;
+}
+
+/** Wizard-shape conflict row, grouped by `rowKey` so a single row can carry
+ * multiple field-level conflicts. Matches the shape that
+ * `smart-import-routes.ts` returns from `runImportPlanner` — the wizard
+ * consumer is unchanged. */
+export interface WizardConflictRow {
+  rowKey: string;
+  displayLabel: string;
+  section: "PLAN" | "REVENUE" | "EXPENDITURE";
+  canonicalSource: string;
+  fields: Array<{
+    fieldName: string;
+    baselineValue: FieldValue;
+    currentAppValue: FieldValue;
+    uploadedValue: FieldValue;
+    mergeCase: "BOTH_CHANGED";
+  }>;
+}
+
+/** Translate the per-field merge-engine entries into the wizard's grouped
+ * row shape. Deduplicates by `(rowKey, fieldName)` so a field reported twice
+ * (e.g. by both engines) collapses to a single decision prompt. */
+export function mergeConflictsToWizardRows(
+  entries: MergeConflictEntry[],
+): WizardConflictRow[] {
+  const byRow = new Map<string, WizardConflictRow>();
+  const seenField = new Set<string>();
+  for (const e of entries) {
+    const dedupKey = `${e.rowKey}::${e.fieldName}`;
+    if (seenField.has(dedupKey)) continue;
+    seenField.add(dedupKey);
+
+    let row = byRow.get(e.rowKey);
+    if (!row) {
+      row = {
+        rowKey: e.rowKey,
+        displayLabel: e.displayLabel,
+        section: e.section,
+        canonicalSource: e.section,
+        fields: [],
+      };
+      byRow.set(e.rowKey, row);
+    }
+    row.fields.push({
+      fieldName: e.fieldName,
+      baselineValue: e.snapshotValue,
+      currentAppValue: e.existingValue,
+      uploadedValue: e.importValue,
+      mergeCase: "BOTH_CHANGED",
+    });
+  }
+  return Array.from(byRow.values());
 }
 
 /** Coerce a DB row's value into the merge engine's narrow domain. */
@@ -614,8 +676,12 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
       const unresolvedConflicts = merge.conflicts.filter(c => !resolvedFieldNames.has(c.fieldName));
 
       if (unresolvedConflicts.length > 0 && existingForMerge) {
+        const rowLabel = mr.businessKey.rowLabel ?? rowUid;
         for (const c of unresolvedConflicts) {
           mergeConflicts.push({
+            rowKey: rowUid,
+            displayLabel: rowLabel,
+            section: "PLAN",
             rowHash: rowHash ?? "",
             existingRowId: existingForMerge.id,
             fieldName: c.fieldName,
@@ -1139,8 +1205,12 @@ export async function writeRevenueIncremental(ctx: TemporalWriteContext): Promis
     const unresolvedConflicts = merge.conflicts.filter(c => !resolvedFieldNames.has(c.fieldName));
 
     if (unresolvedConflicts.length > 0 && existingForMerge) {
+      const rowLabel = mr.businessKey.rowLabel ?? rowUid;
       for (const c of unresolvedConflicts) {
         mergeConflicts.push({
+          rowKey: rowUid,
+          displayLabel: rowLabel,
+          section: "REVENUE",
           rowHash: rowHash ?? "",
           existingRowId: existingForMerge.id,
           fieldName: c.fieldName,
@@ -1627,8 +1697,12 @@ export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Pr
     const unresolvedConflicts = merge.conflicts.filter(c => !resolvedFieldNames.has(c.fieldName));
 
     if (unresolvedConflicts.length > 0 && existingForMerge) {
+      const rowLabel = mr.businessKey.rowLabel ?? rowUid;
       for (const c of unresolvedConflicts) {
         mergeConflicts.push({
+          rowKey: rowUid,
+          displayLabel: rowLabel,
+          section: "EXPENDITURE",
           rowHash: rowHash ?? "",
           existingRowId: existingForMerge.id,
           fieldName: c.fieldName,

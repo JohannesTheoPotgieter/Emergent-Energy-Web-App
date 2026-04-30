@@ -37,6 +37,7 @@ import {
   eachWeekOfInterval, startOfWeek, endOfWeek, isSameDay,
 } from "date-fns";
 import { sanitizeHtml } from "@/lib/sanitize";
+import { styleForCell } from "@/lib/tracker-cell-format";
 import {
   WORKSTREAM_OPTIONS,
   resolveWorkstream,
@@ -653,9 +654,21 @@ const ALL_COLUMNS: PlanColumn[] = [
   { id: "pctComplete", label: "% Complete", width: "w-[90px]" },
   { id: "expectedPct", label: "Expected %", width: "w-[70px]" },
   { id: "status", label: "Status", width: "w-10" },
+  // Smart Import v2 tracker columns. Off by default so the existing
+  // layout is unchanged for users who haven't opted in.
+  { id: "lead", label: "Lead", width: "w-[80px]" },
+  { id: "resource1", label: "Resource 1", width: "w-[90px]" },
+  { id: "resource2", label: "Resource 2", width: "w-[90px]" },
+  { id: "trackerComments", label: "Tracker Comments", width: "min-w-[180px]" },
+  { id: "workDays", label: "Work Days", width: "w-[80px]" },
 ];
 
-const DEFAULT_VISIBLE_COLUMNS = ALL_COLUMNS.map(c => c.id);
+// Existing users get the existing default set (without the tracker
+// columns). New saved views or column-picker activations are how the
+// tracker columns become visible.
+const DEFAULT_VISIBLE_COLUMNS = ALL_COLUMNS
+  .filter(c => !["lead", "resource1", "resource2", "trackerComments", "workDays"].includes(c.id))
+  .map(c => c.id);
 
 interface SavedView {
   name: string;
@@ -2030,6 +2043,11 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
                 {isColumnVisible("pctComplete") && <th className="w-[90px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-pct-done">% Complete</th>}
                 {isColumnVisible("expectedPct") && <th className="w-[70px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-expected-pct">Expected %</th>}
                 {isColumnVisible("status") && <th className="w-10 px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-status">Status</th>}
+                {isColumnVisible("lead") && <th className="w-[80px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-lead-tracker">Lead</th>}
+                {isColumnVisible("resource1") && <th className="w-[90px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-resource-1">Resource 1</th>}
+                {isColumnVisible("resource2") && <th className="w-[90px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-resource-2">Resource 2</th>}
+                {isColumnVisible("trackerComments") && <th className="px-1 py-0 text-left border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28, minWidth: 180 }} data-testid="header-tracker-comments">Tracker Comments</th>}
+                {isColumnVisible("workDays") && <th className="w-[80px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-work-days">Work Days</th>}
                 {isAdmin && <th className="w-7 px-0 py-0 border-b font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} />}
               </tr>
             </thead>
@@ -2349,6 +2367,57 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
                           </Tooltip>
                         </TooltipProvider>
                       </td>
+                      )}
+                      {isColumnVisible("lead") && (
+                        <td
+                          className="px-1 text-center border-r text-[10px] truncate"
+                          style={styleForCell((task as any).cellFormat, "lead")}
+                          data-testid={`lead-tracker-${task.id}`}
+                          title={(task as any).lead ?? undefined}
+                        >
+                          {(task as any).lead ?? "—"}
+                        </td>
+                      )}
+                      {isColumnVisible("resource1") && (
+                        <td
+                          className="px-1 text-center border-r text-[10px] truncate"
+                          style={styleForCell((task as any).cellFormat, "resource1")}
+                          data-testid={`resource-1-${task.id}`}
+                          title={(task as any).resource1 ?? undefined}
+                        >
+                          {(task as any).resource1 ?? "—"}
+                        </td>
+                      )}
+                      {isColumnVisible("resource2") && (
+                        <td
+                          className="px-1 text-center border-r text-[10px] truncate"
+                          style={styleForCell((task as any).cellFormat, "resource2")}
+                          data-testid={`resource-2-${task.id}`}
+                          title={(task as any).resource2 ?? undefined}
+                        >
+                          {(task as any).resource2 ?? "—"}
+                        </td>
+                      )}
+                      {isColumnVisible("trackerComments") && (
+                        <td
+                          className="px-1 text-left border-r text-[10px] truncate"
+                          style={styleForCell((task as any).cellFormat, "trackerComments")}
+                          data-testid={`tracker-comments-${task.id}`}
+                          title={(task as any).trackerComments ?? undefined}
+                        >
+                          <span className="block max-w-[180px] truncate">
+                            {(task as any).trackerComments ?? "—"}
+                          </span>
+                        </td>
+                      )}
+                      {isColumnVisible("workDays") && (
+                        <td
+                          className="px-1 text-center border-r text-[10px] tabular-nums"
+                          style={styleForCell((task as any).cellFormat, "workDays")}
+                          data-testid={`work-days-${task.id}`}
+                        >
+                          {(task as any).workDays ?? "—"}
+                        </td>
                       )}
                       {isAdmin && (
                         <td className="px-0 text-center" onClick={(e) => e.stopPropagation()}>
