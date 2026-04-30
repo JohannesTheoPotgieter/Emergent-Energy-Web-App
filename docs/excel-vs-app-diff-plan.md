@@ -1,9 +1,11 @@
 # Excel-vs-App Diff System — Implementation Plan
 
-> **Status:** DRAFT — pending user review/redline before any code lands.
+> **Status:** APPROVED 2026-04-30 — all 6 locked decisions reconfirmed,
+> all 5 open decisions resolved per the plan's recommendations.
+> Implementation may proceed under the per-workstream plans below.
 > **Created:** 2026-04-30
 > **Branch:** `claude/replica-diff-and-reporting-p3OWG`
-> **Author:** Claude (AI-assisted), pending human review.
+> **Author:** Claude (AI-assisted), reviewed by user.
 > **Scope:** Three coordinated workstreams that make the imported Tracker
 > workbook the unambiguous source of truth across reporting, dashboards,
 > and KPI surfaces — and give operators a single screen (per-project +
@@ -938,6 +940,26 @@ flags drift on every cascade, etc.) and operators would tune it out.
 **Alternative (any field):** show drift on every column. Pros:
 exhaustive — nothing slips through. Cons: high noise; defeats the
 "single screen for drift" goal.
+
+---
+
+## Resolved decisions (2026-04-30)
+
+User confirmed all six locked decisions remain locked, and adopted the
+recommendation for each of the five open decisions:
+
+| # | Decision | Resolution |
+|---|----------|-----------|
+| 6.1 | Workstream B PR shape | **One PR** (per recommendation). |
+| 6.2 | Diff page route | **Dedicated** routes (per recommendation). |
+| 6.3 | Bulk-action safety | **50-row cap + diff summary**, 200/session (per recommendation). |
+| 6.4 | Notification surface | **Header badge + project-level component** on `financial_edit_requests` (per recommendation). |
+| 6.5 | Drift severity scope | **Tracked fields only** (per recommendation). |
+
+Mutation inventory in §B.3–B.7 accepted as scoped: three in-scope code
+paths (Expenditure overrides sync, Revenue overrides sync, Plan tab
+work_items mirror); cascade-service / lifecycle / engineering /
+ms-sync / admin-recovery / legacy adapter writes remain out of scope.
 
 ---
 
