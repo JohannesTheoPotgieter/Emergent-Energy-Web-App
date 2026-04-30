@@ -343,7 +343,85 @@ edits on operational tabs" and stay as-is:
 | `server/admin-recovery-routes.ts:223–418` | Admin recovery (un-delete, etc.). Operates on rows directly; explicit-action context. |
 | `server/lifecycle-routes.ts:1462`, `server/engineering-routes.ts:597, 1816`, `server/api/v2/repositories/project-v2-repository.ts:153`, `server/tr-register-routes.ts:374, 455, 644`, `server/routes/operational-tasks-routes.ts:371`, `server/routes/planning-extracted-routes.ts:681–796`, `server/routes/mytool-routes.ts:377–439`, `server/routes/working-plan-routes.ts:163–335`, `server/task-management-routes.ts:557–872`, `server/deliverable-capture-routes.ts:183, 190` | Each is its own domain (lifecycle, engineering tickets, TR register, etc.). The audit (workstream A) classifies whether they touch tracked fields; only the ones that do enter the invariant scope. **Default assumption**: most of these write fields outside the merge-field lists (status enums, audit metadata), so they're not drift sources. The audit will confirm. |
 
-### B.8 New helper module — `server/lib/manual-overrides.ts`
+### B.8 Single-source contract — `shared/excel-vs-app/contract.ts`
+
+Today the facts that determine "what counts as drift" and "who can
+resolve it" live in three places: the merge-field lists in
+`server/lib/import/commit-executor.ts:135–167`, the per-field edit
+RBAC in operational-tab middleware (e.g.
+`server/departments/financial-integration-routes.ts`), and the wire
+schema for `manual_overrides` JSONB embedded inside
+`server/lib/import/merge-engine.ts`. Without a single source of
+truth, these will drift silently: the import engine, the cell-edit
+handler, and the diff page can each have a slightly different idea
+of which fields participate in drift detection — and the failure
+mode is not a TypeScript error, it's a wrong drift count.
+
+This module owns those facts. Every consumer reads from one place.
+
+```ts
+// shared/excel-vs-app/contract.ts — runs in both server and client.
+
+export type DiffSection = "PLAN" | "REVENUE" | "EXPENDITURE";
+
+export const PLAN_TRACKED_FIELDS = [
+  "startDate", "endDate", "duration",
+  /* …existing entries from commit-executor.ts:135–142… */
+] as const;
+export const REVENUE_TRACKED_FIELDS = [/* …commit-executor.ts:145–153… */] as const;
+export const EXPENDITURE_TRACKED_FIELDS = [/* …commit-executor.ts:156–167… */] as const;
+
+export const TRACKED_FIELDS_BY_SECTION: Record<DiffSection, readonly string[]> = {
+  PLAN: PLAN_TRACKED_FIELDS,
+  REVENUE: REVENUE_TRACKED_FIELDS,
+  EXPENDITURE: EXPENDITURE_TRACKED_FIELDS,
+};
+
+/** Roles that can resolve drift on a given section. Mirrors per-field
+ *  edit middleware on the operational tabs. */
+export const DRIFT_RESOLVER_ROLES: Record<DiffSection, readonly CompanyRole[]> = {
+  PLAN: ["PROGRAM_MANAGER", "COO_ADMIN", "CEO_ADMIN"], // + work-item owner
+  REVENUE: ["PROGRAM_FINANCE_MANAGER", "CCO", "CFO", "COO_ADMIN", "CEO_ADMIN"],
+  EXPENDITURE: ["PROGRAM_FINANCE_MANAGER", "CFO", "COO_ADMIN", "CEO_ADMIN"],
+};
+
+/** Zod schema for a single manual_overrides entry. Validates every
+ *  write — by both the import engine and the cell-edit helper. */
+export const manualOverrideEntrySchema = z.object({
+  value: z.union([z.string(), z.number(), z.boolean(), z.null()]),
+  editedBy: z.number().int().nullable(),
+  editedAt: z.string(),     // ISO timestamp
+  fromValue: z.union([z.string(), z.number(), z.boolean(), z.null()]),
+  note: z.string().optional(),
+});
+export const manualOverridesMapSchema = z.record(manualOverrideEntrySchema);
+
+export type ManualOverrideEntry = z.infer<typeof manualOverrideEntrySchema>;
+export type ManualOverridesMap = z.infer<typeof manualOverridesMapSchema>;
+```
+
+Consumers re-export — no duplicate definitions:
+
+| Consumer | What it reads from the contract |
+|----------|--------------------------------|
+| `server/lib/import/commit-executor.ts` | `PLAN_TRACKED_FIELDS` etc. (the existing `*_MERGE_FIELDS` constants become re-exports of the contract). |
+| `server/lib/import/merge-engine.ts` | `manualOverrideEntrySchema` validates JSONB writes in `updateManualOverrides`. |
+| `server/lib/manual-overrides.ts` (B.9) | Same schema — guarantees the cell-edit path writes identical JSONB to the import path. |
+| `server/routes/excel-vs-app.routes.ts` (workstream C) | `TRACKED_FIELDS_BY_SECTION` for drift detection; `DRIFT_RESOLVER_ROLES` for RBAC. |
+| `server/middleware/*` finance role gates | `DRIFT_RESOLVER_ROLES` replaces hard-coded role lists where they exist. |
+| `client/src/pages/excel-vs-app*.tsx` | `TRACKED_FIELDS_BY_SECTION` for column rendering; `DRIFT_RESOLVER_ROLES` for client-side action gating (server still authoritative). |
+
+**Test:** `qa/tests/unit/excel-vs-app-contract.test.ts` —
+- Snapshot test pins the three field lists; adding a tracked field
+  is an explicit decision, not an accidental import-time-only change.
+- Round-trip test: a JSONB value the import engine writes parses
+  cleanly under `manualOverridesMapSchema`; same for one the
+  cell-edit helper writes.
+- Asserts that `commit-executor.ts`'s exported `*_MERGE_FIELDS`
+  reference-equals the contract's lists (catches accidental
+  divergence after refactor).
+
+### B.9 New helper module — `server/lib/manual-overrides.ts`
 
 A thin wrapper around the existing `merge-engine` JSONB shape so
 non-import code paths can write `manual_overrides` without re-reading
@@ -386,7 +464,7 @@ Internally it:
 The merge engine's `updateManualOverrides` keeps doing the same job
 during import. Both call sites end up with identical JSONB shape.
 
-### B.9 New script — `scripts/backfill-import-snapshot.ts`
+### B.10 New script — `scripts/backfill-import-snapshot.ts`
 
 Pull-forward of Phase 2 from the engine-consolidation assessment.
 
@@ -434,7 +512,7 @@ A single row in `audit_log` (or equivalent) per script invocation:
 they are by-design recovery of metadata that was always intended to
 be there.
 
-### B.10 Test plan
+### B.11 Test plan
 
 Three Vitest suites, each isolated:
 
@@ -488,7 +566,7 @@ Smoke test (manual, on a postgres dev DB):
 5. Re-upload with the cell value changed in Excel. Confirm a v2
    conflict prompt appears.
 
-### B.11 Acceptance
+### B.12 Acceptance
 
 - B.AC-1: For each of the three operational tabs (cost / revenue /
   plan), a cell edit no longer changes `row[field]` on the canonical
@@ -508,6 +586,11 @@ Smoke test (manual, on a postgres dev DB):
 - B.AC-6: `npm run check` and the targeted Vitest suite are green.
   No new failures in `qa/tests/unit/permission-snapshot-no-drift.test.ts`
   beyond the 3 pre-existing fails on main.
+- B.AC-7: The merge-field lists, `manual_overrides` JSONB schema, and
+  per-section resolver-role mapping live in `shared/excel-vs-app/contract.ts`
+  and are consumed (re-exported, not duplicated) by the import engine,
+  the cell-edit helper, the diff routes, and the diff pages. The
+  contract test suite pins the lists.
 
 ---
 
@@ -656,9 +739,11 @@ Two new pages under `client/src/pages/`:
 ### C.6 RBAC
 
 A new permission key `excel_vs_app` with `view` and `resolve` actions,
-added to `shared/permissions.ts`. Per-action role gating mirrors the
-existing per-field edit roles already enforced today on the
-operational tabs:
+added to `shared/permissions.ts`. The per-section resolver role list
+is read from `shared/excel-vs-app/contract.ts` (`DRIFT_RESOLVER_ROLES`,
+introduced in §B.8) — there is no second copy of the role mapping
+in this workstream. Per-action role gating mirrors the existing
+per-field edit roles already enforced today on the operational tabs:
 
 | Action surface | Allowed roles |
 |----------------|--------------|
@@ -961,6 +1046,17 @@ paths (Expenditure overrides sync, Revenue overrides sync, Plan tab
 work_items mirror); cascade-service / lifecycle / engineering /
 ms-sync / admin-recovery / legacy adapter writes remain out of scope.
 
+**Long-term durability addition (2026-04-30):** workstream B grows by
+one module — `shared/excel-vs-app/contract.ts` (§B.8) — to consolidate
+the merge-field lists, `manual_overrides` JSONB schema, and per-section
+resolver-role mapping into a single source of truth. The import engine,
+cell-edit helper, diff routes, and diff pages all re-export from there
+instead of duplicating. The "source-agnostic naming" recommendation
+(`source_snapshot` / `source_type`) was considered and explicitly
+deferred: speculative against a hypothetical future where QuickBooks
+or MS Graph become drift sources, with no concrete plan today; renaming
+is a mechanical one-day job we can do then.
+
 ---
 
 ## What happens after this plan is approved
@@ -999,6 +1095,9 @@ ms-sync / admin-recovery / legacy adapter writes remain out of scope.
 - `client/src/lib/tracker-cell-format.ts` — `styleForCell` helper.
 - `server/lib/data-merge.ts` — adapter layer that already returns
   `cellFormat` + tracker fields (PR #753).
+- `shared/excel-vs-app/contract.ts` — NEW (workstream B §B.8). Single
+  source of truth for merge-field lists, `manual_overrides` JSONB
+  schema, and per-section resolver-role mapping.
 
 
 
