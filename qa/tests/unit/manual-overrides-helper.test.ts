@@ -27,6 +27,8 @@ import {
   buildOverrideMap,
   removeOverrideFromMap,
   readOverridesMap,
+  withOverridesOverlay,
+  applyOverridesOverlay,
 } from "../../../server/lib/manual-overrides";
 import type { ManualOverridesMap } from "@shared/excel-vs-app/contract";
 
@@ -129,6 +131,109 @@ describe("manual-overrides helper — pure field-merge logic", () => {
       amountExVat: { value: "1.00", editedBy: 1, editedAt: NOW.toISOString(), fromValue: null },
     };
     expect(readOverridesMap(map)).toEqual(map);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Read-side overlay
+// ---------------------------------------------------------------------------
+
+describe("manual-overrides helper — read-side overlay", () => {
+  const NOW = "2026-04-30T12:00:00.000Z";
+
+  function makeRow(over: Record<string, unknown> = {}) {
+    return {
+      id: 1,
+      amountExVat: "1500.00",
+      status: "approved",
+      invoiceNumber: "INV-100",
+      manualOverrides: null as unknown,
+      ...over,
+    };
+  }
+
+  it("withOverridesOverlay returns the row unchanged when no overrides exist", () => {
+    const row = makeRow({ manualOverrides: null });
+    const out = withOverridesOverlay(row, ["amountExVat", "status"]);
+    expect(out).toBe(row);
+  });
+
+  it("withOverridesOverlay returns the row unchanged when manualOverrides is an empty object", () => {
+    const row = makeRow({ manualOverrides: {} });
+    const out = withOverridesOverlay(row, ["amountExVat", "status"]);
+    expect(out).toBe(row);
+  });
+
+  it("withOverridesOverlay replaces a field's value when an override exists", () => {
+    const row = makeRow({
+      manualOverrides: {
+        amountExVat: { value: "1700.00", editedBy: 1, editedAt: NOW, fromValue: "1500.00" },
+      },
+    });
+    const out = withOverridesOverlay(row, ["amountExVat", "status"]);
+    expect(out.amountExVat).toBe("1700.00"); // override applied
+    expect(out.status).toBe("approved"); // field not overridden, live value preserved
+    expect(out).not.toBe(row); // shallow-cloned
+  });
+
+  it("withOverridesOverlay does NOT touch the live column on the input row", () => {
+    const row = makeRow({
+      manualOverrides: {
+        amountExVat: { value: "1700.00", editedBy: 1, editedAt: NOW, fromValue: "1500.00" },
+      },
+    });
+    withOverridesOverlay(row, ["amountExVat"]);
+    expect(row.amountExVat).toBe("1500.00"); // input row's live column intact
+  });
+
+  it("withOverridesOverlay only acts on fields in the list (skips overridden fields not in `fields`)", () => {
+    const row = makeRow({
+      manualOverrides: {
+        amountExVat: { value: "1700.00", editedBy: 1, editedAt: NOW, fromValue: "1500.00" },
+        status: { value: "paid", editedBy: 1, editedAt: NOW, fromValue: "approved" },
+      },
+    });
+    // Only request overlay on `amountExVat`; `status` override should not be applied.
+    const out = withOverridesOverlay(row, ["amountExVat"]);
+    expect(out.amountExVat).toBe("1700.00");
+    expect(out.status).toBe("approved"); // status override NOT applied
+  });
+
+  it("withOverridesOverlay supports null override values (operator cleared the field)", () => {
+    const row = makeRow({
+      manualOverrides: {
+        invoiceNumber: { value: null, editedBy: 1, editedAt: NOW, fromValue: "INV-100" },
+      },
+    });
+    const out = withOverridesOverlay(row, ["invoiceNumber"]);
+    expect(out.invoiceNumber).toBeNull();
+  });
+
+  it("withOverridesOverlay preserves the manualOverrides JSONB on the output for client metadata access", () => {
+    const overrides = {
+      amountExVat: { value: "1700.00", editedBy: 1, editedAt: NOW, fromValue: "1500.00" },
+    };
+    const row = makeRow({ manualOverrides: overrides });
+    const out = withOverridesOverlay(row, ["amountExVat"]);
+    expect(out.manualOverrides).toEqual(overrides);
+  });
+
+  it("applyOverridesOverlay applies to every row in an array", () => {
+    const rows = [
+      makeRow({
+        id: 1,
+        manualOverrides: { status: { value: "paid", editedBy: 1, editedAt: NOW, fromValue: "approved" } },
+      }),
+      makeRow({ id: 2, manualOverrides: null }),
+      makeRow({
+        id: 3,
+        manualOverrides: { amountExVat: { value: "2000.00", editedBy: 1, editedAt: NOW, fromValue: "1500.00" } },
+      }),
+    ];
+    const out = applyOverridesOverlay(rows, ["amountExVat", "status"]);
+    expect(out[0].status).toBe("paid");
+    expect(out[1].status).toBe("approved");
+    expect(out[2].amountExVat).toBe("2000.00");
   });
 });
 
