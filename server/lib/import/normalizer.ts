@@ -3,6 +3,15 @@ import type { DetectionResult } from "./detector";
 import type { MappingResult } from "./mapper";
 import { worksheetToArray, parseDate, parseNumber, parsePercent, parseStatus, daysBetween, lastDayOfMonthFromDate } from "./utils";
 
+/**
+ * Per-cell formatting captured from the source workbook, keyed by canonical
+ * field name. The Tracker uses font and fill colour to encode meaning
+ * (red font = unconfirmed, yellow fill = risk, etc.) — preserving these in
+ * a JSONB blob lets downstream UI render the same visual cues without
+ * needing access to the original file.
+ */
+export type CellFormatMap = Record<string, { font?: string; fill?: string; bold?: boolean }>;
+
 export interface NormalizationResult {
   planTasks: Array<{
     taskName: string;
@@ -32,6 +41,8 @@ export interface NormalizationResult {
     resource2: string | null;
     trackerComments: string | null;
     workDays: number | null;
+    /** Per-cell font/fill colour, keyed by canonical field name. */
+    cellFormat: CellFormatMap | null;
   }>;
   revenueLines: Array<{
     description: string | null;
@@ -56,6 +67,8 @@ export interface NormalizationResult {
     subProjectName: string | null;
     // Tracker col R — Milestone Notes & Comments (PR2A wiring).
     milestoneNotes: string | null;
+    /** Per-cell font/fill colour, keyed by canonical field name. */
+    cellFormat: CellFormatMap | null;
   }>;
   costLines: Array<{
     costCategory: string | null;
@@ -97,6 +110,37 @@ export interface NormalizationResult {
     savingOverrun: string | null;
     usdExchangeRate: string | null;
     pricePerWatt: string | null;
+    /** Per-cell font/fill colour, keyed by canonical field name. */
+    cellFormat: CellFormatMap | null;
+  }>;
+  /**
+   * 1:N actual-line entries from the Expenditure Breakdown's right-hand
+   * pane. The Tracker pairs costed items with their actual invoices; when
+   * a costed line settles across multiple invoice batches the actual side
+   * has more rows than the costed side, and these orphan actual rows used
+   * to be silently dropped. Each entry links back to its parent costed
+   * line by `parentSourceRow` (matched in the executor) and gets its own
+   * row in `normalized_cost_line_actuals`.
+   */
+  actualLineRows: Array<{
+    parentCategoryKey: string | null;
+    parentSourceRow: number;
+    actualNo: number;
+    description: string | null;
+    qty: string | null;
+    rate: string | null;
+    actualTotal: string | null;
+    poNumber: string | null;
+    invoiceNumber: string | null;
+    invoiceDate: string | null;
+    revenueRecognitionAmount: string | null;
+    financePaymentDate: string | null;
+    comments: string | null;
+    checkFlag: string | null;
+    savingOverrun: string | null;
+    cellFormat: CellFormatMap | null;
+    sourceSheet: string;
+    sourceRow: number;
   }>;
   executionPhases: Array<{
     phaseName: string;
@@ -126,6 +170,27 @@ export interface NormalizationResult {
     actualProfit: number | null;
     actualMargin: number | null;
   } | null;
+  /**
+   * Top-of-sheet metadata block from the Project Plan tab (rows 1–7).
+   * The values are scalar per-project (one row per import in
+   * `tracker_project_metadata`). When the workbook doesn't contain
+   * the labels, this is left null and the writer skips gracefully.
+   */
+  projectPlanMetadata: {
+    baselineCompletionDate: string | null;
+    forecastedCompletionDate: string | null;
+    projectStartDate: string | null;
+    durationMonthsFromSiteEstab: number | null;
+    durationMonthsToCapacityTest: number | null;
+    sourceSheet: string | null;
+    cellFormat: CellFormatMap | null;
+  } | null;
+  /**
+   * Source sheet for the costedSummary values (Revenue Tracking sheet) —
+   * captured so the writer for `tracker_revenue_summary` can record where
+   * the values came from. Null when no Revenue section was detected.
+   */
+  costedSummarySource: { sourceSheet: string; cellFormat: CellFormatMap | null } | null;
   issues: Array<{
     severity: "INFO" | "WARNING" | "BLOCKER";
     section: "PLAN" | "REVENUE" | "EXPENDITURE" | "GENERAL";
@@ -243,6 +308,173 @@ function extractCostedSummary(
   return { plannedRevenue, plannedExpenditure, plannedProfit, plannedMargin, actualRevenue, actualExpenditure, actualProfit, actualMargin };
 }
 
+/**
+ * Extract the top-of-sheet metadata block on the Project Plan tab (rows
+ * 1..headerRowIndex). The Tracker convention is a label-in-one-cell,
+ * value-in-an-adjacent-cell layout, e.g.:
+ *   Row 1, col A: "Baseline Completion Date:"   col B/C: <date>
+ *   Row 2, col A: "Forecasted Completion Date:" col B/C: <date>
+ *   ...
+ * Labels can have varying punctuation/whitespace and the value can sit
+ * one to three columns to the right. We scan the first few columns for
+ * label matches and pick the nearest non-empty cell on the right.
+ *
+ * Returns null when no labels were found at all (graceful degrade for
+ * trackers that don't have the metadata block).
+ */
+function extractProjectPlanMetadata(
+  data: any[][],
+  headerRowIndex: number,
+): {
+  baselineCompletionDate: string | null;
+  forecastedCompletionDate: string | null;
+  projectStartDate: string | null;
+  durationMonthsFromSiteEstab: number | null;
+  durationMonthsToCapacityTest: number | null;
+  /** 1-indexed row indices keyed by metadata field, for cellFormat lookup. */
+  rowByField: Record<string, number>;
+  /** 0-indexed column index of the value cell, keyed by metadata field. */
+  colByField: Record<string, number>;
+  /** True when at least one label was matched. */
+  hasAny: boolean;
+} {
+  let baselineCompletionDate: string | null = null;
+  let forecastedCompletionDate: string | null = null;
+  let projectStartDate: string | null = null;
+  let durationMonthsFromSiteEstab: number | null = null;
+  let durationMonthsToCapacityTest: number | null = null;
+  const rowByField: Record<string, number> = {};
+  const colByField: Record<string, number> = {};
+  let hasAny = false;
+
+  // Locate the value cell adjacent to a label. Returns { value, colIndex }.
+  function findAdjacent(row: any[], labelCol: number): { value: any; colIndex: number } | null {
+    for (let c = labelCol + 1; c < Math.min(row.length, labelCol + 6); c++) {
+      const v = row[c];
+      if (v === null || v === undefined) continue;
+      const sv = typeof v === "string" ? v.trim() : v;
+      if (sv === "" || sv === null || sv === undefined) continue;
+      if (getExcelError(v) !== null) continue;
+      return { value: v, colIndex: c };
+    }
+    return null;
+  }
+
+  const scanEnd = Math.min(headerRowIndex, data.length);
+  for (let i = 0; i < scanEnd; i++) {
+    const row = data[i];
+    if (!row) continue;
+
+    for (let c = 0; c < Math.min(row.length, 4); c++) {
+      const labelRaw = row[c];
+      if (labelRaw == null) continue;
+      const label = String(labelRaw).toLowerCase().trim();
+      if (!label) continue;
+
+      // Baseline / forecasted completion date (allow optional colon).
+      if (
+        baselineCompletionDate === null &&
+        (label.startsWith("baseline completion date") || label === "baseline completion")
+      ) {
+        const adj = findAdjacent(row, c);
+        if (adj) {
+          const parsed = parseDate(adj.value);
+          if (parsed) {
+            baselineCompletionDate = parsed;
+            rowByField.baselineCompletionDate = i + 1;
+            colByField.baselineCompletionDate = adj.colIndex;
+            hasAny = true;
+          }
+        }
+        continue;
+      }
+      if (
+        forecastedCompletionDate === null &&
+        (label.startsWith("forecasted completion date") || label === "forecasted completion" ||
+         label.startsWith("forecast completion date") || label === "forecast completion")
+      ) {
+        const adj = findAdjacent(row, c);
+        if (adj) {
+          const parsed = parseDate(adj.value);
+          if (parsed) {
+            forecastedCompletionDate = parsed;
+            rowByField.forecastedCompletionDate = i + 1;
+            colByField.forecastedCompletionDate = adj.colIndex;
+            hasAny = true;
+          }
+        }
+        continue;
+      }
+      if (
+        projectStartDate === null &&
+        (label.startsWith("project start date") || label === "project start")
+      ) {
+        const adj = findAdjacent(row, c);
+        if (adj) {
+          const parsed = parseDate(adj.value);
+          if (parsed) {
+            projectStartDate = parsed;
+            rowByField.projectStartDate = i + 1;
+            colByField.projectStartDate = adj.colIndex;
+            hasAny = true;
+          }
+        }
+        continue;
+      }
+      if (
+        durationMonthsFromSiteEstab === null &&
+        (label.startsWith("project duration from site establishment") ||
+         label.startsWith("project duration from site estab") ||
+         label.includes("duration from site establishment"))
+      ) {
+        const adj = findAdjacent(row, c);
+        if (adj != null) {
+          const num = typeof adj.value === "number"
+            ? adj.value
+            : parseFloat(String(adj.value).replace(/[\s,R]/g, ""));
+          if (!isNaN(num)) {
+            durationMonthsFromSiteEstab = num;
+            rowByField.durationMonthsFromSiteEstab = i + 1;
+            colByField.durationMonthsFromSiteEstab = adj.colIndex;
+            hasAny = true;
+          }
+        }
+        continue;
+      }
+      if (
+        durationMonthsToCapacityTest === null &&
+        (label.startsWith("duration to capacity test") ||
+         label.includes("duration to capacity test"))
+      ) {
+        const adj = findAdjacent(row, c);
+        if (adj != null) {
+          const num = typeof adj.value === "number"
+            ? adj.value
+            : parseFloat(String(adj.value).replace(/[\s,R]/g, ""));
+          if (!isNaN(num)) {
+            durationMonthsToCapacityTest = num;
+            rowByField.durationMonthsToCapacityTest = i + 1;
+            colByField.durationMonthsToCapacityTest = adj.colIndex;
+            hasAny = true;
+          }
+        }
+        continue;
+      }
+    }
+  }
+
+  return {
+    baselineCompletionDate,
+    forecastedCompletionDate,
+    projectStartDate,
+    durationMonthsFromSiteEstab,
+    durationMonthsToCapacityTest,
+    rowByField,
+    colByField,
+    hasAny,
+  };
+}
+
 // Excel formula error values — these corrupt data and should be replaced with null
 const EXCEL_ERROR_VALUES = new Set(["#REF!", "#DIV/0!", "#VALUE!", "#N/A", "#NAME?", "#NULL!", "#NUM!"]);
 
@@ -356,6 +588,88 @@ function getCellFontColor(ws: ExcelJS.Worksheet, rowIdx: number, colIdx: number)
   }
 }
 
+/**
+ * Extract the fill (background) colour for a cell. Mirrors the ARGB→RGB
+ * normalization used by extractFontColorHex. Returns null when the cell
+ * has no explicit pattern fill (Excel's default "no fill" state) or the
+ * fill type is something other than a solid pattern. Theme-only fills
+ * cannot be resolved without the workbook theme XML; callers treat
+ * `null` as "no fill captured".
+ */
+function extractFillColorHex(fill: any): string | null {
+  if (!fill) return null;
+  // ExcelJS exposes solid pattern fills as { type: "pattern", pattern: "solid", fgColor: { argb } }.
+  // We only capture solid fills; gradient / striped / etc. are surfaced as null.
+  if (fill.type !== "pattern") return null;
+  const fg = fill.fgColor;
+  if (!fg) return null;
+  if (typeof fg.argb === "string") {
+    const argb = fg.argb;
+    // Strip alpha when present (Excel stores ARGB; UI cares about RGB).
+    return argb.length === 8 ? argb.substring(2).toLowerCase() : argb.toLowerCase();
+  }
+  if (typeof fg.rgb === "string") {
+    return fg.rgb.toLowerCase();
+  }
+  return null;
+}
+
+/**
+ * Capture font, fill, and bold flags for a single cell. Returns `undefined`
+ * when the cell has nothing worth recording (no value AND no formatting),
+ * so the caller can skip allocating an entry on the cellFormat map. This
+ * keeps the JSONB blob compact for unformatted rows.
+ */
+function extractCellFormat(
+  ws: ExcelJS.Worksheet,
+  rowIdx: number,
+  colIdx: number,
+): { font?: string; fill?: string; bold?: boolean } | undefined {
+  try {
+    const cell = ws.getRow(rowIdx + 1).getCell(colIdx + 1);
+    if (!cell) return undefined;
+    const out: { font?: string; fill?: string; bold?: boolean } = {};
+    const font = cell.font;
+    if (font) {
+      const hex = extractFontColorHex(font.color);
+      if (hex) out.font = `#${hex.toUpperCase()}`;
+      if (font.bold === true) out.bold = true;
+    }
+    const fillHex = extractFillColorHex(cell.fill);
+    if (fillHex) out.fill = `#${fillHex.toUpperCase()}`;
+    if (out.font === undefined && out.fill === undefined && out.bold === undefined) {
+      return undefined;
+    }
+    return out;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Build a CellFormatMap by sampling each canonical field's column on a
+ * specific row. Skips fields whose colIndex is < 0 (column not present in
+ * this workbook) and skips fields with no formatting to record. Returns
+ * `null` when no field had any formatting captured.
+ */
+function buildRowCellFormat(
+  ws: ExcelJS.Worksheet,
+  rowIdx: number,
+  fieldColIndexes: Record<string, number>,
+): CellFormatMap | null {
+  const out: CellFormatMap = {};
+  let hasAny = false;
+  for (const [fieldName, colIdx] of Object.entries(fieldColIndexes)) {
+    if (colIdx == null || colIdx < 0) continue;
+    const fmt = extractCellFormat(ws, rowIdx, colIdx);
+    if (fmt) {
+      out[fieldName] = fmt;
+      hasAny = true;
+    }
+  }
+  return hasAny ? out : null;
+}
+
 function deriveRevenueStatus(
   invoiceNumber: string | null,
   invoiceDate: string | null,
@@ -427,7 +741,8 @@ function extractPlanTasks(
   sheetName: string,
   startRow: number,
   endRow: number,
-  isMultiProject: boolean = false
+  isMultiProject: boolean = false,
+  ws?: ExcelJS.Worksheet,
 ): { tasks: NormalizationResult["planTasks"]; phases: NormalizationResult["executionPhases"] } {
   const rawTasks: Array<{
     taskName: string;
@@ -452,6 +767,7 @@ function extractPlanTasks(
     resource2: string | null;
     trackerComments: string | null;
     workDays: number | null;
+    cellFormat: CellFormatMap | null;
   }> = [];
   const phases: NormalizationResult["executionPhases"] = [];
 
@@ -550,6 +866,29 @@ function extractPlanTasks(
       if (!isNaN(parsed)) workDaysVal = parsed;
     }
 
+    // Capture per-cell formatting (font, fill, bold) for every canonical
+    // PLAN field that has a column in this workbook. Skipped when no
+    // worksheet handle is provided (legacy callers / unit-test paths).
+    const cellFormat = ws ? buildRowCellFormat(ws, i, {
+      task_name: taskNameCol,
+      task_no: taskNoCol,
+      phase: phaseCol,
+      start_date: startDateCol,
+      end_date: endDateCol,
+      duration: durationCol,
+      actual_start: actualStartCol,
+      actual_end: actualEndCol,
+      actual_duration: actualDurationCol,
+      pct_complete: pctCompleteCol,
+      expected_pct: expectedPctCol,
+      owner: ownerCol,
+      tracker_comments: commentCol,
+      lead: leadCol,
+      resource_1: resource1Col,
+      resource_2: resource2Col,
+      work_days: workDaysCol,
+    }) : null;
+
     rawTasks.push({
       taskName: taskName || taskNo || "",
       taskNo: taskNo || null,
@@ -577,6 +916,7 @@ function extractPlanTasks(
       resource2: resource2Col >= 0 ? cellStr(row, resource2Col) : null,
       trackerComments: trackerCommentVal,
       workDays: workDaysVal,
+      cellFormat,
     });
   }
 
@@ -807,6 +1147,21 @@ function extractRevenueLines(
 
     const milestoneNotes = milestoneNotesCol >= 0 ? cellStr(row, milestoneNotesCol) : null;
 
+    // Capture per-cell formatting for every REVENUE field present.
+    const cellFormat = ws ? buildRowCellFormat(ws, i, {
+      milestone_name: milestoneNameCol,
+      milestone_no: milestoneNoCol,
+      percent: milestonePercentCol,
+      amount_ex_vat: amountCol,
+      vat: vatCol,
+      invoice_number: invoiceNumCol,
+      invoice_date: invoiceDateCol,
+      planned_payment_date: plannedDateCol,
+      payment_received_date: paidDateCol,
+      in_bank_date: inBankDateCol,
+      milestone_notes: milestoneNotesCol,
+    }) : null;
+
     lines.push({
       description: milestoneName,
       milestoneName,
@@ -829,6 +1184,7 @@ function extractRevenueLines(
       turnaroundDays,
       subProjectName,
       milestoneNotes,
+      cellFormat,
     });
   }
 
@@ -862,10 +1218,19 @@ function extractCostLines(
   issues: IssueEntry[],
   ws?: ExcelJS.Worksheet,
   isMultiProject: boolean = false
-): { lines: NormalizationResult["costLines"]; counterparties: string[]; categoryAllocations: CategoryAllocationEntry[] } {
+): {
+  lines: NormalizationResult["costLines"];
+  counterparties: string[];
+  categoryAllocations: CategoryAllocationEntry[];
+  actualLineRows: NormalizationResult["actualLineRows"];
+} {
   const lines: NormalizationResult["costLines"] = [];
   const counterpartySet = new Set<string>();
   const categoryAllocations: CategoryAllocationEntry[] = [];
+  // 1:N actual-line rows (right-hand pane only — costed-side empty).
+  // Each entry has zero or more "extra" actual rows; we link them back to
+  // the most recent costed parent by `parentSourceRow` for the executor.
+  const actualLineRows: NormalizationResult["actualLineRows"] = [];
 
   const categoryCol = getColIndex(mapping, "cost_category");
   const descCol = getColIndex(mapping, "description");
@@ -953,6 +1318,16 @@ function extractCostLines(
   let currentCategoryName: string | null = null;
   const seenCategoryNumbers = new Set<string>();
 
+  // 1:N actual extraction state: track the most recently emitted costed
+  // parent so orphan actual rows (right-pane only) can link back to it.
+  // `lastParentSourceRow` is the 1-indexed source row of the parent costed
+  // line; `lastParentCategoryKey` mirrors the parent's categoryKey for
+  // diagnostic context. The actualNo counter resets every time a new
+  // costed parent is emitted.
+  let lastParentSourceRow: number | null = null;
+  let lastParentCategoryKey: string | null = null;
+  let actualNoForCurrentParent = 0;
+
   for (let i = startRow; i < Math.min(endRow, data.length); i++) {
     const row = data[i];
     if (!row) continue;
@@ -980,6 +1355,72 @@ function extractCostLines(
     const amountExVat = effectiveAmountCol >= 0 ? parseNumber(row[effectiveAmountCol]) : null;
     const parsedAmount = amountExVat !== null ? parseFloat(String(amountExVat)) : NaN;
     const hasAmount = !isNaN(parsedAmount) && parsedAmount !== 0;
+
+    // 1:N orphan-actual detection. When the costed-side columns are empty
+    // but the actual-pane columns carry data (qty, rate, total, invoice
+    // number, invoice date, etc.), the row is an extra invoice batch
+    // attached to the most recent costed parent line. These rows used to
+    // be silently dropped by the early `continue` below; now they're
+    // captured into `actualLineRows` so the executor can write them into
+    // `normalized_cost_line_actuals`.
+    if (!rawCategory && !description && !counterparty && !hasAmount && lastParentSourceRow != null) {
+      const orphanQty = actualQtyCol >= 0 ? cellStr(row, actualQtyCol) : null;
+      const orphanRate = actualRateCol >= 0 ? cellStr(row, actualRateCol) : null;
+      const orphanActualTotal = actualTotalCol >= 0 ? parseNumber(row[actualTotalCol]) : null;
+      const orphanInvoiceNo = invoiceNumCol >= 0 ? cellStr(row, invoiceNumCol) : null;
+      const orphanInvoiceDate = invoiceDateCol >= 0 ? parseDate(row[invoiceDateCol]) : null;
+      const orphanPaidDate = paidDateCol >= 0 ? parseDate(row[paidDateCol]) : null;
+      const orphanInvoiceDateResolved = orphanInvoiceDate ?? lastDayOfMonthFromDate(orphanPaidDate);
+      const orphanPo = poCol >= 0 ? cellStr(row, poCol) : null;
+      const orphanRevRecog = revenueRecogCol >= 0 ? parseNumber(row[revenueRecogCol]) : null;
+      const orphanComments = commentsCol >= 0 ? cellStr(row, commentsCol) : null;
+      const orphanCheckFlag = checkFlagCol >= 0 ? cellStr(row, checkFlagCol) : null;
+      const orphanSavingOverrun = savingOverrunCol >= 0 ? parseNumber(row[savingOverrunCol]) : null;
+
+      const orphanHasData =
+        !!orphanQty || !!orphanRate || orphanActualTotal !== null ||
+        !!orphanInvoiceNo || !!orphanInvoiceDateResolved || !!orphanPaidDate ||
+        !!orphanPo || orphanRevRecog !== null || !!orphanComments;
+
+      if (orphanHasData) {
+        const orphanCellFormat = ws ? buildRowCellFormat(ws, i, {
+          actual_qty: actualQtyCol,
+          actual_rate: actualRateCol,
+          actual_total: actualTotalCol,
+          po_number: poCol,
+          invoice_number: invoiceNumCol,
+          invoice_date: invoiceDateCol,
+          payment_date: paidDateCol,
+          revenue_recognition_amount: revenueRecogCol,
+          comments: commentsCol,
+          check_flag: checkFlagCol,
+          saving_overrun: savingOverrunCol,
+        }) : null;
+
+        actualNoForCurrentParent += 1;
+        actualLineRows.push({
+          parentCategoryKey: lastParentCategoryKey,
+          parentSourceRow: lastParentSourceRow,
+          actualNo: actualNoForCurrentParent,
+          description: null,
+          qty: orphanQty,
+          rate: orphanRate,
+          actualTotal: orphanActualTotal,
+          poNumber: orphanPo,
+          invoiceNumber: orphanInvoiceNo,
+          invoiceDate: orphanInvoiceDateResolved,
+          revenueRecognitionAmount: orphanRevRecog,
+          financePaymentDate: orphanPaidDate,
+          comments: orphanComments,
+          checkFlag: orphanCheckFlag,
+          savingOverrun: orphanSavingOverrun,
+          cellFormat: orphanCellFormat,
+          sourceSheet: sheetName,
+          sourceRow: i + 1,
+        });
+      }
+      continue;
+    }
 
     if (!rawCategory && !description && !counterparty && !hasAmount) continue;
 
@@ -1187,6 +1628,34 @@ function extractCostLines(
     const usdExchangeRate = usdExchangeRateCol >= 0 ? parseNumber(row[usdExchangeRateCol]) : null;
     const pricePerWatt = pricePerWattCol >= 0 ? parseNumber(row[pricePerWattCol]) : null;
 
+    // Capture per-cell formatting for every EXPENDITURE field present.
+    const cellFormat = ws ? buildRowCellFormat(ws, i, {
+      cost_category: categoryCol,
+      description: descCol,
+      counterparty: counterpartyCol,
+      amount_ex_vat: effectiveAmountCol,
+      actual_total: actualTotalCol,
+      invoice_number: invoiceNumCol,
+      invoice_date: invoiceDateCol,
+      approved_date: approvedDateCol,
+      payment_date: paidDateCol,
+      po_number: poCol,
+      actual_cos: actualCosCol,
+      revenue_recognition_amount: revenueRecogCol,
+      actual_qty: actualQtyCol,
+      actual_rate: actualRateCol,
+      comments: commentsCol,
+      check_flag: checkFlagCol,
+      saving_overrun: savingOverrunCol,
+      usd_exchange_rate: usdExchangeRateCol,
+      price_per_watt: pricePerWattCol,
+      budget_qty: budgetQtyCol,
+      budget_rate: budgetRateCol,
+      budget_total: budgetTotalCol,
+      budget_cos: budgetCosCol,
+      forecast_payment_date: forecastPayDateCol,
+    }) : null;
+
     lines.push({
       costCategory: category,
       categoryKey,
@@ -1223,7 +1692,14 @@ function extractCostLines(
       savingOverrun,
       usdExchangeRate,
       pricePerWatt,
+      cellFormat,
     });
+
+    // After emitting a costed parent, reset the orphan-actual counter so
+    // any subsequent right-pane-only rows attach to THIS parent.
+    lastParentSourceRow = i + 1;
+    lastParentCategoryKey = categoryKey ?? null;
+    actualNoForCurrentParent = 0;
   }
 
   // S06: Reconcile J_cat grand total — SUM(revenueAllocation) vs row 2 grand total.
@@ -1247,7 +1723,7 @@ function extractCostLines(
     }
   }
 
-  return { lines, counterparties: Array.from(counterpartySet), categoryAllocations };
+  return { lines, counterparties: Array.from(counterpartySet), categoryAllocations, actualLineRows };
 }
 
 export function normalizeData(
@@ -1259,10 +1735,13 @@ export function normalizeData(
   let planTasks: NormalizationResult["planTasks"] = [];
   let revenueLines: NormalizationResult["revenueLines"] = [];
   let costLines: NormalizationResult["costLines"] = [];
+  let actualLineRows: NormalizationResult["actualLineRows"] = [];
   let executionPhases: NormalizationResult["executionPhases"] = [];
   let counterpartyNames: string[] = [];
   let categoryAllocations: NormalizationResult["categoryAllocations"] = [];
   let costedSummary: NormalizationResult["costedSummary"] = null;
+  let costedSummarySource: NormalizationResult["costedSummarySource"] = null;
+  let projectPlanMetadata: NormalizationResult["projectPlanMetadata"] = null;
 
   const isMultiProject = detection.multiProject?.isMultiProject === true;
   const subProjects = detection.multiProject?.subProjects || [];
@@ -1324,9 +1803,41 @@ export function normalizeData(
         const result = extractPlanTasks(
           data, mapping, section.sheetName,
           section.dataStartRowIndex, section.dataEndRowIndex,
-          isMultiProject
+          isMultiProject, ws
         );
         planTasks = result.tasks;
+
+        // Extract top-of-sheet metadata (rows 1..headerRowIndex). The
+        // labels are typically in rows 1–7 of the Project Plan sheet.
+        // When the workbook doesn't have these labels, `hasAny` is false
+        // and we leave projectPlanMetadata null so the writer skips it.
+        if (projectPlanMetadata == null) {
+          const meta = extractProjectPlanMetadata(data, section.headerRowIndex);
+          if (meta.hasAny) {
+            // Capture the formatting for each found metadata field.
+            const metaCellFormat: CellFormatMap = {};
+            let hasFmt = false;
+            for (const fieldName of Object.keys(meta.colByField)) {
+              const colIdx = meta.colByField[fieldName];
+              const rowIdx1 = meta.rowByField[fieldName];
+              if (colIdx == null || rowIdx1 == null) continue;
+              const fmt = extractCellFormat(ws, rowIdx1 - 1, colIdx);
+              if (fmt) {
+                metaCellFormat[fieldName] = fmt;
+                hasFmt = true;
+              }
+            }
+            projectPlanMetadata = {
+              baselineCompletionDate: meta.baselineCompletionDate,
+              forecastedCompletionDate: meta.forecastedCompletionDate,
+              projectStartDate: meta.projectStartDate,
+              durationMonthsFromSiteEstab: meta.durationMonthsFromSiteEstab,
+              durationMonthsToCapacityTest: meta.durationMonthsToCapacityTest,
+              sourceSheet: section.sheetName,
+              cellFormat: hasFmt ? metaCellFormat : null,
+            };
+          }
+        }
 
         // Generate INFO issue when project metadata is missing (e.g., MONDI_LEGACY layout)
         if (detection.projectInfo) {
@@ -1378,6 +1889,14 @@ export function normalizeData(
         );
         if (!costedSummary) {
           costedSummary = extractCostedSummary(data, section.headerRowIndex);
+          if (costedSummary) {
+            // Capture the source sheet so the trackerRevenueSummary writer
+            // can record where the values came from. Cell-level formatting
+            // for the summary block is currently coarse (the labels and
+            // values are in scattered cells across rows 4–7); we leave
+            // cellFormat null for v1 — the schema column is nullable.
+            costedSummarySource = { sourceSheet: section.sheetName, cellFormat: null };
+          }
         }
         break;
       }
@@ -1390,6 +1909,7 @@ export function normalizeData(
         costLines = result.lines;
         counterpartyNames = result.counterparties;
         categoryAllocations = result.categoryAllocations;
+        actualLineRows = result.actualLineRows;
         break;
       }
     }
@@ -1404,10 +1924,13 @@ export function normalizeData(
     planTasks,
     revenueLines,
     costLines,
+    actualLineRows,
     executionPhases,
     counterpartyNames,
     categoryAllocations,
     costedSummary,
+    costedSummarySource,
+    projectPlanMetadata,
     issues,
   };
 }
