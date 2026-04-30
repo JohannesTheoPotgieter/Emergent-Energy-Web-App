@@ -62,9 +62,15 @@ interface DriftRow {
 
 interface DriftDetailResponse {
   projectId: number;
+  projectName: string | null;
   costLines: DriftRow[];
   revenueLines: DriftRow[];
   planTasks: DriftRow[];
+  legacyRowsWithoutSnapshot: {
+    EXPENDITURE: number;
+    REVENUE: number;
+    PLAN: number;
+  };
   summary: {
     EXPENDITURE: { verified: number; unverified: number };
     REVENUE:     { verified: number; unverified: number };
@@ -112,6 +118,23 @@ export default function ExcelVsAppProjectPage() {
     enabled: Number.isFinite(projectId) && projectId > 0,
   });
 
+  // Project-level pending financial_edit_requests queue. Includes
+  // requests filed by this diff page's "Request approval" action AND
+  // any other PM-Site-style cost/revenue overrides awaiting approval
+  // for the project. Single queue for the project's financial edits.
+  const projectName = data?.projectName ?? null;
+  const pendingRequestsQuery = useQuery<any[]>({
+    queryKey: ["financial-edit-requests", projectName, "pending"],
+    queryFn: async () => {
+      if (!projectName) return [];
+      const url = `/api/financial-edit-requests?projectName=${encodeURIComponent(projectName)}&status=pending`;
+      const res = await apiRequest("GET", url);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!projectName,
+  });
+
   const resolveMutation = useMutation({
     mutationFn: async (body: object) => {
       const res = await apiRequest("POST", `/api/excel-vs-app/projects/${projectId}/resolve`, body);
@@ -130,6 +153,7 @@ export default function ExcelVsAppProjectPage() {
       setReasonOpen(null);
       queryClient.invalidateQueries({ queryKey: ["excel-vs-app-project", projectId] });
       queryClient.invalidateQueries({ queryKey: ["excel-vs-app-program"] });
+      queryClient.invalidateQueries({ queryKey: ["financial-edit-requests"] });
     },
     onError: (e: unknown) => {
       toast({ title: "Resolution failed", description: e instanceof Error ? e.message : String(e), variant: "destructive" });
@@ -258,6 +282,13 @@ export default function ExcelVsAppProjectPage() {
         </div>
       </div>
 
+      <BackfillBanner legacyCounts={data?.legacyRowsWithoutSnapshot} />
+
+      <PendingRequestsPanel
+        requests={pendingRequestsQuery.data ?? []}
+        projectName={projectName ?? undefined}
+      />
+
       {totalSelected > 0 && (
         <Card className="border-emerald-200 bg-emerald-50/50">
           <CardContent className="p-4 flex items-center justify-between gap-4">
@@ -313,7 +344,7 @@ export default function ExcelVsAppProjectPage() {
             <DialogDescription>
               {reasonOpen?.action === "keep_app"
                 ? `Recording ${selected.size} field${selected.size === 1 ? "" : "s"} as deliberate operator overrides on top of Excel-truth. Reason will be persisted alongside the override.`
-                : `Filing an approval request for ${reasonOpen?.section ? selectedBySection[reasonOpen.section].length : 0} field${reasonOpen?.section && selectedBySection[reasonOpen.section].length === 1 ? "" : "s"}. The section's reviewers will see the request in the Financial Edit Requests queue.`}
+                : `Filing an approval request for ${reasonOpen?.section ? selectedBySection[reasonOpen.section].length : 0} field${reasonOpen?.section && selectedBySection[reasonOpen.section].length === 1 ? "" : "s"}. The request will appear in the "Pending edit requests" panel above for ${reasonOpen?.section === "EXPENDITURE" ? "PROGRAM_FINANCE_MANAGER / CFO" : reasonOpen?.section === "REVENUE" ? "PROGRAM_FINANCE_MANAGER / CCO" : "PROGRAM_MANAGER"} review. Until they act on it, the affected fields stay unchanged.`}
             </DialogDescription>
           </DialogHeader>
           <Textarea
@@ -446,6 +477,90 @@ function DriftSectionCard({
             </table>
           </div>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function PendingRequestsPanel({
+  requests,
+  projectName,
+}: {
+  requests: any[];
+  projectName?: string;
+}) {
+  if (!projectName) return null;
+  if (!requests || requests.length === 0) return null;
+  return (
+    <Card className="border-blue-200 bg-blue-50/40">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-semibold flex items-center gap-2 text-blue-900">
+          <MailQuestion className="h-4 w-4" />
+          Pending edit requests ({requests.length})
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <p className="text-xs text-blue-900">
+          Filed against {projectName}. CFO / COO / approver-role users see them via the project-level finance approvals queue. Until they're acted on, the affected fields stay unchanged.
+        </p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-left text-blue-900/70">
+                <th className="py-1 font-medium">Edit type</th>
+                <th className="py-1 font-medium">Summary</th>
+                <th className="py-1 font-medium">Requested by</th>
+                <th className="py-1 font-medium">Filed</th>
+              </tr>
+            </thead>
+            <tbody>
+              {requests.map((r: any) => (
+                <tr key={r.id} className="border-t border-blue-200/50">
+                  <td className="py-1 font-mono">{r.editType}</td>
+                  <td className="py-1">{r.editSummary}</td>
+                  <td className="py-1">{r.requestedBy?.name ?? "—"}</td>
+                  <td className="py-1">{r.createdAt ? new Date(r.createdAt).toLocaleString() : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function BackfillBanner({
+  legacyCounts,
+}: {
+  legacyCounts?: { EXPENDITURE: number; REVENUE: number; PLAN: number };
+}) {
+  if (!legacyCounts) return null;
+  const total = legacyCounts.EXPENDITURE + legacyCounts.REVENUE + legacyCounts.PLAN;
+  if (total === 0) return null;
+  const parts: string[] = [];
+  if (legacyCounts.PLAN > 0) parts.push(`${legacyCounts.PLAN} plan`);
+  if (legacyCounts.REVENUE > 0) parts.push(`${legacyCounts.REVENUE} revenue`);
+  if (legacyCounts.EXPENDITURE > 0) parts.push(`${legacyCounts.EXPENDITURE} expenditure`);
+  return (
+    <Card className="border-amber-300 bg-amber-50">
+      <CardContent className="p-4 flex gap-3 items-start">
+        <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+        <div className="space-y-1">
+          <div className="font-semibold text-amber-900 text-sm">
+            Backfill required — drift counts may be misleading
+          </div>
+          <p className="text-xs text-amber-800">
+            {total} active row{total === 1 ? "" : "s"} on this project ({parts.join(", ")}) have no
+            <code className="mx-1 bg-amber-100 px-1 rounded">import_snapshot</code> populated yet.
+            For those rows, drift detection treats every value as drifted.
+          </p>
+          <p className="text-xs text-amber-800">
+            An ops engineer needs to run
+            <code className="mx-1 bg-amber-100 px-1 rounded">npx tsx scripts/backfill-import-snapshot.ts --project-id={" "}<em>this-project</em></code>
+            once. Until then, focus on rows where Excel and live values are obviously different — and double-check before clicking Accept Excel.
+          </p>
+        </div>
       </CardContent>
     </Card>
   );

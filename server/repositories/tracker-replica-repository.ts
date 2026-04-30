@@ -338,6 +338,18 @@ export class TrackerReplicaRepository {
       return { verified, unverified };
     }
 
+    function countLegacyRows(rawRows: Array<{ importSnapshot?: unknown }>): number {
+      // Active rows where import_snapshot has never been populated.
+      // Drift detection on these rows treats every non-null live value
+      // as drift (because the snapshot is null), so a project still
+      // pending the workstream-B backfill will look 100% drifted. The
+      // diff page surfaces this count via a banner so the operator
+      // knows to run `scripts/backfill-import-snapshot.ts` first.
+      let n = 0;
+      for (const r of rawRows) if (r.importSnapshot == null) n++;
+      return n;
+    }
+
     const [costRows, revRows, planRows] = await Promise.all([
       this.dbInstance
         .select()
@@ -405,6 +417,11 @@ export class TrackerReplicaRepository {
         REVENUE: summarise(revenueLines),
         PLAN: summarise(planTasks),
       },
+      legacyRowsWithoutSnapshot: {
+        EXPENDITURE: countLegacyRows(costRows as any[]),
+        REVENUE: countLegacyRows(revRows as any[]),
+        PLAN: countLegacyRows(planRows as any[]),
+      },
     };
   }
 }
@@ -439,6 +456,15 @@ export interface DriftDetail {
   costLines: DriftRow[];
   revenueLines: DriftRow[];
   planTasks: DriftRow[];
+  /** Per-section count of active rows whose import_snapshot is NULL.
+   *  When non-zero on any section, the diff page renders a "backfill
+   *  required" banner — drift detection on those rows is unreliable
+   *  until the backfill script populates their snapshots. */
+  legacyRowsWithoutSnapshot: {
+    EXPENDITURE: number;
+    REVENUE: number;
+    PLAN: number;
+  };
   summary: {
     EXPENDITURE: DriftSectionSummary;
     REVENUE: DriftSectionSummary;
