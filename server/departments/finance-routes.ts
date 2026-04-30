@@ -5881,7 +5881,23 @@ router.post("/api/revenue-tracking/overrides", requireAuth, requireAdminOrFinanc
       );
     }
 
-    // Apply overrides directly to the base table (normalized_revenue_lines)
+    // Apply overrides directly to the base table (normalized_revenue_lines).
+    // Workstream B: tracked fields go to manual_overrides JSONB; untracked
+    // fields (presentation metadata like font colours) keep writing to the
+    // live column. Gated by USE_MANUAL_OVERRIDES.
+    const revenueLegacyToCanonical: Record<string, string> = {
+      milestoneInvoiceNumber: "invoiceNumber",
+      invoiceRaisedDate: "invoiceDate",
+      paymentReceivedDate: "paidDate",
+      plannedPaymentDate: "expectedPaymentDate",
+      milestoneAmount: "amountExVat",
+      milestoneNotes: "milestoneNotes",
+      invoiceDateConfirmed: "invoiceDateConfirmed",
+      paidDateConfirmed: "paidDateConfirmed",
+    };
+    const revenueTrackedSet = new Set<string>(REVENUE_TRACKED_FIELDS as readonly string[]);
+    const useOverridesRev = manualOverridesEnabled();
+
     for (const pn of projectNames) {
       const projectOverrides = overrides.filter((o: any) => o.projectName === pn);
       const inflows = baselineRowsByProject.get(pn)!;
@@ -5890,21 +5906,58 @@ router.post("/api/revenue-tracking/overrides", requireAuth, requireAdminOrFinanc
       for (const ov of projectOverrides) {
         const inflow = inflows.get(ov.rowNumber);
         if (!inflow) continue;
-        if (!rowGroups.has(inflow.id)) rowGroups.set(inflow.id, {});
-        const fields = rowGroups.get(inflow.id)!;
+        // The id from the inflow may be a negative legacy adapter id;
+        // resolve to the canonical normalized_revenue_lines id.
+        const rawId = inflow.id as number;
+        const canonicalId = rawId < 0 ? -rawId : (rawId >= 900000 ? rawId - 900000 : rawId);
+        if (!rowGroups.has(canonicalId)) rowGroups.set(canonicalId, {});
+        const fields = rowGroups.get(canonicalId)!;
         const effectiveValue = ov.overrideValue === "__null__" ? null : ov.overrideValue;
         fields[ov.fieldName] = effectiveValue;
       }
 
-      for (const [inflowId, fields] of rowGroups.entries()) {
-        if (Object.keys(fields).length > 0) {
-          const result = await storage.updateProgramInflowFields(inflowId, fields);
+      for (const [revRowId, fields] of rowGroups.entries()) {
+        if (Object.keys(fields).length === 0) continue;
+        if (!useOverridesRev) {
+          const result = await storage.updateProgramInflowFields(revRowId, fields);
           if (result) saved.push(result);
+          continue;
+        }
+        const trackedEntries: [string, any][] = [];
+        const untrackedFields: Record<string, any> = {};
+        for (const [legacyKey, value] of Object.entries(fields)) {
+          const canonicalKey = revenueLegacyToCanonical[legacyKey] ?? legacyKey;
+          if (revenueTrackedSet.has(canonicalKey)) {
+            trackedEntries.push([canonicalKey, value]);
+          } else {
+            untrackedFields[legacyKey] = value;
+          }
+        }
+        for (const [canonicalKey, value] of trackedEntries) {
+          await applyManualOverride({
+            table: "normalized_revenue_lines",
+            rowId: revRowId,
+            fieldName: canonicalKey,
+            value: value as any,
+            editedBy: userId ?? null,
+            note: overrideComment.trim(),
+          });
+        }
+        if (Object.keys(untrackedFields).length > 0) {
+          const result = await storage.updateProgramInflowFields(revRowId, untrackedFields);
+          if (result) saved.push(result);
+        } else {
+          // Track save count even when only override fields changed.
+          saved.push({ id: revRowId, _viaManualOverrides: true });
         }
       }
     }
 
-    // Sync inBank status on updated rows
+    // Sync inBank status on updated rows.
+    // Workstream B: paidDateConfirmed / paidDate / inBankDate are tracked
+    // fields, so when USE_MANUAL_OVERRIDES is on the sync writes through
+    // applyManualOverride; paidDateFontColor is presentation metadata
+    // (untracked) and keeps writing to the live column directly.
     try {
       for (const projectName of projectNames) {
         const appliedRows = await storage.getProgramInflowsByProject(projectName);
@@ -5925,17 +5978,57 @@ router.post("/api/revenue-tracking/overrides", requireAuth, requireAdminOrFinanc
           const paidDateConfirmed = isInBank;
           const paidDateFontColor = isInBank ? 'black' : 'red';
           const paidDate = isInBank ? (r.paymentReceivedDate || r.plannedPaymentDate || null) : null;
+          // Resolve canonical row id from the legacy adapter shape.
+          const rawId = r.id as number;
+          const canonicalRevId = rawId < 0 ? -rawId : (rawId >= 900000 ? rawId - 900000 : rawId);
+          if (!useOverridesRev) {
+            await db.update(normalizedRevenueLines)
+              .set({
+                paidDateConfirmed,
+                paidDateFontColor,
+                paidDate: paidDate,
+                inBankDate: isInBank ? (paidDate || null) : null,
+              })
+              .where(
+                and(
+                  eq(normalizedRevenueLines.projectName, projectName),
+                  eq(normalizedRevenueLines.sourceRow, rowNum),
+                  isNull(normalizedRevenueLines.effectiveTo),
+                )
+              );
+            continue;
+          }
+          // Tracked fields → manual_overrides
+          await applyManualOverride({
+            table: "normalized_revenue_lines",
+            rowId: canonicalRevId,
+            fieldName: "paidDateConfirmed",
+            value: paidDateConfirmed,
+            editedBy: userId ?? null,
+            note: "inBank sync after revenue override",
+          });
+          await applyManualOverride({
+            table: "normalized_revenue_lines",
+            rowId: canonicalRevId,
+            fieldName: "paidDate",
+            value: paidDate,
+            editedBy: userId ?? null,
+            note: "inBank sync after revenue override",
+          });
+          await applyManualOverride({
+            table: "normalized_revenue_lines",
+            rowId: canonicalRevId,
+            fieldName: "inBankDate",
+            value: isInBank ? (paidDate || null) : null,
+            editedBy: userId ?? null,
+            note: "inBank sync after revenue override",
+          });
+          // Untracked: font colour to live column.
           await db.update(normalizedRevenueLines)
-            .set({
-              paidDateConfirmed,
-              paidDateFontColor,
-              paidDate: paidDate,
-              inBankDate: isInBank ? (paidDate || null) : null,
-            })
+            .set({ paidDateFontColor })
             .where(
               and(
-                eq(normalizedRevenueLines.projectName, projectName),
-                eq(normalizedRevenueLines.sourceRow, rowNum),
+                eq(normalizedRevenueLines.id, canonicalRevId),
                 isNull(normalizedRevenueLines.effectiveTo),
               )
             );
@@ -6005,7 +6098,9 @@ router.get("/api/revenue-tab/:projectName", requireAuth, async (req, res) => {
     try { useCanonical = await isWorkItemsEnabled(); } catch (_e) { /* feature flag unavailable */ }
 
     const [rawInflows, overrides, projectInfoList, savedSummary, canonicalTasks, legacyOperationalTasks, planTasks, taskLinks] = await Promise.all([
-      storage.getProgramInflowsByProject(projectName),
+      // Operational-tab read: overlay manual_overrides on top of the
+      // live column for tracked revenue fields.
+      storage.getProgramInflowsByProject(projectName, { applyOverrides: manualOverridesEnabled() }),
       Promise.resolve([]),
       storage.getAllProjectInfo(),
       storage.getProjectRevenueSummary(projectName).catch(() => undefined),
