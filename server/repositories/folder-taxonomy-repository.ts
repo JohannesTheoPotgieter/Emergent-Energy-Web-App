@@ -105,13 +105,43 @@ export async function updateTaxonomyRow(
 
   const parsed = taxonomyUpdateSchema.parse(patch);
 
-  // Guard against breaking the tree: a row cannot become its own parent.
-  if (parsed.parentKey === internalKey) {
-    throw new Error("A taxonomy row cannot be its own parent.");
-  }
-  if (parsed.parentKey) {
+  // Guard against tree breakage. The DB self-FK catches non-existent
+  // parents but NOT cycles, so we walk the parent chain and reject any
+  // update that would create A -> B -> ... -> A.
+  if (parsed.parentKey !== undefined && parsed.parentKey !== null) {
+    if (parsed.parentKey === internalKey) {
+      throw new Error("A taxonomy row cannot be its own parent.");
+    }
     const parent = await getTaxonomyByKey(parsed.parentKey);
     if (!parent) throw new Error(`Parent key '${parsed.parentKey}' does not exist.`);
+
+    // Walk up from the proposed parent. If we ever land on `internalKey`,
+    // accepting this update would create a cycle. Bound the walk to the
+    // total row count to prevent runaway loops if data is already corrupt.
+    const visited = new Set<string>();
+    let cursor: string | null = parsed.parentKey;
+    let safety = 0;
+    while (cursor) {
+      if (cursor === internalKey) {
+        throw new Error(
+          `Setting parent to '${parsed.parentKey}' would create a cycle (chain reaches '${internalKey}').`,
+        );
+      }
+      if (visited.has(cursor)) {
+        // Existing data already has a loop; refuse to touch it rather
+        // than compounding the corruption.
+        throw new Error(
+          `Existing taxonomy contains a cycle at '${cursor}'. Resolve manually before re-parenting.`,
+        );
+      }
+      visited.add(cursor);
+      const next: FolderTaxonomy | null = await getTaxonomyByKey(cursor);
+      cursor = next?.parentKey ?? null;
+      safety += 1;
+      if (safety > 1024) {
+        throw new Error("Parent chain exceeded safety bound; refusing to write.");
+      }
+    }
   }
 
   const [row] = await db

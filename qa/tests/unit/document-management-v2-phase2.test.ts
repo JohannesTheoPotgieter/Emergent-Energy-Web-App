@@ -168,6 +168,80 @@ describe("D6 Phase 2 — admin routes wiring", () => {
     expect(routeFile).toMatch(/insertFolderTaxonomySchema/);
     expect(routeFile).toMatch(/insertDocumentApprovalRequirementSchema/);
   });
+
+  it("audit-logs every admin mutation (create / update / deactivate × both tables)", () => {
+    // logAuditFromReq must be imported AND called for both entityTypes
+    // and all three actions. Lock this down so a future refactor that
+    // accidentally drops a call gets caught.
+    expect(routeFile).toMatch(/import\s*\{\s*logAuditFromReq\s*\}/);
+
+    // folder_taxonomy
+    expect(routeFile).toMatch(
+      /entityType:\s*"folder_taxonomy",[\s\S]*?action:\s*"create"/,
+    );
+    expect(routeFile).toMatch(
+      /entityType:\s*"folder_taxonomy",[\s\S]*?action:\s*"update"/,
+    );
+    expect(routeFile).toMatch(
+      /entityType:\s*"folder_taxonomy",[\s\S]*?action:\s*"deactivate"/,
+    );
+
+    // document_approval_requirement
+    expect(routeFile).toMatch(
+      /entityType:\s*"document_approval_requirement",[\s\S]*?action:\s*"create"/,
+    );
+    expect(routeFile).toMatch(
+      /entityType:\s*"document_approval_requirement",[\s\S]*?action:\s*"update"/,
+    );
+    expect(routeFile).toMatch(
+      /entityType:\s*"document_approval_requirement",[\s\S]*?action:\s*"deactivate"/,
+    );
+  });
+});
+
+describe("D6 Phase 2.1 — repository cycle prevention", () => {
+  const repoFile = fs.readFileSync(
+    path.join(repoRoot, "server", "repositories", "folder-taxonomy-repository.ts"),
+    "utf8",
+  );
+
+  it("walks the parent chain to detect transitive cycles", () => {
+    // Lock the algorithm shape: visited Set, while loop bounded by safety
+    // counter, throws on landing on `internalKey`.
+    expect(repoFile).toMatch(/visited\s*=\s*new\s+Set/);
+    expect(repoFile).toMatch(/while\s*\(\s*cursor\s*\)/);
+    expect(repoFile).toMatch(/would create a cycle/i);
+  });
+
+  it("guards against existing data that already contains a cycle", () => {
+    expect(repoFile).toMatch(/Existing taxonomy contains a cycle/i);
+  });
+
+  it("bounds the walk with a safety counter (defence-in-depth)", () => {
+    expect(repoFile).toMatch(/safety bound/i);
+  });
+});
+
+describe("D6 Phase 2.1 — admin UI deactivate confirmation", () => {
+  const pageFile = fs.readFileSync(
+    path.join(repoRoot, "client", "src", "pages", "admin-document-management.tsx"),
+    "utf8",
+  );
+
+  it("imports AlertDialog primitives from the shared component library", () => {
+    expect(pageFile).toMatch(
+      /import\s*\{[\s\S]*?AlertDialog[\s\S]*?\}\s*from\s*["']@\/components\/ui\/alert-dialog["']/,
+    );
+  });
+
+  it("uses an AlertDialog confirm step before each deactivate (taxonomy + requirement)", () => {
+    expect(pageFile).toMatch(/data-testid="btn-taxonomy-deactivate-confirm"/);
+    expect(pageFile).toMatch(/data-testid="btn-requirement-deactivate-confirm"/);
+  });
+
+  it("references audit-logging in the confirm copy so users know the action is tracked", () => {
+    expect(pageFile).toMatch(/audit-logged/i);
+  });
 });
 
 describe("D6 Phase 2 — admin page registration", () => {
@@ -205,6 +279,18 @@ describe("D6 Phase 2 — bootstrap wiring", () => {
 
   it("logs inserted/skipped counts so operators see seed activity", () => {
     expect(bootstrapFile).toMatch(/Folder taxonomy: inserted=/);
+  });
+
+  it("invokes the D6 seed BEFORE the startup_seeds_v1 one-shot guard so it runs on prod", () => {
+    // The startup_seeds_v1 guard short-circuits old seeds that have
+    // already completed. The D6 seed is idempotent, so it must run on
+    // every boot. Catching this here prevents a regression where a
+    // future refactor pushes the seed back inside the guard.
+    const guardIdx = bootstrapFile.indexOf('hasBackfillRun("startup_seeds_v1")');
+    const seedIdx = bootstrapFile.indexOf("seedFolderTaxonomy");
+    expect(guardIdx).toBeGreaterThan(0);
+    expect(seedIdx).toBeGreaterThan(0);
+    expect(seedIdx).toBeLessThan(guardIdx);
   });
 });
 

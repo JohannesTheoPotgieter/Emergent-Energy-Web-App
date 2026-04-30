@@ -26,6 +26,10 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -257,6 +261,7 @@ function TaxonomyDialog(props: {
   const create = useCreateTaxonomyRow();
   const update = useUpdateTaxonomyRow();
   const deactivate = useDeactivateTaxonomyRow();
+  const [confirmingDeactivate, setConfirmingDeactivate] = useState(false);
 
   const isPending = create.isPending || update.isPending || deactivate.isPending;
 
@@ -457,7 +462,7 @@ function TaxonomyDialog(props: {
           {isEditing && initial?.active && (
             <Button
               variant="outline"
-              onClick={handleDeactivate}
+              onClick={() => setConfirmingDeactivate(true)}
               disabled={isPending}
               data-testid="btn-taxonomy-deactivate"
             >
@@ -474,6 +479,34 @@ function TaxonomyDialog(props: {
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      <AlertDialog
+        open={confirmingDeactivate}
+        onOpenChange={(open) => !open && setConfirmingDeactivate(false)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Deactivate folder?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Hides <strong>{initial?.displayName}</strong> from new submissions and discipline
+              panels. Existing project_folders rows pointing at it stay intact and the row can be
+              re-activated by editing it. This action is audit-logged.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                setConfirmingDeactivate(false);
+                await handleDeactivate();
+              }}
+              data-testid="btn-taxonomy-deactivate-confirm"
+            >
+              Deactivate
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 }
@@ -623,6 +656,7 @@ function RequirementDialog(props: {
   const create = useCreateRequirement();
   const update = useUpdateRequirement();
   const deactivate = useDeactivateRequirement();
+  const [confirmingDeactivate, setConfirmingDeactivate] = useState(false);
 
   const isPending = create.isPending || update.isPending || deactivate.isPending;
 
@@ -786,7 +820,7 @@ function RequirementDialog(props: {
           {isEditing && initial?.active && (
             <Button
               variant="outline"
-              onClick={handleDeactivate}
+              onClick={() => setConfirmingDeactivate(true)}
               disabled={isPending}
               data-testid="btn-requirement-deactivate"
             >
@@ -803,6 +837,34 @@ function RequirementDialog(props: {
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      <AlertDialog
+        open={confirmingDeactivate}
+        onOpenChange={(open) => !open && setConfirmingDeactivate(false)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Deactivate approval requirement?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Files matching <strong>{initial?.displayName}</strong> will no longer trigger an
+              approval. Existing in-flight approvals are not affected; the requirement can be
+              re-activated by editing it. This action is audit-logged.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                setConfirmingDeactivate(false);
+                await handleDeactivate();
+              }}
+              data-testid="btn-requirement-deactivate-confirm"
+            >
+              Deactivate
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 }

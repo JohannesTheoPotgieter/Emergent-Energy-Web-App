@@ -28,6 +28,7 @@ import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { requireAuth } from "../auth-context";
 import { requirePermission } from "../permission-middleware";
+import { logAuditFromReq } from "../audit-logger";
 import {
   ApiError,
   badRequest,
@@ -148,6 +149,12 @@ export function registerDocumentManagementAdminRoutes(app: Express): void {
       }
       try {
         const row = await createTaxonomyRow(parsed.data);
+        logAuditFromReq(req, {
+          entityType: "folder_taxonomy",
+          entityId: row.internalKey,
+          action: "create",
+          changesJson: { row },
+        });
         res.status(201).json({ row });
       } catch (err) {
         console.error("[doc-mgmt-admin] create taxonomy error:", err);
@@ -171,6 +178,12 @@ export function registerDocumentManagementAdminRoutes(app: Express): void {
       }
       try {
         const row = await updateTaxonomyRow(parsedKey.data, parsedBody.data);
+        logAuditFromReq(req, {
+          entityType: "folder_taxonomy",
+          entityId: row.internalKey,
+          action: "update",
+          changesJson: { patch: parsedBody.data },
+        });
         res.json({ row });
       } catch (err) {
         console.error("[doc-mgmt-admin] update taxonomy error:", err);
@@ -188,6 +201,12 @@ export function registerDocumentManagementAdminRoutes(app: Express): void {
       if (!parsedKey.success) throw badRequest("Invalid internalKey");
       try {
         const row = await deactivateTaxonomyRow(parsedKey.data);
+        logAuditFromReq(req, {
+          entityType: "folder_taxonomy",
+          entityId: row.internalKey,
+          action: "deactivate",
+          changesJson: { active: false },
+        });
         res.json({ row });
       } catch (err) {
         console.error("[doc-mgmt-admin] deactivate taxonomy error:", err);
@@ -254,6 +273,12 @@ export function registerDocumentManagementAdminRoutes(app: Express): void {
       if (!parent) throw badRequest(`Taxonomy key '${parsed.data.taxonomyKey}' does not exist`);
       try {
         const row = await createRequirement(parsed.data);
+        logAuditFromReq(req, {
+          entityType: "document_approval_requirement",
+          entityId: String(row.id),
+          action: "create",
+          changesJson: { row },
+        });
         res.status(201).json({ row });
       } catch (err) {
         console.error("[doc-mgmt-admin] create requirement error:", err);
@@ -282,6 +307,12 @@ export function registerDocumentManagementAdminRoutes(app: Express): void {
       }
       try {
         const row = await updateRequirement(parsedId.data, parsedBody.data);
+        logAuditFromReq(req, {
+          entityType: "document_approval_requirement",
+          entityId: String(row.id),
+          action: "update",
+          changesJson: { patch: parsedBody.data },
+        });
         res.json({ row });
       } catch (err) {
         console.error("[doc-mgmt-admin] update requirement error:", err);
@@ -299,6 +330,12 @@ export function registerDocumentManagementAdminRoutes(app: Express): void {
       if (!parsedId.success) throw badRequest("Invalid requirement id");
       try {
         const row = await deactivateRequirement(parsedId.data);
+        logAuditFromReq(req, {
+          entityType: "document_approval_requirement",
+          entityId: String(row.id),
+          action: "deactivate",
+          changesJson: { active: false },
+        });
         res.json({ row });
       } catch (err) {
         console.error("[doc-mgmt-admin] deactivate requirement error:", err);
