@@ -43,6 +43,33 @@ import {
   type ConflictResolution as EngineConflictResolution,
   type ManualOverridesMap,
 } from "./merge-engine";
+import { threeWayMergeEnabled } from "./feature-flags";
+
+/**
+ * Gated wrapper around `mergeRowEngine`. When the kill switch
+ * `USE_THREE_WAY_MERGE=false` is set in the env, this short-circuits
+ * to a "no material change, no conflicts" stub that lets the section
+ * writer fall back to its pre-merge-engine behaviour. The row_hash +
+ * import_snapshot capture upstream of this call still happens, so the
+ * flag can be flipped back on without backfilling. The existing
+ * `conflict-engine.ts` continues to run earlier in the pipeline
+ * regardless of this flag — see docs/smart-import-v2-spec.md.
+ */
+function gatedMergeRowEngine(
+  input: Parameters<typeof mergeRowEngine>[0],
+): EngineRowMergeResult {
+  if (!threeWayMergeEnabled()) {
+    return {
+      rowHash: input.rowHash,
+      existingId: input.existingRow?.id ?? null,
+      outcomes: {},
+      conflicts: [],
+      hasConflicts: false,
+      hasMaterialChanges: !!input.existingRow,
+    };
+  }
+  return mergeRowEngine(input);
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -572,7 +599,7 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
           } as Record<string, FieldValue> & { id: number })
         : null;
 
-      const merge = mergeRowEngine({
+      const merge = gatedMergeRowEngine({
         rowHash: rowHash ?? `legacy::plan::${rowUid}`,
         fileRow: planMergeFileRow,
         existingRow: existingForMerge,
@@ -1098,7 +1125,7 @@ export async function writeRevenueIncremental(ctx: TemporalWriteContext): Promis
         } as Record<string, FieldValue> & { id: number })
       : null;
 
-    const merge = mergeRowEngine({
+    const merge = gatedMergeRowEngine({
       rowHash: rowHash ?? `legacy::revenue::${mr.businessKey.key}`,
       fileRow: revFileForMerge,
       existingRow: existingForMerge,
@@ -1586,7 +1613,7 @@ export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Pr
         } as Record<string, FieldValue> & { id: number })
       : null;
 
-    const merge = mergeRowEngine({
+    const merge = gatedMergeRowEngine({
       rowHash: rowHash ?? `legacy::expenditure::${mr.businessKey.key}`,
       fileRow: costFileForMerge,
       existingRow: existingForMerge,
