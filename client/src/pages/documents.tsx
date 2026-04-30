@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { PageLayout } from "@/components/layout";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FolderPlus, Upload } from "lucide-react";
 import { RootSelector } from "@/components/documents/RootSelector";
@@ -106,7 +107,13 @@ export default function DocumentsPage() {
   return (
     <PageLayout
       data-testid="documents-page"
-      header={<PageHeader title="Documents" subtitle="Browse project and company SharePoint libraries." />}
+      header={(
+        <PageHeader
+          title="Documents"
+          subtitle="Browse project and company SharePoint libraries."
+          status={<Badge variant="outline">V2 bridge in progress</Badge>}
+        />
+      )}
     >
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
         <Card className="lg:col-span-1">
