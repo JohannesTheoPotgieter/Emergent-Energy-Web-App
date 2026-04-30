@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, ShieldCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permissions";
 import { PageHeader } from "@/components/ui/page-header";
@@ -86,6 +86,13 @@ export default function PmHandoverReviewPage() {
         </Card>
       ) : null}
 
+      {!error && canApprove ? (
+        <div className="inline-flex items-center gap-2 text-xs text-muted-foreground border rounded-md px-2.5 py-1 w-fit">
+          <ShieldCheck className="h-3.5 w-3.5 text-green-600" />
+          Approvals are audited and written to handover history.
+        </div>
+      ) : null}
+
       {(data?.items || []).map((i) => (
         <div key={i.project_id} className="border rounded-lg p-3 flex items-center justify-between" data-testid={`row-handover-${i.project_id}`}>
           <div>
@@ -117,7 +124,7 @@ export default function PmHandoverReviewPage() {
                 </Button>
               </>
             )}
-            <Link href={`/pd/handover/${i.project_id}`} className="text-primary underline hover:opacity-80">Review handover</Link>
+            <Link href={`/pd/handover/${i.project_id}`} className="text-primary underline hover:opacity-80">Open handover packet</Link>
           </div>
         </div>
       ))}
@@ -126,6 +133,7 @@ export default function PmHandoverReviewPage() {
         <Card className="border-dashed">
           <CardContent className="p-6 text-center text-sm text-muted-foreground">
             No submitted or recently returned handovers are waiting for PM review.
+            Use the Gates queue for portfolio-level handover monitoring.
           </CardContent>
         </Card>
       ) : null}
