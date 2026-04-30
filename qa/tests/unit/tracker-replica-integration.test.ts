@@ -199,6 +199,35 @@ describe("route registry exposes the new endpoints", () => {
   });
 });
 
+
+
+describe("tracker replica route permission gates", () => {
+  const trackerReplicaRoutes = fs.readFileSync("server/routes/tracker-replica.routes.ts", "utf8");
+
+  it("revenue + manual overrides require revenue_tracker:view", () => {
+    expect(trackerReplicaRoutes).toMatch(
+      /app\.get\(\s*"\/api\/tracker-replica\/:projectId\/revenue-tracking"[\s\S]*?requirePermission\("revenue_tracker", "view"\)/,
+    );
+    expect(trackerReplicaRoutes).toMatch(
+      /app\.get\(\s*"\/api\/tracker-replica\/:projectId\/manual-overrides"[\s\S]*?requirePermission\("revenue_tracker", "view"\)/,
+    );
+  });
+
+  it("expenditure breakdown requires cos:view", () => {
+    const block = trackerReplicaRoutes.slice(
+      trackerReplicaRoutes.indexOf('/api/tracker-replica/:projectId/expenditure-breakdown'),
+      trackerReplicaRoutes.indexOf('/api/tracker-replica/:projectId/manual-overrides'),
+    );
+    expect(block).toContain('requirePermission("cos", "view")');
+  });
+
+  it("program plan requires work_items:view", () => {
+    const block = trackerReplicaRoutes.slice(
+      trackerReplicaRoutes.indexOf('/api/tracker-replica/:projectId/program-plan'),
+    );
+    expect(block).toContain('requirePermission("work_items", "view")');
+  });
+});
 describe("feature flag + metrics", () => {
   it("threeWayMergeEnabled defaults to ON", () => {
     const prev = process.env.USE_THREE_WAY_MERGE;
