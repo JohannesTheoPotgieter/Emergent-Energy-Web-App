@@ -206,6 +206,21 @@ describe("applyResolutions — final values", () => {
     expect(result.a).toBe("custom");
   });
 
+
+
+  it("defaults unresolved conflicts to keep_existing (protect manual app edits)", () => {
+    const merge = mergeRow({
+      rowHash: "h_safe",
+      fileRow: { amount: 200 },
+      existingRow: { id: 10, amount: 150 },
+      importSnapshot: { amount: 100 },
+      fields: ["amount"],
+    });
+    expect(merge.outcomes.amount.type).toBe("conflict");
+
+    const result = applyResolutions(merge, [], true);
+    expect(result.amount).toBe(150);
+  });
   it("throws on an unresolved conflict by default", () => {
     const merge = buildMerge();
     expect(() => applyResolutions(merge, [])).toThrow(/Unresolved conflict/);
