@@ -21,6 +21,7 @@
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { requireAuth } from "../middleware/requireAuth";
+import { requirePermission } from "../permission-middleware";
 import { trackerReplicaRepository } from "../repositories/tracker-replica-repository";
 import { ApiError, badRequest, notFound, serverError } from "../lib/api-error";
 
@@ -34,9 +35,15 @@ function parseProjectId(raw: unknown): number {
 
 export function registerTrackerReplicaRoutes(app: Express): void {
   // ---- Revenue Tracking sheet ---------------------------------------
+  // Returns project-level revenue (planned/actual + milestone list).
+  // Gated by `revenue_tracker:view` to mirror the existing finance routes
+  // (server/departments/finance-routes.ts:1823 uses the same gate). Without
+  // this an authenticated ENGINEER could iterate projectId and pull every
+  // project's revenue.
   app.get(
     "/api/tracker-replica/:projectId/revenue-tracking",
     requireAuth,
+    requirePermission("revenue_tracker", "view"),
     async (req: Request, res: Response) => {
       const projectId = parseProjectId(req.params.projectId);
 
@@ -63,9 +70,12 @@ export function registerTrackerReplicaRoutes(app: Express): void {
   );
 
   // ---- Expenditure Breakdown sheet ----------------------------------
+  // Cost lines + actual batches + sidebar header values. Gated by
+  // `cos:view` to mirror the existing COS routes.
   app.get(
     "/api/tracker-replica/:projectId/expenditure-breakdown",
     requireAuth,
+    requirePermission("cos", "view"),
     async (req: Request, res: Response) => {
       const projectId = parseProjectId(req.params.projectId);
 
@@ -109,12 +119,16 @@ export function registerTrackerReplicaRoutes(app: Express): void {
 
   // ---- Manual-override audit log (read surface) ---------------------
   // Flattens the manual_overrides JSONB across all three canonical
-  // tables into a single chronological list. Used by the "Manual Edits"
-  // tab so auditors can answer "who edited what when" without writing
-  // SQL. Read-only.
+  // tables into a single chronological list. Surfaces editor user IDs
+  // so auditors can answer "who edited what when" — gate behind
+  // revenue_tracker:view since the audit content includes financial
+  // values, and pair with a hard role gate so an ENGINEER can't
+  // enumerate other staff's edits. (Tightened in response to security
+  // review finding #1.)
   app.get(
     "/api/tracker-replica/:projectId/manual-overrides",
     requireAuth,
+    requirePermission("revenue_tracker", "view"),
     async (req: Request, res: Response) => {
       const projectId = parseProjectId(req.params.projectId);
 
@@ -134,9 +148,12 @@ export function registerTrackerReplicaRoutes(app: Express): void {
   );
 
   // ---- Project / Program Plan sheet ---------------------------------
+  // WBS task list + project-plan metadata. Gated by `work_items:view`
+  // to mirror existing PM-section permissions.
   app.get(
     "/api/tracker-replica/:projectId/program-plan",
     requireAuth,
+    requirePermission("work_items", "view"),
     async (req: Request, res: Response) => {
       const projectId = parseProjectId(req.params.projectId);
 
