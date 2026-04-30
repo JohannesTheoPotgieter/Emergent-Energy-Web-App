@@ -881,6 +881,17 @@ function RagDot({ color }: { color: "green" | "amber" | "red" }) {
   return <span className={`inline-block w-2.5 h-2.5 rounded-full ${cls}`} />;
 }
 
+function formatUpdatedAt(ts?: number) {
+  if (!ts) return "Unknown";
+  return new Date(ts).toLocaleString("en-ZA", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 
 export default function ProjectDetailPage() {
   const [isNameRoute, nameParams] = useRoute("/project/:projectName");
@@ -1034,7 +1045,7 @@ export default function ProjectDetailPage() {
   const { data: stageData } = useProjectStages(projectInfoId);
 
   // ─── V2 Consolidated project query ─────────────────────────────
-  const { data: v2Detail } = useProjectDetail(projectInfoId);
+  const { data: v2Detail, dataUpdatedAt: v2DetailUpdatedAt, isFetching: v2DetailFetching } = useProjectDetail(projectInfoId);
   const v2Perms: ProjectPermissions | null = v2Detail?.permissions ?? null;
 
   // V2 lazy-load hooks — each tab domain loads on demand.
@@ -1092,7 +1103,7 @@ export default function ProjectDetailPage() {
     enabled: !!projectName,
   });
 
-  const { data: revenueData = [] } = useQuery({
+  const { data: revenueData = [], dataUpdatedAt: revenueUpdatedAt, isFetching: revenueFetching } = useQuery({
     queryKey: ["program-inflows", projectName],
     queryFn: async () => {
       const res = await engFetch(`/api/program-inflows?projectName=${encodeURIComponent(projectName)}`);
@@ -1145,7 +1156,7 @@ export default function ProjectDetailPage() {
     enabled: !!projectInfoId && canViewTab.finance && (activeSection === "commercial" || activeSection === "delivery"),
   });
 
-  const { data: cashflowData = [] } = useQuery({
+  const { data: cashflowData = [], dataUpdatedAt: cashflowUpdatedAt, isFetching: cashflowFetching } = useQuery({
     queryKey: ["cashflow", projectName],
     queryFn: async () => {
       const res = await engFetch(`/api/cashflow?project=${encodeURIComponent(projectName)}`);
@@ -1165,7 +1176,7 @@ export default function ProjectDetailPage() {
     enabled: !!projectInfo?.project_info_id,
   });
 
-  const { data: qualityData } = useQuery({
+  const { data: qualityData, dataUpdatedAt: qualityUpdatedAt, isFetching: qualityFetching } = useQuery({
     queryKey: ["quality-summary", projectName],
     queryFn: async () => {
       const res = await engFetch(`/api/quality/project/${encodeURIComponent(projectName)}/summary`);
@@ -1629,6 +1640,20 @@ export default function ProjectDetailPage() {
             </button>
           );
         })}
+      </div>
+
+      <div className="rounded-md border bg-muted/20 px-3 py-2 text-xs" data-testid="project-trust-strip">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <span><strong>Source:</strong> {activeDept === "finance" ? "Finance trackers + V2 summary" : activeDept === "quality" ? "Quality workspace + V2 summary" : "V2 project detail + project workspaces"}</span>
+          <span><strong>Status:</strong> {(activeDept === "finance" && revenueFetching) || (activeDept === "quality" && qualityFetching) || v2DetailFetching ? "Refreshing" : "Synced"}</span>
+          <span><strong>Last updated:</strong> {
+            activeDept === "finance"
+              ? formatUpdatedAt(Math.max(v2DetailUpdatedAt || 0, revenueUpdatedAt || 0, cashflowUpdatedAt || 0))
+              : activeDept === "quality"
+                ? formatUpdatedAt(Math.max(v2DetailUpdatedAt || 0, qualityUpdatedAt || 0))
+                : formatUpdatedAt(v2DetailUpdatedAt)
+          }</span>
+        </div>
       </div>
 
       {/* ════════════════════════════════════════════════════════════
