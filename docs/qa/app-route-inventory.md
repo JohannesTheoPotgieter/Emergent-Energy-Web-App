@@ -1,6 +1,6 @@
 # App Route Inventory
 
-**Generated** 2026-04-30T09:46:27.159Z by `script/test-routes.ts`. Do not hand-edit — regenerate with `npm run test:routes`.
+**Generated** 2026-04-30T09:57:42.251Z by `script/test-routes.ts`. Do not hand-edit — regenerate with `npm run test:routes`.
 
 Source: `client/src/config/page-registry.ts`
 
