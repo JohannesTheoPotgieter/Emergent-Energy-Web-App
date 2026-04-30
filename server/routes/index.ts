@@ -13,6 +13,7 @@ import { registerExceptionDashboardRoutes } from './exception-dashboard.routes';
 import { registerDocumentManagementRoutes } from './document-management.routes';
 import { registerDocumentCommentsRoutes } from './document-comments.routes';
 import { registerDocumentManagementAdminRoutes } from './document-management-admin.routes';
+import { registerDocumentProvisioningRoutes } from './document-provisioning.routes';
 
 export async function registerRoutes(httpServer: Server, app: Express) {
   registerTemplateGovernanceRoutes(app);
@@ -27,5 +28,6 @@ export async function registerRoutes(httpServer: Server, app: Express) {
   registerDocumentManagementRoutes(app);
   registerDocumentCommentsRoutes(app);
   registerDocumentManagementAdminRoutes(app);
+  registerDocumentProvisioningRoutes(app);
   return registerLegacyRoutes(httpServer, app);
 }

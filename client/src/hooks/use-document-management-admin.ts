@@ -179,3 +179,90 @@ export function useDeactivateRequirement() {
     },
   });
 }
+
+// =========================================================================
+// Provisioning (Phase 3)
+// =========================================================================
+
+export interface ProvisionRowReport {
+  taxonomyKey: string;
+  displayName: string;
+  status: "created" | "already_present" | "linked_existing" | "skipped" | "error";
+  driveId?: string | null;
+  itemId?: string | null;
+  sharepointPath?: string | null;
+  error?: string;
+}
+
+export interface ProvisionResult {
+  projectId: number;
+  projectName: string;
+  projectFolderPath: string;
+  rootKind: string;
+  lifecycleMode: "pre_construction" | "full_lifecycle" | "both";
+  rows: ProvisionRowReport[];
+  summary: {
+    created: number;
+    alreadyPresent: number;
+    linkedExisting: number;
+    skipped: number;
+    errors: number;
+  };
+}
+
+export function useProvisionProjectFolders() {
+  const qc = useQueryClient();
+  return useMutation<
+    ProvisionResult,
+    Error,
+    { projectId: number; lifecycleMode: ProvisionResult["lifecycleMode"] }
+  >({
+    mutationFn: async ({ projectId, lifecycleMode }) => {
+      const res = await apiRequest(
+        "POST",
+        `/api/projects/${projectId}/provision-folders`,
+        { lifecycleMode },
+      );
+      return res.json();
+    },
+    onSuccess: (_data, { projectId }) => {
+      qc.invalidateQueries({ queryKey: [`/api/projects/${projectId}/folders`] });
+    },
+  });
+}
+
+interface ProjectFoldersResponse {
+  projectId: number;
+  folders: Array<{
+    id: number;
+    projectId: number;
+    taxonomyKey: string;
+    driveId: string | null;
+    itemId: string | null;
+    sharepointPath: string | null;
+    provisionedAt: string | null;
+    lastVerifiedAt: string | null;
+    verifyError: string | null;
+  }>;
+}
+
+export function useProjectFolders(projectId: number | null) {
+  return useQuery<ProjectFoldersResponse>({
+    queryKey: projectId ? [`/api/projects/${projectId}/folders`] : ["/api/projects/0/folders"],
+    queryFn: getQueryFn({ on401: "throw" }),
+    enabled: typeof projectId === "number" && projectId > 0,
+  });
+}
+
+export function useVerifyProjectFolders() {
+  const qc = useQueryClient();
+  return useMutation<{ projectId: number; verified: number; missing: number }, Error, number>({
+    mutationFn: async (projectId) => {
+      const res = await apiRequest("POST", `/api/projects/${projectId}/verify-folders`);
+      return res.json();
+    },
+    onSuccess: (_data, projectId) => {
+      qc.invalidateQueries({ queryKey: [`/api/projects/${projectId}/folders`] });
+    },
+  });
+}
