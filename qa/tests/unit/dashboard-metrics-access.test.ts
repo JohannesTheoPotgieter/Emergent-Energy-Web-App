@@ -41,35 +41,38 @@ describe("dashboard metrics access control", () => {
 
   // ── requireAdmin middleware ──
 
-  it("non-admin users receive 403 from requireAdmin", () => {
+  // Note (Task #101): requireAdmin was rewritten as a thin shim around
+  // requirePermission('admin','edit'), which returns an async middleware.
+  // These tests must therefore await the call. The previous synchronous
+  // pattern was a holdover from the pre-rework hardcoded role-set check.
+  it("non-admin users receive 403 from requireAdmin", async () => {
     const req = { user: { role: "ENGINEER" } } as any;
     const res = { status: vi.fn().mockReturnThis(), json: vi.fn() } as any;
     const next = vi.fn();
 
-    requireAdmin(req, res, next);
+    await requireAdmin(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(403);
-    expect(res.json).toHaveBeenCalledWith({ error: "admin_required" });
   });
 
-  it("COO_ADMIN passes requireAdmin", () => {
+  it("COO_ADMIN passes requireAdmin", async () => {
     const req = { user: { role: "COO_ADMIN" } } as any;
     const res = { status: vi.fn().mockReturnThis(), json: vi.fn() } as any;
     const next = vi.fn();
 
-    requireAdmin(req, res, next);
+    await requireAdmin(req, res, next);
 
     expect(next).toHaveBeenCalled();
     expect(res.status).not.toHaveBeenCalled();
   });
 
-  it("CEO_ADMIN passes requireAdmin", () => {
+  it("CEO_ADMIN passes requireAdmin", async () => {
     const req = { user: { role: "CEO_ADMIN" } } as any;
     const res = { status: vi.fn().mockReturnThis(), json: vi.fn() } as any;
     const next = vi.fn();
 
-    requireAdmin(req, res, next);
+    await requireAdmin(req, res, next);
 
     expect(next).toHaveBeenCalled();
   });

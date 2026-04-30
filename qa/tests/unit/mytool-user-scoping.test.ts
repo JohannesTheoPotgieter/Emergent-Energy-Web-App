@@ -109,12 +109,12 @@ describe("mytool user-scoping", () => {
   // ── requireAdmin still blocks non-admin on support-tickets ──
 
   describe("support-tickets remains admin-only", () => {
-    it("non-admin receives 403 on support-tickets listing", () => {
+    it("non-admin receives 403 on support-tickets listing", async () => {
       const req = { user: { role: "ENGINEER" } } as any;
       const res = { status: vi.fn().mockReturnThis(), json: vi.fn() } as any;
       const next = vi.fn();
 
-      requireAdmin(req, res, next);
+      await requireAdmin(req, res, next);
 
       expect(next).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(403);
