@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { FinanceShell } from "@/components/layout/FinanceShell";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { Loader2, AlertTriangle, CheckCircle2, MinusCircle, Pencil, FlaskConical, RotateCcw } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { computeEarnedVsInvoiced } from "@shared/lib/financeAnalysis";
@@ -24,12 +25,16 @@ interface EarnedRow {
   variancePct: number;
   flag: "over_billed" | "in_line" | "under_billed";
 }
-interface EarnedResponse { rows: EarnedRow[]; defaultToleranceBandPct: number }
+interface EarnedResponse {
+  rows: EarnedRow[];
+  defaultToleranceBandPct: number;
+  trust?: { sourceLayer?: string; basis?: string; asOf?: string };
+}
 interface CounterpartyPoint { counterpartyId: number | null; counterpartyName: string; monthKey: string; amount: number }
 interface CounterpartyResponse { months: number; points: CounterpartyPoint[] }
 
 async function okJson(r: Response) {
-  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  if (!r.ok) throw new Error("Unable to load COS analysis data right now.");
   return r.json();
 }
 
@@ -56,8 +61,12 @@ function flagBadge(flag: EarnedRow["flag"]) {
 
 export default function CosAnalysisPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const qc = useQueryClient();
   const [editing, setEditing] = useState<{ projectId: number; bandPct: number } | null>(null);
+  const canEditTolerance = ["COO_ADMIN", "CEO_ADMIN", "CFO", "PROGRAM_FINANCE_MANAGER"].includes(
+    String(user?.role ?? "").toUpperCase(),
+  );
 
   // Sandbox: client-side what-if. Override pctComplete, invoiced amount, or
   // tolerance band per project. Nothing is written to the DB.
@@ -80,6 +89,7 @@ export default function CosAnalysisPage() {
 
   const updateTolerance = useMutation({
     mutationFn: async ({ projectId, bandPct }: { projectId: number; bandPct: number }) => {
+      if (!canEditTolerance) throw new Error("You are not allowed to update tolerance bands.");
       const res = await fetch(`/api/finance/analysis/tolerance/${projectId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -179,6 +189,9 @@ export default function CosAnalysisPage() {
           <h2 className="text-xl font-semibold tracking-tight" data-testid="page-title">COS Analysis</h2>
           <p className="text-sm text-muted-foreground">
             Compares COS invoices against project plan progress. Per-project tolerance band determines the "in line" zone.
+          </p>
+          <p className="text-xs text-muted-foreground mt-1" data-testid="analysis-metadata">
+            Source: {earned.data?.trust?.sourceLayer ?? "canonical"} · Basis: captured COS invoices vs project progress · Last updated: {earned.data?.trust?.asOf ?? "N/A"}
           </p>
         </div>
         <div className="flex items-center gap-2 border-l pl-3">
@@ -301,7 +314,7 @@ export default function CosAnalysisPage() {
                             onChange={(e) => setOverride(row.projectId, { bandPct: Number(e.target.value) })}
                             data-testid={`sandbox-band-${row.projectId}`}
                           />
-                        ) : editing?.projectId === row.projectId ? (
+                        ) : canEditTolerance && editing?.projectId === row.projectId ? (
                           <div className="flex items-center gap-1">
                             <Input
                               type="number"
@@ -324,7 +337,7 @@ export default function CosAnalysisPage() {
                             </Button>
                             <Button size="sm" variant="ghost" className="h-7" onClick={() => setEditing(null)}>Cancel</Button>
                           </div>
-                        ) : (
+                        ) : canEditTolerance ? (
                           <button
                             type="button"
                             className="inline-flex items-center gap-1 hover:underline"
@@ -333,6 +346,8 @@ export default function CosAnalysisPage() {
                           >
                             {row.toleranceBandPct}% <Pencil className="w-3 h-3 text-muted-foreground" />
                           </button>
+                        ) : (
+                          <span>{row.toleranceBandPct}%</span>
                         )}
                       </TableCell>
                       <TableCell>{flagBadge(row.flag)}</TableCell>
