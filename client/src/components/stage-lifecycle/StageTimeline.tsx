@@ -2,6 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { ProjectStageInstance } from "@shared/schema";
 import { STAGE_SEQUENCE } from "@shared/utils/stage-state-machine";
+import { PHASE_BY_CODE } from "@shared/phases";
 import { CheckCircle2, Circle, AlertCircle, Loader2, ShieldCheck, XCircle } from "lucide-react";
 
 interface StageTimelineProps {
@@ -11,16 +12,21 @@ interface StageTimelineProps {
 }
 
 const STAGE_SHORT_LABELS: Record<string, string> = {
-  S01_FIRST_ASSESSMENT: "Assessment",
-  S02_DESIGN_COST_PROPOSAL: "Design & CP",
-  S03_SIGNATURE_FINANCIAL_CLOSE: "Fin. Close",
-  S04_PD_PM_HANDOVER: "PD→PM",
-  S05_FINANCIAL_REVIEW: "Fin. Review",
-  S06_CONSTRUCTION: "Construction",
-  S07_COMMISSIONING: "Commission",
-  S08_OM_HANDOVER: "O&M",
-  S09_CLIENT_HANDOVER: "Client",
-  S10_POST_HANDOVER_REVIEW: "3M Review",
+  S01_FIRST_ASSESSMENT: "1. Assessment",
+  S02_DESIGN_COST_PROPOSAL: "2. Cost & Design",
+  S03_SIGNATURE_FINANCIAL_CLOSE: "3. Fin Close",
+  S04_PLANNING: "4. Planning",
+  S06_CONSTRUCTION: "5. Construction",
+  S07_COMMISSIONING: "6. Commissioning",
+  S08_OM_HANDOVER: "7. O&M HO",
+  S09_CLIENT_HANDOVER: "8. Client HO",
+  S10_POST_HANDOVER_REVIEW: "9. 3M Review",
+  S9B_COMPLIANCE_HANDOVER: "10. Compliance HO",
+  S_HOLD: "Hold",
+  S_DONE: "Done",
+  // legacy retained for historical rows
+  S04_PD_PM_HANDOVER: "3. PD→PM (legacy)",
+  S05_FINANCIAL_REVIEW: "Fin Review (legacy)",
 };
 
 const STATUS_ICON: Record<string, React.ReactNode> = {
@@ -45,7 +51,7 @@ export function StageTimeline({ stages, currentStageCode, onStageClick }: StageT
       <div className="flex items-center gap-0.5 overflow-x-auto pb-1">
         {sorted.map((stage, i) => {
           const isCurrent = stage.stageCode === currentStageCode;
-          const label = STAGE_SHORT_LABELS[stage.stageCode] || stage.stageCode;
+          const label = STAGE_SHORT_LABELS[stage.stageCode] || PHASE_BY_CODE[stage.stageCode]?.label || stage.stageCode;
           const icon = STATUS_ICON[stage.stageStatus] || <Circle className="h-5 w-5 text-gray-300" />;
 
           return (

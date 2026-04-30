@@ -1527,7 +1527,7 @@ export default function ProjectDetailPage() {
         <div className="space-y-2" data-testid="stage-lifecycle-block">
           <CriticalControlPanel
             projectId={projectInfoId}
-            onViewGate={() => setLocation(`/project/${encodeURIComponent(projectName)}/gate/${encodeURIComponent(stageData?.currentStage?.stageCode || "S01_FIRST_ASSESSMENT")}`)}
+            onViewGate={() => setLocation(`/project/id/${projectInfoId}/gate/${encodeURIComponent(stageData?.currentStage?.stageCode || "S01_FIRST_ASSESSMENT")}`)}
             isAdmin={isAdmin}
           />
           {stageData && (stageData.stages || []).length > 0 && (
@@ -1535,7 +1535,7 @@ export default function ProjectDetailPage() {
               <StageTimeline
                 stages={(stageData.stages || []) as any}
                 currentStageCode={stageData.currentStage?.stageCode ?? null}
-                onStageClick={(stageCode) => setLocation(`/project/${encodeURIComponent(projectName)}/gate/${encodeURIComponent(stageCode)}`)}
+                onStageClick={(stageCode) => setLocation(`/project/id/${projectInfoId}/gate/${encodeURIComponent(stageCode)}`)}
               />
             </div>
           )}
@@ -1565,7 +1565,7 @@ export default function ProjectDetailPage() {
       {projectInfoId && !canViewTab.engineering && (
         <CriticalControlPanel
           projectId={projectInfoId}
-          onViewGate={() => setLocation(`/project/${encodeURIComponent(projectName)}/gate/${encodeURIComponent(stageData?.currentStage?.stageCode || "S01_FIRST_ASSESSMENT")}`)}
+          onViewGate={() => setLocation(`/project/id/${projectInfoId}/gate/${encodeURIComponent(stageData?.currentStage?.stageCode || "S01_FIRST_ASSESSMENT")}`)}
           isAdmin={isAdmin}
         />
       )}
