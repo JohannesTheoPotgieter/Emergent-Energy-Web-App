@@ -199,6 +199,12 @@ export default function CashflowAnalysisPage() {
         </div>
       </div>
 
+      <div className="mb-4 rounded-md border border-slate-200 bg-slate-50/70 p-3" data-testid="cashflow-analysis-trust-note">
+        <p className="text-sm text-slate-800">Cashflow actuals use payment received / paid dates.</p>
+        <p className="mt-1 text-sm text-slate-700">Forecast dates may use planned-payment fallback where no canonical payment date exists.</p>
+        <p className="mt-1 text-xs text-slate-600">Use forecast values as planning data until reconciled.</p>
+      </div>
+
       {sandboxOn && (
         <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950 dark:border-amber-700 p-3" data-testid="sandbox-banner">
           <div className="flex items-center justify-between gap-3 flex-wrap">
