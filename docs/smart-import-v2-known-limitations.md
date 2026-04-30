@@ -226,6 +226,46 @@ into a 1:N row group when this happens.
 
 ---
 
+## 12b. Environment-only blockers for end-to-end smoke testing
+
+**Status:** Documented; not addressable in CI / dev-sqlite
+
+Three steps in the production-readiness checklist for the 2026-04-29
+release can ONLY be exercised in a postgres-backed environment with a
+real user session and a real Tracker workbook:
+
+1. **Real Tracker import smoke test.** Apply migrations 0042 + 0043 on
+   a postgres dev DB; upload `attached_assets/Mondi_Tracker_Rev02_*.xlsm`
+   through the wizard; commit; spot-check the new tables
+   (`normalized_cost_line_actuals`, `tracker_project_metadata`,
+   `tracker_revenue_summary`) and the new columns (`row_hash`,
+   `import_snapshot`, `manual_overrides`, `cell_format`,
+   `milestone_notes`, `lead`, `resource_1`, etc.).
+2. **User-confirmed conflict UX.** A human clicks through the new v2
+   conflict cards (3-column snapshot / db / file with keep / accept
+   toggles) and confirms the layout matches what they wanted.
+3. **Performance on large trackers.** The Mondi Tracker has 849
+   expenditure rows. Need to measure that the merge engine + new
+   3-way logic stays fast enough on import. Likely fine — partial
+   indexes are in place — but unmeasured.
+
+Why these are blockers in this environment:
+
+- The dev sqlite bootstrap in `server/db.ts` hand-codes a CREATE
+  TABLE list that doesn't include the PR1 / PR2B/C tables. Migrations
+  only apply to postgres.
+- Real Microsoft SSO login isn't available in CI / dev sandboxes.
+- Browser interaction (clicking through wizard conflict cards) needs
+  a human or a Playwright suite (we have Playwright but not a
+  scenario for this specific flow yet).
+
+**Mitigation:** the smoke procedure is documented at the end of
+`docs/smart-import-v2-operator-guide.md` (steps 3–8 of the
+"Manual smoke procedure" subsection). Run on the staging environment
+before merge.
+
+---
+
 ## 13. Tracker top-of-sheet metadata blocks
 
 **Status:** Captured into new tables
