@@ -20,3 +20,14 @@
 - Do not hide invalid data to pass report checks.
 - Raise discrepancy ticket with root-cause owner (finance ops vs integration vs data model).
 - Annotate uncertainty in reports until corrected at source.
+
+
+## Cashflow full-trust reconciliation checklist
+Before marking a cashflow view as fully trusted, confirm all of the following:
+1. **Payment-date completeness**: all realised inflow/outflow rows have captured payment received/paid dates where funds have actually cleared.
+2. **Date precedence integrity**: effective-date hierarchy is unchanged (admin override → payment date → approved tracker overrides/tasks → computed forecast → planned-payment fallback).
+3. **Planned-payment fallback exposure**: quantify rows still using planned-payment fallback and publish that count with the report period.
+4. **Revenue/COS alignment**: revenue and COS reporting still follow approved tracker logic, including COS realised only when invoice is captured under actuals.
+5. **Forecast communication**: every cashflow-facing page states that forecast values remain planning-only until reconciled.
+6. **Exception closure**: unresolved date exceptions (missing payment date, no-PO invoice flags, unmatched invoice/payment links) are assigned owners and due dates.
+

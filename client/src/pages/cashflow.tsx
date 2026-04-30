@@ -1136,6 +1136,11 @@ export default function CashflowPage() {
           </Badge>
         )}
       </div>
+      <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs text-slate-700" data-testid="cashflow-trust-note">
+        <p>Cashflow actuals use payment received / paid dates.</p>
+        <p className="mt-1">Forecast dates may use planned-payment fallback where no canonical payment date exists.</p>
+        <p className="mt-1 text-slate-600">Use forecast values as planning data until reconciled.</p>
+      </div>
       <div className="lg:flex lg:gap-5 lg:items-start -mt-1">
         <aside
           className="hidden lg:flex lg:flex-col lg:w-56 lg:shrink-0 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] rounded-xl border border-border bg-card shadow-sm p-3"
