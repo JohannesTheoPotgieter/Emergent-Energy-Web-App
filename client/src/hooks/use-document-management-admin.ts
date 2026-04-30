@@ -17,6 +17,39 @@ import type {
 const TAXONOMY_KEY = ["/api/admin/folder-taxonomy"] as const;
 const REQUIREMENTS_KEY = ["/api/admin/document-approval-requirements"] as const;
 
+const PUBLIC_TAXONOMY_KEY = ["/api/folder-taxonomy"] as const;
+const PUBLIC_REQUIREMENTS_KEY = ["/api/document-approval-requirements"] as const;
+
+// =========================================================================
+// Public reads — any authenticated user with documents:view
+// =========================================================================
+
+interface PublicTaxonomyResponse {
+  taxonomy: FolderTaxonomy[];
+}
+
+export function usePublicFolderTaxonomy(enabled = true) {
+  return useQuery<PublicTaxonomyResponse>({
+    queryKey: PUBLIC_TAXONOMY_KEY,
+    queryFn: getQueryFn({ on401: "throw" }),
+    enabled,
+    staleTime: 60_000,
+  });
+}
+
+interface PublicRequirementsResponse {
+  requirements: DocumentApprovalRequirement[];
+}
+
+export function usePublicApprovalRequirements(enabled = true) {
+  return useQuery<PublicRequirementsResponse>({
+    queryKey: PUBLIC_REQUIREMENTS_KEY,
+    queryFn: getQueryFn({ on401: "throw" }),
+    enabled,
+    staleTime: 60_000,
+  });
+}
+
 // =========================================================================
 // Folder taxonomy
 // =========================================================================
