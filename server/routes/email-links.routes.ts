@@ -36,6 +36,20 @@ const idParam = z.coerce.number().int().positive();
 
 const SUPER_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
 
+// Roles allowed to manually create email/teams ↔ project links. Tightened
+// in response to security review finding #3 — previously these POST
+// handlers were `requireAuth` only, so any authenticated user could
+// orphan-link a Graph message id to any project. Mirrors the role set
+// used for the existing DELETE handlers in this file (SUPER_ROLES) plus
+// project-execution roles that legitimately need to file emails.
+const LINK_CREATE_ROLES = [
+  "COO_ADMIN", "CEO_ADMIN", "CCO", "CFO",
+  "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER",
+  "CONSTRUCTION_MANAGER", "ENGINEERING_MANAGER", "QUALITY_MANAGER",
+  "PROJECT_MANAGER_SITE", "PROJECT_DEVELOPER", "KEY_ACCOUNTS_MANAGER",
+  "ACCOUNTANT",
+];
+
 const emailSignalValues = ["client_domain", "client_contact", "subject_tag", "thread_inheritance", "pipedrive", "manual"] as const;
 const teamsSignalValues = ["project_channel", "user_mention", "manual"] as const;
 
@@ -174,6 +188,7 @@ export function registerEmailLinksRoutes(app: Express): void {
   app.post(
     "/api/email-links",
     requireAuth,
+    requireRole(LINK_CREATE_ROLES),
     async (req: Request, res: Response) => {
       const user = getEffectiveUser(req);
       if (!user) throw unauthorized();
@@ -199,6 +214,7 @@ export function registerEmailLinksRoutes(app: Express): void {
   app.post(
     "/api/teams-links",
     requireAuth,
+    requireRole(LINK_CREATE_ROLES),
     async (req: Request, res: Response) => {
       const user = getEffectiveUser(req);
       if (!user) throw unauthorized();

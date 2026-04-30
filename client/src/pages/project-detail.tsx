@@ -55,6 +55,7 @@ import { useProjectsSummary } from "@/hooks/use-projects-summary";
 import { useAuth } from "@/hooks/use-auth";
 import DataSourceDebug from "@/components/DataSourceDebug";
 import { ProjectCommandHeader } from "@/components/ProjectCommandHeader";
+import { TrackerReplicaLinks } from "@/components/tracker-replica-links";
 import { CriticalControlPanel } from "@/components/stage-lifecycle/CriticalControlPanel";
 import { StageTimeline } from "@/components/stage-lifecycle/StageTimeline";
 import { useProjectStages } from "@/hooks/use-stage-lifecycle";
@@ -1461,6 +1462,11 @@ export default function ProjectDetailPage() {
         pmAssignableUsers={pmAssignableUsers || []}
       />
       </div>{/* /cockpit-command-header */}
+
+      {/* Tracker Replica nav — links to the per-project 1:1 source-workbook
+          replica screens added in the 2026-04-29 release. Renders nothing
+          when projectInfoId hasn't resolved yet. */}
+      <TrackerReplicaLinks projectId={projectInfoId ?? null} />
 
       {/* Project status / DLP badges — only render when non-default */}
       {(() => {

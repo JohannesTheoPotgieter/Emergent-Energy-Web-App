@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { evaluatePermissionForRole } from "@shared/permission-resolver";
 import { COO_OPERATIONAL_ACCESS_MATRIX } from "@shared/coo-operational-access-matrix";
-import { PAGE_REGISTRY } from "@/config/page-registry";
+import { PAGE_REGISTRY, LEGACY_REDIRECTS } from "@/config/page-registry";
 import fs from "node:fs";
 
 describe("COO operational access matrix", () => {
@@ -38,11 +38,17 @@ describe("COO operational access matrix", () => {
   });
 
   it("ensures every operational domain has discoverable UI entry points", () => {
+    // Discoverable means reachable from the URL: either a registered page or
+    // a legacy redirect that lands on one. /admin/control-center, for
+    // example, was retired (Task #101) but is preserved as a redirect to
+    // /admin/roles so deep links still work.
     const registryPaths = new Set(PAGE_REGISTRY.map((page) => page.path));
+    const redirectPaths = new Set(LEGACY_REDIRECTS.map((r) => r.path));
 
     for (const domain of COO_OPERATIONAL_ACCESS_MATRIX) {
       for (const path of domain.discoverablePaths) {
-        expect(registryPaths.has(path), `${domain.domain} missing discoverable path: ${path}`).toBe(true);
+        const reachable = registryPaths.has(path) || redirectPaths.has(path);
+        expect(reachable, `${domain.domain} missing discoverable path: ${path}`).toBe(true);
       }
     }
   });

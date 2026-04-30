@@ -32,7 +32,8 @@ import { requireAdmin } from "./middleware/requireAdmin";
 import { runSmartImportPreview } from "./lib/import/index";
 import { runPreflightValidator } from "./lib/import/preflight-validator";
 import { runImportPlanner, type PlannerResult } from "./lib/import/planner";
-import { writePlanIncremental, writeRevenueIncremental, writeExpenditureIncremental, type IncrementalCommitResult } from "./lib/import/commit-executor";
+import { writePlanIncremental, writeRevenueIncremental, writeExpenditureIncremental, writeActualLineRows, writeProjectMetadata, writeRevenueSummary, type IncrementalCommitResult } from "./lib/import/commit-executor";
+import { newImportMetrics, emitImportMetrics, threeWayMergeEnabled } from "./lib/import/feature-flags";
 import { matchRows, generateBusinessKey, type SectionType, type MatchedRow } from "./lib/import/row-matcher";
 import { runConflictEngine, type RowMergeResult } from "./lib/import/conflict-engine";
 import { loadCurrentPlanRows, loadCurrentRevenueRows, loadCurrentCostRows, loadBaselineNormalization, detectImportMode } from "./lib/import/baseline";
@@ -2504,6 +2505,73 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         });
         counts.costLines = costResult.counts.inserted + costResult.counts.updated;
       }
+
+      // ── PR2C: Auxiliary captures from the source workbook ──
+      // These three writers persist data the section writers above don't
+      // touch: 1:N orphan actual rows for Expenditure, the
+      // top-of-Project-Plan metadata block, and the top-of-Revenue-Tracking
+      // summary block. Each writer is idempotent — re-importing an
+      // unchanged workbook produces zero writes here.
+      const importMetrics = newImportMetrics(runId, projectId);
+      const importStartedAt = Date.now();
+      try {
+        if (Array.isArray(norm.actualLineRows) && norm.actualLineRows.length > 0) {
+          const actualResult = await writeActualLineRows({
+            tx, projectId, runId, commitTimestamp,
+            actualLineRows: norm.actualLineRows,
+          });
+          importMetrics.actuals.inserted = actualResult.inserted;
+          importMetrics.actuals.orphaned = actualResult.orphaned;
+          if (actualResult.orphaned > 0) {
+            console.warn(`[SmartImport] ${actualResult.orphaned} actual-line row(s) had no parent costed line and were skipped.`);
+          }
+        }
+        if (norm.projectPlanMetadata) {
+          const r = await writeProjectMetadata({
+            tx, projectId, runId, commitTimestamp,
+            metadata: norm.projectPlanMetadata,
+            sourceSheet: (norm.projectPlanMetadata as any)?.sourceSheet ?? null,
+          });
+          importMetrics.metadata.written = r.written;
+        }
+        if (norm.costedSummary) {
+          const r = await writeRevenueSummary({
+            tx, projectId, runId, commitTimestamp,
+            costedSummary: norm.costedSummary,
+            costedSummarySource: norm.costedSummarySource ?? null,
+          });
+          importMetrics.summary.written = r.written;
+        }
+      } catch (auxErr) {
+        // Auxiliary writes are non-blocking — the import has already
+        // succeeded for the canonical tables. Surface as warnings.
+        console.error("[SmartImport] Auxiliary writer failure (non-blocking):", auxErr);
+      }
+
+      // Aggregate per-section counters into the structured metrics
+      // emission so an operator can grep `[SmartImport.metrics]` in the
+      // app log and see exactly what every import did.
+      if (planResult) {
+        importMetrics.plan.inserted = planResult.counts.inserted;
+        importMetrics.plan.updated = planResult.counts.updated;
+        importMetrics.plan.unchanged = planResult.counts.unchanged ?? 0;
+        importMetrics.plan.conflictsSurfaced = (planResult.mergeConflicts ?? []).length;
+      }
+      if (revenueResult) {
+        importMetrics.revenue.inserted = revenueResult.counts.inserted;
+        importMetrics.revenue.updated = revenueResult.counts.updated;
+        importMetrics.revenue.unchanged = revenueResult.counts.unchanged ?? 0;
+        importMetrics.revenue.conflictsSurfaced = (revenueResult.mergeConflicts ?? []).length;
+      }
+      if (costResult) {
+        importMetrics.expenditure.inserted = costResult.counts.inserted;
+        importMetrics.expenditure.updated = costResult.counts.updated;
+        importMetrics.expenditure.unchanged = costResult.counts.unchanged ?? 0;
+        importMetrics.expenditure.conflictsSurfaced = (costResult.mergeConflicts ?? []).length;
+      }
+      importMetrics.threeWayMergeEnabled = threeWayMergeEnabled();
+      importMetrics.durationMs = Date.now() - importStartedAt;
+      emitImportMetrics(importMetrics);
 
       // ── S09: Write category_revenue_allocations ──
       // Persist extracted J_cat values from the normalization result.

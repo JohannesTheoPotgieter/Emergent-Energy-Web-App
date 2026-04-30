@@ -2437,6 +2437,23 @@ export function PreviewCommitStep({
     }>;
   } | null>(null);
   const [conflictResolutions, setConflictResolutions] = useState<Record<string, "keep" | "import">>({});
+  const [v2ConflictsWarning, setV2ConflictsWarning] = useState<{
+    message: string;
+    conflicts: Array<{
+      rowKey: string;
+      displayLabel: string;
+      section: "PLAN" | "REVENUE" | "EXPENDITURE";
+      canonicalSource: string;
+      fields: Array<{
+        fieldName: string;
+        baselineValue: string | null;
+        currentAppValue: string | null;
+        uploadedValue: string | null;
+        mergeCase: "UNCHANGED" | "AUTO_ACCEPT_FILE" | "KEEP_APP" | "CONFLICT" | "NEW_FIELD";
+      }>;
+    }>;
+  } | null>(null);
+  const [v2ConflictResolutions, setV2ConflictResolutions] = useState<Record<string, "keep_app" | "accept_file">>({});
   const [previouslyDeletedWarning, setPreviouslyDeletedWarning] = useState<{ message: string; deletedBy: string; deletedAt: string } | null>(null);
   const [recencyWarning, setRecencyWarning] = useState<{ message: string; error: string } | null>(null);
   const [blockerWarning, setBlockerWarning] = useState<{
@@ -2491,10 +2508,16 @@ export function PreviewCommitStep({
   const doCommit = async (extraBody: Record<string, any> = {}) => {
     setCommitting(true);
     try {
+      // Auto-include any pending v2 conflict resolutions (preserves manual edits across multi-step flows).
+      const hasV2Resolutions = Object.keys(v2ConflictResolutions).length > 0;
+      const body: Record<string, any> = { ...extraBody };
+      if (hasV2Resolutions && body.v2ConflictResolutions === undefined) {
+        body.v2ConflictResolutions = v2ConflictResolutions;
+      }
       const res = await fetch(`/api/smart-import/${runId}/commit`, {
         method: "POST",
         headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ ...extraBody }),
+        body: JSON.stringify(body),
       });
       if (res.ok) {
         const data = await res.json();
@@ -2506,6 +2529,8 @@ export function PreviewCommitStep({
         setBlockerWarning(null);
         setPlanEditConflict(null);
         setDuplicateProjectWarning(null);
+        setV2ConflictsWarning(null);
+        setV2ConflictResolutions({});
         toast({ title: "Import Committed!", description: "Data has been imported successfully" });
       } else {
         const err = await res.json().catch(() => ({ error: "Commit failed" }));
@@ -2518,6 +2543,16 @@ export function PreviewCommitStep({
             }
             setConflictResolutions(defaults);
           }
+        } else if (err.error === "v2_conflicts_detected") {
+          setV2ConflictsWarning({ message: err.message, conflicts: err.conflicts || [] });
+          // Pre-populate resolutions: default each conflict to "keep_app" (preserve manual edit).
+          const defaults: Record<string, "keep_app" | "accept_file"> = {};
+          for (const row of err.conflicts || []) {
+            for (const field of row.fields || []) {
+              defaults[`${row.rowKey}::${field.fieldName}`] = "keep_app";
+            }
+          }
+          setV2ConflictResolutions(defaults);
         } else if (err.error === "previously_deleted") {
           setPreviouslyDeletedWarning({ message: err.message, deletedBy: err.deletedBy, deletedAt: err.deletedAt });
         } else if (err.error === "import_older_than_existing" || err.error === "import_equal_date") {
@@ -2553,6 +2588,7 @@ export function PreviewCommitStep({
   const handleCommitForce = () => doCommit({ acknowledgeManualEdits: true });
   const handleCommitPreserve = () => doCommit({ preserveManualEdits: true });
   const handleCommitWithResolutions = () => doCommit({ conflictResolutions });
+  const handleCommitWithV2Resolutions = () => doCommit({ v2ConflictResolutions });
   const handleCommitRecreate = () => doCommit({ forceRecreate: true });
   const handleCommitConfirmNewProject = () => doCommit({ confirmNewProject: true });
   const handleCommitSelectProject = (projectId: number) => doCommit({ projectId });
@@ -3144,6 +3180,232 @@ export function PreviewCommitStep({
           </CardContent>
         </Card>
       )}
+
+      {v2ConflictsWarning && (() => {
+        // Flatten nested (rowKey, fieldName) pairs so each cell is a single conflict entry.
+        const flatConflicts = v2ConflictsWarning.conflicts.flatMap((row) =>
+          row.fields.map((field) => ({
+            rowKey: row.rowKey,
+            displayLabel: row.displayLabel,
+            section: row.section,
+            canonicalSource: row.canonicalSource,
+            field,
+            key: `${row.rowKey}::${field.fieldName}`,
+          })),
+        );
+        const totalCount = flatConflicts.length;
+        const keepCount = flatConflicts.filter((c) => v2ConflictResolutions[c.key] === "keep_app").length;
+        const acceptCount = flatConflicts.filter((c) => v2ConflictResolutions[c.key] === "accept_file").length;
+        const unresolvedCount = totalCount - keepCount - acceptCount;
+        const allResolved = unresolvedCount === 0 && totalCount > 0;
+        const sectionBadgeColor = (section: string) => {
+          if (section === "PLAN") return "bg-blue-50 text-blue-700 border-blue-200";
+          if (section === "REVENUE") return "bg-emerald-50 text-emerald-700 border-emerald-200";
+          return "bg-purple-50 text-purple-700 border-purple-200";
+        };
+        return (
+          <Card className="border-amber-300 bg-amber-50" data-testid="v2-conflicts-warning">
+            <CardContent className="p-4">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+                <div className="flex-1 space-y-3">
+                  <div>
+                    <p className="text-sm font-medium text-amber-800">{safeStr(v2ConflictsWarning.message)}</p>
+                    <p className="text-xs text-amber-600 mt-1">
+                      Both your in-app edits and the source workbook changed since the last import. Choose which value to keep for each field.
+                    </p>
+                  </div>
+
+                  <div className="border border-amber-200 rounded-lg overflow-hidden bg-white">
+                    <div className="px-3 py-2 bg-amber-100/50 border-b border-amber-200 flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-xs font-semibold text-amber-800">
+                        {totalCount} conflict{totalCount !== 1 ? "s" : ""} detected — choose how to resolve each
+                      </p>
+                      <div className="flex gap-2 text-[10px]">
+                        <span className="text-emerald-700 font-medium" data-testid="v2-counter-keep">
+                          {keepCount} keeping edits
+                        </span>
+                        <span className="text-slate-400">|</span>
+                        <span className="text-red-600 font-medium" data-testid="v2-counter-accept">
+                          {acceptCount} accepting source
+                        </span>
+                        <span className="text-slate-400">|</span>
+                        <span className="text-slate-500 font-medium" data-testid="v2-counter-unresolved">
+                          {unresolvedCount} unresolved
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="max-h-[420px] overflow-y-auto divide-y divide-slate-100">
+                      {flatConflicts.map((c) => {
+                        const resolution = v2ConflictResolutions[c.key];
+                        const isKeep = resolution === "keep_app";
+                        const isAccept = resolution === "accept_file";
+                        return (
+                          <div
+                            key={c.key}
+                            className={`p-3 ${isKeep ? "bg-emerald-50/30" : isAccept ? "bg-red-50/20" : "bg-white"}`}
+                            data-testid={`v2-conflict-row-${c.key}`}
+                          >
+                            <div className="flex flex-wrap items-center gap-2 mb-2">
+                              <Badge variant="outline" className={`text-[10px] ${sectionBadgeColor(c.section)}`}>
+                                {c.section}
+                              </Badge>
+                              <span className="text-xs font-medium text-slate-700 truncate" title={c.displayLabel}>
+                                {c.displayLabel}
+                              </span>
+                              <span className="font-mono font-bold text-xs text-slate-800">{c.field.fieldName}</span>
+                              {c.field.mergeCase === "KEEP_APP" && (
+                                <Badge
+                                  variant="outline"
+                                  className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200"
+                                  title="Manual edit detected — your value will be preserved by default"
+                                >
+                                  Manual edit detected
+                                </Badge>
+                              )}
+                              {c.field.mergeCase === "CONFLICT" && (
+                                <Badge
+                                  variant="outline"
+                                  className="text-[10px] bg-amber-50 text-amber-700 border-amber-200"
+                                  title="Both source and your edit changed — choose one"
+                                >
+                                  Both diverged
+                                </Badge>
+                              )}
+                            </div>
+
+                            <div className="grid grid-cols-3 gap-2 text-xs mb-2">
+                              <div className="rounded border border-slate-200 bg-slate-50 px-2 py-1.5">
+                                <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-0.5">Baseline</div>
+                                <div className="font-mono text-slate-600 break-words">
+                                  {c.field.baselineValue ?? <span className="text-slate-300 italic">empty</span>}
+                                </div>
+                              </div>
+                              <div className={`rounded border px-2 py-1.5 ${isKeep ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-white"}`}>
+                                <div className="text-[10px] uppercase tracking-wide text-emerald-700 font-semibold mb-0.5">
+                                  Your edit
+                                </div>
+                                <div className="font-mono text-slate-800 break-words">
+                                  {c.field.currentAppValue ?? <span className="text-slate-300 italic">empty</span>}
+                                </div>
+                              </div>
+                              <div className={`rounded border px-2 py-1.5 ${isAccept ? "border-red-300 bg-red-50" : "border-slate-200 bg-white"}`}>
+                                <div className="text-[10px] uppercase tracking-wide text-red-600 font-semibold mb-0.5">
+                                  Source workbook
+                                </div>
+                                <div className="font-mono text-slate-800 break-words">
+                                  {c.field.uploadedValue ?? <span className="text-slate-300 italic">empty</span>}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-colors border ${
+                                  isKeep
+                                    ? "bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
+                                    : "bg-white text-emerald-700 border-emerald-300 hover:bg-emerald-50"
+                                }`}
+                                onClick={() =>
+                                  setV2ConflictResolutions((prev) => ({ ...prev, [c.key]: "keep_app" }))
+                                }
+                                data-testid={`btn-v2-keep-${c.key}`}
+                              >
+                                Keep my edit
+                              </button>
+                              <button
+                                type="button"
+                                className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-colors border ${
+                                  isAccept
+                                    ? "bg-red-600 text-white border-red-600 hover:bg-red-700"
+                                    : "bg-white text-red-700 border-red-300 hover:bg-red-50"
+                                }`}
+                                onClick={() =>
+                                  setV2ConflictResolutions((prev) => ({ ...prev, [c.key]: "accept_file" }))
+                                }
+                                data-testid={`btn-v2-accept-${c.key}`}
+                              >
+                                Accept source value
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="px-3 py-2 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center gap-3">
+                      <span className="text-[10px] text-slate-500 font-medium">Apply to All:</span>
+                      <button
+                        type="button"
+                        className="text-[10px] font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded transition-colors"
+                        onClick={() => {
+                          const all: Record<string, "keep_app" | "accept_file"> = {};
+                          for (const c of flatConflicts) all[c.key] = "keep_app";
+                          setV2ConflictResolutions(all);
+                        }}
+                        data-testid="btn-v2-keep-all"
+                      >
+                        Keep all my edits
+                      </button>
+                      <button
+                        type="button"
+                        className="text-[10px] font-semibold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-2.5 py-1 rounded transition-colors"
+                        onClick={() => {
+                          const all: Record<string, "keep_app" | "accept_file"> = {};
+                          for (const c of flatConflicts) all[c.key] = "accept_file";
+                          setV2ConflictResolutions(all);
+                        }}
+                        data-testid="btn-v2-accept-all"
+                      >
+                        Accept all source values
+                      </button>
+                      <span className="text-[10px] text-slate-400 ml-auto">
+                        Recommended: Keep your edits unless the source workbook has the corrected values.
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 mt-3">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setV2ConflictsWarning(null);
+                        setV2ConflictResolutions({});
+                      }}
+                      data-testid="btn-v2-cancel"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="bg-emerald-600 hover:bg-emerald-700"
+                      onClick={() => {
+                        if (!allResolved) {
+                          toast({
+                            title: "Resolve all conflicts",
+                            description: `${unresolvedCount} conflict(s) still need a decision.`,
+                            variant: "destructive",
+                          });
+                          return;
+                        }
+                        handleCommitWithV2Resolutions();
+                      }}
+                      disabled={committing || !allResolved}
+                      data-testid="btn-v2-resolve-commit"
+                    >
+                      {committing ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : null}
+                      Resolve & Commit
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {recencyWarning && (
         <Card className="border-amber-300 bg-amber-50" data-testid="recency-warning">

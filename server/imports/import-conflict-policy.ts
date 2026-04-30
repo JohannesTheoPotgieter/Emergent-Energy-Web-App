@@ -7,7 +7,19 @@
  * 2. Conflicts with frontend edits MUST be detected before commit
  * 3. Users MUST make an explicit keep/overwrite decision per conflict
  * 4. All conflict decisions MUST be audit-logged
+ *
+ * As of PR2C the conflict-detection backbone is the 3-way merge engine
+ * in `server/lib/import/merge-engine.ts`. The classic two-way
+ * `detectConflicts()` function is preserved as a backwards-compatible
+ * wrapper but now consumes the merge engine internally so its output
+ * carries snapshot values for richer wizard rendering.
  */
+
+import {
+  mergeRow,
+  type FieldValue,
+  type RowMergeResult as MergeRowResult,
+} from "../lib/import/merge-engine";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -32,6 +44,12 @@ export interface ImportConflict {
 
 export interface ConflictField {
   fieldName: string;
+  /**
+   * The value at the time of the previous import — the 3-way "common
+   * ancestor". Optional so callers using the legacy two-way path keep
+   * working (the field is undefined when no snapshot is available).
+   */
+  snapshotValue?: FieldValue;
   existingValue: string | number | null;
   importValue: string | number | null;
 }
@@ -67,6 +85,13 @@ export interface ImportBatchResult {
  * - The existing row has been modified AFTER the import snapshot was taken
  * - At least one field value differs
  *
+ * Internally this delegates to the 3-way merge engine — when the existing
+ * row carries an `importSnapshot`, the engine's `mergeRow()` is used to
+ * produce a richer result (snapshot/db/file) and only true 3-way
+ * conflicts are surfaced. When no snapshot is present (legacy path) the
+ * engine still produces a sound 2-way result by treating the snapshot as
+ * equal to the current DB row.
+ *
  * @param importRows - Rows from the Excel import
  * @param existingRows - Matching rows from the database
  * @param snapshotTimestamp - When the import snapshot was captured
@@ -74,8 +99,8 @@ export interface ImportBatchResult {
  * @param compareFields - Fields to compare for conflicts
  */
 export function detectConflicts(
-  importRows: Record<string, any>[],
-  existingRows: Array<{ id: number; updatedAt: Date; [key: string]: any }>,
+  importRows: Record<string, unknown>[],
+  existingRows: Array<{ id: number; updatedAt: Date; [key: string]: unknown }>,
   snapshotTimestamp: Date,
   matchFields: string[],
   compareFields: string[],
@@ -94,32 +119,68 @@ export function detectConflicts(
     if (!existing) continue; // New row, no conflict
     if (existing.updatedAt <= snapshotTimestamp) continue; // Not modified since snapshot
 
-    const conflictingFields: ConflictField[] = [];
+    // Coerce DB-row values into the merge engine's FieldValue domain. The
+    // engine accepts string | number | boolean | null | undefined; anything
+    // else (Date, Buffer, …) is stringified so equality remains meaningful.
+    const fileRow: Record<string, FieldValue> = {};
+    const existingRowMerge: Record<string, FieldValue> & { id: number } = { id: existing.id };
+    const importSnapshotRaw = (existing as { importSnapshot?: unknown }).importSnapshot;
+    const importSnapshot = isPlainSnapshot(importSnapshotRaw) ? importSnapshotRaw : null;
+
     for (const field of compareFields) {
-      const importVal = importRow[field] ?? null;
-      const existingVal = existing[field] ?? null;
-      if (String(importVal) !== String(existingVal)) {
-        conflictingFields.push({
-          fieldName: field,
-          existingValue: existingVal,
-          importValue: importVal,
-        });
-      }
+      fileRow[field] = coerceFieldValue(importRow[field]);
+      existingRowMerge[field] = coerceFieldValue(existing[field]);
     }
 
-    if (conflictingFields.length > 0) {
-      conflicts.push({
-        importRowId: importRow.idempotencyKey ?? matchKey,
-        existingRowId: existing.id,
-        table,
-        conflictingFields,
-        existingUpdatedAt: existing.updatedAt,
-        importProcessedAt: new Date(),
-      });
-    }
+    const merge: MergeRowResult = mergeRow({
+      // detectConflicts has no row-hash plumbing in legacy callers; use the
+      // synthetic match key as a stable-within-batch identifier.
+      rowHash: `legacy::${matchKey}`,
+      fileRow,
+      existingRow: existingRowMerge,
+      importSnapshot,
+      fields: compareFields,
+    });
+
+    if (!merge.hasConflicts) continue;
+
+    const conflictingFields: ConflictField[] = merge.conflicts.map(c => ({
+      fieldName: c.fieldName,
+      snapshotValue: c.snapshotValue,
+      existingValue: toScalar(c.existingValue),
+      importValue: toScalar(c.importValue),
+    }));
+
+    conflicts.push({
+      importRowId: typeof importRow.idempotencyKey === "string"
+        ? importRow.idempotencyKey
+        : matchKey,
+      existingRowId: existing.id,
+      table,
+      conflictingFields,
+      existingUpdatedAt: existing.updatedAt,
+      importProcessedAt: new Date(),
+    });
   }
 
   return conflicts;
+}
+
+function coerceFieldValue(v: unknown): FieldValue {
+  if (v === null || v === undefined) return null;
+  if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") return v;
+  if (v instanceof Date) return v.toISOString();
+  return String(v);
+}
+
+function toScalar(v: FieldValue): string | number | null {
+  if (v === null || v === undefined) return null;
+  if (typeof v === "boolean") return v ? "true" : "false";
+  return v;
+}
+
+function isPlainSnapshot(v: unknown): v is Record<string, FieldValue> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
 // ---------------------------------------------------------------------------
