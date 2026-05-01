@@ -2,6 +2,18 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db } from "../db";
 import { normalizedCostLines, projectInfo } from "@shared/schema";
 import { adaptCostToExpense } from "../lib/data-merge";
+import { applyOverridesOverlay } from "../lib/manual-overrides";
+import { EXPENDITURE_TRACKED_FIELDS } from "@shared/excel-vs-app/contract";
+
+/**
+ * Optional per-call flag for the canonical readers. Operational tabs
+ * pass `applyOverrides: true` so manual overrides display on top of
+ * the live column. Reporting and replica callers omit it (default
+ * off) so they keep reading raw Excel-truth.
+ */
+export interface CostLineReadOpts {
+  applyOverrides?: boolean;
+}
 
 export type CostLineageType = "IMPORTED" | "MANUAL_IDEMPOTENT" | "MANUAL_FALLBACK";
 
@@ -128,30 +140,45 @@ export async function resolveProjectIdByName(projectNameInput: string): Promise<
   return null;
 }
 
-export async function getCanonicalProjectCostLines(projectId: number): Promise<CanonicalCostLineRow[]> {
+export async function getCanonicalProjectCostLines(
+  projectId: number,
+  opts?: CostLineReadOpts,
+): Promise<CanonicalCostLineRow[]> {
   const [projectMap, rows] = await Promise.all([
     projectNameMapById(),
     db.select().from(normalizedCostLines).where(and(eq(normalizedCostLines.projectId, projectId), and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)))),
   ]);
   const dedupedRows = dedupeCurrentLineage(rows as RawCostLineRow[]);
-
-  const resolvedName = projectMap.get(projectId) || (dedupedRows[0]?.projectName ?? "");
-  return dedupedRows.map((r) => toCanonicalUiRow(r, resolvedName));
+  // Optional overlay: applies manual_overrides[field].value on top of
+  // the live column for tracked fields. Operational-tab consumers
+  // pass `applyOverrides: true`; reporting / replica readers leave it
+  // off and see raw Excel-truth.
+  const overlaidRows = opts?.applyOverrides
+    ? (applyOverridesOverlay(dedupedRows as any[], EXPENDITURE_TRACKED_FIELDS) as RawCostLineRow[])
+    : dedupedRows;
+  const resolvedName = projectMap.get(projectId) || (overlaidRows[0]?.projectName ?? "");
+  return overlaidRows.map((r) => toCanonicalUiRow(r, resolvedName));
 }
 
-export async function getCanonicalAllCurrentCostLines(): Promise<CanonicalCostLineRow[]> {
+export async function getCanonicalAllCurrentCostLines(opts?: CostLineReadOpts): Promise<CanonicalCostLineRow[]> {
   const [projectMap, rows] = await Promise.all([
     projectNameMapById(),
     db.select().from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
   ]);
   const dedupedRows = dedupeCurrentLineage(rows as RawCostLineRow[]);
-  return dedupedRows.map((r) => toCanonicalUiRow(r, projectMap.get(r.projectId) || r.projectName || ""));
+  const overlaidRows = opts?.applyOverrides
+    ? (applyOverridesOverlay(dedupedRows as any[], EXPENDITURE_TRACKED_FIELDS) as RawCostLineRow[])
+    : dedupedRows;
+  return overlaidRows.map((r) => toCanonicalUiRow(r, projectMap.get(r.projectId) || r.projectName || ""));
 }
 
-export async function getCanonicalProjectCostLinesByName(projectName: string): Promise<{ projectId: number | null; rows: CanonicalCostLineRow[] }> {
+export async function getCanonicalProjectCostLinesByName(
+  projectName: string,
+  opts?: CostLineReadOpts,
+): Promise<{ projectId: number | null; rows: CanonicalCostLineRow[] }> {
   const projectId = await resolveProjectIdByName(projectName);
   if (!projectId) return { projectId: null, rows: [] };
-  const rows = await getCanonicalProjectCostLines(projectId);
+  const rows = await getCanonicalProjectCostLines(projectId, opts);
   return { projectId, rows };
 }
 

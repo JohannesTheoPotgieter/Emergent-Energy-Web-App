@@ -22,6 +22,8 @@ const RevenueTrackingReplicaPage = lazyWithRetry(() => import("@/pages/revenue-t
 const ExpenditureBreakdownReplicaPage = lazyWithRetry(() => import("@/pages/expenditure-breakdown"));
 const ProgramPlanReplicaPage = lazyWithRetry(() => import("@/pages/program-plan"));
 const ManualOverridesPage = lazyWithRetry(() => import("@/pages/manual-overrides"));
+const ExcelVsAppProgramPage = lazyWithRetry(() => import("@/pages/excel-vs-app"));
+const ExcelVsAppProjectPage = lazyWithRetry(() => import("@/pages/excel-vs-app-project"));
 const CostTracker = lazyWithRetry(() => import("@/pages/cos"));
 const CosAnalysisPage = lazyWithRetry(() => import("@/pages/cos-analysis"));
 const ProjectDetailPage = lazyWithRetry(() => import("@/pages/project-detail"));
@@ -159,6 +161,8 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   ExpenditureBreakdownReplicaPage,
   ProgramPlanReplicaPage,
   ManualOverridesPage,
+  ExcelVsAppProgramPage,
+  ExcelVsAppProjectPage,
   MyWorkAdminSettingsPage,
   QmDashboardPage,
   EngineeringDashboardPage,

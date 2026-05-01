@@ -44,6 +44,11 @@ import {
   type ManualOverridesMap,
 } from "./merge-engine";
 import { threeWayMergeEnabled } from "./feature-flags";
+import {
+  PLAN_TRACKED_FIELDS,
+  REVENUE_TRACKED_FIELDS,
+  EXPENDITURE_TRACKED_FIELDS,
+} from "@shared/excel-vs-app/contract";
 
 /**
  * Gated wrapper around `mergeRowEngine`. When the kill switch
@@ -129,42 +134,18 @@ export interface IncrementalCommitResult {
 // PR2C — hash-based merge-engine bookkeeping
 // ---------------------------------------------------------------------------
 
-/** Fields that participate in the 3-way merge for the PLAN section. Includes
- * the PR2A tracker columns alongside the legacy compare list so manual edits
- * on those fields are protected on re-import. */
-const PLAN_MERGE_FIELDS = [
-  "startDate", "endDate", "duration",
-  "actualStart", "actualEnd", "actualDuration",
-  "ownerName", "status", "percentComplete", "expectedPctComplete",
-  "description", "isMilestone", "outlineNumber",
-  // PR2A tracker columns.
-  "lead", "resource1", "resource2", "trackerComments", "workDays",
-] as const;
-
-/** Fields that participate in the 3-way merge for the REVENUE section. */
-const REVENUE_MERGE_FIELDS = [
-  "amountExVat", "vat", "milestonePercent", "invoiceNumber", "invoiceDate",
-  "expectedPaymentDate", "paidDate", "inBankDate", "status",
-  // Manual-flag protection — these MUST flow through the merge engine so
-  // manual edits become conflicts when the workbook would change them.
-  "invoiceDateConfirmed", "paidDateConfirmed",
-  // PR2A tracker column.
-  "milestoneNotes",
-] as const;
-
-/** Fields that participate in the 3-way merge for the EXPENDITURE section. */
-const EXPENDITURE_MERGE_FIELDS = [
-  "amountExVat", "budgetQty", "budgetRate", "budgetTotal", "budgetCos",
-  "invoiceNumber", "invoiceDate", "approvedDate", "paidDate",
-  "forecastPaymentDate", "poNumber", "costCategory", "status",
-  "counterpartyName", "revenueRecognitionAmount",
-  // Manual-flag protection — see REVENUE_MERGE_FIELDS comment.
-  "invoiceDateConfirmed", "paidDateConfirmed", "cosRealised",
-  "cashflowConfirmed", "noRevenueLinked",
-  // PR2A tracker columns.
-  "actualQty", "actualRate", "comments", "checkFlag",
-  "savingOverrun", "usdExchangeRate", "pricePerWatt",
-] as const;
+/**
+ * Per-section merge-field lists used by the 3-way merge engine.
+ *
+ * As of 2026-04-30 these are aliases of the canonical lists exported
+ * from `shared/excel-vs-app/contract.ts`. Local aliases stay so
+ * existing callers in this file don't need a second rename pass.
+ * Adding a tracked field is done in the contract — these update
+ * automatically.
+ */
+const PLAN_MERGE_FIELDS = PLAN_TRACKED_FIELDS;
+const REVENUE_MERGE_FIELDS = REVENUE_TRACKED_FIELDS;
+const EXPENDITURE_MERGE_FIELDS = EXPENDITURE_TRACKED_FIELDS;
 
 /** Per-row hash-based merge outcome surfaced by the executor.
  *

@@ -13,6 +13,7 @@ import { registerExceptionDashboardRoutes } from './exception-dashboard.routes';
 import { registerDocumentManagementRoutes } from './document-management.routes';
 import { registerDocumentCommentsRoutes } from './document-comments.routes';
 import { registerTrackerReplicaRoutes } from './tracker-replica.routes';
+import { registerExcelVsAppRoutes } from './excel-vs-app.routes';
 
 export async function registerRoutes(httpServer: Server, app: Express) {
   registerTemplateGovernanceRoutes(app);
@@ -27,5 +28,6 @@ export async function registerRoutes(httpServer: Server, app: Express) {
   registerDocumentManagementRoutes(app);
   registerDocumentCommentsRoutes(app);
   registerTrackerReplicaRoutes(app);
+  registerExcelVsAppRoutes(app);
   return registerLegacyRoutes(httpServer, app);
 }

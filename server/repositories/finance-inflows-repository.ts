@@ -110,7 +110,7 @@ export class FinanceInflowsRepository {
       .map(({ row, name }) => adaptRevenueToInflow(row, resolve(name)));
   }
 
-  async getProgramInflowsByProject(projectName: string): Promise<any[]> {
+  async getProgramInflowsByProject(projectName: string, opts?: { applyOverrides?: boolean }): Promise<any[]> {
     const { adaptRevenueToInflow } = await import("../lib/data-merge");
     // Resolve project_id for the requested name so we also catch legacy rows
     // where project_name is NULL but project_id is set.
@@ -132,7 +132,18 @@ export class FinanceInflowsRepository {
         or(projectNameFilter, projectIdFilter),
       ));
 
-    return (matched as any[]).map((r: any) => adaptRevenueToInflow(r, projectName));
+    // Optional read-side overlay (workstream B). When enabled, applies
+    // manual_overrides on top of the live column for tracked revenue
+    // fields BEFORE adaptRevenueToInflow runs, so the adapter's derived
+    // fields (e.g. inBank computation) react to the operator's edits.
+    let rawRows = matched as any[];
+    if (opts?.applyOverrides) {
+      const { applyOverridesOverlay } = await import("../lib/manual-overrides");
+      const { REVENUE_TRACKED_FIELDS } = await import("@shared/excel-vs-app/contract");
+      rawRows = applyOverridesOverlay(rawRows, REVENUE_TRACKED_FIELDS);
+    }
+
+    return rawRows.map((r: any) => adaptRevenueToInflow(r, projectName));
   }
 
   async updateProgramInflowFields(id: number, fields: Record<string, any>, audit?: AuditCtx): Promise<any | undefined> {
