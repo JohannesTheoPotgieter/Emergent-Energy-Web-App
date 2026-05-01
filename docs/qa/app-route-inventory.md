@@ -1,10 +1,10 @@
 # App Route Inventory
 
-**Generated** 2026-04-30T09:57:42.251Z by `script/test-routes.ts`. Do not hand-edit — regenerate with `npm run test:routes`.
+**Generated** 2026-05-01T06:54:50.907Z by `script/test-routes.ts`. Do not hand-edit — regenerate with `npm run test:routes`.
 
 Source: `client/src/config/page-registry.ts`
 
-Total registered paths: 169
+Total registered paths: 172
 
 | Path | Title | Nav group | Permission |
 |------|-------|-----------|------------|
@@ -21,6 +21,7 @@ Total registered paths: 169
 | `/admin/control-center` | — | — | — |
 | `/admin/data-migration-status` | — | SYSTEM | admin |
 | `/admin/database-migration` | — | — | database_migration |
+| `/admin/document-management` | — | SYSTEM | documents_admin |
 | `/admin/document-types` | — | SYSTEM | admin_roles |
 | `/admin/email-linker-dev` | — | SYSTEM | admin_roles |
 | `/admin/eng-templates` | — | SYSTEM | admin |
@@ -135,16 +136,18 @@ Total registered paths: 169
 | `/priorities` | — | PRIORITIES | company_priorities |
 | `/priorities/:id` | — | — | company_priorities |
 | `/procurement` | — | PROJECT_MANAGEMENT | execution_board |
+| `/program/excel-vs-app` | — | FINANCE | excel_vs_app |
 | `/project-create` | — | — | project_creation |
 | `/project-lifecycle` | — | — | — |
 | `/project-lifecycle/client-overview` | — | — | pd_clients |
 | `/project-lifecycle/latest-updates` | — | — | projects |
 | `/project-lifecycle/stage-gates` | — | — | lifecycle |
-| `/project/:projectName` | — | PROJECT_MANAGEMENT | projects |
 | `/project/:projectName/financial-linking` | — | PROJECT_MANAGEMENT | financial_linking |
-| `/project/:projectName/gate/:stageCode` | — | PROJECT_MANAGEMENT | stage_lifecycle |
+| `/project/id/:projectId` | — | PROJECT_MANAGEMENT | projects |
+| `/project/id/:projectId/gate/:stageCode` | — | PROJECT_MANAGEMENT | stage_lifecycle |
 | `/projects` | — | PROJECT_MANAGEMENT | projects |
 | `/projects/:projectId/documents` | — | — | projects |
+| `/projects/:projectId/excel-vs-app` | — | FINANCE | excel_vs_app |
 | `/projects/:projectId/expenditure-breakdown` | — | FINANCE | cos |
 | `/projects/:projectId/manual-overrides` | — | FINANCE | revenue_tracker |
 | `/projects/:projectId/program-plan` | — | PROJECT_MANAGEMENT | work_items |
