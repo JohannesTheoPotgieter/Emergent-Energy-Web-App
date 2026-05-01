@@ -9,14 +9,15 @@
  * the per-project page; this view is read-only summary.
  */
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowRight, AlertTriangle, CheckCircle2, FileText } from "lucide-react";
+import { ArrowRight, AlertTriangle, CheckCircle2, FileText, RefreshCw } from "lucide-react";
 
 interface SectionSummary {
   verified: number;
@@ -42,10 +43,11 @@ interface ProgramResponse {
 type FilterMode = "all" | "unverified" | "verified" | "none";
 
 export default function ExcelVsAppProgramPage() {
+  const queryClient = useQueryClient();
   const [filter, setFilter] = useState<FilterMode>("all");
   const [search, setSearch] = useState("");
 
-  const { data, isLoading, isError, error } = useQuery<ProgramResponse>({
+  const { data, isLoading, isError, error, dataUpdatedAt, isFetching } = useQuery<ProgramResponse>({
     queryKey: ["excel-vs-app-program"],
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/excel-vs-app/program");
@@ -53,6 +55,10 @@ export default function ExcelVsAppProgramPage() {
       return res.json();
     },
   });
+
+  function handleRefresh() {
+    queryClient.invalidateQueries({ queryKey: ["excel-vs-app-program"] });
+  }
 
   const filtered = useMemo(() => {
     const rows = data?.projects ?? [];
@@ -83,13 +89,23 @@ export default function ExcelVsAppProgramPage() {
 
   return (
     <div className="container mx-auto py-6 space-y-6 max-w-7xl">
-      <div className="flex items-start justify-between">
-        <div>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1">
           <h1 className="text-2xl font-semibold tracking-tight">Excel vs App</h1>
           <p className="text-sm text-muted-foreground mt-1">
             Per-project comparison of the live app state against the most recent Tracker workbook import.
             Unverified drift means the live value disagrees with Excel and no operator override explains the change — those need an explicit decision.
           </p>
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isFetching}>
+            <RefreshCw className={"h-3.5 w-3.5 mr-1 " + (isFetching ? "animate-spin" : "")} /> Refresh
+          </Button>
+          {dataUpdatedAt > 0 && (
+            <span className="text-[11px] text-muted-foreground">
+              Updated {new Date(dataUpdatedAt).toLocaleTimeString()}
+            </span>
+          )}
         </div>
       </div>
 
