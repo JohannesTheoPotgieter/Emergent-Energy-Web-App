@@ -22,9 +22,10 @@
  * 13_Project Photos is shared across the company).
  */
 
-import { useMemo } from "react";
+import { useMemo, useState, Fragment } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -33,8 +34,11 @@ import {
   usePublicFolderTaxonomy,
   useProjectFolders,
 } from "@/hooks/use-document-management-admin";
+import { FolderFiles } from "@/components/documents/FolderFiles";
 import type { FolderTaxonomy } from "@shared/schema";
-import { CheckCircle2, AlertTriangle, FolderTree, FolderX } from "lucide-react";
+import {
+  CheckCircle2, AlertTriangle, FolderTree, FolderX, ChevronDown, ChevronRight,
+} from "lucide-react";
 
 interface ProjectFolder {
   id: number;
@@ -70,6 +74,7 @@ export function DisciplinePanel({
 }: DisciplinePanelProps) {
   const taxonomy = usePublicFolderTaxonomy();
   const folders = useProjectFolders(projectId);
+  const [expandedFolderId, setExpandedFolderId] = useState<number | null>(null);
 
   const isLoading = taxonomy.isLoading || folders.isLoading;
   const hasError = Boolean(taxonomy.error || folders.error);
@@ -179,6 +184,7 @@ export function DisciplinePanel({
           <Table data-testid={`discipline-table-${discipline}`}>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-6"></TableHead>
                 <TableHead>Folder</TableHead>
                 <TableHead>Lifecycle</TableHead>
                 <TableHead>Stage</TableHead>
@@ -187,49 +193,82 @@ export function DisciplinePanel({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map(({ taxonomy: t, folder }) => (
-                <TableRow
-                  key={t.internalKey}
-                  data-testid={`discipline-row-${discipline}-${t.internalKey}`}
-                >
-                  <TableCell>
-                    <div>
-                      <div className="text-sm font-medium">{t.displayName}</div>
-                      {t.parentKey && (
-                        <div className="text-[10px] font-mono text-muted-foreground">
-                          under {t.parentKey}
+              {rows.map(({ taxonomy: t, folder }) => {
+                const expandable = Boolean(folder?.id && folder.itemId);
+                const isExpanded = expandable && expandedFolderId === folder!.id;
+                return (
+                  <Fragment key={t.internalKey}>
+                    <TableRow data-testid={`discipline-row-${discipline}-${t.internalKey}`}>
+                      <TableCell>
+                        {expandable && (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-6 w-6"
+                            onClick={() =>
+                              setExpandedFolderId(isExpanded ? null : folder!.id)
+                            }
+                            data-testid={`btn-folder-toggle-${discipline}-${t.internalKey}`}
+                          >
+                            {isExpanded ? (
+                              <ChevronDown className="h-3.5 w-3.5" />
+                            ) : (
+                              <ChevronRight className="h-3.5 w-3.5" />
+                            )}
+                          </Button>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div>
+                          <div className="text-sm font-medium">{t.displayName}</div>
+                          {t.parentKey && (
+                            <div className="text-[10px] font-mono text-muted-foreground">
+                              under {t.parentKey}
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-xs">
-                    {t.lifecycleMode === "pre_construction" && "Pre-construction"}
-                    {t.lifecycleMode === "full_lifecycle" && "Full lifecycle"}
-                    {t.lifecycleMode === "both" && "Both"}
-                  </TableCell>
-                  <TableCell className="text-xs font-mono">{t.stageCode ?? "—"}</TableCell>
-                  <TableCell className="text-xs">
-                    {folder?.webUrl ? (
-                      <a
-                        href={folder.webUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="font-mono text-emerald-700 hover:underline"
-                        data-testid={`discipline-link-${discipline}-${t.internalKey}`}
-                      >
-                        {folder.sharepointPath ?? "Open in SharePoint"}
-                      </a>
-                    ) : (
-                      <span className="font-mono text-muted-foreground">
-                        {folder?.sharepointPath ?? "—"}
-                      </span>
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        {t.lifecycleMode === "pre_construction" && "Pre-construction"}
+                        {t.lifecycleMode === "full_lifecycle" && "Full lifecycle"}
+                        {t.lifecycleMode === "both" && "Both"}
+                      </TableCell>
+                      <TableCell className="text-xs font-mono">{t.stageCode ?? "—"}</TableCell>
+                      <TableCell className="text-xs">
+                        {folder?.webUrl ? (
+                          <a
+                            href={folder.webUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-mono text-emerald-700 hover:underline"
+                            data-testid={`discipline-link-${discipline}-${t.internalKey}`}
+                          >
+                            {folder.sharepointPath ?? "Open in SharePoint"}
+                          </a>
+                        ) : (
+                          <span className="font-mono text-muted-foreground">
+                            {folder?.sharepointPath ?? "—"}
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <DisciplineFolderStatus folder={folder} />
+                      </TableCell>
+                    </TableRow>
+                    {isExpanded && folder?.id && (
+                      <TableRow data-testid={`discipline-files-row-${discipline}-${t.internalKey}`}>
+                        <TableCell colSpan={6} className="bg-muted/30 p-0">
+                          <FolderFiles
+                            projectId={projectId}
+                            folderId={folder.id}
+                            testIdSuffix={`${discipline}-${t.internalKey}`}
+                          />
+                        </TableCell>
+                      </TableRow>
                     )}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <DisciplineFolderStatus folder={folder} />
-                  </TableCell>
-                </TableRow>
-              ))}
+                  </Fragment>
+                );
+              })}
             </TableBody>
           </Table>
         )}
