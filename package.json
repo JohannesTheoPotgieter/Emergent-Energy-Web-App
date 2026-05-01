@@ -35,6 +35,7 @@
     "test:coverage": "vitest run -c qa/vitest.config.ts --coverage",
     "drift:report": "tsx scripts/find-drift.ts",
     "encrypt-bank-details": "tsx scripts/encrypt-existing-bank-details.ts",
+    "seed:test-users": "tsx scripts/seed-test-users.ts",
     "check:redirects": "tsx scripts/check-redirect-chains.ts",
     "check:routes-migration": "tsx scripts/check-routes-migration.ts",
     "check:duplicate-routes": "tsx scripts/check-duplicate-routes.ts",
