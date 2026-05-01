@@ -1,17 +1,20 @@
 /**
  * Tracker Replica Repository.
  *
- * Read-only data access for the per-project Tracker workbook replicas:
- *   - Revenue Tracking sheet
- *   - Expenditure Breakdown sheet
- *   - Project Plan sheet
+ * Data access for the per-project Tracker workbook replicas
+ * (Revenue Tracking / Expenditure Breakdown / Project Plan) AND the
+ * Excel-vs-App diff system that consumes the same data.
  *
  * All reads filter active rows only:
  *   - effective_to IS NULL on temporal tables (normalized_*, tracker_*).
  *   - deleted_at IS NULL on work_items (per CLAUDE.md note about retired
  *     writable view; soft-delete is the active filter).
  *
- * No writes — these screens are read-only in v1.
+ * Writes are limited to the diff system's drift-resolution pipeline:
+ * `createDriftApprovalRequest` files a `financial_edit_requests` row
+ * routed to the section's reviewers. The drift-resolve cell-edit
+ * helpers (apply / clear) live in `server/lib/manual-overrides.ts`
+ * because they're shared between the import engine and the diff page.
  */
 import { eq, and, isNull, asc } from "drizzle-orm";
 import {
@@ -20,11 +23,13 @@ import {
   normalizedCostLineActuals,
   trackerRevenueSummary,
   trackerProjectMetadata,
+  financialEditRequests,
   type NormalizedRevenueLine,
   type NormalizedCostLine,
   type NormalizedCostLineActual,
   type TrackerRevenueSummary,
   type TrackerProjectMetadata,
+  type FinancialEditRequest,
 } from "@shared/schema/finance";
 import { workItems, type WorkItem } from "@shared/schema/tasks";
 import { projectInfo } from "@shared/schema/projects";
@@ -542,6 +547,83 @@ export class TrackerReplicaRepository {
     });
   }
 }
+
+// ---------------------------------------------------------------------------
+// Drift-resolution writes (diff page)
+// ---------------------------------------------------------------------------
+//
+// These small methods exist so excel-vs-app.routes.ts doesn't bypass the
+// repository layer (CLAUDE.md "Repository layer: CRUD in routes must
+// go through server/repositories/*"). Each is a thin wrapper around a
+// single SQL operation; the routes file owns the orchestration.
+
+export class TrackerReplicaWriteRepository {
+  private _dbInstance?: typeof db;
+
+  constructor(dbInstance?: typeof db) {
+    this._dbInstance = dbInstance;
+  }
+
+  private get dbInstance(): typeof db {
+    return this._dbInstance || db;
+  }
+
+  /** Look up a project's name by id. Returns null when no project_info
+   *  row matches — caller surfaces a 404. */
+  async getProjectName(projectId: number): Promise<string | null> {
+    const [row] = await this.dbInstance
+      .select({ projectName: projectInfo.projectName })
+      .from(projectInfo)
+      .where(eq(projectInfo.id, projectId))
+      .limit(1);
+    return row?.projectName ?? null;
+  }
+
+  /** Read the work_item.ownerUserId for the PLAN-section owner
+   *  exception. Returns null when the row doesn't exist. */
+  async getWorkItemOwnerUserId(workItemId: number): Promise<number | null> {
+    const [row] = await this.dbInstance
+      .select({ ownerUserId: workItems.ownerUserId })
+      .from(workItems)
+      .where(eq(workItems.id, workItemId))
+      .limit(1);
+    return row?.ownerUserId ?? null;
+  }
+
+  /** File a drift-approval request into the financial_edit_requests
+   *  queue. The section's reviewers see it via the diff page's
+   *  pending-requests panel. */
+  async createDriftApprovalRequest(input: {
+    projectId: number;
+    projectName: string;
+    requestedByUserId: number;
+    editType: string;
+    editPayload: string;
+    editSummary: string;
+    affectsRevenue: boolean;
+    affectsExpenditure: boolean;
+  }): Promise<FinancialEditRequest> {
+    const [saved] = await this.dbInstance
+      .insert(financialEditRequests)
+      .values({
+        projectName: input.projectName,
+        projectId: input.projectId,
+        requestedByUserId: input.requestedByUserId,
+        editType: input.editType,
+        editTarget: "excel_vs_app",
+        editPayload: input.editPayload,
+        editSummary: input.editSummary,
+        isCriticalPath: false,
+        affectsRevenue: input.affectsRevenue,
+        affectsExpenditure: input.affectsExpenditure,
+        affectsQuality: false,
+      })
+      .returning();
+    return saved as FinancialEditRequest;
+  }
+}
+
+export const trackerReplicaWriteRepository = new TrackerReplicaWriteRepository();
 
 export interface ProgramDriftRow {
   projectId: number;
