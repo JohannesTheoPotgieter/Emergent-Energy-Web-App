@@ -30,12 +30,10 @@ import { z } from "zod";
 import { eq, and, isNull, asc } from "drizzle-orm";
 import { requireAuth } from "../middleware/requireAuth";
 import { requirePermission } from "../permission-middleware";
-import { trackerReplicaRepository } from "../repositories/tracker-replica-repository";
+import { trackerReplicaRepository, trackerReplicaWriteRepository } from "../repositories/tracker-replica-repository";
 import { ApiError, badRequest, notFound, forbidden, serverError } from "../lib/api-error";
 import { validateBody } from "../middleware/validateBody";
 import { db } from "../db";
-import { projectInfo } from "@shared/schema/projects";
-import { financialEditRequests } from "@shared/schema/finance";
 import { applyManualOverride, clearManualOverride } from "../lib/manual-overrides";
 import { recordOverride } from "../lib/audit/diff-engine";
 import { emitExcelVsAppMetric } from "../lib/excel-vs-app-metrics";
@@ -81,13 +79,8 @@ function coerceToOverrideValue(v: unknown): string | number | boolean | null {
 /** PLAN-section owner exception: a work-item owner can resolve drift
  *  on their own task even without the PROGRAM_MANAGER role. */
 async function actorOwnsWorkItem(actorId: number, workItemId: number): Promise<boolean> {
-  const { workItems } = await import("@shared/schema/tasks");
-  const [row] = await db
-    .select({ ownerUserId: workItems.ownerUserId })
-    .from(workItems)
-    .where(eq(workItems.id, workItemId))
-    .limit(1);
-  return row?.ownerUserId === actorId;
+  const ownerUserId = await trackerReplicaWriteRepository.getWorkItemOwnerUserId(workItemId);
+  return ownerUserId === actorId;
 }
 
 /** Derive the metric `section` from a heterogeneous entry list. Returns
@@ -181,19 +174,15 @@ export function registerExcelVsAppRoutes(app: Express): void {
       try {
         const exists = await trackerReplicaRepository.projectExists(projectId);
         if (!exists) throw notFound("Project");
-        const [detail, projectRow] = await Promise.all([
+        const [detail, projectName] = await Promise.all([
           trackerReplicaRepository.getDriftDetail(projectId),
-          db
-            .select({ projectName: projectInfo.projectName })
-            .from(projectInfo)
-            .where(eq(projectInfo.id, projectId))
-            .limit(1),
+          trackerReplicaWriteRepository.getProjectName(projectId),
         ]);
         const totalU = detail.summary.PLAN.unverified + detail.summary.REVENUE.unverified + detail.summary.EXPENDITURE.unverified;
         const totalV = detail.summary.PLAN.verified + detail.summary.REVENUE.verified + detail.summary.EXPENDITURE.verified;
         const totalLegacy = detail.legacyRowsWithoutSnapshot.PLAN + detail.legacyRowsWithoutSnapshot.REVENUE + detail.legacyRowsWithoutSnapshot.EXPENDITURE;
         emitExcelVsAppMetric({ op: "view", scope: "project", projectId, unverifiedTotal: totalU, verifiedTotal: totalV, legacyRowsWithoutSnapshot: totalLegacy });
-        res.json({ ...detail, projectName: projectRow[0]?.projectName ?? null });
+        res.json({ ...detail, projectName });
       } catch (err) {
         if (err instanceof ApiError) throw err;
         console.error("[excel-vs-app] project error:", err);
@@ -246,12 +235,9 @@ export function registerExcelVsAppRoutes(app: Express): void {
         }
 
         // Project name for audit-log tagging on resolved entries.
-        const [projectRow] = await db
-          .select({ projectName: projectInfo.projectName })
-          .from(projectInfo)
-          .where(eq(projectInfo.id, projectId))
-          .limit(1);
-        const projectName = projectRow?.projectName ?? `Project ${projectId}`;
+        const projectName =
+          (await trackerReplicaWriteRepository.getProjectName(projectId)) ??
+          `Project ${projectId}`;
 
         if (body.action === "accept_excel") {
           // Atomic bulk: any failure rolls back the whole batch so a
@@ -370,22 +356,16 @@ export function registerExcelVsAppRoutes(app: Express): void {
           reason: body.reason,
         });
         const editSummary = `Excel-vs-App ${body.section} drift approval requested for ${body.entries.length} field(s). Reason: ${body.reason}`;
-        const [saved] = await db
-          .insert(financialEditRequests)
-          .values({
-            projectName,
-            projectId,
-            requestedByUserId: actorId ?? 0,
-            editType,
-            editTarget: "excel_vs_app",
-            editPayload,
-            editSummary,
-            isCriticalPath: false,
-            affectsRevenue: body.section === "REVENUE",
-            affectsExpenditure: body.section === "EXPENDITURE",
-            affectsQuality: false,
-          })
-          .returning();
+        const saved = await trackerReplicaWriteRepository.createDriftApprovalRequest({
+          projectId,
+          projectName,
+          requestedByUserId: actorId ?? 0,
+          editType,
+          editPayload,
+          editSummary,
+          affectsRevenue: body.section === "REVENUE",
+          affectsExpenditure: body.section === "EXPENDITURE",
+        });
         try {
           await recordOverride({
             actorUserId: actorId ?? undefined,
