@@ -68,6 +68,18 @@ function actorCanResolveSection(role: string | undefined, section: DiffSection):
   return allowed.includes(role);
 }
 
+/** PLAN-section owner exception: a work-item owner can resolve drift
+ *  on their own task even without the PROGRAM_MANAGER role. */
+async function actorOwnsWorkItem(actorId: number, workItemId: number): Promise<boolean> {
+  const { workItems } = await import("@shared/schema/tasks");
+  const [row] = await db
+    .select({ ownerUserId: workItems.ownerUserId })
+    .from(workItems)
+    .where(eq(workItems.id, workItemId))
+    .limit(1);
+  return row?.ownerUserId === actorId;
+}
+
 /** Derive the metric `section` from a heterogeneous entry list. Returns
  *  the single section all entries belong to, or "MIXED" when the bulk
  *  spans multiple sections (only possible on the
@@ -218,17 +230,25 @@ export function registerExcelVsAppRoutes(app: Express): void {
         // accept_excel / keep_app actions. request_approval is broader
         // (any viewer can request) — the approval flow itself enforces
         // the section roles when the reviewer acts.
+        //
+        // PLAN-section exception: a work-item owner can resolve drift
+        // on their own task even without PROGRAM_MANAGER. The check
+        // looks up work_items.ownerUserId per row.
         if (body.action === "accept_excel" || body.action === "keep_app") {
           for (const e of body.entries) {
             const section = sectionForTable(e.table);
             if (!section) {
               throw badRequest(`Unknown table: ${e.table}`);
             }
-            if (!actorCanResolveSection(actorRole, section)) {
-              throw forbidden(
-                `Role ${actorRole ?? "unknown"} cannot resolve drift on the ${section} section`,
-              );
+            if (actorCanResolveSection(actorRole, section)) continue;
+            // PLAN owner-on-row exception.
+            if (section === "PLAN" && actorId != null) {
+              const ownsRow = await actorOwnsWorkItem(actorId, e.rowId);
+              if (ownsRow) continue;
             }
+            throw forbidden(
+              `Role ${actorRole ?? "unknown"} cannot resolve drift on the ${section} section`,
+            );
           }
         }
 
