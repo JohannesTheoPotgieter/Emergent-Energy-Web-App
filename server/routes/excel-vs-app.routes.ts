@@ -38,6 +38,7 @@ import { projectInfo } from "@shared/schema/projects";
 import { financialEditRequests } from "@shared/schema/finance";
 import { applyManualOverride, clearManualOverride } from "../lib/manual-overrides";
 import { recordOverride } from "../lib/audit/diff-engine";
+import { emitExcelVsAppMetric } from "../lib/excel-vs-app-metrics";
 import {
   DRIFT_RESOLVER_ROLES,
   type DiffSection,
@@ -65,6 +66,23 @@ function actorCanResolveSection(role: string | undefined, section: DiffSection):
   if (!role) return false;
   const allowed = DRIFT_RESOLVER_ROLES[section] as readonly string[];
   return allowed.includes(role);
+}
+
+/** Derive the metric `section` from a heterogeneous entry list. Returns
+ *  the single section all entries belong to, or "MIXED" when the bulk
+ *  spans multiple sections (only possible on the
+ *  cross-section `accept_excel` / `keep_app` paths). */
+function deriveSection(
+  entries: Array<{ table: string }>,
+): "PLAN" | "REVENUE" | "EXPENDITURE" | "MIXED" | undefined {
+  const sections = new Set<DiffSection>();
+  for (const e of entries) {
+    const s = sectionForTable(e.table);
+    if (s) sections.add(s);
+  }
+  if (sections.size === 0) return undefined;
+  if (sections.size === 1) return sections.values().next().value;
+  return "MIXED";
 }
 
 const BULK_ENTRY_CAP = 50;
@@ -136,6 +154,9 @@ export function registerExcelVsAppRoutes(app: Express): void {
         );
         // Default sort: most unverified drift first.
         summaries.sort((a, b) => b.unverified - a.unverified || b.verified - a.verified);
+        const totalU = summaries.reduce((s, r) => s + r.unverified, 0);
+        const totalV = summaries.reduce((s, r) => s + r.verified, 0);
+        emitExcelVsAppMetric({ op: "view", scope: "program", unverifiedTotal: totalU, verifiedTotal: totalV });
         res.json({ projects: summaries });
       } catch (err) {
         if (err instanceof ApiError) throw err;
@@ -163,6 +184,10 @@ export function registerExcelVsAppRoutes(app: Express): void {
             .where(eq(projectInfo.id, projectId))
             .limit(1),
         ]);
+        const totalU = detail.summary.PLAN.unverified + detail.summary.REVENUE.unverified + detail.summary.EXPENDITURE.unverified;
+        const totalV = detail.summary.PLAN.verified + detail.summary.REVENUE.verified + detail.summary.EXPENDITURE.verified;
+        const totalLegacy = detail.legacyRowsWithoutSnapshot.PLAN + detail.legacyRowsWithoutSnapshot.REVENUE + detail.legacyRowsWithoutSnapshot.EXPENDITURE;
+        emitExcelVsAppMetric({ op: "view", scope: "project", projectId, unverifiedTotal: totalU, verifiedTotal: totalV, legacyRowsWithoutSnapshot: totalLegacy });
         res.json({ ...detail, projectName: projectRow[0]?.projectName ?? null });
       } catch (err) {
         if (err instanceof ApiError) throw err;
@@ -251,6 +276,15 @@ export function registerExcelVsAppRoutes(app: Express): void {
               console.warn("[excel-vs-app] accept_excel audit failed:", auditErr.message);
             }
           }
+          emitExcelVsAppMetric({
+            op: "resolve",
+            action: "accept_excel",
+            projectId,
+            section: deriveSection(body.entries),
+            count: resolved,
+            actorRole: actorRole ?? null,
+            actorUserId: actorId,
+          });
           res.json({ status: "ok", action: body.action, resolved });
           return;
         }
@@ -292,6 +326,15 @@ export function registerExcelVsAppRoutes(app: Express): void {
               console.warn("[excel-vs-app] keep_app audit failed:", auditErr.message);
             }
           }
+          emitExcelVsAppMetric({
+            op: "resolve",
+            action: "keep_app",
+            projectId,
+            section: deriveSection(body.entries),
+            count: resolved,
+            actorRole: actorRole ?? null,
+            actorUserId: actorId,
+          });
           res.json({ status: "ok", action: body.action, resolved });
           return;
         }
@@ -343,6 +386,15 @@ export function registerExcelVsAppRoutes(app: Express): void {
         } catch (auditErr: any) {
           console.warn("[excel-vs-app] request_approval audit failed:", auditErr.message);
         }
+        emitExcelVsAppMetric({
+          op: "resolve",
+          action: "request_approval",
+          projectId,
+          section: body.section,
+          count: body.entries.length,
+          actorRole: actorRole ?? null,
+          actorUserId: actorId,
+        });
         res.json({
           status: "pending_approval",
           requestId: saved.id,
