@@ -147,7 +147,11 @@ describe("engineering task filters", () => {
     expect(metrics.unassignedTasks.map((item) => item.id)).toEqual([2]);
     expect(metrics.blockedTasks.map((item) => item.id)).toEqual([2]);
     expect(metrics.reviewNeededTasks.map((item) => item.id)).toEqual([3]);
-    expect(metrics.approvalPendingTasks.map((item) => item.id)).toEqual([4]);
+    // `provide_feedback` (task #3) is in BOTH REVIEW_STATUSES and
+    // TICKET_APPROVAL_STATUSES (per shared/engineering-ticket-status.ts:13)
+    // so it surfaces in both review-needed and approval-pending. Task #4
+    // (`needs_approval`) is approval-only.
+    expect(metrics.approvalPendingTasks.map((item) => item.id)).toEqual([3, 4]);
     expect(metrics.projectLinkedDeliverableTasks.map((item) => item.id)).toEqual([1]);
     expect(metrics.microsoftLinkedTasks.map((item) => item.id)).toEqual([1]);
     expect(metrics.microsoftActionTasks.map((item) => item.id)).toEqual([1]);
