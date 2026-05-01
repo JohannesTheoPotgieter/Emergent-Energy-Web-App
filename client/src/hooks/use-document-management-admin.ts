@@ -224,6 +224,7 @@ export interface ProvisionRowReport {
   driveId?: string | null;
   itemId?: string | null;
   sharepointPath?: string | null;
+  webUrl?: string | null;
   error?: string;
 }
 
@@ -273,6 +274,7 @@ interface ProjectFoldersResponse {
     driveId: string | null;
     itemId: string | null;
     sharepointPath: string | null;
+    webUrl: string | null;
     provisionedAt: string | null;
     lastVerifiedAt: string | null;
     verifyError: string | null;
@@ -296,6 +298,62 @@ export function useVerifyProjectFolders() {
     },
     onSuccess: (_data, projectId) => {
       qc.invalidateQueries({ queryKey: [`/api/projects/${projectId}/folders`] });
+    },
+  });
+}
+
+// =========================================================================
+// Company SharePoint roots (Phase 3.1)
+// =========================================================================
+
+export interface CompanySharepointRoot {
+  id: number;
+  kind: string;
+  displayName: string;
+  driveId: string | null;
+  rootItemId: string | null;
+  rootPath: string;
+  sortOrder: number;
+  active: boolean;
+}
+
+interface CompanyRootsResponse {
+  roots: CompanySharepointRoot[];
+}
+
+const COMPANY_ROOTS_KEY = ["/api/admin/company-sharepoint-roots"] as const;
+
+export function useCompanySharepointRoots(enabled = true) {
+  return useQuery<CompanyRootsResponse>({
+    queryKey: COMPANY_ROOTS_KEY,
+    queryFn: getQueryFn({ on401: "throw" }),
+    enabled,
+  });
+}
+
+export interface UpsertCompanyRootPayload {
+  kind: string;
+  displayName: string;
+  driveId?: string | null;
+  rootItemId?: string | null;
+  rootPath: string;
+  sortOrder?: number;
+  active?: boolean;
+}
+
+export function useUpsertCompanyRoot() {
+  const qc = useQueryClient();
+  return useMutation<{ row: CompanySharepointRoot }, Error, UpsertCompanyRootPayload>({
+    mutationFn: async ({ kind, ...rest }) => {
+      const res = await apiRequest(
+        "PUT",
+        `/api/admin/company-sharepoint-roots/${encodeURIComponent(kind)}`,
+        rest,
+      );
+      return res.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: COMPANY_ROOTS_KEY });
     },
   });
 }

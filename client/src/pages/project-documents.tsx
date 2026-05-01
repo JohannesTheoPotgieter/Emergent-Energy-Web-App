@@ -17,7 +17,7 @@
  * project-documents surface going forward.
  */
 
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useParams } from "wouter";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
@@ -44,6 +44,16 @@ export default function ProjectDocumentsPage() {
   const taxonomy = usePublicFolderTaxonomy();
   const folders = useProjectFolders(isValid ? projectId : null);
 
+  // Deep-linkable tab — readers from other pages (department dashboards,
+  // project drawers, etc.) can route to /projects/:id/documents?discipline=ENGINEERING
+  // and land on the matching tab.
+  const initialDiscipline = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    const params = new URLSearchParams(window.location.search);
+    return params.get("discipline");
+  }, []);
+  const [activeTab, setActiveTab] = useState<string | null>(initialDiscipline);
+
   const disciplinesWithRows = useMemo(() => {
     const rows = taxonomy.data?.taxonomy ?? [];
     const present = new Set<string>();
@@ -54,6 +64,41 @@ export default function ProjectDocumentsPage() {
     }
     return LIFECYCLE_DEPARTMENTS.filter((d) => present.has(d));
   }, [taxonomy.data]);
+
+  // Per-discipline folder counts for the tab badges.
+  const folderCountByDiscipline = useMemo(() => {
+    const tax = taxonomy.data?.taxonomy ?? [];
+    const out = new Map<string, { total: number; provisioned: number }>();
+    const folderMap = new Map(
+      (folders.data?.folders ?? []).map((f) => [f.taxonomyKey, f] as const),
+    );
+    for (const r of tax) {
+      if (!r.active) continue;
+      const ds = (r.disciplines ?? []) as string[];
+      for (const d of ds) {
+        const stat = out.get(d) ?? { total: 0, provisioned: 0 };
+        stat.total += 1;
+        const f = folderMap.get(r.internalKey);
+        if (f?.itemId) stat.provisioned += 1;
+        out.set(d, stat);
+      }
+    }
+    return out;
+  }, [taxonomy.data, folders.data]);
+
+  // Default to the deep-linked discipline if it actually has rows; otherwise
+  // fall back to the first discipline with content, then "ALL".
+  useEffect(() => {
+    if (activeTab) return;
+    if (
+      initialDiscipline &&
+      (disciplinesWithRows as readonly string[]).includes(initialDiscipline)
+    ) {
+      setActiveTab(initialDiscipline);
+      return;
+    }
+    setActiveTab(disciplinesWithRows[0] ?? "ALL");
+  }, [activeTab, initialDiscipline, disciplinesWithRows]);
 
   const overallSummary = useMemo(() => {
     const allRows = (taxonomy.data?.taxonomy ?? []).filter((r) => r.active);
@@ -105,16 +150,37 @@ export default function ProjectDocumentsPage() {
       </div>
 
       <div className="mt-4">
-        <Tabs defaultValue={disciplinesWithRows[0] ?? "ALL"} className="w-full">
+        <Tabs
+          value={activeTab ?? "ALL"}
+          onValueChange={setActiveTab}
+          className="w-full"
+        >
           <TabsList className="flex flex-wrap h-auto gap-1">
             <TabsTrigger value="ALL" data-testid="tab-discipline-ALL">
               All disciplines
             </TabsTrigger>
-            {disciplinesWithRows.map((d) => (
-              <TabsTrigger key={d} value={d} data-testid={`tab-discipline-${d}`}>
-                {d}
-              </TabsTrigger>
-            ))}
+            {disciplinesWithRows.map((d) => {
+              const stat = folderCountByDiscipline.get(d);
+              return (
+                <TabsTrigger
+                  key={d}
+                  value={d}
+                  data-testid={`tab-discipline-${d}`}
+                  className="gap-2"
+                >
+                  <span>{d}</span>
+                  {stat && (
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] px-1.5 py-0"
+                      data-testid={`tab-discipline-count-${d}`}
+                    >
+                      {stat.provisioned}/{stat.total}
+                    </Badge>
+                  )}
+                </TabsTrigger>
+              );
+            })}
           </TabsList>
 
           <TabsContent value="ALL" className="mt-4">

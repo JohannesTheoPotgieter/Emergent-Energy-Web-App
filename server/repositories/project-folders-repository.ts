@@ -69,6 +69,7 @@ export interface UpsertProjectFolderInput {
   driveId?: string | null;
   itemId?: string | null;
   sharepointPath?: string | null;
+  webUrl?: string | null;
   provisionedByUserId?: number | null;
   provisionedAt?: Date | null;
 }
@@ -89,6 +90,7 @@ export async function upsertProjectFolder(input: UpsertProjectFolderInput): Prom
         driveId: input.driveId ?? existing.driveId,
         itemId: input.itemId ?? existing.itemId,
         sharepointPath: input.sharepointPath ?? existing.sharepointPath,
+        webUrl: input.webUrl ?? existing.webUrl,
         provisionedAt: input.provisionedAt ?? existing.provisionedAt ?? now,
         provisionedByUserId: input.provisionedByUserId ?? existing.provisionedByUserId,
         lastVerifiedAt: now,
@@ -108,6 +110,7 @@ export async function upsertProjectFolder(input: UpsertProjectFolderInput): Prom
       driveId: input.driveId ?? null,
       itemId: input.itemId ?? null,
       sharepointPath: input.sharepointPath ?? null,
+      webUrl: input.webUrl ?? null,
       provisionedAt: input.provisionedAt ?? now,
       provisionedByUserId: input.provisionedByUserId ?? null,
       lastVerifiedAt: now,

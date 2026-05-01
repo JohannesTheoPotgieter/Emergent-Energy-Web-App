@@ -47,9 +47,12 @@ import {
   useProvisionProjectFolders,
   useProjectFolders,
   useVerifyProjectFolders,
+  useCompanySharepointRoots,
+  useUpsertCompanyRoot,
   type CreateTaxonomyPayload,
   type CreateRequirementPayload,
   type ProvisionResult,
+  type CompanySharepointRoot,
 } from "@/hooks/use-document-management-admin";
 import { useProjectsSummary } from "@/hooks/use-projects-summary";
 import { isSuperAdmin } from "@/lib/access-control";
@@ -899,6 +902,10 @@ function ProvisioningTab() {
   const folders = useProjectFolders(projectId);
   const provision = useProvisionProjectFolders();
   const verify = useVerifyProjectFolders();
+  const companyRoots = useCompanySharepointRoots();
+  const activeProjectsRoot = (companyRoots.data?.roots ?? []).find(
+    (r) => r.kind === "active_projects",
+  );
 
   const projectName = useMemo(() => {
     if (!projectId || !projectsSummary) return null;
@@ -946,8 +953,11 @@ function ProvisioningTab() {
   }
 
   return (
-    <Card>
-      <CardContent className="pt-6 space-y-4">
+    <div className="space-y-4">
+      <CompanyRootCard root={activeProjectsRoot} isLoading={companyRoots.isLoading} />
+
+      <Card>
+        <CardContent className="pt-6 space-y-4">
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1">
             <Label>Project</Label>
@@ -1034,6 +1044,173 @@ function ProvisioningTab() {
             folders={folders.data?.folders ?? []}
             isLoading={folders.isLoading}
           />
+        )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function CompanyRootCard(props: {
+  root: CompanySharepointRoot | undefined;
+  isLoading: boolean;
+}) {
+  const { root, isLoading } = props;
+  const upsert = useUpsertCompanyRoot();
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({
+    displayName: "Active Projects",
+    rootPath: "01 - Clients/01 - active projects (1)",
+    driveId: "",
+    rootItemId: "",
+  });
+
+  const configured = Boolean(root?.driveId);
+
+  function startEdit() {
+    if (root) {
+      setForm({
+        displayName: root.displayName,
+        rootPath: root.rootPath,
+        driveId: root.driveId ?? "",
+        rootItemId: root.rootItemId ?? "",
+      });
+    }
+    setEditing(true);
+  }
+
+  async function save() {
+    try {
+      await upsert.mutateAsync({
+        kind: "active_projects",
+        displayName: form.displayName,
+        driveId: form.driveId.trim() || null,
+        rootItemId: form.rootItemId.trim() || null,
+        rootPath: form.rootPath,
+      });
+      toast({ title: "Saved", description: "Active Projects root updated." });
+      setEditing(false);
+    } catch (err) {
+      toast({
+        title: "Save failed",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      });
+    }
+  }
+
+  return (
+    <Card data-testid="active-projects-root-card">
+      <CardContent className="pt-6 space-y-3">
+        <div className="flex items-center gap-2">
+          <FolderTree className="h-4 w-4 text-muted-foreground" />
+          <h3 className="text-sm font-semibold">Active Projects SharePoint root</h3>
+          {isLoading ? (
+            <Badge variant="outline" className="ml-auto text-[10px]">
+              Loading…
+            </Badge>
+          ) : configured ? (
+            <Badge
+              variant="outline"
+              className="ml-auto text-[10px] bg-emerald-50 text-emerald-700"
+              data-testid="active-projects-root-status"
+            >
+              Configured
+            </Badge>
+          ) : (
+            <Badge
+              variant="outline"
+              className="ml-auto text-[10px] bg-amber-50 text-amber-800"
+              data-testid="active-projects-root-status"
+            >
+              Not configured — provisioning blocked
+            </Badge>
+          )}
+        </div>
+
+        {!editing ? (
+          <>
+            <div className="text-xs text-muted-foreground space-y-0.5">
+              <div>
+                <span className="font-medium">Path:</span>{" "}
+                <span className="font-mono">{root?.rootPath ?? "—"}</span>
+              </div>
+              <div>
+                <span className="font-medium">Drive ID:</span>{" "}
+                <span className="font-mono">{root?.driveId ?? "—"}</span>
+              </div>
+              <div>
+                <span className="font-medium">Root item ID:</span>{" "}
+                <span className="font-mono">{root?.rootItemId ?? "—"}</span>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={startEdit}
+              data-testid="btn-edit-active-projects-root"
+            >
+              <Pencil className="h-3.5 w-3.5 mr-1" />
+              {configured ? "Edit" : "Configure"}
+            </Button>
+          </>
+        ) : (
+          <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label>Display name</Label>
+                <Input
+                  value={form.displayName}
+                  onChange={(e) => setForm((s) => ({ ...s, displayName: e.target.value }))}
+                  data-testid="input-active-projects-root-display-name"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>SharePoint path</Label>
+                <Input
+                  value={form.rootPath}
+                  onChange={(e) => setForm((s) => ({ ...s, rootPath: e.target.value }))}
+                  data-testid="input-active-projects-root-path"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Graph drive ID</Label>
+                <Input
+                  value={form.driveId}
+                  onChange={(e) => setForm((s) => ({ ...s, driveId: e.target.value }))}
+                  placeholder="b!xxxxxx..."
+                  data-testid="input-active-projects-root-drive-id"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Graph item ID (parent folder)</Label>
+                <Input
+                  value={form.rootItemId}
+                  onChange={(e) => setForm((s) => ({ ...s, rootItemId: e.target.value }))}
+                  placeholder="01XXXXXXXXXXXXX..."
+                  data-testid="input-active-projects-root-item-id"
+                />
+              </div>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              The drive + item IDs come from Graph Explorer or the SharePoint URL. In dev (mock
+              connector), placeholder IDs are auto-seeded.
+            </p>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                onClick={save}
+                disabled={upsert.isPending}
+                data-testid="btn-save-active-projects-root"
+              >
+                {upsert.isPending && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
+                Save
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
         )}
       </CardContent>
     </Card>

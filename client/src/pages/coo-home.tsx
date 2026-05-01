@@ -4,6 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { getQueryFn } from "@/lib/queryClient";
 import { useGatesPipeline, useGatesHandovers } from "@/hooks/use-gates";
 import { ApprovalQueueCard } from "@/components/controlled-documents";
+import { PortfolioReadinessTile } from "@/components/documents/PortfolioReadinessTile";
+import { ManagedDocumentApprovalQueue } from "@/components/documents/ManagedDocumentApprovalQueue";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { PageLayout } from "@/components/layout";
@@ -124,9 +126,15 @@ export default function CooHome() {
         <div className="xl:col-span-3 space-y-4">
           {/* Top row: approvals + priorities */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <ApprovalQueueCard />
+            <ManagedDocumentApprovalQueue title="Document approvals waiting on you" />
             <PrioritiesCard rows={priorities} loading={prioritiesQuery.isLoading} />
           </div>
+
+          {/* Documents readiness across the portfolio (D6) */}
+          <PortfolioReadinessTile />
+
+          {/* Legacy controlled-documents queue, kept until destructive cleanup */}
+          <ApprovalQueueCard />
 
           {/* Finance KPI strip — revenue, CoS, outstanding, margin */}
           <FinanceKpiStrip kpis={execQuery.data?.kpis} loading={execQuery.isLoading} />
