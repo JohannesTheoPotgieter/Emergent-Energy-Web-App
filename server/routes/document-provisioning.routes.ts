@@ -39,6 +39,8 @@ import {
   verifyProjectFolders,
 } from "../services/folder-provisioning-service";
 import { listFoldersForProject } from "../repositories/project-folders-repository";
+import { listManagedDocumentsByFolder } from "../repositories/managed-documents-repository";
+import { listApprovalsForDocument } from "../services/managed-document-approvals-service";
 import { FOLDER_LIFECYCLE_MODES } from "@shared/schema/documents";
 
 const projectIdParam = z.coerce.number().int().positive();
@@ -109,6 +111,49 @@ export function registerDocumentProvisioningRoutes(app: Express): void {
         if (/no company sharepoint root|no driveId/i.test(msg)) throw badRequest(msg);
         console.error("[doc-provisioning] provision error:", err);
         throw serverError(msg);
+      }
+    },
+  );
+
+  // ====================================================================
+  // GET /api/projects/:projectId/folders/:folderId/files
+  // (D6 Phase 7) — managed_documents in a provisioned folder, joined
+  // with their latest approval rows so the UI can render status badges
+  // without a separate round trip per file.
+  // ====================================================================
+  app.get(
+    "/api/projects/:projectId/folders/:folderId/files",
+    requireAuth,
+    requirePermission("documents", "view"),
+    async (req: Request, res: Response) => {
+      const parsedProject = projectIdParam.safeParse(req.params.projectId);
+      const parsedFolder = z.coerce.number().int().positive().safeParse(req.params.folderId);
+      if (!parsedProject.success) throw badRequest("Invalid projectId");
+      if (!parsedFolder.success) throw badRequest("Invalid folderId");
+      try {
+        // Verify the folder belongs to the project so we can't be probed
+        // for arbitrary projectFolders ids.
+        const folders = await listFoldersForProject(parsedProject.data);
+        const folder = folders.find((f) => f.id === parsedFolder.data);
+        if (!folder) throw notFound("Folder not found for this project");
+
+        const docs = await listManagedDocumentsByFolder(folder.id);
+        const filesWithApprovals = await Promise.all(
+          docs.map(async (d) => ({
+            document: d,
+            approvals: await listApprovalsForDocument(d.id),
+          })),
+        );
+        res.json({
+          projectId: parsedProject.data,
+          folderId: folder.id,
+          taxonomyKey: folder.taxonomyKey,
+          files: filesWithApprovals,
+        });
+      } catch (err) {
+        if (err instanceof ApiError) throw err;
+        console.error("[doc-provisioning] folder files error:", err);
+        throw serverError("Failed to load folder files");
       }
     },
   );
