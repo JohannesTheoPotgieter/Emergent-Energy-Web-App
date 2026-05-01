@@ -424,6 +424,140 @@ export class TrackerReplicaRepository {
       },
     };
   }
+
+  /**
+   * Program-wide drift summary in a single round of queries.
+   *
+   * Replaces the N+1 pattern (`Promise.all(projects.map(getDriftDetail))`)
+   * the route used to issue. Reads each canonical table ONCE for all
+   * projects, buckets by `project_id`, and classifies fields in JS.
+   *
+   * For a 50-project portfolio with Mondi-sized data this is roughly
+   * 3 + 50 = 53 round trips replaced by 4 round trips, plus identical
+   * per-row JS classification cost. The dominant cost on large
+   * portfolios was query latency, not classification time.
+   *
+   * Returns the same per-project rows the program endpoint already
+   * exposes — no API contract change.
+   */
+  async getProgramDriftSummary(): Promise<ProgramDriftRow[]> {
+    const { valuesEqual } = await import("../lib/import/merge-engine");
+    const {
+      PLAN_TRACKED_FIELDS,
+      REVENUE_TRACKED_FIELDS,
+      EXPENDITURE_TRACKED_FIELDS,
+    } = await import("@shared/excel-vs-app/contract");
+
+    function readJsonbObject(v: unknown): Record<string, any> {
+      if (!v || typeof v !== "object" || Array.isArray(v)) return {};
+      return v as Record<string, any>;
+    }
+
+    function summariseRows(
+      rows: Array<Record<string, any>>,
+      trackedFields: readonly string[],
+    ): { verified: number; unverified: number; legacyRows: number } {
+      let verified = 0, unverified = 0, legacyRows = 0;
+      for (const row of rows) {
+        const snapshot = readJsonbObject(row.importSnapshot);
+        const overrides = readJsonbObject(row.manualOverrides);
+        if (row.importSnapshot == null) legacyRows++;
+        for (const f of trackedFields) {
+          const live = row[f] ?? null;
+          const snap = snapshot[f] ?? null;
+          const overrideEntry = overrides[f];
+          const hasOverride = overrideEntry != null && typeof overrideEntry === "object" && "value" in overrideEntry;
+          const display = hasOverride ? overrideEntry.value : live;
+          if (valuesEqual(display as any, snap as any)) continue;
+          if (hasOverride) verified++;
+          else unverified++;
+        }
+      }
+      return { verified, unverified, legacyRows };
+    }
+
+    function bucketBy<T extends { projectId: number }>(rows: T[]): Map<number, T[]> {
+      const m = new Map<number, T[]>();
+      for (const r of rows) {
+        const k = r.projectId;
+        const bucket = m.get(k);
+        if (bucket) bucket.push(r);
+        else m.set(k, [r]);
+      }
+      return m;
+    }
+
+    const [projects, costRows, revRows, planRows] = await Promise.all([
+      this.dbInstance
+        .select({ id: projectInfo.id, projectName: projectInfo.projectName })
+        .from(projectInfo),
+      this.dbInstance
+        .select()
+        .from(normalizedCostLines)
+        .where(
+          and(
+            isNull(normalizedCostLines.effectiveTo),
+            isNull(normalizedCostLines.deletedAt),
+          ),
+        ),
+      this.dbInstance
+        .select()
+        .from(normalizedRevenueLines)
+        .where(
+          and(
+            isNull(normalizedRevenueLines.effectiveTo),
+            isNull(normalizedRevenueLines.deletedAt),
+          ),
+        ),
+      this.dbInstance
+        .select()
+        .from(workItems)
+        .where(isNull(workItems.deletedAt)),
+    ]);
+
+    const costByProject = bucketBy(costRows as any[]);
+    const revByProject = bucketBy(revRows as any[]);
+    const planByProject = bucketBy(planRows as any[]);
+
+    return projects.map((p: { id: number; projectName: string }) => {
+      const costSummary = summariseRows(costByProject.get(p.id) ?? [], EXPENDITURE_TRACKED_FIELDS);
+      const revSummary = summariseRows(revByProject.get(p.id) ?? [], REVENUE_TRACKED_FIELDS);
+      const planSummary = summariseRows(planByProject.get(p.id) ?? [], PLAN_TRACKED_FIELDS);
+      return {
+        projectId: p.id,
+        projectName: p.projectName,
+        section: {
+          EXPENDITURE: { verified: costSummary.verified, unverified: costSummary.unverified },
+          REVENUE: { verified: revSummary.verified, unverified: revSummary.unverified },
+          PLAN: { verified: planSummary.verified, unverified: planSummary.unverified },
+        },
+        verified: costSummary.verified + revSummary.verified + planSummary.verified,
+        unverified: costSummary.unverified + revSummary.unverified + planSummary.unverified,
+        legacyRowsWithoutSnapshot: {
+          EXPENDITURE: costSummary.legacyRows,
+          REVENUE: revSummary.legacyRows,
+          PLAN: planSummary.legacyRows,
+        },
+      };
+    });
+  }
+}
+
+export interface ProgramDriftRow {
+  projectId: number;
+  projectName: string;
+  section: {
+    EXPENDITURE: DriftSectionSummary;
+    REVENUE: DriftSectionSummary;
+    PLAN: DriftSectionSummary;
+  };
+  verified: number;
+  unverified: number;
+  legacyRowsWithoutSnapshot: {
+    EXPENDITURE: number;
+    REVENUE: number;
+    PLAN: number;
+  };
 }
 
 export interface DriftRowField {
