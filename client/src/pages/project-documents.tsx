@@ -32,8 +32,9 @@ import {
 } from "@/hooks/use-document-management-admin";
 import { DisciplinePanel } from "@/components/documents/DisciplinePanel";
 import { ManagedDocumentApprovalQueue } from "@/components/documents/ManagedDocumentApprovalQueue";
+import { ProjectReadinessCard } from "@/components/documents/ProjectReadinessCard";
 import { LIFECYCLE_DEPARTMENTS } from "@shared/schema";
-import { CheckCircle2, FolderX, AlertTriangle } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 
 export default function ProjectDocumentsPage() {
   const { projectId: projectIdStr } = useParams<{ projectId: string }>();
@@ -81,47 +82,23 @@ export default function ProjectDocumentsPage() {
       data-testid="project-documents-page"
       header={<PageHeader title={title} subtitle="Documents" />}
     >
-      <Card>
-        <CardContent className="pt-6 space-y-2">
-          <div className="text-sm font-medium">Overall readiness</div>
-          <div className="flex flex-wrap gap-2 text-xs">
-            <Badge
-              variant="outline"
-              className="bg-emerald-50 text-emerald-700"
-              data-testid="overall-summary-provisioned"
-            >
-              <CheckCircle2 className="h-3 w-3 mr-1" />
-              {overallSummary.provisioned} of {overallSummary.total} folders provisioned
-            </Badge>
-            {overallSummary.missing > 0 && (
-              <Badge
-                variant="outline"
-                className="bg-amber-50 text-amber-800"
-                data-testid="overall-summary-missing"
-              >
-                <FolderX className="h-3 w-3 mr-1" />
-                {overallSummary.missing} missing
-              </Badge>
-            )}
-            {overallSummary.errors > 0 && (
-              <Badge
-                variant="outline"
-                className="bg-rose-50 text-rose-700"
-                data-testid="overall-summary-errors"
-              >
-                <AlertTriangle className="h-3 w-3 mr-1" />
-                {overallSummary.errors} verify errors
-              </Badge>
-            )}
-          </div>
-          {overallSummary.total === 0 && (
-            <div className="text-xs text-muted-foreground">
-              No taxonomy folders mapped to a discipline yet — set up discipline ownership in
-              <em> /admin/document-management</em>.
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <ProjectReadinessCard projectId={projectId} />
+
+      {overallSummary.errors > 0 && (
+        <div className="mt-4">
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-2 text-sm text-rose-700">
+                <AlertTriangle className="h-4 w-4" />
+                <span data-testid="overall-summary-errors">
+                  {overallSummary.errors} folder{overallSummary.errors === 1 ? "" : "s"} report
+                  Graph verify errors — re-run <em>Verify</em> from the admin Provisioning tab.
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       <div className="mt-4">
         <ManagedDocumentApprovalQueue projectId={projectId} title="Approvals waiting on you" />

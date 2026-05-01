@@ -108,9 +108,11 @@ describe("D6 Phase 4 — project-documents page", () => {
     expect(pageFile).toMatch(/LIFECYCLE_DEPARTMENTS/);
   });
 
-  it("renders an overall readiness summary (provisioned / missing / verify errors)", () => {
-    expect(pageFile).toMatch(/data-testid="overall-summary-provisioned"/);
-    expect(pageFile).toMatch(/data-testid="overall-summary-missing"/);
+  it("surfaces verify-error operational signal when any folder is broken on Graph", () => {
+    // Phase 6 replaced the per-page provisioned/missing summary with the
+    // <ProjectReadinessCard>; only the verify-errors callout remains as a
+    // page-level signal because it indicates Graph drift (operational), not
+    // process readiness.
     expect(pageFile).toMatch(/data-testid="overall-summary-errors"/);
   });
 });

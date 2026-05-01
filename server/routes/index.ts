@@ -22,6 +22,7 @@ import { registerDocumentCommentsRoutes } from './document-comments.routes';
 import { registerDocumentManagementAdminRoutes } from './document-management-admin.routes';
 import { registerDocumentProvisioningRoutes } from './document-provisioning.routes';
 import { registerManagedDocumentApprovalRoutes } from './managed-document-approvals.routes';
+import { registerDocumentReadinessRoutes } from './document-readiness.routes';
 
 export async function registerRoutes(httpServer: Server, app: Express) {
   registerTemplateGovernanceRoutes(app);
@@ -38,5 +39,6 @@ export async function registerRoutes(httpServer: Server, app: Express) {
   registerDocumentManagementAdminRoutes(app);
   registerDocumentProvisioningRoutes(app);
   registerManagedDocumentApprovalRoutes(app);
+  registerDocumentReadinessRoutes(app);
   return registerLegacyRoutes(httpServer, app);
 }
