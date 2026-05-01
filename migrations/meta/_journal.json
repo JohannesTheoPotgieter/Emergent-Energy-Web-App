@@ -295,6 +295,13 @@
       "when": 1777300000002,
       "tag": "0033_users_location",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1777400000001,
+      "tag": "0039_project_folders_web_url",
+      "breakpoints": true
     }
   ]
 }

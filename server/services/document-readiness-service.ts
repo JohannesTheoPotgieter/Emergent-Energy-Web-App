@@ -37,7 +37,8 @@ import {
   type DocumentApprovalRequirement,
   type ManagedDocument,
 } from "@shared/schema/documents";
-import { projectInfo } from "@shared/schema/projects";
+import { projectInfo, projectExecutionState } from "@shared/schema/projects";
+import { SEQUENTIAL_STAGE_CODES } from "@shared/schema/stage-lifecycle";
 
 // =========================================================================
 // Public types
@@ -135,6 +136,16 @@ async function loadProjectDocumentsForMany(projectIds: number[]): Promise<Manage
     );
 }
 
+/** Compile a regex from the requirement, ignoring invalid patterns. */
+function compileFilenameMatcher(pattern: string | null | undefined): RegExp | null {
+  if (!pattern) return null;
+  try {
+    return new RegExp(pattern, "i");
+  } catch {
+    return null;
+  }
+}
+
 function classifyRequirement(
   req: DocumentApprovalRequirement,
   taxonomyByKey: Map<string, FolderTaxonomy>,
@@ -164,7 +175,13 @@ function classifyRequirement(
     };
   }
 
-  const docs = documentsByFolderId.get(folder.id) ?? [];
+  // file_name_pattern narrows which docs in the folder satisfy this
+  // requirement. When the pattern is missing or invalid, fall back to
+  // matching every doc in the folder (the v1 behaviour).
+  const matcher = compileFilenameMatcher(req.fileNamePattern);
+  const docs = (documentsByFolderId.get(folder.id) ?? []).filter((d) =>
+    matcher ? matcher.test(d.name) : true,
+  );
   const approved = docs.find((d) => d.state === "approved");
   if (approved) {
     return {
@@ -192,6 +209,32 @@ function classifyRequirement(
     status: "missing",
     approvedDocumentId: null,
   };
+}
+
+/**
+ * Stage-aware filter: only include requirements whose folder's stage_code
+ * is at or before the project's current stage. Cross-stage folders
+ * (stage_code === null) always count.
+ *
+ * If the project has no current stage code, all requirements are in
+ * scope — we don't pretend to know the schedule.
+ */
+function filterRequirementsByStage(
+  requirements: DocumentApprovalRequirement[],
+  taxonomyByKey: Map<string, FolderTaxonomy>,
+  currentStageCode: string | null,
+): DocumentApprovalRequirement[] {
+  if (!currentStageCode) return requirements;
+  const orderIdx = (s: string | null | undefined) =>
+    s == null ? -1 : SEQUENTIAL_STAGE_CODES.indexOf(s as (typeof SEQUENTIAL_STAGE_CODES)[number]);
+  const currentIdx = orderIdx(currentStageCode);
+  if (currentIdx < 0) return requirements;
+  return requirements.filter((r) => {
+    const t = taxonomyByKey.get(r.taxonomyKey);
+    if (!t || !t.stageCode) return true; // cross-stage / pre-construction always in scope
+    const reqIdx = orderIdx(t.stageCode);
+    return reqIdx <= currentIdx;
+  });
 }
 
 function indexDocumentsByFolder(docs: ManagedDocument[]): Map<number, ManagedDocument[]> {
@@ -308,13 +351,17 @@ function percent(s: {
 
 export async function computeProjectReadiness(projectId: number): Promise<ProjectReadiness> {
   const [proj] = await db
-    .select({ projectName: projectInfo.projectName })
+    .select({
+      projectName: projectInfo.projectName,
+      currentStageCode: projectExecutionState.currentStageCode,
+    })
     .from(projectInfo)
+    .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
     .where(eq(projectInfo.id, projectId))
     .limit(1);
   if (!proj) throw new Error(`Project ${projectId} not found`);
 
-  const [taxonomy, requirements, folders, documents] = await Promise.all([
+  const [taxonomy, allRequirements, folders, documents] = await Promise.all([
     loadActiveTaxonomy(),
     loadActiveRequirements(),
     loadProjectFolders(projectId),
@@ -324,6 +371,15 @@ export async function computeProjectReadiness(projectId: number): Promise<Projec
   const taxonomyByKey = new Map(taxonomy.map((t) => [t.internalKey, t] as const));
   const folderByTaxonomyKey = indexFoldersByTaxonomyKey(folders);
   const documentsByFolderId = indexDocumentsByFolder(documents);
+
+  // Stage-aware: drop requirements whose owning folder's stage_code is
+  // ahead of the project's current stage so the readiness number reflects
+  // what's actually due now.
+  const requirements = filterRequirementsByStage(
+    allRequirements,
+    taxonomyByKey,
+    proj.currentStageCode ?? null,
+  );
 
   const requirementRows = requirements.map((r) =>
     classifyRequirement(r, taxonomyByKey, folderByTaxonomyKey, documentsByFolderId),
@@ -370,9 +426,18 @@ export async function computePortfolioReadiness(): Promise<PortfolioReadinessRow
   // once, and all folders + documents in a single query. The math is then
   // done in memory, so the portfolio tile costs O(projects + folders + docs)
   // queries, not O(projects).
-  const projects: Array<{ id: number; projectName: string }> = await db
-    .select({ id: projectInfo.id, projectName: projectInfo.projectName })
-    .from(projectInfo);
+  const projects: Array<{
+    id: number;
+    projectName: string;
+    currentStageCode: string | null;
+  }> = await db
+    .select({
+      id: projectInfo.id,
+      projectName: projectInfo.projectName,
+      currentStageCode: projectExecutionState.currentStageCode,
+    })
+    .from(projectInfo)
+    .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
 
   if (projects.length === 0) return [];
 
@@ -415,7 +480,12 @@ export async function computePortfolioReadiness(): Promise<PortfolioReadinessRow
       return Boolean(f?.itemId);
     }).length;
 
-    const reqClass = requirements.map((r) =>
+    const inScope = filterRequirementsByStage(
+      requirements,
+      taxonomyByKey,
+      p.currentStageCode,
+    );
+    const reqClass = inScope.map((r) =>
       classifyRequirement(r, taxonomyByKey, folderByTaxonomyKey, documentsByFolderId),
     );
     const requirementsTotal = reqClass.length;

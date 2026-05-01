@@ -42,6 +42,7 @@ interface ProjectFolder {
   driveId: string | null;
   itemId: string | null;
   sharepointPath: string | null;
+  webUrl: string | null;
   provisionedAt: string | null;
   verifyError: string | null;
 }
@@ -207,8 +208,22 @@ export function DisciplinePanel({
                     {t.lifecycleMode === "both" && "Both"}
                   </TableCell>
                   <TableCell className="text-xs font-mono">{t.stageCode ?? "—"}</TableCell>
-                  <TableCell className="text-xs font-mono text-muted-foreground">
-                    {folder?.sharepointPath ?? "—"}
+                  <TableCell className="text-xs">
+                    {folder?.webUrl ? (
+                      <a
+                        href={folder.webUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="font-mono text-emerald-700 hover:underline"
+                        data-testid={`discipline-link-${discipline}-${t.internalKey}`}
+                      >
+                        {folder.sharepointPath ?? "Open in SharePoint"}
+                      </a>
+                    ) : (
+                      <span className="font-mono text-muted-foreground">
+                        {folder?.sharepointPath ?? "—"}
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell className="text-right">
                     <DisciplineFolderStatus folder={folder} />

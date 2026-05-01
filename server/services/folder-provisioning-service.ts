@@ -66,6 +66,7 @@ export interface ProvisionRowReport {
   driveId?: string | null;
   itemId?: string | null;
   sharepointPath?: string | null;
+  webUrl?: string | null;
   error?: string;
 }
 
@@ -182,6 +183,7 @@ export async function provisionProjectFolders(input: {
         driveId: item.driveId,
         itemId: item.itemId,
         sharepointPath: item.path,
+        webUrl: item.webUrl ?? null,
         provisionedByUserId: userId,
       });
     },
@@ -251,6 +253,7 @@ export async function provisionProjectFolders(input: {
           driveId: item.driveId,
           itemId: item.itemId,
           sharepointPath: item.path,
+          webUrl: item.webUrl ?? null,
           provisionedByUserId: userId,
         });
       },
@@ -327,8 +330,18 @@ async function ensureFolder(input: {
   parentPath: string;
   taxonomyKey: string;
   displayName: string;
-  existingLink: { driveId: string | null; itemId: string | null; sharepointPath: string | null } | null;
-  onLink: (linked: { driveId: string; itemId: string; path: string }) => Promise<void>;
+  existingLink: {
+    driveId: string | null;
+    itemId: string | null;
+    sharepointPath: string | null;
+    webUrl: string | null;
+  } | null;
+  onLink: (linked: {
+    driveId: string;
+    itemId: string;
+    path: string;
+    webUrl: string | null;
+  }) => Promise<void>;
 }): Promise<ProvisionRowReport> {
   const { driveId, parentItemId, name, userId, parentPath, existingLink, taxonomyKey, displayName, onLink } = input;
 
@@ -341,6 +354,7 @@ async function ensureFolder(input: {
       driveId: existingLink.driveId,
       itemId: existingLink.itemId,
       sharepointPath: existingLink.sharepointPath ?? `${parentPath}/${name}`,
+      webUrl: existingLink.webUrl,
     };
   }
 
@@ -362,7 +376,8 @@ async function ensureFolder(input: {
 
   if (alreadyOnGraph) {
     const path = alreadyOnGraph.path || `${parentPath}/${name}`;
-    await onLink({ driveId, itemId: alreadyOnGraph.id, path });
+    const webUrl = alreadyOnGraph.webUrl ?? null;
+    await onLink({ driveId, itemId: alreadyOnGraph.id, path, webUrl });
     return {
       taxonomyKey,
       displayName,
@@ -370,6 +385,7 @@ async function ensureFolder(input: {
       driveId,
       itemId: alreadyOnGraph.id,
       sharepointPath: path,
+      webUrl,
     };
   }
 
@@ -377,7 +393,8 @@ async function ensureFolder(input: {
   try {
     const created = await createFolder({ driveId, parentItemId, name, userId });
     const path = created.path || `${parentPath}/${name}`;
-    await onLink({ driveId, itemId: created.id, path });
+    const webUrl = created.webUrl ?? null;
+    await onLink({ driveId, itemId: created.id, path, webUrl });
     return {
       taxonomyKey,
       displayName,
@@ -385,6 +402,7 @@ async function ensureFolder(input: {
       driveId,
       itemId: created.id,
       sharepointPath: path,
+      webUrl,
     };
   } catch (err) {
     return {

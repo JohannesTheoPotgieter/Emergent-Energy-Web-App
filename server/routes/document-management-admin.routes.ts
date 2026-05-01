@@ -53,6 +53,11 @@ import {
   deactivateRequirement,
 } from "../repositories/document-approval-requirements-repository";
 import {
+  listActiveCompanyRoots,
+  getCompanyRootByKind,
+  upsertCompanyRoot,
+} from "../repositories/company-sharepoint-roots-repository";
+import {
   insertFolderTaxonomySchema,
   insertDocumentApprovalRequirementSchema,
 } from "@shared/schema/documents";
@@ -340,6 +345,75 @@ export function registerDocumentManagementAdminRoutes(app: Express): void {
       } catch (err) {
         console.error("[doc-mgmt-admin] deactivate requirement error:", err);
         throw toApiError(err, "Failed to deactivate approval requirement");
+      }
+    },
+  );
+
+  // ====================================================================
+  // Company SharePoint roots (D6 Phase 3.1) — admin must register the
+  // 'active_projects' root before provisioning works. Without this UI
+  // the only path was to manually INSERT a row, which made Phase 3
+  // unreachable in practice.
+  // ====================================================================
+
+  app.get(
+    "/api/admin/company-sharepoint-roots",
+    requireAuth,
+    requirePermission("documents_admin", "view"),
+    async (_req: Request, res: Response) => {
+      try {
+        const roots = await listActiveCompanyRoots();
+        res.json({ roots });
+      } catch (err) {
+        if (err instanceof ApiError) throw err;
+        console.error("[doc-mgmt-admin] list company roots error:", err);
+        throw serverError("Failed to load company SharePoint roots");
+      }
+    },
+  );
+
+  app.put(
+    "/api/admin/company-sharepoint-roots/:kind",
+    requireAuth,
+    requirePermission("documents_admin", "edit"),
+    async (req: Request, res: Response) => {
+      const kindSchema = z.string().min(1).max(64).regex(/^[a-z0-9_]+$/);
+      const parsedKind = kindSchema.safeParse(req.params.kind);
+      if (!parsedKind.success) throw badRequest("Invalid root kind");
+      const bodySchema = z.object({
+        displayName: z.string().min(1).max(256),
+        driveId: z.string().max(256).nullish(),
+        rootItemId: z.string().max(256).nullish(),
+        rootPath: z.string().min(1).max(1024),
+        sortOrder: z.number().int().min(0).max(99999).optional(),
+        active: z.boolean().optional(),
+      });
+      const parsedBody = bodySchema.safeParse(req.body);
+      if (!parsedBody.success) {
+        throw badRequest("Invalid SharePoint root payload", {
+          issues: parsedBody.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
+        });
+      }
+      try {
+        const row = await upsertCompanyRoot({
+          kind: parsedKind.data,
+          displayName: parsedBody.data.displayName,
+          driveId: parsedBody.data.driveId ?? null,
+          rootItemId: parsedBody.data.rootItemId ?? null,
+          rootPath: parsedBody.data.rootPath,
+          sortOrder: parsedBody.data.sortOrder ?? 0,
+          active: parsedBody.data.active ?? true,
+        });
+        logAuditFromReq(req, {
+          entityType: "company_sharepoint_root",
+          entityId: row.kind,
+          action: "upsert",
+          changesJson: { row },
+        });
+        res.json({ row });
+      } catch (err) {
+        console.error("[doc-mgmt-admin] upsert company root error:", err);
+        throw toApiError(err, "Failed to upsert SharePoint root");
       }
     },
   );

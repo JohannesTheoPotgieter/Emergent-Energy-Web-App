@@ -29,8 +29,10 @@ import { eq } from "drizzle-orm";
 import { db } from "./db";
 import {
   folderTaxonomy,
+  companySharepointRoots,
   type InsertFolderTaxonomy,
 } from "@shared/schema/documents";
+import { isConnectorMocked } from "./lib/connector-mode";
 
 // =========================================================================
 // Seed data — Pattern A (pre_construction)
@@ -507,6 +509,29 @@ export async function seedFolderTaxonomy(): Promise<{ inserted: number; skipped:
 
     await db.insert(folderTaxonomy).values(row);
     inserted += 1;
+  }
+
+  // In mock-connector mode, also auto-seed a placeholder 'active_projects'
+  // company SharePoint root so provisioning works end-to-end without a
+  // super-user manually configuring it. Production deployments register
+  // the real root via the admin UI (PUT /api/admin/company-sharepoint-roots/:kind).
+  if (isConnectorMocked("ms-graph")) {
+    const [existing] = await db
+      .select({ id: companySharepointRoots.id })
+      .from(companySharepointRoots)
+      .where(eq(companySharepointRoots.kind, "active_projects"))
+      .limit(1);
+    if (!existing) {
+      await db.insert(companySharepointRoots).values({
+        kind: "active_projects",
+        displayName: "Active Projects (mock)",
+        driveId: "mock-drive-id",
+        rootItemId: "mock-active-projects-root",
+        rootPath: "01 - Clients/01 - active projects (1)",
+        sortOrder: 0,
+        active: true,
+      });
+    }
   }
 
   return { inserted, skipped };

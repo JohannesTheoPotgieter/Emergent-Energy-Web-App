@@ -611,6 +611,12 @@ export const projectFolders = pgTable("project_folders", {
   driveId: text("drive_id"),
   itemId: text("item_id"),
   sharepointPath: text("sharepoint_path"),
+  /**
+   * Browser-openable SharePoint URL (Graph driveItem.webUrl). Populated
+   * during provisioning so the UI can offer deep links straight to the
+   * folder in SharePoint without an extra Graph round-trip.
+   */
+  webUrl: text("web_url"),
   // Provisioning audit
   provisionedAt: timestamp("provisioned_at"),
   provisionedByUserId: integer("provisioned_by_user_id").references(() => users.id, { onDelete: "set null" }),
