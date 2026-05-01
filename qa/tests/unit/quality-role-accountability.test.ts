@@ -163,22 +163,25 @@ describe("governance views permission gates", () => {
 });
 
 describe("permission entity definitions are consistent with route usage", () => {
-  const users = read("shared/schema/users.ts");
+  // Permission entities used to live in shared/schema/users.ts; they were
+  // migrated to shared/permissions/registry.ts. This test points at the
+  // current canonical location.
+  const registry = read("shared/permissions/registry.ts");
 
   it("quality entity has correct role separation", () => {
     // quality:approve must include QUALITY_MANAGER and HSE_MANAGER but not CONSTRUCTION_MANAGER
-    expect(users).toMatch(/entity: 'quality'[\s\S]*?approve_roles:.*QUALITY_MANAGER/);
-    expect(users).toMatch(/entity: 'quality'[\s\S]*?approve_roles:.*HSE_MANAGER/);
+    expect(registry).toMatch(/entity: 'quality'[\s\S]*?approve_roles:.*QUALITY_MANAGER/);
+    expect(registry).toMatch(/entity: 'quality'[\s\S]*?approve_roles:.*HSE_MANAGER/);
   });
 
   it("pd_quality entity allows CONSTRUCTION_MANAGER to edit but not approve", () => {
     // pd_quality:edit must include CONSTRUCTION_MANAGER
-    expect(users).toMatch(/entity: 'pd_quality'[\s\S]*?edit_roles:.*CONSTRUCTION_MANAGER/);
+    expect(registry).toMatch(/entity: 'pd_quality'[\s\S]*?edit_roles:.*CONSTRUCTION_MANAGER/);
   });
 
   it("quality:delete is restricted to COO_ADMIN and CEO_ADMIN only", () => {
     // Extract the quality entity block and check delete_roles
-    const qualityBlock = users.match(/entity: 'quality'[\s\S]*?delete_roles: \[([^\]]+)\]/);
+    const qualityBlock = registry.match(/entity: 'quality'[\s\S]*?delete_roles: \[([^\]]+)\]/);
     expect(qualityBlock).toBeTruthy();
     const deleteRoles = qualityBlock![1];
     expect(deleteRoles).toContain("COO_ADMIN");

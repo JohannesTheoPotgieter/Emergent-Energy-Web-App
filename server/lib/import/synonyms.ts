@@ -6,13 +6,27 @@ export const PLAN_SYNONYMS: Record<string, string[]> = {
   duration: ["duration", "days", "duration (days)", "duration (work days)", "planned duration", "total days", "calendar days"],
   actual_start: ["actual start", "actual start date", "act start", "real start"],
   actual_end: ["actual end", "actual end date", "actual finish", "act end", "act finish", "real end"],
-  actual_duration: ["actual duration", "actual days", "act duration", "work days"],
+  // Tracker col K — "WORK DAYS" — distinct from `duration` (calendar days)
+  // and `actual_duration` (number of days elapsed). The Tracker uses this
+  // for net working-day count excluding weekends/non-work days.
+  work_days: ["work days", "working days", "workdays", "net work days"],
+  actual_duration: ["actual duration", "actual days", "act duration"],
   pct_complete: ["status", "% complete", "progress", "completion", "actual %", "actual status", "% done", "done", "complete %", "percentage complete"],
   expected_pct: ["expected", "expected %", "planned %", "expected status", "baseline %", "% forecasted", "forecasted", "target %", "planned progress"],
-  owner: ["owner", "responsible", "assigned to", "resource", "person", "lead", "project manager", "pm", "responsible person", "resource 1"],
+  // Owner / Lead / Resource 1 / Resource 2 are FOUR distinct columns in the
+  // Tracker — previously the synonym map collapsed them onto `owner` so
+  // whichever appeared first won and the others were silently dropped.
+  owner: ["owner", "responsible", "assigned to", "person", "project manager", "pm", "responsible person"],
+  lead: ["lead", "team lead", "task lead"],
+  resource_1: ["resource 1", "resource1", "resource one", "primary resource"],
+  resource_2: ["resource 2", "resource2", "resource two", "secondary resource"],
   predecessor: ["predecessor", "predecessors", "depends on", "dependency", "dependencies"],
   phase: ["phase", "stage", "section", "work package", "category"],
-  comment: ["comment", "comments", "notes", "remarks", "note", "remark", "resource 2"],
+  // Tracker col D "COMMENTS" — free-text notes against the task. Distinct
+  // from the task description (col B "TASK"). Stored on the new
+  // work_items.tracker_comments column rather than collapsing onto
+  // resource_2 / description.
+  tracker_comments: ["comment", "comments", "notes", "remarks", "note", "remark", "task comments", "row comments"],
 };
 
 export const REVENUE_SYNONYMS: Record<string, string[]> = {
@@ -26,17 +40,28 @@ export const REVENUE_SYNONYMS: Record<string, string[]> = {
   planned_payment_date: ["planned payment date", "planned date", "expected date", "due date"],
   payment_received_date: ["payment received date", "received date", "paid date", "payment date"],
   in_bank_date: ["in bank date", "bank date", "cleared date"],
-  requirements: ["requirement", "notes", "conditions", "comments"],
+  // Tracker col R "MILESTONE NOTES & COMMENTS" — was previously mapped to
+  // `requirements` which had no schema target, so the field was silently
+  // dropped on every import. Now lands on
+  // normalized_revenue_lines.milestone_notes.
+  milestone_notes: ["milestone notes", "milestone notes & comments", "milestone notes and comments", "notes", "notes & comments", "comments", "milestone comments", "requirement", "requirements", "conditions"],
   documents: ["milestone documents received", "documents", "docs received"],
 };
 
 export const EXPENDITURE_SYNONYMS: Record<string, string[]> = {
-  cost_category: ["product/ service", "product", "category", "cost category", "service category"],
+  cost_category: ["product/ service", "product / service", "product", "category", "cost category", "service category"],
   description: ["description of work", "description", "line item", "item description", "detail"],
   counterparty: ["supplier", "contractor", "vendor", "counterparty", "company", "installer", "sub-contractor"],
-  budget_qty: ["qty", "quantity", "budget qty"],
-  budget_rate: ["rate / unit", "rate", "unit rate", "budget rate"],
+  // Costed-side QTY and Rate (Tracker cols E, F).
+  budget_qty: ["qty", "quantity", "budget qty", "costed qty"],
+  budget_rate: ["rate / unit", "rate/unit", "rate", "unit rate", "budget rate", "costed rate"],
   budget_total: ["budget total", "budget amount", "budgeted"],
+  // Actual-side QTY and Rate (Tracker cols O, P) — previously mapped to
+  // budget_qty/budget_rate via the same synonyms, which clobbered the
+  // costed values whenever both sides were present. Now distinct fields
+  // on normalized_cost_lines.actual_qty / actual_rate.
+  actual_qty: ["actual qty", "actual quantity", "qty actual"],
+  actual_rate: ["actual rate", "actual unit rate", "rate actual"],
   actual_total: ["actual total", "actual amount", "actual cost", "actual"],
   amount_ex_vat: ["amount ex vat", "amount excl vat", "excl vat", "cost ex vat"],
   po_number: ["po number", "po no", "purchase order", "po #"],
@@ -53,6 +78,15 @@ export const EXPENDITURE_SYNONYMS: Record<string, string[]> = {
   category_revenue_allocation: ["total revenue", "revenue allocation", "revenue alloc", "category revenue", "rev allocation", "costed revenue"],
   // Budget-pane column for category-level COS total (X_cat costed).
   category_cos_total: ["total cos"],
+  // Tracker col V "CHECK" — formula-driven validation flag. Stored verbatim.
+  check_flag: ["check", "validation", "check flag"],
+  // Tracker col Z "Saving / Overrun" — variance between costed and actual.
+  saving_overrun: ["saving / overrun", "saving/overrun", "saving", "overrun", "variance"],
+  // Tracker col AA "Comments" — per-line free-text notes.
+  comments: ["comments", "comment", "notes", "remarks", "line comments"],
+  // Tracker cols AB/AC and AE — header values that apply to all lines below.
+  usd_exchange_rate: ["usd exchange rate", "usd rate", "exchange rate", "fx rate"],
+  price_per_watt: ["price per watt", "$/w", "r/w", "price/watt", "rate per watt"],
 };
 
 export const SECTION_ANCHORS: Record<string, { sheetNames: string[]; anchorPhrases: string[]; requiredFields: string[] }> = {

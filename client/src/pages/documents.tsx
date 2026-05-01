@@ -4,12 +4,12 @@ import { PageHeader } from "@/components/ui/page-header";
 import { PageLayout } from "@/components/layout";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import { FolderPlus, Upload, FolderTree, Server, ExternalLink } from "lucide-react";
 import { RootSelector } from "@/components/documents/RootSelector";
 import { FileListTable } from "@/components/documents/FileListTable";

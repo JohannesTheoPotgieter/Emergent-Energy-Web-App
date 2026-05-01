@@ -27,7 +27,10 @@ import { LIFECYCLE_DEPARTMENTS } from "@shared/schema/stage-lifecycle";
 import { COMPANY_ROLES } from "@shared/schema/users";
 
 const repoRoot = path.resolve(__dirname, "..", "..", "..");
-const migrationPath = path.join(repoRoot, "migrations", "0038_document_management_v2_taxonomy.sql");
+// Phase 1 hand-authored migration was consolidated into a drizzle-kit
+// generated migration after the merge with main (which had its own
+// 0038/0039) — see commit "merge main into D6".
+const migrationPath = path.join(repoRoot, "migrations", "0044_document_management_v2.sql");
 const journalPath = path.join(repoRoot, "migrations", "meta", "_journal.json");
 
 describe("D6 schema — table shapes", () => {
@@ -173,47 +176,61 @@ describe("D6 permissions — registry entries", () => {
   });
 });
 
-describe("D6 migration 0038 — SQL shape", () => {
+describe("D6 migration 0044 — SQL shape", () => {
   const sql = fs.readFileSync(migrationPath, "utf8");
 
   it("creates folder_taxonomy with a unique constraint on internal_key", () => {
-    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "folder_taxonomy"/);
-    expect(sql).toMatch(/folder_taxonomy_internal_key_uq/);
+    expect(sql).toMatch(/CREATE TABLE "folder_taxonomy"/);
+    expect(sql).toMatch(/folder_taxonomy_internal_key_unique/);
   });
 
   it("creates the folder_lifecycle_mode_enum type with the right values", () => {
-    expect(sql).toMatch(/CREATE TYPE "folder_lifecycle_mode_enum"/);
+    expect(sql).toMatch(/CREATE TYPE "public"\."folder_lifecycle_mode_enum"/);
     expect(sql).toMatch(/'pre_construction'.*'full_lifecycle'.*'both'/s);
   });
 
-  it("declares a self-referential FK on folder_taxonomy.parent_key", () => {
-    expect(sql).toMatch(/folder_taxonomy_parent_fk[\s\S]*FOREIGN KEY \("parent_key"\)/);
+  it("declares a self-referential FK on folder_taxonomy.parent_key (ON DELETE set null)", () => {
+    expect(sql).toMatch(
+      /folder_taxonomy_parent_key_folder_taxonomy_internal_key_fk[\s\S]*FOREIGN KEY \("parent_key"\)[\s\S]*REFERENCES "public"\."folder_taxonomy"\("internal_key"\) ON DELETE set null/,
+    );
   });
 
   it("declares an FK from folder_taxonomy.stage_code to stage_definitions.stage_code", () => {
-    expect(sql).toMatch(/folder_taxonomy_stage_fk[\s\S]*REFERENCES "stage_definitions"\("stage_code"\)/);
+    expect(sql).toMatch(
+      /folder_taxonomy_stage_code_stage_definitions_stage_code_fk[\s\S]*REFERENCES "public"\."stage_definitions"\("stage_code"\) ON DELETE set null/,
+    );
   });
 
   it("declares an FK from project_folders.project_id to project_info.id (CASCADE)", () => {
-    expect(sql).toMatch(/project_folders_project_fk[\s\S]*REFERENCES "project_info"\("id"\) ON DELETE CASCADE/);
+    expect(sql).toMatch(
+      /project_folders_project_id_project_info_id_fk[\s\S]*REFERENCES "public"\."project_info"\("id"\) ON DELETE cascade/,
+    );
   });
 
   it("declares an FK from project_folders.taxonomy_key to folder_taxonomy.internal_key", () => {
-    expect(sql).toMatch(/project_folders_taxonomy_fk[\s\S]*REFERENCES "folder_taxonomy"\("internal_key"\)/);
+    expect(sql).toMatch(
+      /project_folders_taxonomy_key_folder_taxonomy_internal_key_fk[\s\S]*REFERENCES "public"\."folder_taxonomy"\("internal_key"\)/,
+    );
   });
 
   it("declares the project_folders unique index on (project_id, taxonomy_key)", () => {
-    expect(sql).toMatch(/CREATE UNIQUE INDEX IF NOT EXISTS "project_folders_project_taxonomy_uq"/);
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX "project_folders_project_taxonomy_uq"/,
+    );
   });
 
   it("declares the FK from managed_documents.parent_folder_id to project_folders.id (SET NULL)", () => {
     expect(sql).toMatch(
-      /managed_documents_parent_folder_fk[\s\S]*REFERENCES "project_folders"\("id"\) ON DELETE SET NULL/,
+      /managed_documents_parent_folder_id_project_folders_id_fk[\s\S]*REFERENCES "public"\."project_folders"\("id"\) ON DELETE set null/,
     );
   });
 
-  it("uses ADD COLUMN IF NOT EXISTS for managed_documents.parent_folder_id (additive guarantee)", () => {
-    expect(sql).toMatch(/ADD COLUMN IF NOT EXISTS "parent_folder_id"/);
+  it("adds the parent_folder_id column to managed_documents", () => {
+    expect(sql).toMatch(/ALTER TABLE "managed_documents" ADD COLUMN "parent_folder_id" integer/);
+  });
+
+  it("adds the web_url column to project_folders (Phase 3.1 deep-link affordance)", () => {
+    expect(sql).toMatch(/"web_url" text/);
   });
 });
 
@@ -230,11 +247,11 @@ describe("D6 — migration journal integrity", () => {
     expect(untracked).toEqual([]);
   });
 
-  it("includes a journal entry for migration 0038", () => {
+  it("includes a journal entry for migration 0044_document_management_v2", () => {
     const journal = JSON.parse(fs.readFileSync(journalPath, "utf8")) as {
       entries: Array<{ tag?: string }>;
     };
     const tags = journal.entries.map((e) => e.tag);
-    expect(tags).toContain("0038_document_management_v2_taxonomy");
+    expect(tags).toContain("0044_document_management_v2");
   });
 });

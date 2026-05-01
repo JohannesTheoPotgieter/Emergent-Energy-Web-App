@@ -62,6 +62,7 @@ export interface Task {
   tags: string[] | null;
   createdAt: string;
   updatedAt: string;
+  completedAt?: string | null;
   resolvedOwner?: TaskResolvedUser | null;
   resolvedAssignees?: TaskResolvedUser[] | null;
   isUnassigned?: boolean;

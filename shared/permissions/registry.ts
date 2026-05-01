@@ -374,6 +374,11 @@ export const ENTITY_REGISTRY: EntityRegistryEntry[] = [
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
+  // documents / documents_provision / documents_admin are defined earlier
+  // in this registry by D6 Phase 1; the trust-matrix work added overlapping
+  // entries during the same window. Keeping the Phase 1 versions (broader
+  // create/edit role set, super-user-only override) and removing the
+  // narrower duplicates here.
   {
     entity: 'pd_overview',
     title: "Project Overview",
@@ -1136,9 +1141,9 @@ export const ENTITY_REGISTRY: EntityRegistryEntry[] = [
     description: "PD-PM Handover — submit, approve, reject, reopen handovers",
     category: 'PD',
     view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'HSE_MANAGER'],
-    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROJECT_DEVELOPER'],
-    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROJECT_DEVELOPER'],
-    approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
+    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROJECT_DEVELOPER', 'PROJECT_MANAGER_SITE'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROJECT_DEVELOPER', 'PROJECT_MANAGER_SITE'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROJECT_MANAGER_SITE'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },

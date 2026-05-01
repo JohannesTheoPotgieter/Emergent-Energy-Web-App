@@ -80,7 +80,7 @@ export function registerRoleTemplateRoutes(app: Express) {
     requirePermission("admin", "view"),
     async (req: Request, res: Response) => {
       try {
-        const diff = await previewApplyTemplate(req.params.role, req.params.templateKey);
+        const diff = await previewApplyTemplate(String(req.params.role), String(req.params.templateKey));
         res.json(diff);
       } catch (err: unknown) {
         const { status, body } = errorToHttpResponse(err, "preview_failed");
@@ -100,7 +100,7 @@ export function registerRoleTemplateRoutes(app: Express) {
       const actor = actorFrom(req);
       try {
         const result = await applyTemplate(
-          req.params.role,
+          String(req.params.role),
           parsed.data.templateKey,
           actor.id,
           actor.role,
@@ -124,7 +124,7 @@ export function registerRoleTemplateRoutes(app: Express) {
         return res.status(400).json({ error: "invalid_user_id" });
       }
       try {
-        const diff = await previewApplyTemplateToUser(userId, req.params.templateKey);
+        const diff = await previewApplyTemplateToUser(userId, String(req.params.templateKey));
         res.json(diff);
       } catch (err: unknown) {
         const { status, body } = errorToHttpResponse(err, "preview_failed");

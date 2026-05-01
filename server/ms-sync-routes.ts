@@ -62,6 +62,7 @@ async function requireUnifiedWorkFlag(_req: Request, res: Response, next: NextFu
 }
 
 import { normalizeStatus as canonicalNormalizeStatus } from "./lib/canonical-task-engine";
+import { projectEngineeringTicket } from "@shared/lib/engineering-ticket-view";
 
 function normalizeTaskStatus(status: string | null | undefined): string {
   return canonicalNormalizeStatus(status);
@@ -983,29 +984,59 @@ export function registerMsSyncRoutes(app: Express) {
         });
       });
 
-      const engineeringTasksMapped = engTasks.map((t: any) => withSourceLinks("engineering_task", {
-        id: t.id,
-        title: t.title,
-        status: normalizeTaskStatus(t.status),
-        projectId: t.projectId ?? null,
-        projectName: t.projectName,
-        parentTaskId: t.parentId || null,
-        parentTaskTitle: t.parentId ? (parentTitleMap.get(t.parentId) || null) : null,
-        lifecyclePhase: t.lifecyclePhaseTag,
-        assigneeUserId: t.ownerUserId ?? t.assigneeUserId,
-        assigneeName: t.assigneeName,
-        resolvedAssignee: resolveUserId(t.ownerUserId ?? t.assigneeUserId) || resolveTextNameToUser(t.assigneeName),
-        scheduledDate: t.scheduledDate || null,
-        scheduledStartTime: t.scheduledStartTime || null,
-        scheduledEndTime: t.scheduledEndTime || null,
-        workstream: t.workstream || "ENG",
-        source: t.source || null,
-        _source: "engineering_task",
-      }, {
-        itemKey: `eng-${t.id}`,
-        rawId: t.id,
-        projectName: t.projectName,
-      }));
+      const engineeringTasksMapped = engTasks.map((t: any) => {
+        const view = projectEngineeringTicket({
+          id: t.id,
+          title: t.title,
+          status: t.status,
+          priority: t.priority,
+          dueDate: t.endDate ?? t.dueDate ?? null,
+          endDate: t.endDate ?? null,
+          startDate: t.startDate ?? null,
+          ownerUserId: t.ownerUserId ?? t.assigneeUserId ?? null,
+          ownerName: t.ownerName ?? t.assigneeName ?? null,
+          assigneeUserIds: t.assigneeUserIds ?? null,
+          projectId: t.projectId ?? null,
+          projectName: t.projectName ?? null,
+          completedAt: t.completedAt ?? null,
+        });
+        return withSourceLinks("engineering_task", {
+          id: t.id,
+          title: t.title,
+          status: view.status,
+          statusLabel: view.statusLabel,
+          statusBadgeClass: view.statusBadgeClass,
+          statusColour: view.statusColour,
+          priority: view.priority,
+          dueDate: view.dueDate,
+          dueLabel: view.dueLabel,
+          dueUrgency: view.dueUrgency,
+          isOverdue: view.isOverdue,
+          isComplete: view.isComplete,
+          isBlocked: view.isBlocked,
+          isApprovalPending: view.isApprovalPending,
+          ownerInitials: view.ownerInitials,
+          projectId: t.projectId ?? null,
+          projectName: t.projectName,
+          parentTaskId: t.parentId || null,
+          parentTaskTitle: t.parentId ? (parentTitleMap.get(t.parentId) || null) : null,
+          lifecyclePhase: t.lifecyclePhaseTag,
+          assigneeUserId: t.ownerUserId ?? t.assigneeUserId,
+          assigneeName: t.assigneeName,
+          resolvedAssignee: resolveUserId(t.ownerUserId ?? t.assigneeUserId) || resolveTextNameToUser(t.assigneeName),
+          scheduledDate: t.scheduledDate || null,
+          scheduledStartTime: t.scheduledStartTime || null,
+          scheduledEndTime: t.scheduledEndTime || null,
+          workstream: t.workstream || "ENG",
+          source: t.source || null,
+          completedAt: t.completedAt ?? null,
+          _source: "engineering_task",
+        }, {
+          itemKey: `eng-${t.id}`,
+          rawId: t.id,
+          projectName: t.projectName,
+        });
+      });
 
       const qualityTasksMapped = (qualityTasks as any[]).map((t: any) => withSourceLinks("quality_task", {
         id: t.id,

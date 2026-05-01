@@ -57,6 +57,7 @@ import {
   FileText,
   User,
   XCircle,
+  Trash2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ActionBar } from "@/components/guidance/ActionBar";
@@ -68,6 +69,9 @@ import { ApprovalQueueCard } from "@/components/controlled-documents";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { AttentionBadges, type AttentionItem } from "@/components/dashboard/AttentionBadges";
 import { QualityTab } from "@/components/tabs/QualityTab";
+import { ConfirmDestructive, type ImpactRow } from "@/components/ui/confirm-destructive";
+import { usePermission } from "@/hooks/use-permissions";
+import { useAuth } from "@/hooks/use-auth";
 
 async function qFetch(url: string, options?: RequestInit) {
   const token = localStorage.getItem('auth_token');
@@ -233,8 +237,14 @@ export default function QmDashboardPage() {
   const [startQmOpen, setStartQmOpen] = useState(false);
   const [startQmProject, setStartQmProject] = useState("");
   const [startQmPopoverOpen, setStartQmPopoverOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Checklist | null>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { allowed: canDeleteQualityPerm } = usePermission("quality", "delete");
+  const { isAdmin, isQm } = useAuth();
+  // Mirror the backend gate (`requireAdminOrQm` + `requirePermission("quality","delete")`)
+  // so users without the right role don't see a delete button that would 403.
+  const canDeleteQuality = canDeleteQualityPerm && (isAdmin || isQm);
 
   const { data: checklists = [], isLoading: checklistsLoading, isError: checklistsError, error: checklistsQueryError, refetch: refetchChecklists } = useQuery<Checklist[]>({
     queryKey: ["quality-checklists"],
@@ -306,6 +316,31 @@ export default function QmDashboardPage() {
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to start quality process.", variant: "destructive" });
+    },
+  });
+
+  const deleteChecklistMutation = useMutation<{ counts?: Record<string, number> }, Error, string>({
+    mutationFn: (projectName: string) =>
+      qFetch(`/api/quality/project/${encodeURIComponent(projectName)}/checklist`, { method: "DELETE" }),
+    onSuccess: (_data, projectName) => {
+      queryClient.invalidateQueries({ queryKey: ["quality-checklists"] });
+      queryClient.invalidateQueries({ queryKey: ["quality-warnings-all"] });
+      queryClient.invalidateQueries({ queryKey: ["quality-dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["quality-all-items"] });
+      if (selectedProjectName && selectedProjectName === projectName) {
+        setSelectedProjectName(null);
+      }
+      toast({
+        title: "Quality process deleted",
+        description: `${projectName} can now be restarted from the Start Quality Process dialog.`,
+      });
+    },
+    onError: (err) => {
+      toast({
+        title: "Couldn't delete quality process",
+        description: err?.message || "Please retry. No data was changed.",
+        variant: "destructive",
+      });
     },
   });
 
@@ -847,11 +882,7 @@ export default function QmDashboardPage() {
                             <tr
                               key={checklist.id}
                               data-testid={`qm-project-row-${checklist.id}`}
-                              className="border-b last:border-0 hover:bg-emerald-50/40 cursor-pointer transition-colors group"
-                              role="button"
-                              tabIndex={0}
-                              onClick={() => setSelectedProjectName(checklist.projectName)}
-                              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedProjectName(checklist.projectName); }}}
+                              className="border-b last:border-0 hover:bg-emerald-50/40 transition-colors group"
                             >
                               <td className="py-2.5 px-3">
                                 <span className="font-medium text-sm group-hover:text-emerald-600 transition-colors" data-testid={`text-project-name-${checklist.id}`}>
@@ -956,8 +987,7 @@ export default function QmDashboardPage() {
                                     variant="ghost"
                                     size="icon"
                                     className="h-7 w-7"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
+                                    onClick={() => {
                                       setLocation(`/project/${encodeURIComponent(checklist.projectName)}?mode=execution&section=quality&subTab=quality`);
                                     }}
                                     aria-label={`Open ${checklist.projectName} project details`}
@@ -965,7 +995,32 @@ export default function QmDashboardPage() {
                                   >
                                     <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
                                   </Button>
-                                  <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-emerald-500 transition-colors" />
+                                  {canDeleteQuality && (
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                                      onClick={() => {
+                                        setDeleteTarget(checklist);
+                                      }}
+                                      aria-label={`Delete quality process for ${checklist.projectName}`}
+                                      data-testid={`btn-delete-project-${checklist.id}`}
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </Button>
+                                  )}
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7"
+                                    onClick={() => setSelectedProjectName(checklist.projectName)}
+                                    aria-label={`Expand quality details for ${checklist.projectName}`}
+                                    data-testid={`btn-expand-project-${checklist.id}`}
+                                  >
+                                    <ChevronRight className="h-4 w-4 text-muted-foreground/60 group-hover:text-emerald-500 transition-colors" />
+                                  </Button>
                                 </div>
                               </td>
                             </tr>
@@ -1243,6 +1298,9 @@ export default function QmDashboardPage() {
             <p className="text-sm text-muted-foreground">
               Select a project to start the quality management process. Projects that already have a quality checklist are shown but cannot be selected.
             </p>
+            <p className="text-xs text-muted-foreground bg-muted/40 border rounded-md p-2">
+              Tip: if a project's quality process was deleted from the Project Checklists list, it becomes selectable here again so you can restart it from scratch.
+            </p>
             <div>
               <label className="text-sm font-medium block mb-1.5">Project</label>
               <Popover open={startQmPopoverOpen} onOpenChange={setStartQmPopoverOpen}>
@@ -1316,8 +1374,44 @@ export default function QmDashboardPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDestructive
+        open={!!deleteTarget}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        title="Delete quality process?"
+        subject={deleteTarget?.projectName ?? ""}
+        description="This permanently deletes the quality checklist and every related record for this project. The project itself, its plan and finance data are not affected. After deletion you can restart the quality process from the Start Quality Process dialog."
+        impact={deleteTarget ? buildDeleteImpact(deleteTarget) : []}
+        actionVerb="Delete quality process"
+        onConfirm={async () => {
+          if (!deleteTarget) return;
+          await deleteChecklistMutation.mutateAsync(deleteTarget.projectName);
+        }}
+      />
     </PageShell>
   );
+}
+
+function buildDeleteImpact(checklist: Checklist): ImpactRow[] {
+  const totalItems = checklist.checklistItemCount
+    ?? (checklist.phases?.reduce((t, p) => t + p.total, 0) ?? 0);
+  const warnings = checklist.warningCount ?? 0;
+  // We don't know the exact number of related rows from the dashboard data
+  // (evidence uploads, plan links, risk answers, post-mortem rows are not
+  // in the list response). Listing them with an exact count would be
+  // misleading, so they're shown as a single "all related records" line
+  // and the server-side transaction handles the actual cascade.
+  return [
+    { label: "Checklist", count: 1, severity: "high" },
+    { label: "Checklist items", count: totalItems, severity: totalItems > 0 ? "high" : "low" },
+    { label: "Warnings (all statuses)", count: warnings, severity: warnings > 0 ? "medium" : "low" },
+    {
+      label: "Evidence uploads, plan links, risk answers, post-mortem",
+      count: 1,
+      note: "all wiped",
+      severity: "medium",
+    },
+  ];
 }
 
 function WarningRow({ warning, severity, onView, onOverride, onResolve, onViewProject }: {

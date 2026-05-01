@@ -18,6 +18,7 @@ import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/p
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { useAuth } from "@/hooks/use-auth";
 import { normalizeRoleForPermissions } from "@shared/schema";
+import { getInitials } from "@/lib/task-formatters";
 
 const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"];
 import {
@@ -227,9 +228,9 @@ function MoodBadge({ mood }: { mood: string | null }) {
   ) : null;
 }
 
-function getInitials(name: string) {
-  return name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
-}
+// getInitials moved to client/src/lib/task-formatters.ts so
+// the Engineering Standup avatar matches what the Engineering Board /
+// My Work / Opportunity drawer Tickets section show for the same user.
 
 const PRIORITY_COLORS: Record<string, string> = {
   Urgent: "bg-red-100 text-red-700 border-red-200",

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { invalidateProjectV2Queries } from "@/hooks/use-project-v2";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -393,6 +394,7 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
     },
     onSuccess: () => {
       invalidateAll();
+      invalidateProjectV2Queries(queryClient, projectInfoId ?? null);
       setSendForApprovalItem(null);
       setSfaApprover("");
       toast({ title: "Submitted for review", description: "The item is now in review. The reviewer will pass or fail it." });
@@ -427,6 +429,7 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
     },
     onSuccess: () => {
       invalidateAll();
+      invalidateProjectV2Queries(queryClient, projectInfoId ?? null);
       setNewItemName("");
       setShowAddItem(null);
     },
@@ -446,6 +449,7 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
     },
     onSuccess: () => {
       invalidateAll();
+      invalidateProjectV2Queries(queryClient, projectInfoId ?? null);
       setDeleteConfirmId(null);
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
@@ -468,6 +472,7 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["quality-plan-links", projectName] });
       invalidateAll();
+      invalidateProjectV2Queries(queryClient, projectInfoId ?? null);
       setLinkingPhaseId(null);
       setLinkingItemId(null);
     },
@@ -483,6 +488,7 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["quality-plan-links", projectName] });
       invalidateAll();
+      invalidateProjectV2Queries(queryClient, projectInfoId ?? null);
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
@@ -525,6 +531,7 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
       }
       queryClient.invalidateQueries({ queryKey: ["quality-checklist", projectName] });
       invalidateAll();
+      invalidateProjectV2Queries(queryClient, projectInfoId ?? null);
       toast({ title: "Evidence uploaded" });
     } catch (err: any) {
       toast({ title: "Upload failed", description: err.message, variant: "destructive" });
@@ -627,6 +634,96 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
     };
   }, [checklistData?.itemInstances, checklistData?.templateItems, checklistData?.evidence]);
 
+  // ── Helpers and drill-down memos — hoisted ABOVE the early returns below so
+  // that hook count is identical between the loading render and the loaded
+  // render. Violating this triggers React error #310 ("Rendered more hooks
+  // than during the previous render"). Each block guards its own data access
+  // with optional chaining so it is safe to run while checklistData is still
+  // undefined during the initial fetch.
+  const buildGovernanceItemLike = (instance: any) => {
+    const ti = (checklistData?.templateItems || []).find((t: any) => t.id === instance.templateItemId);
+    const evidenceCount = (checklistData?.evidence || []).filter((e: any) => e.itemInstanceId === instance.id).length;
+    return {
+      isApplicable: instance.isApplicable,
+      isEvidenceRequired: ti?.isEvidenceRequired ?? false,
+      evidenceCount,
+      approved: instance.approved,
+      qmStatus: instance.qmStatus,
+      approvalState: instance.approvalState,
+      approvalStatus: instance.approvalStatus,
+      endDate: instance.endDate,
+      scheduledDate: instance.scheduledDate,
+    };
+  };
+
+  const isHandoverBlockingItem = (instance: any) => {
+    if (instance.isApplicable === false) return false;
+    const ev = evaluateQualityGovernanceItem(buildGovernanceItemLike(instance));
+    return ev.evidenceMissing || ev.resubmissionNeeded || ev.overdue || ev.approvalState === "pending_review";
+  };
+
+  // Items contributing to CRITICAL risk score are the higher-weighted ones in
+  // computeQualityRiskSummary (overdue x2, resubmission x3, evidence gap x2).
+  // Pending review alone is weighted 1 and does not push the level to critical.
+  const isCriticalContributorItem = (instance: any) => {
+    if (instance.isApplicable === false) return false;
+    const ev = evaluateQualityGovernanceItem(buildGovernanceItemLike(instance));
+    return ev.evidenceMissing || ev.resubmissionNeeded || ev.overdue;
+  };
+
+  // Items the user can actionably submit for approval right now: applicable,
+  // not already approved, and not already pending review. This matches the
+  // server-side `actionableForApprovalCount`.
+  const isActionableForApprovalItem = (instance: any) => {
+    if (instance.isApplicable === false) return false;
+    if (instance.approved) return false;
+    const ev = evaluateQualityGovernanceItem(buildGovernanceItemLike(instance));
+    if (ev.approvalState === "pending_review" || ev.approvalState === "approved") return false;
+    return true;
+  };
+
+  // Drill-down items across ALL phases (matches badge counts). When the user
+  // has not opened a chip drill-down (chipConfig === null) or data is still
+  // loading (checklistData === undefined) this short-circuits to an empty
+  // array — keeping the hook call itself unconditional.
+  const drillDownInstances = useMemo(() => {
+    if (!chipConfig || !checklistData) return [];
+    const filterValue = chipConfig.filter;
+    const allInst = checklistData.itemInstances || [];
+    const tplItems = checklistData.templateItems || [];
+    const evid = checklistData.evidence || [];
+    return allInst.filter((instance: any) => {
+      if (filterValue === "evidence_gap") {
+        if (instance.isApplicable === false) return false;
+        const ti = tplItems.find((t: any) => t.id === instance.templateItemId);
+        return ti?.isEvidenceRequired && evid.filter((e: any) => e.itemInstanceId === instance.id).length === 0;
+      }
+      if (filterValue === "handover_blocking") {
+        return isHandoverBlockingItem(instance);
+      }
+      if (filterValue === "critical_contributors") {
+        return isCriticalContributorItem(instance);
+      }
+      if (filterValue === "actionable_for_approval") {
+        return isActionableForApprovalItem(instance);
+      }
+      if (filterValue === "review") {
+        return getItemQmStatus(instance) === "review";
+      }
+      return false;
+    });
+  }, [chipConfig, checklistData]);
+
+  const drillDownInPhase = useMemo(() => {
+    if (!chipConfig || !selectedPhaseId || !checklistData) return drillDownInstances;
+    const tplItems = checklistData.templateItems || [];
+    const grpItems = checklistData.groups || [];
+    const phaseTemplateIds = tplItems
+      .filter((ti: any) => grpItems.find((g: any) => g.id === ti.templateGroupId)?.templatePhaseId === selectedPhaseId)
+      .map((ti: any) => ti.id);
+    return drillDownInstances.filter((i: any) => phaseTemplateIds.includes(i.templateItemId));
+  }, [chipConfig, drillDownInstances, selectedPhaseId, checklistData]);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-16" data-testid="quality-loading">
@@ -705,48 +802,6 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
     t.taskNo && t.highLevelProgramme && t.taskNo !== "No." && t.highLevelProgramme !== "HIGH LEVEL PROGRAMME"
   );
 
-  const buildGovernanceItemLike = (instance: any) => {
-    const ti = (checklistData?.templateItems || []).find((t: any) => t.id === instance.templateItemId);
-    const evidenceCount = (checklistData?.evidence || []).filter((e: any) => e.itemInstanceId === instance.id).length;
-    return {
-      isApplicable: instance.isApplicable,
-      isEvidenceRequired: ti?.isEvidenceRequired ?? false,
-      evidenceCount,
-      approved: instance.approved,
-      qmStatus: instance.qmStatus,
-      approvalState: instance.approvalState,
-      approvalStatus: instance.approvalStatus,
-      endDate: instance.endDate,
-      scheduledDate: instance.scheduledDate,
-    };
-  };
-
-  const isHandoverBlockingItem = (instance: any) => {
-    if (instance.isApplicable === false) return false;
-    const ev = evaluateQualityGovernanceItem(buildGovernanceItemLike(instance));
-    return ev.evidenceMissing || ev.resubmissionNeeded || ev.overdue || ev.approvalState === "pending_review";
-  };
-
-  // Items contributing to CRITICAL risk score are the higher-weighted ones in
-  // computeQualityRiskSummary (overdue x2, resubmission x3, evidence gap x2).
-  // Pending review alone is weighted 1 and does not push the level to critical.
-  const isCriticalContributorItem = (instance: any) => {
-    if (instance.isApplicable === false) return false;
-    const ev = evaluateQualityGovernanceItem(buildGovernanceItemLike(instance));
-    return ev.evidenceMissing || ev.resubmissionNeeded || ev.overdue;
-  };
-
-  // Items the user can actionably submit for approval right now: applicable,
-  // not already approved, and not already pending review. This matches the
-  // server-side `actionableForApprovalCount`.
-  const isActionableForApprovalItem = (instance: any) => {
-    if (instance.isApplicable === false) return false;
-    if (instance.approved) return false;
-    const ev = evaluateQualityGovernanceItem(buildGovernanceItemLike(instance));
-    if (ev.approvalState === "pending_review" || ev.approvalState === "approved") return false;
-    return true;
-  };
-
   const shouldShowItem = (instance: any) => {
     if (statusFilter === "all") return true;
     if (statusFilter === "unassigned") return !instance.primaryAssignment;
@@ -799,40 +854,10 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
     }
   };
 
-  // Compute drill-down items across ALL phases (matches badge counts)
+  // Drill-down memos and the helpers they depend on are now declared above the
+  // early returns (React's Rules of Hooks). `allInstances` is still kept here
+  // because other code paths below (e.g. bulk actions) reference it post-load.
   const allInstances: any[] = checklistData?.itemInstances || [];
-  const drillDownInstances = useMemo(() => {
-    if (!chipConfig) return [];
-    const filterValue = chipConfig.filter;
-    return allInstances.filter((instance: any) => {
-      if (filterValue === "evidence_gap") {
-        if (instance.isApplicable === false) return false;
-        const ti = (checklistData?.templateItems || []).find((t: any) => t.id === instance.templateItemId);
-        return ti?.isEvidenceRequired && (checklistData?.evidence || []).filter((e: any) => e.itemInstanceId === instance.id).length === 0;
-      }
-      if (filterValue === "handover_blocking") {
-        return isHandoverBlockingItem(instance);
-      }
-      if (filterValue === "critical_contributors") {
-        return isCriticalContributorItem(instance);
-      }
-      if (filterValue === "actionable_for_approval") {
-        return isActionableForApprovalItem(instance);
-      }
-      if (filterValue === "review") {
-        return getItemQmStatus(instance) === "review";
-      }
-      return false;
-    });
-  }, [chipConfig, allInstances, checklistData?.templateItems, checklistData?.evidence]);
-
-  const drillDownInPhase = useMemo(() => {
-    if (!chipConfig || !selectedPhaseId) return drillDownInstances;
-    const phaseTemplateIds = templateItems
-      .filter((ti: any) => groups.find((g: any) => g.id === ti.templateGroupId)?.templatePhaseId === selectedPhaseId)
-      .map((ti: any) => ti.id);
-    return drillDownInstances.filter((i: any) => phaseTemplateIds.includes(i.templateItemId));
-  }, [chipConfig, drillDownInstances, selectedPhaseId, templateItems, groups]);
 
   const selectAllVisibleDrillDown = () => {
     setSelectedItems(new Set(drillDownInPhase.map((i: any) => i.id)));
@@ -877,6 +902,7 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
     setBulkApprover("");
     setSelectedItems(new Set());
     invalidateAll();
+      invalidateProjectV2Queries(queryClient, projectInfoId ?? null);
     if (failCount > 0) {
       toast({
         title: failCount === ids.length ? "Send for approval failed" : "Partial submission",
@@ -937,6 +963,7 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
       setCreatePackDialogOpen(false);
       setSelectedItems(new Set());
       invalidateAll();
+      invalidateProjectV2Queries(queryClient, projectInfoId ?? null);
       toast({
         title: "Handover pack created",
         description: `Pack created with ${ids.length - itemFailures} of ${ids.length} item${ids.length !== 1 ? "s" : ""}.${itemFailures > 0 ? ` (${itemFailures} failed)` : ""}`,

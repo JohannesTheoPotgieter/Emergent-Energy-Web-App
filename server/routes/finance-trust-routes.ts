@@ -69,12 +69,11 @@ export function registerFinanceTrustRoutes(app: Express): void {
         });
         res.json({ ...summary, trust });
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to build exception summary";
-        console.error("[finance-trust] exception summary failed:", err);
-        res.status(500).json({
-          error: "finance_exception_summary_failed",
-          message,
-        });
+        console.error("[finance-trust] exception summary failed:", err, err);
+        // Security review #4: drop err.message from the response so
+        // raw Drizzle/pg errors don't leak schema details to the
+        // client. Server log retains the full diagnostic above.
+        res.status(500).json({ error: "finance_exception_summary_failed" });
       }
     },
   );
@@ -105,12 +104,11 @@ export function registerFinanceTrustRoutes(app: Express): void {
         });
         res.json({ ...queue, trust });
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to build exception queue";
-        console.error("[finance-trust] exception queue failed:", err);
-        res.status(500).json({
-          error: "finance_exception_queue_failed",
-          message,
-        });
+        console.error("[finance-trust] exception queue failed:", err, err);
+        // Security review #4: drop err.message from the response so
+        // raw Drizzle/pg errors don't leak schema details to the
+        // client. Server log retains the full diagnostic above.
+        res.status(500).json({ error: "finance_exception_queue_failed" });
       }
     },
   );
@@ -142,12 +140,11 @@ export function registerFinanceTrustRoutes(app: Express): void {
         });
         res.json({ ...health, trust });
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to load sync health";
-        console.error("[finance-trust] sync health failed:", err);
-        res.status(500).json({
-          error: "finance_sync_health_failed",
-          message,
-        });
+        console.error("[finance-trust] sync health failed:", err, err);
+        // Security review #4: drop err.message from the response so
+        // raw Drizzle/pg errors don't leak schema details to the
+        // client. Server log retains the full diagnostic above.
+        res.status(500).json({ error: "finance_sync_health_failed" });
       }
     },
   );
@@ -181,12 +178,11 @@ export function registerFinanceTrustRoutes(app: Express): void {
         });
         res.json({ ...report, trust });
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to build integrity audit";
-        console.error("[finance-trust] integrity audit failed:", err);
-        res.status(500).json({
-          error: "finance_integrity_audit_failed",
-          message,
-        });
+        console.error("[finance-trust] integrity audit failed:", err, err);
+        // Security review #4: drop err.message from the response so
+        // raw Drizzle/pg errors don't leak schema details to the
+        // client. Server log retains the full diagnostic above.
+        res.status(500).json({ error: "finance_integrity_audit_failed" });
       }
     },
   );
@@ -218,12 +214,11 @@ export function registerFinanceTrustRoutes(app: Express): void {
         });
         res.json({ ...status, trust });
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to build revalidation status";
-        console.error("[finance-trust] revalidation status failed:", err);
-        res.status(500).json({
-          error: "finance_revalidation_status_failed",
-          message,
-        });
+        console.error("[finance-trust] revalidation status failed:", err, err);
+        // Security review #4: drop err.message from the response so
+        // raw Drizzle/pg errors don't leak schema details to the
+        // client. Server log retains the full diagnostic above.
+        res.status(500).json({ error: "finance_revalidation_status_failed" });
       }
     },
   );
@@ -260,12 +255,11 @@ export function registerFinanceTrustRoutes(app: Express): void {
         });
         res.json({ ...report, trust });
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Failed to load integration freshness";
-        console.error("[finance-trust] integration freshness failed:", err);
-        res.status(500).json({
-          error: "integration_freshness_failed",
-          message,
-        });
+        console.error("[finance-trust] integration freshness failed:", err, err);
+        // Security review #4: drop err.message from the response so
+        // raw Drizzle/pg errors don't leak schema details to the
+        // client. Server log retains the full diagnostic above.
+        res.status(500).json({ error: "integration_freshness_failed" });
       }
     },
   );

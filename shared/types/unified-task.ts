@@ -1,11 +1,44 @@
 /**
- * UnifiedTask — Single canonical type for all task data flowing through the app.
+ * UnifiedTask — Single canonical view-model for every task / engineering
+ * ticket displayed in the app.
  *
  * Replaces the ad-hoc OperationalTask / EngineeringTask / Task / MytoolTask
  * shapes that previously diverged across endpoints. Every field here maps to
  * work_items core + extension tables.
  *
- * Prompt 8 of 15.
+ * ── Engineering-ticket consumer surfaces ──────────────────────────────────
+ * The same engineering ticket can appear on many screens. To keep the rows
+ * identical (status pill, dates, %, owner initials, "X overdue" badges),
+ * every surface below MUST read from this view-model, format it through
+ *   shared/lib/engineering-ticket-view.ts (canonical projection +
+ *     deriveEngineeringTicketMetrics — single source of "Active /
+ *     Overdue / Unassigned / Blocked / Review / Approval /
+ *     Deliverables / MicrosoftLinked" counters)
+ *   shared/engineering-ticket-status.ts (canonical status helpers)
+ *   client/src/lib/task-formatters.ts  (dates, due-label, initials, colour)
+ *   client/src/lib/task-status.ts      (status label / badge / column)
+ *   client/src/lib/task-status-compat.ts (canonical ↔ standup-lane casing)
+ * and invalidate writes through
+ *   client/src/lib/task-cache.ts → invalidateAllTaskCaches /
+ *   invalidateEngineeringTicketCaches.
+ *
+ * Surfaces that consume this view-model:
+ *  - Engineering Task Execution Board    (client/src/pages/EngineeringTasksPage.tsx)
+ *  - Engineering Dashboard               (client/src/pages/engineering-dashboard.tsx)
+ *  - Engineering Standup                 (client/src/pages/engineering/standup/*)
+ *  - Execution Dashboard / Plan tab      (client/src/pages/execution-dashboard/*,
+ *                                         client/src/pages/execution-board.tsx)
+ *  - Milestone Tracker                   (client/src/pages/milestone-tracker.tsx)
+ *  - My Work tasks / calendar / home     (client/src/pages/my-work-*.tsx)
+ *  - Action Launchpad                    (client/src/pages/action-launchpad.tsx)
+ *  - Opportunity drawer Tickets section  (client/src/components/opportunities/
+ *                                         OpportunityDrawer.tsx)
+ *  - Project tab "Engineering" lists     (client/src/components/tabs/*.tsx)
+ *
+ * Status casing rule: the wire format stays canonical lower_snake (see
+ * shared/task-status.ts).  Standup-lane UPPERCASE (`TO DO`, `IN PROGRESS`,
+ * `HOLD`, `COMPLETE`) and Plan-tab presentation strings are derived in
+ * task-status-compat.ts — never stored alongside the canonical value.
  */
 
 // ── Core ────────────────────────────────────────────────────────────
@@ -125,7 +158,7 @@ export function fromWorkItem(row: Record<string, any>, overrides?: Partial<Unifi
     id: row.id,
     title: row.title ?? "",
     description: row.description ?? null,
-    status: row.status ?? "Not Started",
+    status: row.status ?? "not_started",
     priority: row.priority ?? null,
     workstream: row.workstream ?? row.work_stream ?? "PM",
     type: row.type ?? null,

@@ -89,8 +89,11 @@ describe("D6 Phase 3.1 — admin UI + webUrl", () => {
 
   it("project_folders schema declares webUrl column with backing migration", () => {
     expect(documentsSchema).toMatch(/webUrl:\s*text\(["']web_url["']\)/);
+    // After the merge with main, the two D6 migrations (taxonomy + web_url
+    // column) were consolidated into a single drizzle-kit-generated
+    // 0044_document_management_v2 migration that ships both at once.
     const tags = journal.entries.map((e) => e.tag);
-    expect(tags).toContain("0039_project_folders_web_url");
+    expect(tags).toContain("0044_document_management_v2");
   });
 
   it("provisioning service threads webUrl through onLink + report", () => {

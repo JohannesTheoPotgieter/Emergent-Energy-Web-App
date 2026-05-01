@@ -6,6 +6,7 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import type {
   ProjectDetailResponse,
@@ -78,4 +79,14 @@ export function useProjectEngineering(projectId: number | undefined, enabled: bo
     enabled: !!projectId && enabled,
     staleTime: 30_000,
   });
+}
+
+export function invalidateProjectV2Queries(queryClient: QueryClient, projectId: number | null | undefined) {
+  if (!projectId) return;
+  queryClient.invalidateQueries({ queryKey: ["v2-project-detail", projectId] });
+  queryClient.invalidateQueries({ queryKey: ["v2-project-finance", projectId] });
+  queryClient.invalidateQueries({ queryKey: ["v2-project-plan", projectId] });
+  queryClient.invalidateQueries({ queryKey: ["v2-project-quality", projectId] });
+  queryClient.invalidateQueries({ queryKey: ["v2-project-engineering", projectId] });
+  queryClient.invalidateQueries({ queryKey: ["project-header-kpis", projectId] });
 }

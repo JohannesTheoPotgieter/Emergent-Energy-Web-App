@@ -6,12 +6,22 @@ import type { Express, Request, Response } from "express";
 import { db } from "../db";
 import { eq, and, isNull, desc } from "drizzle-orm";
 import { jwtAuth, requireAuth } from "../auth-context";
+import { requireRole } from "../middleware/requireRole";
 import { logAuditFromReq } from "../audit-logger";
 import * as schema from "@shared/schema";
 import { TEMPLATE_TYPES, templateOverrides } from "@shared/schema/template-overrides";
 import { diffTemplateVsOpenStages, applyTemplateSync } from "../services/stage-lifecycle-service";
 
 const COO_ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
+
+// Hard role gate for template-governance writes — these handlers
+// publish stage-checklist versions and per-project overrides that
+// affect every project's gate evaluation. Without this gate (added in
+// response to security review finding #2), any authenticated user
+// could create override rows or version templates. Reads stay
+// requireAuth-only because the data is operational and used by the
+// stage-gate UI from non-admin roles.
+const TEMPLATE_WRITE_ROLES = COO_ADMIN_ROLES;
 
 function getUser(req: Request): { id: number; name: string; role: string } {
   const u = (req as any).user;
@@ -81,7 +91,7 @@ app.get("/api/templates/stage-checklist/:id/versions", jwtAuth, requireAuth, asy
 });
 
 // POST /api/templates/stage-checklist/:id/version — create a new version (admin only)
-app.post("/api/templates/stage-checklist/:id/version", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+app.post("/api/templates/stage-checklist/:id/version", jwtAuth, requireAuth, requireRole(TEMPLATE_WRITE_ROLES), async (req: Request, res: Response) => {
   try {
     const user = getUser(req);
     if (!isAdmin(user.role)) {
@@ -156,7 +166,7 @@ app.post("/api/templates/stage-checklist/:id/version", jwtAuth, requireAuth, asy
 // ── Template Overrides ────────────────────────────────────
 
 // POST /api/templates/overrides — create a project-level template override
-app.post("/api/templates/overrides", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+app.post("/api/templates/overrides", jwtAuth, requireAuth, requireRole(TEMPLATE_WRITE_ROLES), async (req: Request, res: Response) => {
   try {
     const user = getUser(req);
     if (!isAdmin(user.role)) {
@@ -233,7 +243,7 @@ app.get("/api/templates/overrides/:projectId", jwtAuth, requireAuth, async (req:
 });
 
 // DELETE /api/templates/overrides/:id — deactivate an override (soft-delete)
-app.delete("/api/templates/overrides/:id", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+app.delete("/api/templates/overrides/:id", jwtAuth, requireAuth, requireRole(TEMPLATE_WRITE_ROLES), async (req: Request, res: Response) => {
   try {
     const user = getUser(req);
     if (!isAdmin(user.role)) {
@@ -370,6 +380,7 @@ app.post(
   "/api/templates/stage-checklist/:stageCode/sync",
   jwtAuth,
   requireAuth,
+  requireRole(TEMPLATE_WRITE_ROLES),
   async (req: Request, res: Response) => {
     try {
       const user = getUser(req);

@@ -23,6 +23,10 @@ import {
   isTicketBlocked,
   normalizeEngineeringTicketStatus,
 } from "@shared/engineering-ticket-status";
+import {
+  syncTicketEditToWorkItem,
+  ticketPriorityToWorkItemPriority,
+} from "./work-items-adapter";
 
 /**
  * Resolve the effective PD visibility config for a user.
@@ -435,7 +439,9 @@ export function registerPdRoutes(app: Express) {
         .orderBy(asc(engineeringTickets.id));
 
       const projectNames = Array.from(new Set(
-        rows.map(r => r.projectName || r.projectSiteName).filter(Boolean) as string[]
+        rows.map((r: { projectName: string | null; projectSiteName: string | null }) =>
+          r.projectName || r.projectSiteName
+        ).filter(Boolean) as string[]
       ));
 
       res.json({
@@ -644,8 +650,12 @@ export function registerPdRoutes(app: Express) {
         createdBy: user?.id || null,
       }).returning();
 
-      const selectedTasks: string[] | undefined = body.selectedTasks;
-      await spawnTasksForTicket(ticket, user, selectedTasks);
+      // Path 2: template auto-spawn (PD_REQUEST_TYPE_TASK_TEMPLATES) is
+      // retired. Engineering work is now created by the user explicitly,
+      // either via the "Add Engineering Ticket" form on the opportunity
+      // drawer (which inserts the canonical sibling work_items row in the
+      // same transaction) or via per-ticket "Add task" actions on the
+      // engineering board (`POST /api/pd/tickets/:id/engineering-tasks`).
 
       logAuditFromReq(req, {
         entityType: "pd_ticket",
@@ -717,6 +727,20 @@ export function registerPdRoutes(app: Express) {
             return acc;
           }, {}),
         });
+      }
+
+      // Path 2 — keep the canonical sibling work_items row in sync when
+      // the ticket is edited via this endpoint (PD ticket detail UI).
+      // Without this, status/priority/dueDate/solar-fields edits would
+      // silently skip the canonical store and the drawer board would
+      // go stale. See server/work-items-adapter.ts for the inverse leg.
+      try {
+        await syncTicketEditToWorkItem(updated, new Set(changedFields));
+      } catch (syncErr) {
+        // Sync is best-effort: never let a mirror failure block the
+        // user's edit response. The audit log already captured what
+        // changed so any drift is recoverable.
+        console.error(`[pd-tickets] syncTicketEditToWorkItem failed for ticket ${id}:`, syncErr);
       }
 
       res.json(updated);
@@ -803,74 +827,24 @@ export function registerPdRoutes(app: Express) {
     }
   });
 
-  app.post("/api/pd/tickets/:id/spawn-tasks", requireAuth, requirePermission('pd_tickets', 'edit'), async (req: Request, res: Response) => {
-    try {
-      const user = req.user as any;
-      // NOTE: `canCreatePdTicket` double-gate removed — see POST /api/pd/tickets.
-      const id = parseIntParam(req.params.id);
-      // Cascade-display: refuse spawn-tasks on a soft-deleted ticket (Task #34).
-      const [ticket] = await db.select().from(engineeringTickets).where(and(eq(engineeringTickets.id, id), isNull(engineeringTickets.deletedAt)));
-      if (!ticket) return res.status(404).json({ error: "Ticket not found" });
-
-      if (ticket.tasksSpawnedAt) {
-        return res.status(409).json({ error: "Tasks already spawned for this ticket" });
-      }
-
-      const { selectedTasks, customTasks } = req.body || {};
-      const spawned = await spawnTasksForTicket(ticket, user, selectedTasks, customTasks);
-      res.json({ spawned: spawned.length, tasks: spawned });
-    } catch (err: any) {
-      throw err;
-    }
+  // Path 2 — template-spawn surfaces are retired. The
+  // PD_REQUEST_TYPE_TASK_TEMPLATES fan-out produced phantom "[PD] …" cards
+  // that confused the opportunity drawer board. Engineering work is now
+  // created explicitly by the user — either via the "Add Engineering
+  // Ticket" form (canonical sibling work_items inserted in the same
+  // transaction) or via per-ticket "Add task" actions on the engineering
+  // board. Both endpoints below return 410 Gone so any stale client sees
+  // an explicit error rather than silently doing nothing.
+  app.post("/api/pd/tickets/:id/spawn-tasks", requireAuth, requirePermission('pd_tickets', 'edit'), async (_req: Request, res: Response) => {
+    res.status(410).json({
+      error: "Template task-spawn is retired. Add engineering work directly via the Add Engineering Ticket form or per-ticket Add task on the engineering board.",
+    });
   });
 
-  // Task #108 — companion bulk-spawn POST. Paired with GET
-  // /api/pd/tickets/spawn-eligible above (registered before /:id to avoid
-  // route-collision). Reuses SPAWN_EXEC_ROLES declared with the GET.
-  app.post("/api/pd/tickets/bulk-spawn-tasks", requireAuth, requireRole(SPAWN_EXEC_ROLES), async (req: Request, res: Response) => {
-    try {
-      const user = req.user as any;
-      const eligible = await db
-        .select()
-        .from(engineeringTickets)
-        .where(and(
-          isNull(engineeringTickets.deletedAt),
-          isNull(engineeringTickets.tasksSpawnedAt),
-          sql`${engineeringTickets.projectId} is not null`,
-        ));
-
-      let workItemsCreated = 0;
-      let ticketsProcessed = 0;
-      let skipped = 0;
-
-      for (const ticket of eligible) {
-        // spawnTasksForTicket performs its own atomic claim — if another caller
-        // beat us to this ticket it returns []; we record that as "skipped".
-        const spawned = await spawnTasksForTicket(ticket, user);
-        if (spawned.length > 0) {
-          ticketsProcessed += 1;
-          workItemsCreated += spawned.length;
-        } else {
-          skipped += 1;
-        }
-      }
-
-      logAuditFromReq(req, {
-        entityType: "engineering_ticket",
-        entityId: "bulk-spawn",
-        action: "bulk_spawn_tasks",
-        changesJson: {
-          eligibleConsidered: eligible.length,
-          ticketsProcessed,
-          workItemsCreated,
-          skipped,
-        },
-      });
-
-      res.json({ ticketsProcessed, workItemsCreated, skipped });
-    } catch (err: any) {
-      throw err;
-    }
+  app.post("/api/pd/tickets/bulk-spawn-tasks", requireAuth, requireRole(SPAWN_EXEC_ROLES), async (_req: Request, res: Response) => {
+    res.status(410).json({
+      error: "Bulk template task-spawn is retired. Engineering work is now created per-ticket by the user.",
+    });
   });
 
   app.post("/api/pd/tickets/:id/engineering-tasks", requireAuth, requirePermission('pd_tickets', 'edit'), async (req: Request, res: Response) => {
@@ -888,8 +862,13 @@ export function registerPdRoutes(app: Express) {
       const title = String(req.body?.title || "").trim();
       if (!title) return res.status(400).json({ error: "Task title is required" });
 
-      const priority = String(req.body?.priority || "Medium");
-      const normalizedPriority = ["High", "Medium", "Low"].includes(priority) ? priority : "Medium";
+      // Path 2 — work_items.priority canonical enum is Urgent | High | Med | Low.
+      // Accept both ticket-style ("Medium") and work-item-style ("Med") inbound
+      // values from clients and normalise via the bidirectional helper so the
+      // canonical store never accumulates "Medium" rows that don't match the
+      // engineering board renderer.
+      const inboundPriority = req.body?.priority == null ? null : String(req.body.priority);
+      const normalizedPriority = ticketPriorityToWorkItemPriority(inboundPriority) ?? "Med";
 
       const [task] = await db.insert(workItems).values({
         projectId: ticket.projectId,
@@ -1460,66 +1439,14 @@ export function registerPdRoutes(app: Express) {
 // Client-id generation lives in server/lib/client-id-generator.ts so both
 // /api/pd/clients and /api/clients share a single race-safe implementation.
 
-export async function spawnTasksForTicket(ticket: any, user: any, selectedTasks?: string[], customTasks?: { title: string; priority: string }[]): Promise<any[]> {
-  // Atomic idempotency claim: only the first caller for a given ticket
-  // wins the marker. Subsequent retries / concurrent submits get an empty
-  // result instead of duplicating tasks. Architect-flagged 2026-04-20.
-  if (!ticket.projectId) return [];
-
-  let templates = PD_REQUEST_TYPE_TASK_TEMPLATES[ticket.requestType] || [];
-  if (selectedTasks && Array.isArray(selectedTasks)) {
-    const selectedSet = new Set(selectedTasks);
-    templates = templates.filter(t => selectedSet.has(t.title));
-  }
-  const allTasks: { title: string; priority: string }[] = [
-    ...templates,
-    ...(Array.isArray(customTasks) ? customTasks.filter(t => t.title?.trim()) : []),
-  ];
-
-  // Atomic claim + insert in a single transaction. If task inserts fail
-  // for any reason, the claim rolls back too so retries remain possible.
-  // Architect-flagged 2026-04-20.
-  return db.transaction(async (tx: typeof db) => {
-    const claimed = await tx
-      .update(engineeringTickets)
-      .set({
-        tasksSpawnedAt: new Date(),
-        // Bump "haven't started" states to in_progress on first spawn;
-        // otherwise preserve the board state the ticket is currently in.
-        status: ["to_do", "not_started"].includes(normalizeEngineeringTicketStatus(ticket.status))
-          ? "in_progress"
-          : normalizeEngineeringTicketStatus(ticket.status),
-      })
-      .where(and(eq(engineeringTickets.id, ticket.id), isNull(engineeringTickets.tasksSpawnedAt)))
-      .returning({ id: engineeringTickets.id });
-    if (claimed.length === 0) return [];
-
-    const spawned: any[] = [];
-    for (let i = 0; i < allTasks.length; i++) {
-      const tmpl = allTasks[i];
-      const [task] = await tx.insert(workItems).values({
-        projectId: ticket.projectId,
-        workstream: "ENG",
-        source: "UI",
-        title: `[PD] ${tmpl.title}`,
-        description: `Auto-spawned from PD Ticket #${ticket.id} (${ticket.requestType}) for ${ticket.projectSiteName}`,
-        status: "TO DO",
-        priority: tmpl.priority === "High" ? "High" : "Medium",
-        endDate: ticket.dueDate || null,
-        sortOrder: i,
-        engineeringTicketId: ticket.id,
-        createdBy: user?.id || null,
-      }).returning();
-      if (task) {
-        await tx.insert(taskActivityLog).values({
-          workItemId: task.id,
-          actorId: user?.id || null,
-          actionType: "created",
-          newValue: `Task spawned from PD Ticket #${ticket.id} (${ticket.requestType})`,
-        });
-        spawned.push(task);
-      }
-    }
-    return spawned;
-  });
+/**
+ * @deprecated Path 2 — template-spawn is retired.
+ * Returns [] unconditionally. Kept only so existing imports
+ * (server/departments/opportunities-routes.ts) still resolve at module
+ * load. New engineering work is created by the user via the "Add
+ * Engineering Ticket" form or the per-ticket "Add task" action.
+ * Schedule for full removal once those import sites are deleted.
+ */
+export async function spawnTasksForTicket(_ticket: any, _user: any, _selectedTasks?: string[], _customTasks?: { title: string; priority: string }[]): Promise<any[]> {
+  return [];
 }

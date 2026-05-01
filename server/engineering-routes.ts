@@ -32,6 +32,11 @@ import { listEngineeringWorkItems, getEngineeringWorkItemById, createEngineering
 import { generateWorkItemReconciliationReport } from "./lib/reconciliation/work-item-reconciliation";
 import { assertTaskWorkflowTransition, buildTaskWorkflowContext, TaskWorkflowGuardError } from "./lib/task-workflow-guard";
 import { isTaskComplete, isTaskCompleteForReporting, isApprovalState } from "@shared/task-status";
+import {
+  isTicketBlocked,
+  normalizeEngineeringTicketStatus,
+} from "@shared/engineering-ticket-status";
+import { projectEngineeringTicket } from "@shared/lib/engineering-ticket-view";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
 import { requireAdmin } from "./middleware/requireAdmin";
 import { getAssignmentsForEntity, getAssignmentsForEntities, listAssignableDirectory } from "./services/assignment-service";
@@ -64,40 +69,37 @@ function getUserRole(req: Request): string {
 // The previous UPPERCASE sets silently failed every comparison because
 // the work-items adapter returns canonical lowercase since migration
 // 20260413_status_casing_normalization.
-const BLOCKED_STATUSES = new Set(["hold"]);
-const REVIEW_NEEDED_STATUSES = new Set(["provide_feedback"]);
-const APPROVAL_PENDING_STATUSES = new Set(["needs_approval", "operational_approval"]);
-const COMPLETE_LIKE_STATUSES = new Set(["complete"]);
 const MICROSOFT_ADMIN_ROLES = new Set(["COO_ADMIN", "CEO_ADMIN"]);
 
-function normalizeStatus(status?: string | null): string {
-  return (status || "").trim().toUpperCase();
-}
-
+// Status flag detection routes through the canonical helpers in
+// shared/engineering-ticket-status.ts. The previous local
+// implementation uppercased the input but compared against lower-case
+// constants, so post-migration tickets never matched and the
+// `isBlocked` / `isReviewNeeded` / `isApprovalPending` enrichment flags
+// were always false.
 function isBlockedStatus(status?: string | null): boolean {
-  return BLOCKED_STATUSES.has(normalizeStatus(status));
+  return isTicketBlocked(status);
 }
 
 function isReviewNeededStatus(status?: string | null): boolean {
-  return REVIEW_NEEDED_STATUSES.has(normalizeStatus(status));
+  return normalizeEngineeringTicketStatus(status) === "provide_feedback";
 }
 
 function isApprovalPendingStatus(status?: string | null): boolean {
-  return APPROVAL_PENDING_STATUSES.has(normalizeStatus(status));
+  const canonical = normalizeEngineeringTicketStatus(status);
+  return canonical === "needs_approval" || canonical === "operational_approval";
 }
 
 function isDeliverableApprovalPendingStatus(status?: string | null): boolean {
-  const normalized = normalizeStatus(status);
-  if (!normalized) return false;
-  if (COMPLETE_LIKE_STATUSES.has(normalized)) return false;
-  return [
-    "APPROVAL",
-    "REVIEW",
-    "SUBMITTED",
-    "PENDING",
-    "AWAITING",
-    "QC",
-  ].some((token) => normalized.includes(token));
+  const canonical = normalizeEngineeringTicketStatus(status);
+  if (canonical === "complete" || canonical === "qc_approved") return false;
+  // Free-form deliverable statuses can be anything: keep the substring
+  // check but normalise once to lower-case so it survives Title-Case input.
+  const lower = (status ?? "").trim().toLowerCase();
+  if (!lower) return false;
+  return ["approval", "review", "submitted", "pending", "awaiting", "qc"].some((token) =>
+    lower.includes(token),
+  );
 }
 
 async function isLocalSyncedSaveFlowEnabled(): Promise<boolean> {
@@ -348,32 +350,78 @@ async function enrichEngineeringTasks(tasks: any[], req: Request): Promise<any[]
       isDeliverableApprovalPendingStatus(item.status),
     ).length;
 
-    return {
-      ...t,
-      assignees: mergedAssignees.map((user: any) => user.name),
+    const ownerName = t.ownerUserId
+      ? userMap.get(t.ownerUserId)?.name ?? t.ownerName ?? null
+      : t.ownerName ?? null;
+    const sourceContextLabel = stageContextMap.has(t.workItemId || t.id)
+      ? `Engineering Stage: ${stageContextMap.get(t.workItemId || t.id)}`
+      : (projectLinks?.sourceContextLabel || null);
+
+    // Project the row through the canonical engineering-ticket
+    // view-model so the status pill, dates, percent complete, owner
+    // initials, "Xd overdue" and blocked/review/approval flags match
+    // every other consumer surface (Plan tab, Standup, Opportunity
+    // drawer, Milestone Tracker, Action Launchpad).
+    const view = projectEngineeringTicket({
+      id: t.id,
+      workItemId: t.workItemId ?? t.id,
+      title: t.title,
+      description: t.description,
+      status: t.status,
+      priority: t.priority,
+      projectId: t.projectId,
+      projectName: t.projectName,
+      startDate: t.startDate,
+      endDate: t.endDate,
+      dueDate: t.dueDate ?? t.endDate,
+      percentComplete: t.percentComplete,
+      expectedPctComplete: t.expectedPctComplete,
+      ownerUserId: t.ownerUserId,
+      ownerName,
       assigneeUserIds: resolvedAssigneeIds,
-      assigneeUserId: resolvedAssigneeIds[0] || null,
-      resolvedAssignees: mergedAssignees,
-      resolvedOwner: t.ownerUserId ? userMap.get(t.ownerUserId) || null : null,
-      isUnassigned: mergedAssignees.length === 0 && !t.ownerUserId,
-      isBlocked: isBlockedStatus(t.status) || !!t.holdReason || !!t.blockedType,
-      isReviewNeeded: isReviewNeededStatus(t.status),
-      isApprovalPending: isApprovalPendingStatus(t.status),
+      assignees: mergedAssignees.map((user: { name: string }) => user.name),
+      resolvedAssignees: mergedAssignees.map((user: { id: number; name: string }) => ({
+        id: user.id,
+        name: user.name,
+      })),
+      holdReason: t.holdReason,
+      blockedType: t.blockedType,
+      blockerReason: t.blockerReason,
+      approvalRequired: t.approvalRequired,
+      trackingRag: t.trackingRag,
+      taskTypeTag: t.taskTypeTag,
+      linkedPlanItemId: t.linkedPlanItemId,
+      linkedDeliverableId: t.linkedDeliverableId,
+      linkedQualityItemInstanceId: t.linkedQualityItemInstanceId,
+      externalRef: t.externalRef,
+      externalTaskId: t.externalTaskId ?? t.externalRef,
+      wbsCode: t.wbsCode ?? t.taskNumber,
       projectLinkedDeliverableCount: projectDeliverables.length,
+      projectLinkedDeliverables: projectDeliverables.slice(0, 3).map((d) => ({
+        id: d.id,
+        title: d.title,
+        status: d.status,
+      })),
       approvalPendingDeliverableCount,
-      projectLinkedDeliverables: projectDeliverables.slice(0, 3),
-      deliverableContextHref: deliverableLinks?.sourceHref || null,
-      deliverableContextLabel: deliverableLinks?.sourceContextLabel || null,
-      projectHref: projectLinks?.projectHref || null,
-      sourceHref: projectLinks?.sourceHref || null,
-      sourceContextLabel: stageContextMap.has(t.workItemId || t.id)
-        ? `Engineering Stage: ${stageContextMap.get(t.workItemId || t.id)}`
-        : (projectLinks?.sourceContextLabel || null),
-      externalHref: projectLinks?.externalHref || null,
       hasMicrosoftContext: rawMicrosoftItems.length > 0,
       microsoftActionRequiredCount,
       relatedMicrosoftItems,
       stageContext: stageContextMap.get(t.workItemId || t.id) || null,
+      sourceContextLabel,
+      deliverableContextLabel: deliverableLinks?.sourceContextLabel || null,
+    });
+
+    return {
+      ...t,
+      // Canonical view-model fields override the raw row so consumers
+      // never see Title-Case status or stale "Not Started" defaults.
+      ...view,
+      assigneeUserId: resolvedAssigneeIds[0] || null,
+      resolvedOwner: t.ownerUserId ? userMap.get(t.ownerUserId) || null : null,
+      deliverableContextHref: deliverableLinks?.sourceHref || null,
+      projectHref: projectLinks?.projectHref || null,
+      sourceHref: projectLinks?.sourceHref || null,
+      externalHref: projectLinks?.externalHref || null,
     };
   });
 }
@@ -2481,20 +2529,49 @@ export function registerEngineeringRoutes(app: Express) {
         statusPipeline[canonical] = (statusPipeline[canonical] || 0) + 1;
       }
 
-      const mapTask = (t: typeof allTasks[0]) => ({
-        id: t.id,
-        title: t.title,
-        status: t.status,
-        priority: t.priority,
-        dueDate: t.dueDate,
-        assignees: t.assignees,
-        trackingRag: t.trackingRag,
-        projectName: t.projectName,
-        holdReason: t.holdReason,
-        blockerReason: t.blockerReason,
-        completedAt: t.completedAt,
-        taskTypeTag: t.taskTypeTag,
-      });
+      const mapTask = (t: typeof allTasks[0]) => {
+        const view = projectEngineeringTicket({
+          id: t.id,
+          title: t.title,
+          status: t.status,
+          priority: t.priority,
+          dueDate: t.dueDate,
+          endDate: t.dueDate,
+          ownerName: Array.isArray(t.assignees) && t.assignees.length > 0 ? t.assignees[0] : null,
+          assignees: t.assignees ?? null,
+          trackingRag: t.trackingRag ?? null,
+          projectId: t.projectId ?? null,
+          projectName: t.projectName ?? null,
+          holdReason: t.holdReason ?? null,
+          blockerReason: t.blockerReason ?? null,
+          completedAt: t.completedAt ?? null,
+          taskTypeTag: t.taskTypeTag ?? null,
+        });
+        return {
+          id: t.id,
+          title: t.title,
+          status: view.status,
+          statusLabel: view.statusLabel,
+          statusBadgeClass: view.statusBadgeClass,
+          statusColour: view.statusColour,
+          priority: t.priority,
+          dueDate: t.dueDate,
+          dueLabel: view.dueLabel,
+          dueUrgency: view.dueUrgency,
+          assignees: t.assignees,
+          ownerInitials: view.ownerInitials,
+          tags: view.tags,
+          trackingRag: t.trackingRag,
+          projectName: t.projectName,
+          holdReason: t.holdReason,
+          blockerReason: t.blockerReason,
+          completedAt: t.completedAt,
+          taskTypeTag: t.taskTypeTag,
+          isOverdue: view.isOverdue,
+          isComplete: view.isComplete,
+          isBlocked: view.isBlocked,
+        };
+      };
 
       // Collect IDs of tasks already shown in a named section
       const shownIds = new Set<number>();

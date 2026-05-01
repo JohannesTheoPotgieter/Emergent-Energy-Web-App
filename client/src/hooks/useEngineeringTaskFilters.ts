@@ -1,5 +1,14 @@
 import { useMemo } from "react";
 import type { Task } from "@/components/tasks/types";
+import {
+  deriveEngineeringTicketMetrics,
+  type EngineeringTicketMetrics as SharedMetrics,
+} from "@shared/lib/engineering-ticket-view";
+import {
+  isTicketDoneForReporting,
+  isTicketInApproval,
+  normalizeEngineeringTicketStatus,
+} from "@shared/engineering-ticket-status";
 
 export type EngineeringDueDateFilter =
   | "all"
@@ -36,19 +45,7 @@ interface Args {
   linkedSourceFilter: EngineeringLinkedSourceFilter;
 }
 
-export interface EngineeringTaskMetrics {
-  openTasks: Task[];
-  overdueTasks: Task[];
-  needsApprovalTasks: Task[];
-  holdTasks: Task[];
-  unassignedTasks: Task[];
-  blockedTasks: Task[];
-  reviewNeededTasks: Task[];
-  approvalPendingTasks: Task[];
-  projectLinkedDeliverableTasks: Task[];
-  microsoftLinkedTasks: Task[];
-  microsoftActionTasks: Task[];
-}
+export type EngineeringTaskMetrics = SharedMetrics<Task>;
 
 function normalizeText(value?: string | null): string {
   return (value || "").trim().toLowerCase();
@@ -72,7 +69,7 @@ function weekEndIso(baseIso: string): string {
 }
 
 function isTaskCompleteStatus(task: Task): boolean {
-  return normalizeText(task.status) === "complete";
+  return isTicketDoneForReporting(task.status);
 }
 
 function taskAssigneeNames(task: Task): string[] {
@@ -81,12 +78,11 @@ function taskAssigneeNames(task: Task): string[] {
 }
 
 function taskFlags(task: Task) {
-  const status = normalizeText(task.status);
+  const status = normalizeEngineeringTicketStatus(task.status);
   const assigneeNames = taskAssigneeNames(task);
   const isBlocked = task.isBlocked === true || status === "hold" || !!task.holdReason || !!task.blockedType;
-  const isApprovalPending =
-    task.isApprovalPending === true || status === "needs approval" || status === "operational approval";
-  const isReviewNeeded = task.isReviewNeeded === true || status === "provide feedback";
+  const isApprovalPending = task.isApprovalPending === true || isTicketInApproval(status);
+  const isReviewNeeded = task.isReviewNeeded === true || status === "provide_feedback";
   const isUnassigned =
     task.isUnassigned === true ||
     (assigneeNames.length === 0 && (task.assigneeUserIds?.length || 0) === 0 && !task.ownerUserId);
@@ -209,33 +205,23 @@ export function filterEngineeringTasks({
 }
 
 export function deriveEngineeringTaskMetrics(tasks: Task[]): EngineeringTaskMetrics {
-  const openTasks = tasks.filter((task) => !isTaskCompleteStatus(task));
-  const overdueTasks = openTasks.filter((task) => {
-    const dueDate = toIsoDate(task.dueDate);
-    return !!dueDate && dueDate < todayIso();
+  return deriveEngineeringTicketMetrics<Task>(tasks, {
+    status: (t) => t.status,
+    ownerUserId: (t) => t.ownerUserId,
+    assigneeUserIds: (t) => t.assigneeUserIds ?? null,
+    assignees: (t) => taskAssigneeNames(t),
+    dueDate: (t) => t.dueDate,
+    completedAt: (t) => t.completedAt ?? t.updatedAt ?? null,
+    holdReason: (t) => t.holdReason,
+    blockedType: (t) => t.blockedType,
+    isBlocked: (t) => t.isBlocked,
+    isReviewNeeded: (t) => t.isReviewNeeded,
+    isApprovalPending: (t) => t.isApprovalPending,
+    isUnassigned: (t) => t.isUnassigned,
+    hasMicrosoftContext: (t) => t.hasMicrosoftContext,
+    microsoftActionRequiredCount: (t) => t.microsoftActionRequiredCount,
+    projectLinkedDeliverableCount: (t) => t.projectLinkedDeliverableCount,
   });
-  const holdTasks = openTasks.filter((task) => normalizeText(task.status) === "hold");
-  const blockedTasks = openTasks.filter((task) => taskFlags(task).isBlocked);
-  const reviewNeededTasks = openTasks.filter((task) => taskFlags(task).isReviewNeeded);
-  const approvalPendingTasks = openTasks.filter((task) => taskFlags(task).isApprovalPending);
-  const unassignedTasks = openTasks.filter((task) => taskFlags(task).isUnassigned);
-  const projectLinkedDeliverableTasks = openTasks.filter((task) => (task.projectLinkedDeliverableCount || 0) > 0);
-  const microsoftLinkedTasks = openTasks.filter((task) => taskFlags(task).hasMicrosoftContext);
-  const microsoftActionTasks = openTasks.filter((task) => (task.microsoftActionRequiredCount || 0) > 0);
-
-  return {
-    openTasks,
-    overdueTasks,
-    needsApprovalTasks: approvalPendingTasks,
-    holdTasks,
-    unassignedTasks,
-    blockedTasks,
-    reviewNeededTasks,
-    approvalPendingTasks,
-    projectLinkedDeliverableTasks,
-    microsoftLinkedTasks,
-    microsoftActionTasks,
-  };
 }
 
 export function useEngineeringTaskFilters({

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { invalidateProjectV2Queries } from "@/hooks/use-project-v2";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -103,6 +104,7 @@ export default function FinancialReviewTab({ projectId, projectName }: Financial
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["financial-review", projectId] });
     queryClient.invalidateQueries({ queryKey: ["financial-review-history", projectId] });
+    invalidateProjectV2Queries(queryClient, projectId);
   };
 
   const createMutation = useMutation({

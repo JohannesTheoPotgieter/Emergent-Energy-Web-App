@@ -1,5 +1,7 @@
 import { Express, NextFunction, Request, Response } from "express";
 import { db } from "./db";
+import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import * as schema from "@shared/schema";
 import { eq, and, desc, sql, inArray, isNull } from "drizzle-orm";
 import multer from "multer";
 import path from "path";
@@ -699,6 +701,189 @@ export function registerQualityRoutes(app: Express) {
       res.status(500).json({ error: "Internal server error" });
     }
   });
+
+  // Hard-delete a project's quality process so the PM can restart from scratch.
+  // Removes evidence, plan links, warnings, post-mortem, then the checklist
+  // (which cascades to item instances + risk answers). Atomic via transaction.
+  app.delete(
+    "/api/quality/project/:projectName/checklist",
+    requireAuth,
+    requireAdminOrQm,
+    requirePermission("quality", "delete"),
+    async (req, res) => {
+      try {
+        // Guard against a malformed `%XX` in the param (would otherwise 500).
+        const rawProjectName = String(req.params.projectName);
+        let requestedProjectName: string;
+        try {
+          requestedProjectName = decodeURIComponent(rawProjectName);
+        } catch {
+          requestedProjectName = rawProjectName;
+        }
+
+        // Resolve the live (non-deleted) project_info row. Determinism comes
+        // from the partial unique index on (project_name) WHERE deleted_at IS NULL.
+        const [project] = await db
+          .select({ id: projectInfo.id, projectName: projectInfo.projectName })
+          .from(projectInfo)
+          .where(and(
+            sql`LOWER(TRIM(${projectInfo.projectName})) = LOWER(TRIM(${requestedProjectName}))`,
+            isNull(projectInfo.deletedAt),
+          ))
+          .limit(1);
+        const projectId = project?.id ?? null;
+        const canonicalProjectName = project?.projectName ?? requestedProjectName;
+        const normalizedProjectName = normalizeProjectName(canonicalProjectName);
+
+        // qc_checklist.project_id is NOT NULL → no live project means no checklist.
+        if (projectId === null) {
+          return res.status(404).json({ error: "No quality checklist found for this project" });
+        }
+        const checklistScope = eq(qcChecklist.projectId, projectId);
+
+        // Dependent tables have nullable project_id; include legacy NULL-projectId
+        // name matches so un-backfilled rows are cleaned up too. The NULL guard
+        // prevents reaching into rows owned by another project_info row.
+        const planLinkScope = sql`(${qcPlanLink.projectId} = ${projectId} OR (${qcPlanLink.projectId} IS NULL AND LOWER(TRIM(${qcPlanLink.projectName})) = ${normalizedProjectName}))`;
+        const warningScope = sql`(${qcWarning.projectId} = ${projectId} OR (${qcWarning.projectId} IS NULL AND LOWER(TRIM(${qcWarning.projectName})) = ${normalizedProjectName}))`;
+        const postmortemScope = sql`(${qcPostmortem.projectId} = ${projectId} OR (${qcPostmortem.projectId} IS NULL AND LOWER(TRIM(${qcPostmortem.projectName})) = ${normalizedProjectName}))`;
+
+        // Discover + delete inside the same transaction so concurrent inserts
+        // between a read and a delete can't slip through. `null` → 404.
+        const result = await db.transaction(async (tx: NodePgDatabase<typeof schema>) => {
+          const matchingChecklists = await tx
+            .select({ id: qcChecklist.id })
+            .from(qcChecklist)
+            .where(checklistScope);
+
+          if (matchingChecklists.length === 0) {
+            return null;
+          }
+
+          const checklistIds: number[] = (matchingChecklists as Array<{ id: number }>).map((c) => c.id);
+
+          const itemInstanceRows = await tx
+            .select({ id: qcItemInstance.id })
+            .from(qcItemInstance)
+            .where(inArray(qcItemInstance.checklistId, checklistIds));
+          const itemInstanceIds: number[] = (itemInstanceRows as Array<{ id: number }>).map((i) => i.id);
+
+          // Snapshot cascade-child IDs before deleting the parents so audit
+          // counts include rows wiped by FK CASCADE (warning_event,
+          // risk_answer, postmortem_summary, postmortem_metric_value).
+          const warningRowsToDelete = await tx
+            .select({ id: qcWarning.id })
+            .from(qcWarning)
+            .where(warningScope);
+          const warningIds: number[] = (warningRowsToDelete as Array<{ id: number }>).map((w) => w.id);
+
+          const postmortemRowsToDelete = await tx
+            .select({ id: qcPostmortem.id })
+            .from(qcPostmortem)
+            .where(postmortemScope);
+          const postmortemIds: number[] = (postmortemRowsToDelete as Array<{ id: number }>).map((p) => p.id);
+
+          // Use Drizzle's `inArray` helper for the count predicates: passing a
+          // JS array straight into `sql\`= ANY(${ids})\`` interpolates as a
+          // row constructor, which Postgres rejects with "op ANY/ALL requires
+          // array on right side". `inArray` produces a parameterised IN list.
+          const countWhere = async (
+            table: typeof qcRiskAnswer | typeof qcWarningEvent | typeof qcPostmortemSummary | typeof qcPostmortemMetricValue,
+            whereExpr: ReturnType<typeof inArray>,
+          ): Promise<number> => {
+            const rows = await tx
+              .select({ n: sql<number>`count(*)::int` })
+              .from(table)
+              .where(whereExpr);
+            return Number((rows as Array<{ n: number }>)[0]?.n ?? 0);
+          };
+
+          const riskAnswerCount = checklistIds.length > 0
+            ? await countWhere(qcRiskAnswer, inArray(qcRiskAnswer.checklistId, checklistIds))
+            : 0;
+          const warningEventCount = warningIds.length > 0
+            ? await countWhere(qcWarningEvent, inArray(qcWarningEvent.warningId, warningIds))
+            : 0;
+          const postmortemSummaryCount = postmortemIds.length > 0
+            ? await countWhere(qcPostmortemSummary, inArray(qcPostmortemSummary.postmortemId, postmortemIds))
+            : 0;
+          const postmortemMetricValueCount = postmortemIds.length > 0
+            ? await countWhere(qcPostmortemMetricValue, inArray(qcPostmortemMetricValue.postmortemId, postmortemIds))
+            : 0;
+
+          let evidenceCount = 0;
+          if (itemInstanceIds.length > 0) {
+            const deletedEvidence = await tx
+              .delete(qcItemEvidence)
+              .where(inArray(qcItemEvidence.itemInstanceId, itemInstanceIds))
+              .returning({ id: qcItemEvidence.id });
+            evidenceCount = deletedEvidence.length;
+          }
+
+          const deletedPlanLinks = await tx
+            .delete(qcPlanLink)
+            .where(planLinkScope)
+            .returning({ id: qcPlanLink.id });
+
+          const deletedWarnings = await tx
+            .delete(qcWarning)
+            .where(warningScope)
+            .returning({ id: qcWarning.id });
+
+          const deletedPostmortems = await tx
+            .delete(qcPostmortem)
+            .where(postmortemScope)
+            .returning({ id: qcPostmortem.id });
+
+          const deletedChecklists = await tx
+            .delete(qcChecklist)
+            .where(inArray(qcChecklist.id, checklistIds))
+            .returning({ id: qcChecklist.id });
+
+          return {
+            checklistIds,
+            counts: {
+              checklists: deletedChecklists.length,
+              itemInstances: itemInstanceIds.length,
+              riskAnswers: riskAnswerCount,
+              evidence: evidenceCount,
+              planLinks: deletedPlanLinks.length,
+              warnings: deletedWarnings.length,
+              warningEvents: warningEventCount,
+              postmortems: deletedPostmortems.length,
+              postmortemSummaries: postmortemSummaryCount,
+              postmortemMetricValues: postmortemMetricValueCount,
+            },
+          };
+        });
+
+        if (!result) {
+          return res.status(404).json({ error: "No quality checklist found for this project" });
+        }
+
+        logAuditFromReq(req, {
+          entityType: "quality_checklist",
+          // entityId carries the primary checklist id (audit_log.entity_id is
+          // a single string column). The full list of deleted ids is kept in
+          // changesJson.checklistIds so multi-checklist legacy cases stay
+          // fully auditable.
+          entityId: String(result.checklistIds[0]),
+          action: "delete",
+          projectName: canonicalProjectName,
+          changesJson: {
+            description: "Quality process deleted (full restart)",
+            checklistIds: result.checklistIds,
+            counts: result.counts,
+          },
+        });
+
+        res.json({ success: true, counts: result.counts });
+      } catch (err: unknown) {
+        console.error("[Quality] Error deleting project quality process:", err);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    },
+  );
 
   // ========== CHECKLIST ITEM OPERATIONS ==========
 

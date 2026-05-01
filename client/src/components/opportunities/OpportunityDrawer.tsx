@@ -33,14 +33,17 @@
  *   load opportunity" fallback. Every reference to the `merged` PD
  *   block below is null-safe; when `merged == null` the header status
  *   badge degrades to "No engineering ticket", margin renders "—",
- *   the PD-note row is hidden, the spawn-from-template button is
- *   hidden, and the empty-tickets section shows the standard "no PD
- *   tickets yet" copy with the convert CTA below.
+ *   the PD-note row is hidden, and the empty-tickets section shows
+ *   the standard "no PD tickets yet" copy with the convert CTA below.
  *
  * Backed by:
  *   GET  /api/opportunities/:id/workflow   (read-only; pd may be null)
- *   POST /api/opportunities/:id/spawn-tasks
  *   POST /api/opportunities/:id/convert-to-project
+ *
+ * NOTE: the legacy POST /api/opportunities/:id/spawn-tasks endpoint
+ * was retired in the Path 2 engineering-ticket consolidation. The
+ * sibling work_items row is created in lock-step with the engineering
+ * ticket itself by POST /api/opportunities/:id/engineering-tickets.
  */
 import { useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -58,6 +61,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, ExternalLink, Lock, Sparkles, Zap, ArrowRight, CheckCircle2, Building2, Inbox } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { invalidateEngineeringTicketCaches } from "@/lib/task-cache";
 import { useToast } from "@/hooks/use-toast";
 
 // --- Types matching /api/opportunities/:id/workflow shape ---
@@ -223,19 +227,10 @@ export function OpportunityDetailBody({ opportunityId, active, variant = "inline
     setConvertOpen(false);
   }, [opportunityId]);
 
-  const spawnTasks = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", `/api/opportunities/${opportunityId}/spawn-tasks`, {});
-      const body = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(body?.error || `Failed (${res.status})`);
-      return body as { spawned: number };
-    },
-    onSuccess: (r) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/opportunities", opportunityId, "workflow"] });
-      toast({ title: `Spawned ${r.spawned} engineering task${r.spawned === 1 ? "" : "s"}` });
-    },
-    onError: (err: Error) => toast({ title: "Spawn failed", description: err.message, variant: "destructive" }),
-  });
+  // Path 2: template task-spawn is retired. Engineering work is created
+  // by the user via the "Add Engineering Ticket" form (canonical sibling
+  // work_items row inserted in the same transaction) or via per-ticket
+  // "Add task" actions on the engineering board.
 
   // Drawer is read-only after the 2026-04-24 simplification — the
   // editable "Internal readiness" section was removed (task #76), so
@@ -449,19 +444,8 @@ export function OpportunityDetailBody({ opportunityId, active, variant = "inline
                     <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-700 flex items-center gap-1.5">
                       <Zap className="h-3 w-3 text-emerald-600" /> Tickets
                     </h3>
-                    {merged && !merged.tasksSpawnedAt && merged.projectId && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 text-xs"
-                        onClick={() => spawnTasks.mutate()}
-                        disabled={spawnTasks.isPending}
-                        data-testid="btn-spawn-tasks"
-                      >
-                        {spawnTasks.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
-                        Spawn from "{merged.requestType}" template
-                      </Button>
-                    )}
+                    {/* Path 2: the "Spawn from template" button is retired —
+                        see comment by the deleted `spawnTasks` mutation. */}
                   </header>
                   <div className="p-4 space-y-2">
                   {!merged?.projectId ? (
@@ -751,7 +735,12 @@ function TicketRow({
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/opportunities", opportunityId, "workflow"] });
+      // Linking the ticket changes its project assignment, which the
+      // Engineering Board / Standup / Plan tab all read. Use the
+      // engineering-scoped invalidator so every consumer surface picks
+      // up the new project link without requiring a full task-cache
+      // sweep.
+      invalidateEngineeringTicketCaches(queryClient);
       queryClient.invalidateQueries({ queryKey: ["/api/opportunities/working"] });
     },
   });
@@ -861,28 +850,16 @@ function ProjectTaskBoard({
   const ticketLabelById = new Map<number, string>();
   for (const t of tickets) ticketLabelById.set(t.id, t.requestType);
 
-  // Promote each engineering ticket to a first-class board item under its
-  // requestType (e.g. "First Assessment") so the ticket itself shows up
-  // even when no work_items have been spawned. If the ticket DOES have
-  // spawned work_items, those render as additional rows in the same phase
-  // column. Tickets linked to a different project (rare) are skipped so
-  // we don't pollute this board.
-  const linkedProjectId = tickets.find((t) => t.projectId)?.projectId ?? null;
-  const ticketsAsTasks: ProjectTask[] = tickets
-    .filter((t) => t.projectId == null || t.projectId === linkedProjectId)
-    .map((t) => ({
-      id: -t.id, // negative id → distinct from real work_items.id
-      pdTicketId: t.id,
-      title: `Ticket: ${t.requestType}`,
-      status: ticketStatusToWorkItemStatus(t.status),
-      phase: t.requestType,
-      priority: t.priority,
-      endDate: t.dueDate,
-      percentComplete: null,
-      ownerUserId: t.designerUserId ?? t.projectDeveloperUserId ?? null,
-      ownerName: t.designerName ?? t.projectDeveloperName ?? null,
-    }));
-  const allItems: ProjectTask[] = [...ticketsAsTasks, ...tasks];
+  // Path 2 (Task: opportunity-drawer phantom duplicate fix):
+  //   The drawer USED to synthesise a "Ticket: <requestType>" board card
+  //   for every engineering ticket and union it with the project's
+  //   work_items list — which produced two cards per ticket (the
+  //   synthetic one AND its sibling work_items row inserted by the
+  //   "Add Engineering Ticket" form). work_items is now canonical for
+  //   engineering execution, so we render the sibling rows directly
+  //   from `tasks` (already scoped server-side to ENG-lane rows linked
+  //   to a ticket on this project).
+  const allItems: ProjectTask[] = tasks;
 
   // Kanban swimlanes by status. Items keep their phase as a small chip
   // on each card so engineers can still see which phase each task belongs
@@ -919,7 +896,7 @@ function ProjectTaskBoard({
       </div>
       {total === 0 ? (
         <p className="text-[11px] text-muted-foreground italic" data-testid="empty-project-board">
-          No engineering tasks on the project yet — spawn tasks from a ticket to populate the board.
+          No engineering tasks on the project yet — add an engineering ticket above, or use "Add task" on the engineering board.
         </p>
       ) : (
         <div className="grid gap-1.5 grid-cols-2 sm:grid-cols-4" data-testid="project-board">
@@ -1015,30 +992,9 @@ function isCancelledStatus(status: string): boolean {
   return s === "cancelled" || s === "canceled";
 }
 
-/** Map an engineering_ticket status onto the work_item status vocabulary so
- *  the status-dot helpers below treat ticket items consistently with tasks.
- *  Now status-aware on the canonical engineering-board 10-state set; legacy
- *  free-form values still resolve correctly via the shared normaliser. */
-function ticketStatusToWorkItemStatus(status: string): string {
-  const c = normalizeEngineeringTicketStatus(status);
-  switch (c) {
-    case "complete":
-      return "done";
-    case "in_progress":
-    case "projects_assistance":
-    case "needs_approval":
-    case "qc_approved":
-    case "provide_feedback":
-    case "operational_approval":
-      return "in_progress";
-    case "hold":
-      return "on_hold";
-    case "to_do":
-    case "not_started":
-    default:
-      return "not_started";
-  }
-}
+// Path 2: `ticketStatusToWorkItemStatus` was removed alongside the
+// synthetic ticket-promoted board cards — work_items now carry their own
+// canonical status, so no translation is needed.
 
 function isDoneStatus(status: string): boolean {
   const s = status.toLowerCase();
