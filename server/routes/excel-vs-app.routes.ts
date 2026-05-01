@@ -68,6 +68,16 @@ function actorCanResolveSection(role: string | undefined, section: DiffSection):
   return allowed.includes(role);
 }
 
+/** Narrow `unknown` to the OverrideValue domain. JSONB columns return
+ *  `unknown`; at runtime every tracked field is one of these primitives.
+ *  Anything else (an unexpected object, an array) is coerced to null
+ *  so the schema validation in `applyManualOverride` sees a clean value. */
+function coerceToOverrideValue(v: unknown): string | number | boolean | null {
+  if (v === null || v === undefined) return null;
+  if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") return v;
+  return null;
+}
+
 /** PLAN-section owner exception: a work-item owner can resolve drift
  *  on their own task even without the PROGRAM_MANAGER role. */
 async function actorOwnsWorkItem(actorId: number, workItemId: number): Promise<boolean> {
@@ -201,8 +211,8 @@ export function registerExcelVsAppRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       const projectId = parseProjectId(req.params.projectId);
       const body = req.body as z.infer<typeof resolveSchema>;
-      const actorId = (req as any).user?.id ?? null;
-      const actorRole = (req as any).user?.role as string | undefined;
+      const actorId = req.user?.id ?? null;
+      const actorRole = req.user?.role;
 
       try {
         const exists = await trackerReplicaRepository.projectExists(projectId);
@@ -302,7 +312,11 @@ export function registerExcelVsAppRoutes(app: Express): void {
                 table: e.table,
                 rowId: e.rowId,
                 fieldName: e.fieldName,
-                value: liveValue as any,
+                // liveValue is `unknown` from the dynamic field read but
+                // every tracked column is one of the OverrideValue
+                // primitives at runtime — coerce explicitly so the
+                // helper sees a typed value.
+                value: coerceToOverrideValue(liveValue),
                 editedBy: actorId,
                 note: body.reason,
               }, tx);
@@ -419,6 +433,10 @@ export function registerExcelVsAppRoutes(app: Express): void {
  * want to record the value the operator currently sees. Accepts
  * an optional `tx` so reads inside a transaction see the same
  * snapshot as the writes.
+ *
+ * Per-table dispatch to keep Drizzle's strict typing — the dynamic
+ * `fieldName` lookup is inherently un-type-checkable (it's a string
+ * resolved at runtime), but the table chain stays narrowly typed.
  */
 async function readLiveValue(
   table: "normalized_cost_lines" | "normalized_revenue_lines" | "work_items",
@@ -428,15 +446,16 @@ async function readLiveValue(
 ): Promise<unknown> {
   const { normalizedCostLines, normalizedRevenueLines } = await import("@shared/schema/finance");
   const { workItems } = await import("@shared/schema/tasks");
-  const t =
-    table === "normalized_cost_lines"
-      ? normalizedCostLines
-      : table === "normalized_revenue_lines"
-        ? normalizedRevenueLines
-        : workItems;
-  const [row] = await tx.select().from(t as any).where(eq((t as any).id, rowId)).limit(1);
+  let row: Record<string, unknown> | undefined;
+  if (table === "normalized_cost_lines") {
+    [row] = await tx.select().from(normalizedCostLines).where(eq(normalizedCostLines.id, rowId)).limit(1);
+  } else if (table === "normalized_revenue_lines") {
+    [row] = await tx.select().from(normalizedRevenueLines).where(eq(normalizedRevenueLines.id, rowId)).limit(1);
+  } else {
+    [row] = await tx.select().from(workItems).where(eq(workItems.id, rowId)).limit(1);
+  }
   if (!row) return null;
-  return (row as any)[fieldName] ?? null;
+  return row[fieldName] ?? null;
 }
 
 /**
@@ -451,15 +470,18 @@ async function readManualOverrideValue(
 ): Promise<unknown> {
   const { normalizedCostLines, normalizedRevenueLines } = await import("@shared/schema/finance");
   const { workItems } = await import("@shared/schema/tasks");
-  const t =
-    table === "normalized_cost_lines"
-      ? normalizedCostLines
-      : table === "normalized_revenue_lines"
-        ? normalizedRevenueLines
-        : workItems;
-  const [row] = await tx.select({ manualOverrides: (t as any).manualOverrides }).from(t as any).where(eq((t as any).id, rowId)).limit(1);
+  let row: { manualOverrides: unknown } | undefined;
+  if (table === "normalized_cost_lines") {
+    [row] = await tx.select({ manualOverrides: normalizedCostLines.manualOverrides }).from(normalizedCostLines).where(eq(normalizedCostLines.id, rowId)).limit(1);
+  } else if (table === "normalized_revenue_lines") {
+    [row] = await tx.select({ manualOverrides: normalizedRevenueLines.manualOverrides }).from(normalizedRevenueLines).where(eq(normalizedRevenueLines.id, rowId)).limit(1);
+  } else {
+    [row] = await tx.select({ manualOverrides: workItems.manualOverrides }).from(workItems).where(eq(workItems.id, rowId)).limit(1);
+  }
   const overrides = row?.manualOverrides;
   if (!overrides || typeof overrides !== "object") return null;
-  const entry = (overrides as Record<string, any>)[fieldName];
-  return entry && typeof entry === "object" && "value" in entry ? entry.value : null;
+  const entry = (overrides as Record<string, unknown>)[fieldName];
+  return entry && typeof entry === "object" && "value" in entry
+    ? (entry as { value: unknown }).value
+    : null;
 }
