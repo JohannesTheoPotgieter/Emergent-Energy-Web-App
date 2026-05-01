@@ -14,6 +14,60 @@ import { projectEngineeringTicket } from "@shared/lib/engineering-ticket-view";
 import { softDeleteCanonicalWorkItemByLegacyTaskId } from "../canonical-boundaries";
 import { runCascadesAfterUpdate, validateParentCompletion } from "../services/task-cascade-service";
 import { queryStr, queryInt, paramStr, paramInt } from "../lib/req-parse";
+import { applyManualOverride, manualOverridesEnabled } from "../lib/manual-overrides";
+import { PLAN_TRACKED_FIELDS } from "@shared/excel-vs-app/contract";
+
+/**
+ * Workstream B: live=Excel invariant for the Plan tab.
+ *
+ * Routes a `db.update(workItems).set(updates).where(...)` call so that
+ * tracked fields (`PLAN_TRACKED_FIELDS`) flow into the work_items
+ * `manual_overrides` JSONB instead of overwriting the live column.
+ * Untracked fields (titles, structural metadata, baseline columns,
+ * etc.) keep writing to the live column directly.
+ *
+ * Returns the matched row count so callers that previously relied on
+ * `.returning()` to detect "no match" (and 409) keep working.
+ *
+ * Gated by `USE_MANUAL_OVERRIDES`. When `false`, behaviour is
+ * identical to the original `db.update(...).set(...).where(...)`.
+ */
+async function applyWorkItemUpdate(
+  updates: Record<string, unknown>,
+  whereClause: any,
+  userId: number | null,
+): Promise<{ matchedCount: number }> {
+  if (!manualOverridesEnabled()) {
+    const result = await db.update(workItems).set(updates as any).where(whereClause).returning({ id: workItems.id });
+    return { matchedCount: result.length };
+  }
+  const trackedSet = new Set<string>(PLAN_TRACKED_FIELDS as readonly string[]);
+  const tracked: [string, unknown][] = [];
+  const untracked: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(updates)) {
+    if (trackedSet.has(k)) tracked.push([k, v]);
+    else untracked[k] = v;
+  }
+  // Resolve which rows match; we need their canonical ids to route
+  // the manual_overrides write per row.
+  const matchedRows = await db.select({ id: workItems.id }).from(workItems).where(whereClause);
+  if (matchedRows.length === 0) return { matchedCount: 0 };
+  for (const row of matchedRows) {
+    for (const [field, value] of tracked) {
+      await applyManualOverride({
+        table: "work_items",
+        rowId: row.id,
+        fieldName: field,
+        value: value as any,
+        editedBy: userId,
+      });
+    }
+  }
+  if (Object.keys(untracked).length > 0) {
+    await db.update(workItems).set(untracked as any).where(whereClause);
+  }
+  return { matchedCount: matchedRows.length };
+}
 
 // SA working days helpers (duplicated from routes.ts for self-containment)
 function formatDateKey(y: number, m: number, d: number): string {
@@ -166,6 +220,10 @@ export function registerPlanningTasksRoutes(app: Express) {
               trackerComments: workItems.trackerComments,
               workDays: workItems.workDays,
               cellFormat: workItems.cellFormat,
+              // Workstream B: manual_overrides JSONB so the read overlay
+              // can apply operator edits on top of the live column for
+              // tracked plan fields.
+              manualOverrides: workItems.manualOverrides,
             })
             .from(workItems)
             .where(
@@ -181,6 +239,7 @@ export function registerPlanningTasksRoutes(app: Express) {
             trackerComments: string | null;
             workDays: number | null;
             cellFormat: unknown;
+            manualOverrides: unknown;
           }>(
             trackerWorkItemRows.map((row: any) => [row.id, {
               lead: row.lead ?? null,
@@ -189,6 +248,7 @@ export function registerPlanningTasksRoutes(app: Express) {
               trackerComments: row.trackerComments ?? null,
               workDays: row.workDays ?? null,
               cellFormat: row.cellFormat ?? null,
+              manualOverrides: row.manualOverrides ?? null,
             }]),
           );
 
@@ -326,6 +386,57 @@ export function registerPlanningTasksRoutes(app: Express) {
               cellFormat: tracker?.cellFormat ?? null,
             };
           });
+
+          // Workstream B read overlay: apply manual_overrides on top of
+          // tracked plan fields so the operator's edits show up on the
+          // tab without round-tripping the live column. Mapping below
+          // covers the canonical-name → output-name renames the
+          // assembly above performs (endDate → dueDate, duration →
+          // durationDays, expectedPctComplete → expectedPercentComplete).
+          // Untracked fields (title, priority, structural metadata)
+          // are deliberately not overlaid.
+          if (manualOverridesEnabled()) {
+            baselineTasks = baselineTasks.map((task: any) => {
+              const trackerEntry = trackerByWorkItemId.get(task.workItemId);
+              const overrides = trackerEntry?.manualOverrides as Record<string, any> | null | undefined;
+              if (!overrides || typeof overrides !== "object") return task;
+              const out = { ...task };
+              const override = (canonical: string): unknown | undefined => {
+                const e = overrides[canonical];
+                return e && typeof e === "object" && "value" in e ? e.value : undefined;
+              };
+              const status = override("status");
+              if (status !== undefined) out.status = status;
+              const description = override("description");
+              if (description !== undefined) out.description = description;
+              const startDate = override("startDate");
+              if (startDate !== undefined) out.startDate = startDate;
+              const endDate = override("endDate");
+              if (endDate !== undefined) out.dueDate = endDate;
+              const duration = override("duration");
+              if (duration !== undefined) out.durationDays = duration;
+              const expectedPct = override("expectedPctComplete");
+              if (expectedPct !== undefined) {
+                const v = Number(expectedPct);
+                out.expectedPercentComplete = v > 1 ? Math.round(v) : Math.round(v * 100);
+              }
+              const pct = override("percentComplete");
+              if (pct !== undefined) {
+                const v = Number(pct);
+                out.percentComplete = v > 1 ? Math.round(v) : Math.round(v * 100);
+                out.storedActualPct = out.percentComplete;
+              }
+              const ownerName = override("ownerName");
+              if (ownerName !== undefined) {
+                out.assignees = [ownerName];
+              }
+              for (const f of ["lead", "resource1", "resource2", "trackerComments", "workDays"] as const) {
+                const v = override(f);
+                if (v !== undefined) out[f] = v;
+              }
+              return out;
+            });
+          }
         }
       }
 
@@ -943,10 +1054,12 @@ export function registerPlanningTasksRoutes(app: Express) {
         if (noteVal != null) wiMirror.description = noteVal;
         if (updates.title != null) wiMirror.title = updates.title;
         if (Object.keys(wiMirror).length > 0) {
-          const mirrorResult = await db.update(workItems).set(wiMirror).where(
-            and(eq(workItems.legacyTable, "project_plan"), eq(workItems.legacyId, actualTaskId))
-          ).returning({ id: workItems.id });
-          if (mirrorResult.length === 0) {
+          const mirrorResult = await applyWorkItemUpdate(
+            wiMirror,
+            and(eq(workItems.legacyTable, "project_plan"), eq(workItems.legacyId, actualTaskId)),
+            (req as any).user?.id ?? null,
+          );
+          if (mirrorResult.matchedCount === 0) {
             return res.status(409).json({
               error: `Could not persist title/description for plan task ${actualTaskId}: no canonical work_items row found. Please retry after the next plan sync.`,
             });
@@ -957,6 +1070,7 @@ export function registerPlanningTasksRoutes(app: Express) {
           const validWorkstreams = ["PM", "ENG", "QUALITY"];
           if (validWorkstreams.includes(updates.workstream)) {
             try {
+              // workstream is structural / NOT tracked → keep direct write.
               await db.update(workItems).set({ workstream: updates.workstream }).where(
                 and(eq(workItems.legacyTable, "project_plan"), eq(workItems.legacyId, actualTaskId))
               );
@@ -977,10 +1091,13 @@ export function registerPlanningTasksRoutes(app: Express) {
             try {
               const wiPct = updateFields.actualPctComplete;
               if (wiPct !== undefined) {
-                const result = await db.update(workItems).set({ percentComplete: wiPct }).where(
-                  and(eq(workItems.legacyTable, "project_plan"), eq(workItems.legacyId, actualTaskId))
-                ).returning({ id: workItems.id });
-                if (result.length === 0) {
+                // percentComplete is tracked → routes through manual_overrides.
+                const result = await applyWorkItemUpdate(
+                  { percentComplete: wiPct },
+                  and(eq(workItems.legacyTable, "project_plan"), eq(workItems.legacyId, actualTaskId)),
+                  (req as any).user?.id ?? null,
+                );
+                if (result.matchedCount === 0) {
                   const wiByProject = await db.execute(sql`
                     SELECT wi.id, wi.title, pi.project_name
                     FROM work_items wi
@@ -989,8 +1106,10 @@ export function registerPlanningTasksRoutes(app: Express) {
                     LIMIT 1
                   `);
                   if (wiByProject.rows.length > 0) {
-                    await db.update(workItems).set({ percentComplete: wiPct }).where(
-                      eq(workItems.id, (wiByProject.rows[0] as any).id)
+                    await applyWorkItemUpdate(
+                      { percentComplete: wiPct },
+                      eq(workItems.id, (wiByProject.rows[0] as any).id),
+                      (req as any).user?.id ?? null,
                     );
                   }
                 }
@@ -1097,7 +1216,11 @@ export function registerPlanningTasksRoutes(app: Express) {
         }
 
         if (Object.keys(wiUpdateFields).length > 0) {
-          await db.update(workItems).set(wiUpdateFields).where(eq(workItems.id, wi.id));
+          await applyWorkItemUpdate(
+            wiUpdateFields,
+            eq(workItems.id, wi.id),
+            (req as any).user?.id ?? null,
+          );
         }
 
         try {
@@ -1108,8 +1231,10 @@ export function registerPlanningTasksRoutes(app: Express) {
           if (updates.percentComplete != null) wiSyncFields.percentComplete = updates.percentComplete / 100;
           if ((updates.status === "complete" || updates.status === "Done") && updates.percentComplete == null) wiSyncFields.percentComplete = 1.0;
           if (Object.keys(wiSyncFields).length > 0) {
-            await db.update(workItems).set(wiSyncFields).where(
-              and(eq(workItems.legacyTable, "normalized_plan_tasks"), eq(workItems.legacyId, actualTaskId), isNull(workItems.deletedAt))
+            await applyWorkItemUpdate(
+              wiSyncFields,
+              and(eq(workItems.legacyTable, "normalized_plan_tasks"), eq(workItems.legacyId, actualTaskId), isNull(workItems.deletedAt)),
+              (req as any).user?.id ?? null,
             );
           }
         } catch (e) {
@@ -1160,7 +1285,11 @@ export function registerPlanningTasksRoutes(app: Express) {
         }
 
         if (Object.keys(wiUpdateFields).length > 0 && isWorkItemTask) {
-          await db.update(workItems).set(wiUpdateFields).where(eq(workItems.id, wi.id));
+          await applyWorkItemUpdate(
+            wiUpdateFields,
+            eq(workItems.id, wi.id),
+            (req as any).user?.id ?? null,
+          );
 
           // Legacy mirror removed — work_items is now the canonical source.
         }

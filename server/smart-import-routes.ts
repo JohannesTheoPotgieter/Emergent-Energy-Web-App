@@ -3056,13 +3056,14 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       // conflicts. Emit the same v2_conflicts_detected envelope as the
       // pre-commit existing engine so the wizard parser is unchanged.
       if ((err as any)?.code === "v2_conflicts_detected") {
-        // eslint-disable-next-line no-restricted-syntax -- intentional: 409 business error with structured conflict payload for the wizard
+        /* eslint-disable no-restricted-syntax -- intentional: 409 business error with structured conflict payload for the wizard */
         return res.status(409).json({
           error: "v2_conflicts_detected",
           message: (err instanceof Error ? err.message : "Three-way merge conflicts detected."),
           conflicts: (err as any).conflicts ?? [],
           hint: "Resolve conflicts via v2ConflictResolutions: { 'rowKey::fieldName': 'keep_app' | 'accept_file' }",
         });
+        /* eslint-enable no-restricted-syntax */
       }
       // eslint-disable-next-line no-restricted-syntax -- intentional: 409 business error message is user-authored
       return res.status(409).json({ error: "COMMIT_CONFLICT", message: (err instanceof Error ? err.message : "Commit conflict") });
