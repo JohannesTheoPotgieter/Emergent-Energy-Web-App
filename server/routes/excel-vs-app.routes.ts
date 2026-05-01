@@ -216,31 +216,40 @@ export function registerExcelVsAppRoutes(app: Express): void {
         const projectName = projectRow?.projectName ?? `Project ${projectId}`;
 
         if (body.action === "accept_excel") {
+          // Atomic bulk: any failure rolls back the whole batch so a
+          // partially-resolved bulk action can never leave the row state
+          // inconsistent. Audit writes (recordOverride below) live
+          // outside the tx so a transient audit fault does not roll back
+          // the resolution itself.
           let resolved = 0;
-          for (const e of body.entries) {
-            // Capture the override value being cleared so the audit row
-            // shows "operator chose Excel value X over previous override Y".
-            const beforeOverride = await readManualOverrideValue(e.table, e.rowId, e.fieldName);
-            const liveValue = await readLiveValue(e.table, e.rowId, e.fieldName);
-            await clearManualOverride(e.table, e.rowId, e.fieldName);
+          const auditEntries: Array<{ entry: typeof body.entries[number]; before: unknown; live: unknown }> = [];
+          await db.transaction(async (tx: typeof db) => {
+            for (const e of body.entries) {
+              const beforeOverride = await readManualOverrideValue(e.table, e.rowId, e.fieldName, tx);
+              const liveValue = await readLiveValue(e.table, e.rowId, e.fieldName, tx);
+              await clearManualOverride(e.table, e.rowId, e.fieldName, tx);
+              auditEntries.push({ entry: e, before: beforeOverride, live: liveValue });
+              resolved++;
+            }
+          });
+          for (const a of auditEntries) {
             try {
               await recordOverride({
                 actorUserId: actorId ?? undefined,
                 actorRole,
-                entityType: `excel_vs_app::${e.table}`,
-                entityId: `${projectId}|row${e.rowId}|${e.fieldName}`,
+                entityType: `excel_vs_app::${a.entry.table}`,
+                entityId: `${projectId}|row${a.entry.rowId}|${a.entry.fieldName}`,
                 projectId,
                 projectName,
                 action: "ACCEPT_EXCEL",
                 overrideCategory: "DATA_CORRECTION",
-                overrideComment: `Accepted Excel value for ${e.fieldName} on ${e.table} row ${e.rowId}`,
-                oldRecord: { [e.fieldName]: beforeOverride },
-                newRecord: { [e.fieldName]: liveValue },
+                overrideComment: `Accepted Excel value for ${a.entry.fieldName} on ${a.entry.table} row ${a.entry.rowId}`,
+                oldRecord: { [a.entry.fieldName]: a.before },
+                newRecord: { [a.entry.fieldName]: a.live },
               });
             } catch (auditErr: any) {
               console.warn("[excel-vs-app] accept_excel audit failed:", auditErr.message);
             }
-            resolved++;
           }
           res.json({ status: "ok", action: body.action, resolved });
           return;
@@ -248,38 +257,40 @@ export function registerExcelVsAppRoutes(app: Express): void {
 
         if (body.action === "keep_app") {
           let resolved = 0;
-          for (const e of body.entries) {
-            // Read the current live value, build an override that
-            // captures it. The helper preserves fromValue from the live
-            // (Excel-truth) column so a later "Reset to Excel" remains
-            // correct.
-            const liveValue = await readLiveValue(e.table, e.rowId, e.fieldName);
-            await applyManualOverride({
-              table: e.table,
-              rowId: e.rowId,
-              fieldName: e.fieldName,
-              value: liveValue as any,
-              editedBy: actorId,
-              note: body.reason,
-            });
+          const auditEntries: Array<{ entry: typeof body.entries[number]; live: unknown }> = [];
+          await db.transaction(async (tx: typeof db) => {
+            for (const e of body.entries) {
+              const liveValue = await readLiveValue(e.table, e.rowId, e.fieldName, tx);
+              await applyManualOverride({
+                table: e.table,
+                rowId: e.rowId,
+                fieldName: e.fieldName,
+                value: liveValue as any,
+                editedBy: actorId,
+                note: body.reason,
+              }, tx);
+              auditEntries.push({ entry: e, live: liveValue });
+              resolved++;
+            }
+          });
+          for (const a of auditEntries) {
             try {
               await recordOverride({
                 actorUserId: actorId ?? undefined,
                 actorRole,
-                entityType: `excel_vs_app::${e.table}`,
-                entityId: `${projectId}|row${e.rowId}|${e.fieldName}`,
+                entityType: `excel_vs_app::${a.entry.table}`,
+                entityId: `${projectId}|row${a.entry.rowId}|${a.entry.fieldName}`,
                 projectId,
                 projectName,
                 action: "KEEP_APP",
                 overrideCategory: "DATA_CORRECTION",
                 overrideComment: body.reason,
-                oldRecord: { [e.fieldName]: null },
-                newRecord: { [e.fieldName]: liveValue },
+                oldRecord: { [a.entry.fieldName]: null },
+                newRecord: { [a.entry.fieldName]: a.live },
               });
             } catch (auditErr: any) {
               console.warn("[excel-vs-app] keep_app audit failed:", auditErr.message);
             }
-            resolved++;
           }
           res.json({ status: "ok", action: body.action, resolved });
           return;
@@ -350,12 +361,15 @@ export function registerExcelVsAppRoutes(app: Express): void {
 /**
  * Read the live value for a (table, rowId, fieldName). Used by the
  * "keep_app" action when there's no existing override entry — we
- * want to record the value the operator currently sees.
+ * want to record the value the operator currently sees. Accepts
+ * an optional `tx` so reads inside a transaction see the same
+ * snapshot as the writes.
  */
 async function readLiveValue(
   table: "normalized_cost_lines" | "normalized_revenue_lines" | "work_items",
   rowId: number,
   fieldName: string,
+  tx: typeof db = db,
 ): Promise<unknown> {
   const { normalizedCostLines, normalizedRevenueLines } = await import("@shared/schema/finance");
   const { workItems } = await import("@shared/schema/tasks");
@@ -365,7 +379,7 @@ async function readLiveValue(
       : table === "normalized_revenue_lines"
         ? normalizedRevenueLines
         : workItems;
-  const [row] = await db.select().from(t as any).where(eq((t as any).id, rowId)).limit(1);
+  const [row] = await tx.select().from(t as any).where(eq((t as any).id, rowId)).limit(1);
   if (!row) return null;
   return (row as any)[fieldName] ?? null;
 }
@@ -378,6 +392,7 @@ async function readManualOverrideValue(
   table: "normalized_cost_lines" | "normalized_revenue_lines" | "work_items",
   rowId: number,
   fieldName: string,
+  tx: typeof db = db,
 ): Promise<unknown> {
   const { normalizedCostLines, normalizedRevenueLines } = await import("@shared/schema/finance");
   const { workItems } = await import("@shared/schema/tasks");
@@ -387,7 +402,7 @@ async function readManualOverrideValue(
       : table === "normalized_revenue_lines"
         ? normalizedRevenueLines
         : workItems;
-  const [row] = await db.select({ manualOverrides: (t as any).manualOverrides }).from(t as any).where(eq((t as any).id, rowId)).limit(1);
+  const [row] = await tx.select({ manualOverrides: (t as any).manualOverrides }).from(t as any).where(eq((t as any).id, rowId)).limit(1);
   const overrides = row?.manualOverrides;
   if (!overrides || typeof overrides !== "object") return null;
   const entry = (overrides as Record<string, any>)[fieldName];
