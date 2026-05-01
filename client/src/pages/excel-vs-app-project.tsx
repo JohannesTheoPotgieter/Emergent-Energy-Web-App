@@ -34,7 +34,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, AlertTriangle, CheckCircle2, RotateCcw, MailQuestion } from "lucide-react";
+import { ArrowLeft, AlertTriangle, CheckCircle2, RotateCcw, MailQuestion, RefreshCw } from "lucide-react";
 import { styleForCell } from "@/lib/tracker-cell-format";
 
 type DiffSection = "PLAN" | "REVENUE" | "EXPENDITURE";
@@ -108,7 +108,7 @@ export default function ExcelVsAppProjectPage() {
   const [reasonOpen, setReasonOpen] = useState<{ action: "keep_app" | "request_approval"; section?: DiffSection } | null>(null);
   const [reason, setReason] = useState("");
 
-  const { data, isLoading, isError, error } = useQuery<DriftDetailResponse>({
+  const { data, isLoading, isError, error, dataUpdatedAt, isFetching } = useQuery<DriftDetailResponse>({
     queryKey: ["excel-vs-app-project", projectId],
     queryFn: async () => {
       const res = await apiRequest("GET", `/api/excel-vs-app/projects/${projectId}`);
@@ -117,6 +117,11 @@ export default function ExcelVsAppProjectPage() {
     },
     enabled: Number.isFinite(projectId) && projectId > 0,
   });
+
+  function handleRefresh() {
+    queryClient.invalidateQueries({ queryKey: ["excel-vs-app-project", projectId] });
+    queryClient.invalidateQueries({ queryKey: ["financial-edit-requests"] });
+  }
 
   // Project-level pending financial_edit_requests queue. Includes
   // requests filed by this diff page's "Request approval" action AND
@@ -265,8 +270,8 @@ export default function ExcelVsAppProjectPage() {
 
   return (
     <div className="container mx-auto py-6 space-y-6 max-w-7xl">
-      <div className="flex items-start justify-between">
-        <div>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1">
           <Link href="/program/excel-vs-app" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-2">
             <ArrowLeft className="h-3.5 w-3.5" /> Back to program view
           </Link>
@@ -275,10 +280,20 @@ export default function ExcelVsAppProjectPage() {
             Live state vs the most recent Tracker workbook. Pick rows where the live value disagrees and either accept the Excel value, keep the app value with a reason, or request approval to push the change back to Excel.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <FilterTab active={filter === "unverified"} onClick={() => setFilter("unverified")}>Unverified only</FilterTab>
-          <FilterTab active={filter === "verified"} onClick={() => setFilter("verified")}>Verified</FilterTab>
-          <FilterTab active={filter === "all"} onClick={() => setFilter("all")}>All drift</FilterTab>
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex items-center gap-2">
+            <FilterTab active={filter === "unverified"} onClick={() => setFilter("unverified")}>Unverified only</FilterTab>
+            <FilterTab active={filter === "verified"} onClick={() => setFilter("verified")}>Verified</FilterTab>
+            <FilterTab active={filter === "all"} onClick={() => setFilter("all")}>All drift</FilterTab>
+            <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isFetching}>
+              <RefreshCw className={"h-3.5 w-3.5 mr-1 " + (isFetching ? "animate-spin" : "")} /> Refresh
+            </Button>
+          </div>
+          {dataUpdatedAt > 0 && (
+            <span className="text-[11px] text-muted-foreground">
+              Updated {new Date(dataUpdatedAt).toLocaleTimeString()}
+            </span>
+          )}
         </div>
       </div>
 
