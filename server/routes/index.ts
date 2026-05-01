@@ -24,6 +24,7 @@ import { registerDocumentProvisioningRoutes } from './document-provisioning.rout
 import { registerManagedDocumentApprovalRoutes } from './managed-document-approvals.routes';
 import { registerDocumentReadinessRoutes } from './document-readiness.routes';
 import { registerTrackerReplicaRoutes } from './tracker-replica.routes';
+import { registerExcelVsAppRoutes } from './excel-vs-app.routes';
 
 export async function registerRoutes(httpServer: Server, app: Express) {
   registerTemplateGovernanceRoutes(app);
@@ -42,5 +43,6 @@ export async function registerRoutes(httpServer: Server, app: Express) {
   registerManagedDocumentApprovalRoutes(app);
   registerDocumentReadinessRoutes(app);
   registerTrackerReplicaRoutes(app);
+  registerExcelVsAppRoutes(app);
   return registerLegacyRoutes(httpServer, app);
 }

@@ -256,6 +256,14 @@
       "override": false,
       "delete": false
     },
+    "excel_vs_app": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "exception": {
       "view": false,
       "create": false,
@@ -1162,6 +1170,14 @@
       "override": false,
       "delete": false
     },
+    "excel_vs_app": {
+      "view": true,
+      "create": false,
+      "edit": true,
+      "approve": true,
+      "override": false,
+      "delete": false
+    },
     "exception": {
       "view": true,
       "create": false,
@@ -2063,6 +2079,14 @@
     "engineering": {
       "view": true,
       "create": true,
+      "edit": true,
+      "approve": true,
+      "override": true,
+      "delete": true
+    },
+    "excel_vs_app": {
+      "view": true,
+      "create": false,
       "edit": true,
       "approve": true,
       "override": true,
@@ -2974,6 +2998,14 @@
       "override": false,
       "delete": false
     },
+    "excel_vs_app": {
+      "view": true,
+      "create": false,
+      "edit": true,
+      "approve": true,
+      "override": false,
+      "delete": false
+    },
     "exception": {
       "view": true,
       "create": false,
@@ -3874,6 +3906,14 @@
     },
     "engineering": {
       "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "excel_vs_app": {
+      "view": true,
       "create": false,
       "edit": false,
       "approve": false,
@@ -4786,6 +4826,14 @@
       "override": true,
       "delete": true
     },
+    "excel_vs_app": {
+      "view": true,
+      "create": false,
+      "edit": true,
+      "approve": true,
+      "override": true,
+      "delete": true
+    },
     "exception": {
       "view": true,
       "create": true,
@@ -5688,6 +5736,14 @@
       "view": true,
       "create": true,
       "edit": true,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "excel_vs_app": {
+      "view": true,
+      "create": false,
+      "edit": false,
       "approve": false,
       "override": false,
       "delete": false
@@ -6598,6 +6654,14 @@
       "override": false,
       "delete": false
     },
+    "excel_vs_app": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "exception": {
       "view": true,
       "create": true,
@@ -7498,6 +7562,14 @@
     },
     "engineering": {
       "view": false,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "excel_vs_app": {
+      "view": true,
       "create": false,
       "edit": false,
       "approve": false,
@@ -8410,6 +8482,14 @@
       "override": false,
       "delete": false
     },
+    "excel_vs_app": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "exception": {
       "view": true,
       "create": false,
@@ -9312,6 +9392,14 @@
       "view": true,
       "create": false,
       "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "excel_vs_app": {
+      "view": true,
+      "create": false,
+      "edit": true,
       "approve": false,
       "override": false,
       "delete": false
@@ -10222,6 +10310,14 @@
       "override": false,
       "delete": false
     },
+    "excel_vs_app": {
+      "view": true,
+      "create": false,
+      "edit": true,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "exception": {
       "view": true,
       "create": true,
@@ -11121,6 +11217,14 @@
       "delete": false
     },
     "engineering": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "excel_vs_app": {
       "view": true,
       "create": false,
       "edit": false,
@@ -12034,6 +12138,14 @@
       "override": false,
       "delete": false
     },
+    "excel_vs_app": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
     "exception": {
       "view": true,
       "create": true,
@@ -12933,6 +13045,14 @@
       "delete": false
     },
     "engineering": {
+      "view": true,
+      "create": false,
+      "edit": false,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "excel_vs_app": {
       "view": true,
       "create": false,
       "edit": false,
@@ -13842,6 +13962,14 @@
       "view": true,
       "create": true,
       "edit": true,
+      "approve": false,
+      "override": false,
+      "delete": false
+    },
+    "excel_vs_app": {
+      "view": true,
+      "create": false,
+      "edit": false,
       "approve": false,
       "override": false,
       "delete": false

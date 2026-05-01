@@ -1,17 +1,20 @@
 /**
  * Tracker Replica Repository.
  *
- * Read-only data access for the per-project Tracker workbook replicas:
- *   - Revenue Tracking sheet
- *   - Expenditure Breakdown sheet
- *   - Project Plan sheet
+ * Data access for the per-project Tracker workbook replicas
+ * (Revenue Tracking / Expenditure Breakdown / Project Plan) AND the
+ * Excel-vs-App diff system that consumes the same data.
  *
  * All reads filter active rows only:
  *   - effective_to IS NULL on temporal tables (normalized_*, tracker_*).
  *   - deleted_at IS NULL on work_items (per CLAUDE.md note about retired
  *     writable view; soft-delete is the active filter).
  *
- * No writes — these screens are read-only in v1.
+ * Writes are limited to the diff system's drift-resolution pipeline:
+ * `createDriftApprovalRequest` files a `financial_edit_requests` row
+ * routed to the section's reviewers. The drift-resolve cell-edit
+ * helpers (apply / clear) live in `server/lib/manual-overrides.ts`
+ * because they're shared between the import engine and the diff page.
  */
 import { eq, and, isNull, asc } from "drizzle-orm";
 import {
@@ -20,11 +23,13 @@ import {
   normalizedCostLineActuals,
   trackerRevenueSummary,
   trackerProjectMetadata,
+  financialEditRequests,
   type NormalizedRevenueLine,
   type NormalizedCostLine,
   type NormalizedCostLineActual,
   type TrackerRevenueSummary,
   type TrackerProjectMetadata,
+  type FinancialEditRequest,
 } from "@shared/schema/finance";
 import { workItems, type WorkItem } from "@shared/schema/tasks";
 import { projectInfo } from "@shared/schema/projects";
@@ -250,6 +255,437 @@ export class TrackerReplicaRepository {
     out.sort((a, b) => (a.editedAt < b.editedAt ? 1 : a.editedAt > b.editedAt ? -1 : 0));
     return out;
   }
+
+  /**
+   * Excel-vs-App drift detail for a project. For each tracked field on
+   * each active canonical row, classifies the field as `none` /
+   * `verified` / `unverified` drift by comparing:
+   *   - liveValue       = row[field]
+   *   - snapshotValue   = importSnapshot[field]
+   *   - overrideValue   = manualOverrides[field]?.value (or null)
+   *   - displayValue    = override ?? live
+   *
+   *   - none       — valuesEqual(displayValue, snapshotValue).
+   *   - verified   — drift AND manual_overrides[field] present.
+   *   - unverified — drift AND manual_overrides[field] absent
+   *                  (live column was changed via a path that bypassed
+   *                  the override pipeline; needs operator
+   *                  resolution).
+   *
+   * Pure read; reuses `valuesEqual` from `merge-engine.ts` so the
+   * loose-equality semantics (1500 vs "1,500.00", ISO vs Excel
+   * date) match what the import engine considers a conflict.
+   */
+  async getDriftDetail(projectId: number): Promise<DriftDetail> {
+    const { valuesEqual } = await import("../lib/import/merge-engine");
+    const {
+      PLAN_TRACKED_FIELDS,
+      REVENUE_TRACKED_FIELDS,
+      EXPENDITURE_TRACKED_FIELDS,
+    } = await import("@shared/excel-vs-app/contract");
+
+    function readJsonbObject(v: unknown): Record<string, any> {
+      if (!v || typeof v !== "object" || Array.isArray(v)) return {};
+      return v as Record<string, any>;
+    }
+
+    function classify(
+      live: unknown,
+      snapshot: unknown,
+      override: unknown,
+      hasOverrideEntry: boolean,
+    ): "none" | "verified" | "unverified" {
+      const display = hasOverrideEntry ? override : live;
+      if (valuesEqual(display as any, snapshot as any)) return "none";
+      return hasOverrideEntry ? "verified" : "unverified";
+    }
+
+    function buildRowFields(
+      row: Record<string, any>,
+      trackedFields: readonly string[],
+    ) {
+      const snapshot = readJsonbObject(row.importSnapshot);
+      const overrides = readJsonbObject(row.manualOverrides);
+      const cellFormat = row.cellFormat ?? null;
+      const fields: DriftRowField[] = [];
+      for (const f of trackedFields) {
+        const live = row[f] ?? null;
+        const snap = snapshot[f] ?? null;
+        const overrideEntry = overrides[f];
+        const hasOverride = overrideEntry != null && typeof overrideEntry === "object" && "value" in overrideEntry;
+        const overrideValue = hasOverride ? overrideEntry.value : null;
+        const driftClass = classify(live, snap, overrideValue, hasOverride);
+        fields.push({
+          fieldName: f,
+          liveValue: live as any,
+          snapshotValue: snap as any,
+          overrideValue: hasOverride ? (overrideValue as any) : null,
+          overrideEditor: hasOverride ? (overrideEntry.editedBy ?? null) : null,
+          overrideEditedAt: hasOverride ? (overrideEntry.editedAt ?? null) : null,
+          overrideReason: hasOverride ? (overrideEntry.note ?? null) : null,
+          cellFormat: cellFormat && typeof cellFormat === "object" && (cellFormat as any)[f]
+            ? (cellFormat as any)[f]
+            : null,
+          drift: driftClass,
+        });
+      }
+      return fields;
+    }
+
+    function summarise(rows: DriftRow[]): { verified: number; unverified: number } {
+      let verified = 0, unverified = 0;
+      for (const r of rows) {
+        for (const f of r.fields) {
+          if (f.drift === "verified") verified++;
+          else if (f.drift === "unverified") unverified++;
+        }
+      }
+      return { verified, unverified };
+    }
+
+    function countLegacyRows(rawRows: Array<{ importSnapshot?: unknown }>): number {
+      // Active rows where import_snapshot has never been populated.
+      // Drift detection on these rows treats every non-null live value
+      // as drift (because the snapshot is null), so a project still
+      // pending the workstream-B backfill will look 100% drifted. The
+      // diff page surfaces this count via a banner so the operator
+      // knows to run `scripts/backfill-import-snapshot.ts` first.
+      let n = 0;
+      for (const r of rawRows) if (r.importSnapshot == null) n++;
+      return n;
+    }
+
+    const [costRows, revRows, planRows] = await Promise.all([
+      this.dbInstance
+        .select()
+        .from(normalizedCostLines)
+        .where(
+          and(
+            eq(normalizedCostLines.projectId, projectId),
+            isNull(normalizedCostLines.effectiveTo),
+            isNull(normalizedCostLines.deletedAt),
+          ),
+        )
+        .orderBy(asc(normalizedCostLines.sourceRow)),
+      this.dbInstance
+        .select()
+        .from(normalizedRevenueLines)
+        .where(
+          and(
+            eq(normalizedRevenueLines.projectId, projectId),
+            isNull(normalizedRevenueLines.effectiveTo),
+            isNull(normalizedRevenueLines.deletedAt),
+          ),
+        )
+        .orderBy(asc(normalizedRevenueLines.sourceRow)),
+      this.dbInstance
+        .select()
+        .from(workItems)
+        .where(
+          and(
+            eq(workItems.projectId, projectId),
+            isNull(workItems.deletedAt),
+          ),
+        )
+        .orderBy(asc(workItems.sortOrder), asc(workItems.sourceRow)),
+    ]);
+
+    const costLines: DriftRow[] = costRows.map((r: any) => ({
+      id: r.id,
+      rowHash: r.rowHash ?? null,
+      displayLabel: r.description ?? `Row ${r.sourceRow ?? r.id}`,
+      sourceRow: r.sourceRow ?? null,
+      fields: buildRowFields(r, EXPENDITURE_TRACKED_FIELDS),
+    }));
+    const revenueLines: DriftRow[] = revRows.map((r: any) => ({
+      id: r.id,
+      rowHash: r.rowHash ?? null,
+      displayLabel: r.milestoneName ?? `Row ${r.sourceRow ?? r.id}`,
+      sourceRow: r.sourceRow ?? null,
+      fields: buildRowFields(r, REVENUE_TRACKED_FIELDS),
+    }));
+    const planTasks: DriftRow[] = planRows.map((r: any) => ({
+      id: r.id,
+      rowHash: r.rowHash ?? null,
+      displayLabel: r.title ?? `Task ${r.sourceRow ?? r.id}`,
+      sourceRow: r.sourceRow ?? null,
+      fields: buildRowFields(r, PLAN_TRACKED_FIELDS),
+    }));
+
+    return {
+      projectId,
+      costLines,
+      revenueLines,
+      planTasks,
+      summary: {
+        EXPENDITURE: summarise(costLines),
+        REVENUE: summarise(revenueLines),
+        PLAN: summarise(planTasks),
+      },
+      legacyRowsWithoutSnapshot: {
+        EXPENDITURE: countLegacyRows(costRows as any[]),
+        REVENUE: countLegacyRows(revRows as any[]),
+        PLAN: countLegacyRows(planRows as any[]),
+      },
+    };
+  }
+
+  /**
+   * Program-wide drift summary in a single round of queries.
+   *
+   * Replaces the N+1 pattern (`Promise.all(projects.map(getDriftDetail))`)
+   * the route used to issue. Reads each canonical table ONCE for all
+   * projects, buckets by `project_id`, and classifies fields in JS.
+   *
+   * For a 50-project portfolio with Mondi-sized data this is roughly
+   * 3 + 50 = 53 round trips replaced by 4 round trips, plus identical
+   * per-row JS classification cost. The dominant cost on large
+   * portfolios was query latency, not classification time.
+   *
+   * Returns the same per-project rows the program endpoint already
+   * exposes — no API contract change.
+   */
+  async getProgramDriftSummary(): Promise<ProgramDriftRow[]> {
+    const { valuesEqual } = await import("../lib/import/merge-engine");
+    const {
+      PLAN_TRACKED_FIELDS,
+      REVENUE_TRACKED_FIELDS,
+      EXPENDITURE_TRACKED_FIELDS,
+    } = await import("@shared/excel-vs-app/contract");
+
+    function readJsonbObject(v: unknown): Record<string, any> {
+      if (!v || typeof v !== "object" || Array.isArray(v)) return {};
+      return v as Record<string, any>;
+    }
+
+    function summariseRows(
+      rows: Array<Record<string, any>>,
+      trackedFields: readonly string[],
+    ): { verified: number; unverified: number; legacyRows: number } {
+      let verified = 0, unverified = 0, legacyRows = 0;
+      for (const row of rows) {
+        const snapshot = readJsonbObject(row.importSnapshot);
+        const overrides = readJsonbObject(row.manualOverrides);
+        if (row.importSnapshot == null) legacyRows++;
+        for (const f of trackedFields) {
+          const live = row[f] ?? null;
+          const snap = snapshot[f] ?? null;
+          const overrideEntry = overrides[f];
+          const hasOverride = overrideEntry != null && typeof overrideEntry === "object" && "value" in overrideEntry;
+          const display = hasOverride ? overrideEntry.value : live;
+          if (valuesEqual(display as any, snap as any)) continue;
+          if (hasOverride) verified++;
+          else unverified++;
+        }
+      }
+      return { verified, unverified, legacyRows };
+    }
+
+    function bucketBy<T extends { projectId: number }>(rows: T[]): Map<number, T[]> {
+      const m = new Map<number, T[]>();
+      for (const r of rows) {
+        const k = r.projectId;
+        const bucket = m.get(k);
+        if (bucket) bucket.push(r);
+        else m.set(k, [r]);
+      }
+      return m;
+    }
+
+    const [projects, costRows, revRows, planRows] = await Promise.all([
+      this.dbInstance
+        .select({ id: projectInfo.id, projectName: projectInfo.projectName })
+        .from(projectInfo),
+      this.dbInstance
+        .select()
+        .from(normalizedCostLines)
+        .where(
+          and(
+            isNull(normalizedCostLines.effectiveTo),
+            isNull(normalizedCostLines.deletedAt),
+          ),
+        ),
+      this.dbInstance
+        .select()
+        .from(normalizedRevenueLines)
+        .where(
+          and(
+            isNull(normalizedRevenueLines.effectiveTo),
+            isNull(normalizedRevenueLines.deletedAt),
+          ),
+        ),
+      this.dbInstance
+        .select()
+        .from(workItems)
+        .where(isNull(workItems.deletedAt)),
+    ]);
+
+    const costByProject = bucketBy(costRows as any[]);
+    const revByProject = bucketBy(revRows as any[]);
+    const planByProject = bucketBy(planRows as any[]);
+
+    return projects.map((p: { id: number; projectName: string }) => {
+      const costSummary = summariseRows(costByProject.get(p.id) ?? [], EXPENDITURE_TRACKED_FIELDS);
+      const revSummary = summariseRows(revByProject.get(p.id) ?? [], REVENUE_TRACKED_FIELDS);
+      const planSummary = summariseRows(planByProject.get(p.id) ?? [], PLAN_TRACKED_FIELDS);
+      return {
+        projectId: p.id,
+        projectName: p.projectName,
+        section: {
+          EXPENDITURE: { verified: costSummary.verified, unverified: costSummary.unverified },
+          REVENUE: { verified: revSummary.verified, unverified: revSummary.unverified },
+          PLAN: { verified: planSummary.verified, unverified: planSummary.unverified },
+        },
+        verified: costSummary.verified + revSummary.verified + planSummary.verified,
+        unverified: costSummary.unverified + revSummary.unverified + planSummary.unverified,
+        legacyRowsWithoutSnapshot: {
+          EXPENDITURE: costSummary.legacyRows,
+          REVENUE: revSummary.legacyRows,
+          PLAN: planSummary.legacyRows,
+        },
+      };
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Drift-resolution writes (diff page)
+// ---------------------------------------------------------------------------
+//
+// These small methods exist so excel-vs-app.routes.ts doesn't bypass the
+// repository layer (CLAUDE.md "Repository layer: CRUD in routes must
+// go through server/repositories/*"). Each is a thin wrapper around a
+// single SQL operation; the routes file owns the orchestration.
+
+export class TrackerReplicaWriteRepository {
+  private _dbInstance?: typeof db;
+
+  constructor(dbInstance?: typeof db) {
+    this._dbInstance = dbInstance;
+  }
+
+  private get dbInstance(): typeof db {
+    return this._dbInstance || db;
+  }
+
+  /** Look up a project's name by id. Returns null when no project_info
+   *  row matches — caller surfaces a 404. */
+  async getProjectName(projectId: number): Promise<string | null> {
+    const [row] = await this.dbInstance
+      .select({ projectName: projectInfo.projectName })
+      .from(projectInfo)
+      .where(eq(projectInfo.id, projectId))
+      .limit(1);
+    return row?.projectName ?? null;
+  }
+
+  /** Read the work_item.ownerUserId for the PLAN-section owner
+   *  exception. Returns null when the row doesn't exist. */
+  async getWorkItemOwnerUserId(workItemId: number): Promise<number | null> {
+    const [row] = await this.dbInstance
+      .select({ ownerUserId: workItems.ownerUserId })
+      .from(workItems)
+      .where(eq(workItems.id, workItemId))
+      .limit(1);
+    return row?.ownerUserId ?? null;
+  }
+
+  /** File a drift-approval request into the financial_edit_requests
+   *  queue. The section's reviewers see it via the diff page's
+   *  pending-requests panel. */
+  async createDriftApprovalRequest(input: {
+    projectId: number;
+    projectName: string;
+    requestedByUserId: number;
+    editType: string;
+    editPayload: string;
+    editSummary: string;
+    affectsRevenue: boolean;
+    affectsExpenditure: boolean;
+  }): Promise<FinancialEditRequest> {
+    const [saved] = await this.dbInstance
+      .insert(financialEditRequests)
+      .values({
+        projectName: input.projectName,
+        projectId: input.projectId,
+        requestedByUserId: input.requestedByUserId,
+        editType: input.editType,
+        editTarget: "excel_vs_app",
+        editPayload: input.editPayload,
+        editSummary: input.editSummary,
+        isCriticalPath: false,
+        affectsRevenue: input.affectsRevenue,
+        affectsExpenditure: input.affectsExpenditure,
+        affectsQuality: false,
+      })
+      .returning();
+    return saved as FinancialEditRequest;
+  }
+}
+
+export const trackerReplicaWriteRepository = new TrackerReplicaWriteRepository();
+
+export interface ProgramDriftRow {
+  projectId: number;
+  projectName: string;
+  section: {
+    EXPENDITURE: DriftSectionSummary;
+    REVENUE: DriftSectionSummary;
+    PLAN: DriftSectionSummary;
+  };
+  verified: number;
+  unverified: number;
+  legacyRowsWithoutSnapshot: {
+    EXPENDITURE: number;
+    REVENUE: number;
+    PLAN: number;
+  };
+}
+
+export interface DriftRowField {
+  fieldName: string;
+  liveValue: string | number | boolean | null;
+  snapshotValue: string | number | boolean | null;
+  overrideValue: string | number | boolean | null;
+  overrideEditor: number | null;
+  overrideEditedAt: string | null;
+  overrideReason: string | null;
+  cellFormat: { font?: string | null; fill?: string | null; bold?: boolean | null } | null;
+  drift: "none" | "verified" | "unverified";
+}
+
+export interface DriftRow {
+  id: number;
+  rowHash: string | null;
+  displayLabel: string;
+  sourceRow: number | null;
+  fields: DriftRowField[];
+}
+
+export interface DriftSectionSummary {
+  verified: number;
+  unverified: number;
+}
+
+export interface DriftDetail {
+  projectId: number;
+  costLines: DriftRow[];
+  revenueLines: DriftRow[];
+  planTasks: DriftRow[];
+  /** Per-section count of active rows whose import_snapshot is NULL.
+   *  When non-zero on any section, the diff page renders a "backfill
+   *  required" banner — drift detection on those rows is unreliable
+   *  until the backfill script populates their snapshots. */
+  legacyRowsWithoutSnapshot: {
+    EXPENDITURE: number;
+    REVENUE: number;
+    PLAN: number;
+  };
+  summary: {
+    EXPENDITURE: DriftSectionSummary;
+    REVENUE: DriftSectionSummary;
+    PLAN: DriftSectionSummary;
+  };
 }
 
 export interface ManualOverrideEntry {

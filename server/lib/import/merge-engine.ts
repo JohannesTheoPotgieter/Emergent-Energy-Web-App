@@ -258,19 +258,19 @@ export function applyResolutions(
 // ---------------------------------------------------------------------------
 // Manual-override tracking
 // ---------------------------------------------------------------------------
+//
+// The JSONB shape lives in `shared/excel-vs-app/contract.ts` so the import
+// engine and the cell-edit helper can't silently drift apart on shape.
+// Re-exported here so existing callers (`commit-executor.ts`) don't need
+// a second rename pass.
 
-export interface ManualOverrideEntry {
-  /** The value the user kept. */
-  value: FieldValue;
-  /** User id who made the edit (or null for system-inferred). */
-  editedBy: number | null;
-  /** When the override was recorded. */
-  editedAt: string; // ISO timestamp
-  /** What it was overriding (the snapshot value at the time). */
-  fromValue: FieldValue;
-}
+import {
+  manualOverrideEntrySchema,
+  type ManualOverrideEntry,
+  type ManualOverridesMap,
+} from "@shared/excel-vs-app/contract";
 
-export type ManualOverridesMap = Record<string, ManualOverrideEntry>;
+export type { ManualOverrideEntry, ManualOverridesMap };
 
 /**
  * Update the row's manual_overrides map after a merge has been applied.
@@ -296,15 +296,20 @@ export function updateManualOverrides(
   const next: ManualOverridesMap = { ...(current ?? {}) };
   const resByField = new Map(resolutions.map(r => [r.fieldName, r]));
   const ts = now.toISOString();
+  // `undefined` is meaningless in JSONB — coerce to `null` at the
+  // boundary so the contract schema (which excludes `undefined`)
+  // accepts every entry the engine produces.
+  const toJson = (v: FieldValue): string | number | boolean | null =>
+    v === undefined ? null : v;
 
   for (const [field, outcome] of Object.entries(merge.outcomes)) {
     if (outcome.type === "keep_db") {
       if (!next[field]) {
         next[field] = {
-          value: outcome.value,
+          value: toJson(outcome.value),
           editedBy: decidedBy,
           editedAt: ts,
-          fromValue: outcome.snapshotValue,
+          fromValue: toJson(outcome.snapshotValue),
         };
       }
       continue;
@@ -319,13 +324,28 @@ export function updateManualOverrides(
       const res = resByField.get(field);
       if (!res || res.resolution === "keep_existing") {
         next[field] = {
-          value: outcome.db,
+          value: toJson(outcome.db),
           editedBy: decidedBy,
           editedAt: ts,
-          fromValue: outcome.snapshot,
+          fromValue: toJson(outcome.snapshot),
         };
       } else {
         delete next[field];
+      }
+    }
+  }
+
+  // Dev-mode shape validation. Catches drift between this writer and the
+  // cell-edit helper's writer at the point of write — both must produce
+  // entries that parse cleanly under the contract schema. Skipped in
+  // production to avoid the per-write overhead.
+  if (process.env.NODE_ENV !== "production") {
+    for (const [field, entry] of Object.entries(next)) {
+      const parsed = manualOverrideEntrySchema.safeParse(entry);
+      if (!parsed.success) {
+        throw new Error(
+          `[merge-engine] manual_overrides entry for "${field}" failed contract validation: ${parsed.error.message}`,
+        );
       }
     }
   }
