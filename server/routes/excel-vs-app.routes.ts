@@ -141,29 +141,12 @@ export function registerExcelVsAppRoutes(app: Express): void {
     requirePermission("excel_vs_app", "view"),
     async (_req: Request, res: Response) => {
       try {
-        const projects = await db
-          .select({ id: projectInfo.id, projectName: projectInfo.projectName })
-          .from(projectInfo);
-        const summaries = await Promise.all(
-          projects.map(async (p: { id: number; projectName: string }) => {
-            const detail = await trackerReplicaRepository.getDriftDetail(p.id);
-            const verified =
-              detail.summary.PLAN.verified +
-              detail.summary.REVENUE.verified +
-              detail.summary.EXPENDITURE.verified;
-            const unverified =
-              detail.summary.PLAN.unverified +
-              detail.summary.REVENUE.unverified +
-              detail.summary.EXPENDITURE.unverified;
-            return {
-              projectId: p.id,
-              projectName: p.projectName,
-              verified,
-              unverified,
-              section: detail.summary,
-            };
-          }),
-        );
+        // Single batched read across all projects (3 queries +
+        // bucket-by-project) replaces the previous N+1 pattern of
+        // calling getDriftDetail per project. See
+        // server/repositories/tracker-replica-repository.ts:
+        // getProgramDriftSummary.
+        const summaries = await trackerReplicaRepository.getProgramDriftSummary();
         // Default sort: most unverified drift first.
         summaries.sort((a, b) => b.unverified - a.unverified || b.verified - a.verified);
         const totalU = summaries.reduce((s, r) => s + r.unverified, 0);
