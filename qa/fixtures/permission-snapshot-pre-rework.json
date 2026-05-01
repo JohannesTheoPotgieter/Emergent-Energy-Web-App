@@ -1084,9 +1084,9 @@
     },
     "documents": {
       "view": true,
-      "create": false,
-      "edit": false,
-      "approve": false,
+      "create": true,
+      "edit": true,
+      "approve": true,
       "override": false,
       "delete": false
     },
@@ -2009,16 +2009,16 @@
       "create": true,
       "edit": true,
       "approve": true,
-      "override": true,
-      "delete": true
+      "override": false,
+      "delete": false
     },
     "documents_provision": {
       "view": true,
       "create": true,
       "edit": true,
       "approve": true,
-      "override": true,
-      "delete": true
+      "override": false,
+      "delete": false
     },
     "ee_info": {
       "view": true,
@@ -2914,7 +2914,7 @@
       "view": true,
       "create": false,
       "edit": false,
-      "approve": false,
+      "approve": true,
       "override": false,
       "delete": false
     },
@@ -3828,7 +3828,7 @@
       "view": true,
       "create": true,
       "edit": true,
-      "approve": false,
+      "approve": true,
       "override": false,
       "delete": false
     },
@@ -5654,8 +5654,8 @@
     },
     "documents": {
       "view": true,
-      "create": false,
-      "edit": false,
+      "create": true,
+      "edit": true,
       "approve": false,
       "override": false,
       "delete": false
@@ -6570,7 +6570,7 @@
       "view": true,
       "create": true,
       "edit": true,
-      "approve": false,
+      "approve": true,
       "override": false,
       "delete": false
     },
@@ -7482,9 +7482,9 @@
     },
     "documents": {
       "view": true,
-      "create": false,
-      "edit": false,
-      "approve": false,
+      "create": true,
+      "edit": true,
+      "approve": true,
       "override": false,
       "delete": false
     },
@@ -9310,8 +9310,8 @@
     },
     "documents": {
       "view": true,
-      "create": false,
-      "edit": false,
+      "create": true,
+      "edit": true,
       "approve": false,
       "override": false,
       "delete": false
@@ -10226,12 +10226,12 @@
       "view": true,
       "create": true,
       "edit": true,
-      "approve": false,
+      "approve": true,
       "override": false,
       "delete": false
     },
     "documents_admin": {
-      "view": true,
+      "view": false,
       "create": false,
       "edit": false,
       "approve": false,
@@ -10239,7 +10239,7 @@
       "delete": false
     },
     "documents_provision": {
-      "view": true,
+      "view": false,
       "create": false,
       "edit": false,
       "approve": false,
@@ -11138,8 +11138,8 @@
     },
     "documents": {
       "view": true,
-      "create": false,
-      "edit": false,
+      "create": true,
+      "edit": true,
       "approve": false,
       "override": false,
       "delete": false
@@ -12968,7 +12968,7 @@
       "view": true,
       "create": true,
       "edit": true,
-      "approve": false,
+      "approve": true,
       "override": false,
       "delete": false
     },
