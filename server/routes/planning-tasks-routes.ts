@@ -9,7 +9,8 @@ import { requireAdmin } from "../middleware/requireAdmin";
 import { ApiError, sendError, badRequest, notFound, validationError, unauthorized, serverError, forbidden } from "../lib/api-error";
 import { validateTaskCreate, validateTaskUpdate } from "../lib/task-validation";
 import { normalizeStatus, normalizePriority } from "../lib/canonical-task-engine";
-import { isWorkItemsEnabled, getAllWorkItemsForPlanTab } from "../work-items-adapter";
+import { isWorkItemsEnabled, getAllWorkItemsForPlanTab, toCanonicalStatus } from "../work-items-adapter";
+import { projectEngineeringTicket } from "@shared/lib/engineering-ticket-view";
 import { softDeleteCanonicalWorkItemByLegacyTaskId } from "../canonical-boundaries";
 import { runCascadesAfterUpdate, validateParentCompletion } from "../services/task-cascade-service";
 import { queryStr, queryInt, paramStr, paramInt } from "../lib/req-parse";
@@ -149,6 +150,48 @@ export function registerPlanningTasksRoutes(app: Express) {
           unlinkedOperationalRaw = nonClickupOps.filter((t: any) => t.importedTaskId == null && t.linkedPlanItemId == null);
           unlinkedOperationalCount = unlinkedOperationalRaw.length;
 
+          // Smart Import v2 tracker columns + cellFormat live on
+          // work_items but the legacy adapter (work-items-adapter.ts) is
+          // marked read-only and doesn't surface them. Pull a thin
+          // tracker-fields lookup directly from work_items here so the
+          // existing Plan tab can render lead / resource_1 / resource_2
+          // / tracker_comments / work_days inline alongside per-cell
+          // colours, without extending the legacy adapter.
+          const trackerWorkItemRows = await db
+            .select({
+              id: workItems.id,
+              lead: workItems.lead,
+              resource1: workItems.resource1,
+              resource2: workItems.resource2,
+              trackerComments: workItems.trackerComments,
+              workDays: workItems.workDays,
+              cellFormat: workItems.cellFormat,
+            })
+            .from(workItems)
+            .where(
+              and(
+                isNull(workItems.deletedAt),
+                sql`EXISTS (SELECT 1 FROM project_info pi WHERE pi.id = ${workItems.projectId} AND pi.project_name = ${projectName})`,
+              ),
+            );
+          const trackerByWorkItemId = new Map<number, {
+            lead: string | null;
+            resource1: string | null;
+            resource2: string | null;
+            trackerComments: string | null;
+            workDays: number | null;
+            cellFormat: unknown;
+          }>(
+            trackerWorkItemRows.map((row: any) => [row.id, {
+              lead: row.lead ?? null,
+              resource1: row.resource1 ?? null,
+              resource2: row.resource2 ?? null,
+              trackerComments: row.trackerComments ?? null,
+              workDays: row.workDays ?? null,
+              cellFormat: row.cellFormat ?? null,
+            }]),
+          );
+
           const filteredCanonical = canonicalTasks.filter((ct: any) => {
             const ws = ct.workstream || "PM";
             if (ws === "ENG" || ws === "QUALITY") return true;
@@ -161,16 +204,34 @@ export function registerPlanningTasksRoutes(app: Express) {
           });
 
           const usedIds = new Set<number>();
+          const isEngWorkstream = (ws?: string | null) => ws === "ENG" || ws === "QUALITY";
           baselineTasks = filteredCanonical.map((ct: any, idx: number) => {
             let taskId = Number.isFinite(ct.id) && ct.id > 0 ? ct.id : (idx + 1);
             while (usedIds.has(taskId)) taskId = taskId + 100000;
             usedIds.add(taskId);
 
+            // Tracker fields keyed by the underlying work_items.id.
+            // ct.workItemId is the canonical work_items row when present;
+            // ct.id can be the legacyId so the lookup falls back through
+            // both keys before defaulting to nulls.
+            const trackerKey: number | undefined = (typeof ct.workItemId === "number" && ct.workItemId > 0)
+              ? ct.workItemId
+              : (typeof ct.id === "number" && ct.id > 0 ? ct.id : undefined);
+            const tracker = trackerKey != null ? trackerByWorkItemId.get(trackerKey) : undefined;
+
             const rawPct = ct.pctComplete != null ? Number(ct.pctComplete) : 0;
             const pctComplete = rawPct > 1 ? Math.round(rawPct) : Math.round(rawPct * 100);
-            let status = "Not Started";
-            if (pctComplete >= 100) status = "Done";
-            else if (pctComplete > 0) status = "In Progress";
+            // Prefer the canonical work_items.status the row already
+            // carries (post-migration 20260413 lower_snake) instead of deriving
+            // from %, so the Plan tab and Engineering Board show the same status
+            // pill for the same row. Fall back to the % heuristic only when the
+            // canonical row is missing a status (legacy plan-only rows).
+            let status = ct.status ? toCanonicalStatus(ct.status) : "";
+            if (!status || status === "not_started") {
+              if (pctComplete >= 100) status = "complete";
+              else if (pctComplete > 0) status = "in_progress";
+              else status = status || "not_started";
+            }
 
             let computedExpPct = 0;
             const tPlannedStart = (ct.startDate || "").substring(0, 10);
@@ -192,12 +253,32 @@ export function registerPlanningTasksRoutes(app: Express) {
               }
             }
 
+            const ticketView = isEngWorkstream(ct.workstream)
+              ? projectEngineeringTicket({
+                  id: ct.id,
+                  workItemId: ct.workItemId || taskId,
+                  title: ct.taskName || `Task ${ct.taskNo || idx + 1}`,
+                  description: ct.comment ?? null,
+                  status,
+                  projectId: ct.projectId ?? null,
+                  projectName,
+                  startDate: tPlannedStart || null,
+                  endDate: tPlannedEnd || null,
+                  dueDate: tPlannedEnd || null,
+                  percentComplete: pctComplete,
+                  expectedPctComplete: computedExpPct,
+                  ownerName: Array.isArray(ct.assignees) ? (ct.assignees[0] ?? null) : null,
+                  assignees: Array.isArray(ct.assignees) ? ct.assignees : null,
+                })
+              : null;
+
             return {
               id: -taskId,
               workItemId: ct.workItemId || taskId,
               projectName,
               planProjectName: projectName,
               importedTaskId: ct.id,
+              ticketView,
               taskNumber: ct.taskNo || String(idx + 1),
               parentTaskId: null as number | null,
               parentWorkItemId: ct.parentWorkItemId || null,
@@ -235,6 +316,14 @@ export function registerPlanningTasksRoutes(app: Express) {
               createdBy: null,
               createdAt: null,
               updatedAt: null,
+              // Smart Import v2 tracker columns. See the trackerByWorkItemId
+              // lookup above. Null when the row isn't in work_items.
+              lead: tracker?.lead ?? null,
+              resource1: tracker?.resource1 ?? null,
+              resource2: tracker?.resource2 ?? null,
+              trackerComments: tracker?.trackerComments ?? null,
+              workDays: tracker?.workDays ?? null,
+              cellFormat: tracker?.cellFormat ?? null,
             };
           });
         }
@@ -274,9 +363,12 @@ export function registerPlanningTasksRoutes(app: Express) {
           })
           .map((pt: any) => {
             const pctComplete = pt.actualPctComplete != null ? Math.round(pt.actualPctComplete * 100) : 0;
-            let status = "Not Started";
-            if (pctComplete >= 100) status = "Done";
-            else if (pctComplete > 0) status = "In Progress";
+            // Emit canonical lower_snake to match the Engineering
+            // Board / Standup wire format. The legacy plan rows here have no
+            // canonical status of their own, so we still derive from %.
+            let status = "not_started";
+            if (pctComplete >= 100) status = "complete";
+            else if (pctComplete > 0) status = "in_progress";
 
             let computedExpPct: number = pt.expectedPctComplete != null ? Math.round(pt.expectedPctComplete * 100) : 0;
             if (pt.expectedPctComplete == null && !pt.isVirtual) {
@@ -309,7 +401,7 @@ export function registerPlanningTasksRoutes(app: Express) {
               parentTaskId: null as number | null,
               title: pt.highLevelProgramme || `Task ${pt.taskNo || pt.rowNumber}`,
               description: null,
-              status: isVirtualMilestone ? "Not Started" : status,
+              status: isVirtualMilestone ? "not_started" : status,
               priority: "Normal",
               startDate: pt.actualStart || null,
               dueDate: pt.actualEnd || null,
@@ -526,7 +618,10 @@ export function registerPlanningTasksRoutes(app: Express) {
           if (!isNaN(actualEnd.getTime()) && actualEnd.getTime() <= todayMs) {
             t.percentComplete = 100;
             t.storedActualPct = 100;
-            if (t.status === "Not Started" || t.status === "active") t.status = "Done";
+            // Emit canonical lower_snake.
+            if (t.status === "not_started" || t.status === "to_do" || t.status === "active" || !t.status) {
+              t.status = "complete";
+            }
           }
         }
       }
@@ -543,14 +638,18 @@ export function registerPlanningTasksRoutes(app: Express) {
           if (!isNaN(actualEnd.getTime()) && actualEnd.getTime() <= todayMs) {
             t.percentComplete = 100;
             t.storedActualPct = 100;
-            if (t.status === "Not Started" || t.status === "active" || t.status === "In Progress") t.status = "Done";
+            // Emit canonical lower_snake.
+            if (t.status === "not_started" || t.status === "to_do" || t.status === "in_progress" || t.status === "active" || !t.status) {
+              t.status = "complete";
+            }
           }
         }
         if (t.isVirtualMilestone && (t.isParent || t.childCount > 0)) {
           const pct = t.percentComplete || 0;
-          if (pct >= 100) t.status = "Done";
-          else if (pct > 0) t.status = "In Progress";
-          else t.status = "Not Started";
+          // Emit canonical lower_snake.
+          if (pct >= 100) t.status = "complete";
+          else if (pct > 0) t.status = "in_progress";
+          else t.status = "not_started";
         }
         const pct = t.percentComplete || 0;
         const exp = t.computedExpectedPct ?? 0;
@@ -809,8 +908,12 @@ export function registerPlanningTasksRoutes(app: Express) {
         if (updates.percentComplete != null) {
           notifFields.push({ field: "percentComplete", old: basePlanTask?.actualPctComplete != null ? String(Math.round(basePlanTask.actualPctComplete * 100)) : null, new_: String(updates.percentComplete) });
         }
-        if (updates.comment != null) {
-          overrideData.overrideComment = updates.comment;
+        // Treat description and comment as a unified "notes" field for plan rows
+        // so the drawer's description editor persists for legacy/project-plan
+        // baselines (previously updates.description was silently dropped here).
+        const noteVal = updates.comment != null ? updates.comment : updates.description;
+        if (noteVal != null) {
+          overrideData.overrideComment = noteVal;
         }
 
         if (existing) {
@@ -827,6 +930,27 @@ export function registerPlanningTasksRoutes(app: Express) {
             deletedFlag: 0,
             isNewTask: 0,
           });
+        }
+
+        // Mirror notes/title onto the canonical work_items row so the grid +
+        // drawer detail fetch (which reads work_items) immediately reflect the
+        // saved value. The grid + detail panels both read work_items as their
+        // source of truth, so a silent mirror failure would leave the user
+        // looking at stale data after a "successful" save. Make this part of
+        // the request-success contract: if the update affects no canonical
+        // row, fail the request so the client surfaces a save-failed toast.
+        const wiMirror: any = {};
+        if (noteVal != null) wiMirror.description = noteVal;
+        if (updates.title != null) wiMirror.title = updates.title;
+        if (Object.keys(wiMirror).length > 0) {
+          const mirrorResult = await db.update(workItems).set(wiMirror).where(
+            and(eq(workItems.legacyTable, "project_plan"), eq(workItems.legacyId, actualTaskId))
+          ).returning({ id: workItems.id });
+          if (mirrorResult.length === 0) {
+            return res.status(409).json({
+              error: `Could not persist title/description for plan task ${actualTaskId}: no canonical work_items row found. Please retry after the next plan sync.`,
+            });
+          }
         }
 
         if (updates.workstream != null) {
@@ -1031,7 +1155,9 @@ export function registerPlanningTasksRoutes(app: Express) {
         if (updates.startDate != null) wiUpdateFields.startDate = updates.startDate;
         if (updates.dueDate != null) wiUpdateFields.endDate = updates.dueDate;
         if (updates.percentComplete != null) wiUpdateFields.percentComplete = updates.percentComplete / 100;
-        if (updates.comment != null) wiUpdateFields.description = updates.comment;
+        if (updates.comment != null || updates.description != null) {
+          wiUpdateFields.description = updates.comment != null ? updates.comment : updates.description;
+        }
 
         if (Object.keys(wiUpdateFields).length > 0 && isWorkItemTask) {
           await db.update(workItems).set(wiUpdateFields).where(eq(workItems.id, wi.id));

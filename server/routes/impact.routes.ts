@@ -13,8 +13,11 @@
  *     ]
  *   }
  *
- * Access: requireAuth for reads. Actual delete endpoints elsewhere gate
- * by role (usually super-user).
+ * Access: requireAuth + requireRole(ALL_STAFF_ROLES) for reads. The
+ * counts and labels themselves leak structure (eg. "this client owns N
+ * projects, M sites"), so previews are gated to authenticated company
+ * staff. Actual delete endpoints elsewhere gate by role (usually
+ * super-user).
  */
 
 /* eslint-disable no-restricted-syntax -- legacy direct db.* calls; tracked tech debt for migration to repository layer (CLAUDE.md). Do not extend. */
@@ -22,6 +25,8 @@ import type { Express, Request, Response } from "express";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth } from "../auth-context";
+import { requireRole } from "../middleware/requireRole";
+import { ALL_STAFF_ROLES } from "@shared/schema/users";
 import { db } from "../db";
 import { projectInfo, clients, sites, opportunities } from "@shared/schema/projects";
 import {
@@ -327,6 +332,7 @@ export function registerImpactRoutes(app: Express): void {
   app.get(
     "/api/projects/:id/delete-impact",
     requireAuth,
+    requireRole(ALL_STAFF_ROLES),
     async (req: Request, res: Response) => {
       const parsed = projectIdParam.safeParse(req.params.id);
       if (!parsed.success) throw badRequest("Invalid project id");
@@ -348,6 +354,7 @@ export function registerImpactRoutes(app: Express): void {
   app.get(
     "/api/clients/:id/delete-impact",
     requireAuth,
+    requireRole(ALL_STAFF_ROLES),
     async (req: Request, res: Response) => {
       const parsed = projectIdParam.safeParse(req.params.id); // same shape: positive int
       if (!parsed.success) throw badRequest("Invalid client id");
@@ -369,6 +376,7 @@ export function registerImpactRoutes(app: Express): void {
   app.get(
     "/api/purchase-orders/:id/delete-impact",
     requireAuth,
+    requireRole(ALL_STAFF_ROLES),
     async (req: Request, res: Response) => {
       const parsed = projectIdParam.safeParse(req.params.id);
       if (!parsed.success) throw badRequest("Invalid PO id");
@@ -390,6 +398,7 @@ export function registerImpactRoutes(app: Express): void {
   app.get(
     "/api/invoices/:id/delete-impact",
     requireAuth,
+    requireRole(ALL_STAFF_ROLES),
     async (req: Request, res: Response) => {
       const parsed = projectIdParam.safeParse(req.params.id);
       if (!parsed.success) throw badRequest("Invalid invoice id");
@@ -411,6 +420,7 @@ export function registerImpactRoutes(app: Express): void {
   app.get(
     "/api/work-items/:id/delete-impact",
     requireAuth,
+    requireRole(ALL_STAFF_ROLES),
     async (req: Request, res: Response) => {
       const parsed = projectIdParam.safeParse(req.params.id);
       if (!parsed.success) throw badRequest("Invalid work item id");
@@ -432,6 +442,7 @@ export function registerImpactRoutes(app: Express): void {
   app.get(
     "/api/documents/:id/delete-impact",
     requireAuth,
+    requireRole(ALL_STAFF_ROLES),
     async (req: Request, res: Response) => {
       const parsed = projectIdParam.safeParse(req.params.id);
       if (!parsed.success) throw badRequest("Invalid document id");

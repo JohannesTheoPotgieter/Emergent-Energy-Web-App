@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { invalidateProjectV2Queries } from "@/hooks/use-project-v2";
 import { useAuth } from "@/hooks/use-auth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -128,6 +129,7 @@ export function ProjectChatTab({ projectName, projectInfoId }: { projectName: st
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["project-ms-objects", projectInfoId] });
       qc.invalidateQueries({ queryKey: ["my-ms-objects-linkable", projectInfoId] });
+      invalidateProjectV2Queries(qc, projectInfoId);
       toast({ title: "Communication linked", description: "Linked to this project." });
     },
   });
@@ -178,6 +180,7 @@ export function ProjectChatTab({ projectName, projectInfoId }: { projectName: st
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["ms-teams-project-chat", projectInfoId] });
+      invalidateProjectV2Queries(qc, projectInfoId);
       toast({ title: "Teams chat linked", description: "This project is now linked to the selected Teams chat." });
       setShowPicker(false);
     },
@@ -198,6 +201,7 @@ export function ProjectChatTab({ projectName, projectInfoId }: { projectName: st
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["ms-teams-project-chat", projectInfoId] });
+      invalidateProjectV2Queries(qc, projectInfoId);
       toast({ title: "Chat unlinked", description: "You can now link a different Teams chat." });
     },
     onError: (err: Error) => {

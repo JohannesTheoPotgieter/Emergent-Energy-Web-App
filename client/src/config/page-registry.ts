@@ -110,11 +110,21 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "projectLifecycleClientOverview", path: "/project-lifecycle/client-overview", label: "Client Overview", permissionEntity: "pd_clients", routeComponentKey: "ProjectLifecyclePage" },
   { id: "projects", path: "/projects", label: "Project List", iconKey: "FileSpreadsheet", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "projects", showInSidebar: true, routeComponentKey: "ProjectsSummary" },
   { id: "projectFinancialLinking", path: "/project/:projectName/financial-linking", label: "Financial Linking", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "financial_linking", routeComponentKey: "FinancialLinkingPage" },
-  { id: "projectDetail", path: "/project/:projectName", label: "Project Detail", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "projects", routeComponentKey: "ProjectDetailPage" },
-  { id: "projectStageGate", path: "/project/:projectName/gate/:stageCode", label: "Project Stage Gate", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "stage_lifecycle", routeComponentKey: "ProjectStageGatePage" },
+  { id: "projectDetail", path: "/project/id/:projectId", label: "Project Detail", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "projects", routeComponentKey: "ProjectDetailPage", aliases: ["/project/:projectName"] },
+  { id: "projectStageGate", path: "/project/id/:projectId/gate/:stageCode", label: "Project Stage Gate", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "stage_lifecycle", routeComponentKey: "ProjectStageGatePage", aliases: ["/project/:projectName/gate/:stageCode"] },
   { id: "cashflow", path: "/cashflow", label: "Cashflow", iconKey: "Wallet", navGroup: "FINANCE", permissionEntity: "cashflow", showInSidebar: true, routeComponentKey: "CashflowPage", roleLandingEligibility: ["CFO", "PROGRAM_FINANCE_MANAGER", "ACCOUNTANT"] },
+  { id: "cashflowAnalysis", path: "/cashflow/analysis", label: "Cashflow Analysis", iconKey: "BarChart3", navGroup: "FINANCE", permissionEntity: "cashflow", showInSidebar: true, routeComponentKey: "CashflowAnalysisPage" },
   { id: "cos", path: "/cos", label: "COS", iconKey: "TrendingUp", navGroup: "FINANCE", permissionEntity: "cos", showInSidebar: true, routeComponentKey: "CostTracker" },
+  { id: "cosAnalysis", path: "/cos/analysis", label: "COS Analysis", iconKey: "BarChart3", navGroup: "FINANCE", permissionEntity: "cos", showInSidebar: true, routeComponentKey: "CosAnalysisPage" },
   { id: "revenueTracker", path: "/revenue-tracker", label: "Revenue", iconKey: "TrendingUp", navGroup: "FINANCE", permissionEntity: "revenue_tracker", showInSidebar: true, routeComponentKey: "RevenueTrackerPage" },
+  // Per-project Tracker replicas — read-only views that render the source
+  // workbook 1:1 with font/fill fidelity. Not in the sidebar; reached from
+  // project-level navigation. Permission scope mirrors the existing finance
+  // / project-management entities so visibility follows the established RBAC.
+  { id: "trackerReplicaRevenue", path: "/projects/:projectId/revenue-tracking", label: "Revenue Tracking (Replica)", iconKey: "TrendingUp", navGroup: "FINANCE", permissionEntity: "revenue_tracker", showInSidebar: false, routeComponentKey: "RevenueTrackingReplicaPage" },
+  { id: "trackerReplicaExpenditure", path: "/projects/:projectId/expenditure-breakdown", label: "Expenditure Breakdown (Replica)", iconKey: "TrendingDown", navGroup: "FINANCE", permissionEntity: "cos", showInSidebar: false, routeComponentKey: "ExpenditureBreakdownReplicaPage" },
+  { id: "trackerReplicaPlan", path: "/projects/:projectId/program-plan", label: "Program Plan (Replica)", iconKey: "Calendar", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "work_items", showInSidebar: false, routeComponentKey: "ProgramPlanReplicaPage" },
+  { id: "manualOverrides", path: "/projects/:projectId/manual-overrides", label: "Manual Edit Log", iconKey: "History", navGroup: "FINANCE", permissionEntity: "revenue_tracker", showInSidebar: false, routeComponentKey: "ManualOverridesPage" },
   { id: "legacyRevenue", path: "/revenue", label: "Revenue (Legacy)", type: "alias", permissionEntity: "revenue_tracker", redirectTo: "/revenue-tracker" },
   { id: "legacyCosControl", path: "/cos-control", label: "COS Control (Legacy)", type: "alias", permissionEntity: "cos", redirectTo: "/cos" },
   { id: "legacyCashflowForecast", path: "/cashflow-forecast", label: "Cashflow Forecast (Legacy)", type: "alias", permissionEntity: "cashflow", redirectTo: "/cashflow" },

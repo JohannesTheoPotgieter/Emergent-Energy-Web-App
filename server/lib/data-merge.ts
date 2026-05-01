@@ -137,6 +137,19 @@ export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: strin
     _cosOverrideBy: (cost as any).cosStatusOverrideBy ?? null,
     _cosOverrideAt: (cost as any).cosStatusOverrideAt ?? null,
     _cosOverrideReason: (cost as any).cosStatusOverrideReason ?? null,
+    // Smart Import v2 tracker columns surfaced to the existing
+    // Expenditure tab. The replica screens already render these via the
+    // tracker-replica endpoint; spreading them here lets the legacy
+    // Expenditure tab render the same values inline + apply per-cell
+    // font/fill colours via the cell_format JSONB.
+    actualQty: (cost as any).actualQty ?? null,
+    actualRate: (cost as any).actualRate ?? null,
+    comments: (cost as any).comments ?? null,
+    checkFlag: (cost as any).checkFlag ?? null,
+    savingOverrun: (cost as any).savingOverrun ?? null,
+    usdExchangeRate: (cost as any).usdExchangeRate ?? null,
+    pricePerWatt: (cost as any).pricePerWatt ?? null,
+    cellFormat: (cost as any).cellFormat ?? null,
   };
 }
 
@@ -172,6 +185,9 @@ export function adaptRevenueToInflow(rev: NormalizedRevenueLine, resolvedName: s
     // normalizedRevenueLines has no counterparty column; customer must come from
     // project-level data or QB customer mappings. Placeholder for future enrichment.
     customerName: null,
+    // Smart Import v2 tracker columns surfaced to the existing Revenue tab.
+    milestoneNotes: (rev as any).milestoneNotes ?? null,
+    cellFormat: (rev as any).cellFormat ?? null,
     _isNormalized: true,
   };
 }

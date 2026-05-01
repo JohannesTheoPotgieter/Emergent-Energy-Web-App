@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { invalidateProjectV2Queries } from "@/hooks/use-project-v2";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -143,6 +144,7 @@ export function ProjectRaidTab({ projectId, projectName }: ProjectRaidTabProps) 
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["raid-items", projectId] });
+      invalidateProjectV2Queries(queryClient, projectId);
       setExpandedId(null);
     },
   });
@@ -160,6 +162,7 @@ export function ProjectRaidTab({ projectId, projectName }: ProjectRaidTabProps) 
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["raid-items", projectId] });
+      invalidateProjectV2Queries(queryClient, projectId);
     },
   });
 
@@ -534,6 +537,7 @@ function CreateRaidDialog({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["raid-items", projectId] });
+      invalidateProjectV2Queries(queryClient, projectId);
       resetForm();
       onClose();
     },

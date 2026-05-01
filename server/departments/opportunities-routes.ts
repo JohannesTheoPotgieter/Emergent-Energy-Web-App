@@ -1287,15 +1287,26 @@ router.post("/api/opportunities/:id/create-engineering-tickets", requireAuth, re
         const ticket = await opportunitiesRepo.insertPdTicket(tx, insertValues);
         results.push(ticket);
 
-        // Spawn the engineering work_items row in the same transaction so
-        // the two surfaces stay in sync. requireAuth above guarantees
-        // userId is set; the cast satisfies the not-null created_by FK.
+        // Insert the canonical engineering work_items row in the same
+        // transaction. Path 2 (Task: opportunity-drawer phantom duplicate
+        // fix) makes work_items the single source of truth for engineering
+        // execution — the drawer board, the engineering kanban, and the
+        // owner/status state all read from this row. The engineering_tickets
+        // row above remains as the back-compat "PD intake snapshot" that
+        // finance/FYE/PD-dashboard/gate-evaluator/Pipedrive still read.
+        //
+        //   - source = 'UI' because this is a user-driven flow ("Create
+        //     Custom Ticket" button on the opportunity drawer). It is NOT
+        //     a SYSTEM-generated row, even though the server inserts it.
+        //   - The 6 solar/site columns mirror the form payload so the
+        //     drawer (and any new consumer) can read everything from
+        //     work_items alone — see migration 0040.
         if (userId == null) {
-          throw new Error("authenticated user id required to spawn engineering work item");
+          throw new Error("authenticated user id required to insert engineering work item");
         }
         await tx.insert(workItems).values({
           workstream: "ENG",
-          source: "SYSTEM",
+          source: "UI",
           type: "task",
           title: String(insertValues.projectSiteName ?? "Engineering ticket"),
           description: (insertValues.comments as string | null | undefined) ?? null,
@@ -1308,6 +1319,12 @@ router.post("/api/opportunities/:id/create-engineering-tickets", requireAuth, re
           ownerUserId: null,
           engineeringTicketId: ticket.id,
           createdBy: userId,
+          fundingType: (insertValues.fundingType as string | undefined) ?? null,
+          sizeKwp: (insertValues.sizeKwp as string | undefined) ?? null,
+          province: (insertValues.province as string | undefined) ?? null,
+          gpsCoordinates: (insertValues.gpsCoordinates as string | undefined) ?? null,
+          batteriesNeeded: (insertValues.batteriesNeeded as boolean | undefined) ?? false,
+          batterySize: (insertValues.batterySize as string | undefined) ?? null,
         });
       }
       return results;
@@ -1737,39 +1754,24 @@ router.patch(
   },
 );
 
-/** Spawn engineering tasks from the request-type template against the PD shadow. */
+/**
+ * Path 2 — template-spawn is retired.
+ *
+ * Engineering work is now created by the user explicitly: the "Add
+ * Engineering Ticket" form on the opportunity drawer inserts the
+ * canonical sibling work_items row in the same transaction, and per-ticket
+ * "Add task" actions on the engineering board create additional rows.
+ * Returns 410 Gone so any stale client surfaces an explicit error rather
+ * than silently doing nothing.
+ */
 router.post(
   "/api/opportunities/:id/spawn-tasks",
   requireAuth,
   requirePermission("opportunities", "edit"),
-  async (req: Request, res: Response) => {
-    if (!canCreatePdTicket(getUserRole(req))) {
-      return res.status(403).json({ error: "Spawning engineering tasks requires a PD-approved role." });
-    }
-    try {
-      const merged = await opportunitiesRepo.getOpportunityWithWorkflow(
-        Number(req.params.id),
-        req.user?.id ?? null,
-      );
-      if (!merged) return res.status(404).json({ error: "Opportunity not found" });
-      if (!merged.pd.projectId) {
-        return res.status(409).json({ error: "Convert this opportunity to a project first — tasks must attach to a project." });
-      }
-      if (merged.pd.tasksSpawnedAt) {
-        return res.status(409).json({ error: "Tasks already spawned for this opportunity." });
-      }
-      const { spawnTasksForTicket } = await import("../pd-routes");
-      const spawned = await spawnTasksForTicket(
-        merged.pd,
-        req.user,
-        Array.isArray(req.body?.selectedTasks) ? req.body.selectedTasks : undefined,
-        Array.isArray(req.body?.customTasks) ? req.body.customTasks : undefined,
-      );
-      res.json({ spawned: spawned.length, tasks: spawned });
-    } catch (err) {
-      console.error("[Opportunities] Failed task spawn:", err);
-      res.status(500).json({ error: "Failed to spawn tasks" });
-    }
+  async (_req: Request, res: Response) => {
+    res.status(410).json({
+      error: "Template task-spawn is retired. Add engineering work via the Add Engineering Ticket form on the opportunity drawer.",
+    });
   },
 );
 

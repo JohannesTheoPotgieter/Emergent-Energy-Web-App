@@ -223,12 +223,41 @@ export const workItems = pgTable("work_items", {
   nextStep: text("next_step"),
   definitionOfDone: text("definition_of_done"),
   completionNote: text("completion_note"),
+  // Solar/site engineering metadata — added by migration
+  // 0040_work_items_engineering_metadata.sql (Path 2 consolidation).
+  // Mirrors the fields the "Add Engineering Ticket" form on
+  // /opportunities collects, so a sibling work_items row carries the
+  // full payload (the engineering_tickets row remains for back-compat
+  // with finance/FYE/PD-dashboard/gate-evaluator/Pipedrive readers).
+  fundingType: text("funding_type"),
+  sizeKwp: decimal("size_kwp", { precision: 12, scale: 2 }),
+  province: text("province"),
+  gpsCoordinates: text("gps_coordinates"),
+  batteriesNeeded: boolean("batteries_needed").default(false),
+  batterySize: decimal("battery_size", { precision: 12, scale: 2 }),
+  lead: text("lead"),
+  resource1: text("resource_1"),
+  resource2: text("resource_2"),
+  trackerComments: text("tracker_comments"),
+  workDays: integer("work_days"),
+  cellFormat: jsonb("cell_format"),
+  // Stable-ID + 3-way-merge support. See identical fields on
+  // normalizedRevenueLines (in shared/schema/finance.ts) for full
+  // documentation. work_items uses deletedAt soft-delete (not the
+  // effectiveFrom/To temporal model), so the partial index filters on
+  // deletedAt IS NULL.
+  rowHash: text("row_hash"),
+  importSnapshot: jsonb("import_snapshot"),
+  manualOverrides: jsonb("manual_overrides"),
 }, (table) => ({
   projectIdIdx: index("work_items_project_id_idx").on(table.projectId),
   ownerUserIdIdx: index("work_items_owner_user_id_idx").on(table.ownerUserId),
   statusIdx: index("work_items_status_idx").on(table.status),
   endDateIdx: index("work_items_end_date_idx").on(table.endDate),
   parentIdIdx: index("work_items_parent_id_idx").on(table.parentId),
+  rowHashActiveIdx: index("work_items_row_hash_active_idx")
+    .on(table.projectId, table.rowHash)
+    .where(sql`${table.deletedAt} IS NULL`),
   uqWorkItemsExternalRefActive: uniqueIndex("uq_work_items_external_ref_active")
     .on(table.externalRef)
     .where(sql`${table.deletedAt} IS NULL`),
@@ -240,6 +269,11 @@ export const workItems = pgTable("work_items", {
   engineeringTicketIdIdx: index("idx_work_items_engineering_ticket_id")
     .on(table.engineeringTicketId)
     .where(sql`${table.engineeringTicketId} IS NOT NULL`),
+  // Drawer board query (Path 2): one card per engineering ticket on
+  // the linked project, scoped to ENG-lane sibling rows only.
+  engTicketActiveIdx: index("idx_work_items_eng_ticket_active")
+    .on(table.workstream, table.engineeringTicketId, table.projectId)
+    .where(sql`${table.deletedAt} IS NULL AND ${table.engineeringTicketId} IS NOT NULL`),
 }));
 export const insertWorkItemSchema = createInsertSchema(workItems).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertWorkItem = z.infer<typeof insertWorkItemSchema>;

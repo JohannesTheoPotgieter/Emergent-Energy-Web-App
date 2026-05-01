@@ -55,18 +55,21 @@ import { useProjectsSummary } from "@/hooks/use-projects-summary";
 import { useAuth } from "@/hooks/use-auth";
 import DataSourceDebug from "@/components/DataSourceDebug";
 import { ProjectCommandHeader } from "@/components/ProjectCommandHeader";
+import { TrackerReplicaLinks } from "@/components/tracker-replica-links";
 import { CriticalControlPanel } from "@/components/stage-lifecycle/CriticalControlPanel";
 import { StageTimeline } from "@/components/stage-lifecycle/StageTimeline";
 import { useProjectStages } from "@/hooks/use-stage-lifecycle";
 import { Milestone } from "lucide-react";
 import { PageShell } from "@/components/layout/page-shell";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { PROJECT_PHASE_LABELS, TASK_STATUSES, type ProjectPhase, checkPermission } from "@shared/schema";
 import { computeScheduleRag, computeCostRag, computeQualityRag, computeOverallRag } from "@shared/kpi-definitions";
 import { usePermission } from "@/hooks/use-permissions";
 import { type NextMilestoneSummary } from "@/lib/next-milestone";
-import { useProjectDetail, useProjectFinance, useProjectPlan, useProjectQuality, useProjectEngineering } from "@/hooks/use-project-v2";
+import { useProjectDetail, useProjectPlan, useProjectQuality, useProjectEngineering } from "@/hooks/use-project-v2";
 import type { ProjectPermissions } from "@shared/api-types/project-v2";
 import { buildProjectSummaryChipDestinations, type ProjectSummaryChipKey } from "@/lib/project-summary-chip-navigation";
+import { findProjectById, findProjectByName } from "@/lib/project-route-identity";
 
 const PHASE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   P0_FIRST_ASSESSMENT: { bg: "bg-muted", text: "text-foreground", border: "border-border" },
@@ -878,13 +881,31 @@ function RagDot({ color }: { color: "green" | "amber" | "red" }) {
   return <span className={`inline-block w-2.5 h-2.5 rounded-full ${cls}`} />;
 }
 
+function formatUpdatedAt(ts?: number) {
+  if (!ts) return "Unknown";
+  return new Date(ts).toLocaleString("en-ZA", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 
 export default function ProjectDetailPage() {
-  const [, params] = useRoute("/project/:projectName");
+  const [isNameRoute, nameParams] = useRoute("/project/:projectName");
+  const [isIdRoute, idParams] = useRoute("/project/id/:projectId");
   const [, setLocation] = useLocation();
   const searchString = useSearch();
-  const projectName = params?.projectName ? decodeURIComponent(params.projectName) : "";
+  const routeProjectName = isNameRoute && nameParams?.projectName ? decodeURIComponent(nameParams.projectName) : "";
+  const routeProjectId = isIdRoute && idParams?.projectId ? Number(idParams.projectId) : null;
   const { projectsSummary, isLoading: programDataLoading } = useProjectsSummary();
+  const projectByName = findProjectByName(projectsSummary as any[] | undefined, routeProjectName);
+  const projectById = findProjectById(projectsSummary as any[] | undefined, routeProjectId);
+  const projectInfo = projectById ?? projectByName;
+  const projectInfoId = projectInfo?.project_info_id ?? undefined;
+  const projectName = projectInfo?.project_name ?? routeProjectName;
   const { user } = useAuth();
 
   useEffect(() => {
@@ -1013,19 +1034,22 @@ export default function ProjectDetailPage() {
   };
 
   const queryClient = useQueryClient();
-  const projectInfo = projectsSummary?.find((p: any) => p.project_name === projectName);
-  // Coerce null to undefined so this can be passed to hooks that expect `number | undefined`
-  const projectInfoId = projectInfo?.project_info_id ?? undefined;
+
+  useEffect(() => {
+    if (!projectInfoId || !projectName || isIdRoute) return;
+    const qs = searchString ? `?${searchString}` : "";
+    setLocation(`/project/id/${projectInfoId}${qs}`, { replace: true });
+  }, [projectInfoId, projectName, isIdRoute, searchString, setLocation]);
 
   // Stage lifecycle data for CriticalControlPanel and Lifecycle tab
   const { data: stageData } = useProjectStages(projectInfoId);
 
   // ─── V2 Consolidated project query ─────────────────────────────
-  const { data: v2Detail } = useProjectDetail(projectInfoId);
+  const { data: v2Detail, dataUpdatedAt: v2DetailUpdatedAt, isFetching: v2DetailFetching } = useProjectDetail(projectInfoId);
   const v2Perms: ProjectPermissions | null = v2Detail?.permissions ?? null;
 
-  // V2 lazy-load hooks — each tab domain loads on demand
-  const { data: v2Finance } = useProjectFinance(projectInfoId, activeSection === "commercial");
+  // V2 lazy-load hooks — each tab domain loads on demand.
+  // Task #124: removed orphan `useProjectFinance` (data fetched but never read).
   const { data: v2Plan } = useProjectPlan(projectInfoId, activeSection === "delivery");
   const { data: v2Quality } = useProjectQuality(projectInfoId, activeSection === "quality");
   const { data: v2Engineering } = useProjectEngineering(projectInfoId, activeSection === "engineering");
@@ -1079,7 +1103,7 @@ export default function ProjectDetailPage() {
     enabled: !!projectName,
   });
 
-  const { data: revenueData = [] } = useQuery({
+  const { data: revenueData = [], dataUpdatedAt: revenueUpdatedAt, isFetching: revenueFetching } = useQuery({
     queryKey: ["program-inflows", projectName],
     queryFn: async () => {
       const res = await engFetch(`/api/program-inflows?projectName=${encodeURIComponent(projectName)}`);
@@ -1132,7 +1156,7 @@ export default function ProjectDetailPage() {
     enabled: !!projectInfoId && canViewTab.finance && (activeSection === "commercial" || activeSection === "delivery"),
   });
 
-  const { data: cashflowData = [] } = useQuery({
+  const { data: cashflowData = [], dataUpdatedAt: cashflowUpdatedAt, isFetching: cashflowFetching } = useQuery({
     queryKey: ["cashflow", projectName],
     queryFn: async () => {
       const res = await engFetch(`/api/cashflow?project=${encodeURIComponent(projectName)}`);
@@ -1152,7 +1176,7 @@ export default function ProjectDetailPage() {
     enabled: !!projectInfo?.project_info_id,
   });
 
-  const { data: qualityData } = useQuery({
+  const { data: qualityData, dataUpdatedAt: qualityUpdatedAt, isFetching: qualityFetching } = useQuery({
     queryKey: ["quality-summary", projectName],
     queryFn: async () => {
       const res = await engFetch(`/api/quality/project/${encodeURIComponent(projectName)}/summary`);
@@ -1461,6 +1485,11 @@ export default function ProjectDetailPage() {
       />
       </div>{/* /cockpit-command-header */}
 
+      {/* Tracker Replica nav — links to the per-project 1:1 source-workbook
+          replica screens added in the 2026-04-29 release. Renders nothing
+          when projectInfoId hasn't resolved yet. */}
+      <TrackerReplicaLinks projectId={projectInfoId ?? null} />
+
       {/* Project status / DLP badges — only render when non-default */}
       {(() => {
         const status = (projectInfo as any)?.project_status ?? (projectInfo as any)?.projectStatus ?? "active";
@@ -1498,7 +1527,7 @@ export default function ProjectDetailPage() {
         <div className="space-y-2" data-testid="stage-lifecycle-block">
           <CriticalControlPanel
             projectId={projectInfoId}
-            onViewGate={() => setLocation(`/project/${encodeURIComponent(projectName)}/gate/${encodeURIComponent(stageData?.currentStage?.stageCode || "S01_FIRST_ASSESSMENT")}`)}
+            onViewGate={() => setLocation(`/project/id/${projectInfoId}/gate/${encodeURIComponent(stageData?.currentStage?.stageCode || "S01_FIRST_ASSESSMENT")}`)}
             isAdmin={isAdmin}
           />
           {stageData && (stageData.stages || []).length > 0 && (
@@ -1506,7 +1535,7 @@ export default function ProjectDetailPage() {
               <StageTimeline
                 stages={(stageData.stages || []) as any}
                 currentStageCode={stageData.currentStage?.stageCode ?? null}
-                onStageClick={(stageCode) => setLocation(`/project/${encodeURIComponent(projectName)}/gate/${encodeURIComponent(stageCode)}`)}
+                onStageClick={(stageCode) => setLocation(`/project/id/${projectInfoId}/gate/${encodeURIComponent(stageCode)}`)}
               />
             </div>
           )}
@@ -1536,7 +1565,7 @@ export default function ProjectDetailPage() {
       {projectInfoId && !canViewTab.engineering && (
         <CriticalControlPanel
           projectId={projectInfoId}
-          onViewGate={() => setLocation(`/project/${encodeURIComponent(projectName)}/gate/${encodeURIComponent(stageData?.currentStage?.stageCode || "S01_FIRST_ASSESSMENT")}`)}
+          onViewGate={() => setLocation(`/project/id/${projectInfoId}/gate/${encodeURIComponent(stageData?.currentStage?.stageCode || "S01_FIRST_ASSESSMENT")}`)}
           isAdmin={isAdmin}
         />
       )}
@@ -1611,6 +1640,20 @@ export default function ProjectDetailPage() {
             </button>
           );
         })}
+      </div>
+
+      <div className="rounded-md border bg-muted/20 px-3 py-2 text-xs" data-testid="project-trust-strip">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <span><strong>Source:</strong> {activeDept === "finance" ? "Finance trackers + V2 summary" : activeDept === "quality" ? "Quality workspace + V2 summary" : "V2 project detail + project workspaces"}</span>
+          <span><strong>Status:</strong> {(activeDept === "finance" && revenueFetching) || (activeDept === "quality" && qualityFetching) || v2DetailFetching ? "Refreshing" : "Synced"}</span>
+          <span><strong>Last updated:</strong> {
+            activeDept === "finance"
+              ? formatUpdatedAt(Math.max(v2DetailUpdatedAt || 0, revenueUpdatedAt || 0, cashflowUpdatedAt || 0))
+              : activeDept === "quality"
+                ? formatUpdatedAt(Math.max(v2DetailUpdatedAt || 0, qualityUpdatedAt || 0))
+                : formatUpdatedAt(v2DetailUpdatedAt)
+          }</span>
+        </div>
       </div>
 
       {/* ════════════════════════════════════════════════════════════
@@ -1751,6 +1794,29 @@ export default function ProjectDetailPage() {
            Permission guard: activeSection === "commercial" && canViewTab.finance
          ════════════════════════════════════════════════════════════ */}
       {activeDept === "finance" && (
+        // Task #124 — section-scoped fallback so a Commercial render crash
+        // doesn't take down the whole page.
+        <ErrorBoundary
+          fallback={({ error, reset }) => (
+            <div
+              className="rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900"
+              data-testid="commercial-section-error"
+            >
+              <div className="font-semibold mb-1">Commercial section failed to render</div>
+              <div className="text-xs opacity-80 mb-2">
+                {error?.message ?? "Unknown render error"}
+              </div>
+              <button
+                type="button"
+                onClick={reset}
+                className="text-xs underline hover:no-underline"
+                data-testid="button-commercial-retry"
+              >
+                Try again
+              </button>
+            </div>
+          )}
+        >
         <div className="space-y-3" data-testid="dept-finance-section">
           {/* Finance KPI strip */}
           <div className="flex items-center gap-4 flex-wrap rounded-md border bg-muted/30 px-3 py-2 text-xs">
@@ -1786,7 +1852,7 @@ export default function ProjectDetailPage() {
             <BudgetBaselineStrip projectId={projectInfoId} actualRevenue={totalRevenueActual} />
           )}
 
-          {activeSubTab === "revenue" && canViewSubTab.revenue && <RevenueTrackingTab projectName={projectName} highlightId={highlightType === 'revenue' ? highlightId : null} />}
+          {activeSubTab === "revenue" && canViewSubTab.revenue && <RevenueTrackingTab projectName={projectName} projectId={projectInfoId ?? null} highlightId={highlightType === 'revenue' ? highlightId : null} />}
           {activeSubTab === "cost-lines" && canViewSubTab.expenditure && <ExpenditureEditableTab projectName={projectName} projectId={projectInfoId ?? null} highlightId={highlightType === 'expense' ? highlightId : null} initialFilter={costFilter || undefined} />}
           {activeSubTab === "cos-tracker" && canViewSubTab.expenditure && <MonthlyRealisationTab projectName={projectName} projectId={projectInfoId ?? null} />}
           {activeSubTab === "rev-tracker" && canViewSubTab.revenue && <RevenueTrackerTab projectName={projectName} projectId={projectInfoId ?? null} />}
@@ -1797,6 +1863,7 @@ export default function ProjectDetailPage() {
             <QuickBooksReconciliationTab projectId={projectInfoId} projectName={projectName} />
           )}
         </div>
+        </ErrorBoundary>
       )}
 
       {/* ════════════════════════════════════════════════════════════

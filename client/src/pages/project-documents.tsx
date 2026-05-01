@@ -20,11 +20,11 @@
 import { useMemo, useState, useEffect } from "react";
 import { useParams } from "wouter";
 import { PageHeader } from "@/components/ui/page-header";
+import { Badge } from "@/components/ui/badge";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { PageLayout } from "@/components/layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
 import { useProjectDetail } from "@/hooks/use-project-v2";
 import {
   usePublicFolderTaxonomy,

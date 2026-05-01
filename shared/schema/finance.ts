@@ -519,6 +519,29 @@ export const normalizedRevenueLines = pgTable("normalized_revenue_lines", {
   adminDateOverrideBy: integer("admin_date_override_by").references(() => users.id, { onDelete: "set null" }),
   adminDateOverrideAt: timestamp("admin_date_override_at"),
   subProjectName: text("sub_project_name"),
+  // Tracker col R — Milestone Notes & Comments. Previously dropped
+  // by the importer (synonym `requirements` mapped to nothing).
+  milestoneNotes: text("milestone_notes"),
+  // Per-cell font/fill colour from the source workbook. Keyed by canonical
+  // field name, e.g. { invoice_date: { font: "#FF0000", fill: "#FFFF00" } }.
+  // The legacy `*_font_color` text columns are kept for backward compat.
+  cellFormat: jsonb("cell_format"),
+  // Stable hash-based row identity. Computed deterministically from the
+  // row's identity columns so the same logical row keeps the same hash
+  // across re-imports, even when its serial id changes. Lookups go through
+  // (project_id, row_hash) which has a partial index for active rows only.
+  rowHash: text("row_hash"),
+  // Snapshot of the row exactly as it was written by the most recent
+  // import. Used as the "common ancestor" in 3-way merge against (a) the
+  // current DB state and (b) the new file row, to distinguish a manual
+  // edit from an import update.
+  importSnapshot: jsonb("import_snapshot"),
+  // Per-field manual-override audit. Keyed by canonical field name with
+  // metadata about who edited what when, e.g.:
+  //   { "milestone_notes": { "value": "...", "editedBy": 7, "editedAt": "..." } }
+  // The 3-way merge consults this map to decide whether to surface a
+  // conflict, accept the file value, or preserve the manual edit.
+  manualOverrides: jsonb("manual_overrides"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   // Soft-delete column (column already present in DB; mirroring it here
@@ -528,7 +551,12 @@ export const normalizedRevenueLines = pgTable("normalized_revenue_lines", {
   effectiveFrom: timestamp("effective_from").notNull().defaultNow(),
   effectiveTo: timestamp("effective_to"),
   snapshotRunId: integer("snapshot_run_id").references(() => smartImportRuns.id, { onDelete: "set null" }),
-});
+}, (table) => ({
+  // Partial index — only active rows participate in stable-ID lookups.
+  rowHashActiveIdx: index("normalized_revenue_lines_row_hash_active_idx")
+    .on(table.projectId, table.rowHash)
+    .where(sql`${table.effectiveTo} IS NULL`),
+}));
 export const insertNormalizedRevenueLineSchema = createInsertSchema(normalizedRevenueLines).omit({ id: true, createdAt: true, updatedAt: true, effectiveFrom: true, effectiveTo: true, amountExVatLegacy: true, vatLegacy: true, deletedAt: true } as any);
 export type InsertNormalizedRevenueLine = z.infer<typeof insertNormalizedRevenueLineSchema>;
 export type NormalizedRevenueLine = typeof normalizedRevenueLines.$inferSelect;
@@ -637,10 +665,150 @@ export const normalizedCostLines = pgTable("normalized_cost_lines", {
   // categoryAllocationId: FK to the category_revenue_allocations row for direct formula lookup.
   categoryKey: text("category_key"),
   categoryAllocationId: integer("category_allocation_id").references(() => categoryRevenueAllocations.id),
-});
+  // Tracker Expenditure Breakdown — actual-side QTY and Rate (cols O, P).
+  // Previously collapsed onto budgetQty/budgetRate, dropping the actual values.
+  actualQty: text("actual_qty"),
+  actualRate: text("actual_rate"),
+  // Tracker col AA — free-text Comments per cost line.
+  comments: text("comments"),
+  // Tracker col V — CHECK column. Stored as raw text because the source
+  // is a formula; non-zero / non-empty signals a validation flag.
+  checkFlag: text("check_flag"),
+  // Tracker col Z — Saving / Overrun stored from the workbook (vs derived)
+  // so the imported value is preserved verbatim for audit.
+  savingOverrun: decimal("saving_overrun", { precision: 15, scale: 2 }),
+  // Tracker cols AB/AC, AE — header/sidebar values that apply to the line.
+  usdExchangeRate: decimal("usd_exchange_rate", { precision: 10, scale: 4 }),
+  pricePerWatt: decimal("price_per_watt", { precision: 12, scale: 6 }),
+  // Per-cell font/fill colour. See cellFormat note on normalizedRevenueLines.
+  cellFormat: jsonb("cell_format"),
+  // Stable-ID + 3-way-merge support. See identical fields on
+  // normalizedRevenueLines for documentation of intent and shape.
+  rowHash: text("row_hash"),
+  importSnapshot: jsonb("import_snapshot"),
+  manualOverrides: jsonb("manual_overrides"),
+}, (table) => ({
+  rowHashActiveIdx: index("normalized_cost_lines_row_hash_active_idx")
+    .on(table.projectId, table.rowHash)
+    .where(sql`${table.effectiveTo} IS NULL`),
+}));
 export const insertNormalizedCostLineSchema = createInsertSchema(normalizedCostLines).omit({ id: true, createdAt: true, updatedAt: true, effectiveFrom: true, effectiveTo: true, amountExVatLegacy: true, deletedAt: true } as any);
 export type InsertNormalizedCostLine = z.infer<typeof insertNormalizedCostLineSchema>;
 export type NormalizedCostLine = typeof normalizedCostLines.$inferSelect;
+
+// ===================== COST LINE ACTUALS (1:N CHILD) =====================
+
+// One row per actual entry on the right-hand side of the Tracker's
+// Expenditure Breakdown sheet. The Tracker pairs costed items with
+// their actual invoices; when a single costed line is settled across
+// multiple invoice batches, the actual side has more rows than the
+// costed side, and the previous schema lost everything past the first.
+export const normalizedCostLineActuals = pgTable("normalized_cost_line_actuals", {
+  id: serial("id").primaryKey(),
+  costLineId: integer("cost_line_id").notNull().references(() => normalizedCostLines.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
+  // Position of the actual entry within its parent costed line.
+  actualNo: integer("actual_no").notNull(),
+  description: text("description"),
+  qty: text("qty"),
+  rate: text("rate"),
+  actualTotal: decimal("actual_total", { precision: 15, scale: 2 }),
+  poNumber: text("po_number"),
+  invoiceNumber: text("invoice_number"),
+  invoiceDate: date("invoice_date"),
+  revenueRecognitionAmount: decimal("revenue_recognition_amount", { precision: 15, scale: 2 }),
+  financePaymentDate: date("finance_payment_date"),
+  comments: text("comments"),
+  checkFlag: text("check_flag"),
+  savingOverrun: decimal("saving_overrun", { precision: 15, scale: 2 }),
+  cellFormat: jsonb("cell_format"),
+  // Stable-ID + 3-way-merge support. See identical fields on
+  // normalizedRevenueLines for documentation of intent and shape.
+  rowHash: text("row_hash"),
+  importSnapshot: jsonb("import_snapshot"),
+  manualOverrides: jsonb("manual_overrides"),
+  sourceSheet: text("source_sheet"),
+  sourceRow: integer("source_row"),
+  importRunId: integer("import_run_id").notNull().references(() => smartImportRuns.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
+  // Temporal columns — same model as parent normalizedCostLines.
+  effectiveFrom: timestamp("effective_from").notNull().defaultNow(),
+  effectiveTo: timestamp("effective_to"),
+  snapshotRunId: integer("snapshot_run_id").references(() => smartImportRuns.id, { onDelete: "set null" }),
+}, (table) => ({
+  costLineIdIdx: index("normalized_cost_line_actuals_cost_line_id_idx").on(table.costLineId),
+  projectIdIdx: index("normalized_cost_line_actuals_project_id_idx").on(table.projectId),
+  effectiveToIdx: index("normalized_cost_line_actuals_effective_to_idx").on(table.effectiveTo),
+  rowHashActiveIdx: index("normalized_cost_line_actuals_row_hash_active_idx")
+    .on(table.costLineId, table.rowHash)
+    .where(sql`${table.effectiveTo} IS NULL`),
+}));
+export const insertNormalizedCostLineActualSchema = createInsertSchema(normalizedCostLineActuals).omit({ id: true, createdAt: true, updatedAt: true, effectiveFrom: true, effectiveTo: true, deletedAt: true } as any);
+export type InsertNormalizedCostLineActual = z.infer<typeof insertNormalizedCostLineActualSchema>;
+export type NormalizedCostLineActual = typeof normalizedCostLineActuals.$inferSelect;
+
+// ===================== TRACKER REVENUE SUMMARY =====================
+
+// Captures the high-level totals at the top of the Tracker's Revenue
+// Tracking sheet (rows 4–7): Planned Revenue / Expenditure / Profit /
+// Margin, each with COSTED and ACTUAL columns. One row per import.
+export const trackerRevenueSummary = pgTable("tracker_revenue_summary", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
+  importRunId: integer("import_run_id").notNull().references(() => smartImportRuns.id),
+  plannedRevenueCosted: decimal("planned_revenue_costed", { precision: 15, scale: 2 }),
+  plannedRevenueActual: decimal("planned_revenue_actual", { precision: 15, scale: 2 }),
+  plannedExpenditureCosted: decimal("planned_expenditure_costed", { precision: 15, scale: 2 }),
+  plannedExpenditureActual: decimal("planned_expenditure_actual", { precision: 15, scale: 2 }),
+  plannedProfitCosted: decimal("planned_profit_costed", { precision: 15, scale: 2 }),
+  plannedProfitActual: decimal("planned_profit_actual", { precision: 15, scale: 2 }),
+  plannedMarginCosted: decimal("planned_margin_costed", { precision: 8, scale: 6 }),
+  plannedMarginActual: decimal("planned_margin_actual", { precision: 8, scale: 6 }),
+  cellFormat: jsonb("cell_format"),
+  sourceSheet: text("source_sheet"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  effectiveFrom: timestamp("effective_from").notNull().defaultNow(),
+  effectiveTo: timestamp("effective_to"),
+  snapshotRunId: integer("snapshot_run_id").references(() => smartImportRuns.id, { onDelete: "set null" }),
+}, (table) => ({
+  projectIdIdx: index("tracker_revenue_summary_project_id_idx").on(table.projectId),
+  effectiveToIdx: index("tracker_revenue_summary_effective_to_idx").on(table.effectiveTo),
+}));
+export const insertTrackerRevenueSummarySchema = createInsertSchema(trackerRevenueSummary).omit({ id: true, createdAt: true, updatedAt: true, effectiveFrom: true, effectiveTo: true } as any);
+export type InsertTrackerRevenueSummary = z.infer<typeof insertTrackerRevenueSummarySchema>;
+export type TrackerRevenueSummary = typeof trackerRevenueSummary.$inferSelect;
+
+// ===================== TRACKER PROJECT METADATA =====================
+
+// Captures the top-of-sheet metadata block on the Project Plan tab
+// (rows 1–7): baseline / forecasted completion dates, project start
+// date, and duration metrics. One row per import.
+export const trackerProjectMetadata = pgTable("tracker_project_metadata", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
+  importRunId: integer("import_run_id").notNull().references(() => smartImportRuns.id),
+  baselineCompletionDate: date("baseline_completion_date"),
+  forecastedCompletionDate: date("forecasted_completion_date"),
+  projectStartDate: date("project_start_date"),
+  durationMonthsFromSiteEstab: decimal("duration_months_from_site_estab", { precision: 8, scale: 4 }),
+  durationMonthsToCapacityTest: decimal("duration_months_to_capacity_test", { precision: 8, scale: 4 }),
+  cellFormat: jsonb("cell_format"),
+  sourceSheet: text("source_sheet"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  effectiveFrom: timestamp("effective_from").notNull().defaultNow(),
+  effectiveTo: timestamp("effective_to"),
+  snapshotRunId: integer("snapshot_run_id").references(() => smartImportRuns.id, { onDelete: "set null" }),
+}, (table) => ({
+  projectIdIdx: index("tracker_project_metadata_project_id_idx").on(table.projectId),
+  effectiveToIdx: index("tracker_project_metadata_effective_to_idx").on(table.effectiveTo),
+}));
+export const insertTrackerProjectMetadataSchema = createInsertSchema(trackerProjectMetadata).omit({ id: true, createdAt: true, updatedAt: true, effectiveFrom: true, effectiveTo: true } as any);
+export type InsertTrackerProjectMetadata = z.infer<typeof insertTrackerProjectMetadataSchema>;
+export type TrackerProjectMetadata = typeof trackerProjectMetadata.$inferSelect;
 
 // ===================== INVOICE PATTERNS =====================
 

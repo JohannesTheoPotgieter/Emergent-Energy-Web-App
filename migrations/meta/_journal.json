@@ -278,29 +278,64 @@
     {
       "idx": 39,
       "version": "7",
-      "when": 1777200000001,
-      "tag": "0038_document_management_v2_taxonomy",
+      "when": 1777370000001,
+      "tag": "0038_task_activity_log_task_id_nullable",
       "breakpoints": true
     },
     {
       "idx": 40,
       "version": "7",
-      "when": 1777300000001,
-      "tag": "0032_backfill_work_items_from_engineering_tickets",
+      "when": 1777370000002,
+      "tag": "0039_drop_work_items_active_eng_ticket_uniq",
       "breakpoints": true
     },
     {
       "idx": 41,
       "version": "7",
-      "when": 1777300000002,
-      "tag": "0033_users_location",
+      "when": 1777467017947,
+      "tag": "0042_tracker_replica_columns",
       "breakpoints": true
     },
     {
       "idx": 42,
       "version": "7",
-      "when": 1777400000001,
-      "tag": "0039_project_folders_web_url",
+      "when": 1777473618645,
+      "tag": "0043_tracker_stable_ids_and_merge",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1777473618646,
+      "tag": "0032_backfill_work_items_from_engineering_tickets",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1777473618647,
+      "tag": "0033_users_location",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1777473618648,
+      "tag": "0040_work_items_engineering_metadata",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1777473618649,
+      "tag": "0041_work_items_batteries_needed_default",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1777616176751,
+      "tag": "0044_document_management_v2",
       "breakpoints": true
     }
   ]

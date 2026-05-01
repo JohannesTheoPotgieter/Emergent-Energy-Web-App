@@ -13,6 +13,8 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { X, Plus, ArrowRight, ArrowLeft } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
 
 interface DependencyManagerProps {
   taskId: number;
@@ -36,10 +38,20 @@ interface WorkItemOption {
 
 export default function DependencyManager({ taskId, projectId }: DependencyManagerProps) {
   const queryClient = useQueryClient();
+  const { isAdmin } = useAuth();
+  const { toast } = useToast();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [predecessorId, setPredecessorId] = useState("");
   const [depType, setDepType] = useState("FS");
   const [lagDays, setLagDays] = useState(0);
+
+  const invalidateDependencyCaches = () => {
+    queryClient.invalidateQueries({ queryKey: ["dependencies", projectId] });
+    queryClient.invalidateQueries({ queryKey: ["project-dependencies"] });
+    queryClient.invalidateQueries({ queryKey: ["operational-task-detail"] });
+    queryClient.invalidateQueries({ queryKey: ["baseline-task-detail"] });
+    queryClient.invalidateQueries({ queryKey: ["planning-tasks"] });
+  };
 
   const { data: depsData, isLoading: depsLoading } = useQuery<{ dependencies: Dependency[] }>({
     queryKey: ["dependencies", projectId],
@@ -68,11 +80,19 @@ export default function DependencyManager({ taskId, projectId }: DependencyManag
       await apiRequest("POST", "/api/dependencies", body);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dependencies", projectId] });
+      invalidateDependencyCaches();
       setDialogOpen(false);
       setPredecessorId("");
       setDepType("FS");
       setLagDays(0);
+      toast({ title: "Dependency added" });
+    },
+    onError: (err: any) => {
+      toast({
+        title: "Failed to add dependency",
+        description: err?.message || "Could not create dependency",
+        variant: "destructive",
+      });
     },
   });
 
@@ -81,7 +101,15 @@ export default function DependencyManager({ taskId, projectId }: DependencyManag
       await apiRequest("DELETE", `/api/dependencies/${depId}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dependencies", projectId] });
+      invalidateDependencyCaches();
+      toast({ title: "Dependency removed" });
+    },
+    onError: (err: any) => {
+      toast({
+        title: "Failed to remove dependency",
+        description: err?.message || "Could not delete dependency",
+        variant: "destructive",
+      });
     },
   });
 
@@ -126,13 +154,16 @@ export default function DependencyManager({ taskId, projectId }: DependencyManag
                 <ArrowLeft className="h-3 w-3" />
                 {dep.predecessorTitle}
                 <span className="text-[10px] opacity-70 ml-0.5">{dep.depType}{dep.lagDays ? ` +${dep.lagDays}d` : ""}</span>
-                <button
-                  className="ml-0.5 hover:bg-red-100 rounded p-0.5"
-                  onClick={() => deleteMutation.mutate(dep.id)}
-                  data-testid={`button-delete-dep-${dep.id}`}
-                >
-                  <X className="h-3 w-3 text-red-500" />
-                </button>
+                {isAdmin && (
+                  <button
+                    className="ml-0.5 hover:bg-red-100 rounded p-0.5"
+                    onClick={() => deleteMutation.mutate(dep.id)}
+                    data-testid={`button-delete-dep-${dep.id}`}
+                    title="Remove predecessor"
+                  >
+                    <X className="h-3 w-3 text-red-500" />
+                  </button>
+                )}
               </Badge>
             ))}
           </div>
@@ -153,13 +184,16 @@ export default function DependencyManager({ taskId, projectId }: DependencyManag
                 <ArrowRight className="h-3 w-3" />
                 {dep.successorTitle}
                 <span className="text-[10px] opacity-70 ml-0.5">{dep.depType}{dep.lagDays ? ` +${dep.lagDays}d` : ""}</span>
-                <button
-                  className="ml-0.5 hover:bg-red-100 rounded p-0.5"
-                  onClick={() => deleteMutation.mutate(dep.id)}
-                  data-testid={`button-delete-dep-${dep.id}`}
-                >
-                  <X className="h-3 w-3 text-red-500" />
-                </button>
+                {isAdmin && (
+                  <button
+                    className="ml-0.5 hover:bg-red-100 rounded p-0.5"
+                    onClick={() => deleteMutation.mutate(dep.id)}
+                    data-testid={`button-delete-dep-${dep.id}`}
+                    title="Remove successor"
+                  >
+                    <X className="h-3 w-3 text-red-500" />
+                  </button>
+                )}
               </Badge>
             ))}
           </div>
@@ -170,15 +204,17 @@ export default function DependencyManager({ taskId, projectId }: DependencyManag
         <p className="text-xs text-muted-foreground mb-2" data-testid="text-no-dependencies">No dependencies</p>
       )}
 
-      <Button
-        variant="outline"
-        size="sm"
-        className="text-xs border-[#16A34A]/30 text-[#16A34A] hover:bg-[#16A34A]/5"
-        onClick={() => setDialogOpen(true)}
-        data-testid="button-add-dependency"
-      >
-        <Plus className="h-3 w-3 mr-1" /> Add Dependency
-      </Button>
+      {isAdmin && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="text-xs border-[#16A34A]/30 text-[#16A34A] hover:bg-[#16A34A]/5"
+          onClick={() => setDialogOpen(true)}
+          data-testid="button-add-dependency"
+        >
+          <Plus className="h-3 w-3 mr-1" /> Add Dependency
+        </Button>
+      )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="bg-white sm:max-w-md" data-testid="dialog-add-dependency">

@@ -12108,9 +12108,9 @@
     },
     "handover": {
       "view": true,
-      "create": false,
-      "edit": false,
-      "approve": false,
+      "create": true,
+      "edit": true,
+      "approve": true,
       "override": false,
       "delete": false
     },
