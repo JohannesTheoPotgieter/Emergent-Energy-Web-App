@@ -153,3 +153,38 @@ describe("Excel-vs-App per-section RBAC", () => {
     }
   });
 });
+
+describe("Excel-vs-App PLAN owner exception", () => {
+  // Mirrors the route logic: section check first, then PLAN-only owner
+  // exception, then deny. Pure function so the policy can be pinned
+  // without DB access.
+  function canResolvePlanRowAsOwner(
+    role: string | undefined,
+    actorId: number | null,
+    rowOwnerUserId: number | null,
+  ): boolean {
+    if (role && (DRIFT_RESOLVER_ROLES.PLAN as readonly string[]).includes(role)) return true;
+    if (actorId != null && rowOwnerUserId === actorId) return true;
+    return false;
+  }
+
+  it("ENGINEER who owns the work item can resolve plan drift on it", () => {
+    expect(canResolvePlanRowAsOwner("ENGINEER", 7, 7)).toBe(true);
+  });
+
+  it("ENGINEER who does NOT own the work item cannot resolve", () => {
+    expect(canResolvePlanRowAsOwner("ENGINEER", 7, 8)).toBe(false);
+  });
+
+  it("PROGRAM_MANAGER can resolve any plan row regardless of owner", () => {
+    expect(canResolvePlanRowAsOwner("PROGRAM_MANAGER", 7, 999)).toBe(true);
+  });
+
+  it("Owner exception only fires when row has a non-null ownerUserId", () => {
+    expect(canResolvePlanRowAsOwner("ENGINEER", 7, null)).toBe(false);
+  });
+
+  it("actorId null disables owner exception", () => {
+    expect(canResolvePlanRowAsOwner("ENGINEER", null, 7)).toBe(false);
+  });
+});
