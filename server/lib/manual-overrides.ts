@@ -77,14 +77,6 @@ interface RowWithOverrides {
 // Internals
 // ---------------------------------------------------------------------------
 
-function tableFor(name: OverrideTableName) {
-  switch (name) {
-    case "normalized_cost_lines":   return normalizedCostLines;
-    case "normalized_revenue_lines": return normalizedRevenueLines;
-    case "work_items":               return workItems;
-  }
-}
-
 export function readOverridesMap(raw: unknown): ManualOverridesMap {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
   return raw as ManualOverridesMap;
@@ -92,6 +84,43 @@ export function readOverridesMap(raw: unknown): ManualOverridesMap {
 
 function toJson(v: OverrideValue | undefined): OverrideValue {
   return v === undefined ? null : v;
+}
+
+// Per-table dispatch — Drizzle's QueryBuilder is too strictly typed
+// to accept a union of table refs. Each branch keeps its narrow type
+// so we don't need an `as any` cast on the select / update chain.
+async function fetchRowDispatch(
+  tx: typeof db,
+  table: OverrideTableName,
+  rowId: number,
+): Promise<RowWithOverrides | null> {
+  if (table === "normalized_cost_lines") {
+    const [row] = await tx.select().from(normalizedCostLines).where(eq(normalizedCostLines.id, rowId)).limit(1);
+    return (row ?? null) as RowWithOverrides | null;
+  }
+  if (table === "normalized_revenue_lines") {
+    const [row] = await tx.select().from(normalizedRevenueLines).where(eq(normalizedRevenueLines.id, rowId)).limit(1);
+    return (row ?? null) as RowWithOverrides | null;
+  }
+  const [row] = await tx.select().from(workItems).where(eq(workItems.id, rowId)).limit(1);
+  return (row ?? null) as RowWithOverrides | null;
+}
+
+async function writeOverridesDispatch(
+  tx: typeof db,
+  table: OverrideTableName,
+  rowId: number,
+  next: ManualOverridesMap,
+): Promise<void> {
+  if (table === "normalized_cost_lines") {
+    await tx.update(normalizedCostLines).set({ manualOverrides: next }).where(eq(normalizedCostLines.id, rowId));
+    return;
+  }
+  if (table === "normalized_revenue_lines") {
+    await tx.update(normalizedRevenueLines).set({ manualOverrides: next }).where(eq(normalizedRevenueLines.id, rowId));
+    return;
+  }
+  await tx.update(workItems).set({ manualOverrides: next }).where(eq(workItems.id, rowId));
 }
 
 // ---------------------------------------------------------------------------
@@ -154,9 +183,7 @@ async function fetchRow(
   table: OverrideTableName,
   rowId: number,
 ): Promise<RowWithOverrides | null> {
-  const t = tableFor(table) as any;
-  const rows = await tx.select().from(t).where(eq(t.id, rowId)).limit(1);
-  return (rows[0] ?? null) as RowWithOverrides | null;
+  return fetchRowDispatch(tx, table, rowId);
 }
 
 // ---------------------------------------------------------------------------
@@ -206,8 +233,7 @@ export async function applyManualOverride(
     input.note,
   );
 
-  const t = tableFor(input.table) as any;
-  await tx.update(t).set({ manualOverrides: next }).where(eq(t.id, input.rowId));
+  await writeOverridesDispatch(tx, input.table, input.rowId, next);
 
   // Structured log line — observability for "how often is the cell-edit
   // path firing vs the import path". One JSON line per write.
@@ -248,8 +274,7 @@ export async function clearManualOverride(
   const next = removeOverrideFromMap(current, fieldName);
   if (next === current) return;
 
-  const t = tableFor(table) as any;
-  await tx.update(t).set({ manualOverrides: next }).where(eq(t.id, rowId));
+  await writeOverridesDispatch(tx, table, rowId, next);
 
   console.log(JSON.stringify({
     tag: "manual-overrides",
