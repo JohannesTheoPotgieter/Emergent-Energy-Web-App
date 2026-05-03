@@ -63,6 +63,9 @@ jobs:
       TOKEN_ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
       JWT_SECRET: ci-test-jwt-secret
       SESSION_SECRET: ci-test-session-secret
+      # Auto-create the connect-pg-simple `session` table at boot so the
+      # password-login flow can persist a session in CI.
+      ENABLE_STARTUP_SCHEMA_REPAIR: "true"
 
     steps:
       - uses: actions/checkout@v4
@@ -85,6 +88,11 @@ jobs:
             turbo-compile-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json') }}-
       - run: npx turbo run build test --cache-dir=.turbo
         if: hashFiles('**/*.test.ts') != ''
+      # Provision the test database: push the Drizzle schema, then seed the
+      # users that the API tests log in as (johannes / eon / opsmanager31).
+      # Without these steps, /api/auth/login returns 401 in CI.
+      - run: npm run db:push
+      - run: npm run seed:test-users
       # Non-cacheable integration steps (need a live server + DB)
       - run: npm run test:api
       - run: npm run release:gate

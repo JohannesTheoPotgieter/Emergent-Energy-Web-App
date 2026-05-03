@@ -38,16 +38,20 @@ describe("COO operational access matrix", () => {
   });
 
   it("ensures every operational domain has discoverable UI entry points", () => {
-    // Discoverable means reachable from the URL: either a registered page or
-    // a legacy redirect that lands on one. /admin/control-center, for
-    // example, was retired (Task #101) but is preserved as a redirect to
-    // /admin/roles so deep links still work.
+    // Discoverable means reachable from the URL: a registered page, a
+    // legacy redirect that lands on one, or a registered alias on a page
+    // (the canonical path may differ — e.g. /project/:projectName is an
+    // alias on /project/id/:projectId).
     const registryPaths = new Set(PAGE_REGISTRY.map((page) => page.path));
+    const aliasPaths = new Set(
+      PAGE_REGISTRY.flatMap((page) => page.aliases ?? []),
+    );
     const redirectPaths = new Set(LEGACY_REDIRECTS.map((r) => r.path));
 
     for (const domain of COO_OPERATIONAL_ACCESS_MATRIX) {
       for (const path of domain.discoverablePaths) {
-        const reachable = registryPaths.has(path) || redirectPaths.has(path);
+        const reachable =
+          registryPaths.has(path) || aliasPaths.has(path) || redirectPaths.has(path);
         expect(reachable, `${domain.domain} missing discoverable path: ${path}`).toBe(true);
       }
     }

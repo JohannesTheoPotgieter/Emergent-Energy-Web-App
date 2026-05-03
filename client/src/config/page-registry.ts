@@ -99,7 +99,8 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   // /quickbooks merged into the existing /finance/quickbooks (Throughput).
   // Kept as a redirect so any bookmarked link still lands in the right place.
   { id: "quickbooksHomeRedirect", path: "/quickbooks", label: "QuickBooks (moved)", type: "alias", permissionEntity: "financials", redirectTo: "/finance/quickbooks" },
-  { id: "adminDocumentTypes", path: "/admin/document-types", label: "Document types", iconKey: "FileText", navGroup: "SYSTEM", permissionEntity: "admin_roles", routeComponentKey: "AdminDocumentTypesPage" },
+  { id: "adminDocumentTypes", path: "/admin/document-types", label: "Document types (legacy)", iconKey: "FileText", navGroup: "SYSTEM", permissionEntity: "admin_roles", showInSidebar: false, routeComponentKey: "AdminDocumentTypesPage" },
+  { id: "adminDocumentManagement", path: "/admin/document-management", label: "Document management", iconKey: "FolderTree", navGroup: "SYSTEM", permissionEntity: "documents_admin", routeComponentKey: "AdminDocumentManagementPage" },
   { id: "adminEmailLinkerDev", path: "/admin/email-linker-dev", label: "Email auto-linker (dev)", iconKey: "Mail", navGroup: "SYSTEM", permissionEntity: "admin_roles", routeComponentKey: "AdminEmailLinkerDevPage" },
   { id: "pendingApprovals", path: "/pending-approvals", label: "Pending Approvals", iconKey: "Inbox", navGroup: "SYSTEM", permissionEntity: "admin_roles", showInSidebar: true, routeComponentKey: "PendingApprovalsPage" },
   { id: "handoverLive", path: "/handover/:projectId/live", label: "Handover live meeting", permissionEntity: "projects", routeComponentKey: "HandoverLivePage" },
@@ -109,8 +110,8 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "projectLifecycleClientOverview", path: "/project-lifecycle/client-overview", label: "Client Overview", permissionEntity: "pd_clients", routeComponentKey: "ProjectLifecyclePage" },
   { id: "projects", path: "/projects", label: "Project List", iconKey: "FileSpreadsheet", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "projects", showInSidebar: true, routeComponentKey: "ProjectsSummary" },
   { id: "projectFinancialLinking", path: "/project/:projectName/financial-linking", label: "Financial Linking", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "financial_linking", routeComponentKey: "FinancialLinkingPage" },
-  { id: "projectDetail", path: "/project/:projectName", label: "Project Detail", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "projects", routeComponentKey: "ProjectDetailPage" },
-  { id: "projectStageGate", path: "/project/:projectName/gate/:stageCode", label: "Project Stage Gate", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "stage_lifecycle", routeComponentKey: "ProjectStageGatePage" },
+  { id: "projectDetail", path: "/project/id/:projectId", label: "Project Detail", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "projects", routeComponentKey: "ProjectDetailPage", aliases: ["/project/:projectName"] },
+  { id: "projectStageGate", path: "/project/id/:projectId/gate/:stageCode", label: "Project Stage Gate", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "stage_lifecycle", routeComponentKey: "ProjectStageGatePage", aliases: ["/project/:projectName/gate/:stageCode"] },
   { id: "cashflow", path: "/cashflow", label: "Cashflow", iconKey: "Wallet", navGroup: "FINANCE", permissionEntity: "cashflow", showInSidebar: true, routeComponentKey: "CashflowPage", roleLandingEligibility: ["CFO", "PROGRAM_FINANCE_MANAGER", "ACCOUNTANT"] },
   { id: "cashflowAnalysis", path: "/cashflow/analysis", label: "Cashflow Analysis", iconKey: "BarChart3", navGroup: "FINANCE", permissionEntity: "cashflow", showInSidebar: true, routeComponentKey: "CashflowAnalysisPage" },
   { id: "cos", path: "/cos", label: "COS", iconKey: "TrendingUp", navGroup: "FINANCE", permissionEntity: "cos", showInSidebar: true, routeComponentKey: "CostTracker" },

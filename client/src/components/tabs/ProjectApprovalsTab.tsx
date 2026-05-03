@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { invalidateProjectV2Queries } from "@/hooks/use-project-v2";
 import { useLocation } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -155,6 +156,7 @@ export function ProjectApprovalsTab({
     onSuccess: () => {
       toast({ title: "Approved successfully" });
       queryClient.invalidateQueries({ queryKey: ["project-approvals"] });
+      invalidateProjectV2Queries(queryClient, projectInfoId);
       setSelectedApproval(null);
       setComment("");
     },
@@ -203,6 +205,7 @@ export function ProjectApprovalsTab({
     onSuccess: () => {
       toast({ title: "Rejected" });
       queryClient.invalidateQueries({ queryKey: ["project-approvals"] });
+      invalidateProjectV2Queries(queryClient, projectInfoId);
       setSelectedApproval(null);
       setComment("");
     },

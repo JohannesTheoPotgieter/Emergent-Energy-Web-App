@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { invalidateProjectV2Queries } from "@/hooks/use-project-v2";
 import { invalidateDashboardQueries } from "@/lib/queryClient";
 import { PermissionGate } from "@/components/PermissionGate";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -201,7 +202,7 @@ interface RevenueTabData {
   riskSignals?: FinanceRiskSignal[];
 }
 
-export function RevenueTrackingTab({ projectName, highlightId }: RevenueTrackingTabProps) {
+export function RevenueTrackingTab({ projectName, highlightId, projectId }: RevenueTrackingTabProps & { projectId?: number | null }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [editingRow, setEditingRow] = useState<number | null>(null);
@@ -287,6 +288,7 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
         return;
       }
       queryClient.invalidateQueries({ queryKey: ["revenue-tab", projectName] });
+      invalidateProjectV2Queries(queryClient, projectId ?? null);
       invalidateDashboardQueries(queryClient);
       toast({ title: "Changes saved", description: "Revenue tracking updates saved successfully" });
     },
@@ -334,6 +336,7 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
         return;
       }
       queryClient.invalidateQueries({ queryKey: ["revenue-tab", projectName] });
+      invalidateProjectV2Queries(queryClient, projectId ?? null);
       invalidateDashboardQueries(queryClient);
       toast({ title: variables.inBank ? "Marked as In Bank" : "Marked as outstanding", description: variables.inBank ? "Payment confirmed in bank — received date set" : "Payment marked as not yet received — received date cleared" });
     },

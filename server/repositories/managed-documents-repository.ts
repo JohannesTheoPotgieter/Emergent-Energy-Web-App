@@ -10,6 +10,7 @@ import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
   managedDocuments,
+  projectFolders,
   type ManagedDocument,
   type ManagedDocumentState,
   type DocumentRootScope,
@@ -108,6 +109,65 @@ export interface UpsertFromGraphInput {
   name: string;
   path: string;
   createdByUserId: number;
+  /**
+   * D6: optional parent project_folders.id linking the managed document to
+   * its taxonomy folder. When set, readiness + discipline rollups recognise
+   * the file. Set automatically by the upload workflow when a SharePoint
+   * upload lands inside a provisioned folder.
+   */
+  parentFolderId?: number | null;
+}
+
+/**
+ * D6: derive parent_folder_id from a SharePoint parent item. Returns null
+ * when no project_folders row matches — the upload is in a path the app
+ * doesn't track (legacy folder, manually-created subfolder, etc.).
+ */
+export async function findProjectFolderByDriveItem(
+  driveId: string,
+  itemId: string,
+): Promise<{ id: number; projectId: number; taxonomyKey: string } | null> {
+  try {
+    const [row] = await db
+      .select({
+        id: projectFolders.id,
+        projectId: projectFolders.projectId,
+        taxonomyKey: projectFolders.taxonomyKey,
+      })
+      .from(projectFolders)
+      .where(
+        and(eq(projectFolders.driveId, driveId), eq(projectFolders.itemId, itemId)),
+      )
+      .limit(1);
+    return row ?? null;
+  } catch (err) {
+    if (isMissingTableError(err)) return null;
+    throw err;
+  }
+}
+
+/**
+ * D6: list managed_documents that live inside a specific project_folder.
+ * Used by the per-folder file panel + readiness summary.
+ */
+export async function listManagedDocumentsByFolder(
+  parentFolderId: number,
+): Promise<ManagedDocument[]> {
+  try {
+    return await db
+      .select()
+      .from(managedDocuments)
+      .where(
+        and(
+          eq(managedDocuments.parentFolderId, parentFolderId),
+          isNull(managedDocuments.deletedAt),
+        ),
+      )
+      .orderBy(desc(managedDocuments.updatedAt));
+  } catch (err) {
+    if (isMissingTableError(err)) return [];
+    throw err;
+  }
 }
 
 /**
@@ -126,6 +186,13 @@ export async function upsertManagedDocumentFromGraph(
       .set({
         name: input.name,
         path: input.path,
+        // Allow promoting a previously-untracked file to a tracked folder
+        // when the caller has resolved one. Never clear an existing link
+        // — that would silently drop the file out of readiness rollups.
+        parentFolderId:
+          input.parentFolderId !== undefined && input.parentFolderId !== null
+            ? input.parentFolderId
+            : existing.parentFolderId,
         updatedAt: new Date(),
       })
       .where(eq(managedDocuments.id, existing.id))
@@ -138,6 +205,7 @@ export async function upsertManagedDocumentFromGraph(
       rootScope: input.rootScope,
       projectId: input.projectId ?? null,
       companyRootId: input.companyRootId ?? null,
+      parentFolderId: input.parentFolderId ?? null,
       driveId: input.driveId,
       driveItemId: input.driveItemId,
       name: input.name,
