@@ -11,7 +11,7 @@
     "start": "node script/with-node-env.cjs production node dist/index.cjs",
     "check": "tsc -p tsconfig.check.json && tsc -p tsconfig.client-check.json",
     "check:client": "tsc -p tsconfig.client-check.json",
-    "ci:compile": "turbo run lint check build --cache-dir=.turbo",
+    "ci:compile": "turbo run lint check build --cache-dir=.turbo && npm run test:permission-contracts",
     "db:push": "drizzle-kit push --force",
     "db:push:legacy": "psql $DATABASE_URL -f script/pre-push-enums.sql && psql $DATABASE_URL -f script/full-schema-alignment.sql",
     "db:setup": "drizzle-kit push --force && ENABLE_STARTUP_SCHEMA_REPAIR=true ENABLE_STARTUP_DATA_SEED=true ENABLE_STARTUP_BACKFILL=true ENABLE_STARTUP_USER_SEED=true node script/with-node-env.cjs development tsx server/index.ts",
@@ -35,13 +35,15 @@
     "test:coverage": "vitest run -c qa/vitest.config.ts --coverage",
     "drift:report": "tsx scripts/find-drift.ts",
     "encrypt-bank-details": "tsx scripts/encrypt-existing-bank-details.ts",
+    "seed:test-users": "tsx scripts/seed-test-users.ts",
     "check:redirects": "tsx scripts/check-redirect-chains.ts",
     "check:routes-migration": "tsx scripts/check-routes-migration.ts",
     "check:duplicate-routes": "tsx scripts/check-duplicate-routes.ts",
     "lint": "eslint . --cache --cache-location .eslintcache",
     "lint:fix": "eslint . --cache --cache-location .eslintcache --fix",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "test:permission-contracts": "vitest run -c qa/vitest.config.ts qa/tests/unit/permissions-route-contract.test.ts"
   },
   "dependencies": {
     "@azure/identity": "^4.6.0",
