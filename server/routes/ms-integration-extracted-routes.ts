@@ -74,7 +74,8 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
       const status = await outlook.getConnectionStatus();
       res.json(status);
     } catch (err: any) {
-      res.json({ configured: false, connected: false, error: err.message });
+      console.error("[ms-integration] status check error:", err);
+      res.json({ configured: false, connected: false, error: "Status check failed" });
     }
   });
 
@@ -120,7 +121,7 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
         },
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -187,7 +188,7 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
         return res.json([]);
       }
       console.error("[Outlook] Events error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -209,7 +210,7 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
       res.json({ eventId });
     } catch (err: any) {
       console.error("[Outlook] Create event error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -227,7 +228,7 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
       res.json({ success: true });
     } catch (err: any) {
       console.error("[Outlook] Update event error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -243,7 +244,7 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
       res.json({ success: true });
     } catch (err: any) {
       console.error("[Outlook] Delete event error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -268,7 +269,7 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
         return res.json([]);
       }
       console.error("[Outlook] Messages error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -282,7 +283,7 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
       res.json(msg);
     } catch (err: any) {
       console.error("[Outlook] Message detail error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -501,7 +502,7 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
         changesJson: { error: err?.message || "Unknown error" },
       });
       console.error("[Outlook] Email-to-task error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -527,7 +528,7 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
       res.json({ success: true });
     } catch (err: any) {
       console.error("[Outlook] Send approval error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -546,7 +547,7 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
         return res.json([]);
       }
       console.error("[Outlook] Folders error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -567,7 +568,7 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
       res.json({ success: true });
     } catch (err: any) {
       console.error("[Outlook] Send mail error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -586,7 +587,7 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
       res.json({ success: true });
     } catch (err: any) {
       console.error("[Outlook] Reply error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -605,7 +606,7 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
       res.json({ success: true });
     } catch (err: any) {
       console.error("[Outlook] Forward error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -639,7 +640,7 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
         return res.json({ data: [], ssoRequired: true, message: "Teams session expired — please sign in with Microsoft again" });
       }
       console.error("[Teams Graph] Error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -666,7 +667,7 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
         return res.json({ data: [], ssoRequired: true, message: "Teams session expired — please sign in with Microsoft again" });
       }
       console.error("[Teams Graph] Chats error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -683,7 +684,7 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
         return res.json({ messages: [], ssoRequired: true });
       }
       console.error("[Teams] Chat messages error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -700,7 +701,7 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
         return res.json({ messages: [], ssoRequired: true });
       }
       console.error("[Teams] Channel messages error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -719,7 +720,7 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
       res.json({ success: true, message: result });
     } catch (err: any) {
       console.error("[Teams] Send chat message error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -738,7 +739,7 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
       res.json({ success: true, message: result });
     } catch (err: any) {
       console.error("[Teams] Send channel message error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -757,7 +758,7 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
         return res.json([]);
       }
       console.error("[SharePoint] Discover sites error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -771,7 +772,7 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
       res.json(drives);
     } catch (err: any) {
       console.error("[SharePoint] Site drives error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 }

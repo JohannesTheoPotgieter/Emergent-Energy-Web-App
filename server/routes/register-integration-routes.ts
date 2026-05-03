@@ -13,4 +13,8 @@ export async function registerIntegrationRoutes(app: Express) {
   registerQuickBooksRoutes(app);
   const { registerFinanceTrustRoutes } = await import("./finance-trust-routes");
   registerFinanceTrustRoutes(app);
+  const { registerPendingApprovalRoutes } = await import("./pending-approvals.routes");
+  registerPendingApprovalRoutes(app);
+  const { registerAllApprovalHandlers } = await import("../services/pending-approvals-handlers");
+  registerAllApprovalHandlers();
 }

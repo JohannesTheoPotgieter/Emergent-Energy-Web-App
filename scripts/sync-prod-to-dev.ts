@@ -208,7 +208,7 @@ function loadDumpIntoDev(devEnv: PgEnv, dumpFile: string): void {
   info("Dump loaded successfully");
 }
 
-function writeSentinel(devEnv: PgEnv): void {
+function writeSentinel(devEnv: PgEnv, prodEnv: PgEnv): void {
   const ts = new Date().toISOString();
   const sentinelSql = `
     CREATE TABLE IF NOT EXISTS dev_data_sync_sentinel (
@@ -220,7 +220,7 @@ function writeSentinel(devEnv: PgEnv): void {
       notes         text
     );
     INSERT INTO dev_data_sync_sentinel (synced_at, source_host, source_db, script_version, notes)
-    VALUES ('${ts}', '${devEnv.PGHOST.replace(/'/g, "''")}', '${devEnv.PGDATABASE.replace(/'/g, "''")}', 'sync-prod-to-dev@1', 'A6: nightly prod→dev refresh');
+    VALUES ('${ts}', '${prodEnv.PGHOST.replace(/'/g, "''")}', '${prodEnv.PGDATABASE.replace(/'/g, "''")}', 'sync-prod-to-dev@2', 'A6: nightly prod→dev refresh');
   `;
   runPsqlCommand(devEnv, sentinelSql, "write sentinel");
 }
@@ -249,6 +249,40 @@ function verifyRowCounts(devEnv: PgEnv): void {
   }
 }
 
+function verifyCriticalTablesPresent(devEnv: PgEnv): void {
+  const criticalTablesSql = `
+    SELECT table_name
+    FROM (
+      VALUES
+        ('project_info'),
+        ('users'),
+        ('normalized_cost_lines'),
+        ('work_items'),
+        ('dev_data_sync_sentinel')
+    ) AS expected(table_name)
+    WHERE to_regclass(table_name) IS NULL;
+  `;
+  const result = spawnSync(
+    "psql",
+    ["--no-psqlrc", "--tuples-only", "--quiet", "-v", "ON_ERROR_STOP=1", "-c", criticalTablesSql],
+    {
+      env: { ...process.env, ...devEnv },
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "inherit"],
+    },
+  );
+  if (result.status !== 0) {
+    fail(51, `critical table verification query failed with exit code ${result.status}`);
+  }
+  const missing = (result.stdout || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (missing.length > 0) {
+    fail(52, `restore completed but critical table(s) are missing: ${missing.join(", ")}`);
+  }
+}
+
 async function main(): Promise<void> {
   const startedAt = Date.now();
   info(`Starting at ${new Date().toISOString()}`);
@@ -262,7 +296,8 @@ async function main(): Promise<void> {
     dumpProd(prodEnv, dumpFile);
     wipeDev(devEnv);
     loadDumpIntoDev(devEnv, dumpFile);
-    writeSentinel(devEnv);
+    writeSentinel(devEnv, prodEnv);
+    verifyCriticalTablesPresent(devEnv);
     verifyRowCounts(devEnv);
   } finally {
     rmSync(workDir, { recursive: true, force: true });

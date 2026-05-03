@@ -22,6 +22,7 @@ import { cacheGet, cacheSet, cacheDelete, cacheClear } from "../lib/cache";
 import { enqueueJob, registerWorker, QUEUE_NAMES } from "../lib/job-queue";
 import { isRevenueSettled } from "../lib/finance/revenue-ar-status";
 import { computeMarginPct } from "../lib/finance/margin";
+import { computeEffectiveRag } from "@shared/utils/effective-rag";
 import { getCosRealisedAmountForNclRow } from "../lib/calculations/financeUtils";
 import { getAssignedEvidenceByCostLineIds } from "../lib/finance/qb-allocation-read";
 
@@ -105,11 +106,12 @@ export async function refreshProjectMetrics(projectId: number): Promise<void> {
     );
   }
 
-  // D-04 fix: store margin as percentage (0–100) consistent with all other views
-  const marginPct =
-    totalRevenue > 0
-      ? (((totalRevenue - totalCost) / totalRevenue) * 100).toFixed(1)
-      : null;
+  // D-04 fix: store margin as percentage (0–100) consistent with all other views.
+  // Uses the shared computeMarginPct helper so every caller of margin math
+  // produces the same number for the same inputs (pinned by
+  // qa/tests/unit/margin-consistency.test.ts).
+  const marginPctNumber = computeMarginPct(totalRevenue, totalCost, { precision: 1, zeroRevenueValue: null });
+  const marginPct = marginPctNumber !== null ? marginPctNumber.toFixed(1) : null;
 
   // Task aggregates from work_items
   const taskRows = await db
@@ -180,9 +182,14 @@ export async function refreshProjectMetrics(projectId: number): Promise<void> {
   const marginRate = marginPct ? Math.max(0, Math.min(1, parseFloat(marginPct))) : 0;
   const healthScore = (marginRate * 40 + taskCompletionRate * 30 + qcRate * 30).toFixed(2);
 
-  // Execution-state snapshot
+  // Execution-state snapshot. RAG is translated through the canonical
+  // effective-RAG rule so the in_dlp override is applied uniformly across
+  // every consumer (Do Next, dashboards, reports).
   const phase = project.phase ?? null;
-  const ragStatus = project.ragStatus ?? null;
+  const { value: ragStatus } = computeEffectiveRag({
+    ragStatus: project.ragStatus ?? null,
+    inDlp: (project as any).inDlp ?? false,
+  });
 
   const row = {
     projectId,

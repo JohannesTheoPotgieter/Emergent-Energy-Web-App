@@ -18,6 +18,7 @@ import { getCosEffectiveDateAndSource } from "../lib/expense-row-selector";
 import { classifyCosStatusFull } from "../lib/calculations/financeUtils";
 import { getCanonicalAllCurrentCostLines } from "../services/project-cost-line-read-service";
 import { setFinanceTrustHeaders } from "../lib/finance-trust/envelope";
+import { getMergedExpensesAndInflows, resolveInflowEffectiveDates } from "../lib/cashflow-helpers";
 
 // Unified realisation check: delegates to canonical isCanonicalCosRealised()
 // to stay aligned with COS Tracker, Company Overview, Dashboard Metrics, etc.
@@ -48,78 +49,6 @@ function isEffectivelyRealisedLocal(exp: any, monthKey: string | null, currentMo
     today: new Date().toISOString().slice(0, 10),
     invoiceDateFontColor: exp.invoiceDateFontColor ?? null,
     invoiceDateConfirmed: exp.invoiceDateConfirmed ?? null,
-  });
-}
-
-async function getMergedExpensesAndInflows(expenses: any[], inflows: any[]) {
-  return { expenses, inflows };
-}
-
-function resolveInflowEffectiveDates(
-  inflows: any[],
-  taskLinks: any[],
-  operationalTasks: any[],
-  planTasks: any[]
-): any[] {
-  if (taskLinks.length === 0) {
-    return inflows.map(inf => ({
-      ...inf,
-      effectiveDate: inf.adminDateOverride || inf.paymentReceivedDate || inf.computedForecastReceiptDate || inf.plannedPaymentDate || null,
-    }));
-  }
-
-  const linkMap = new Map<string, any>();
-  for (const link of taskLinks) {
-    linkMap.set(`${link.projectName}::${link.milestoneRowNumber}`, link);
-  }
-
-  const opTaskMap = new Map<number, any>();
-  for (const t of operationalTasks) {
-    opTaskMap.set(t.id, t);
-  }
-
-  const planTaskMap = new Map<number, any>();
-  for (const t of planTasks) {
-    planTaskMap.set(t.id, t);
-  }
-
-  return inflows.map(inf => {
-    // Admin date override takes highest priority
-    if (inf.adminDateOverride && /^\d{4}-\d{2}-\d{2}/.test(inf.adminDateOverride)) {
-      return { ...inf, effectiveDate: inf.adminDateOverride };
-    }
-
-    const key = `${inf.projectName}::${inf.rowNumber}`;
-    const link = linkMap.get(key);
-
-    if (inf.paymentReceivedDate && /^\d{4}-\d{2}-\d{2}/.test(inf.paymentReceivedDate)) {
-      return { ...inf, effectiveDate: inf.paymentReceivedDate };
-    }
-
-    if (link) {
-      if (link.dateOverride && /^\d{4}-\d{2}-\d{2}/.test(link.dateOverride)) {
-        return { ...inf, effectiveDate: link.dateOverride };
-      }
-
-      const taskId = link.taskId;
-      if (taskId > 0) {
-        const opTask = opTaskMap.get(taskId);
-        if (opTask?.dueDate && /^\d{4}-\d{2}-\d{2}/.test(opTask.dueDate)) {
-          return { ...inf, effectiveDate: opTask.dueDate };
-        }
-      } else if (taskId < 0) {
-        const planTask = planTaskMap.get(Math.abs(taskId));
-        const dueDate = (planTask as any)?.actualEnd || (planTask as any)?.baselineEnd || null;
-        if (dueDate && /^\d{4}-\d{2}-\d{2}/.test(dueDate)) {
-          return { ...inf, effectiveDate: dueDate };
-        }
-      }
-    }
-
-    return {
-      ...inf,
-      effectiveDate: inf.computedForecastReceiptDate || inf.plannedPaymentDate || null,
-    };
   });
 }
 
@@ -163,7 +92,7 @@ export function registerCosControlRoutes(app: Express) {
       res.json(summary);
     } catch (err: any) {
       console.error('[COS Control] summary error:', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -198,7 +127,7 @@ export function registerCosControlRoutes(app: Express) {
       res.json(byProject);
     } catch (err: any) {
       console.error('[COS Control] by-project error:', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -249,7 +178,7 @@ export function registerCosControlRoutes(app: Express) {
       res.json({ lines, total: lines.length });
     } catch (err: any) {
       console.error('[COS Control] lines error:', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -288,7 +217,7 @@ export function registerCosControlRoutes(app: Express) {
       res.json({ invoices, total: invoices.length });
     } catch (err: any) {
       console.error('[COS Control] invoices error:', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -327,7 +256,7 @@ export function registerCosControlRoutes(app: Express) {
       res.json({ pos, total: pos.length });
     } catch (err: any) {
       console.error('[COS Control] POs error:', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -399,7 +328,7 @@ export function registerCosControlRoutes(app: Express) {
       res.json({ weeks: weeklyData, totalInflows: inflowLines.length, totalOutflows: outflowLines.length });
     } catch (err: any) {
       console.error('[Cashflow Forecast] weekly error:', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -471,7 +400,7 @@ export function registerCosControlRoutes(app: Express) {
       res.json({ lines: weekLines, total: weekLines.length });
     } catch (err: any) {
       console.error('[Cashflow Forecast] week-detail error:', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -532,7 +461,7 @@ export function registerCosControlRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error('[Data Quality] scan error:', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -548,7 +477,7 @@ export function registerCosControlRoutes(app: Express) {
       res.json({ success: true, message: 'Backfill completed' });
     } catch (err: any) {
       console.error('[Admin] backfill error:', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -561,7 +490,7 @@ export function registerCosControlRoutes(app: Express) {
       res.json({ success: true, ...result });
     } catch (err: any) {
       console.error('[Admin] invoice confirmed backfill error:', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -620,7 +549,7 @@ export function registerCosControlRoutes(app: Express) {
       res.json({ weeks, heatmap });
     } catch (err: any) {
       console.error('[Planning Board] capacity error:', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -673,7 +602,7 @@ export function registerCosControlRoutes(app: Express) {
       res.json({ projects: projectData, total: projectData.length });
     } catch (err: any) {
       console.error('[Planning Board] projects error:', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -684,7 +613,7 @@ export function registerCosControlRoutes(app: Express) {
       const all = await (storage as any).getAllScenarios();
       res.json({ scenarios: all });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -697,7 +626,7 @@ export function registerCosControlRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "scenario", action: "create", entityId: String(scenario.id), changesJson: { description: "Scenario created", name } });
       res.json(scenario);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -710,7 +639,7 @@ export function registerCosControlRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "scenario", action: "duplicate", entityId: String(id), changesJson: { description: "Scenario duplicated", sourceId: id, newName: name } });
       res.json(dup);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -721,7 +650,7 @@ export function registerCosControlRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "scenario", action: "delete", entityId: String(id), changesJson: { description: "Scenario deleted" } });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -732,7 +661,7 @@ export function registerCosControlRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "scenario", action: "reset", entityId: String(id), changesJson: { description: "Scenario date overrides cleared" } });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -799,7 +728,7 @@ export function registerCosControlRoutes(app: Express) {
       res.json({ monthly: monthlyData, summary, lineCount: scenarioLines.length });
     } catch (err: any) {
       console.error('[COS Control Scenario Monthly]', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -876,7 +805,7 @@ export function registerCosControlRoutes(app: Express) {
       res.json({ months, totals, lineCount: items.length });
     } catch (err: any) {
       console.error('[COS Tracker]', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -978,7 +907,7 @@ export function registerCosControlRoutes(app: Express) {
       res.json({ weeks, totals });
     } catch (err: any) {
       console.error('[Cashflow Tracker]', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1068,7 +997,7 @@ export function registerCosControlRoutes(app: Express) {
       res.json({ invoices, total: invoices.length });
     } catch (err: any) {
       console.error('[COS Control Scenario Invoices]', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1144,7 +1073,7 @@ export function registerCosControlRoutes(app: Express) {
       res.json({ lines, total: lines.length });
     } catch (err: any) {
       console.error('[COS Control Scenario Lines]', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1185,7 +1114,7 @@ export function registerCosControlRoutes(app: Express) {
 
       res.json({ shifts: shifts.slice(0, 10), totalShifts: shifts.length });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1298,7 +1227,7 @@ export function registerCosControlRoutes(app: Express) {
       res.json({ weeks: weeklyData });
     } catch (err: any) {
       console.error('[Cashflow Forecast Scenario Weekly]', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1416,7 +1345,7 @@ export function registerCosControlRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error('[Cashflow Forecast Scenario Week Detail]', err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1459,7 +1388,7 @@ export function registerCosControlRoutes(app: Express) {
 
       res.json({ projects: projectData });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1541,7 +1470,7 @@ export function registerCosControlRoutes(app: Express) {
 
       res.json({ capacity: capacityData, clashes, resourceType });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 }

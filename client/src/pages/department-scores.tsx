@@ -1,8 +1,10 @@
 import { useMemo } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout } from "@/components/layout";
 
 type Entry = { role: string; points: number; pointsEarned: number; pointsPenalty: number };
 type Response = { leaderboard: Entry[] };
@@ -50,27 +52,31 @@ export default function DepartmentScoresPage() {
   }, [data]);
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold">Department Scores</h1>
-        <p className="text-sm text-slate-600">Ranked department performance with trend signals from real gamification data.</p>
-      </div>
+    <PageLayout
+      data-testid="department-scores-page"
+      header={
+        <PageHeader
+          title="Department Scores"
+          subtitle="Ranked department performance with trend signals from real gamification data"
+        />
+      }
+    >
       {error ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">Could not load department scores. Likely reason: network/API issue. How to fix: refresh and retry. If this keeps happening, contact your admin.</div> : null}
-      <Card className="border-slate-200 shadow-sm">
-        <CardHeader><CardTitle className="text-base">Department Ranking</CardTitle></CardHeader>
-        <CardContent className="space-y-2">
-          {isLoading ? <p className="text-sm text-slate-500">Loading scores...</p> : departments.length === 0 ? <p className="text-sm text-slate-500">No department scoring data yet. Ask leadership to enable gamification feeds for each team role.</p> : departments.map((d, idx) => (
-            <div key={d.name} className="rounded-lg border border-slate-200 p-3">
+      <Card>
+        <CardContent className="p-4 space-y-2">
+          <h2 className="text-base font-semibold">Department Ranking</h2>
+          {isLoading ? <p className="text-sm text-muted-foreground">Loading scores...</p> : departments.length === 0 ? <p className="text-sm text-muted-foreground">No department scoring data yet. Ask leadership to enable gamification feeds for each team role.</p> : departments.map((d, idx) => (
+            <div key={d.name} className="rounded-lg border border-border p-3" data-testid={`department-${d.name}`}>
               <div className="flex items-center justify-between">
                 <p className="text-sm font-medium">#{idx + 1} {d.name}</p>
-                <p className="text-sm font-semibold">Avg {d.avg} pts</p>
+                <p className="text-sm font-semibold tabular-nums">Avg {d.avg} pts</p>
               </div>
-              <p className="text-xs text-slate-500">Members: {d.members} · Earned: {d.earned} · Penalties: {d.penalty}</p>
+              <p className="text-xs text-muted-foreground tabular-nums">Members: {d.members} · Earned: {d.earned} · Penalties: {d.penalty}</p>
             </div>
           ))}
-          <Button asChild variant="outline" className="w-full"><Link href="/leaderboard">View leadership leaderboard detail</Link></Button>
+          <Button asChild variant="outline" className="w-full mt-3"><Link href="/leaderboard">View leadership leaderboard detail</Link></Button>
         </CardContent>
       </Card>
-    </div>
+    </PageLayout>
   );
 }

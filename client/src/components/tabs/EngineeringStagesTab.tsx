@@ -272,69 +272,81 @@ export default function EngineeringStagesTab({ projectId, projectName, isAdmin, 
             Mark Cost Proposal as Signed
           </DialogTitle>
         </DialogHeader>
-        <div className="space-y-4 pt-2">
-          <div>
-            <Label className="text-xs">Evidence Type *</Label>
-            <SearchableSelect
-              value={cpEvidenceType}
-              onValueChange={(v) => setCpEvidenceType(v as any)}
-              placeholder="Select..."
-              triggerClassName="h-9 mt-1"
-              options={[
-                { value: "email_reference", label: "Email Reference" },
-                { value: "file_upload", label: "File Upload" },
-              ]}
-              data-testid="select-cp-evidence-type"
-            />
-          </div>
-          {cpEvidenceType === "email_reference" && (
-            <>
-              <div>
-                <Label className="text-xs">Email Subject *</Label>
-                <Input
-                  value={cpEmailSubject}
-                  onChange={e => setCpEmailSubject(e.target.value)}
-                  placeholder="e.g. RE: Cost Proposal - Approved"
-                  className="h-9 mt-1"
-                  data-testid="input-cp-email-subject"
-                />
-              </div>
-              <div>
-                <Label className="text-xs">Email Date</Label>
-                <Input
-                  type="date"
-                  value={cpEmailDate}
-                  onChange={e => setCpEmailDate(e.target.value)}
-                  className="h-9 mt-1"
-                  data-testid="input-cp-email-date"
-                />
-              </div>
-            </>
-          )}
-          {cpEvidenceType === "file_upload" && (
-            <p className="text-xs text-muted-foreground">Upload the signed CP document via the deliverables section, then reference it here.</p>
-          )}
-          <p className="text-xs text-muted-foreground bg-muted p-2 rounded">
-            This will create PM default tasks (6) and Engineering post-CP tasks (4) for this project.
-          </p>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" size="sm" onClick={() => setCpDialogOpen(false)}>Cancel</Button>
-          <Button
-            size="sm"
-            className="bg-amber-600 hover:bg-amber-700"
-            disabled={cpMutation.isPending || (cpEvidenceType === "email_reference" && !cpEmailSubject.trim())}
-            onClick={() => cpMutation.mutate({
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (cpMutation.isPending) return;
+            if (cpEvidenceType === "email_reference" && !cpEmailSubject.trim()) return;
+            cpMutation.mutate({
               evidenceType: cpEvidenceType,
               emailSubject: cpEmailSubject.trim() || undefined,
               emailDate: cpEmailDate || undefined,
-            })}
-            data-testid="btn-confirm-cp-signed"
-          >
-            {cpMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <FileSignature className="h-3.5 w-3.5 mr-1" />}
-            Confirm CP Signed
-          </Button>
-        </DialogFooter>
+            });
+          }}
+        >
+          <div className="space-y-4 pt-2">
+            <div>
+              <Label htmlFor="cp-evidence-type" className="text-xs">Evidence Type <span className="text-red-500">*</span></Label>
+              <SearchableSelect
+                value={cpEvidenceType}
+                onValueChange={(v) => setCpEvidenceType(v as any)}
+                placeholder="Select..."
+                triggerClassName="h-9 mt-1"
+                options={[
+                  { value: "email_reference", label: "Email Reference" },
+                  { value: "file_upload", label: "File Upload" },
+                ]}
+                data-testid="select-cp-evidence-type"
+              />
+            </div>
+            {cpEvidenceType === "email_reference" && (
+              <>
+                <div>
+                  <Label htmlFor="cp-email-subject" className="text-xs">Email Subject <span className="text-red-500">*</span></Label>
+                  <Input
+                    id="cp-email-subject"
+                    value={cpEmailSubject}
+                    onChange={e => setCpEmailSubject(e.target.value)}
+                    placeholder="e.g. RE: Cost Proposal - Approved"
+                    className="h-9 mt-1"
+                    required
+                    data-testid="input-cp-email-subject"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="cp-email-date" className="text-xs">Email Date</Label>
+                  <Input
+                    id="cp-email-date"
+                    type="date"
+                    value={cpEmailDate}
+                    onChange={e => setCpEmailDate(e.target.value)}
+                    className="h-9 mt-1"
+                    data-testid="input-cp-email-date"
+                  />
+                </div>
+              </>
+            )}
+            {cpEvidenceType === "file_upload" && (
+              <p className="text-xs text-muted-foreground">Upload the signed CP document via the deliverables section, then reference it here.</p>
+            )}
+            <p className="text-xs text-muted-foreground bg-muted p-2 rounded">
+              This will create PM default tasks (6) and Engineering post-CP tasks (4) for this project.
+            </p>
+          </div>
+          <DialogFooter className="mt-4">
+            <Button type="button" variant="outline" size="sm" onClick={() => setCpDialogOpen(false)}>Cancel</Button>
+            <Button
+              type="submit"
+              size="sm"
+              className="bg-amber-600 hover:bg-amber-700"
+              disabled={cpMutation.isPending || (cpEvidenceType === "email_reference" && !cpEmailSubject.trim())}
+              data-testid="btn-confirm-cp-signed"
+            >
+              {cpMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <FileSignature className="h-3.5 w-3.5 mr-1" />}
+              Confirm CP Signed
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
     </>

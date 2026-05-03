@@ -25,23 +25,23 @@ describe("smart-import role-based authorization", () => {
 
   // ── requireAdmin middleware ──
 
-  it("ENGINEER receives 403 from requireAdmin (rollback guard)", () => {
+  it("ENGINEER receives 403 from requireAdmin (rollback guard)", async () => {
     const req = { user: { role: "ENGINEER" } } as any;
     const res = { status: vi.fn().mockReturnThis(), json: vi.fn() } as any;
     const next = vi.fn();
 
-    requireAdmin(req, res, next);
+    await requireAdmin(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(403);
   });
 
-  it("COO_ADMIN passes requireAdmin (rollback allowed)", () => {
+  it("COO_ADMIN passes requireAdmin (rollback allowed)", async () => {
     const req = { user: { role: "COO_ADMIN" } } as any;
     const res = { status: vi.fn().mockReturnThis(), json: vi.fn() } as any;
     const next = vi.fn();
 
-    requireAdmin(req, res, next);
+    await requireAdmin(req, res, next);
 
     expect(next).toHaveBeenCalled();
   });

@@ -26,14 +26,14 @@ function projectPath(projectName: string, params: Record<string, string>): strin
 export function buildProjectSummaryChipDestinations(projectName: string): Partial<Record<ProjectSummaryChipKey, ProjectSummaryChipDestination>> {
   return {
     "handover-blocked": {
-      path: projectPath(projectName, { dept: "pm", sub: "handover", handoverFilter: "blocked", chip: "handover-blocked" }),
-      title: "Open blocked handover items",
-      ariaLabel: "Open handover tab with blocked items",
+      path: projectPath(projectName, { dept: "quality", sub: "checklist", qualityFilter: "handover_blocking", chip: "handover-blocked" }),
+      title: "Open QC items blocking handover",
+      ariaLabel: "Open quality checklist filtered to handover-blocking items",
     },
     "quality-risk": {
-      path: projectPath(projectName, { dept: "quality", sub: "checklist", qualityFilter: "fail", chip: "quality-critical" }),
-      title: "Open critical quality issues",
-      ariaLabel: "Open quality checklist filtered to failed items",
+      path: projectPath(projectName, { dept: "quality", sub: "checklist", qualityFilter: "critical_contributors", chip: "quality-critical" }),
+      title: "Open QC items contributing to critical risk",
+      ariaLabel: "Open quality checklist filtered to critical risk contributors",
     },
     "evidence-gaps": {
       path: projectPath(projectName, { dept: "quality", sub: "checklist", qualityFilter: "evidence_gap", chip: "quality-evidence-gaps" }),

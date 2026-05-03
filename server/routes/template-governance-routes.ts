@@ -6,11 +6,22 @@ import type { Express, Request, Response } from "express";
 import { db } from "../db";
 import { eq, and, isNull, desc } from "drizzle-orm";
 import { jwtAuth, requireAuth } from "../auth-context";
+import { requireRole } from "../middleware/requireRole";
 import { logAuditFromReq } from "../audit-logger";
 import * as schema from "@shared/schema";
 import { TEMPLATE_TYPES, templateOverrides } from "@shared/schema/template-overrides";
+import { diffTemplateVsOpenStages, applyTemplateSync } from "../services/stage-lifecycle-service";
 
 const COO_ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
+
+// Hard role gate for template-governance writes — these handlers
+// publish stage-checklist versions and per-project overrides that
+// affect every project's gate evaluation. Without this gate (added in
+// response to security review finding #2), any authenticated user
+// could create override rows or version templates. Reads stay
+// requireAuth-only because the data is operational and used by the
+// stage-gate UI from non-admin roles.
+const TEMPLATE_WRITE_ROLES = COO_ADMIN_ROLES;
 
 function getUser(req: Request): { id: number; name: string; role: string } {
   const u = (req as any).user;
@@ -80,7 +91,7 @@ app.get("/api/templates/stage-checklist/:id/versions", jwtAuth, requireAuth, asy
 });
 
 // POST /api/templates/stage-checklist/:id/version — create a new version (admin only)
-app.post("/api/templates/stage-checklist/:id/version", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+app.post("/api/templates/stage-checklist/:id/version", jwtAuth, requireAuth, requireRole(TEMPLATE_WRITE_ROLES), async (req: Request, res: Response) => {
   try {
     const user = getUser(req);
     if (!isAdmin(user.role)) {
@@ -155,7 +166,7 @@ app.post("/api/templates/stage-checklist/:id/version", jwtAuth, requireAuth, asy
 // ── Template Overrides ────────────────────────────────────
 
 // POST /api/templates/overrides — create a project-level template override
-app.post("/api/templates/overrides", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+app.post("/api/templates/overrides", jwtAuth, requireAuth, requireRole(TEMPLATE_WRITE_ROLES), async (req: Request, res: Response) => {
   try {
     const user = getUser(req);
     if (!isAdmin(user.role)) {
@@ -232,7 +243,7 @@ app.get("/api/templates/overrides/:projectId", jwtAuth, requireAuth, async (req:
 });
 
 // DELETE /api/templates/overrides/:id — deactivate an override (soft-delete)
-app.delete("/api/templates/overrides/:id", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+app.delete("/api/templates/overrides/:id", jwtAuth, requireAuth, requireRole(TEMPLATE_WRITE_ROLES), async (req: Request, res: Response) => {
   try {
     const user = getUser(req);
     if (!isAdmin(user.role)) {
@@ -322,5 +333,84 @@ app.get("/api/templates/overrides/:id/status", jwtAuth, requireAuth, async (req:
     res.status(500).json({ error: "Failed to check override status" });
   }
 });
+
+// ── §6b: Sync current template version onto existing open stages ──
+//
+// Admin flow:
+//   1. Edit a template item (POST /version above) — creates version N+1.
+//   2. GET /sync-preview/:stageCode  → dry-run diff per project.
+//   3. POST /sync/:stageCode { reason } → apply with audit trail.
+// Closed stages (approved / progressed / exception_approved) are
+// skipped; their snapshots are immutable per §6.
+
+app.get(
+  "/api/templates/stage-checklist/:stageCode/sync-preview",
+  jwtAuth,
+  requireAuth,
+  async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      if (!isAdmin(user.role)) {
+        return res.status(403).json({ error: "Admin role required to preview a template sync" });
+      }
+      const stageCode = String(req.params.stageCode);
+      const plans = await diffTemplateVsOpenStages(stageCode);
+      const summary = plans.reduce(
+        (acc, p) => {
+          if (p.skipped) acc.projectsSkipped += 1;
+          else {
+            acc.added += p.toAdd.length;
+            acc.updated += p.toUpdate.length;
+            acc.removed += p.toRemove.length;
+            if (p.toAdd.length + p.toUpdate.length + p.toRemove.length > 0) acc.projectsWithChanges += 1;
+          }
+          return acc;
+        },
+        { projectsWithChanges: 0, projectsSkipped: 0, added: 0, updated: 0, removed: 0 },
+      );
+      res.json({ stageCode, summary, plans });
+    } catch (err: unknown) {
+      console.error("Template sync preview error:", err);
+      res.status(500).json({ error: "Failed to preview template sync" });
+    }
+  },
+);
+
+app.post(
+  "/api/templates/stage-checklist/:stageCode/sync",
+  jwtAuth,
+  requireAuth,
+  requireRole(TEMPLATE_WRITE_ROLES),
+  async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      if (!isAdmin(user.role)) {
+        return res.status(403).json({ error: "Admin role required to apply a template sync" });
+      }
+      const stageCode = String(req.params.stageCode);
+      const reason: string | undefined = req.body?.reason;
+      if (!reason || reason.trim().length < 10) {
+        return res.status(400).json({ error: "reason is required (min 10 characters)" });
+      }
+      const result = await applyTemplateSync({
+        stageCode,
+        actorUserId: user.id,
+        actorRole: user.role,
+        reason,
+      });
+      await logAuditFromReq(req, {
+        entityType: "stage_checklist_template",
+        entityId: stageCode,
+        action: "template_sync_applied",
+        changesJson: { ...result, reason: reason.trim() },
+      });
+      res.json(result);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("Template sync apply error:", err);
+      res.status(400).json({ error: msg });
+    }
+  },
+);
 
 } // end registerTemplateGovernanceRoutes

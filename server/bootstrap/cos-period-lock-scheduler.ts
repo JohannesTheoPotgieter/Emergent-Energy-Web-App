@@ -134,14 +134,24 @@ export async function runCosPeriodAutoLockCheck(opts?: { now?: Date }): Promise<
     };
   }
 
-  await db.insert(cosPeriodLocks).values({
-    periodMonth: prevMonth as any,
-    lockedByUserId: null,
-    autoLocked: true,
-    notes: `Auto-locked by scheduled job on ${today} (3rd business day of ${today.slice(0, 7)}).`,
+  // Auto-lock gate: stage the lock proposal in the Pending Approval inbox
+  // instead of locking the period directly. A user must release it from
+  // /pending-approvals; on approval the handler re-attributes the lock to
+  // the approver (autoLocked = false, lockedByUserId = approver).
+  const { proposeApproval } = await import("../services/pending-approvals-service");
+  await proposeApproval({
+    kind: "cos_period_lock_create",
+    targetTable: "cos_period_locks",
+    summary: `Lock COS period ${prevMonth} (proposed on ${today}, 3rd business day of ${today.slice(0, 7)})`,
+    payload: {
+      periodMonth: prevMonth,
+      notes: `Auto-proposed by scheduled job on ${today} (3rd business day of ${today.slice(0, 7)}).`,
+    } as Record<string, unknown>,
+    sourceLabel: "system:cos-period-lock-scheduler",
+    sourceRef: `cos-period:${prevMonth}`,
   });
 
-  console.log(`[cos-period-lock] Auto-locked ${prevMonth} at ${today}.`);
+  console.log(`[cos-period-lock] Proposed lock for ${prevMonth} (awaiting approval).`);
   return {
     ranAt: today,
     targetMonth: prevMonth,

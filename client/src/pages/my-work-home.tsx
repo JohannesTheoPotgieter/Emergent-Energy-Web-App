@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { invalidateAllTaskCaches } from "@/lib/task-cache";
+import { isOverdue as isOverdueShared } from "@/lib/task-formatters";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -962,12 +963,15 @@ export default function MyWorkHomePage() {
                 Focus Now
               </h2>
               {focusNowItems.map(task => {
-                const isOverdue = task.dueAt ? new Date(task.dueAt) < new Date() : false;
+                // Route through the shared formatter so the
+                // overdue-pill behaviour matches every other engineering
+                // surface (skips completed tasks, same date precision).
+                const overdue = isOverdueShared(task.dueAt ?? null, task.status ?? "");
                 return (
                   <div
                     key={task.id}
                     className={`flex items-center gap-3 px-3.5 py-2.5 rounded-lg border cursor-pointer transition-all touch-manipulation active:scale-[0.98] group ${
-                      isOverdue
+                      overdue
                         ? "border-l-4 border-l-red-400 border-red-200 bg-red-50/40 hover:bg-red-50/70 active:bg-red-50"
                         : "border-l-4 border-l-amber-400 border-amber-200 bg-amber-50/40 hover:bg-amber-50/70 active:bg-amber-50"
                     }`}
@@ -980,8 +984,8 @@ export default function MyWorkHomePage() {
                       <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
                         {task.projectName && <span>{task.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}</span>}
                         {task.dueAt && (
-                          <span className={isOverdue ? "text-red-600 font-medium" : "text-amber-600"}>
-                            {isOverdue ? "Overdue" : "Due today"}
+                          <span className={overdue ? "text-red-600 font-medium" : "text-amber-600"}>
+                            {overdue ? "Overdue" : "Due today"}
                           </span>
                         )}
                       </div>

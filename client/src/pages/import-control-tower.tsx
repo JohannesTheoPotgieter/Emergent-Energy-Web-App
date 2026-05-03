@@ -10,6 +10,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout } from "@/components/layout";
 import {
   FileSpreadsheet,
   RefreshCw,
@@ -178,50 +180,53 @@ export default function ImportControlTowerPage() {
   const succeededRecords = runs.reduce((sum, r) => sum + (r.recordsSucceeded || 0), 0);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold" data-testid="text-page-title">Import Control Tower</h1>
-          <p className="text-sm text-muted-foreground mt-1">Monitor, investigate, and retry all import operations</p>
-        </div>
-        <Button
-          data-testid="button-refresh"
-          variant="outline"
-          size="sm"
-          onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/import-control-tower/history"] })}
-        >
-          <RefreshCw className="h-4 w-4 mr-2" /> Refresh
-        </Button>
-      </div>
-
+    <PageLayout
+      data-testid="import-control-tower-page"
+      header={
+        <PageHeader
+          title="Import Control Tower"
+          subtitle="Monitor, investigate, and retry all import operations"
+          actions={
+            <Button
+              data-testid="button-refresh"
+              variant="outline"
+              size="sm"
+              onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/import-control-tower/history"] })}
+            >
+              <RefreshCw className="h-4 w-4 mr-2" /> Refresh
+            </Button>
+          }
+        />
+      }
+    >
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <Card>
           <CardContent className="pt-4 pb-3 text-center">
-            <div className="text-2xl font-bold" data-testid="text-total-runs">{totalRuns}</div>
+            <div className="text-2xl font-bold tabular-nums" data-testid="text-total-runs">{totalRuns}</div>
             <div className="text-xs text-muted-foreground">Total Runs</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 pb-3 text-center">
-            <div className="text-2xl font-bold text-emerald-600" data-testid="text-committed-runs">{committedRuns}</div>
+            <div className="text-2xl font-bold text-emerald-600 tabular-nums" data-testid="text-committed-runs">{committedRuns}</div>
             <div className="text-xs text-muted-foreground">Committed</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 pb-3 text-center">
-            <div className="text-2xl font-bold text-red-600" data-testid="text-failed-runs">{failedRuns}</div>
+            <div className="text-2xl font-bold text-red-600 tabular-nums" data-testid="text-failed-runs">{failedRuns}</div>
             <div className="text-xs text-muted-foreground">Failed</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 pb-3 text-center">
-            <div className="text-2xl font-bold text-blue-600" data-testid="text-preview-runs">{previewRuns}</div>
+            <div className="text-2xl font-bold text-blue-600 tabular-nums" data-testid="text-preview-runs">{previewRuns}</div>
             <div className="text-xs text-muted-foreground">Pending</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 pb-3 text-center">
-            <div className="text-2xl font-bold" data-testid="text-success-rate">
+            <div className="text-2xl font-bold tabular-nums" data-testid="text-success-rate">
               {totalRecords > 0 ? Math.round((succeededRecords / totalRecords) * 100) : 0}%
             </div>
             <div className="text-xs text-muted-foreground">Success Rate</div>
@@ -476,6 +481,6 @@ export default function ImportControlTowerPage() {
           ) : null}
         </DialogContent>
       </Dialog>
-    </div>
+    </PageLayout>
   );
 }

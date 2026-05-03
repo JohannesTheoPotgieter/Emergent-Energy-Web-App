@@ -41,7 +41,7 @@ import { requireAdmin } from "../middleware/requireAdmin";
 import { requirePermission } from "../permission-middleware";
 import { logAuditFromReq } from "../audit-logger";
 import { ApiError, sendError, badRequest, logApiError } from "../lib/api-error";
-import { paramStr } from "../lib/req-params";
+import { paramStr, parseIntParam } from "../lib/req-params";
 import { getCanonicalProjectCostLinesByName } from "../services/project-cost-line-read-service";
 
 // Ensure uploads directory exists
@@ -457,11 +457,10 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
     } catch (error: any) {
       console.error("Upload error:", error);
       const { dbMode } = await import("../db");
-      res.status(500).json({ 
-        error: error.message || "Failed to process upload",
-        message: error.message || "Failed to process upload",
+      res.status(500).json({
+        error: "Failed to process upload",
         code: error.code || 'UPLOAD_ERROR',
-        dbMode 
+        dbMode
       });
     }
   });
@@ -549,8 +548,7 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
         } catch (error: any) {
           reprocessResults.push({
             fileName: fileInfo.fileName,
-            status: "error",
-            message: error.message || "Reprocessing failed"
+            status: "error"
           });
         }
       }
@@ -570,9 +568,8 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
     } catch (error: any) {
       console.error("Reprocess error:", error);
       const { dbMode } = await import("../db");
-      res.status(500).json({ 
-        error: error.message || "Failed to reprocess files",
-        message: error.message || "Failed to reprocess files",
+      res.status(500).json({
+        error: "Failed to reprocess files",
         code: error.code || 'REPROCESS_ERROR',
         dbMode
       });
@@ -666,7 +663,7 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
             refreshResults.push({ fileName: fileInfo.fileName, projectName: parseResult.projectName, status: "success", recordsProcessed });
             sendEvent({ type: 'progress', current: processed, total, fileName: fileInfo.fileName, projectName: parseResult.projectName, status: 'success' });
           } catch (error: any) {
-            refreshResults.push({ fileName: fileInfo.fileName, projectName, status: "error", message: error.message || "Refresh failed" });
+            refreshResults.push({ fileName: fileInfo.fileName, projectName, status: "error" });
             sendEvent({ type: 'progress', current: processed, total, fileName: fileInfo.fileName, projectName, status: 'error' });
           }
         }
@@ -678,7 +675,7 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
         sendEvent({ type: 'complete', results: refreshResults, durationMs: Date.now() - startTime });
         res.end();
       } catch (error: any) {
-        sendEvent({ type: 'error', message: error.message });
+        sendEvent({ type: 'error' });
         res.end();
       }
       return;
@@ -737,7 +734,7 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
             parseResult.financeRevenueParsed + parseResult.financeCosParsed;
           refreshResults.push({ fileName: fileInfo.fileName, projectName: parseResult.projectName, status: "success", message: `Refreshed from source`, recordsProcessed });
         } catch (error: any) {
-          refreshResults.push({ fileName: fileInfo.fileName, projectName, status: "error", message: error.message || "Refresh failed" });
+          refreshResults.push({ fileName: fileInfo.fileName, projectName, status: "error" });
         }
       }
       
@@ -772,7 +769,6 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
       res.status(500).json({ 
         success: false,
         error: "refresh_failed",
-        message: error.message || "Failed to refresh data from source files",
         code: "REFRESH_DATA_ERROR",
         timestamps: {
           started: new Date(startTime).toISOString(),
@@ -818,8 +814,7 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
       console.error("Clear all data error:", error);
       res.status(500).json({ 
         success: false,
-        error: "clear_failed",
-        message: error.message || "Failed to clear all data"
+        error: "clear_failed"
       });
     }
   });
@@ -1052,11 +1047,12 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
           });
           
         } catch (error: any) {
+          console.error("[imports-admin] file processing failed:", fileName, error);
           results.push({
             fileName,
             projectName: fileName.replace(/\.(xlsx|xlsm|xls)$/i, ''),
             status: "failed",
-            message: error.message || "Processing failed",
+            message: "Processing failed",
             fileDate
           });
         }
@@ -1103,7 +1099,6 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
       res.status(500).json({ 
         success: false,
         error: "scan_failed",
-        message: error.message || "Failed to scan folder",
         timestamps: {
           started: new Date(startTime).toISOString(),
           completed: new Date().toISOString(),
@@ -1124,7 +1119,7 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
       logAuditFromReq(req, { entityType: "admin", action: "mark_active", changesJson: { description: `${projectNames.length} project(s) marked active`, projectNames } });
       res.json({ success: true, projectCounts: counts });
     } catch (error: any) {
-      res.status(500).json({ error: "Failed to mark projects active", message: error.message });
+      res.status(500).json({ error: "Failed to mark projects active" });
     }
   });
 
@@ -1162,8 +1157,7 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
       });
     } catch (error: any) {
       res.status(500).json({ 
-        error: "refresh_history_failed", 
-        message: error.message || "Failed to fetch refresh history",
+        error: "refresh_history_failed",
         code: "REFRESH_HISTORY_ERROR" 
       });
     }
@@ -1385,7 +1379,6 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
         passed: false,
         checks,
         error: "smoke_test_error",
-        message: error.message || "Smoke test failed unexpectedly",
         code: "smoke_test_error",
         timestamps: {
           started: new Date(startTime).toISOString(),
@@ -1407,7 +1400,7 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
       const settings = await storage.getSpSettings();
       res.json(settings || null);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1430,7 +1423,7 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
       logAuditFromReq(req, { entityType: "admin", action: "sp_settings_update", changesJson: { description: "SharePoint settings updated", siteId, driveId, enabled } });
       res.json(settings);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1445,7 +1438,7 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
       logAuditFromReq(req, { entityType: "sp_settings", action: "test_connection", changesJson: { siteId, driveId } });
       res.json(result);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1460,7 +1453,7 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
       const items = await browseFolders(driveId, folderId || undefined);
       res.json(items);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1476,7 +1469,7 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
       logAuditFromReq(req, { entityType: "admin", action: "import_single", changesJson: { description: "Single file imported from SharePoint", itemId } });
       res.json(result);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1488,7 +1481,7 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
       logAuditFromReq(req, { entityType: "admin", action: "import_run", changesJson: { description: "Full import triggered manually" } });
       res.json(result);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1500,7 +1493,7 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
       logAuditFromReq(req, { entityType: "admin", action: "import_retry", changesJson: { description: "Failed imports retried" } });
       res.json(result);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1510,20 +1503,20 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
       const runs = await storage.getAllImportRuns();
       res.json(runs);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
   // Admin: Get single import run + ledger entries
   app.get("/api/admin/import/runs/:id", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const runId = parseInt(paramStr(req.params.id));
+      const runId = parseIntParam(req.params.id);
       const run = await storage.getImportRun(runId);
       if (!run) return res.status(404).json({ error: "Run not found" });
       const entries = await storage.getAllChangeLedger({ runId });
       res.json({ run, entries });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 }

@@ -2,6 +2,7 @@
  * B3: Opportunities CRUD routes
  */
 import { Router, type Express, type Request, type Response } from "express";
+import { sql, eq, and, isNull } from "drizzle-orm";
 import { requireAuth } from "./shared-middleware";
 import { requirePermission } from "../permission-middleware";
 import { validateBody } from "../middleware/validateBody";
@@ -10,11 +11,36 @@ import { z } from "zod";
 import { logAuditFromReq } from "../audit-logger";
 import { canCreatePdTicket, canViewOpportunityIntake } from "@shared/roles/pd-roles";
 import { isActivePdWorkingOpportunity, isOpportunityIntakeTerminal } from "../lib/opportunity-working-filter";
+import { canViewAllTickets } from "@shared/roles/pd-roles";
+import { PHASES, PHASE_BY_CODE } from "@shared/phases";
+import { pdStageToLifecycle } from "@shared/lib/pd-stage-lifecycle";
+import { getFyWindow } from "../lib/fy-window";
 import { insertClientWithGeneratedId } from "../lib/client-id-generator";
 import { syncProjectSplitTablesAfterInsert } from "../lib/project-info-sync";
 import { buildOpportunityMappingPlan } from "../lib/opportunity-mapping-plan";
 import { buildCustomComments, buildSamePhaseDuplicateWarning, buildTemplateTicketDrafts } from "../lib/opportunity-engineering-ticket-flow";
 import { opportunitiesRepo } from "../repositories/opportunities-repository";
+import { ENGINEERING_TICKET_STATUSES } from "@shared/engineering-ticket-status";
+import { workItems } from "@shared/schema/tasks";
+
+/**
+ * Map a pd_ticket priority value (the create-engineering-tickets schema
+ * accepts "Critical" | "High" | "Medium" | "Low") onto the canonical
+ * work_items priority set ("Low" | "Med" | "High" | "Urgent"). Falls back
+ * to "Med" for unknown values so the engineering kanban card always
+ * renders a chip rather than a blank.
+ *
+ * Critical -> Urgent because the engineering board has no "Critical" lane;
+ * Urgent is the highest priority on that surface.
+ */
+function normalizeWorkItemPriority(raw: unknown): string {
+  if (typeof raw !== "string") return "Med";
+  const trimmed = raw.trim();
+  if (trimmed === "Medium") return "Med";
+  if (trimmed === "Critical") return "Urgent";
+  if (["Low", "Med", "High", "Urgent"].includes(trimmed)) return trimmed;
+  return "Med";
+}
 
 // Validation for user-driven opportunity create/update. Intentionally
 // narrower than the raw table schema:
@@ -65,12 +91,23 @@ const engineeringTicketCreateSchema = z.object({
   phaseTemplateId: z.number().int().optional(),
   templateBaseDueDate: z.string().trim().optional(),
   customTicket: z.object({
-    title: z.string().trim().min(1),
-    phase: z.string().trim().min(1),
-    descriptionScope: z.string().trim().min(1),
-    dueDate: z.string().trim().min(1),
+    title: z.string().trim().min(1, "Title is required"),
+    phase: z.string().trim().min(1, "Phase is required"),
+    descriptionScope: z.string().trim().min(1, "Description / scope is required"),
+    dueDate: z.string().trim().min(1, "Due date is required"),
     priority: z.enum(["Critical", "High", "Medium", "Low"]).default("Medium"),
-    requiredOutput: z.string().trim().min(1),
+    requiredOutput: z.string().trim().min(1, "Required output is required"),
+    // Optional operational fields — let the manual ticket carry the same
+    // metadata the full PD ticket would have. Pre-filled by the UI from
+    // the opportunity row when available.
+    fundingType: z.string().trim().optional(),
+    sizeKwp: z.union([z.string(), z.number()]).optional()
+      .transform((v) => (v === undefined || v === null || v === "" ? undefined : String(v))),
+    province: z.string().trim().optional(),
+    gpsCoordinates: z.string().trim().optional(),
+    batteriesNeeded: z.boolean().optional(),
+    batterySize: z.union([z.string(), z.number()]).optional()
+      .transform((v) => (v === undefined || v === null || v === "" ? undefined : String(v))),
   }).optional(),
 });
 
@@ -93,46 +130,118 @@ router.get("/api/opportunities/working", requireAuth, requirePermission("opportu
       return res.status(403).json({ error: "Opportunities intake view is limited to Project Development and admin oversight roles." });
     }
 
-    const rows = await opportunitiesRepo.getWorkingListRows();
+    const allRows = await opportunitiesRepo.getWorkingListRows();
+
+    // Per-user scoping: COO/CEO/CCO see everything (canViewAllTickets);
+    // Project Developers and other PD-eligible roles only see opportunities
+    // where they are the PD-shadow project developer OR (when no PD override
+    // exists) the Pipedrive deal owner.
+    const userId = req.user?.id ?? null;
+    const role = getUserRole(req);
+    const seesAll = canViewAllTickets(role);
+    let rows = seesAll
+      ? allRows
+      : allRows.filter(r => {
+          if (userId == null) return false;
+          if (r.pdProjectDeveloperUserId != null) return r.pdProjectDeveloperUserId === userId;
+          return r.dealOwnerUserId === userId;
+        });
+
+    // Defensive dedupe: getWorkingOpportunities does a leftJoin on pd_tickets
+    // and, while the partial-unique index normally enforces 1:1, real-world
+    // data has shown duplicate shadow rows (e.g. one with project_id null
+    // and an older one with project_id set) sneaking through. That produces
+    // duplicate React keys on the client and a runtime crash. Dedupe by
+    // opportunity id, preferring the first row (already ordered by
+    // updatedAt desc). 2026-04-21 hotfix.
+    {
+      const seen = new Set<number>();
+      const deduped: typeof rows = [];
+      for (const r of rows) {
+        if (seen.has(r.id)) continue;
+        seen.add(r.id);
+        deduped.push(r);
+      }
+      rows = deduped;
+    }
+
     const opportunityIds = rows.map(r => r.id);
     if (opportunityIds.length === 0) return res.json([]);
 
-    const [linkedProjectCounts, engineeringTicketCounts] = await Promise.all([
+    const [linkedProjectCounts, engineeringTicketSummaries, linkedProjects] = await Promise.all([
       opportunitiesRepo.getLinkedProjectCounts(opportunityIds),
-      opportunitiesRepo.getEngineeringTicketCounts(opportunityIds),
+      opportunitiesRepo.getEngineeringTicketSummaries(opportunityIds),
+      opportunitiesRepo.getLinkedProjectsByOpportunity(opportunityIds),
     ]);
 
     const projectCountByOpportunity = new Map<number, number>();
     for (const r of linkedProjectCounts) {
       if (r.opportunityId != null) projectCountByOpportunity.set(r.opportunityId, r.count);
     }
-    const engineeringTicketCountByOpportunity = new Map<number, number>();
-    for (const r of engineeringTicketCounts) {
-      if (r.opportunityId != null) engineeringTicketCountByOpportunity.set(r.opportunityId, r.count);
+    const ticketSummaryByOpportunity = new Map<number, typeof engineeringTicketSummaries[number]>();
+    for (const r of engineeringTicketSummaries) {
+      ticketSummaryByOpportunity.set(r.opportunityId, r);
+    }
+    const linkedProjectByOpportunity = new Map<number, { projectId: number; projectName: string | null }>();
+    for (const r of linkedProjects) {
+      linkedProjectByOpportunity.set(r.opportunityId, { projectId: r.projectId, projectName: r.projectName });
     }
 
     const workingRows = rows
       .map(r => {
         const linkedProjectCount = projectCountByOpportunity.get(r.id) || 0;
         const hasLinkedProject = linkedProjectCount > 0;
+        // Prefer the canonical `opportunities.deal_name` column populated
+        // by Pipedrive sync (M001-M003); fall back to the legacy notes
+        // parsing only for rows that pre-date the migration backfill.
         const note = (r.notes || "").trim();
-        const dealName = note.toLowerCase().startsWith("pipedrive:")
-          ? note.replace(/^pipedrive:\s*/i, "").trim()
-          : (note || `Deal #${r.pipedriveDealId || r.id}`);
+        const dealName =
+          (r.dealName && r.dealName.trim()) ||
+          (note.toLowerCase().startsWith("pipedrive:")
+            ? note.replace(/^pipedrive:\s*/i, "").trim()
+            : (note || `Deal #${r.pipedriveDealId || r.id}`));
+
+        // Project Developer = PD-side override (pd_tickets) ► Pipedrive owner.
+        // Province = opportunity column (Pipedrive) ► PD shadow fallback.
+        const pipedriveOwner = r.dealOwnerUserName || r.dealOwnerNameSnapshot || null;
+        const projectDeveloper = r.pdProjectDeveloperUserName || pipedriveOwner;
+        const province = r.province || r.pdProvince || null;
 
         return {
           id: r.id,
           dealName,
           pipedriveDealId: r.pipedriveDealId,
           orgClientName: r.clientName || null,
-          dealOwner: r.dealOwnerName || null,
+          dealOwner: pipedriveOwner,
+          projectDeveloper,
+          projectDeveloperOverridden: Boolean(r.pdProjectDeveloperUserName && r.pdProjectDeveloperUserName !== pipedriveOwner),
           stage: r.stage || null,
           status: r.status || null,
           siteLocation: r.siteName || r.siteAddress || null,
+          province,
+          fundingType: r.fundingType || null,
+          estimatedValue: r.estimatedValue != null ? Number(r.estimatedValue) : null,
+          estimatedKwp: r.estimatedKwp != null ? Number(r.estimatedKwp) : null,
+          nextActivityDate: r.nextActivityDate || null,
+          nextActivitySubject: r.nextActivitySubject || null,
           hasLinkedClient: Boolean(r.clientId),
           hasLinkedProject,
           linkedProjectCount,
-          existingEngineeringTicketCount: engineeringTicketCountByOpportunity.get(r.id) || 0,
+          linkedProjectId: linkedProjectByOpportunity.get(r.id)?.projectId ?? null,
+          linkedProjectName: linkedProjectByOpportunity.get(r.id)?.projectName ?? null,
+          openEngineeringTaskCount: ticketSummaryByOpportunity.get(r.id)?.openCount ?? 0,
+          closedEngineeringTaskCount: ticketSummaryByOpportunity.get(r.id)?.closedCount ?? 0,
+          oldestOpenEngineeringAt: ticketSummaryByOpportunity.get(r.id)?.oldestOpenAt
+            ? ticketSummaryByOpportunity.get(r.id)!.oldestOpenAt!.toISOString()
+            : null,
+          // When tickets already exist for this deal, the latest ticket's
+          // client/project is the natural default for "+ another ticket"
+          // — surfaces these so the UI can skip the mapping dialog.
+          lastTicketClientId: ticketSummaryByOpportunity.get(r.id)?.lastTicketClientId ?? null,
+          lastTicketProjectId: ticketSummaryByOpportunity.get(r.id)?.lastTicketProjectId ?? null,
+          existingEngineeringTicketCount:
+            (ticketSummaryByOpportunity.get(r.id)?.openCount ?? 0) +
+            (ticketSummaryByOpportunity.get(r.id)?.closedCount ?? 0), // alias for legacy callers (now total, not just open)
           lastUpdated: r.updatedAt || null,
           signedDate: r.signedDate || null,
           expectedCloseDate: r.expectedCloseDate || null,
@@ -153,12 +262,889 @@ router.get("/api/opportunities/working", requireAuth, requirePermission("opportu
   }
 });
 
+/**
+ * GET /api/pd/dashboard/pipeline-by-phase
+ * Read-only roll-up of ACTIVE opportunities grouped by canonical
+ * lifecycle phase, plus the flat list of those opportunities (with
+ * expected close date) so the PD Dashboard can render both the
+ * Pipeline-by-phase KPI card and the Expected sign-dates calendar
+ * from a single round-trip.
+ *
+ * Excludes:
+ *   - opportunities.deleted_at IS NOT NULL
+ *   - opportunities.stage IN ('won','lost')
+ *   - opportunities.status IN ('won','lost')
+ *   - opportunities tied to a soft-deleted client
+ *
+ * Phase resolution:
+ *   - opportunities.stage (CRM stage like 'prospect' / 'proposal')
+ *     is mapped to a canonical CanonicalPhase via pdStageToLifecycle.
+ *   - Opportunities whose stage cannot be mapped fall under '_UNSCOPED'
+ *     so nothing is silently dropped.
+ *
+ * Added 2026-04-24 (task #77). Schema-additive zero — uses existing
+ * opportunities.estimated_kwp, expected_close_date and estimated_value
+ * columns.
+ */
+router.get("/api/pd/dashboard/pipeline-by-phase", requireAuth, requirePermission("pd_dashboard", "view"), async (_req: Request, res: Response) => {
+  try {
+    const result = await db.execute(sql`
+      SELECT
+        o.id,
+        COALESCE(NULLIF(TRIM(o.deal_name), ''), NULLIF(TRIM(c.name), ''), 'Opportunity #' || o.id::text) AS deal_name,
+        c.name AS client_name,
+        LOWER(COALESCE(o.stage, '')) AS stage,
+        o.pipedrive_deal_id,
+        o.estimated_kwp,
+        o.estimated_value,
+        o.expected_close_date::text AS expected_close_date,
+        o.next_activity_date::text  AS next_activity_date
+      FROM opportunities o
+      LEFT JOIN clients c ON c.id = o.client_id AND c.deleted_at IS NULL
+      WHERE o.deleted_at IS NULL
+        -- Substring match catches CRM variants like 'won - signed', ' WON ',
+        -- 'lost - no budget', etc. that exact equality would miss.
+        AND POSITION('won'  IN LOWER(COALESCE(o.stage,  ''))) = 0
+        AND POSITION('lost' IN LOWER(COALESCE(o.stage,  ''))) = 0
+        AND POSITION('won'  IN LOWER(COALESCE(o.status, ''))) = 0
+        AND POSITION('lost' IN LOWER(COALESCE(o.status, ''))) = 0
+        -- A signed deal is no longer in the active sales pipeline.
+        AND o.signed_date IS NULL
+        AND (o.client_id IS NULL OR c.id IS NOT NULL)
+      ORDER BY o.id
+    `);
+
+    type Row = {
+      id: number;
+      deal_name: string;
+      client_name: string | null;
+      stage: string | null;
+      pipedrive_deal_id: string | null;
+      estimated_kwp: string | number | null;
+      estimated_value: string | number | null;
+      expected_close_date: string | null;
+      next_activity_date: string | null;
+    };
+
+    const rawRows = (result.rows ?? []) as Row[];
+
+    const enriched = rawRows.map((r) => {
+      const phase = pdStageToLifecycle(r.stage ?? null);
+      const kwp = r.estimated_kwp == null ? null : Number(r.estimated_kwp);
+      const value = r.estimated_value == null ? null : Number(r.estimated_value);
+      return {
+        id: Number(r.id),
+        dealName: r.deal_name,
+        clientName: r.client_name,
+        stage: r.stage,
+        pipedriveDealId: r.pipedrive_deal_id,
+        phaseCode: phase?.code ?? null,
+        phaseLabel: phase?.label ?? "Unscoped",
+        phaseDisplayNumber: phase?.displayNumber ?? 99,
+        estimatedKwp: kwp != null && Number.isFinite(kwp) ? kwp : null,
+        estimatedValue: value != null && Number.isFinite(value) ? value : null,
+        expectedCloseDate: r.expected_close_date,
+        nextActivityDate: r.next_activity_date,
+      };
+    });
+
+    type PhaseAgg = {
+      code: string;
+      label: string;
+      // displayNumber is null for terminal branch phases (Hold/Done) since
+      // 0030_canonical_lifecycle_phases_v2.sql; "_UNSCOPED" uses 99 as a
+      // sentinel so unmapped rows always sort to the end.
+      displayNumber: number | null;
+      count: number;
+      totalKwp: number;
+      totalValue: number;
+    };
+    const phaseAgg = new Map<string, PhaseAgg>();
+    for (const r of enriched) {
+      const code = r.phaseCode ?? "_UNSCOPED";
+      const meta = code === "_UNSCOPED"
+        ? { label: "Unscoped", displayNumber: 99 }
+        : (PHASE_BY_CODE[code] ?? { label: r.phaseLabel, displayNumber: r.phaseDisplayNumber });
+      const existing = phaseAgg.get(code) ?? {
+        code,
+        label: meta.label,
+        displayNumber: meta.displayNumber,
+        count: 0,
+        totalKwp: 0,
+        totalValue: 0,
+      };
+      existing.count += 1;
+      existing.totalKwp += r.estimatedKwp ?? 0;
+      existing.totalValue += r.estimatedValue ?? 0;
+      phaseAgg.set(code, existing);
+    }
+
+    const totalKwp = Array.from(phaseAgg.values()).reduce((s, p) => s + p.totalKwp, 0);
+    const totalCount = enriched.length;
+    const totalValue = Array.from(phaseAgg.values()).reduce((s, p) => s + p.totalValue, 0);
+
+    const byPhase = Array.from(phaseAgg.values())
+      .map((p) => ({
+        ...p,
+        sharePct: totalKwp > 0 ? (p.totalKwp / totalKwp) * 100 : 0,
+      }))
+      .sort((a, b) => (a.displayNumber ?? 99) - (b.displayNumber ?? 99));
+
+    res.json({
+      generatedAt: new Date().toISOString(),
+      totals: { count: totalCount, totalKwp, totalValue },
+      byPhase,
+      rows: enriched.map((r) => ({
+        id: r.id,
+        dealName: r.dealName,
+        clientName: r.clientName,
+        stage: r.stage,
+        pipedriveDealId: r.pipedriveDealId,
+        phaseCode: r.phaseCode,
+        phaseLabel: r.phaseLabel,
+        estimatedKwp: r.estimatedKwp,
+        estimatedValue: r.estimatedValue,
+        expectedCloseDate: r.expectedCloseDate,
+        nextActivityDate: r.nextActivityDate,
+      })),
+    });
+  } catch (err) {
+    console.error("[Opportunities] pipeline-by-phase failed:", err);
+    res.status(500).json({ error: "Failed to load pipeline-by-phase" });
+  }
+});
+
+/**
+ * GET /api/pd/dashboard/won-deals  (Task #94, 2026-04-24)
+ *
+ * Read-only roll-up of Pipedrive opportunities that crossed into "won"
+ * within the current financial year (Sep–Aug). Powers the "Won deals
+ * this FY" tile on `/pd-dashboard`. The FY window is computed by the
+ * shared `getFyWindow()` helper so this endpoint and `/api/pd/reports`
+ * (which already exposes a `wonFy` KPI) cannot drift.
+ *
+ * Filter:
+ *   - `opportunities.deleted_at IS NULL`
+ *   - `source = 'pipedrive'`
+ *   - `LOWER(status) LIKE '%won%'` (substring catches "won - signed",
+ *     "WON", "won/closed", … variants)
+ *   - `signed_date BETWEEN <fyStart> AND <fyEnd>` — anchors the FY
+ *     scope on the contracted date so an opportunity flagged "won"
+ *     last FY but signed in the current FY shows up in the right year,
+ *     and an opp signed last FY never re-appears here when its CRM
+ *     timestamps churn.
+ *
+ * Each row carries the data the tile needs (deal name, client, value,
+ * kWp, sign date, owner, pipedrive deal id) plus a derived
+ * `projectLinkState` of `linked | stub | none`:
+ *   - `linked` — a non-deleted `project_info` row points at the
+ *     opportunity AND has both `pd_user_id` and `pm_user_id` set AND
+ *     the linked `project_execution_state.phase` is non-empty.
+ *   - `stub`   — a non-deleted `project_info` row exists but is
+ *     missing one or more of the above (Schaeffler is the canonical
+ *     case for FY26).
+ *   - `none`   — no non-deleted `project_info` references the
+ *     opportunity. The drawer surfaces the Convert-to-Project CTA.
+ *
+ * Auth: requireAuth + requirePermission('pd_dashboard','view').
+ * Schema-additive zero — uses existing columns only.
+ */
+router.get("/api/pd/dashboard/won-deals", requireAuth, requirePermission("pd_dashboard", "view"), async (_req: Request, res: Response) => {
+  try {
+    const win = getFyWindow();
+
+    const result = await db.execute(sql`
+      SELECT
+        o.id,
+        COALESCE(NULLIF(TRIM(o.deal_name), ''), NULLIF(TRIM(c.name), ''), 'Opportunity #' || o.id::text) AS deal_name,
+        c.name AS client_name,
+        o.pipedrive_deal_id,
+        o.estimated_value,
+        o.estimated_kwp,
+        o.signed_date::text AS signed_date,
+        o.deal_owner_name,
+        o.updated_at,
+        o.status,
+        pi.id            AS project_id,
+        pi.project_name  AS project_name,
+        pi.pd_user_id    AS pd_user_id,
+        pi.pm_user_id    AS pm_user_id,
+        pes.phase        AS project_phase
+      FROM opportunities o
+      LEFT JOIN clients c ON c.id = o.client_id AND c.deleted_at IS NULL
+      LEFT JOIN LATERAL (
+        SELECT pi.id, pi.project_name, pi.pd_user_id, pi.pm_user_id
+        FROM project_info pi
+        WHERE pi.opportunity_id = o.id AND pi.deleted_at IS NULL
+        ORDER BY pi.id DESC
+        LIMIT 1
+      ) pi ON TRUE
+      LEFT JOIN project_execution_state pes ON pes.project_id = pi.id
+      WHERE o.deleted_at IS NULL
+        AND o.source = 'pipedrive'
+        AND POSITION('won' IN LOWER(COALESCE(o.status, ''))) > 0
+        AND o.signed_date IS NOT NULL
+        AND o.signed_date >= ${win.fyStartIso}::date
+        AND o.signed_date <= ${win.fyEndIso}::date
+      ORDER BY o.signed_date DESC NULLS LAST, o.updated_at DESC NULLS LAST
+    `);
+
+    type Row = {
+      id: number;
+      deal_name: string;
+      client_name: string | null;
+      pipedrive_deal_id: string | null;
+      estimated_value: string | number | null;
+      estimated_kwp: string | number | null;
+      signed_date: string | null;
+      deal_owner_name: string | null;
+      updated_at: string | Date | null;
+      status: string | null;
+      project_id: number | null;
+      project_name: string | null;
+      pd_user_id: number | null;
+      pm_user_id: number | null;
+      project_phase: string | null;
+    };
+
+    const rawRows = (result.rows ?? []) as Row[];
+
+    const rows = rawRows.map((r) => {
+      const value = r.estimated_value == null ? null : Number(r.estimated_value);
+      const kwp = r.estimated_kwp == null ? null : Number(r.estimated_kwp);
+      const phaseTrim = (r.project_phase ?? "").trim();
+      let projectLinkState: "linked" | "stub" | "none";
+      if (r.project_id == null) {
+        projectLinkState = "none";
+      } else if (r.pd_user_id != null && r.pm_user_id != null && phaseTrim.length > 0) {
+        projectLinkState = "linked";
+      } else {
+        projectLinkState = "stub";
+      }
+      return {
+        id: Number(r.id),
+        dealName: r.deal_name,
+        clientName: r.client_name,
+        pipedriveDealId: r.pipedrive_deal_id,
+        estimatedValue: value != null && Number.isFinite(value) ? value : null,
+        estimatedKwp: kwp != null && Number.isFinite(kwp) ? kwp : null,
+        signedDate: r.signed_date,
+        dealOwnerName: r.deal_owner_name,
+        updatedAt: r.updated_at instanceof Date ? r.updated_at.toISOString() : r.updated_at,
+        projectId: r.project_id,
+        projectName: r.project_name,
+        projectPhase: phaseTrim || null,
+        projectLinkState,
+      };
+    });
+
+    const totalValue = rows.reduce((s, r) => s + (r.estimatedValue ?? 0), 0);
+    const totalKwp = rows.reduce((s, r) => s + (r.estimatedKwp ?? 0), 0);
+
+    res.json({
+      generatedAt: new Date().toISOString(),
+      fy: win.fy,
+      fyLabel: win.fyLabel,
+      fyStart: win.fyStartIso,
+      fyEnd: win.fyEndIso,
+      kpis: {
+        count: rows.length,
+        totalValue,
+        totalKwp,
+        currency: "ZAR",
+      },
+      rows,
+    });
+  } catch (err) {
+    console.error("[Opportunities] won-deals failed:", err);
+    res.status(500).json({ error: "Failed to load won-deals" });
+  }
+});
+
+/**
+ * GET /api/pd/dashboard
+ * Aggregated KPIs for the Project Development Dashboard.
+ * Read-only: aggregates the opportunities table (incl. enriched Pipedrive cols).
+ *
+ * Returns:
+ *   summary    — pipeline value, weighted value, active/won/lost counts, win rate, avg probability
+ *   byStage    — count + value + weighted per active stage
+ *   atRisk     — counts of stale-activity & high-value-no-activity active deals
+ *   recentWins — last 5 won deals
+ *   recentLost — last 5 lost deals (with reason)
+ *   activity   — upcoming activities (next 14d) and overdue counts
+ *   pipeline   — last 90d won-vs-lost weekly buckets (for sparkline)
+ */
+// ============================================================================
+// /api/pd/dashboard — App-internal Project Development dashboard.
+// Task #71: app-internal sources (engineering_tickets, work_items, project_info,
+// project_execution_state, raid_items, om_handovers, users). Drilldowns target
+// /engineering/tickets, /engineering/tasks, /project/<name>.
+// ============================================================================
+router.get("/api/pd/dashboard", requireAuth, requirePermission("pd_dashboard", "view"), async (_req: Request, res: Response) => {
+  try {
+    const [
+      ticketTotalsRow,
+      workItemTotalsRow,
+      handoverRow,
+      byPhaseRows,
+      byOwnerRows,
+      actionQueueRows,
+      recentlyCompletedRows,
+      upcomingThisWeekRows,
+      atRiskRows,
+      linkageGapRows,
+    ] = await Promise.all([
+      // Engineering-ticket totals. "Active" = not in a terminal status.
+      // "Overdue" = active AND due_date in the past. "Stale 30d" =
+      // active AND last activity (latest related work_items.updated_at,
+      // falling back to ticket updated_at) older than 30d. "Blocked" =
+      // active AND has at least one open work_item in 'hold' status.
+      db.execute(sql`
+        WITH t AS (
+          SELECT
+            et.id,
+            et.status,
+            et.due_date,
+            et.updated_at,
+            et.size_kwp,
+            -- Latest activity = max work-item update for this ticket,
+            -- falling back to the ticket's own updated_at when no work
+            -- items exist. Used to compute the stale-30d signal so that
+            -- a quiet ticket with active work items isn't flagged stale.
+            GREATEST(
+              et.updated_at,
+              COALESCE(
+                (SELECT MAX(w2.updated_at) FROM work_items w2
+                 WHERE w2.engineering_ticket_id = et.id AND w2.deleted_at IS NULL),
+                et.updated_at
+              )
+            ) AS last_activity_at,
+            EXISTS (
+              SELECT 1 FROM work_items w
+              WHERE w.engineering_ticket_id = et.id
+                AND w.deleted_at IS NULL
+                AND LOWER(COALESCE(w.status, '')) IN ('hold', 'blocked', 'on_hold')
+            ) AS has_blocker
+          FROM engineering_tickets et
+          WHERE et.deleted_at IS NULL
+        ),
+        active AS (
+          SELECT * FROM t
+          WHERE LOWER(COALESCE(status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done', 'cancelled', 'canceled')
+        )
+        SELECT
+          (SELECT COUNT(*) FROM active) AS active_tickets,
+          (SELECT COUNT(*) FROM active WHERE due_date IS NOT NULL AND due_date::date < CURRENT_DATE) AS overdue_tickets,
+          (SELECT COUNT(*) FROM active WHERE last_activity_at < NOW() - INTERVAL '30 days') AS stale30_tickets,
+          (SELECT COUNT(*) FROM active WHERE has_blocker) AS blocked_tickets,
+          -- Engineering-board "in approval" sub-states: tickets that are
+          -- waiting on a human review gate before they can move to complete.
+          -- See shared/engineering-ticket-status.ts::TICKET_APPROVAL_STATUSES.
+          (SELECT COUNT(*) FROM active WHERE LOWER(COALESCE(status, '')) IN ('needs_approval', 'qc_approved', 'provide_feedback', 'operational_approval')) AS in_approval_tickets,
+          (SELECT COUNT(*) FROM t WHERE LOWER(COALESCE(status, '')) IN ('completed', 'complete', 'closed', 'resolved', 'done')) AS completed_tickets,
+          (SELECT COALESCE(SUM(size_kwp), 0) FROM active) AS active_kwp
+      `),
+      // Work-item totals scoped to items linked to engineering tickets
+      // (the PD operating surface). Counts open / overdue / due-this-week /
+      // completed-last-14d for the top-strip context band.
+      db.execute(sql`
+        WITH w AS (
+          SELECT
+            wi.id, wi.status, wi.end_date, wi.completed_at, wi.actual_end
+          FROM work_items wi
+          WHERE wi.deleted_at IS NULL
+            AND wi.engineering_ticket_id IS NOT NULL
+        )
+        SELECT
+          COUNT(*) FILTER (
+            WHERE LOWER(COALESCE(status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done')
+          ) AS open_work_items,
+          COUNT(*) FILTER (
+            WHERE LOWER(COALESCE(status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done')
+              AND NULLIF(end_date, '') IS NOT NULL
+              AND NULLIF(end_date, '')::date < CURRENT_DATE
+          ) AS overdue_work_items,
+          COUNT(*) FILTER (
+            WHERE LOWER(COALESCE(status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done')
+              AND NULLIF(end_date, '') IS NOT NULL
+              AND NULLIF(end_date, '')::date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
+          ) AS due_this_week_work_items,
+          COUNT(*) FILTER (
+            WHERE LOWER(COALESCE(status, '')) IN ('completed', 'complete', 'closed', 'resolved', 'done')
+              AND COALESCE(completed_at, actual_end::timestamp) >= NOW() - INTERVAL '14 days'
+          ) AS completed_14d_work_items
+        FROM w
+      `),
+      // Handover-ready: count of active projects whose O&M handover
+      // record (om_handovers — the closest existing analogue of the
+      // task-spec "handover_meeting_capture") shows the deliverables are
+      // assembled but actual handover hasn't happened yet. Specifically:
+      // deleted_at IS NULL, actual_handover_date IS NULL, AND at least
+      // the three core packs are uploaded (as_builts + warranties +
+      // O&M manual). The project's canonical phase is also surfaced so
+      // the UI can label which handover band the project sits in.
+      db.execute(sql`
+        WITH hr AS (
+          SELECT
+            pi.id,
+            pi.project_name,
+            pes.current_stage_code AS phase,
+            pes.rag_status
+          FROM project_info pi
+          JOIN om_handovers omh
+            ON omh.project_id = pi.id
+            AND omh.deleted_at IS NULL
+            AND omh.actual_handover_date IS NULL
+            AND COALESCE(omh.as_builts_uploaded, false) = true
+            AND COALESCE(omh.warranties_uploaded, false) = true
+            AND COALESCE(omh.om_manual_uploaded, false) = true
+          LEFT JOIN project_execution_state pes
+            ON pes.project_id = pi.id AND pes.deleted_at IS NULL
+          WHERE pi.deleted_at IS NULL
+            AND pi.project_status = 'active'
+        )
+        SELECT
+          (SELECT COUNT(*) FROM hr) AS total,
+          COALESCE(json_agg(row_to_json(t) ORDER BY t.project_name) FILTER (WHERE t.id IS NOT NULL), '[]'::json) AS items
+        FROM (SELECT * FROM hr ORDER BY project_name LIMIT 8) t
+      `),
+      // By canonical phase: scope to ACTIVE engineering tickets and
+      // roll up open / overdue work items by canonical stage code.
+      //
+      // Phase derivation per ticket:
+      //   1. If the ticket has any work items, use the most-recently
+      //      updated work item's `phase` (already canonical).
+      //   2. If that's missing, fall back to mapping the ticket's
+      //      `request_type` to a canonical phase (mirrors the static
+      //      table in shared/utils/phase-to-stage-map.ts so the SQL
+      //      doesn't need to import TS).
+      //   3. Otherwise '_UNSCOPED'.
+      //
+      // Open / overdue work-item counts also flow through the same
+      // active-ticket scoping so a phase row only reflects work that's
+      // actually in flight.
+      db.execute(sql`
+        WITH active_tickets AS (
+          SELECT
+            et.id,
+            et.request_type,
+            -- (1) preferred: latest work-item phase for this ticket
+            (
+              SELECT wi.phase
+              FROM work_items wi
+              WHERE wi.engineering_ticket_id = et.id
+                AND wi.deleted_at IS NULL
+                AND wi.phase IS NOT NULL
+              ORDER BY wi.updated_at DESC NULLS LAST
+              LIMIT 1
+            ) AS wi_phase
+          FROM engineering_tickets et
+          WHERE et.deleted_at IS NULL
+            AND LOWER(COALESCE(et.status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done', 'cancelled', 'canceled')
+        ),
+        ticket_phase AS (
+          SELECT
+            id AS ticket_id,
+            COALESCE(
+              wi_phase,
+              -- (2) fallback: request_type → canonical phase
+              CASE
+                WHEN request_type ILIKE 'First Assessment%' THEN 'S01_FIRST_ASSESSMENT'
+                WHEN request_type IN ('Cost Proposal', 'CP - PVSOL', 'Feasibility Study', 'Sizing Rational Request', 'Design & Cost Proposal', 'Cost Proposal & Design') THEN 'S02_DESIGN_COST_PROPOSAL'
+                WHEN request_type IN ('Site visit Report', 'Data Analysis Request', 'Meter installation') THEN 'S01_FIRST_ASSESSMENT'
+                ELSE NULL
+              END,
+              '_UNSCOPED'
+            ) AS code
+          FROM active_tickets
+        ),
+        wi_rollup AS (
+          SELECT
+            tp.code,
+            wi.id AS wi_id,
+            wi.status,
+            wi.end_date
+          FROM ticket_phase tp
+          JOIN work_items wi
+            ON wi.engineering_ticket_id = tp.ticket_id
+            AND wi.deleted_at IS NULL
+        )
+        SELECT
+          code,
+          (SELECT COUNT(*) FROM ticket_phase tp2 WHERE tp2.code = w.code) AS ticket_count,
+          -- IMPORTANT: gate counts on (w.wi_id IS NOT NULL) so the synthetic
+          -- placeholder rows (used only to ensure phases with zero work
+          -- items still appear) never inflate work-item totals.
+          COUNT(*) FILTER (
+            WHERE w.wi_id IS NOT NULL
+              AND LOWER(COALESCE(w.status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done')
+          ) AS open_work_items,
+          COUNT(*) FILTER (
+            WHERE w.wi_id IS NOT NULL
+              AND LOWER(COALESCE(w.status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done')
+              AND NULLIF(w.end_date, '') IS NOT NULL
+              AND NULLIF(w.end_date, '')::date < CURRENT_DATE
+          ) AS overdue_work_items
+        FROM (
+          -- Synthetic placeholder per phase keeps zero-work-item phases visible;
+          -- gated out of every COUNT FILTER above via (w.wi_id IS NOT NULL).
+          SELECT code, NULL::int AS wi_id, NULL::text AS status, NULL::text AS end_date FROM ticket_phase
+          UNION ALL
+          SELECT code, wi_id, status, end_date FROM wi_rollup
+        ) w
+        GROUP BY code
+      `),
+      // By owner: per-PD-developer rollup of active engineering tickets.
+      // Owner identity is the engineering_tickets.project_developer_user_id
+      // joined to users.name (no Pipedrive snapshot). Unassigned tickets
+      // bucket under "Unassigned" so they remain visible.
+      db.execute(sql`
+        SELECT
+          et.project_developer_user_id AS owner_user_id,
+          COALESCE(NULLIF(TRIM(u.name), ''), 'Unassigned') AS owner,
+          COUNT(*) FILTER (
+            WHERE LOWER(COALESCE(et.status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done', 'cancelled', 'canceled')
+          ) AS active,
+          COUNT(*) FILTER (
+            WHERE LOWER(COALESCE(et.status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done', 'cancelled', 'canceled')
+              AND et.due_date IS NOT NULL AND et.due_date::date < CURRENT_DATE
+          ) AS overdue,
+          COUNT(*) FILTER (
+            WHERE LOWER(COALESCE(et.status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done', 'cancelled', 'canceled')
+              AND GREATEST(
+                et.updated_at,
+                COALESCE(
+                  (SELECT MAX(w2.updated_at) FROM work_items w2
+                   WHERE w2.engineering_ticket_id = et.id AND w2.deleted_at IS NULL),
+                  et.updated_at
+                )
+              ) < NOW() - INTERVAL '30 days'
+          ) AS stale30,
+          COUNT(*) FILTER (
+            WHERE LOWER(COALESCE(et.status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done', 'cancelled', 'canceled')
+              AND et.due_date IS NOT NULL
+              AND et.due_date::date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
+          ) AS due_this_week,
+          COALESCE(SUM(et.size_kwp) FILTER (
+            WHERE LOWER(COALESCE(et.status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done', 'cancelled', 'canceled')
+          ), 0) AS active_kwp
+        FROM engineering_tickets et
+        LEFT JOIN users u ON u.id = et.project_developer_user_id
+        WHERE et.deleted_at IS NULL
+        GROUP BY 1, 2
+        HAVING COUNT(*) FILTER (
+          WHERE LOWER(COALESCE(et.status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done', 'cancelled', 'canceled')
+        ) > 0
+        ORDER BY active DESC, owner ASC
+        LIMIT 25
+      `),
+      // Action queue: top open work_items needing action right now,
+      // ranked by reason. Each row carries a deterministic reason chip.
+      // Order (per task spec): overdue → on-hold → stale_30d →
+      // high-priority quiet. Overdue is ranked first because it is the
+      // hardest commitment (a missed end_date), ahead of an explicit
+      // hold which at least carries a reason.
+      db.execute(sql`
+        WITH ranked AS (
+          SELECT
+            wi.id AS work_item_id,
+            wi.title,
+            wi.engineering_ticket_id,
+            et.project_site_name,
+            wi.phase,
+            wi.priority,
+            wi.end_date,
+            wi.status,
+            wi.updated_at,
+            COALESCE(NULLIF(TRIM(u.name), ''), NULLIF(TRIM(wi.owner_name), ''), 'Unassigned') AS owner,
+            CASE
+              WHEN NULLIF(wi.end_date, '') IS NOT NULL AND NULLIF(wi.end_date, '')::date < CURRENT_DATE THEN 'overdue'
+              WHEN LOWER(COALESCE(wi.status, '')) IN ('hold', 'blocked', 'on_hold') THEN 'on_hold'
+              WHEN wi.updated_at < NOW() - INTERVAL '30 days' THEN 'stale_30d'
+              WHEN LOWER(COALESCE(wi.priority, '')) IN ('high', 'critical') AND wi.updated_at < NOW() - INTERVAL '7 days' THEN 'high_priority_quiet'
+              ELSE NULL
+            END AS reason
+          FROM work_items wi
+          JOIN engineering_tickets et ON et.id = wi.engineering_ticket_id AND et.deleted_at IS NULL
+          LEFT JOIN users u ON u.id = wi.owner_user_id
+          WHERE wi.deleted_at IS NULL
+            AND wi.engineering_ticket_id IS NOT NULL
+            AND LOWER(COALESCE(wi.status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done')
+        )
+        SELECT
+          work_item_id, title, engineering_ticket_id, project_site_name,
+          phase, priority, end_date, status, owner, reason
+        FROM ranked
+        WHERE reason IS NOT NULL
+        ORDER BY
+          CASE reason
+            WHEN 'overdue' THEN 1
+            WHEN 'on_hold' THEN 2
+            WHEN 'stale_30d' THEN 3
+            WHEN 'high_priority_quiet' THEN 4
+          END ASC,
+          end_date ASC NULLS LAST,
+          updated_at ASC
+        LIMIT 12
+      `),
+      // Recently completed (last 14d) — work items linked to engineering
+      // tickets, used as a "what got done" pulse. Resolves owner via FK
+      // first then falls back to denormalised owner_name.
+      db.execute(sql`
+        SELECT
+          wi.id AS work_item_id,
+          wi.title,
+          wi.engineering_ticket_id,
+          et.project_site_name,
+          COALESCE(wi.completed_at, wi.actual_end::timestamp) AS completed_at,
+          COALESCE(NULLIF(TRIM(u.name), ''), NULLIF(TRIM(wi.owner_name), ''), 'Unassigned') AS owner
+        FROM work_items wi
+        JOIN engineering_tickets et ON et.id = wi.engineering_ticket_id AND et.deleted_at IS NULL
+        LEFT JOIN users u ON u.id = wi.owner_user_id
+        WHERE wi.deleted_at IS NULL
+          AND wi.engineering_ticket_id IS NOT NULL
+          AND LOWER(COALESCE(wi.status, '')) IN ('completed', 'complete', 'closed', 'resolved', 'done')
+          AND COALESCE(wi.completed_at, wi.actual_end::timestamp) >= NOW() - INTERVAL '14 days'
+        ORDER BY COALESCE(wi.completed_at, wi.actual_end::timestamp) DESC
+        LIMIT 10
+      `),
+      // Upcoming this week — open work items due in the next 7 days.
+      db.execute(sql`
+        SELECT
+          wi.id AS work_item_id,
+          wi.title,
+          wi.engineering_ticket_id,
+          et.project_site_name,
+          wi.end_date,
+          wi.priority,
+          COALESCE(NULLIF(TRIM(u.name), ''), NULLIF(TRIM(wi.owner_name), ''), 'Unassigned') AS owner
+        FROM work_items wi
+        JOIN engineering_tickets et ON et.id = wi.engineering_ticket_id AND et.deleted_at IS NULL
+        LEFT JOIN users u ON u.id = wi.owner_user_id
+        WHERE wi.deleted_at IS NULL
+          AND wi.engineering_ticket_id IS NOT NULL
+          AND LOWER(COALESCE(wi.status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done')
+          AND NULLIF(wi.end_date, '') IS NOT NULL
+          AND NULLIF(wi.end_date, '')::date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '7 days'
+        ORDER BY NULLIF(wi.end_date, '')::date ASC
+        LIMIT 10
+      `),
+      // At-risk tickets — engineering tickets that have either:
+      //   (a) at least one open work_item with tracking_rag = 'red', or
+      //   (b) a linked project_info with at least one open RAID item at
+      //       'high' or 'critical' priority.
+      db.execute(sql`
+        WITH red_wi AS (
+          SELECT
+            wi.engineering_ticket_id AS ticket_id,
+            COUNT(*) AS red_count
+          FROM work_items wi
+          WHERE wi.deleted_at IS NULL
+            AND wi.engineering_ticket_id IS NOT NULL
+            AND LOWER(COALESCE(wi.status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done')
+            AND LOWER(COALESCE(wi.tracking_rag, '')) = 'red'
+          GROUP BY 1
+        ),
+        crit_raid AS (
+          SELECT
+            ri.project_id,
+            COUNT(*) AS crit_count
+          FROM raid_items ri
+          WHERE ri.deleted_at IS NULL
+            AND ri.status IN ('open', 'mitigating')
+            AND ri.priority IN ('high', 'critical')
+          GROUP BY 1
+        )
+        SELECT
+          et.id AS ticket_id,
+          et.project_site_name,
+          COALESCE(NULLIF(TRIM(u.name), ''), 'Unassigned') AS owner,
+          COALESCE(rw.red_count, 0) AS red_work_item_count,
+          COALESCE(cr.crit_count, 0) AS open_critical_raid_count
+        FROM engineering_tickets et
+        LEFT JOIN users u ON u.id = et.project_developer_user_id
+        LEFT JOIN red_wi rw ON rw.ticket_id = et.id
+        LEFT JOIN crit_raid cr ON cr.project_id = et.project_id
+        WHERE et.deleted_at IS NULL
+          AND LOWER(COALESCE(et.status, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done', 'cancelled', 'canceled')
+          AND (rw.red_count > 0 OR cr.crit_count > 0)
+        ORDER BY (COALESCE(rw.red_count, 0) + COALESCE(cr.crit_count, 0)) DESC
+        LIMIT 10
+      `),
+      // Linkage gaps: spine breakage between opportunities, tickets, projects.
+      //   unlinked_ticket / completed_no_project / won_no_project / project_no_tickets.
+      // For won_no_project the label is the opportunity's own name column
+      // (opportunities.deal_name is the canonical opportunity name post-merge,
+      // task #61); falls back to person_name then a synthetic id.
+      db.execute(sql`
+        SELECT 'unlinked_ticket' AS kind, et.id AS id, et.project_site_name AS label
+        FROM engineering_tickets et
+        WHERE et.deleted_at IS NULL
+          AND et.project_id IS NULL
+          AND et.opportunity_id IS NULL
+          AND LOWER(COALESCE(et.status, '')) NOT IN ('cancelled', 'canceled', 'completed', 'complete', 'closed', 'resolved', 'done')
+        UNION ALL
+        SELECT 'completed_no_project' AS kind, et.id AS id, et.project_site_name AS label
+        FROM engineering_tickets et
+        WHERE et.deleted_at IS NULL
+          AND et.project_id IS NULL
+          AND LOWER(COALESCE(et.status, '')) IN ('completed', 'complete', 'closed', 'resolved', 'done')
+        UNION ALL
+        SELECT 'won_no_project' AS kind, opp.id AS id,
+               ('Opportunity #' || opp.id) AS label
+        FROM opportunities opp
+        WHERE opp.deleted_at IS NULL
+          AND LOWER(COALESCE(opp.status, '')) = 'won'
+          AND NOT EXISTS (
+            SELECT 1 FROM project_info pi
+            WHERE pi.opportunity_id = opp.id AND pi.deleted_at IS NULL
+          )
+        UNION ALL
+        SELECT 'project_no_tickets' AS kind, pi.id AS id, pi.project_name AS label
+        FROM project_info pi
+        WHERE pi.deleted_at IS NULL
+          AND pi.project_status = 'active'
+          AND NOT EXISTS (
+            SELECT 1 FROM engineering_tickets et
+            WHERE et.project_id = pi.id AND et.deleted_at IS NULL
+          )
+        ORDER BY 3
+        LIMIT 50
+      `),
+    ]);
+
+    const tt = (ticketTotalsRow.rows?.[0] ?? {}) as Record<string, any>;
+    const wt = (workItemTotalsRow.rows?.[0] ?? {}) as Record<string, any>;
+    const hr = (handoverRow.rows?.[0] ?? {}) as Record<string, any>;
+
+    // byPhase — augment with display label from canonical PHASES.
+    const phaseAcc = new Map<string, { code: string; label: string; ticketCount: number; openWorkItems: number; overdueWorkItems: number }>();
+    for (const code of PHASES.map(p => p.code)) {
+      phaseAcc.set(code, { code, label: PHASE_BY_CODE[code]?.label ?? code, ticketCount: 0, openWorkItems: 0, overdueWorkItems: 0 });
+    }
+    for (const r of (byPhaseRows.rows ?? []) as any[]) {
+      const code = String(r.code ?? '_UNSCOPED');
+      const existing = phaseAcc.get(code);
+      const row = existing ?? { code, label: PHASE_BY_CODE[code]?.label ?? (code === '_UNSCOPED' ? 'Unscoped' : code), ticketCount: 0, openWorkItems: 0, overdueWorkItems: 0 };
+      row.ticketCount += Number(r.ticket_count ?? 0);
+      row.openWorkItems += Number(r.open_work_items ?? 0);
+      row.overdueWorkItems += Number(r.overdue_work_items ?? 0);
+      if (!existing) phaseAcc.set(code, row);
+    }
+    const byPhase = Array.from(phaseAcc.values()).sort((a, b) => {
+      const aIdx = PHASES.findIndex(p => p.code === a.code);
+      const bIdx = PHASES.findIndex(p => p.code === b.code);
+      // Unscoped/unknown go to the end
+      const aOrder = aIdx === -1 ? 99 : aIdx;
+      const bOrder = bIdx === -1 ? 99 : bIdx;
+      return aOrder - bOrder;
+    });
+
+    res.json({
+      generatedAt: new Date().toISOString(),
+      summary: {
+        activeTickets: Number(tt.active_tickets ?? 0),
+        overdueTickets: Number(tt.overdue_tickets ?? 0),
+        stale30Tickets: Number(tt.stale30_tickets ?? 0),
+        blockedTickets: Number(tt.blocked_tickets ?? 0),
+        inApprovalTickets: Number(tt.in_approval_tickets ?? 0),
+        completedTickets: Number(tt.completed_tickets ?? 0),
+        activeKwp: Number(tt.active_kwp ?? 0),
+        openWorkItems: Number(wt.open_work_items ?? 0),
+        overdueWorkItems: Number(wt.overdue_work_items ?? 0),
+        dueThisWeekWorkItems: Number(wt.due_this_week_work_items ?? 0),
+        completed14dWorkItems: Number(wt.completed_14d_work_items ?? 0),
+      },
+      byPhase,
+      byOwner: (byOwnerRows.rows ?? []).map((r: any) => ({
+        ownerUserId: r.owner_user_id != null ? Number(r.owner_user_id) : null,
+        owner: String(r.owner ?? 'Unassigned'),
+        active: Number(r.active ?? 0),
+        overdue: Number(r.overdue ?? 0),
+        stale30: Number(r.stale30 ?? 0),
+        dueThisWeek: Number(r.due_this_week ?? 0),
+        activeKwp: Number(r.active_kwp ?? 0),
+      })),
+      handoverReady: {
+        total: Number(hr.total ?? 0),
+        items: (((hr.items ?? []) as any[])).map((it) => ({
+          id: Number(it.id),
+          projectName: it.project_name ?? null,
+          phase: it.phase ?? null,
+          phaseLabel: it.phase ? (PHASE_BY_CODE[it.phase]?.label ?? it.phase) : null,
+          ragStatus: it.rag_status ?? null,
+        })),
+      },
+      actionQueue: (actionQueueRows.rows ?? []).map((r: any) => ({
+        workItemId: Number(r.work_item_id),
+        title: r.title ?? null,
+        ticketId: r.engineering_ticket_id != null ? Number(r.engineering_ticket_id) : null,
+        ticketName: r.project_site_name ?? null,
+        phase: r.phase ?? null,
+        phaseLabel: r.phase ? (PHASE_BY_CODE[r.phase]?.label ?? r.phase) : null,
+        priority: r.priority ?? null,
+        endDate: r.end_date ?? null,
+        owner: r.owner ?? null,
+        reason: String(r.reason ?? ''),
+      })),
+      // Recently completed (14d) — grouped by engineering ticket per task #71 spec.
+      recentlyCompleted: (() => {
+        const groups = new Map<string, { ticketId: number | null; ticketName: string | null; items: any[] }>();
+        for (const r of (recentlyCompletedRows.rows ?? []) as any[]) {
+          const ticketId = r.engineering_ticket_id != null ? Number(r.engineering_ticket_id) : null;
+          const key = ticketId == null ? "_orphan" : String(ticketId);
+          let g = groups.get(key);
+          if (!g) {
+            g = { ticketId, ticketName: r.project_site_name ?? null, items: [] };
+            groups.set(key, g);
+          }
+          g.items.push({
+            workItemId: Number(r.work_item_id),
+            title: r.title ?? null,
+            completedAt: r.completed_at ?? null,
+            owner: r.owner ?? null,
+          });
+        }
+        return Array.from(groups.values());
+      })(),
+      upcomingThisWeek: (upcomingThisWeekRows.rows ?? []).map((r: any) => ({
+        workItemId: Number(r.work_item_id),
+        title: r.title ?? null,
+        ticketId: r.engineering_ticket_id != null ? Number(r.engineering_ticket_id) : null,
+        ticketName: r.project_site_name ?? null,
+        endDate: r.end_date ?? null,
+        priority: r.priority ?? null,
+        owner: r.owner ?? null,
+      })),
+      atRiskTickets: (atRiskRows.rows ?? []).map((r: any) => ({
+        ticketId: Number(r.ticket_id),
+        ticketName: r.project_site_name ?? null,
+        owner: r.owner ?? null,
+        redWorkItemCount: Number(r.red_work_item_count ?? 0),
+        openCriticalRaidCount: Number(r.open_critical_raid_count ?? 0),
+      })),
+      linkageGaps: (() => {
+        const items = (linkageGapRows.rows ?? []).map((r: any) => ({
+          kind: String(r.kind),
+          id: Number(r.id),
+          label: r.label ?? null,
+        }));
+        return { total: items.length, items: items.slice(0, 12) };
+      })(),
+    });
+  } catch (err) {
+    console.error("[Opportunities] Failed to compute PD dashboard:", err);
+    res.status(500).json({ error: "Failed to compute PD dashboard" });
+  }
+});
+
 
 /**
  * Phase templates are global — the endpoint does not use an opportunity ID.
  * Legacy URL with :id is kept as an alias for backwards compatibility.
  */
-router.get("/api/opportunities/engineering-phase-templates", requireAuth, requirePermission("pd_tickets", "create"), async (req: Request, res: Response) => {
+router.get("/api/opportunities/engineering-phase-templates", requireAuth, requirePermission("pd_tickets", "view"), async (req: Request, res: Response) => {
   try {
     if (!canViewOpportunityIntake(getUserRole(req))) {
       return res.status(403).json({ error: "Template inspection is limited to Project Development and admin oversight roles." });
@@ -171,7 +1157,7 @@ router.get("/api/opportunities/engineering-phase-templates", requireAuth, requir
   }
 });
 // Backwards-compat alias for old client code that includes :id
-router.get("/api/opportunities/:id/engineering-phase-templates", requireAuth, requirePermission("pd_tickets", "create"), async (req: Request, res: Response) => {
+router.get("/api/opportunities/:id/engineering-phase-templates", requireAuth, requirePermission("pd_tickets", "view"), async (req: Request, res: Response) => {
   try {
     if (!canViewOpportunityIntake(getUserRole(req))) {
       return res.status(403).json({ error: "Template inspection is limited to Project Development and admin oversight roles." });
@@ -223,16 +1209,23 @@ router.post("/api/opportunities/:id/create-engineering-tickets", requireAuth, re
       if (!parsed.customTicket) return res.status(400).json({ error: "customTicket payload is required for custom mode" });
       const count = await opportunitiesRepo.countSamePhaseTickets(opportunityId, parsed.projectId, parsed.customTicket.phase);
       warnings.push(...buildSamePhaseDuplicateWarning(parsed.customTicket.phase, count));
+      const ct = parsed.customTicket;
       ticketValues = [{
         clientId: parsed.clientId,
         clientNameSnapshot: clientRow.name,
+        ...(ct.fundingType ? { fundingType: ct.fundingType } : {}),
+        ...(ct.sizeKwp ? { sizeKwp: ct.sizeKwp } : {}),
+        ...(ct.province ? { province: ct.province } : {}),
+        ...(ct.gpsCoordinates ? { gpsCoordinates: ct.gpsCoordinates } : {}),
+        ...(ct.batteriesNeeded !== undefined ? { batteriesNeeded: ct.batteriesNeeded } : {}),
+        ...(ct.batterySize ? { batterySize: ct.batterySize } : {}),
         projectId: parsed.projectId,
         opportunityId,
         projectSiteName: parsed.customTicket.title,
         requestType: parsed.customTicket.phase,
         dueDate: parsed.customTicket.dueDate,
         priority: parsed.customTicket.priority,
-        status: "Draft",
+        status: "to_do",
         comments: buildCustomComments(parsed.customTicket),
         projectDeveloperUserId: userId,
         createdBy: userId,
@@ -268,7 +1261,7 @@ router.post("/api/opportunities/:id/create-engineering-tickets", requireAuth, re
         requestType: draft.requestType,
         dueDate: draft.dueDate,
         priority: draft.priority,
-        status: "Draft",
+        status: "to_do",
         comments: draft.comments,
         projectDeveloperUserId: userId,
         createdBy: userId,
@@ -281,12 +1274,58 @@ router.post("/api/opportunities/:id/create-engineering-tickets", requireAuth, re
     }
 
     // --- Insert all tickets inside a single transaction ---
+    // Each pd_ticket also spawns a sibling work_items row (workstream='ENG')
+    // linked back via work_items.engineering_ticket_id. Without this, tickets
+    // born on the Opportunity drawer never surface on the Engineering Task
+    // Board (which reads exclusively from work_items WHERE workstream='ENG').
+    // The migration 0032_backfill_work_items_from_engineering_tickets.sql
+    // closes the same gap for tickets created before this code shipped.
     const createdTickets = await db.transaction(async (tx: typeof db) => {
       const results: CreatedTicket[] = [];
       for (const values of ticketValues) {
         const { _templateItemId, _templateId, _templateName, _templateVersion, _templatePhase, ...insertValues } = values;
         const ticket = await opportunitiesRepo.insertPdTicket(tx, insertValues);
         results.push(ticket);
+
+        // Insert the canonical engineering work_items row in the same
+        // transaction. Path 2 (Task: opportunity-drawer phantom duplicate
+        // fix) makes work_items the single source of truth for engineering
+        // execution — the drawer board, the engineering kanban, and the
+        // owner/status state all read from this row. The engineering_tickets
+        // row above remains as the back-compat "PD intake snapshot" that
+        // finance/FYE/PD-dashboard/gate-evaluator/Pipedrive still read.
+        //
+        //   - source = 'UI' because this is a user-driven flow ("Create
+        //     Custom Ticket" button on the opportunity drawer). It is NOT
+        //     a SYSTEM-generated row, even though the server inserts it.
+        //   - The 6 solar/site columns mirror the form payload so the
+        //     drawer (and any new consumer) can read everything from
+        //     work_items alone — see migration 0040.
+        if (userId == null) {
+          throw new Error("authenticated user id required to insert engineering work item");
+        }
+        await tx.insert(workItems).values({
+          workstream: "ENG",
+          source: "UI",
+          type: "task",
+          title: String(insertValues.projectSiteName ?? "Engineering ticket"),
+          description: (insertValues.comments as string | null | undefined) ?? null,
+          status: "to_do",
+          priority: normalizeWorkItemPriority(insertValues.priority),
+          phase: (insertValues.requestType as string | undefined) ?? null,
+          endDate: (insertValues.dueDate as string | undefined) || null,
+          projectId: (insertValues.projectId as number | undefined) ?? null,
+          clientId: (insertValues.clientId as number | undefined) ?? null,
+          ownerUserId: null,
+          engineeringTicketId: ticket.id,
+          createdBy: userId,
+          fundingType: (insertValues.fundingType as string | undefined) ?? null,
+          sizeKwp: (insertValues.sizeKwp as string | undefined) ?? null,
+          province: (insertValues.province as string | undefined) ?? null,
+          gpsCoordinates: (insertValues.gpsCoordinates as string | undefined) ?? null,
+          batteriesNeeded: (insertValues.batteriesNeeded as boolean | undefined) ?? false,
+          batterySize: (insertValues.batterySize as string | undefined) ?? null,
+        });
       }
       return results;
     });
@@ -310,6 +1349,21 @@ router.post("/api/opportunities/:id/create-engineering-tickets", requireAuth, re
           traceability: "opportunity+client+project",
         },
       });
+      // Lineage audit for the spawned engineering work_item — closes the
+      // gap the architect flagged where the work_items insert had no
+      // dedicated audit trail.
+      logAuditFromReq(req, {
+        entityType: "work_item",
+        entityId: String(ticket.id),
+        action: "spawn_from_engineering_ticket",
+        changesJson: {
+          engineeringTicketId: ticket.id,
+          opportunityId,
+          projectId: parsed.projectId,
+          workstream: "ENG",
+          source: "SYSTEM",
+        },
+      });
     }
 
     res.status(201).json({
@@ -322,11 +1376,16 @@ router.post("/api/opportunities/:id/create-engineering-tickets", requireAuth, re
     });
   } catch (err) {
     console.error("[Opportunities] create engineering tickets failed:", err);
-    res.status(500).json({ error: "Failed to create engineering tickets" });
+    // Surface the real error so the UI toast shows something actionable
+    // instead of a generic "Failed". These are internal users and the
+    // most common causes (duplicate project shell, missing required
+    // column, FK violations) are useful to see directly.
+    const message = err instanceof Error ? err.message : "Failed to create engineering tickets";
+    res.status(500).json({ error: message });
   }
 });
 
-router.get("/api/opportunities/:id/mapping-context", requireAuth, requirePermission("pd_tickets", "create"), async (req: Request, res: Response) => {
+router.get("/api/opportunities/:id/mapping-context", requireAuth, requirePermission("pd_tickets", "view"), async (req: Request, res: Response) => {
   try {
     if (!canViewOpportunityIntake(getUserRole(req))) {
       return res.status(403).json({ error: "Mapping inspection is limited to Project Development and admin oversight roles." });
@@ -510,6 +1569,29 @@ router.post("/api/opportunities/:id/resolve-mapping", requireAuth, requirePermis
       await opportunitiesRepo.updateOpportunityClient(db, opportunityId, resolvedClient.id);
     }
 
+    // Back-link the opportunity onto the resolved (existing) project so it
+    // disappears from the Opportunities working list as "converted". The
+    // shell-creation branch already sets `opportunity_id` at insert time;
+    // this covers the `existing_existing` path (and any prior orphaned
+    // existing project that has never been linked). `IfUnset` guards against
+    // clobbering a different opportunity already pointing at this project.
+    let backLinkedExistingProject = false;
+    if (resolvedProject && !createdProjectShell) {
+      backLinkedExistingProject = await opportunitiesRepo.linkProjectToOpportunityIfUnset(
+        db,
+        resolvedProject.id,
+        opportunityId,
+      );
+      if (backLinkedExistingProject) {
+        logAuditFromReq(req, {
+          entityType: "project",
+          entityId: String(resolvedProject.id),
+          action: "back_link_to_opportunity",
+          changesJson: { opportunityId, projectName: resolvedProject.projectName, mode: parsed.mode },
+        });
+      }
+    }
+
     if (resolvedClient?.id && opportunity.clientId !== resolvedClient.id) {
       logAuditFromReq(req, {
         entityType: "opportunity",
@@ -571,6 +1653,258 @@ router.get("/api/opportunities/:id", requireAuth, requirePermission("opportuniti
     res.status(500).json({ error: "Failed to fetch opportunity" });
   }
 });
+
+/**
+ * Unified merged-Opportunity read used by the new drawer (2026-04-20;
+ * no-shadow contract reaffirmed 2026-04-24, Task #83).
+ *
+ * Returns CRM truth + the engineering PD shadow ticket (or `null` if
+ * none exists yet) + spawned tasks in one payload. Auto-spawn was
+ * removed 2026-04-23 — engineering shadow tickets are created only by
+ * an explicit user action (the working list "create ticket" CTA),
+ * never on read. The drawer is built to render successfully when
+ * `pd === null`; see the file-header docblock in
+ * client/src/components/opportunities/OpportunityDrawer.tsx.
+ */
+router.get(
+  "/api/opportunities/:id/workflow",
+  requireAuth,
+  requirePermission("opportunities", "view"),
+  async (req: Request, res: Response) => {
+    try {
+      const merged = await opportunitiesRepo.getOpportunityWithWorkflow(
+        Number(req.params.id),
+        req.user?.id ?? null,
+      );
+      if (!merged) return res.status(404).json({ error: "Opportunity not found" });
+      res.json(merged);
+    } catch (err) {
+      console.error("[Opportunities] Failed workflow fetch:", err);
+      res.status(500).json({ error: "Failed to load opportunity workflow" });
+    }
+  },
+);
+
+/**
+ * PD-side update. Whitelist-only — CRM-owned columns (stage, status,
+ * estimated value, expected close date, signed date, clientId) are not
+ * accepted here; the existing PATCH /api/opportunities/:id is the only
+ * surface that mutates the CRM block, and the Pipedrive sync still
+ * overwrites that block on every run for sourced deals.
+ */
+const pdShadowPatchSchema = z.object({
+  requestType: z.string().optional(),
+  priority: z.enum(["Low", "Medium", "High", "Urgent"]).optional(),
+  // Engineering-board canonical statuses (shared/engineering-ticket-status.ts).
+  // Migration 0027 backfilled legacy free-form values, so the enum now only
+  // accepts the canonical 10-state set.
+  status: z.enum(ENGINEERING_TICKET_STATUSES).optional(),
+  dueDate: z.string().nullable().optional(),
+  projectDeveloperUserId: z.number().int().nullable().optional(),
+  designerUserId: z.number().int().nullable().optional(),
+  billsOrTariffData: z.boolean().optional(),
+  meteringDataAvailable: z.boolean().optional(),
+  siteInspectionForm: z.boolean().optional(),
+  siteInspectionLink: z.string().nullable().optional(),
+  batteriesNeeded: z.boolean().optional(),
+  batterySize: z.union([z.string(), z.number()]).nullable().optional()
+    .transform(v => v == null ? null : String(v)),
+  dieselGenIntegration: z.boolean().optional(),
+  roofReplacementNeeded: z.boolean().optional(),
+  hseDiscussed: z.boolean().optional(),
+  comments: z.string().nullable().optional(),
+  estimatedCost: z.union([z.string(), z.number()]).nullable().optional()
+    .transform(v => v == null ? null : String(v)),
+  estimatedMargin: z.union([z.string(), z.number()]).nullable().optional()
+    .transform(v => v == null ? null : String(v)),
+  estimatedMarginPercent: z.union([z.string(), z.number()]).nullable().optional()
+    .transform(v => v == null ? null : String(v)),
+  financialNotes: z.string().nullable().optional(),
+}).strict();
+
+router.patch(
+  "/api/opportunities/:id/pd",
+  requireAuth,
+  requirePermission("opportunities", "edit"),
+  async (req: Request, res: Response) => {
+    if (!canCreatePdTicket(getUserRole(req))) {
+      return res.status(403).json({ error: "PD-workflow edits require a PD-approved role." });
+    }
+    const parsed = pdShadowPatchSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "Validation failed (PD endpoint accepts PD-workflow fields only — CRM fields are owned by Pipedrive)",
+        details: parsed.error.flatten(),
+      });
+    }
+    try {
+      const updated = await opportunitiesRepo.updatePdShadow(Number(req.params.id), parsed.data);
+      if (!updated) return res.status(404).json({ error: "PD shadow not found — open the opportunity first to materialise it" });
+      logAuditFromReq(req, {
+        entityType: "opportunity_pd_shadow",
+        entityId: String(updated.id),
+        action: "update",
+        changesJson: { opportunityId: Number(req.params.id), changed: Object.keys(parsed.data) },
+      });
+      res.json(updated);
+    } catch (err) {
+      console.error("[Opportunities] Failed PD update:", err);
+      res.status(500).json({ error: "Failed to update PD workflow" });
+    }
+  },
+);
+
+/**
+ * Path 2 — template-spawn is retired.
+ *
+ * Engineering work is now created by the user explicitly: the "Add
+ * Engineering Ticket" form on the opportunity drawer inserts the
+ * canonical sibling work_items row in the same transaction, and per-ticket
+ * "Add task" actions on the engineering board create additional rows.
+ * Returns 410 Gone so any stale client surfaces an explicit error rather
+ * than silently doing nothing.
+ */
+router.post(
+  "/api/opportunities/:id/spawn-tasks",
+  requireAuth,
+  requirePermission("opportunities", "edit"),
+  async (_req: Request, res: Response) => {
+    res.status(410).json({
+      error: "Template task-spawn is retired. Add engineering work via the Add Engineering Ticket form on the opportunity drawer.",
+    });
+  },
+);
+
+/**
+ * Convert-to-Project wizard target. Creates a `project_info` row at
+ * `S01_FIRST_ASSESSMENT`, links it back to the opportunity, links the
+ * PD shadow to the new project, marks the shadow Completed, and flips
+ * the opportunity status to 'won' if not already terminal.
+ */
+const convertSchema = z.object({
+  projectName: z.string().min(1),
+  pmUserId: z.number().int().nullable().optional(),
+  clientId: z.number().int().nullable().optional(),
+  siteId: z.number().int().nullable().optional(),
+  sizeKwp: z.union([z.string(), z.number()]).nullable().optional()
+    .transform(v => v == null ? null : String(v)),
+  // Optional CRM stage override applied during convert. When provided,
+  // takes precedence over the auto-bump-to-"won" behaviour below so a PD
+  // can keep the deal in (e.g.) "negotiation" while a project shell is
+  // being scoped. Allowed values mirror the canonical app stages on
+  // opportunities.stage.
+  stage: z.enum(["prospect", "qualification", "proposal", "negotiation", "won", "lost"]).optional(),
+}).strict();
+
+router.post(
+  "/api/opportunities/:id/convert-to-project",
+  requireAuth,
+  requirePermission("opportunities", "edit"),
+  async (req: Request, res: Response) => {
+    if (!canCreatePdTicket(getUserRole(req))) {
+      return res.status(403).json({ error: "Convert-to-project requires a PD-approved role." });
+    }
+    const parsed = convertSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Validation failed", details: parsed.error.flatten() });
+    }
+    const opportunityId = Number(req.params.id);
+    try {
+      const opp = await opportunitiesRepo.getOpportunityById(opportunityId);
+      if (!opp) return res.status(404).json({ error: "Opportunity not found" });
+
+      const { projectInfo, engineeringTickets, opportunities: oppTable } = await import("@shared/schema/projects");
+      const { eq, desc } = await import("drizzle-orm");
+
+      // Idempotency: if this opportunity is already linked to a project,
+      // return that project instead of creating a duplicate. Prevents
+      // double-clicks / retries from spawning multiple shells.
+      const [existing] = await db
+        .select({ id: projectInfo.id, projectName: projectInfo.projectName })
+        .from(projectInfo)
+        .where(eq(projectInfo.opportunityId, opportunityId))
+        .limit(1);
+      if (existing) {
+        return res.status(200).json({ project: existing, alreadyExisted: true });
+      }
+
+      // The execution-state fields (`phase`, `ragStatus`) live on the
+      // split tables — they are NOT columns on `project_info` post-canonical-phase
+      // refactor. We mirror the `/resolve-mapping` shell-creation flow:
+      // insert project_info, then sync split tables. Architect-flagged 2026-04-20.
+      const projectShellFields = {
+        projectName: parsed.data.projectName,
+        clientId: parsed.data.clientId ?? opp.clientId ?? null,
+        pmUserId: parsed.data.pmUserId ?? null,
+        opportunityId,
+        projectCode: `OPP-${opportunityId}`,
+        inDlp: false,
+        projectStatus: "active" as const,
+        // execution-state extras consumed by syncProjectSplitTablesAfterInsert:
+        phase: "S01_FIRST_ASSESSMENT",
+        ragStatus: "green",
+      };
+
+      const result = await db.transaction(async (tx: typeof db) => {
+        const [project] = await tx
+          .insert(projectInfo)
+          .values(projectShellFields as typeof projectInfo.$inferInsert)
+          .returning();
+
+        await syncProjectSplitTablesAfterInsert(project.id, projectShellFields, tx);
+
+        const [shadow] = await tx
+          .select()
+          .from(engineeringTickets)
+          // Cascade-display: don't promote a soft-deleted shadow (Task #34).
+          .where(and(eq(engineeringTickets.opportunityId, opportunityId), isNull(engineeringTickets.deletedAt)))
+          .limit(1);
+        if (shadow) {
+          await tx
+            .update(engineeringTickets)
+            .set({
+              projectId: project.id,
+              // Convert-to-project closes out the engineering shadow ticket
+              // (canonical engineering-board terminal state — migration 0027).
+              status: "complete",
+              sizeKwp: parsed.data.sizeKwp ?? shadow.sizeKwp,
+              updatedAt: new Date(),
+            })
+            .where(eq(engineeringTickets.id, shadow.id));
+        }
+
+        // Stage write: explicit override (from the convert dialog) wins;
+        // otherwise auto-bump to "won" only when the deal hasn't already
+        // landed in a terminal state.
+        if (parsed.data.stage) {
+          await tx
+            .update(oppTable)
+            .set({ stage: parsed.data.stage, updatedAt: new Date() })
+            .where(eq(oppTable.id, opportunityId));
+        } else if (opp.status !== "won" && opp.status !== "lost") {
+          await tx
+            .update(oppTable)
+            .set({ status: "won", updatedAt: new Date() })
+            .where(eq(oppTable.id, opportunityId));
+        }
+
+        return project;
+      });
+
+      logAuditFromReq(req, {
+        entityType: "opportunity",
+        entityId: String(opportunityId),
+        action: "convert_to_project",
+        changesJson: { newProjectId: result.id, projectName: result.projectName },
+      });
+
+      res.status(201).json({ project: result });
+    } catch (err) {
+      console.error("[Opportunities] Failed convert-to-project:", err);
+      res.status(500).json({ error: "Failed to convert opportunity to project" });
+    }
+  },
+);
 
 // Numeric fields on `opportunities` are stored as Drizzle `numeric` columns
 // which serialize as strings. The Zod schema accepts either string or number

@@ -63,28 +63,70 @@ export const LEGACY_REDIRECTS: Array<{ path: string; redirectTo: string }> = [
   { path: "/my-tool/help", redirectTo: "/" },
   { path: "/my-tool/meetings", redirectTo: "/my-work/meetings" },
   { path: "/company-priorities", redirectTo: "/priorities" },
-  { path: "/admin", redirectTo: "/admin/control-center" },
-  { path: "/admin/legacy-utilities", redirectTo: "/admin/control-center" },
+  { path: "/admin", redirectTo: "/admin/roles" },
+  { path: "/admin/legacy-utilities", redirectTo: "/admin/roles" },
+  // Task #101 — Control Center retired; "Roles & Permissions" is the new
+  // single landing page for everything access-related (People / Roles /
+  // Advanced tabs). The legacy admin-control-center.tsx is kept on disk as
+  // a fallback but no longer routed.
+  { path: "/admin/control-center", redirectTo: "/admin/roles" },
   // Prompt 2 — old nav destinations that moved
   { path: "/exceptions", redirectTo: "/gates/exceptions" },
   { path: "/project-lifecycle", redirectTo: "/lifecycle-board" },
   { path: "/command-center", redirectTo: "/my-work" },
   { path: "/sseg", redirectTo: "/handover?tab=sseg" },
+  // Hyphenated admin paths used by older code paths / bookmarks. Real
+  // routes use slash-separated paths (/admin/pipedrive). Redirect so
+  // mistyped or stale links don't dead-end on Access Denied.
+  { path: "/admin-pipedrive", redirectTo: "/admin/pipedrive" },
+  { path: "/admin-quickbooks", redirectTo: "/admin/quickbooks" },
+  { path: "/admin-workflow-config", redirectTo: "/admin/workflow-config" },
+  { path: "/admin-backfill", redirectTo: "/admin/data-migration-status" },
+  { path: "/admin-recovery", redirectTo: "/admin/recovery" },
+  { path: "/admin-roles", redirectTo: "/admin/roles" },
+  { path: "/admin-settings", redirectTo: "/admin/roles" },
+  { path: "/system-activity-log", redirectTo: "/admin/activity-log" },
+  { path: "/phase-templates", redirectTo: "/admin/phase-templates" },
 ];
 
 export const PAGE_REGISTRY: PageRegistryEntry[] = [
-  { id: "companyOverview", path: "/company-overview", label: "Company Overview", iconKey: "Activity", navGroup: "PORTFOLIO", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "CompanyOverviewPage", roleLandingEligibility: ["COO_ADMIN", "CEO_ADMIN"] },
+  { id: "companyOverview", path: "/company-overview", label: "Company Overview", iconKey: "Activity", navGroup: "PORTFOLIO", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "CompanyOverviewPage" },
+  { id: "companyTeam", path: "/company/team", label: "Team", iconKey: "Users", navGroup: "PORTFOLIO", permissionEntity: "company_team", showInSidebar: true, routeComponentKey: "CompanyTeamPage" },
+  { id: "ceoHome", path: "/ceo", label: "CEO Dashboard", iconKey: "Sun", navGroup: "MY_WORK", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "CeoHomePage", roleLandingEligibility: ["CEO_ADMIN"] },
+  { id: "cooHome", path: "/coo", label: "COO Dashboard", iconKey: "Activity", navGroup: "MY_WORK", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "CooHomePage", roleLandingEligibility: ["COO_ADMIN"] },
+  { id: "settingsHome", path: "/settings", label: "Settings", iconKey: "SlidersHorizontal", navGroup: "SYSTEM", permissionEntity: "admin_roles", showInSidebar: true, routeComponentKey: "SettingsHomePage" },
+  { id: "projectDocuments", path: "/projects/:projectId/documents", label: "Project Documents", permissionEntity: "projects", routeComponentKey: "ProjectDocumentsPage" },
+  // /quickbooks merged into the existing /finance/quickbooks (Throughput).
+  // Kept as a redirect so any bookmarked link still lands in the right place.
+  { id: "quickbooksHomeRedirect", path: "/quickbooks", label: "QuickBooks (moved)", type: "alias", permissionEntity: "financials", redirectTo: "/finance/quickbooks" },
+  { id: "adminDocumentTypes", path: "/admin/document-types", label: "Document types (legacy)", iconKey: "FileText", navGroup: "SYSTEM", permissionEntity: "admin_roles", showInSidebar: false, routeComponentKey: "AdminDocumentTypesPage" },
+  { id: "adminDocumentManagement", path: "/admin/document-management", label: "Document management", iconKey: "FolderTree", navGroup: "SYSTEM", permissionEntity: "documents_admin", routeComponentKey: "AdminDocumentManagementPage" },
+  { id: "adminEmailLinkerDev", path: "/admin/email-linker-dev", label: "Email auto-linker (dev)", iconKey: "Mail", navGroup: "SYSTEM", permissionEntity: "admin_roles", routeComponentKey: "AdminEmailLinkerDevPage" },
+  { id: "pendingApprovals", path: "/pending-approvals", label: "Pending Approvals", iconKey: "Inbox", navGroup: "SYSTEM", permissionEntity: "admin_roles", showInSidebar: true, routeComponentKey: "PendingApprovalsPage" },
+  { id: "handoverLive", path: "/handover/:projectId/live", label: "Handover live meeting", permissionEntity: "projects", routeComponentKey: "HandoverLivePage" },
   { id: "projectLifecycle", path: "/project-lifecycle", label: "Project Lifecycle", iconKey: "Layers", navGroup: "PROJECTS", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "ProjectLifecyclePage" },
   { id: "projectLifecycleStageGates", path: "/project-lifecycle/stage-gates", label: "Stage Gates", permissionEntity: "lifecycle", routeComponentKey: "ProjectLifecyclePage" },
   { id: "projectLifecycleLatestUpdates", path: "/project-lifecycle/latest-updates", label: "Latest Updates", permissionEntity: "projects", routeComponentKey: "ProjectLifecyclePage" },
   { id: "projectLifecycleClientOverview", path: "/project-lifecycle/client-overview", label: "Client Overview", permissionEntity: "pd_clients", routeComponentKey: "ProjectLifecyclePage" },
   { id: "projects", path: "/projects", label: "Project List", iconKey: "FileSpreadsheet", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "projects", showInSidebar: true, routeComponentKey: "ProjectsSummary" },
   { id: "projectFinancialLinking", path: "/project/:projectName/financial-linking", label: "Financial Linking", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "financial_linking", routeComponentKey: "FinancialLinkingPage" },
-  { id: "projectDetail", path: "/project/:projectName", label: "Project Detail", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "projects", routeComponentKey: "ProjectDetailPage" },
-  { id: "projectStageGate", path: "/project/:projectName/gate/:stageCode", label: "Project Stage Gate", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "stage_lifecycle", routeComponentKey: "ProjectStageGatePage" },
+  { id: "projectDetail", path: "/project/id/:projectId", label: "Project Detail", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "projects", routeComponentKey: "ProjectDetailPage", aliases: ["/project/:projectName"] },
+  { id: "projectStageGate", path: "/project/id/:projectId/gate/:stageCode", label: "Project Stage Gate", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "stage_lifecycle", routeComponentKey: "ProjectStageGatePage", aliases: ["/project/:projectName/gate/:stageCode"] },
   { id: "cashflow", path: "/cashflow", label: "Cashflow", iconKey: "Wallet", navGroup: "FINANCE", permissionEntity: "cashflow", showInSidebar: true, routeComponentKey: "CashflowPage", roleLandingEligibility: ["CFO", "PROGRAM_FINANCE_MANAGER", "ACCOUNTANT"] },
+  { id: "cashflowAnalysis", path: "/cashflow/analysis", label: "Cashflow Analysis", iconKey: "BarChart3", navGroup: "FINANCE", permissionEntity: "cashflow", showInSidebar: true, routeComponentKey: "CashflowAnalysisPage" },
   { id: "cos", path: "/cos", label: "COS", iconKey: "TrendingUp", navGroup: "FINANCE", permissionEntity: "cos", showInSidebar: true, routeComponentKey: "CostTracker" },
+  { id: "cosAnalysis", path: "/cos/analysis", label: "COS Analysis", iconKey: "BarChart3", navGroup: "FINANCE", permissionEntity: "cos", showInSidebar: true, routeComponentKey: "CosAnalysisPage" },
   { id: "revenueTracker", path: "/revenue-tracker", label: "Revenue", iconKey: "TrendingUp", navGroup: "FINANCE", permissionEntity: "revenue_tracker", showInSidebar: true, routeComponentKey: "RevenueTrackerPage" },
+  // Per-project Tracker replicas — read-only views that render the source
+  // workbook 1:1 with font/fill fidelity. Not in the sidebar; reached from
+  // project-level navigation. Permission scope mirrors the existing finance
+  // / project-management entities so visibility follows the established RBAC.
+  { id: "trackerReplicaRevenue", path: "/projects/:projectId/revenue-tracking", label: "Revenue Tracking (Replica)", iconKey: "TrendingUp", navGroup: "FINANCE", permissionEntity: "revenue_tracker", showInSidebar: false, routeComponentKey: "RevenueTrackingReplicaPage" },
+  { id: "trackerReplicaExpenditure", path: "/projects/:projectId/expenditure-breakdown", label: "Expenditure Breakdown (Replica)", iconKey: "TrendingDown", navGroup: "FINANCE", permissionEntity: "cos", showInSidebar: false, routeComponentKey: "ExpenditureBreakdownReplicaPage" },
+  { id: "trackerReplicaPlan", path: "/projects/:projectId/program-plan", label: "Program Plan (Replica)", iconKey: "Calendar", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "work_items", showInSidebar: false, routeComponentKey: "ProgramPlanReplicaPage" },
+  { id: "manualOverrides", path: "/projects/:projectId/manual-overrides", label: "Manual Edit Log", iconKey: "History", navGroup: "FINANCE", permissionEntity: "revenue_tracker", showInSidebar: false, routeComponentKey: "ManualOverridesPage" },
+  { id: "excelVsAppProgram", path: "/program/excel-vs-app", label: "Excel vs App", iconKey: "GitCompare", navGroup: "FINANCE", permissionEntity: "excel_vs_app", showInSidebar: true, routeComponentKey: "ExcelVsAppProgramPage" },
+  { id: "excelVsAppProject", path: "/projects/:projectId/excel-vs-app", label: "Excel vs App (Project)", iconKey: "GitCompare", navGroup: "FINANCE", permissionEntity: "excel_vs_app", showInSidebar: false, routeComponentKey: "ExcelVsAppProjectPage" },
   { id: "legacyRevenue", path: "/revenue", label: "Revenue (Legacy)", type: "alias", permissionEntity: "revenue_tracker", redirectTo: "/revenue-tracker" },
   { id: "legacyCosControl", path: "/cos-control", label: "COS Control (Legacy)", type: "alias", permissionEntity: "cos", redirectTo: "/cos" },
   { id: "legacyCashflowForecast", path: "/cashflow-forecast", label: "Cashflow Forecast (Legacy)", type: "alias", permissionEntity: "cashflow", redirectTo: "/cashflow" },
@@ -92,9 +134,9 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   // Absorbs: QB Customer Mapping, QB Bill Linking, Counterparties,
   // Subcontractor Dashboard, Invoice Patterns, Admin QB.
   { id: "financeQuickBooksThroughput", path: "/finance/quickbooks", label: "QB Throughput", iconKey: "Plug", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: true, routeComponentKey: "FinanceQuickBooksThroughputPage" },
-  { id: "priorities", path: "/priorities", label: "Priorities", iconKey: "Flag", navGroup: "PRIORITIES", permissionEntity: "company_priorities", showInSidebar: true, routeComponentKey: "PrioritiesPage" },
-  { id: "priorityDetail", path: "/priorities/:id", label: "Priority Detail", permissionEntity: "company_priorities", routeComponentKey: "PriorityDetailPage" },
-  { id: "companyPriorities", path: "/company-priorities", label: "Company Priorities", type: "alias", permissionEntity: "company_priorities", redirectTo: "/priorities" },
+  { id: "priorities", path: "/priorities", label: "Priorities", iconKey: "Flag", navGroup: "PRIORITIES", permissionEntity: "company_priorities", accessPolicy: "ungated", showInSidebar: true, routeComponentKey: "PrioritiesPage" },
+  { id: "priorityDetail", path: "/priorities/:id", label: "Priority Detail", permissionEntity: "company_priorities", accessPolicy: "ungated", routeComponentKey: "PriorityDetailPage" },
+  { id: "companyPriorities", path: "/company-priorities", label: "Company Priorities", type: "alias", permissionEntity: "company_priorities", accessPolicy: "ungated", redirectTo: "/priorities" },
   { id: "adminMyTool", path: "/admin/my-tool-settings", label: "My Work Settings", permissionEntity: "admin", routeComponentKey: "MyWorkAdminSettingsPage" },
   { id: "sharepointIntake", path: "/admin/sharepoint-intake", label: "SharePoint Intake", iconKey: "Cloud", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "SharePointIntakePage" },
   { id: "quality", path: "/quality", label: "Quality", iconKey: "ShieldCheck", navGroup: "QUALITY", permissionEntity: "quality", showInSidebar: true, routeComponentKey: "QmDashboardPage", roleLandingEligibility: ["QUALITY_MANAGER"] },
@@ -124,17 +166,20 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   // sidebar/command palette. Route still resolves for direct access.
   { id: "feedback", path: "/feedback", label: "Feedback & Support", iconKey: "MessageSquareText", navGroup: "KNOWLEDGE", permissionEntity: "feedback", showInSidebar: false, routeComponentKey: "FeedbackPage" },
   { id: "eeInfo", path: "/ee-info", label: "Processes & SOPs", iconKey: "Leaf", navGroup: "KNOWLEDGE", permissionEntity: "ee_info", showInSidebar: true, routeComponentKey: "EeInfoPage" },
+  { id: "documents", path: "/documents", label: "Documents", iconKey: "FolderOpen", navGroup: "KNOWLEDGE", permissionEntity: "ee_info", showInSidebar: true, routeComponentKey: "DocumentsPage" },
   { id: "training", path: "/training", label: "Training", iconKey: "GraduationCap", navGroup: "KNOWLEDGE", permissionEntity: "training", showInSidebar: false, routeComponentKey: "TrainingPage" },
   { id: "portfolios", path: "/portfolios", label: "Portfolios", iconKey: "FolderOpen", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "portfolios", showInSidebar: true, routeComponentKey: "PortfoliosPage" },
   { id: "portfolioDetail", path: "/portfolios/:id", label: "Portfolio Detail", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "portfolio_detail", routeComponentKey: "PortfolioDetailPage" },
-  // Lean PD Dashboard: KPI cards + PD work queue + handover readiness.
-  // The full ticket list lives on the merged /opportunities page.
-  { id: "pdDashboard", path: "/pd", label: "Project Development Dashboard", iconKey: "Sun", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_dashboard", showInSidebar: true, routeComponentKey: "PdTicketsPage", aliases: ["/pd/dashboard"], roleLandingEligibility: ["CCO", "KEY_ACCOUNTS_MANAGER", "PROJECT_DEVELOPER"] },
-  // Legacy /pd/tickets deep link → redirect to merged Pipeline / Opportunities page.
+  // Project Development Dashboard. Path stays at /pd; /engineering-board
+  // and /engineering-dashboard remain as harmless URL aliases (task #68
+  // reverted the user-visible labels from "Engineering & Quality" back to
+  // "Project Development" while keeping the alias paths working).
+  { id: "pdDashboard", path: "/pd", label: "Project Development Dashboard", iconKey: "Sun", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_dashboard", showInSidebar: true, routeComponentKey: "PdDashboardPage", aliases: ["/pd/dashboard", "/engineering-board", "/engineering-dashboard"], roleLandingEligibility: ["CCO", "KEY_ACCOUNTS_MANAGER", "PROJECT_DEVELOPER"] },
+  // Legacy ticket deep links → redirect to Opportunities so existing bookmarks/emails still resolve.
   { id: "pdTicketsRedirect", path: "/pd/tickets", label: "Project Development Tickets (moved)", type: "alias", permissionEntity: "pd_dashboard", redirectTo: "/opportunities" },
-  { id: "pdTicketCreate", path: "/pd/tickets/create", label: "Create Project Development Ticket", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_tickets", routeComponentKey: "PdTicketCreatePage" },
-  { id: "pdTicketDetail", path: "/pd/tickets/:id", label: "Project Development Ticket Detail", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_tickets", routeComponentKey: "PdTicketDetailPage" },
-  { id: "pdReports", path: "/pd/reports", label: "Project Development Reports", iconKey: "BarChart3", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_dashboard", showInSidebar: false, routeComponentKey: "PdReportsPage" },
+  { id: "pdTicketCreateRedirect", path: "/pd/tickets/create", label: "Create Ticket (moved)", type: "alias", permissionEntity: "pd_dashboard", redirectTo: "/opportunities" },
+  { id: "pdTicketDetailRedirect", path: "/pd/tickets/:id", label: "Ticket Detail (moved)", type: "alias", permissionEntity: "pd_dashboard", redirectTo: "/opportunities" },
+  { id: "pdReportsRedirect", path: "/pd/reports", label: "PD Reports (moved)", type: "alias", permissionEntity: "pd_dashboard", redirectTo: "/opportunities" },
   { id: "teamsChats", path: "/teams/chats", label: "Teams Chat", type: "alias", permissionEntity: "teams_chat", redirectTo: "/my-work/teams" },
   { id: "collaboration", path: "/collaboration", label: "Collaboration Hub", type: "alias", permissionEntity: "collaboration_hub", redirectTo: "/my-work" },
   { id: "collabEmail", path: "/collaboration/email", label: "Collaboration Email", type: "alias", permissionEntity: "collaboration_hub", redirectTo: "/my-work/email" },
@@ -171,7 +216,10 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "engMonthlyReportProject", path: "/reports/engineering/monthly/:month/project/:projectId", label: "Engineering Report Project", permissionEntity: "reports", routeComponentKey: "EngMonthlyReportProjectPage" },
   { id: "adminRecovery", path: "/admin/recovery", label: "Recovery Center", iconKey: "ShieldAlert", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminRecoveryPage" },
   { id: "stageAdmin", path: "/admin/stage-lifecycle", label: "Stage Lifecycle", iconKey: "Milestone", navGroup: "SYSTEM", permissionEntity: "stage_admin", showInSidebar: false, routeComponentKey: "StageAdminPage" },
-  { id: "adminControlCenter", path: "/admin/control-center", label: "Control Center", iconKey: "Gauge", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminControlCenterPage" },
+  // Task #101: Control Center page retired in favour of /admin/roles tabs.
+  // The redirect lives in the legacy redirects block above so old bookmarks
+  // land on the new home.
+  // { id: "adminControlCenter", path: "/admin/control-center", ... }
   { id: "clientProjectDepartments", path: "/clients/:clientId/project/:projectId", label: "Project Departments", permissionEntity: "pd_clients", routeComponentKey: "ClientProjectDepartmentsPage" },
   { id: "clientDetail", path: "/clients/:clientId", label: "Client Detail", permissionEntity: "pd_clients", routeComponentKey: "ClientDetailPage" },
   { id: "clients", path: "/clients", label: "Clients", iconKey: "Users", navGroup: "PROJECTS", permissionEntity: "pd_clients", showInSidebar: true, routeComponentKey: "ClientsPage", aliases: ["/pd/clients"] },
@@ -200,6 +248,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "hseDashboard", path: "/hse", label: "Health, Safety & Environment", iconKey: "ShieldAlert", navGroup: "HSE", permissionEntity: "hse", showInSidebar: true, routeComponentKey: "HseDashboardPage", roleLandingEligibility: ["HSE_MANAGER", "SSEG_MANAGER"] },
   { id: "hseCompliance", path: "/hse/compliance", label: "Compliance / SSEG", type: "alias", redirectTo: "/hse?tab=compliance", navGroup: "HSE", permissionEntity: "hse_compliance", showInSidebar: false },
   { id: "handoverDashboard", path: "/handover", label: "Handover & Closeout", iconKey: "Handshake", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "handover", showInSidebar: true, routeComponentKey: "HandoverDashboardPage" },
+  { id: "ssegSubmissions", path: "/sseg-submissions", label: "SSEG Submissions", iconKey: "ClipboardList", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "hse_sseg", showInSidebar: true, routeComponentKey: "SsegSubmissionsPage" },
   // PD-PM Handover V2 extensions
   { id: "lessonsLearnt", path: "/admin/lessons", label: "Lessons Learnt", iconKey: "BookOpen", navGroup: "SYSTEM", permissionEntity: "handover", showInSidebar: false, routeComponentKey: "LessonsLearntPage" },
   { id: "handoverHealth", path: "/admin/handover-health", label: "Handover Health Score", iconKey: "Handshake", navGroup: "SYSTEM", permissionEntity: "handover", showInSidebar: false, routeComponentKey: "HandoverControlPage" },
@@ -207,6 +256,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "adminSettings", path: "/admin/settings", label: "System Settings", iconKey: "Settings", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "RoleSettingsPage" },
   { id: "adminWorkflowConfig", path: "/admin/workflow-config", label: "Workflow Configuration", iconKey: "Workflow", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminWorkflowConfigPage" },
   { id: "adminBackfill", path: "/admin/data-migration-status", label: "Data Migration Status", iconKey: "Database", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminBackfillPage" },
+  { id: "adminWorkItemLinkage", path: "/admin/work-item-linkage", label: "Work Item Linkage", iconKey: "Link", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminWorkItemLinkagePage" },
   { id: "adminPipedrive", path: "/admin/pipedrive", label: "Pipedrive Integration", iconKey: "Plug", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminPipedrivePage" },
   { id: "adminQuickBooks", path: "/admin/quickbooks", label: "QuickBooks Integration", iconKey: "Plug", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminQuickBooksPage" },
   // Absorbed into QB Throughput > Mapping / Reconciliation tabs — hidden from nav.
@@ -280,6 +330,10 @@ const NAV_GROUP_TO_SECTION: Record<NavGroupKey, SectionKey> = {
   HSE: "HSE",
   GATES: "PORTFOLIO",
   FINANCE: "FINANCE",
+  // KNOWLEDGE is the historical nav-group key for company-knowledge surfaces
+  // (Processes & SOPs, Training, Leaderboard, Feedback). They live inside the
+  // user-facing "Admin" top section so power users / admins maintain them
+  // alongside system tools — see ADMIN_NAV_ITEMS for the surfaced list.
   KNOWLEDGE: "ADMIN",
   PRIORITIES: "PRIORITIES",
   PORTFOLIO: "PORTFOLIO",

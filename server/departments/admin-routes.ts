@@ -338,8 +338,7 @@ router.post("/api/upload", requireAuth, multiUpload, async (req, res) => {
     console.error("Upload error:", error);
     const { dbMode } = await import("../db");
     res.status(500).json({
-      error: error.message || "Failed to process upload",
-      message: error.message || "Failed to process upload",
+      error: "Failed to process upload",
       code: error.code || 'UPLOAD_ERROR',
       dbMode
     });
@@ -419,8 +418,7 @@ router.post("/api/reprocess-all", requireAuth, requireAdmin, async (req, res) =>
       } catch (error: any) {
         reprocessResults.push({
           fileName: fileInfo.fileName,
-          status: "error",
-          message: error.message || "Reprocessing failed"
+          status: "error"
         });
       }
     }
@@ -439,8 +437,7 @@ router.post("/api/reprocess-all", requireAuth, requireAdmin, async (req, res) =>
     console.error("Reprocess error:", error);
     const { dbMode } = await import("../db");
     res.status(500).json({
-      error: error.message || "Failed to reprocess files",
-      message: error.message || "Failed to reprocess files",
+      error: "Failed to reprocess files",
       code: error.code || 'REPROCESS_ERROR',
       dbMode
     });
@@ -454,7 +451,7 @@ router.get("/api/writeback-mappings", requireAuth, requireAdmin, async (req: Req
     const mappings = await storage.getAllWritebackMappings();
     res.json(mappings);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -463,7 +460,7 @@ router.post("/api/writeback-mappings", requireAuth, requireAdmin, async (req: Re
     const mapping = await storage.createWritebackMapping(req.body);
     res.json(mapping);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -472,7 +469,7 @@ router.patch("/api/writeback-mappings/:id", requireAuth, requireAdmin, async (re
     const updated = await storage.updateWritebackMapping(paramInt(req, "id")!, req.body);
     res.json(updated);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -481,7 +478,7 @@ router.delete("/api/writeback-mappings/:id", requireAuth, requireAdmin, async (r
     await storage.deleteWritebackMapping(paramInt(req, "id")!);
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -493,7 +490,7 @@ router.get("/api/writeback-audit", requireAuth, requireAdmin, async (req: Reques
     const logs = await storage.getWritebackAuditLogs(mappingId);
     res.json(logs);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -518,7 +515,7 @@ router.get("/api/writeback/workbook-sheets", requireAuth, requireAdmin, async (r
     const sheets = await getWorkbookSheets(check.resolved);
     res.json({ sheets });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -548,7 +545,7 @@ router.post("/api/writeback/preview", requireAuth, requireAdmin, async (req: Req
     const preview = await previewWriteback(check.resolved, mappings, dataByEntity);
     res.json(preview);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -626,7 +623,7 @@ router.post("/api/writeback/execute", requireAuth, requireAdmin, async (req: Req
       outputPath: outputPath || workbookPath,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -655,7 +652,7 @@ router.post("/api/writeback/rollback/:auditId", requireAuth, requireAdmin, async
 
     res.json({ success: result.success, error: result.error });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -666,7 +663,7 @@ router.get("/api/admin/sp-settings", requireAuth, requireAdmin, async (req, res)
     const settings = await storage.getSpSettings();
     res.json(settings || null);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -687,7 +684,7 @@ router.post("/api/admin/sp-settings", requireAuth, requireAdmin, async (req, res
     });
     res.json(settings);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -701,7 +698,7 @@ router.post("/api/admin/sp-settings/test", requireAuth, requireAdmin, async (req
     const result = await testConnection(siteId, driveId);
     res.json(result);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -716,7 +713,7 @@ router.get("/api/admin/sp-browse", requireAuth, requireAdmin, async (req, res) =
     const items = await browseFolders(driveId, folderId || undefined);
     res.json(items);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -733,7 +730,7 @@ router.post("/api/admin/import/single", requireAuth, requireAdmin, async (req, r
     const result = await importSingleFile(driveId, siteId, itemId, user?.email || user?.name || "admin");
     res.json(result);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -744,7 +741,7 @@ router.post("/api/admin/import/run", requireAuth, requireAdmin, async (req, res)
     const result = await runFullImport("manual", user?.email || user?.name || "admin");
     res.json(result);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -755,7 +752,7 @@ router.post("/api/admin/import/retry-failed", requireAuth, requireAdmin, async (
     const result = await retryFailedImports(user?.email || user?.name || "admin");
     res.json(result);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -764,7 +761,7 @@ router.get("/api/admin/import/runs", requireAuth, requireAdmin, async (req, res)
     const runs = await storage.getAllImportRuns();
     res.json(runs);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -776,7 +773,7 @@ router.get("/api/admin/import/runs/:id", requireAuth, requireAdmin, async (req, 
     const entries = await storage.getAllChangeLedger({ runId });
     res.json({ run, entries });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -791,7 +788,7 @@ router.get("/api/admin/ms-integration", requireAuth, requireAdmin, async (req, r
     }
     res.json(config);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -810,7 +807,7 @@ router.put("/api/admin/ms-integration/:key", requireAuth, requireAdmin, async (r
     `);
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -868,7 +865,8 @@ router.post("/api/admin/ms-integration/test-sharepoint", requireAuth, requireAdm
       drives,
     });
   } catch (err: any) {
-    res.json({ success: false, error: err.message });
+    console.error("[admin-routes] error:", err);
+    res.json({ success: false, error: "Operation failed" });
   }
 });
 
@@ -881,7 +879,7 @@ router.post("/api/admin/ms-integration/browse-drive", requireAuth, requireAdmin,
     const items = await browseFolders(driveId, folderId || undefined);
     res.json(items);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -891,7 +889,7 @@ router.get("/api/admin/migration-verify", requireAuth, requireAdmin, async (_req
     const report = await runMigrationVerification();
     res.json(report);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -934,7 +932,8 @@ router.get("/api/admin/reconciliation/phase-1a", requireAuth, requireAdmin, asyn
       })),
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || "Failed to generate Phase 1A reconciliation report" });
+    console.error("[admin-routes] Phase 1A reconciliation error:", err);
+    res.status(500).json({ error: "Failed to generate Phase 1A reconciliation report" });
   }
 });
 

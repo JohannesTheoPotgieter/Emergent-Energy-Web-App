@@ -14,7 +14,7 @@ import path from "path";
 import fs from "fs";
 import multer from "multer";
 import { sanitizeFilename, allowedFileFilter } from "../lib/upload-security";
-import { paramStr } from "../lib/req-params";
+import { paramStr, parseIntParam } from "../lib/req-params";
 
 const router = Router();
 
@@ -128,7 +128,7 @@ router.get("/api/mytool/settings", requireAuth, requireAdmin, async (req, res) =
     const settings = await storage.getMytoolSettings();
     res.json(settings);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -137,7 +137,7 @@ router.put("/api/mytool/settings", requireAuth, requireAdmin, async (req, res) =
     const updated = await storage.updateMytoolSettings(req.body);
     res.json(updated);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -155,7 +155,7 @@ router.get("/api/mytool/tasks", requireAuth, requireAdmin, async (req, res) => {
     }
     res.json(tasks);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -174,13 +174,13 @@ router.post("/api/mytool/tasks", requireAuth, requireAdmin, async (req, res) => 
     const task = await storage.createMytoolTask({ ...req.body, bucket, ownerUserId: userId });
     res.json(task);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
 router.patch("/api/mytool/tasks/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const taskId = parseInt(paramStr(req.params.id));
+    const taskId = parseIntParam(req.params.id);
     const userId = (req.user as any).id;
     const existingTask = await storage.getMytoolTask(taskId);
 
@@ -244,16 +244,16 @@ router.patch("/api/mytool/tasks/:id", requireAuth, requireAdmin, async (req, res
 
     res.json(task);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
 router.delete("/api/mytool/tasks/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    await storage.deleteMytoolTask(parseInt(paramStr(req.params.id)));
+    await storage.deleteMytoolTask(parseIntParam(req.params.id));
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -269,7 +269,7 @@ router.get("/api/mytool/timeblocks", requireAuth, requireAdmin, async (req, res)
     const blocks = await storage.getMytoolTimeblocks(userId, date);
     res.json(blocks);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -279,25 +279,25 @@ router.post("/api/mytool/timeblocks", requireAuth, requireAdmin, async (req, res
     const block = await storage.createMytoolTimeblock({ ...req.body, ownerUserId: userId });
     res.json(block);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
 router.patch("/api/mytool/timeblocks/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const block = await storage.updateMytoolTimeblock(parseInt(paramStr(req.params.id)), req.body);
+    const block = await storage.updateMytoolTimeblock(parseIntParam(req.params.id), req.body);
     res.json(block);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
 router.delete("/api/mytool/timeblocks/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    await storage.deleteMytoolTimeblock(parseInt(paramStr(req.params.id)));
+    await storage.deleteMytoolTimeblock(parseIntParam(req.params.id));
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -313,7 +313,7 @@ router.get("/api/mytool/daily-review", requireAuth, requireAdmin, async (req, re
     const review = await storage.getMytoolDailyReview(userId, date);
     res.json(review || null);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -323,7 +323,7 @@ router.put("/api/mytool/daily-review", requireAuth, requireAdmin, async (req, re
     const review = await storage.upsertMytoolDailyReview({ ...req.body, ownerUserId: userId });
     res.json(review);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -387,7 +387,7 @@ router.get("/api/mytool/company-priorities", requireAuth, async (req, res) => {
     });
     res.json(enriched);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -403,7 +403,7 @@ router.post("/api/mytool/company-priorities", requireAuth, requirePriorityAdmin,
     const priority = await storage.createMytoolCompanyPriority(parsed.data as any);
     res.json(priority);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -413,19 +413,19 @@ router.patch("/api/mytool/company-priorities/:id", requireAuth, requirePriorityA
     if (!parsed.success) {
       return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
     }
-    const priority = await storage.updateMytoolCompanyPriority(parseInt(paramStr(req.params.id)), parsed.data as any);
+    const priority = await storage.updateMytoolCompanyPriority(parseIntParam(req.params.id), parsed.data as any);
     res.json(priority);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
 router.delete("/api/mytool/company-priorities/:id", requireAuth, requirePriorityAdmin, async (req, res) => {
   try {
-    await storage.updateMytoolCompanyPriority(parseInt(paramStr(req.params.id)), { status: "closed" } as any);
+    await storage.updateMytoolCompanyPriority(parseIntParam(req.params.id), { status: "closed" } as any);
     res.json({ success: true, mode: "soft_close" });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -433,7 +433,7 @@ router.delete("/api/mytool/company-priorities/:id", requireAuth, requirePriority
 
 router.get("/api/mytool/company-priorities/:id/links", requireAuth, async (req, res) => {
   try {
-    const priorityId = parseInt(paramStr(req.params.id));
+    const priorityId = parseIntParam(req.params.id);
     const links = await db.select().from(priorityLinks).where(eq(priorityLinks.priorityId, priorityId));
     const projects = await db.select({
       id: priorityProjects.id,
@@ -461,7 +461,7 @@ router.get("/api/mytool/company-priorities/:id/links", requireAuth, async (req, 
 
     res.json([...links, ...synthetic]);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -471,13 +471,13 @@ router.get("/api/mytool/priority-links", requireAuth, async (_req, res) => {
     const links = await db.select().from(plTable);
     res.json(links);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
 router.post("/api/mytool/company-priorities/:id/links", requireAuth, requirePriorityAdmin, async (req, res) => {
   try {
-    const priorityId = parseInt(paramStr(req.params.id));
+    const priorityId = parseIntParam(req.params.id);
     const { linkType, projectName, taskId, taskType } = req.body;
     if (!linkType) return res.status(400).json({ error: "linkType is required" });
     let resolvedProjectId: number | null = req.body.projectId ? parseInt(req.body.projectId) : null;
@@ -511,13 +511,13 @@ router.post("/api/mytool/company-priorities/:id/links", requireAuth, requirePrio
 
     res.json(link);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
 router.delete("/api/mytool/priority-links/:linkId", requireAuth, requirePriorityAdmin, async (req, res) => {
   try {
-    const linkId = parseInt(paramStr(req.params.linkId));
+    const linkId = parseIntParam(req.params.linkId);
     const [existing] = await db.select().from(priorityLinks).where(eq(priorityLinks.id, linkId)).limit(1);
     await db.delete(priorityLinks).where(eq(priorityLinks.id, linkId));
     if (existing?.projectId) {
@@ -528,7 +528,7 @@ router.delete("/api/mytool/priority-links/:linkId", requireAuth, requirePriority
     }
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -585,7 +585,7 @@ router.get("/api/mytool/escalated-priorities", requireAuth, requireAdmin, async 
 
     res.json(escalated);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -597,7 +597,7 @@ router.get("/api/mytool/preferences", requireAuth, requireAdmin, async (req, res
     const prefs = await storage.getMytoolUserPreferences(userId);
     res.json(prefs || { ownerUserId: userId, defaultView: 'today', workdayStartTime: '08:00', workdayEndTime: '17:00', showCompanyPriorities: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -607,7 +607,7 @@ router.put("/api/mytool/preferences", requireAuth, requireAdmin, async (req, res
     const prefs = await storage.upsertMytoolUserPreferences({ ...req.body, ownerUserId: userId });
     res.json(prefs);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -630,7 +630,7 @@ router.get("/api/mytool/email-links", requireAuth, requireAdmin, async (req, res
     }
     res.json([]);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -640,16 +640,16 @@ router.post("/api/mytool/email-links", requireAuth, requireAdmin, async (req, re
     const link = await storage.createEmailLink({ ...req.body, createdBy: userId });
     res.json(link);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
 router.delete("/api/mytool/email-links/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    await storage.deleteEmailLink(parseInt(paramStr(req.params.id)));
+    await storage.deleteEmailLink(parseIntParam(req.params.id));
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -659,7 +659,7 @@ router.get("/api/mytool/dod-templates", requireAuth, requireAdmin, async (req, r
     const templates = await storage.getMytoolDodTemplates();
     res.json(templates);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -669,16 +669,16 @@ router.post("/api/mytool/dod-templates", requireAuth, requireAdmin, async (req, 
     const template = await storage.createMytoolDodTemplate({ ...req.body, createdBy: userId });
     res.json(template);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
 router.delete("/api/mytool/dod-templates/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    await storage.deleteMytoolDodTemplate(parseInt(paramStr(req.params.id)));
+    await storage.deleteMytoolDodTemplate(parseIntParam(req.params.id));
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -820,7 +820,7 @@ router.get("/api/outlook/events", requireAuth, async (req, res) => {
       return res.json([]);
     }
     console.error("[Outlook] Events error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -838,7 +838,7 @@ router.post("/api/outlook/events", requireAuth, requireAdmin, async (req, res) =
     res.json({ eventId });
   } catch (err: any) {
     console.error("[Outlook] Create event error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -852,7 +852,7 @@ router.patch("/api/outlook/events/:eventId", requireAuth, requireAdmin, async (r
     res.json({ success: true });
   } catch (err: any) {
     console.error("[Outlook] Update event error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -864,7 +864,7 @@ router.delete("/api/outlook/events/:eventId", requireAuth, requireAdmin, async (
     res.json({ success: true });
   } catch (err: any) {
     console.error("[Outlook] Delete event error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -884,7 +884,7 @@ router.get("/api/outlook/messages", requireAuth, async (req, res) => {
       return res.json([]);
     }
     console.error("[Outlook] Messages error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -895,7 +895,7 @@ router.get("/api/outlook/messages/:id", requireAuth, async (req, res) => {
     res.json(msg);
   } catch (err: any) {
     console.error("[Outlook] Message detail error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -1000,7 +1000,7 @@ router.post("/api/outlook/email-to-task", requireAuth, requireAdmin, async (req,
     });
   } catch (err: any) {
     console.error("[Outlook] Email-to-task error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -1020,7 +1020,7 @@ router.post("/api/outlook/send-approval", requireAuth, requireAdmin, async (req,
     res.json({ success: true });
   } catch (err: any) {
     console.error("[Outlook] Send approval error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -1034,7 +1034,7 @@ router.get("/api/outlook/folders", requireAuth, async (req, res) => {
       return res.json([]);
     }
     console.error("[Outlook] Folders error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -1049,7 +1049,7 @@ router.post("/api/outlook/send", requireAuth, requireAdmin, async (req, res) => 
     res.json({ success: true });
   } catch (err: any) {
     console.error("[Outlook] Send mail error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -1064,7 +1064,7 @@ router.post("/api/outlook/messages/:id/reply", requireAuth, requireAdmin, async 
     res.json({ success: true });
   } catch (err: any) {
     console.error("[Outlook] Reply error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -1079,7 +1079,7 @@ router.post("/api/outlook/messages/:id/forward", requireAuth, requireAdmin, asyn
     res.json({ success: true });
   } catch (err: any) {
     console.error("[Outlook] Forward error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -1092,7 +1092,7 @@ router.get("/api/mytool/triage-rules", requireAuth, requireAdmin, async (req, re
     const rules = await db.select().from(triageRulesTable).where(eq(triageRulesTable.ownerUserId, userId));
     res.json(rules);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -1110,13 +1110,13 @@ router.post("/api/mytool/triage-rules", requireAuth, requireAdmin, async (req, r
     }).returning();
     res.json(rule);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
 router.patch("/api/mytool/triage-rules/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const ruleId = parseInt(paramStr(req.params.id));
+    const ruleId = parseIntParam(req.params.id);
     const { triageRules: triageRulesTable } = await import("@shared/schema");
     const updates: any = {};
     if (req.body.value !== undefined) updates.value = req.body.value.trim();
@@ -1124,18 +1124,18 @@ router.patch("/api/mytool/triage-rules/:id", requireAuth, requireAdmin, async (r
     const [rule] = await db.update(triageRulesTable).set(updates).where(eq(triageRulesTable.id, ruleId)).returning();
     res.json(rule);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
 router.delete("/api/mytool/triage-rules/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const ruleId = parseInt(paramStr(req.params.id));
+    const ruleId = parseIntParam(req.params.id);
     const { triageRules: triageRulesTable } = await import("@shared/schema");
     await db.delete(triageRulesTable).where(eq(triageRulesTable.id, ruleId));
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -1200,7 +1200,7 @@ router.get("/api/mytool/triage-inbox", requireAuth, requireAdmin, async (req, re
     if (err.message?.includes("not connected") || err.message?.includes("not available")) {
       return res.json({ flagged: [], keywordMatches: [], senderMatches: [], rules: [] });
     }
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -1222,7 +1222,7 @@ router.get("/api/mytool/unclassified-tasks", requireAuth, requireAdmin, async (r
       );
     res.json(tasks);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -1248,7 +1248,7 @@ router.get("/api/admin/users/microsoft-mapping", requireAuth, async (req, res) =
     res.json(allUsers);
   } catch (err: any) {
     console.error("[MS Mapping] Error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -1257,7 +1257,7 @@ router.patch("/api/admin/users/:id/microsoft-id", requireAuth, async (req, res) 
     const userRole = (req.user as any).role;
     if (!COO_ROLES.includes(userRole)) return res.status(403).json({ error: "Admin access required" });
 
-    const userId = parseInt(paramStr(req.params.id));
+    const userId = parseIntParam(req.params.id);
     const { microsoftId, email } = req.body;
 
     const { users: usersTable } = await import("@shared/schema");
@@ -1271,7 +1271,7 @@ router.patch("/api/admin/users/:id/microsoft-id", requireAuth, async (req, res) 
     res.json({ success: true });
   } catch (err: any) {
     console.error("[MS Mapping] Update error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -1322,7 +1322,7 @@ router.get("/api/teams/groups", requireAuth, async (req, res) => {
     res.json(groups);
   } catch (err: any) {
     console.error("[Teams Groups] Error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -1370,14 +1370,14 @@ router.post("/api/teams/groups", requireAuth, async (req, res) => {
     res.json(group);
   } catch (err: any) {
     console.error("[Teams Groups] Create error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
 router.delete("/api/teams/groups/:id", requireAuth, async (req, res) => {
   try {
     const { teamsChatGroups, teamsChatMembers } = await import("@shared/schema");
-    const groupId = parseInt(paramStr(req.params.id));
+    const groupId = parseIntParam(req.params.id);
     const userId = (req.user as any).id;
     const userRole = (req.user as any).role;
     const isCoo = COO_ROLES.includes(userRole);
@@ -1397,14 +1397,14 @@ router.delete("/api/teams/groups/:id", requireAuth, async (req, res) => {
     res.json({ success: true });
   } catch (err: any) {
     console.error("[Teams Groups] Delete error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
 router.post("/api/teams/groups/:id/members", requireAuth, async (req, res) => {
   try {
     const { teamsChatGroups, teamsChatMembers } = await import("@shared/schema");
-    const groupId = parseInt(paramStr(req.params.id));
+    const groupId = parseIntParam(req.params.id);
     const actingUserId = (req.user as any).id;
     const actingRole = (req.user as any).role;
     const isCoo = COO_ROLES.includes(actingRole);
@@ -1454,15 +1454,15 @@ router.post("/api/teams/groups/:id/members", requireAuth, async (req, res) => {
     res.json({ added: results.length });
   } catch (err: any) {
     console.error("[Teams Groups] Add members error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
 router.delete("/api/teams/groups/:id/members/:userId", requireAuth, async (req, res) => {
   try {
     const { teamsChatGroups, teamsChatMembers } = await import("@shared/schema");
-    const groupId = parseInt(paramStr(req.params.id));
-    const targetUserId = parseInt(paramStr(req.params.userId));
+    const groupId = parseIntParam(req.params.id);
+    const targetUserId = parseIntParam(req.params.userId);
     const actingUserId = (req.user as any).id;
     const actingRole = (req.user as any).role;
     const isCoo = COO_ROLES.includes(actingRole);
@@ -1492,7 +1492,7 @@ router.delete("/api/teams/groups/:id/members/:userId", requireAuth, async (req, 
     res.json({ success: true });
   } catch (err: any) {
     console.error("[Teams Groups] Remove member error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -1507,7 +1507,7 @@ async function checkGroupMembership(groupId: number, userId: number): Promise<bo
 router.get("/api/teams/groups/:id/messages", requireAuth, async (req, res) => {
   try {
     const { teamsChatMessages, users: usersTable } = await import("@shared/schema");
-    const groupId = parseInt(paramStr(req.params.id));
+    const groupId = parseIntParam(req.params.id);
     const limit = parseInt(req.query.limit as string) || 50;
 
     const messages = await db.select({
@@ -1534,14 +1534,14 @@ router.get("/api/teams/groups/:id/messages", requireAuth, async (req, res) => {
     res.json(messages.reverse());
   } catch (err: any) {
     console.error("[Teams Groups] Messages error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
 router.post("/api/teams/groups/:id/messages", requireAuth, async (req, res) => {
   try {
     const { teamsChatMessages } = await import("@shared/schema");
-    const groupId = parseInt(paramStr(req.params.id));
+    const groupId = parseIntParam(req.params.id);
     const userId = (req.user as any).id;
     const userName = (req.user as any).name;
     const userRole = (req.user as any).role;
@@ -1568,7 +1568,7 @@ router.post("/api/teams/groups/:id/messages", requireAuth, async (req, res) => {
     res.json(msg);
   } catch (err: any) {
     console.error("[Teams Groups] Send message error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -1588,7 +1588,7 @@ const chatUpload = multer({ storage: chatStorage, limits: { fileSize: 25 * 1024 
 router.post("/api/teams/groups/:id/files", requireAuth, chatUpload.single("file"), async (req: any, res) => {
   try {
     const { teamsChatMessages } = await import("@shared/schema");
-    const groupId = parseInt(req.params.id);
+    const groupId = parseIntParam(req.params.id);
     const userId = (req.user as any).id;
     const userName = (req.user as any).name;
     const userRole = (req.user as any).role;
@@ -1617,7 +1617,7 @@ router.post("/api/teams/groups/:id/files", requireAuth, chatUpload.single("file"
     res.json(msg);
   } catch (err: any) {
     console.error("[Teams Groups] File upload error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -1702,7 +1702,7 @@ router.get("/api/teams/project-group/:projectName", requireAuth, async (req, res
     });
   } catch (err: any) {
     console.error("[Teams Project Group] Error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -1717,7 +1717,7 @@ router.get("/api/sp-config", requireAuth, async (req, res) => {
       enabled: settings.enabled,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -1733,7 +1733,7 @@ router.get("/api/sp-project-browse", requireAuth, async (req, res) => {
     res.json(items);
   } catch (err: any) {
     console.error("[SP Browse] Error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -1769,7 +1769,7 @@ router.get("/api/sp-project-files", requireAuth, async (req, res) => {
     res.json(items);
   } catch (err: any) {
     console.error("[SP Files] Error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 

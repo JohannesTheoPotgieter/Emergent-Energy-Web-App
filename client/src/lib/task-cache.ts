@@ -1,42 +1,52 @@
-/**
- * Unified task cache invalidation.
- *
- * All task mutations across any page should call invalidateAllTaskCaches()
- * so that changes (assignee, status, etc.) propagate to every view.
- */
 import type { QueryClient } from "@tanstack/react-query";
 
-/** Query keys used by different task pages/components */
-const TASK_QUERY_KEY_PREFIXES = [
-  // My Work pages
+export const engineeringTicketKeys = {
+  all: ["engineering-tickets"] as const,
+  scope: (scope: string) => ["engineering-tickets", scope] as const,
+  scoped: (scope: string, params?: Record<string, unknown>) =>
+    params ? (["engineering-tickets", scope, params] as const) : (["engineering-tickets", scope] as const),
+} as const;
+
+const ENGINEERING_TICKET_KEYS = [
   "/api/my-work/all-tasks",
-  "/api/mytool/tasks",
-  // Engineering Tasks page
   "eng-tasks",
+  "eng-overview",
   "project-eng-tasks",
-  // Task Management page
+  "eng-tasks-standup",
+  "eng-tasks-all-standup",
+  "standup-meeting",
+  "standups-today",
+  "planning-tasks",
+  "/api/opportunities",
+  "/api/lifecycle-board/execution-dashboard",
+  "execution-dashboard",
+  "milestone-tracker",
+  "action-launchpad",
+  "engineering-tickets",
+] as const;
+
+const TASK_QUERY_KEY_PREFIXES = [
+  ...ENGINEERING_TICKET_KEYS,
+  "/api/mytool/tasks",
   "tasks",
   "tasks-board",
   "tasks-metrics",
   "tasks-calendar",
-  // Operational tasks
   "operational-tasks",
-  // Planning tasks
-  "planning-tasks",
-  // Entity-specific assignment caches
   "commissioning",
   "procurement",
   "raid",
   "change-control",
 ] as const;
 
-/**
- * Invalidate all task-related React Query caches.
- * Call this after any task mutation (create, update, delete, reassign, status change)
- * to ensure changes propagate across all pages.
- */
 export function invalidateAllTaskCaches(queryClient: QueryClient): void {
   for (const key of TASK_QUERY_KEY_PREFIXES) {
+    queryClient.invalidateQueries({ queryKey: [key] });
+  }
+}
+
+export function invalidateEngineeringTicketCaches(queryClient: QueryClient): void {
+  for (const key of ENGINEERING_TICKET_KEYS) {
     queryClient.invalidateQueries({ queryKey: [key] });
   }
 }

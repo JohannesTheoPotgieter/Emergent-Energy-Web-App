@@ -57,8 +57,21 @@ export const ADMIN_ROLES = [
   "CEO_ADMIN",
 ] as const;
 
-/** Engineering request types that engineers should see */
+/**
+ * Engineering request types that engineers should see.
+ *
+ * The convert-to-project flow lets PDs author free-form `request_type`
+ * strings (e.g. "Cost Proposal", "First Assessment", "Site visit Report"),
+ * so this list is the union of (a) the legacy template names and
+ * (b) the actual values produced by the convert flow as of 2026-04.
+ *
+ * Code that filters by this list (e.g. server/pd-routes.ts) should
+ * fall back to "show everything that isn't terminal" when in doubt —
+ * see `getEngineeringTicketCounts` in opportunities-repository for
+ * the pattern.
+ */
 export const ENGINEERING_REQUEST_TYPES = [
+  // Legacy template names
   "Feasibility Study",
   "Design Review",
   "IFC Planning",
@@ -66,6 +79,14 @@ export const ENGINEERING_REQUEST_TYPES = [
   "Battery Assessment",
   "Site Assessment",
   "Full EPC",
+  // Names produced by the convert-to-project flow
+  "First Assessment",
+  "Cost Proposal",
+  "Site Visit Report",
+  "Site visit Report",
+  "Sizing Rational Request",
+  "CP - PVSOL",
+  "First Assessment - PowerPoint Template",
 ] as const;
 
 // ---- Helper functions ----

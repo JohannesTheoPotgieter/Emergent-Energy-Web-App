@@ -3,7 +3,7 @@
  * as a prominent operational surface on role homepages.
  *
  * These gates are first-class operational surfaces, not hidden data fields:
- * - Design & Cost Proposal
+ * - Cost Proposal & Design
  * - Signature & Financial Close
  * - PD to PM Handover
  * - Financial Review

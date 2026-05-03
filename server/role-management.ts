@@ -29,7 +29,24 @@ import { invalidateEntityPermCache, invalidateUserOverrideCache } from "./permis
 import bcrypt from "bcryptjs";
 import { logAuditFromReq } from "./audit-logger";
 import { logPermissionAudit, type PermissionAuditEventType } from "./permission-audit";
-import { paramStr } from "./lib/req-params";
+import { paramStr, parseIntParam } from "./lib/req-params";
+import { z } from "zod";
+import { validateBody } from "./middleware/validateBody";
+
+// ── Admin user/role write schemas (Phase 2b-PR2) ──
+const updateUserRoleSchema = z.object({ role: z.string().min(1) }).passthrough();
+// Task #110 — flip an account active/inactive from the Manage Account drawer.
+const updateUserActiveSchema = z.object({ isActive: z.boolean() }).strict();
+const createUserSchema = z
+  .object({
+    username: z.string().min(1).max(64),
+    name: z.string().min(1).max(200),
+    email: z.string().email(),
+    password: z.string().min(8).max(200),
+    role: z.string().min(1).optional(),
+    department: z.string().max(200).optional().nullable(),
+  })
+  .passthrough();
 
 const LEGACY_ROLE_MAP: Record<string, string> = {
   admin: "COO_ADMIN",
@@ -276,7 +293,7 @@ export function registerRoleManagementRoutes(app: Express) {
       const roles = await ensureRolePermissionsSeeded();
       res.json(roles);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -323,7 +340,7 @@ export function registerRoleManagementRoutes(app: Express) {
         scopeCatalog: ["own", "department", "assigned_projects", "all_projects", "company_admin"],
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -334,7 +351,7 @@ export function registerRoleManagementRoutes(app: Express) {
       if (!role) return res.status(404).json({ error: "Role not found" });
       res.json(role);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -377,7 +394,7 @@ export function registerRoleManagementRoutes(app: Express) {
       res.json(updated);
     } catch (err: any) {
       console.error("[Roles] PUT /api/roles/:role error:", err.message, err.stack);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -406,7 +423,7 @@ export function registerRoleManagementRoutes(app: Express) {
       logPermissionAudit(req, { eventType: "role_created", targetRole: role, changeDetail: { label, sections } });
       res.json(created);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -442,7 +459,7 @@ export function registerRoleManagementRoutes(app: Express) {
       logPermissionAudit(req, { eventType: "role_cloned", targetRole: newRole, changeDetail: { sourceRole: sourceRoleKey, label } });
       res.json(created);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -468,7 +485,7 @@ export function registerRoleManagementRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "role_permissions", action: archived ? "archive" : "unarchive", entityId: roleKey, changesJson: { description: archived ? "Role archived" : "Role unarchived" } });
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -507,7 +524,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
       res.json({ role: effectiveRole, matrix: legacyMatrix, authorityMatrix });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -547,7 +564,7 @@ export function registerRoleManagementRoutes(app: Express) {
         requestedRole: targetRole,
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -575,7 +592,7 @@ export function registerRoleManagementRoutes(app: Express) {
       logPermissionAudit(req, { eventType: "role_deleted", targetRole: roleKey, changeDetail: { label: existing.label } });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -587,17 +604,19 @@ export function registerRoleManagementRoutes(app: Express) {
         email: users.email,
         role: users.role,
         department: users.department,
+        location: users.location,
+        isActive: users.isActive,
       }).from(users);
       const mapped = allUsers.map((u: any) => ({ ...u, role: mapRole(u.role) }));
       res.json(mapped);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
-  app.patch("/api/admin/users/:userId/role", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  app.patch("/api/admin/users/:userId/role", jwtAuth, requireAuth, requireAdmin, validateBody(updateUserRoleSchema), async (req: Request, res: Response) => {
     try {
-      const userId = parseInt(req.params.userId as string);
+      const userId = parseIntParam(req.params.userId);
       const { role } = req.body;
       if (!role) return res.status(400).json({ error: "Role is required" });
 
@@ -618,11 +637,11 @@ export function registerRoleManagementRoutes(app: Express) {
       logPermissionAudit(req, { eventType: "user_role_changed", targetUserId: userId, targetRole: role, changeDetail: { userName: updated.name, previousRole: userBefore?.role, newRole: role } });
       res.json({ id: updated.id, email: updated.email, name: updated.name, role: updated.role });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
-  app.post("/api/admin/users", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  app.post("/api/admin/users", jwtAuth, requireAuth, requireAdmin, validateBody(createUserSchema), async (req: Request, res: Response) => {
     try {
       const { username, name, email, password, role } = req.body;
       if (!username || !name || !email || !password) {
@@ -655,13 +674,13 @@ export function registerRoleManagementRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "user", action: "create", entityId: String(created.id), changesJson: { description: "New user created", username, name, email, role: assignedRole, department } });
       res.json({ id: created.id, username: created.username, name: created.name, email: created.email, role: created.role, department: created.department ?? null });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
   app.patch("/api/admin/users/:userId/department", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const userId = parseInt(req.params.userId as string);
+      const userId = parseIntParam(req.params.userId);
       const rawDepartment = typeof req.body?.department === "string" ? req.body.department.trim() : "";
       const department = rawDepartment || null;
 
@@ -691,13 +710,54 @@ export function registerRoleManagementRoutes(app: Express) {
 
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
+    }
+  });
+
+  const locationBodySchema = z.object({
+    location: z.union([z.string(), z.null()]).optional(),
+  });
+  app.patch("/api/admin/users/:userId/location", jwtAuth, requireAuth, requireAdmin, validateBody(locationBodySchema), async (req: Request, res: Response) => {
+    try {
+      const userId = parseIntParam(req.params.userId);
+      if (!Number.isFinite(userId)) return res.status(400).json({ error: "Invalid user id" });
+      const body = req.body as { location?: string | null };
+      const raw = typeof body.location === "string" ? body.location.trim() : "";
+      const location = raw ? raw.slice(0, 200) : null;
+
+      const [userBefore] = await db
+        .select({ id: users.id, name: users.name, location: users.location })
+        .from(users)
+        .where(and(eq(users.id, userId), isNull(users.deletedAt)));
+      if (!userBefore) return res.status(404).json({ error: "User not found" });
+
+      const [updated] = await db
+        .update(users)
+        .set({ location })
+        .where(and(eq(users.id, userId), isNull(users.deletedAt)))
+        .returning({ id: users.id, name: users.name, email: users.email, role: users.role, department: users.department, location: users.location });
+
+      logAuditFromReq(req, {
+        entityType: "user",
+        action: "location_change",
+        entityId: String(userId),
+        changesJson: {
+          description: "User location changed",
+          userName: updated.name,
+          previousLocation: userBefore.location,
+          newLocation: location,
+        },
+      });
+
+      res.json(updated);
+    } catch (err: any) {
+      throw err;
     }
   });
 
   app.patch("/api/admin/users/:userId/password", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const userId = parseInt(req.params.userId as string);
+      const userId = parseIntParam(req.params.userId);
       const { password } = req.body;
       if (!password || password.length < 8) {
         return res.status(400).json({ error: "Password must be at least 8 characters" });
@@ -714,13 +774,94 @@ export function registerRoleManagementRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "user", action: "password_reset", entityId: String(userId), changesJson: { description: "User password reset by admin", userName: updated.name } });
       res.json({ success: true, message: `Password updated for ${updated.name}` });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
+  // Task #110 — admin-controlled active/inactive toggle.
+  // Mirrors the same gate as the rest of the Manage Account writes
+  // (`requireAdmin` → `requirePermission('admin', 'edit')`). Flipping
+  // `isActive: false` is honoured by `fetchUserById` in
+  // server/auth-context.ts and by the LocalStrategy in
+  // server/bootstrap/auth.ts, so the next request from that account is
+  // rejected. We also revoke existing tokens via the
+  // `setRevokedUserTokenVersionFloor` floor used by other admin writes.
+  app.patch(
+    "/api/admin/users/:userId/active",
+    jwtAuth,
+    requireAuth,
+    requireAdmin,
+    validateBody(updateUserActiveSchema),
+    async (req: Request, res: Response) => {
+      try {
+        const userId = parseIntParam(req.params.userId);
+        if (!Number.isFinite(userId)) {
+          return res.status(400).json({ error: "Invalid user id" });
+        }
+        const { isActive } = req.body as { isActive: boolean };
+        const currentUser = getEffectiveUser(req);
+        if (currentUser?.id === userId && !isActive) {
+          return res.status(400).json({ error: "Cannot deactivate your own account" });
+        }
+
+        const [userBefore] = await db
+          .select({ id: users.id, name: users.name, email: users.email, isActive: users.isActive })
+          .from(users)
+          .where(and(eq(users.id, userId), isNull(users.deletedAt)));
+        if (!userBefore) return res.status(404).json({ error: "User not found" });
+
+        const [updated] = await db
+          .update(users)
+          .set({ isActive })
+          .where(and(eq(users.id, userId), isNull(users.deletedAt)))
+          .returning({
+            id: users.id,
+            name: users.name,
+            email: users.email,
+            role: users.role,
+            department: users.department,
+            location: users.location,
+            isActive: users.isActive,
+          });
+        if (!updated) return res.status(404).json({ error: "User not found" });
+
+        // Invalidate existing tokens so a deactivated user is bounced
+        // immediately on their next request (without waiting for token expiry).
+        setRevokedUserTokenVersionFloor(userId, Date.now());
+
+        logAuditFromReq(req, {
+          entityType: "user",
+          action: isActive ? "activate" : "deactivate",
+          entityId: String(userId),
+          changesJson: {
+            description: isActive ? "User activated" : "User deactivated",
+            userName: updated.name,
+            email: updated.email,
+            previousIsActive: userBefore.isActive,
+            newIsActive: isActive,
+          },
+        });
+        logPermissionAudit(req, {
+          eventType: isActive ? "user_activated" : "user_deactivated",
+          targetUserId: userId,
+          changeDetail: {
+            userName: updated.name,
+            email: updated.email,
+            previousIsActive: userBefore.isActive,
+            newIsActive: isActive,
+          },
+        });
+
+        res.json(updated);
+      } catch (err: any) {
+        throw err;
+      }
+    },
+  );
+
   app.delete("/api/admin/users/:userId", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const userId = parseInt(req.params.userId as string);
+      const userId = parseIntParam(req.params.userId);
       const currentUser = getEffectiveUser(req);
       if (currentUser?.id === userId) {
         return res.status(400).json({ error: "Cannot delete your own account" });
@@ -733,7 +874,7 @@ export function registerRoleManagementRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "user", action: "soft_delete", entityId: String(userId), changesJson: { description: "User soft-deleted", userName: deleted.name, email: deleted.email } });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -795,7 +936,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
       res.json(buildAuthPermissionsPayload({ perm, userOverrides }));
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -803,14 +944,14 @@ export function registerRoleManagementRoutes(app: Express) {
 
   app.get("/api/admin/user-overrides/:userId", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const userId = parseInt(paramStr(req.params.userId));
+      const userId = parseIntParam(req.params.userId);
       if (isNaN(userId)) return res.status(400).json({ error: "Invalid userId" });
 
       const overrides = await db.select().from(userPermissionOverrides)
         .where(and(eq(userPermissionOverrides.userId, userId), isNull(userPermissionOverrides.deletedAt)));
       res.json(overrides);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -862,13 +1003,13 @@ export function registerRoleManagementRoutes(app: Express) {
 
       res.json(created);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
   app.delete("/api/admin/user-overrides/:id", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const overrideId = parseInt(paramStr(req.params.id));
+      const overrideId = parseIntParam(req.params.id);
       if (isNaN(overrideId)) return res.status(400).json({ error: "Invalid override ID" });
 
       const [existing] = await db.select().from(userPermissionOverrides)
@@ -889,7 +1030,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -945,7 +1086,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
       res.json({ entries: enriched, limit, offset });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -957,7 +1098,7 @@ export function registerRoleManagementRoutes(app: Express) {
       const configs = await db.select().from(pdVisibilityConfig);
       res.json(configs);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -989,7 +1130,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
       res.json(created);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1021,14 +1162,14 @@ export function registerRoleManagementRoutes(app: Express) {
 
       res.json(created);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
   // Delete a visibility config by ID
   app.delete("/api/admin/pd-visibility/:id", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const configId = parseInt(paramStr(req.params.id));
+      const configId = parseIntParam(req.params.id);
       if (isNaN(configId)) return res.status(400).json({ error: "Invalid config ID" });
 
       const [existing] = await db.select().from(pdVisibilityConfig)
@@ -1046,7 +1187,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1067,7 +1208,7 @@ export function registerRoleManagementRoutes(app: Express) {
         roleDepartmentMap: ROLE_DEPARTMENT_MAP,
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1112,7 +1253,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
       res.json(created);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1156,14 +1297,14 @@ export function registerRoleManagementRoutes(app: Express) {
 
       res.json(created);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
   // Delete a workstream visibility config by ID
   app.delete("/api/admin/workstream-visibility/:id", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const configId = parseInt(paramStr(req.params.id));
+      const configId = parseIntParam(req.params.id);
       if (isNaN(configId)) return res.status(400).json({ error: "Invalid config ID" });
 
       const [existing] = await db.select().from(workstreamVisibilityConfig)
@@ -1181,7 +1322,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1192,7 +1333,7 @@ export function registerRoleManagementRoutes(app: Express) {
   // 3. User-level overrides (userPermissionOverrides)
   app.get("/api/admin/users/:id/effective-permissions", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const userId = parseInt(paramStr(req.params.id));
+      const userId = parseIntParam(req.params.id);
       if (isNaN(userId)) return res.status(400).json({ error: "Invalid user ID" });
 
       const [user] = await db.select().from(users).where(eq(users.id, userId));
@@ -1266,7 +1407,7 @@ export function registerRoleManagementRoutes(app: Express) {
         overrideCount: overrides.length,
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1344,7 +1485,7 @@ export function registerRoleManagementRoutes(app: Express) {
         differenceCount: comparison.filter((c) => c.hasDifference).length,
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 }

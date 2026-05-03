@@ -38,6 +38,7 @@ app.get("/api/governance/quality", jwtAuth, requireAuth, async (req, res) => {
           qi.qm_status, qi.approved, qi.is_applicable,
           ti.item_name, ti.default_severity AS severity,
           COALESCE(EXTRACT(DAY FROM NOW() - qi.last_updated_at)::int, 0) AS age_days,
+          qi.assignee_user_id AS owner_user_id,
           u.name AS owner_name
         FROM qc_item_instance qi
         JOIN qc_checklist cl ON cl.id = qi.checklist_id
@@ -79,7 +80,7 @@ app.get("/api/governance/quality", jwtAuth, requireAuth, async (req, res) => {
       return res.json({ commissioningReviews: [], openSnags: [], qualityChecklist: [] });
     }
     console.error("Quality governance error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -115,7 +116,7 @@ app.patch("/api/governance/quality/:id/action", jwtAuth, requireAuth, requirePer
       return res.json({ success: false, error: "Stage tables not yet migrated" });
     }
     console.error("Quality action error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -182,7 +183,7 @@ app.get("/api/governance/compliance", jwtAuth, requireAuth, async (req, res) => 
       return res.json({ ssegByProject: [], authoritySubmissions: [], meteringPending: [] });
     }
     console.error("Compliance governance error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -202,7 +203,7 @@ app.patch("/api/governance/compliance/:id/action", jwtAuth, requireAuth, async (
     res.json({ success: true });
   } catch (err: any) {
     console.error("Compliance action error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 

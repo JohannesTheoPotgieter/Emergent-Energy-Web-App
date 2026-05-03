@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout } from "@/components/layout";
 import {
   ArrowLeft, Link2, Unlink, TrendingUp, DollarSign, Lightbulb,
   CheckCircle, AlertTriangle, AlertCircle, Info, Loader2, Zap,
@@ -334,24 +336,27 @@ export default function FinancialLinkingPage() {
   const syncBg = syncStatus?.syncStatus === "good" ? "bg-emerald-50" : syncStatus?.syncStatus === "partial" ? "bg-amber-50" : "bg-red-50";
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
-        <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => navigate(`/project/${encodeURIComponent(projectName)}`)}
-            data-testid="button-back-to-project"
-          >
-            <ArrowLeft className="h-4 w-4 mr-1" />
-            Back
-          </Button>
-          <div>
-            <h1 className="text-xl font-bold" data-testid="text-page-title">Project Commercial Linking</h1>
-            <p className="text-sm text-muted-foreground" data-testid="text-project-name">{projectName}</p>
-          </div>
-        </div>
-
+    <PageLayout
+      data-testid="financial-linking-page"
+      header={
+        <PageHeader
+          title="Project Commercial Linking"
+          subtitle={projectName}
+          actions={
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate(`/project/${encodeURIComponent(projectName)}`)}
+              data-testid="button-back-to-project"
+            >
+              <ArrowLeft className="h-4 w-4 mr-1" />
+              Back to Project
+            </Button>
+          }
+        />
+      }
+    >
+      <div className="max-w-7xl mx-auto space-y-6">
         {syncStatus && (
           <Card className={`${syncBg} border-0`} data-testid="card-sync-status">
             <CardContent className="p-4 space-y-3">
@@ -707,7 +712,7 @@ export default function FinancialLinkingPage() {
           </>
         )}
       </div>
-    </div>
+    </PageLayout>
   );
 }
 

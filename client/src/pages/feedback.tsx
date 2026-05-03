@@ -18,6 +18,8 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout } from "@/components/layout";
 import {
   Bug,
   Lightbulb,
@@ -161,35 +163,37 @@ export default function FeedbackPage() {
   }
 
   return (
-    <div className="space-y-6 p-4 max-w-5xl mx-auto" data-testid="feedback-page">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold" data-testid="text-feedback-title">Feedback & Support</h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            Report bugs or request new features. Your feedback helps us improve.
-          </p>
-        </div>
-        <Button onClick={() => setShowForm(true)} className="gap-2" data-testid="button-new-ticket">
-          <Plus className="h-4 w-4" /> New Report
-        </Button>
-      </div>
-
+    <PageLayout
+      data-testid="feedback-page"
+      header={
+        <PageHeader
+          title="Feedback & Support"
+          subtitle="Report bugs or request new features. Your feedback helps us improve."
+          actions={
+            <Button onClick={() => setShowForm(true)} className="gap-2" data-testid="button-new-ticket">
+              <Plus className="h-4 w-4" /> New Report
+            </Button>
+          }
+        />
+      }
+    >
+      <div className="max-w-5xl mx-auto space-y-6">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Card className="p-3">
           <div className="text-xs text-muted-foreground">Total</div>
-          <div className="text-2xl font-bold" data-testid="text-total-tickets">{stats.total}</div>
+          <div className="text-2xl font-bold tabular-nums" data-testid="text-total-tickets">{stats.total}</div>
         </Card>
         <Card className="p-3">
           <div className="text-xs text-blue-600">Open</div>
-          <div className="text-2xl font-bold text-blue-600" data-testid="text-open-tickets">{stats.open}</div>
+          <div className="text-2xl font-bold text-blue-600 tabular-nums" data-testid="text-open-tickets">{stats.open}</div>
         </Card>
         <Card className="p-3">
           <div className="text-xs text-yellow-600">In Progress</div>
-          <div className="text-2xl font-bold text-yellow-600" data-testid="text-progress-tickets">{stats.inProgress}</div>
+          <div className="text-2xl font-bold text-yellow-600 tabular-nums" data-testid="text-progress-tickets">{stats.inProgress}</div>
         </Card>
         <Card className="p-3">
           <div className="text-xs text-green-600">Resolved</div>
-          <div className="text-2xl font-bold text-green-600" data-testid="text-resolved-tickets">{stats.resolved}</div>
+          <div className="text-2xl font-bold text-green-600 tabular-nums" data-testid="text-resolved-tickets">{stats.resolved}</div>
         </Card>
       </div>
 
@@ -422,6 +426,7 @@ export default function FeedbackPage() {
           </DialogContent>
         </Dialog>
       )}
-    </div>
+      </div>
+    </PageLayout>
   );
 }

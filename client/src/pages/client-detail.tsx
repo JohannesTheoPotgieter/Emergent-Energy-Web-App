@@ -100,6 +100,20 @@ export default function ClientDetailPage() {
 
   const client = clients.find(c => c.id === clientId);
 
+  // Task #73 — "previously known as" history. Each row represents a
+  // prior client whose records were merged into this one.
+  const { data: aliases = [] } = useQuery<Array<{
+    id: number;
+    loserClientId: number;
+    loserName: string;
+    loserClientIdCode: string;
+    performedAt: string;
+  }>>({
+    queryKey: ["client-aliases", clientId],
+    enabled: !!clientId,
+    queryFn: () => qFetch(`/api/pd/clients/${clientId}/aliases`),
+  });
+
   const { data: allProjects = [], isLoading: projectsLoading } = useQuery<ProjectSummary[]>({
     queryKey: ["projects-summary-for-client-detail"],
     queryFn: () => qFetch("/api/projects-summary"),
@@ -167,6 +181,18 @@ export default function ClientDetailPage() {
         <span>/</span>
         <span className="text-foreground font-medium">{client.name}</span>
       </div>
+
+      {aliases.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 text-sm" data-testid="aliases-chips">
+          <span className="text-muted-foreground">Previously known as:</span>
+          {aliases.map((a) => (
+            <Badge key={a.id} variant="secondary" className="gap-1.5" data-testid={`alias-${a.loserClientId}`}>
+              {a.loserName}
+              <span className="text-xs text-muted-foreground">({a.loserClientIdCode})</span>
+            </Badge>
+          ))}
+        </div>
+      )}
 
       <SectionHeader
         icon={<Building2 className="h-5 w-5" />}

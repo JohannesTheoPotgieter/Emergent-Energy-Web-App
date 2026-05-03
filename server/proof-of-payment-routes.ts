@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 import { requirePermission } from "./permission-middleware";
 import { jwtAuth, requireAuth, getEffectiveUser } from "./auth-context";
 import { logAuditFromReq } from "./audit-logger";
+import { parseIntParam } from "./lib/req-params";
 
 function rowsFromResult(result: unknown): Record<string, unknown>[] {
   if (Array.isArray(result)) return result;
@@ -71,7 +72,7 @@ export function registerProofOfPaymentRoutes(app: Express) {
 
   app.get("/api/proof-of-payment/request/:paymentRequestId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const prId = parseInt(String(req.params.paymentRequestId));
+      const prId = parseIntParam(req.params.paymentRequestId);
       if (isNaN(prId)) return res.status(400).json({ error: "Invalid ID" });
 
       const rows = await db.execute(sql`
@@ -92,7 +93,7 @@ export function registerProofOfPaymentRoutes(app: Express) {
 
   app.get("/api/proof-of-payment/batch/:paymentBatchId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const batchId = parseInt(String(req.params.paymentBatchId));
+      const batchId = parseIntParam(req.params.paymentBatchId);
       if (isNaN(batchId)) return res.status(400).json({ error: "Invalid ID" });
 
       const rows = await db.execute(sql`

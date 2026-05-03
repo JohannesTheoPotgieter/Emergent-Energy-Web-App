@@ -4,15 +4,18 @@ import {
   intakeRequests,
   intakeTasks,
   msObjects,
-  pdTickets,
+  opportunities,
+  engineeringTickets,
   projectCommunicationTimelineEvents,
   projectEditableFields,
+  projectExecutionState,
+  projectInfo,
   projectPhaseHistory,
   raidItems,
   workItemDependencies,
   workItems,
 } from "@shared/schema";
-import { db } from "../db";
+import { db, initializeDatabase } from "../db";
 import { getPlatformProjectSummaryMap } from "./project-platform-summary-service";
 
 export const FEASIBILITY_STATUS_VALUES = [
@@ -219,6 +222,27 @@ export interface ProjectDevelopmentWorkspacePayload {
     }>;
   };
   pdTickets: {
+    total: number;
+    open: number;
+    completed: number;
+    tickets: Array<{
+      id: number;
+      requestType: string;
+      status: string;
+      dueDate: string | null;
+      numberOfReworks: number;
+      developerName: string | null;
+      designerName: string | null;
+      taskTotal: number;
+      taskCompleted: number;
+    }>;
+  };
+  /**
+   * Canonical name for the PD/engineering ticket block (task #61). Mirrors
+   * `pdTickets` exactly; the legacy `pdTickets` key is kept for one release
+   * as a deprecated alias so existing clients keep working.
+   */
+  engineeringTickets: {
     total: number;
     open: number;
     completed: number;
@@ -514,6 +538,14 @@ export function buildProjectDevelopmentWorkspaceFromSources(params: {
       completed: pdTicketSummary.filter((row) => isCompletedStatus(row.status)).length,
       tickets: pdTicketSummary,
     },
+    // Task #61: canonical key. Mirrors `pdTickets` exactly; the legacy key
+    // above is kept for one release as a deprecated alias.
+    engineeringTickets: {
+      total: pdTicketSummary.length,
+      open: pdTicketSummary.filter((row) => !isCompletedStatus(row.status)).length,
+      completed: pdTicketSummary.filter((row) => isCompletedStatus(row.status)).length,
+      tickets: pdTicketSummary,
+    },
     dependencies: {
       total: dependencyItems.length,
       openWorkItems,
@@ -715,17 +747,22 @@ export async function getProjectDevelopmentWorkspace(params: {
       .orderBy(desc(intakeRequests.updatedAt)),
     db
       .select({
-        id: pdTickets.id,
-        requestType: pdTickets.requestType,
-        status: pdTickets.status,
-        dueDate: pdTickets.dueDate,
-        numberOfReworks: pdTickets.numberOfReworks,
-        developerName: sql<string>`(SELECT name FROM users WHERE id = ${pdTickets.projectDeveloperUserId})`,
-        designerName: sql<string>`(SELECT name FROM users WHERE id = ${pdTickets.designerUserId})`,
+        id: engineeringTickets.id,
+        requestType: engineeringTickets.requestType,
+        status: engineeringTickets.status,
+        dueDate: engineeringTickets.dueDate,
+        numberOfReworks: engineeringTickets.numberOfReworks,
+        developerName: sql<string>`(SELECT name FROM users WHERE id = ${engineeringTickets.projectDeveloperUserId})`,
+        designerName: sql<string>`(SELECT name FROM users WHERE id = ${engineeringTickets.designerUserId})`,
       })
-      .from(pdTickets)
-      .where(eq(pdTickets.projectId, params.projectId))
-      .orderBy(desc(pdTickets.updatedAt)),
+      .from(engineeringTickets)
+      // Cascade-display: hide soft-deleted PD tickets and tickets whose
+      // project was soft-deleted via project_info.deleted_at. The
+      // pd_tickets.deleted_at column was added by migration
+      // 0019_foundation_linkage_hardening.sql to mirror the rest of the
+      // spine's soft-delete pattern.
+      .where(and(eq(engineeringTickets.projectId, params.projectId), isNull(engineeringTickets.deletedAt)))
+      .orderBy(desc(engineeringTickets.updatedAt)),
     db.select().from(raidItems).where(eq(raidItems.projectId, params.projectId)).orderBy(desc(raidItems.updatedAt)),
     db
       .select({
@@ -789,7 +826,28 @@ export async function getProjectDevelopmentWorkspace(params: {
           .from(intakeTasks)
           .where(inArray(intakeTasks.intakeRequestId, intakeRequestIds))
       : Promise.resolve([]),
-    Promise.resolve([] as PdTicketTaskSource[]),
+    // pdTicketTaskRows: aggregate work_items rows linked to each PD ticket
+    // for this project. Previously hardcoded to []; per Task #34 this is
+    // the missing read path that drove every PD ticket card to display
+    // "0 of 0 tasks" even after spawn. We compute total + completed in
+    // SQL using the same set of "completed" statuses recognised by
+    // isCompletedStatus() to keep the API and UI summaries consistent.
+    pdTicketIds.length > 0
+      ? db
+          .select({
+            pdTicketId: workItems.engineeringTicketId,
+            total: sql<number>`COUNT(*)`.as("total"),
+            completed: sql<number>`COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(${workItems.status}, ''))) IN ('completed','complete','closed','resolved','done'))`.as("completed"),
+          })
+          .from(workItems)
+          .where(
+            and(
+              inArray(workItems.engineeringTicketId, pdTicketIds),
+              isNull(workItems.deletedAt),
+            ),
+          )
+          .groupBy(workItems.engineeringTicketId)
+      : Promise.resolve([] as PdTicketTaskSource[]),
     workItemIds.length > 0
       ? db
           .select({
@@ -846,5 +904,207 @@ export async function getProjectDevelopmentWorkspace(params: {
     communicationTimelineRows,
     phaseHistoryRows,
     platformSummary: summaryMap.get(params.projectId),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Org-wide workspace rollup ("Meeting view") — Task #34
+// ---------------------------------------------------------------------------
+
+export type WorkspaceRollupRow = {
+  projectId: number;
+  projectName: string;
+  clientId: number | null;
+  phase: string | null;
+  opportunityId: number | null;
+  opportunityStage: string | null;
+  pdTickets: {
+    total: number;
+    open: number;
+    completed: number;
+    overdue: number;
+    oldestOpenAt: string | null;
+  };
+  /**
+   * Canonical alias for `pdTickets` (task #61). Mirrors the same data; the
+   * legacy `pdTickets` key is retained for one release.
+   */
+  engineeringTickets: {
+    total: number;
+    open: number;
+    completed: number;
+    overdue: number;
+    oldestOpenAt: string | null;
+  };
+  workItems: {
+    total: number;
+    open: number;
+    completed: number;
+    blocked: number;
+    overdue: number;
+  };
+  raid: { open: number };
+  ragStatus: string | null;
+  /** Spine-integrity flag set when this project has zero PD tickets but >0 work_items
+   * (i.e. work has been logged against a project whose intake never produced a ticket). */
+  spineGap: boolean;
+  /** Number of open PD tickets pointing at a soft-deleted project (should be 0). */
+  cascadeAnomalies: number;
+  lastActivityAt: string | null;
+};
+
+// Org-wide rollup. Driven from project_info filtered by deleted_at so
+// cascade-display is honoured at source.
+export async function getProjectDevelopmentWorkspaceRollup(): Promise<WorkspaceRollupRow[]> {
+  if (!db) {
+    await initializeDatabase();
+  }
+  const today = new Date().toISOString().slice(0, 10);
+
+  let projects: any[];
+  let oppRows: any[];
+  let ticketRows: any[];
+  let workItemAggRows: any[];
+  let raidAggRows: any[];
+  try {
+    [projects, oppRows, ticketRows, workItemAggRows, raidAggRows] = await Promise.all([
+      db
+        .select({
+          id: projectInfo.id,
+          projectName: projectInfo.projectName,
+          clientId: projectInfo.clientId,
+          phase: projectExecutionState.phase,
+          opportunityId: projectInfo.opportunityId,
+          ragStatus: projectExecutionState.ragStatus,
+          updatedAt: projectInfo.updatedAt,
+        })
+        .from(projectInfo)
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
+        .where(isNull(projectInfo.deletedAt)),
+      db
+        .select({ id: opportunities.id, stage: opportunities.stage })
+        .from(opportunities)
+        .where(isNull(opportunities.deletedAt)),
+      db
+        .select({
+          projectId: engineeringTickets.projectId,
+          status: engineeringTickets.status,
+          dueDate: engineeringTickets.dueDate,
+          createdAt: engineeringTickets.createdAt,
+        })
+        .from(engineeringTickets)
+        .where(isNull(engineeringTickets.deletedAt)),
+      db
+        .select({
+          projectId: workItems.projectId,
+          total: sql<number>`COUNT(*)::int`,
+          completed: sql<number>`COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(${workItems.status}, ''))) IN ('completed','complete','closed','resolved','done'))::int`,
+          blocked: sql<number>`COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(${workItems.status}, ''))) IN ('blocked','on hold'))::int`,
+          overdue: sql<number>`COUNT(*) FILTER (WHERE ${workItems.endDate} IS NOT NULL AND ${workItems.endDate} < ${today} AND LOWER(TRIM(COALESCE(${workItems.status}, ''))) NOT IN ('completed','complete','closed','resolved','done'))::int`,
+          lastActivityAt: sql<string | null>`MAX(${workItems.updatedAt})`,
+        })
+        .from(workItems)
+        .where(isNull(workItems.deletedAt))
+        .groupBy(workItems.projectId),
+      db
+        .select({
+          projectId: raidItems.projectId,
+          // raid_items.status is a Postgres enum (raid_status); we must cast to
+          // text BEFORE COALESCE because the empty-string default '' would
+          // otherwise be coerced into the enum type and trigger
+          // "invalid input value for enum raid_status: ''" (22P02).
+          open: sql<number>`COUNT(*) FILTER (WHERE LOWER(TRIM(COALESCE(${raidItems.status}::text, ''))) NOT IN ('completed','complete','closed','resolved','done'))::int`,
+        })
+        .from(raidItems)
+        .groupBy(raidItems.projectId),
+    ]);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/no such table/i.test(message) || /no such column/i.test(message)) {
+      return [];
+    }
+    throw error;
+  }
+
+  const oppStageById = new Map<number, string | null>();
+  for (const o of oppRows) oppStageById.set(o.id, o.stage ?? null);
+
+  type TicketAgg = { total: number; open: number; completed: number; overdue: number; oldestOpenAt: Date | null };
+  const ticketsByProject = new Map<number, TicketAgg>();
+  for (const t of ticketRows) {
+    if (t.projectId == null) continue;
+    let agg = ticketsByProject.get(t.projectId);
+    if (!agg) {
+      agg = { total: 0, open: 0, completed: 0, overdue: 0, oldestOpenAt: null };
+      ticketsByProject.set(t.projectId, agg);
+    }
+    agg.total += 1;
+    const status = String(t.status ?? "").trim();
+    const isClosed = status === "Completed" || status === "Cancelled";
+    if (isClosed) {
+      agg.completed += 1;
+    } else {
+      agg.open += 1;
+      if (t.createdAt && (!agg.oldestOpenAt || t.createdAt < agg.oldestOpenAt)) {
+        agg.oldestOpenAt = t.createdAt;
+      }
+      if (t.dueDate && t.dueDate < today) {
+        agg.overdue += 1;
+      }
+    }
+  }
+
+  const workItemsByProject = new Map<number, typeof workItemAggRows[number]>();
+  for (const w of workItemAggRows) {
+    if (w.projectId == null) continue;
+    workItemsByProject.set(w.projectId, w);
+  }
+
+  const raidByProject = new Map<number, number>();
+  for (const r of raidAggRows) {
+    if (r.projectId == null) continue;
+    raidByProject.set(r.projectId, Number(r.open ?? 0));
+  }
+
+  return projects.map((p: typeof projects[number]): WorkspaceRollupRow => {
+    const tickets = ticketsByProject.get(p.id) ?? { total: 0, open: 0, completed: 0, overdue: 0, oldestOpenAt: null };
+    const wi = workItemsByProject.get(p.id);
+    const wiTotal = Number(wi?.total ?? 0);
+    return {
+      projectId: p.id,
+      projectName: p.projectName ?? "",
+      clientId: p.clientId ?? null,
+      phase: p.phase ?? null,
+      opportunityId: p.opportunityId ?? null,
+      opportunityStage: p.opportunityId ? oppStageById.get(p.opportunityId) ?? null : null,
+      pdTickets: {
+        total: tickets.total,
+        open: tickets.open,
+        completed: tickets.completed,
+        overdue: tickets.overdue,
+        oldestOpenAt: tickets.oldestOpenAt ? toIsoString(tickets.oldestOpenAt) : null,
+      },
+      // Task #61: canonical alias of `pdTickets`. Same numbers, friendlier
+      // name. Legacy key kept for one release.
+      engineeringTickets: {
+        total: tickets.total,
+        open: tickets.open,
+        completed: tickets.completed,
+        overdue: tickets.overdue,
+        oldestOpenAt: tickets.oldestOpenAt ? toIsoString(tickets.oldestOpenAt) : null,
+      },
+      workItems: {
+        total: wiTotal,
+        open: Math.max(0, wiTotal - Number(wi?.completed ?? 0)),
+        completed: Number(wi?.completed ?? 0),
+        blocked: Number(wi?.blocked ?? 0),
+        overdue: Number(wi?.overdue ?? 0),
+      },
+      raid: { open: raidByProject.get(p.id) ?? 0 },
+      ragStatus: p.ragStatus ?? null,
+      spineGap: tickets.total === 0 && wiTotal > 0,
+      cascadeAnomalies: 0,
+      lastActivityAt: wi?.lastActivityAt ? toIsoString(wi.lastActivityAt) : (p.updatedAt ? toIsoString(p.updatedAt) : null),
+    };
   });
 }

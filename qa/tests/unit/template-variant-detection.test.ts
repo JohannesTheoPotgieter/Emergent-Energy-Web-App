@@ -65,28 +65,36 @@ describe("Template variant detection", () => {
       expect(source).toContain('"duration (work days)"');
     });
 
-    it("includes work days for actual_duration", () => {
+    it("includes work days under its own canonical field", () => {
+      // PR2A split the previously-conflated synonyms. "Work Days" is now
+      // a distinct canonical field on PLAN_SYNONYMS rather than being
+      // mapped onto actual_duration (where it collided semantically with
+      // calendar duration).
       const source = read("server/lib/import/synonyms.ts");
       const lines = source.split("\n");
-      const actualDurationLine = lines.find((l: string) => l.includes("actual_duration:"));
-      expect(actualDurationLine).toBeDefined();
-      expect(actualDurationLine).toContain('"work days"');
+      const workDaysLine = lines.find((l: string) => l.includes("work_days:"));
+      expect(workDaysLine).toBeDefined();
+      expect(workDaysLine).toContain('"work days"');
     });
 
-    it("includes resource 1 → owner synonym", () => {
+    it("includes resource_1 as a distinct canonical field", () => {
+      // PR2A split: "Resource 1" used to map onto `owner` (collision
+      // with the OWNER column). It now has its own canonical field.
       const source = read("server/lib/import/synonyms.ts");
       const lines = source.split("\n");
-      const ownerLine = lines.find((l: string) => l.includes("owner:"));
-      expect(ownerLine).toBeDefined();
-      expect(ownerLine).toContain('"resource 1"');
+      const resource1Line = lines.find((l: string) => l.includes("resource_1:"));
+      expect(resource1Line).toBeDefined();
+      expect(resource1Line).toContain('"resource 1"');
     });
 
-    it("includes resource 2 → comment synonym", () => {
+    it("includes resource_2 as a distinct canonical field", () => {
+      // PR2A split: "Resource 2" used to map onto `comment` (collision
+      // with the COMMENTS column). It now has its own canonical field.
       const source = read("server/lib/import/synonyms.ts");
       const lines = source.split("\n");
-      const commentLine = lines.find((l: string) => l.includes("comment:"));
-      expect(commentLine).toBeDefined();
-      expect(commentLine).toContain('"resource 2"');
+      const resource2Line = lines.find((l: string) => l.includes("resource_2:"));
+      expect(resource2Line).toBeDefined();
+      expect(resource2Line).toContain('"resource 2"');
     });
   });
 

@@ -21,6 +21,8 @@ import { NotificationBell } from "@/components/NotificationBell";
 import { LensSwitcher } from "@/components/layout/LensSwitcher";
 import { useLensContext } from "@/hooks/use-lens-context";
 import { GlobalCommandPalette } from "@/components/GlobalCommandPalette";
+import { KeyboardShortcutsDialog } from "@/components/KeyboardShortcutsDialog";
+import { useKeyboardNav } from "@/hooks/use-keyboard-nav";
 import { NavOnboardingTour } from "@/components/layout/NavOnboardingTour";
 import { NavOrderCustomizer } from "@/components/layout/NavOrderCustomizer";
 import { useTheme } from "@/hooks/use-theme";
@@ -28,6 +30,8 @@ import { useBreakpoint } from "@/hooks/use-breakpoint";
 import { trackNavClick, trackPageView } from "@/lib/nav-analytics";
 import { usePrefetchRoute } from "@/hooks/use-prefetch-route";
 import { useRolloutFlag } from "@/hooks/use-rollout-flag";
+import { useScreenAvailability } from "@/hooks/use-screen-availability";
+import { PAGE_REGISTRY } from "@/config/page-registry";
 
 type SearchResult = { id: string; title: string; subtitle?: string; type: string; url?: string | null };
 
@@ -53,6 +57,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [microsoftMenuOpen, setMicrosoftMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const { canAccessEntityAction, canViewPath, disabledSubPages } = useAccessMatrix();
+  const { isScreenEnabled } = useScreenAvailability();
   const { enabled: actionLaunchpadEnabled } = useRolloutFlag("action_launchpad");
   const { enabled: onboardingTourEnabled } = useRolloutFlag("onboarding_tour");
   const { theme, setTheme } = useTheme();
@@ -83,14 +88,35 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     }
   }, [location]);
 
+  // Build a map from nav path → screen id so we can filter by screen availability.
+  const pathToScreenId = useMemo(
+    () => new Map(PAGE_REGISTRY.filter((p) => p.id && p.path).map((p) => [p.path, p.id])),
+    [],
+  );
+
   const visibleSections = useMemo(() => {
     const sections = buildVisibleTopSections({
       canViewPath,
       disabledSubPages: disabledSubPages,
     });
+
+    // Filter out any secondary nav items whose screen has been disabled by admin.
+    const filtered = sections
+      .map((section) => {
+        const secondary = section.secondary.filter((item) => {
+          const screenId = pathToScreenId.get(item.path);
+          return !screenId || isScreenEnabled(screenId);
+        });
+        const sectionScreenId = pathToScreenId.get(section.path);
+        const sectionEnabled = !sectionScreenId || isScreenEnabled(sectionScreenId);
+        if (!sectionEnabled && secondary.length === 0) return null;
+        return { ...section, secondary };
+      })
+      .filter(Boolean) as typeof sections;
+
     // Apply user's custom section order if set
     if (sectionOrder.length > 0) {
-      return [...sections].sort((a, b) => {
+      return [...filtered].sort((a, b) => {
         const aIdx = sectionOrder.indexOf(a.label);
         const bIdx = sectionOrder.indexOf(b.label);
         if (aIdx === -1 && bIdx === -1) return 0;
@@ -99,8 +125,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         return aIdx - bIdx;
       });
     }
-    return sections;
-  }, [canViewPath, sectionOrder, disabledSubPages]);
+    return filtered;
+  }, [canViewPath, sectionOrder, disabledSubPages, isScreenEnabled, pathToScreenId]);
 
   // Redirect to the active lens's landing page on lens switch
   const prevLensRef = useRef(lens.activeLens);
@@ -247,8 +273,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </SheetContent>
           </Sheet>
 
-          <Link href="/" className="flex items-center gap-2.5 min-w-fit">
-            <img src="/emergent-logo.png" alt="Emergent Energy" className="h-7 w-auto object-contain" />
+          <Link href="/" className="flex items-center min-w-fit group" aria-label="Emergent Energy home">
+            <img
+              src="/emergent-leaf.png"
+              alt="Emergent Energy"
+              className="sm:hidden h-7 w-7 object-contain transition-transform duration-200 group-hover:rotate-[6deg]"
+            />
+            <img
+              src="/emergent-logo.png"
+              alt="Emergent Energy"
+              className="hidden sm:block h-7 w-auto object-contain transition-transform duration-200 group-hover:scale-[1.02]"
+            />
           </Link>
 
           <div className={cn("relative flex-1", isMobile ? "max-w-[42vw]" : "max-w-xl")} ref={searchContainerRef}>
@@ -371,7 +406,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </DropdownMenu>
         </div>
 
-        <div className="hidden lg:block border-t border-border/50">
+        <div className="hidden lg:block">
           <nav className="flex px-6 py-1 gap-0.5 overflow-x-auto mx-auto w-full max-w-[1440px]" data-testid="nav-top-sections">
             {visibleSections.map((section) => {
               const active = section.label === activeSection.label;
@@ -397,7 +432,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         {(breadcrumbs.length > 0 || activeSection.secondary.length > 0) && (
-          <div className="border-t border-border/40 bg-muted/20">
+          <div className="bg-[hsl(var(--surface-tint))]/40">
             <div className="px-4 lg:px-6 mx-auto w-full max-w-[1440px]">
               {breadcrumbs.length > 0 && (
                 <nav aria-label="breadcrumb" className="py-1.5">
@@ -567,6 +602,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       <main id="main-content" className={cn("px-4 lg:px-6 py-5", isTablet && "pb-24")}>{children}</main>
       <GlobalCommandPalette />
+      <KeyboardShortcutsDialog />
+      <KeyboardNavActivator />
       {onboardingTourEnabled ? <NavOnboardingTour /> : null}
     </div>
   );
@@ -610,4 +647,14 @@ function MobileCollapsibleSubNav({ items, location }: { items: { label: string; 
       )}
     </div>
   );
+}
+
+/**
+ * Tiny wrapper so the useKeyboardNav hook is installed inside AppLayout
+ * (hooks must live inside a component; useKeyboardNav is a side-effect
+ * hook that attaches a keydown listener globally).
+ */
+function KeyboardNavActivator() {
+  useKeyboardNav();
+  return null;
 }

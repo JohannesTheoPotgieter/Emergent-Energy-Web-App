@@ -40,7 +40,7 @@ import { recordOverride, recordManualEdit } from "../lib/audit/diff-engine";
 import { recordManualEditFlag } from "../lib/manual-edit-flag";
 import { safeNum, getFYRange } from "../lib/home-helpers";
 import { isEffectivelyRealisedLocal, isCashflowConfirmedCheck } from "../lib/finance-helpers";
-import { paramStr } from "../lib/req-params";
+import { paramStr, parseIntParam } from "../lib/req-params";
 import { getCanonicalAllCurrentCostLines, getCanonicalProjectCostLinesByName } from "../services/project-cost-line-read-service";
 
 export function registerFinanceLegacyExtractedRoutes(app: Express): void {
@@ -325,7 +325,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
       });
     } catch (err: any) {
       console.error("[Financial Headline] Error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -724,7 +724,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
       logAuditFromReq(req, { entityType: "revenue_tracking_override", action: "create", changesJson: { description: `${overrides.length} revenue tracking override(s) saved`, count: overrides.length, projectNames } });
       res.json({ message: "Revenue tracking overrides saved", count: saved.length, overrides: saved });
     } catch (error) {
-      res.status(500).json({ error: "Failed to save revenue tracking overrides", message: error instanceof Error ? error.message : "Failed to save revenue tracking overrides" });
+      res.status(500).json({ error: "Failed to save revenue tracking overrides" });
     }
   });
 
@@ -827,7 +827,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
       res.json({ message: "Expenditure overrides applied successfully", count: overrides.length });
     } catch (error) {
       console.error("Failed to submit expenditure overrides for approval:", error);
-      res.status(500).json({ error: "Failed to save overrides", message: error instanceof Error ? error.message : "Failed to save overrides" });
+      res.status(500).json({ error: "Failed to save overrides" });
     }
   });
 
@@ -874,7 +874,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
 
   app.delete("/api/expense-task-links/:projectName/:expenseId", requireAuth, requireAdmin, async (req, res) => {
     try {
-      await storage.deleteExpenseTaskLink(paramStr(req.params.projectName), parseInt(paramStr(req.params.expenseId)));
+      await storage.deleteExpenseTaskLink(paramStr(req.params.projectName), parseIntParam(req.params.expenseId));
 
       logAuditFromReq(req, { entityType: "expense_link", action: "delete", projectName: paramStr(req.params.projectName), changesJson: { description: "Expense task link removed", expenseId: paramStr(req.params.expenseId) } });
       res.json({ success: true });
@@ -887,7 +887,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
     try {
       const { dateOverride, reason } = req.body;
       const projectName = paramStr(req.params.projectName);
-      const expenseId = parseInt(paramStr(req.params.expenseId));
+      const expenseId = parseIntParam(req.params.expenseId);
       await storage.updateExpenseTaskLinkDateOverride(projectName, expenseId, dateOverride, reason);
 
       try {
@@ -1135,7 +1135,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
 
   app.delete("/api/cos-status-override/:expenseId", requireAuth, async (req, res) => {
     try {
-      const expenseId = parseInt(paramStr(req.params.expenseId));
+      const expenseId = parseIntParam(req.params.expenseId);
 
       // PE dual-write removed — normalized_cost_lines is canonical source
       // DEPRECATED: cosStatusOverrides table removed — override data baked into base rows

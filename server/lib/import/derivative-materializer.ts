@@ -19,7 +19,7 @@
 import type { NormalizationResult } from "./normalizer";
 import { addTemporalColumns } from "../temporal-helpers";
 import { projectRevenueSummary } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 
 export interface MaterializerContext {
   tx: any;
@@ -50,7 +50,10 @@ export async function materializeDerivatives(ctx: MaterializerContext): Promise<
     if (hasData) {
       const [existing] = await tx.select({ id: projectRevenueSummary.id })
         .from(projectRevenueSummary)
-        .where(eq(projectRevenueSummary.projectName, projectName))
+        .where(and(
+          eq(projectRevenueSummary.projectName, projectName),
+          isNull(projectRevenueSummary.effectiveTo),
+        ))
         .limit(1);
       const vals: Record<string, any> = {};
       if (cs.plannedRevenue != null) vals.plannedRevenue = String(cs.plannedRevenue);
@@ -64,7 +67,10 @@ export async function materializeDerivatives(ctx: MaterializerContext): Promise<
       if (existing) {
         await tx.update(projectRevenueSummary)
           .set({ ...vals, snapshotRunId: runId, effectiveFrom: commitTimestamp })
-          .where(eq(projectRevenueSummary.id, existing.id));
+          .where(and(
+            eq(projectRevenueSummary.id, existing.id),
+            isNull(projectRevenueSummary.effectiveTo),
+          ));
       } else {
         await tx.insert(projectRevenueSummary).values(addTemporalColumns({ projectName, projectId, ...vals }, runId, commitTimestamp) as any);
       }

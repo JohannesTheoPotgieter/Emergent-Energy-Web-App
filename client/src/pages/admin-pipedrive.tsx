@@ -22,11 +22,24 @@ interface SyncLogEntry {
   status: string;
 }
 
+type SyncErrorClass =
+  | "missing_org" | "missing_field" | "schema_mismatch" | "type_coercion"
+  | "api_error" | "client_resolve" | "unknown";
+
+interface StructuredSyncError {
+  dealId: number | null;
+  dealTitle: string | null;
+  class: SyncErrorClass;
+  message: string;
+  retryable: boolean;
+}
+
 interface SyncResult {
   dealsProcessed: number;
   dealsCreated: number;
   dealsUpdated: number;
-  errors: string[];
+  dealsUnchanged?: number;
+  errors: StructuredSyncError[];
 }
 
 function statusBadge(s: string) {
@@ -37,13 +50,38 @@ function statusBadge(s: string) {
   return "bg-muted text-muted-foreground";
 }
 
-function parseErrors(raw: string | null): string[] {
+const ERROR_CLASS_LABEL: Record<SyncErrorClass, string> = {
+  missing_org: "Missing org",
+  missing_field: "Missing field",
+  schema_mismatch: "Schema mismatch",
+  type_coercion: "Type error",
+  api_error: "Pipedrive API",
+  client_resolve: "Client lookup",
+  unknown: "Other",
+};
+
+function parseErrors(raw: string | null): StructuredSyncError[] {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.map(String) : [String(parsed)];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((e: unknown): StructuredSyncError => {
+      // New structured shape
+      if (e && typeof e === "object" && "class" in e && "message" in e) {
+        const o = e as Record<string, unknown>;
+        return {
+          dealId: typeof o.dealId === "number" ? o.dealId : null,
+          dealTitle: typeof o.dealTitle === "string" ? o.dealTitle : null,
+          class: (o.class as SyncErrorClass) ?? "unknown",
+          message: String(o.message ?? ""),
+          retryable: Boolean(o.retryable),
+        };
+      }
+      // Legacy plain-string shape (older sync_log rows)
+      return { dealId: null, dealTitle: null, class: "unknown", message: String(e), retryable: false };
+    });
   } catch {
-    return [raw];
+    return [{ dealId: null, dealTitle: null, class: "unknown", message: raw, retryable: false }];
   }
 }
 
@@ -134,16 +172,22 @@ export default function AdminPipedrivePage() {
                 deals flow <em>into</em> Opportunities; nothing is written back to Pipedrive.
               </p>
               <p>
-                Synced fields: <code className="px-1 py-0.5 bg-blue-100 rounded text-[11px]">clientId</code>,{" "}
+                Synced from Pipedrive (CRM-owned): <code className="px-1 py-0.5 bg-blue-100 rounded text-[11px]">clientId</code>,{" "}
                 <code className="px-1 py-0.5 bg-blue-100 rounded text-[11px]">stage</code>,{" "}
                 <code className="px-1 py-0.5 bg-blue-100 rounded text-[11px]">status</code>,{" "}
                 <code className="px-1 py-0.5 bg-blue-100 rounded text-[11px]">estimatedValue</code>,{" "}
                 <code className="px-1 py-0.5 bg-blue-100 rounded text-[11px]">expectedCloseDate</code>,{" "}
-                <code className="px-1 py-0.5 bg-blue-100 rounded text-[11px]">signedDate</code>.
-                App-side fields (notes, contract type, funding, kWp/kWh, handover readiness,
-                commercial risks, deal owner) are <strong>not</strong> touched by sync — they
-                remain user-owned. Clients are auto-created from Pipedrive organisations when
-                no match on <code className="px-1 py-0.5 bg-blue-100 rounded text-[11px]">pipedrive_org_id</code> is found.
+                <code className="px-1 py-0.5 bg-blue-100 rounded text-[11px]">signedDate</code>,{" "}
+                <code className="px-1 py-0.5 bg-blue-100 rounded text-[11px]">dealOwner</code>,{" "}
+                <code className="px-1 py-0.5 bg-blue-100 rounded text-[11px]">person*</code>,{" "}
+                kWp / kWh and other Pipedrive custom fields. The complete, authoritative list
+                lives in the field-mapping registry
+                (<code className="px-1 py-0.5 bg-blue-100 rounded text-[11px]">pipedrive-field-mapping.ts</code>).
+                App-owned fields (notes, contract type, funding type, site assignment,
+                handover readiness, commercial risks) are <strong>never</strong> touched by sync —
+                they remain user-owned even on full re-sync. Clients are auto-created from
+                Pipedrive organisations when no match on{" "}
+                <code className="px-1 py-0.5 bg-blue-100 rounded text-[11px]">pipedrive_org_id</code> is found.
               </p>
             </div>
           </div>
@@ -282,15 +326,50 @@ export default function AdminPipedrivePage() {
                       )}
                     </div>
                     {errs.length > 0 && (
-                      <details className="mt-2">
+                      <details className="mt-2" data-testid={`details-errors-${entry.id}`}>
                         <summary className="text-xs text-red-600 cursor-pointer">
                           View {errs.length} {errs.length === 1 ? "error" : "errors"}
                         </summary>
-                        <ul className="text-[10px] text-red-700 bg-red-50 p-2 rounded mt-1 list-disc pl-5 space-y-0.5">
-                          {errs.map((e, i) => (
-                            <li key={i} className="break-all">{e}</li>
-                          ))}
-                        </ul>
+                        <div className="mt-1 bg-red-50 p-2 rounded space-y-1">
+                          {(() => {
+                            const counts: Record<string, number> = {};
+                            errs.forEach(e => { counts[e.class] = (counts[e.class] || 0) + 1; });
+                            return (
+                              <div className="flex flex-wrap gap-1 mb-1">
+                                {Object.entries(counts).map(([cls, n]) => (
+                                  <Badge
+                                    key={cls}
+                                    variant="outline"
+                                    className="text-[10px] bg-white"
+                                    data-testid={`badge-error-class-${cls}-${entry.id}`}
+                                  >
+                                    {ERROR_CLASS_LABEL[cls as SyncErrorClass] ?? cls}: {n}
+                                  </Badge>
+                                ))}
+                              </div>
+                            );
+                          })()}
+                          <ul className="text-[10px] text-red-700 list-none space-y-1 max-h-64 overflow-auto">
+                            {errs.map((e, i) => (
+                              <li key={i} className="border-l-2 border-red-300 pl-2" data-testid={`text-error-${entry.id}-${i}`}>
+                                <div className="flex items-center gap-1 flex-wrap">
+                                  <span className="font-semibold">
+                                    {ERROR_CLASS_LABEL[e.class] ?? e.class}
+                                  </span>
+                                  {e.dealId != null && (
+                                    <span className="text-red-500">
+                                      · deal {e.dealId}{e.dealTitle ? ` "${e.dealTitle}"` : ""}
+                                    </span>
+                                  )}
+                                  {e.retryable && (
+                                    <Badge variant="outline" className="text-[9px] bg-white">retryable</Badge>
+                                  )}
+                                </div>
+                                <div className="break-all">{e.message}</div>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
                       </details>
                     )}
                   </CardContent>

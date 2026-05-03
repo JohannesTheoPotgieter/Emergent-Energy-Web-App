@@ -1,23 +1,51 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
 import { PageShell } from "@/components/layout/page-shell";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout } from "@/components/layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { AlertTriangle, Plus, X, Search, DollarSign, ListTodo, MessageSquare, FolderOpen, CheckCircle2, GitBranch } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  DollarSign,
+  FolderOpen,
+  GitBranch,
+  History,
+  ListTodo,
+  MessageSquare,
+  Plus,
+  X,
+} from "lucide-react";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
-import { isPriorityAdminRole } from "@/config/priorities";
-
-const token = () => localStorage.getItem("auth_token") || "";
+import { isPriorityAdminRole, departmentLabel } from "@/config/priorities";
+import { ProjectLinker } from "@/components/priorities/ProjectLinker";
+import { type ProgressSourceValue } from "@/components/priorities/ProgressSourcePicker";
+import {
+  PriorityFormFields,
+  emptyPriorityForm,
+  buildPriorityPayload,
+  type PriorityFormState,
+} from "@/components/priorities/PriorityFormFields";
+import { BreakDownDialog } from "@/components/priorities/BreakDownDialog";
+import { useConfirmDialog } from "@/components/priorities/ConfirmActionDialog";
+import { ActivityIcon, formatActivitySentence } from "@/lib/priority-activity-formatter";
+import type {
+  LinkedProject,
+  PriorityActivityRow,
+  PriorityDetail,
+  PriorityRow,
+} from "@/lib/priority-types";
 
 const HEALTH_DOT: Record<string, string> = {
   critical: "bg-red-500",
@@ -38,223 +66,71 @@ const RAG_BADGE: Record<string, string> = {
   red: "bg-red-100 text-red-700",
 };
 
-const DEPARTMENT_OPTIONS = [
-  { value: "ADMIN", label: "Admin" },
-  { value: "LEADERSHIP", label: "Leadership" },
-  { value: "ENGINEERING", label: "Engineering" },
-  { value: "PROJECT_DEVELOPMENT", label: "Project Development" },
-  { value: "PROJECT_MANAGEMENT", label: "Project Management" },
-  { value: "FINANCE", label: "Finance" },
-];
-
 function formatCurrency(value: number): string {
   if (Math.abs(value) >= 1_000_000) return `R ${(value / 1_000_000).toFixed(1)}M`;
   if (Math.abs(value) >= 1_000) return `R ${(value / 1_000).toFixed(0)}K`;
   return `R ${value.toFixed(0)}`;
 }
 
+/** Short, human-friendly date — handles ISO `YYYY-MM-DD` and full Date strings. */
+function formatDateShort(value: string | null | undefined): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function formatDateTime(value: string | null | undefined): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function prettyStatus(s: string | null | undefined): string {
+  if (!s) return "—";
+  return s.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function statusBadgeClass(s: string | null | undefined): string {
+  const k = (s || "").toLowerCase().replace(/[_-]+/g, " ").trim();
+  if (k.includes("block")) return "bg-red-50 text-red-700 border-red-200";
+  if (k.includes("progress") || k === "open" || k === "active") return "bg-blue-50 text-blue-700 border-blue-200";
+  if (k === "complete" || k === "completed" || k === "done" || k === "qc approved") return "bg-emerald-50 text-emerald-700 border-emerald-200";
+  if (k === "cancelled" || k === "canceled") return "bg-gray-100 text-gray-500 border-gray-200";
+  if (k.startsWith("not")) return "bg-slate-100 text-slate-600 border-slate-200";
+  return "bg-gray-100 text-gray-600 border-gray-200";
+}
+
+/**
+ * Date-only diff in days. Uses ISO YYYY-MM-DD comparison so it doesn't flip
+ * across the UTC/local boundary (see Tier 1 bug-fix notes).
+ */
 function daysRemaining(dateStr: string | null): number | null {
   if (!dateStr) return null;
-  const due = new Date(dateStr);
-  const now = new Date();
-  return Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  const due = Date.parse(dateStr + "T00:00:00Z");
+  const today = Date.parse(new Date().toISOString().slice(0, 10) + "T00:00:00Z");
+  if (Number.isNaN(due) || Number.isNaN(today)) return null;
+  return Math.ceil((due - today) / 86_400_000);
 }
 
-function ProjectLinker({ priorityId, existingProjectIds, onDone }: { priorityId: number; existingProjectIds: number[]; onDone: () => void }) {
-  const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState<number[]>([]);
-  const queryClient = useQueryClient();
-
-  const { data: allProjects = [] } = useQuery<any[]>({
-    queryKey: ["/api/v2/projects", "linker"],
-    queryFn: async () => {
-      // Primary source: projects-summary endpoint (widely used across app + role aware).
-      try {
-        const summaryRes = await fetch("/api/projects-summary", {
-          credentials: "include",
-          headers: { Authorization: `Bearer ${token()}` },
-        });
-        if (summaryRes.ok) {
-          const summaryData = await summaryRes.json();
-          const summaryRows = Array.isArray(summaryData)
-            ? summaryData
-            : summaryData?.projects || summaryData?.data?.rows || [];
-          if (summaryRows.length > 0) {
-            return summaryRows.map((p: any) => ({
-              id: p.id || p.project_info_id,
-              projectName: p.projectName || p.project_name || p.name || `Project ${p.id || p.project_info_id}`,
-            }));
-          }
-        }
-      } catch {
-        // Fall through to v2 endpoint
-      }
-
-      // Fallback: v2 projects endpoint.
-      const res = await fetch("/api/v2/projects?pageSize=500", {
-        credentials: "include",
-        headers: { Authorization: `Bearer ${token()}` },
-      });
-      if (!res.ok) return [];
-      const data = await res.json();
-      return (data.data?.rows || []).map((p: any) => ({
-        id: p.id,
-        projectName: p.projectName || p.project_name || p.name || `Project ${p.id}`,
-      }));
-    },
-  });
-
-  const available = useMemo(() => {
-    const existingSet = new Set(existingProjectIds);
-    return allProjects
-      .filter(p => !existingSet.has(p.id))
-      .filter(p => !search || p.projectName?.toLowerCase().includes(search.toLowerCase()));
-  }, [allProjects, existingProjectIds, search]);
-
-  const linkMutation = useMutation({
-    mutationFn: async () => {
-      await apiRequest("POST", `/api/priorities/${priorityId}/projects`, { project_ids: selected });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}`] });
-      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
-      onDone();
-    },
-  });
-
-  return (
-    <div className="space-y-3">
-      <div className="relative">
-        <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-        <Input placeholder="Search projects..." value={search} onChange={e => setSearch(e.target.value)} className="pl-8" />
-      </div>
-      <div className="max-h-60 overflow-y-auto space-y-1">
-        {available.map(p => (
-          <label key={p.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer text-sm">
-            <input
-              type="checkbox"
-              checked={selected.includes(p.id)}
-              onChange={e => {
-                if (e.target.checked) setSelected([...selected, p.id]);
-                else setSelected(selected.filter(id => id !== p.id));
-              }}
-              className="rounded"
-            />
-            <span>{p.projectName}</span>
-          </label>
-        ))}
-        {available.length === 0 && <p className="text-sm text-muted-foreground py-2 text-center">No available projects</p>}
-      </div>
-      <Button size="sm" disabled={selected.length === 0 || linkMutation.isPending} onClick={() => linkMutation.mutate()}>
-        Link {selected.length} project{selected.length !== 1 ? "s" : ""}
-      </Button>
-    </div>
-  );
+interface ProjectLikeChild extends PriorityRow {
+  /** enriched-server shape — children share the PriorityRow envelope. */
+  id: number;
 }
 
-function BreakDownDialog({ priorityId, open, onOpenChange }: { priorityId: number; open: boolean; onOpenChange: (v: boolean) => void }) {
-  const queryClient = useQueryClient();
-  const [rows, setRows] = useState([{ title: "", department_key: "", assigned_user_id: "" }]);
-
-  const breakDownMutation = useMutation({
-    mutationFn: async () => {
-      const children = rows
-        .filter(r => r.title.trim())
-        .map(r => ({
-          title: r.title.trim(),
-          department_key: r.department_key || undefined,
-          assigned_user_id: r.assigned_user_id ? parseInt(r.assigned_user_id) : undefined,
-        }));
-      const res = await fetch(`/api/priorities/${priorityId}/break-down`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
-        body: JSON.stringify({ children }),
-      });
-      if (!res.ok) throw new Error("Failed to break down priority");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}/children`] });
-      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
-      onOpenChange(false);
-      setRows([{ title: "", department_key: "", assigned_user_id: "" }]);
-    },
-  });
-
-  const updateRow = (idx: number, field: string, value: string) => {
-    setRows(prev => prev.map((r, i) => i === idx ? { ...r, [field]: value } : r));
-  };
-
-  const addRow = () => setRows(prev => [...prev, { title: "", department_key: "", assigned_user_id: "" }]);
-  const removeRow = (idx: number) => setRows(prev => prev.filter((_, i) => i !== idx));
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Break Down Priority</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3">
-          <p className="text-sm text-muted-foreground">Create child priorities below this one.</p>
-          {rows.map((row, idx) => (
-            <div key={idx} className="grid grid-cols-12 gap-2 items-end border rounded p-2">
-              <div className="col-span-5">
-                <Label className="text-xs">Title *</Label>
-                <Input
-                  value={row.title}
-                  onChange={e => updateRow(idx, "title", e.target.value)}
-                  placeholder="Child priority title"
-                />
-              </div>
-              <div className="col-span-4">
-                <Label className="text-xs">Department</Label>
-                <Select value={row.department_key} onValueChange={v => updateRow(idx, "department_key", v)}>
-                  <SelectTrigger><SelectValue placeholder="Select dept" /></SelectTrigger>
-                  <SelectContent>
-                    {DEPARTMENT_OPTIONS.map(d => (
-                      <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="col-span-2">
-                <Label className="text-xs">User ID</Label>
-                <Input
-                  type="number"
-                  value={row.assigned_user_id}
-                  onChange={e => updateRow(idx, "assigned_user_id", e.target.value)}
-                  placeholder="Optional"
-                />
-              </div>
-              <div className="col-span-1 flex justify-end">
-                {rows.length > 1 && (
-                  <button onClick={() => removeRow(idx)} className="text-muted-foreground hover:text-red-600 mt-1">
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
-          <Button variant="outline" size="sm" onClick={addRow}>
-            <Plus className="w-3 h-3 mr-1" /> Add another
-          </Button>
-        </div>
-        <div className="flex justify-end gap-2 mt-2">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button
-            onClick={() => breakDownMutation.mutate()}
-            disabled={breakDownMutation.isPending || !rows.some(r => r.title.trim())}
-          >
-            {breakDownMutation.isPending ? "Creating..." : "Create sub-priorities"}
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
+interface MergedTaskOrApproval {
+  id: number;
+  title: string;
+  status: string | null;
+  projectName: string;
+  assignee: string | null;
+  dueDate: string | null;
+  endDate?: string | null;
+  itemType: "task" | "approval";
 }
 
+// ── Activity helpers (re-exported from lib for use in JSX below) ──
 export default function PriorityDetailPage() {
   const [, params] = useRoute("/priorities/:id");
   const priorityId = params?.id ? parseInt(params.id) : 0;
@@ -263,81 +139,85 @@ export default function PriorityDetailPage() {
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [breakDownDialogOpen, setBreakDownDialogOpen] = useState(false);
-  const [editForm, setEditForm] = useState({
-    title: "",
-    description: "",
-    severity: "normal",
-    status: "active",
-    due_date: "",
-    target_outcome: "",
-    manual_health: "none",
-    manual_progress: "",
+  const [showProjectEvents, setShowProjectEvents] = useState(false);
+  const [editForm, setEditForm] = useState<PriorityFormState>(emptyPriorityForm);
+  const [progressSource, setProgressSource] = useState<ProgressSourceValue>({
+    type: "manual",
+    ref: null,
+    manualProgress: "",
   });
 
   const isAdmin = isPriorityAdminRole(user?.role);
+  const { confirm, dialog: confirmDialog } = useConfirmDialog();
 
-  const { data: priority, isLoading, isError, error, refetch } = useQuery<any>({
+  const { data: priority, isLoading, isError, error, refetch } = useQuery<PriorityDetail>({
     queryKey: [`/api/priorities/${priorityId}`],
     queryFn: async () => {
-      const res = await fetch(`/api/priorities/${priorityId}`, { headers: { Authorization: `Bearer ${token()}` } });
-      if (!res.ok) throw new Error("Failed to fetch data (" + res.status + ")");
+      const res = await apiRequest("GET", `/api/priorities/${priorityId}`);
       return res.json();
     },
     enabled: priorityId > 0,
   });
 
-  const { data: tasks = [] } = useQuery<any[]>({
+  const hasAnyProjects = priorityId > 0
+    && ((priority?.rolledUp?.projectCount ?? 0) > 0 || !!priority?.hasProjects);
+
+  const subResourceFetcher = async <T,>(url: string, fallback: T): Promise<T> => {
+    try {
+      const res = await apiRequest("GET", url);
+      return (await res.json()) as T;
+    } catch {
+      return fallback;
+    }
+  };
+
+  const { data: tasks = [] } = useQuery<MergedTaskOrApproval[]>({
     queryKey: [`/api/priorities/${priorityId}/tasks`],
-    queryFn: async () => {
-      const res = await fetch(`/api/priorities/${priorityId}/tasks`, { headers: { Authorization: `Bearer ${token()}` } });
-      if (!res.ok) return [];
-      return res.json();
-    },
-    enabled: priorityId > 0 && !!priority?.hasProjects,
+    queryFn: () => subResourceFetcher(`/api/priorities/${priorityId}/tasks`, [] as MergedTaskOrApproval[]),
+    enabled: hasAnyProjects,
   });
 
-  const { data: pendingApprovals = [] } = useQuery<any[]>({
+  const { data: pendingApprovals = [] } = useQuery<MergedTaskOrApproval[]>({
     queryKey: [`/api/priorities/${priorityId}/approvals`],
-    queryFn: async () => {
-      const res = await fetch(`/api/priorities/${priorityId}/approvals`, { headers: { Authorization: `Bearer ${token()}` } });
-      if (!res.ok) return [];
-      return res.json();
-    },
-    enabled: priorityId > 0 && !!priority?.hasProjects,
+    queryFn: () => subResourceFetcher(`/api/priorities/${priorityId}/approvals`, [] as MergedTaskOrApproval[]),
+    enabled: hasAnyProjects,
   });
 
-  const { data: updates = [] } = useQuery<any[]>({
+  interface ProjectUpdateRow {
+    projectId: number;
+    projectName: string;
+    phase: string | null;
+    ragStatus: string | null;
+    ragComment: string | null;
+    phaseNotes: string | null;
+    date: string | null;
+  }
+  const { data: updates = [] } = useQuery<ProjectUpdateRow[]>({
     queryKey: [`/api/priorities/${priorityId}/updates`],
-    queryFn: async () => {
-      const res = await fetch(`/api/priorities/${priorityId}/updates`, { headers: { Authorization: `Bearer ${token()}` } });
-      if (!res.ok) return [];
-      return res.json();
-    },
-    enabled: priorityId > 0 && !!priority?.hasProjects,
+    queryFn: () => subResourceFetcher(`/api/priorities/${priorityId}/updates`, [] as ProjectUpdateRow[]),
+    enabled: hasAnyProjects,
   });
 
-  const { data: children = [] } = useQuery<any[]>({
+  const { data: children = [] } = useQuery<ProjectLikeChild[]>({
     queryKey: [`/api/priorities/${priorityId}/children`],
-    queryFn: async () => {
-      const res = await fetch(`/api/priorities/${priorityId}/children`, { headers: { Authorization: `Bearer ${token()}` } });
-      if (!res.ok) return [];
-      return res.json();
-    },
+    queryFn: () => subResourceFetcher(`/api/priorities/${priorityId}/children`, [] as ProjectLikeChild[]),
+    enabled: priorityId > 0,
+  });
+
+  const { data: activity = [] } = useQuery<PriorityActivityRow[]>({
+    queryKey: [`/api/priorities/${priorityId}/activity`, showProjectEvents],
+    queryFn: () => subResourceFetcher(
+      `/api/priorities/${priorityId}/activity${showProjectEvents ? "?include_project_events=true" : ""}`,
+      [] as PriorityActivityRow[],
+    ),
     enabled: priorityId > 0,
   });
 
   const escalateMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch(`/api/priorities/${priorityId}/escalate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
-        body: JSON.stringify({ reason: "manual" }),
-      });
-      if (!res.ok) throw new Error("Failed to escalate");
-      return res.json();
-    },
+    mutationFn: () => apiRequest("POST", `/api/priorities/${priorityId}/escalate`, { reason: "manual" }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}/activity`] });
       queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
     },
   });
@@ -348,6 +228,7 @@ export default function PriorityDetailPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}/activity`] });
       queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
       queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
     },
@@ -355,19 +236,18 @@ export default function PriorityDetailPage() {
 
   const updatePriorityMutation = useMutation({
     mutationFn: async () => {
-      await apiRequest("PUT", `/api/priorities/${priorityId}`, {
-        title: editForm.title,
-        description: editForm.description || null,
-        severity: editForm.severity,
-        status: editForm.status,
-        due_date: editForm.due_date || null,
-        target_outcome: editForm.target_outcome || null,
-        manual_health: editForm.manual_health === "none" ? null : editForm.manual_health,
-        manual_progress: editForm.manual_progress ? parseInt(editForm.manual_progress) : null,
-      });
+      const payload = buildPriorityPayload(editForm, { includeStatus: true });
+      // Linked-source progress overrides any manual % from the form.
+      payload.manual_progress = progressSource.type === "manual" && progressSource.manualProgress
+        ? parseInt(progressSource.manualProgress, 10)
+        : null;
+      payload.progress_source_type = progressSource.type;
+      payload.progress_source_ref = progressSource.type === "manual" ? null : progressSource.ref;
+      await apiRequest("PUT", `/api/priorities/${priorityId}`, payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}/activity`] });
       queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
       queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
       setEditDialogOpen(false);
@@ -380,6 +260,7 @@ export default function PriorityDetailPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}/activity`] });
       queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
       queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
     },
@@ -394,14 +275,29 @@ export default function PriorityDetailPage() {
 
   const openEditDialog = () => {
     setEditForm({
+      ...emptyPriorityForm,
       title: priority.title || "",
       description: priority.description || "",
+      scope: priority.scope || "company",
       severity: priority.severity || "normal",
       status: priority.status || "active",
+      horizon: (priority as any).horizon || "quarter",
       due_date: priority.dueDate || "",
       target_outcome: priority.targetOutcome || "",
-      manual_health: priority.manualHealth || "none",
+      next_action: (priority as any).nextAction || "",
+      definition_of_done: (priority as any).definitionOfDone || "",
+      manual_health: priority.manualHealth || "",
       manual_progress: priority.manualProgress != null ? String(priority.manualProgress) : "",
+      department_key: (priority as any).departmentKey || "",
+      owner_user_id: priority.owner?.id != null ? String(priority.owner.id) : "",
+      accountable_exec_id: (priority as any).accountableExecId != null ? String((priority as any).accountableExecId) : "",
+      assigned_user_id: (priority as any).assignedUserId != null ? String((priority as any).assignedUserId) : "",
+      parent_id: (priority as any).parentId != null ? String((priority as any).parentId) : "",
+    });
+    setProgressSource({
+      type: ((priority.progressSourceType as any) || "manual") as ProgressSourceValue["type"],
+      ref: (priority.progressSourceRef as any) || null,
+      manualProgress: priority.manualProgress != null ? String(priority.manualProgress) : "",
     });
     setEditDialogOpen(true);
   };
@@ -409,12 +305,23 @@ export default function PriorityDetailPage() {
   const sev = SEVERITY_BADGE[priority.severity] || SEVERITY_BADGE.normal;
   const days = daysRemaining(priority.dueDate);
   const linkedProjects = priority.linkedProjects || [];
-  const gpMargin = priority.totalRevenue > 0 ? ((priority.totalGp / priority.totalRevenue) * 100).toFixed(1) : "0.0";
+  // Prefer rolled-up totals (this priority + descendants) so the drill-down
+  // is a true single pane of glass. Falls back to direct totals for older
+  // API responses.
+  const rollup = priority.rolledUp || null;
+  const totalRevenue = rollup?.totalRevenue ?? priority.totalRevenue ?? 0;
+  const totalCos = rollup?.totalCos ?? priority.totalCos ?? 0;
+  const totalGp = rollup?.totalGp ?? priority.totalGp ?? 0;
+  const displayProjectCount = rollup?.projectCount ?? linkedProjects.length;
+  const directProjectCount = rollup?.directProjectCount ?? priority.directProjectCount ?? displayProjectCount;
+  const descendantCount = rollup?.descendantPriorityCount ?? priority.descendantPriorityCount ?? 0;
+  const indirectProjectCount = Math.max(displayProjectCount - directProjectCount, 0);
+  const gpMargin = totalRevenue > 0 ? ((totalGp / totalRevenue) * 100).toFixed(1) : "0.0";
 
   // Merged tasks + approvals
   const mergedItems = [
-    ...tasks.map((t: any) => ({ ...t, itemType: "task" })),
-    ...pendingApprovals.map((a: any) => ({ ...a, itemType: "approval" })),
+    ...tasks.map((t) => ({ ...t, itemType: "task" as const })),
+    ...pendingApprovals.map((a) => ({ ...a, itemType: "approval" as const })),
   ].sort((a, b) => {
     const aBlocked = a.status?.toLowerCase().includes("block") ? 0 : 1;
     const bBlocked = b.status?.toLowerCase().includes("block") ? 0 : 1;
@@ -425,41 +332,55 @@ export default function PriorityDetailPage() {
   });
 
   return (
-    <PageShell>
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-1 text-xs text-muted-foreground mb-4">
-        <Link href="/"><span className="hover:underline cursor-pointer">Home</span></Link>
-        <span>/</span>
-        <Link href="/priorities"><span className="hover:underline cursor-pointer">Priorities</span></Link>
-        <span>/</span>
-        <span className="text-foreground">{priority.title}</span>
-      </div>
-
-      {/* Header */}
-      <div className="mb-6">
-        <div className="flex items-center gap-2 mb-1">
-          <span className={`w-3 h-3 rounded-full ${HEALTH_DOT[priority.effectiveHealth] || HEALTH_DOT.healthy}`} />
-          <h1 className="text-xl font-semibold text-foreground">{priority.title}</h1>
-          <Badge variant="secondary" className={`text-[10px] ${sev.className}`}>{sev.label}</Badge>
-          {isAdmin && (
-            <div className="ml-auto flex items-center gap-2">
-              <Button size="sm" variant="outline" onClick={openEditDialog}>Edit priority</Button>
-              {priority.status !== "closed" && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => { if (confirm("Close this priority?")) closePriorityMutation.mutate(); }}
-                  disabled={closePriorityMutation.isPending}
-                >
-                  {closePriorityMutation.isPending ? "Closing..." : "Close"}
-                </Button>
-              )}
+    <PageLayout
+      data-testid="priority-detail-page"
+      header={
+        <PageHeader
+          breadcrumbs={[
+            { label: "Home", href: "/" },
+            { label: "Priorities", href: "/priorities" },
+            { label: priority.title },
+          ]}
+          title={priority.title}
+          status={
+            <div className="flex items-center gap-2">
+              <span className={`w-3 h-3 rounded-full ${HEALTH_DOT[priority.effectiveHealth] || HEALTH_DOT.healthy}`} aria-label={`health: ${priority.effectiveHealth}`} />
+              <Badge variant="secondary" className={`text-[10px] ${sev.className}`}>{sev.label}</Badge>
             </div>
-          )}
-        </div>
-
+          }
+          actions={
+            isAdmin ? (
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="outline" onClick={openEditDialog} data-testid="btn-edit-priority">Edit priority</Button>
+                {priority.status !== "closed" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={async () => {
+                      const ok = await confirm({
+                        title: "Close this priority?",
+                        description: "It will be soft-closed and hidden from the active list.",
+                        confirmLabel: "Close",
+                        destructive: true,
+                      });
+                      if (ok) closePriorityMutation.mutate();
+                    }}
+                    disabled={closePriorityMutation.isPending}
+                    data-testid="btn-close-priority"
+                  >
+                    {closePriorityMutation.isPending ? "Closing..." : "Close"}
+                  </Button>
+                )}
+              </div>
+            ) : undefined
+          }
+        />
+      }
+    >
+      {/* Description + meta + cascade info */}
+      <div>
         {priority.description && (
-          <p className="text-sm text-muted-foreground mt-1 max-w-2xl">{priority.description}</p>
+          <p className="text-sm text-muted-foreground max-w-2xl">{priority.description}</p>
         )}
 
         <div className="flex items-center gap-4 text-xs text-muted-foreground mt-2 flex-wrap">
@@ -505,7 +426,14 @@ export default function PriorityDetailPage() {
                   size="sm"
                   variant="outline"
                   className="text-xs h-7"
-                  onClick={() => { if (confirm("Escalate this priority?")) escalateMutation.mutate(); }}
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: "Escalate this priority?",
+                      description: "It will move one scope upward (role → department → company).",
+                      confirmLabel: "Escalate",
+                    });
+                    if (ok) escalateMutation.mutate();
+                  }}
                   disabled={escalateMutation.isPending}
                 >
                   {escalateMutation.isPending ? "Escalating..." : "Escalate"}
@@ -536,34 +464,47 @@ export default function PriorityDetailPage() {
               style={{ width: `${Math.min(priority.effectiveProgress, 100)}%` }}
             />
           </div>
+          {priority.progressSource && (
+            <p
+              className="text-[11px] text-muted-foreground mt-1"
+              data-testid="text-progress-source-label"
+            >
+              <span className="inline-block px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 mr-1">
+                Auto
+              </span>
+              {priority.progressSource.label} · {priority.progressSource.value}%
+            </p>
+          )}
         </div>
 
-        {/* Financial summary cards (only when has projects) */}
-        {priority.hasProjects && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
-            <Card><CardContent className="p-3">
-              <p className="text-[10px] text-muted-foreground uppercase">Revenue</p>
-              <p className="text-lg font-semibold">{formatCurrency(priority.totalRevenue)}</p>
-            </CardContent></Card>
-            <Card><CardContent className="p-3">
-              <p className="text-[10px] text-muted-foreground uppercase">Cost of Sales</p>
-              <p className="text-lg font-semibold">{formatCurrency(priority.totalCos)}</p>
-            </CardContent></Card>
-            <Card><CardContent className="p-3">
-              <p className="text-[10px] text-muted-foreground uppercase">Gross Profit</p>
-              <p className="text-lg font-semibold">{formatCurrency(priority.totalGp)}</p>
-            </CardContent></Card>
-            <Card><CardContent className="p-3">
-              <p className="text-[10px] text-muted-foreground uppercase">GP Margin</p>
-              <p className="text-lg font-semibold">{gpMargin}%</p>
-            </CardContent></Card>
-          </div>
+        {/* Financial summary cards (shown when any project rolls up — direct or via sub-priorities) */}
+        {displayProjectCount > 0 && (
+          <>
+            {indirectProjectCount > 0 && (
+              <p className="text-[11px] text-muted-foreground mt-3 mb-1">
+                Rolled up across {displayProjectCount} project{displayProjectCount === 1 ? "" : "s"} —
+                {" "}{directProjectCount} directly linked
+                {indirectProjectCount > 0 && `, ${indirectProjectCount} via ${descendantCount} sub-priorit${descendantCount === 1 ? "y" : "ies"}`}
+              </p>
+            )}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
+              <KpiTile label="Revenue" value={formatCurrency(totalRevenue)} dim={totalRevenue === 0} />
+              <KpiTile label="Cost of Sales" value={formatCurrency(totalCos)} dim={totalCos === 0} />
+              <KpiTile label="Gross Profit" value={formatCurrency(totalGp)} dim={totalGp === 0} accent={totalGp > 0 ? "emerald" : totalGp < 0 ? "red" : undefined} />
+              <KpiTile label="GP Margin" value={`${gpMargin}%`} dim={totalRevenue === 0} />
+            </div>
+            {totalRevenue === 0 && totalCos === 0 && (
+              <p className="text-[11px] text-muted-foreground italic mt-2">
+                No tracker data yet. Once revenue / COS lines are committed for the linked project{displayProjectCount === 1 ? "" : "s"}, totals will appear here automatically.
+              </p>
+            )}
+          </>
         )}
 
-        {!priority.hasProjects && (
+        {displayProjectCount === 0 && (
           <Card className="mt-4 border-dashed">
             <CardContent className="p-4 text-sm text-muted-foreground">
-              This is a standalone priority. Link projects to see derived metrics and financial data.
+              This is a standalone priority. Link projects — or break it down into sub-priorities — to see derived metrics and financial data.
               {isAdmin && (
                 <Button variant="outline" size="sm" className="ml-2" onClick={() => setLinkDialogOpen(true)}>
                   <Plus className="w-3 h-3 mr-1" /> Link projects
@@ -575,21 +516,23 @@ export default function PriorityDetailPage() {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue={priority.hasProjects ? "projects" : "details"}>
-        <TabsList>
-          {priority.hasProjects ? (
+      <Tabs defaultValue={displayProjectCount > 0 ? "projects" : "details"}>
+        <TabsList className="bg-muted/60">
+          {displayProjectCount > 0 ? (
             <>
-              <TabsTrigger value="projects"><FolderOpen className="w-3.5 h-3.5 mr-1" />Projects</TabsTrigger>
-              <TabsTrigger value="financials"><DollarSign className="w-3.5 h-3.5 mr-1" />Financials</TabsTrigger>
-              <TabsTrigger value="chain"><GitBranch className="w-3.5 h-3.5 mr-1" />Chain</TabsTrigger>
-              <TabsTrigger value="tasks"><ListTodo className="w-3.5 h-3.5 mr-1" />Tasks & Approvals</TabsTrigger>
-              <TabsTrigger value="updates"><MessageSquare className="w-3.5 h-3.5 mr-1" />Updates</TabsTrigger>
+              <TabsTrigger value="projects" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><FolderOpen className="w-3.5 h-3.5" />Projects</TabsTrigger>
+              <TabsTrigger value="financials" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><DollarSign className="w-3.5 h-3.5" />Financials</TabsTrigger>
+              <TabsTrigger value="chain" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><GitBranch className="w-3.5 h-3.5" />Chain</TabsTrigger>
+              <TabsTrigger value="tasks" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><ListTodo className="w-3.5 h-3.5" />Tasks & Approvals</TabsTrigger>
+              <TabsTrigger value="updates" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><MessageSquare className="w-3.5 h-3.5" />Updates</TabsTrigger>
+              <TabsTrigger value="activity" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><History className="w-3.5 h-3.5" />Activity</TabsTrigger>
             </>
           ) : (
             <>
-              <TabsTrigger value="details">Details</TabsTrigger>
-              <TabsTrigger value="chain"><GitBranch className="w-3.5 h-3.5 mr-1" />Chain</TabsTrigger>
-              <TabsTrigger value="updates"><MessageSquare className="w-3.5 h-3.5 mr-1" />Updates</TabsTrigger>
+              <TabsTrigger value="details" className="data-[state=active]:bg-card data-[state=active]:shadow-sm">Details</TabsTrigger>
+              <TabsTrigger value="chain" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><GitBranch className="w-3.5 h-3.5" />Chain</TabsTrigger>
+              <TabsTrigger value="updates" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><MessageSquare className="w-3.5 h-3.5" />Updates</TabsTrigger>
+              <TabsTrigger value="activity" className="data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"><History className="w-3.5 h-3.5" />Activity</TabsTrigger>
             </>
           )}
         </TabsList>
@@ -642,36 +585,58 @@ export default function PriorityDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {linkedProjects.map((p: any) => (
-                  <tr key={p.id} className="border-b hover:bg-muted/50">
-                    <td className="py-2">
-                      <Link href={`/project/${encodeURIComponent(p.name)}`}>
-                        <span className="text-primary hover:underline cursor-pointer font-medium">{p.name}</span>
-                      </Link>
-                    </td>
-                    <td className="py-2">{p.phase || "—"}</td>
-                    <td className="py-2">{p.pm?.name || "—"}</td>
-                    <td className="py-2">
-                      {p.ragStatus ? (
-                        <Badge variant="secondary" className={`text-[10px] ${RAG_BADGE[p.ragStatus?.toLowerCase()] || ""}`}>
-                          {p.ragStatus}
-                        </Badge>
-                      ) : "—"}
-                    </td>
-                    <td className="py-2">{p.percentComplete}%</td>
-                    {isAdmin && (
+                {linkedProjects.map((p: LinkedProject) => {
+                  const linkedDirectly = p.linkedDirectly ?? true;
+                  return (
+                    <tr key={p.id} className="border-b hover:bg-muted/50">
                       <td className="py-2">
-                        <button
-                          onClick={() => { if (confirm("Unlink this project?")) unlinkMutation.mutate(p.id); }}
-                          className="text-muted-foreground hover:text-red-600"
-                          title="Unlink project"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
+                        <Link href={`/project/${encodeURIComponent(p.name)}`}>
+                          <span className="text-primary hover:underline cursor-pointer font-medium">{p.name}</span>
+                        </Link>
+                        {!linkedDirectly && (
+                          <Badge variant="secondary" className="ml-2 text-[9px] bg-blue-50 text-blue-700" title="Linked via a sub-priority">
+                            via sub-priority
+                          </Badge>
+                        )}
                       </td>
-                    )}
-                  </tr>
-                ))}
+                      <td className="py-2">{p.phase || "—"}</td>
+                      <td className="py-2">{p.pm?.name || "—"}</td>
+                      <td className="py-2">
+                        {p.ragStatus ? (
+                          <Badge variant="secondary" className={`text-[10px] ${RAG_BADGE[p.ragStatus?.toLowerCase()] || ""}`}>
+                            {p.ragStatus}
+                          </Badge>
+                        ) : "—"}
+                      </td>
+                      <td className="py-2">{p.percentComplete}%</td>
+                      {isAdmin && (
+                        <td className="py-2">
+                          {linkedDirectly ? (
+                            <button
+                              onClick={async () => {
+                                const ok = await confirm({
+                                  title: "Unlink this project?",
+                                  description: "The priority's rolled-up totals will recalculate without it.",
+                                  confirmLabel: "Unlink",
+                                });
+                                if (ok) unlinkMutation.mutate(p.id);
+                              }}
+                              className="text-muted-foreground hover:text-red-600"
+                              title="Unlink project"
+                              aria-label={`Unlink ${p.name}`}
+                            >
+                              <X className="w-3.5 h-3.5" aria-hidden="true" />
+                            </button>
+                          ) : (
+                            <span className="text-muted-foreground/40" title="Managed by sub-priority — unlink there">
+                              <X className="w-3.5 h-3.5" />
+                            </span>
+                          )}
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -684,83 +649,154 @@ export default function PriorityDetailPage() {
         </TabsContent>
 
         {/* Financials tab */}
-        <TabsContent value="financials" className="mt-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-            <Card><CardContent className="p-3">
-              <p className="text-[10px] text-muted-foreground uppercase">Revenue</p>
-              <p className="text-lg font-semibold">{formatCurrency(priority.totalRevenue)}</p>
-            </CardContent></Card>
-            <Card><CardContent className="p-3">
-              <p className="text-[10px] text-muted-foreground uppercase">Cost of Sales</p>
-              <p className="text-lg font-semibold">{formatCurrency(priority.totalCos)}</p>
-            </CardContent></Card>
-            <Card><CardContent className="p-3">
-              <p className="text-[10px] text-muted-foreground uppercase">Gross Profit</p>
-              <p className="text-lg font-semibold">{formatCurrency(priority.totalGp)}</p>
-            </CardContent></Card>
-            <Card><CardContent className="p-3">
-              <p className="text-[10px] text-muted-foreground uppercase">GP Margin</p>
-              <p className="text-lg font-semibold">{gpMargin}%</p>
-            </CardContent></Card>
+        <TabsContent value="financials" className="mt-4 space-y-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <KpiTile label="Revenue" value={formatCurrency(totalRevenue)} dim={totalRevenue === 0} />
+            <KpiTile label="Cost of Sales" value={formatCurrency(totalCos)} dim={totalCos === 0} />
+            <KpiTile label="Gross Profit" value={formatCurrency(totalGp)} dim={totalGp === 0} accent={totalGp > 0 ? "emerald" : totalGp < 0 ? "red" : undefined} />
+            <KpiTile label="GP Margin" value={`${gpMargin}%`} dim={totalRevenue === 0} />
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-xs text-muted-foreground">
-                  <th className="pb-2 font-medium">Project</th>
-                  <th className="pb-2 font-medium text-right">Revenue</th>
-                  <th className="pb-2 font-medium text-right">COS</th>
-                  <th className="pb-2 font-medium text-right">GP</th>
-                  <th className="pb-2 font-medium text-right">GP%</th>
-                  <th className="pb-2 font-medium text-right">Revenue Realised</th>
-                  <th className="pb-2 font-medium text-right">COS Realised</th>
-                </tr>
-              </thead>
-              <tbody>
-                {linkedProjects.map((p: any) => (
-                  <tr key={p.id} className="border-b hover:bg-muted/50">
-                    <td className="py-2 font-medium">{p.name}</td>
-                    <td className="py-2 text-right">{p.totalRevenue ? formatCurrency(p.totalRevenue) : "—"}</td>
-                    <td className="py-2 text-right">{p.totalCos ? formatCurrency(p.totalCos) : "—"}</td>
-                    <td className="py-2 text-right">{p.grossProfit ? formatCurrency(p.grossProfit) : "—"}</td>
-                    <td className="py-2 text-right">{p.grossMarginPct ? `${(p.grossMarginPct * 100).toFixed(1)}%` : "—"}</td>
-                    <td className="py-2 text-right">{p.revenueRealised ? formatCurrency(p.revenueRealised) : "—"}</td>
-                    <td className="py-2 text-right">{p.cosRealised ? formatCurrency(p.cosRealised) : "—"}</td>
+          <Card>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/30 text-left text-[11px] text-muted-foreground uppercase tracking-wide">
+                    <th className="px-3 py-2 font-medium">Project</th>
+                    <th className="px-3 py-2 font-medium text-right">Revenue</th>
+                    <th className="px-3 py-2 font-medium text-right">COS</th>
+                    <th className="px-3 py-2 font-medium text-right">GP</th>
+                    <th className="px-3 py-2 font-medium text-right">GP%</th>
+                    <th className="px-3 py-2 font-medium text-right">Revenue Realised</th>
+                    <th className="px-3 py-2 font-medium text-right">COS Realised</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {linkedProjects.map((p: LinkedProject) => (
+                    <tr key={p.id} className="border-b last:border-b-0 hover:bg-muted/30">
+                      <td className="px-3 py-2 font-medium">{p.name}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{p.totalRevenue ? formatCurrency(p.totalRevenue) : <span className="text-muted-foreground/60">—</span>}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{p.totalCos ? formatCurrency(p.totalCos) : <span className="text-muted-foreground/60">—</span>}</td>
+                      <td className="px-3 py-2 text-right tabular-nums font-medium">{p.grossProfit ? formatCurrency(p.grossProfit) : <span className="text-muted-foreground/60">—</span>}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{p.grossMarginPct ? `${(p.grossMarginPct * 100).toFixed(1)}%` : <span className="text-muted-foreground/60">—</span>}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{p.revenueRealised ? formatCurrency(p.revenueRealised) : <span className="text-muted-foreground/60">—</span>}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{p.cosRealised ? formatCurrency(p.cosRealised) : <span className="text-muted-foreground/60">—</span>}</td>
+                    </tr>
+                  ))}
+                  {linkedProjects.length === 0 && (
+                    <tr><td colSpan={7} className="px-3 py-6 text-center text-muted-foreground text-sm">No linked projects.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+
+          <p className="text-[10px] text-muted-foreground italic">
+            Revenue uses the canonical POC method (revenue recognition amount). COS uses the COS-realised gate. Same source as the Finance and Project Delivery dashboards.
+          </p>
         </TabsContent>
 
-        {/* Tasks & Approvals tab */}
+        {/* Tasks & Approvals tab — grouped by urgency, list-style */}
         <TabsContent value="tasks" className="mt-4">
           {mergedItems.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">No tasks or approvals for linked projects</p>
-          ) : (
-            <div className="space-y-1">
-              {mergedItems.slice(0, 50).map((item: any, i: number) => (
-                <div key={`${item.itemType}-${item.id}`} className="flex items-center gap-3 px-3 py-2 rounded hover:bg-muted text-sm border-b">
+            <Card><CardContent className="p-6 text-sm text-muted-foreground text-center">No open tasks or approvals on linked projects.</CardContent></Card>
+          ) : (() => {
+            // Normalise + bucket every item once. Uses the same dueIso / dueDays
+            // logic as before so sorting and the urgency hint stay consistent.
+            const enriched = mergedItems.map((item) => {
+              const due = item.dueDate || item.endDate;
+              const dueIso = due ? (() => {
+                const d = new Date(due);
+                return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+              })() : null;
+              const dueDays = daysRemaining(dueIso);
+              // Defensive: workItems.ownerName has historically been used as a
+              // free-text field — strip values that obviously look like full
+              // Date.toString() output ("Fri Apr 10 2026 00:00:00 GMT+...") so
+              // they never bleed into the subtitle.
+              const assigneeRaw = (item.assignee || "").trim();
+              const assigneeLooksLikeDate = /\b\d{4}\b.*GMT/i.test(assigneeRaw) || /^[A-Za-z]{3}\s+[A-Za-z]{3}\s+\d{1,2}\s+\d{4}/.test(assigneeRaw);
+              const assignee = assigneeLooksLikeDate ? "" : assigneeRaw;
+              return { ...item, due, dueDays, assignee };
+            });
+            const overdue = enriched.filter(e => e.dueDays != null && e.dueDays < 0).sort((a, b) => (a.dueDays ?? 0) - (b.dueDays ?? 0));
+            const dueSoon = enriched.filter(e => e.dueDays != null && e.dueDays >= 0 && e.dueDays <= 7).sort((a, b) => (a.dueDays ?? 0) - (b.dueDays ?? 0));
+            const later   = enriched.filter(e => e.dueDays == null || e.dueDays > 7).sort((a, b) => (a.dueDays ?? 1e9) - (b.dueDays ?? 1e9));
+
+            const renderRow = (item: typeof enriched[number]) => {
+              const isOverdue = (item.dueDays ?? 0) < 0;
+              const isSoon = item.dueDays != null && item.dueDays >= 0 && item.dueDays <= 7;
+              const accent = isOverdue ? "before:bg-red-500" : isSoon ? "before:bg-amber-500" : item.itemType === "approval" ? "before:bg-purple-400" : "before:bg-blue-300";
+              return (
+                <div
+                  key={`${item.itemType}-${item.id}`}
+                  data-testid={`row-task-${item.id}`}
+                  className={`relative flex items-start gap-3 pl-4 pr-3 py-3 hover:bg-muted/30 before:absolute before:left-0 before:top-2 before:bottom-2 before:w-1 before:rounded-full ${accent}`}
+                >
                   {item.itemType === "task" ? (
-                    <ListTodo className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                    <ListTodo className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" aria-label="Task" />
                   ) : (
-                    <CheckCircle2 className="w-3.5 h-3.5 text-purple-500 shrink-0" />
+                    <CheckCircle2 className="w-4 h-4 text-purple-500 shrink-0 mt-0.5" aria-label="Approval" />
                   )}
                   <div className="flex-1 min-w-0">
-                    <span className="font-medium truncate block">{item.title}</span>
-                    <span className="text-xs text-muted-foreground">{item.projectName}</span>
+                    <div className="font-medium text-sm text-foreground leading-snug">{item.title}</div>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1">
+                      {item.projectName && (
+                        <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">
+                          <FolderOpen className="w-3 h-3" />
+                          {item.projectName}
+                        </span>
+                      )}
+                      {item.assignee && (
+                        <span className="text-[11px] text-foreground/70">{item.assignee}</span>
+                      )}
+                      <Badge variant="outline" className={`text-[10px] py-0 ${statusBadgeClass(item.status)}`}>{prettyStatus(item.status)}</Badge>
+                    </div>
                   </div>
-                  <span className="text-xs text-muted-foreground">{item.assignee || ""}</span>
-                  <Badge variant="outline" className="text-[10px] shrink-0">{item.status}</Badge>
-                  <span className="text-xs text-muted-foreground shrink-0">{item.dueDate || ""}</span>
+                  <div className="text-right shrink-0 w-24">
+                    <div className="text-xs text-foreground tabular-nums">{formatDateShort(item.due)}</div>
+                    {item.dueDays != null && (
+                      <div className={`text-[10px] ${item.dueDays < 0 ? "text-red-600 font-medium" : item.dueDays <= 7 ? "text-amber-600" : "text-muted-foreground"}`}>
+                        {item.dueDays < 0 ? `${Math.abs(item.dueDays)}d overdue` : item.dueDays === 0 ? "today" : `${item.dueDays}d`}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              ))}
-              {mergedItems.length > 50 && (
-                <p className="text-xs text-muted-foreground text-center py-2">Showing first 50 of {mergedItems.length} items</p>
-              )}
-            </div>
-          )}
+              );
+            };
+
+            // Global cap of 50 across the three urgency buckets — overdue
+            // wins, then due-this-week, then later — so the most actionable
+            // rows are always visible.
+            const CAP = 50;
+            const overdueShown = overdue.slice(0, CAP);
+            const dueSoonShown = dueSoon.slice(0, Math.max(0, CAP - overdueShown.length));
+            const laterShown   = later.slice(0,   Math.max(0, CAP - overdueShown.length - dueSoonShown.length));
+            const totalShown = overdueShown.length + dueSoonShown.length + laterShown.length;
+
+            const Section = ({ label, count, tone, items }: { label: string; count: number; tone: string; items: typeof enriched }) => (
+              items.length === 0 ? null : (
+                <div>
+                  <div className={`flex items-center gap-2 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide border-b ${tone}`}>
+                    <span>{label}</span>
+                    <span className="text-muted-foreground font-normal">{count}</span>
+                  </div>
+                  <div className="divide-y">{items.map(renderRow)}</div>
+                </div>
+              )
+            );
+
+            return (
+              <Card className="overflow-hidden">
+                <Section label="Overdue"       count={overdue.length} tone="text-red-700 bg-red-50/60"        items={overdueShown} />
+                <Section label="Due this week" count={dueSoon.length} tone="text-amber-700 bg-amber-50/60"   items={dueSoonShown} />
+                <Section label="Later"         count={later.length}   tone="text-muted-foreground bg-muted/40" items={laterShown} />
+                {enriched.length > totalShown && (
+                  <p className="text-xs text-muted-foreground text-center py-2 border-t bg-muted/20">Showing first {totalShown} of {enriched.length} items</p>
+                )}
+              </Card>
+            );
+          })()}
         </TabsContent>
 
         {/* Chain tab */}
@@ -804,8 +840,8 @@ export default function PriorityDetailPage() {
               <div className="pl-11 space-y-3">
                 <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Sub-priorities ({children.length})</p>
                 {(() => {
-                  const grouped: Record<string, any[]> = {};
-                  children.forEach((c: any) => {
+                  const grouped: Record<string, ProjectLikeChild[]> = {};
+                  children.forEach((c) => {
                     const key = c.departmentKey || "other";
                     if (!grouped[key]) grouped[key] = [];
                     grouped[key].push(c);
@@ -814,10 +850,10 @@ export default function PriorityDetailPage() {
                     <div key={dept} className="space-y-1">
                       {Object.keys(grouped).length > 1 && (
                         <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">
-                          {DEPARTMENT_OPTIONS.find(d => d.value === dept)?.label || dept}
+                          {departmentLabel(dept)}
                         </p>
                       )}
-                      {deptChildren.map((child: any) => {
+                      {deptChildren.map((child) => {
                         const childDays = daysRemaining(child.dueDate);
                         return (
                           <div key={child.id} className="flex items-center gap-3 px-3 py-2 rounded border hover:bg-muted/50 text-sm">
@@ -858,11 +894,11 @@ export default function PriorityDetailPage() {
         <TabsContent value="updates" className="mt-4">
           {updates.length === 0 ? (
             <p className="text-sm text-muted-foreground py-4 text-center">
-              {priority.hasProjects ? "No updates from linked projects" : "Link projects to see updates"}
+              {displayProjectCount > 0 ? "No updates from linked projects" : "Link projects or break this priority down to see updates"}
             </p>
           ) : (
             <div className="space-y-3">
-              {updates.map((u: any, i: number) => (
+              {updates.map((u, i) => (
                 <Card key={i}>
                   <CardContent className="p-3">
                     <div className="flex items-center gap-2 mb-1">
@@ -872,8 +908,8 @@ export default function PriorityDetailPage() {
                           {u.ragStatus}
                         </Badge>
                       )}
-                      <span className="text-xs text-muted-foreground ml-auto">
-                        {u.date ? new Date(u.date).toLocaleDateString() : ""}
+                      <span className="text-xs text-muted-foreground ml-auto tabular-nums">
+                        {formatDateShort(u.date)}
                       </span>
                     </div>
                     {u.ragComment && <p className="text-sm">{u.ragComment}</p>}
@@ -882,6 +918,44 @@ export default function PriorityDetailPage() {
                 </Card>
               ))}
             </div>
+          )}
+        </TabsContent>
+
+        {/* Activity tab — append-only audit timeline */}
+        <TabsContent value="activity" className="mt-4">
+          <div className="flex items-center justify-end mb-3">
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={showProjectEvents}
+                onChange={(e) => setShowProjectEvents(e.target.checked)}
+                className="rounded"
+              />
+              Show project events (RAG / phase changes)
+            </label>
+          </div>
+          {activity.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">No activity recorded yet for this priority.</p>
+          ) : (
+            <ol className="relative border-l border-border pl-4 space-y-3">
+              {activity.map((a) => (
+                <li key={a.id} className="relative">
+                  <span className="absolute -left-[22px] top-1 w-4 h-4 rounded-full bg-background border border-border flex items-center justify-center">
+                    <ActivityIcon action={a.action} />
+                  </span>
+                  <div className="text-xs">
+                    <span className="font-medium text-foreground">{a.actorName || (a.source === "project" ? "Project update" : "Someone")}</span>
+                    <span className="text-muted-foreground"> {formatActivitySentence(a)}</span>
+                    {a.source === "project" && (
+                      <Badge variant="secondary" className="ml-2 text-[9px] bg-blue-50 text-blue-700">project</Badge>
+                    )}
+                  </div>
+                  <span className="text-[10px] text-muted-foreground tabular-nums">
+                    {formatDateTime(a.createdAt)}
+                  </span>
+                </li>
+              ))}
+            </ol>
           )}
         </TabsContent>
       </Tabs>
@@ -894,7 +968,7 @@ export default function PriorityDetailPage() {
             </DialogHeader>
             <ProjectLinker
               priorityId={priorityId}
-              existingProjectIds={linkedProjects.map((p: any) => p.id)}
+              existingProjectIds={linkedProjects.map((p: LinkedProject) => p.id)}
               onDone={() => setLinkDialogOpen(false)}
             />
           </DialogContent>
@@ -903,71 +977,26 @@ export default function PriorityDetailPage() {
 
       {isAdmin && (
         <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-          <DialogContent className="max-w-xl">
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Edit Priority</DialogTitle>
             </DialogHeader>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2">
-                <Label className="text-xs">Title</Label>
-                <Input value={editForm.title} onChange={(e) => setEditForm((p) => ({ ...p, title: e.target.value }))} />
-              </div>
-              <div className="col-span-2">
-                <Label className="text-xs">Description</Label>
-                <Textarea value={editForm.description} onChange={(e) => setEditForm((p) => ({ ...p, description: e.target.value }))} rows={3} />
-              </div>
-              <div>
-                <Label className="text-xs">Severity</Label>
-                <Select value={editForm.severity} onValueChange={(v) => setEditForm((p) => ({ ...p, severity: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="critical">Critical</SelectItem>
-                    <SelectItem value="important">High</SelectItem>
-                    <SelectItem value="normal">Normal</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="text-xs">Status</Label>
-                <Select value={editForm.status} onValueChange={(v) => setEditForm((p) => ({ ...p, status: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="monitoring">Monitoring</SelectItem>
-                    <SelectItem value="in_progress">In progress</SelectItem>
-                    <SelectItem value="complete">Complete</SelectItem>
-                    <SelectItem value="closed">Closed</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="text-xs">Due date</Label>
-                <Input type="date" value={editForm.due_date} onChange={(e) => setEditForm((p) => ({ ...p, due_date: e.target.value }))} />
-              </div>
-              <div>
-                <Label className="text-xs">Manual health</Label>
-                <Select value={editForm.manual_health} onValueChange={(v) => setEditForm((p) => ({ ...p, manual_health: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Auto</SelectItem>
-                    <SelectItem value="healthy">Healthy</SelectItem>
-                    <SelectItem value="at_risk">At risk</SelectItem>
-                    <SelectItem value="critical">Critical</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="text-xs">Manual progress %</Label>
-                <Input type="number" min={0} max={100} value={editForm.manual_progress} onChange={(e) => setEditForm((p) => ({ ...p, manual_progress: e.target.value }))} />
-              </div>
-              <div className="col-span-2">
-                <Label className="text-xs">Target outcome</Label>
-                <Textarea value={editForm.target_outcome} onChange={(e) => setEditForm((p) => ({ ...p, target_outcome: e.target.value }))} rows={2} />
-              </div>
-            </div>
+            <PriorityFormFields
+              form={editForm}
+              patch={(delta) => setEditForm((prev) => ({ ...prev, ...delta }))}
+              mode="edit"
+              progressSource={progressSource}
+              onProgressSourceChange={setProgressSource}
+              linkedProjects={linkedProjects}
+              excludePriorityId={priorityId}
+            />
             <div className="flex justify-end gap-2 mt-2">
               <Button variant="outline" onClick={() => setEditDialogOpen(false)}>Cancel</Button>
-              <Button onClick={() => updatePriorityMutation.mutate()} disabled={updatePriorityMutation.isPending || !editForm.title.trim()}>
+              <Button
+                onClick={() => updatePriorityMutation.mutate()}
+                disabled={updatePriorityMutation.isPending || !editForm.title.trim()}
+                data-testid="button-save-priority"
+              >
                 {updatePriorityMutation.isPending ? "Saving..." : "Save changes"}
               </Button>
             </div>
@@ -981,6 +1010,20 @@ export default function PriorityDetailPage() {
           onOpenChange={setBreakDownDialogOpen}
         />
       )}
-    </PageShell>
+
+      {confirmDialog}
+    </PageLayout>
+  );
+}
+
+function KpiTile({ label, value, dim, accent }: { label: string; value: string; dim?: boolean; accent?: "emerald" | "red" }) {
+  const accentClass = accent === "emerald" ? "text-emerald-700" : accent === "red" ? "text-red-700" : "text-foreground";
+  return (
+    <Card className="shadow-sm">
+      <CardContent className="p-3">
+        <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{label}</p>
+        <p className={`text-lg font-semibold tabular-nums ${dim ? "text-muted-foreground/60" : accentClass}`}>{value}</p>
+      </CardContent>
+    </Card>
   );
 }

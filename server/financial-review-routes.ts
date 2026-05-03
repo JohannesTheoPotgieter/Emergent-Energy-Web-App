@@ -12,6 +12,7 @@ import {
   submitReview,
   updateFinancialReview,
 } from "./services/financial-review-service";
+import { parseIntParam } from "./lib/req-params";
 
 function getUser(req: Request): { id: number; role: string } {
   const user = (req as any).user;
@@ -35,7 +36,7 @@ export function registerFinancialReviewRoutes(app: Express): void {
     requirePermission("pd_finance", "create"),
     async (req: Request, res: Response) => {
       try {
-        const projectId = parseInt(req.params.projectId as string, 10);
+        const projectId = parseIntParam(req.params.projectId);
         if (Number.isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
         const user = getUser(req);
         if (!CREATE_REVIEW_ROLES.includes(user.role)) {
@@ -59,7 +60,7 @@ export function registerFinancialReviewRoutes(app: Express): void {
     requirePermission("pd_finance", "view"),
     async (req: Request, res: Response) => {
       try {
-        const projectId = parseInt(req.params.projectId as string, 10);
+        const projectId = parseIntParam(req.params.projectId);
         if (Number.isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
         const review = await getLatestFinancialReview(projectId);
         res.json({ review });
@@ -79,7 +80,7 @@ export function registerFinancialReviewRoutes(app: Express): void {
     requirePermission("pd_finance", "view"),
     async (req: Request, res: Response) => {
       try {
-        const reviewId = parseInt(req.params.reviewId as string, 10);
+        const reviewId = parseIntParam(req.params.reviewId);
         if (Number.isNaN(reviewId)) return res.status(400).json({ error: "Invalid reviewId" });
         const review = await getFinancialReview(reviewId);
         if (!review) return res.status(404).json({ error: "Review not found" });
@@ -100,7 +101,7 @@ export function registerFinancialReviewRoutes(app: Express): void {
     requirePermission("pd_finance", "view"),
     async (req: Request, res: Response) => {
       try {
-        const projectId = parseInt(req.params.projectId as string, 10);
+        const projectId = parseIntParam(req.params.projectId);
         if (Number.isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
         const reviews = await getFinancialReviewHistory(projectId);
         res.json({ reviews });
@@ -120,7 +121,7 @@ export function registerFinancialReviewRoutes(app: Express): void {
     requirePermission("pd_finance", "edit"),
     async (req: Request, res: Response) => {
       try {
-        const reviewId = parseInt(req.params.reviewId as string, 10);
+        const reviewId = parseIntParam(req.params.reviewId);
         if (Number.isNaN(reviewId)) return res.status(400).json({ error: "Invalid reviewId" });
 
         const allowedFields = [
@@ -152,7 +153,7 @@ export function registerFinancialReviewRoutes(app: Express): void {
     requirePermission("pd_finance", "edit"),
     async (req: Request, res: Response) => {
       try {
-        const reviewId = parseInt(req.params.reviewId as string, 10);
+        const reviewId = parseIntParam(req.params.reviewId);
         if (Number.isNaN(reviewId)) return res.status(400).json({ error: "Invalid reviewId" });
         const review = await refreshSnapshot(reviewId);
         res.json({ review });
@@ -172,7 +173,7 @@ export function registerFinancialReviewRoutes(app: Express): void {
     requirePermission("pd_finance", "edit"),
     async (req: Request, res: Response) => {
       try {
-        const reviewId = parseInt(req.params.reviewId as string, 10);
+        const reviewId = parseIntParam(req.params.reviewId);
         if (Number.isNaN(reviewId)) return res.status(400).json({ error: "Invalid reviewId" });
         const user = getUser(req);
         const review = await submitReview(reviewId, user.id);
@@ -193,7 +194,7 @@ export function registerFinancialReviewRoutes(app: Express): void {
     requirePermission("pd_finance", "approve"),
     async (req: Request, res: Response) => {
       try {
-        const reviewId = parseInt(req.params.reviewId as string, 10);
+        const reviewId = parseIntParam(req.params.reviewId);
         if (Number.isNaN(reviewId)) return res.status(400).json({ error: "Invalid reviewId" });
         const user = getUser(req);
         const { outcome, outcomeConditions, outcomeNotes } = req.body;

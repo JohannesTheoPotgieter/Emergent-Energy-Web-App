@@ -1,0 +1,111 @@
+Work in repo: JohannesTheoPotgieter/Emergent-Energy-Web-App
+Branch: main
+
+After the Pipedrive integration fix, harden the live data model and reporting across:
+opportunities -> project_info -> pd_tickets -> work_items -> dashboard / workspace views
+
+First inspect these files before changing anything:
+- shared/schema/projects.ts
+- shared/schema/tasks.ts
+- server/services/pipedrive-sync-service.ts
+- server/repositories/opportunities-repository.ts
+- server/services/project-development-workspace-service.ts
+- server/departments/pipedrive-routes.ts
+- server/routes/pd-intake.routes.ts
+- client/src/pages/opportunities.tsx
+- client/src/components/opportunities/OpportunityDrawer.tsx
+- client/src/pages/admin-pipedrive.tsx
+
+Current repo truths to respect:
+- Pipedrive sync writes CRM data into opportunities
+- project spine is project_info
+- PD / engineering tickets are stored in pd_tickets
+- spawned ticket tasks are stored in work_items and linked by work_items.pd_ticket_id
+- linked project conversion is represented by project_info.opportunity_id
+- the repo already uses deletedAt / soft-delete patterns in many core tables
+- project-development-workspace-service already exists and must be extended, not duplicated
+- pdTicketTaskRows in project-development-workspace-service is currently returning an empty array placeholder; fix this properly from live data
+
+Objective:
+Make opportunities, projects, pd_tickets, and work_items truly live and foundation-linked so they always reflect the current source of truth and never drift into stale, orphaned, or misleading states.
+
+Required outcomes:
+1. Review current linkage and deletion/archive behaviour for:
+   - opportunities
+   - project_info
+   - pd_tickets
+   - work_items
+   - existing dashboard/workspace views
+
+2. Harden linkage rules:
+   - when a parent project is soft-deleted, archived, merged, or unlinked, dependent pd_tickets and work_items must resolve correctly
+   - no orphan pd_tickets
+   - no orphan work_items with stale pd_ticket_id or project_id
+   - no stale dashboard counts
+   - no duplicate project/ticket/task rollups
+   - no dead links in the UI
+
+3. Enforce source-of-truth ownership:
+   - project_info is the operational spine
+   - opportunities remain CRM-facing intake records
+   - pd_tickets are the engineering / PD ticket layer
+   - work_items are the spawned executable task layer
+   - counts, statuses, and KPIs must calculate from live source tables, not UI assumptions
+
+4. Extend the existing dashboard / workspace layer so meetings can run from it.
+Add or improve a section that shows at minimum:
+   - total opportunities
+   - total linked projects
+   - total pd_tickets
+   - total work_items linked to pd_tickets
+   - open / in progress / blocked / overdue / completed counts
+   - projects with no linked pd_tickets
+   - pd_tickets with no valid project or opportunity linkage
+   - work_items with invalid pd_ticket_id or project_id linkage
+   - tickets due this week
+   - tasks due this week
+   - latest updates by project
+   - drill-down by project, owner, department, status, and phase
+
+5. Fix the existing data gap in project-development-workspace-service:
+   - pdTicketTaskRows must be populated from real work_items grouped by pd_ticket_id
+   - task totals and completed counts must be real, not placeholder values
+   - workspace summaries must stay aligned with deletedAt filters and live linkage
+
+6. Add controls and safeguards:
+   - validation on create/edit/delete/archive/unlink
+   - clear soft-delete handling rules
+   - merge and unlink handling
+   - audit logging for linkage changes
+   - role and permission alignment
+   - resilient UI empty/error states
+   - no misleading KPI cards
+
+7. Add tests for:
+   - project soft delete
+   - opportunity soft delete
+   - pd_ticket unlink / relink
+   - work_item orphan prevention
+   - project merge impact on linked records
+   - dashboard refresh after link changes
+   - workspace counts after task deletion / archive
+   - no stale counts after reruns
+
+Output required:
+1. Current linkage model found in repo
+2. Actual failure points / stale-data risks
+3. Immediate fixes applied
+4. Structural hardening applied
+5. Files changed
+6. Schema or migration changes
+7. Tests added
+8. Risks / open decisions
+9. Recommended next improvements
+
+Guardrails:
+- inspect actual repo behaviour first
+- extend existing services and dashboards instead of duplicating logic
+- preserve current business rules
+- prefer source-of-truth reads over front-end patching
+- do not invent hard-delete behaviour where the repo uses soft delete
+- call out any tables that still need cleanup or backfill

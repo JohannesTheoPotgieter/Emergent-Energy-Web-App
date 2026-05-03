@@ -3,6 +3,7 @@ import { softCloseByProjectName } from "../lib/temporal-helpers";
 import { selectWinningExpenseRows } from "../lib/expense-row-selector";
 import { computeCostEvidence } from "../lib/finance/qb-allocation";
 import { getAssignedEvidenceByCostLineIds } from "../lib/finance/qb-allocation-read";
+import { logAudit } from "../audit-logger";
 import {
   normalizedCostLines, projectInfo,
   type ProgramExpense, type InsertProgramExpense,
@@ -65,6 +66,12 @@ function resolveCostRowProjectNames(
   return out;
 }
 
+interface AuditCtx {
+  userId?: number;
+  userName?: string;
+  actorRole?: string;
+}
+
 export class FinanceExpenseEngineRepository {
   private _dbInstance?: typeof db;
 
@@ -95,7 +102,7 @@ export class FinanceExpenseEngineRepository {
     return winners;
   }
 
-  async createManyProgramExpenses(expenseList: InsertProgramExpense[]): Promise<ProgramExpense[]> {
+  async createManyProgramExpenses(expenseList: InsertProgramExpense[], audit?: AuditCtx): Promise<ProgramExpense[]> {
     if (expenseList.length === 0) return [];
     const mapped = expenseList.map((e: any) => ({
       projectName: e.projectName,
@@ -115,7 +122,15 @@ export class FinanceExpenseEngineRepository {
     }));
     const results = await this.dbInstance.insert(normalizedCostLines).values(mapped).returning();
     const { adaptCostToExpense } = await import("../lib/data-merge");
-    return results.map((r: any) => adaptCostToExpense(r, r.projectName)) as any;
+    const adapted = results.map((r: any) => adaptCostToExpense(r, r.projectName)) as any;
+    logAudit({
+      ...audit,
+      entityType: "cost_line",
+      action: "bulk_import",
+      source: "IMPORT",
+      changesJson: { count: results.length, projectName: (expenseList[0] as any)?.projectName ?? null },
+    }).catch(() => {});
+    return adapted;
   }
 
   private async attachAllocationEvidence(costLines: any[]): Promise<any[]> {
@@ -142,7 +157,7 @@ export class FinanceExpenseEngineRepository {
     await softCloseByProjectName(this.dbInstance, "normalized_cost_lines", projectName);
   }
 
-  async updateProgramExpenseFields(id: number, fields: Record<string, any>, expectedUpdatedAt?: string): Promise<ProgramExpense | undefined> {
+  async updateProgramExpenseFields(id: number, fields: Record<string, any>, expectedUpdatedAt?: string, audit?: AuditCtx): Promise<ProgramExpense | undefined> {
     const mappedFields: Record<string, any> = {};
     const fieldMap: Record<string, string> = {
       expenseCategory: 'costCategory',
@@ -180,7 +195,10 @@ export class FinanceExpenseEngineRepository {
       const [current] = await this.dbInstance
         .select({ updatedAt: normalizedCostLines.updatedAt })
         .from(normalizedCostLines)
-        .where(eq(normalizedCostLines.id, canonicalId))
+        .where(and(
+          eq(normalizedCostLines.id, canonicalId),
+          isNull(normalizedCostLines.effectiveTo),
+        ))
         .limit(1);
       if (current?.updatedAt) {
         const currentTs = new Date(current.updatedAt).getTime();
@@ -198,53 +216,77 @@ export class FinanceExpenseEngineRepository {
     const result = await this.dbInstance
       .update(normalizedCostLines)
       .set(mappedFields)
-      .where(eq(normalizedCostLines.id, canonicalId))
+      .where(and(
+        eq(normalizedCostLines.id, canonicalId),
+        isNull(normalizedCostLines.effectiveTo),
+      ))
       .returning();
     if (!result[0]) return undefined;
+    logAudit({
+      ...audit,
+      entityType: "cost_line",
+      entityId: String(canonicalId),
+      action: "update",
+      source: "UI",
+      changesJson: { fields: mappedFields, projectName: result[0].projectName ?? null },
+    }).catch(() => {});
     const { adaptCostToExpense } = await import("../lib/data-merge");
     return adaptCostToExpense(result[0], result[0].projectName) as any;
   }
 
-  async createManualExpense(data: InsertProgramExpense & { idempotencyKey?: string; projectId?: number; projectName?: string }): Promise<ProgramExpense> {
+  async createManualExpense(data: InsertProgramExpense & { idempotencyKey?: string; projectId?: number; projectName?: string }, audit?: AuditCtx): Promise<ProgramExpense> {
     const d = data as any;
-    // Resolve projectId from projectName if not explicitly provided.
-    let resolvedProjectId = d.projectId ?? null;
-    if (!resolvedProjectId && d.projectName) {
-      const [pi] = await this.dbInstance.select({ id: projectInfo.id })
-        .from(projectInfo)
-        .where(eq(projectInfo.projectName, d.projectName))
-        .limit(1);
-      if (pi) resolvedProjectId = pi.id;
-    }
 
-    // POLICY: Manual expenses MUST have a valid project assignment.
-    // Without projectId, expenses are invisible to dashboards and break finance integrity.
-    if (!resolvedProjectId) {
-      throw new Error("Manual expense requires a valid projectId. Cannot save an expense without a project assignment.");
-    }
+    return this.dbInstance.transaction(async (tx: typeof db) => {
+      // Resolve projectId from projectName if not explicitly provided.
+      // Runs inside the transaction so the project cannot be deleted between
+      // lookup and insert.
+      let resolvedProjectId = d.projectId ?? null;
+      if (!resolvedProjectId && d.projectName) {
+        const [pi] = await tx.select({ id: projectInfo.id })
+          .from(projectInfo)
+          .where(eq(projectInfo.projectName, d.projectName))
+          .limit(1);
+        if (pi) resolvedProjectId = pi.id;
+      }
 
-    const mapped: Record<string, any> = {
-      projectName: d.projectName,
-      projectId: resolvedProjectId,
-      costCategory: d.expenseCategory || null,
-      description: d.expenseLineItem || null,
-      amountExVat: d.expenseActualTotal?.toString() || null,
-      invoiceNumber: d.expenseInvoiceNumber || null,
-      invoiceDate: d.expenseInvoicedDate || null,
-      invoiceDateConfirmed: d.invoiceDateConfirmed ?? null,
-      invoiceDateFontColor: d.invoiceDateFontColor || null,
-      paidDate: d.expensePaymentDate || null,
-      paidDateConfirmed: d.paymentDateConfirmed ?? null,
-      paidDateFontColor: d.paymentDateFontColor || null,
-      poNumber: d.expensePoNumber || null,
-      counterpartyName: d.supplierName || null,
-      sourceRow: d.rowNumber || null,
-    };
-    if (data.idempotencyKey) {
-      mapped.idempotencyKey = data.idempotencyKey;
-    }
-    const inserted = await this.dbInstance.insert(normalizedCostLines).values(mapped).returning();
-    const { adaptCostToExpense } = await import("../lib/data-merge");
-    return adaptCostToExpense(inserted[0], inserted[0].projectName) as any;
+      // POLICY: Manual expenses MUST have a valid project assignment.
+      // Without projectId, expenses are invisible to dashboards and break finance integrity.
+      if (!resolvedProjectId) {
+        throw new Error("Manual expense requires a valid projectId. Cannot save an expense without a project assignment.");
+      }
+
+      const mapped: Record<string, any> = {
+        projectName: d.projectName,
+        projectId: resolvedProjectId,
+        costCategory: d.expenseCategory || null,
+        description: d.expenseLineItem || null,
+        amountExVat: d.expenseActualTotal?.toString() || null,
+        invoiceNumber: d.expenseInvoiceNumber || null,
+        invoiceDate: d.expenseInvoicedDate || null,
+        invoiceDateConfirmed: d.invoiceDateConfirmed ?? null,
+        invoiceDateFontColor: d.invoiceDateFontColor || null,
+        paidDate: d.expensePaymentDate || null,
+        paidDateConfirmed: d.paymentDateConfirmed ?? null,
+        paidDateFontColor: d.paymentDateFontColor || null,
+        poNumber: d.expensePoNumber || null,
+        counterpartyName: d.supplierName || null,
+        sourceRow: d.rowNumber || null,
+      };
+      if (data.idempotencyKey) {
+        mapped.idempotencyKey = data.idempotencyKey;
+      }
+      const inserted = await tx.insert(normalizedCostLines).values(mapped).returning();
+      logAudit({
+        ...audit,
+        entityType: "cost_line",
+        entityId: String(inserted[0].id),
+        action: "create_manual",
+        source: "UI",
+        changesJson: { projectName: inserted[0].projectName, amountExVat: inserted[0].amountExVat, costCategory: inserted[0].costCategory },
+      }).catch(() => {});
+      const { adaptCostToExpense } = await import("../lib/data-merge");
+      return adaptCostToExpense(inserted[0], inserted[0].projectName) as any;
+    });
   }
 }

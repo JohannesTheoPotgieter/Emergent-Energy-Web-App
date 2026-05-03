@@ -112,7 +112,7 @@ app.get("/api/performance/v1", jwtAuth, requireAuth, requirePermission("performa
       });
     }
     console.error("Performance V1 error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -124,7 +124,9 @@ app.get("/api/reports/gate-reports", jwtAuth, requireAuth, requirePermission("pe
       // Blocked gates with age and owner
       db.execute(sql`
         SELECT
-          pi.project_name, psi.stage_code, u.name AS owner_name,
+          pi.project_name, psi.stage_code,
+          psi.stage_owner_user_id AS owner_user_id,
+          u.name AS owner_name,
           COALESCE(EXTRACT(DAY FROM NOW() - psi.started_at)::int, 0) AS days_blocked,
           pes.waiting_on_department
         FROM project_stage_instances psi
@@ -159,7 +161,7 @@ app.get("/api/reports/gate-reports", jwtAuth, requireAuth, requirePermission("pe
       return res.json({ blockedGates: [], exceptionAgeing: [] });
     }
     console.error("Gate reports error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -234,7 +236,7 @@ app.get("/api/reports/operational", jwtAuth, requireAuth, requirePermission("per
       return res.json({ commissioningQueue: [], handoverQueue: [], weeklyCompliance: [] });
     }
     console.error("Operational reports error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -281,7 +283,7 @@ app.get("/api/reports/quality-compliance", jwtAuth, requireAuth, requirePermissi
       return res.json({ qualityBlockers: [], complianceBlockers: [] });
     }
     console.error("Quality-compliance reports error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 

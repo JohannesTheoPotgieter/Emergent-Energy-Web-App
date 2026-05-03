@@ -8,7 +8,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { Eye, Pencil, Plus, Save, Shield, ShieldCheck, Trash2, UserCheck, X } from "lucide-react";
+import { Pencil, Plus, Save, Shield, ShieldCheck, Trash2, UserCheck, X } from "lucide-react";
 import { COMPANY_ROLES, WORKSTREAM_VISIBILITY_DEFAULTS, ROLE_DEPARTMENT_MAP } from "@shared/schema";
 import * as api from "../settings-api";
 import type { PdVisConfig, UserSummary, WorkstreamVisConfig } from "../settings-types";
@@ -46,26 +46,27 @@ const DEPARTMENT_COLORS: Record<string, string> = {
 };
 
 export function VisibilitySection() {
-  const [activeTab, setActiveTab] = useState<"pd" | "workstream">("pd");
-
   return (
-    <div className="space-y-4">
-      <div className="flex gap-2 border-b border-gray-200">
-        {([
-          { key: "pd" as const, label: "PD Visibility", icon: <Eye className="h-3.5 w-3.5" /> },
-          { key: "workstream" as const, label: "Workstream Visibility", icon: <ShieldCheck className="h-3.5 w-3.5" /> },
-        ]).map((tab) => (
-          <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === tab.key ? "border-emerald-600 text-emerald-700" : "border-transparent text-gray-500 hover:text-gray-700"
-            }`}
-            data-testid={`tab-${tab.key}-visibility`}
-          >{tab.icon}{tab.label}</button>
-        ))}
-      </div>
+    <div className="space-y-10" data-testid="section-visibility">
+      <section data-testid="section-pd-visibility">
+        <h2
+          className="text-lg font-semibold text-gray-900 mb-3 pb-2 border-b border-gray-200"
+          data-testid="heading-pd-visibility"
+        >
+          PD Inbox visibility
+        </h2>
+        <PdVisibilityView />
+      </section>
 
-      {activeTab === "pd" && <PdVisibilityView />}
-      {activeTab === "workstream" && <WorkstreamVisibilityView />}
+      <section data-testid="section-workstream-visibility">
+        <h2
+          className="text-lg font-semibold text-gray-900 mb-3 pb-2 border-b border-gray-200"
+          data-testid="heading-workstream-visibility"
+        >
+          Workstream visibility
+        </h2>
+        <WorkstreamVisibilityView />
+      </section>
     </div>
   );
 }

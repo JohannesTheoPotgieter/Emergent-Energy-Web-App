@@ -9,6 +9,7 @@ import type { StartupReport } from "./startup-report";
 import { db, getDbMode } from "../db";
 import { sql } from "drizzle-orm";
 import { warnOnDangerousRoutesInNonDev } from "../middleware/production-safety";
+import { loadRevokedTokensFromDb } from "../auth-context";
 
 export async function runStartupOrchestrator(options: {
   app: Express;
@@ -57,6 +58,13 @@ export async function runStartupOrchestrator(options: {
     `Runtime schema sync is disabled — schema is owned by ./migrations/*.sql (shared/schema.ts is the Drizzle mirror). Production startup is read-only.`,
     "Startup:Schema",
   );
+
+  // Load persisted token/session revocations into memory so they survive restarts.
+  try {
+    await loadRevokedTokensFromDb();
+  } catch (err) {
+    log(`loadRevokedTokensFromDb failed (non-fatal): ${(err instanceof Error ? err.message : String(err))}`, "Startup:Auth");
+  }
 
   await runStartupMaintenanceOrchestrator({ runtimeMaintenanceEnabled, startupSchemaRepairEnabled, log });
   report.maintenance.push(runtimeMaintenanceEnabled && startupSchemaRepairEnabled ? "completed" : "skipped");

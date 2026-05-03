@@ -153,3 +153,77 @@ export const RESULT_LABELS = {
   skippedKept: "Rows kept from previous import",
   dashboardNote: "Dashboard summaries may take a moment to update.",
 } as const;
+
+// Upload step labels (UX-1). The upload step is the first thing a
+// non-technical user sees. Copy here should be plain English, answer
+// "what am I about to do?", and make the reversibility explicit.
+export const UPLOAD_LABELS = {
+  pageTitle: "Import a project plan",
+  singleMode: {
+    title: "Import one file",
+    subtitle: "For a single project",
+    description: "Choose this if you have one spreadsheet covering one project — a plan update, a revenue schedule, or a cost tracker.",
+  },
+  folderMode: {
+    title: "Import a folder of files",
+    subtitle: "Many projects or many sections at once",
+    description: "Choose this when you have several spreadsheets (for example a SharePoint folder with plans for multiple projects).",
+  },
+  dropzone: {
+    singleHint: "Drop your plan file here, or click to browse.",
+    folderHint: "Drop a folder here, or click to browse. Sub-folders are scanned too.",
+    accepted: "Accepted: .xlsx · .xlsm",
+    singleMaxSize: "Max 25 MB.",
+    folderMaxFiles: "Up to 100 files per run.",
+    browserNote: "Folder upload works best in Chrome or Edge.",
+  },
+  howItWorks: {
+    single: [
+      "We'll read your spreadsheet and tell you what we found.",
+      "You review the changes.",
+      "We highlight anything that needs your decision.",
+      "You confirm — nothing is saved until this step.",
+    ],
+    folder: [
+      "We read every spreadsheet in the folder.",
+      "We match each one to a project in the app (you can fix any mismatch).",
+      "You review the changes per file in one place.",
+      "You pick which files to import. Un-ticked files stay untouched.",
+    ],
+  },
+  safety: "Nothing is saved until you click Commit at the final step — you can go back or cancel any time.",
+  templateLink: "Download a sample plan template",
+  guideLink: "Watch a 90-second guide",
+} as const;
+
+// Bulk / folder journey labels (UX-5). Copy for the multi-file bulk
+// commit panel, the bulk intro narrative, and the bulk post-commit
+// result screen. Phrasing mirrors UX-3's single-file "what happens
+// next" so the non-technical user sees the same vocabulary in both
+// flows.
+export const BULK_LABELS = {
+  intro: {
+    titleSingular: "We're ready to commit 1 file",
+    titlePlural: "We're ready to commit %n files",
+    readyPrefix: "%n ready to commit",
+    blockedPrefix: "%n need your attention",
+    stuckPrefix: "%n still have blockers — fix or skip each before committing",
+    grouping: "Files are grouped per project below. Use 'Review' to open a single file, or 'Allow All' to accept a file's warnings in one click.",
+  },
+  result: {
+    titleCommittedOnly: "All files imported",
+    titleMixed: "Bulk import finished",
+    titleFailedOnly: "Bulk import did not complete",
+    perFileHeading: "Per-file result",
+    whatNextHeading: "What happens next",
+    whatNextItems: [
+      "Dashboards for every affected project refresh within about 30 seconds.",
+      "Anyone owning a task whose dates or owner changed gets a notification.",
+      "Finance revenue will re-sync with QuickBooks on the next automatic run.",
+    ],
+    viewProjectAction: "View project",
+    retryAction: "Try again",
+    uploadMoreAction: "Import more files",
+    undoHint: "Each committed file is logged and reversible for 7 days via Import History.",
+  },
+} as const;

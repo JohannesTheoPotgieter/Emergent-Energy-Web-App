@@ -496,7 +496,7 @@ export const MODULE_TO_NAV_GROUPS: Record<CanonicalModule, string[]> = {
  * Lifecycle gates that should be prominent operational surfaces.
  */
 export const LIFECYCLE_GATES = [
-  { key: 'design_cost_proposal', label: 'Design & Cost Proposal', path: '/pd', module: 'PIPELINE' as CanonicalModule },
+  { key: 'design_cost_proposal', label: 'Cost Proposal & Design', path: '/pd', module: 'PIPELINE' as CanonicalModule },
   { key: 'signature_financial_close', label: 'Signature & Financial Close', path: '/gates', module: 'DELIVERY' as CanonicalModule },
   { key: 'pd_to_pm_handover', label: 'PD to PM Handover', path: '/handover-control', module: 'DELIVERY' as CanonicalModule },
   { key: 'financial_review', label: 'Financial Review', path: '/governance/financial-reviews', module: 'FINANCE' as CanonicalModule },

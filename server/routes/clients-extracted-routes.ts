@@ -30,9 +30,10 @@ export function registerClientsExtractedRoutes(app: Express): void {
       const usePromotedRead = await getFeatureFlag("promoted_core_clients_read");
       const compareMode = req.query.compare === "1" || req.query.compare === "true";
 
+      // Cascade-display: hide soft-deleted clients (Task #73, migration 0029).
       const allClients = usePromotedRead
         ? await listClientsFromPromotedCoreCompat()
-        : await db.select().from(clients).orderBy(asc(clients.name));
+        : await db.select().from(clients).where(sql`${clients.deletedAt} IS NULL`).orderBy(asc(clients.name));
 
       if (compareMode || usePromotedRead) {
         const comparison = await compareCoreClientsReadiness();
@@ -121,6 +122,11 @@ export function registerClientsExtractedRoutes(app: Express): void {
     secondaryContactEmail: z.string().email().optional().nullable().or(z.literal("")),
     industry: z.string().optional().nullable(),
     status: z.enum(["active", "inactive", "prospect"]).optional(),
+    // Email-linking foundations (migration 0013). Domain strings like
+    // "clientabc.com" — validated loosely (no protocol, no @, not empty
+    // when present). additional_email_domains is a list of the same.
+    primaryEmailDomain: z.string().min(1).max(253).regex(/^[^@\s/]+$/).optional().nullable().or(z.literal("")),
+    additionalEmailDomains: z.array(z.string().min(1).max(253).regex(/^[^@\s/]+$/)).max(10).optional(),
   }).strict();
 
   app.patch("/api/clients/:id", requireAuth, requireAdmin, async (req, res) => {

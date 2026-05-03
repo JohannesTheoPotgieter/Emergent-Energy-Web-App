@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { invalidateProjectV2Queries } from "@/hooks/use-project-v2";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { OwnerName } from "@/components/OwnerName";
 import {
   Loader2,
   Plus,
@@ -142,6 +144,7 @@ export function ProjectRaidTab({ projectId, projectName }: ProjectRaidTabProps) 
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["raid-items", projectId] });
+      invalidateProjectV2Queries(queryClient, projectId);
       setExpandedId(null);
     },
   });
@@ -159,6 +162,7 @@ export function ProjectRaidTab({ projectId, projectName }: ProjectRaidTabProps) 
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["raid-items", projectId] });
+      invalidateProjectV2Queries(queryClient, projectId);
     },
   });
 
@@ -313,10 +317,13 @@ export function ProjectRaidTab({ projectId, projectName }: ProjectRaidTabProps) 
                         </Badge>
                       </div>
                       <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                        {item.owner_name && (
+                        {(item.owner_user_id != null || item.owner_name) && (
                           <span className="flex items-center gap-1">
                             <User className="w-3 h-3" />
-                            {item.owner_name}
+                            <OwnerName
+                              ownerUserId={item.owner_user_id}
+                              fallbackName={item.owner_name}
+                            />
                           </span>
                         )}
                         {item.due_date && (
@@ -443,7 +450,13 @@ function ExpandedRaidItem({
         </div>
         <div>
           <Label className="text-[10px] uppercase text-muted-foreground mb-1 block">Owner</Label>
-          <p className="text-xs text-slate-700 py-1.5">{item.owner_name || "Unassigned"}</p>
+          <p className="text-xs text-slate-700 py-1.5">
+            <OwnerName
+              ownerUserId={item.owner_user_id}
+              fallbackName={item.owner_name}
+              emptyLabel="Unassigned"
+            />
+          </p>
         </div>
       </div>
 
@@ -524,6 +537,7 @@ function CreateRaidDialog({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["raid-items", projectId] });
+      invalidateProjectV2Queries(queryClient, projectId);
       resetForm();
       onClose();
     },

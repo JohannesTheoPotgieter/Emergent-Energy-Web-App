@@ -8,7 +8,7 @@ import { db } from "../db";
 import { financialEditRequests, financialIntegrationRules, users, workItems, projectInfo, expenseTaskLinks, milestoneTaskLinks } from "@shared/schema";
 import { createNotification } from "../services/notification-service";
 import { eq, and, inArray, isNull, desc, sql } from "drizzle-orm";
-import { paramStr } from "../lib/req-params";
+import { paramStr, parseIntParam } from "../lib/req-params";
 import { getCanonicalProjectCostLinesByName } from "../services/project-cost-line-read-service";
 
 const router = Router();
@@ -280,7 +280,7 @@ router.get("/api/financial-edit-requests/pending-count", requireAuth, async (req
 
 router.post("/api/financial-edit-requests/:id/approve", requireAuth, requireFinancialApprover, async (req: Request, res: Response) => {
   try {
-    const requestId = parseInt(paramStr(req.params.id));
+    const requestId = parseIntParam(req.params.id);
     const userId = req.user!.id;
     const { comment } = req.body;
 
@@ -374,7 +374,7 @@ router.post("/api/financial-edit-requests/:id/approve", requireAuth, requireFina
 
 router.post("/api/financial-edit-requests/:id/reject", requireAuth, requireFinancialApprover, async (req: Request, res: Response) => {
   try {
-    const requestId = parseInt(paramStr(req.params.id));
+    const requestId = parseIntParam(req.params.id);
     const userId = req.user!.id;
     const { comment } = req.body;
 
@@ -448,13 +448,27 @@ router.get("/api/financial-integration/warnings/:projectName", requireAuth, asyn
       });
     }
 
-    const totalRevenue = inflows.reduce((s: number, r: any) => s + (Number(r.milestoneAmount) || 0), 0);
+    // CANONICAL Revenue Recognition (POC) — sum of recognition amounts on
+    // cost lines for this project. Falls back to milestone billing total when
+    // POC is unavailable (no costed revenue captured yet).
+    const pocRevenueTotal = expenses.reduce(
+      (s: number, e: any) =>
+        s + (e.rowType === 'item' && !e.noRevenueLinked
+          ? Number(e.revenueRecognitionAmount) || 0
+          : 0),
+      0,
+    );
+    const milestoneRevenueTotal = inflows.reduce(
+      (s: number, r: any) => s + (Number(r.milestoneAmount) || 0),
+      0,
+    );
+    const totalRevenue = pocRevenueTotal > 0 ? pocRevenueTotal : milestoneRevenueTotal;
     if (totalRevenue > 0 && totalActual > totalRevenue) {
       warnings.push({
         type: "cos_exceeds_revenue",
         severity: "critical",
         message: `COS (R${(totalActual / 1000).toFixed(0)}k) exceeds total revenue (R${(totalRevenue / 1000).toFixed(0)}k)`,
-        details: { totalActual, totalRevenue },
+        details: { totalActual, totalRevenue, revenueMethod: pocRevenueTotal > 0 ? "POC" : "milestone_fallback" },
       });
     }
 
@@ -676,7 +690,7 @@ router.post("/api/financial-integration/rules", requireAuth, requireFinancialApp
 
 router.patch("/api/financial-integration/rules/:ruleId", requireAuth, requireFinancialApprover, async (req: Request, res: Response) => {
   try {
-    const ruleId = parseInt(paramStr(req.params.ruleId));
+    const ruleId = parseIntParam(req.params.ruleId);
     const { ruleConfig, isActive } = req.body;
 
     const updates: any = { updatedAt: new Date() };
@@ -702,7 +716,7 @@ router.patch("/api/financial-integration/rules/:ruleId", requireAuth, requireFin
 
 router.delete("/api/financial-integration/rules/:ruleId", requireAuth, requireFinancialApprover, async (req: Request, res: Response) => {
   try {
-    const ruleId = parseInt(paramStr(req.params.ruleId));
+    const ruleId = parseIntParam(req.params.ruleId);
     const [deleted] = await db.delete(financialIntegrationRules)
       .where(eq(financialIntegrationRules.id, ruleId))
       .returning();

@@ -161,20 +161,8 @@ export default function ClientProjectDepartmentsPage() {
     staleTime: 30_000,
   });
 
-  // PD tickets count
-  const { data: pdTickets = [] } = useQuery<any[]>({
-    queryKey: ["pd-tickets-for-project", projectId],
-    queryFn: async () => {
-      const token = localStorage.getItem("auth_token");
-      const headers: Record<string, string> = {};
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-      const res = await fetch(`/api/pd/tickets?projectId=${projectId}`, { headers, credentials: "include" });
-      if (!res.ok) return [];
-      return res.json();
-    },
-    enabled: !!projectId,
-    staleTime: 30_000,
-  });
+  // PD Tickets removed 2026-04-19 — Pipedrive/Opportunities is the source of truth.
+  const pdTickets: any[] = [];
 
   // Stage lifecycle data
   const { data: stageData } = useQuery<{ currentStage?: { stageCode: string; label: string } }>({
@@ -301,7 +289,7 @@ export default function ClientProjectDepartmentsPage() {
             metrics={[
               { label: "Contract", value: contractValue > 0 ? `R ${(contractValue / 1000000).toFixed(1)}M` : "—" },
               { label: "Revenue Realised", value: `${Math.round(revenueRealisedPct)}%` },
-              { label: "Project Development Tickets", value: `${pdTicketCount} open` },
+              // Open Opportunities metric removed 2026-04-19 — not yet wired to Pipedrive data; will be restored when Opportunities API is queryable per-project.
             ]}
             onClick={() => setLocation(`/project/${encodedName}?dept=pd`)}
           />

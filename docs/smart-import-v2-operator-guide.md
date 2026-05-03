@@ -75,6 +75,16 @@ You can also use the bulk buttons at the top:
 
 Once all decisions are made, click **Continue**.
 
+### Which fields trigger a conflict?
+
+Every field that the import detects a difference on, including newly-captured Tracker columns added in the 2026-04-29 release:
+
+- **Project Plan**: Lead, Resource 1, Resource 2, Tracker Comments, Work Days
+- **Revenue Tracking**: Milestone Notes & Comments
+- **Expenditure Breakdown**: Actual QTY, Actual Rate, Comments, CHECK flag, Saving / Overrun, USD Exchange Rate, Price per Watt
+
+If you've manually edited any of these in the app and the spreadsheet later changes the same cell, the wizard surfaces the conflict here. **Default is always "Keep current app value"** — your edits are never silently overwritten.
+
 ---
 
 ## Step 5: Confirm import
@@ -123,6 +133,32 @@ If someone changed a value in the app, and your spreadsheet has a different valu
 
 Yes. Click "Browse Folder" and select the folder. Each Excel file will be uploaded and processed as a separate import. You can review each one individually.
 
+### Where can I see the imported data exactly as it was in the spreadsheet?
+
+Three new per-project pages render the source Tracker sheets 1:1 with font and fill colour fidelity:
+
+- **Revenue Tracking** — `/projects/<id>/revenue-tracking`
+  Top-line summary (Planned Revenue / Expenditure / Profit / Margin × Costed / Actual) plus the Contract Milestones table with all 9 columns.
+
+- **Expenditure Breakdown** — `/projects/<id>/expenditure-breakdown`
+  Side-by-side Costed vs Actual tables. When a single costed line was settled across multiple invoice batches, the actual side expands to show one row per batch.
+
+- **Program Plan** — `/projects/<id>/program-plan`
+  Project-plan header (start date, baseline / forecasted completion, duration metrics) plus the WBS-indented task list with all 13 columns.
+
+Each cell renders the source workbook's font and fill colours: red text for unconfirmed values, yellow fill for risk, black for confirmed.
+
 ### Can I undo an import?
 
 Contact your administrator. The system keeps a full history of all imports and can roll back to a previous state if needed.
+
+
+## Rollback safety toggle (operators)
+
+If a production incident is suspected in the 3-way merge path, the backend kill switch remains available:
+
+- Set `USE_THREE_WAY_MERGE=false` and restart the API process.
+- This disables the per-row 3-way merge decisioning for commits while keeping row identity capture (`row_hash`) and snapshot capture (`import_snapshot`) in place.
+- Re-enable later by removing the variable or setting it back to `true`.
+
+This is intended as an emergency rollback control only; normal operation should keep the flag enabled.

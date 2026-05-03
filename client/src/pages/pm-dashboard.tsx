@@ -52,6 +52,7 @@ import { EnergyLoader } from "@/components/ui/energy-loader";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import DataSourceDebug from "@/components/DataSourceDebug";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
+import { ApprovalQueueCard } from "@/components/controlled-documents";
 import { apiRequest } from "@/lib/queryClient";
 import { formatCurrencyCompact, formatCurrencyFull } from "@/lib/execution-dashboard";
 import { formatForDisplayZA, parseIsoDateStrict } from "@shared/utils/dates";
@@ -800,9 +801,9 @@ const COO_VIEW_ROLES = ["COO_ADMIN", "CEO_ADMIN", "admin"];
 function HandoverCompleteSection() {
   const [, navigate] = useLocation();
   const { data } = useQuery<{ items: any[] }>({
-    queryKey: ["/api/pd-pm-handover/completed"],
+    queryKey: ["/api/engineering-pm-handover/completed"],
     queryFn: async () => {
-      const res = await apiRequest("GET", "/api/pd-pm-handover/completed");
+      const res = await apiRequest("GET", "/api/engineering-pm-handover/completed");
       return res.json();
     },
   });
@@ -999,6 +1000,9 @@ export default function PMDashboard() {
           <CalendarTab navigate={navigate} pmUserId={pmIdParam} />
         </TabsContent>
       </Tabs>
+
+      {/* D3 controlled-document approvals waiting on this PM */}
+      <ApprovalQueueCard />
 
       {/* Handover-complete projects section */}
       <HandoverCompleteSection />

@@ -5,6 +5,7 @@ import { requirePermission } from "./permission-middleware";
 import { jwtAuth, requireAuth, getEffectiveUser } from "./auth-context";
 import { logAuditFromReq } from "./audit-logger";
 import { createPaymentReleaseApproval } from "./services/approval-service";
+import { parseIntParam } from "./lib/req-params";
 
 // ===================== PAYMENT BATCH STATE MACHINE =====================
 
@@ -62,7 +63,7 @@ export function registerPaymentBatchRoutes(app: Express) {
 
   app.get("/api/payment-batches/:id", jwtAuth, requireAuth, requirePermission("procurement", "view"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(String(req.params.id));
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
 
       const batchResult = await db.execute(sql`
@@ -182,7 +183,7 @@ export function registerPaymentBatchRoutes(app: Express) {
       const user = getEffectiveUser(req);
       if (!user?.id) return res.status(401).json({ error: "Not authenticated" });
 
-      const id = parseInt(String(req.params.id));
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
 
       const batchResult = await db.execute(sql`SELECT * FROM payment_batches WHERE id = ${id}`);
@@ -240,7 +241,7 @@ export function registerPaymentBatchRoutes(app: Express) {
         return res.status(403).json({ error: "Only ManCo members can approve payment batches" });
       }
 
-      const id = parseInt(String(req.params.id));
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
 
       const batchResult = await db.execute(sql`SELECT status FROM payment_batches WHERE id = ${id}`);
@@ -276,7 +277,7 @@ export function registerPaymentBatchRoutes(app: Express) {
       const user = getEffectiveUser(req);
       if (!user?.id) return res.status(401).json({ error: "Not authenticated" });
 
-      const id = parseInt(String(req.params.id));
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
 
       const batchResult = await db.execute(sql`SELECT status FROM payment_batches WHERE id = ${id}`);
@@ -312,7 +313,7 @@ export function registerPaymentBatchRoutes(app: Express) {
       const user = getEffectiveUser(req);
       if (!user?.id) return res.status(401).json({ error: "Not authenticated" });
 
-      const id = parseInt(String(req.params.id));
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
 
       const { bankReference, documentDriveId, documentItemId, documentUrl, notes } = req.body;

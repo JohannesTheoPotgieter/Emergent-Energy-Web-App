@@ -13,6 +13,7 @@ import { isApiError } from "@/lib/api-error";
 import { formatRand } from "@/lib/safeMoney";
 import { ReportTrustNotice } from "@/components/reports/ReportTrustNotice";
 import { FinanceLimitedBetaBanner } from "@/components/reports/FinanceLimitedBetaBanner";
+import { FieldHint } from "@/components/ui/field-hint";
 
 interface QbBillRaw {
   Id: string;
@@ -184,8 +185,8 @@ export default function FinanceQuickBooksLinksPage() {
       />
 
       <FinanceLimitedBetaBanner
-        title="Limited beta — QuickBooks bill linking"
-        body="Reconciliation actions here are audited and gated (financials:edit), but COS realisation is NOT performed from this page. Use the COS Tracker to mark a cost line as realised. A QuickBooks 'bill' is evidence only; normalized_cost_lines remains the source of truth."
+        title="Moved — use Finance → QuickBooks Throughput"
+        body="Bill linking now lives inside the consolidated Throughput page (tab: Bills → Costs). This standalone screen is kept for now as a fallback only and may be removed in a future release. Behaviour is unchanged: COS realisation is still NOT performed here — use the COS Tracker."
       />
 
       <ReportTrustNotice
@@ -252,7 +253,7 @@ export default function FinanceQuickBooksLinksPage() {
       {selectedBill && (
         <section>
           <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
-            2. Pick a project cost line to link{" "}
+            2. Pick a project cost line to link <FieldHint hint="Auto-generated hash ID — do not edit manually" />{" "}
             <Badge variant="outline">{costLineSearchResp?.costLines.length ?? 0}</Badge>
             <Button
               size="sm"

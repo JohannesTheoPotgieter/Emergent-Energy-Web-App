@@ -1,9 +1,11 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { invalidateProjectV2Queries } from "@/hooks/use-project-v2";
 import { invalidateDashboardQueries } from "@/lib/queryClient";
 import { PermissionGate } from "@/components/PermissionGate";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { styleForCell } from "@/lib/tracker-cell-format";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -102,6 +104,11 @@ interface Milestone {
   flags: string[];
   hasOverride: boolean;
   milestoneNotes: string | null;
+  // Per-cell font/fill colour map keyed by canonical field name. Smart
+  // Import v2 stores tracker conventions (red font = unconfirmed, yellow
+  // fill = risk) here so the existing Revenue tab can render them inline
+  // alongside the dedicated revenue-tracking replica.
+  cellFormat: unknown;
   dependentTask: DependentTask | null;
   dateOverride: string | null;
   dateOverrideReason: string | null;
@@ -195,7 +202,7 @@ interface RevenueTabData {
   riskSignals?: FinanceRiskSignal[];
 }
 
-export function RevenueTrackingTab({ projectName, highlightId }: RevenueTrackingTabProps) {
+export function RevenueTrackingTab({ projectName, highlightId, projectId }: RevenueTrackingTabProps & { projectId?: number | null }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [editingRow, setEditingRow] = useState<number | null>(null);
@@ -281,6 +288,7 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
         return;
       }
       queryClient.invalidateQueries({ queryKey: ["revenue-tab", projectName] });
+      invalidateProjectV2Queries(queryClient, projectId ?? null);
       invalidateDashboardQueries(queryClient);
       toast({ title: "Changes saved", description: "Revenue tracking updates saved successfully" });
     },
@@ -328,6 +336,7 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
         return;
       }
       queryClient.invalidateQueries({ queryKey: ["revenue-tab", projectName] });
+      invalidateProjectV2Queries(queryClient, projectId ?? null);
       invalidateDashboardQueries(queryClient);
       toast({ title: variables.inBank ? "Marked as In Bank" : "Marked as outstanding", description: variables.inBank ? "Payment confirmed in bank — received date set" : "Payment marked as not yet received — received date cleared" });
     },
@@ -1047,6 +1056,7 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
                       <TableHead className="w-[100px] text-xs">INVOICE DATE</TableHead>
                       <TableHead className="min-w-[140px] text-xs">DEPENDENT TASK</TableHead>
                       <TableHead className="w-[130px] text-xs">STATUS</TableHead>
+                      <TableHead className="min-w-[160px] text-xs">NOTES</TableHead>
                       <TableHead className="w-[50px] text-xs">EDIT</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1060,8 +1070,8 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
                           className={`transition-all duration-500 ${highlightedRowId === m.id ? "bg-amber-100 ring-2 ring-amber-400 ring-inset" : isEditing ? "bg-blue-50/50" : m.status === "overdue" ? "bg-red-50/30" : ""}`}
                           data-testid={`row-milestone-${m.rowNumber}`}
                         >
-                          <TableCell className="font-mono text-xs">{m.milestoneNo}</TableCell>
-                          <TableCell className="text-xs font-medium">
+                          <TableCell className="font-mono text-xs" style={styleForCell(m.cellFormat, "milestoneNo")}>{m.milestoneNo}</TableCell>
+                          <TableCell className="text-xs font-medium" style={styleForCell(m.cellFormat, "milestoneName")}>
                             <div className="space-y-1">
                               <div className="flex items-center gap-1">
                               <span className="truncate max-w-[160px]" title={m.milestoneName}>{m.milestoneName}</span>
@@ -1093,10 +1103,10 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
                               )}
                             </div>
                           </TableCell>
-                          <TableCell className="text-right font-mono text-xs">
+                          <TableCell className="text-right font-mono text-xs" style={styleForCell(m.cellFormat, "milestonePercent")}>
                             {m.milestonePercent ? `${(parseFloat(m.milestonePercent) * 100).toFixed(0)}%` : "-"}
                           </TableCell>
-                          <TableCell className="text-right font-mono text-xs font-medium">{formatCurrency(m.milestoneAmount)}</TableCell>
+                          <TableCell className="text-right font-mono text-xs font-medium" style={styleForCell(m.cellFormat, "amountExVat")}>{formatCurrency(m.milestoneAmount)}</TableCell>
 
                           {/* Single DATE column - red = planned/unconfirmed, black = in bank */}
                           <TableCell className="text-xs">
@@ -1276,6 +1286,19 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
                             </div>
                           </TableCell>
 
+                          {/* Notes — Smart Import v2 milestone_notes column.
+                              Renders raw text with the cell_format colour
+                              from the source workbook applied; truncates
+                              long notes with full text in the title attr. */}
+                          <TableCell
+                            className="text-xs"
+                            style={styleForCell(m.cellFormat, "milestoneNotes")}
+                          >
+                            <span className="block max-w-[180px] truncate" title={m.milestoneNotes ?? ""}>
+                              {m.milestoneNotes ?? "-"}
+                            </span>
+                          </TableCell>
+
                           {/* Actions */}
                           <TableCell>
                             {isEditing ? (
@@ -1309,7 +1332,7 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
                           : ""}
                       </TableCell>
                       <TableCell className="text-right font-mono text-xs font-bold">{formatCurrency(summary.totalContract)}</TableCell>
-                      <TableCell colSpan={6}></TableCell>
+                      <TableCell colSpan={7}></TableCell>
                     </TableRow>
                   </TableBody>
                 </Table>

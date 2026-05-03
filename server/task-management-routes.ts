@@ -11,6 +11,7 @@ import { getEffectiveUser, requireAuth } from "./auth-context";
 import { requirePermission } from "./permission-middleware";
 import { attachWorkstreamVisibility, type WorkstreamVisibility } from "./workstream-visibility-middleware";
 import { blockInProduction } from "./middleware/production-safety";
+import { parseIntParam } from "./lib/req-params";
 
 type AppUser = { id: number; email: string; name: string; role: string };
 
@@ -168,7 +169,7 @@ export function registerTaskManagementRoutes(app: Express) {
         offset,
       });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -217,7 +218,7 @@ export function registerTaskManagementRoutes(app: Express) {
 
       res.json(columns);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -265,7 +266,7 @@ export function registerTaskManagementRoutes(app: Express) {
 
       res.json(calendar);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -348,7 +349,7 @@ export function registerTaskManagementRoutes(app: Express) {
         lookbackDays,
       });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -402,7 +403,7 @@ export function registerTaskManagementRoutes(app: Express) {
 
       res.status(201).json(item);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -410,7 +411,7 @@ export function registerTaskManagementRoutes(app: Express) {
   app.patch("/api/tasks/:id", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = getUser(req);
-      const id = parseInt(req.params.id as string);
+      const id = parseIntParam(req.params.id);
       if (!Number.isFinite(id) || id <= 0) {
         return next();
       }
@@ -453,14 +454,14 @@ export function registerTaskManagementRoutes(app: Express) {
 
       res.json(updated);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
   /** Soft-delete a task */
   app.delete("/api/tasks/:id", requireAuth, requirePermission("task_management", "delete"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id as string);
+      const id = parseIntParam(req.params.id);
       if (!Number.isFinite(id) || id <= 0) {
         return res.status(400).json({ error: "Invalid task ID" });
       }
@@ -472,7 +473,7 @@ export function registerTaskManagementRoutes(app: Express) {
       if (!deleted) return res.status(404).json({ error: "Task not found" });
       res.json({ success: true });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -523,7 +524,7 @@ export function registerTaskManagementRoutes(app: Express) {
 
       res.json({ success: true, updatedCount: taskIds.length });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -533,7 +534,7 @@ export function registerTaskManagementRoutes(app: Express) {
   app.post("/api/tasks/:id/time", requireAuth, requirePermission("task_management", "edit"), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
-      const workItemId = parseInt(req.params.id as string);
+      const workItemId = parseIntParam(req.params.id);
       const { durationMinutes, description, date } = req.body;
 
       if (!durationMinutes || durationMinutes <= 0) {
@@ -559,14 +560,14 @@ export function registerTaskManagementRoutes(app: Express) {
 
       res.status(201).json(entry);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
   /** Get time entries for a task */
   app.get("/api/tasks/:id/time", requireAuth, requirePermission("task_management", "view"), async (req: Request, res: Response) => {
     try {
-      const workItemId = parseInt(req.params.id as string);
+      const workItemId = parseIntParam(req.params.id);
       const entries = await db
         .select({
           id: taskTimeEntries.id,
@@ -587,7 +588,7 @@ export function registerTaskManagementRoutes(app: Express) {
 
       res.json({ entries, totalMinutes });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -595,8 +596,8 @@ export function registerTaskManagementRoutes(app: Express) {
   app.delete("/api/tasks/:taskId/time/:entryId", requireAuth, requirePermission("task_management", "edit"), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
-      const workItemId = parseInt(req.params.taskId as string);
-      const entryId = parseInt(req.params.entryId as string);
+      const workItemId = parseIntParam(req.params.taskId);
+      const entryId = parseIntParam(req.params.entryId);
 
       // Only allow deletion of own entries (or admin)
       const [entry] = await db.select().from(taskTimeEntries).where(eq(taskTimeEntries.id, entryId));
@@ -618,7 +619,7 @@ export function registerTaskManagementRoutes(app: Express) {
 
       res.json({ success: true });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -634,7 +635,7 @@ export function registerTaskManagementRoutes(app: Express) {
         .orderBy(asc(taskTags.category), asc(taskTags.name));
       res.json(tags);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -658,14 +659,14 @@ export function registerTaskManagementRoutes(app: Express) {
       if ((err instanceof Error ? err.message : String(err))?.includes("unique")) {
         return res.status(409).json({ error: "Tag name already exists" });
       }
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
   /** Update a tag */
   app.patch("/api/tags/:id", requireAuth, requirePermission("task_management", "edit"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id as string);
+      const id = parseIntParam(req.params.id);
       const { name, color, category } = req.body;
 
       const updates: Record<string, any> = {};
@@ -681,25 +682,25 @@ export function registerTaskManagementRoutes(app: Express) {
 
       res.json(updated);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
   /** Delete a tag */
   app.delete("/api/tags/:id", requireAuth, requirePermission("task_management", "delete"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id as string);
+      const id = parseIntParam(req.params.id);
       await db.update(taskTags).set({ deletedAt: new Date(), deletedBy: req.user?.id }).where(eq(taskTags.id, id)).returning();
       res.json({ success: true });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
   /** Assign tags to a task */
   app.post("/api/tasks/:id/tags", requireAuth, requirePermission("task_management", "edit"), async (req: Request, res: Response) => {
     try {
-      const workItemId = parseInt(req.params.id as string);
+      const workItemId = parseIntParam(req.params.id);
       const { tagIds } = req.body;
 
       if (!tagIds || !Array.isArray(tagIds)) {
@@ -728,15 +729,15 @@ export function registerTaskManagementRoutes(app: Express) {
 
       res.json(currentTags);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
   /** Remove a tag from a task */
   app.delete("/api/tasks/:id/tags/:tagId", requireAuth, requirePermission("task_management", "edit"), async (req: Request, res: Response) => {
     try {
-      const workItemId = parseInt(req.params.id as string);
-      const tagId = parseInt(req.params.tagId as string);
+      const workItemId = parseIntParam(req.params.id);
+      const tagId = parseIntParam(req.params.tagId);
 
       await db.delete(workItemTags).where(
         and(
@@ -747,7 +748,7 @@ export function registerTaskManagementRoutes(app: Express) {
 
       res.json({ success: true });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -892,7 +893,7 @@ export function registerTaskManagementRoutes(app: Express) {
         counts: { bugs: bugs.length, improvements: improvements.length, features: features.length },
       });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 }

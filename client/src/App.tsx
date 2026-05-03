@@ -22,6 +22,7 @@ import { Download, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { lazyWithRetry } from "@/lib/lazy-with-retry";
 import { ROUTE_COMPONENTS } from "@/config/route-components";
+import { useScreenAvailability } from "@/hooks/use-screen-availability";
 
 // Eagerly loaded pages (critical path — login, home, not-found)
 import LoginPage from "@/pages/login";
@@ -60,7 +61,15 @@ const APP_ROUTES: RouteConfig[] = [
     }
 
     for (const alias of page.aliases ?? []) {
-      routes.push({ path: alias, redirectTo: page.path });
+      // Parametric aliases (e.g. /project/:projectName → /project/id/:projectId) can't
+      // be redirected because the param names differ. Render the same component directly
+      // — the page itself handles canonical-URL redirect once it resolves the identity.
+      const aliasHasParams = alias.includes(":");
+      if (aliasHasParams && page.routeComponentKey && ROUTE_COMPONENTS[page.routeComponentKey]) {
+        routes.push({ path: alias, component: ROUTE_COMPONENTS[page.routeComponentKey] });
+      } else {
+        routes.push({ path: alias, redirectTo: page.path });
+      }
     }
 
     return routes;
@@ -85,6 +94,23 @@ function AccessDenied() {
   );
 }
 
+function ScreenUnavailable() {
+  return (
+    <div className="min-h-[60vh] flex items-center justify-center">
+      <div className="text-center space-y-4 max-w-md px-4">
+        <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center mx-auto">
+          <X className="h-8 w-8 text-slate-400" />
+        </div>
+        <h2 className="text-xl font-semibold text-foreground">Not Available</h2>
+        <p className="text-sm text-muted-foreground">This section has been disabled by your administrator.</p>
+        <a href="/" className="inline-flex items-center gap-2 text-sm font-medium text-emerald-600 hover:text-emerald-700">
+          <ArrowLeft className="h-4 w-4" /> Back to Home
+        </a>
+      </div>
+    </div>
+  );
+}
+
 function RoleGuard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const [location] = useLocation();
@@ -98,9 +124,19 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
     (window as any).__navMode = navMode;
   }
 
-  const { canViewPath } = useAccessMatrix();
+  const { canViewPath, loading: accessLoading } = useAccessMatrix();
 
-  if (effectiveRole && !canViewPath(location)) {
+  // Wait for the permissions matrix to finish loading before deciding the
+  // user is denied — otherwise navigation flashes the "Access Denied" page
+  // for ~200-500ms while /api/auth/permissions is still in flight, then
+  // suddenly renders the real page. See user feedback 2026-04-21 on
+  // /opportunities.
+  //
+  // If the matrix query failed entirely the hook returns `loading=false`
+  // with no permissions snapshot. We still render the children so the
+  // page-level error/empty handling can kick in instead of leaving a
+  // blank screen indefinitely.
+  if (effectiveRole && !accessLoading && !canViewPath(location)) {
     return <AccessDenied />;
   }
 
@@ -115,10 +151,16 @@ function usePageTitle(location: string) {
   }, [location]);
 }
 
+// Map each route path to its PAGE_REGISTRY id, for screen-availability checks.
+const PATH_TO_SCREEN_ID = new Map<string, string>(
+  PAGE_REGISTRY.filter((p) => p.id && p.path).map((p) => [p.path, p.id]),
+);
+
 function ProtectedPages() {
   const [location] = useLocation();
   useScrollRestoration(location);
   usePageTitle(location);
+  const { isScreenEnabled } = useScreenAvailability();
 
   return (
     <LensProvider>
@@ -134,7 +176,15 @@ function ProtectedPages() {
               return <Route key={route.path} path={route.path}>{() => <Redirect to={route.redirectTo!} />}</Route>;
             }
             const PageComponent = route.component!;
-            return <Route key={route.path} path={route.path}>{() => <ErrorBoundary><PageComponent /></ErrorBoundary>}</Route>;
+            const screenId = PATH_TO_SCREEN_ID.get(route.path);
+            return (
+              <Route key={route.path} path={route.path}>
+                {() => {
+                  if (screenId && !isScreenEnabled(screenId)) return <ScreenUnavailable />;
+                  return <ErrorBoundary><PageComponent /></ErrorBoundary>;
+                }}
+              </Route>
+            );
           })}
           <Route component={NotFound} />
         </Switch>

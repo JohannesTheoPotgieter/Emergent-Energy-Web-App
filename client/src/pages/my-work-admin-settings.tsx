@@ -22,6 +22,8 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout } from "@/components/layout";
 
 type Horizon = "today" | "week" | "month" | "quarter";
 type Severity = "critical" | "important" | "normal";
@@ -248,13 +250,15 @@ export default function MyWorkAdminSettingsPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-[1400px] mx-auto" data-testid="mytool-admin-settings-page">
-      <header>
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground" data-testid="text-page-title">
-          My Work — Administration
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">Manage global settings and company priorities</p>
-      </header>
+    <PageLayout
+      data-testid="mytool-admin-settings-page"
+      header={
+        <PageHeader
+          title="My Work — Administration"
+          subtitle="Manage global settings and company priorities"
+        />
+      }
+    >
 
       <Card data-testid="card-feature-settings">
         <CardHeader>
@@ -442,7 +446,7 @@ export default function MyWorkAdminSettingsPage() {
           )}
         </CardContent>
       </Card>
-    </div>
+    </PageLayout>
   );
 }
 

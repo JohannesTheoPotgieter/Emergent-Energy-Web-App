@@ -15,6 +15,7 @@ import { logAuditFromReq } from "./audit-logger";
 import { sanitizeFilename } from "./lib/upload-security";
 import { jwtAuth, requireAuth } from "./auth-context";
 import { requirePermission } from "./permission-middleware";
+import { parseIntParam } from "./lib/req-params";
 
 const photoUploadDir = path.join(process.cwd(), "uploads", "pm-photos");
 if (!fs.existsSync(photoUploadDir)) {
@@ -53,7 +54,7 @@ function requireProjectManagerOrAdmin(req: Request, res: Response, next: NextFun
 
 async function requirePmAssignment(req: Request, res: Response, next: NextFunction) {
   const user = (req as any).user || req.user;
-  const projectId = parseInt(req.params.projectId as string);
+  const projectId = parseIntParam(req.params.projectId);
   if (!user || !projectId || isNaN(projectId)) {
     return res.status(400).json({ error: "Invalid project ID" });
   }
@@ -72,7 +73,7 @@ async function requirePmAssignment(req: Request, res: Response, next: NextFuncti
     }
     next();
   } catch (err: unknown) {
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 }
 
@@ -131,7 +132,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
           .limit(1);
         res.json({ mode: rows.length > 0 ? rows[0].preferredMode : "full_detail" });
       } catch (err: unknown) {
-        res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+        throw err;
       }
     }
   );
@@ -163,7 +164,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
         logAuditFromReq(req, { entityType: "pm_mode_preference", entityId: String(user.id), action: "update", changesJson: { description: "Mode preference updated", mode } });
         res.json({ mode });
       } catch (err: unknown) {
-        res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+        throw err;
       }
     }
   );
@@ -247,7 +248,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
         res.json({ projects: result });
       } catch (err: unknown) {
         console.error("[PM-OTG] Projects error:", (err instanceof Error ? err.message : String(err)));
-        res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+        throw err;
       }
     }
   );
@@ -260,7 +261,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
     requirePmAssignment,
     async (req: Request, res: Response) => {
       try {
-        const projectId = parseInt(req.params.projectId as string);
+        const projectId = parseIntParam(req.params.projectId);
         const project = await db
           .select()
           .from(projectInfo)
@@ -343,7 +344,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
         });
       } catch (err: unknown) {
         console.error("[PM-OTG] Snapshot error:", (err instanceof Error ? err.message : String(err)));
-        res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+        throw err;
       }
     }
   );
@@ -358,7 +359,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
     async (req: Request, res: Response) => {
       try {
         const user = getUser(req);
-        const projectId = parseInt(req.params.projectId as string);
+        const projectId = parseIntParam(req.params.projectId);
         const { notes, weatherConditions, safetyStatus, visitDate } = req.body;
         const files = (req.files as Express.Multer.File[]) || [];
         const photoIds = files.map((f) => `/uploads/pm-photos/${f.filename}`);
@@ -416,7 +417,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
         res.json({ success: true, visit });
       } catch (err: unknown) {
         console.error("[PM-OTG] Site visit error:", (err instanceof Error ? err.message : String(err)));
-        res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+        throw err;
       }
     }
   );
@@ -430,7 +431,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
     async (req: Request, res: Response) => {
       try {
         const user = getUser(req);
-        const projectId = parseInt(req.params.projectId as string);
+        const projectId = parseIntParam(req.params.projectId);
         const { poNumber, description, amount, supplier } = req.body;
         if (!poNumber || !description) {
           return res.status(400).json({ error: "PO number and description are required" });
@@ -466,7 +467,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
         logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "PO request generated", poNumber, amount, supplier } });
         res.json({ success: true, action });
       } catch (err: unknown) {
-        res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+        throw err;
       }
     }
   );
@@ -480,7 +481,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
     async (req: Request, res: Response) => {
       try {
         const user = getUser(req);
-        const projectId = parseInt(req.params.projectId as string);
+        const projectId = parseIntParam(req.params.projectId);
         const { invoiceNumber, amount, poReference } = req.body;
         if (!invoiceNumber) {
           return res.status(400).json({ error: "Invoice number is required" });
@@ -515,7 +516,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
         logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "Invoice linked", invoiceNumber, amount, poReference } });
         res.json({ success: true, action });
       } catch (err: unknown) {
-        res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+        throw err;
       }
     }
   );
@@ -529,7 +530,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
     async (req: Request, res: Response) => {
       try {
         const user = getUser(req);
-        const projectId = parseInt(req.params.projectId as string);
+        const projectId = parseIntParam(req.params.projectId);
         const { description, amount, justification } = req.body;
         if (!description || !amount) {
           return res.status(400).json({ error: "Description and amount are required" });
@@ -565,7 +566,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
         logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "Variation order raised", amount, justification } });
         res.json({ success: true, action });
       } catch (err: unknown) {
-        res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+        throw err;
       }
     }
   );
@@ -579,7 +580,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
     async (req: Request, res: Response) => {
       try {
         const user = getUser(req);
-        const projectId = parseInt(req.params.projectId as string);
+        const projectId = parseIntParam(req.params.projectId);
         const { description, daysDelayed, impact } = req.body;
         if (!description) {
           return res.status(400).json({ error: "Description is required" });
@@ -614,7 +615,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
         logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "Delay logged", daysDelayed, impact } });
         res.json({ success: true, action });
       } catch (err: unknown) {
-        res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+        throw err;
       }
     }
   );
@@ -628,7 +629,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
     async (req: Request, res: Response) => {
       try {
         const user = getUser(req);
-        const projectId = parseInt(req.params.projectId as string);
+        const projectId = parseIntParam(req.params.projectId);
         const { description, severity, mitigationNotes } = req.body;
         if (!description || !severity) {
           return res.status(400).json({ error: "Description and severity are required" });
@@ -663,7 +664,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
         logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "Risk logged", severity, mitigationNotes } });
         res.json({ success: true, action });
       } catch (err: unknown) {
-        res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+        throw err;
       }
     }
   );
@@ -678,7 +679,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
     async (req: Request, res: Response) => {
       try {
         const user = getUser(req);
-        const projectId = parseInt(req.params.projectId as string);
+        const projectId = parseIntParam(req.params.projectId);
         const file = req.file;
         if (!file) {
           return res.status(400).json({ error: "Photo file is required" });
@@ -706,7 +707,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
         logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "Photo uploaded", caption } });
         res.json({ success: true, action, photoUrl });
       } catch (err: unknown) {
-        res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+        throw err;
       }
     }
   );
@@ -720,7 +721,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
     async (req: Request, res: Response) => {
       try {
         const user = getUser(req);
-        const projectId = parseInt(req.params.projectId as string);
+        const projectId = parseIntParam(req.params.projectId);
         const { progressPercent, notes } = req.body;
         const pct = parseInt(progressPercent);
         if (isNaN(pct) || pct < 0 || pct > 100) {
@@ -769,7 +770,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
         logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "Progress updated", progressPercent: pct, notes } });
         res.json({ success: true, action });
       } catch (err: unknown) {
-        res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+        throw err;
       }
     }
   );
@@ -783,7 +784,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
     async (req: Request, res: Response) => {
       try {
         const user = getUser(req);
-        const projectId = parseInt(req.params.projectId as string);
+        const projectId = parseIntParam(req.params.projectId);
         const { description, escalationLevel, urgency } = req.body;
         if (!description) {
           return res.status(400).json({ error: "Description is required" });
@@ -823,7 +824,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
         logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "Escalation raised", escalationLevel, urgency } });
         res.json({ success: true, action });
       } catch (err: unknown) {
-        res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+        throw err;
       }
     }
   );
@@ -837,7 +838,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
     async (req: Request, res: Response) => {
       try {
         const user = getUser(req);
-        const projectId = parseInt(req.params.projectId as string);
+        const projectId = parseIntParam(req.params.projectId);
         const weekStart = getWeekStart();
 
         const rows = await db.execute(sql`
@@ -873,7 +874,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
           weeklyRiskDone: row.weekly_risk_done || false,
         });
       } catch (err: unknown) {
-        res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+        throw err;
       }
     }
   );
@@ -887,7 +888,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
     async (req: Request, res: Response) => {
       try {
         const user = getUser(req);
-        const projectId = parseInt(req.params.projectId as string);
+        const projectId = parseIntParam(req.params.projectId);
         const weekStart = getWeekStart();
 
         await db.execute(sql`
@@ -906,7 +907,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
         logAuditFromReq(req, { entityType: "pm_compliance", entityId: String(projectId), action: "update", changesJson: { description: "Weekly risk compliance confirmed", weekStart } });
         res.json({ success: true });
       } catch (err: unknown) {
-        res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+        throw err;
       }
     }
   );

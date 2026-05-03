@@ -1,21 +1,14 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { usePermission } from "@/hooks/use-permissions";
 import { useLocation } from "wouter";
 import { format } from "date-fns";
+import * as Checkbox from "@radix-ui/react-checkbox";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { useToast } from "@/hooks/use-toast";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
+import { toast } from "sonner";
 import {
   Wrench,
   ShieldCheck,
@@ -30,6 +23,7 @@ import {
   ThumbsUp,
   ThumbsDown,
   Loader2,
+  Check,
 } from "lucide-react";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 
@@ -100,15 +94,85 @@ function getAuthHeaders(): Record<string, string> {
   return headers;
 }
 
+async function performApprovalAction(item: ApprovalItem, action: "approve" | "reject", comment: string) {
+  if (item.type === "general") {
+    const approvalId = item.meta.generalApprovalId || item.id.replace("gen-", "");
+    const res = await fetch(`/api/approvals/general/${approvalId}`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        status: action === "approve" ? "approved" : "rejected",
+        decisionNote: comment || undefined,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || err.message || "Failed to update general approval");
+    }
+    return res.json();
+  }
+  if (item.type === "engineering") {
+    const approvalId = item.meta.approvalId;
+    const res = await fetch(`/api/eng-stages/approvals/${approvalId}`, {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        status: action === "approve" ? "approved" : "rejected",
+        comments: comment || undefined,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || err.message || "Failed to update engineering approval");
+    }
+    return res.json();
+  }
+  if (item.type === "quality") {
+    const itemInstanceId = item.meta.itemInstanceId;
+    const res = await fetch(`/api/quality/project/${encodeURIComponent(item.projectName)}/item/${itemInstanceId}/approve`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        approved: action === "approve",
+        comment: comment || undefined,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || err.message || "Failed to update quality approval");
+    }
+    return res.json();
+  }
+  const deliverableId = item.meta.deliverableId;
+  const newStatus = action === "approve" ? "COMPLETE" : "PROVIDE FEEDBACK";
+  const res = await fetch(`/api/deliverables/${deliverableId}`, {
+    method: "PATCH",
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ status: newStatus }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || err.message || "Failed to update deliverable");
+  }
+  if (action === "reject" && comment) {
+    await fetch(`/api/deliverables/${deliverableId}/feedback`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ feedbackText: comment }),
+    }).catch(() => {});
+  }
+  return res.json();
+}
+
 export default function AdminApprovalsPage() {
   const { allowed: canView } = usePermission('approvals', 'view');
   const { allowed: canApprove } = usePermission('approvals', 'approve');
   const [location, navigate] = useLocation();
   const [filter, setFilter] = useState<ApprovalType>("all");
   const [showAll, setShowAll] = useState(false);
-  const [actionDialog, setActionDialog] = useState<{ item: ApprovalItem; action: "approve" | "reject" } | null>(null);
-  const [reason, setReason] = useState("");
-  const { toast } = useToast();
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [rejectOpenById, setRejectOpenById] = useState<Record<string, boolean>>({});
+  const [rejectReasonById, setRejectReasonById] = useState<Record<string, string>>({});
   const queryClient = useQueryClient();
 
   const { data, isLoading, error } = useQuery<ApprovalsResponse>({
@@ -124,8 +188,7 @@ export default function AdminApprovalsPage() {
 
   const isAdmin = data?.isAdmin ?? false;
 
-  const actionMutation = useMutation({
-    mutationFn: async ({ item, action, comment }: { item: ApprovalItem; action: "approve" | "reject"; comment: string }) => {
+  const applyApprovalAction = async ({ item, action, comment }: { item: ApprovalItem; action: "approve" | "reject"; comment: string }) => {
       if (item.type === "general") {
         const approvalId = item.meta.generalApprovalId || item.id.replace("gen-", "");
         const res = await fetch(`/api/approvals/general/${approvalId}`, {
@@ -193,22 +256,77 @@ export default function AdminApprovalsPage() {
         }
         return res.json();
       }
+  };
+
+  const approveMutation = useMutation({
+    mutationFn: ({ item }: { item: ApprovalItem }) => applyApprovalAction({ item, action: "approve", comment: "" }),
+    onMutate: async ({ item }) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/approvals/pending"] });
+      const previous = queryClient.getQueryData<ApprovalsResponse>(["/api/approvals/pending", showAll]);
+      queryClient.setQueryData<ApprovalsResponse>(["/api/approvals/pending", showAll], (current) => {
+        if (!current) return current;
+        return {
+          ...current,
+          items: current.items.map((row) => row.id === item.id ? { ...row, status: "approved" } : row),
+        };
+      });
+      return { previous };
     },
     onSuccess: (_data, variables) => {
-      const verb = variables.action === "approve" ? "approved" : "rejected";
-      toast({ title: `Item ${verb}`, description: `${variables.item.title} has been ${verb}.` });
-      queryClient.invalidateQueries({ queryKey: ["/api/approvals/pending"] });
-      setActionDialog(null);
-      setReason("");
+      toast.success(`${variables.item.title} approved`);
     },
-    onError: (err: any) => {
-      toast({ title: "Action failed", description: err.message || "Something went wrong", variant: "destructive" });
+    onError: (err: any, _variables, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(["/api/approvals/pending", showAll], context.previous);
+      }
+      toast.error(err.message || "Failed to approve");
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/approvals/pending"] });
+    },
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: ({ item, comment }: { item: ApprovalItem; comment: string }) =>
+      applyApprovalAction({ item, action: "reject", comment }),
+    onMutate: async ({ item }) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/approvals/pending"] });
+      const previous = queryClient.getQueryData<ApprovalsResponse>(["/api/approvals/pending", showAll]);
+      queryClient.setQueryData<ApprovalsResponse>(["/api/approvals/pending", showAll], (current) => {
+        if (!current) return current;
+        return {
+          ...current,
+          items: current.items.map((row) => row.id === item.id ? { ...row, status: "rejected" } : row),
+        };
+      });
+      return { previous };
+    },
+    onSuccess: (_data, variables) => {
+      setRejectOpenById((prev) => ({ ...prev, [variables.item.id]: false }));
+      setRejectReasonById((prev) => ({ ...prev, [variables.item.id]: "" }));
+      toast.success(`${variables.item.title} rejected`);
+    },
+    onError: (err: any, _variables, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(["/api/approvals/pending", showAll], context.previous);
+      }
+      toast.error(err.message || "Failed to reject");
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/approvals/pending"] });
     },
   });
 
   const items = data?.items || [];
   const counts = data?.counts || { engineering: 0, quality: 0, deliverable: 0, general: 0, total: 0 };
   const filtered = filter === "all" ? items : items.filter(i => i.type === filter);
+  const filteredIds = useMemo(() => new Set(filtered.map((item) => item.id)), [filtered]);
+  const selectedItems = useMemo(
+    () => filtered.filter((item) => selectedIds.has(item.id)),
+    [filtered, selectedIds],
+  );
+  const allRowsSelected = filtered.length > 0 && selectedItems.length === filtered.length;
+  const someRowsSelected = selectedItems.length > 0 && selectedItems.length < filtered.length;
   const isPmWorkspace = location.startsWith("/pm/");
   const subtitle = isPmWorkspace
     ? "Execution approvals queue for post-handover delivery work. Approval-required items must use Send for Approval only."
@@ -245,23 +363,8 @@ export default function AdminApprovalsPage() {
     ].filter(g => g.items.length > 0);
   })();
 
-  function openAction(item: ApprovalItem, action: "approve" | "reject", e: { stopPropagation: () => void }) {
-    e.stopPropagation();
-    setReason("");
-    setActionDialog({ item, action });
-  }
-
-  function submitAction() {
-    if (!canApprove) {
-      toast({ title: "Permission required", description: "You do not have approval permission for this queue.", variant: "destructive" });
-      return;
-    }
-    if (!actionDialog) return;
-    if (actionDialog.action === "reject" && !reason.trim()) {
-      toast({ title: "Reason required", description: "Please provide a reason for rejection.", variant: "destructive" });
-      return;
-    }
-    actionMutation.mutate({ item: actionDialog.item, action: actionDialog.action, comment: reason.trim() });
+  function isPendingStatus(status: string) {
+    return status.toLowerCase() === "pending";
   }
 
   function navigateToItem(item: ApprovalItem) {
@@ -275,6 +378,54 @@ export default function AdminApprovalsPage() {
       navigate(`/project/${encodeURIComponent(item.projectName)}`);
     }
   }
+
+  function toggleSelected(itemId: string, checked: boolean) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(itemId);
+      else next.delete(itemId);
+      return next;
+    });
+  }
+
+  function toggleSelectAll(checked: boolean) {
+    setSelectedIds((prev) => {
+      if (!checked) {
+        const next = new Set(prev);
+        filtered.forEach((item) => next.delete(item.id));
+        return next;
+      }
+      const next = new Set(prev);
+      filtered.forEach((item) => next.add(item.id));
+      return next;
+    });
+  }
+
+  async function approveSelected() {
+    if (selectedItems.length === 0) return;
+    if (!canApprove) {
+      toast.error("Permission required: You do not have approval permission for this queue.");
+      return;
+    }
+    try {
+      await Promise.all(selectedItems.map((item) => performApprovalAction(item, "approve", "")));
+      setSelectedIds(new Set());
+      await queryClient.invalidateQueries({ queryKey: ["/api/approvals/pending"] });
+      toast.success(`Approved ${selectedItems.length} item${selectedItems.length === 1 ? "" : "s"}.`);
+    } catch (err: any) {
+      toast.error(err?.message || "Bulk approve failed.");
+    }
+  }
+
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      const next = new Set<string>();
+      prev.forEach((id) => {
+        if (filteredIds.has(id)) next.add(id);
+      });
+      return next.size === prev.size ? prev : next;
+    });
+  }, [filteredIds]);
 
   if (!canView) {
     return (
@@ -468,28 +619,80 @@ export default function AdminApprovalsPage() {
                               </span>
                             </div>
                           </div>
-                          {canApprove ? (
+                          {canApprove && isPendingStatus(item.status) ? (
                             <div className="flex gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                               <Button
-                                variant="outline" size="sm" className="h-7 text-xs gap-1 text-emerald-600 hover:text-emerald-700"
-                                onClick={(e) => openAction(item, "approve", e)}
+                                variant="outline" size="sm" className="h-7 text-xs gap-1 text-emerald-700 border-emerald-300 hover:text-emerald-800"
+                                onClick={() => approveMutation.mutate({ item })}
+                                disabled={approveMutation.isPending || rejectMutation.isPending}
                                 data-testid={`btn-approve-${item.id}`}
                               >
-                                <ThumbsUp className="w-3 h-3" />
+                                {approveMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <ThumbsUp className="w-3 h-3" />}
                                 Approve
                               </Button>
                               <Button
                                 variant="outline" size="sm" className="h-7 text-xs gap-1 text-red-600 hover:text-red-700"
-                                onClick={(e) => openAction(item, "reject", e)}
+                                onClick={() => setRejectOpenById((prev) => ({ ...prev, [item.id]: !prev[item.id] }))}
                                 data-testid={`btn-reject-${item.id}`}
                               >
                                 <ThumbsDown className="w-3 h-3" />
+                                Reject
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0"
+                                onClick={() => navigateToItem(item)}
+                                title="View in project"
+                                data-testid={`btn-navigate-${item.id}`}
+                              >
+                                <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />
                               </Button>
                             </div>
                           ) : (
                             <Badge variant="outline" className="text-[10px]">View only</Badge>
                           )}
                         </div>
+                        {canApprove && isPendingStatus(item.status) && rejectOpenById[item.id] && (
+                          <div className="mt-3 pl-11 space-y-2" onClick={(e) => e.stopPropagation()}>
+                            <Textarea
+                              rows={2}
+                              placeholder="Enter rejection reason"
+                              value={rejectReasonById[item.id] || ""}
+                              onChange={(e) => setRejectReasonById((prev) => ({ ...prev, [item.id]: e.target.value }))}
+                              data-testid={`input-reject-reason-${item.id}`}
+                            />
+                            <div className="flex items-center gap-2">
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                disabled={!String(rejectReasonById[item.id] || "").trim() || rejectMutation.isPending || approveMutation.isPending}
+                                onClick={() => {
+                                  const reason = String(rejectReasonById[item.id] || "").trim();
+                                  if (!reason) {
+                                    toast.error("Please provide a reason for rejection.");
+                                    return;
+                                  }
+                                  rejectMutation.mutate({ item, comment: reason });
+                                }}
+                                data-testid={`btn-confirm-reject-${item.id}`}
+                              >
+                                {rejectMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : null}
+                                Submit rejection
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  setRejectOpenById((prev) => ({ ...prev, [item.id]: false }));
+                                  setRejectReasonById((prev) => ({ ...prev, [item.id]: "" }));
+                                }}
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        )}
                       </CardContent>
                     </Card>
                   );
@@ -540,23 +743,24 @@ export default function AdminApprovalsPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
-                        {canApprove ? (
+                        {canApprove && isPendingStatus(item.status) ? (
                           <>
                             <Button
                               variant="default"
                               size="sm"
                               className="h-7 text-xs bg-green-600 hover:bg-green-700 gap-1"
-                              onClick={(e) => openAction(item, "approve", e)}
+                              onClick={() => approveMutation.mutate({ item })}
+                              disabled={approveMutation.isPending || rejectMutation.isPending}
                               data-testid={`btn-approve-${item.id}`}
                             >
-                              <ThumbsUp className="w-3 h-3" />
+                              {approveMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <ThumbsUp className="w-3 h-3" />}
                               Approve
                             </Button>
                             <Button
                               variant="outline"
                               size="sm"
                               className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700 gap-1"
-                              onClick={(e) => openAction(item, "reject", e)}
+                              onClick={() => setRejectOpenById((prev) => ({ ...prev, [item.id]: !prev[item.id] }))}
                               data-testid={`btn-reject-${item.id}`}
                             >
                               <ThumbsDown className="w-3 h-3" />
@@ -578,6 +782,46 @@ export default function AdminApprovalsPage() {
                         </Button>
                       </div>
                     </div>
+                    {canApprove && isPendingStatus(item.status) && rejectOpenById[item.id] && (
+                      <div className="mt-3 pl-11 space-y-2" onClick={(e) => e.stopPropagation()}>
+                        <Textarea
+                          rows={2}
+                          placeholder="Enter rejection reason"
+                          value={rejectReasonById[item.id] || ""}
+                          onChange={(e) => setRejectReasonById((prev) => ({ ...prev, [item.id]: e.target.value }))}
+                          data-testid={`input-reject-reason-${item.id}`}
+                        />
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            disabled={!String(rejectReasonById[item.id] || "").trim() || rejectMutation.isPending || approveMutation.isPending}
+                            onClick={() => {
+                              const reason = String(rejectReasonById[item.id] || "").trim();
+                              if (!reason) {
+                                toast.error("Please provide a reason for rejection.");
+                                return;
+                              }
+                              rejectMutation.mutate({ item, comment: reason });
+                            }}
+                            data-testid={`btn-confirm-reject-${item.id}`}
+                          >
+                            {rejectMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : null}
+                            Submit rejection
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setRejectOpenById((prev) => ({ ...prev, [item.id]: false }));
+                              setRejectReasonById((prev) => ({ ...prev, [item.id]: "" }));
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               );
@@ -586,71 +830,6 @@ export default function AdminApprovalsPage() {
         )}
         </div>
       </PageShell>
-
-      <Dialog open={!!actionDialog} onOpenChange={(open) => { if (!open) { setActionDialog(null); setReason(""); } }}>
-        <DialogContent className="sm:max-w-[440px]">
-          {actionDialog && (
-            <>
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                  {actionDialog.action === "approve" ? (
-                    <ThumbsUp className="w-5 h-5 text-green-600" />
-                  ) : (
-                    <ThumbsDown className="w-5 h-5 text-red-600" />
-                  )}
-                  {actionDialog.action === "approve" ? "Approve Item" : "Reject Item"}
-                </DialogTitle>
-                <DialogDescription>
-                  {actionDialog.action === "approve"
-                    ? "Confirm approval for this item. You can optionally add a comment."
-                    : "Please provide a reason for rejecting this item."}
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-3 py-2">
-                <div className="rounded-lg border p-3 bg-muted/30">
-                  <div className="text-sm font-medium">{actionDialog.item.title}</div>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    {actionDialog.item.projectName} · {typeConfig[actionDialog.item.type].label}
-                  </div>
-                </div>
-                <div>
-                  <label className="text-sm font-medium">
-                    {actionDialog.action === "approve" ? "Comment (optional)" : "Reason (required)"}
-                  </label>
-                  <Textarea
-                    value={reason}
-                    onChange={(e) => setReason(e.target.value)}
-                    placeholder={actionDialog.action === "approve" ? "Add a comment..." : "Why is this being rejected?"}
-                    className="mt-1.5"
-                    rows={3}
-                    data-testid="input-reason"
-                  />
-                </div>
-              </div>
-              <DialogFooter className="gap-2 sm:gap-0">
-                <Button
-                  variant="outline"
-                  onClick={() => { setActionDialog(null); setReason(""); }}
-                  disabled={actionMutation.isPending}
-                  data-testid="btn-cancel-action"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  variant={actionDialog.action === "approve" ? "default" : "destructive"}
-                  className={actionDialog.action === "approve" ? "bg-green-600 hover:bg-green-700" : ""}
-                  onClick={submitAction}
-                  disabled={actionMutation.isPending || (actionDialog.action === "reject" && !reason.trim())}
-                  data-testid="btn-confirm-action"
-                >
-                  {actionMutation.isPending && <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />}
-                  {actionDialog.action === "approve" ? "Confirm Approval" : "Confirm Rejection"}
-                </Button>
-              </DialogFooter>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
     </>
   );
 }

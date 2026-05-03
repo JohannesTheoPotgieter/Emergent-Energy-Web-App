@@ -10,7 +10,7 @@ import { calculateCPM, applyOverridesToTasks, applyOverridesToDependencies } fro
 import { logAuditFromReq } from "../audit-logger";
 import { requireAuth } from "../auth-context";
 import { requireAdmin } from "../middleware/requireAdmin";
-import { paramStr } from "../lib/req-params";
+import { paramStr, parseIntParam } from "../lib/req-params";
 
 export function registerWorkingPlanRoutes(app: Express) {
   // ==================== PROJECT PLAN SCHEDULING API ====================
@@ -91,7 +91,7 @@ export function registerWorkingPlanRoutes(app: Express) {
       });
     } catch (error: any) {
       console.error("Error getting working plan:", error);
-      res.status(500).json({ error: "server_error", message: error.message });
+      res.status(500).json({ error: "server_error" });
     }
   });
 
@@ -110,7 +110,7 @@ export function registerWorkingPlanRoutes(app: Express) {
       res.json({ success: true, message: "Working plan reset to baseline" });
     } catch (error: any) {
       console.error("Error resetting working plan:", error);
-      res.status(500).json({ error: "server_error", message: error.message });
+      res.status(500).json({ error: "server_error" });
     }
   });
 
@@ -192,7 +192,7 @@ export function registerWorkingPlanRoutes(app: Express) {
       }
     } catch (error: any) {
       console.error("Error updating task:", error);
-      res.status(500).json({ error: "server_error", message: error.message });
+      res.status(500).json({ error: "server_error" });
     }
   });
 
@@ -226,7 +226,7 @@ export function registerWorkingPlanRoutes(app: Express) {
       res.json(created);
     } catch (error: any) {
       console.error("Error creating task:", error);
-      res.status(500).json({ error: "server_error", message: error.message });
+      res.status(500).json({ error: "server_error" });
     }
   });
 
@@ -287,7 +287,7 @@ export function registerWorkingPlanRoutes(app: Express) {
       res.json({ success: true, totalRenamed: workingTasks.length });
     } catch (error: any) {
       console.error("Error renumbering WBS:", error);
-      res.status(500).json({ error: "server_error", message: error.message });
+      res.status(500).json({ error: "server_error" });
     }
   });
 
@@ -340,7 +340,7 @@ export function registerWorkingPlanRoutes(app: Express) {
       res.json({ success: true });
     } catch (error: any) {
       console.error("Error deleting task:", error);
-      res.status(500).json({ error: "server_error", message: error.message });
+      res.status(500).json({ error: "server_error" });
     }
   });
 
@@ -419,21 +419,21 @@ export function registerWorkingPlanRoutes(app: Express) {
       res.json(created);
     } catch (error: any) {
       console.error("Error creating dependency:", error);
-      res.status(500).json({ error: "server_error", message: error.message });
+      res.status(500).json({ error: "server_error" });
     }
   });
 
   // Delete dependency
   app.delete("/api/dependencies/:depId", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const depId = parseInt(paramStr(req.params.depId));
+      const depId = parseIntParam(req.params.depId);
       if (isNaN(depId)) return res.status(400).json({ error: "Invalid dependency ID" });
       await storage.deleteDependency(depId);
       logAuditFromReq(req, { entityType: "dependency", action: "delete", entityId: String(depId), changesJson: { description: "Dependency deleted" } });
       res.json({ success: true });
     } catch (error: any) {
       console.error("Error deleting dependency:", error);
-      res.status(500).json({ error: "server_error", message: error.message });
+      res.status(500).json({ error: "server_error" });
     }
   });
 
@@ -446,7 +446,7 @@ export function registerWorkingPlanRoutes(app: Express) {
       res.json(notices);
     } catch (error: any) {
       console.error("Error getting change notices:", error);
-      res.status(500).json({ error: "server_error", message: error.message });
+      res.status(500).json({ error: "server_error" });
     }
   });
 
@@ -478,14 +478,14 @@ export function registerWorkingPlanRoutes(app: Express) {
       res.json(created);
     } catch (error: any) {
       console.error("Error creating change notice:", error);
-      res.status(500).json({ error: "server_error", message: error.message });
+      res.status(500).json({ error: "server_error" });
     }
   });
 
   // Update schedule change notice (mark as notified/documented)
   app.patch("/api/change-notices/:noticeId", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const noticeId = parseInt(paramStr(req.params.noticeId));
+      const noticeId = parseIntParam(req.params.noticeId);
       if (isNaN(noticeId)) return res.status(400).json({ error: "Invalid notice ID" });
       const { clientNotified, documentationUpdated, userNote } = req.body;
 
@@ -503,7 +503,7 @@ export function registerWorkingPlanRoutes(app: Express) {
       res.json(updated);
     } catch (error: any) {
       console.error("Error updating change notice:", error);
-      res.status(500).json({ error: "server_error", message: error.message });
+      res.status(500).json({ error: "server_error" });
     }
   });
 }

@@ -23,6 +23,8 @@ import { useRolloutFlag } from "@/hooks/use-rollout-flag";
 import type { NextAction, BlockerInfo, OwnerInfo } from "@/hooks/use-guidance";
 import { usePermission } from "@/hooks/use-permissions";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout } from "@/components/layout";
 
 interface StageGateBlock {
   projectId: number;
@@ -42,6 +44,7 @@ interface ProjectInfo {
   pm: string | null;
   contractValue: string | null;
   phase: string | null;
+  projectStatus: string | null;
   isActive: boolean;
   escalationLevel: string | null;
   ragStatus: string | null;
@@ -93,165 +96,26 @@ function phaseShowsQM(_phaseKey: string): boolean {
   return true;
 }
 
-const PHASE_GROUPS = [
-  {
-    key: "first_assessment",
-    label: "First Assessment",
-    phaseValue: "First Assessment",
-    matches: ["First Assessment", "P0_FIRST_ASSESSMENT", "P0", "S01_FIRST_ASSESSMENT", "S01"],
-    color: "bg-muted border-border",
-    headerBg: "bg-slate-500",
-  },
-  {
-    key: "design_cost_proposal",
-    // Post-merge: this column absorbs the former "Financial Review" column.
-    label: "Design & Cost Proposal",
-    phaseValue: "Design & Cost Proposal",
-    matches: [
-      "Cost Proposal",
-      "Design & Cost Proposal",
-      "P1_COST_PROPOSAL_DESIGN",
-      "P1",
-      "S02_DESIGN_COST_PROPOSAL",
-      "S02",
-      // Absorbed Financial Review phases
-      "Financial Review",
-      "P3_DETAILED_DESIGN_PROC_RELEASE",
-      "S05_FINANCIAL_REVIEW",
-      "S05",
-    ],
-    color: "bg-blue-50 border-blue-300",
-    headerBg: "bg-blue-500",
-  },
-  {
-    key: "signature_financial_close",
-    // Post-merge: this column absorbs the former "PD-PM Handover" column.
-    label: "Financial Close",
-    phaseValue: "Signature & Financial Close",
-    matches: [
-      "Financial Close",
-      "Signature & Financial Close",
-      "P3_FINANCIAL_CLOSE",
-      "P3",
-      "S03_SIGNATURE_FINANCIAL_CLOSE",
-      "S03",
-      // Absorbed PD-PM handover phases
-      "Planning",
-      "PD-PM Handover",
-      "P2_PD_PM_HANDOVER",
-      "P2",
-      "S04_PD_PM_HANDOVER",
-      "S04",
-    ],
-    color: "bg-indigo-50 border-indigo-300",
-    headerBg: "bg-indigo-500",
-  },
-  {
-    key: "construction",
-    label: "Construction",
-    phaseValue: "Construction",
-    matches: ["Construction", "P4_CONSTRUCTION_INSTALLATION", "P4", "S06_CONSTRUCTION", "S06"],
-    color: "bg-orange-50 border-orange-300",
-    headerBg: "bg-orange-500",
-  },
-  {
-    key: "commissioning",
-    label: "Commissioning",
-    phaseValue: "Commissioning",
-    matches: ["QA", "Commissioning", "P5_COMMISSIONING_QA", "P5", "S07_COMMISSIONING", "S07"],
-    color: "bg-violet-50 border-violet-300",
-    headerBg: "bg-violet-500",
-  },
-  {
-    key: "om_handover",
-    label: "O&M Handover",
-    phaseValue: "O&M Handover",
-    matches: ["O&M Handover", "Compliance Handover", "S08_OM_HANDOVER", "S08"],
-    color: "bg-cyan-50 border-cyan-300",
-    headerBg: "bg-cyan-600",
-  },
-  {
-    key: "client_handover",
-    label: "Client Handover",
-    phaseValue: "Client Handover",
-    matches: ["Handover", "Client Handover", "P6_HANDOVER_DLP", "P6", "S09_CLIENT_HANDOVER", "S09"],
-    color: "bg-teal-50 border-teal-300",
-    headerBg: "bg-teal-500",
-  },
-  {
-    key: "post_handover_review",
-    label: "Post-Handover Review",
-    phaseValue: "Post-Handover Review",
-    matches: ["DLP", "Commercial Close Out", "Commercial Close out", "Closeout", "Post-Handover Review", "P7_CLOSEOUT_POSTMORTEM", "P7", "S10_POST_HANDOVER_REVIEW", "S10"],
-    color: "bg-emerald-50 border-emerald-300",
-    headerBg: "bg-emerald-500",
-  },
-  {
-    key: "internal",
-    label: "Internal",
-    phaseValue: "Internal",
-    matches: ["Internal", "INTERNAL"],
-    color: "bg-purple-50 border-purple-300",
-    headerBg: "bg-purple-600",
-  },
-  {
-    key: "hold",
-    label: "Hold",
-    phaseValue: "Hold",
-    matches: ["Hold", "On Hold", "HOLD"],
-    color: "bg-muted border-border",
-    headerBg: "bg-gray-500",
-  },
-  {
-    key: "gone",
-    label: "Gone",
-    phaseValue: "Gone",
-    matches: ["Gone", "GONE"],
-    color: "bg-red-50 border-red-300",
-    headerBg: "bg-red-800",
-  },
-];
+type LifecycleGroup = {
+  key: string;
+  label: string;
+  phaseValue: string;
+  matches: string[];
+  color: string;
+  headerBg: string;
+};
 
-function mapPhaseToGroup(phase: string | null, source?: string): string {
-  if (source === "engineering" && !phase) {
-    return "internal";
-  }
+const GROUP_COLORS = ["bg-slate-50 border-slate-300", "bg-blue-50 border-blue-300", "bg-indigo-50 border-indigo-300", "bg-amber-50 border-amber-300", "bg-orange-50 border-orange-300", "bg-violet-50 border-violet-300", "bg-cyan-50 border-cyan-300", "bg-teal-50 border-teal-300", "bg-emerald-50 border-emerald-300", "bg-lime-50 border-lime-300"];
+const GROUP_HEADERS = ["bg-slate-500", "bg-blue-500", "bg-indigo-500", "bg-amber-500", "bg-orange-500", "bg-violet-500", "bg-cyan-600", "bg-teal-500", "bg-emerald-500", "bg-lime-600"];
 
-  if (source === "engineering" && phase) {
-    const normalized = phase.trim();
-    for (const g of PHASE_GROUPS) {
-      if (g.matches.some((m) => m.toLowerCase() === normalized.toLowerCase())) {
-        return g.key;
-      }
-    }
-    return "internal";
-  }
-
-  let group = "first_assessment";
-  if (phase) {
-    const normalized = phase.trim();
-    let found = false;
-    for (const g of PHASE_GROUPS) {
-      if (g.matches.some((m) => m.toLowerCase() === normalized.toLowerCase())) {
-        group = g.key;
-        found = true;
-        break;
-      }
-    }
-    if (!found) {
-      if (normalized.startsWith("P0") || normalized.startsWith("S01")) group = "first_assessment";
-      else if (normalized.startsWith("P1") || normalized.startsWith("S02")) group = "design_cost_proposal";
-      else if (normalized.startsWith("P3") || normalized.startsWith("S03")) group = "signature_financial_close";
-      else if (normalized.startsWith("P2") || normalized.startsWith("S04")) group = "pd_pm_handover";
-      else if (normalized.startsWith("S05")) group = "financial_review";
-      else if (normalized.startsWith("P4") || normalized.startsWith("S06")) group = "construction";
-      else if (normalized.startsWith("P5") || normalized.startsWith("S07")) group = "commissioning";
-      else if (normalized.startsWith("S08")) group = "om_handover";
-      else if (normalized.startsWith("P6") || normalized.startsWith("S09")) group = "client_handover";
-      else if (normalized.startsWith("P7") || normalized.startsWith("S10")) group = "post_handover_review";
-    }
-  }
-  return group;
+function mapPhaseToGroup(phase: string | null, lifecycleGroups: LifecycleGroup[]): string {
+  if (!phase) return lifecycleGroups[0]?.key || "unknown";
+  const normalized = phase.trim().toLowerCase();
+  const byMatch = lifecycleGroups.find((g) => g.matches.some((m) => m.toLowerCase() === normalized));
+  if (byMatch) return byMatch.key;
+  const byLabel = lifecycleGroups.find((g) => g.phaseValue.toLowerCase() === normalized);
+  if (byLabel) return byLabel.key;
+  return lifecycleGroups[0]?.key || "unknown";
 }
 
 function cleanProjectName(name: string): string {
@@ -379,6 +243,16 @@ export default function LifecycleBoardPage() {
     refetchInterval: 30_000,
   });
 
+  const { data: lifecycleModel = [] } = useQuery<Array<{ key: string; label: string; phaseValue: string; code: string }>>({
+    queryKey: ["/api/lifecycle-board/lifecycle-model"],
+    queryFn: async () => {
+      const res = await fetch("/api/lifecycle-board/lifecycle-model", { credentials: "include", headers: getAuthHeaders() });
+      if (!res.ok) return [];
+      const payload = await res.json();
+      return payload.lifecycle || [];
+    },
+  });
+
   const { data: pmUsers = [] } = useQuery<{ id: number; name: string; username: string; role: string }[]>({
     queryKey: ["/api/pm-assignable-users"],
     queryFn: async () => {
@@ -459,7 +333,7 @@ export default function LifecycleBoardPage() {
     clientName: "",
     projectCode: "",
     location: "",
-    initialPhase: "P0_FIRST_ASSESSMENT",
+    initialPhase: "First Assessment",
   });
   const [addProjectResult, setAddProjectResult] = useState<any>(null);
   const [phaseConstants, setPhaseConstants] = useState<{ projectPhases: string[]; projectPhaseLabels: Record<string, string> } | null>(null);
@@ -473,6 +347,21 @@ export default function LifecycleBoardPage() {
         .then(d => d && setPhaseConstants(d));
     }
   }, [addProjectOpen]);
+
+
+  const lifecycleGroups = useMemo<LifecycleGroup[]>(() => {
+    if (!lifecycleModel || lifecycleModel.length === 0) return [];
+    return lifecycleModel.map((stage, index) => ({
+      key: stage.key,
+      label: stage.label,
+      phaseValue: stage.phaseValue,
+      matches: [stage.phaseValue, stage.label, stage.code],
+      color: GROUP_COLORS[index % GROUP_COLORS.length],
+      headerBg: GROUP_HEADERS[index % GROUP_HEADERS.length],
+    }));
+  }, [lifecycleModel]);
+
+  const boardGroups = lifecycleGroups;
 
   const role = localStorage.getItem("company_role") || "";
   const isExec = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"].includes(role);
@@ -703,13 +592,13 @@ export default function LifecycleBoardPage() {
 
     if (!draggedProject) return;
 
-    const currentGroup = mapPhaseToGroup(draggedProject.phase, draggedProject.source);
+    const currentGroup = mapPhaseToGroup(draggedProject.phase, lifecycleGroups);
     if (currentGroup === targetColumnKey) {
       setDraggedProject(null);
       return;
     }
 
-    const targetPhase = PHASE_GROUPS.find(g => g.key === targetColumnKey);
+    const targetPhase = lifecycleGroups.find(g => g.key === targetColumnKey);
     if (!targetPhase) return;
 
     if (!draggedProject.id || draggedProject.id < 0) {
@@ -933,7 +822,7 @@ export default function LifecycleBoardPage() {
   };
 
   const resetAddProjectDialog = () => {
-    setAddProjectForm({ projectName: "", clientName: "", projectCode: "", location: "", initialPhase: "P0_FIRST_ASSESSMENT" });
+    setAddProjectForm({ projectName: "", clientName: "", projectCode: "", location: "", initialPhase: "First Assessment" });
     setAddProjectResult(null);
     setAddProjectOpen(false);
   };
@@ -951,15 +840,16 @@ export default function LifecycleBoardPage() {
   });
 
   const grouped: Record<string, ProjectInfo[]> = {};
-  for (const group of PHASE_GROUPS) {
+  for (const group of boardGroups) {
     grouped[group.key] = [];
   }
   for (const p of filtered) {
-    const key = mapPhaseToGroup(p.phase, p.source);
+    const key = mapPhaseToGroup(p.phase, lifecycleGroups);
     if (grouped[key]) {
       grouped[key].push(p);
     } else {
-      grouped["first_assessment"].push(p);
+      const fallbackKey = boardGroups[0]?.key;
+      if (fallbackKey && grouped[fallbackKey]) grouped[fallbackKey].push(p);
     }
   }
 
@@ -969,7 +859,7 @@ export default function LifecycleBoardPage() {
   const totalOverdue = useMemo(() => filtered.reduce((sum, p) => sum + (p.engOverdue || 0), 0), [filtered]);
   const totalHighPri = useMemo(() => filtered.reduce((sum, p) => sum + (p.engHighPriority || 0), 0), [filtered]);
   const missingPmProjects = useMemo(() => filtered.filter(p => {
-    const key = mapPhaseToGroup(p.phase, p.source);
+    const key = mapPhaseToGroup(p.phase, lifecycleGroups);
     return phaseShowsPM(key) && !p.pm;
   }), [filtered]);
 
@@ -998,21 +888,34 @@ export default function LifecycleBoardPage() {
   if (loading) return <PageSkeleton lines={5} />;
   if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load Lifecycle Board" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
-  return (
-    <div className="space-y-3 md:space-y-3" data-testid="lifecycle-board-page">
-      <div className="flex items-start justify-between flex-wrap gap-1.5">
-        <div>
-          <h1 className="text-xl md:text-2xl font-bold leading-tight" data-testid="text-lifecycle-title">Lifecycle</h1>
-          <p className="text-muted-foreground text-xs md:text-sm leading-snug">
-            Existing lifecycle board for stage movement, history, and gate visibility
-            <span className="ml-2 text-xs">
-              ({trackerCount} with tracker{preTrackerCount > 0 ? `, ${preTrackerCount} pre-tracker` : ""})
-            </span>
-          </p>
-        </div>
-        {microWalkthroughEnabled ? <ReplayWalkthrough screenId="lifecycle-board" label="Replay guide" /> : null}
-      </div>
+  const lifecycleSubtitle = `Stage movement, history, and gate visibility · ${trackerCount} with tracker${preTrackerCount > 0 ? `, ${preTrackerCount} pre-tracker` : ""}`;
 
+  return (
+    <PageLayout
+      data-testid="lifecycle-board-page"
+      header={
+        <PageHeader
+          title="Lifecycle"
+          subtitle={lifecycleSubtitle}
+          actions={
+            <>
+              {microWalkthroughEnabled ? (
+                <ReplayWalkthrough screenId="lifecycle-board" label="Replay guide" />
+              ) : null}
+              {canCreateProject && (
+                <Button
+                  size="sm"
+                  onClick={() => { setAddProjectResult(null); setAddProjectForm({ projectName: "", clientName: "", projectCode: "", location: "", initialPhase: "First Assessment" }); setAddProjectOpen(true); }}
+                  data-testid="button-add-project"
+                >
+                  <Plus className="w-4 h-4 mr-1" /> Add Project
+                </Button>
+              )}
+            </>
+          }
+        />
+      }
+    >
       {microWalkthroughEnabled ? <MicroWalkthrough screenId="lifecycle-board" steps={lifecycleWalkthroughSteps} /> : null}
       <ActionBar nextAction={lifecycleNextAction} blockers={lifecycleBlockers} />
 
@@ -1047,21 +950,12 @@ export default function LifecycleBoardPage() {
           <span className="text-sm text-muted-foreground" data-testid="text-project-count">
             {filtered.length} project{filtered.length !== 1 ? "s" : ""}
           </span>
-          {canCreateProject && (
-            <Button
-              size="sm"
-              onClick={() => { setAddProjectResult(null); setAddProjectForm({ projectName: "", clientName: "", projectCode: "", location: "", initialPhase: "P0_FIRST_ASSESSMENT" }); setAddProjectOpen(true); }}
-              data-testid="button-add-project"
-            >
-              <Plus className="w-4 h-4 mr-1" /> Add Project
-            </Button>
-          )}
         </div>
       </div>
 
       <div className="overflow-x-auto -mx-3 sm:-mx-4 md:-mx-6 px-3 sm:px-4 md:px-6 pb-2">
         {(() => {
-          const visibleGroups = hideEmptyLanes ? PHASE_GROUPS.filter(g => (grouped[g.key] || []).length > 0) : PHASE_GROUPS;
+          const visibleGroups = hideEmptyLanes ? boardGroups.filter(g => (grouped[g.key] || []).length > 0) : boardGroups;
           return (
         <div
           className="grid gap-1.5 items-start"
@@ -1287,9 +1181,9 @@ export default function LifecycleBoardPage() {
                 <div className="space-y-4" data-testid="summary-panel">
                   {(() => {
                     const p = selectedProject;
-                    const phaseKey = mapPhaseToGroup(p.phase, p.source);
+                    const phaseKey = mapPhaseToGroup(p.phase, lifecycleGroups);
                     const showPM = phaseShowsPM(phaseKey);
-                    const phaseLabel = PHASE_GROUPS.find(g => g.key === phaseKey)?.label || p.phase || "Unknown";
+                    const phaseLabel = boardGroups.find(g => g.key === phaseKey)?.label || p.phase || "Unknown";
 
                     return (
                       <>
@@ -1549,7 +1443,7 @@ export default function LifecycleBoardPage() {
                       onValueChange={(val) => setEditForm(f => ({ ...f, phase: val }))}
                       disabled={!selectedProject.id || selectedProject.id <= 0}
                       placeholder="Select phase..."
-                      options={PHASE_GROUPS.map(g => ({ value: g.phaseValue, label: g.label }))}
+                      options={lifecycleGroups.map(g => ({ value: g.phaseValue, label: g.label }))}
                       data-testid="select-edit-phase"
                     />
                   </div>
@@ -1977,7 +1871,7 @@ export default function LifecycleBoardPage() {
                 </div>
               )}
               <DialogFooter className="gap-2 pt-2">
-                <Button variant="outline" onClick={() => { setAddProjectResult(null); setAddProjectForm({ projectName: "", clientName: "", projectCode: "", location: "", initialPhase: "P0_FIRST_ASSESSMENT" }); }} data-testid="button-add-another">
+                <Button variant="outline" onClick={() => { setAddProjectResult(null); setAddProjectForm({ projectName: "", clientName: "", projectCode: "", location: "", initialPhase: "First Assessment" }); }} data-testid="button-add-another">
                   <Plus className="w-4 h-4 mr-1" /> Add Another
                 </Button>
                 <Button onClick={resetAddProjectDialog} data-testid="button-close-add-dialog">
@@ -2030,7 +1924,7 @@ export default function LifecycleBoardPage() {
                 <SearchableSelect
                   value={addProjectForm.initialPhase}
                   onValueChange={(v) => setAddProjectForm(f => ({ ...f, initialPhase: v }))}
-                  options={(phaseConstants?.projectPhases || ["P0_FIRST_ASSESSMENT"]).map((p) => ({
+                  options={(phaseConstants?.projectPhases || ["First Assessment"]).map((p) => ({
                     value: p,
                     label: phaseConstants?.projectPhaseLabels?.[p] || p,
                   }))}
@@ -2182,6 +2076,6 @@ export default function LifecycleBoardPage() {
           {ragHistoryLoading && <div className="text-xs text-muted-foreground text-center py-2">Loading history...</div>}
         </DialogContent>
       </Dialog>
-    </div>
+    </PageLayout>
   );
 }

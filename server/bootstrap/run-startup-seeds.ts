@@ -12,7 +12,19 @@ export async function runStartupSeeds(options: {
 
   if (!startupDataSeedEnabled) return;
 
-  // One-time guard: skip if all seeds have already completed
+  // D6 — Active Clients folder taxonomy. Runs OUTSIDE the startup_seeds_v1
+  // one-shot guard so it executes on every boot (idempotent insert keyed
+  // on internal_key). New rows added to the seed picked up automatically;
+  // admin-edited rows preserved (we only insert when missing).
+  try {
+    const { seedFolderTaxonomy } = await import("../seed-folder-taxonomy");
+    const { inserted, skipped } = await seedFolderTaxonomy();
+    log(`[Seed] Folder taxonomy: inserted=${inserted} skipped=${skipped}`, "Startup");
+  } catch (err) {
+    log(`[Seed] Folder taxonomy error: ${err}`, "Startup");
+  }
+
+  // One-time guard: skip the v1 batch if all original seeds have already completed
   if (await hasBackfillRun("startup_seeds_v1")) return;
 
   const { seedQualityTemplate } = await import("../seed-quality-template");
@@ -38,6 +50,14 @@ export async function runStartupSeeds(options: {
 
   const { seedRolePermissions } = await import("../role-management");
   await seedRolePermissions().catch((err) => log(`[Seed] Role permissions error: ${err}`, "Startup"));
+
+  // Task #101 — curated role templates (idempotent upsert).
+  const { seedRoleTemplates } = await import("../services/role-template-service");
+  await seedRoleTemplates()
+    .then(({ inserted, updated }) =>
+      log(`[Seed] Role templates: inserted=${inserted} updated=${updated}`, "Startup"),
+    )
+    .catch((err) => log(`[Seed] Role templates error: ${err}`, "Startup"));
 
   try {
     const {

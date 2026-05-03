@@ -41,6 +41,8 @@ import {
   Check,
   X,
 } from "lucide-react";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout } from "@/components/layout";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 
 function getAuthHeaders(): Record<string, string> {
@@ -184,21 +186,30 @@ export default function PMOnTheGoProject() {
   const diaryDoneToday = compliance?.dailyDiaryDone?.includes(today) || false;
   const progressDone = compliance?.weeklyProgressDone || false;
   const riskDone = compliance?.weeklyRiskDone || false;
+  const primaryActionTypes: ActionType[] = ["update_progress", "upload_photo", "log_risk"];
+  const primaryActions = ACTION_CONFIG.filter((action) => primaryActionTypes.includes(action.type));
 
   return (
-    <div className="p-3 sm:p-4 space-y-4 max-w-4xl mx-auto pb-20">
-      <div className="flex items-center justify-between">
-        <Button variant="ghost" size="sm" onClick={() => navigate("/pm/on-the-go")} data-testid="btn-back-home">
-          <ArrowLeft className="w-4 h-4 mr-1" /> Back
-        </Button>
-        <Button variant="outline" size="sm" onClick={refreshAll} data-testid="btn-refresh-project">
-          <RefreshCw className="w-4 h-4 mr-1" /> Refresh
-        </Button>
-      </div>
-
-      <h2 className="text-xl sm:text-2xl font-heading font-bold truncate" data-testid="text-pm-otg-project-title">
-        {snapshot.projectName}
-      </h2>
+    <PageLayout
+      data-testid="pm-on-the-go-project-page"
+      header={
+        <PageHeader
+          title={snapshot.projectName}
+          subtitle={snapshot.phase || undefined}
+          actions={
+            <>
+              <Button variant="ghost" size="sm" onClick={() => navigate("/pm/on-the-go")} data-testid="btn-back-home">
+                <ArrowLeft className="w-4 h-4 mr-1" /> Back
+              </Button>
+              <Button variant="outline" size="sm" onClick={refreshAll} data-testid="btn-refresh-project">
+                <RefreshCw className="w-4 h-4 mr-1" /> Refresh
+              </Button>
+            </>
+          }
+        />
+      }
+    >
+      <div className="max-w-4xl mx-auto space-y-4 pb-28 sm:pb-20">
 
       <Card className="p-3 sm:p-4 space-y-3" data-testid="card-health-snapshot">
         <div className="flex items-center justify-between">
@@ -291,7 +302,25 @@ export default function PMOnTheGoProject() {
         </div>
       </Card>
 
-      <div className="grid grid-cols-3 gap-2 sm:gap-3" data-testid="grid-actions">
+      <Card className="p-3 sm:hidden" data-testid="card-primary-actions">
+        <p className="text-sm font-medium text-muted-foreground mb-2">Quick Actions</p>
+        <div className="grid grid-cols-1 gap-2" data-testid="grid-primary-actions">
+          {primaryActions.map(({ type, label, icon: Icon, color }) => (
+            <Button
+              key={`quick-${type}`}
+              variant="default"
+              className={`${color} h-11 justify-start px-3 text-white text-sm font-medium rounded-lg`}
+              onClick={() => setActiveAction(type)}
+              data-testid={`btn-quick-action-${type}`}
+            >
+              <Icon className="w-4 h-4 mr-2 shrink-0" />
+              <span className="truncate">{label}</span>
+            </Button>
+          ))}
+        </div>
+      </Card>
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3" data-testid="grid-actions">
         {ACTION_CONFIG.map(({ type, label, icon: Icon, color }) => (
           <Button
             key={type}
@@ -319,7 +348,25 @@ export default function PMOnTheGoProject() {
           }}
         />
       )}
-    </div>
+      </div>
+      <div className="sm:hidden fixed bottom-0 inset-x-0 z-40 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        <div className="mx-auto max-w-4xl grid grid-cols-3 gap-2 p-2">
+          {primaryActions.map(({ type, label, icon: Icon, color }) => (
+            <Button
+              key={`dock-${type}`}
+              type="button"
+              variant="default"
+              className={`${color} h-11 px-2 text-[11px] font-medium text-white rounded-lg`}
+              onClick={() => setActiveAction(type)}
+              data-testid={`btn-dock-action-${type}`}
+            >
+              <Icon className="w-4 h-4 mr-1.5 shrink-0" />
+              <span className="truncate">{label}</span>
+            </Button>
+          ))}
+        </div>
+      </div>
+    </PageLayout>
   );
 }
 
@@ -481,7 +528,7 @@ function SiteVisitForm({ onSubmit, submitting }: { onSubmit: FormSubmit; submitt
       </div>
       <div>
         <Label>Safety Status</Label>
-        <div className="flex gap-4 mt-1">
+        <div className="flex flex-col gap-2 mt-1 sm:flex-row sm:gap-4">
           <label className="flex items-center gap-2 cursor-pointer">
             <input type="radio" name="safety" value="clear" checked={safety === "clear"} onChange={() => setSafety("clear")} data-testid="radio-safety-clear" />
             <span className="text-sm">Clear</span>

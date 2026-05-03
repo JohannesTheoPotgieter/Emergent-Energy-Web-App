@@ -1,9 +1,7 @@
 # Emergent Energy Web App
 
 ## Overview
-Emergent Energy is an internal operations platform designed for a South African commercial and industrial (C&I) solar EPC company. It functions as a project-centric command center, replacing fragmented, Excel-based systems. The platform's core purpose is to provide a single, trusted system for all roles (COO, CFO, Project Managers, Engineers, etc.) to manage the entire project lifecycle, from engineering intake and development through construction, commissioning, finance tracking, and quality management.
-
-Key functional modules span Home, Company overview, Project Development, Project Delivery, HSE, Engineering, Quality, Finance, Reporting, Executive Priorities, and Admin, ensuring comprehensive oversight and management across the organization.
+Emergent Energy is an internal operations platform designed for a South African commercial and industrial (C&I) solar EPC company. Its primary purpose is to centralize and streamline project lifecycle management, from engineering and commissioning to finance and quality assurance. The platform aims to enhance operational efficiency, consolidate data from disparate systems (currently Excel-based), and provide critical insights to support the company's growth and maintain its leadership in the C&I solar market.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
@@ -11,83 +9,105 @@ Preferred communication style: Simple, everyday language.
 ## System Architecture
 
 ### Monorepo Structure
-The project is organized as a monorepo with distinct `client/` (React SPA), `server/` (Express API), `shared/` (Drizzle schema), `migrations/`, `qa/` (testing), and `script/` directories. Aliases (`@/`, `@shared/`, `@assets/`) are used for cleaner imports.
+The project is organized as a monorepo, separating the client (React SPA), server (Express API), shared code (Drizzle schema), database migrations, QA, and scripting.
 
 ### Frontend
-- **Framework:** React 19 with TypeScript, bundled by Vite.
-- **Routing:** Lightweight `wouter` for SPA navigation.
-- **Styling:** Tailwind CSS v4, `shadcn/ui` (New York style) components built on Radix UI primitives, Lucide icons.
-- **State Management:** TanStack React Query v5 for server state, local React state for UI.
-- **Forms:** React Hook Form with Zod schemas for validation.
-- **Design:** CSS variables for theming, white-and-emerald light theme, specific font stack (Barlow, Inter, JetBrains Mono).
+- **Framework & Tooling:** React 19 with TypeScript and Vite.
+- **Routing:** `wouter` for SPA navigation.
+- **Styling & Components:** Tailwind CSS v4, `shadcn/ui` components (New York style) based on Radix UI, and Lucide icons.
+- **State Management:** TanStack React Query v5 for server state; local React state for UI-specific data.
+- **Forms:** React Hook Form with Zod for validation.
+- **Design:** White-and-emerald light theme using CSS variables, with Barlow, Inter, and JetBrains Mono fonts.
 
 ### Backend
-- **Runtime:** Node.js with Express 5, TypeScript. `tsx` for development, compiled to CJS for production.
-- **API Style:** RESTful, grouped by domain. New routes use `server/routes/<domain>.routes.ts`.
-- **Data Access:** All database operations are abstracted through `server/repositories/*`.
-- **Validation:** Zod schemas and `validateBody` middleware for request body validation.
-- **Error Handling:** Centralized `ApiError` handling to return consistent JSON errors without exposing sensitive details.
-- **Session Management:** `express-session` storing user roles.
-- **Startup:** `startup-orchestrator.ts` manages additive migrations and data seeding based on feature flags.
-- **Key Tables:** `public.work_items` is the canonical table for work items.
-- **Smart Import v2:** A core workflow for processing `.xlsx` tracker workbooks, using ExcelJS for parsing and a sophisticated upsert/override pattern to manage project data.
+- **Runtime & Framework:** Node.js with Express 5 and TypeScript.
+- **API Design:** RESTful API utilizing a repository pattern.
+- **Validation & Error Handling:** Zod schemas and `validateBody` middleware, with centralized `ApiError` handling.
+- **Authentication:** `express-session` for user sessions and roles.
+- **Data Initialization:** `startup-orchestrator.ts` for additive migrations and data seeding.
+- **Smart Import v2:** Handles `.xlsx` tracker workbook imports with upsert/override strategies and preflight validation.
+- **Financial Reconciliation:** Provides read-only interfaces for reconciling QuickBooks data with internal cost trackers and managing vendor mappings.
+- **Revenue Recognition:** Implements a Canonical Revenue Recognition system integrated with QuickBooks.
+- **COS Tracker Past-Month Auto-Promote:** Automates 'Realised' status for past month cost lines with invoice numbers.
+- **Home "Do Next":** Role-aware, ranked action items with snooze/dismiss functionality.
+- **Canonical Phase Cycle:** Defines a 12-phase project lifecycle (`shared/phases.ts`) including 10 sequential and 2 terminal phases (`S_HOLD`, `S_DONE`).
+- **Priority Linked Progress:** Allows `effectiveProgress` of priorities to be driven by various data sources (e.g., `project_phase`, `derived_project_kpis`).
+- **Priorities UI Overhaul:** Streamlined priority management with unified add/edit dialogs, improved field parity, and role-based access controls.
+- **Opportunities Management Board:** Centralizes project development activities under `/opportunities` with List, Kanban, and Calendar views, featuring role-scoped access and Pipedrive integration.
+- **Project Development Dashboard:** Provides an overview of PD KPIs, pipeline status, and risk signals.
+- **Engineering Ticket Tracking:** Integrated into the Opportunity Drawer, displaying ticket status, age, due dates, owners, and comments, with a mini engineering task board for `work_items`.
+- **Opportunities Working List Hardening:** Enhances the opportunities working list with server-side authoritative gating, deep-link support, Pipedrive sync indicators, sortable columns, and refined engineering badges.
+- **Opportunity ↔ PD Ticket Merge:** Unifies Pipedrive opportunities and PD tickets into a single `Opportunity` record.
+- **Stage Gate Auto-Population:** `server/services/gate-auto-evaluator-service.ts` provides a deterministic evaluator registry for canonical gate criteria, reading from the data spine. Auto-detected statuses persist on `project_stage_requirements.auto_*` and are surfaced when manual status is `not_started`.
+- **PD Dashboard Features:** Displays "Pipeline by Phase" KPI and "Expected sign dates" calendar, along with "Won Deals (this FY)" from Pipedrive.
+- **Pending Approval Inbox:** App-wide queue (`pending_approvals` table) that intercepts write operations, staging proposals via `proposeApproval()`. UI at `/pending-approvals` for approver roles.
 
 ### Database Strategy
-- **Dual-Mode:** Supports PostgreSQL (production) and SQLite (local development/Replit fallback) based on `DATABASE_URL` environment variable.
-- **ORM:** Drizzle ORM with Drizzle Kit for schema definition and migrations.
-- **Schema:** Source of truth is `shared/schema/*.ts` files, with `shared/schema.ts` as a barrel re-export.
-- **Migrations:** Additive-only SQL migrations located in `/migrations/` at the repo root, enforced with `IF NOT EXISTS` guards.
-- **Snapshot Versioning:** Several tables (e.g., `normalizedCostLines`, `normalizedRevenueLines`) use `effective_to` for snapshot versioning; queries must include `effective_to IS NULL` to ensure correctness.
+- **Dual-Mode:** Supports PostgreSQL for production and SQLite for local development.
+- **ORM:** Drizzle ORM for schema definition, Drizzle Kit for additive SQL migrations.
+- **Schema Source of Truth:** `shared/schema/*.ts`.
+- **Snapshot Versioning:** Uses `effective_to` for versioning select tables.
 
 ### Authentication & Authorization
-- **Primary Auth:** Microsoft SSO via Azure MSAL, mapping MS accounts to internal user records and roles.
-- **Fallback Auth:** Username/password login using `bcryptjs`.
+- **Primary:** Microsoft SSO via Azure MSAL, mapping MS accounts to internal users and roles.
+- **Fallback:** Username/password authentication using `bcryptjs`.
 - **Role Management:** Authoritative role list defined in `shared/schema/users.ts`.
-- **Server-side Enforcement:** `requireAuth` and `requireRole` middleware enforce access control.
-- **Security:** Azure Key Vault for secret management in production, encryption for sensitive bank detail fields.
+- **Security:** Server-side enforcement with `requireAuth`, `requireRole`, and the canonical `requirePermission(entity, action)` middleware, Azure Key Vault for secrets, and encryption.
+- **Roles & Permissions Rework:** A canonical evaluator (`server/permission-middleware.ts`) centralizes permission checks. A canonical entity registry (`shared/permissions/registry.ts`) defines entities, and `shared/permissions/templates.ts` ships 13 curated role templates. The `/admin/roles` UI is a single screen for managing user and role permissions, supporting deep-linking and audit logging. Client-side gating is managed by `<PermissionGate>` and `usePermission()`.
 
 ### Microsoft 365 Integration
-- Utilizes `@microsoft/microsoft-graph-client` for integration with Outlook, Teams, and SharePoint.
-- Includes a sync service (`server/ms-sync-service.ts`) for calendar events and a SharePoint list intake for Engineering Support's "Proposals Pipeline."
-- Data storage policy prohibits storing full email bodies or attachment content; only metadata and deep links are stored.
+- Integration with Outlook, Teams, and SharePoint using `@microsoft/microsoft-graph-client` for calendar event metadata, emails, and attachments.
+
+### Engineering-Ticket Consolidation (Path 2)
+- The `work_items` table is the canonical source for engineering execution data, with `engineering_tickets` maintained as a back-compatible mirror for finance / PD / Pipedrive / gates. Server-side deduplication ensures only canonical `work_items` render on the `/opportunities` drawer board, and retired template-spawn endpoints (`/api/pd/tickets/:id/spawn-tasks`, `/api/pd/tickets/bulk-spawn-tasks`) now return HTTP 410 Gone.
+- Migrations `0040_work_items_engineering_metadata.sql` (additive — adds `funding_type`, `size_kwp`, `province`, `gps_coordinates`, `batteries_needed`, `battery_size`, plus `idx_work_items_eng_ticket_active`) and `0041_work_items_batteries_needed_default.sql` (drops `DEFAULT false` so future linked-row backfills can inherit `true` from the ticket) are applied. Schema mirror lives in `shared/schema/tasks.ts`. Boot verifier prints `[DB] ✓ work_items engineering columns verified`.
+- Bidirectional sync lives in `server/work-items-adapter.ts`:
+  - Forward (work_item → ticket): `updateEngineeringWorkItem` mirrors status / priority / dueDate / title onto the linked `engineering_tickets` row using the canonical `workItemPriorityToTicketPriority` helper (`Urgent↔Critical`, `High↔High`, `Med↔Medium`, `Low↔Low`, null/empty preserved).
+  - Reverse (ticket → work_item): `syncTicketEditToWorkItem`, wired into `PATCH /api/pd/tickets/:id`, mirrors status / priority / dueDate→endDate, identity (`projectSiteName→title`), linkage (`projectId`, `clientId`), and the 6 solar/site fields. Scoped to `workstream='ENG'` + non-deleted siblings; best-effort try/catch so a mirror failure never blocks the user's edit response.
+  - The `POST /api/pd/tickets/:id/engineering-tasks` user-add flow normalises inbound priority via `ticketPriorityToWorkItemPriority` (defaults to `Med`) so the canonical store never accumulates the invalid `"Medium"` value.
+- Regression coverage in `qa/tests/unit/opportunity-drawer-engineering-consolidation.test.ts` (28 tests) pins: dedupe scoping, drawer client-side flattening, opportunities-routes sibling insert source/fields, forward + reverse sync coverage including the title-fallback parity guard, the priority-helper matrix, dead-code removal of `SpawnEngineeringTasksButton` from `client/src/pages/pd-dashboard.tsx`, and migration 0041 invariants.
 
 ### Testing
 - **Unit & API Tests:** Vitest.
-- **E2E Tests:** Playwright for browser-based end-to-end testing.
-- **Release Gate:** A `qa/release-gate.ts` script ensures critical tests pass before any release.
+- **E2E Tests:** Playwright.
+- **Release Gate:** `qa/release-gate.ts` script ensures critical test validation.
+- **Rules-of-Hooks Guard:** `qa/tests/unit/client-rules-of-hooks.test.ts` validates React Hooks usage.
 
 ## External Dependencies
 
 ### Microsoft Azure / 365
-- **`@azure/msal-node`**: Azure AD / MS SSO.
-- **`@azure/identity`**: Azure credential management.
-- **`@azure/keyvault-secrets`**: Secret retrieval.
-- **`@microsoft/microsoft-graph-client`**: MS Graph API for Outlook, Teams, SharePoint.
-- **SharePoint List**: Engineering Support "Proposals Pipeline."
+- `@azure/msal-node`
+- `@azure/identity`
+- `@azure/keyvault-secrets`
+- `@microsoft/microsoft-graph-client`
+- SharePoint List (Engineering Support "Proposals Pipeline")
 
 ### Database
-- **PostgreSQL**: Production database.
-- **`better-sqlite3`**: SQLite for local development.
-- **Drizzle ORM + Drizzle Kit**: Schema management and querying.
+- PostgreSQL
+- `better-sqlite3`
+- Drizzle ORM
+- Drizzle Kit
 
 ### Frontend Libraries
-- **`shadcn/ui`**: Component library.
-- **Radix UI**: UI primitives.
-- **TanStack React Query v5**: Server state management.
-- **TanStack Virtual**: Virtualized lists.
-- **React Hook Form + Zod**: Forms and validation.
-- **Recharts**: Charting.
-- **ExcelJS**: Server-side Excel parsing.
-- **DOMPurify**: HTML sanitization.
+- `shadcn/ui`
+- Radix UI
+- TanStack React Query v5
+- TanStack Virtual
+- React Hook Form
+- Zod
+- Recharts
+- ExcelJS
+- DOMPurify
 
 ### Testing & QA
-- **Vitest**: Unit and API tests.
-- **Playwright**: End-to-end browser tests.
+- Vitest
+- Playwright
 
 ### Build & Dev Tools
-- **Vite**: Frontend bundler.
-- **tsx**: TypeScript execution.
-- **ESLint + Prettier**: Code quality.
+- Vite
+- tsx
+- ESLint
+- Prettier
 
 ### Fonts
-- **Google Fonts**: Barlow, Inter, JetBrains Mono.
+- Google Fonts (Barlow, Inter, JetBrains Mono)

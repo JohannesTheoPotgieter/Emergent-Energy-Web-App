@@ -1,18 +1,15 @@
 name: PR Checks
 on:
   pull_request:
-    branches: [main, develop]
+    branches: [main]
 
 jobs:
   # ── Fast gate: compile integrity (no DB required) ─────────
+  # Uses local Turbo cache only. Remote cache was intentionally removed as a
+  # correctness gate — secrets that might not be configured must not be
+  # load-bearing for "did my code compile".
   compile:
     runs-on: ubuntu-latest
-
-    # Turbo Remote Cache (Vercel). Empty values disable remote cache silently
-    # and CI falls back to the actions/cache step below.
-    env:
-      TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
-      TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
 
     steps:
       - uses: actions/checkout@v4
@@ -23,8 +20,6 @@ jobs:
           node-version: '20'
           cache: 'npm'
       - run: npm ci --prefer-offline --no-audit
-      # Local fallback cache — used when remote cache is unreachable or when
-      # TURBO_TOKEN/TURBO_TEAM secrets aren't configured.
       - uses: actions/cache@v4
         with:
           path: |
@@ -34,7 +29,14 @@ jobs:
           restore-keys: |
             turbo-compile-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json') }}-
             turbo-compile-${{ runner.os }}-
-      - run: npx turbo run lint check build
+      - run: npm run ci:compile
+      # Schema-drift guard (Phase 3b). Fails the build if shared/schema/*.ts
+      # was edited without a corresponding new migration under /migrations/.
+      - run: npm run db:check
+      # Unit tests (Phase 4). No Postgres, no live server — pure vitest over
+      # qa/tests/unit/. Any regression in finance math, error-leak guards,
+      # schema invariants, or other pinned contracts fails PRs here.
+      - run: npm run test
 
   # ── Quality gate: tests + release readiness ───────────────
   quality-gate:
@@ -61,9 +63,9 @@ jobs:
       TOKEN_ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
       JWT_SECRET: ci-test-jwt-secret
       SESSION_SECRET: ci-test-session-secret
-      # Turbo Remote Cache (Vercel). Empty values disable remote cache silently.
-      TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
-      TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
+      # Auto-create the connect-pg-simple `session` table at boot so the
+      # password-login flow can persist a session in CI.
+      ENABLE_STARTUP_SCHEMA_REPAIR: "true"
 
     steps:
       - uses: actions/checkout@v4
@@ -84,8 +86,15 @@ jobs:
             turbo-test-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json') }}-
             turbo-test-${{ runner.os }}-
             turbo-compile-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json') }}-
-      - run: npx turbo run build test
+      - run: npx turbo run build test --cache-dir=.turbo
         if: hashFiles('**/*.test.ts') != ''
+      # Provision the test database: push the Drizzle schema, then seed the
+      # users that the API tests log in as (johannes / eon / opsmanager31).
+      # Without these steps, /api/auth/login returns 401 in CI.
+      - run: npm run db:push
+      - run: npm run seed:test-users
+      # Non-cacheable integration steps (need a live server + DB)
+      - run: npm run test:api
       - run: npm run release:gate
         env:
           SKIP_SMOKE_TESTS: "true"

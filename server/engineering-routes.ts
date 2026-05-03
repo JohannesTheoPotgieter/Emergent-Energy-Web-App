@@ -32,12 +32,17 @@ import { listEngineeringWorkItems, getEngineeringWorkItemById, createEngineering
 import { generateWorkItemReconciliationReport } from "./lib/reconciliation/work-item-reconciliation";
 import { assertTaskWorkflowTransition, buildTaskWorkflowContext, TaskWorkflowGuardError } from "./lib/task-workflow-guard";
 import { isTaskComplete, isTaskCompleteForReporting, isApprovalState } from "@shared/task-status";
+import {
+  isTicketBlocked,
+  normalizeEngineeringTicketStatus,
+} from "@shared/engineering-ticket-status";
+import { projectEngineeringTicket } from "@shared/lib/engineering-ticket-view";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
 import { requireAdmin } from "./middleware/requireAdmin";
 import { getAssignmentsForEntity, getAssignmentsForEntities, listAssignableDirectory } from "./services/assignment-service";
 import { buildMyWorkSourceLinks } from "./lib/my-work-source-links";
 import { runCascadesAfterUpdate, validateParentCompletion } from "./services/task-cascade-service";
-import { paramStr } from "./lib/req-params";
+import { paramStr, parseIntParam } from "./lib/req-params";
 
 const approvalUploadsDir = path.join(process.cwd(), "uploads", "approvals");
 if (!fs.existsSync(approvalUploadsDir)) fs.mkdirSync(approvalUploadsDir, { recursive: true });
@@ -64,40 +69,37 @@ function getUserRole(req: Request): string {
 // The previous UPPERCASE sets silently failed every comparison because
 // the work-items adapter returns canonical lowercase since migration
 // 20260413_status_casing_normalization.
-const BLOCKED_STATUSES = new Set(["hold"]);
-const REVIEW_NEEDED_STATUSES = new Set(["provide_feedback"]);
-const APPROVAL_PENDING_STATUSES = new Set(["needs_approval", "operational_approval"]);
-const COMPLETE_LIKE_STATUSES = new Set(["complete"]);
 const MICROSOFT_ADMIN_ROLES = new Set(["COO_ADMIN", "CEO_ADMIN"]);
 
-function normalizeStatus(status?: string | null): string {
-  return (status || "").trim().toUpperCase();
-}
-
+// Status flag detection routes through the canonical helpers in
+// shared/engineering-ticket-status.ts. The previous local
+// implementation uppercased the input but compared against lower-case
+// constants, so post-migration tickets never matched and the
+// `isBlocked` / `isReviewNeeded` / `isApprovalPending` enrichment flags
+// were always false.
 function isBlockedStatus(status?: string | null): boolean {
-  return BLOCKED_STATUSES.has(normalizeStatus(status));
+  return isTicketBlocked(status);
 }
 
 function isReviewNeededStatus(status?: string | null): boolean {
-  return REVIEW_NEEDED_STATUSES.has(normalizeStatus(status));
+  return normalizeEngineeringTicketStatus(status) === "provide_feedback";
 }
 
 function isApprovalPendingStatus(status?: string | null): boolean {
-  return APPROVAL_PENDING_STATUSES.has(normalizeStatus(status));
+  const canonical = normalizeEngineeringTicketStatus(status);
+  return canonical === "needs_approval" || canonical === "operational_approval";
 }
 
 function isDeliverableApprovalPendingStatus(status?: string | null): boolean {
-  const normalized = normalizeStatus(status);
-  if (!normalized) return false;
-  if (COMPLETE_LIKE_STATUSES.has(normalized)) return false;
-  return [
-    "APPROVAL",
-    "REVIEW",
-    "SUBMITTED",
-    "PENDING",
-    "AWAITING",
-    "QC",
-  ].some((token) => normalized.includes(token));
+  const canonical = normalizeEngineeringTicketStatus(status);
+  if (canonical === "complete" || canonical === "qc_approved") return false;
+  // Free-form deliverable statuses can be anything: keep the substring
+  // check but normalise once to lower-case so it survives Title-Case input.
+  const lower = (status ?? "").trim().toLowerCase();
+  if (!lower) return false;
+  return ["approval", "review", "submitted", "pending", "awaiting", "qc"].some((token) =>
+    lower.includes(token),
+  );
 }
 
 async function isLocalSyncedSaveFlowEnabled(): Promise<boolean> {
@@ -348,32 +350,78 @@ async function enrichEngineeringTasks(tasks: any[], req: Request): Promise<any[]
       isDeliverableApprovalPendingStatus(item.status),
     ).length;
 
-    return {
-      ...t,
-      assignees: mergedAssignees.map((user: any) => user.name),
+    const ownerName = t.ownerUserId
+      ? userMap.get(t.ownerUserId)?.name ?? t.ownerName ?? null
+      : t.ownerName ?? null;
+    const sourceContextLabel = stageContextMap.has(t.workItemId || t.id)
+      ? `Engineering Stage: ${stageContextMap.get(t.workItemId || t.id)}`
+      : (projectLinks?.sourceContextLabel || null);
+
+    // Project the row through the canonical engineering-ticket
+    // view-model so the status pill, dates, percent complete, owner
+    // initials, "Xd overdue" and blocked/review/approval flags match
+    // every other consumer surface (Plan tab, Standup, Opportunity
+    // drawer, Milestone Tracker, Action Launchpad).
+    const view = projectEngineeringTicket({
+      id: t.id,
+      workItemId: t.workItemId ?? t.id,
+      title: t.title,
+      description: t.description,
+      status: t.status,
+      priority: t.priority,
+      projectId: t.projectId,
+      projectName: t.projectName,
+      startDate: t.startDate,
+      endDate: t.endDate,
+      dueDate: t.dueDate ?? t.endDate,
+      percentComplete: t.percentComplete,
+      expectedPctComplete: t.expectedPctComplete,
+      ownerUserId: t.ownerUserId,
+      ownerName,
       assigneeUserIds: resolvedAssigneeIds,
-      assigneeUserId: resolvedAssigneeIds[0] || null,
-      resolvedAssignees: mergedAssignees,
-      resolvedOwner: t.ownerUserId ? userMap.get(t.ownerUserId) || null : null,
-      isUnassigned: mergedAssignees.length === 0 && !t.ownerUserId,
-      isBlocked: isBlockedStatus(t.status) || !!t.holdReason || !!t.blockedType,
-      isReviewNeeded: isReviewNeededStatus(t.status),
-      isApprovalPending: isApprovalPendingStatus(t.status),
+      assignees: mergedAssignees.map((user: { name: string }) => user.name),
+      resolvedAssignees: mergedAssignees.map((user: { id: number; name: string }) => ({
+        id: user.id,
+        name: user.name,
+      })),
+      holdReason: t.holdReason,
+      blockedType: t.blockedType,
+      blockerReason: t.blockerReason,
+      approvalRequired: t.approvalRequired,
+      trackingRag: t.trackingRag,
+      taskTypeTag: t.taskTypeTag,
+      linkedPlanItemId: t.linkedPlanItemId,
+      linkedDeliverableId: t.linkedDeliverableId,
+      linkedQualityItemInstanceId: t.linkedQualityItemInstanceId,
+      externalRef: t.externalRef,
+      externalTaskId: t.externalTaskId ?? t.externalRef,
+      wbsCode: t.wbsCode ?? t.taskNumber,
       projectLinkedDeliverableCount: projectDeliverables.length,
+      projectLinkedDeliverables: projectDeliverables.slice(0, 3).map((d) => ({
+        id: d.id,
+        title: d.title,
+        status: d.status,
+      })),
       approvalPendingDeliverableCount,
-      projectLinkedDeliverables: projectDeliverables.slice(0, 3),
-      deliverableContextHref: deliverableLinks?.sourceHref || null,
-      deliverableContextLabel: deliverableLinks?.sourceContextLabel || null,
-      projectHref: projectLinks?.projectHref || null,
-      sourceHref: projectLinks?.sourceHref || null,
-      sourceContextLabel: stageContextMap.has(t.workItemId || t.id)
-        ? `Engineering Stage: ${stageContextMap.get(t.workItemId || t.id)}`
-        : (projectLinks?.sourceContextLabel || null),
-      externalHref: projectLinks?.externalHref || null,
       hasMicrosoftContext: rawMicrosoftItems.length > 0,
       microsoftActionRequiredCount,
       relatedMicrosoftItems,
       stageContext: stageContextMap.get(t.workItemId || t.id) || null,
+      sourceContextLabel,
+      deliverableContextLabel: deliverableLinks?.sourceContextLabel || null,
+    });
+
+    return {
+      ...t,
+      // Canonical view-model fields override the raw row so consumers
+      // never see Title-Case status or stale "Not Started" defaults.
+      ...view,
+      assigneeUserId: resolvedAssigneeIds[0] || null,
+      resolvedOwner: t.ownerUserId ? userMap.get(t.ownerUserId) || null : null,
+      deliverableContextHref: deliverableLinks?.sourceHref || null,
+      projectHref: projectLinks?.projectHref || null,
+      sourceHref: projectLinks?.sourceHref || null,
+      externalHref: projectLinks?.externalHref || null,
     };
   });
 }
@@ -477,7 +525,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.delete("/api/project-team/:id", requireAuth, requireAdminOrEpm, async (req, res) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return sendError(res, badRequest("Invalid ID"));
       await db.delete(projectTeamMembers).where(eq(projectTeamMembers.id, id));
       logAuditFromReq(req, { entityType: "project_team", entityId: paramStr(req.params.id), action: "delete", changesJson: { description: "Team member removed" } });
@@ -707,7 +755,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.patch("/api/eng/tasks/:id", requireAuth, requirePermission("eng_tasks", "edit"), async (req, res) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       const [existing] = await db.select().from(workItems).where(and(eq(workItems.id, id), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)));
       if (!existing) return sendError(res, notFound("Task"));
 
@@ -824,7 +872,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   // Permission: submitting for approval requires edit on eng_tasks.
   app.post("/api/eng/tasks/:id/send-for-approval", requireAuth, requirePermission("eng_tasks", "edit"), approvalUpload.single("file"), async (req, res) => {
-    const id = parseInt(paramStr(req.params.id));
+    const id = parseIntParam(req.params.id);
     const user = getUser(req);
     const note = req.body.note || "";
     const file = req.file;
@@ -1079,7 +1127,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   // Permission: sending a deliverable requires edit on eng_tasks.
   app.post("/api/eng/tasks/:id/send-deliverable", requireAuth, requirePermission("eng_tasks", "edit"), approvalUpload.single("file"), async (req, res) => {
-    const id = parseInt(paramStr(req.params.id));
+    const id = parseIntParam(req.params.id);
     const user = getUser(req);
 
     try {
@@ -1326,7 +1374,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.get("/api/eng/tasks/:id/deliverables", requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       const deliverables = await db.select({
         id: taskDeliverables.id,
         taskId: taskDeliverables.workItemId,
@@ -1366,7 +1414,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.patch("/api/eng/deliverables/:id/acknowledge", requireAuth, requirePermission("deliverables", "edit"), async (req, res) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       const [deliverable] = await db.select().from(taskDeliverables).where(eq(taskDeliverables.id, id));
       if (!deliverable) return sendError(res, notFound("Deliverable"));
 
@@ -1409,7 +1457,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.get("/api/eng/deliverables/:id/download", requireAuth, requirePermission("deliverables", "view"), async (req, res) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       const [deliverable] = await db.select().from(taskDeliverables).where(eq(taskDeliverables.id, id));
       if (!deliverable) return sendError(res, notFound("Deliverable"));
 
@@ -1426,7 +1474,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.delete("/api/eng/tasks/:id", requireAuth, requirePermission('eng_tasks', 'delete'), async (req, res) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       const [existing] = await db.select().from(workItems).where(and(eq(workItems.id, id), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)));
       if (!existing) return sendError(res, notFound("Task"));
 
@@ -1527,7 +1575,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.post("/api/eng/tasks/:id/link", requireAuth, requirePermission("eng_tasks", "edit"), async (req, res) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       const { linkedPlanItemId, linkedDeliverableId, linkedQualityItemInstanceId } = req.body;
 
       const updated = await updateEngineeringWorkItem(id, {
@@ -1558,7 +1606,7 @@ export function registerEngineeringRoutes(app: Express) {
       })
       .from(taskWatchers)
       .leftJoin(users, eq(taskWatchers.userId, users.id))
-      .where(eq(taskWatchers.workItemId, parseInt(paramStr(req.params.id))));
+      .where(eq(taskWatchers.workItemId, parseIntParam(req.params.id)));
       res.json(watchers);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
@@ -1568,7 +1616,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.post("/api/eng/tasks/:id/watchers", requireAuth, requirePermission("eng_tasks", "edit"), async (req, res) => {
     try {
-      const taskId = parseInt(paramStr(req.params.id));
+      const taskId = parseIntParam(req.params.id);
       const userId = parseInt(req.body.userId);
       if (isNaN(taskId) || isNaN(userId)) {
         return sendError(res, badRequest("Valid taskId and userId are required"));
@@ -1607,8 +1655,8 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.delete("/api/eng/tasks/:taskId/watchers/:userId", requireAuth, requirePermission("eng_tasks", "edit"), async (req, res) => {
     try {
-      const taskId = parseInt(paramStr(req.params.taskId));
-      const userId = parseInt(paramStr(req.params.userId));
+      const taskId = parseIntParam(req.params.taskId);
+      const userId = parseIntParam(req.params.userId);
       if (isNaN(taskId) || isNaN(userId)) {
         return sendError(res, badRequest("Valid taskId and userId are required"));
       }
@@ -1638,7 +1686,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.get("/api/eng/tasks/:id", requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       const task = await getEngineeringWorkItemById(id);
       if (!task) return sendError(res, notFound("Task"));
       const [enriched] = await enrichEngineeringTasks([task], req);
@@ -1661,7 +1709,7 @@ export function registerEngineeringRoutes(app: Express) {
       })
       .from(taskComments)
       .leftJoin(users, eq(taskComments.authorId, users.id))
-      .where(eq(taskComments.workItemId, parseInt(paramStr(req.params.id))))
+      .where(eq(taskComments.workItemId, parseIntParam(req.params.id)))
       .orderBy(asc(taskComments.createdAt));
       res.json(comments);
     } catch (err: any) {
@@ -1672,7 +1720,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.post("/api/eng/tasks/:id/comments", requireAuth, requirePermission("eng_tasks", "edit"), async (req, res) => {
     try {
-      const taskId = parseInt(paramStr(req.params.id));
+      const taskId = parseIntParam(req.params.id);
       const { body } = req.body;
       if (!body || !body.trim()) {
         return sendError(res, badRequest("Comment body is required"));
@@ -1721,7 +1769,7 @@ export function registerEngineeringRoutes(app: Express) {
       })
       .from(taskActivityLog)
       .leftJoin(users, eq(taskActivityLog.actorId, users.id))
-      .where(eq(taskActivityLog.workItemId, parseInt(paramStr(req.params.id))))
+      .where(eq(taskActivityLog.workItemId, parseIntParam(req.params.id)))
       .orderBy(desc(taskActivityLog.createdAt));
       res.json(activity);
     } catch (err: any) {
@@ -1732,7 +1780,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.get("/api/eng/tasks/:id/subtasks", requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
     try {
-      const parentId = parseInt(paramStr(req.params.id));
+      const parentId = parseIntParam(req.params.id);
       const allItems = await listEngineeringWorkItems({});
       const subtasks = allItems.filter((item) => item.parentTaskId === parentId);
       res.json(subtasks);
@@ -1744,7 +1792,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.post("/api/eng/tasks/:id/subtasks", requireAuth, requirePermission("eng_tasks", "create"), async (req, res) => {
     try {
-      const parentId = parseInt(paramStr(req.params.id));
+      const parentId = parseIntParam(req.params.id);
       const parent = await getEngineeringWorkItemById(parentId);
       if (!parent) return sendError(res, notFound("Parent task"));
 
@@ -1815,7 +1863,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.get("/api/deliverables/:id", requireAuth, requirePermission("deliverables", "view"), async (req, res) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       const [del] = await db.select().from(deliverables).where(eq(deliverables.id, id));
       if (!del) return sendError(res, notFound("Deliverable"));
 
@@ -1884,7 +1932,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.patch("/api/deliverables/:id", requireAuth, requirePermission("deliverables", "edit"), async (req, res) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       const [existing] = await db.select().from(deliverables).where(eq(deliverables.id, id));
       if (!existing) return sendError(res, notFound("Deliverable"));
 
@@ -1939,7 +1987,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.post("/api/deliverables/:id/feedback", requireAuth, requireAuthority("deliverables", "approve"), async (req, res) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       const { feedbackText } = req.body;
 
       const [updated] = await db.update(deliverables)
@@ -1971,7 +2019,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.post("/api/deliverables/:id/revise", requireAuth, requirePermission("deliverables", "edit"), async (req, res) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       const { changeReason, impactJson } = req.body;
 
       const [existing] = await db.select().from(deliverables).where(eq(deliverables.id, id));
@@ -2013,7 +2061,7 @@ export function registerEngineeringRoutes(app: Express) {
     try {
       const [file] = await db.insert(deliverableFiles).values({
         ...req.body,
-        deliverableId: parseInt(paramStr(req.params.id)),
+        deliverableId: parseIntParam(req.params.id),
         uploadedByUserId: getUser(req).id,
       }).returning();
       logAuditFromReq(req, { entityType: "deliverable", entityId: paramStr(req.params.id), action: "update", changesJson: { description: "File attached to deliverable", fileName: file.fileName } });
@@ -2026,7 +2074,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.patch("/api/deliverables/files/:fileId/approve", requireAuth, requireAuthority("deliverables", "approve"), async (req, res) => {
     try {
-      const fileId = parseInt(paramStr(req.params.fileId));
+      const fileId = parseIntParam(req.params.fileId);
       if (isNaN(fileId)) return sendError(res, badRequest("Invalid file ID"));
       const [file] = await db.update(deliverableFiles)
         .set({ isApproved: true })
@@ -2047,7 +2095,7 @@ export function registerEngineeringRoutes(app: Express) {
       const result = await db.select().from(spFilePointers)
         .where(and(
           eq(spFilePointers.entityType, paramStr(req.params.entityType)),
-          eq(spFilePointers.entityId, parseInt(paramStr(req.params.entityId)))
+          eq(spFilePointers.entityId, parseIntParam(req.params.entityId))
         ))
         .orderBy(desc(spFilePointers.uploadedAt));
       res.json(result);
@@ -2080,7 +2128,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.delete("/api/eng/file-pointers/:id", requireAuth, requirePermission("engineering", "delete"), async (req, res) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return sendError(res, badRequest("Invalid ID"));
       await db.delete(spFilePointers).where(eq(spFilePointers.id, id));
       logAuditFromReq(req, { entityType: "file_pointer", entityId: paramStr(req.params.id), action: "delete", changesJson: { description: "File pointer deleted" } });
@@ -2263,7 +2311,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.patch("/api/eng/warnings/:id", requireAuth, requirePermission("engineering", "edit"), async (req, res) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return sendError(res, badRequest("Invalid ID"));
       const updates = { ...req.body, updatedAt: new Date() };
       const [updated] = await db.update(qcWarning).set(updates).where(eq(qcWarning.id, id)).returning();
@@ -2287,7 +2335,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.post("/api/eng/warnings/:id/acknowledge", requireAuth, requirePermission("engineering", "edit"), async (req, res) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       await db.insert(qcWarningEvent).values({
         warningId: id,
         eventType: "acknowledged",
@@ -2481,20 +2529,49 @@ export function registerEngineeringRoutes(app: Express) {
         statusPipeline[canonical] = (statusPipeline[canonical] || 0) + 1;
       }
 
-      const mapTask = (t: typeof allTasks[0]) => ({
-        id: t.id,
-        title: t.title,
-        status: t.status,
-        priority: t.priority,
-        dueDate: t.dueDate,
-        assignees: t.assignees,
-        trackingRag: t.trackingRag,
-        projectName: t.projectName,
-        holdReason: t.holdReason,
-        blockerReason: t.blockerReason,
-        completedAt: t.completedAt,
-        taskTypeTag: t.taskTypeTag,
-      });
+      const mapTask = (t: typeof allTasks[0]) => {
+        const view = projectEngineeringTicket({
+          id: t.id,
+          title: t.title,
+          status: t.status,
+          priority: t.priority,
+          dueDate: t.dueDate,
+          endDate: t.dueDate,
+          ownerName: Array.isArray(t.assignees) && t.assignees.length > 0 ? t.assignees[0] : null,
+          assignees: t.assignees ?? null,
+          trackingRag: t.trackingRag ?? null,
+          projectId: t.projectId ?? null,
+          projectName: t.projectName ?? null,
+          holdReason: t.holdReason ?? null,
+          blockerReason: t.blockerReason ?? null,
+          completedAt: t.completedAt ?? null,
+          taskTypeTag: t.taskTypeTag ?? null,
+        });
+        return {
+          id: t.id,
+          title: t.title,
+          status: view.status,
+          statusLabel: view.statusLabel,
+          statusBadgeClass: view.statusBadgeClass,
+          statusColour: view.statusColour,
+          priority: t.priority,
+          dueDate: t.dueDate,
+          dueLabel: view.dueLabel,
+          dueUrgency: view.dueUrgency,
+          assignees: t.assignees,
+          ownerInitials: view.ownerInitials,
+          tags: view.tags,
+          trackingRag: t.trackingRag,
+          projectName: t.projectName,
+          holdReason: t.holdReason,
+          blockerReason: t.blockerReason,
+          completedAt: t.completedAt,
+          taskTypeTag: t.taskTypeTag,
+          isOverdue: view.isOverdue,
+          isComplete: view.isComplete,
+          isBlocked: view.isBlocked,
+        };
+      };
 
       // Collect IDs of tasks already shown in a named section
       const shownIds = new Set<number>();
@@ -2960,7 +3037,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.post("/api/projects/:projectId/mark-cp-signed", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
-      const projectId = parseInt(paramStr(req.params.projectId));
+      const projectId = parseIntParam(req.params.projectId);
       const user = getUser(req);
       const { evidenceType, emailSubject, emailDate, fileId } = req.body;
 
@@ -3073,7 +3150,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.get("/api/projects/:projectId/cp-status", jwtAuth, requireAuth, async (req, res) => {
     try {
-      const projectId = parseInt(paramStr(req.params.projectId));
+      const projectId = parseIntParam(req.params.projectId);
       const [project] = await db.select({
         cpSigned: projectExecutionState.cpSigned,
         cpSignedDate: projectExecutionState.cpSignedDate,
@@ -3113,7 +3190,7 @@ export function registerEngineeringRoutes(app: Express) {
         return sendError(res, forbidden("Only admins can change project phases"));
       }
 
-      const projectId = parseInt(paramStr(req.params.projectId));
+      const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return sendError(res, badRequest("Invalid project ID"));
 
       const { toPhase, reason, overrideSequence } = req.body;
@@ -3247,7 +3324,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.get("/api/projects/:projectId/phase-history", jwtAuth, requireAuth, requirePermission("lifecycle", "view"), async (req, res) => {
     try {
-      const projectId = parseInt(paramStr(req.params.projectId));
+      const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return sendError(res, badRequest("Invalid project ID"));
 
       const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
@@ -3279,7 +3356,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.get("/api/projects/:projectId/eng-tasks", jwtAuth, requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
     try {
-      const projectId = parseInt(paramStr(req.params.projectId));
+      const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return sendError(res, badRequest("Invalid project ID"));
 
       const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
@@ -3302,7 +3379,7 @@ export function registerEngineeringRoutes(app: Express) {
   app.post("/api/projects/:projectId/generate-eng-tasks", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
       const user = getUser(req);
-      const projectId = parseInt(paramStr(req.params.projectId));
+      const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return sendError(res, badRequest("Invalid project ID"));
 
       const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));

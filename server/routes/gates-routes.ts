@@ -65,13 +65,13 @@ async function getProjectsWithStageData(filter?: {
   `;
 
   if (filter?.gateStatuses?.length) {
-    const statuses = filter.gateStatuses.map((s) => `'${s}'`).join(",");
-    query = sql`${query} AND pes.gate_status IN (${sql.raw(statuses)})`;
+    const statuses = sql.join(filter.gateStatuses.map((s) => sql`${s}`), sql`, `);
+    query = sql`${query} AND pes.gate_status IN (${statuses})`;
   }
 
   if (filter?.stageCodes?.length) {
-    const codes = filter.stageCodes.map((s) => `'${s}'`).join(",");
-    query = sql`${query} AND pes.current_stage_code IN (${sql.raw(codes)})`;
+    const codes = sql.join(filter.stageCodes.map((s) => sql`${s}`), sql`, `);
+    query = sql`${query} AND pes.current_stage_code IN (${codes})`;
   }
 
   query = sql`${query} ORDER BY days_in_stage DESC`;
@@ -206,7 +206,7 @@ app.get("/api/gates/pipeline", jwtAuth, requireAuth, requirePermission("stage_ga
       }
     }
     console.error("Gates pipeline error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -223,7 +223,7 @@ app.get("/api/gates/blocked", jwtAuth, requireAuth, requirePermission("stage_gat
       return res.json({ projects: [] });
     }
     console.error("Gates blocked error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -240,7 +240,7 @@ app.get("/api/gates/ready", jwtAuth, requireAuth, requirePermission("stage_gate"
       return res.json({ projects: [] });
     }
     console.error("Gates ready error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -306,7 +306,7 @@ app.get("/api/gates/exceptions", jwtAuth, requireAuth, requirePermission("stage_
       return res.json({ exceptions: [] });
     }
     console.error("Gates exceptions error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -333,7 +333,7 @@ app.get("/api/gates/exceptions/counts", jwtAuth, requireAuth, requirePermission(
       return res.json({ all: 0, pendingMyApproval: 0, overdue: 0 });
     }
     console.error("Gates exceptions counts error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -400,7 +400,7 @@ app.patch("/api/gates/exceptions/:id/action", jwtAuth, requireAuth, requirePermi
       return res.json({ success: false, error: "Stage tables not yet migrated" });
     }
     console.error("Exception action error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -448,7 +448,7 @@ app.get("/api/gates/client-updates", jwtAuth, requireAuth, requirePermission("st
       return res.json({ projects: [] });
     }
     console.error("Gates client-updates error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -547,7 +547,7 @@ app.get("/api/gates/handovers", jwtAuth, requireAuth, requirePermission("stage_g
       return res.json({ projects: [] });
     }
     console.error("Gates handovers error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 

@@ -6,17 +6,23 @@ import { useProjectsSummary } from "@/hooks/use-projects-summary";
 import { useAuth } from "@/hooks/use-auth";
 import { ArrowLeft } from "lucide-react";
 import { useLocation, useRoute } from "wouter";
+import { findProjectById, findProjectByName } from "@/lib/project-route-identity";
 
 export default function ProjectStageGatePage() {
-  const [, params] = useRoute("/project/:projectName/gate/:stageCode");
+  const [isNameRoute, nameParams] = useRoute("/project/:projectName/gate/:stageCode");
+  const [isIdRoute, idParams] = useRoute("/project/id/:projectId/gate/:stageCode");
   const [, setLocation] = useLocation();
   const { projectsSummary, isLoading } = useProjectsSummary();
   const { user } = useAuth();
 
-  const projectName = params?.projectName ? decodeURIComponent(params.projectName) : "";
-  const stageCode = params?.stageCode ? decodeURIComponent(params.stageCode) : "";
-  const projectInfo = projectsSummary?.find((p: any) => p.project_name === projectName);
+  const projectNameFromRoute = isNameRoute && nameParams?.projectName ? decodeURIComponent(nameParams.projectName) : "";
+  const projectIdFromRoute = isIdRoute && idParams?.projectId ? Number(idParams.projectId) : null;
+  const stageCode = (isIdRoute ? idParams?.stageCode : nameParams?.stageCode) ? decodeURIComponent((isIdRoute ? idParams?.stageCode : nameParams?.stageCode) as string) : "";
+  const projectByName = findProjectByName(projectsSummary as any[] | undefined, projectNameFromRoute);
+  const projectById = findProjectById(projectsSummary as any[] | undefined, projectIdFromRoute);
+  const projectInfo = projectById ?? projectByName;
   const projectInfoId = projectInfo?.project_info_id;
+  const projectName = projectInfo?.project_name ?? projectNameFromRoute;
 
   const isAdmin = ["COO_ADMIN", "CEO_ADMIN"].includes(user?.role || "");
 
@@ -26,7 +32,7 @@ export default function ProjectStageGatePage() {
       return;
     }
 
-    setLocation(`/project/${encodeURIComponent(projectName)}`);
+    setLocation(projectInfoId ? `/project/id/${projectInfoId}` : `/project/${encodeURIComponent(projectName)}`);
   };
 
   if (isLoading) {

@@ -563,18 +563,27 @@ export async function getCoreMasterDataReadinessReport() {
 }
 
 export async function listClientsFromPromotedCoreCompat() {
+  // Cascade-display: hide soft-deleted clients (Task #73, migration 0029).
+  // core.clients has no deleted_at column of its own, so we anti-join to
+  // public.clients to drop any id that has been tombstoned. The legacy
+  // fallback (when core.clients is absent) filters public.clients
+  // directly.
   try {
     const rows = await db.execute(sql`
       SELECT
-        id,
-        name,
-        client_code AS "clientId",
-        created_by AS "createdBy",
-        updated_by AS "updatedBy",
-        created_at AS "createdAt",
-        updated_at AS "updatedAt"
-      FROM core.clients
-      ORDER BY name ASC
+        c.id,
+        c.name,
+        c.client_code AS "clientId",
+        c.created_by AS "createdBy",
+        c.updated_by AS "updatedBy",
+        c.created_at AS "createdAt",
+        c.updated_at AS "updatedAt"
+      FROM core.clients c
+      WHERE NOT EXISTS (
+        SELECT 1 FROM public.clients pc
+        WHERE pc.id = c.id AND pc.deleted_at IS NOT NULL
+      )
+      ORDER BY c.name ASC
     `).then((r: any) => r.rows ?? r);
 
     return rows;
@@ -591,6 +600,7 @@ export async function listClientsFromPromotedCoreCompat() {
           created_at AS "createdAt",
           updated_at AS "updatedAt"
         FROM public.clients
+        WHERE deleted_at IS NULL
         ORDER BY name ASC
       `).then((r: any) => r.rows ?? r);
       return rows;

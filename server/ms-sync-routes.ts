@@ -1,4 +1,5 @@
 import type { Express, NextFunction, Request, Response } from "express";
+import { timingSafeEqual } from "crypto";
 import { z } from "zod";
 import { db } from "./db";
 import { eq, and, or, desc, asc, sql, inArray, isNull, ne } from "drizzle-orm";
@@ -40,6 +41,7 @@ import {
   requireMicrosoftSurfaceFromRequest,
   requireMicrosoftSyncSurfaceAccess,
 } from "./lib/microsoft-route-access";
+import { parseIntParam } from "./lib/req-params";
 
 const tagSchema = z.object({
   projectId: z.number(),
@@ -60,6 +62,7 @@ async function requireUnifiedWorkFlag(_req: Request, res: Response, next: NextFu
 }
 
 import { normalizeStatus as canonicalNormalizeStatus } from "./lib/canonical-task-engine";
+import { projectEngineeringTicket } from "@shared/lib/engineering-ticket-view";
 
 function normalizeTaskStatus(status: string | null | undefined): string {
   return canonicalNormalizeStatus(status);
@@ -88,7 +91,7 @@ export function registerMsSyncRoutes(app: Express) {
 
   app.post("/api/ms-objects/:id/tag-project", jwtAuth, requireAuth, requireUnifiedWorkFlag, requireMicrosoftObjectSurfaceAccess(), async (req: Request, res: Response) => {
     try {
-      const msObjectId = parseInt(String(req.params.id));
+      const msObjectId = parseIntParam(req.params.id);
       if (isNaN(msObjectId)) return res.status(400).json({ error: "Invalid ms object id" });
 
       const parsed = tagSchema.safeParse(req.body);
@@ -101,13 +104,13 @@ export function registerMsSyncRoutes(app: Express) {
       res.json(result);
     } catch (err: unknown) {
       const status = (err instanceof Error ? err.message : String(err))?.includes("not found") ? 404 : (err instanceof Error ? err.message : String(err))?.includes("only") ? 403 : 500;
-      res.status(status).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
   app.delete("/api/ms-objects/:id/tag-project", jwtAuth, requireAuth, requireUnifiedWorkFlag, requireMicrosoftObjectSurfaceAccess(), async (req: Request, res: Response) => {
     try {
-      const msObjectId = parseInt(String(req.params.id));
+      const msObjectId = parseIntParam(req.params.id);
       if (isNaN(msObjectId)) return res.status(400).json({ error: "Invalid ms object id" });
 
       const userId = (req as any).user?.id;
@@ -117,7 +120,7 @@ export function registerMsSyncRoutes(app: Express) {
       res.json({ success: true });
     } catch (err: unknown) {
       const status = (err instanceof Error ? err.message : String(err))?.includes("not found") ? 404 : (err instanceof Error ? err.message : String(err))?.includes("only") ? 403 : 500;
-      res.status(status).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -139,13 +142,13 @@ export function registerMsSyncRoutes(app: Express) {
       const visibleItems = await filterMicrosoftItemsForRequest(req, items);
       res.json(visibleItems);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
   app.get("/api/ms-objects/project/:projectId", jwtAuth, requireAuth, requirePermission("projects", "view"), async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(String(req.params.projectId));
+      const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project id" });
 
       const userId = (req as any).user?.id;
@@ -155,13 +158,13 @@ export function registerMsSyncRoutes(app: Express) {
       const visibleItems = await filterMicrosoftItemsForRequest(req, items);
       res.json(visibleItems);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
   app.post("/api/ms-objects/:id/convert-to-task", jwtAuth, requireAuth, requireUnifiedWorkFlag, requireMicrosoftObjectSurfaceAccess(), async (req: Request, res: Response) => {
     try {
-      const msObjectId = parseInt(String(req.params.id));
+      const msObjectId = parseIntParam(req.params.id);
       if (isNaN(msObjectId)) return res.status(400).json({ error: "Invalid ms object id" });
 
       const userId = (req as any).user?.id;
@@ -172,7 +175,7 @@ export function registerMsSyncRoutes(app: Express) {
       res.json(result);
     } catch (err: unknown) {
       const status = (err instanceof Error ? err.message : String(err))?.includes("not found") ? 404 : (err instanceof Error ? err.message : String(err))?.includes("only") ? 403 : 500;
-      res.status(status).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -180,7 +183,7 @@ export function registerMsSyncRoutes(app: Express) {
 
   app.post("/api/ms-objects/:id/create-follow-up", jwtAuth, requireAuth, requireUnifiedWorkFlag, requireMicrosoftObjectSurfaceAccess(), async (req: Request, res: Response) => {
     try {
-      const msObjectId = parseInt(String(req.params.id));
+      const msObjectId = parseIntParam(req.params.id);
       if (isNaN(msObjectId)) return res.status(400).json({ error: "Invalid ms object id" });
 
       const userId = (req as any).user?.id;
@@ -235,13 +238,13 @@ export function registerMsSyncRoutes(app: Express) {
       const visibleRows = await filterMicrosoftItemsForRequest(req, rows);
       res.json(visibleRows);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
   app.get("/api/projects/:projectId/communication-timeline", jwtAuth, requireAuth, requirePermission("projects", "view"), async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(String(req.params.projectId));
+      const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project id" });
 
       const userId = (req as any).user?.id;
@@ -256,20 +259,20 @@ export function registerMsSyncRoutes(app: Express) {
 
       res.json(items);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
   app.patch("/api/ms-objects/:id/dismiss", jwtAuth, requireAuth, requireMicrosoftObjectSurfaceAccess(), async (req: Request, res: Response) => {
     try {
-      const msObjectId = parseInt(String(req.params.id));
+      const msObjectId = parseIntParam(req.params.id);
       if (isNaN(msObjectId)) return res.status(400).json({ error: "Invalid ms object id" });
       const userId = (req as any).user?.id;
       if (!userId) return res.status(401).json({ error: "auth_required" });
       await db.update(msObjects).set({ dismissed: true }).where(and(eq(msObjects.id, msObjectId), eq(msObjects.userId, userId)));
       res.json({ success: true });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -317,7 +320,7 @@ export function registerMsSyncRoutes(app: Express) {
       res.json({ success: true, results });
     } catch (err: unknown) {
       console.error("[MS Sync] Trigger error:", (err instanceof Error ? err.message : String(err)));
-      res.status(500).json({ error: "Sync failed: " + (err instanceof Error ? err.message : String(err)) });
+      res.status(500).json({ error: "Sync failed: " });
     }
   });
 
@@ -336,7 +339,7 @@ export function registerMsSyncRoutes(app: Express) {
         }));
       res.json(internal);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -346,14 +349,14 @@ export function registerMsSyncRoutes(app: Express) {
       if (!entityType) {
         return res.status(400).json({ error: `Unknown entity type: ${req.params.entityType}` });
       }
-      const entityId = parseInt(req.params.entityId as string, 10);
+      const entityId = parseIntParam(req.params.entityId);
       if (!Number.isFinite(entityId) || entityId <= 0) {
         return res.status(400).json({ error: `Invalid entity ID: ${req.params.entityId}` });
       }
       const assignments = await getAssignmentsForEntity(entityType, entityId);
       res.json(assignments);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -366,7 +369,7 @@ export function registerMsSyncRoutes(app: Express) {
         : await listAssignableDirectory(search);
       res.json(assignable);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -393,7 +396,7 @@ export function registerMsSyncRoutes(app: Express) {
       if (!actorId || !Number.isFinite(actorId)) {
         return res.status(401).json({ error: "Valid user session required" });
       }
-      console.log("[Reassign] Processing:", { taskId, taskSource, assigneeType, assigneeId, actorId, body: JSON.stringify(req.body) });
+      console.log("[Reassign] Processing:", { taskId, taskSource, assigneeType, assigneeId, actorId });
 
       if (taskSource === "plan_viewer" || taskSource === "remove_viewer") {
         const viewerUserId = assigneeType === "internal_user" ? assigneeId : parsed.data.userId ?? null;
@@ -511,8 +514,15 @@ export function registerMsSyncRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[Reassign] Assignment update failed", err?.message, err?.stack?.split("\n").slice(0, 8).join("\n"));
-      const status = err?.message?.toLowerCase().includes("permission") ? 403 : err?.message?.toLowerCase().includes("not found") ? 404 : err?.message?.toLowerCase().includes("required") ? 400 : 500;
-      res.status(status).json({ error: (err instanceof Error ? err.message : String(err)) || "Assignment update failed", _debug: { body: req.body, stack: err?.stack?.split("\n").slice(0, 8) } });
+      // Known validation-style errors surface their own message (safe —
+      // these strings are authored by the caller, not the driver). Anything
+      // else falls through to the global handler for sanitisation.
+      const msg = err instanceof Error ? err.message : "";
+      const lower = msg.toLowerCase();
+      if (lower.includes("permission")) throw Object.assign(new Error(msg), { statusCode: 403 });
+      if (lower.includes("not found")) throw Object.assign(new Error(msg), { statusCode: 404 });
+      if (lower.includes("required")) throw Object.assign(new Error(msg), { statusCode: 400 });
+      throw err;
     }
   });
 
@@ -974,29 +984,59 @@ export function registerMsSyncRoutes(app: Express) {
         });
       });
 
-      const engineeringTasksMapped = engTasks.map((t: any) => withSourceLinks("engineering_task", {
-        id: t.id,
-        title: t.title,
-        status: normalizeTaskStatus(t.status),
-        projectId: t.projectId ?? null,
-        projectName: t.projectName,
-        parentTaskId: t.parentId || null,
-        parentTaskTitle: t.parentId ? (parentTitleMap.get(t.parentId) || null) : null,
-        lifecyclePhase: t.lifecyclePhaseTag,
-        assigneeUserId: t.ownerUserId ?? t.assigneeUserId,
-        assigneeName: t.assigneeName,
-        resolvedAssignee: resolveUserId(t.ownerUserId ?? t.assigneeUserId) || resolveTextNameToUser(t.assigneeName),
-        scheduledDate: t.scheduledDate || null,
-        scheduledStartTime: t.scheduledStartTime || null,
-        scheduledEndTime: t.scheduledEndTime || null,
-        workstream: t.workstream || "ENG",
-        source: t.source || null,
-        _source: "engineering_task",
-      }, {
-        itemKey: `eng-${t.id}`,
-        rawId: t.id,
-        projectName: t.projectName,
-      }));
+      const engineeringTasksMapped = engTasks.map((t: any) => {
+        const view = projectEngineeringTicket({
+          id: t.id,
+          title: t.title,
+          status: t.status,
+          priority: t.priority,
+          dueDate: t.endDate ?? t.dueDate ?? null,
+          endDate: t.endDate ?? null,
+          startDate: t.startDate ?? null,
+          ownerUserId: t.ownerUserId ?? t.assigneeUserId ?? null,
+          ownerName: t.ownerName ?? t.assigneeName ?? null,
+          assigneeUserIds: t.assigneeUserIds ?? null,
+          projectId: t.projectId ?? null,
+          projectName: t.projectName ?? null,
+          completedAt: t.completedAt ?? null,
+        });
+        return withSourceLinks("engineering_task", {
+          id: t.id,
+          title: t.title,
+          status: view.status,
+          statusLabel: view.statusLabel,
+          statusBadgeClass: view.statusBadgeClass,
+          statusColour: view.statusColour,
+          priority: view.priority,
+          dueDate: view.dueDate,
+          dueLabel: view.dueLabel,
+          dueUrgency: view.dueUrgency,
+          isOverdue: view.isOverdue,
+          isComplete: view.isComplete,
+          isBlocked: view.isBlocked,
+          isApprovalPending: view.isApprovalPending,
+          ownerInitials: view.ownerInitials,
+          projectId: t.projectId ?? null,
+          projectName: t.projectName,
+          parentTaskId: t.parentId || null,
+          parentTaskTitle: t.parentId ? (parentTitleMap.get(t.parentId) || null) : null,
+          lifecyclePhase: t.lifecyclePhaseTag,
+          assigneeUserId: t.ownerUserId ?? t.assigneeUserId,
+          assigneeName: t.assigneeName,
+          resolvedAssignee: resolveUserId(t.ownerUserId ?? t.assigneeUserId) || resolveTextNameToUser(t.assigneeName),
+          scheduledDate: t.scheduledDate || null,
+          scheduledStartTime: t.scheduledStartTime || null,
+          scheduledEndTime: t.scheduledEndTime || null,
+          workstream: t.workstream || "ENG",
+          source: t.source || null,
+          completedAt: t.completedAt ?? null,
+          _source: "engineering_task",
+        }, {
+          itemKey: `eng-${t.id}`,
+          rawId: t.id,
+          projectName: t.projectName,
+        });
+      });
 
       const qualityTasksMapped = (qualityTasks as any[]).map((t: any) => withSourceLinks("quality_task", {
         id: t.id,
@@ -1077,7 +1117,7 @@ export function registerMsSyncRoutes(app: Express) {
       });
     } catch (err: unknown) {
       console.error("[MyWork AllTasks] Error:", err);
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -1086,7 +1126,7 @@ export function registerMsSyncRoutes(app: Express) {
       const userId = (req as any).user?.id;
       if (!userId) return res.status(401).json({ error: "auth_required" });
 
-      const projectId = parseInt(String(req.params.projectId));
+      const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project id" });
 
       const [project] = await db.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, projectId));
@@ -1186,7 +1226,7 @@ export function registerMsSyncRoutes(app: Express) {
       });
     } catch (err: unknown) {
       console.error("[MS Teams Project Chat] Error:", err);
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -1198,7 +1238,7 @@ export function registerMsSyncRoutes(app: Express) {
         return res.status(403).json({ error: "Only admin/COO can unlink Teams chats" });
       }
 
-      const projectId = parseInt(String(req.params.projectId));
+      const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project id" });
 
       await db.update(msObjects)
@@ -1208,7 +1248,7 @@ export function registerMsSyncRoutes(app: Express) {
       res.json({ success: true });
     } catch (err: unknown) {
       console.error("[MS Teams Unlink] Error:", err);
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -1246,9 +1286,42 @@ export function registerMsSyncRoutes(app: Express) {
   });
 
   app.post("/api/webhooks/graph", async (req: Request, res: Response) => {
+    // Subscription validation handshake — Microsoft POSTs this during
+    // subscription creation. Must respond with the token as plain text.
     if (req.query.validationToken) {
       return res.status(200).contentType("text/plain").send(req.query.validationToken as string);
     }
+
+    // Verify clientState on every notification delivery. GRAPH_WEBHOOK_CLIENT_STATE
+    // is REQUIRED in production — fail-closed if missing. In non-prod the check
+    // is skipped so local fixtures can POST without one.
+    const expectedClientState = process.env.GRAPH_WEBHOOK_CLIENT_STATE;
+    if (!expectedClientState) {
+      if (process.env.NODE_ENV === "production") {
+        console.error("[Graph Webhook] Rejected: GRAPH_WEBHOOK_CLIENT_STATE not configured");
+        return res.status(503).json({ error: "Webhook not configured" });
+      }
+    } else {
+      const notifications: Array<{ clientState?: string }> = req.body?.value;
+      if (!Array.isArray(notifications) || notifications.length === 0) {
+        console.warn("[Graph Webhook] Rejected: empty or missing value array");
+        return res.status(400).json({ error: "Invalid payload" });
+      }
+      const expectedBuf = Buffer.from(expectedClientState);
+      const allValid = notifications.every((n) => {
+        const provided = typeof n.clientState === "string" ? n.clientState : "";
+        const providedBuf = Buffer.from(provided);
+        return (
+          providedBuf.length === expectedBuf.length &&
+          timingSafeEqual(providedBuf, expectedBuf)
+        );
+      });
+      if (!allValid) {
+        console.warn("[Graph Webhook] Rejected: clientState mismatch");
+        return res.status(401).json({ error: "Invalid clientState" });
+      }
+    }
+
     try {
       const notifications = req.body?.value || [];
       for (const notification of notifications) {

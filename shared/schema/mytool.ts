@@ -4,7 +4,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
 import { users } from "./users";
-import { projectInfo } from "./projects";
+import { projectInfo, opportunities } from "./projects";
 import { workItems } from "./tasks";
 
 // ── Legacy personal-task enums — retained for Drizzle migration compatibility ──
@@ -124,6 +124,13 @@ export const mytoolCompanyPriorities = pgTable("mytool_company_priorities", {
   sortOrder: integer("sort_order").notNull().default(0),
   manualHealth: text("manual_health"),
   manualProgress: integer("manual_progress"),
+  // Progress source linking (migration 0009).
+  // When `progressSourceType` is set + non-null, the priority's effective
+  // progress is computed from the linked source (project phase, project %,
+  // revenue milestone, or tasks roll-up) instead of `manualProgress`.
+  // Compute lives in server/lib/priorities/progress-source.ts.
+  progressSourceType: text("progress_source_type"),
+  progressSourceRef: jsonb("progress_source_ref"),
   // Cascading priority columns
   scope: mytoolPriorityScopeEnum("scope").notNull().default('company'),
   parentId: integer("parent_id"),
@@ -139,6 +146,33 @@ export const mytoolCompanyPriorities = pgTable("mytool_company_priorities", {
 export const insertMytoolCompanyPrioritySchema = createInsertSchema(mytoolCompanyPriorities).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertMytoolCompanyPriority = z.infer<typeof insertMytoolCompanyPrioritySchema>;
 export type MytoolCompanyPriority = typeof mytoolCompanyPriorities.$inferSelect;
+
+// ── Priority activity log ─────────────────────────────────────────────
+// Append-only audit trail of what happened to a priority. One row per
+// observable event — created, updated, escalated, closed, reopened,
+// broken_down, project_linked, project_unlinked, health_changed, etc.
+// Used by the "Activity" tab on the priority detail page so reviewers
+// can trace how a priority got to its current state.
+export const priorityActivity = pgTable("priority_activity", {
+  id: serial("id").primaryKey(),
+  priorityId: integer("priority_id").notNull().references(() => mytoolCompanyPriorities.id, { onDelete: "cascade" }),
+  actorUserId: integer("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+  /** Denormalised snapshot of the actor's name at the time of the event. */
+  actorName: text("actor_name"),
+  /** Event kind — see the union in server/departments/priority-activity-log.ts */
+  action: text("action").notNull(),
+  /** Old value serialised to string (e.g. 'active', 'healthy', 'normal'). Null for inserts. */
+  fromValue: text("from_value"),
+  /** New value serialised to string. Null for purely "marker" events. */
+  toValue: text("to_value"),
+  /** Free-form context (e.g. escalation reason, linked project IDs). */
+  details: jsonb("details"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertPriorityActivitySchema = createInsertSchema(priorityActivity).omit({ id: true, createdAt: true } as any);
+export type InsertPriorityActivity = z.infer<typeof insertPriorityActivitySchema>;
+export type PriorityActivity = typeof priorityActivity.$inferSelect;
 
 export const priorityLinks = pgTable("priority_links", {
   id: serial("id").primaryKey(),
@@ -170,6 +204,24 @@ export const priorityProjects = pgTable("priority_projects", {
 export const insertPriorityProjectSchema = createInsertSchema(priorityProjects).omit({ id: true, linkedAt: true } as any);
 export type InsertPriorityProject = z.infer<typeof insertPriorityProjectSchema>;
 export type PriorityProject = typeof priorityProjects.$inferSelect;
+
+// Priority ↔ Opportunity junction — Tier 4 · PR 2.
+// Lets a Priority attach to a *pre-contract* deal (opportunity) as well as
+// to a signed project. Needed so the strategic view can see pipeline risk
+// (stalled proposals, overdue feasibility work) not just post-signature work.
+export const priorityOpportunities = pgTable("priority_opportunities", {
+  id: serial("id").primaryKey(),
+  priorityId: integer("priority_id").notNull().references(() => mytoolCompanyPriorities.id, { onDelete: "cascade" }),
+  opportunityId: integer("opportunity_id").notNull().references(() => opportunities.id, { onDelete: "cascade" }),
+  linkedBy: integer("linked_by").references(() => users.id, { onDelete: "set null" }),
+  linkedAt: timestamp("linked_at").notNull().defaultNow(),
+}, (table) => ({
+  uniquePriorityOpportunity: unique("priority_opportunities_unique").on(table.priorityId, table.opportunityId),
+}));
+
+export const insertPriorityOpportunitySchema = createInsertSchema(priorityOpportunities).omit({ id: true, linkedAt: true } as any);
+export type InsertPriorityOpportunity = z.infer<typeof insertPriorityOpportunitySchema>;
+export type PriorityOpportunity = typeof priorityOpportunities.$inferSelect;
 
 export const mytoolUserPreferences = pgTable("mytool_user_preferences", {
   ownerUserId: integer("owner_user_id").primaryKey().references(() => users.id),

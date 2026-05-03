@@ -33,7 +33,12 @@ export async function getMergedExpensesAndInflows(
  *   2. paymentReceivedDate (actual bank receipt — never overridden)
  *   3. dateOverride from milestone_task_links (manual override)
  *   4. Linked operational/plan task dueDate
- *   5. Original computed forecast / planned date
+ *   5. Canonical computed forecast date (computedForecastReceiptDate)
+ *   6. Legacy fallback planned date (plannedPaymentDate)
+ *
+ * NOTE: plannedPaymentDate is retained only as a hybrid compatibility fallback
+ * while older imports are normalized. Do not remove without migration proof that
+ * computedForecastReceiptDate is backfilled for all active revenue lines.
  */
 export function resolveInflowEffectiveDates(
   inflows: any[],

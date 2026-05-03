@@ -13,7 +13,10 @@ import {
   stageChecklistTemplates,
   stageGateEvidenceSnapshots,
   projectExecutionState,
+  projectInfo,
   STAGE_CODES,
+  TERMINAL_STAGE_CODES,
+  SEQUENTIAL_STAGE_CODES,
   type StageCode,
   type StageStatus,
   type InsertProjectStageInstance,
@@ -58,7 +61,28 @@ type RequirementLike = {
   blocksGate: boolean;
   evidenceAttached: boolean;
   notes?: string | null;
+  // Task #84: Auto-evaluator output, surfaced into the snapshot so audit
+  // trails record which items were satisfied by app data vs by manual entry.
+  isAuto?: boolean;
+  autoStatus?: string | null;
+  autoSourceLabel?: string | null;
+  autoSourceRef?: string | null;
+  autoEvidenceUrl?: string | null;
+  autoConfidence?: string | null;
 };
+
+/** Manual status wins. If it's `not_started` and the auto-evaluator detected
+ *  something, the snapshot reflects the auto status with isAuto=true. */
+function effectiveSnapshotStatus(req: ProjectStageRequirement): { status: string; isAuto: boolean } {
+  const manual = req.status;
+  // Tolerate both casings while the migration to lowercase canonical
+  // statuses is still in flight elsewhere in the codebase.
+  const manualNormalized = manual?.toLowerCase();
+  if (manualNormalized === "not_started" && req.autoStatus) {
+    return { status: req.autoStatus, isAuto: true };
+  }
+  return { status: manual, isAuto: false };
+}
 
 function summarizeRequirements(reqs: ProjectStageRequirement[]): {
   gatesTotal: number;
@@ -71,7 +95,9 @@ function summarizeRequirements(reqs: ProjectStageRequirement[]): {
   let gatesPassed = 0;
   const missingItems: Array<{ itemCode: string; itemName: string; department: string; reason: string }> = [];
   const requirementsSnapshot: RequirementLike[] = reqs.map((r) => {
-    const isComplete = r.status === "COMPLETE";
+    const eff = effectiveSnapshotStatus(r);
+    const isComplete =
+      eff.status === "COMPLETE" || eff.status === "complete";
     if (isComplete) gatesPassed += 1;
     else {
       missingItems.push({
@@ -91,6 +117,12 @@ function summarizeRequirements(reqs: ProjectStageRequirement[]): {
       blocksGate: r.blocksGate,
       evidenceAttached: r.evidenceAttached,
       notes: r.notes ?? null,
+      isAuto: eff.isAuto,
+      autoStatus: r.autoStatus ?? null,
+      autoSourceLabel: r.autoSourceLabel ?? null,
+      autoSourceRef: r.autoSourceRef ?? null,
+      autoEvidenceUrl: r.autoEvidenceUrl ?? null,
+      autoConfidence: r.autoConfidence ?? null,
     };
   });
 
@@ -247,17 +279,36 @@ export async function computeCurrentStageGateReadiness(projectId: number, stageC
  * Create all 10 stage instances for a project.
  * Skips any that already exist (idempotent).
  */
-// Post-merge (migration 20260413_stage_lifecycle_merge): 8 active stages.
-// S04_PD_PM_HANDOVER folded into S03, S05_FINANCIAL_REVIEW folded into S02.
+// Post-merge (migration 20260413_stage_lifecycle_merge): originally 8 active
+// stages. Planning (S04_PLANNING) re-introduced 2026-04-21 as a standalone
+// PM-owned stage between Financial Close and Construction, matching the
+// canonical phase model in shared/phases.ts. Legacy S04_PD_PM_HANDOVER is
+// still folded into S03; S05_FINANCIAL_REVIEW is still folded into S02.
+// Canonical 12-phase model (2026-04-24, migration 0030_canonical_lifecycle_phases_v2):
+// 10 sequential stages (S01..S04, S06..S10, S9B) ordered by stage_sequence,
+// plus 2 terminal branch stages (S_HOLD, S_DONE) which carry no sequence and
+// are filtered out of the linear progression.
+//
+// stage_sequence values 1..10 are dense and contiguous so that lifecycle
+// boards can sort by sequence without gaps. The numeric value is purely an
+// ordering key — the canonical "position" is owned by displayNumber in
+// shared/phases.ts (PHASE_BY_CODE.<CODE>.displayNumber). Note: 3 Months Post
+// HO Review (S10) sits at position 9 and Compliance Handover (S9B) at
+// position 10 — the swap is intentional and matches shared/phases.ts and
+// migration 0030 (which sets the same sequence values in stage_definitions).
 const DEFAULT_STAGE_DEFS = [
-  { stageCode: 'S01_FIRST_ASSESSMENT', stageName: 'First Assessment', stageSequence: 1, description: 'Initial site and feasibility assessment', defaultOwnerRole: 'PD', defaultApproverRole: 'COO' },
-  { stageCode: 'S02_DESIGN_COST_PROPOSAL', stageName: 'Design & Cost Proposal', stageSequence: 2, description: 'Engineering design, costing, and pre-construction financial review (absorbed from former S05).', defaultOwnerRole: 'ENGINEERING', defaultApproverRole: 'COO' },
-  { stageCode: 'S03_SIGNATURE_FINANCIAL_CLOSE', stageName: 'Financial Close', stageSequence: 3, description: 'Contract signature, financial close, and PD-to-PM handover (absorbed from former S04).', defaultOwnerRole: 'PD', defaultApproverRole: 'CFO' },
-  { stageCode: 'S06_CONSTRUCTION', stageName: 'Construction', stageSequence: 6, description: 'On-site construction phase', defaultOwnerRole: 'PM', defaultApproverRole: 'COO' },
-  { stageCode: 'S07_COMMISSIONING', stageName: 'Commissioning', stageSequence: 7, description: 'System testing and commissioning', defaultOwnerRole: 'ENGINEERING', defaultApproverRole: 'COO' },
-  { stageCode: 'S08_OM_HANDOVER', stageName: 'O&M Handover', stageSequence: 8, description: 'Handover to operations and maintenance', defaultOwnerRole: 'PM', defaultApproverRole: 'COO' },
-  { stageCode: 'S09_CLIENT_HANDOVER', stageName: 'Client Handover', stageSequence: 9, description: 'Final handover to the client', defaultOwnerRole: 'PM', defaultApproverRole: 'COO' },
-  { stageCode: 'S10_POST_HANDOVER_REVIEW', stageName: 'Post-Handover Review', stageSequence: 10, description: 'Post-completion review and lessons learned', defaultOwnerRole: 'PM', defaultApproverRole: 'COO' },
+  { stageCode: 'S01_FIRST_ASSESSMENT',          stageName: 'First Assessment',         stageSequence: 1,  description: 'Initial site and feasibility assessment',                                                                       defaultOwnerRole: 'PD',          defaultApproverRole: 'COO' },
+  { stageCode: 'S02_DESIGN_COST_PROPOSAL',      stageName: 'Cost Proposal & Design',   stageSequence: 2,  description: 'Engineering design, costing, and pre-construction financial review (absorbed from former S05).',                defaultOwnerRole: 'ENGINEERING', defaultApproverRole: 'COO' },
+  { stageCode: 'S03_SIGNATURE_FINANCIAL_CLOSE', stageName: 'Financial Close',          stageSequence: 3,  description: 'Contract signature, financial close, and PD-to-PM handover (absorbed from former S04).',                       defaultOwnerRole: 'PD',          defaultApproverRole: 'CFO' },
+  { stageCode: 'S04_PLANNING',                  stageName: 'Planning',                 stageSequence: 4,  description: 'Detailed design release, procurement kick-off, and construction-readiness planning by the PM team.',           defaultOwnerRole: 'PM',          defaultApproverRole: 'COO' },
+  { stageCode: 'S06_CONSTRUCTION',              stageName: 'Construction',             stageSequence: 5,  description: 'On-site construction phase',                                                                                     defaultOwnerRole: 'PM',          defaultApproverRole: 'COO' },
+  { stageCode: 'S07_COMMISSIONING',             stageName: 'Commissioning',            stageSequence: 6,  description: 'System testing and commissioning',                                                                               defaultOwnerRole: 'ENGINEERING', defaultApproverRole: 'COO' },
+  { stageCode: 'S08_OM_HANDOVER',               stageName: 'O&M Handover',             stageSequence: 7,  description: 'Handover to operations and maintenance',                                                                         defaultOwnerRole: 'PM',          defaultApproverRole: 'COO' },
+  { stageCode: 'S09_CLIENT_HANDOVER',           stageName: 'Client Handover',          stageSequence: 8,  description: 'Final handover to the client',                                                                                   defaultOwnerRole: 'PM',          defaultApproverRole: 'COO' },
+  { stageCode: 'S10_POST_HANDOVER_REVIEW',      stageName: '3 Months Post HO Review',  stageSequence: 9,  description: '3-months-after-handover review and lessons learned. Sits at position 9 ahead of compliance handover.',          defaultOwnerRole: 'PM',          defaultApproverRole: 'COO' },
+  { stageCode: 'S9B_COMPLIANCE_HANDOVER',       stageName: 'Compliance Handover',      stageSequence: 10, description: 'Final regulatory and compliance handover documentation; closes the project lifecycle.',                         defaultOwnerRole: 'PM',          defaultApproverRole: 'COO' },
+  { stageCode: 'S_HOLD',                        stageName: 'Hold',                     stageSequence: 0,  description: 'Resumable terminal branch — projects placed on hold preserve their prior phase in project_execution_state.previous_phase.', defaultOwnerRole: 'PM', defaultApproverRole: 'COO' },
+  { stageCode: 'S_DONE',                        stageName: 'Done',                     stageSequence: 0,  description: 'Permanent terminal branch — closed, completed, or cancelled projects.',                                         defaultOwnerRole: 'PM',          defaultApproverRole: 'COO' },
 ];
 
 async function ensureStageDefinitions() {
@@ -290,7 +341,15 @@ export async function initializeProjectStages(projectId: number): Promise<Projec
   const existingCodes = new Set(existing.map((e: ProjectStageInstance) => e.stageCode));
   const toCreate: InsertProjectStageInstance[] = [];
 
-  for (const def of definitions) {
+  // Terminal branch stages (S_HOLD, S_DONE) are NOT pre-created on
+  // initialisation — they are inserted on-demand by the placeProjectOnHold/
+  // markProjectDone transition handlers below. Filtering by stage_code
+  // keeps us decoupled from the row shape returned by drizzle.
+  const sequentialDefs = definitions.filter(
+    (d: typeof definitions[number]) => !TERMINAL_STAGE_CODES.has(d.stageCode as StageCode),
+  );
+
+  for (const def of sequentialDefs) {
     if (!existingCodes.has(def.stageCode)) {
       toCreate.push({
         projectId,
@@ -305,8 +364,11 @@ export async function initializeProjectStages(projectId: number): Promise<Projec
     await db.insert(projectStageInstances).values(toCreate);
   }
 
-  // Set current_stage_code on project_execution_state
-  if (definitions.length > 0) {
+  // Set current_stage_code on project_execution_state. We must use the
+  // first SEQUENTIAL stage (S01_FIRST_ASSESSMENT) — sequentialDefs is
+  // ordered by stage_sequence so [0] is the canonical entry point.
+  if (sequentialDefs.length > 0) {
+    const firstSequentialCode = sequentialDefs[0].stageCode;
     const [execState] = await db
       .select({ currentStageCode: projectExecutionState.currentStageCode })
       .from(projectExecutionState)
@@ -315,12 +377,12 @@ export async function initializeProjectStages(projectId: number): Promise<Projec
     if (execState && !execState.currentStageCode) {
       await db
         .update(projectExecutionState)
-        .set({ currentStageCode: definitions[0].stageCode, updatedAt: new Date() })
+        .set({ currentStageCode: firstSequentialCode, updatedAt: new Date() })
         .where(eq(projectExecutionState.projectId, projectId));
     } else if (!execState) {
       await db.insert(projectExecutionState).values({
         projectId,
-        currentStageCode: definitions[0].stageCode,
+        currentStageCode: firstSequentialCode,
       }).onConflictDoNothing();
     }
   }
@@ -357,12 +419,16 @@ export async function hydrateStageChecklist(projectId: number, stageCode: string
     throw new Error(`Cannot hydrate checklist: stage instance does not exist for project ${projectId}, stage ${stageCode}.`);
   }
 
+  // §6b: only the current version of each template item seeds new project
+  // requirements. Without the isCurrentVersion filter, hydrate would pick
+  // up every historical version and duplicate rows after any template edit.
   const templates = await db
     .select()
     .from(stageChecklistTemplates)
     .where(and(
       eq(stageChecklistTemplates.stageCode, stageCode),
       eq(stageChecklistTemplates.isActive, true),
+      eq(stageChecklistTemplates.isCurrentVersion, true),
     ))
     .orderBy(stageChecklistTemplates.sortOrder);
 
@@ -385,6 +451,9 @@ export async function hydrateStageChecklist(projectId: number, stageCode: string
         itemCode: t.itemCode,
         blocksGate: t.blocksGate,
         status: 'NOT_STARTED',
+        // §6b: pin the template version so a future sync can diff cleanly.
+        sourceTemplateId: t.id,
+        templateVersionAtHydrate: t.version,
       });
     }
   }
@@ -407,6 +476,275 @@ export async function hydrateStageChecklist(projectId: number, stageCode: string
     createdCount,
     requirements,
   };
+}
+
+// ── §6b: Template-vs-Open-Stages Diff + Sync ────────────────
+
+export interface RequirementAdd {
+  itemCode: string;
+  itemName: string;
+  department: string;
+  blocksGate: boolean;
+  templateId: number;
+  templateVersion: number;
+}
+
+export interface RequirementUpdate {
+  requirementId: number;
+  itemCode: string;
+  fromVersion: number | null;
+  toVersion: number;
+  changes: {
+    itemName?: { from: string; to: string };
+    department?: { from: string; to: string };
+    blocksGate?: { from: boolean; to: boolean };
+  };
+  templateId: number;
+}
+
+export interface RequirementRemove {
+  requirementId: number;
+  itemCode: string;
+  itemName: string;
+  department: string;
+  currentStatus: string;
+}
+
+export interface StageSyncPlan {
+  projectId: number;
+  stageInstanceId: number;
+  stageCode: string;
+  stageStatus: string;
+  skipped: boolean;
+  skipReason?: string;
+  toAdd: RequirementAdd[];
+  toUpdate: RequirementUpdate[];
+  toRemove: RequirementRemove[];
+}
+
+/**
+ * Compute, per project, what would change on the named stage if the
+ * current-version templates were applied. Closed stages are returned
+ * with `skipped: true` and an empty plan — their snapshots are sacred
+ * (§6). A dry-run-safe function; no writes.
+ */
+export async function diffTemplateVsOpenStages(stageCode: string): Promise<StageSyncPlan[]> {
+  const templates = await db
+    .select()
+    .from(stageChecklistTemplates)
+    .where(and(
+      eq(stageChecklistTemplates.stageCode, stageCode),
+      eq(stageChecklistTemplates.isActive, true),
+      eq(stageChecklistTemplates.isCurrentVersion, true),
+    ));
+
+  const templateByItemCode = new Map<string, typeof templates[number]>();
+  for (const t of templates) templateByItemCode.set(t.itemCode, t);
+
+  const stages = await db
+    .select()
+    .from(projectStageInstances)
+    .where(eq(projectStageInstances.stageCode, stageCode));
+
+  const plans: StageSyncPlan[] = [];
+  for (const stage of stages) {
+    const stageStatus = stage.stageStatus?.toLowerCase() ?? '';
+    if (CLOSED_STAGE_STATUSES.has(stageStatus)) {
+      plans.push({
+        projectId: stage.projectId,
+        stageInstanceId: stage.id,
+        stageCode,
+        stageStatus,
+        skipped: true,
+        skipReason: `Stage is ${stageStatus}; snapshot is immutable.`,
+        toAdd: [],
+        toUpdate: [],
+        toRemove: [],
+      });
+      continue;
+    }
+
+    const existing = await db
+      .select()
+      .from(projectStageRequirements)
+      .where(eq(projectStageRequirements.stageInstanceId, stage.id));
+
+    const existingByItemCode = new Map<string, typeof existing[number]>();
+    for (const r of existing) existingByItemCode.set(r.itemCode, r);
+
+    const toAdd: RequirementAdd[] = [];
+    const toUpdate: RequirementUpdate[] = [];
+    const toRemove: RequirementRemove[] = [];
+
+    for (const t of templates) {
+      const match = existingByItemCode.get(t.itemCode);
+      if (!match) {
+        toAdd.push({
+          itemCode: t.itemCode,
+          itemName: t.itemName,
+          department: t.department,
+          blocksGate: t.blocksGate,
+          templateId: t.id,
+          templateVersion: t.version,
+        });
+        continue;
+      }
+      if (match.templateVersionAtHydrate === t.version) continue;
+      const changes: RequirementUpdate['changes'] = {};
+      if (match.itemName !== t.itemName) changes.itemName = { from: match.itemName, to: t.itemName };
+      if (match.department !== t.department) changes.department = { from: match.department, to: t.department };
+      if (match.blocksGate !== t.blocksGate) changes.blocksGate = { from: match.blocksGate, to: t.blocksGate };
+      if (Object.keys(changes).length === 0 && match.templateVersionAtHydrate === t.version) continue;
+      toUpdate.push({
+        requirementId: match.id,
+        itemCode: match.itemCode,
+        fromVersion: match.templateVersionAtHydrate,
+        toVersion: t.version,
+        changes,
+        templateId: t.id,
+      });
+    }
+
+    for (const r of existing) {
+      if (!templateByItemCode.has(r.itemCode)) {
+        // Manual/project-specific requirements (no source template) are
+        // explicitly protected from template sync removals.
+        if (!r.sourceTemplateId) continue;
+        toRemove.push({
+          requirementId: r.id,
+          itemCode: r.itemCode,
+          itemName: r.itemName,
+          department: r.department,
+          currentStatus: r.status,
+        });
+      }
+    }
+
+    plans.push({
+      projectId: stage.projectId,
+      stageInstanceId: stage.id,
+      stageCode,
+      stageStatus,
+      skipped: false,
+      toAdd,
+      toUpdate,
+      toRemove,
+    });
+  }
+
+  return plans;
+}
+
+export interface ApplyTemplateSyncParams {
+  stageCode: string;
+  actorUserId: number;
+  actorRole: string;
+  reason: string;
+}
+
+export interface ApplyTemplateSyncResult {
+  stageCode: string;
+  projectsTouched: number;
+  projectsSkipped: number;
+  added: number;
+  updated: number;
+  removed: number;
+}
+
+/**
+ * Apply the diff computed by diffTemplateVsOpenStages. COO_ADMIN / CEO_ADMIN
+ * only. Closed stages are skipped. Each touched project gets a
+ * `template_sync` decision row so the audit trail points at who pulled
+ * the new template version onto which stages and why.
+ *
+ * Removals here soft-drop the requirement row (hard delete) because it is
+ * no longer in the current template. Projects that need to retain a
+ * deprecated requirement must hold it via a project-level template
+ * override (already supported by template-governance-routes.ts).
+ */
+export async function applyTemplateSync(params: ApplyTemplateSyncParams): Promise<ApplyTemplateSyncResult> {
+  const { stageCode, actorUserId, actorRole, reason } = params;
+
+  if (!STAGE_REOPEN_ROLES.has(actorRole)) {
+    throw new Error(`Only COO_ADMIN or CEO_ADMIN may apply a template sync; actor role=${actorRole}.`);
+  }
+  if (!reason || reason.trim().length < 10) {
+    throw new Error(`Template sync requires a reason of at least 10 characters.`);
+  }
+
+  const plans = await diffTemplateVsOpenStages(stageCode);
+
+  let projectsTouched = 0;
+  let projectsSkipped = 0;
+  let added = 0;
+  let updated = 0;
+  let removed = 0;
+
+  for (const plan of plans) {
+    if (plan.skipped) { projectsSkipped += 1; continue; }
+    const hasChanges = plan.toAdd.length + plan.toUpdate.length + plan.toRemove.length > 0;
+    if (!hasChanges) continue;
+
+    for (const add of plan.toAdd) {
+      await db.insert(projectStageRequirements).values({
+        projectId: plan.projectId,
+        stageInstanceId: plan.stageInstanceId,
+        stageCode: plan.stageCode,
+        department: add.department,
+        itemName: add.itemName,
+        itemCode: add.itemCode,
+        blocksGate: add.blocksGate,
+        status: 'not_started',
+        sourceTemplateId: add.templateId,
+        templateVersionAtHydrate: add.templateVersion,
+      });
+      added += 1;
+    }
+
+    for (const upd of plan.toUpdate) {
+      const patch: Record<string, any> = {
+        templateVersionAtHydrate: upd.toVersion,
+        sourceTemplateId: upd.templateId,
+        updatedAt: new Date(),
+      };
+      if (upd.changes.itemName) patch.itemName = upd.changes.itemName.to;
+      if (upd.changes.department) patch.department = upd.changes.department.to;
+      if (upd.changes.blocksGate !== undefined) patch.blocksGate = upd.changes.blocksGate.to;
+      await db.update(projectStageRequirements).set(patch).where(eq(projectStageRequirements.id, upd.requirementId));
+      updated += 1;
+    }
+
+    for (const rm of plan.toRemove) {
+      await db.delete(projectStageRequirements).where(eq(projectStageRequirements.id, rm.requirementId));
+      removed += 1;
+    }
+
+    await db.insert(projectStageDecisions).values({
+      projectId: plan.projectId,
+      stageCode: plan.stageCode,
+      decisionType: 'template_sync',
+      decisionSummary: `Template sync applied to stage ${plan.stageCode}: +${plan.toAdd.length} / ~${plan.toUpdate.length} / -${plan.toRemove.length}`,
+      decidedByUserId: actorUserId,
+      decidedDate: new Date(),
+      rationale: reason.trim(),
+    });
+
+    // Requirement set changed — recompute readiness.
+    const refreshed = await db
+      .select()
+      .from(projectStageRequirements)
+      .where(eq(projectStageRequirements.stageInstanceId, plan.stageInstanceId));
+    const readiness = computeReadinessPct(refreshed);
+    await db
+      .update(projectStageInstances)
+      .set({ readinessPct: readiness, updatedAt: new Date() })
+      .where(eq(projectStageInstances.id, plan.stageInstanceId));
+    await syncCurrentStage(plan.projectId);
+
+    projectsTouched += 1;
+  }
+
+  return { stageCode, projectsTouched, projectsSkipped, added, updated, removed };
 }
 
 // ── Stage Transition ────────────────────────────────────────
@@ -512,19 +850,37 @@ export async function transitionStageStatus(params: TransitionParams): Promise<P
 
 // ── Requirement Updates ─────────────────────────────────────
 
+// §6: once a stage has been closed (gate decision recorded + snapshot taken),
+// its requirements become audit records. Editing them silently would change
+// the historical readinessPct without leaving a trail — see
+// captureStageGateSnapshot. Only COO_ADMIN / CEO_ADMIN may reopen, and they
+// must provide a justification which is persisted to project_stage_decisions.
+export const CLOSED_STAGE_STATUSES = new Set<string>([
+  'approved',
+  'progressed',
+  'exception_approved',
+]);
+
+export const STAGE_REOPEN_ROLES = new Set<string>([
+  'COO_ADMIN',
+  'CEO_ADMIN',
+]);
+
 export interface UpdateRequirementParams {
   requirementId: number;
   status: string;
   actorUserId: number;
+  actorRole?: string;
   evidenceUrl?: string;
   notes?: string;
+  reopenReason?: string;
 }
 
 /**
  * Update a requirement status and recalculate readiness.
  */
 export async function updateRequirementStatus(params: UpdateRequirementParams) {
-  const { requirementId, status, actorUserId, evidenceUrl, notes } = params;
+  const { requirementId, status, actorUserId, actorRole, evidenceUrl, notes, reopenReason } = params;
 
   const [req] = await db
     .select()
@@ -533,6 +889,36 @@ export async function updateRequirementStatus(params: UpdateRequirementParams) {
 
   if (!req) {
     throw new Error(`Requirement ${requirementId} not found`);
+  }
+
+  // §6 immutability guard: block edits on requirements whose parent stage
+  // has already closed, unless an authorised role supplies a reopen reason.
+  const [parentStage] = await db
+    .select()
+    .from(projectStageInstances)
+    .where(eq(projectStageInstances.id, req.stageInstanceId));
+
+  const parentStatus = parentStage?.stageStatus?.toLowerCase() ?? '';
+  if (parentStage && CLOSED_STAGE_STATUSES.has(parentStatus)) {
+    if (!actorRole || !STAGE_REOPEN_ROLES.has(actorRole)) {
+      throw new Error(
+        `Stage ${parentStage.stageCode} is closed (${parentStatus}); only COO_ADMIN or CEO_ADMIN may modify its requirements.`,
+      );
+    }
+    if (!reopenReason || reopenReason.trim().length < 10) {
+      throw new Error(
+        `Reopening a closed stage requires a reopenReason of at least 10 characters.`,
+      );
+    }
+    await db.insert(projectStageDecisions).values({
+      projectId: req.projectId,
+      stageCode: req.stageCode,
+      decisionType: 'stage_reopen',
+      decisionSummary: `Requirement ${req.itemCode} modified on closed stage ${parentStage.stageCode} (status=${parentStatus})`,
+      decidedByUserId: actorUserId,
+      decidedDate: new Date(),
+      rationale: reopenReason.trim(),
+    });
   }
 
   const updateData: Record<string, any> = {
@@ -875,4 +1261,277 @@ export async function advanceToStage(params: {
   await syncCurrentStage(projectId);
 
   return { skipped, currentStage: targetStageCode };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TERMINAL BRANCH TRANSITIONS — Hold / Resume / Done
+// ─────────────────────────────────────────────────────────────────────────────
+// These handlers move a project into one of the two terminal "branch" phases
+// (S_HOLD, S_DONE) and back. They were added 2026-04-24 alongside migration
+// 0030_canonical_lifecycle_phases_v2.sql which introduced the terminal codes
+// and the project_execution_state.previous_phase column.
+//
+// Contract:
+//   - placeProjectOnHold: captures the outgoing sequential stage code on
+//     project_execution_state.previous_phase, ensures an S_HOLD stage
+//     instance exists, sets project_status='hold', and records a
+//     STAGE_OVERRIDE decision for the audit trail.
+//   - resumeProjectFromHold: reads previous_phase, restores it as the
+//     current stage, sets project_status='active', clears previous_phase,
+//     and records the resume in the decisions table. Throws if the project
+//     is not currently on S_HOLD or if there is no previous_phase recorded.
+//   - markProjectDone: ensures an S_DONE stage instance exists, sets
+//     project_status='closed', and records the closure decision. Done is
+//     permanent — there is no resume from S_DONE.
+//
+// All three are intentionally additive: they do not delete the prior
+// sequential stage instances, so the historical audit trail (gate
+// evaluations, evidence, decisions) is preserved across the round-trip.
+
+interface TerminalTransitionParams {
+  projectId: number;
+  actorUserId: number;
+  reason?: string;
+}
+
+async function ensureTerminalStageInstance(
+  projectId: number,
+  stageCode: 'S_HOLD' | 'S_DONE',
+  now: Date,
+): Promise<ProjectStageInstance> {
+  const [existing] = await db
+    .select()
+    .from(projectStageInstances)
+    .where(
+      and(
+        eq(projectStageInstances.projectId, projectId),
+        eq(projectStageInstances.stageCode, stageCode),
+      ),
+    );
+
+  if (existing) {
+    const [updated] = await db
+      .update(projectStageInstances)
+      .set({
+        stageStatus: 'IN_PROGRESS',
+        startedAt: existing.startedAt ?? now,
+        updatedAt: now,
+      })
+      .where(eq(projectStageInstances.id, existing.id))
+      .returning();
+    return updated;
+  }
+
+  const [created] = await db
+    .insert(projectStageInstances)
+    .values({
+      projectId,
+      stageCode,
+      stageStatus: 'IN_PROGRESS',
+      readinessPct: 0,
+      startedAt: now,
+    })
+    .returning();
+  return created;
+}
+
+export async function placeProjectOnHold(params: TerminalTransitionParams): Promise<{
+  previousPhase: StageCode | null;
+  stageInstanceId: number;
+}> {
+  const { projectId, actorUserId, reason } = params;
+  const now = new Date();
+
+  // Read current sequential stage so we can preserve it for resume.
+  const [execState] = await db
+    .select({
+      currentStageCode: projectExecutionState.currentStageCode,
+      previousPhase: projectExecutionState.previousPhase,
+    })
+    .from(projectExecutionState)
+    .where(eq(projectExecutionState.projectId, projectId));
+
+  const outgoing = execState?.currentStageCode as StageCode | null | undefined;
+  // Only preserve the outgoing stage when it is a real sequential phase —
+  // never overwrite previous_phase with another terminal code.
+  const previousToPersist =
+    outgoing && !TERMINAL_STAGE_CODES.has(outgoing) ? outgoing : execState?.previousPhase ?? null;
+
+  const holdInstance = await ensureTerminalStageInstance(projectId, 'S_HOLD', now);
+
+  // Defensive upsert: a brand-new project may not have an exec state row
+  // yet (initialiseStages is not always run before a manual hold). A
+  // plain UPDATE would silently no-op and leave the project_status flip
+  // hanging without a current_stage_code, so use ON CONFLICT to either
+  // insert the row or update it in a single statement.
+  await db
+    .insert(projectExecutionState)
+    .values({
+      projectId,
+      currentStageCode: 'S_HOLD',
+      previousPhase: previousToPersist ?? null,
+    })
+    .onConflictDoUpdate({
+      target: projectExecutionState.projectId,
+      set: {
+        currentStageCode: 'S_HOLD',
+        previousPhase: previousToPersist ?? null,
+        updatedAt: now,
+      },
+    });
+
+  await db
+    .update(projectInfo)
+    .set({ projectStatus: 'hold', updatedAt: now })
+    .where(eq(projectInfo.id, projectId));
+
+  await db.insert(projectStageDecisions).values({
+    projectId,
+    stageCode: 'S_HOLD',
+    decisionType: 'STAGE_OVERRIDE',
+    decisionSummary: `Project placed on hold${
+      previousToPersist ? ` (preserved phase ${previousToPersist} for resume)` : ''
+    }${reason ? ': ' + reason : ''}`,
+    decidedByUserId: actorUserId,
+    decidedDate: now,
+    rationale: reason ?? 'Placed on hold via terminal-branch transition',
+  });
+
+  return {
+    previousPhase: (previousToPersist ?? null) as StageCode | null,
+    stageInstanceId: holdInstance.id,
+  };
+}
+
+export async function resumeProjectFromHold(params: TerminalTransitionParams): Promise<{
+  resumedTo: StageCode;
+}> {
+  const { projectId, actorUserId, reason } = params;
+  const now = new Date();
+
+  const [execState] = await db
+    .select({
+      currentStageCode: projectExecutionState.currentStageCode,
+      previousPhase: projectExecutionState.previousPhase,
+    })
+    .from(projectExecutionState)
+    .where(eq(projectExecutionState.projectId, projectId));
+
+  if (!execState) {
+    throw new Error(`Cannot resume: project ${projectId} has no execution state`);
+  }
+  if (execState.currentStageCode !== 'S_HOLD') {
+    throw new Error(
+      `Cannot resume: project ${projectId} is not on S_HOLD (current=${execState.currentStageCode ?? 'null'})`,
+    );
+  }
+  const target = execState.previousPhase as StageCode | null;
+  if (!target) {
+    throw new Error(
+      `Cannot resume: project ${projectId} has no previous_phase recorded — use advanceToStage to pick a stage explicitly`,
+    );
+  }
+  if (TERMINAL_STAGE_CODES.has(target)) {
+    throw new Error(
+      `Cannot resume: previous_phase is itself a terminal code (${target}). Use advanceToStage instead.`,
+    );
+  }
+  // Defence-in-depth: previous_phase is written straight into
+  // current_stage_code below. If a legacy backfill or a manual SQL edit
+  // ever leaves a non-canonical label here (e.g. "Construction" from a
+  // pre-task-#81 export), refuse rather than corrupt the lifecycle row.
+  // Migration 0030_canonical_lifecycle_phases_v2.sql step 7a guarantees
+  // canonical codes for held projects, but this guard keeps the contract
+  // safe against future regressions.
+  if (!(SEQUENTIAL_STAGE_CODES as readonly string[]).includes(target)) {
+    throw new Error(
+      `Cannot resume: previous_phase '${target}' is not a canonical sequential stage code — use advanceToStage to pick a stage explicitly`,
+    );
+  }
+
+  // Close out the S_HOLD instance so the audit trail shows it as ended.
+  await db
+    .update(projectStageInstances)
+    .set({
+      stageStatus: 'PROGRESSED',
+      completedAt: now,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(projectStageInstances.projectId, projectId),
+        eq(projectStageInstances.stageCode, 'S_HOLD'),
+      ),
+    );
+
+  await db
+    .update(projectExecutionState)
+    .set({
+      currentStageCode: target,
+      previousPhase: null,
+      updatedAt: now,
+    })
+    .where(eq(projectExecutionState.projectId, projectId));
+
+  await db
+    .update(projectInfo)
+    .set({ projectStatus: 'active', updatedAt: now })
+    .where(eq(projectInfo.id, projectId));
+
+  await db.insert(projectStageDecisions).values({
+    projectId,
+    stageCode: 'S_HOLD',
+    decisionType: 'STAGE_OVERRIDE',
+    decisionSummary: `Project resumed from hold to ${target}${reason ? ': ' + reason : ''}`,
+    decidedByUserId: actorUserId,
+    decidedDate: now,
+    rationale: reason ?? 'Resumed from terminal Hold branch',
+  });
+
+  return { resumedTo: target };
+}
+
+export async function markProjectDone(params: TerminalTransitionParams): Promise<{
+  stageInstanceId: number;
+}> {
+  const { projectId, actorUserId, reason } = params;
+  const now = new Date();
+
+  const doneInstance = await ensureTerminalStageInstance(projectId, 'S_DONE', now);
+
+  // Defensive upsert (same rationale as placeProjectOnHold): cover the
+  // edge case where a project is closed before initialiseStages has
+  // ever run, so a plain UPDATE would silently no-op.
+  await db
+    .insert(projectExecutionState)
+    .values({
+      projectId,
+      currentStageCode: 'S_DONE',
+    })
+    .onConflictDoUpdate({
+      target: projectExecutionState.projectId,
+      set: {
+        currentStageCode: 'S_DONE',
+        // previous_phase intentionally preserved as observability data —
+        // S_DONE is permanent so there is no resume that would consume it.
+        updatedAt: now,
+      },
+    });
+
+  await db
+    .update(projectInfo)
+    .set({ projectStatus: 'closed', updatedAt: now })
+    .where(eq(projectInfo.id, projectId));
+
+  await db.insert(projectStageDecisions).values({
+    projectId,
+    stageCode: 'S_DONE',
+    decisionType: 'STAGE_OVERRIDE',
+    decisionSummary: `Project marked Done (terminal closure)${reason ? ': ' + reason : ''}`,
+    decidedByUserId: actorUserId,
+    decidedDate: now,
+    rationale: reason ?? 'Closed via terminal Done branch',
+  });
+
+  return { stageInstanceId: doneInstance.id };
 }

@@ -2,17 +2,19 @@
 // Fix guide: use queryStr/queryInt from server/lib/req-parse for query params,
 // add explicit ': any' to .map/.filter callback params on db result rows.
 import { Router, Request, Response, NextFunction } from "express";
-import { paramStr } from "./lib/req-params";
+import { paramStr, parseIntParam } from "./lib/req-params";
 import { db } from "./db";
 import { normalizedCostLines, counterparties, projectInfo, invoicePatternRules } from "@shared/schema";
 import { encryptField, decryptField } from "./lib/field-encryption";
-import { eq, sql, and, isNull } from "drizzle-orm";
-import { softCloseRows, addTemporalColumns, dedupeCostLineInserts } from "./lib/temporal-helpers";
+import { eq, sql, and, isNull, or } from "drizzle-orm";
+import { softCloseRows, softCloseByCondition, addTemporalColumns, dedupeCostLineInserts } from "./lib/temporal-helpers";
 import { normalizeCostLineStatus } from "./lib/import/utils";
 import { extractSupplierName } from "./lib/calculations/supplierExtractor";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
-import { jwtAuth, requireAuth } from "./auth-context";
+import { jwtAuth, requireAuth, getEffectiveUser } from "./auth-context";
+
+const BANK_DETAIL_ROLES = new Set(["COO_ADMIN", "CEO_ADMIN", "CFO", "ACCOUNTANT"]);
 const router = Router();
 
 function toPositiveInt(value: unknown): number | null {
@@ -190,7 +192,7 @@ router.get("/api/subcontractor-dashboard/summary", requireAuth, async (req: Requ
     });
   } catch (err: any) {
     console.error("[subcontractor-dashboard] Error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -328,7 +330,7 @@ router.get("/api/subcontractor-dashboard/detail/:name", requireAuth, async (req:
     });
   } catch (err: any) {
     console.error("[subcontractor-detail] Error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -507,7 +509,7 @@ router.post("/api/procurement-analysis/run", requireAuth, requirePermission('pro
     });
   } catch (err: any) {
     console.error("[procurement-analysis] Error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -521,7 +523,7 @@ router.get("/api/procurement-analysis/status", requireAuth, async (_req: Request
       sourceExpenses: Number(costResult.count),
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -555,6 +557,7 @@ router.patch("/api/subcontractor-dashboard/rename", requireAuth, requirePermissi
           .where(eq(counterparties.id, oldCp[0].id));
       }
 
+      // Intentional: rewrites historical snapshots so renamed counterparty is consistent in past invoices.
       const updated = await tx.update(normalizedCostLines)
         .set({ counterpartyName: trimmedNew })
         .where(sql`LOWER(TRIM(${normalizedCostLines.counterpartyName})) = LOWER(${oldName.trim()})`);
@@ -564,7 +567,7 @@ router.patch("/api/subcontractor-dashboard/rename", requireAuth, requirePermissi
     res.json({ success: true, oldName, newName: trimmedNew });
   } catch (err: any) {
     console.error("[subcontractor-rename] Error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -584,11 +587,22 @@ router.delete("/api/subcontractor-dashboard/counterparty/:name", requireAuth, re
       if (cpRows.length > 0) {
         const cpId = cpRows[0].id;
         // Temporal: soft-close cost lines instead of hard delete (Prompt 10)
-        await softCloseRows(tx, "normalized_cost_lines", `counterparty_id = ${cpId} OR LOWER(TRIM(counterparty_name)) = '${normalized.replace(/'/g, "''")}'`);
+        await softCloseByCondition(
+          tx,
+          normalizedCostLines,
+          or(
+            eq(normalizedCostLines.counterpartyId, cpId),
+            sql`LOWER(TRIM(${normalizedCostLines.counterpartyName})) = ${normalized}`,
+          ),
+        );
         await tx.delete(counterparties).where(eq(counterparties.id, cpId));
       } else {
         // Temporal: soft-close cost lines instead of hard delete (Prompt 10)
-        await softCloseRows(tx, "normalized_cost_lines", `LOWER(TRIM(counterparty_name)) = '${normalized.replace(/'/g, "''")}'`);
+        await softCloseByCondition(
+          tx,
+          normalizedCostLines,
+          sql`LOWER(TRIM(${normalizedCostLines.counterpartyName})) = ${normalized}`,
+        );
       }
     });
 
@@ -596,7 +610,7 @@ router.delete("/api/subcontractor-dashboard/counterparty/:name", requireAuth, re
     res.json({ success: true, deleted: name });
   } catch (err: any) {
     console.error("[subcontractor-delete] Error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -620,10 +634,12 @@ router.patch("/api/subcontractor-dashboard/counterparty/:name/type", requireAuth
           .set({ typeDefault: type, lastSeenAt: new Date() })
           .where(eq(counterparties.id, cpId));
 
+        // Intentional: rewrites historical snapshots so type reclassification flows through to past reports.
         await tx.update(normalizedCostLines)
           .set({ counterpartyType: type })
           .where(sql`${normalizedCostLines.counterpartyId} = ${cpId} OR LOWER(TRIM(${normalizedCostLines.counterpartyName})) = ${normalized}`);
       } else {
+        // Intentional: same as above for the no-counterparty-row branch.
         await tx.update(normalizedCostLines)
           .set({ counterpartyType: type })
           .where(sql`LOWER(TRIM(${normalizedCostLines.counterpartyName})) = ${normalized}`);
@@ -634,7 +650,7 @@ router.patch("/api/subcontractor-dashboard/counterparty/:name/type", requireAuth
     res.json({ success: true, name, type });
   } catch (err: any) {
     console.error("[subcontractor-type] Error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -696,12 +712,14 @@ router.post("/api/subcontractor-dashboard/merge", requireAuth, requirePermission
           const srcAliases = Array.isArray(srcCp[0].nameAliases) ? srcCp[0].nameAliases as string[] : [];
           mergedAliases.push(...srcAliases);
 
+          // Intentional: rewrites historical snapshots to point at the merged counterparty.
           await tx.update(normalizedCostLines)
             .set({ counterpartyName: trimmedTarget, counterpartyId: targetCpId })
             .where(sql`${normalizedCostLines.counterpartyId} = ${srcId} OR LOWER(TRIM(${normalizedCostLines.counterpartyName})) = ${srcNorm}`);
 
           await tx.delete(counterparties).where(eq(counterparties.id, srcId));
         } else {
+          // Intentional: same as above for the source-counterparty-not-found branch.
           await tx.update(normalizedCostLines)
             .set({ counterpartyName: trimmedTarget, counterpartyId: targetCpId })
             .where(sql`LOWER(TRIM(${normalizedCostLines.counterpartyName})) = ${srcNorm}`);
@@ -740,7 +758,7 @@ router.post("/api/subcontractor-dashboard/merge", requireAuth, requirePermission
     res.json({ success: true, merged: sourceNames, into: trimmedTarget });
   } catch (err: any) {
     console.error("[subcontractor-merge] Error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -833,7 +851,7 @@ router.post("/api/subcontractor-dashboard/link-counterparty", requireAuth, requi
     res.json({ success: true, linked: normalizedLineIds.length, counterpartyName: cpName, patternCreated });
   } catch (err: any) {
     console.error("[subcontractor-link] Error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -896,7 +914,7 @@ router.get("/api/subcontractor-dashboard/overdue", requireAuth, async (req: Requ
     });
   } catch (err: any) {
     console.error("[subcontractor-overdue] Error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -944,13 +962,28 @@ router.get("/api/subcontractor-dashboard/supplier-details/:name", requireAuth, a
     if (!row) {
       return res.json({ exists: false, name: req.params.name });
     }
-    // Phase 3: Decrypt bank fields before returning to caller.
-    // decryptField() is safe for unencrypted legacy values (returns as-is).
+    // Bank fields are sensitive — only return decrypted values to finance roles.
+    // Non-finance callers receive null in those slots so the existing UI fields
+    // (name, contacts, address, payment_terms, etc.) keep working.
+    const callerRole = getEffectiveUser(req)?.role ?? "";
+    const canSeeBankDetails = BANK_DETAIL_ROLES.has(callerRole);
+    if (canSeeBankDetails) {
+      logAuditFromReq(req, {
+        entityType: "counterparty",
+        entityId: String(row.id ?? ""),
+        action: "read_bank_details",
+        changesJson: { name: row.name_canonical },
+      });
+    }
     res.json({
       exists: true,
       ...row,
-      bank_account_number: decryptField(row.bank_account_number as string | null),
-      bank_branch_code: decryptField(row.bank_branch_code as string | null),
+      bank_account_number: canSeeBankDetails
+        ? decryptField(row.bank_account_number as string | null)
+        : null,
+      bank_branch_code: canSeeBankDetails
+        ? decryptField(row.bank_branch_code as string | null)
+        : null,
     });
   } catch (err: any) {
     console.error("[Procurement] Supplier details error:", err.message);
@@ -1038,7 +1071,7 @@ router.get("/api/subcontractor-dashboard/supplier-list", requireAuth, async (_re
 
 router.get("/api/subcontractor-assignments/project/:projectId", requireAuth, async (req: Request, res: Response) => {
   try {
-    const projectId = parseInt(paramStr(req.params.projectId));
+    const projectId = parseIntParam(req.params.projectId);
     if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
     const rows = await db.execute(sql`
       SELECT sa.*, c.name_canonical as supplier_name, u.name as owner_name, p.project_name
@@ -1128,7 +1161,7 @@ router.patch("/api/subcontractor-assignments/:id", requireAuth, requirePermissio
 
 router.delete("/api/subcontractor-assignments/:id", requireAuth, requirePermission("procurement", "delete"), async (req: Request, res: Response) => {
   try {
-    const id = parseInt(paramStr(req.params.id));
+    const id = parseIntParam(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
     await db.execute(sql`DELETE FROM project_subcontractor_assignments WHERE id = ${id}`);

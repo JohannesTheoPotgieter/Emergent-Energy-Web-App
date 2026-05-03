@@ -2,17 +2,17 @@ import React, { useState, useCallback, useEffect } from "react";
 import { AdminPageShell } from "@/components/admin/admin-shell";
 import { isSuperAdmin } from "@/lib/access-control";
 import { Card, CardContent } from "@/components/ui/card";
-import { AlertTriangle, Shield, Users, Eye, ScrollText } from "lucide-react";
-import { RolesSection } from "./roles/roles-section";
+import { AlertTriangle, MonitorOff, Users, Eye, ScrollText } from "lucide-react";
 import { UsersSection } from "./users/users-section";
 import { VisibilitySection } from "./visibility/visibility-section";
 import { AuditSection } from "./audit/audit-section";
+import { ScreensSection } from "./screens/screens-section";
 import type { AdminSettingsSection } from "./settings-types";
 
 const SETTINGS_NAV: Array<{ key: AdminSettingsSection; label: string; icon: React.ElementType }> = [
-  { key: "roles", label: "Roles & Permissions", icon: Shield },
   { key: "users", label: "Users", icon: Users },
   { key: "visibility", label: "Visibility", icon: Eye },
+  { key: "screens", label: "Screen Availability", icon: MonitorOff },
   { key: "audit", label: "Audit Log", icon: ScrollText },
 ];
 
@@ -20,7 +20,7 @@ function getInitialSection(): AdminSettingsSection {
   const params = new URLSearchParams(window.location.search);
   const section = params.get("section");
   if (section && SETTINGS_NAV.some((n) => n.key === section)) return section as AdminSettingsSection;
-  return "roles";
+  return "users";
 }
 
 export default function AdminSettingsPage() {
@@ -44,7 +44,14 @@ export default function AdminSettingsPage() {
 }
 
 function AdminSettingsContent() {
-  const [activeSection, setActiveSection] = useState<AdminSettingsSection>(getInitialSection);
+  const [activeSection, setActiveSection] = useState<AdminSettingsSection>(() => {
+    const initial = getInitialSection();
+    if (initial === "roles") {
+      window.location.replace("/admin/roles");
+      return "users";
+    }
+    return initial;
+  });
 
   const navigateSection = useCallback((section: AdminSettingsSection) => {
     setActiveSection(section);
@@ -54,7 +61,14 @@ function AdminSettingsContent() {
   }, []);
 
   useEffect(() => {
-    const handlePopState = () => setActiveSection(getInitialSection());
+    const handlePopState = () => {
+      const next = getInitialSection();
+      if (next === "roles") {
+        window.location.replace("/admin/roles");
+        return;
+      }
+      setActiveSection(next);
+    };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
@@ -94,9 +108,9 @@ function AdminSettingsContent() {
 
         {/* Content Area — full width */}
         <div className="min-w-0">
-          {activeSection === "roles" && <RolesSection />}
           {activeSection === "users" && <UsersSection />}
           {activeSection === "visibility" && <VisibilitySection />}
+          {activeSection === "screens" && <ScreensSection />}
           {activeSection === "audit" && <AuditSection />}
         </div>
       </div>

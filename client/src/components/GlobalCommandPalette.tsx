@@ -4,8 +4,49 @@ import { CommandDialog, CommandInput, CommandList, CommandEmpty, CommandGroup, C
 import { PAGE_REGISTRY } from "@/config/page-registry";
 import { useAccessMatrix } from "@/hooks/use-access-matrix";
 import { getAvailableQuickCreateActions } from "@/lib/action-access";
-import { Navigation, Search, Plus, ArrowRight, Zap } from "lucide-react";
+import {
+  Navigation, Search, Plus, ArrowRight, Zap,
+  FileText, FolderOpen, Receipt, User, Briefcase, Hash,
+} from "lucide-react";
 import { useRolloutFlag } from "@/hooks/use-rollout-flag";
+
+interface ServerSearchResult {
+  id: string;
+  title: string;
+  subtitle?: string;
+  type: string;
+  url?: string | null;
+}
+
+// Icon for each server-search result type — consistent iconography across
+// entity kinds so users learn the visual language fast.
+function iconFor(type: string) {
+  switch (type) {
+    case "project": return FolderOpen;
+    case "client": return User;
+    case "invoice":
+    case "po": return Receipt;
+    case "task":
+    case "engineering":
+    case "quality": return Briefcase;
+    case "document":
+    case "file": return FileText;
+    case "cost":
+    case "revenue": return Hash;
+    default: return Search;
+  }
+}
+
+// Group header for each result type.
+function groupFor(type: string): string {
+  if (type === "project") return "Projects";
+  if (type === "client") return "Clients / Installers";
+  if (["invoice", "po"].includes(type)) return "Invoices & POs";
+  if (["task", "engineering", "quality"].includes(type)) return "Work Items";
+  if (["cost", "revenue"].includes(type)) return "Finance lines";
+  if (["document", "file"].includes(type)) return "Documents";
+  return "People";
+}
 
 const NAV_ITEMS = PAGE_REGISTRY.filter(
   (p) => p.showInSidebar && p.routeComponentKey && !p.redirectTo
@@ -18,9 +59,51 @@ const NAV_ITEMS = PAGE_REGISTRY.filter(
 export function GlobalCommandPalette() {
   const [open, setOpen] = useState(false);
   const [recent, setRecent] = useState<Array<{ path: string; label: string }>>([]);
+  const [query, setQuery] = useState("");
+  const [serverResults, setServerResults] = useState<ServerSearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
   const [, setLocation] = useLocation();
   const { canViewPath, canAccessEntityAction } = useAccessMatrix();
   const { enabled: actionLaunchpadEnabled } = useRolloutFlag("action_launchpad");
+
+  // Debounced server-side search. Covers projects, clients, invoices,
+  // POs, work items, documents, people — federated via /api/search.
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (trimmed.length < 2) {
+      setServerResults([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(trimmed)}&limit=20`, {
+          credentials: "include",
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setServerResults(Array.isArray(data?.results) ? data.results : []);
+        } else {
+          setServerResults([]);
+        }
+      } catch {
+        setServerResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  const groupedServerResults = useMemo(() => {
+    const groups = new Map<string, ServerSearchResult[]>();
+    for (const r of serverResults) {
+      const g = groupFor(r.type);
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g)!.push(r);
+    }
+    return groups;
+  }, [serverResults]);
 
   const quickActions = useMemo(() => {
     if (!actionLaunchpadEnabled) return [];
@@ -74,11 +157,68 @@ export function GlobalCommandPalette() {
     {},
   );
 
+  // Manual filter for nav items — so they stay visible when the user
+  // types (cmdk's default shouldFilter would hide anything not matching
+  // the query, including the "Pages" group the user wants always
+  // reachable). Server results are fetched separately and already
+  // filtered server-side; they always render.
+  const q = query.trim().toLowerCase();
+  const filteredVisibleItems = q.length === 0
+    ? visibleItems
+    : visibleItems.filter((item) =>
+      item.label.toLowerCase().includes(q) ||
+      item.group.toLowerCase().includes(q),
+    );
+  const filteredGroups = filteredVisibleItems.reduce<Record<string, typeof visibleItems>>(
+    (acc, item) => {
+      if (!acc[item.group]) acc[item.group] = [];
+      acc[item.group].push(item);
+      return acc;
+    },
+    {},
+  );
+
   return (
-    <CommandDialog open={open} onOpenChange={setOpen}>
-      <CommandInput placeholder="Search or take action... (Ctrl+K)" />
+    <CommandDialog open={open} onOpenChange={setOpen} shouldFilter={false}>
+      <CommandInput
+        placeholder="Search projects, invoices, installers, pages, actions... (⌘K)"
+        value={query}
+        onValueChange={setQuery}
+      />
       <CommandList>
-        <CommandEmpty>No pages or actions found.</CommandEmpty>
+        <CommandEmpty>
+          {searching ? "Searching…" : "No matches. Try a project name, invoice number, or installer."}
+        </CommandEmpty>
+
+        {/* Server-side search results: projects, invoices, installers, etc. */}
+        {Array.from(groupedServerResults.entries()).map(([group, items]) => (
+          <CommandGroup key={`server-${group}`} heading={group}>
+            {items.map((item) => {
+              const Icon = iconFor(item.type);
+              const href = item.url && (item.url.startsWith("/") || item.url.startsWith("http")) ? item.url : null;
+              return (
+                <CommandItem
+                  key={`server-${item.type}-${item.id}`}
+                  value={`${item.title} ${item.subtitle ?? ""} ${item.type}`}
+                  onSelect={() => {
+                    if (href) handleSelect(href, item.title);
+                  }}
+                  disabled={!href}
+                >
+                  <Icon className="h-4 w-4 mr-2 text-muted-foreground" />
+                  <div className="flex flex-col min-w-0 flex-1">
+                    <span className="truncate">{item.title}</span>
+                    {item.subtitle && (
+                      <span className="text-xs text-muted-foreground truncate">{item.subtitle}</span>
+                    )}
+                  </div>
+                </CommandItem>
+              );
+            })}
+          </CommandGroup>
+        ))}
+
+        {groupedServerResults.size > 0 && <CommandSeparator />}
 
         {/* Quick Actions — create, launch */}
         {quickActions.length > 0 && (
@@ -122,7 +262,7 @@ export function GlobalCommandPalette() {
             ))}
           </CommandGroup>
         )}
-        {Object.entries(groups).map(([group, items]) => (
+        {Object.entries(filteredGroups).map(([group, items]) => (
           <CommandGroup key={group} heading={group.replace(/_/g, " ")}>
             {items.map((item) => (
               <CommandItem
