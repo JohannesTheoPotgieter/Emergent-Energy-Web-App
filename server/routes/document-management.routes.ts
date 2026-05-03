@@ -391,6 +391,7 @@ export function registerDocumentManagementRoutes(app: Express): void {
           companyRootId: root.companyRootId,
           driveId: root.driveId,
           driveItemId: uploaded.id,
+          parentDriveItemId: parentItemId,
           name: uploaded.name,
           path: uploaded.path,
           sizeBytes: uploaded.size ?? file.size,
@@ -427,12 +428,24 @@ export function registerDocumentManagementRoutes(app: Express): void {
       const rootDrivePathUc = await getRootDrivePath(root);
       assertAcl(root.scope, pathUnderRoot(uploaded.path, rootDrivePathUc), user.role, "write");
 
+      // D6: thread parentDriveItemId so the workflow can link the
+      // managed_document to a project_folders row when it lands in a
+      // provisioned taxonomy folder. The Graph item carries
+      // parentReference.id; fall back to the request body if the field
+      // isn't on the typed GraphItem.
+      const parentDriveItemId =
+        (uploaded as { parentReference?: { id?: string } }).parentReference?.id ??
+        (typeof (body as { parentItemId?: unknown }).parentItemId === "string"
+          ? ((body as { parentItemId: string }).parentItemId)
+          : null);
+
       const result = await workflow.completeUpload({
         rootScope: root.scope,
         projectId: root.projectId,
         companyRootId: root.companyRootId,
         driveId: root.driveId,
         driveItemId: uploaded.id,
+        parentDriveItemId,
         name: uploaded.name,
         path: uploaded.path,
         sizeBytes: body.sizeBytes ?? uploaded.size ?? null,

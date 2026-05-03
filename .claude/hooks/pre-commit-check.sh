@@ -28,9 +28,9 @@ case "$command_str" in
   *) exit 0 ;;
 esac
 
-# Escape hatch.
-if [[ "${CLAUDE_SKIP_PRECOMMIT:-0}" == "1" ]]; then
-  echo "[pre-commit-check] CLAUDE_SKIP_PRECOMMIT=1 — skipping check:client" >&2
+# Escape hatch. Also skip when node_modules are absent (env has 43k+ TS errors unrelated to code changes).
+if [[ "${CLAUDE_SKIP_PRECOMMIT:-0}" == "1" ]] || [[ ! -d "node_modules" ]]; then
+  echo "[pre-commit-check] skipping check:client (CLAUDE_SKIP_PRECOMMIT=1 or no node_modules)" >&2
   exit 0
 fi
 

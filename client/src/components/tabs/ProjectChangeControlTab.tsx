@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { invalidateProjectV2Queries } from "@/hooks/use-project-v2";
 import { queryClient } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -306,6 +307,7 @@ function ExpandedChangeRequest({ cr }: { cr: ChangeRequest }) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["change-requests", cr.project_id] });
+      invalidateProjectV2Queries(queryClient, cr.project_id);
     },
   });
 
@@ -333,6 +335,7 @@ function ExpandedChangeRequest({ cr }: { cr: ChangeRequest }) {
     onSuccess: () => {
       setEditing(false);
       queryClient.invalidateQueries({ queryKey: ["change-requests", cr.project_id] });
+      invalidateProjectV2Queries(queryClient, cr.project_id);
     },
   });
 
@@ -347,6 +350,7 @@ function ExpandedChangeRequest({ cr }: { cr: ChangeRequest }) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["change-requests", cr.project_id] });
+      invalidateProjectV2Queries(queryClient, cr.project_id);
     },
   });
 
@@ -543,6 +547,7 @@ function CreateChangeRequestDialog({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["change-requests", projectId] });
+      invalidateProjectV2Queries(queryClient, projectId);
       onOpenChange(false);
       resetForm();
     },

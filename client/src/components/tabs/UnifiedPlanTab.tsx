@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { invalidateProjectV2Queries } from "@/hooks/use-project-v2";
 import { apiRequest, invalidateProjectQueries } from "@/lib/queryClient";
 import { createMilestoneFlow, invalidateMilestoneCreationQueries } from "@/lib/milestone-create-flow";
 import { useToast } from "@/hooks/use-toast";
@@ -925,6 +926,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["project-dependencies", projectName] });
       invalidateTaskCaches();
+    invalidateProjectV2Queries(qc, projectId ?? null);
       toast({ title: "Predecessor added" });
     },
     onError: (err: any) => {
@@ -939,6 +941,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["project-dependencies", projectName] });
       invalidateTaskCaches();
+    invalidateProjectV2Queries(qc, projectId ?? null);
       toast({ title: "Predecessor removed" });
     },
     onError: (err: any) => {
@@ -952,6 +955,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     },
     onSuccess: (_data, variables) => {
       invalidateTaskCaches();
+    invalidateProjectV2Queries(qc, projectId ?? null);
     invalidateMilestoneCreationQueries((queryKey) => qc.invalidateQueries({ queryKey }), projectName);
       const field = Object.keys(variables.updates)[0];
       if (field === "percentComplete") toast({ title: "Progress updated" });
@@ -978,6 +982,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: ["planning-tasks", projectName] });
       invalidateTaskCaches();
+    invalidateProjectV2Queries(qc, projectId ?? null);
       setUnlinkedRowSelections(prev => {
         const next = { ...prev };
         delete next[variables.opTaskId];
@@ -1005,6 +1010,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     },
     onSuccess: () => {
       invalidateTaskCaches();
+    invalidateProjectV2Queries(qc, projectId ?? null);
       setNewTaskTitle("");
       toast({ title: "Task created" });
     },
@@ -1019,6 +1025,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     },
     onSuccess: () => {
       invalidateTaskCaches();
+    invalidateProjectV2Queries(qc, projectId ?? null);
     },
     onError: (err: any) => {
       toast({ title: "Structure change failed", description: err?.message || "Could not update plan structure", variant: "destructive" });
@@ -1031,6 +1038,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     },
     onSuccess: () => {
       invalidateTaskCaches();
+    invalidateProjectV2Queries(qc, projectId ?? null);
       toast({ title: "WBS numbering refreshed" });
     },
     onError: (err: any) => {
@@ -1068,6 +1076,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     },
     onSuccess: (_data, ids) => {
       invalidateTaskCaches();
+    invalidateProjectV2Queries(qc, projectId ?? null);
       setSelectedIds(new Set());
       toast({ title: `${ids.length} task(s) deleted` });
     },
@@ -1321,6 +1330,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     }
 
     invalidateTaskCaches();
+    invalidateProjectV2Queries(qc, projectId ?? null);
     invalidateMilestoneCreationQueries((queryKey) => qc.invalidateQueries({ queryKey }), projectName);
     toast({ title: "Milestone created" });
     setMilestoneDialogOpen(false);
@@ -1335,6 +1345,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     },
     onSuccess: () => {
       invalidateTaskCaches();
+    invalidateProjectV2Queries(qc, projectId ?? null);
       toast({ title: "Task number updated" });
     },
     onError: (err: any) => {
@@ -1354,6 +1365,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     },
     onSuccess: () => {
       invalidateTaskCaches();
+    invalidateProjectV2Queries(qc, projectId ?? null);
       toast({ title: "Converted to milestone" });
       setConvertMilestoneDialogOpen(false);
       setConvertMilestoneTask(null);
@@ -1372,6 +1384,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     },
     onSuccess: () => {
       invalidateTaskCaches();
+    invalidateProjectV2Queries(qc, projectId ?? null);
       toast({ title: "Converted to regular task" });
     },
     onError: (err: any) => {
@@ -1391,6 +1404,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     },
     onSuccess: () => {
       invalidateTaskCaches();
+    invalidateProjectV2Queries(qc, projectId ?? null);
       toast({ title: "Tasks grouped & WBS renumbered" });
       setGroupUnderDialogOpen(false);
       setGroupUnderTask(null);
@@ -1412,6 +1426,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     },
     onSuccess: () => {
       invalidateTaskCaches();
+    invalidateProjectV2Queries(qc, projectId ?? null);
       toast({ title: "Task ungrouped & WBS renumbered" });
     },
     onError: (err: any) => {
@@ -1430,6 +1445,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
     },
     onSuccess: () => {
       invalidateTaskCaches();
+    invalidateProjectV2Queries(qc, projectId ?? null);
       toast({ title: "Tasks reordered" });
     },
     onError: (err: any) => {

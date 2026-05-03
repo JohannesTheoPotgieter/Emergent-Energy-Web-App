@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { invalidateProjectV2Queries } from "@/hooks/use-project-v2";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -885,6 +886,7 @@ function CreateProcurementDialog({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["procurement", projectId] });
+      invalidateProjectV2Queries(queryClient, projectId);
       onOpenChange(false);
       setForm({ title: "", description: "", category: "", supplierId: "", quantity: "", unit: "", expectedCost: "", requiredDate: "", ownerUserId: "", notes: "", budgetLine: "", linkedDeliverableId: "", linkedMilestone: "" });
     },
@@ -1913,6 +1915,7 @@ function CaptureInvoiceDialog({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["invoice-captures", projectId] });
+      invalidateProjectV2Queries(queryClient, projectId);
       onOpenChange(false);
       setForm({ invoiceNumber: "", invoiceDate: "", amount: "", vatAmount: "", supplierId: "", linkedPoId: "", linkedProcurementItemId: "", notes: "", budgetLine: "", linkedDeliverableId: "", linkedMilestone: "" });
       setFile(null);

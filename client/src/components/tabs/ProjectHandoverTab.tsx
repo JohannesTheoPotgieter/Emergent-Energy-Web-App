@@ -4,6 +4,7 @@
  */
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { invalidateProjectV2Queries } from "@/hooks/use-project-v2";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -71,6 +72,7 @@ export function ProjectHandoverTab({ projectId, projectName, initialFilter = "al
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/handover/packs", projectId] });
+      invalidateProjectV2Queries(queryClient, projectId);
       toast({ title: "Handover pack created" });
       setShowCreate(false);
     },
