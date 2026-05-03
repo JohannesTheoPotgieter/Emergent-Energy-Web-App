@@ -10,6 +10,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { sanitizeFilename, allowedFileFilter } from "./lib/upload-security";
+import { parseIntParam } from "./lib/req-params";
 
 const uploadDir = path.resolve("uploads/invoices");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -39,7 +40,7 @@ function oldInvoiceRefFallback(id: number): string {
 export function registerInvoiceCaptureRoutes(app: Express): void {
   app.get("/api/invoice-captures/project/:projectId", jwtAuth, requireAuth, requirePermission("procurement", "view"), async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(String(req.params.projectId));
+      const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
 
       const rows = await db.execute(sql`
@@ -78,6 +79,12 @@ export function registerInvoiceCaptureRoutes(app: Express): void {
         }
       }
 
+      logAuditFromReq(req, {
+        entityType: "invoice_capture",
+        action: "create_attempt",
+        changesJson: { invoiceNumber, amount, projectId, linkedPoId, linkedProcurementItemId },
+      });
+
       const result = await db.insert(invoiceCaptures).values({
         projectId: parseInt(projectId),
         supplierId: supplierId ? parseInt(supplierId) : null,
@@ -95,6 +102,13 @@ export function registerInvoiceCaptureRoutes(app: Express): void {
 
 
       if (result[0].linkedProcurementItemId) {
+        logAuditFromReq(req, {
+          entityType: "procurement_item",
+          entityId: String(result[0].linkedProcurementItemId),
+          action: "link_invoice_capture_attempt",
+          changesJson: { invoiceCaptureId: result[0].id, invoiceNumber: result[0].invoiceNumber || oldInvoiceRefFallback(result[0].id) },
+        });
+
         await db.update(procurementItems)
           .set({
             invoiceRef: result[0].invoiceNumber || oldInvoiceRefFallback(result[0].id),
@@ -135,7 +149,7 @@ export function registerInvoiceCaptureRoutes(app: Express): void {
 
   app.patch("/api/invoice-captures/:id", jwtAuth, requireAuth, requirePermission("procurement", "edit"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(String(req.params.id));
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
       const existing = await db.select().from(invoiceCaptures).where(eq(invoiceCaptures.id, id));
@@ -147,6 +161,13 @@ export function registerInvoiceCaptureRoutes(app: Express): void {
       for (const f of fields) {
         if (req.body[f] !== undefined) updates[f] = req.body[f];
       }
+
+      logAuditFromReq(req, {
+        entityType: "invoice_capture",
+        entityId: String(id),
+        action: "update_attempt",
+        changesJson: { updates: req.body },
+      });
 
       const result = await db.update(invoiceCaptures).set(updates).where(eq(invoiceCaptures.id, id)).returning();
 
@@ -167,6 +188,13 @@ export function registerInvoiceCaptureRoutes(app: Express): void {
       }
 
       if (result[0].linkedProcurementItemId) {
+        logAuditFromReq(req, {
+          entityType: "procurement_item",
+          entityId: String(result[0].linkedProcurementItemId),
+          action: "sync_invoice_capture_attempt",
+          changesJson: { invoiceCaptureId: result[0].id, invoiceRef: result[0].invoiceNumber || old.invoiceNumber || `INV-${result[0].id}` },
+        });
+
         await db.update(procurementItems)
           .set({
             invoiceRef: result[0].invoiceNumber || old.invoiceNumber || `INV-${result[0].id}`,
@@ -191,7 +219,7 @@ export function registerInvoiceCaptureRoutes(app: Express): void {
 
   app.delete("/api/invoice-captures/:id", jwtAuth, requireAuth, requirePermission("procurement", "delete"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(String(req.params.id));
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
       const existing = await db.select().from(invoiceCaptures).where(eq(invoiceCaptures.id, id));
@@ -200,6 +228,13 @@ export function registerInvoiceCaptureRoutes(app: Express): void {
       if (existing[0].documentPath) {
         try { fs.unlinkSync(existing[0].documentPath); } catch { /* ignore */ }
       }
+
+      logAuditFromReq(req, {
+        entityType: "invoice_capture",
+        entityId: String(id),
+        action: "delete_attempt",
+        changesJson: { invoiceNumber: existing[0].invoiceNumber },
+      });
 
       const [deleted] = await db.update(invoiceCaptures).set({ deletedAt: new Date(), deletedBy: req.user?.id }).where(eq(invoiceCaptures.id, id)).returning();
 

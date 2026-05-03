@@ -52,7 +52,16 @@ describe("project timeline instrumentation", () => {
     const page = read("client/src/pages/project-detail.tsx");
     const tab = read("client/src/components/tabs/ProjectTimelineTab.tsx");
 
-    expect(page).toContain('subtab-timeline');
+    // Timeline now lives in the Stage Lifecycle block at the top of the page,
+    // co-located with the Critical Control Panel + StageTimeline. The legacy
+    // Engineering "subtab-timeline" was removed; instead we assert the new
+    // disclosure + stage-timeline-inline test ids exist.
+    expect(page).toContain('stage-lifecycle-block');
+    expect(page).toContain('stage-timeline-inline');
+    expect(page).toContain('activity-timeline-disclosure');
+    expect(page).toContain('toggle-activity-timeline');
+    expect(page).not.toContain('subtab-timeline');
+
     expect(tab).toContain('Timeline filters');
     expect(tab).toContain('eventTypes');
     expect(tab).toContain('actorUserId');

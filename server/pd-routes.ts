@@ -3,17 +3,30 @@
 // add explicit ': any' to .map/.filter callback params on db result rows.
 import type { Express, Request, Response } from "express";
 import { db } from "./db";
-import { clients, pdTickets, workItems, workItemAssignments, projectInfo, users, taskActivityLog, PD_REQUEST_TYPE_TASK_TEMPLATES, projectExecutionState, projectPdPmHandover, projectHandoverHistory, pdVisibilityConfig, workstreamVisibilityConfig, opportunities } from "@shared/schema";
+import { clients, engineeringTickets, workItems, workItemAssignments, projectInfo, users, taskActivityLog, PD_REQUEST_TYPE_TASK_TEMPLATES, projectExecutionState, projectPdPmHandover, projectHandoverHistory, pdVisibilityConfig, workstreamVisibilityConfig, opportunities } from "@shared/schema";
 import { eq, ilike, sql, and, desc, asc, or, isNull, inArray } from "drizzle-orm";
 import { getFeatureFlag } from "./lib/feature-flags";
 import { requirePermission } from "./permission-middleware";
 import { getEffectiveWorkstreamVisibility } from "./workstream-visibility-middleware";
 
 import { requireAuth } from "./auth-context";
+import { requireRole } from "./middleware/requireRole";
 import { canViewAllTickets, ENGINEERING_REQUEST_TYPES } from "@shared/roles/pd-roles";
-import { paramStr } from "./lib/req-params";
+import { paramStr, parseIntParam } from "./lib/req-params";
+import { getFyWindow } from "./lib/fy-window";
 import { insertClientWithGeneratedId } from "./lib/client-id-generator";
 import { logAuditFromReq } from "./audit-logger";
+import { registerClientsMergeRoutes } from "./routes/clients-merge-routes";
+import {
+  ENGINEERING_TICKET_DEFAULT_STATUS,
+  isTicketDoneForReporting,
+  isTicketBlocked,
+  normalizeEngineeringTicketStatus,
+} from "@shared/engineering-ticket-status";
+import {
+  syncTicketEditToWorkItem,
+  ticketPriorityToWorkItemPriority,
+} from "./work-items-adapter";
 
 /**
  * Resolve the effective PD visibility config for a user.
@@ -137,12 +150,12 @@ async function filterTicketsByRole<T extends Record<string, any>>(
     let assignedIds = engineerAssignedTicketIds;
     if (!assignedIds) {
       const rows = await db
-        .select({ pdTicketId: workItems.pdTicketId })
+        .select({ pdTicketId: workItems.engineeringTicketId })
         .from(workItems)
         .where(
           and(
             eq(workItems.ownerUserId, user?.id),
-            sql`${workItems.pdTicketId} IS NOT NULL`,
+            sql`${workItems.engineeringTicketId} IS NOT NULL`,
             sql`${workItems.deletedAt} IS NULL`,
           ),
         );
@@ -161,20 +174,70 @@ async function filterTicketsByRole<T extends Record<string, any>>(
 }
 
 export function registerPdRoutes(app: Express) {
+  // Merge / soft-delete / aliases endpoints (Task #73). Registered
+  // alongside the existing /api/pd/clients routes so they share the
+  // same `pd_clients` permission gate. See server/routes/clients-merge-routes.ts.
+  registerClientsMergeRoutes(app);
 
   app.get("/api/pd/clients", requireAuth, requirePermission('pd_clients', 'view'), async (req: Request, res: Response) => {
     try {
       const search = (req.query.search as string) || "";
-      let query;
-      if (search) {
-        query = db.select().from(clients).where(ilike(clients.name, `%${search}%`)).orderBy(asc(clients.name)).limit(50);
-      } else {
-        query = db.select().from(clients).orderBy(asc(clients.name)).limit(100);
+      // Explicit column selection so this endpoint stays alive when a
+      // Drizzle-schema column exists but the DB column has not been
+      // migrated yet (email-domain columns from migration 0013 are a
+      // recent addition — without explicit selection the `select()`
+      // fails with "column does not exist" against an un-migrated DB).
+      const baseCols = {
+        id: clients.id,
+        clientId: clients.clientId,
+        name: clients.name,
+        createdAt: clients.createdAt,
+        updatedAt: clients.updatedAt,
+        createdBy: clients.createdBy,
+        updatedBy: clients.updatedBy,
+        legalEntityName: clients.legalEntityName,
+        tradingName: clients.tradingName,
+        clientType: clients.clientType,
+        billingEntity: clients.billingEntity,
+        primaryContactName: clients.primaryContactName,
+        primaryContactEmail: clients.primaryContactEmail,
+        primaryContactPhone: clients.primaryContactPhone,
+        secondaryContactName: clients.secondaryContactName,
+        secondaryContactEmail: clients.secondaryContactEmail,
+        industry: clients.industry,
+        pipedriveOrgId: clients.pipedriveOrgId,
+        status: clients.status,
+      };
+      let rows;
+      try {
+        const full = {
+          ...baseCols,
+          primaryEmailDomain: clients.primaryEmailDomain,
+          additionalEmailDomains: clients.additionalEmailDomains,
+        };
+        // Cascade-display filter: hide soft-deleted clients (Task #73,
+        // migration 0029). Mirrors pd_tickets.deleted_at filtering from
+        // migration 0019.
+        const notDeleted = isNull(clients.deletedAt);
+        rows = search
+          ? await db.select(full).from(clients).where(and(ilike(clients.name, `%${search}%`), notDeleted)).orderBy(asc(clients.name)).limit(50)
+          : await db.select(full).from(clients).where(notDeleted).orderBy(asc(clients.name)).limit(100);
+      } catch (err: any) {
+        const msg = err?.message || String(err);
+        if (/primary_email_domain|additional_email_domains|42703|does not exist/i.test(msg)) {
+          console.warn("[pd-routes] clients: email-domain columns missing (migration 0013 not applied) — falling back to base columns");
+          const notDeleted = isNull(clients.deletedAt);
+          rows = search
+            ? await db.select(baseCols).from(clients).where(and(ilike(clients.name, `%${search}%`), notDeleted)).orderBy(asc(clients.name)).limit(50)
+            : await db.select(baseCols).from(clients).where(notDeleted).orderBy(asc(clients.name)).limit(100);
+        } else {
+          throw err;
+        }
       }
-      const rows = await query;
       res.json(rows);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      console.error("[pd-routes] list clients error:", err);
+      res.status(500).json({ error: "Failed to load clients" });
     }
   });
 
@@ -238,7 +301,7 @@ export function registerPdRoutes(app: Express) {
       }
       res.status(201).json({ ...created, _promotedMirror: promotedMirror });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -246,7 +309,7 @@ export function registerPdRoutes(app: Express) {
     try {
       const user = req.user as any;
       // NOTE: hardcoded `isPdRole` double-gate removed — see POST above.
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid client ID" });
 
       const { name } = req.body;
@@ -270,7 +333,7 @@ export function registerPdRoutes(app: Express) {
 
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -285,7 +348,7 @@ export function registerPdRoutes(app: Express) {
         .groupBy(projectInfo.clientId);
       res.json(rows);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -296,29 +359,37 @@ export function registerPdRoutes(app: Express) {
 
       const rows = await db
         .select({
-          ticket: pdTickets,
+          ticket: engineeringTickets,
           clientName: clients.name,
           projectName: projectInfo.projectName,
-          developerName: sql<string>`(SELECT name FROM users WHERE id = ${pdTickets.projectDeveloperUserId})`,
-          designerName: sql<string>`(SELECT name FROM users WHERE id = ${pdTickets.designerUserId})`,
+          developerName: sql<string>`(SELECT name FROM users WHERE id = ${engineeringTickets.projectDeveloperUserId})`,
+          designerName: sql<string>`(SELECT name FROM users WHERE id = ${engineeringTickets.designerUserId})`,
         })
-        .from(pdTickets)
-        .leftJoin(clients, eq(pdTickets.clientId, clients.id))
-        .leftJoin(projectInfo, eq(pdTickets.projectId, projectInfo.id))
-        .orderBy(desc(pdTickets.createdAt));
+        .from(engineeringTickets)
+        .leftJoin(clients, eq(engineeringTickets.clientId, clients.id))
+        .leftJoin(projectInfo, eq(engineeringTickets.projectId, projectInfo.id))
+        // Cascade-display: hide soft-deleted PD tickets and tickets whose
+        // project was soft-deleted (Task #34). For unlinked tickets
+        // (projectId IS NULL), the joined project_info row is NULL and
+        // the IS NULL check passes — they remain visible.
+        .where(and(
+          isNull(engineeringTickets.deletedAt),
+          or(isNull(engineeringTickets.projectId), isNull(projectInfo.deletedAt)),
+        ))
+        .orderBy(desc(engineeringTickets.createdAt));
 
       const ticketIds = rows.map((r: any) => r.ticket.id);
       let taskCounts: Record<number, { total: number; completed: number }> = {};
       if (ticketIds.length > 0) {
         const taskCountRows = await db
           .select({
-            pdTicketId: workItems.pdTicketId,
+            pdTicketId: workItems.engineeringTicketId,
             total: sql<number>`count(*)::int`,
             completed: sql<number>`count(*) FILTER (WHERE ${workItems.status} IN ('Completed', 'DONE', 'Done'))::int`,
           })
           .from(workItems)
-          .where(sql`${workItems.pdTicketId} IS NOT NULL AND ${workItems.deletedAt} IS NULL`)
-          .groupBy(workItems.pdTicketId);
+          .where(sql`${workItems.engineeringTicketId} IS NOT NULL AND ${workItems.deletedAt} IS NULL`)
+          .groupBy(workItems.engineeringTicketId);
         for (const row of taskCountRows) {
           if (row.pdTicketId) {
             taskCounts[row.pdTicketId] = { total: row.total, completed: row.completed };
@@ -337,28 +408,77 @@ export function registerPdRoutes(app: Express) {
       const result = await filterTicketsByRole(enriched, user, role);
       res.json(result);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
+    }
+  });
+
+  // Task #108 — exec-only one-click bulk-spawn from PD dashboard.
+  // Eligible = ticket has projectId set, tasksSpawnedAt is null, not soft-deleted.
+  // Role-gated via the legacy requireRole shim (no new permission entity per task scope).
+  // IMPORTANT: this GET must be registered ABOVE the dynamic /:id route below,
+  // otherwise Express matches "spawn-eligible" against the :id param.
+  const SPAWN_EXEC_ROLES = ['CFO', 'CEO_ADMIN', 'COO_ADMIN'];
+
+  app.get("/api/pd/tickets/spawn-eligible", requireAuth, requireRole(SPAWN_EXEC_ROLES), async (_req: Request, res: Response) => {
+    try {
+      const rows = await db
+        .select({
+          id: engineeringTickets.id,
+          projectId: engineeringTickets.projectId,
+          requestType: engineeringTickets.requestType,
+          projectSiteName: engineeringTickets.projectSiteName,
+          projectName: projectInfo.projectName,
+        })
+        .from(engineeringTickets)
+        .leftJoin(projectInfo, eq(engineeringTickets.projectId, projectInfo.id))
+        .where(and(
+          isNull(engineeringTickets.deletedAt),
+          isNull(engineeringTickets.tasksSpawnedAt),
+          sql`${engineeringTickets.projectId} is not null`,
+        ))
+        .orderBy(asc(engineeringTickets.id));
+
+      const projectNames = Array.from(new Set(
+        rows.map((r: { projectName: string | null; projectSiteName: string | null }) =>
+          r.projectName || r.projectSiteName
+        ).filter(Boolean) as string[]
+      ));
+
+      res.json({
+        ticketCount: rows.length,
+        projectCount: projectNames.length,
+        projectNames,
+        tickets: rows,
+      });
+    } catch (err: any) {
+      throw err;
     }
   });
 
   app.get("/api/pd/tickets/:id", requireAuth, requirePermission('pd_tickets', 'view'), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ticket ID" });
 
       const [ticket] = await db
         .select({
-          ticket: pdTickets,
+          ticket: engineeringTickets,
           clientName: clients.name,
           clientClientId: clients.clientId,
           projectName: projectInfo.projectName,
           projectPhase: projectExecutionState.phase,
         })
-        .from(pdTickets)
-        .leftJoin(clients, eq(pdTickets.clientId, clients.id))
-        .leftJoin(projectInfo, eq(pdTickets.projectId, projectInfo.id))
+        .from(engineeringTickets)
+        .leftJoin(clients, eq(engineeringTickets.clientId, clients.id))
+        .leftJoin(projectInfo, eq(engineeringTickets.projectId, projectInfo.id))
         .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
-        .where(eq(pdTickets.id, id));
+        // Cascade-display: 404 a soft-deleted ticket OR a ticket whose
+        // project_info parent has been soft-deleted (Task #34).
+        .where(and(
+          eq(engineeringTickets.id, id),
+          isNull(engineeringTickets.deletedAt),
+          sql`(${engineeringTickets.projectId} IS NULL OR ${projectInfo.deletedAt} IS NULL)`,
+        ));
 
       if (!ticket) return res.status(404).json({ error: "Ticket not found" });
 
@@ -377,7 +497,7 @@ export function registerPdRoutes(app: Express) {
           updatedAt: workItems.updatedAt,
         })
         .from(workItems)
-        .where(and(eq(workItems.pdTicketId, id), sql`${workItems.deletedAt} IS NULL`))
+        .where(and(eq(workItems.engineeringTicketId, id), sql`${workItems.deletedAt} IS NULL`))
         .orderBy(asc(workItems.sortOrder));
 
       const taskIds = tasks.map((t: any) => t.id);
@@ -424,7 +544,7 @@ export function registerPdRoutes(app: Express) {
         opportunityInfo,
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -462,12 +582,25 @@ export function registerPdRoutes(app: Express) {
       // duplicate PD tickets surfacing in the list view.
       if (!body.allowDuplicate) {
         const existingOpen = await db
-          .select({ id: pdTickets.id, status: pdTickets.status, createdAt: pdTickets.createdAt })
-          .from(pdTickets)
+          .select({ id: engineeringTickets.id, status: engineeringTickets.status, createdAt: engineeringTickets.createdAt })
+          .from(engineeringTickets)
           .where(and(
-            eq(pdTickets.projectId, Number(body.projectId)),
-            eq(pdTickets.requestType, body.requestType),
-            sql`${pdTickets.status} NOT IN ('Completed', 'Cancelled')`,
+            eq(engineeringTickets.projectId, Number(body.projectId)),
+            eq(engineeringTickets.requestType, body.requestType),
+            // Match both legacy (Draft / In Progress / On Hold / Completed /
+            // Cancelled) and canonical engineering-board values via LOWER().
+            // Anything in the terminal-synonym list is considered closed and
+            // therefore re-openable with a new ticket.
+            // Duplicate guard: a ticket only stops counting toward "active
+            // for this opportunity" once it reaches a true terminal state.
+            // Per shared/engineering-ticket-status.ts, only `complete` (and
+            // its legacy synonyms / Cancelled) is terminal — `qc_approved`
+            // is still in-flight (post-QC, pre-closeout) so it must remain
+            // counted, otherwise users can spawn a duplicate ticket while
+            // engineering is still finishing the existing one.
+            sql`LOWER(COALESCE(${engineeringTickets.status}, '')) NOT IN ('completed', 'complete', 'closed', 'resolved', 'done', 'cancelled', 'canceled')`,
+            // Cascade-display: ignore soft-deleted tickets in dup guard (Task #34).
+            isNull(engineeringTickets.deletedAt),
           ))
           .limit(1);
         if (existingOpen.length > 0) {
@@ -479,7 +612,7 @@ export function registerPdRoutes(app: Express) {
         }
       }
 
-      const [ticket] = await db.insert(pdTickets).values({
+      const [ticket] = await db.insert(engineeringTickets).values({
         clientId: body.clientId || null,
         clientNameSnapshot: body.clientNameSnapshot || null,
         projectId: body.projectId || null,
@@ -490,7 +623,7 @@ export function registerPdRoutes(app: Express) {
         dueDate: body.dueDate || null,
         requestType: body.requestType,
         priority: body.priority || "Medium",
-        status: body.status || "Draft",
+        status: body.status ? normalizeEngineeringTicketStatus(body.status) : ENGINEERING_TICKET_DEFAULT_STATUS,
         numberOfReworks: body.numberOfReworks || 0,
         projectDeveloperUserId: body.projectDeveloperUserId || user?.id || null,
         designerUserId: body.designerUserId || null,
@@ -517,8 +650,12 @@ export function registerPdRoutes(app: Express) {
         createdBy: user?.id || null,
       }).returning();
 
-      const selectedTasks: string[] | undefined = body.selectedTasks;
-      await spawnTasksForTicket(ticket, user, selectedTasks);
+      // Path 2: template auto-spawn (PD_REQUEST_TYPE_TASK_TEMPLATES) is
+      // retired. Engineering work is now created by the user explicitly,
+      // either via the "Add Engineering Ticket" form on the opportunity
+      // drawer (which inserts the canonical sibling work_items row in the
+      // same transaction) or via per-ticket "Add task" actions on the
+      // engineering board (`POST /api/pd/tickets/:id/engineering-tasks`).
 
       logAuditFromReq(req, {
         entityType: "pd_ticket",
@@ -537,7 +674,7 @@ export function registerPdRoutes(app: Express) {
 
       res.status(201).json(ticket);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -545,10 +682,11 @@ export function registerPdRoutes(app: Express) {
     try {
       const user = req.user as any;
       const role = user?.companyRole || user?.role || "";
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ticket ID" });
 
-      const [existing] = await db.select().from(pdTickets).where(eq(pdTickets.id, id));
+      // Cascade-display: PATCH on a soft-deleted ticket should 404 (Task #34).
+      const [existing] = await db.select().from(engineeringTickets).where(and(eq(engineeringTickets.id, id), isNull(engineeringTickets.deletedAt)));
       if (!existing) return res.status(404).json({ error: "Ticket not found" });
 
       if (!canViewAllTickets(role) && existing.createdBy !== user?.id && existing.projectDeveloperUserId !== user?.id) {
@@ -574,7 +712,7 @@ export function registerPdRoutes(app: Express) {
         }
       }
 
-      const [updated] = await db.update(pdTickets).set(updates).where(eq(pdTickets.id, id)).returning();
+      const [updated] = await db.update(engineeringTickets).set(updates).where(eq(engineeringTickets.id, id)).returning();
 
       // Log only the fields that actually changed so the audit trail is
       // useful for debugging stale data complaints.
@@ -591,9 +729,23 @@ export function registerPdRoutes(app: Express) {
         });
       }
 
+      // Path 2 — keep the canonical sibling work_items row in sync when
+      // the ticket is edited via this endpoint (PD ticket detail UI).
+      // Without this, status/priority/dueDate/solar-fields edits would
+      // silently skip the canonical store and the drawer board would
+      // go stale. See server/work-items-adapter.ts for the inverse leg.
+      try {
+        await syncTicketEditToWorkItem(updated, new Set(changedFields));
+      } catch (syncErr) {
+        // Sync is best-effort: never let a mirror failure block the
+        // user's edit response. The audit log already captured what
+        // changed so any drift is recoverable.
+        console.error(`[pd-tickets] syncTicketEditToWorkItem failed for ticket ${id}:`, syncErr);
+      }
+
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -601,96 +753,122 @@ export function registerPdRoutes(app: Express) {
     try {
       const user = req.user as any;
       const role = user?.companyRole || user?.role || "";
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ticket ID" });
 
-      const [existing] = await db.select().from(pdTickets).where(eq(pdTickets.id, id));
+      // Cascade-display: a re-DELETE on an already soft-deleted ticket
+      // should be idempotent, not 200-with-spurious-cascade. Filter to
+      // active rows only (Task #34).
+      const [existing] = await db.select().from(engineeringTickets).where(and(eq(engineeringTickets.id, id), isNull(engineeringTickets.deletedAt)));
       if (!existing) return res.status(404).json({ error: "Ticket not found" });
 
       if (!canViewAllTickets(role) && existing.createdBy !== user?.id && existing.projectDeveloperUserId !== user?.id) {
         return res.status(403).json({ error: "Not authorized to delete this ticket" });
       }
 
-      const linkedTasks = await db.select({ id: workItems.id }).from(workItems).where(eq(workItems.pdTicketId, id));
+      // Soft-delete only (Task #34). The previous implementation hard-deleted
+      // the pd_ticket and CASCADE-deleted every work_item linked to it
+      // (along with expense_task_links, intake_tasks, project_eng_tasks,
+      // documents, qc_item_instances, deliverables, task_activity_log).
+      // That destroyed historical project-development data the moment a
+      // PD ticket was removed in error and required a checkpoint rollback
+      // to recover. We now mark the ticket and all its linked work_items
+      // as soft-deleted; the new FK on work_items.pd_ticket_id stays
+      // intact (ON DELETE SET NULL is only used when the ticket is
+      // physically removed by an out-of-band admin sweep). All cascade
+      // peripheral cleanups are skipped — those rows are now hidden via
+      // the existing isNull(workItems.deletedAt) read filters.
+      const linkedTasks = await db.select({ id: workItems.id }).from(workItems)
+        .where(and(eq(workItems.engineeringTicketId, id), isNull(workItems.deletedAt)));
       const deletedTaskIds = linkedTasks.map((t: any) => t.id);
 
+      const now = new Date();
       await db.transaction(async (tx: typeof db) => {
         if (deletedTaskIds.length > 0) {
-          await tx.execute(sql`DELETE FROM expense_task_links WHERE canonical_task_id IN ${sql.raw(`(${deletedTaskIds.join(",")})`)}`);
-          await tx.execute(sql`DELETE FROM intake_tasks WHERE linked_work_item_id IN ${sql.raw(`(${deletedTaskIds.join(",")})`)}`);
-          await tx.execute(sql`DELETE FROM project_eng_tasks WHERE linked_work_item_id IN ${sql.raw(`(${deletedTaskIds.join(",")})`)}`);
-          await tx.execute(sql`DELETE FROM "_deliverables_legacy" WHERE linked_work_item_id IN ${sql.raw(`(${deletedTaskIds.join(",")})`)}`);
-          await tx.execute(sql`DELETE FROM documents WHERE linked_work_item_id IN ${sql.raw(`(${deletedTaskIds.join(",")})`)}`);
-          await tx.execute(sql`DELETE FROM qc_item_instances WHERE linked_work_item_id IN ${sql.raw(`(${deletedTaskIds.join(",")})`)}`);
-          await tx.execute(sql`UPDATE work_items SET parent_id = NULL WHERE parent_id IN ${sql.raw(`(${deletedTaskIds.join(",")})`)}`);
-          await tx.delete(taskActivityLog).where(inArray(taskActivityLog.workItemId, deletedTaskIds));
-          await tx.delete(workItems).where(inArray(workItems.id, deletedTaskIds));
+          await tx
+            .update(workItems)
+            .set({ deletedAt: now, updatedAt: now })
+            .where(inArray(workItems.id, deletedTaskIds));
         }
-
-        await tx.delete(pdTickets).where(eq(pdTickets.id, id));
+        await tx
+          .update(engineeringTickets)
+          .set({ deletedAt: now, updatedAt: now })
+          .where(eq(engineeringTickets.id, id));
       });
 
       logAuditFromReq(req, {
         entityType: "pd_ticket",
         entityId: String(id),
         action: "delete",
-        changesJson: { projectSiteName: existing.projectSiteName, deletedTaskCount: deletedTaskIds.length },
+        changesJson: {
+          projectSiteName: existing.projectSiteName,
+          softDeleted: true,
+          cascadeWorkItemIds: deletedTaskIds,
+          cascadeWorkItemCount: deletedTaskIds.length,
+        },
       });
 
-      res.json({ success: true, deletedTaskCount: deletedTaskIds.length });
+      res.json({ success: true, softDeleted: true, deletedTaskCount: deletedTaskIds.length });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
   app.get("/api/pd/tickets/:id/task-templates", requireAuth, requirePermission('pd_tickets', 'view'), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
-      const [ticket] = await db.select().from(pdTickets).where(eq(pdTickets.id, id));
+      const id = parseIntParam(req.params.id);
+      // Cascade-display: hide soft-deleted tickets from template lookup (Task #34).
+      const [ticket] = await db.select().from(engineeringTickets).where(and(eq(engineeringTickets.id, id), isNull(engineeringTickets.deletedAt)));
       if (!ticket) return res.status(404).json({ error: "Ticket not found" });
       const templates = PD_REQUEST_TYPE_TASK_TEMPLATES[ticket.requestType] || [];
       res.json({ requestType: ticket.requestType, templates });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
-  app.post("/api/pd/tickets/:id/spawn-tasks", requireAuth, requirePermission('pd_tickets', 'edit'), async (req: Request, res: Response) => {
-    try {
-      const user = req.user as any;
-      // NOTE: `canCreatePdTicket` double-gate removed — see POST /api/pd/tickets.
-      const id = parseInt(paramStr(req.params.id));
-      const [ticket] = await db.select().from(pdTickets).where(eq(pdTickets.id, id));
-      if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+  // Path 2 — template-spawn surfaces are retired. The
+  // PD_REQUEST_TYPE_TASK_TEMPLATES fan-out produced phantom "[PD] …" cards
+  // that confused the opportunity drawer board. Engineering work is now
+  // created explicitly by the user — either via the "Add Engineering
+  // Ticket" form (canonical sibling work_items inserted in the same
+  // transaction) or via per-ticket "Add task" actions on the engineering
+  // board. Both endpoints below return 410 Gone so any stale client sees
+  // an explicit error rather than silently doing nothing.
+  app.post("/api/pd/tickets/:id/spawn-tasks", requireAuth, requirePermission('pd_tickets', 'edit'), async (_req: Request, res: Response) => {
+    res.status(410).json({
+      error: "Template task-spawn is retired. Add engineering work directly via the Add Engineering Ticket form or per-ticket Add task on the engineering board.",
+    });
+  });
 
-      if (ticket.tasksSpawnedAt) {
-        return res.status(409).json({ error: "Tasks already spawned for this ticket" });
-      }
-
-      const { selectedTasks, customTasks } = req.body || {};
-      const spawned = await spawnTasksForTicket(ticket, user, selectedTasks, customTasks);
-      res.json({ spawned: spawned.length, tasks: spawned });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
+  app.post("/api/pd/tickets/bulk-spawn-tasks", requireAuth, requireRole(SPAWN_EXEC_ROLES), async (_req: Request, res: Response) => {
+    res.status(410).json({
+      error: "Bulk template task-spawn is retired. Engineering work is now created per-ticket by the user.",
+    });
   });
 
   app.post("/api/pd/tickets/:id/engineering-tasks", requireAuth, requirePermission('pd_tickets', 'edit'), async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
       // NOTE: `canCreatePdTicket` double-gate removed — see POST /api/pd/tickets.
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ticket ID" });
 
-      const [ticket] = await db.select().from(pdTickets).where(eq(pdTickets.id, id));
+      // Cascade-display: refuse engineering-task creation on soft-deleted ticket (Task #34).
+      const [ticket] = await db.select().from(engineeringTickets).where(and(eq(engineeringTickets.id, id), isNull(engineeringTickets.deletedAt)));
       if (!ticket) return res.status(404).json({ error: "Ticket not found" });
       if (!ticket.projectId) return res.status(400).json({ error: "Ticket is not linked to a project" });
 
       const title = String(req.body?.title || "").trim();
       if (!title) return res.status(400).json({ error: "Task title is required" });
 
-      const priority = String(req.body?.priority || "Medium");
-      const normalizedPriority = ["High", "Medium", "Low"].includes(priority) ? priority : "Medium";
+      // Path 2 — work_items.priority canonical enum is Urgent | High | Med | Low.
+      // Accept both ticket-style ("Medium") and work-item-style ("Med") inbound
+      // values from clients and normalise via the bidirectional helper so the
+      // canonical store never accumulates "Medium" rows that don't match the
+      // engineering board renderer.
+      const inboundPriority = req.body?.priority == null ? null : String(req.body.priority);
+      const normalizedPriority = ticketPriorityToWorkItemPriority(inboundPriority) ?? "Med";
 
       const [task] = await db.insert(workItems).values({
         projectId: ticket.projectId,
@@ -705,7 +883,7 @@ export function registerPdRoutes(app: Express) {
         status: "TO DO",
         priority: normalizedPriority,
         endDate: req.body?.dueDate || ticket.dueDate || null,
-        pdTicketId: ticket.id,
+        engineeringTicketId: ticket.id,
         ownerUserId: req.body?.ownerUserId || null,
         createdBy: user?.id || null,
       }).returning();
@@ -728,43 +906,63 @@ export function registerPdRoutes(app: Express) {
       }
 
       if (!ticket.tasksSpawnedAt) {
-        await db.update(pdTickets)
-          .set({ tasksSpawnedAt: new Date(), status: ticket.status === "Draft" ? "In Progress" : ticket.status })
-          .where(eq(pdTickets.id, ticket.id));
+        await db.update(engineeringTickets)
+          .set({
+            tasksSpawnedAt: new Date(),
+            // Bump from "haven't started" states to in_progress on first
+            // spawn; otherwise preserve whatever board state the ticket is in.
+            status: ["to_do", "not_started"].includes(normalizeEngineeringTicketStatus(ticket.status))
+              ? "in_progress"
+              : normalizeEngineeringTicketStatus(ticket.status),
+          })
+          .where(eq(engineeringTickets.id, ticket.id));
       }
 
       res.status(201).json(task);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
-  app.get("/api/pd/dashboard", requireAuth, requirePermission('pd_dashboard', 'view'), async (req: Request, res: Response) => {
+  // Renamed 2026-04-20: was `/api/pd/dashboard`. The new opportunities-aggregation
+  // dashboard owns that path now (see server/departments/opportunities-routes.ts).
+  // This legacy ticket-counts endpoint is preserved at the more specific path for
+  // any internal callers still relying on pd_tickets aggregates.
+  app.get("/api/pd/tickets/dashboard", requireAuth, requirePermission('pd_dashboard', 'view'), async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
       const role = user?.companyRole || user?.role || "";
 
-      const allTicketsRaw = await db.select().from(pdTickets);
+      // Cascade-display: ignore soft-deleted PD tickets in dashboard counts (Task #34).
+      const allTicketsRaw = await db.select().from(engineeringTickets).where(isNull(engineeringTickets.deletedAt));
       const allTickets = await filterTicketsByRole(allTicketsRaw, user, role);
       const today = todaySast();
 
+      // All status comparisons go through the canonical normaliser so the
+      // tile counts work for both legacy text values and the new
+      // engineering-board states (task #71 follow-up).
       const total = allTickets.length;
-      const active = allTickets.filter(t => t.status === "In Progress" || t.status === "Draft").length;
-      const overdue = allTickets.filter(t => t.dueDate && t.dueDate < today && t.status !== "Completed" && t.status !== "Cancelled").length;
+      const isDone = (t: any) => isTicketDoneForReporting(t.status);
+      const active = allTickets.filter(t => !isDone(t)).length;
+      const overdue = allTickets.filter(t => t.dueDate && t.dueDate < today && !isDone(t)).length;
       const dueThisWeek = allTickets.filter(t => {
-        if (!t.dueDate || t.status === "Completed" || t.status === "Cancelled") return false;
+        if (!t.dueDate || isDone(t)) return false;
         const d = new Date(t.dueDate);
         const now = new Date();
         const weekEnd = new Date();
         weekEnd.setDate(now.getDate() + 7);
         return d >= now && d <= weekEnd;
       }).length;
-      const onHold = allTickets.filter(t => t.status === "On Hold").length;
-      const completed = allTickets.filter(t => t.status === "Completed").length;
+      const onHold = allTickets.filter(t => isTicketBlocked(t.status)).length;
+      const completed = allTickets.filter(isDone).length;
+      const inApproval = allTickets.filter(t => {
+        const c = normalizeEngineeringTicketStatus(t.status);
+        return c === "needs_approval" || c === "qc_approved" || c === "provide_feedback" || c === "operational_approval";
+      }).length;
 
-      res.json({ total, active, overdue, dueThisWeek, onHold, completed });
+      res.json({ total, active, overdue, dueThisWeek, onHold, completed, inApproval });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -775,15 +973,21 @@ export function registerPdRoutes(app: Express) {
 
       const allTicketsRaw = await db
         .select({
-          ticket: pdTickets,
+          ticket: engineeringTickets,
           clientName: clients.name,
           projectName: projectInfo.projectName,
-          developerName: sql<string>`(SELECT name FROM users WHERE id = ${pdTickets.projectDeveloperUserId})`,
+          developerName: sql<string>`(SELECT name FROM users WHERE id = ${engineeringTickets.projectDeveloperUserId})`,
         })
-        .from(pdTickets)
-        .leftJoin(clients, eq(pdTickets.clientId, clients.id))
-        .leftJoin(projectInfo, eq(pdTickets.projectId, projectInfo.id))
-        .orderBy(desc(pdTickets.createdAt));
+        .from(engineeringTickets)
+        .leftJoin(clients, eq(engineeringTickets.clientId, clients.id))
+        .leftJoin(projectInfo, eq(engineeringTickets.projectId, projectInfo.id))
+        // Cascade-display: hide soft-deleted PD tickets and tickets whose
+        // project was soft-deleted from the pipeline (Task #34).
+        .where(and(
+          isNull(engineeringTickets.deletedAt),
+          or(isNull(engineeringTickets.projectId), isNull(projectInfo.deletedAt)),
+        ))
+        .orderBy(desc(engineeringTickets.createdAt));
 
       const allTickets = await filterTicketsByRole(allTicketsRaw, user, role);
 
@@ -798,13 +1002,13 @@ export function registerPdRoutes(app: Express) {
 
       const taskCountRows = await db
         .select({
-          pdTicketId: workItems.pdTicketId,
+          pdTicketId: workItems.engineeringTicketId,
           total: sql<number>`count(*)::int`,
           completed: sql<number>`count(*) FILTER (WHERE ${workItems.status} IN ('Completed', 'DONE', 'Done'))::int`,
         })
         .from(workItems)
-        .where(sql`${workItems.pdTicketId} IS NOT NULL AND ${workItems.deletedAt} IS NULL`)
-        .groupBy(workItems.pdTicketId);
+        .where(sql`${workItems.engineeringTicketId} IS NOT NULL AND ${workItems.deletedAt} IS NULL`)
+        .groupBy(workItems.engineeringTicketId);
       const taskCountMap: Map<any, any> = new Map(taskCountRows.map((r: any) => [r.pdTicketId!, { total: r.total, completed: r.completed }]));
 
       const today = todaySast();
@@ -823,21 +1027,23 @@ export function registerPdRoutes(app: Express) {
         const t = row.ticket;
         const handover = t.projectId ? handoverMap.get(t.projectId) : null;
         const tasks = taskCountMap.get(t.id) || { total: 0, completed: 0 };
-        // Map to Kanban column
+        // Map to Kanban column. The board now uses canonical status values
+        // (to_do, in_progress, hold, needs_approval, qc_approved,
+        // provide_feedback, operational_approval, complete, …); legacy
+        // free-form values are tolerated via the normaliser.
+        const canonical = normalizeEngineeringTicketStatus(t.status);
         let kanbanColumn = "New";
-        if (t.status === "Draft") kanbanColumn = "New";
-        else if (t.status === "In Progress") kanbanColumn = "In Progress";
-        else if (t.status === "On Hold") kanbanColumn = "In Progress";
-        else if (t.status === "Completed" || t.status === "Cancelled") {
-          kanbanColumn = handover?.status === "ACCEPTED" ? "Handed Over" : "Handed Over";
-          if (t.status === "Completed" && !handover) kanbanColumn = "Handed Over";
-        }
+        if (canonical === "to_do" || canonical === "not_started") kanbanColumn = "New";
+        else if (canonical === "in_progress" || canonical === "projects_assistance") kanbanColumn = "In Progress";
+        else if (canonical === "hold") kanbanColumn = "In Progress";
+        else if (canonical === "needs_approval" || canonical === "qc_approved" || canonical === "provide_feedback" || canonical === "operational_approval") kanbanColumn = "Under Review";
+        else if (canonical === "complete") kanbanColumn = "Handed Over";
         if (handover?.status === "SUBMITTED_FOR_PM_REVIEW") kanbanColumn = "Under Review";
         if (handover?.handoverReadinessStatus === "READY_FOR_HANDOVER" && handover?.status === "DRAFT") kanbanColumn = "Ready for Handover";
         if (handover?.status === "ACCEPTED") kanbanColumn = "Handed Over";
 
         const daysInStage = Math.max(0, Math.floor((Date.now() - new Date(t.updatedAt).getTime()) / 86400000));
-        const isOverdue = t.dueDate && t.dueDate < today && t.status !== "Completed" && t.status !== "Cancelled";
+        const isOverdue = t.dueDate && t.dueDate < today && !isTicketDoneForReporting(t.status);
 
         const enriched = {
           id: t.id,
@@ -864,7 +1070,7 @@ export function registerPdRoutes(app: Express) {
         byStatus[kanbanColumn].tickets.push(enriched);
 
         // Aggregate by request type
-        byRequestType[t.requestType] = (byRequestType[t.requestType] || 0) + (t.status !== "Completed" && t.status !== "Cancelled" ? 1 : 0);
+        byRequestType[t.requestType] = (byRequestType[t.requestType] || 0) + (isTicketDoneForReporting(t.status) ? 0 : 1);
 
         // Overdue buckets
         if (isOverdue) {
@@ -888,7 +1094,7 @@ export function registerPdRoutes(app: Express) {
       // Pipeline value from financial estimates
       const activeTicketsRaw = allTickets.map(r => r.ticket);
       const totalPipelineValue = activeTicketsRaw
-        .filter(t => t.status !== "Completed" && t.status !== "Cancelled" && t.estimatedProjectValue)
+        .filter(t => !isTicketDoneForReporting(t.status) && t.estimatedProjectValue)
         .reduce((sum, t) => sum + parseFloat(t.estimatedProjectValue as string || "0"), 0);
 
       res.json({
@@ -901,7 +1107,7 @@ export function registerPdRoutes(app: Express) {
         kanbanColumns: ["New", "In Progress", "Under Review", "Ready for Handover", "Handed Over"],
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -918,7 +1124,7 @@ export function registerPdRoutes(app: Express) {
         .orderBy(asc(users.name));
       res.json(allUsers);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -934,7 +1140,7 @@ export function registerPdRoutes(app: Express) {
    *    and what the Pipedrive vs internal split looks like.
    *
    * 2. `throughput` + `pipelineHealth` — PD-work-queue metrics from
-   *    the `pdTickets` table. Measures engineering request throughput:
+   *    the `engineeringTickets` table. Measures engineering request throughput:
    *    how many tickets were created vs completed, what the backlog
    *    looks like by status/type/member, and what the overdue count
    *    is. Pipeline-health metrics are now FY-scoped (fix: previously
@@ -949,13 +1155,14 @@ export function registerPdRoutes(app: Express) {
    */
   app.get("/api/pd/reports", requireAuth, requirePermission('pd_dashboard', 'view'), async (req: Request, res: Response) => {
     try {
-      // FY boundaries: Sep-Aug. FY2026 = 1 Sep 2025 → 31 Aug 2026
+      // FY boundaries: Sep-Aug. FY2026 = 1 Sep 2025 → 31 Aug 2026.
+      // Window math is shared with /api/pd/dashboard/won-deals via
+      // server/lib/fy-window.ts so the two surfaces never drift.
       const fyParam = req.query.fy ? parseInt(req.query.fy as string) : null;
-      const now = new Date();
-      const currentFY = now.getMonth() >= 8 ? now.getFullYear() + 1 : now.getFullYear(); // Month 8 = Sep
-      const fy = fyParam || currentFY;
-      const fyStart = new Date(`${fy - 1}-09-01T00:00:00Z`);
-      const fyEnd = new Date(`${fy}-08-31T23:59:59Z`);
+      const win = getFyWindow({ fy: fyParam });
+      const fy = win.fy;
+      const fyStart = win.fyStart;
+      const fyEnd = win.fyEnd;
 
       // Quarter boundaries within FY (Sep-Nov, Dec-Feb, Mar-May, Jun-Aug)
       const quarters = [
@@ -969,7 +1176,8 @@ export function registerPdRoutes(app: Express) {
       const currentMonth = today.slice(0, 7); // YYYY-MM (SAST)
 
       // ===== DATA FETCH =====
-      const allTickets = await db.select().from(pdTickets);
+      // Cascade-display: ignore soft-deleted PD tickets in reports (Task #34).
+      const allTickets = await db.select().from(engineeringTickets).where(isNull(engineeringTickets.deletedAt));
       const fyTickets = allTickets.filter((t: any) => t.createdAt >= fyStart && t.createdAt <= fyEnd);
 
       const allHandovers = await db.select().from(projectPdPmHandover);
@@ -1028,7 +1236,7 @@ export function registerPdRoutes(app: Express) {
       };
 
       // ===== SECTION 2: PD WORK QUEUE — THROUGHPUT =====
-      // Source: `pdTickets` table (NOT mixed with opportunities).
+      // Source: `engineeringTickets` table (NOT mixed with opportunities).
 
       /** KPI: Tickets created this month. Count of pd_tickets with
        *  createdAt in the current calendar month (SAST). */
@@ -1037,7 +1245,7 @@ export function registerPdRoutes(app: Express) {
 
       /** KPI: Tickets completed in FY. Count of pd_tickets with
        *  status="Completed" and createdAt within the FY window. */
-      const completedFy = fyTickets.filter((t: any) => t.status === "Completed");
+      const completedFy = fyTickets.filter((t: any) => isTicketDoneForReporting(t.status));
 
       /** KPI: Tickets completed this month. Subset of completedFy where
        *  updatedAt is in the current calendar month. */
@@ -1086,20 +1294,24 @@ export function registerPdRoutes(app: Express) {
       const activeByStatus: Record<string, number> = {};
       /** KPI: Active tickets by request type (FY-scoped). */
       const activeByType: Record<string, number> = {};
-      const fyActive = fyTickets.filter((t: any) => t.status !== "Completed" && t.status !== "Cancelled");
+      const fyActive = fyTickets.filter((t: any) => !isTicketDoneForReporting(t.status));
       for (const t of fyActive) {
-        activeByStatus[t.status] = (activeByStatus[t.status] || 0) + 1;
+        // Bucket under canonical key so the report shows engineering-board
+        // labels (in_progress, hold, needs_approval, …) instead of the old
+        // Title-Case text values.
+        const canonical = normalizeEngineeringTicketStatus(t.status);
+        activeByStatus[canonical] = (activeByStatus[canonical] || 0) + 1;
         activeByType[t.requestType] = (activeByType[t.requestType] || 0) + 1;
       }
 
       /** KPI: Overdue tickets (all-time). Count of tickets with dueDate
        *  before today and status not Completed/Cancelled. Not FY-scoped. */
-      const overdueCount = allTickets.filter((t: any) => t.dueDate && t.dueDate < today && t.status !== "Completed" && t.status !== "Cancelled").length;
+      const overdueCount = allTickets.filter((t: any) => t.dueDate && t.dueDate < today && !isTicketDoneForReporting(t.status)).length;
 
       /** KPI: Tickets per PD team member (all-time active). Count of
        *  non-completed, non-cancelled tickets grouped by developer. */
       const ticketsPerMember: Record<string, number> = {};
-      for (const t of allTickets.filter((t: any) => t.status !== "Completed" && t.status !== "Cancelled")) {
+      for (const t of allTickets.filter((t: any) => !isTicketDoneForReporting(t.status))) {
         const name = (t as any).projectDeveloperUserId ? (userMap.get((t as any).projectDeveloperUserId) || "Unassigned") : "Unassigned";
         ticketsPerMember[name as string] = (ticketsPerMember[name as string] || 0) + 1;
       }
@@ -1141,8 +1353,8 @@ export function registerPdRoutes(app: Express) {
       // top of this file from `ENGINEERING_REQUEST_TYPES`) instead of
       // hand-inlining the list here — the hand-inlined copy had already
       // drifted from the source constant.
-      const engineeringTickets = allTickets.filter(
-        (t: any) => engineeringRequestTypesSet.has(t.requestType) && t.status !== "Cancelled",
+      const engineeringTicketCount = allTickets.filter(
+        (t: any) => engineeringRequestTypesSet.has(t.requestType) && !isTicketDoneForReporting(t.status),
       ).length;
 
       // W2: Surface Pipedrive sync freshness in the commercial funnel report
@@ -1190,11 +1402,11 @@ export function registerPdRoutes(app: Express) {
           topRejectionReasons: Object.entries(rejectionReasons).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([reason, count]) => ({ reason, count })),
         },
         crossFunctional: {
-          engineeringRequests: engineeringTickets,
+          engineeringRequests: engineeringTicketCount,
         },
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1219,7 +1431,7 @@ export function registerPdRoutes(app: Express) {
       const rows = await query;
       res.json(rows);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 }
@@ -1227,61 +1439,14 @@ export function registerPdRoutes(app: Express) {
 // Client-id generation lives in server/lib/client-id-generator.ts so both
 // /api/pd/clients and /api/clients share a single race-safe implementation.
 
-async function spawnTasksForTicket(ticket: any, user: any, selectedTasks?: string[], customTasks?: { title: string; priority: string }[]): Promise<any[]> {
-  if (ticket.tasksSpawnedAt) return [];
-
-  let templates = PD_REQUEST_TYPE_TASK_TEMPLATES[ticket.requestType] || [];
-
-  if (selectedTasks && Array.isArray(selectedTasks)) {
-    const selectedSet = new Set(selectedTasks);
-    templates = templates.filter(t => selectedSet.has(t.title));
-  }
-
-  const allTasks: { title: string; priority: string }[] = [
-    ...templates,
-    ...(Array.isArray(customTasks) ? customTasks.filter(t => t.title?.trim()) : []),
-  ];
-
-  let projectName = ticket.projectSiteName || "Unassigned";
-  if (ticket.projectId) {
-    const [proj] = await db.select({ projectName: projectInfo.projectName })
-      .from(projectInfo)
-      .where(eq(projectInfo.id, ticket.projectId));
-    if (proj) projectName = proj.projectName;
-  }
-
-  const spawned: any[] = [];
-  for (let i = 0; i < allTasks.length; i++) {
-    const tmpl = allTasks[i];
-    if (!ticket.projectId) continue;
-    const [task] = await db.insert(workItems).values({
-      projectId: ticket.projectId,
-      workstream: "ENG",
-      source: "UI",
-      title: `[PD] ${tmpl.title}`,
-      description: `Auto-spawned from PD Ticket #${ticket.id} (${ticket.requestType}) for ${ticket.projectSiteName}`,
-      status: "TO DO",
-      priority: tmpl.priority === "High" ? "High" : "Medium",
-      endDate: ticket.dueDate || null,
-      sortOrder: i,
-      pdTicketId: ticket.id,
-      createdBy: user?.id || null,
-    }).returning();
-
-    if (task) {
-      await db.insert(taskActivityLog).values({
-        workItemId: task.id,
-        actorId: user?.id || null,
-        actionType: "created",
-        newValue: `Task spawned from PD Ticket #${ticket.id} (${ticket.requestType})`,
-      });
-      spawned.push(task);
-    }
-  }
-
-  await db.update(pdTickets)
-    .set({ tasksSpawnedAt: new Date(), status: ticket.status === "Draft" ? "In Progress" : ticket.status })
-    .where(eq(pdTickets.id, ticket.id));
-
-  return spawned;
+/**
+ * @deprecated Path 2 — template-spawn is retired.
+ * Returns [] unconditionally. Kept only so existing imports
+ * (server/departments/opportunities-routes.ts) still resolve at module
+ * load. New engineering work is created by the user via the "Add
+ * Engineering Ticket" form or the per-ticket "Add task" action.
+ * Schedule for full removal once those import sites are deleted.
+ */
+export async function spawnTasksForTicket(_ticket: any, _user: any, _selectedTasks?: string[], _customTasks?: { title: string; priority: string }[]): Promise<any[]> {
+  return [];
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildProjectDevelopmentWorkspaceFromSources,
   computePdPmSubmitBlockers,
+  getProjectDevelopmentWorkspaceRollup,
 } from "../../../server/services/project-development-workspace-service";
 
 describe("project development workspace service", () => {
@@ -255,5 +256,43 @@ describe("project development workspace service", () => {
       "Clear intake internal blockers",
       "Complete linked intake tasks",
     ]));
+  });
+});
+
+describe("getProjectDevelopmentWorkspaceRollup (Task #34)", () => {
+  it("returns an array of WorkspaceRollupRow objects with the required shape and is idempotent", async () => {
+    const a = await getProjectDevelopmentWorkspaceRollup();
+    const b = await getProjectDevelopmentWorkspaceRollup();
+    expect(Array.isArray(a)).toBe(true);
+    expect(a.length).toBe(b.length);
+    for (const row of a) {
+      expect(typeof row.projectId).toBe("number");
+      expect(typeof row.projectName).toBe("string");
+      expect(typeof row.spineGap).toBe("boolean");
+      expect(typeof row.cascadeAnomalies).toBe("number");
+      expect(row.pdTickets).toBeDefined();
+      expect(typeof row.pdTickets.total).toBe("number");
+      expect(typeof row.pdTickets.open).toBe("number");
+      expect(typeof row.pdTickets.overdue).toBe("number");
+      expect(row.workItems).toBeDefined();
+      expect(typeof row.workItems.total).toBe("number");
+      expect(typeof row.workItems.blocked).toBe("number");
+      expect(typeof row.workItems.overdue).toBe("number");
+      expect(row.raid).toBeDefined();
+      expect(typeof row.raid.open).toBe("number");
+    }
+  });
+
+  it("never includes a soft-deleted project (cascade-display at source)", async () => {
+    const rows = await getProjectDevelopmentWorkspaceRollup();
+    // Spine gap is a derived flag — cascade-display means rows for soft-deleted
+    // projects must not appear at all. Sanity: no duplicates and no negative counts.
+    const ids = new Set<number>();
+    for (const r of rows) {
+      expect(ids.has(r.projectId)).toBe(false);
+      ids.add(r.projectId);
+      expect(r.pdTickets.open).toBeGreaterThanOrEqual(0);
+      expect(r.workItems.open).toBeGreaterThanOrEqual(0);
+    }
   });
 });

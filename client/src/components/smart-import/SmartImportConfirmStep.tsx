@@ -19,6 +19,9 @@ import { SECTION_LABELS, CONFIRM_LABELS, RESULT_LABELS, IMPORT_MODE_LABELS } fro
 import { SmartImportMoneyImpact } from "./SmartImportMoneyImpact";
 import { SmartImportQbProtectionsCallout } from "./SmartImportQbProtectionsCallout";
 import { SmartImportIntegrityCheck } from "./SmartImportIntegrityCheck";
+import { SmartImportPreflightPanel } from "./SmartImportPreflightPanel";
+import { SmartImportDownstreamImpact } from "./SmartImportDownstreamImpact";
+import { SmartImportPostCommitNext } from "./SmartImportPostCommitNext";
 
 interface ConfirmStepProps {
   runId: number;
@@ -141,6 +144,15 @@ export function SmartImportConfirmStep({ runId, planning, preview, decisions, on
             </div>
           )}
 
+          {Array.isArray(commitResult?.v2?.rowWarnings) && commitResult.v2.rowWarnings.length > 0 && (
+            <div className="border-t pt-3">
+              <SmartImportPreflightPanel rowWarnings={commitResult.v2.rowWarnings} variant="post-commit" />
+            </div>
+          )}
+
+          {/* UX-3: plain-English "what happens next" card. */}
+          <SmartImportPostCommitNext planning={planning} commitResult={commitResult} />
+
           <p className="text-xs text-muted-foreground mt-3">
             {RESULT_LABELS.dashboardNote}
           </p>
@@ -222,6 +234,15 @@ export function SmartImportConfirmStep({ runId, planning, preview, decisions, on
           })}
         </div>
 
+        {/* Pre-flight warnings (S003/S004) — surfaces planned-identifier
+            collisions, blank-outline milestones, and missing source
+            coordinates before the user commits. */}
+        {preview?.preflight && (preview.preflight.warnings?.length ?? 0) > 0 && (
+          <div className="border-t pt-3">
+            <SmartImportPreflightPanel preflight={preview.preflight} variant="pre-commit" />
+          </div>
+        )}
+
         {/* QuickBooks protections — compact, sits just before the money
             impact so the user understands what is locked before reading
             the financial movement. */}
@@ -237,6 +258,14 @@ export function SmartImportConfirmStep({ runId, planning, preview, decisions, on
         {/* Invoice / PO integrity (B4a) — advisory data-hygiene check. */}
         <div className="border-t pt-3">
           <SmartImportIntegrityCheck runId={runId} />
+        </div>
+
+        {/* UX-3: downstream-impact card — final "who will see this" before commit. */}
+        <div className="border-t pt-3">
+          <SmartImportDownstreamImpact
+            planning={planning}
+            projectName={preview?.detection?.projectInfo?.name ?? null}
+          />
         </div>
 
         {/* Error display */}

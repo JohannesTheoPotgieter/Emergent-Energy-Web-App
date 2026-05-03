@@ -1,5 +1,7 @@
 import { Express, NextFunction, Request, Response } from "express";
 import { db } from "./db";
+import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import * as schema from "@shared/schema";
 import { eq, and, desc, sql, inArray, isNull } from "drizzle-orm";
 import multer from "multer";
 import path from "path";
@@ -33,6 +35,7 @@ import {
 } from "@shared/quality-governance";
 import { getProjectLinkedItems } from "./project-linking-service";
 import { computePdPmSubmitBlockers, getProjectDevelopmentWorkspace } from "./services/project-development-workspace-service";
+import { parseIntParam } from "./lib/req-params";
 
 const qmApprovalUploadsDir = path.join(process.cwd(), "uploads", "qm-approvals");
 if (!fs.existsSync(qmApprovalUploadsDir)) fs.mkdirSync(qmApprovalUploadsDir, { recursive: true });
@@ -553,7 +556,7 @@ export function registerQualityRoutes(app: Express) {
 
   app.get("/api/quality/templates/:templateId", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
-      const tid = parseInt(String(req.params.templateId), 10);
+      const tid = parseIntParam(req.params.templateId);
       const [tmpl] = await db.select().from(qcTemplate).where(eq(qcTemplate.id, tid));
       if (!tmpl) return res.status(404).json({ error: "Template not found" });
 
@@ -699,11 +702,194 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
+  // Hard-delete a project's quality process so the PM can restart from scratch.
+  // Removes evidence, plan links, warnings, post-mortem, then the checklist
+  // (which cascades to item instances + risk answers). Atomic via transaction.
+  app.delete(
+    "/api/quality/project/:projectName/checklist",
+    requireAuth,
+    requireAdminOrQm,
+    requirePermission("quality", "delete"),
+    async (req, res) => {
+      try {
+        // Guard against a malformed `%XX` in the param (would otherwise 500).
+        const rawProjectName = String(req.params.projectName);
+        let requestedProjectName: string;
+        try {
+          requestedProjectName = decodeURIComponent(rawProjectName);
+        } catch {
+          requestedProjectName = rawProjectName;
+        }
+
+        // Resolve the live (non-deleted) project_info row. Determinism comes
+        // from the partial unique index on (project_name) WHERE deleted_at IS NULL.
+        const [project] = await db
+          .select({ id: projectInfo.id, projectName: projectInfo.projectName })
+          .from(projectInfo)
+          .where(and(
+            sql`LOWER(TRIM(${projectInfo.projectName})) = LOWER(TRIM(${requestedProjectName}))`,
+            isNull(projectInfo.deletedAt),
+          ))
+          .limit(1);
+        const projectId = project?.id ?? null;
+        const canonicalProjectName = project?.projectName ?? requestedProjectName;
+        const normalizedProjectName = normalizeProjectName(canonicalProjectName);
+
+        // qc_checklist.project_id is NOT NULL → no live project means no checklist.
+        if (projectId === null) {
+          return res.status(404).json({ error: "No quality checklist found for this project" });
+        }
+        const checklistScope = eq(qcChecklist.projectId, projectId);
+
+        // Dependent tables have nullable project_id; include legacy NULL-projectId
+        // name matches so un-backfilled rows are cleaned up too. The NULL guard
+        // prevents reaching into rows owned by another project_info row.
+        const planLinkScope = sql`(${qcPlanLink.projectId} = ${projectId} OR (${qcPlanLink.projectId} IS NULL AND LOWER(TRIM(${qcPlanLink.projectName})) = ${normalizedProjectName}))`;
+        const warningScope = sql`(${qcWarning.projectId} = ${projectId} OR (${qcWarning.projectId} IS NULL AND LOWER(TRIM(${qcWarning.projectName})) = ${normalizedProjectName}))`;
+        const postmortemScope = sql`(${qcPostmortem.projectId} = ${projectId} OR (${qcPostmortem.projectId} IS NULL AND LOWER(TRIM(${qcPostmortem.projectName})) = ${normalizedProjectName}))`;
+
+        // Discover + delete inside the same transaction so concurrent inserts
+        // between a read and a delete can't slip through. `null` → 404.
+        const result = await db.transaction(async (tx: NodePgDatabase<typeof schema>) => {
+          const matchingChecklists = await tx
+            .select({ id: qcChecklist.id })
+            .from(qcChecklist)
+            .where(checklistScope);
+
+          if (matchingChecklists.length === 0) {
+            return null;
+          }
+
+          const checklistIds: number[] = (matchingChecklists as Array<{ id: number }>).map((c) => c.id);
+
+          const itemInstanceRows = await tx
+            .select({ id: qcItemInstance.id })
+            .from(qcItemInstance)
+            .where(inArray(qcItemInstance.checklistId, checklistIds));
+          const itemInstanceIds: number[] = (itemInstanceRows as Array<{ id: number }>).map((i) => i.id);
+
+          // Snapshot cascade-child IDs before deleting the parents so audit
+          // counts include rows wiped by FK CASCADE (warning_event,
+          // risk_answer, postmortem_summary, postmortem_metric_value).
+          const warningRowsToDelete = await tx
+            .select({ id: qcWarning.id })
+            .from(qcWarning)
+            .where(warningScope);
+          const warningIds: number[] = (warningRowsToDelete as Array<{ id: number }>).map((w) => w.id);
+
+          const postmortemRowsToDelete = await tx
+            .select({ id: qcPostmortem.id })
+            .from(qcPostmortem)
+            .where(postmortemScope);
+          const postmortemIds: number[] = (postmortemRowsToDelete as Array<{ id: number }>).map((p) => p.id);
+
+          // Use Drizzle's `inArray` helper for the count predicates: passing a
+          // JS array straight into `sql\`= ANY(${ids})\`` interpolates as a
+          // row constructor, which Postgres rejects with "op ANY/ALL requires
+          // array on right side". `inArray` produces a parameterised IN list.
+          const countWhere = async (
+            table: typeof qcRiskAnswer | typeof qcWarningEvent | typeof qcPostmortemSummary | typeof qcPostmortemMetricValue,
+            whereExpr: ReturnType<typeof inArray>,
+          ): Promise<number> => {
+            const rows = await tx
+              .select({ n: sql<number>`count(*)::int` })
+              .from(table)
+              .where(whereExpr);
+            return Number((rows as Array<{ n: number }>)[0]?.n ?? 0);
+          };
+
+          const riskAnswerCount = checklistIds.length > 0
+            ? await countWhere(qcRiskAnswer, inArray(qcRiskAnswer.checklistId, checklistIds))
+            : 0;
+          const warningEventCount = warningIds.length > 0
+            ? await countWhere(qcWarningEvent, inArray(qcWarningEvent.warningId, warningIds))
+            : 0;
+          const postmortemSummaryCount = postmortemIds.length > 0
+            ? await countWhere(qcPostmortemSummary, inArray(qcPostmortemSummary.postmortemId, postmortemIds))
+            : 0;
+          const postmortemMetricValueCount = postmortemIds.length > 0
+            ? await countWhere(qcPostmortemMetricValue, inArray(qcPostmortemMetricValue.postmortemId, postmortemIds))
+            : 0;
+
+          let evidenceCount = 0;
+          if (itemInstanceIds.length > 0) {
+            const deletedEvidence = await tx
+              .delete(qcItemEvidence)
+              .where(inArray(qcItemEvidence.itemInstanceId, itemInstanceIds))
+              .returning({ id: qcItemEvidence.id });
+            evidenceCount = deletedEvidence.length;
+          }
+
+          const deletedPlanLinks = await tx
+            .delete(qcPlanLink)
+            .where(planLinkScope)
+            .returning({ id: qcPlanLink.id });
+
+          const deletedWarnings = await tx
+            .delete(qcWarning)
+            .where(warningScope)
+            .returning({ id: qcWarning.id });
+
+          const deletedPostmortems = await tx
+            .delete(qcPostmortem)
+            .where(postmortemScope)
+            .returning({ id: qcPostmortem.id });
+
+          const deletedChecklists = await tx
+            .delete(qcChecklist)
+            .where(inArray(qcChecklist.id, checklistIds))
+            .returning({ id: qcChecklist.id });
+
+          return {
+            checklistIds,
+            counts: {
+              checklists: deletedChecklists.length,
+              itemInstances: itemInstanceIds.length,
+              riskAnswers: riskAnswerCount,
+              evidence: evidenceCount,
+              planLinks: deletedPlanLinks.length,
+              warnings: deletedWarnings.length,
+              warningEvents: warningEventCount,
+              postmortems: deletedPostmortems.length,
+              postmortemSummaries: postmortemSummaryCount,
+              postmortemMetricValues: postmortemMetricValueCount,
+            },
+          };
+        });
+
+        if (!result) {
+          return res.status(404).json({ error: "No quality checklist found for this project" });
+        }
+
+        logAuditFromReq(req, {
+          entityType: "quality_checklist",
+          // entityId carries the primary checklist id (audit_log.entity_id is
+          // a single string column). The full list of deleted ids is kept in
+          // changesJson.checklistIds so multi-checklist legacy cases stay
+          // fully auditable.
+          entityId: String(result.checklistIds[0]),
+          action: "delete",
+          projectName: canonicalProjectName,
+          changesJson: {
+            description: "Quality process deleted (full restart)",
+            checklistIds: result.checklistIds,
+            counts: result.counts,
+          },
+        });
+
+        res.json({ success: true, counts: result.counts });
+      } catch (err: unknown) {
+        console.error("[Quality] Error deleting project quality process:", err);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    },
+  );
+
   // ========== CHECKLIST ITEM OPERATIONS ==========
 
   app.post("/api/quality/project/:projectName/item/:itemInstanceId", requireAuth, requireAdminOrQm, requirePermission('pd_quality', 'edit'), async (req, res) => {
     try {
-      const itemId = parseInt(String(req.params.itemInstanceId), 10);
+      const itemId = parseIntParam(req.params.itemInstanceId);
       const {
         startDate,
         endDate,
@@ -841,7 +1027,7 @@ export function registerQualityRoutes(app: Express) {
 
   app.post("/api/quality/project/:projectName/item/:itemInstanceId/approve", requireAuth, requirePermission('quality', 'approve'), async (req, res) => {
     try {
-      const itemId = parseInt(String(req.params.itemInstanceId), 10);
+      const itemId = parseIntParam(req.params.itemInstanceId);
       const { approved, comment } = req.body;
       const [existing] = await db.select().from(qcItemInstance).where(eq(qcItemInstance.id, itemId));
 
@@ -910,7 +1096,7 @@ export function registerQualityRoutes(app: Express) {
 
   app.post("/api/quality/project/:projectName/item/:itemInstanceId/evidence", requireAuth, requirePermission("quality", "edit"), async (req, res) => {
     try {
-      const itemId = parseInt(String(req.params.itemInstanceId), 10);
+      const itemId = parseIntParam(req.params.itemInstanceId);
       const { evidenceUrl, evidenceNote } = req.body;
       if (!evidenceUrl) return res.status(400).json({ error: "evidenceUrl required" });
 
@@ -931,7 +1117,7 @@ export function registerQualityRoutes(app: Express) {
 
   app.post("/api/quality/project/:projectName/item/:itemInstanceId/evidence/upload", requireAuth, requirePermission("quality", "edit"), qmApprovalUpload.single("file"), async (req, res) => {
     try {
-      const itemId = parseInt(String(req.params.itemInstanceId), 10);
+      const itemId = parseIntParam(req.params.itemInstanceId);
       const file = req.file;
       if (!file) return res.status(400).json({ error: "No file uploaded" });
       const note = req.body.note || "";
@@ -997,7 +1183,7 @@ export function registerQualityRoutes(app: Express) {
 
   app.post("/api/quality/project/:projectName/item/:itemInstanceId/send-for-approval", requireAuth, requirePermission("pd_quality", "edit"), qmApprovalUpload.single("file"), async (req, res) => {
     try {
-      const itemId = parseInt(String(req.params.itemInstanceId), 10);
+      const itemId = parseIntParam(req.params.itemInstanceId);
       const projectName = decodeURIComponent(String(req.params.projectName));
       const approverUserId = parseInt(req.body.approverUserId);
       if (!approverUserId) return res.status(400).json({ error: "Approver is required" });
@@ -1049,7 +1235,7 @@ export function registerQualityRoutes(app: Express) {
 
   app.delete("/api/quality/evidence/:evidenceId", requireAuth, requirePermission("quality", "delete"), async (req, res) => {
     try {
-      await db.update(qcItemEvidence).set({ deletedAt: new Date(), deletedBy: getUser(req).id }).where(eq(qcItemEvidence.id, parseInt(String(req.params.evidenceId), 10))).returning();
+      await db.update(qcItemEvidence).set({ deletedAt: new Date(), deletedBy: getUser(req).id }).where(eq(qcItemEvidence.id, parseIntParam(req.params.evidenceId))).returning();
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(req.params.evidenceId), action: "delete", changesJson: { description: "Evidence deleted" } });
       res.json({ success: true });
     } catch (err: unknown) {
@@ -1111,7 +1297,7 @@ export function registerQualityRoutes(app: Express) {
   app.delete("/api/quality/project/:projectName/item/:itemInstanceId", requireAuth, requireAdminOrQm, requirePermission('pd_quality', 'delete'), async (req, res) => {
     try {
       const pName = decodeURIComponent(String(req.params.projectName));
-      const itemId = parseInt(String(req.params.itemInstanceId), 10);
+      const itemId = parseIntParam(req.params.itemInstanceId);
 
       const [checklist] = await db.select().from(qcChecklist).where(eq(qcChecklist.projectName, pName));
       if (!checklist) return res.status(404).json({ error: "No checklist found for this project" });
@@ -1264,7 +1450,7 @@ export function registerQualityRoutes(app: Express) {
 
   app.post("/api/quality/warning/:warningId/acknowledge", requireAuth, requirePermission("quality", "approve"), async (req, res) => {
     try {
-      const warningId = parseInt(String(req.params.warningId), 10);
+      const warningId = parseIntParam(req.params.warningId);
       const { note } = req.body;
       await db.update(qcWarning).set({ status: "in_progress", updatedAt: new Date() }).where(eq(qcWarning.id, warningId));
       await db.insert(qcWarningEvent).values({
@@ -1285,7 +1471,7 @@ export function registerQualityRoutes(app: Express) {
 
   app.post("/api/quality/warning/:warningId/resolve", requireAuth, requirePermission("quality", "approve"), async (req, res) => {
     try {
-      const warningId = parseInt(String(req.params.warningId), 10);
+      const warningId = parseIntParam(req.params.warningId);
       const { note } = req.body;
       await db.update(qcWarning).set({ status: "resolved", updatedAt: new Date() }).where(eq(qcWarning.id, warningId));
       await db.insert(qcWarningEvent).values({
@@ -1337,8 +1523,8 @@ export function registerQualityRoutes(app: Express) {
 
   app.delete("/api/quality/plan-link/:linkId", requireAuth, requirePermission("quality", "delete"), async (req, res) => {
     try {
-      const [deletedLink] = await db.select().from(qcPlanLink).where(eq(qcPlanLink.id, parseInt(String(req.params.linkId), 10)));
-      await db.delete(qcPlanLink).where(eq(qcPlanLink.id, parseInt(String(req.params.linkId), 10)));
+      const [deletedLink] = await db.select().from(qcPlanLink).where(eq(qcPlanLink.id, parseIntParam(req.params.linkId)));
+      await db.delete(qcPlanLink).where(eq(qcPlanLink.id, parseIntParam(req.params.linkId)));
       if (deletedLink) recalculateWarnings(deletedLink.projectName).catch((err) => console.error("[Quality] Warning recalculation failed:", err?.message || err));
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(req.params.linkId), action: "delete", projectName: deletedLink?.projectName, changesJson: { description: "Plan link deleted" } });
       res.json({ success: true });
@@ -1376,6 +1562,9 @@ export function registerQualityRoutes(app: Express) {
             unansweredRiskCount: 0,
             triggeredRiskCount: 0,
             blockedHandover: false,
+            handoverBlockingItemCount: 0,
+            criticalContributorItemCount: 0,
+            actionableForApprovalCount: 0,
             riskLevel: "low",
             riskScore: 0,
             },
@@ -1487,6 +1676,9 @@ export function registerQualityRoutes(app: Express) {
           unansweredRiskCount: riskSummary.exposures.unansweredRiskCount,
           triggeredRiskCount: riskSummary.exposures.triggeredRiskCount,
           blockedHandover: riskSummary.exposures.blockedHandover,
+          handoverBlockingItemCount: riskSummary.exposures.handoverBlockingItemCount,
+          criticalContributorItemCount: riskSummary.exposures.criticalContributorItemCount,
+          actionableForApprovalCount: riskSummary.exposures.actionableForApprovalCount,
           riskLevel: riskSummary.level,
           riskScore: riskSummary.score,
           handoverBlockers: getQualityHandoverReasons({
@@ -2236,7 +2428,7 @@ export function registerQualityRoutes(app: Express) {
 
   app.delete("/api/quality/holidays/:id", requireAuth, requireRole("COO_ADMIN", "CEO_ADMIN"), async (req, res) => {
     try {
-      await db.delete(calendarHoliday).where(eq(calendarHoliday.id, parseInt(String(req.params.id), 10)));
+      await db.delete(calendarHoliday).where(eq(calendarHoliday.id, parseIntParam(req.params.id)));
       logAuditFromReq(req, { entityType: "quality_template", entityId: String(req.params.id), action: "delete", changesJson: { description: "Holiday deleted" } });
       res.json({ success: true });
     } catch (err: unknown) {
@@ -2290,7 +2482,7 @@ export function registerQualityRoutes(app: Express) {
       if (!isAdminRole(role)) {
         return res.status(403).json({ error: "Admin access required" });
       }
-      const userId = parseInt(String(req.params.userId), 10);
+      const userId = parseIntParam(req.params.userId);
       const { role: newRole } = req.body;
       if (!newRole) return res.status(400).json({ error: "Role is required" });
       const { users } = await import("@shared/schema");

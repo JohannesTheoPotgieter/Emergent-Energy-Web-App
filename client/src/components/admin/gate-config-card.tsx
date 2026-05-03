@@ -71,7 +71,7 @@ export function GateConfigCard() {
                 <span>Weekly Update Overdue</span><Badge variant="outline">{sla.weeklyUpdateOverdueDays} days</Badge>
               </div>
               <div className="flex items-center justify-between text-xs">
-                <span>Post-Handover Review Overdue</span><Badge variant="outline">{sla.postHandoverReviewOverdueDays} days</Badge>
+                <span>3 Months Post HO Review Overdue</span><Badge variant="outline">{sla.postHandoverReviewOverdueDays} days</Badge>
               </div>
             </>
           ) : (

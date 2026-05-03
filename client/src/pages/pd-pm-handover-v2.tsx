@@ -237,7 +237,7 @@ function StakeholderTab({ projectId, items, onRefresh, disabled }: { projectId: 
   const addMutation = useMutation({
     mutationFn: async () => {
       if (!newRow.name || !newRow.role) throw new Error("Name and role required.");
-      const res = await fetch(`/api/pd-pm-handover/${projectId}/stakeholders`, {
+      const res = await fetch(`/api/engineering-pm-handover/${projectId}/stakeholders`, {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(newRow),
@@ -255,7 +255,7 @@ function StakeholderTab({ projectId, items, onRefresh, disabled }: { projectId: 
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`/api/pd-pm-handover/${projectId}/stakeholders/${id}`, { method: "DELETE", credentials: "include" });
+      const res = await fetch(`/api/engineering-pm-handover/${projectId}/stakeholders/${id}`, { method: "DELETE", credentials: "include" });
       if (!res.ok) throw new Error("Could not delete.");
     },
     onSuccess: () => { setDeleteId(null); toast({ title: "Stakeholder removed" }); onRefresh(); },
@@ -368,7 +368,7 @@ export function PdPmHandoverV2({ projectId }: { projectId: number }) {
     queryKey: ["pd-pm-handover", projectId],
     enabled: Number.isFinite(projectId),
     queryFn: async () => {
-      const res = await fetch(`/api/pd-pm-handover/${projectId}`, { credentials: "include" });
+      const res = await fetch(`/api/engineering-pm-handover/${projectId}`, { credentials: "include" });
       if (!res.ok) throw new Error(await parseErrorMessage(res, "Could not load handover."));
       return res.json();
     },
@@ -379,7 +379,7 @@ export function PdPmHandoverV2({ projectId }: { projectId: number }) {
     queryKey: ["handover-stakeholders", projectId],
     enabled: Number.isFinite(projectId),
     queryFn: async () => {
-      const res = await fetch(`/api/pd-pm-handover/${projectId}/stakeholders`, { credentials: "include" });
+      const res = await fetch(`/api/engineering-pm-handover/${projectId}/stakeholders`, { credentials: "include" });
       if (!res.ok) return { items: [] };
       return res.json();
     },
@@ -424,7 +424,7 @@ export function PdPmHandoverV2({ projectId }: { projectId: number }) {
     await Promise.all([
       qc.invalidateQueries({ queryKey: ["pd-pm-handover", projectId] }),
       qc.invalidateQueries({ queryKey: ["handover-stakeholders", projectId] }),
-      qc.invalidateQueries({ queryKey: ["/api/pd-pm-handover/control"] }),
+      qc.invalidateQueries({ queryKey: ["/api/engineering-pm-handover/control"] }),
       qc.invalidateQueries({ queryKey: ["/api/projects-summary"] }),
     ]);
   }, [qc, projectId]);
@@ -440,7 +440,7 @@ export function PdPmHandoverV2({ projectId }: { projectId: number }) {
         kickoffDate: tabData.kickoffDate || null,
         lessonsReviewed: lessonsDismissed || false,
       };
-      const res = await fetch(`/api/pd-pm-handover/${projectId}/draft`, {
+      const res = await fetch(`/api/engineering-pm-handover/${projectId}/draft`, {
         method: "PUT", credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -457,7 +457,7 @@ export function PdPmHandoverV2({ projectId }: { projectId: number }) {
   const submitMutation = useMutation({
     mutationFn: async () => {
       setSubmitError(null);
-      const res = await fetch(`/api/pd-pm-handover/${projectId}/submit`, {
+      const res = await fetch(`/api/engineering-pm-handover/${projectId}/submit`, {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
@@ -477,7 +477,7 @@ export function PdPmHandoverV2({ projectId }: { projectId: number }) {
 
   const acceptMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`/api/pd-pm-handover/${projectId}/accept`, { method: "POST", credentials: "include" });
+      const res = await fetch(`/api/engineering-pm-handover/${projectId}/accept`, { method: "POST", credentials: "include" });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Could not accept.");
     },
     onSuccess: async () => { toast({ title: "Handover accepted" }); await invalidate(); },
@@ -487,7 +487,7 @@ export function PdPmHandoverV2({ projectId }: { projectId: number }) {
   const rejectMutation = useMutation({
     mutationFn: async () => {
       if (!rejectReason.trim()) throw new Error("Rejection reason required.");
-      const res = await fetch(`/api/pd-pm-handover/${projectId}/reject`, {
+      const res = await fetch(`/api/engineering-pm-handover/${projectId}/reject`, {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reason: rejectReason.trim() }),
@@ -503,7 +503,7 @@ export function PdPmHandoverV2({ projectId }: { projectId: number }) {
 
   const pdSignOff = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`/api/pd-pm-handover/${projectId}/pd-sign-off`, { method: "POST", credentials: "include" });
+      const res = await fetch(`/api/engineering-pm-handover/${projectId}/pd-sign-off`, { method: "POST", credentials: "include" });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "PD sign-off failed.");
     },
     onSuccess: async () => { toast({ title: "PD sign-off recorded" }); await invalidate(); },
@@ -512,7 +512,7 @@ export function PdPmHandoverV2({ projectId }: { projectId: number }) {
 
   const pmSignOff = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`/api/pd-pm-handover/${projectId}/pm-sign-off`, { method: "POST", credentials: "include" });
+      const res = await fetch(`/api/engineering-pm-handover/${projectId}/pm-sign-off`, { method: "POST", credentials: "include" });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "PM sign-off failed.");
     },
     onSuccess: async () => { toast({ title: "PM sign-off recorded" }); await invalidate(); },

@@ -2,16 +2,34 @@ import type { ComponentType } from "react";
 import { lazyWithRetry } from "@/lib/lazy-with-retry";
 
 const CompanyOverviewPage = lazyWithRetry(() => import("@/pages/company-overview"));
+const CompanyTeamPage = lazyWithRetry(() => import("@/pages/company-team"));
 const Dashboard = lazyWithRetry(() => import("@/pages/dashboard"));
+const CeoHomePage = lazyWithRetry(() => import("@/pages/ceo-home"));
+const CooHomePage = lazyWithRetry(() => import("@/pages/coo-home"));
+const SettingsHomePage = lazyWithRetry(() => import("@/pages/settings-home"));
+const ProjectDocumentsPage = lazyWithRetry(() => import("@/pages/project-documents"));
+const DocumentsPage = lazyWithRetry(() => import("@/pages/documents"));
+// (removed) QuickBooksHomePage — orphaned surface, consolidated into FinanceQuickBooksThroughputPage in Task #30.
+const AdminDocumentTypesPage = lazyWithRetry(() => import("@/pages/admin-document-types"));
+const AdminDocumentManagementPage = lazyWithRetry(() => import("@/pages/admin-document-management"));
+const AdminEmailLinkerDevPage = lazyWithRetry(() => import("@/pages/admin-email-linker-dev"));
+const HandoverLivePage = lazyWithRetry(() => import("@/pages/handover-live"));
 const ProjectLifecyclePage = lazyWithRetry(() => import("@/pages/project-lifecycle"));
 const ProjectsSummary = lazyWithRetry(() => import("@/pages/projects"));
 const CashflowPage = lazyWithRetry(() => import("@/pages/cashflow"));
+const CashflowAnalysisPage = lazyWithRetry(() => import("@/pages/cashflow-analysis"));
 const RevenueTrackerPage = lazyWithRetry(() => import("@/pages/revenue-tracker"));
+const RevenueTrackingReplicaPage = lazyWithRetry(() => import("@/pages/revenue-tracking"));
+const ExpenditureBreakdownReplicaPage = lazyWithRetry(() => import("@/pages/expenditure-breakdown"));
+const ProgramPlanReplicaPage = lazyWithRetry(() => import("@/pages/program-plan"));
+const ManualOverridesPage = lazyWithRetry(() => import("@/pages/manual-overrides"));
+const ExcelVsAppProgramPage = lazyWithRetry(() => import("@/pages/excel-vs-app"));
+const ExcelVsAppProjectPage = lazyWithRetry(() => import("@/pages/excel-vs-app-project"));
 const CostTracker = lazyWithRetry(() => import("@/pages/cos"));
+const CosAnalysisPage = lazyWithRetry(() => import("@/pages/cos-analysis"));
 const ProjectDetailPage = lazyWithRetry(() => import("@/pages/project-detail"));
 const ProjectStageGatePage = lazyWithRetry(() => import("@/pages/project-stage-gate"));
 const MyWorkAdminSettingsPage = lazyWithRetry(() => import("@/pages/my-work-admin-settings"));
-const MyWorkPrioritiesPage = lazyWithRetry(() => import("@/pages/my-work-priorities"));
 const MyWorkMeetingsPage = lazyWithRetry(() => import("@/pages/my-work-meetings"));
 const MyWorkSettingsPage = lazyWithRetry(() => import("@/pages/my-work-settings"));
 const QmDashboardPage = lazyWithRetry(() => import("@/pages/qm-dashboard"));
@@ -28,7 +46,10 @@ const SubcontractorDashboardPage = lazyWithRetry(() => import("@/pages/subcontra
 const CounterpartiesPage = lazyWithRetry(() => import("@/pages/counterparties"));
 const SystemActivityLogPage = lazyWithRetry(() => import("@/pages/system-activity-log"));
 const WeeklyReviewsPage = lazyWithRetry(() => import("@/pages/weekly-reviews"));
-const AdminRolesPage = lazyWithRetry(() => import("@/pages/admin-roles"));
+// Task #107: AdminRolesPage is the new single-screen rail + right-panel layout
+// (no tabs). Retired the tabbed admin-roles-shell.tsx and the 2638-line
+// admin-roles.tsx — both deleted in this task.
+const AdminRolesPage = lazyWithRetry(() => import("@/pages/admin-roles/index"));
 const AdminSettingsPage = lazyWithRetry(() => import("@/pages/admin-settings"));
 const LeaderboardPage = lazyWithRetry(() => import("@/pages/leaderboard"));
 const FeedbackPage = lazyWithRetry(() => import("@/pages/feedback"));
@@ -37,10 +58,6 @@ const TrainingPage = lazyWithRetry(() => import("@/pages/training"));
 const PMDashboard = lazyWithRetry(() => import("@/pages/pm-dashboard"));
 const PortfoliosPage = lazyWithRetry(() => import("@/pages/portfolios"));
 const PortfolioDetailPage = lazyWithRetry(() => import("@/pages/portfolio-detail"));
-const PdTicketsPage = lazyWithRetry(() => import("@/pages/pd-tickets"));
-const PdTicketCreatePage = lazyWithRetry(() => import("@/pages/pd-ticket-create"));
-const PdTicketDetailPage = lazyWithRetry(() => import("@/pages/pd-ticket-detail"));
-const PdReportsPage = lazyWithRetry(() => import("@/pages/pd-reports"));
 const TeamsChatsPage = lazyWithRetry(() => import("@/pages/teams-chats"));
 const CollabEmailPage = lazyWithRetry(() => import("@/pages/collab-email"));
 const FinancialLinkingPage = lazyWithRetry(() => import("@/pages/financial-linking"));
@@ -89,9 +106,11 @@ const PaymentRequestBoardPage = lazyWithRetry(() => import("@/pages/payment-requ
 const PaymentBatchManagerPage = lazyWithRetry(() => import("@/pages/payment-batch-manager"));
 const HseDashboardPage = lazyWithRetry(() => import("@/pages/hse-dashboard"));
 const HandoverDashboardPage = lazyWithRetry(() => import("@/pages/handover-dashboard"));
+const SsegSubmissionsPage = lazyWithRetry(() => import("@/pages/sseg-submissions"));
 const LessonsLearntPage = lazyWithRetry(() => import("@/pages/lessons-learnt"));
 const SitesPage = lazyWithRetry(() => import("@/pages/sites"));
 const OpportunitiesPage = lazyWithRetry(() => import("@/pages/opportunities"));
+const PdDashboardPage = lazyWithRetry(() => import("@/pages/pd-dashboard"));
 const AdminPipedrivePage = lazyWithRetry(() => import("@/pages/admin-pipedrive"));
 const AdminQuickBooksPage = lazyWithRetry(() => import("@/pages/admin-quickbooks"));
 const FinanceQuickBooksLinksPage = lazyWithRetry(() => import("@/pages/finance-quickbooks-links"));
@@ -102,6 +121,7 @@ const FinanceQuickBooksThroughputPage = lazyWithRetry(
   () => import("@/pages/finance-quickbooks-throughput"),
 );
 const AdminBackfillPage = lazyWithRetry(() => import("@/pages/admin-backfill"));
+const AdminWorkItemLinkagePage = lazyWithRetry(() => import("@/pages/admin-work-item-linkage"));
 const AdminWorkflowConfigPage = lazyWithRetry(() => import("@/pages/admin-workflow-config"));
 
 const CommissioningDashboardPage = lazyWithRetry(() => import("@/pages/commissioning-dashboard"));
@@ -116,6 +136,7 @@ const GatesClientUpdatesPage = lazyWithRetry(() => import("@/pages/gates/gates-c
 const GatesHandoversPage = lazyWithRetry(() => import("@/pages/gates/gates-handovers"));
 const GatesQueriesPage = lazyWithRetry(() => import("@/pages/gates/gates-queries"));
 const GatesCommitmentsPage = lazyWithRetry(() => import("@/pages/gates/gates-commitments"));
+const PendingApprovalsPage = lazyWithRetry(() => import("@/pages/pending-approvals"));
 
 /**
  * Maps PageRegistryEntry.routeComponentKey → the lazy-loaded page component.
@@ -125,6 +146,7 @@ const GatesCommitmentsPage = lazyWithRetry(() => import("@/pages/gates/gates-com
  */
 export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   CompanyOverviewPage,
+  CompanyTeamPage,
   Dashboard,
   ProjectLifecyclePage,
   ProjectsSummary,
@@ -132,9 +154,16 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   ProjectDetailPage,
   ProjectStageGatePage,
   CashflowPage,
+  CashflowAnalysisPage,
   CostTracker,
+  CosAnalysisPage,
   RevenueTrackerPage,
-  MyWorkPrioritiesPage,
+  RevenueTrackingReplicaPage,
+  ExpenditureBreakdownReplicaPage,
+  ProgramPlanReplicaPage,
+  ManualOverridesPage,
+  ExcelVsAppProgramPage,
+  ExcelVsAppProjectPage,
   MyWorkAdminSettingsPage,
   QmDashboardPage,
   EngineeringDashboardPage,
@@ -161,10 +190,6 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   PMDashboard,
   PortfoliosPage,
   PortfolioDetailPage,
-  PdTicketsPage,
-  PdTicketCreatePage,
-  PdTicketDetailPage,
-  PdReportsPage,
   TeamsChatsPage,
   CollabEmailPage,
   PMOnTheGoHome,
@@ -212,15 +237,18 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   PaymentBatchManagerPage,
   HseDashboardPage,
   HandoverDashboardPage,
+  SsegSubmissionsPage,
   LessonsLearntPage,
   SitesPage,
   OpportunitiesPage,
+  PdDashboardPage,
   AdminPipedrivePage,
   AdminQuickBooksPage,
   FinanceQuickBooksLinksPage,
   FinanceQuickBooksCustomerMappingPage,
   FinanceQuickBooksThroughputPage,
   AdminBackfillPage,
+  AdminWorkItemLinkagePage,
   AdminWorkflowConfigPage,
   MilestoneTrackerPage,
   GatesPipelinePage,
@@ -232,6 +260,16 @@ export const ROUTE_COMPONENTS: Record<string, ComponentType<any>> = {
   GatesQueriesPage,
   GatesCommitmentsPage,
   CommissioningDashboardPage,
+  CeoHomePage,
+  CooHomePage,
+  SettingsHomePage,
+  ProjectDocumentsPage,
+  DocumentsPage,
+  AdminDocumentTypesPage,
+  AdminDocumentManagementPage,
+  AdminEmailLinkerDevPage,
+  HandoverLivePage,
+  PendingApprovalsPage,
 };
 
 export const ROUTE_COMPONENT_KEYS: ReadonlySet<string> = new Set(Object.keys(ROUTE_COMPONENTS));

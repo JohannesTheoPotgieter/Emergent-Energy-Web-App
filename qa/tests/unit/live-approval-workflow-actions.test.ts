@@ -17,7 +17,11 @@ describe("live approval workflow actions", () => {
   });
 
   it("wires PM handover review accept and reject actions to existing backend endpoint", () => {
-    expect(pmHandoverQueuePage).toContain('/api/pd-pm-handover/${projectId}/${action}');
+    // Task #61 added a server-side alias `/api/engineering-pm-handover/*`
+    // → `/api/pd-pm-handover/*`, so either spelling reaches the same
+    // handler. The frontend currently uses the legacy spelling; the test
+    // accepts either to remain valid through the planned URL migration.
+    expect(pmHandoverQueuePage).toMatch(/\/api\/(pd|engineering)-pm-handover\/\$\{projectId\}\/\$\{action\}/);
     expect(pmHandoverQueuePage).toContain('action: "accept"');
     expect(pmHandoverQueuePage).toContain('action: "reject"');
     expect(pmHandoverQueuePage).toContain('usePermission("handover", "approve")');

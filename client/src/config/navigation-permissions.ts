@@ -18,7 +18,7 @@ export type NavigationPermissionItem = {
 const SECTION_HELP_TEXT: Partial<Record<SectionKey, string>> = {
   HOME: "Dashboard, My Tasks, Approvals, Calendar, Meetings, Inbox",
   PORTFOLIO: "Company Overview, Lifecycle Board, Gate Tracker, Blocked Gates, Exceptions",
-  PRIORITIES: "My Priorities, Department, Company",
+  PRIORITIES: "Department, Company",
   PROJECT_DEVELOPMENT: "Project Development Dashboard, Pipeline / Opportunities, Clients, Handover Queue, Project Development Reports",
   PROJECT_DELIVERY: "Execution Dashboard, PM Dashboard, Portfolio Dashboard, All Projects, PM On-The-Go, Handover & Closeout, and delivery controls",
   FINANCE: "Cashflow, COS, Revenue, QB Throughput",
@@ -34,7 +34,7 @@ function basePath(path: string) {
 }
 
 export const NAVIGATION_PERMISSION_MODEL = TOP_SECTIONS.map((section) => {
-  const items = section.secondary.map((item) => {
+  const items = (section.secondary ?? []).map((item) => {
     const entity = getPermissionEntityForPath(basePath(item.path));
     return {
       sectionKey: section.key,
@@ -62,7 +62,6 @@ export const NAVIGATION_PERMISSION_MODEL = TOP_SECTIONS.map((section) => {
  */
 const MISSING_ENTITY_ALLOWLIST = new Set<string>([
   "/",
-  "/priorities?tab=mine",
   "/priorities?tab=department",
   "/priorities?tab=company",
 ]);

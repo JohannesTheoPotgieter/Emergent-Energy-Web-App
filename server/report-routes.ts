@@ -10,6 +10,7 @@ import { randomUUID } from "crypto";
 import { getProgrammeDrilldownRows, writeDrilldownExcel } from "./services/report-drilldown-service";
 import { requireAuth } from "./auth-context";
 import { requireAdmin } from "./middleware/requireAdmin";
+import { effectiveRagBucket, computeEffectiveRag } from "@shared/utils/effective-rag";
 
 const ADVANCED_REPORT_TYPES = [
   {
@@ -224,7 +225,7 @@ export function registerReportRoutes(app: Express) {
       res.status(201).json({ id, status, downloadUrl, scheduled: Boolean(schedule) });
     } catch (error: any) {
       console.error("[Reports] Failed to generate report", error);
-      res.status(500).json({ error: "report_generation_failed", message: error?.message || "Unknown error" });
+      res.status(500).json({ error: "report_generation_failed" });
     }
   });
 
@@ -250,7 +251,7 @@ export function registerReportRoutes(app: Express) {
       `);
       res.json({ items: rows.rows || [] });
     } catch (error: any) {
-      res.status(500).json({ error: "scheduled_reports_fetch_failed", message: error?.message || "Unknown error" });
+      res.status(500).json({ error: "scheduled_reports_fetch_failed" });
     }
   });
 
@@ -278,7 +279,7 @@ export function registerReportRoutes(app: Express) {
       `);
       res.json({ items: rows.rows || [] });
     } catch (error: any) {
-      res.status(500).json({ error: "report_history_fetch_failed", message: error?.message || "Unknown error" });
+      res.status(500).json({ error: "report_history_fetch_failed" });
     }
   });
 
@@ -306,7 +307,7 @@ export function registerReportRoutes(app: Express) {
       res.json(payload);
     } catch (error: any) {
       console.error("[Programme Reports] drilldown failed", error);
-      res.status(500).json({ error: "programme_drilldown_failed", message: error?.message || "Unknown error" });
+      res.status(500).json({ error: "programme_drilldown_failed" });
     }
   });
 
@@ -348,10 +349,11 @@ export function registerReportRoutes(app: Express) {
         return !done && r.endDate < new Date().toISOString().substring(0, 10);
       }).length;
 
+      // Apply canonical effective-RAG so projects in DLP are counted as red.
       const health = {
-        green: qualityRows.filter((p: any) => String((p as any).ragStatus || (p as any).rag || "").toLowerCase() === "green").length,
-        amber: qualityRows.filter((p: any) => String((p as any).ragStatus || (p as any).rag || "").toLowerCase() === "amber").length,
-        red: qualityRows.filter((p: any) => String((p as any).ragStatus || (p as any).rag || "").toLowerCase() === "red").length,
+        green: qualityRows.filter((p: any) => effectiveRagBucket({ ragStatus: p.ragStatus ?? p.rag, inDlp: p.inDlp }) === "green").length,
+        amber: qualityRows.filter((p: any) => effectiveRagBucket({ ragStatus: p.ragStatus ?? p.rag, inDlp: p.inDlp }) === "amber").length,
+        red:   qualityRows.filter((p: any) => effectiveRagBucket({ ragStatus: p.ragStatus ?? p.rag, inDlp: p.inDlp }) === "red").length,
       };
 
       const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
@@ -388,7 +390,7 @@ export function registerReportRoutes(app: Express) {
       res.send(Buffer.from(data));
     } catch (error: any) {
       console.error("[Programme Reports] board pdf failed", error);
-      res.status(500).json({ error: "programme_board_pdf_failed", message: error?.message || "Unknown error" });
+      res.status(500).json({ error: "programme_board_pdf_failed" });
     }
   });
 
@@ -400,7 +402,7 @@ export function registerReportRoutes(app: Express) {
       res.json(result);
     } catch (err: unknown) {
       console.error("[Reports] Error:", (err instanceof Error ? err.message : String(err)));
-      res.status(400).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -461,7 +463,7 @@ export function registerReportRoutes(app: Express) {
       res.send(pdfBytes);
     } catch (err: unknown) {
       console.error("[Reports] PDF error:", (err instanceof Error ? err.message : String(err)));
-      res.status(400).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -579,6 +581,12 @@ export function registerReportRoutes(app: Express) {
           percentComplete: t.percentComplete,
           expectedPctComplete: t.expectedPctComplete,
           isMilestone: t.isMilestone,
+          // Smart Import v2 tracker columns surfaced from work_items.
+          lead: t.lead ?? null,
+          resource1: t.resource1 ?? null,
+          resource2: t.resource2 ?? null,
+          trackerComments: t.trackerComments ?? null,
+          workDays: t.workDays ?? null,
           lastImportAt: lastImport?.committedAt || null,
           isStale: staleness.isStale,
           daysSinceImport: staleness.daysSinceImport,
@@ -596,6 +604,11 @@ export function registerReportRoutes(app: Express) {
           { header: "End", key: "endDate", width: 12 },
           { header: "Duration", key: "duration", width: 10 },
           { header: "Owner", key: "owner", width: 20 },
+          { header: "Lead", key: "lead", width: 15 },
+          { header: "Resource 1", key: "resource1", width: 15 },
+          { header: "Resource 2", key: "resource2", width: 15 },
+          { header: "Tracker Comments", key: "trackerComments", width: 30 },
+          { header: "Work Days", key: "workDays", width: 10 },
           { header: "Status", key: "status", width: 15 },
           { header: "% Complete", key: "percentComplete", width: 12 },
           { header: "Milestone", key: "isMilestone", width: 10 },
@@ -606,7 +619,7 @@ export function registerReportRoutes(app: Express) {
       res.json({ data: rows, meta: { count: rows.length, stalenessThresholdDays: STALENESS_THRESHOLD_DAYS } });
     } catch (err: unknown) {
       console.error("[Reports] Project plan error:", (err instanceof Error ? err.message : String(err)));
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -672,6 +685,13 @@ export function registerReportRoutes(app: Express) {
           cosStatus,
           paymentConfirmed,
           status: c.status,
+          // Smart Import v2 tracker columns surfaced from
+          // normalized_cost_lines for portfolio-level review.
+          checkFlag: c.checkFlag ?? null,
+          actualQty: c.actualQty ?? null,
+          actualRate: c.actualRate ?? null,
+          comments: c.comments ?? null,
+          savingOverrun: c.savingOverrun ?? null,
           lastImportAt: lastImport?.committedAt || null,
           isStale: staleness.isStale,
           daysSinceImport: staleness.daysSinceImport,
@@ -686,6 +706,8 @@ export function registerReportRoutes(app: Express) {
           { header: "Counterparty", key: "counterpartyName", width: 25 },
           { header: "Description", key: "description", width: 35 },
           { header: "Amount Ex VAT", key: "amountExVat", width: 15 },
+          { header: "Actual Qty", key: "actualQty", width: 12 },
+          { header: "Actual Rate", key: "actualRate", width: 12 },
           { header: "Invoice #", key: "invoiceNumber", width: 15 },
           { header: "Invoice Date", key: "invoiceDate", width: 12 },
           { header: "Invoice Confirmed", key: "invoiceDateConfirmed", width: 15 },
@@ -693,6 +715,9 @@ export function registerReportRoutes(app: Express) {
           { header: "Payment Confirmed", key: "paidDateConfirmed", width: 15 },
           { header: "PO Number", key: "poNumber", width: 15 },
           { header: "COS Status", key: "cosStatus", width: 12 },
+          { header: "Check", key: "checkFlag", width: 10 },
+          { header: "Saving / Overrun", key: "savingOverrun", width: 15 },
+          { header: "Comments", key: "comments", width: 30 },
           { header: "Last Import", key: "lastImportAt", width: 20 },
         ], rows);
       }
@@ -713,7 +738,7 @@ export function registerReportRoutes(app: Express) {
       });
     } catch (err: unknown) {
       console.error("[Reports] Cost report error:", (err instanceof Error ? err.message : String(err)));
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -736,10 +761,16 @@ export function registerReportRoutes(app: Express) {
         const lastImport = importInfo.get(p.projectName);
         const staleness = checkStaleness(lastImport?.committedAt);
 
+        const eff = computeEffectiveRag({
+          ragStatus: (p as any).ragStatus || (p as any).rag,
+          inDlp: (p as any).inDlp,
+        });
         return {
           projectName: p.projectName,
           phase: (p as any).phase || (p as any).executionPhase || null,
-          ragStatus: (p as any).ragStatus || (p as any).rag || null,
+          ragStatus: eff.value,
+          ragReason: eff.reason,
+          inDlp: !!(p as any).inDlp,
           sizeKwp: p.sizeKwp,
           pd: p.pd,
           pm: p.pm,
@@ -765,7 +796,7 @@ export function registerReportRoutes(app: Express) {
       res.json({ data: rows, meta: { count: rows.length, stalenessThresholdDays: STALENESS_THRESHOLD_DAYS } });
     } catch (err: unknown) {
       console.error("[Reports] Quality report error:", (err instanceof Error ? err.message : String(err)));
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -862,7 +893,7 @@ export function registerReportRoutes(app: Express) {
       res.json({ data: rows, meta: { count: rows.length, stalenessThresholdDays: STALENESS_THRESHOLD_DAYS } });
     } catch (err: unknown) {
       console.error("[Reports] Resource allocation error:", (err instanceof Error ? err.message : String(err)));
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 

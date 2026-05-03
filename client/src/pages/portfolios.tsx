@@ -12,7 +12,10 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Textarea } from "@/components/ui/textarea";
 import UserPicker from "@/components/UserPicker";
 import { useToast } from "@/hooks/use-toast";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout } from "@/components/layout";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
+import { getMarginColour } from "@/lib/margin-colour";
 import {
   Briefcase, Plus, FolderOpen, TrendingUp, TrendingDown, AlertTriangle,
   Users, Zap, DollarSign, ShieldCheck, Search, ChevronRight, ChevronDown, Wrench,
@@ -223,7 +226,10 @@ function ProjectDrillTable({ portfolio }: { portfolio: any }) {
             const fin: any = financeByName.get(s.projectName) || {};
             const delta = s.delta || 0;
             return (
-              <tr key={s.projectName} className="border-t border-border/30 hover:bg-muted/20 transition-colors">
+              <tr
+                key={s.projectName}
+                className={`border-t border-border/30 hover:bg-muted/20 transition-colors ${getMarginColour(Number(fin.gpMarginPct || 0))}`}
+              >
                 <td className="py-2 px-3 font-medium truncate max-w-[180px]">{s.projectName}</td>
                 <td className="py-2 px-2 text-muted-foreground">{s.phase || "-"}</td>
                 <td className="py-2 px-2 text-right tabular-nums font-medium">{(s.actualPct ?? 0).toFixed(1)}%</td>
@@ -583,19 +589,20 @@ export default function PortfoliosPage() {
   if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load Portfolios" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
   return (
-    <div className="space-y-6" data-testid="page-portfolios">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold" data-testid="text-page-title">Portfolio Dashboard</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            {dashboard?.totalPortfolios || 0} portfolios · {dashboard?.unassignedProjectCount || 0} unassigned projects
-          </p>
-        </div>
-        <Button onClick={() => setCreateOpen(true)} className="gap-1.5" data-testid="button-create-portfolio">
-          <Plus className="h-4 w-4" /> New Portfolio
-        </Button>
-      </div>
-
+    <PageLayout
+      data-testid="page-portfolios"
+      header={
+        <PageHeader
+          title="Portfolio Dashboard"
+          subtitle={`${dashboard?.totalPortfolios || 0} portfolios · ${dashboard?.unassignedProjectCount || 0} unassigned projects`}
+          actions={
+            <Button onClick={() => setCreateOpen(true)} className="gap-1.5" data-testid="button-create-portfolio">
+              <Plus className="h-4 w-4" /> New Portfolio
+            </Button>
+          }
+        />
+      }
+    >
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex bg-muted rounded-lg p-0.5 gap-0.5">
           {([
@@ -789,6 +796,6 @@ export default function PortfoliosPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageLayout>
   );
 }

@@ -11,10 +11,33 @@ import { recordOverride } from "../lib/audit/diff-engine";
 import { classifyExpenseState, isDateBlack } from "../lib/calculations/stateClassifier";
 import { isCosRealised, classifyCosStatusFull } from "../lib/calculations/financeUtils";
 import { getCosEffectiveDateAndSource } from "../lib/expense-row-selector";
+import {
+  recognitionAmountFor,
+  sumRevenueRecognition,
+  sumRealisedRevenueRecognition,
+} from "../lib/finance/revenue-recognition";
+import { isEffectivelyRealised } from "../lib/finance/cos-realisation";
 import { buildCanonicalResolver } from "../services/project-summary-helpers";
 import { getProjectHeaderKpis, recomputeHeaderKpiProjectionForActiveProjects } from "../services/project-header-kpi-service";
 import { evaluateRevenueArStatus } from "../lib/finance/revenue-ar-status";
 import { getCanonicalAllCurrentCostLines } from "../services/project-cost-line-read-service";
+import { parseIntParam } from "../lib/req-params";
+
+/**
+ * Helper: derive the COS month-key (YYYY-MM, UTC anchor) for a cost line.
+ * Used by canonical Revenue Recognition aggregation so that the realised
+ * gate uses the same month bucketing as the COS Tracker.
+ */
+function cosMonthKeyForLine(line: any): string | null {
+  const { date } = getCosEffectiveDateAndSource(line);
+  return date ? date.substring(0, 7) : null;
+}
+
+/** Current month key in UTC (YYYY-MM). */
+function currentMonthKeyUtc(): string {
+  const d = new Date();
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
 
 const router = Router();
 
@@ -308,13 +331,16 @@ router.get("/api/overview", requireAuth, async (req, res) => {
       }
     }
 
-    let revenueRealised = 0;
-    for (const inflow of allInflows) {
-      const paymentDate = inflow.effectiveDate;
-      if (paymentDate && /^\d{4}-\d{2}-\d{2}$/.test(paymentDate) && paymentDate <= today && inflow.milestoneAmount) {
-        revenueRealised += parseFloat(inflow.milestoneAmount) || 0;
-      }
-    }
+    // CANONICAL Revenue Recognition (POC method).
+    // Source: normalized_cost_lines.revenue_recognition_amount on lines whose
+    // underlying COS is effectively realised. NOT cash inflows.
+    const cmkOv = currentMonthKeyUtc();
+    const revenueRealised = sumRealisedRevenueRecognition(
+      allExpenses as any,
+      cmkOv,
+      cosMonthKeyForLine,
+    );
+    const revenuePlannedOv = sumRevenueRecognition(allExpenses as any);
 
     const uniqueProjects = new Set<string>();
     for (const info of allProjectInfo) {
@@ -334,6 +360,8 @@ router.get("/api/overview", requireAuth, async (req, res) => {
       total_program_budget: totalProgramBudget,
       actual_spend_paid: actualSpendPaid,
       revenue_realised: revenueRealised,
+      revenue_planned: revenuePlannedOv,
+      revenue_method: "POC",
       active_projects: uniqueProjects.size,
       data_as_of: new Date().toISOString()
     });
@@ -485,28 +513,37 @@ router.get("/api/home/summary", requireAuth, async (req, res) => {
     const omHandoverDue30 = allProjectInfo.filter(p => isWithinDays(p.omHandoverDate, 30)).length;
     const clientHandoverDue30 = allProjectInfo.filter(p => isWithinDays(p.clientHandoverDate, 30)).length;
 
-    let actualRevenue = 0, actualExpenses = 0, currentVoTotal = 0;
-    
-    const hasRevenueSummaryData = revenueSummaries.length > 0;
-    if (hasRevenueSummaryData) {
-      for (const rs of revenueSummaries) {
-        actualRevenue += safeNum(rs.actualRevenue);
-        actualExpenses += safeNum(rs.actualExpenditure);
-        currentVoTotal += safeNum(rs.currentVoTotal);
+    // CANONICAL Revenue Recognition (POC method) — applied unconditionally so
+    // /api/home/summary matches /api/overview and the Revenue Tracker. The
+    // legacy revenueSummaries table is no longer used as a revenue source
+    // (it was milestone-derived during import); only currentVoTotal is kept
+    // from it. Gross Profit follows the tracker convention:
+    //    GP = POC-realised revenue − COS-realised cost
+    // i.e. both sides use the same effective-realisation gate; we no longer
+    // mix POC revenue with Paid-state cost.
+    let actualRevenue = 0, realisedCost = 0, currentVoTotal = 0;
+    const cmkHm = currentMonthKeyUtc();
+    actualRevenue = sumRealisedRevenueRecognition(
+      allExpenses as any,
+      cmkHm,
+      cosMonthKeyForLine,
+    );
+    const plannedRevenue = sumRevenueRecognition(allExpenses as any);
+    let actualExpenses = 0; // Cash-paid concept (kept for cashflow tile)
+    for (const expense of allExpenses) {
+      const amt = safeNum(expense.expenseActualTotal);
+      if (!amt) continue;
+      const mk = cosMonthKeyForLine(expense);
+      if (isEffectivelyRealised(expense as any, mk, cmkHm)) {
+        realisedCost += amt;
       }
-    } else {
-      for (const inflow of allInflows) {
-        if (inflow.milestoneAmount) {
-          actualRevenue += safeNum(inflow.milestoneAmount);
-        }
-      }
-      for (const expense of allExpenses) {
-        if (expense.expenseActualTotal) {
-          actualExpenses += safeNum(expense.expenseActualTotal);
-        }
-      }
+      const state = classifyExpenseState(expense as any);
+      if (state === 'Paid') actualExpenses += amt;
     }
-    const grossProfit = actualRevenue - actualExpenses;
+    for (const rs of revenueSummaries) {
+      currentVoTotal += safeNum(rs.currentVoTotal);
+    }
+    const grossProfit = actualRevenue - realisedCost;
     const grossProfitPercent = actualRevenue > 0 ? (grossProfit / actualRevenue) * 100 : 0;
 
     let revenueOutstanding = 0;
@@ -587,6 +624,9 @@ router.get("/api/home/summary", requireAuth, async (req, res) => {
       top5BehindPlan,
       financial: {
         actualRevenue,
+        plannedRevenue,
+        revenueMethod: "POC",
+        realisedCost,
         actualExpenses,
         grossProfit,
         grossProfitPercent,
@@ -858,18 +898,24 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
       const workingWeeks = commWorkDays ? commWorkDays / 5 : null;
       const kwPerWeek = (sizeKwp && workingWeeks && workingWeeks > 0) ? sizeKwp / workingWeeks : null;
 
-      let totalContractRevenue = 0;
-      let actualRevenue = 0;
-      for (const inflow of projectInflows) {
-        if (inflow.milestoneAmount) {
-          const amt = parseFloat(inflow.milestoneAmount) || 0;
-          totalContractRevenue += amt;
-          const manualInBank = inflow.inBank === 1 || inflow.inBank === '1' || inflow.inBank === true;
-          const hasInvoice = !!(inflow.milestoneInvoiceNumber && String(inflow.milestoneInvoiceNumber).trim());
-          const hasPaymentReceived = !!(inflow.paymentReceivedDate && String(inflow.paymentReceivedDate).trim() && inflow.paymentReceivedDate !== '-');
-          const isInBank = manualInBank || (hasPaymentReceived && hasInvoice);
-          if (isInBank) {
-            actualRevenue += amt;
+      // CANONICAL Revenue Recognition (POC method) per project.
+      //   totalContractRevenue = sum(revenue_recognition_amount) on this
+      //                          project's cost lines (POC base)
+      //   actualRevenue        = sum(revenue_recognition_amount) gated on
+      //                          effective COS realisation for the period.
+      // Falls back to milestone billing total for projects with no costed
+      // revenue captured yet, so newly-imported projects don't show R0.
+      const cmkPlist = currentMonthKeyUtc();
+      let totalContractRevenue = sumRevenueRecognition(projectExpenses as any);
+      let actualRevenue = sumRealisedRevenueRecognition(
+        projectExpenses as any,
+        cmkPlist,
+        cosMonthKeyForLine,
+      );
+      if (totalContractRevenue === 0) {
+        for (const inflow of projectInflows) {
+          if (inflow.milestoneAmount) {
+            totalContractRevenue += parseFloat(inflow.milestoneAmount) || 0;
           }
         }
       }
@@ -1159,7 +1205,7 @@ router.patch("/api/projects-summary/:projectName/latest-update", requireAuth, re
 
 router.patch("/api/projects-summary/:projectInfoId/escalation", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const id = parseInt(req.params.projectInfoId as string);
+    const id = parseIntParam(req.params.projectInfoId);
     const schema = z.object({
       escalationLevel: z.enum(["None", "Low", "Medium", "High", "Highest"]).nullable(),
     });
@@ -1447,7 +1493,8 @@ router.get("/api/program-dashboard", requireAuth, async (req, res) => {
     }
     const PHASE_LIFECYCLE_ORDER = [
       "DLP", "Financial Close", "Planning", "Construction", "QA",
-      "Handover", "Commercial Close Out", "Compliance Handover", "Hold"
+      "Handover", "Commercial Close Out", "3 Months Post HO Review",
+      "Compliance Handover", "Hold", "Done"
     ];
     const projectsByPhase = Array.from(phaseCountMap.entries())
       .map(([phase, count]) => ({ phase, count }))
@@ -1837,7 +1884,7 @@ router.get("/api/projects", requireAuth, async (req, res) => {
 
 router.get("/api/projects/:id", requireAuth, async (req, res) => {
   try {
-    const id = parseInt(String(req.params.id));
+    const id = parseIntParam(req.params.id);
     const project = await storage.getProject(id);
     if (!project) {
       return res.status(404).json({ error: "Project not found", message: "Project not found" });
@@ -1857,7 +1904,8 @@ router.get("/api/projects/:id/header-kpis", requireAuth, async (req, res) => {
     const kpis = await getProjectHeaderKpis(projectId);
     return res.json(kpis);
   } catch (error: any) {
-    return res.status(500).json({ error: error?.message || "Failed to load header KPIs" });
+    console.error("[project-routes] header-kpis error:", error);
+    return res.status(500).json({ error: "Failed to load header KPIs" });
   }
 });
 
@@ -1866,7 +1914,8 @@ router.post("/api/projects/header-kpis/recompute", requireAuth, requireAdmin, as
     const result = await recomputeHeaderKpiProjectionForActiveProjects();
     return res.json({ ok: true, ...result });
   } catch (error: any) {
-    return res.status(500).json({ error: error?.message || "Failed to recompute KPI projection" });
+    console.error("[project-routes] header-kpis recompute error:", error);
+    return res.status(500).json({ error: "Failed to recompute KPI projection" });
   }
 });
 
@@ -1945,7 +1994,7 @@ router.get("/api/pd-assignable-users", requireAuth, async (_req, res) => {
 
 router.patch("/api/project-info/:id/assign-pm", requireAuth, requirePermission('projects', 'edit'), async (req, res) => {
   try {
-    const id = parseInt(req.params.id as string);
+    const id = parseIntParam(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid project ID" });
 
     const schema = z.object({
@@ -1971,7 +2020,7 @@ router.patch("/api/project-info/:id/assign-pm", requireAuth, requirePermission('
 
 router.patch("/api/project-info/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const id = parseInt(req.params.id as string);
+    const id = parseIntParam(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid project ID" });
 
     const editSchema = z.object({
@@ -2011,7 +2060,7 @@ router.get("/api/key-date-mappings/:projectName", requireAuth, requireAdmin, asy
     const mappings = await storage.getKeyDateMappings(decodeURIComponent(req.params.projectName as string));
     res.json(mappings);
   } catch (err: unknown) {
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
@@ -2020,25 +2069,25 @@ router.post("/api/key-date-mappings", requireAuth, requireAdmin, async (req: Req
     const mapping = await storage.createKeyDateMapping({ ...req.body, createdBy: (req.user as any)?.id });
     res.json(mapping);
   } catch (err: unknown) {
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
 router.patch("/api/key-date-mappings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
-    const updated = await storage.updateKeyDateMapping(parseInt(req.params.id as string), req.body);
+    const updated = await storage.updateKeyDateMapping(parseIntParam(req.params.id), req.body);
     res.json(updated);
   } catch (err: unknown) {
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
 router.delete("/api/key-date-mappings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
-    await storage.deleteKeyDateMapping(parseInt(req.params.id as string));
+    await storage.deleteKeyDateMapping(parseIntParam(req.params.id));
     res.json({ success: true });
   } catch (err: unknown) {
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
@@ -2112,7 +2161,7 @@ router.get("/api/key-dates/:projectName", requireAuth, async (req: Request, res:
 
     res.json(results);
   } catch (err: unknown) {
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 

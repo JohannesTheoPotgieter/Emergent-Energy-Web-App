@@ -10,7 +10,7 @@ import {
   qcChecklist, qcItemInstance, normalizedCostLines, normalizedRevenueLines,
   projectExecutionState,
 } from "@shared/schema";
-import { paramStr } from "./lib/req-params";
+import { paramStr, parseIntParam } from "./lib/req-params";
 import { logAuditFromReq } from "./audit-logger";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { computeProjectCompletion, summarizeEngineeringStatuses, summarizeQualityStatuses, summarizeSchedule, calculateGrossMarginPercent } from "./services/kpi-service";
@@ -198,13 +198,13 @@ export function registerPortfolioRoutes(app: Express) {
       res.json(result);
     } catch (err: any) {
       console.error("[Portfolio] List error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
   app.get("/api/portfolios/:id", jwtAuth, requireAuth, async (req, res) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       const [portfolio] = await db.select().from(portfolios).where(eq(portfolios.id, id));
       if (!portfolio) return res.status(404).json({ error: "Portfolio not found" });
 
@@ -241,7 +241,7 @@ export function registerPortfolioRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[Portfolio] Get error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -265,13 +265,13 @@ export function registerPortfolioRoutes(app: Express) {
       res.json(created);
     } catch (err: any) {
       console.error("[Portfolio] Create error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
   app.put("/api/portfolios/:id", jwtAuth, requireAuth, requireManageRole, async (req, res) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       const userId = ((req as any).user as any)?.id;
       const { name, clientName, status, description, ownerUserId } = req.body;
 
@@ -289,25 +289,25 @@ export function registerPortfolioRoutes(app: Express) {
       res.json(updated);
     } catch (err: any) {
       console.error("[Portfolio] Update error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
   app.delete("/api/portfolios/:id", jwtAuth, requireAuth, requireManageRole, async (req, res) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       const [deleted] = await db.update(portfolios).set({ deletedAt: new Date(), deletedBy: req.user?.id }).where(eq(portfolios.id, id)).returning();
       logAuditFromReq(req, { entityType: "portfolio", entityId: String(id), action: "delete", changesJson: { description: "Portfolio soft-deleted" } });
       res.json({ success: true, record: deleted });
     } catch (err: any) {
       console.error("[Portfolio] Delete error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
   app.post("/api/portfolios/:id/assign-project", jwtAuth, requireAuth, requireManageRole, async (req, res) => {
     try {
-      const portfolioId = parseInt(paramStr(req.params.id));
+      const portfolioId = parseIntParam(req.params.id);
       const userId = ((req as any).user as any)?.id;
       const { projectId } = req.body;
       if (!projectId) return res.status(400).json({ error: "projectId is required" });
@@ -333,13 +333,13 @@ export function registerPortfolioRoutes(app: Express) {
       res.json(assignment);
     } catch (err: any) {
       console.error("[Portfolio] Assign error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
   app.post("/api/portfolios/:id/move-project", jwtAuth, requireAuth, requireCooRole, async (req, res) => {
     try {
-      const targetPortfolioId = parseInt(paramStr(req.params.id));
+      const targetPortfolioId = parseIntParam(req.params.id);
       const userId = ((req as any).user as any)?.id;
       const { projectId } = req.body;
       if (!projectId) return res.status(400).json({ error: "projectId is required" });
@@ -364,14 +364,14 @@ export function registerPortfolioRoutes(app: Express) {
       }
     } catch (err: any) {
       console.error("[Portfolio] Move error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
   app.delete("/api/portfolios/:id/remove-project/:projectId", jwtAuth, requireAuth, requireManageRole, async (req, res) => {
     try {
-      const portfolioId = parseInt(paramStr(req.params.id));
-      const projectId = parseInt(paramStr(req.params.projectId));
+      const portfolioId = parseIntParam(req.params.id);
+      const projectId = parseIntParam(req.params.projectId);
       await db.delete(projectPortfolioAssignments).where(
         and(eq(projectPortfolioAssignments.portfolioId, portfolioId), eq(projectPortfolioAssignments.projectId, projectId))
       );
@@ -379,13 +379,13 @@ export function registerPortfolioRoutes(app: Express) {
       res.json({ success: true });
     } catch (err: any) {
       console.error("[Portfolio] Remove project error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
   app.get("/api/portfolios/:id/rollups", jwtAuth, requireAuth, async (req, res) => {
     try {
-      const portfolioId = parseInt(paramStr(req.params.id));
+      const portfolioId = parseIntParam(req.params.id);
       const assignments = await db.select().from(projectPortfolioAssignments).where(eq(projectPortfolioAssignments.portfolioId, portfolioId));
       const projectIds = assignments.map((a: any) => a.projectId);
 
@@ -520,13 +520,13 @@ export function registerPortfolioRoutes(app: Express) {
       res.json({ finance, schedule, quality: qualityData, engineering: engData, projects: projectDetails });
     } catch (err: any) {
       console.error("[Portfolio] Rollups error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
   app.get("/api/portfolios/:id/available-projects", jwtAuth, requireAuth, async (req, res) => {
     try {
-      const portfolioId = parseInt(paramStr(req.params.id));
+      const portfolioId = parseIntParam(req.params.id);
       const allProjects = await db.select({
         id: projectInfo.id,
         projectName: projectInfo.projectName,
@@ -552,13 +552,13 @@ export function registerPortfolioRoutes(app: Express) {
       res.json(result);
     } catch (err: any) {
       console.error("[Portfolio] Available projects error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
   app.post("/api/portfolios/:id/rollout-plans", jwtAuth, requireAuth, requireManageRole, async (req, res) => {
     try {
-      const portfolioId = parseInt(paramStr(req.params.id));
+      const portfolioId = parseIntParam(req.params.id);
       const userId = ((req as any).user as any)?.id;
       const { name, notes, phases } = req.body;
       if (!name?.trim()) return res.status(400).json({ error: "Plan name is required" });
@@ -589,13 +589,13 @@ export function registerPortfolioRoutes(app: Express) {
       res.json(plan);
     } catch (err: any) {
       console.error("[Portfolio] Create rollout plan error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
   app.put("/api/portfolios/:portfolioId/rollout-plans/:planId", jwtAuth, requireAuth, requireManageRole, async (req, res) => {
     try {
-      const planId = parseInt(paramStr(req.params.planId));
+      const planId = parseIntParam(req.params.planId);
       const userId = ((req as any).user as any)?.id;
       const { name, notes, phases } = req.body;
 
@@ -624,19 +624,19 @@ export function registerPortfolioRoutes(app: Express) {
       res.json(updated);
     } catch (err: any) {
       console.error("[Portfolio] Update rollout plan error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
   app.delete("/api/portfolios/:portfolioId/rollout-plans/:planId", jwtAuth, requireAuth, requireManageRole, async (req, res) => {
     try {
-      const planId = parseInt(paramStr(req.params.planId));
+      const planId = parseIntParam(req.params.planId);
       const [deleted] = await db.update(portfolioRolloutPlans).set({ deletedAt: new Date(), deletedBy: req.user?.id }).where(eq(portfolioRolloutPlans.id, planId)).returning();
       logAuditFromReq(req, { entityType: "portfolio_rollout", entityId: String(planId), action: "delete", changesJson: { description: "Rollout plan soft-deleted" } });
       res.json({ success: true, record: deleted });
     } catch (err: any) {
       console.error("[Portfolio] Delete rollout plan error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -799,13 +799,13 @@ export function registerPortfolioRoutes(app: Express) {
       res.json({ portfolios: result, unassignedProjectCount: unassignedCount, totalPortfolios: allPortfolios.length });
     } catch (err: any) {
       console.error("[Portfolio] Dashboard error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
   app.get("/api/portfolios/:id/timeline", jwtAuth, requireAuth, async (req, res) => {
     try {
-      const portfolioId = parseInt(paramStr(req.params.id));
+      const portfolioId = parseIntParam(req.params.id);
       const assignments = await db.select().from(projectPortfolioAssignments).where(eq(projectPortfolioAssignments.portfolioId, portfolioId));
       const projectIds = assignments.map((a: any) => a.projectId);
 
@@ -881,13 +881,13 @@ export function registerPortfolioRoutes(app: Express) {
       res.json(timeline);
     } catch (err: any) {
       console.error("[Portfolio] Timeline error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
   app.get("/api/portfolios/:id/key-dates", jwtAuth, requireAuth, async (req, res) => {
     try {
-      const portfolioId = parseInt(paramStr(req.params.id));
+      const portfolioId = parseIntParam(req.params.id);
       const assignments = await db.select().from(projectPortfolioAssignments).where(eq(projectPortfolioAssignments.portfolioId, portfolioId));
       const projectIds = assignments.map((a: any) => a.projectId);
 
@@ -988,7 +988,7 @@ export function registerPortfolioRoutes(app: Express) {
       res.json(result);
     } catch (err: any) {
       console.error("[Portfolio] Key dates error:", err);
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 }

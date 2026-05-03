@@ -69,12 +69,14 @@ export const TOP_SECTIONS: TopSection[] = [
     path: "/lifecycle-board",
     match: (pathname) => startsWithAny(pathname, [
       "/company-overview",
+      "/company/team",
       "/lifecycle-board",
       "/gates", "/exceptions",
       "/project-lifecycle",
     ]) && !matchesPathPrefix(pathname, "/gates/commitments"),
     secondary: [
       { label: "Company Overview", path: "/company-overview" },
+      { label: "Team", path: "/company/team" },
       { label: "Lifecycle Board", path: "/lifecycle-board" },
       { label: "Gate Tracker", path: "/gates" },
       { label: "Blocked Gates", path: "/gates/blocked" },
@@ -86,11 +88,10 @@ export const TOP_SECTIONS: TopSection[] = [
     key: "PRIORITIES",
     path: "/priorities",
     match: (pathname) => startsWithAny(pathname, ["/priorities"]),
-    secondary: [
-      { label: "My Priorities", path: "/priorities?tab=mine" },
-      { label: "Department", path: "/priorities?tab=department" },
-      { label: "Company", path: "/priorities?tab=company" },
-    ],
+    // Sub-tabs are rendered inside the Priorities page itself (Department /
+    // Company) so we don't duplicate them in the secondary nav. Keep the
+    // empty array so consumers that map over `secondary` don't crash.
+    secondary: [],
   },
   {
     label: "Project Development",
@@ -99,6 +100,7 @@ export const TOP_SECTIONS: TopSection[] = [
     match: (pathname) => startsWithAny(pathname, [
       "/pd", "/opportunities", "/clients",
       "/handover-control",
+      "/engineering-board", "/engineering-dashboard",
     ]),
     secondary: [
       { label: "Project Development Dashboard", path: "/pd" },
@@ -117,6 +119,7 @@ export const TOP_SECTIONS: TopSection[] = [
       "/projects", "/project", "/project-create",
       "/procurement",
       "/handover",
+      "/sseg-submissions",
       "/pm", "/sites",
       "/governance/financial-reviews",
       "/po-approval-board", "/payment-request-board", "/payment-batch-manager",
@@ -138,6 +141,7 @@ export const TOP_SECTIONS: TopSection[] = [
       { label: "PM Approvals", path: "/pm/approvals" },
       { label: "PM On-The-Go", path: "/pm/on-the-go" },
       { label: "Handover & Closeout", path: "/handover" },
+      { label: "SSEG Submissions", path: "/sseg-submissions" },
       { label: "Financial Reviews", path: "/governance/financial-reviews" },
       { label: "Sites", path: "/sites" },
     ],
@@ -151,7 +155,9 @@ export const TOP_SECTIONS: TopSection[] = [
     ]),
     secondary: [
       { label: "Cashflow", path: "/cashflow" },
+      { label: "Cashflow Analysis", path: "/cashflow/analysis" },
       { label: "COS", path: "/cos" },
+      { label: "COS Analysis", path: "/cos/analysis" },
       { label: "Revenue", path: "/revenue-tracker" },
       { label: "QB Throughput", path: "/finance/quickbooks" },
     ],
@@ -200,14 +206,15 @@ export const TOP_SECTIONS: TopSection[] = [
   {
     label: "Admin",
     key: "ADMIN",
-    path: "/admin/control-center",
+    path: "/settings",
     match: (pathname) => startsWithAny(pathname, [
       "/admin", "/settings", "/ee-info", "/feedback", "/training",
       "/leaderboard", "/department-scores",
     ]),
     secondary: [
-      { label: "Control Center", path: "/admin/control-center" },
+      { label: "Settings", path: "/settings" },
       { label: "Roles & Permissions", path: "/admin/roles" },
+      { label: "Control Center", path: "/admin/control-center" },
       { label: "Smart Import", path: "/admin/smart-import" },
       { label: "Audit Log", path: "/admin/activity-log" },
       { label: "Processes & SOPs", path: "/ee-info" },
@@ -379,28 +386,27 @@ export function buildVisibleTopSections(options: {
 }
 
 export function linkIsActive(current: string, target: string) {
-  if (target === "/") return current === "/";
-  const targetBase = target.split("?")[0];
-  const targetQuery = target.includes("?") ? target.split("?")[1] : null;
+  const [currentPath, currentQuery = ""] = current.split("?");
+  const [targetBase, targetQuery = ""] = target.split("?");
 
-  if (current === targetBase || current.startsWith(`${targetBase}/`)) {
-    if (targetQuery) {
-      const params = new URLSearchParams(window.location.search);
-      const targetParams = new URLSearchParams(targetQuery);
-      for (const [key, val] of targetParams.entries()) {
-        if (params.get(key) !== val) return false;
-      }
-      return true;
+  if (targetBase === "/") return currentPath === "/";
+
+  const currentParams = new URLSearchParams(currentQuery);
+  const targetParams = new URLSearchParams(targetQuery);
+
+  if (currentPath === targetBase || currentPath.startsWith(`${targetBase}/`)) {
+    for (const [key, val] of targetParams.entries()) {
+      if (currentParams.get(key) !== val) return false;
     }
-    if (target === "/my-work" && current === "/my-work/tasks") {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get("source") === "approvals") return false;
+
+    if (targetBase === "/my-work" && currentPath === "/my-work/tasks") {
+      if (currentParams.get("source") === "approvals") return false;
     }
     return true;
   }
-  if (target === "/my-work/approvals" && current === "/my-work/tasks") {
-    const params = new URLSearchParams(window.location.search);
-    return params.get("source") === "approvals";
+
+  if (targetBase === "/my-work/approvals" && currentPath === "/my-work/tasks") {
+    return currentParams.get("source") === "approvals";
   }
   return false;
 }
@@ -441,19 +447,6 @@ export function getBreadcrumbs(pathname: string, activeSection: TopSection): Bre
   if (portfolioMatch) return [
     { label: "Company", path: "/lifecycle-board" },
     { label: decodeURIComponent(portfolioMatch[1]) },
-  ];
-
-  // --- Project Development Tickets ---
-  if (pathname === "/pd/tickets/create") return [
-    { label: "Project Development", path: "/pd" },
-    { label: "Project Development Tickets", path: "/pd/tickets" },
-    { label: "Create" },
-  ];
-  const ticketMatch = pathname.match(/^\/pd\/tickets\/([^/]+)/);
-  if (ticketMatch) return [
-    { label: "Project Development", path: "/pd" },
-    { label: "Project Development Tickets", path: "/pd/tickets" },
-    { label: `Ticket ${decodeURIComponent(ticketMatch[1])}` },
   ];
 
   // --- PD Handover ---

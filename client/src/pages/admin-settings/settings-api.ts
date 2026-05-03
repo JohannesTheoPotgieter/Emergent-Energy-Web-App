@@ -118,6 +118,22 @@ export async function deleteUser(userId: number): Promise<{ ok: boolean; error?:
   return { ok: true };
 }
 
+// Task #110 — admin-controlled active/inactive toggle.
+export async function setUserActive(userId: number, isActive: boolean): Promise<{ ok: boolean; data?: UserSummary; error?: string }> {
+  const res = await fetch(`/api/admin/users/${userId}/active`, {
+    method: "PATCH",
+    headers: authHeaders(),
+    ...fetchOpts,
+    body: JSON.stringify({ isActive }),
+  });
+  const data = await parseJsonSafe<UserSummary | { error?: string }>(res);
+  if (!res.ok) {
+    const err = (data as { error?: string } | null)?.error || `Save failed (${res.status})`;
+    return { ok: false, error: err };
+  }
+  return { ok: true, data: data as UserSummary };
+}
+
 export async function resetUserPassword(userId: number, password: string): Promise<{ ok: boolean; error?: string }> {
   const res = await fetch(`/api/admin/users/${userId}/password`, { method: "PATCH", headers: authHeaders(), ...fetchOpts, body: JSON.stringify({ password }) });
   if (!res.ok) { const data = await parseJsonSafe<any>(res); return { ok: false, error: data?.error || "Unknown error" }; }
@@ -200,4 +216,26 @@ export async function saveWorkstreamVisibilityRole(role: string, workstreams: st
 export async function deleteWorkstreamVisibilityConfig(configId: number): Promise<boolean> {
   const res = await fetch(`/api/admin/workstream-visibility/${configId}`, { method: "DELETE", headers: authHeaders(), ...fetchOpts });
   return res.ok;
+}
+
+// ── Screen Settings ──
+
+export async function fetchScreenSettings(): Promise<import("./settings-types").ScreenSetting[]> {
+  const res = await fetch("/api/admin/screen-settings", { headers: authHeaders(), ...fetchOpts });
+  if (!res.ok) return [];
+  return (await parseJsonSafe<import("./settings-types").ScreenSetting[]>(res)) ?? [];
+}
+
+export async function saveScreenSetting(screenId: string, isEnabled: boolean): Promise<{ ok: boolean; error?: string }> {
+  const res = await fetch(`/api/admin/screen-settings/${encodeURIComponent(screenId)}`, {
+    method: "PUT",
+    headers: authHeaders(),
+    ...fetchOpts,
+    body: JSON.stringify({ isEnabled }),
+  });
+  if (!res.ok) {
+    const err = await parseJsonSafe<{ error?: string }>(res);
+    return { ok: false, error: err?.error ?? `Save failed (${res.status})` };
+  }
+  return { ok: true };
 }

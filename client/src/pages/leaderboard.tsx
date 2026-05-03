@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout } from "@/components/layout";
 import {
   Dialog,
   DialogContent,
@@ -628,38 +630,32 @@ export default function LeaderboardPage() {
   const myLvlCfg = myEntry ? (LEVEL_CONFIG[myEntry.level.level] || LEVEL_CONFIG[1]) : LEVEL_CONFIG[1];
 
   return (
-    <div className="max-w-5xl mx-auto p-4 sm:p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-yellow-400 to-amber-500 flex items-center justify-center shadow-lg shadow-amber-200/50 dark:shadow-amber-900/30">
-            <Trophy className="w-7 h-7 text-white" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-black tracking-tight" data-testid="text-leaderboard-title">
-              Leaderboard
-            </h1>
-            <p className="text-xs text-muted-foreground">
-              Compete, earn XP, and climb the ranks
-            </p>
-          </div>
-        </div>
-        <Tabs value={tab} onValueChange={(v) => setTab(v as any)}>
-          <TabsList className="bg-muted/50">
-            <TabsTrigger value="leaderboard" data-testid="tab-leaderboard" className="gap-1.5">
-              <Swords className="w-3.5 h-3.5" />
-              Rankings
-            </TabsTrigger>
-            <TabsTrigger value="departments" data-testid="tab-departments" className="gap-1.5">
-              <Users className="w-3.5 h-3.5" />
-              Departments
-            </TabsTrigger>
-            <TabsTrigger value="badges" data-testid="tab-badges" className="gap-1.5">
-              <Medal className="w-3.5 h-3.5" />
-              Badges
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-      </div>
+    <PageLayout
+      data-testid="leaderboard-page"
+      header={
+        <PageHeader
+          title="Leaderboard"
+          subtitle="Compete, earn XP, and climb the ranks"
+        />
+      }
+    >
+      <div className="max-w-5xl mx-auto space-y-6">
+      <Tabs value={tab} onValueChange={(v) => setTab(v as any)}>
+        <TabsList className="bg-muted/50">
+          <TabsTrigger value="leaderboard" data-testid="tab-leaderboard" className="gap-1.5">
+            <Swords className="w-3.5 h-3.5" />
+            Rankings
+          </TabsTrigger>
+          <TabsTrigger value="departments" data-testid="tab-departments" className="gap-1.5">
+            <Users className="w-3.5 h-3.5" />
+            Departments
+          </TabsTrigger>
+          <TabsTrigger value="badges" data-testid="tab-badges" className="gap-1.5">
+            <Medal className="w-3.5 h-3.5" />
+            Badges
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
 
       {myEntry && (
         <div className="relative overflow-hidden rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-500 p-4 sm:p-5 text-white shadow-xl shadow-purple-200/30 dark:shadow-purple-900/30 animate-float-in" data-testid="card-my-stats">
@@ -941,6 +937,7 @@ export default function LeaderboardPage() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </PageLayout>
   );
 }

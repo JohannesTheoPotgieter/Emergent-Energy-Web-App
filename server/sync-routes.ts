@@ -21,7 +21,7 @@ import {
   isSharePointListConfigured,
 } from "./sharepoint-list";
 import { getConnector } from "./intake-connector";
-import { paramStr } from "./lib/req-params";
+import { paramStr, parseIntParam } from "./lib/req-params";
 
 function isMissingTableError(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err ?? "");
@@ -54,7 +54,7 @@ export function registerSyncRoutes(app: Express) {
       const sites = await discoverSites();
       res.json({ sites });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -65,7 +65,7 @@ export function registerSyncRoutes(app: Express) {
       const site = await discoverSiteByUrl(hostAndPath as string);
       res.json(site);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -74,7 +74,7 @@ export function registerSyncRoutes(app: Express) {
       const lists = await discoverLists(paramStr(req.params.siteId));
       res.json({ lists });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -92,7 +92,8 @@ export function registerSyncRoutes(app: Express) {
         res.json({ list: null, error: "List not found" });
       }
     } catch (err: any) {
-      res.json({ list: null, error: err.message || "List not found with that name" });
+      console.error("[sync-routes] list lookup error:", err);
+      res.json({ list: null, error: "List not found with that name" });
     }
   });
 
@@ -101,7 +102,7 @@ export function registerSyncRoutes(app: Express) {
       const columns = await getListColumns(paramStr(req.params.siteId), paramStr(req.params.listId));
       res.json({ columns });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -111,7 +112,7 @@ export function registerSyncRoutes(app: Express) {
       const config = await getConfig();
       res.json({ config, isConfigured: isSharePointListConfigured() });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -128,7 +129,7 @@ export function registerSyncRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "sp_sync", action: "configure", changesJson: { siteId, listId, siteName, listName } });
       res.json({ config });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -159,7 +160,7 @@ export function registerSyncRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "sp_sync", action: "auto_detect_columns", changesJson: { totalColumns: columns.length, mappedColumns: Object.keys(mapping).length } });
       res.json({ mapping, columnTypes, totalColumns: columns.length, mappedColumns: Object.keys(mapping).length });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -182,7 +183,7 @@ export function registerSyncRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "sp_sync", action: "update_mapping", changesJson: { fieldsUpdated: Object.keys(mapping || {}).length } });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -242,10 +243,22 @@ export function registerSyncRoutes(app: Express) {
             if (existing.length > 0) {
               projectId = existing[0].id;
             } else {
+              // Auto-creation gate: stage the new project shell in the
+              // Pending Approval inbox instead of creating it now. Until
+              // a user releases it, downstream intake_requests for this
+              // SharePoint item are also gated (see below) — both rows
+              // need to be released before either is live.
+              const { proposeApproval } = await import("./services/pending-approvals-service");
               const syncInsertFields = { projectName: clientName, phase: "First Assessment", isActive: true };
-              const [newProj] = await db.insert(projectInfo).values(syncInsertFields).returning();
-              await syncProjectSplitTablesAfterInsert(newProj.id, syncInsertFields);
-              projectId = newProj.id;
+              await proposeApproval({
+                kind: "sharepoint_project_shell_create",
+                targetTable: "project_info",
+                summary: `New project shell from SharePoint: ${clientName}`,
+                payload: syncInsertFields as Record<string, unknown>,
+                sourceLabel: "system:sharepoint-pull",
+                sourceRef: `sp-project:${clientName}`,
+              });
+              projectId = null; // shell not created yet — intake row staged with null projectId
               newProjects++;
             }
           } else {
@@ -259,7 +272,15 @@ export function registerSyncRoutes(app: Express) {
           const spFieldsHash = hashFields(mapped);
 
           if (existingReq.length === 0) {
-            await db.insert(intakeRequests).values({
+            // Auto-creation gate: stage in the Pending Approval inbox.
+            const { proposeApproval } = await import("./services/pending-approvals-service");
+            await proposeApproval({
+              kind: "sharepoint_intake_request_create",
+              targetTable: "intake_requests",
+              summary: `Intake from SharePoint #${item.id}: ${clientName} (${mapped.requestType || "no type"})`,
+              sourceLabel: "system:sharepoint-pull",
+              sourceRef: `sp-intake:${item.id}`,
+              payload: {
               spItemId: item.id,
               projectId,
               clientKey,
@@ -293,6 +314,7 @@ export function registerSyncRoutes(app: Express) {
               spRawJson: item.fields,
               lastPulledAt: new Date(),
               lastPulledHash: spFieldsHash,
+              } as Record<string, unknown>,
             });
             newRequests++;
           } else {
@@ -421,7 +443,7 @@ export function registerSyncRoutes(app: Express) {
         errorList: errorList.length > 0 ? errorList : undefined,
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -536,7 +558,7 @@ export function registerSyncRoutes(app: Express) {
 
       res.json({ success: true, pushed, errors, errorList: errorList.length > 0 ? errorList : undefined });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -584,7 +606,7 @@ export function registerSyncRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "sp_sync", entityId: requestId, action: "resolve_conflict", changesJson: { resolutions } });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -658,7 +680,7 @@ export function registerSyncRoutes(app: Express) {
       logAuditFromReq(req, { entityType: "intake_request", entityId: requestId, action: "cp_signed", changesJson: { clientName: request.clientName, evidenceType, signedDate } });
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -668,14 +690,14 @@ export function registerSyncRoutes(app: Express) {
       const requests = await db.select().from(intakeRequests).orderBy(desc(intakeRequests.updatedAt));
       res.json({ requests });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
   app.get("/api/sp-sync/intake-requests/:id", jwtAuth, requireAuth, async (req, res) => {
     try {
       const [request] = await db.select().from(intakeRequests)
-        .where(eq(intakeRequests.id, parseInt(paramStr(req.params.id))));
+        .where(eq(intakeRequests.id, parseIntParam(req.params.id)));
       if (!request) return res.status(404).json({ error: "Not found" });
 
       const tasks = await db.select().from(intakeTasks)
@@ -684,18 +706,18 @@ export function registerSyncRoutes(app: Express) {
 
       res.json({ request, tasks });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
   app.get("/api/sp-sync/intake-requests/by-project/:projectId", jwtAuth, requireAuth, async (req, res) => {
     try {
       const requests = await db.select().from(intakeRequests)
-        .where(eq(intakeRequests.projectId, parseInt(paramStr(req.params.projectId))))
+        .where(eq(intakeRequests.projectId, parseIntParam(req.params.projectId)))
         .orderBy(desc(intakeRequests.updatedAt));
       res.json({ requests });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -712,13 +734,13 @@ export function registerSyncRoutes(app: Express) {
 
       const [updated] = await db.update(intakeRequests)
         .set(updates)
-        .where(eq(intakeRequests.id, parseInt(paramStr(req.params.id))))
+        .where(eq(intakeRequests.id, parseIntParam(req.params.id)))
         .returning();
 
       logAuditFromReq(req, { entityType: "intake_request", entityId: paramStr(req.params.id), action: "update", changesJson: { fieldsUpdated: Object.keys(updates).filter(k => k !== "updatedAt" && k !== "lastAppEditAt") } });
       res.json({ request: updated });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -726,11 +748,11 @@ export function registerSyncRoutes(app: Express) {
   app.get("/api/sp-sync/intake-tasks/:requestId", jwtAuth, requireAuth, async (req, res) => {
     try {
       const tasks = await db.select().from(intakeTasks)
-        .where(eq(intakeTasks.intakeRequestId, parseInt(paramStr(req.params.requestId))))
+        .where(eq(intakeTasks.intakeRequestId, parseIntParam(req.params.requestId)))
         .orderBy(intakeTasks.sortOrder);
       res.json({ tasks });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -748,12 +770,12 @@ export function registerSyncRoutes(app: Express) {
 
       const [updated] = await db.update(intakeTasks)
         .set(updates)
-        .where(eq(intakeTasks.id, parseInt(paramStr(req.params.taskId))))
+        .where(eq(intakeTasks.id, parseIntParam(req.params.taskId)))
         .returning();
       logAuditFromReq(req, { entityType: "intake_task", entityId: paramStr(req.params.taskId), action: "update", changesJson: { status, assignedTo } });
       res.json({ task: updated });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -761,7 +783,7 @@ export function registerSyncRoutes(app: Express) {
   app.post("/api/sp-sync/generate-tasks/:requestId", jwtAuth, requireAuth, requireCOO, async (req, res) => {
     try {
       const [request] = await db.select().from(intakeRequests)
-        .where(eq(intakeRequests.id, parseInt(paramStr(req.params.requestId))));
+        .where(eq(intakeRequests.id, parseIntParam(req.params.requestId)));
       if (!request) return res.status(404).json({ error: "Not found" });
       if (request.tasksGenerated) return res.status(400).json({ error: "Tasks already generated" });
 
@@ -777,7 +799,7 @@ export function registerSyncRoutes(app: Express) {
 
       for (const tmpl of templates) {
         await db.insert(intakeTasks).values({
-          intakeRequestId: parseInt(paramStr(req.params.requestId)),
+          intakeRequestId: parseIntParam(req.params.requestId),
           templateItemId: tmpl.id,
           title: tmpl.title,
           description: tmpl.description,
@@ -790,12 +812,12 @@ export function registerSyncRoutes(app: Express) {
         tasksGenerated: true,
         requestType: requestType,
         updatedAt: new Date(),
-      }).where(eq(intakeRequests.id, parseInt(paramStr(req.params.requestId))));
+      }).where(eq(intakeRequests.id, parseIntParam(req.params.requestId)));
 
       logAuditFromReq(req, { entityType: "intake_request", entityId: paramStr(req.params.requestId), action: "generate_tasks", changesJson: { tasksCreated: templates.length, requestType } });
       res.json({ success: true, tasksCreated: templates.length });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -806,7 +828,7 @@ export function registerSyncRoutes(app: Express) {
         .orderBy(intakeTaskTemplates.requestType, intakeTaskTemplates.sortOrder);
       res.json({ templates });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -819,7 +841,7 @@ export function registerSyncRoutes(app: Express) {
         .limit(limit);
       res.json({ logs });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -870,7 +892,7 @@ export function registerSyncRoutes(app: Express) {
         listName: config?.listName,
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 

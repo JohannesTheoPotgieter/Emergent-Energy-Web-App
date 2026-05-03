@@ -157,6 +157,11 @@ export default function EngineeringMonthlyReport() {
   const prevKpis = prevData.kpis || {};
   const status = report?.status || "draft";
   const reportId = report?.id;
+  // Anchor every "> 7 days old" threshold on the report's generation time
+  // so published reports stay deterministic. For drafts we fall back to
+  // "now" so the dashboard reflects live state.
+  const reportNowMs = report?.generatedAt ? new Date(report.generatedAt).getTime() : Date.now();
+  const SEVEN_DAYS_MS = 7 * 24 * 3600 * 1000;
 
   const approvals = reportData.approvals || [];
   const stageGates = reportData.stageGates || [];
@@ -165,7 +170,7 @@ export default function EngineeringMonthlyReport() {
   const deliverableRegister = reportData.deliverables?.register || [];
 
   const pendingApprovals = approvals.filter((a: any) => String(a.status).toLowerCase() === "pending").length;
-  const overdueApprovals = approvals.filter((a: any) => String(a.status).toLowerCase() === "pending" && a.date && (Date.now() - new Date(a.date).getTime()) > 7 * 24 * 3600 * 1000).length;
+  const overdueApprovals = approvals.filter((a: any) => String(a.status).toLowerCase() === "pending" && a.date && (reportNowMs - new Date(a.date).getTime()) > SEVEN_DAYS_MS).length;
   const blockedGates = stageGates.filter((s: any) => String(s.status).toLowerCase() === "blocked").length;
   const overloadedResources = resources.filter((r: any) => r.assignedTasks >= 15 || r.overdue >= 3).length;
 
@@ -305,12 +310,12 @@ export default function EngineeringMonthlyReport() {
                   <table className="w-full text-xs">
                     <thead className="bg-muted sticky top-0"><tr><th className="text-left px-3 py-2">Project</th><th className="text-left px-3 py-2">Deliverable</th><th className="text-left px-3 py-2">Type</th><th className="text-left px-3 py-2">Status</th><th className="text-left px-3 py-2">Last Update</th></tr></thead>
                     <tbody>
-                      {deliverableRegister.filter((d: any) => d.status === "NEEDS APPROVAL" && d.updatedAt && (Date.now() - new Date(d.updatedAt).getTime()) > 7 * 24 * 3600 * 1000).slice(0, 12).map((d: any, i: number) => (
+                      {deliverableRegister.filter((d: any) => d.status === "NEEDS APPROVAL" && d.updatedAt && (reportNowMs - new Date(d.updatedAt).getTime()) > SEVEN_DAYS_MS).slice(0, 12).map((d: any, i: number) => (
                         <tr key={i} className="border-b hover:bg-muted/30 cursor-pointer" onClick={() => setDrill({ title: "Pending approval deliverables", context: { tab: "deliverables", status: "NEEDS APPROVAL", projectId: d.projectId } })}>
                           <td className="px-3 py-1.5">{d.projectName}</td><td className="px-3 py-1.5">{d.title}</td><td className="px-3 py-1.5">{d.type}</td><td className="px-3 py-1.5"><Badge variant="outline" className="text-[10px]">{d.status}</Badge></td><td className="px-3 py-1.5">{humanDate(d.updatedAt)}</td>
                         </tr>
                       ))}
-                      {deliverableRegister.filter((d: any) => d.status === "NEEDS APPROVAL" && d.updatedAt && (Date.now() - new Date(d.updatedAt).getTime()) > 7 * 24 * 3600 * 1000).length === 0 && (
+                      {deliverableRegister.filter((d: any) => d.status === "NEEDS APPROVAL" && d.updatedAt && (reportNowMs - new Date(d.updatedAt).getTime()) > SEVEN_DAYS_MS).length === 0 && (
                         <tr><td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">No bottlenecks found</td></tr>
                       )}
                     </tbody>

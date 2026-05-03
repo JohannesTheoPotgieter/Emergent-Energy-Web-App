@@ -209,9 +209,11 @@ export async function createInvoice(projectId: number, payload: any, userId: num
 }
 
 export async function getProjectFinanceSummary(projectId: number) {
+  // Task #124: cost_line_status / revenue_line_status enums are lowercase
+  // (see shared/schema/finance.ts). Keep IN-list literals lowercase.
   const [cos, revenue, budgetAgg, costedSummary] = await Promise.all([
-    db.select({ planned: sql<number>`coalesce(sum(cast(${normalizedCostLines.amountExVat} as numeric)),0)`, actual: sql<number>`coalesce(sum(case when ${normalizedCostLines.status} in ('APPROVED','PAID') then cast(${normalizedCostLines.amountExVat} as numeric) else 0 end),0)` }).from(normalizedCostLines).where(and(eq(normalizedCostLines.projectId, projectId), and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)))),
-    db.select({ planned: sql<number>`coalesce(sum(cast(${normalizedRevenueLines.amountExVat} as numeric)),0)`, actual: sql<number>`coalesce(sum(case when ${normalizedRevenueLines.status} in ('INVOICED','PAID','IN_BANK','REALISED') then cast(${normalizedRevenueLines.amountExVat} as numeric) else 0 end),0)` }).from(normalizedRevenueLines).where(and(eq(normalizedRevenueLines.projectId, projectId), and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt)))),
+    db.select({ planned: sql<number>`coalesce(sum(cast(${normalizedCostLines.amountExVat} as numeric)),0)`, actual: sql<number>`coalesce(sum(case when ${normalizedCostLines.status} in ('approved','paid') then cast(${normalizedCostLines.amountExVat} as numeric) else 0 end),0)` }).from(normalizedCostLines).where(and(eq(normalizedCostLines.projectId, projectId), and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)))),
+    db.select({ planned: sql<number>`coalesce(sum(cast(${normalizedRevenueLines.amountExVat} as numeric)),0)`, actual: sql<number>`coalesce(sum(case when ${normalizedRevenueLines.status} in ('invoiced','paid','in_bank','realised') then cast(${normalizedRevenueLines.amountExVat} as numeric) else 0 end),0)` }).from(normalizedRevenueLines).where(and(eq(normalizedRevenueLines.projectId, projectId), and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt)))),
     db.select({ budgetTotal: sql<number>`coalesce(sum(cast(${normalizedCostLines.budgetTotal} as numeric)),0)` }).from(normalizedCostLines).where(and(eq(normalizedCostLines.projectId, projectId), and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)))),
     db.select().from(projectRevenueSummary).where(and(eq(projectRevenueSummary.projectId, projectId), isNull(projectRevenueSummary.effectiveTo))).limit(1),
   ]);
@@ -223,11 +225,29 @@ export async function getProjectFinanceSummary(projectId: number) {
   };
 }
 
-export async function getFinanceCashflow(projectId: number) {
-  return db.select({ status: normalizedCostLines.status, projected: sql<number>`coalesce(sum(cast(${normalizedCostLines.amountExVat} as numeric)),0)`, actual: sql<number>`coalesce(sum(case when ${normalizedCostLines.status} in ('APPROVED','PAID') then cast(${normalizedCostLines.amountExVat} as numeric) else 0 end),0)` })
+/**
+ * Builder for the cashflow aggregate. Split from `getFinanceCashflow` so
+ * tests can call `.toSQL()` on the live Drizzle query.
+ *
+ * Task #124: keep the IN list lowercase — `cost_line_status` enum domain
+ * is {planned, invoiced, approved, paid}.
+ */
+export function buildFinanceCashflowQuery(projectId: number) {
+  return db.select({
+    status: normalizedCostLines.status,
+    projected: sql<number>`coalesce(sum(cast(${normalizedCostLines.amountExVat} as numeric)),0)`,
+    actual: sql<number>`coalesce(sum(case when ${normalizedCostLines.status} in ('approved','paid') then cast(${normalizedCostLines.amountExVat} as numeric) else 0 end),0)`,
+  })
     .from(normalizedCostLines)
-    .where(and(eq(normalizedCostLines.projectId, projectId), and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))))
+    .where(and(
+      eq(normalizedCostLines.projectId, projectId),
+      and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)),
+    ))
     .groupBy(normalizedCostLines.status);
+}
+
+export async function getFinanceCashflow(projectId: number) {
+  return buildFinanceCashflowQuery(projectId);
 }
 
 export async function getFinanceRevenueLines(projectId: number) {
@@ -288,6 +308,14 @@ export async function createEngineeringDesign(payload: any, userId: number) {
   return created;
 }
 
+export async function getEngineeringStageByProject(projectId: number, stageId: number) {
+  const [stage] = await db.select({ id: projectEngStages.id })
+    .from(projectEngStages)
+    .where(and(eq(projectEngStages.id, stageId), eq(projectEngStages.projectId, projectId)))
+    .limit(1);
+  return stage ?? null;
+}
+
 export async function patchEngineeringDesign(id: number, payload: any, userId: number) {
   const [updated] = await db.update(projectEngDeliverables).set({ ...payload, approvedBy: payload.approvalStatus === "approved" ? userId : undefined, approvedAt: payload.approvalStatus === "approved" ? new Date() : undefined }).where(eq(projectEngDeliverables.id, id)).returning();
   return updated ?? null;
@@ -321,6 +349,15 @@ export async function getChecklistByProject(projectId: number, checklistId: numb
 export async function patchQualityCheck(id: number, payload: any) {
   const [updated] = await db.update(qcItemInstance).set({ ...payload, lastUpdatedAt: new Date(), approvedAt: payload.approved ? new Date() : undefined }).where(eq(qcItemInstance.id, id)).returning();
   return updated ?? null;
+}
+
+export async function getQualityCheckByProject(projectId: number, itemInstanceId: number) {
+  const [row] = await db.select({ id: qcItemInstance.id })
+    .from(qcItemInstance)
+    .innerJoin(qcChecklist, eq(qcChecklist.id, qcItemInstance.checklistId))
+    .where(and(eq(qcItemInstance.id, itemInstanceId), eq(qcChecklist.projectId, projectId)))
+    .limit(1);
+  return row ?? null;
 }
 
 export async function listImportsByDomain(domain: string) {

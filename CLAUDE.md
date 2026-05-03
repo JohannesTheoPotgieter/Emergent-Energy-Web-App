@@ -23,8 +23,17 @@ and `docs/architecture.md` for the architecture baseline.
 - `npm run test:smoke` — Playwright smoke suite (all routes × all roles).
 - `npm run qa:full-proof` — Full quality gate (check + test:api + test:smoke +
   test:routes + test:workflows + reconciliation + release:gate).
-- `npm run db:push` — Apply pre-push SQL enums + full schema alignment against
-  `$DATABASE_URL`.
+- `npm run db:push` — Sync `shared/schema.ts` to `$DATABASE_URL` via
+  `drizzle-kit push --force`. Dev-only; destructive — will drop columns that
+  exist in the DB but not in the schema.
+- `npm run db:generate` — After editing `shared/schema/*.ts`, run this with
+  `--name=<short_snake_case>` to produce a new migration file next to the
+  baseline.
+- `npm run db:migrate` — Apply pending migrations in order (tracked via
+  `migrations/meta/_journal.json` + the `__drizzle_migrations` table on the
+  target DB).
+- `npm run db:check` — CI guard. Fails if `shared/schema/*.ts` was edited
+  without a matching new migration file. Invoked on every PR.
 
 ## Project Structure
 
@@ -84,12 +93,24 @@ qa/release-gate.ts  Must pass before any release
   - Note: `ProgramExpense` / `ProgramInflows` are **deprecated PE/PI type shapes**
     in `shared/schema/finance.ts` — do not use for new code; use
     `normalizedCostLines` / `normalizedRevenueLines` instead.
-- **Migrations location:** `/migrations/` at the repo root (Drizzle-managed SQL).
-  Do NOT put new migrations in `server/migrations/` — that directory only holds
-  one-off TS maintenance scripts.
-- **Migrations policy:** Additive only. Every migration must use `IF NOT EXISTS`
-  / `IF EXISTS` guards. Never destructively `ALTER TABLE … DROP` or `RENAME`
-  without an explicit multi-step safe-migration plan.
+- **Migrations location:** `/migrations/` at the repo root. The current
+  baseline is `0000_baseline_20260419.sql`; new migrations are generated
+  next to it by `npm run db:generate`. Do NOT hand-write migrations — the
+  journal (`migrations/meta/_journal.json`) is the source of truth for
+  what Drizzle considers applied. Do NOT put migrations in
+  `server/migrations/` — that directory only holds one-off TS scripts.
+- **Historical migrations:** the 225 pre-baseline migrations live in
+  `migrations/archive/` for reference only. They are NOT re-applied by
+  any tooling; prod DBs already contain their effects. See
+  `migrations/archive/README.md`.
+- **Schema-drift CI guard:** `npm run db:check` runs `drizzle-kit generate`
+  in a sandbox and fails if it would produce a new SQL file — meaning the
+  schema and the committed migrations are out of sync. The CI workflows
+  run this on every PR.
+- **Migrations policy:** Additive only. Every new migration must use
+  `IF NOT EXISTS` / `IF EXISTS` guards. Never destructively
+  `ALTER TABLE … DROP` or `RENAME` without an explicit multi-step safe-
+  migration plan.
 - **`work_items`:** Writes go directly to `public.work_items` via Drizzle. The
   writable-view architecture was retired (see
   `migrations/20260409_retire_work_items_view.sql`). The files
@@ -151,6 +172,20 @@ qa/release-gate.ts  Must pass before any release
 - **Overrides/scenarios are stored separately with an audit trail.** Never
   overwrite imported baseline rows with override values.
 
+## Local QA: mock connectors
+
+- **External integrations** (MS Graph / Outlook / SharePoint / Teams,
+  QuickBooks, Pipedrive) auto-serve fixture data when their creds are
+  absent AND `NODE_ENV !== "production"`. This lets a fresh clone exercise
+  every integrated page without real tenant tokens.
+- Gate lives in `server/lib/connector-mode.ts`. Decision order per
+  integration: (1) prod → real only; (2) `USE_MOCK_CONNECTORS=false` →
+  force real; (3) `USE_MOCK_CONNECTORS=true` → force mock; (4) creds
+  present → real; (5) creds absent → mock.
+- Fixtures live in `server/mocks/{ms-graph,quickbooks,pipedrive}-fixtures.ts`.
+  Adjust them when the UI needs new realistic data for a scenario.
+- Prod is strictly `NODE_ENV`-gated — the flag has no effect there.
+
 ## Microsoft 365 Integration
 
 - **Graph client:** `@microsoft/microsoft-graph-client` via
@@ -188,6 +223,30 @@ qa/release-gate.ts  Must pass before any release
 - API tests require the `script/run-with-app.ts` wrapper (starts server first).
 - Before release, `npm run qa:full-proof` must pass (`qa/release-gate.ts`
   enforces this).
+
+## CI Rules
+
+- **Authoritative PR workflow:** `.github/workflows/pr-checks.yml` on
+  `pull_request` to `main` only. It runs:
+  `npm run ci:compile` → `npm run db:check` → `npm run test` → `npm run test:api`
+  → `npm run release:gate` (`SKIP_SMOKE_TESTS=true` in CI).
+- **Push workflow:** `.github/workflows/ci.yml` runs on `push` to `main` only
+  and mirrors the same gate logic for post-merge confidence.
+- **Unit tests** (`npm run test`) run on every PR — no Postgres needed. A new
+  regression in any pinned invariant (finance math, error leaks, schema
+  drift, route inventory) fails at this stage.
+- **Schema-drift guard** (`npm run db:check`) — runs `drizzle-kit generate`
+  in a sandbox; fails any PR that edited `shared/schema/*.ts` without a
+  matching new migration file.
+- **Replit deploy health is NOT CI health.** Replit deploy uses `.replit`
+  (`npm run build` / `npm run start`) and can be green while PR checks are red.
+  Treat GitHub PR checks as merge authority.
+- **Branch protection on `main`** is configured via GitHub UI. Docs in this
+  repo can describe intent, but only the GitHub settings are authoritative.
+- **Auth rate-limit loopback exemption** — `127.0.0.1` / `::1` are exempt
+  from the auth rate-limiter when `NODE_ENV !== "production"`, so local
+  `npm run test:api` and dev flows aren't blocked after 20 logins. The gate
+  is strictly NODE_ENV-based — prod is always rate-limited.
 
 ## Working With This Codebase — Rules for Claude
 

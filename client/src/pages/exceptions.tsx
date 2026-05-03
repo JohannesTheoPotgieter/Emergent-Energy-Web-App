@@ -1,12 +1,15 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { AlertTriangle, ArrowRight, ShieldAlert, Search, Filter, RotateCcw } from "lucide-react";
+import { AlertTriangle, ArrowRight, Search, Filter, RotateCcw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { PageHeader } from "@/components/ui/page-header";
+import { QueryLoading, QueryError } from "@/components/ui/query-states";
+import { PageLayout } from "@/components/layout";
 
 type ExceptionItem = {
   id: string;
@@ -49,7 +52,7 @@ function fetchExceptions(): Promise<ExceptionResponse> {
 }
 
 export default function ExceptionsPage() {
-  const { data, isLoading, isError } = useQuery({ queryKey: ["exceptions-page"], queryFn: fetchExceptions });
+  const { data, isLoading, isError, error, refetch } = useQuery({ queryKey: ["exceptions-page"], queryFn: fetchExceptions });
   const [search, setSearch] = useState("");
   const [severityFilter, setSeverityFilter] = useState("all");
   const [ownerFilter, setOwnerFilter] = useState("all");
@@ -111,41 +114,45 @@ export default function ExceptionsPage() {
     return Array.from(map.entries()).sort((a, b) => b[1].length - a[1].length);
   }, [filteredItems]);
 
+  const subtitle = hasActiveFilters
+    ? `${filteredSummary.total} of ${data?.summary?.total || 0} exceptions matching filters`
+    : "Only what needs intervention now. Role-scoped, severity-ranked, deeply actionable.";
+
   return (
-    <div className="space-y-4 p-4 md:p-6">
-      <Card className="border-red-100">
-        <CardHeader>
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div>
-              <CardTitle className="flex items-center gap-2 text-xl"><ShieldAlert className="h-5 w-5 text-red-600" />Exception Command Center</CardTitle>
-              <p className="text-sm text-muted-foreground mt-1">
-                {hasActiveFilters
-                  ? `${filteredSummary.total} of ${data?.summary?.total || 0} exceptions matching filters`
-                  : "Only what needs intervention now. Role-scoped, severity-ranked, deeply actionable."}
-              </p>
-            </div>
-            {hasActiveFilters && (
+    <PageLayout
+      data-testid="exceptions-page"
+      header={
+        <PageHeader
+          title="Exception Command Center"
+          subtitle={subtitle}
+          actions={
+            hasActiveFilters ? (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => { setSearch(""); setSeverityFilter("all"); setOwnerFilter("all"); setCategoryFilter("all"); }}
-                className="gap-1.5 text-muted-foreground"
+                className="gap-1.5"
+                data-testid="btn-clear-filters"
               >
                 <RotateCcw className="w-3.5 h-3.5" />Clear filters
               </Button>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3">
+            ) : null
+          }
+        />
+      }
+    >
+      <Card>
+        <CardContent className="p-4 space-y-3">
           <div className="grid gap-2 sm:grid-cols-4">
             {["critical", "high", "medium", "low"].map((severity) => (
               <button
                 key={severity}
                 onClick={() => setSeverityFilter(severityFilter === severity ? "all" : severity)}
-                className={`rounded-md border p-2 text-left transition-colors cursor-pointer ${severityFilter === severity ? severityTone[severity] : "hover:bg-muted/30"}`}
+                className={`rounded-md border p-2 text-left transition-colors cursor-pointer ${severityFilter === severity ? severityTone[severity] : "hover:bg-muted/30 border-border"}`}
+                data-testid={`filter-severity-${severity}`}
               >
                 <p className="text-xs uppercase text-muted-foreground">{severity}</p>
-                <p className="text-lg font-semibold">{filteredSummary.bySeverity[severity] || 0}</p>
+                <p className="text-lg font-semibold tabular-nums">{filteredSummary.bySeverity[severity] || 0}</p>
               </button>
             ))}
           </div>
@@ -159,6 +166,7 @@ export default function ExceptionsPage() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-8 h-9"
+                data-testid="input-search-exceptions"
               />
             </div>
             <SearchableSelect
@@ -177,8 +185,8 @@ export default function ExceptionsPage() {
         </CardContent>
       </Card>
 
-      {isLoading ? <p className="text-sm text-muted-foreground">Loading exceptions...</p> : null}
-      {isError ? <p className="text-sm text-red-600">Could not load exceptions.</p> : null}
+      {isLoading ? <QueryLoading /> : null}
+      {isError ? <QueryError error={error} onRetry={() => refetch()} /> : null}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
@@ -188,10 +196,10 @@ export default function ExceptionsPage() {
               <div key={group.severity} className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Badge className={severityTone[group.severity]}>{group.severity.toUpperCase()}</Badge>
-                  <span className="text-xs text-muted-foreground">{group.items.length} item(s)</span>
+                  <span className="text-xs text-muted-foreground tabular-nums">{group.items.length} item(s)</span>
                 </div>
                 {group.items.slice(0, 6).map((item) => (
-                  <Link key={item.id} href={item.sourceLink} className="flex items-start justify-between rounded-md border p-2 hover:bg-muted/40">
+                  <Link key={item.id} href={item.sourceLink} className="flex items-start justify-between rounded-md border border-border p-2 hover:bg-muted/40" data-testid={`exception-${item.id}`}>
                     <div>
                       <p className="text-sm font-medium">{item.title}</p>
                       <p className="text-xs text-muted-foreground">{item.project} · Owner: {item.owner} · {item.reason}</p>
@@ -208,13 +216,13 @@ export default function ExceptionsPage() {
           <CardHeader><CardTitle className="text-base">By category</CardTitle></CardHeader>
           <CardContent className="space-y-2">
             {groupedByCategory.map(([category, items]) => (
-              <div key={category} className="rounded-md border p-2">
+              <div key={category} className="rounded-md border border-border p-2">
                 <div className="mb-1 flex items-center justify-between">
                   <p className="text-sm font-medium">{category.replace(/_/g, " ")}</p>
-                  <Badge variant="outline">{items.length}</Badge>
+                  <Badge variant="outline" className="tabular-nums">{items.length}</Badge>
                 </div>
                 {items.slice(0, 3).map((item) => (
-                  <Link key={item.id} href={item.sourceLink} className="mt-1 flex items-center justify-between rounded border border-transparent px-2 py-1 hover:border-slate-200 hover:bg-slate-50">
+                  <Link key={item.id} href={item.sourceLink} className="mt-1 flex items-center justify-between rounded border border-transparent px-2 py-1 hover:border-border hover:bg-muted/40">
                     <span className="text-xs">{item.title}</span>
                     {item.severity === "critical" ? <AlertTriangle className="h-3.5 w-3.5 text-red-500" /> : null}
                   </Link>
@@ -224,6 +232,6 @@ export default function ExceptionsPage() {
           </CardContent>
         </Card>
       </div>
-    </div>
+    </PageLayout>
   );
 }

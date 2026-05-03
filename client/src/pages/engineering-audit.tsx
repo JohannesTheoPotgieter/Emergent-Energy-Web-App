@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { engFetch } from "@/lib/eng-fetch";
@@ -15,6 +15,8 @@ import {
   Activity, Search, ChevronDown, ChevronRight, Loader2, Users, Clock,
   Calendar, BarChart3, RefreshCw,
 } from "lucide-react";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout } from "@/components/layout";
 
 // --- Types ---
 
@@ -209,18 +211,18 @@ export default function EngineeringAuditPage() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage] = useState(0);
 
-  // Debounce search
-  const searchTimeout = useMemo(() => {
-    return (value: string) => {
-      const id = setTimeout(() => setDebouncedSearch(value), 300);
-      return () => clearTimeout(id);
-    };
-  }, []);
+  // Debounce search — 300 ms after the user stops typing, update the value
+  // used in the query key so React Query refetches once rather than per-key.
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(0);
+    }, 300);
+    return () => clearTimeout(id);
+  }, [search]);
 
   const handleSearch = (value: string) => {
     setSearch(value);
-    setPage(0);
-    searchTimeout(value);
   };
 
   // Queries
@@ -252,23 +254,20 @@ export default function EngineeringAuditPage() {
 
   return (
     <ErrorBoundary>
-    <div className="space-y-4 p-4 md:p-6" data-testid="engineering-audit-page">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-600 to-slate-700 flex items-center justify-center shadow-sm">
-            <Activity className="h-5 w-5 text-white" />
-          </div>
-          <div>
-            <h2 className="text-2xl font-heading font-bold">Engineering Audit Log</h2>
-            <p className="text-xs text-muted-foreground">Complete audit trail of all engineering module actions.</p>
-          </div>
-        </div>
-        <Button variant="outline" size="sm" onClick={() => refetch()} className="gap-1.5">
-          <RefreshCw className="h-3.5 w-3.5" /> Refresh
-        </Button>
-      </div>
-
+    <PageLayout
+      data-testid="engineering-audit-page"
+      header={
+        <PageHeader
+          title="Engineering Audit Log"
+          subtitle={`Complete audit trail of all engineering module actions${total ? ` · ${total.toLocaleString()} entries` : ""}`}
+          actions={
+            <Button variant="outline" size="sm" onClick={() => refetch()} className="gap-1.5" data-testid="btn-refresh-audit">
+              <RefreshCw className="h-3.5 w-3.5" /> Refresh
+            </Button>
+          }
+        />
+      }
+    >
       {/* Stats */}
       <StatsPanel stats={stats} isLoading={statsLoading} />
 
@@ -391,7 +390,7 @@ export default function EngineeringAuditPage() {
           </div>
         </div>
       )}
-    </div>
+    </PageLayout>
     </ErrorBoundary>
   );
 }

@@ -3,6 +3,9 @@ import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, re
 
 // ==================== STATUS ENUMS ====================
 export const archivedStatusEnum = pgEnum("archived_status_enum", ["ACTIVE", "ARCHIVED", "ARCHIVED_MERGED", "GONE"]);
+// Canonical project status (orthogonal to phase). Mirrors the DB enum
+// `project_status_enum` created by 20260420_canonical_phase_cycle.sql.
+export const projectStatusEnum = pgEnum("project_status_enum", ["active", "hold", "internal", "closed", "tbc"]);
 export const executionGateStatusEnum = pgEnum("execution_gate_status_enum", ["NOT_ELIGIBLE", "ELIGIBLE", "APPROVED"]);
 export const signedStatusEnum = pgEnum("signed_status_enum", ["NONE", "PENDING", "SIGNED"]);
 import { createInsertSchema } from "drizzle-zod";
@@ -37,7 +40,30 @@ export const clients = pgTable("clients", {
   industry: text("industry"),
   pipedriveOrgId: text("pipedrive_org_id"),
   status: text("status").default("active"),    // 'active', 'inactive', 'prospect'
-});
+  // Email-linking foundations — used to auto-attribute incoming Outlook
+  // emails to this client when the sender's domain matches.
+  // See docs/overhaul/04-overnight-progress.md for the email-linking design.
+  primaryEmailDomain: text("primary_email_domain"),     // e.g. "clientabc.com"
+  additionalEmailDomains: jsonb("additional_email_domains").$type<string[]>().default([]),
+  // Soft-delete + merge bookkeeping (Task #73, migration 0029).
+  //   - `deletedAt` is set when the row is soft-deleted via DELETE
+  //     /api/pd/clients/:id OR when the row is the loser of a merge.
+  //   - `mergedIntoClientId` is set only when this row was merged into
+  //     another client; deep links to the loser id can resolve to the
+  //     survivor by following this pointer.
+  // Both columns are filtered (`WHERE deleted_at IS NULL`) on every
+  // client read path so soft-deleted rows never appear in pickers,
+  // listings, or downstream joins. Mirrors pd_tickets.deleted_at from
+  // migration 0019 (Task #34).
+  deletedAt: timestamp("deleted_at"),
+  mergedIntoClientId: integer("merged_into_client_id").references((): any => clients.id, { onDelete: "set null" }),
+}, (table) => ({
+  // Defence-in-depth against duplicate clients for the same Pipedrive org.
+  // Backed by migration 0018_clients_unique_pipedrive_org.sql.
+  pipedriveOrgIdUniq: uniqueIndex("clients_pipedrive_org_id_uniq")
+    .on(table.pipedriveOrgId)
+    .where(sql`${table.pipedriveOrgId} IS NOT NULL`),
+}));
 export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertClient = z.infer<typeof insertClientSchema>;
 export type Client = typeof clients.$inferSelect;
@@ -63,7 +89,13 @@ export const sites = pgTable("sites", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   deletedAt: timestamp("deleted_at"),
-});
+}, (table) => ({
+  // Defence-in-depth against duplicate sites for the same client+name.
+  // Backed by migration 0022_sites_pdtickets_natural_key_uniques.sql.
+  clientSiteNameUniq: uniqueIndex("sites_client_site_name_uniq")
+    .on(table.clientId, table.siteName)
+    .where(sql`${table.deletedAt} IS NULL AND ${table.clientId} IS NOT NULL AND ${table.siteName} IS NOT NULL`),
+}));
 
 export const insertSiteSchema = createInsertSchema(sites).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertSite = z.infer<typeof insertSiteSchema>;
@@ -126,6 +158,31 @@ export const opportunities = pgTable("opportunities", {
   commercialRisks: text("commercial_risks"),
   notes: text("notes"),
   status: text("status").default("active"),              // 'active', 'won', 'lost', 'on_hold'
+  // Project location. Populated by Pipedrive sync (when address custom-field
+  // is mapped) or copied from the PD shadow on backfill. See migration
+  // 20260420_opportunity_province.sql.
+  province: text("province"),
+  // === Pipedrive enrichment (added 2026-04-20, migration
+  // 20260420_opportunity_merge_pipedrive_enrich.sql). All optional;
+  // populated by `pipedrive-sync-service.ts` when a deal is synced.
+  // App-side opportunities ('source' = 'internal') leave them null. ===
+  dealName: text("deal_name"),
+  dealOwnerName: text("deal_owner_name"),                // snapshot when no users-table match
+  currency: text("currency").notNull().default("ZAR"),
+  pipedriveUpdatedAt: timestamp("pipedrive_updated_at"), // Pipedrive's update_time
+  pipedriveStageChangedAt: timestamp("pipedrive_stage_changed_at"),
+  probability: decimal("probability", { precision: 5, scale: 2 }),
+  weightedValue: decimal("weighted_value", { precision: 15, scale: 2 }),
+  lostReason: text("lost_reason"),
+  lostTime: timestamp("lost_time"),
+  personName: text("person_name"),
+  personEmail: text("person_email"),
+  personPhone: text("person_phone"),
+  activitiesCount: integer("activities_count").notNull().default(0),
+  lastActivityDate: date("last_activity_date"),
+  nextActivityDate: date("next_activity_date"),
+  nextActivitySubject: text("next_activity_subject"),
+  labels: text("labels"),                                // CSV for now
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   deletedAt: timestamp("deleted_at"),
@@ -157,6 +214,12 @@ export const projectInfo = pgTable("project_info", {
   opportunityId: integer("opportunity_id").references(() => opportunities.id),
   deliveryModel: text("delivery_model"),     // 'turnkey', 'design_build', 'epc', 'consulting'
   projectCode: text("project_code"),
+  // Canonical phase cycle (added 2026-04-20). Hold/Internal/Closed/TBC are
+  // no longer phases — they live here as an orthogonal status. DLP is a
+  // flag that auto-pushes RAG to red while the project is in any handover
+  // phase. See shared/phases.ts for the canonical 10-phase list.
+  projectStatus: projectStatusEnum("project_status").notNull().default("active"),
+  inDlp: boolean("in_dlp").notNull().default(false),
 }, (table) => ({
   uqProjectInfoProjectNameActive: uniqueIndex("uq_project_info_project_name_active")
     .on(table.projectName)
@@ -179,6 +242,11 @@ export const projectExecutionState = pgTable("project_execution_state", {
   phaseUpdatedAt: timestamp("phase_updated_at"),
   phaseUpdatedByUserId: integer("phase_updated_by_user_id").references(() => users.id, { onDelete: "set null" }),
   phaseNotes: text("phase_notes"),
+  // Stores the prior sequential lifecycle phase when a project is parked
+  // in the terminal "Hold" branch. Cleared when the project resumes back
+  // into the sequential cycle. Added 2026-04-24 by migration
+  // 0030_canonical_lifecycle_phases_v2.sql.
+  previousPhase: text("previous_phase"),
 
   // Key dates (planned) — migrated from text to date in 20260331_convert_project_dates_to_date.sql
   pdHandoverDate: date("pd_handover_date"),
@@ -413,23 +481,82 @@ export type ProjectEditableFields = typeof projectEditableFields.$inferSelect;
 
 // ===================== LIFECYCLE PHASES =====================
 
+/**
+ * @deprecated 2026-04-20 — import {@link import('../phases').PHASES} instead.
+ *
+ * This list is kept as a transitional shim so existing call sites still
+ * compile. It is the union of the canonical 10-phase cycle PLUS the
+ * legacy labels (Cost Proposal, QA, Handover, Commercial Close Out, DLP,
+ * Internal, Hold, Closed, TBC) — these legacy values are no longer stored
+ * in the database after migration 20260420_canonical_phase_cycle but are
+ * tolerated as TypeScript types until every call site is migrated.
+ *
+ * Canonical 10 phases (in order): First Assessment, Design & Cost Proposal,
+ * Financial Close, Planning, Construction, Commissioning, O&M Handover,
+ * Client Handover, Compliance Handover, Post-Handover Review.
+ *
+ * Hold / Internal / Closed / TBC live on `project_info.project_status`.
+ * DLP lives on `project_info.in_dlp` and forces RAG=red during handover.
+ */
 export const LIFECYCLE_PHASES = [
+  // Canonical 10 (sequential, in display order):
   "First Assessment",
-  "Cost Proposal",
+  "Cost Proposal & Design",
   "Financial Close",
   "Planning",
   "Construction",
+  "Commissioning",
+  "O&M Handover",
+  "Client Handover",
+  "3 Months Post HO Review",
+  "Compliance Handover",
+  // Terminal branches (not sequential):
+  "Hold",
+  "Done",
+  // Legacy labels — DEPRECATED, kept for compile-time tolerance only:
+  "Design & Cost Proposal",
+  "Post-Handover Review",
+  "Cost Proposal",
   "QA",
   "Handover",
-  "Compliance Handover",
   "Commercial Close Out",
   "DLP",
   "Internal",
-  "Hold",
   "Closed",
   "TBC",
 ] as const;
 export type LifecyclePhase = typeof LIFECYCLE_PHASES[number];
+
+/**
+ * The canonical 10-phase sequential cycle as a string-literal tuple.
+ * Use this (and not LIFECYCLE_PHASES) in new code that needs the active
+ * sequential list. Terminal Hold/Done are exposed via TERMINAL_LIFECYCLE_PHASES.
+ */
+export const CANONICAL_LIFECYCLE_PHASES = [
+  "First Assessment",
+  "Cost Proposal & Design",
+  "Financial Close",
+  "Planning",
+  "Construction",
+  "Commissioning",
+  "O&M Handover",
+  "Client Handover",
+  "3 Months Post HO Review",
+  "Compliance Handover",
+] as const satisfies ReadonlyArray<LifecyclePhase>;
+export type CanonicalLifecyclePhase = typeof CANONICAL_LIFECYCLE_PHASES[number];
+
+/**
+ * Terminal "branch" phases — Hold (resumable) and Done (permanent).
+ * Rendered as separate columns next to the sequential cycle on lifecycle
+ * boards. Hold preserves the prior sequential phase via
+ * project_info.previous_phase so the project can resume where it left off.
+ */
+export const TERMINAL_LIFECYCLE_PHASES = [
+  "Hold",
+  "Done",
+] as const satisfies ReadonlyArray<LifecyclePhase>;
+export type TerminalLifecyclePhase = typeof TERMINAL_LIFECYCLE_PHASES[number];
 
 export const PROJECT_PHASES = [
   ...LIFECYCLE_PHASES,
@@ -445,28 +572,40 @@ export const PROJECT_PHASES = [
 export type ProjectPhase = typeof PROJECT_PHASES[number];
 
 export const PROJECT_PHASE_LABELS: Record<string, string> = {
-  "First Assessment": "First Assessment",
-  "Cost Proposal": "Cost Proposal",
-  "Financial Close": "Financial Close",
-  "Planning": "Planning",
-  "Construction": "Construction",
-  "QA": "QA",
-  "Handover": "Handover",
-  "Compliance Handover": "Compliance Handover",
-  "Commercial Close Out": "Commercial Close Out",
-  "DLP": "DLP",
-  "Internal": "Internal",
-  "Hold": "Hold",
-  "Closed": "Closed",
-  "TBC": "TBC",
-  P0_FIRST_ASSESSMENT: "First Assessment",
-  P1_COST_PROPOSAL_DESIGN: "Cost Proposal",
-  P2_PD_PM_HANDOVER: "Planning",
-  P3_DETAILED_DESIGN_PROC_RELEASE: "Planning",
-  P4_CONSTRUCTION_INSTALLATION: "Construction",
-  P5_COMMISSIONING_TESTING: "QA",
-  P6_HANDOVER_CLIENT_MATRIARCH: "Handover",
-  P7_CLOSEOUT_POSTMORTEM: "Commercial Close Out",
+  // Canonical labels (preferred)
+  "First Assessment":         "First Assessment",
+  "Cost Proposal & Design":   "Cost Proposal & Design",
+  "Financial Close":          "Financial Close",
+  "Planning":                 "Planning",
+  "Construction":             "Construction",
+  "Commissioning":            "Commissioning",
+  "O&M Handover":             "O&M Handover",
+  "Client Handover":          "Client Handover",
+  "3 Months Post HO Review":  "3 Months Post HO Review",
+  "Compliance Handover":      "Compliance Handover",
+  "Hold":                     "Hold",
+  "Done":                     "Done",
+  // Legacy labels normalised to canonical display
+  "Design & Cost Proposal": "Cost Proposal & Design",
+  "Cost Proposal":          "Cost Proposal & Design",
+  "Post-Handover Review":   "3 Months Post HO Review",
+  "QA":                     "Commissioning",
+  "Handover":               "O&M Handover",
+  "Commercial Close Out":   "3 Months Post HO Review",
+  "DLP":                    "O&M Handover",  // surfaced as in_dlp badge
+  "Internal":               "Internal",      // surfaced via project_status badge
+  "Closed":                 "Done",          // canonical terminal label
+  "Gone":                   "Done",
+  "TBC":                    "TBC",           // surfaced via project_status badge
+  // Legacy P-codes from import era
+  P0_FIRST_ASSESSMENT:                "First Assessment",
+  P1_COST_PROPOSAL_DESIGN:            "Cost Proposal & Design",
+  P2_PD_PM_HANDOVER:                  "Financial Close",
+  P3_DETAILED_DESIGN_PROC_RELEASE:    "Planning",
+  P4_CONSTRUCTION_INSTALLATION:       "Construction",
+  P5_COMMISSIONING_TESTING:           "Commissioning",
+  P6_HANDOVER_CLIENT_MATRIARCH:       "O&M Handover",
+  P7_CLOSEOUT_POSTMORTEM:             "3 Months Post HO Review",
 };
 
 export const LEGACY_TO_LIFECYCLE: Record<string, LifecyclePhase> = {
@@ -521,19 +660,33 @@ export const PHASE_TEXT_TO_ENUM: Record<string, ProjectPhase> = {
 };
 
 export const PHASE_TO_ENG_STAGES: Record<string, string[]> = {
-  "First Assessment": ["First Assessment"],
-  "Cost Proposal": ["Cost Proposal"],
-  "Financial Close": ["Cost Proposal"],
-  "Planning": ["IFC Planning"],
-  "Construction": ["IFC Planning", "Construction Support"],
-  "QA": ["Handover Pack"],
-  "Handover": ["Handover Pack"],
-  "Compliance Handover": ["Handover Pack"],
+  // Canonical labels:
+  "First Assessment":         ["First Assessment"],
+  "Cost Proposal & Design":   ["Cost Proposal"],
+  "Financial Close":          ["Cost Proposal"],
+  "Planning":                 ["IFC Planning"],
+  "Construction":             ["IFC Planning", "Construction Support"],
+  "Commissioning":            ["Handover Pack"],
+  "O&M Handover":             ["Handover Pack"],
+  "Client Handover":          ["Handover Pack"],
+  "3 Months Post HO Review":  ["Handover Pack"],
+  "Compliance Handover":      ["Handover Pack"],
+  // Legacy labels (kept for tolerant lookup)
+  "Design & Cost Proposal": ["Cost Proposal"],
+  "Cost Proposal":          ["Cost Proposal"],
+  "Post-Handover Review":   ["Handover Pack"],
+  "QA":                     ["Handover Pack"],
+  "Handover":               ["Handover Pack"],
 };
 
 // ===================== PROJECT DEVELOPMENT (PD) =====================
 
-export const pdTickets = pgTable("pd_tickets", {
+// ── Renamed from `pd_tickets` to `engineering_tickets` in vocabulary phase 2
+// (task #58, migrations 0024 + 0025). The legacy `pdTickets` /
+// `PdTicket` / `insertPdTicketSchema` re-exports were dropped in task
+// #60 (migration 0026) once production telemetry confirmed zero
+// traffic against the old names for a full release.
+export const engineeringTickets = pgTable("engineering_tickets", {
   id: serial("id").primaryKey(),
   clientId: integer("client_id").references(() => clients.id),
   clientNameSnapshot: text("client_name_snapshot"),
@@ -550,7 +703,11 @@ export const pdTickets = pgTable("pd_tickets", {
   dueDate: text("due_date"),
   requestType: text("request_type").notNull(),
   priority: text("priority").notNull().default("Medium"),
-  status: text("status").notNull().default("Draft"),
+  // Canonical engineering-task status set (shared/engineering-ticket-status.ts).
+  // Default is 'to_do'. Migration 0027 backfills legacy values
+  // (Draft / In Progress / Completed / On Hold / Cancelled) to canonical
+  // forms and shifts the column default.
+  status: text("status").notNull().default("to_do"),
   numberOfReworks: integer("number_of_reworks").notNull().default(0),
   projectDeveloperUserId: integer("project_developer_user_id").references(() => users.id),
   designerUserId: integer("designer_user_id").references(() => users.id),
@@ -595,10 +752,21 @@ export const pdTickets = pgTable("pd_tickets", {
   createdBy: integer("created_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
-export const insertPdTicketSchema = createInsertSchema(pdTickets).omit({ id: true, createdAt: true, updatedAt: true, tasksSpawnedAt: true } as any);
-export type InsertPdTicket = z.infer<typeof insertPdTicketSchema>;
-export type PdTicket = typeof pdTickets.$inferSelect;
+  deletedAt: timestamp("deleted_at"),
+}, (table) => ({
+  // Defence-in-depth against duplicate project-bound PD tickets for the
+  // same (opportunity, project, request_type). Complements the existing
+  // shadow-ticket unique index (`pd_tickets_opportunity_shadow_unique`,
+  // migrations 0019/0020) by covering project-bound tickets.
+  // Backed by migration 0022_sites_pdtickets_natural_key_uniques.sql.
+  // Index renamed alongside the table in migration 0025.
+  phasePerProjectUniq: uniqueIndex("engineering_tickets_phase_per_project_uniq")
+    .on(table.opportunityId, table.projectId, table.requestType)
+    .where(sql`${table.deletedAt} IS NULL AND ${table.opportunityId} IS NOT NULL AND ${table.projectId} IS NOT NULL AND ${table.requestType} IS NOT NULL`),
+}));
+export const insertEngineeringTicketSchema = createInsertSchema(engineeringTickets).omit({ id: true, createdAt: true, updatedAt: true, tasksSpawnedAt: true, deletedAt: true } as any);
+export type InsertEngineeringTicket = z.infer<typeof insertEngineeringTicketSchema>;
+export type EngineeringTicket = typeof engineeringTickets.$inferSelect;
 
 export const PD_REQUEST_TYPE_TASK_TEMPLATES: Record<string, { title: string; priority: string }[]> = {
   "Cost Proposal": [
@@ -936,6 +1104,32 @@ export const projectClientHistory = pgTable("project_client_history", {
 export const insertProjectClientHistorySchema = createInsertSchema(projectClientHistory).omit({ id: true, movedAt: true } as any);
 export type InsertProjectClientHistory = z.infer<typeof insertProjectClientHistorySchema>;
 export type ProjectClientHistory = typeof projectClientHistory.$inferSelect;
+
+// ===================== CLIENT MERGES (Task #73) =====================
+//
+// Audit ledger — one row per executed client merge. Backed by
+// migration 0029_clients_merge_and_soft_delete.sql.
+//
+// `loserNameSnapshot` and `loserClientIdSnapshot` are captured at
+// merge-time so the survivor's "previously known as" chip can render
+// the loser's identity even after the loser row is restored or
+// renamed. `repointedCounts` is a free-form jsonb keyed by table name,
+// e.g. `{ "project_info": 4, "opportunities": 7, "engineering_tickets": 12 }`.
+
+export const clientMerges = pgTable("client_merges", {
+  id: serial("id").primaryKey(),
+  loserClientId: integer("loser_client_id").notNull().references(() => clients.id),
+  survivorClientId: integer("survivor_client_id").notNull().references(() => clients.id),
+  performedByUserId: integer("performed_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  performedAt: timestamp("performed_at").notNull().defaultNow(),
+  loserNameSnapshot: text("loser_name_snapshot").notNull(),
+  loserClientIdSnapshot: text("loser_client_id_snapshot").notNull(),
+  repointedCounts: jsonb("repointed_counts").$type<Record<string, number>>().notNull().default({}),
+  reason: text("reason"),
+});
+export const insertClientMergeSchema = createInsertSchema(clientMerges).omit({ id: true, performedAt: true } as any);
+export type InsertClientMerge = z.infer<typeof insertClientMergeSchema>;
+export type ClientMerge = typeof clientMerges.$inferSelect;
 
 // ===================== USER PROJECT FOLDERS =====================
 

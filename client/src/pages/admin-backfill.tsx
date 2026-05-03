@@ -133,7 +133,7 @@ export default function AdminBackfillPage() {
           <Card>
             <CardContent className="p-4 flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium">Create Opportunities from PD Tickets</p>
+                <p className="text-sm font-medium">Create Opportunities from legacy PD records</p>
                 <p className="text-xs text-muted-foreground">Creates opportunity records from PD tickets with client data. Links tickets to their opportunities.</p>
               </div>
               <Button

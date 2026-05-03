@@ -40,6 +40,7 @@ export function validateResponse<T>(schema: ZodSchema<T>, data: unknown, endpoin
 
 export function fail(res: Response, err: unknown) {
   if (err instanceof ApiV2Error) {
+    // eslint-disable-next-line no-restricted-syntax -- intentional: ApiV2Error messages are user-authored and safe
     return res.status(err.status).json({ success: false, data: null, meta: null, error: { code: err.code, message: err.message, details: err.details ?? null } });
   }
   return res.status(500).json({ success: false, data: null, meta: null, error: { code: "INTERNAL_ERROR", message: "Unexpected error", details: null } });

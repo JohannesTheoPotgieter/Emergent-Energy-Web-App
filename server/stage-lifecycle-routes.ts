@@ -17,6 +17,9 @@ import {
   advanceToStage,
   getStageGateHistory,
   computeCurrentStageGateReadiness,
+  placeProjectOnHold,
+  resumeProjectFromHold,
+  markProjectDone,
 } from "./services/stage-lifecycle-service";
 import {
   createException,
@@ -38,6 +41,7 @@ import {
   projectStageRequirements,
   projectStageDecisions,
 } from "@shared/schema";
+import { parseIntParam } from "./lib/req-params";
 
 function getUser(req: Request): { id: number; role: string } {
   const user = (req as any).user;
@@ -49,7 +53,7 @@ function p(v: string | string[] | undefined): string {
 }
 
 function parseProjectId(req: Request, res: Response): number | null {
-  const id = parseInt(p(req.params.projectId), 10);
+  const id = parseIntParam(req.params.projectId);
   if (Number.isNaN(id)) {
     res.status(400).json({ error: "Invalid projectId" });
     return null;
@@ -107,6 +111,19 @@ export function registerStageLifecycleRoutes(app: Express): void {
 
         const stage = matching.find((s: any) => s.stageCode === stageCode);
         if (!stage) return res.status(404).json({ error: "Stage not found" });
+
+        // Task #84: Run the auto-evaluator before reading the requirements
+        // so the badges and effective statuses reflect the latest app data.
+        // Hold/Done phases are skipped inside the service (no-op for terminal
+        // phases). Failures here must never block the page load.
+        try {
+          const { evaluateAndPersistGateAuto } = await import(
+            "./services/gate-auto-evaluator-service"
+          );
+          await evaluateAndPersistGateAuto(projectId, stageCode);
+        } catch (err) {
+          console.warn("[stage-lifecycle] auto-evaluator failed (non-fatal):", err);
+        }
 
         const requirements = await db
           .select()
@@ -198,6 +215,18 @@ export function registerStageLifecycleRoutes(app: Express): void {
         const targetStageCode = p(req.params.targetStageCode);
         const { reason } = req.body || {};
 
+        // Terminal stages must go through their dedicated endpoints so the
+        // Hold/Done contract (preserve previous_phase, flip project_status,
+        // log audit decision) is honoured. The generic advance-to path is
+        // for sequential stages only.
+        if (targetStageCode === "S_HOLD" || targetStageCode === "S_DONE") {
+          return res.status(400).json({
+            error: `Use POST /api/projects/${projectId}/stages/${
+              targetStageCode === "S_HOLD" ? "hold" : "done"
+            } for terminal-branch transitions`,
+          });
+        }
+
         const result = await advanceToStage({
           projectId,
           targetStageCode: targetStageCode as any,
@@ -209,6 +238,106 @@ export function registerStageLifecycleRoutes(app: Express): void {
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
         console.error("[stage-lifecycle] advance-to error:", msg);
+        res.status(400).json({ error: msg });
+      }
+    },
+  );
+
+  // ── Terminal-branch transitions (Task #81) ──────────────────
+  // Three dedicated endpoints implement the canonical 12-phase
+  // model's terminal contract (10 sequential + Hold + Done).
+  // Routing through the service handlers keeps three invariants:
+  //   - Hold preserves current_stage_code on previous_phase so
+  //     resume can drop the project back to where it left off.
+  //   - Resume only succeeds when the project is on S_HOLD AND
+  //     has a previous_phase.
+  //   - Done is permanent (no resume) and flips status to closed.
+
+  // POST /api/projects/:projectId/stages/hold
+  app.post(
+    "/api/projects/:projectId/stages/hold",
+    jwtAuth,
+    requireAuth,
+    requirePermission("stage_gate", "edit"),
+    async (req: Request, res: Response) => {
+      try {
+        const projectId = parseProjectId(req, res);
+        if (!projectId) return;
+        const user = getUser(req);
+        const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
+        if (!ADMIN_ROLES.includes(user.role)) {
+          return res.status(403).json({ error: "Only admin roles can place a project on hold" });
+        }
+        const { reason } = req.body || {};
+        const result = await placeProjectOnHold({
+          projectId,
+          actorUserId: user.id,
+          reason,
+        });
+        res.json(result);
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        console.error("[stage-lifecycle] hold error:", msg);
+        res.status(400).json({ error: msg });
+      }
+    },
+  );
+
+  // POST /api/projects/:projectId/stages/resume
+  app.post(
+    "/api/projects/:projectId/stages/resume",
+    jwtAuth,
+    requireAuth,
+    requirePermission("stage_gate", "edit"),
+    async (req: Request, res: Response) => {
+      try {
+        const projectId = parseProjectId(req, res);
+        if (!projectId) return;
+        const user = getUser(req);
+        const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
+        if (!ADMIN_ROLES.includes(user.role)) {
+          return res.status(403).json({ error: "Only admin roles can resume a project" });
+        }
+        const { reason } = req.body || {};
+        const result = await resumeProjectFromHold({
+          projectId,
+          actorUserId: user.id,
+          reason,
+        });
+        res.json(result);
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        console.error("[stage-lifecycle] resume error:", msg);
+        res.status(400).json({ error: msg });
+      }
+    },
+  );
+
+  // POST /api/projects/:projectId/stages/done
+  app.post(
+    "/api/projects/:projectId/stages/done",
+    jwtAuth,
+    requireAuth,
+    requirePermission("stage_gate", "edit"),
+    async (req: Request, res: Response) => {
+      try {
+        const projectId = parseProjectId(req, res);
+        if (!projectId) return;
+        const user = getUser(req);
+        const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
+        if (!ADMIN_ROLES.includes(user.role)) {
+          return res.status(403).json({ error: "Only admin roles can mark a project done" });
+        }
+        const { reason } = req.body || {};
+        const result = await markProjectDone({
+          projectId,
+          actorUserId: user.id,
+          reason,
+        });
+        res.json(result);
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        console.error("[stage-lifecycle] done error:", msg);
         res.status(400).json({ error: msg });
       }
     },
@@ -279,10 +408,10 @@ export function registerStageLifecycleRoutes(app: Express): void {
     requirePermission("stage_lifecycle", "edit"),
     async (req: Request, res: Response) => {
       try {
-        const requirementId = parseInt(p(req.params.requirementId), 10);
+        const requirementId = parseIntParam(req.params.requirementId);
         if (Number.isNaN(requirementId)) return res.status(400).json({ error: "Invalid requirementId" });
         const user = getUser(req);
-        const { status, evidenceUrl, notes, contributors } = req.body;
+        const { status, evidenceUrl, notes, contributors, reopenReason } = req.body;
 
         // Support updating contributors without status change
         if (contributors !== undefined && !status) {
@@ -299,8 +428,10 @@ export function registerStageLifecycleRoutes(app: Express): void {
           requirementId,
           status,
           actorUserId: user.id,
+          actorRole: user.role,
           evidenceUrl,
           notes,
+          reopenReason,
         });
         res.json(result);
       } catch (error: unknown) {
@@ -431,7 +562,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     requirePermission("stage_exceptions", "edit"),
     async (req: Request, res: Response) => {
       try {
-        const id = parseInt(p(req.params.id), 10);
+        const id = parseIntParam(req.params.id);
         if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
         const user = getUser(req);
         const { conditions } = req.body;
@@ -452,7 +583,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     requirePermission("stage_exceptions", "edit"),
     async (req: Request, res: Response) => {
       try {
-        const id = parseInt(p(req.params.id), 10);
+        const id = parseIntParam(req.params.id);
         if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
         const user = getUser(req);
         const { reason } = req.body;
@@ -474,7 +605,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     requirePermission("stage_exceptions", "edit"),
     async (req: Request, res: Response) => {
       try {
-        const id = parseInt(p(req.params.id), 10);
+        const id = parseIntParam(req.params.id);
         if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
         const user = getUser(req);
         const exception = await closeException(id, user.id);
@@ -550,7 +681,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     requirePermission("stage_lifecycle", "edit"),
     async (req: Request, res: Response) => {
       try {
-        const id = parseInt(p(req.params.id), 10);
+        const id = parseIntParam(req.params.id);
         if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
         const user = getUser(req);
         const dependency = await resolveDependency(id, user.id);
@@ -570,7 +701,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     requirePermission("stage_lifecycle", "edit"),
     async (req: Request, res: Response) => {
       try {
-        const id = parseInt(p(req.params.id), 10);
+        const id = parseIntParam(req.params.id);
         if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
         const user = getUser(req);
         const { reason } = req.body;
@@ -651,7 +782,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     requireAuth,
     async (req: Request, res: Response) => {
       try {
-        const projectId = parseInt(p(req.params.projectId), 10);
+        const projectId = parseIntParam(req.params.projectId);
         if (Number.isNaN(projectId)) {
           return res.status(400).json({ error: "Invalid projectId" });
         }
@@ -659,6 +790,106 @@ export function registerStageLifecycleRoutes(app: Express): void {
         const limit = Number.isNaN(limitParam) ? 200 : Math.min(Math.max(limitParam, 1), 1000);
         const history = await getStageGateHistory(projectId, limit);
         res.json({ projectId, count: history.length, snapshots: history });
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        res.status(500).json({ error: msg });
+      }
+    },
+  );
+
+  // ── Task #84: Gate auto-evaluator endpoints ──────────────────
+  // GET /api/projects/:projectId/stage-gates/:phase/auto
+  // Run the auto-evaluator registry for a single project + phase, persist
+  // the auto_* columns, and return the evaluation results so the UI can
+  // render "Detected from <source>" badges. Holds/Done are not evaluated.
+  app.get(
+    "/api/projects/:projectId/stage-gates/:phase/auto",
+    jwtAuth,
+    requireAuth,
+    requirePermission("stage_lifecycle", "view"),
+    async (req: Request, res: Response) => {
+      try {
+        const projectId = parseProjectId(req, res);
+        if (!projectId) return;
+        const phase = p(req.params.phase);
+        if (!phase) return res.status(400).json({ error: "Missing phase code" });
+
+        const { evaluateAndPersistGateAuto, listEvaluatorsForPhase } = await import(
+          "./services/gate-auto-evaluator-service"
+        );
+        const bindings = listEvaluatorsForPhase(phase);
+        if (bindings.length === 0) {
+          return res.json({
+            projectId,
+            phase,
+            results: [],
+            persistResult: { updated: 0, cleared: 0 },
+            note: "No evaluator bindings registered for this phase (Hold/Done are intentionally excluded).",
+          });
+        }
+        const { results, persistResult } = await evaluateAndPersistGateAuto(projectId, phase);
+        res.json({
+          projectId,
+          phase,
+          results,
+          persistResult,
+          summary: {
+            evaluatedItems: results.length,
+            detectedItems: results.filter((r) => r.status !== null).length,
+            highConfidence: results.filter((r) => r.status !== null && r.confidence === "high").length,
+          },
+        });
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        res.status(500).json({ error: msg });
+      }
+    },
+  );
+
+  // GET /api/projects/stage-gates/auto?phase=...&projectIds=1,2,3
+  // Bulk evaluator for board/dashboard views. Returns
+  //   { projects: { [projectId]: AutoRequirementEvaluation[] } }
+  // Persistence is opt-in via ?persist=true (default false) — bulk reads
+  // shouldn't always rewrite per-row state.
+  app.get(
+    "/api/projects/stage-gates/auto",
+    jwtAuth,
+    requireAuth,
+    requirePermission("stage_lifecycle", "view"),
+    async (req: Request, res: Response) => {
+      try {
+        const phase = p(req.query.phase as string | undefined) || undefined;
+        const projectIdsRaw = p(req.query.projectIds as string | undefined);
+        const persist = p(req.query.persist as string | undefined) === "true";
+        if (!projectIdsRaw) {
+          return res.status(400).json({ error: "Missing projectIds (comma-separated)" });
+        }
+        const projectIds = projectIdsRaw
+          .split(",")
+          .map((s) => parseInt(s.trim(), 10))
+          .filter((n) => Number.isFinite(n));
+        if (projectIds.length === 0) {
+          return res.status(400).json({ error: "No valid projectIds" });
+        }
+        if (projectIds.length > 100) {
+          return res.status(400).json({ error: "Maximum 100 projectIds per request" });
+        }
+
+        const { evaluateGateAutoBulk, persistGateAutoEvaluation } = await import(
+          "./services/gate-auto-evaluator-service"
+        );
+        const projects = await evaluateGateAutoBulk(projectIds, phase);
+
+        if (persist && phase) {
+          // Best-effort persistence; we don't fail the whole batch on a single project error.
+          await Promise.all(
+            Object.entries(projects).map(([pid, results]) =>
+              persistGateAutoEvaluation(parseInt(pid, 10), phase, results).catch(() => null),
+            ),
+          );
+        }
+
+        res.json({ phase: phase ?? "ALL_SEQUENTIAL", projects });
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
         res.status(500).json({ error: msg });
@@ -676,7 +907,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     requireAuth,
     async (req: Request, res: Response) => {
       try {
-        const projectId = parseInt(p(req.params.projectId), 10);
+        const projectId = parseIntParam(req.params.projectId);
         const stageCode = p(req.params.stageCode);
         if (Number.isNaN(projectId) || !stageCode) {
           return res.status(400).json({ error: "Invalid projectId or stageCode" });

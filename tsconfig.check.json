@@ -2,6 +2,7 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "tsBuildInfoFile": "./.cache/tsconfig.check.tsbuildinfo",
+    "typeRoots": ["./node_modules/@types"],
     "types": ["node"]
   },
   "include": [

@@ -40,6 +40,22 @@ function getClientKey(req: Request): string {
   return `${ip}:${req.path}`;
 }
 
+/**
+ * The auth rate limiter (20 req / 15 min / IP+path) is protecting a
+ * prod login endpoint from brute force. In non-production runs,
+ * localhost/CI loopback is exempt: the test suite hammers /api/auth/login
+ * from 127.0.0.1 far faster than a human ever could, and any bypass from
+ * the real internet requires forging x-forwarded-for against a server
+ * that's by definition not exposed. Gate strictly on NODE_ENV so the
+ * exemption never leaks to prod. See Phase 4 long-term fix.
+ */
+function isNonProdLoopback(req: Request): boolean {
+  if (process.env.NODE_ENV === "production") return false;
+  const forwardedFor = req.headers["x-forwarded-for"];
+  const ip = typeof forwardedFor === "string" ? forwardedFor.split(",")[0].trim() : req.ip;
+  return ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";
+}
+
 function cleanupAuthLimiter(now: number): void {
   for (const [key, value] of authLimiterStore.entries()) {
     if (value.resetAt <= now || now - value.lastSeenAt > AUTH_STORE_TTL_MS) {
@@ -52,6 +68,11 @@ function cleanupAuthLimiter(now: number): void {
 
 async function redisRateLimit(req: Request, res: Response, next: NextFunction): Promise<void> {
   if (!AUTH_ENDPOINTS.has(req.path)) {
+    next();
+    return;
+  }
+
+  if (isNonProdLoopback(req)) {
     next();
     return;
   }
@@ -88,6 +109,11 @@ async function redisRateLimit(req: Request, res: Response, next: NextFunction): 
 
 function memoryRateLimit(req: Request, res: Response, next: NextFunction): void {
   if (!AUTH_ENDPOINTS.has(req.path)) {
+    next();
+    return;
+  }
+
+  if (isNonProdLoopback(req)) {
     next();
     return;
   }

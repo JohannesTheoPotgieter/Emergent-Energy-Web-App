@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { useAccessMatrix } from "@/hooks/use-access-matrix";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { invalidateDashboardQueries } from "@/lib/queryClient";
 import { PermissionGate } from "@/components/PermissionGate";
@@ -38,6 +39,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { FieldHint } from "@/components/ui/field-hint";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { format, parse, isValid } from "date-fns";
@@ -49,6 +51,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { styleForCell } from "@/lib/tracker-cell-format";
 
 interface FinanceFieldAudit {
   fieldName: string;
@@ -135,6 +138,17 @@ interface EnrichedExpense {
   dateOverrideReason: string | null;
   cosOverride: { reason: string; overriddenBy: string | null; originalStatus: string; overrideStatus: string } | null;
   noRevenueLinked: boolean;
+  // Smart Import v2 tracker columns surfaced from normalized_cost_lines.
+  actualQty: string | null;
+  actualRate: string | null;
+  comments: string | null;
+  checkFlag: string | null;
+  savingOverrun: string | null;
+  usdExchangeRate: string | null;
+  pricePerWatt: string | null;
+  // Per-cell font/fill colour map keyed by canonical field name.
+  // See client/src/lib/tracker-cell-format.ts for the helper.
+  cellFormat: unknown;
   trust?: {
     sourceSheet: string;
     sourceRow: number;
@@ -173,7 +187,25 @@ interface ExpenditureEditableTabProps {
 type ColumnKey =
   | "description" | "actualTotal" | "poNumber" | "invoiceNo"
   | "invoiceDate" | "paymentDate" | "linkedTask" | "cosStatus"
-  | "paymentStatus" | "plannedMonth" | "budgetTotal" | "variance" | "revenueAmount" | "supplier" | "noRevLinked";
+  | "paymentStatus" | "plannedMonth" | "budgetTotal" | "variance" | "revenueAmount" | "supplier" | "noRevLinked"
+  // Smart Import v2 tracker columns. Default-hidden so the existing
+  // table layout is unchanged for users who haven't opted in.
+  | "actualQty" | "actualRate" | "checkFlag" | "savingOverrun" | "comments";
+
+/** Map a UI ColumnKey to the canonical schema field name used by the
+ *  cell_format JSONB. Keys not in the map fall through to the column key
+ *  itself, which is correct for tracker columns named identically. */
+const COLUMN_TO_CELL_FORMAT_FIELD: Partial<Record<ColumnKey, string>> = {
+  actualTotal: "amountExVat",
+  budgetTotal: "budgetTotal",
+  poNumber: "poNumber",
+  invoiceNo: "invoiceNumber",
+  invoiceDate: "invoiceDate",
+  paymentDate: "paidDate",
+  description: "description",
+  supplier: "counterpartyName",
+  revenueAmount: "revenueRecognitionAmount",
+};
 
 interface ColumnDef {
   key: ColumnKey;
@@ -199,6 +231,14 @@ const COLUMNS: ColumnDef[] = [
   { key: "noRevLinked", label: "No Rev", defaultVisible: true, align: "center", minWidth: "70px" },
   { key: "revenueAmount", label: "Rev Recognition", defaultVisible: false, align: "right", minWidth: "130px" },
   { key: "variance", label: "Variance", defaultVisible: false, align: "right", minWidth: "110px" },
+  // Smart Import v2 tracker columns. Off by default to keep the existing
+  // layout stable; visible via the columns dropdown when an operator
+  // wants the tracker view inline.
+  { key: "actualQty", label: "Actual Qty", defaultVisible: false, align: "right", minWidth: "90px" },
+  { key: "actualRate", label: "Actual Rate", defaultVisible: false, align: "right", minWidth: "100px" },
+  { key: "checkFlag", label: "Check", defaultVisible: false, align: "center", minWidth: "70px" },
+  { key: "savingOverrun", label: "Saving / Overrun", defaultVisible: false, align: "right", minWidth: "120px" },
+  { key: "comments", label: "Comments", defaultVisible: false, align: "left", minWidth: "180px" },
 ];
 
 const formatCurrency = (value: string | number | null): string => {
@@ -293,6 +333,13 @@ const OverrideDot = ({ originalValue, audit }: { originalValue: string; audit?: 
 
 export function ExpenditureEditableTab({ projectName, projectId, highlightId, initialFilter }: ExpenditureEditableTabProps) {
   const { isAdmin } = useAuth();
+  const { canAccessEntityAction } = useAccessMatrix();
+  // Frontend visibility for the COS status override must mirror the backend
+  // `requireCosOverrideRole` guard (server/departments/finance-routes.ts):
+  // COO_ADMIN, CEO_ADMIN, CFO, PROGRAM_FINANCE_MANAGER. The cos entity's
+  // `override` action in ENTITY_PERMISSION_DEFAULTS is the closest match —
+  // we keep CFO/PFM through the existing role permission matrix.
+  const canOverrideCos = canAccessEntityAction("cos", "override");
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const tableContainerRef = useRef<HTMLDivElement>(null);
@@ -1231,9 +1278,32 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
         return renderLinkedTask(exp);
       case "cosStatus": {
         const computedStatus = exp.computedCosStatus || exp.cosStatus;
-        const isClickable = !!exp.cosOverride;
         const badge = getCosStatusBadge(exp.cosStatus);
-        if (!isClickable && !exp.cosOverride) return badge;
+        // Only senior finance / admin roles can open the override dialog —
+        // mirrors the backend requireCosOverrideRole middleware so users without
+        // override authority are not shown a button that would 403 on submit.
+        if (!canOverrideCos) {
+          if (!exp.cosOverride) return badge;
+          return (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex items-center gap-0.5" data-testid={`cos-override-readonly-${exp.id}`}>
+                    {badge}
+                    <span className="text-amber-500 text-[10px] font-bold">*</span>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-xs">
+                  <div className="text-xs space-y-1">
+                    <p className="font-semibold">Override: {exp.cosOverride.originalStatus} → {exp.cosOverride.overrideStatus}</p>
+                    <p>{exp.cosOverride.reason}</p>
+                    {exp.cosOverride.overriddenBy && <p className="text-muted-foreground">By: {exp.cosOverride.overriddenBy}</p>}
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          );
+        }
         return (
           <TooltipProvider>
             <Tooltip>
@@ -1294,6 +1364,36 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
           <span className={`text-xs font-mono ${variance >= 0 ? "text-emerald-600" : "text-red-600"}`}>
             {formatCurrency(variance)}
           </span>
+        );
+      // Smart Import v2 tracker columns. Read-only — these flow straight
+      // from normalized_cost_lines on each import; manual edits live on
+      // the budget/actual cells already covered above.
+      case "actualQty":
+        return <span className="text-xs font-mono">{exp.actualQty ?? "-"}</span>;
+      case "actualRate":
+        return <span className="text-xs font-mono">{exp.actualRate ?? "-"}</span>;
+      case "checkFlag":
+        return <span className="text-xs font-mono">{exp.checkFlag ?? "-"}</span>;
+      case "savingOverrun":
+        return (
+          <span className="text-xs font-mono">
+            {exp.savingOverrun !== null && exp.savingOverrun !== undefined && exp.savingOverrun !== ""
+              ? formatCurrency(exp.savingOverrun)
+              : "-"}
+          </span>
+        );
+      case "comments":
+        return (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="text-xs block max-w-[220px] truncate">{exp.comments ?? "-"}</span>
+              </TooltipTrigger>
+              {exp.comments && exp.comments.length > 30 && (
+                <TooltipContent side="left" className="max-w-[320px]"><p className="text-xs">{exp.comments}</p></TooltipContent>
+              )}
+            </Tooltip>
+          </TooltipProvider>
         );
       default:
         return "-";
@@ -1435,7 +1535,7 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
               {kpis.variance >= 0 ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-red-600" />}
             </div>
             <div className="min-w-0">
-              <span className="text-[10px] uppercase tracking-wider font-medium text-slate-500">Variance</span>
+              <span className="text-[10px] uppercase tracking-wider font-medium text-slate-500 inline-flex items-center gap-1">Variance <FieldHint hint="Positive = under budget. Negative = over budget" /></span>
               <div className={`text-base sm:text-lg font-bold font-mono mt-0.5 ${kpis.variance >= 0 ? "text-emerald-600" : "text-red-600"}`} data-testid="text-kpi-variance">
                 {formatCurrency(kpis.variance)}
               </div>
@@ -1625,14 +1725,21 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
                           <TableCell className="px-2 py-1.5 text-center text-[10px] text-muted-foreground font-mono sticky left-0 z-10 bg-inherit">
                             {exp.rowNumber}
                           </TableCell>
-                          {activeColumns.map((col) => (
-                            <TableCell key={col.key}
-                              className={`px-3 py-1.5
-                                ${col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left"}`}
-                              style={{ minWidth: col.minWidth }}>
-                              {renderCellValue(exp, col)}
-                            </TableCell>
-                          ))}
+                          {activeColumns.map((col) => {
+                            // Apply per-cell font/fill colour from
+                            // cell_format JSONB (Smart Import v2). Map UI
+                            // ColumnKey → canonical schema field name; for
+                            // tracker columns the keys match 1:1.
+                            const fmtField = COLUMN_TO_CELL_FORMAT_FIELD[col.key] ?? col.key;
+                            return (
+                              <TableCell key={col.key}
+                                className={`px-3 py-1.5
+                                  ${col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left"}`}
+                                style={{ minWidth: col.minWidth, ...styleForCell(exp.cellFormat, fmtField) }}>
+                                {renderCellValue(exp, col)}
+                              </TableCell>
+                            );
+                          })}
                           <TableCell className="px-2 py-1.5 text-center">
                             {getRowStatusBadge(exp)}
                           </TableCell>
@@ -1740,7 +1847,7 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
                 />
               </div>
               <div>
-                <Label className="text-xs">Planned Month</Label>
+                <Label className="text-xs inline-flex items-center gap-1">Planned Month <FieldHint hint="The date this record becomes active in financial calculations" /></Label>
                 <SearchableSelect
                   value={drawerFilter.plannedMonth || "all"}
                   onValueChange={v => setDrawerFilter(f => ({ ...f, plannedMonth: v === "all" ? "" : v }))}
@@ -1757,7 +1864,7 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
                   onChange={e => setDrawerFilter(f => ({ ...f, invoiceNo: e.target.value }))} />
               </div>
               <div>
-                <Label className="text-xs">PO Number</Label>
+                <Label className="text-xs inline-flex items-center gap-1">PO Number <FieldHint hint="Purchase Order must exist before capturing this invoice" /></Label>
                 <Input className="h-8 text-xs" placeholder="Search..." value={drawerFilter.poNumber || ""}
                   onChange={e => setDrawerFilter(f => ({ ...f, poNumber: e.target.value }))} />
               </div>
@@ -1870,7 +1977,7 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
                 <Input type="date" className="h-8 text-xs" value={newLineData.invoiceDate} onChange={e => setNewLineData(d => ({ ...d, invoiceDate: e.target.value }))} />
               </div>
               <div>
-                <Label className="text-xs">Finance Payment Date</Label>
+                <Label className="text-xs inline-flex items-center gap-1">Finance Payment Date <FieldHint hint="Leave blank for current records. Set only when superseding with a new version" /></Label>
                 <Input type="date" className="h-8 text-xs" value={newLineData.paymentDate} onChange={e => setNewLineData(d => ({ ...d, paymentDate: e.target.value }))} />
               </div>
             </div>

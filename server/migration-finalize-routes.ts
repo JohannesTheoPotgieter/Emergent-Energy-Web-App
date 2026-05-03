@@ -91,7 +91,7 @@ router.get("/api/admin/migration/status", jwtAuth, requireAuth, requireAdmin, as
       },
     });
   } catch (err: unknown) {
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
@@ -131,7 +131,7 @@ router.get("/api/admin/migration/verify", jwtAuth, requireAuth, requireAdmin, as
       legacyTableCounts,
     });
   } catch (err: unknown) {
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
@@ -153,7 +153,7 @@ router.post("/api/admin/migration/register-backup", jwtAuth, requireAuth, requir
 
     res.json({ success: true, backupId });
   } catch (err: unknown) {
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
@@ -213,7 +213,7 @@ router.post("/api/admin/migration/check-references", jwtAuth, requireAuth, requi
 
     res.json({ references, safe: references.length === 0 });
   } catch (err: unknown) {
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
@@ -311,7 +311,7 @@ router.post("/api/admin/migration/archive", jwtAuth, requireAuth, requireAdmin, 
 
     res.json({ success: true, archived, skipped, droppedConstraints });
   } catch (err: unknown) {
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
@@ -358,7 +358,7 @@ router.post("/api/admin/migration/restore", jwtAuth, requireAuth, requireAdmin, 
 
     res.json({ success: true, restored, skipped });
   } catch (err: unknown) {
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 
@@ -427,7 +427,7 @@ router.post(
 
     res.json({ success: true, dropped, skipped });
   } catch (err: unknown) {
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    throw err;
   }
 });
 

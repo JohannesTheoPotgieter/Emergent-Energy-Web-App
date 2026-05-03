@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import UserPicker from "@/components/UserPicker";
+import { OwnerName } from "@/components/OwnerName";
 import {
   Dialog,
   DialogContent,
@@ -390,7 +391,13 @@ function ChecklistItem({
               )}
             </div>
             <div className="flex items-center gap-3 text-xs text-gray-500 mt-0.5">
-              {item.owner_name && <span data-testid={`text-owner-${item.id}`}>{item.owner_name}</span>}
+              {(item.owner_user_id || item.owner_name) && (
+                <OwnerName
+                  ownerUserId={item.owner_user_id}
+                  fallbackName={item.owner_name}
+                  testId={`text-owner-${item.id}`}
+                />
+              )}
               {item.due_date && (
                 <span className={isOverdue ? "text-red-500 font-medium" : ""} data-testid={`text-due-${item.id}`}>
                   Due {formatDate(item.due_date)}

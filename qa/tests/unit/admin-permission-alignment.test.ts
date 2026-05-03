@@ -4,7 +4,11 @@ import { PAGE_REGISTRY, getPermissionEntityForPath } from "@/config/page-registr
 describe("admin permission alignment", () => {
   it("returns the correct permission entity for admin paths", () => {
     expect(getPermissionEntityForPath("/admin/smart-import")).toBe("smart_import");
-    expect(getPermissionEntityForPath("/admin/control-center")).toBe("admin");
+    // Task #101: /admin/control-center is now a redirect-only entry that
+    // sends users to /admin/roles (which is itself gated by admin_roles).
+    // The path no longer carries its own permissionEntity — the destination
+    // does the gating.
+    expect(getPermissionEntityForPath("/admin/control-center")).toBeUndefined();
     expect(getPermissionEntityForPath("/admin/import-control-tower")).toBe("admin");
     expect(getPermissionEntityForPath("/admin/roles")).toBe("admin_roles");
     expect(getPermissionEntityForPath("/admin/activity-log")).toBe("activity_log");

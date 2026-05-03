@@ -1,0 +1,482 @@
+[
+  {
+    "role": "PROJECT_MANAGER_SITE",
+    "userId": 37,
+    "probe": "HSE incidents create (valid payload)",
+    "method": "POST",
+    "path": "/api/hse/incidents",
+    "status": 201,
+    "createdId": 145,
+    "verdict": "policy_match"
+  },
+  {
+    "role": "PROJECT_MANAGER_SITE",
+    "userId": 37,
+    "probe": "Planning tasks create (valid payload, real project)",
+    "method": "POST",
+    "path": "/api/planning-tasks",
+    "status": 403,
+    "createdId": null,
+    "verdict": "policy_match"
+  },
+  {
+    "role": "PROJECT_MANAGER_SITE",
+    "userId": 37,
+    "probe": "Admin users list (control)",
+    "method": "GET",
+    "path": "/api/admin/users",
+    "status": 403,
+    "createdId": null,
+    "verdict": "policy_match"
+  },
+  {
+    "role": "PROJECT_MANAGER_SITE",
+    "userId": 37,
+    "probe": "Project 351 finance (known 500)",
+    "method": "GET",
+    "path": "/api/v2/projects/351/finance",
+    "status": 403,
+    "createdId": null,
+    "verdict": "policy_overshoot"
+  },
+  {
+    "role": "CCO",
+    "userId": 23,
+    "probe": "HSE incidents create (valid payload)",
+    "method": "POST",
+    "path": "/api/hse/incidents",
+    "status": 201,
+    "createdId": 146,
+    "verdict": "policy_gap"
+  },
+  {
+    "role": "CCO",
+    "userId": 23,
+    "probe": "Planning tasks create (valid payload, real project)",
+    "method": "POST",
+    "path": "/api/planning-tasks",
+    "status": 403,
+    "createdId": null,
+    "verdict": "policy_match"
+  },
+  {
+    "role": "CCO",
+    "userId": 23,
+    "probe": "Admin users list (control)",
+    "method": "GET",
+    "path": "/api/admin/users",
+    "status": 403,
+    "createdId": null,
+    "verdict": "policy_match"
+  },
+  {
+    "role": "CCO",
+    "userId": 23,
+    "probe": "Project 351 finance (known 500)",
+    "method": "GET",
+    "path": "/api/v2/projects/351/finance",
+    "status": 500,
+    "createdId": null,
+    "verdict": "server_error"
+  },
+  {
+    "role": "PROJECT_DEVELOPER",
+    "userId": 42,
+    "probe": "HSE incidents create (valid payload)",
+    "method": "POST",
+    "path": "/api/hse/incidents",
+    "status": 201,
+    "createdId": 147,
+    "verdict": "policy_gap"
+  },
+  {
+    "role": "PROJECT_DEVELOPER",
+    "userId": 42,
+    "probe": "Planning tasks create (valid payload, real project)",
+    "method": "POST",
+    "path": "/api/planning-tasks",
+    "status": 403,
+    "createdId": null,
+    "verdict": "policy_match"
+  },
+  {
+    "role": "PROJECT_DEVELOPER",
+    "userId": 42,
+    "probe": "Admin users list (control)",
+    "method": "GET",
+    "path": "/api/admin/users",
+    "status": 403,
+    "createdId": null,
+    "verdict": "policy_match"
+  },
+  {
+    "role": "PROJECT_DEVELOPER",
+    "userId": 42,
+    "probe": "Project 351 finance (known 500)",
+    "method": "GET",
+    "path": "/api/v2/projects/351/finance",
+    "status": 403,
+    "createdId": null,
+    "verdict": "policy_match"
+  },
+  {
+    "role": "ACCOUNTANT",
+    "userId": 30,
+    "probe": "HSE incidents create (valid payload)",
+    "method": "POST",
+    "path": "/api/hse/incidents",
+    "status": 201,
+    "createdId": 148,
+    "verdict": "policy_gap"
+  },
+  {
+    "role": "ACCOUNTANT",
+    "userId": 30,
+    "probe": "Planning tasks create (valid payload, real project)",
+    "method": "POST",
+    "path": "/api/planning-tasks",
+    "status": 403,
+    "createdId": null,
+    "verdict": "policy_match"
+  },
+  {
+    "role": "ACCOUNTANT",
+    "userId": 30,
+    "probe": "Admin users list (control)",
+    "method": "GET",
+    "path": "/api/admin/users",
+    "status": 403,
+    "createdId": null,
+    "verdict": "policy_match"
+  },
+  {
+    "role": "ACCOUNTANT",
+    "userId": 30,
+    "probe": "Project 351 finance (known 500)",
+    "method": "GET",
+    "path": "/api/v2/projects/351/finance",
+    "status": 500,
+    "createdId": null,
+    "verdict": "server_error"
+  },
+  {
+    "role": "ENGINEER",
+    "userId": 31,
+    "probe": "HSE incidents create (valid payload)",
+    "method": "POST",
+    "path": "/api/hse/incidents",
+    "status": 201,
+    "createdId": 149,
+    "verdict": "policy_gap"
+  },
+  {
+    "role": "ENGINEER",
+    "userId": 31,
+    "probe": "Planning tasks create (valid payload, real project)",
+    "method": "POST",
+    "path": "/api/planning-tasks",
+    "status": 403,
+    "createdId": null,
+    "verdict": "policy_match"
+  },
+  {
+    "role": "ENGINEER",
+    "userId": 31,
+    "probe": "Admin users list (control)",
+    "method": "GET",
+    "path": "/api/admin/users",
+    "status": 403,
+    "createdId": null,
+    "verdict": "policy_match"
+  },
+  {
+    "role": "ENGINEER",
+    "userId": 31,
+    "probe": "Project 351 finance (known 500)",
+    "method": "GET",
+    "path": "/api/v2/projects/351/finance",
+    "status": 403,
+    "createdId": null,
+    "verdict": "policy_match"
+  },
+  {
+    "role": "QUALITY_MANAGER",
+    "userId": 27,
+    "probe": "HSE incidents create (valid payload)",
+    "method": "POST",
+    "path": "/api/hse/incidents",
+    "status": 201,
+    "createdId": 150,
+    "verdict": "policy_gap"
+  },
+  {
+    "role": "QUALITY_MANAGER",
+    "userId": 27,
+    "probe": "Planning tasks create (valid payload, real project)",
+    "method": "POST",
+    "path": "/api/planning-tasks",
+    "status": 403,
+    "createdId": null,
+    "verdict": "policy_match"
+  },
+  {
+    "role": "QUALITY_MANAGER",
+    "userId": 27,
+    "probe": "Admin users list (control)",
+    "method": "GET",
+    "path": "/api/admin/users",
+    "status": 403,
+    "createdId": null,
+    "verdict": "policy_match"
+  },
+  {
+    "role": "QUALITY_MANAGER",
+    "userId": 27,
+    "probe": "Project 351 finance (known 500)",
+    "method": "GET",
+    "path": "/api/v2/projects/351/finance",
+    "status": 403,
+    "createdId": null,
+    "verdict": "policy_match"
+  },
+  {
+    "role": "CEO_ADMIN",
+    "userId": 22,
+    "probe": "HSE incidents create (valid payload)",
+    "method": "POST",
+    "path": "/api/hse/incidents",
+    "status": 201,
+    "createdId": 151,
+    "verdict": "policy_match"
+  },
+  {
+    "role": "CEO_ADMIN",
+    "userId": 22,
+    "probe": "Planning tasks create (valid payload, real project)",
+    "method": "POST",
+    "path": "/api/planning-tasks",
+    "status": 200,
+    "createdId": 1000000376,
+    "verdict": "policy_match"
+  },
+  {
+    "role": "CEO_ADMIN",
+    "userId": 22,
+    "probe": "Admin users list (control)",
+    "method": "GET",
+    "path": "/api/admin/users",
+    "status": 200,
+    "createdId": null,
+    "verdict": "policy_match"
+  },
+  {
+    "role": "CEO_ADMIN",
+    "userId": 22,
+    "probe": "Project 351 finance (known 500)",
+    "method": "GET",
+    "path": "/api/v2/projects/351/finance",
+    "status": 500,
+    "createdId": null,
+    "verdict": "server_error"
+  },
+  {
+    "role": "PROGRAM_MANAGER",
+    "userId": 26,
+    "probe": "HSE incidents create (valid payload)",
+    "method": "POST",
+    "path": "/api/hse/incidents",
+    "status": 201,
+    "createdId": 152,
+    "verdict": "policy_gap"
+  },
+  {
+    "role": "PROGRAM_MANAGER",
+    "userId": 26,
+    "probe": "Planning tasks create (valid payload, real project)",
+    "method": "POST",
+    "path": "/api/planning-tasks",
+    "status": 200,
+    "createdId": 1000000377,
+    "verdict": "policy_match"
+  },
+  {
+    "role": "PROGRAM_MANAGER",
+    "userId": 26,
+    "probe": "Admin users list (control)",
+    "method": "GET",
+    "path": "/api/admin/users",
+    "status": 403,
+    "createdId": null,
+    "verdict": "policy_match"
+  },
+  {
+    "role": "PROGRAM_MANAGER",
+    "userId": 26,
+    "probe": "Project 351 finance (known 500)",
+    "method": "GET",
+    "path": "/api/v2/projects/351/finance",
+    "status": 500,
+    "createdId": null,
+    "verdict": "server_error"
+  },
+  {
+    "role": "CFO",
+    "userId": 24,
+    "probe": "HSE incidents create (valid payload)",
+    "method": "POST",
+    "path": "/api/hse/incidents",
+    "status": 201,
+    "createdId": 153,
+    "verdict": "policy_gap"
+  },
+  {
+    "role": "CFO",
+    "userId": 24,
+    "probe": "Planning tasks create (valid payload, real project)",
+    "method": "POST",
+    "path": "/api/planning-tasks",
+    "status": 403,
+    "createdId": null,
+    "verdict": "policy_match"
+  },
+  {
+    "role": "CFO",
+    "userId": 24,
+    "probe": "Admin users list (control)",
+    "method": "GET",
+    "path": "/api/admin/users",
+    "status": 403,
+    "createdId": null,
+    "verdict": "policy_match"
+  },
+  {
+    "role": "CFO",
+    "userId": 24,
+    "probe": "Project 351 finance (known 500)",
+    "method": "GET",
+    "path": "/api/v2/projects/351/finance",
+    "status": 500,
+    "createdId": null,
+    "verdict": "server_error"
+  },
+  {
+    "role": "CONSTRUCTION_MANAGER",
+    "userId": 28,
+    "probe": "HSE incidents create (valid payload)",
+    "method": "POST",
+    "path": "/api/hse/incidents",
+    "status": 201,
+    "createdId": 154,
+    "verdict": "policy_match"
+  },
+  {
+    "role": "CONSTRUCTION_MANAGER",
+    "userId": 28,
+    "probe": "Planning tasks create (valid payload, real project)",
+    "method": "POST",
+    "path": "/api/planning-tasks",
+    "status": 403,
+    "createdId": null,
+    "verdict": "policy_match"
+  },
+  {
+    "role": "CONSTRUCTION_MANAGER",
+    "userId": 28,
+    "probe": "Admin users list (control)",
+    "method": "GET",
+    "path": "/api/admin/users",
+    "status": 403,
+    "createdId": null,
+    "verdict": "policy_match"
+  },
+  {
+    "role": "CONSTRUCTION_MANAGER",
+    "userId": 28,
+    "probe": "Project 351 finance (known 500)",
+    "method": "GET",
+    "path": "/api/v2/projects/351/finance",
+    "status": 500,
+    "createdId": null,
+    "verdict": "server_error"
+  },
+  {
+    "role": "PROGRAM_FINANCE_MANAGER",
+    "userId": 29,
+    "probe": "HSE incidents create (valid payload)",
+    "method": "POST",
+    "path": "/api/hse/incidents",
+    "status": 201,
+    "createdId": 155,
+    "verdict": "policy_gap"
+  },
+  {
+    "role": "PROGRAM_FINANCE_MANAGER",
+    "userId": 29,
+    "probe": "Planning tasks create (valid payload, real project)",
+    "method": "POST",
+    "path": "/api/planning-tasks",
+    "status": 403,
+    "createdId": null,
+    "verdict": "policy_match"
+  },
+  {
+    "role": "PROGRAM_FINANCE_MANAGER",
+    "userId": 29,
+    "probe": "Admin users list (control)",
+    "method": "GET",
+    "path": "/api/admin/users",
+    "status": 403,
+    "createdId": null,
+    "verdict": "policy_match"
+  },
+  {
+    "role": "PROGRAM_FINANCE_MANAGER",
+    "userId": 29,
+    "probe": "Project 351 finance (known 500)",
+    "method": "GET",
+    "path": "/api/v2/projects/351/finance",
+    "status": 500,
+    "createdId": null,
+    "verdict": "server_error"
+  },
+  {
+    "role": "COO_ADMIN",
+    "userId": 25,
+    "probe": "HSE incidents create (valid payload)",
+    "method": "POST",
+    "path": "/api/hse/incidents",
+    "status": 201,
+    "createdId": 156,
+    "verdict": "policy_match"
+  },
+  {
+    "role": "COO_ADMIN",
+    "userId": 25,
+    "probe": "Planning tasks create (valid payload, real project)",
+    "method": "POST",
+    "path": "/api/planning-tasks",
+    "status": 200,
+    "createdId": 1000000378,
+    "verdict": "policy_match"
+  },
+  {
+    "role": "COO_ADMIN",
+    "userId": 25,
+    "probe": "Admin users list (control)",
+    "method": "GET",
+    "path": "/api/admin/users",
+    "status": 200,
+    "createdId": null,
+    "verdict": "policy_match"
+  },
+  {
+    "role": "COO_ADMIN",
+    "userId": 25,
+    "probe": "Project 351 finance (known 500)",
+    "method": "GET",
+    "path": "/api/v2/projects/351/finance",
+    "status": 500,
+    "createdId": null,
+    "verdict": "server_error"
+  }
+]

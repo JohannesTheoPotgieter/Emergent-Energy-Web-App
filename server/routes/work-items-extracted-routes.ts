@@ -11,7 +11,7 @@
  */
 
 import type { Express } from "express";
-import { paramStr } from "../lib/req-params";
+import { paramStr, parseIntParam } from "../lib/req-params";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { requireAuth } from "../auth-context";
@@ -83,7 +83,7 @@ export function registerWorkItemsExtractedRoutes(app: Express): void {
 
   app.get("/api/work-items/:id/viewers", requireAuth, async (req, res) => {
     try {
-      const workItemId = parseInt(paramStr(req.params.id));
+      const workItemId = parseIntParam(req.params.id);
       if (isNaN(workItemId)) return res.status(400).json({ error: "Invalid work item id" });
       const rows = await db.execute(sql`
         SELECT wia.id, wia.work_item_id, wia.user_id, wia.role, wia.created_at,
@@ -102,7 +102,7 @@ export function registerWorkItemsExtractedRoutes(app: Express): void {
 
   app.post("/api/work-items/:id/viewers", requireAuth, async (req, res) => {
     try {
-      const workItemId = parseInt(paramStr(req.params.id));
+      const workItemId = parseIntParam(req.params.id);
       const { userId: viewerUserId } = req.body;
       if (isNaN(workItemId)) return res.status(400).json({ error: "Invalid work item id" });
       if (!viewerUserId || typeof viewerUserId !== "number") return res.status(400).json({ error: "userId is required" });
@@ -136,8 +136,8 @@ export function registerWorkItemsExtractedRoutes(app: Express): void {
 
   app.delete("/api/work-items/:id/viewers/:userId", requireAuth, async (req, res) => {
     try {
-      const workItemId = parseInt(paramStr(req.params.id));
-      const viewerUserId = parseInt(paramStr(req.params.userId));
+      const workItemId = parseIntParam(req.params.id);
+      const viewerUserId = parseIntParam(req.params.userId);
       if (isNaN(workItemId) || isNaN(viewerUserId)) return res.status(400).json({ error: "Invalid parameters" });
 
       await db.execute(sql`

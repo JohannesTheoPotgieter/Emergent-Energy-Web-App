@@ -53,7 +53,13 @@ import { apiRequest, invalidateDashboardQueries } from "@/lib/queryClient";
 import LatestUpdateEditor from "@/components/LatestUpdateEditor";
 import { useAuth } from "@/hooks/use-auth";
 import type { PlatformProjectSummaryContract } from "@shared/platform-contracts";
-import { PROJECT_PHASES, PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
+import {
+  PROJECT_PHASES,
+  PROJECT_PHASE_LABELS,
+  CANONICAL_LIFECYCLE_PHASES,
+  TERMINAL_LIFECYCLE_PHASES,
+  type ProjectPhase,
+} from "@shared/schema";
 import {
   Dialog,
   DialogContent,
@@ -68,6 +74,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/page-shell";
 import { isSuperAdmin } from "@/lib/access-control";
 import { useAccessMatrix } from "@/hooks/use-access-matrix";
+import { StageProgress } from "@/components/ui/stage-progress";
+import { PHASE_LABELS } from "@shared/phases";
 
 interface ProjectSummary {
   project_info_id: number | null;
@@ -142,6 +150,8 @@ type SortKey = string;
 function cleanName(name: string): string {
   return name.replace(/_Tracker.*$/i, "").replace(/_/g, " ");
 }
+
+const PHASE_LIST = [...PHASE_LABELS];
 
 function formatDate(val: string | null): string {
   if (!val) return "—";
@@ -469,7 +479,7 @@ function TaskCompletionPopover({ projectName, currentPct }: { projectName: strin
               </tbody>
             </table>
           ) : (
-            <EmptyState title="No tasks found" className="my-4" />
+            <EmptyState title="No tasks found" description="Try adjusting project, owner, or status filters to see matching tasks." className="my-4" />
           )}
         </div>
         {hasEdits && (
@@ -813,19 +823,12 @@ function FinancialCloseCell({
   );
 }
 
-const EXECUTION_PHASES = [
-  "First Assessment",
-  "Cost Proposal",
-  "DLP",
-  "Financial Close",
-  "Planning",
-  "Construction",
-  "QA",
-  "Handover",
-  "Commercial Close Out",
-  "Compliance Handover",
-  "Hold",
-  "Gone",
+// Execution-phase dropdown options. Sourced from the canonical lifecycle
+// phases in shared/schema/projects.ts (CANONICAL_LIFECYCLE_PHASES + the
+// terminal Hold/Done branches) so the UI cannot drift from the model.
+const EXECUTION_PHASES: readonly string[] = [
+  ...CANONICAL_LIFECYCLE_PHASES,
+  ...TERMINAL_LIFECYCLE_PHASES,
 ];
 
 interface SavedView {
@@ -1256,13 +1259,18 @@ function MobileProjectCard({ project, setLocation }: { project: ProjectSummary; 
     <Card className="border-border shadow-sm overflow-hidden" data-testid={`mobile-card-${project.project_name}`}>
       <CardContent className="p-3 space-y-2">
         <div className="flex items-start justify-between gap-2">
-          <button
-            className="text-left font-semibold text-blue-700 hover:text-blue-900 hover:underline text-sm leading-tight min-w-0 truncate"
-            onClick={() => setLocation(`/project/${encodeURIComponent(project.project_name)}`)}
-            data-testid={`mobile-link-project-${project.project_name}`}
-          >
-            {cleanName(project.project_name)}
-          </button>
+          <div className="min-w-0 flex-1 space-y-1">
+            <button
+              className="text-left font-semibold text-blue-700 hover:text-blue-900 hover:underline text-sm leading-tight min-w-0 truncate w-full"
+              onClick={() => setLocation(`/project/${encodeURIComponent(project.project_name)}`)}
+              data-testid={`mobile-link-project-${project.project_name}`}
+            >
+              {cleanName(project.project_name)}
+            </button>
+            {project.phase && (
+              <StageProgress currentStage={project.phase} stages={PHASE_LIST} />
+            )}
+          </div>
           <span
             className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap shrink-0 ${cfg.bg} ${cfg.text} ${cfg.border}`}
           >
@@ -1478,9 +1486,14 @@ export default function ProjectsSummary() {
     return pmUsers.map(u => u.name).sort();
   }, [pmUsers]);
 
-  const PHASE_ORDER = [
-    "DLP", "Financial Close", "Planning", "Construction", "QA",
-    "Handover", "Commercial Close Out", "Compliance Handover", "Hold", "Gone"
+  // Phase sort order — canonical sequential phases first, then terminal
+  // Hold/Done. "Gone" is a legacy archival status appended at the end so
+  // historical rows still sort consistently. Sourced from
+  // shared/schema/projects.ts to prevent drift from the canonical model.
+  const PHASE_ORDER: readonly string[] = [
+    ...CANONICAL_LIFECYCLE_PHASES,
+    ...TERMINAL_LIFECYCLE_PHASES,
+    "Gone",
   ];
   const uniquePhases = useMemo(() => {
     const phases = new Set<string>();
@@ -1745,7 +1758,7 @@ export default function ProjectsSummary() {
           description="Execution project management list"
         />
         <EmptyState
-          icon={<AlertCircle className="w-6 h-6 text-muted-foreground" />}
+          icon={AlertCircle}
           title="No projects available"
           description="Upload tracker files to populate the execution project list with trusted tracker-linked dates, latest updates, and operational signals."
         />
@@ -1781,6 +1794,9 @@ export default function ProjectsSummary() {
           >
             {cleanName(p.project_name)}
           </button>
+          {p.phase && (
+            <StageProgress currentStage={p.phase} stages={PHASE_LIST} />
+          )}
           <button
             type="button"
             className="inline-flex items-center text-[9px] text-blue-700 hover:text-blue-900 hover:underline gap-0.5"

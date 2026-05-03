@@ -53,8 +53,8 @@ WITH base AS (
                 || COALESCE(lower(trim(ncl.cost_category)), '')                        || '|'
                 || COALESCE(lower(trim(ncl.counterparty_name)), '')                    || '|'
                 || COALESCE(lower(trim(ncl.description)), '')                          || '|'
-                || COALESCE(to_char(ncl.amount_ex_vat, 'FM999999999999990.00'), '')    || '|'
-                || COALESCE(to_char(ncl.invoice_date, 'YYYY-MM-DD'), '')
+                || COALESCE(lower(trim(ncl.amount_ex_vat::text)), '')    || '|'
+                || COALESCE(lower(trim(ncl.invoice_date::text)), '')
          END AS bk
   FROM normalized_cost_lines ncl
   JOIN project_info p ON p.id = ncl.project_id
@@ -85,8 +85,8 @@ WITH ranked AS (
                     || COALESCE(lower(trim(cost_category)), '')                    || '|'
                     || COALESCE(lower(trim(counterparty_name)), '')                || '|'
                     || COALESCE(lower(trim(description)), '')                      || '|'
-                    || COALESCE(to_char(amount_ex_vat, 'FM999999999999990.00'), '')|| '|'
-                    || COALESCE(to_char(invoice_date, 'YYYY-MM-DD'), '')
+                    || COALESCE(lower(trim(amount_ex_vat::text)), '')|| '|'
+                    || COALESCE(lower(trim(invoice_date::text)), '')
              END
            ORDER BY id DESC
          ) AS rn
@@ -126,8 +126,8 @@ WITH ranked AS (
                     || COALESCE(lower(trim(sub_project_name)), '')                 || '|'
                     || COALESCE(lower(trim(milestone_name)),
                                 lower(trim(description)), '')                      || '|'
-                    || COALESCE(to_char(amount_ex_vat, 'FM999999999999990.00'), '')|| '|'
-                    || COALESCE(to_char(invoice_date, 'YYYY-MM-DD'), '')
+                    || COALESCE(lower(trim(amount_ex_vat::text)), '')|| '|'
+                    || COALESCE(lower(trim(invoice_date::text)), '')
              END
            ORDER BY id DESC
          ) AS rn
@@ -160,8 +160,8 @@ WITH base AS (
                 || COALESCE(lower(trim(ncl.cost_category)), '')                        || '|'
                 || COALESCE(lower(trim(ncl.counterparty_name)), '')                    || '|'
                 || COALESCE(lower(trim(ncl.description)), '')                          || '|'
-                || COALESCE(to_char(ncl.amount_ex_vat, 'FM999999999999990.00'), '')    || '|'
-                || COALESCE(to_char(ncl.invoice_date, 'YYYY-MM-DD'), '')
+                || COALESCE(lower(trim(ncl.amount_ex_vat::text)), '')    || '|'
+                || COALESCE(lower(trim(ncl.invoice_date::text)), '')
          END AS bk
   FROM normalized_cost_lines ncl
   JOIN project_info p ON p.id = ncl.project_id

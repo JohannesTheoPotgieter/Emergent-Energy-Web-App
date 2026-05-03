@@ -10,8 +10,20 @@ import {
 import { getEffectiveUser, requireAuth } from "./auth-context";
 import { requirePermission } from "./permission-middleware";
 import { blockInProduction } from "./middleware/production-safety";
+import { parseIntParam } from "./lib/req-params";
 
 type AppUser = { id: number; email: string; name: string; role: string };
+
+// Only engineers, engineering leadership, the quality manager, and company admins
+// may be auto-added to the engineering standup. Other roles can still be added
+// explicitly via POST /participants, but are not surfaced in the facilitator UI.
+const STANDUP_ATTENDEE_ROLES = [
+  "COO_ADMIN",
+  "CEO_ADMIN",
+  "ENGINEERING_MANAGER",
+  "ENGINEER",
+  "QUALITY_MANAGER",
+] as const;
 
 function getUser(req: Request): AppUser {
   return getEffectiveUser(req) as AppUser;
@@ -140,7 +152,7 @@ export function registerStandupRoutes(app: Express) {
 
       res.json(schedules);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -153,7 +165,7 @@ export function registerStandupRoutes(app: Express) {
         .orderBy(desc(standupSchedules.createdAt));
       res.json(schedules);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -188,14 +200,14 @@ export function registerStandupRoutes(app: Express) {
 
       res.status(201).json(schedule);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
   /** Update a standup schedule */
   app.patch("/api/standups/schedules/:id", requireAuth, requirePermission("standups", "edit"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id as string);
+      const id = parseIntParam(req.params.id);
       const updates: Partial<InsertStandupSchedule> = {};
       const allowed = ["name", "teamLabel", "projectId", "cadence", "cadenceDays", "anchorDate", "deadlineTime", "deadlineTimezone", "isActive"] as const;
       for (const key of allowed) {
@@ -211,18 +223,18 @@ export function registerStandupRoutes(app: Express) {
 
       res.json(updated);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
   /** Delete a standup schedule */
   app.delete("/api/standups/schedules/:id", requireAuth, requirePermission("standups", "delete"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id as string);
+      const id = parseIntParam(req.params.id);
       await db.update(standupSchedules).set({ deletedAt: new Date(), deletedBy: req.user?.id }).where(eq(standupSchedules.id, id)).returning();
       res.json({ success: true });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -231,7 +243,8 @@ export function registerStandupRoutes(app: Express) {
   /** List participants for a schedule */
   app.get("/api/standups/schedules/:id/participants", requireAuth, async (req: Request, res: Response) => {
     try {
-      const scheduleId = parseInt(req.params.id as string);
+      const scheduleId = parseIntParam(req.params.id);
+      const includeAll = req.query.includeAll === "1" || req.query.includeAll === "true";
       const participants = await db
         .select({
           id: standupParticipants.id,
@@ -241,22 +254,28 @@ export function registerStandupRoutes(app: Express) {
           addedAt: standupParticipants.addedAt,
           userName: users.name,
           userEmail: users.email,
+          userRole: users.role,
         })
         .from(standupParticipants)
         .leftJoin(users, eq(standupParticipants.userId, users.id))
         .where(eq(standupParticipants.scheduleId, scheduleId))
         .orderBy(asc(users.name));
 
-      res.json(participants);
+      const allowedRoles = new Set<string>(STANDUP_ATTENDEE_ROLES);
+      const filtered = includeAll
+        ? participants
+        : participants.filter((p: { userRole: string | null }) => allowedRoles.has(p.userRole || ""));
+
+      res.json(filtered);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
   /** Add participant to schedule */
   app.post("/api/standups/schedules/:id/participants", requireAuth, requirePermission("standups", "edit"), async (req: Request, res: Response) => {
     try {
-      const scheduleId = parseInt(req.params.id as string);
+      const scheduleId = parseIntParam(req.params.id);
       const { userId, isRequired } = req.body;
 
       const [participant] = await db.insert(standupParticipants).values({
@@ -267,15 +286,15 @@ export function registerStandupRoutes(app: Express) {
 
       res.status(201).json(participant);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
   /** Remove participant from schedule */
   app.delete("/api/standups/schedules/:scheduleId/participants/:userId", requireAuth, requirePermission("standups", "edit"), async (req: Request, res: Response) => {
     try {
-      const scheduleId = parseInt(req.params.scheduleId as string);
-      const userId = parseInt(req.params.userId as string);
+      const scheduleId = parseIntParam(req.params.scheduleId);
+      const userId = parseIntParam(req.params.userId);
 
       await db.delete(standupParticipants).where(
         and(
@@ -286,7 +305,7 @@ export function registerStandupRoutes(app: Express) {
 
       res.json({ success: true });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -350,7 +369,7 @@ export function registerStandupRoutes(app: Express) {
 
       res.json(todayStandups);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -425,14 +444,14 @@ export function registerStandupRoutes(app: Express) {
 
       res.status(201).json(entry);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
   /** Update a standup entry */
   app.patch("/api/standups/entries/:id", requireAuth, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id as string);
+      const id = parseIntParam(req.params.id);
       const { whatIDid, whatImDoing, blockers, mood } = req.body;
 
       const [updated] = await db
@@ -447,14 +466,14 @@ export function registerStandupRoutes(app: Express) {
 
       res.json(updated);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
   /** List entries for a schedule on a specific date */
   app.get("/api/standups/entries/:scheduleId", requireAuth, async (req: Request, res: Response) => {
     try {
-      const scheduleId = parseInt(req.params.scheduleId as string);
+      const scheduleId = parseIntParam(req.params.scheduleId);
       const date = (req.query.date as string) || today();
 
       const entries = await db
@@ -482,14 +501,14 @@ export function registerStandupRoutes(app: Express) {
 
       res.json(entries);
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
   /** Standup history for a schedule (with pagination and search) */
   app.get("/api/standups/entries/:scheduleId/history", requireAuth, async (req: Request, res: Response) => {
     try {
-      const scheduleId = parseInt(req.params.scheduleId as string);
+      const scheduleId = parseIntParam(req.params.scheduleId);
       const limit = parseInt(req.query.limit as string) || 20;
       const offset = parseInt(req.query.offset as string) || 0;
       const search = req.query.search as string;
@@ -551,14 +570,14 @@ export function registerStandupRoutes(app: Express) {
 
       res.json({ entries: grouped, total: totalCount, limit, offset, hasMore: offset + limit < totalCount });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
   /** Standup analytics for a schedule */
   app.get("/api/standups/analytics/:scheduleId", requireAuth, async (req: Request, res: Response) => {
     try {
-      const scheduleId = parseInt(req.params.scheduleId as string);
+      const scheduleId = parseIntParam(req.params.scheduleId);
 
       // Total entries
       const [totalResult] = await db
@@ -630,14 +649,14 @@ export function registerStandupRoutes(app: Express) {
         participationRate: avgParticipation,
       });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
   /** Standup trends over time (for time-series charts) */
   app.get("/api/standups/analytics/:scheduleId/trends", requireAuth, async (req: Request, res: Response) => {
     try {
-      const scheduleId = parseInt(req.params.scheduleId as string);
+      const scheduleId = parseIntParam(req.params.scheduleId);
       const days = parseInt(req.query.days as string) || 30;
 
       const cutoffDate = new Date();
@@ -729,14 +748,14 @@ export function registerStandupRoutes(app: Express) {
 
       res.json({ series, totalParticipants });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
   /** Per-person analytics for a schedule */
   app.get("/api/standups/analytics/:scheduleId/per-person", requireAuth, async (req: Request, res: Response) => {
     try {
-      const scheduleId = parseInt(req.params.scheduleId as string);
+      const scheduleId = parseIntParam(req.params.scheduleId);
 
       // All participants
       const participants = await db
@@ -807,14 +826,14 @@ export function registerStandupRoutes(app: Express) {
 
       res.json({ members: personStats, totalStandups });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
   /** Generate formatted digest of a specific standup date */
   app.get("/api/standups/digest/:scheduleId", requireAuth, async (req: Request, res: Response) => {
     try {
-      const scheduleId = parseInt(req.params.scheduleId as string);
+      const scheduleId = parseIntParam(req.params.scheduleId);
       const date = (req.query.date as string) || today();
 
       const schedule = await db
@@ -902,7 +921,7 @@ export function registerStandupRoutes(app: Express) {
 
       res.json({ text, markdown, date, scheduleName, submissionCount: entries.length, participantCount: participants.length, blockerCount: blockerEntries.length, missingCount: missing.length });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -956,7 +975,7 @@ export function registerStandupRoutes(app: Express) {
 
       res.json({ whatIDid, whatImDoing });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -965,7 +984,7 @@ export function registerStandupRoutes(app: Express) {
   /** Get meeting data: all participants with their entries + assigned tasks for the meeting carousel */
   app.get("/api/standups/meeting/:scheduleId", requireAuth, async (req: Request, res: Response) => {
     try {
-      const scheduleId = parseInt(req.params.scheduleId as string);
+      const scheduleId = parseIntParam(req.params.scheduleId);
       const date = (req.query.date as string) || today();
 
       // Get all participants
@@ -1188,7 +1207,7 @@ export function registerStandupRoutes(app: Express) {
         },
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1208,7 +1227,7 @@ export function registerStandupRoutes(app: Express) {
       `);
       res.status(201).json({ ok: true });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -1227,7 +1246,7 @@ export function registerStandupRoutes(app: Express) {
       `);
       res.json({ items: rows.rows || [] });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -1248,7 +1267,7 @@ export function registerStandupRoutes(app: Express) {
       `));
       res.json({ items: rows.rows || [] });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 
@@ -1300,7 +1319,7 @@ export function registerStandupRoutes(app: Express) {
         schedule = s;
       }
 
-      // Add creator as participant
+      // Add creator as participant (they're the facilitator, always required)
       if (isSqlite) {
         await db.run(sql`INSERT INTO standup_participants (schedule_id, user_id, is_required) VALUES (${schedule.id}, ${user.id}, 1)`);
       } else {
@@ -1311,13 +1330,19 @@ export function registerStandupRoutes(app: Express) {
         });
       }
 
-      // Add all active users as participants (exclude soft-deleted users)
-      const allUsers = await db
-        .select({ id: users.id })
+      // Add active users whose role is in the standup attendee allowlist
+      // (engineers, engineering manager, quality manager, COO/CEO).
+      const eligibleUsers = await db
+        .select({ id: users.id, role: users.role })
         .from(users)
-        .where(isNull(users.deletedAt));
+        .where(
+          and(
+            isNull(users.deletedAt),
+            inArray(users.role, STANDUP_ATTENDEE_ROLES as unknown as string[]),
+          ),
+        );
 
-      const participantValues = allUsers
+      const participantValues = eligibleUsers
         .filter((u: any) => u.id !== user.id)
         .map((u: any) => ({
           scheduleId: schedule.id,
@@ -1337,7 +1362,7 @@ export function registerStandupRoutes(app: Express) {
 
       res.status(201).json({ seeded: true, schedule });
     } catch (err: unknown) {
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+      throw err;
     }
   });
 }

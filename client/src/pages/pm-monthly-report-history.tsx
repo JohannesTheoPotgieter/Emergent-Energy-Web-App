@@ -2,8 +2,18 @@ import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { useLocation } from "wouter";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout, TableLayout } from "@/components/layout";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 function getAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = {};
@@ -37,64 +47,81 @@ export default function PmMonthlyReportHistory() {
   if (isLoading) return <PageSkeleton lines={5} />;
   if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load PM report history" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
-  return (
-    <div className="container mx-auto p-6 space-y-4">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => navigate("/reports/pm/monthly")}>
-          <ArrowLeft className="w-4 h-4" />
-        </Button>
-        <h1 className="text-2xl font-bold">PM Report History</h1>
-      </div>
+  const subtitle = history.length === 0
+    ? "No reports generated yet"
+    : `${history.length} report${history.length !== 1 ? "s" : ""} in history`;
 
-      {isLoading ? (
-        <div className="flex items-center justify-center min-h-[30vh]">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
-      ) : (
-        <div className="border rounded-lg overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-muted">
-              <tr>
-                <th className="text-left px-4 py-2.5 font-medium">Month</th>
-                <th className="text-left px-4 py-2.5 font-medium">Status</th>
-                <th className="text-left px-4 py-2.5 font-medium">Generated</th>
-                <th className="text-left px-4 py-2.5 font-medium">Reviewed By</th>
-                <th className="text-left px-4 py-2.5 font-medium">Published By</th>
-                <th className="px-4 py-2.5"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {history.length === 0 ? (
-                <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">No reports generated yet</td></tr>
-              ) : history.map((h: any) => (
-                <tr key={h.id} className="border-b hover:bg-muted/30">
-                  <td className="px-4 py-2.5 font-medium">{h.reportMonth}</td>
-                  <td className="px-4 py-2.5">
-                    <Badge variant="outline" className={`text-xs ${statusColors[h.status] || ""}`}>{h.status}</Badge>
-                  </td>
-                  <td className="px-4 py-2.5 text-xs text-muted-foreground">
-                    {new Date(h.generatedAt).toLocaleString("en-ZA")}
-                    {h.regeneratedAt && <span className="ml-2">(regen: {new Date(h.regeneratedAt).toLocaleString("en-ZA")})</span>}
-                  </td>
-                  <td className="px-4 py-2.5 text-xs">
-                    {h.reviewedByName || "—"}
-                    {h.reviewedAt && <span className="text-muted-foreground ml-1">({new Date(h.reviewedAt).toLocaleDateString("en-ZA")})</span>}
-                  </td>
-                  <td className="px-4 py-2.5 text-xs">
-                    {h.publishedByName || "—"}
-                    {h.publishedAt && <span className="text-muted-foreground ml-1">({new Date(h.publishedAt).toLocaleDateString("en-ZA")})</span>}
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <Button variant="ghost" size="sm" className="text-xs" onClick={() => navigate(`/reports/pm/monthly?month=${h.reportMonth}`)}>
-                      View
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
+  const emptyRow = (
+    <TableRow>
+      <TableCell colSpan={6} className="py-12 text-center">
+        <p className="text-sm font-medium text-muted-foreground">No reports generated yet</p>
+      </TableCell>
+    </TableRow>
+  );
+
+  const table = (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Month</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>Generated</TableHead>
+          <TableHead>Reviewed By</TableHead>
+          <TableHead>Published By</TableHead>
+          <TableHead></TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {history.length === 0 ? emptyRow : history.map((h: any) => (
+          <TableRow key={h.id} data-testid={`row-report-${h.id}`}>
+            <TableCell className="font-medium">{h.reportMonth}</TableCell>
+            <TableCell>
+              <Badge variant="outline" className={`text-xs ${statusColors[h.status] || ""}`}>{h.status}</Badge>
+            </TableCell>
+            <TableCell className="text-xs text-muted-foreground">
+              {new Date(h.generatedAt).toLocaleString("en-ZA")}
+              {h.regeneratedAt && <span className="ml-2">(regen: {new Date(h.regeneratedAt).toLocaleString("en-ZA")})</span>}
+            </TableCell>
+            <TableCell className="text-xs">
+              {h.reviewedByName || "—"}
+              {h.reviewedAt && <span className="text-muted-foreground ml-1">({new Date(h.reviewedAt).toLocaleDateString("en-ZA")})</span>}
+            </TableCell>
+            <TableCell className="text-xs">
+              {h.publishedByName || "—"}
+              {h.publishedAt && <span className="text-muted-foreground ml-1">({new Date(h.publishedAt).toLocaleDateString("en-ZA")})</span>}
+            </TableCell>
+            <TableCell>
+              <Button variant="ghost" size="sm" className="text-xs" onClick={() => navigate(`/reports/pm/monthly?month=${h.reportMonth}`)} data-testid={`btn-view-${h.id}`}>
+                View
+              </Button>
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+
+  return (
+    <PageLayout
+      data-testid="pm-monthly-report-history-page"
+      header={
+        <PageHeader
+          title="PM Report History"
+          subtitle={subtitle}
+          actions={
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate("/reports/pm/monthly")}
+              data-testid="btn-back-pm-monthly"
+            >
+              <ArrowLeft className="w-4 h-4 mr-1" /> Back to PM Monthly Report
+            </Button>
+          }
+        />
+      }
+    >
+      <TableLayout table={table} />
+    </PageLayout>
   );
 }

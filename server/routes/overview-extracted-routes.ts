@@ -16,6 +16,11 @@ import { mapCostToExpenseInput } from "../lib/data-merge";
 import { resolveInflowEffectiveDates } from "../lib/cashflow-helpers";
 import { isWorkItemsEnabled } from "../work-items-adapter";
 import { getCanonicalAllCurrentCostLines } from "../services/project-cost-line-read-service";
+import {
+  sumRevenueRecognition,
+  sumRealisedRevenueRecognition,
+} from "../lib/finance/revenue-recognition";
+import { getCosEffectiveDateAndSource } from "../lib/expense-row-selector";
 
 export function registerOverviewExtractedRoutes(app: Express): void {
 
@@ -176,31 +181,23 @@ export function registerOverviewExtractedRoutes(app: Express): void {
         }
       }
 
-      // revenue_realised = SUM(milestone_amount where in-bank: manualInBank || (hasPaymentReceived && hasInvoice))
-      let revenueRealised = 0;
-      for (const inflow of allInflows) {
-        if (inflow.milestoneAmount) {
-          const manualInBank = (inflow as any).inBank === 1 || (inflow as any).inBank === '1' || (inflow as any).inBank === true;
-          const hasInvoice = !!(inflow.milestoneInvoiceNumber && String(inflow.milestoneInvoiceNumber).trim());
-          const hasPaymentReceived = !!(inflow.paymentReceivedDate && String(inflow.paymentReceivedDate).trim() && inflow.paymentReceivedDate !== '-');
-          const isInBank = manualInBank || (hasPaymentReceived && hasInvoice);
-          if (isInBank) {
-            revenueRealised += parseFloat(inflow.milestoneAmount) || 0;
-          }
-        }
-      }
-      for (const rev of allNormRevOv) {
-        if (oldInflowProjects.has(resolveOvName(rev.projectName))) continue;
-        if (rev.amountExVat) {
-          const manualInBank = (rev as any).inBank === 1 || (rev as any).inBank === '1' || (rev as any).inBank === true;
-          const hasInvoice = !!(rev.invoiceNumber && String(rev.invoiceNumber).trim());
-          const hasPaymentReceived = !!(rev.paidDate && String(rev.paidDate).trim() && rev.paidDate !== '-');
-          const isInBank = manualInBank || (hasPaymentReceived && hasInvoice);
-          if (isInBank) {
-            revenueRealised += parseFloat(rev.amountExVat) || 0;
-          }
-        }
-      }
+      // revenue_realised — CANONICAL Revenue Recognition (POC method).
+      // Source: normalized_cost_lines.revenue_recognition_amount, gated on the
+      // line being effectively realised (past-month auto-promote + canonical
+      // strict realisation check). NOT milestone/cash — for cash inflows see
+      // /api/home/summary.weeklyInflows or /api/cos-tracker.
+      const nowOv = new Date();
+      const cmkOv = `${nowOv.getUTCFullYear()}-${String(nowOv.getUTCMonth() + 1).padStart(2, '0')}`;
+      const getCosMonthKeyOv = (line: any): string | null => {
+        const { date } = getCosEffectiveDateAndSource(line);
+        return date ? date.substring(0, 7) : null;
+      };
+      const revenueRealised = sumRealisedRevenueRecognition(
+        allExpenses as any,
+        cmkOv,
+        getCosMonthKeyOv,
+      );
+      const revenuePlanned = sumRevenueRecognition(allExpenses as any);
 
       const uniqueProjects = new Set<string>();
       for (const info of allProjectInfo) uniqueProjects.add(info.projectName);
@@ -215,6 +212,8 @@ export function registerOverviewExtractedRoutes(app: Express): void {
         total_program_budget: totalProgramBudget,
         actual_spend_paid: actualSpendPaid,
         revenue_realised: revenueRealised,
+        revenue_planned: revenuePlanned,
+        revenue_method: "POC",
         active_projects: uniqueProjects.size,
         data_as_of: new Date().toISOString()
       });

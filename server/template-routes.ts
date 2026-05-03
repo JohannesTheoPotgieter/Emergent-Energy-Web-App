@@ -10,22 +10,31 @@ import {
   users, projectInfo, projectPhaseHistory, workItems,
   deliverables, taskActivityLog,
   phaseTemplate, phaseTemplateItem, phaseTemplateItemHistory, phaseTemplateApplication,
-  PROJECT_PHASES, PROJECT_PHASE_LABELS, LIFECYCLE_PHASES, PHASE_TO_ENG_STAGES,
+  PROJECT_PHASE_LABELS, PHASE_TO_ENG_STAGES,
   type ProjectPhase,
   TEMPLATE_ITEM_TYPES, TEMPLATE_WORKSTREAMS, TEMPLATE_LINK_TARGET_TYPES,
   clients,
   qcWarning,
   projectExecutionState,
 } from "@shared/schema";
+import { PHASES as CANONICAL_PHASES } from "../shared/phases";
 import { syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { requirePermission } from "./permission-middleware";
-import { paramStr } from "./lib/req-params";
+import { paramStr, parseIntParam } from "./lib/req-params";
 import { generateEngStagesForProject } from "./eng-stage-routes";
 import { createHash } from "crypto";
 import { logAuditFromReq } from "./audit-logger";
 
 function getUser(req: Request) {
   return getEffectiveUser(req);
+}
+
+const CANONICAL_PHASE_LABELS = CANONICAL_PHASES.map((p) => p.label);
+const CANONICAL_PHASE_LABELS_LC = new Map(CANONICAL_PHASE_LABELS.map((p) => [p.toLowerCase(), p]));
+
+function toCanonicalPhaseOrNull(raw: unknown): string | null {
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  return CANONICAL_PHASE_LABELS_LC.get(raw.trim().toLowerCase()) ?? null;
 }
 
 function makeApplicationKey(projectId: number, phase: string, templateId: number, templateVersion: number): string {
@@ -302,13 +311,13 @@ export function registerTemplateRoutes(app: Express) {
         .orderBy(asc(phaseTemplate.phase), desc(phaseTemplate.version));
       res.json(templates);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
   app.get("/api/phase-templates/:id", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       const [tmpl] = await db.select().from(phaseTemplate).where(eq(phaseTemplate.id, id));
       if (!tmpl) return res.status(404).json({ error: "Template not found" });
 
@@ -318,7 +327,7 @@ export function registerTemplateRoutes(app: Express) {
 
       res.json({ ...tmpl, items });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -327,15 +336,16 @@ export function registerTemplateRoutes(app: Express) {
       const user = getUser(req);
       const { phase, name } = req.body;
       if (!phase || !name) return res.status(400).json({ error: "phase and name are required" });
-      if (!PROJECT_PHASES.includes(phase as any)) return res.status(400).json({ error: "Invalid phase" });
+      const canonicalPhase = toCanonicalPhaseOrNull(phase);
+      if (!canonicalPhase) return res.status(400).json({ error: "Invalid phase" });
 
       const existing = await db.select({ maxVer: sql<number>`COALESCE(MAX(${phaseTemplate.version}), 0)` })
         .from(phaseTemplate)
-        .where(eq(phaseTemplate.phase, phase));
+        .where(eq(phaseTemplate.phase, canonicalPhase));
       const nextVersion = (existing[0]?.maxVer || 0) + 1;
 
       const [created] = await db.insert(phaseTemplate).values({
-        phase,
+        phase: canonicalPhase,
         name,
         version: nextVersion,
         isActive: false,
@@ -344,13 +354,13 @@ export function registerTemplateRoutes(app: Express) {
 
       res.json(created);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
   app.patch("/api/phase-templates/:id/activate", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
-      const id = parseInt(paramStr(req.params.id));
+      const id = parseIntParam(req.params.id);
       const [tmpl] = await db.select().from(phaseTemplate).where(eq(phaseTemplate.id, id));
       if (!tmpl) return res.status(404).json({ error: "Template not found" });
 
@@ -364,21 +374,21 @@ export function registerTemplateRoutes(app: Express) {
 
       res.json({ activated: true, phase: tmpl.phase, templateId: id });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
   app.post("/api/phase-templates/:id/clone", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
       const user = getUser(req);
-      const sourceId = parseInt(paramStr(req.params.id));
+      const sourceId = parseIntParam(req.params.id);
       const { targetPhase } = req.body;
 
       const [source] = await db.select().from(phaseTemplate).where(eq(phaseTemplate.id, sourceId));
       if (!source) return res.status(404).json({ error: "Source template not found" });
 
-      const phase = targetPhase || source.phase;
-      if (!PROJECT_PHASES.includes(phase as any)) return res.status(400).json({ error: "Invalid target phase" });
+      const phase = toCanonicalPhaseOrNull(targetPhase || source.phase);
+      if (!phase) return res.status(400).json({ error: "Invalid target phase" });
 
       const existing = await db.select({ maxVer: sql<number>`COALESCE(MAX(${phaseTemplate.version}), 0)` })
         .from(phaseTemplate)
@@ -434,7 +444,7 @@ export function registerTemplateRoutes(app: Express) {
 
       res.json({ cloned, itemsCloned: sourceItems.length, collisions });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -443,7 +453,7 @@ export function registerTemplateRoutes(app: Express) {
   app.post("/api/phase-templates/:id/items", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
       const user = getUser(req);
-      const templateId = parseInt(paramStr(req.params.id));
+      const templateId = parseIntParam(req.params.id);
       const [tmpl] = await db.select().from(phaseTemplate).where(eq(phaseTemplate.id, templateId));
       if (!tmpl) return res.status(404).json({ error: "Template not found" });
 
@@ -491,14 +501,14 @@ export function registerTemplateRoutes(app: Express) {
 
       res.json(created);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
   app.patch("/api/phase-template-items/:itemId", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
       const user = getUser(req);
-      const itemId = parseInt(paramStr(req.params.itemId));
+      const itemId = parseIntParam(req.params.itemId);
       const [existing] = await db.select().from(phaseTemplateItem).where(eq(phaseTemplateItem.id, itemId));
       if (!existing) return res.status(404).json({ error: "Item not found" });
 
@@ -527,14 +537,14 @@ export function registerTemplateRoutes(app: Express) {
       const [updated] = await db.select().from(phaseTemplateItem).where(eq(phaseTemplateItem.id, itemId));
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
   app.delete("/api/phase-template-items/:itemId", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
       const user = getUser(req);
-      const itemId = parseInt(paramStr(req.params.itemId));
+      const itemId = parseIntParam(req.params.itemId);
 
       await db.update(phaseTemplateItem)
         .set({ isDeleted: true })
@@ -548,7 +558,7 @@ export function registerTemplateRoutes(app: Express) {
 
       res.json({ deleted: true });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -556,7 +566,7 @@ export function registerTemplateRoutes(app: Express) {
 
   app.get("/api/phase-templates/:id/preview", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
-      const templateId = parseInt(paramStr(req.params.id));
+      const templateId = parseIntParam(req.params.id);
       const items = await db.select().from(phaseTemplateItem)
         .where(and(eq(phaseTemplateItem.templateId, templateId), eq(phaseTemplateItem.isDeleted, false)))
         .orderBy(asc(phaseTemplateItem.sortOrder));
@@ -578,25 +588,26 @@ export function registerTemplateRoutes(app: Express) {
         },
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
   app.post("/api/projects/:projectId/phase-preview", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
-      const projectId = parseInt(paramStr(req.params.projectId));
+      const projectId = parseIntParam(req.params.projectId);
       const { toPhase } = req.body;
-      if (!toPhase || !PROJECT_PHASES.includes(toPhase as any)) {
+      const canonicalToPhase = toCanonicalPhaseOrNull(toPhase);
+      if (!canonicalToPhase) {
         return res.status(400).json({ error: "Valid toPhase required" });
       }
 
       const [activeTemplate] = await db.select().from(phaseTemplate)
-        .where(and(eq(phaseTemplate.phase, toPhase), eq(phaseTemplate.isActive, true)));
+        .where(and(eq(phaseTemplate.phase, canonicalToPhase), eq(phaseTemplate.isActive, true)));
 
       if (!activeTemplate) {
         return res.json({
           hasTemplate: false,
-          message: `No active template for ${PROJECT_PHASE_LABELS[toPhase as ProjectPhase] || toPhase}`,
+          message: `No active template for ${PROJECT_PHASE_LABELS[canonicalToPhase as ProjectPhase] || canonicalToPhase}`,
           items_to_create: [],
           items_to_skip: [],
           items_to_update: [],
@@ -604,7 +615,7 @@ export function registerTemplateRoutes(app: Express) {
         });
       }
 
-      const preview = await buildPreview(projectId, toPhase, activeTemplate.id);
+      const preview = await buildPreview(projectId, canonicalToPhase, activeTemplate.id);
       res.json({
         hasTemplate: true,
         templateId: activeTemplate.id,
@@ -613,7 +624,7 @@ export function registerTemplateRoutes(app: Express) {
         ...preview,
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -622,24 +633,25 @@ export function registerTemplateRoutes(app: Express) {
   app.post("/api/projects/:projectId/apply-template", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
       const user = getUser(req);
-      const projectId = parseInt(paramStr(req.params.projectId));
+      const projectId = parseIntParam(req.params.projectId);
       const { phase } = req.body;
 
-      if (!phase || !PROJECT_PHASES.includes(phase as any)) {
+      const canonicalPhase = toCanonicalPhaseOrNull(phase);
+      if (!canonicalPhase) {
         return res.status(400).json({ error: "Valid phase required" });
       }
 
       const [activeTemplate] = await db.select().from(phaseTemplate)
-        .where(and(eq(phaseTemplate.phase, phase), eq(phaseTemplate.isActive, true)));
+        .where(and(eq(phaseTemplate.phase, canonicalPhase), eq(phaseTemplate.isActive, true)));
 
       if (!activeTemplate) {
         return res.json({ applied: false, message: "No active template for this phase" });
       }
 
-      const result = await applyTemplate(projectId, phase, activeTemplate.id, activeTemplate.version, user!.id);
+      const result = await applyTemplate(projectId, canonicalPhase, activeTemplate.id, activeTemplate.version, user!.id);
       res.json({ applied: true, result });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -647,7 +659,7 @@ export function registerTemplateRoutes(app: Express) {
 
   app.get("/api/phase-template-items/:itemId/history", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
-      const itemId = parseInt(paramStr(req.params.itemId));
+      const itemId = parseIntParam(req.params.itemId);
       const history = await db.select({
         id: phaseTemplateItemHistory.id,
         changedAt: phaseTemplateItemHistory.changedAt,
@@ -660,7 +672,7 @@ export function registerTemplateRoutes(app: Express) {
         .orderBy(desc(phaseTemplateItemHistory.changedAt));
       res.json(history);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -668,7 +680,7 @@ export function registerTemplateRoutes(app: Express) {
 
   app.get("/api/projects/:projectId/template-applications", jwtAuth, requireAuth, async (req, res) => {
     try {
-      const projectId = parseInt(paramStr(req.params.projectId));
+      const projectId = parseIntParam(req.params.projectId);
       const apps = await db.select({
         id: phaseTemplateApplication.id,
         phase: phaseTemplateApplication.phase,
@@ -685,7 +697,7 @@ export function registerTemplateRoutes(app: Express) {
         .orderBy(desc(phaseTemplateApplication.appliedAt));
       res.json(apps);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -725,7 +737,7 @@ export function registerTemplateRoutes(app: Express) {
 
       res.json({ matches });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -746,7 +758,7 @@ export function registerTemplateRoutes(app: Express) {
         return res.status(400).json({ error: "A project with this name already exists" });
       }
 
-      const phase = initialPhase && PROJECT_PHASES.includes(initialPhase as any) ? initialPhase : "P0_FIRST_ASSESSMENT";
+      const phase = toCanonicalPhaseOrNull(initialPhase) || "First Assessment";
 
       // If an opportunityId is supplied, validate it exists and optionally
       // carry the client forward so the project inherits the commercial
@@ -884,7 +896,7 @@ export function registerTemplateRoutes(app: Express) {
         _opportunitySource: opportunitySource ?? undefined,
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -960,13 +972,13 @@ export function registerTemplateRoutes(app: Express) {
 
       res.json(result);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
   app.get("/api/exec/portfolio/:projectId", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
-      const projectId = parseInt(paramStr(req.params.projectId));
+      const projectId = parseIntParam(req.params.projectId);
       const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
       if (!project) return res.status(404).json({ error: "Project not found" });
 
@@ -1033,7 +1045,7 @@ export function registerTemplateRoutes(app: Express) {
         },
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      throw err;
     }
   });
 
@@ -1041,12 +1053,12 @@ export function registerTemplateRoutes(app: Express) {
 
   app.get("/api/template-constants", jwtAuth, requireAuth, async (_req, res) => {
     const lifecycleLabels: Record<string, string> = {};
-    for (const p of LIFECYCLE_PHASES) lifecycleLabels[p] = p;
+    for (const p of CANONICAL_PHASE_LABELS) lifecycleLabels[p] = p;
     res.json({
       itemTypes: TEMPLATE_ITEM_TYPES,
       workstreams: TEMPLATE_WORKSTREAMS,
       linkTargetTypes: TEMPLATE_LINK_TARGET_TYPES,
-      projectPhases: LIFECYCLE_PHASES,
+      projectPhases: CANONICAL_PHASE_LABELS,
       projectPhaseLabels: lifecycleLabels,
     });
   });

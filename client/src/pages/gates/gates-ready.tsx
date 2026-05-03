@@ -5,18 +5,24 @@ import { Input } from "@/components/ui/input";
 import { useLocation } from "wouter";
 import { Search, CheckCircle } from "lucide-react";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout, TableLayout } from "@/components/layout";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { PHASES } from "@shared/phases";
 
+// Stage labels derive from the canonical lifecycle (shared/phases.ts).
+// Deprecated codes are appended for historical row rendering only.
 const STAGE_LABELS: Record<string, string> = {
-  S01_FIRST_ASSESSMENT: "First Assessment",
-  S02_DESIGN_COST_PROPOSAL: "Design & Cost Proposal",
-  S03_SIGNATURE_FINANCIAL_CLOSE: "Financial Close",
+  ...Object.fromEntries(PHASES.map((p) => [p.code, p.label])),
   S04_PD_PM_HANDOVER: "PD-PM Handover",
   S05_FINANCIAL_REVIEW: "Financial Review",
-  S06_CONSTRUCTION: "Construction",
-  S07_COMMISSIONING: "Commissioning",
-  S08_OM_HANDOVER: "O&M Handover",
-  S09_CLIENT_HANDOVER: "Client Handover",
-  S10_POST_HANDOVER_REVIEW: "Post-Handover",
 };
 
 export default function GatesReadyPage() {
@@ -37,64 +43,91 @@ export default function GatesReadyPage() {
   if (isLoading) return <PageSkeleton />;
   if (error) return <PageError message="Failed to load ready gates" />;
 
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search ready projects..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-8"
-          />
-        </div>
-        <Badge className="bg-blue-100 text-blue-800">{filtered.length} ready</Badge>
-      </div>
+  const readyCount = filtered.length;
+  const subtitle = readyCount === 0
+    ? "No projects ready for review right now"
+    : `${readyCount} project${readyCount !== 1 ? "s" : ""} ready for gate review`;
 
-      {filtered.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          <CheckCircle className="h-8 w-8 mx-auto mb-2" />
-          <p>No projects ready for review right now.</p>
-        </div>
-      ) : (
-        <div className="border rounded-lg overflow-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b bg-muted/50">
-                <th className="text-left p-2 font-medium">Project</th>
-                <th className="text-left p-2 font-medium">Client</th>
-                <th className="text-left p-2 font-medium">Stage</th>
-                <th className="text-left p-2 font-medium">Status</th>
-                <th className="text-right p-2 font-medium">Readiness</th>
-                <th className="text-left p-2 font-medium">PM</th>
-                <th className="text-left p-2 font-medium">PD</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((p) => (
-                <tr
-                  key={p.projectId}
-                  className="border-b hover:bg-muted/30 cursor-pointer"
-                  onClick={() => navigate(`/project/${encodeURIComponent(p.projectName)}`)}
-                >
-                  <td className="p-2 font-medium">{p.projectName}</td>
-                  <td className="p-2 text-muted-foreground">{p.clientName || "-"}</td>
-                  <td className="p-2 text-xs">{STAGE_LABELS[p.currentStageCode || ""] || "-"}</td>
-                  <td className="p-2">
-                    <Badge variant="outline" className="text-[10px] bg-blue-100 text-blue-800">
-                      {p.gateStatus}
-                    </Badge>
-                  </td>
-                  <td className="p-2 text-right font-medium text-emerald-600">{p.gateReadinessPct}%</td>
-                  <td className="p-2 text-muted-foreground">{p.pm || "-"}</td>
-                  <td className="p-2 text-muted-foreground">{p.pd || "-"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+  const toolbar = (
+    <div className="flex items-center gap-3 w-full">
+      <div className="relative flex-1 max-w-sm">
+        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Search ready projects..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="pl-8"
+          data-testid="input-search-gates-ready"
+        />
+      </div>
+      <Badge className="bg-blue-100 text-blue-800" data-testid="badge-ready-count">{readyCount} ready</Badge>
     </div>
+  );
+
+  const emptyRow = (
+    <TableRow>
+      <TableCell colSpan={7} className="py-12 text-center">
+        <div className="flex flex-col items-center gap-2 text-muted-foreground">
+          <CheckCircle className="h-8 w-8" />
+          <p className="text-sm font-medium">No projects ready for review</p>
+          <p className="text-xs">Check back after teams mark their gates ready.</p>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+
+  const table = (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Project</TableHead>
+          <TableHead>Client</TableHead>
+          <TableHead>Stage</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead className="text-right">Readiness</TableHead>
+          <TableHead>PM</TableHead>
+          <TableHead>PD</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {filtered.length === 0 ? emptyRow : filtered.map((p) => (
+          <TableRow
+            key={p.projectId}
+            className="cursor-pointer"
+            onClick={() => navigate(`/project/${encodeURIComponent(p.projectName)}`)}
+            data-testid={`row-ready-${p.projectId}`}
+          >
+            <TableCell className="font-medium">{p.projectName}</TableCell>
+            <TableCell className="text-muted-foreground">{p.clientName || "-"}</TableCell>
+            <TableCell className="text-xs">{STAGE_LABELS[p.currentStageCode || ""] || "-"}</TableCell>
+            <TableCell>
+              <Badge variant="outline" className="text-[10px] bg-blue-100 text-blue-800">
+                {p.gateStatus}
+              </Badge>
+            </TableCell>
+            <TableCell className="text-right font-medium text-emerald-600 tabular-nums">{p.gateReadinessPct}%</TableCell>
+            <TableCell className="text-muted-foreground">{p.pm || "-"}</TableCell>
+            <TableCell className="text-muted-foreground">{p.pd || "-"}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+
+  return (
+    <PageLayout
+      data-testid="gates-ready-page"
+      header={
+        <PageHeader
+          title="Ready Gates"
+          subtitle={subtitle}
+        />
+      }
+    >
+      <TableLayout
+        toolbar={toolbar}
+        table={table}
+      />
+    </PageLayout>
   );
 }

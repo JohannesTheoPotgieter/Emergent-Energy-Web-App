@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
 import {
   TableProperties,
   ArrowUp,
@@ -11,6 +10,17 @@ import {
 } from "lucide-react";
 import type { Department, DepartmentScore, KpiScore } from "@shared/config/kpi-registry";
 import { ALL_DEPARTMENTS } from "@shared/config/kpi-registry";
+
+const HIDDEN_KPI_KEYS = new Set([
+  "pd_signed_pipeline_vs_target",
+  "fin_revenue_vs_target",
+  "fin_cash_collected_vs_target",
+  "fin_cos_vs_target",
+  "fin_gross_margin_vs_target",
+  "hse_site_audit_pass_rate",
+  "hse_toolbox_compliance",
+  "hse_safety_file_completeness",
+]);
 
 function formatValue(kpi: KpiScore): string {
   if (kpi.actual == null) return "—";
@@ -40,6 +50,7 @@ export function DepartmentKpiTable({
     const all: Array<KpiScore & { department: Department }> = [];
     for (const ds of scores) {
       for (const kpi of ds.kpis) {
+        if (HIDDEN_KPI_KEYS.has(kpi.kpiKey)) continue;
         all.push({ ...kpi, department: ds.department });
       }
     }

@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useToast } from "@/hooks/use-toast";
 import { AlertTriangle, Building2, CheckCircle, Loader2, Plus, TrendingUp } from "lucide-react";
+import { PageHeader } from "@/components/ui/page-header";
+import { PageLayout } from "@/components/layout";
 
 const authFetch = async (url: string, opts: RequestInit = {}) => {
   const token = localStorage.getItem("auth_token");
@@ -37,6 +39,7 @@ export default function ProjectCreatePage() {
     projectCode: "",
     location: "",
     initialPhase: "P0_FIRST_ASSESSMENT",
+    sharepointRootPath: "",
   });
   const [result, setResult] = useState<any>(null);
   const [duplicateWarningDismissed, setDuplicateWarningDismissed] = useState(false);
@@ -116,6 +119,7 @@ export default function ProjectCreatePage() {
       projectCode: "",
       location: "",
       initialPhase: "P0_FIRST_ASSESSMENT",
+      sharepointRootPath: "",
     });
   };
 
@@ -127,8 +131,11 @@ export default function ProjectCreatePage() {
 
     setSaving(true);
     try {
+      // sharepointRootPath is not a /api/projects field — it's persisted
+      // to /api/projects/:id/sharepoint-root after creation. Strip it here.
+      const { sharepointRootPath: _drop, ...projectForm } = form;
       const body = {
-        ...form,
+        ...projectForm,
         clientId: form.clientId ? Number(form.clientId) : null,
         clientName: selectedClient?.name || null,
         // Pass the source opportunity so the server sets
@@ -152,6 +159,26 @@ export default function ProjectCreatePage() {
 
       setResult(data);
       toast({ title: "Project created successfully" });
+
+      // If the user provided a SharePoint root path, save it now against
+      // the just-created project. Silent-fail on error — not worth
+      // blocking project creation if the root save misses; a super user
+      // can set it later from project-detail.
+      const newProjectId = data?.id ?? data?.project?.id;
+      if (newProjectId && form.sharepointRootPath.trim()) {
+        try {
+          await authFetch(`/api/projects/${newProjectId}/sharepoint-root`, {
+            method: "PUT",
+            body: JSON.stringify({ rootPath: form.sharepointRootPath.trim() }),
+          });
+        } catch {
+          toast({
+            title: "SharePoint root not saved",
+            description: "Project was created but the SharePoint root couldn't be set. A super user can configure it from the project page.",
+            variant: "destructive",
+          });
+        }
+      }
     } catch (error: any) {
       toast({
         title: "Error",
@@ -165,17 +192,21 @@ export default function ProjectCreatePage() {
 
   if (permLoading) {
     return (
-      <div className="p-8 text-center text-muted-foreground">
-        <Loader2 className="w-6 h-6 animate-spin mx-auto" />
-      </div>
+      <PageLayout header={<PageHeader title="Create Project" />}>
+        <div className="p-8 text-center text-muted-foreground">
+          <Loader2 className="w-6 h-6 animate-spin mx-auto" />
+        </div>
+      </PageLayout>
     );
   }
 
   if (!canCreateProject) {
     return (
-      <div className="p-8 text-center text-muted-foreground">
-        You don't have permission to create projects. Contact your admin to request access.
-      </div>
+      <PageLayout header={<PageHeader title="Create Project" />}>
+        <div className="p-8 text-center text-muted-foreground" data-testid="project-create-permission-denied">
+          You don't have permission to create projects. Contact your admin to request access.
+        </div>
+      </PageLayout>
     );
   }
 
@@ -183,7 +214,8 @@ export default function ProjectCreatePage() {
 
   if (result) {
     return (
-      <div className="p-6 max-w-xl mx-auto space-y-6" data-testid="project-create-success">
+      <PageLayout header={<PageHeader title="Create Project" />}>
+      <div className="max-w-xl mx-auto" data-testid="project-create-success">
         <Card>
           <CardContent className="pt-6 space-y-4 text-center">
             <CheckCircle className="w-12 h-12 text-green-500 mx-auto" />
@@ -249,20 +281,22 @@ export default function ProjectCreatePage() {
           </CardContent>
         </Card>
       </div>
+      </PageLayout>
     );
   }
 
   return (
-    <div className="p-6 max-w-xl mx-auto space-y-6" data-testid="project-create-page">
+    <PageLayout
+      header={
+        <PageHeader
+          title="Create New Project"
+          subtitle="Add a new project to the portfolio. Phase templates are applied automatically if configured."
+        />
+      }
+    >
+      <div className="max-w-xl mx-auto" data-testid="project-create-page">
       <Card>
-        <CardHeader>
-          <CardTitle>Create New Project</CardTitle>
-          <CardDescription>
-            Add a new project to the portfolio. Phase templates will be applied automatically if
-            configured.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="pt-6 space-y-4">
           {/* Conversion banner — shown when the form is pre-filled from an opportunity */}
           {sourceOpportunity && (
             <div className="flex items-start gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
@@ -382,6 +416,19 @@ export default function ProjectCreatePage() {
               }))}
             />
           </div>
+          <div>
+            <label className="text-sm font-medium">SharePoint root path (optional)</label>
+            <Input
+              value={form.sharepointRootPath}
+              onChange={(event) => setForm((current) => ({ ...current, sharepointRootPath: event.target.value }))}
+              placeholder="e.g. Sites/EngineeringSupport/Projects/ClientName/ProjectName"
+              className="font-mono text-xs"
+              data-testid="input-sharepoint-root-path"
+            />
+            <p className="text-[11px] text-muted-foreground mt-1">
+              If you set this now, controlled documents can be submitted for approval right from the start. You can also configure it later from the project's Controlled docs tab.
+            </p>
+          </div>
           <Button
             className="w-full"
             onClick={handleSubmit}
@@ -397,6 +444,7 @@ export default function ProjectCreatePage() {
           </Button>
         </CardContent>
       </Card>
-    </div>
+      </div>
+    </PageLayout>
   );
 }

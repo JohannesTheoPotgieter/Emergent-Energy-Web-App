@@ -24,6 +24,7 @@ vite.config.ts.*
 # ── Runtime data (developer machine state, not source) ───────
 uploads/
 data/
+!client/src/data/
 server/data-seed/.migrated
 server/.pd-seed-done
 backups/
@@ -37,6 +38,11 @@ backups/
 *.log
 *.err.log
 *.out.log
+
+# ── QA artifacts & reports (regenerated on every test run) ──
+qa/artifacts/
+qa/reports/
+**/.last-run.json
 combined.log
 error.log
 login-request.log
@@ -60,3 +66,5 @@ node20-dev.out.log
 tsc-all.txt
 tsc-errors.txt
 .cache/
+.migrations-drift-check/
+qa/reports/vitest-results.json

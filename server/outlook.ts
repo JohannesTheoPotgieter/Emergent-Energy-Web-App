@@ -1,15 +1,62 @@
 import { Client } from "@microsoft/microsoft-graph-client";
 import { MS_TIMEZONE } from "./ms-config";
+import { isConnectorMocked } from "./lib/connector-mode";
+import * as msGraphMocks from "./mocks/ms-graph-fixtures";
 
 // -- Replit Connector-based Outlook integration --
 // OAuth is managed by the Replit connector. Access tokens are fetched
 // from the connector API automatically, including refresh handling.
+//
+// Phase 7: every public entry point short-circuits to fixture data when
+// isConnectorMocked("ms-graph") is true (dev without Replit Connectors
+// env configured, or USE_MOCK_CONNECTORS=true). Production is guarded
+// via NODE_ENV in the mode helper.
 
 let connectionSettings: any;
 
 export function clearCachedToken() {
   connectionSettings = null;
   cachedCalendarId = null;
+}
+
+export function isOutlookConfigured(): boolean {
+  if (isConnectorMocked("ms-graph")) return true;
+  return !!(process.env.REPLIT_CONNECTORS_HOSTNAME);
+}
+
+export async function getConnectionStatus(): Promise<{
+  configured: boolean;
+  connected: boolean;
+  email?: string;
+}> {
+  if (isConnectorMocked("ms-graph")) return msGraphMocks.mockConnectionStatus();
+  if (!isOutlookConfiguredReal()) {
+    return { configured: false, connected: false };
+  }
+
+  try {
+    const token = await getAccessToken();
+    if (!token) return { configured: true, connected: false };
+
+    const profileRes = await fetch("https://graph.microsoft.com/v1.0/me", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (profileRes.ok) {
+      const profile = (await profileRes.json()) as any;
+      return {
+        configured: true,
+        connected: true,
+        email: profile.mail || profile.userPrincipalName,
+      };
+    }
+    return { configured: true, connected: false };
+  } catch {
+    return { configured: true, connected: false };
+  }
+}
+
+function isOutlookConfiguredReal(): boolean {
+  return !!(process.env.REPLIT_CONNECTORS_HOSTNAME);
 }
 
 async function getAccessToken(): Promise<string> {
@@ -68,40 +115,6 @@ async function getOutlookClient(): Promise<Client> {
       getAccessToken: async () => accessToken,
     },
   });
-}
-
-export function isOutlookConfigured(): boolean {
-  return !!(process.env.REPLIT_CONNECTORS_HOSTNAME);
-}
-
-export async function getConnectionStatus(): Promise<{
-  configured: boolean;
-  connected: boolean;
-  email?: string;
-}> {
-  if (!isOutlookConfigured()) {
-    return { configured: false, connected: false };
-  }
-
-  try {
-    const token = await getAccessToken();
-    if (!token) return { configured: true, connected: false };
-
-    const profileRes = await fetch("https://graph.microsoft.com/v1.0/me", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (profileRes.ok) {
-      const profile = (await profileRes.json()) as any;
-      return {
-        configured: true,
-        connected: true,
-        email: profile.mail || profile.userPrincipalName,
-      };
-    }
-    return { configured: true, connected: false };
-  } catch {
-    return { configured: true, connected: false };
-  }
 }
 
 const MYTOOL_CALENDAR_NAME = "EE – My Tool Blocks";
@@ -200,6 +213,7 @@ async function graphDelete(url: string, userAccessToken?: string | null): Promis
 }
 
 export async function getCalendarEvents(startDate: string, endDate: string, userAccessToken?: string | null): Promise<any[]> {
+  if (isConnectorMocked("ms-graph")) return msGraphMocks.mockCalendarEvents(startDate, endDate);
   const start = `${startDate}T00:00:00`;
   const end = `${endDate}T23:59:59`;
   const url = `/me/calendarView?startDateTime=${encodeURIComponent(start)}&endDateTime=${encodeURIComponent(end)}&$select=id,subject,start,end,isAllDay,location,organizer,showAs,isCancelled,type&$top=200&$orderby=start/dateTime`;
@@ -245,6 +259,7 @@ export async function createOutlookEvent(block: {
   label: string;
   idempotencyKey: string;
 }, userAccessToken?: string | null): Promise<string> {
+  if (isConnectorMocked("ms-graph")) return `mock-evt-${Date.now()}`;
   const calendarId = await ensureMyToolCalendar(userAccessToken);
 
   const event = {
@@ -282,6 +297,7 @@ export async function updateOutlookEvent(
   },
   userAccessToken?: string | null,
 ): Promise<void> {
+  if (isConnectorMocked("ms-graph")) return;
   const patch: any = {};
   if (updates.label) patch.subject = updates.label;
   if (updates.date && updates.startTime) {
@@ -299,6 +315,7 @@ export async function updateOutlookEvent(
 }
 
 export async function deleteOutlookEvent(eventId: string, calendarId: string | null, userAccessToken?: string | null): Promise<void> {
+  if (isConnectorMocked("ms-graph")) return;
   const url = calendarId
     ? `/me/calendars/${calendarId}/events/${eventId}`
     : `/me/events/${eventId}`;
@@ -312,6 +329,7 @@ export async function listMessages(options: {
   skip?: number;
   folder?: string;
 }, userAccessToken?: string | null): Promise<any[]> {
+  if (isConnectorMocked("ms-graph")) return msGraphMocks.mockMailMessages();
   const top = options.top || 20;
   const skip = options.skip || 0;
   const folder = options.folder || "inbox";
@@ -337,6 +355,7 @@ export async function listMessages(options: {
 }
 
 export async function listFlaggedMessages(top: number = 50, userAccessToken?: string | null): Promise<any[]> {
+  if (isConnectorMocked("ms-graph")) return msGraphMocks.mockMailMessages().filter((m: any) => m.flag?.flagStatus === "flagged");
   const url = `/me/messages?$top=${top}&$filter=flag/flagStatus eq 'flagged'&$select=id,subject,from,receivedDateTime,bodyPreview,webLink,isRead,hasAttachments,flag`;
   try {
     const data = await graphGet(url, userAccessToken);
@@ -359,6 +378,7 @@ export async function listFlaggedMessages(top: number = 50, userAccessToken?: st
 }
 
 export async function getMessageDetail(messageId: string, userAccessToken?: string | null): Promise<any> {
+  if (isConnectorMocked("ms-graph")) return msGraphMocks.mockMailMessages().find((m: any) => m.id === messageId) ?? null;
   const msg = await graphGet(`/me/messages/${messageId}?$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,bodyPreview,webLink,body,isRead,hasAttachments,conversationId`, userAccessToken);
   return {
     id: msg.id,
@@ -379,6 +399,7 @@ export async function getMessageDetail(messageId: string, userAccessToken?: stri
 }
 
 export async function listMailFolders(userAccessToken?: string | null): Promise<any[]> {
+  if (isConnectorMocked("ms-graph")) return msGraphMocks.mockMailFolders();
   const data = await graphGet("/me/mailFolders?$top=100&$select=id,displayName,totalItemCount,unreadItemCount,parentFolderId", userAccessToken);
   const folders = (data.value || []).map((f: any) => ({
     id: f.id,
@@ -414,6 +435,7 @@ export async function sendMail(options: {
   body: string;
   bodyType?: "Text" | "HTML";
 }, userAccessToken?: string | null): Promise<void> {
+  if (isConnectorMocked("ms-graph")) return;
   await graphPost("/me/sendMail", {
     message: {
       subject: options.subject,
@@ -426,6 +448,7 @@ export async function sendMail(options: {
 }
 
 export async function replyToMessage(messageId: string, comment: string, replyAll: boolean = false, userAccessToken?: string | null): Promise<void> {
+  if (isConnectorMocked("ms-graph")) return;
   const endpoint = replyAll ? "replyAll" : "reply";
   await graphPost(`/me/messages/${messageId}/${endpoint}`, {
     comment,
@@ -433,6 +456,7 @@ export async function replyToMessage(messageId: string, comment: string, replyAl
 }
 
 export async function forwardMessage(messageId: string, comment: string, toRecipients: string[], userAccessToken?: string | null): Promise<void> {
+  if (isConnectorMocked("ms-graph")) return;
   await graphPost(`/me/messages/${messageId}/forward`, {
     comment,
     toRecipients: toRecipients.map(addr => ({ emailAddress: { address: addr } })),
@@ -440,6 +464,7 @@ export async function forwardMessage(messageId: string, comment: string, toRecip
 }
 
 export async function getJoinedTeams(ssoToken?: string | null): Promise<any[]> {
+  if (isConnectorMocked("ms-graph")) return msGraphMocks.mockJoinedTeams();
   try {
     if (!ssoToken) throw new Error("User SSO token required for /me/joinedTeams");
     const data = await graphGet("/me/joinedTeams?$select=id,displayName,description", ssoToken);
@@ -455,6 +480,7 @@ export async function getJoinedTeams(ssoToken?: string | null): Promise<any[]> {
 }
 
 export async function getTeamChannels(teamId: string, ssoToken?: string | null): Promise<any[]> {
+  if (isConnectorMocked("ms-graph")) return msGraphMocks.mockTeamChannels(teamId);
   try {
     if (!ssoToken) throw new Error("User SSO token required for team channels");
     const data = await graphGet(`/teams/${teamId}/channels?$select=id,displayName,description,membershipType`, ssoToken);
@@ -471,6 +497,7 @@ export async function getTeamChannels(teamId: string, ssoToken?: string | null):
 }
 
 export async function getMyChats(top: number = 30, ssoToken?: string | null): Promise<any[]> {
+  if (isConnectorMocked("ms-graph")) return msGraphMocks.mockMyChats();
   try {
     if (!ssoToken) throw new Error("User SSO token required for /me/chats");
     const data = await graphGet(`/me/chats?$top=${top}&$expand=members&$select=id,topic,chatType,lastUpdatedDateTime`, ssoToken);
@@ -491,6 +518,7 @@ export async function getMyChats(top: number = 30, ssoToken?: string | null): Pr
 }
 
 export async function getChatMessages(chatId: string, top: number = 50, ssoToken?: string | null): Promise<any[]> {
+  if (isConnectorMocked("ms-graph")) return msGraphMocks.mockChatMessages(chatId);
   try {
     if (!ssoToken) throw new Error("User SSO token required for chat messages");
     const data = await graphGet(`/me/chats/${chatId}/messages?$top=${top}&$orderby=createdDateTime desc`, ssoToken);
@@ -510,6 +538,7 @@ export async function getChatMessages(chatId: string, top: number = 50, ssoToken
 }
 
 export async function getChannelMessages(teamId: string, channelId: string, top: number = 50, ssoToken?: string | null): Promise<any[]> {
+  if (isConnectorMocked("ms-graph")) return msGraphMocks.mockChatMessages(`${teamId}/${channelId}`);
   try {
     if (!ssoToken) throw new Error("User SSO token required for channel messages");
     const data = await graphGet(`/teams/${teamId}/channels/${channelId}/messages?$top=${top}`, ssoToken);
@@ -529,6 +558,7 @@ export async function getChannelMessages(teamId: string, channelId: string, top:
 }
 
 export async function sendChatMessage(chatId: string, content: string, ssoToken?: string | null): Promise<any> {
+  if (isConnectorMocked("ms-graph")) return { id: `mock-chat-msg-${Date.now()}`, body: { content, contentType: "text" } };
   if (!ssoToken) throw new Error("User SSO token required to send message");
   const res = await fetch(`https://graph.microsoft.com/v1.0/me/chats/${chatId}/messages`, {
     method: "POST",

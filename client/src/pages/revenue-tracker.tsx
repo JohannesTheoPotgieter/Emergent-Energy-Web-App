@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback } from "react";
 import { FinanceShell } from "@/components/layout/FinanceShell";
+import { RevenueGapTab } from "@/components/revenue/RevenueGapTab";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -98,6 +99,8 @@ interface MonthDetailItem {
   noRevenueLinked: boolean;
   revState: string;
   dataSource?: string;
+  dateSource?: string | null;
+  dateSourceLabel?: string | null;
   qbTransactionType?: string | null;
   qbDocNumber?: string | null;
   paymentReference?: string | null;
@@ -135,12 +138,20 @@ const ROW_DEFS: RowDef[] = [
   { key: "totalRevenue", label: "Revenue Planned", dataKey: "totalRevenue", colorClass: "text-emerald-700 font-semibold", group: "monthly", expandable: true, projectsKey: "revProjects" },
   { key: "budget", label: "Budget (Manual)", dataKey: "budget", editable: true, colorClass: "text-emerald-700/60", group: "monthly" },
   { key: "unrealisedRevenue", label: "Revenue Committed", dataKey: "unrealisedRevenue", colorClass: "text-amber-700 font-semibold", group: "monthly", expandable: true, projectsKey: "unrealisedProjects" },
+  // "Revenue Unrealised" row mirrors the COS grid layout (Planned → Committed →
+  // Unrealised → Realised). Revenue currently has no separate planned-vs-
+  // committed breakdown, so its Unrealised value equals the Committed total
+  // above (everything not yet realised). The row exists for look-and-feel
+  // parity with the COS grid; the value will diverge once revenue gains a
+  // finer-grained classification.
+  { key: "unrealisedRevenueRow", label: "Revenue Unrealised", dataKey: "unrealisedRevenue", colorClass: "text-amber-800 font-semibold", group: "monthly", expandable: true, projectsKey: "unrealisedProjects" },
   { key: "realisedRevenue", label: "Revenue Realised", dataKey: "realisedRevenue", colorClass: "text-foreground font-bold", group: "monthly", expandable: true, projectsKey: "realisedProjects" },
   { key: "qbRevenueActual", label: "Quickbooks Revenue", dataKey: "qbRevenueActual", colorClass: "text-emerald-600 font-semibold", group: "monthly", expandable: true, projectsKey: "qbRevenueProjects" },
   { key: "variance", label: "Budget Variance", dataKey: "variance", colorClass: "", group: "monthly", colorCoded: true },
   { key: "variancePct", label: "Budget Variance %", dataKey: "variancePct", colorClass: "", group: "monthly", colorCoded: true },
   { key: "ytdBudget", label: "YTD Planned (Budget)", dataKey: "ytdBudget", colorClass: "text-emerald-700", group: "ytd" },
   { key: "ytdUnrealised", label: "YTD Committed", dataKey: "ytdUnrealised", colorClass: "text-amber-700", group: "ytd" },
+  { key: "ytdUnrealisedRow", label: "YTD Unrealised", dataKey: "ytdUnrealised", colorClass: "text-amber-800", group: "ytd" },
   { key: "ytdRealised", label: "YTD Realised", dataKey: "ytdRealised", colorClass: "text-foreground font-bold", group: "ytd" },
   { key: "ytdQbRevenueActual", label: "YTD QB Revenue", dataKey: "ytdQbRevenueActual", colorClass: "text-emerald-600", group: "ytd" },
   { key: "ytdVariance", label: "YTD Variance", dataKey: "ytdVariance", colorClass: "", group: "ytd", colorCoded: true },
@@ -409,10 +420,6 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                               <p className="font-medium text-foreground">{item.invoiceNumber || "—"}</p>
                             </div>
                             <div>
-                              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-0.5">PO #</p>
-                              <p className="font-medium text-foreground">{item.poNumber || "—"}</p>
-                            </div>
-                            <div>
                               <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-0.5">Invoice Date</p>
                               <p className="font-medium text-foreground">{item.invoiceDate || "—"}</p>
                             </div>
@@ -432,6 +439,16 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                             <div>
                               <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-0.5">QB Doc / Trace</p>
                               <p className="font-medium text-foreground">{item.qbDocNumber || item.sourceTraceId || "—"}</p>
+                              {item.dateSource && (
+                                <Badge
+                                  variant="outline"
+                                  className={`mt-1 text-[9px] ${item.dateSource === "qb_txn_date_paid" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-amber-300 bg-amber-50 text-amber-700"}`}
+                                  title={item.dateSourceLabel ?? undefined}
+                                  data-testid={`badge-date-source-${item.id}`}
+                                >
+                                  {item.dateSource === "qb_txn_date_paid" ? "Issue date · paid" : "Issue date · proxy"}
+                                </Badge>
+                              )}
                             </div>
                           </div>
                         </td>
@@ -457,7 +474,7 @@ export default function RevenueTrackerPage() {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<EditingCell | null>(null);
   const [drawerMonth, setDrawerMonth] = useState<{ monthKey: string; monthLabel: string; defaultFilter?: "all" | "realised" | "unrealised" | "qb_actual"; defaultProject?: string } | null>(null);
-  const [activeTab, setActiveTab] = useState<"recon" | "trend">("recon");
+  const [activeTab, setActiveTab] = useState<"recon" | "trend" | "gap">("recon");
   const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
   const [projectSearch, setProjectSearch] = useState("");
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
@@ -491,7 +508,40 @@ export default function RevenueTrackerPage() {
     mutationFn: async (body: { trackerType: string; monthKey: string; budget?: string }) => {
       await apiRequest("POST", "/api/tracker-monthly", body);
     },
-    onSuccess: () => {
+    onMutate: async (body: { trackerType: string; monthKey: string; budget?: string }) => {
+      if (body.budget == null) return;
+      const newBudget = Number(body.budget);
+      if (!Number.isFinite(newBudget)) return;
+      await qc.cancelQueries({ queryKey: ["/api/revenue-tracker"] });
+      const previous = qc.getQueryData<RevenueTrackerResponse>(["/api/revenue-tracker"]);
+      if (!previous) return { previous };
+      const targetIdx = previous.months.findIndex((m) => m.monthKey === body.monthKey);
+      if (targetIdx < 0) return { previous };
+      const nextMonths = previous.months.map((m) => ({ ...m }));
+      nextMonths[targetIdx].budget = newBudget;
+      // Mirror server formula in finance-routes.ts: variance = totalRevenue - budget;
+      // ytdBudget cumulative; ytdVariance = ytdRevenue - ytdBudget.
+      let ytdBudget = 0;
+      let ytdRevenue = 0;
+      for (let i = 0; i < nextMonths.length; i++) {
+        const m = nextMonths[i];
+        ytdBudget += m.budget ?? 0;
+        ytdRevenue += m.totalRevenue ?? 0;
+        if (i >= targetIdx) {
+          m.variance = (m.totalRevenue ?? 0) - (m.budget ?? 0);
+          m.variancePct = (m.budget ?? 0) !== 0 ? (m.variance / (m.budget ?? 0)) * 100 : 0;
+          m.ytdBudget = ytdBudget;
+          m.ytdVariance = ytdRevenue - ytdBudget;
+          m.ytdVariancePct = ytdBudget !== 0 ? (m.ytdVariance / ytdBudget) * 100 : 0;
+        }
+      }
+      qc.setQueryData<RevenueTrackerResponse>(["/api/revenue-tracker"], { ...previous, months: nextMonths });
+      return { previous };
+    },
+    onError: (_err, _body, ctx) => {
+      if (ctx?.previous) qc.setQueryData(["/api/revenue-tracker"], ctx.previous);
+    },
+    onSettled: () => {
       qc.invalidateQueries({ queryKey: ["/api/revenue-tracker"] });
       invalidateDashboardQueries(qc);
     },
@@ -520,9 +570,71 @@ export default function RevenueTrackerPage() {
     [commitEdit],
   );
 
-  const months = data?.months ?? [];
+  const rawMonths = data?.months ?? [];
+  // When a project filter is active, derive each month's totals from its per-project
+  // breakdown arrays (filtered to selected projects) and rebuild YTD chains. Budget is
+  // tracked at the company level only, so it falls to 0 in the filtered view.
+  const months = useMemo<MonthData[]>(() => {
+    if (!isProjectFiltered) return rawMonths;
+    const sel = new Set(selectedProjects);
+    const sumProjects = (arr: ProjectBreakdown[] | undefined) =>
+      (arr ?? []).filter((p) => sel.has(p.projectName)).reduce((s, p) => s + (p.value ?? 0), 0);
+    const filterProjects = (arr: ProjectBreakdown[] | undefined) =>
+      (arr ?? []).filter((p) => sel.has(p.projectName));
+    let ytdRevenue = 0, ytdRealised = 0, ytdUnrealised = 0, ytdQbRevenueActual = 0;
+    const ytdBudget = 0;
+    return rawMonths.map((m) => {
+      const totalRevenue = sumProjects(m.revProjects);
+      const realisedRevenue = sumProjects(m.realisedProjects);
+      const unrealisedRevenue = sumProjects(m.unrealisedProjects);
+      const qbRevenueActual = sumProjects(m.qbRevenueProjects);
+      const budget = 0;
+      const variance = totalRevenue - budget;
+      const variancePct = 0;
+      ytdRevenue += totalRevenue;
+      ytdRealised += realisedRevenue;
+      ytdUnrealised += unrealisedRevenue;
+      ytdQbRevenueActual += qbRevenueActual;
+      const ytdVariance = ytdRevenue - ytdBudget;
+      const ytdVariancePct = 0;
+      return {
+        ...m,
+        totalRevenue,
+        realisedRevenue,
+        unrealisedRevenue,
+        qbRevenueActual,
+        qbVsAppVariance: qbRevenueActual - totalRevenue,
+        qbVsAppVariancePct: qbRevenueActual !== 0 ? ((qbRevenueActual - totalRevenue) / qbRevenueActual) * 100 : 0,
+        budget,
+        variance,
+        variancePct,
+        ytdRevenue,
+        ytdRealised,
+        ytdUnrealised,
+        ytdQbRevenueActual,
+        ytdBudget,
+        ytdVariance,
+        ytdVariancePct,
+        revProjects: filterProjects(m.revProjects),
+        realisedProjects: filterProjects(m.realisedProjects),
+        unrealisedProjects: filterProjects(m.unrealisedProjects),
+        qbRevenueProjects: filterProjects(m.qbRevenueProjects),
+        budgetProjects: filterProjects(m.budgetProjects),
+      };
+    });
+  }, [rawMonths, isProjectFiltered, selectedProjects]);
   const lastMonth = useMemo(() => (months.length ? months[months.length - 1] : null), [months]);
   const prevMonth = useMemo(() => (months.length > 1 ? months[months.length - 2] : null), [months]);
+
+  const fyTotals = useMemo(
+    () => ({
+      budget: months.reduce((s, m) => s + (m.budget ?? 0), 0),
+      planned: months.reduce((s, m) => s + (m.totalRevenue ?? 0), 0),
+      realised: months.reduce((s, m) => s + (m.realisedRevenue ?? 0), 0),
+      quickbooks: months.reduce((s, m) => s + (m.qbRevenueActual ?? 0), 0),
+    }),
+    [months],
+  );
 
   const projectNamesByRow = useMemo(() => {
     const result: Record<string, string[]> = {};
@@ -617,67 +729,47 @@ export default function RevenueTrackerPage() {
     </div>
   );
 
-  const renderKpiCard = (tab: RevTab) => {
-    const meta = TAB_META[tab];
-    const Icon = meta.icon;
-    const k = kpiByTab[tab];
-    const delta = k.lastValue - k.prevValue;
-    const deltaPct = k.prevValue !== 0 ? (delta / Math.abs(k.prevValue)) * 100 : 0;
-    const deltaPositive = delta >= 0;
-    const iconBg = tab === "realised" ? "bg-foreground/8 text-foreground" : tab === "committed" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700";
-    return (
-      <Card key={tab} className="border-border shadow-sm">
-        <CardContent className="p-3 sm:p-4">
-          <div className="flex items-center gap-2 mb-1.5">
-            <div className={`h-7 w-7 rounded-lg flex items-center justify-center ${iconBg}`}>
-              <Icon className="h-3.5 w-3.5" />
-            </div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">YTD {meta.label}</p>
-          </div>
-          <p className={`text-lg sm:text-xl font-bold font-mono tracking-tight ${meta.accent}`} data-testid={`text-ytd-${tab}-value`}>
-            {formatRand(k.ytdValue)}
-          </p>
-          <div className="flex items-center justify-between mt-1.5">
-            <div className="flex flex-col">
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Last mo.</span>
-              <span className="font-mono font-semibold text-xs">{formatRand(k.lastValue)}</span>
-              {prevMonth && (
-                <span className={`inline-flex items-center gap-0.5 text-[10px] font-medium ${deltaPositive ? "text-emerald-700" : "text-destructive"}`}>
-                  {deltaPositive ? <ArrowUpRight className="h-2.5 w-2.5" /> : <ArrowDownRight className="h-2.5 w-2.5" />}
-                  {Math.abs(deltaPct).toFixed(1)}%
-                </span>
-              )}
-            </div>
-            {renderSparkline(tab)}
-          </div>
-        </CardContent>
-      </Card>
-    );
+  type FyCardKey = "budget" | "planned" | "realised" | "quickbooks";
+  const FY_CARD_META: Record<FyCardKey, {
+    label: string;
+    icon: React.ComponentType<{ className?: string }>;
+    iconBg: string;
+    accent: string;
+    sparkColor: string;
+    monthField: keyof MonthData;
+  }> = {
+    budget: { label: "FY Budget", icon: Wallet, iconBg: "bg-emerald-50 text-emerald-700 border border-emerald-200", accent: "text-emerald-700", sparkColor: "#16a34a", monthField: "budget" },
+    planned: { label: "FY Planned", icon: ListChecks, iconBg: "bg-emerald-100 text-emerald-700", accent: "text-emerald-700", sparkColor: "#16a34a", monthField: "totalRevenue" },
+    realised: { label: "FY Realised", icon: CheckCircle2, iconBg: "bg-foreground/8 text-foreground", accent: "text-foreground", sparkColor: "#0f172a", monthField: "realisedRevenue" },
+    quickbooks: { label: "FY Quickbooks", icon: DollarSign, iconBg: "bg-emerald-50 text-emerald-700 border border-emerald-200", accent: "text-emerald-700", sparkColor: "#16a34a", monthField: "qbRevenueActual" },
   };
 
-  const renderQbKpiCard = () => {
-    const lastQb = lastMonth?.qbRevenueActual ?? 0;
-    const prevQb = prevMonth?.qbRevenueActual ?? 0;
-    const delta = lastQb - prevQb;
-    const deltaPct = prevQb !== 0 ? (delta / Math.abs(prevQb)) * 100 : 0;
+  const renderFyKpiCard = (key: FyCardKey) => {
+    const meta = FY_CARD_META[key];
+    const Icon = meta.icon;
+    const fyValue = fyTotals[key];
+    const lastValue = (lastMonth?.[meta.monthField] as number | undefined) ?? 0;
+    const prevValue = (prevMonth?.[meta.monthField] as number | undefined) ?? 0;
+    const delta = lastValue - prevValue;
+    const deltaPct = prevValue !== 0 ? (delta / Math.abs(prevValue)) * 100 : 0;
     const deltaPositive = delta >= 0;
-    const qbSparkData = months.map((m) => ({ x: m.monthKey, y: m.qbRevenueActual }));
+    const cardSpark = months.map((m) => ({ x: m.monthKey, y: (m[meta.monthField] as number | undefined) ?? 0 }));
     return (
-      <Card className="border-border shadow-sm">
+      <Card key={key} className="border-border shadow-sm">
         <CardContent className="p-3 sm:p-4">
           <div className="flex items-center gap-2 mb-1.5">
-            <div className="h-7 w-7 rounded-lg flex items-center justify-center bg-emerald-50 text-emerald-700 border border-emerald-200">
-              <DollarSign className="h-3.5 w-3.5" />
+            <div className={`h-7 w-7 rounded-lg flex items-center justify-center ${meta.iconBg}`}>
+              <Icon className="h-3.5 w-3.5" />
             </div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">YTD QuickBooks</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{meta.label}</p>
           </div>
-          <p className="text-lg sm:text-xl font-bold font-mono tracking-tight text-emerald-700" data-testid="text-ytd-qb-value">
-            {formatRand(ytdQbRev)}
+          <p className={`text-lg sm:text-xl font-bold font-mono tracking-tight ${meta.accent}`} data-testid={`text-fy-${key}-value`}>
+            {formatRand(fyValue)}
           </p>
           <div className="flex items-center justify-between mt-1.5">
             <div className="flex flex-col">
               <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Last mo.</span>
-              <span className="font-mono font-semibold text-xs">{formatRand(lastQb)}</span>
+              <span className="font-mono font-semibold text-xs">{formatRand(lastValue)}</span>
               {prevMonth && (
                 <span className={`inline-flex items-center gap-0.5 text-[10px] font-medium ${deltaPositive ? "text-emerald-700" : "text-destructive"}`}>
                   {deltaPositive ? <ArrowUpRight className="h-2.5 w-2.5" /> : <ArrowDownRight className="h-2.5 w-2.5" />}
@@ -687,8 +779,8 @@ export default function RevenueTrackerPage() {
             </div>
             <div className="h-10 w-28 sm:w-36">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={qbSparkData} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
-                  <Line type="monotone" dataKey="y" stroke="#16a34a" strokeWidth={1.5} dot={false} />
+                <LineChart data={cardSpark} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+                  <Line type="monotone" dataKey="y" stroke={meta.sparkColor} strokeWidth={1.5} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -783,7 +875,7 @@ export default function RevenueTrackerPage() {
                   {months.map((m) => {
                     const val = m[row.dataKey] as number;
                     const isEditingCell = editing?.field === row.key && editing?.monthKey === m.monthKey;
-                    if (row.editable && canEditRevenueTracker) {
+                    if (row.editable && canEditRevenueTracker && !isProjectFiltered) {
                       return (
                         <td key={m.monthKey} className="px-1 sm:px-2 py-1 sm:py-1.5 text-right">
                           {isEditingCell ? (
@@ -998,13 +1090,13 @@ export default function RevenueTrackerPage() {
 
           <div className="flex-1 min-w-0 space-y-3">
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3" data-testid="kpi-strip-revenue">
-              {renderKpiCard("planned")}
-              {renderKpiCard("committed")}
-              {renderKpiCard("realised")}
-              {renderQbKpiCard()}
+              {renderFyKpiCard("budget")}
+              {renderFyKpiCard("planned")}
+              {renderFyKpiCard("realised")}
+              {renderFyKpiCard("quickbooks")}
             </div>
 
-            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "recon" | "trend")}>
+            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "recon" | "trend" | "gap")}>
               <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
                 <TabsList className="bg-muted/60">
                   <TabsTrigger value="recon" className="data-[state=active]:bg-card gap-1.5" data-testid="tab-recon">
@@ -1014,6 +1106,10 @@ export default function RevenueTrackerPage() {
                   <TabsTrigger value="trend" className="data-[state=active]:bg-card gap-1.5" data-testid="tab-trend">
                     <LineChartIcon className="h-3.5 w-3.5" />
                     Trend
+                  </TabsTrigger>
+                  <TabsTrigger value="gap" className="data-[state=active]:bg-card gap-1.5" data-testid="tab-revenue-gap">
+                    <ListChecks className="h-3.5 w-3.5" />
+                    Tracker Gap
                   </TabsTrigger>
                 </TabsList>
 
@@ -1115,6 +1211,7 @@ export default function RevenueTrackerPage() {
                 </Card>
               </TabsContent>
               <TabsContent value="trend" className="mt-0">{renderTrend()}</TabsContent>
+              <TabsContent value="gap" className="mt-0"><RevenueGapTab /></TabsContent>
             </Tabs>
           </div>
         </div>

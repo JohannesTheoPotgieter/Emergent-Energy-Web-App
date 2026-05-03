@@ -423,6 +423,7 @@ export async function generatePmReportData(month: string) {
       description: r.description,
       priority: r.priority,
       status: r.status,
+      ownerUserId: r.ownerUserId ?? null,
       ownerName: r.ownerUserId ? (userMap.get(r.ownerUserId) || null) : null,
       dueDate: r.dueDate,
       mitigation: r.mitigationResponse,

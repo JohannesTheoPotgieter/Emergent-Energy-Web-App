@@ -46,7 +46,7 @@ const STATUS_DISPLAY: Record<string, string> = {
 
 export default function HandoverControlPage() {
   const { data, isLoading, error } = useQuery<{ items: any[] }>({
-    queryKey: ["/api/pd-pm-handover/control"],
+    queryKey: ["/api/engineering-pm-handover/control"],
   });
 
   const totals = useMemo(() => {
@@ -93,6 +93,9 @@ export default function HandoverControlPage() {
               const openRisks = countOpenRisks(formData);
               const daysToKickoff = daysUntil(row.kickoff_date);
               const readinessScore = row.readiness_score ?? 0;
+              const healthScore = typeof row.health_score === "number" ? row.health_score : null;
+              const missingInputs = Array.isArray(row.health_missing_inputs) ? row.health_missing_inputs : [];
+              const blockers = Array.isArray(row.health_blockers) ? row.health_blockers : [];
               const lessonsReviewed = row.lessons_reviewed === true;
               return (
                 <tr key={row.project_id} className={`border-t ${rowColour(row)}`}>
@@ -103,9 +106,18 @@ export default function HandoverControlPage() {
                   <td className="p-2"><Badge variant="outline" className="text-[10px]">{STATUS_DISPLAY[row.handover_status] || row.handover_status || 'Draft'}</Badge></td>
                   <td className="p-2">{days}d</td>
                   <td className="p-2">
-                    <span className={readinessScore === 100 ? "text-emerald-700" : readinessScore > 0 ? "text-amber-700" : "text-muted-foreground"}>
-                      {readinessScore}%
-                    </span>
+                    {row.health_not_enough_data ? (
+                      <div className="text-[11px] text-amber-700">
+                        <div className="font-medium">Not enough data</div>
+                        <div className="text-muted-foreground truncate max-w-[180px]" title={missingInputs.join(", ")}>
+                          Missing: {missingInputs.join(", ") || "—"}
+                        </div>
+                      </div>
+                    ) : (
+                      <span className={healthScore === 100 ? "text-emerald-700" : (healthScore ?? 0) > 0 ? "text-amber-700" : "text-muted-foreground"}>
+                        {healthScore ?? readinessScore}%
+                      </span>
+                    )}
                   </td>
                   <td className="p-2">{openRisks > 0 ? <span className="text-rose-600">{openRisks}</span> : "0"}</td>
                   <td className="p-2 whitespace-nowrap">{daysToKickoff !== null ? `${daysToKickoff}d` : '—'}</td>
@@ -113,10 +125,18 @@ export default function HandoverControlPage() {
                   <td className="p-2">{row.deliverables_complete ? 'Yes' : 'No'}</td>
                   <td className="p-2">{row.tracker_linked ? 'Yes' : 'No'}</td>
                   <td className="p-2">{row.execution_enabled ? 'Yes' : 'No'}</td>
-                  <td className="p-2 max-w-[150px] truncate" title={row.next_action || ''}>{row.next_action || '—'}</td>
-                  <td className="p-2">{row.action_owner || '—'}</td>
+                  <td className="p-2 max-w-[200px]" title={row.next_action || ''}>
+                    <div className="truncate">{row.next_action || '—'}</div>
+                    {blockers.length > 0 ? <div className="text-[10px] text-rose-700 truncate" title={blockers.join(", ")}>Blockers: {blockers.join(", ")}</div> : null}
+                  </td>
+                  <td className="p-2">
+                    <div>{row.action_owner || '—'}</div>
+                    <div className="text-[10px] text-muted-foreground">Updated {days}d ago</div>
+                  </td>
                   <td className="p-2 whitespace-nowrap">
                     <Link href={`/pd/handover/${row.project_id}`} className="text-blue-600 underline">Detail</Link>
+                    {" · "}
+                    <Link href={`/handover/${row.project_id}/live`} className="text-primary underline" data-testid={`live-room-${row.project_id}`}>Live room</Link>
                   </td>
                 </tr>
               );

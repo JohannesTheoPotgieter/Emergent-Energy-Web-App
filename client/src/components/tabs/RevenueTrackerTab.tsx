@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { invalidateProjectV2Queries } from "@/hooks/use-project-v2";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
@@ -18,6 +19,7 @@ import {
   Loader2, Search, DollarSign, TrendingUp, Activity, Target, X,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { FieldHint } from "@/components/ui/field-hint";
 
 interface RevenueTrackerTabProps {
   projectName: string;
@@ -93,9 +95,10 @@ const ROW_DEFS: {
   clickable?: boolean;
   editable?: boolean;
   colorCoded?: boolean;
+  hint?: string;
 }[] = [
   { key: "totalRevenue", label: "Revenue", dataKey: "totalRevenue", colorClass: "text-foreground font-bold", group: "monthly", clickable: true },
-  { key: "realisedRevenue", label: "Realised Revenue", dataKey: "realisedRevenue", colorClass: "text-emerald-700 font-bold", group: "monthly", clickable: true },
+  { key: "realisedRevenue", label: "Realised Revenue", dataKey: "realisedRevenue", colorClass: "text-emerald-700 font-bold", group: "monthly", clickable: true, hint: "Only recognised when payment receipt date is confirmed" },
   { key: "unrealisedRevenue", label: "Unrealised Revenue", dataKey: "unrealisedRevenue", colorClass: "text-amber-600 font-semibold", group: "monthly", clickable: true },
   { key: "budget", label: "Budget", dataKey: "budget", colorClass: "text-purple-600", group: "monthly", editable: true },
   { key: "variance", label: "Variance", dataKey: "variance", colorClass: "", group: "monthly", colorCoded: true },
@@ -292,6 +295,7 @@ export function RevenueTrackerTab({ projectName, projectId }: RevenueTrackerTabP
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["revenue-tracker-project", projectName] });
+      invalidateProjectV2Queries(qc, projectId ?? null);
     },
   });
 
@@ -523,7 +527,7 @@ export function RevenueTrackerTab({ projectName, projectId }: RevenueTrackerTabP
                         data-testid={`row-revenue-${row.key}`}
                       >
                         <td className={`sticky left-0 z-10 px-5 py-2.5 font-medium text-sm border-r border-slate-200 ${isYtd ? "bg-slate-50 pl-8 text-slate-500" : "bg-white text-slate-900"}`}>
-                          {row.label}
+                          {row.label}{row.hint ? <span className="ml-1 align-middle inline-flex"><FieldHint hint={row.hint} /></span> : null}
                         </td>
                         {months.map((m) => {
                           const val = m[row.dataKey] as number;

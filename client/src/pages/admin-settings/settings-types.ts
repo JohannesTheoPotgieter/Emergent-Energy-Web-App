@@ -32,9 +32,20 @@ export type UserSummary = {
   email: string;
   role: string;
   department?: string | null;
+  // Task #110 — admin-controlled active/inactive toggle. The API
+  // (GET /api/admin/users) always returns this field post-migration 0037,
+  // so it is required on the client type. `true` means the account can
+  // sign in; `false` blocks login at the LocalStrategy / bearer / session
+  // gates and at the Microsoft OAuth callback.
+  isActive: boolean;
 };
 
-export type AdminSettingsSection = "roles" | "users" | "visibility" | "audit";
+export type AdminSettingsSection = "roles" | "users" | "visibility" | "screens" | "audit";
+
+export interface ScreenSetting {
+  screenId: string;
+  isEnabled: boolean;
+}
 
 export type AdminRolesViewState = "loading" | "error" | "empty" | "ready";
 
@@ -133,7 +144,7 @@ export const ENTITY_DESCRIPTIONS: Record<string, string> = {
   create_project: "Create new project from lifecycle",
   pd_clients: "Clients list & client overview",
   pd_dashboard: "Project Development Dashboard — project development pipeline",
-  pd_tickets: "Project Development Tickets — development tickets & tracking",
+  pd_tickets: "Project Development — opportunity workflow & tracking",
   projects: "Project List — all projects summary table",
   execution_board: "Execution Dashboard — delivery KPIs & cards",
   deliverables: "Deliverables tracker across projects",
@@ -251,6 +262,7 @@ export const ENTITY_DESCRIPTIONS: Record<string, string> = {
   admin_processes: "Processes & SOPs — process documentation management",
   admin_templates: "Templates — phase & document template management",
   admin_recovery: "Recovery — system recovery tools",
+  company_team: "Company > Team — workforce directory and utilisation summary",
 };
 
 export const ENTITY_CATEGORIES: Record<string, { label: string; entities: string[] }> = {
@@ -260,7 +272,7 @@ export const ENTITY_CATEGORIES: Record<string, { label: string; entities: string
   },
   portfolio: {
     label: "Company",
-    entities: ["lifecycle", "create_project", "stage_lifecycle", "stage_gate", "stage_exceptions", "stage_dependencies", "stage_config", "stage_admin", "gate_override", "exception"],
+    entities: ["lifecycle", "company_team", "create_project", "stage_lifecycle", "stage_gate", "stage_exceptions", "stage_dependencies", "stage_config", "stage_admin", "gate_override", "exception"],
   },
   project_dev: {
     label: "Project Development",

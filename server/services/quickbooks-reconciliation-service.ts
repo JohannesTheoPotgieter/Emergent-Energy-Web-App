@@ -179,6 +179,366 @@ export function billRawToSummary(raw: any): QuickBooksBillSummary {
 }
 
 /**
+ * One row per QuickBooks Bill line. Used by the COS Tracker reconciliation
+ * report to surface QB bills that exist in the GL but were never captured
+ * in the project Excel trackers (the source of truth). READ-ONLY — this
+ * helper never writes to `normalized_cost_lines` or any other table.
+ *
+ * The project key on a QB bill line lives on either the line-level
+ * `ClassRef` (preferred — finance tags every project line with the project
+ * Class) or the bill-level `CustomerRef` (fallback — older bills booked
+ * via Customer instead of Class).
+ */
+export interface QuickBooksBillLineRow {
+  billId: string;
+  docNumber: string | null;
+  txnDate: string | null;
+  vendorName: string | null;
+  vendorId: string | null;
+  lineId: string | null;
+  lineNum: number | null;
+  /**
+   * The line subtotal in QB. QB Bill lines are typically stored ex-tax in
+   * `Amount` for AccountBasedExpenseLineDetail; we treat it as ex-VAT for
+   * comparison against `normalized_cost_lines.amount_ex_vat`. If the bill
+   * carries no `TxnTaxDetail`, this is the safest assumption.
+   */
+  lineAmountExVat: number | null;
+  classRefName: string | null;
+  classRefId: string | null;
+  customerRefName: string | null;
+  customerRefId: string | null;
+  accountRefName: string | null;
+  accountRefId: string | null;
+  description: string | null;
+}
+
+/**
+ * Extract one row per Bill line from a raw QB Bill payload. Skips lines
+ * that aren't `AccountBasedExpenseLineDetail` (e.g. SubTotal lines emitted
+ * by some QB UIs) and lines with a non-numeric Amount. Returns at least
+ * one synthetic header row when the bill has no usable Line[] so the
+ * caller can still see the bill in the unmapped bucket.
+ */
+export function billRawToLineRows(raw: any): QuickBooksBillLineRow[] {
+  const billId = String(raw?.Id ?? "");
+  const docNumber = raw?.DocNumber ?? null;
+  const txnDate = raw?.TxnDate ?? null;
+  const vendorName = raw?.VendorRef?.name ?? null;
+  const vendorId = raw?.VendorRef?.value ?? null;
+  const billLevelCustomer = raw?.CustomerRef ?? null;
+
+  const lines: any[] = Array.isArray(raw?.Line) ? raw.Line : [];
+  const out: QuickBooksBillLineRow[] = [];
+
+  for (const line of lines) {
+    const detailType = String(line?.DetailType ?? "");
+    if (detailType !== "AccountBasedExpenseLineDetail" && detailType !== "ItemBasedExpenseLineDetail") {
+      // Skip SubTotal / Description lines.
+      continue;
+    }
+    const detail =
+      line?.AccountBasedExpenseLineDetail ?? line?.ItemBasedExpenseLineDetail ?? {};
+    const amount = amountToNumber(line?.Amount);
+    out.push({
+      billId,
+      docNumber,
+      txnDate,
+      vendorName,
+      vendorId,
+      lineId: line?.Id ? String(line.Id) : null,
+      lineNum: typeof line?.LineNum === "number" ? line.LineNum : null,
+      lineAmountExVat: amount,
+      classRefName: detail?.ClassRef?.name ?? null,
+      classRefId: detail?.ClassRef?.value ?? null,
+      customerRefName: detail?.CustomerRef?.name ?? billLevelCustomer?.name ?? null,
+      customerRefId: detail?.CustomerRef?.value ?? billLevelCustomer?.value ?? null,
+      accountRefName: detail?.AccountRef?.name ?? null,
+      accountRefId: detail?.AccountRef?.value ?? null,
+      description: line?.Description ?? null,
+    });
+  }
+
+  // Header-only fallback so the bill still appears in the report even if
+  // we couldn't parse any usable lines (e.g. tax-only adjustment).
+  if (out.length === 0) {
+    out.push({
+      billId,
+      docNumber,
+      txnDate,
+      vendorName,
+      vendorId,
+      lineId: null,
+      lineNum: null,
+      lineAmountExVat: amountToNumber(raw?.TotalAmt),
+      classRefName: null,
+      classRefId: null,
+      customerRefName: billLevelCustomer?.name ?? null,
+      customerRefId: billLevelCustomer?.value ?? null,
+      accountRefName: null,
+      accountRefId: null,
+      description: raw?.PrivateNote ?? "(synthetic header — bill has no usable expense lines)",
+    });
+  }
+
+  return out;
+}
+
+// ===================== PROJECT RESOLVER =====================
+
+/**
+ * Normalise a project-name candidate (from QB Class/Customer or the app's
+ * project list) into a comparable key. Strips whitespace, lowercases,
+ * removes a trailing `_Tracker` / ` Tracker` suffix, and collapses to
+ * alphanumerics so " Mondi (Tracker)" and "mondi" match.
+ */
+export function normalizeProjectKey(value: string | null | undefined): string {
+  if (!value) return "";
+  return String(value)
+    .replace(/[\s_\-]*tracker\b/i, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
+export type QbProjectResolutionStrategy =
+  | "class_exact"
+  | "customer_exact"
+  | "class_substring"
+  | "customer_substring"
+  | "unmapped_class"
+  | "unmapped_no_class"
+  | "customer_override"
+  | "unmapped_customer"
+  | "unmapped_no_customer";
+
+export interface QbProjectResolution {
+  projectName: string | null;
+  strategy: QbProjectResolutionStrategy;
+  /** The raw QB tag we used to resolve (or attempted to). */
+  matchedFrom: string | null;
+}
+
+/**
+ * Build an in-memory resolver bound to a known project-name universe.
+ * The returned function is cheap to call per bill line.
+ *
+ * Strategy ladder:
+ *   1. `class_exact`    — normalised `classRefName` exactly equals a normalised project name
+ *   2. `customer_exact` — same, against `customerRefName`
+ *   3. `class_substring` — exactly one project name's normalised key is a
+ *                          substring of the normalised classRefName (or vice
+ *                          versa for short class tags). Flagged as fuzzy.
+ *   4. `customer_substring` — same against customerRefName
+ *   5. `unmapped_class` — has a class but nothing matched
+ *   6. `unmapped_no_class` — no class and customer didn't match either
+ */
+export function buildQbProjectResolver(projectNames: string[]): (input: {
+  classRefName: string | null;
+  customerRefName: string | null;
+}) => QbProjectResolution {
+  // Pre-compute normalised → canonical project name lookup. When two source
+  // names normalise to the same key (e.g. "Mondi" and "Mondi_Tracker"), we
+  // keep the longer/canonical form as the value.
+  const exactMap = new Map<string, string>();
+  for (const name of projectNames) {
+    const key = normalizeProjectKey(name);
+    if (!key) continue;
+    const existing = exactMap.get(key);
+    if (!existing || name.length > existing.length) exactMap.set(key, name);
+  }
+
+  // For substring strategy we need a stable list of (key, name) pairs.
+  const allKeys: { key: string; name: string }[] = [];
+  for (const [key, name] of exactMap.entries()) {
+    if (key.length >= 4) allKeys.push({ key, name }); // ignore 1-3 char keys
+  }
+  // Longest key first so "MEGA PARK P2" wins over "MEGA PARK".
+  allKeys.sort((a, b) => b.key.length - a.key.length);
+
+  function tryExact(raw: string | null): string | null {
+    const key = normalizeProjectKey(raw);
+    if (!key) return null;
+    return exactMap.get(key) ?? null;
+  }
+
+  function trySubstring(raw: string | null): string | null {
+    const key = normalizeProjectKey(raw);
+    // Conservative: only allow when the QB tag is at least 6 chars AND
+    // contains a project key as a substring (i.e. QB tag is *more specific*
+    // than the project name, e.g. QB="MondiPhase2" → "Mondi"). Reject the
+    // reverse direction (project name being a substring of the QB tag is
+    // inherently ambiguous when sibling projects share a prefix — e.g. QB
+    // tag "Mondi" must NOT silently resolve to "Mondi Park 2"). Always
+    // surfaced as `class_substring`/`customer_substring` so finance can
+    // confirm before the row is treated as a real tracker_gap.
+    if (!key || key.length < 6) return null;
+    const hits = allKeys.filter(({ key: pk }) => pk.length >= 5 && key.includes(pk));
+    if (hits.length === 0) return null;
+    const top = hits[0]!; // longest first by sort
+    const tieCount = hits.filter((h) => h.key.length === top.key.length).length;
+    return tieCount === 1 ? top.name : null;
+  }
+
+  return ({ classRefName, customerRefName }) => {
+    const classExact = tryExact(classRefName);
+    if (classExact) {
+      return { projectName: classExact, strategy: "class_exact", matchedFrom: classRefName };
+    }
+    const customerExact = tryExact(customerRefName);
+    if (customerExact) {
+      return {
+        projectName: customerExact,
+        strategy: "customer_exact",
+        matchedFrom: customerRefName,
+      };
+    }
+    const classSub = trySubstring(classRefName);
+    if (classSub) {
+      return { projectName: classSub, strategy: "class_substring", matchedFrom: classRefName };
+    }
+    const customerSub = trySubstring(customerRefName);
+    if (customerSub) {
+      return {
+        projectName: customerSub,
+        strategy: "customer_substring",
+        matchedFrom: customerRefName,
+      };
+    }
+    if (classRefName && classRefName.trim()) {
+      return { projectName: null, strategy: "unmapped_class", matchedFrom: classRefName };
+    }
+    return {
+      projectName: null,
+      strategy: "unmapped_no_class",
+      matchedFrom: customerRefName ?? null,
+    };
+  };
+}
+
+/**
+ * Revenue-side resolver — mirrors `buildQbProjectResolver` but inverts the
+ * priority: CUSTOMER first, CLASS as fallback. This matches how invoices are
+ * captured in QB (customer is primary; class is optional metadata).
+ *
+ * Strategy ladder for revenue:
+ *   1. `customer_exact`     — normalised customer == project name
+ *   2. `class_exact`        — fallback when customer didn't match
+ *   3. `customer_substring` — fuzzy customer match
+ *   4. `class_substring`    — fuzzy class fallback
+ *   5. `unmapped_customer`  — customer present but no resolution
+ *   6. `unmapped_no_customer` — no customer at all
+ */
+export function buildRevenueProjectResolver(projectNames: string[]): (input: {
+  classRefName: string | null;
+  customerRefName: string | null;
+}) => QbProjectResolution {
+  const exactMap = new Map<string, string>();
+  for (const name of projectNames) {
+    const key = normalizeProjectKey(name);
+    if (!key) continue;
+    const existing = exactMap.get(key);
+    if (!existing || name.length > existing.length) exactMap.set(key, name);
+  }
+  const allKeys: { key: string; name: string }[] = [];
+  for (const [key, name] of exactMap.entries()) {
+    if (key.length >= 4) allKeys.push({ key, name });
+  }
+  allKeys.sort((a, b) => b.key.length - a.key.length);
+
+  function tryExact(raw: string | null): string | null {
+    const key = normalizeProjectKey(raw);
+    if (!key) return null;
+    return exactMap.get(key) ?? null;
+  }
+  function trySubstring(raw: string | null): string | null {
+    const key = normalizeProjectKey(raw);
+    if (!key || key.length < 6) return null;
+    const hits = allKeys.filter(({ key: pk }) => pk.length >= 5 && key.includes(pk));
+    if (hits.length === 0) return null;
+    const top = hits[0]!;
+    const tieCount = hits.filter((h) => h.key.length === top.key.length).length;
+    return tieCount === 1 ? top.name : null;
+  }
+
+  return ({ classRefName, customerRefName }) => {
+    const customerExact = tryExact(customerRefName);
+    if (customerExact) {
+      return { projectName: customerExact, strategy: "customer_exact", matchedFrom: customerRefName };
+    }
+    const classExact = tryExact(classRefName);
+    if (classExact) {
+      return { projectName: classExact, strategy: "class_exact", matchedFrom: classRefName };
+    }
+    const customerSub = trySubstring(customerRefName);
+    if (customerSub) {
+      return { projectName: customerSub, strategy: "customer_substring", matchedFrom: customerRefName };
+    }
+    const classSub = trySubstring(classRefName);
+    if (classSub) {
+      return { projectName: classSub, strategy: "class_substring", matchedFrom: classRefName };
+    }
+    if (customerRefName && customerRefName.trim()) {
+      return { projectName: null, strategy: "unmapped_customer", matchedFrom: customerRefName };
+    }
+    return { projectName: null, strategy: "unmapped_no_customer", matchedFrom: classRefName ?? null };
+  };
+}
+
+/**
+ * Rank candidate project mappings for an unmapped QB customer using:
+ *  - normalised name distance (longest common substring ratio)
+ *  - amount-window co-occurrence with existing revenue lines
+ *  - history of prior overrides for the same customer
+ */
+export interface RevenueProjectSuggestion {
+  projectName: string;
+  score: number;
+  reasons: string[];
+}
+
+export function rankRevenueProjectSuggestions(args: {
+  customerName: string;
+  customerAmounts: number[];
+  projectNames: string[];
+  revenueLinesByProjectKey: Map<string, { amountExVat: number | string | null }[]>;
+  priorOverridesForCustomer: { projectName: string }[];
+}): RevenueProjectSuggestion[] {
+  const candidates = new Map<string, { score: number; reasons: string[] }>();
+  const custKey = normalizeProjectKey(args.customerName);
+
+  function bump(project: string, delta: number, reason: string) {
+    const slot = candidates.get(project) ?? { score: 0, reasons: [] };
+    slot.score += delta;
+    slot.reasons.push(reason);
+    candidates.set(project, slot);
+  }
+
+  for (const o of args.priorOverridesForCustomer) bump(o.projectName, 100, "prior override for this customer");
+
+  for (const p of args.projectNames) {
+    const pKey = normalizeProjectKey(p);
+    if (!pKey) continue;
+    if (custKey === pKey) bump(p, 80, "exact name match");
+    else if (custKey.includes(pKey) || pKey.includes(custKey)) {
+      const overlap = Math.min(custKey.length, pKey.length) / Math.max(custKey.length, pKey.length);
+      bump(p, Math.round(40 * overlap), `name overlap ${(overlap * 100).toFixed(0)}%`);
+    }
+    const lines = args.revenueLinesByProjectKey.get(pKey) ?? [];
+    let amountHits = 0;
+    for (const a of args.customerAmounts) {
+      if (lines.some((l) => Math.abs(Number(l.amountExVat ?? 0) - a) <= 1)) amountHits += 1;
+    }
+    if (amountHits > 0) bump(p, 10 * amountHits, `${amountHits} amount(s) match within R1`);
+  }
+
+  return [...candidates.entries()]
+    .map(([projectName, s]) => ({ projectName, score: s.score, reasons: s.reasons }))
+    .filter((s) => s.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3);
+}
+
+/**
  * Parse a QB P&L report (with summarize_column_by=Month) and extract the
  * "Cost of Goods Sold" (COGS) section totals per month.
  * Returns a Map of monthKey ("YYYY-MM") → COS amount (number).
@@ -1292,6 +1652,91 @@ export function invoiceRawToSummary(raw: any): QuickBooksInvoiceSummary {
     customerName: raw?.CustomerRef?.name ?? null,
     customerId: raw?.CustomerRef?.value ?? null,
   };
+}
+
+/**
+ * One row per QuickBooks Invoice line. Mirrors `billRawToLineRows` for the
+ * revenue side — used by the Revenue Tracker Gap report to surface QB
+ * invoices that exist in the GL but were never captured in the project
+ * trackers (the source of truth). READ-ONLY — this never mutates QB or app
+ * state and never modifies `normalized_revenue_lines`.
+ *
+ * Returns one synthetic header row when the invoice has no usable Line[] so
+ * the caller can still see the invoice in the unmapped bucket.
+ */
+export interface QuickBooksInvoiceLineRow {
+  invoiceId: string;
+  docNumber: string | null;
+  txnDate: string | null;
+  customerName: string | null;
+  customerId: string | null;
+  lineId: string | null;
+  lineNum: number | null;
+  lineAmountExVat: number | null;
+  classRefName: string | null;
+  classRefId: string | null;
+  itemRefName: string | null;
+  itemRefId: string | null;
+  description: string | null;
+  balance: number | null;
+}
+
+export function invoiceRawToLineRows(raw: any): QuickBooksInvoiceLineRow[] {
+  const invoiceId = String(raw?.Id ?? "");
+  const docNumber = raw?.DocNumber ?? null;
+  const txnDate = raw?.TxnDate ?? null;
+  const customerName = raw?.CustomerRef?.name ?? null;
+  const customerId = raw?.CustomerRef?.value ?? null;
+  const balance = amountToNumber(raw?.Balance);
+
+  const lines: any[] = Array.isArray(raw?.Line) ? raw.Line : [];
+  const out: QuickBooksInvoiceLineRow[] = [];
+
+  for (const line of lines) {
+    const detailType = String(line?.DetailType ?? "");
+    if (detailType !== "SalesItemLineDetail" && detailType !== "GroupLineDetail") {
+      continue;
+    }
+    const detail = line?.SalesItemLineDetail ?? line?.GroupLineDetail ?? {};
+    const amount = amountToNumber(line?.Amount);
+    out.push({
+      invoiceId,
+      docNumber,
+      txnDate,
+      customerName,
+      customerId,
+      lineId: line?.Id ? String(line.Id) : null,
+      lineNum: typeof line?.LineNum === "number" ? line.LineNum : null,
+      lineAmountExVat: amount,
+      classRefName: detail?.ClassRef?.name ?? null,
+      classRefId: detail?.ClassRef?.value ?? null,
+      itemRefName: detail?.ItemRef?.name ?? null,
+      itemRefId: detail?.ItemRef?.value ?? null,
+      description: line?.Description ?? null,
+      balance,
+    });
+  }
+
+  if (out.length === 0) {
+    out.push({
+      invoiceId,
+      docNumber,
+      txnDate,
+      customerName,
+      customerId,
+      lineId: null,
+      lineNum: null,
+      lineAmountExVat: amountToNumber(raw?.TotalAmt),
+      classRefName: null,
+      classRefId: null,
+      itemRefName: null,
+      itemRefId: null,
+      description: raw?.PrivateNote ?? "(synthetic header — invoice has no usable sales lines)",
+      balance,
+    });
+  }
+
+  return out;
 }
 
 export function revenueLineToSummary(row: NormalizedRevenueLine): AppRevenueLineSummary {

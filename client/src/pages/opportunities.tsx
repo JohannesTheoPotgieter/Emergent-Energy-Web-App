@@ -1,4 +1,4 @@
-import { useMemo, useReducer, useState } from "react";
+import { useEffect, useMemo, useReducer, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { usePermission } from "@/hooks/use-permissions";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import {
   AlertCircle,
   AlertTriangle,
@@ -40,12 +40,20 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { OPPORTUNITY_INTAKE_VIEW_ROLES } from "@shared/roles/pd-roles";
+import { PHASE_LABELS } from "@shared/phases";
 import { statusColorClasses, priorityColorClasses } from "@/lib/status-colors";
 import { useTablePagination } from "@/hooks/use-table-pagination";
 import { TablePagination } from "@/components/ui/table-pagination";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ExportDropdown } from "@/components/ui/export-dropdown";
 import { PD_REQUEST_TYPES_FILTERABLE } from "@/lib/pd/request-types";
+import { OpportunityDrawer, OpportunityDetailBody } from "@/components/opportunities/OpportunityDrawer";
+import { OpportunitiesCalendar } from "@/components/opportunities/OpportunityViews";
+import { useBreakpoint } from "@/hooks/use-breakpoint";
+import { X, Link2 } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { LayoutList, CalendarDays } from "lucide-react";
+import { pdStageLifecycleLabel } from "@/lib/pdStageLifecycle";
 
 // App-phase label: capitalizes the stored stage value so the column reads
 // "Qualification" instead of "qualification". These are the values produced
@@ -66,15 +74,83 @@ interface WorkingOpportunityRow {
   pipedriveDealId: string | null;
   orgClientName: string | null;
   dealOwner: string | null;
+  projectDeveloper: string | null;
+  projectDeveloperOverridden: boolean;
   stage: string | null;
   status: string | null;
   siteLocation: string | null;
+  province: string | null;
+  fundingType: string | null;
+  estimatedValue: number | null;
+  estimatedKwp: number | null;
+  nextActivityDate: string | null;
+  nextActivitySubject: string | null;
   hasLinkedClient: boolean;
   hasLinkedProject: boolean;
   linkedProjectCount: number;
+  linkedProjectId: number | null;
+  linkedProjectName: string | null;
   existingEngineeringTicketCount: number;
+  openEngineeringTaskCount: number;
+  closedEngineeringTaskCount: number;
+  oldestOpenEngineeringAt: string | null;
+  lastTicketClientId: number | null;
+  lastTicketProjectId: number | null;
   lastUpdated: string | null;
   signedDate?: string | null;
+  expectedCloseDate?: string | null;
+}
+
+const FUNDING_LABELS: Record<string, string> = {
+  self_funded: "Self-funded",
+  third_party: "3rd-party",
+  blended: "Blended",
+  PPA: "PPA",
+  EPC: "EPC",
+  lease: "Lease",
+  hybrid: "Hybrid",
+};
+
+function fundingLabel(value: string | null | undefined): string {
+  if (!value) return "—";
+  return FUNDING_LABELS[value] ?? value;
+}
+
+function formatZAR(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return "—";
+  if (Math.abs(n) >= 1_000_000) return `R ${(n / 1_000_000).toFixed(1)}M`;
+  if (Math.abs(n) >= 1_000) return `R ${(n / 1_000).toFixed(0)}k`;
+  return `R ${n.toFixed(0)}`;
+}
+
+function formatRelative(d: Date): string {
+  const ms = Date.now() - d.getTime();
+  const sec = Math.max(0, Math.round(ms / 1000));
+  if (sec < 60) return "just now";
+  const min = Math.round(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.round(hr / 24);
+  return `${day}d ago`;
+}
+
+function daysSince(iso: string | null): number | null {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return null;
+  const ms = Date.now() - t;
+  if (ms < 0) return 0;
+  return Math.floor(ms / (1000 * 60 * 60 * 24));
+}
+
+function formatDate(s: string | null | undefined): string {
+  if (!s) return "—";
+  try {
+    return new Date(s).toLocaleDateString("en-ZA", { day: "2-digit", month: "short", year: "2-digit" });
+  } catch {
+    return "—";
+  }
 }
 
 type MappingMode = "existing_existing" | "existing_new" | "new_new";
@@ -131,6 +207,13 @@ interface DialogState {
   mappingWarnings: string[];
   resolvedClientId: number | null;
   resolvedProjectId: number | null;
+  /**
+   * When `true`, the dialog opens straight to the "add ticket" form,
+   * pre-populating `resolvedClientId`/`resolvedProjectId` from the
+   * opportunity's most recent existing ticket. Mapping is suppressed
+   * because the user has already mapped the deal at least once.
+   */
+  skipMapping: boolean;
   ticketMode: "phase_template" | "custom";
   selectedTemplateId: string;
   templateBaseDueDate: string;
@@ -140,6 +223,14 @@ interface DialogState {
   customDueDate: string;
   customPriority: string;
   customRequiredOutput: string;
+  // Operational metadata — mirrors PD ticket fields so this in-dialog
+  // form is the canonical "manual ticket" surface.
+  customFundingType: string;
+  customSizeKwp: string;
+  customProvince: string;
+  customGpsCoordinates: string;
+  customBatteriesNeeded: boolean;
+  customBatterySize: string;
 }
 
 const DIALOG_INITIAL: DialogState = {
@@ -152,6 +243,7 @@ const DIALOG_INITIAL: DialogState = {
   mappingWarnings: [],
   resolvedClientId: null,
   resolvedProjectId: null,
+  skipMapping: false,
   ticketMode: "phase_template",
   selectedTemplateId: "",
   templateBaseDueDate: "",
@@ -161,7 +253,91 @@ const DIALOG_INITIAL: DialogState = {
   customDueDate: "",
   customPriority: "Medium",
   customRequiredOutput: "",
+  customFundingType: "",
+  customSizeKwp: "",
+  customProvince: "",
+  customGpsCoordinates: "",
+  customBatteriesNeeded: false,
+  customBatterySize: "",
 };
+
+/**
+ * Engineering tickets cell for the working list.
+ *
+ * Layout:
+ *   [open]/[closed] · [Nd]
+ * where:
+ *   - open = open ticket count, emerald pill (links to project if linked)
+ *   - closed = total closed (Completed/Cancelled) tickets, slate
+ *   - Nd = days since the oldest still-open ticket was created (in-progress age)
+ *
+ * Empty state: a single dim "·" centered in the cell.
+ */
+function EngCell({ row }: { row: WorkingOpportunityRow }) {
+  const open = row.openEngineeringTaskCount;
+  const closed = row.closedEngineeringTaskCount;
+  const total = open + closed;
+
+  if (total === 0) {
+    return <span className="text-slate-300" aria-label="No engineering tickets">·</span>;
+  }
+
+  const ageDays = daysSince(row.oldestOpenEngineeringAt);
+  const ageLabel = open > 0 && ageDays != null ? `${ageDays}d` : null;
+
+  const openPill = row.linkedProjectName ? (
+    <Link
+      href={`/project/${encodeURIComponent(row.linkedProjectName)}`}
+      onClick={(e) => e.stopPropagation()}
+      title={`Open project ${row.linkedProjectName} • ${open} open ticket${open === 1 ? "" : "s"}`}
+      data-testid={`link-eng-project-${row.id}`}
+      className={`inline-flex items-center justify-center min-w-[22px] h-5 px-1.5 rounded-full text-[11px] font-semibold tabular-nums ${
+        open > 0 ? "bg-emerald-600 text-white hover:bg-emerald-700 hover:shadow" : "bg-slate-100 text-slate-500"
+      }`}
+    >
+      {open}
+    </Link>
+  ) : (
+    <span
+      className={`inline-flex items-center justify-center min-w-[22px] h-5 px-1.5 rounded-full text-[11px] font-semibold tabular-nums ${
+        open > 0 ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-500"
+      }`}
+      title={open > 0 ? `${open} open engineering ticket${open === 1 ? "" : "s"}` : "No open tickets"}
+    >
+      {open}
+    </span>
+  );
+
+  return (
+    <span className="inline-flex items-center gap-1 text-[11px] tabular-nums">
+      {openPill}
+      <span className="text-slate-400">/</span>
+      <span
+        className="text-slate-600"
+        title={`${closed} closed (Completed or Cancelled)`}
+        data-testid={`text-eng-closed-${row.id}`}
+      >
+        {closed}
+      </span>
+      {ageLabel ? (
+        <>
+          <span className="text-slate-300">·</span>
+          <span
+            className={
+              ageDays! >= 14
+                ? "text-amber-700 font-medium"
+                : "text-slate-500"
+            }
+            title={`Oldest open ticket is ${ageDays}d old`}
+            data-testid={`text-eng-age-${row.id}`}
+          >
+            {ageLabel}
+          </span>
+        </>
+      ) : null}
+    </span>
+  );
+}
 
 export default function OpportunitiesPage() {
   const { user } = useAuth();
@@ -174,6 +350,34 @@ export default function OpportunitiesPage() {
   const roleIsPdApproved = (OPPORTUNITY_INTAKE_VIEW_ROLES as readonly string[]).includes(role);
   const canView = canViewEntity && roleIsPdApproved;
 
+  // Unified drawer (2026-04-20 merge) — opens for any row click and
+  // surfaces CRM (Pipedrive) + PD shadow + Convert-to-Project together.
+  const [drawerOppId, setDrawerOppId] = useState<number | null>(null);
+  const { isDesktop } = useBreakpoint();
+
+  // Deep-link support: PD Dashboard links use /opportunities?open={id}
+  // to jump straight to a specific deal. Read once on mount, then strip
+  // the param so the URL doesn't pin the drawer permanently.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const raw = params.get("open");
+    const id = raw ? Number(raw) : NaN;
+    if (Number.isFinite(id) && id > 0) {
+      setDrawerOppId(id);
+      params.delete("open");
+      const qs = params.toString();
+      const next = window.location.pathname + (qs ? `?${qs}` : "");
+      window.history.replaceState(null, "", next);
+    }
+    // run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Pipedrive "last synced" indicator — driven entirely client-side from
+  // the most recent successful pull.
+  const [lastPullAt, setLastPullAt] = useState<Date | null>(null);
+
   const [dlg, updateDlg] = useReducer(
     (prev: DialogState, action: Partial<DialogState> | "reset") =>
       action === "reset" ? DIALOG_INITIAL : { ...prev, ...action },
@@ -181,89 +385,35 @@ export default function OpportunitiesPage() {
   );
   const mappingResolved = dlg.resolvedClientId != null && dlg.resolvedProjectId != null;
 
-  // ---- PD Tickets section state (merged from the retired /pd/tickets page) ----
-  const { allowed: canDeleteTicket } = usePermission("pd_tickets", "edit");
-  const [ticketSearch, setTicketSearch] = useState("");
-  const [ticketStatusFilter, setTicketStatusFilter] = useState("all");
-  const [ticketPriorityFilter, setTicketPriorityFilter] = useState("all");
-  const [ticketTypeFilter, setTicketTypeFilter] = useState("all");
-  const [deleteTarget, setDeleteTarget] = useState<{
-    ticket: { id: number; projectSiteName: string | null };
-    taskTotal: number;
-  } | null>(null);
+  // Search + sort UI state for the List view.
+  type SortKey = "dealName" | "stage" | "projectDeveloper" | "province" | "estimatedKwp" | "estimatedValue" | "expectedCloseDate" | "nextActivityDate" | "openEngineeringTaskCount";
+  type RiskFilter = "stale-30" | "stale-60" | "high-value-quiet" | "overdue-followups" | null;
+  const [searchTerm, setSearchTerm] = useState("");
+  const [sortKey, setSortKey] = useState<SortKey>("expectedCloseDate");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
-  const { data: ticketStats } = useQuery<{
-    total: number;
-    active: number;
-    overdue: number;
-    dueThisWeek: number;
-    onHold: number;
-    completed: number;
-  }>({
-    queryKey: ["/api/pd/dashboard"],
-    queryFn: async () => {
-      const res = await apiRequest("GET", "/api/pd/dashboard");
-      if (!res.ok) throw new Error(`Failed to load PD stats (${res.status})`);
-      return res.json();
-    },
-    enabled: canView,
+  // Risk-signal filter from PD dashboard drill-ins. Read once on mount
+  // from ?filter= query param so /opportunities?filter=stale-30 etc.
+  // land on the filtered view.
+  const [riskFilter, setRiskFilter] = useState<RiskFilter>(() => {
+    if (typeof window === "undefined") return null;
+    const raw = new URLSearchParams(window.location.search).get("filter");
+    if (raw === "stale-30" || raw === "stale-60" || raw === "high-value-quiet" || raw === "overdue-followups") {
+      return raw;
+    }
+    return null;
   });
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
 
-  const {
-    data: ticketRows = [],
-    isLoading: ticketsLoading,
-    isError: ticketsError,
-    error: ticketsErrorObj,
-    refetch: refetchTickets,
-  } = useQuery<
-    Array<{
-      ticket: {
-        id: number;
-        projectSiteName: string | null;
-        requestType: string;
-        priority: string;
-        status: string;
-        dueDate: string | null;
-        createdAt: string | null;
-        tasksSpawnedAt: string | null;
-      };
-      clientName: string | null;
-      projectName: string | null;
-      developerName: string | null;
-      designerName: string | null;
-      taskTotal: number;
-      taskCompleted: number;
-    }>
-  >({
-    queryKey: ["/api/pd/tickets"],
-    queryFn: async () => {
-      const res = await apiRequest("GET", "/api/pd/tickets");
-      if (!res.ok) throw new Error(`Failed to load PD tickets (${res.status})`);
-      return res.json();
-    },
-    enabled: canView,
-    retry: 1,
-  });
-
-  const deleteTicketMutation = useMutation({
-    mutationFn: async (id: number) => {
-      const res = await apiRequest("DELETE", `/api/pd/tickets/${id}`);
-      const body = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(body?.error || `Delete failed (${res.status})`);
-      return body as { deletedTaskCount?: number };
-    },
-    onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/pd/tickets"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/pd/dashboard"] });
-      toast({
-        title: "Ticket deleted",
-        description: `Ticket and ${result?.deletedTaskCount || 0} linked engineering task(s) removed. Project and client were kept.`,
-      });
-      setDeleteTarget(null);
-    },
-    onError: (e: Error) =>
-      toast({ title: "Delete failed", description: e.message, variant: "destructive" }),
-  });
+  // (Legacy PD Tickets section state was removed 2026-04-20 — replaced by
+  // the unified OpportunityDrawer which fetches per-row /workflow on open.)
 
   const { data = [], isLoading, isError, error, refetch } = useQuery<WorkingOpportunityRow[]>({
     queryKey: ["/api/opportunities/working"],
@@ -294,6 +444,14 @@ export default function OpportunitiesPage() {
     },
     enabled: !!dlg.target?.id,
   });
+
+  // If templates are empty, force the dialog into "custom" mode so the
+  // user isn't shown a dropdown with nothing to pick.
+  useEffect(() => {
+    if (dlg.target?.id && phaseTemplates.length === 0 && dlg.ticketMode === "phase_template") {
+      updateDlg({ ticketMode: "custom" });
+    }
+  }, [dlg.target?.id, phaseTemplates.length, dlg.ticketMode]);
 
   // Scope metadata for the "Pull from Pipedrive" button. The server
   // derives `scope` from the caller's role — COO/CEO/CCO get the
@@ -361,6 +519,7 @@ export default function OpportunitiesPage() {
       });
       queryClient.invalidateQueries({ queryKey: ["/api/opportunities/working"] });
       queryClient.invalidateQueries({ queryKey: ["/api/opportunities"] });
+      setLastPullAt(new Date());
     },
     onError: (err: Error) => {
       toast({ title: "Pipedrive pull failed", description: err.message, variant: "destructive" });
@@ -414,6 +573,17 @@ export default function OpportunitiesPage() {
         body.phaseTemplateId = dlg.selectedTemplateId ? Number(dlg.selectedTemplateId) : undefined;
         body.templateBaseDueDate = dlg.templateBaseDueDate || undefined;
       } else {
+        // Inline required-field check so users see a friendly inline
+        // error rather than a generic "Bad Request" toast.
+        const missing: string[] = [];
+        if (!dlg.customTitle.trim()) missing.push("Title");
+        if (!dlg.customPhase.trim()) missing.push("Phase");
+        if (!dlg.customDescriptionScope.trim()) missing.push("Description / Scope");
+        if (!dlg.customDueDate) missing.push("Due date");
+        if (!dlg.customRequiredOutput.trim()) missing.push("Required output");
+        if (missing.length > 0) {
+          throw new Error(`Please fill in: ${missing.join(", ")}`);
+        }
         body.customTicket = {
           title: dlg.customTitle.trim(),
           phase: dlg.customPhase.trim(),
@@ -421,11 +591,34 @@ export default function OpportunitiesPage() {
           dueDate: dlg.customDueDate,
           priority: dlg.customPriority,
           requiredOutput: dlg.customRequiredOutput.trim(),
+          ...(dlg.customFundingType.trim() ? { fundingType: dlg.customFundingType.trim() } : {}),
+          ...(dlg.customSizeKwp.trim() ? { sizeKwp: dlg.customSizeKwp.trim() } : {}),
+          ...(dlg.customProvince.trim() ? { province: dlg.customProvince.trim() } : {}),
+          ...(dlg.customGpsCoordinates.trim() ? { gpsCoordinates: dlg.customGpsCoordinates.trim() } : {}),
+          batteriesNeeded: dlg.customBatteriesNeeded,
+          ...(dlg.customBatterySize.trim() ? { batterySize: dlg.customBatterySize.trim() } : {}),
         };
       }
       const res = await apiRequest("POST", `/api/opportunities/${dlg.target.id}/create-engineering-tickets`, body);
       const payload = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(payload?.error || "Failed to create engineering tickets");
+      if (!res.ok) {
+        // Extract field-level Zod messages from validateBody's
+        // `details` envelope so the toast tells the user exactly which
+        // fields are wrong instead of just "Bad Request".
+        const fieldErrors = payload?.details?.fieldErrors;
+        const formErrors = payload?.details?.formErrors;
+        const fieldMsgs: string[] = [];
+        if (fieldErrors && typeof fieldErrors === "object") {
+          for (const [k, v] of Object.entries(fieldErrors)) {
+            if (Array.isArray(v) && v.length > 0) fieldMsgs.push(`${k}: ${(v as string[]).join("; ")}`);
+          }
+        }
+        if (Array.isArray(formErrors) && formErrors.length > 0) fieldMsgs.push(...formErrors);
+        const msg = fieldMsgs.length > 0
+          ? fieldMsgs.join(" | ")
+          : payload?.error || `Failed to create engineering tickets (HTTP ${res.status})`;
+        throw new Error(msg);
+      }
       return payload;
     },
     onSuccess: (payload: Record<string, unknown>) => {
@@ -447,51 +640,121 @@ export default function OpportunitiesPage() {
     },
   });
 
-  // Safety net: if upstream filtering drifts, never render terminal deals in
-  // this active working view.
-  const activeRows = useMemo(
-    () => data.filter((row) => !hasTerminalMarker(row.status) && !hasTerminalMarker(row.stage) && !row.signedDate),
-    [data],
-  );
+  // The server (`server/lib/opportunity-working-filter.ts`) is the
+  // authoritative gate for which deals appear here — terminal status
+  // and signed date exclude. Linked-to-project is intentionally NOT
+  // a hide-reason any more (the row stays visible with a project
+  // chip). We re-apply the same checks client-side as a defensive
+  // safety net (cached responses, mid-flight mutations, role-stale
+  // data); in DEV we log when the safety net actually trips so any
+  // drift between client/server is visible. See review item C1
+  // (2026-04-21) and Task #55 (2026-04-23).
+  const activeRows = useMemo(() => {
+    const filtered = data.filter(
+      (row) =>
+        !hasTerminalMarker(row.status) &&
+        !hasTerminalMarker(row.stage) &&
+        !row.signedDate,
+    );
+    if (import.meta.env.DEV && filtered.length !== data.length) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[opportunities] client safety-net dropped ${data.length - filtered.length} row(s) the server returned — check isActivePdWorkingOpportunity().`,
+      );
+    }
+    return filtered;
+  }, [data]);
 
-  // Filtered + sorted PD tickets (overdue first).
-  const filteredTickets = useMemo(() => {
-    const today = new Date().toISOString().split("T")[0];
-    return ticketRows
-      .filter((row) => {
-        const t = row.ticket;
-        if (ticketStatusFilter !== "all" && t.status !== ticketStatusFilter) return false;
-        if (ticketPriorityFilter !== "all" && t.priority !== ticketPriorityFilter) return false;
-        if (ticketTypeFilter !== "all" && t.requestType !== ticketTypeFilter) return false;
-        if (ticketSearch) {
-          const term = ticketSearch.toLowerCase();
-          return (
-            (t.projectSiteName || "").toLowerCase().includes(term) ||
-            (row.clientName || "").toLowerCase().includes(term) ||
-            (row.projectName || "").toLowerCase().includes(term) ||
-            (row.developerName || "").toLowerCase().includes(term)
-          );
+  // Apply risk-signal filter (from PD dashboard drill-ins) on top of
+  // active rows. Keeps activeRows unchanged so the Kanban / Calendar
+  // tabs stay unaffected by this filter.
+  const riskFilteredRows = useMemo(() => {
+    if (!riskFilter) return activeRows;
+    const now = Date.now();
+    const MS_PER_DAY = 86_400_000;
+    const HIGH_VALUE_THRESHOLD = 500_000; // R500k+ = high value
+    return activeRows.filter((row) => {
+      switch (riskFilter) {
+        case "stale-30": {
+          if (!row.lastUpdated) return true; // never updated = definitely stale
+          return now - new Date(row.lastUpdated).getTime() > 30 * MS_PER_DAY;
         }
-        return true;
-      })
-      .sort((a, b) => {
-        const aOverdue =
-          !!a.ticket.dueDate &&
-          a.ticket.dueDate < today &&
-          a.ticket.status !== "Completed" &&
-          a.ticket.status !== "Cancelled";
-        const bOverdue =
-          !!b.ticket.dueDate &&
-          b.ticket.dueDate < today &&
-          b.ticket.status !== "Completed" &&
-          b.ticket.status !== "Cancelled";
-        if (aOverdue && !bOverdue) return -1;
-        if (!aOverdue && bOverdue) return 1;
-        return 0;
-      });
-  }, [ticketRows, ticketSearch, ticketStatusFilter, ticketPriorityFilter, ticketTypeFilter]);
+        case "stale-60": {
+          if (!row.lastUpdated) return true;
+          return now - new Date(row.lastUpdated).getTime() > 60 * MS_PER_DAY;
+        }
+        case "high-value-quiet": {
+          if (row.estimatedValue == null || row.estimatedValue < HIGH_VALUE_THRESHOLD) return false;
+          if (!row.lastUpdated) return true;
+          return now - new Date(row.lastUpdated).getTime() > 14 * MS_PER_DAY;
+        }
+        case "overdue-followups": {
+          if (!row.nextActivityDate) return false;
+          return new Date(row.nextActivityDate).getTime() < now;
+        }
+        default:
+          return true;
+      }
+    });
+  }, [activeRows, riskFilter]);
 
-  const ticketPagination = useTablePagination(filteredTickets);
+  // Derived list for the table view: applies the search filter and the
+  // current sort. Kanban/Calendar tabs continue to use `activeRows`
+  // directly (their own sort behavior is in the child components).
+  const displayRows = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    const filtered = q
+      ? riskFilteredRows.filter((row) => {
+          const haystack = [
+            row.dealName,
+            row.orgClientName,
+            row.projectDeveloper,
+            row.province,
+            row.pipedriveDealId,
+            row.stage,
+            row.fundingType,
+            row.siteLocation,
+            row.nextActivitySubject,
+          ]
+            .map((v) => String(v ?? "").toLowerCase())
+            .join(" ");
+          return haystack.includes(q);
+        })
+      : riskFilteredRows;
+
+    const dir = sortDir === "asc" ? 1 : -1;
+    const cmp = (a: WorkingOpportunityRow, b: WorkingOpportunityRow): number => {
+      const av = a[sortKey];
+      const bv = b[sortKey];
+      // Push nullish to the bottom regardless of direction.
+      const aNull = av == null || av === "";
+      const bNull = bv == null || bv === "";
+      if (aNull && bNull) return 0;
+      if (aNull) return 1;
+      if (bNull) return -1;
+      if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+      if (sortKey === "expectedCloseDate" || sortKey === "nextActivityDate") {
+        const at = new Date(String(av)).getTime();
+        const bt = new Date(String(bv)).getTime();
+        if (Number.isFinite(at) && Number.isFinite(bt)) return (at - bt) * dir;
+      }
+      return String(av).localeCompare(String(bv)) * dir;
+    };
+    return [...filtered].sort(cmp);
+  }, [riskFilteredRows, searchTerm, sortKey, sortDir]);
+
+  const sortIndicator = (key: SortKey) =>
+    sortKey === key ? (
+      <span className="ml-1 text-emerald-700 font-bold" aria-hidden="true">
+        {sortDir === "asc" ? "▲" : "▼"}
+      </span>
+    ) : (
+      <span className="ml-1 text-slate-300" aria-hidden="true">↕</span>
+    );
+  const sortHeaderClass = (key: SortKey) =>
+    sortKey === key
+      ? "text-emerald-900 font-bold underline decoration-emerald-300 underline-offset-2"
+      : "";
 
   const clientOptions = useMemo(() => {
     const base = mappingContext?.likelyClients || [];
@@ -510,6 +773,15 @@ export default function OpportunitiesPage() {
   }, [mappingContext]);
 
   function openMapping(row: WorkingOpportunityRow) {
+    // Fast path: if this opportunity already has tickets AND we know
+    // which client/project the latest one was filed against, skip the
+    // mapping selection entirely and open straight to the ticket form.
+    // Re-mapping the same deal every time you add a ticket is friction
+    // PDs explicitly asked us to remove (2026-04-21 user feedback).
+    const totalTickets = row.openEngineeringTaskCount + row.closedEngineeringTaskCount;
+    const canSkipMapping =
+      totalTickets > 0 && row.lastTicketClientId != null && row.lastTicketProjectId != null;
+
     updateDlg({
       ...DIALOG_INITIAL,
       target: row,
@@ -518,6 +790,16 @@ export default function OpportunitiesPage() {
       templateBaseDueDate: new Date().toISOString().slice(0, 10),
       customTitle: row.dealName || "",
       customPhase: "First Assessment",
+      customFundingType: row.fundingType || "",
+      customSizeKwp: row.estimatedKwp != null ? String(row.estimatedKwp) : "",
+      customProvince: row.province || "",
+      ...(canSkipMapping
+        ? {
+            skipMapping: true,
+            resolvedClientId: row.lastTicketClientId,
+            resolvedProjectId: row.lastTicketProjectId,
+          }
+        : {}),
     });
   }
 
@@ -552,8 +834,18 @@ export default function OpportunitiesPage() {
         icon={<TrendingUp className="h-5 w-5" />}
         eyebrow="Project Development"
         title="Opportunities (Active Working List)"
-        description="Only active Pipedrive opportunities are shown here. Lost, won/signed/closed, and converted deals are excluded."
+        description="Active Pipedrive opportunities, including those already linked to a project (linked deals show a green project chip). Lost and won/signed/closed deals are excluded."
         actions={
+          <div className="flex items-center gap-2">
+            {lastPullAt && (
+              <span
+                className="text-[11px] text-slate-500 hidden sm:inline"
+                title={`Last successful Pipedrive pull: ${lastPullAt.toLocaleString()}`}
+                data-testid="text-last-pulled-at"
+              >
+                Synced {formatRelative(lastPullAt)}
+              </span>
+            )}
           <Button
             size="sm"
             variant="outline"
@@ -595,6 +887,7 @@ export default function OpportunitiesPage() {
                     ? "Pull all from Pipedrive"
                     : "Pull my Pipedrive deals"}
           </Button>
+          </div>
         }
       />
 
@@ -655,411 +948,320 @@ export default function OpportunitiesPage() {
           description="No active Pipedrive opportunities currently qualify for this working list."
         />
       ) : (
-        <div className="overflow-x-auto border rounded-lg">
-          <table className="w-full text-sm" data-testid="table-opportunities-working">
-            <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
-              <tr>
-                <th className="text-left px-3 py-2">Deal</th>
-                <th className="text-left px-3 py-2">Stage</th>
-                <th className="text-left px-3 py-2">Status</th>
-                <th className="text-left px-3 py-2">Client</th>
-                <th className="text-left px-3 py-2">Project</th>
-                <th className="text-left px-3 py-2">Eng tickets</th>
-                <th className="text-left px-3 py-2">Updated</th>
-                <th className="text-right px-3 py-2">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {activeRows.map((row) => (
-                <tr key={row.id} className="border-t hover:bg-muted/20" data-testid={`opportunity-row-${row.id}`}>
-                  <td className="px-3 py-2 align-top min-w-[260px]">
-                    <p className="font-medium text-foreground">{row.dealName || `Deal #${row.id}`}</p>
-                    <p className="text-xs text-muted-foreground">PD #{row.pipedriveDealId || "—"}</p>
-                    <p className="text-xs text-muted-foreground mt-1">{row.orgClientName || "Unknown org"}{row.dealOwner ? ` • Owner: ${row.dealOwner}` : ""}</p>
-                    {row.siteLocation ? <p className="text-xs text-muted-foreground">{row.siteLocation}</p> : null}
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    <Badge className={`text-[10px] ${stageBadgeClass(row.stage)}`}>{appPhaseLabel(row.stage)}</Badge>
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    <Badge className={`text-[10px] ${statusBadgeClass(row.status)}`}>{row.status || "—"}</Badge>
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    {row.hasLinkedClient ? (
-                      <span className="inline-flex items-center gap-1 text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" /> Linked</span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 text-amber-700"><AlertTriangle className="h-3.5 w-3.5" /> Unlinked</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    {row.hasLinkedProject ? (
-                      <span className="inline-flex items-center gap-1 text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" /> {row.linkedProjectCount} linked</span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 text-slate-600"><CircleOff className="h-3.5 w-3.5" /> None</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    <Badge variant="outline">{row.existingEngineeringTicketCount || 0}</Badge>
-                  </td>
-                  <td className="px-3 py-2 align-top text-xs text-muted-foreground whitespace-nowrap">
-                    {row.lastUpdated ? new Date(row.lastUpdated).toLocaleString() : "—"}
-                  </td>
-                  <td className="px-3 py-2 align-top text-right">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="gap-1"
-                      data-testid={`btn-create-engineering-ticket-${row.id}`}
-                      onClick={() => openMapping(row)}
-                    >
-                      <TicketPlus className="h-3.5 w-3.5" />
-                      Create Engineering Ticket
-                    </Button>
-                  </td>
-                </tr>
+        <div className={isDesktop ? "grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-4 items-start" : ""}>
+        <Tabs defaultValue="list" className="w-full min-w-0">
+          {/* Risk-signal filter banner — always visible when a filter is
+              active, regardless of which tab (List/Kanban/Calendar). */}
+          {riskFilter && (
+            <div
+              className="mb-3 flex items-center justify-between rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+              data-testid="risk-filter-banner"
+            >
+              <span className="flex items-center gap-2">
+                <AlertTriangle className="h-3.5 w-3.5" />
+                <strong>Filter active:</strong>
+                {riskFilter === "stale-30" && "Deals with no activity for 30+ days"}
+                {riskFilter === "stale-60" && "Deals with no activity for 60+ days"}
+                {riskFilter === "high-value-quiet" && "High-value deals with 14+ days quiet"}
+                {riskFilter === "overdue-followups" && "Deals with overdue follow-ups"}
+                <span className="tabular-nums">· {riskFilteredRows.length} match{riskFilteredRows.length === 1 ? "" : "es"}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setRiskFilter(null);
+                  const params = new URLSearchParams(window.location.search);
+                  params.delete("filter");
+                  const qs = params.toString();
+                  window.history.replaceState(null, "", window.location.pathname + (qs ? `?${qs}` : ""));
+                }}
+                className="text-amber-900 underline hover:no-underline"
+                data-testid="btn-clear-risk-filter"
+              >
+                Clear filter
+              </button>
+            </div>
+          )}
+          <TabsList className="bg-emerald-50/60 border border-emerald-200 h-9 p-0.5" data-testid="tabs-views">
+            <TabsTrigger value="list" className="text-xs gap-1.5 data-[state=active]:bg-white data-[state=active]:text-emerald-800" data-testid="tab-list">
+              <LayoutList className="h-3.5 w-3.5" /> List
+            </TabsTrigger>
+            <TabsTrigger value="calendar" className="text-xs gap-1.5 data-[state=active]:bg-white data-[state=active]:text-emerald-800" data-testid="tab-calendar">
+              <CalendarDays className="h-3.5 w-3.5" /> Calendar
+            </TabsTrigger>
+          </TabsList>
+
+          {/* ── List view (compact) ───────────────────────────────────── */}
+          <TabsContent value="list" className="mt-3">
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <div className="relative w-full max-w-md">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+                <Input
+                  type="search"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search by deal, client, developer, province, deal #…"
+                  className="pl-8 h-8 text-xs"
+                  data-testid="input-search-opportunities"
+                />
+              </div>
+              <div className="text-[11px] text-slate-500 whitespace-nowrap" data-testid="text-opportunities-count">
+                {displayRows.length} of {activeRows.length} shown
+                {sortKey && <span className="text-slate-400"> • sorted by {sortKey}{sortDir === "desc" ? " ↓" : " ↑"}</span>}
+              </div>
+            </div>
+            <div className="flex items-center gap-1 mb-2 overflow-x-auto pb-1" data-testid="opportunity-sort-bar">
+              <span className="text-[10px] uppercase tracking-wide text-slate-400 font-semibold pr-1 shrink-0">Sort</span>
+              {([
+                ["dealName", "Name"],
+                ["stage", "Stage"],
+                ["estimatedValue", "Value"],
+                ["estimatedKwp", "Size"],
+                ["expectedCloseDate", "Est. Sig."],
+                ["nextActivityDate", "Next Act."],
+                ["openEngineeringTaskCount", "Eng."],
+                ["projectDeveloper", "PD"],
+                ["province", "Province"],
+              ] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => toggleSort(key)}
+                  data-testid={`sort-${key}`}
+                  className={`shrink-0 inline-flex items-center gap-0.5 rounded-full border px-2 h-6 text-[10px] font-medium transition-colors ${
+                    sortKey === key
+                      ? "bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
+                      : "bg-white text-slate-600 border-slate-200 hover:border-emerald-300 hover:text-emerald-700"
+                  }`}
+                >
+                  {label}
+                  {sortKey === key && <span className="text-[9px]">{sortDir === "desc" ? "↓" : "↑"}</span>}
+                </button>
               ))}
-            </tbody>
-          </table>
+            </div>
+            <div
+              className="rounded-lg border border-slate-200 bg-white shadow-sm overflow-y-auto max-h-[calc(100vh-260px)]"
+              data-testid="table-opportunities-working"
+            >
+              <ul className="divide-y divide-slate-100">
+                {displayRows.map((row) => {
+                  const sizeLabel =
+                    row.estimatedKwp != null
+                      ? row.estimatedKwp >= 1000
+                        ? `${(row.estimatedKwp / 1000).toFixed(2)} MWp`
+                        : `${row.estimatedKwp.toFixed(0)} kWp`
+                      : null;
+                  const lifecycle = pdStageLifecycleLabel(row.stage);
+                  return (
+                    <li
+                      key={row.id}
+                      className="group cursor-pointer px-3 py-2.5 hover:bg-emerald-50/40 transition-colors"
+                      data-testid={`opportunity-row-${row.id}`}
+                      onClick={() => setDrawerOppId(row.id)}
+                    >
+                      {/* Row 1: title + status/lifecycle badge */}
+                      <div className="flex items-start justify-between gap-2 mb-1">
+                        <div className="min-w-0 flex-1">
+                          <p
+                            className="font-semibold text-[13px] text-slate-900 truncate leading-tight"
+                            title={row.dealName}
+                          >
+                            {row.dealName || `Deal #${row.id}`}
+                          </p>
+                          <p
+                            className="text-[10px] text-slate-500 truncate flex items-center gap-1 leading-tight mt-0.5"
+                            title={row.orgClientName || ""}
+                          >
+                            <span className="truncate">{row.orgClientName || "Unlinked"}</span>
+                            {!row.hasLinkedClient && (
+                              <AlertTriangle className="h-2.5 w-2.5 text-amber-500 shrink-0" />
+                            )}
+                            <span className="text-slate-300">·</span>
+                            <span className="text-slate-400 shrink-0">#{row.pipedriveDealId || "—"}</span>
+                          </p>
+                        </div>
+                        <div className="flex flex-col items-end gap-0.5 shrink-0">
+                          {lifecycle ? (
+                            <Badge
+                              className="text-[10px] font-medium px-1.5 py-0 bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-50"
+                              data-testid={`row-lifecycle-${row.id}`}
+                              title={`Company lifecycle phase: ${lifecycle}`}
+                            >
+                              {lifecycle}
+                            </Badge>
+                          ) : (
+                            <Badge
+                              className={`text-[10px] font-medium px-1.5 py-0 ${stageBadgeClass(row.stage)}`}
+                            >
+                              {appPhaseLabel(row.stage)}
+                            </Badge>
+                          )}
+                          {lifecycle && row.stage && (
+                            <span
+                              className="text-[9px] lowercase text-slate-500 leading-none"
+                              title={`Pipedrive stage: ${row.stage}`}
+                            >
+                              {String(row.stage).toLowerCase()}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Row 2: meta — value, size, est sig, next act, province, PD */}
+                      <div className="flex items-center flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-600">
+                        <span className="tabular-nums font-semibold text-slate-900">
+                          {formatZAR(row.estimatedValue)}
+                        </span>
+                        {sizeLabel && (
+                          <span className="tabular-nums text-slate-700" title="Size">
+                            {sizeLabel}
+                          </span>
+                        )}
+                        {row.expectedCloseDate && (
+                          <span className="tabular-nums" title="Expected signing">
+                            <span className="text-slate-400">sig</span> {formatDate(row.expectedCloseDate)}
+                          </span>
+                        )}
+                        {row.nextActivityDate && (
+                          <span
+                            className="tabular-nums"
+                            title={row.nextActivitySubject || "Next activity"}
+                          >
+                            <span className="text-slate-400">next</span> {formatDate(row.nextActivityDate)}
+                          </span>
+                        )}
+                        {row.province && (
+                          <span className="inline-flex items-center px-1.5 py-0 rounded bg-sky-50 text-sky-700 text-[10px] font-medium border border-sky-100">
+                            {row.province}
+                          </span>
+                        )}
+                        {row.hasLinkedProject && (
+                          <Link
+                            href={`/project/${encodeURIComponent(
+                              row.linkedProjectName || String(row.linkedProjectId ?? ""),
+                            )}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center gap-1 px-1.5 py-0 rounded bg-emerald-50 text-emerald-700 text-[10px] font-medium border border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300 transition-colors max-w-[180px]"
+                            title={`Linked to project: ${row.linkedProjectName || `#${row.linkedProjectId}`}${row.linkedProjectCount > 1 ? ` (+${row.linkedProjectCount - 1} more)` : ""}`}
+                            data-testid={`opp-linked-project-chip-${row.id}`}
+                          >
+                            <Link2 className="h-2.5 w-2.5 shrink-0" />
+                            <span
+                              className="truncate"
+                              data-testid={`opp-linked-project-link-${row.id}`}
+                            >
+                              {row.linkedProjectName || `Project #${row.linkedProjectId}`}
+                            </span>
+                            {row.linkedProjectCount > 1 && (
+                              <span className="text-[9px] text-emerald-600 shrink-0">
+                                +{row.linkedProjectCount - 1}
+                              </span>
+                            )}
+                          </Link>
+                        )}
+                        {row.projectDeveloper && (
+                          <span
+                            className="truncate max-w-[140px] text-slate-500"
+                            title={row.projectDeveloper}
+                          >
+                            <span className="text-slate-400">PD</span> {row.projectDeveloper}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Row 3: eng count + action button */}
+                      <div className="flex items-center justify-between mt-1.5">
+                        <EngCell row={row} />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-1 h-6 text-[10px] px-2 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:border-emerald-300"
+                          data-testid={`btn-create-engineering-ticket-${row.id}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openMapping(row);
+                          }}
+                        >
+                          <TicketPlus className="h-3 w-3" />
+                          Eng.
+                        </Button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+              <div className="px-3 py-1.5 bg-slate-50 border-t text-[11px] text-slate-500 flex items-center justify-between sticky bottom-0">
+                <span>
+                  {searchTerm
+                    ? `${displayRows.length} match${displayRows.length === 1 ? "" : "es"} of ${activeRows.length} active`
+                    : `${activeRows.length} active opportunit${activeRows.length === 1 ? "y" : "ies"}`}
+                </span>
+                <span className="text-slate-400">Click any card for detail</span>
+              </div>
+            </div>
+          </TabsContent>
+
+          {/* ── Calendar view ─────────────────────────────────────────── */}
+          <TabsContent value="calendar" className="mt-3">
+            <OpportunitiesCalendar
+              rows={activeRows}
+              onEventClick={(id) => setDrawerOppId(id)}
+            />
+          </TabsContent>
+        </Tabs>
+        {isDesktop && (
+          <aside
+            className="sticky top-2 max-h-[calc(100vh-90px)] overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-sm min-w-0"
+            data-testid="panel-opportunity-detail"
+          >
+            {drawerOppId != null && (
+              <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100">
+                <span className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">
+                  Opportunity detail
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0 text-slate-500 hover:text-slate-900"
+                  onClick={() => setDrawerOppId(null)}
+                  data-testid="btn-close-detail-panel"
+                  aria-label="Close detail panel"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            )}
+            <OpportunityDetailBody
+              opportunityId={drawerOppId}
+              active={drawerOppId != null}
+              variant="inline"
+            />
+          </aside>
+        )}
         </div>
       )}
 
       {/* ------------------------------------------------------------------ */}
-      {/* Project Development Tickets — merged in from the retired /pd/tickets */}
-      {/* ------------------------------------------------------------------ */}
-      <div className="space-y-4 pt-4 border-t">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold flex items-center gap-2">
-              <FileEdit className="h-4 w-4 text-violet-600" />
-              Project Development Tickets
-            </h2>
-            <p className="text-xs text-muted-foreground">
-              Engineering tickets spawned from opportunities, plus manually-created ones.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <ExportDropdown
-              data={filteredTickets.map((r) => r.ticket)}
-              columns={[
-                { key: "projectSiteName", header: "Project / Site" },
-                { key: "requestType", header: "Request Type" },
-                { key: "priority", header: "Priority" },
-                { key: "status", header: "Status" },
-                { key: "dueDate", header: "Due Date" },
-                { key: "createdAt", header: "Created" },
-              ]}
-              filename="pd-tickets"
-            />
-            <Button
-              size="sm"
-              onClick={() => navigate("/pd/tickets/create")}
-              className="gap-1.5"
-              data-testid="btn-create-ticket"
-            >
-              <Plus className="h-4 w-4" /> New Ticket
-            </Button>
-          </div>
-        </div>
 
-        {/* KPI cards: click to filter the table */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          {[
-            { label: "Total", value: ticketStats?.total || 0, icon: FileStack, color: "text-foreground bg-muted", statusFilter: "all" },
-            { label: "Active", value: ticketStats?.active || 0, icon: FileEdit, color: "text-blue-700 bg-blue-100", statusFilter: "In Progress" },
-            { label: "Overdue", value: ticketStats?.overdue || 0, icon: AlertTriangle, color: "text-red-700 bg-red-100", statusFilter: "all" },
-            { label: "Due This Week", value: ticketStats?.dueThisWeek || 0, icon: Clock, color: "text-amber-700 bg-amber-100", statusFilter: "all" },
-            { label: "On Hold", value: ticketStats?.onHold || 0, icon: PauseCircle, color: "text-orange-700 bg-orange-100", statusFilter: "On Hold" },
-            { label: "Completed", value: ticketStats?.completed || 0, icon: CheckCircle2, color: "text-green-700 bg-green-100", statusFilter: "Completed" },
-          ].map((card) => (
-            <Card
-              key={card.label}
-              className="hover:shadow-md transition-shadow cursor-pointer"
-              onClick={() => setTicketStatusFilter(card.statusFilter)}
-              data-testid={`pd-stat-${card.label.toLowerCase().replace(/\s/g, "-")}`}
-            >
-              <CardContent className="p-4 flex flex-col items-center text-center gap-1">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${card.color}`}>
-                  <card.icon className="h-5 w-5" />
-                </div>
-                <span className="text-2xl font-bold">{card.value}</span>
-                <span className="text-[11px] text-muted-foreground">{card.label}</span>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
-        {/* Filters */}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative flex-1 min-w-[180px] max-w-xs">
-            <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search tickets..."
-              className="pl-9 h-8 text-xs"
-              value={ticketSearch}
-              onChange={(e) => setTicketSearch(e.target.value)}
-              data-testid="pd-tickets-search"
-            />
-          </div>
-          <SearchableSelect
-            value={ticketStatusFilter}
-            onValueChange={setTicketStatusFilter}
-            placeholder="Status"
-            triggerClassName="w-[130px] h-8 text-xs"
-            options={[{ value: "all", label: "All Statuses" }, ...TICKET_STATUSES.map((s) => ({ value: s, label: s }))]}
-            data-testid="pd-filter-status"
-          />
-          <SearchableSelect
-            value={ticketPriorityFilter}
-            onValueChange={setTicketPriorityFilter}
-            placeholder="Priority"
-            triggerClassName="w-[110px] h-8 text-xs"
-            options={[{ value: "all", label: "All Priorities" }, ...TICKET_PRIORITIES.map((p) => ({ value: p, label: p }))]}
-            data-testid="pd-filter-priority"
-          />
-          <SearchableSelect
-            value={ticketTypeFilter}
-            onValueChange={setTicketTypeFilter}
-            placeholder="Type"
-            triggerClassName="w-[140px] h-8 text-xs"
-            options={[{ value: "all", label: "All Types" }, ...PD_REQUEST_TYPES_FILTERABLE.map((t) => ({ value: t, label: t }))]}
-            data-testid="pd-filter-type"
-          />
-        </div>
-
-        {/* Tickets table */}
-        {ticketsLoading ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          </div>
-        ) : ticketsError ? (
-          <Card>
-            <CardContent className="p-8 text-center text-muted-foreground space-y-2">
-              <AlertTriangle className="h-10 w-10 mx-auto text-amber-500" />
-              <p className="font-medium text-foreground">Could not load Project Development tickets</p>
-              <p className="text-xs">{ticketsErrorObj instanceof Error ? ticketsErrorObj.message : "Try again."}</p>
-              <Button size="sm" variant="outline" onClick={() => refetchTickets()} data-testid="btn-retry-pd-tickets">
-                Retry
-              </Button>
-            </CardContent>
-          </Card>
-        ) : filteredTickets.length === 0 ? (
-          <Card>
-            <CardContent className="p-8 text-center text-muted-foreground">
-              <FileEdit className="h-10 w-10 mx-auto mb-2 opacity-30" />
-              <p className="font-medium">No tickets found</p>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="overflow-x-auto border rounded-lg">
-            <table className="w-full text-sm min-w-[1100px]" aria-label="Project Development Tickets">
-              <thead>
-                <tr className="bg-muted/40 border-b text-[11px] text-muted-foreground">
-                  <th scope="col" className="text-left p-2.5 pl-3">Project / Site</th>
-                  <th scope="col" className="text-left p-2.5">Client</th>
-                  <th scope="col" className="text-left p-2.5">Request Type</th>
-                  <th scope="col" className="text-left p-2.5">Priority</th>
-                  <th scope="col" className="text-left p-2.5">Status</th>
-                  <th scope="col" className="text-left p-2.5">Due Date</th>
-                  <th scope="col" className="text-left p-2.5">Days In Progress</th>
-                  <th scope="col" className="text-left p-2.5">Developer</th>
-                  <th scope="col" className="text-left p-2.5">Sub-tasks</th>
-                  <th scope="col" className="text-left p-2.5">Next Action</th>
-                  <th scope="col" className="text-left p-2.5">Designer</th>
-                  {canDeleteTicket && <th scope="col" className="text-right p-2.5 pr-3 w-[60px]">Actions</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {ticketPagination.paginatedItems.map((row) => {
-                  const t = row.ticket;
-                  const today = new Date();
-                  const created = t.createdAt ? new Date(t.createdAt) : null;
-                  const daysInProgress =
-                    created && !isNaN(created.getTime())
-                      ? Math.max(0, Math.floor((today.getTime() - created.getTime()) / 86_400_000))
-                      : null;
-                  const todayStr = today.toISOString().split("T")[0];
-                  const overdue =
-                    !!t.dueDate && t.dueDate < todayStr && t.status !== "Completed" && t.status !== "Cancelled";
-                  const daysOverdue = overdue && t.dueDate
-                    ? Math.floor((today.getTime() - new Date(t.dueDate).getTime()) / 86_400_000)
-                    : 0;
-                  return (
-                    <tr
-                      key={t.id}
-                      className={`border-b hover:bg-muted/10 cursor-pointer transition-colors ${
-                        overdue ? "border-l-4 border-l-red-500 bg-red-50/30" : ""
-                      }`}
-                      onClick={() => navigate(`/pd/tickets/${t.id}`)}
-                      data-testid={`pd-ticket-row-${t.id}`}
-                    >
-                      <td className="p-2.5 pl-3 font-medium max-w-[200px] truncate" title={t.projectSiteName || ""}>
-                        {t.projectSiteName || "—"}
-                      </td>
-                      <td className="p-2.5 text-muted-foreground max-w-[150px] truncate" title={row.clientName || ""}>
-                        {row.clientName || "—"}
-                      </td>
-                      <td className="p-2.5">
-                        <Badge variant="outline" className="text-[10px]">{t.requestType}</Badge>
-                      </td>
-                      <td className="p-2.5">
-                        <Badge className={`text-[10px] ${priorityColorClasses(t.priority)}`}>{t.priority}</Badge>
-                      </td>
-                      <td className="p-2.5">
-                        <Badge className={`text-[10px] ${statusColorClasses(t.status)}`}>{t.status}</Badge>
-                      </td>
-                      <td className={`p-2.5 ${overdue ? "text-red-600 font-semibold" : "text-muted-foreground"}`}>
-                        <div className="flex items-center gap-1.5">
-                          <span>{t.dueDate || "—"}</span>
-                          {overdue && (
-                            <Badge variant="destructive" className="text-[9px] px-1 py-0">
-                              {daysOverdue}d overdue
-                            </Badge>
-                          )}
-                        </div>
-                      </td>
-                      <td className="p-2.5 text-muted-foreground">
-                        {daysInProgress != null ? `${daysInProgress}d` : "—"}
-                      </td>
-                      <td className="p-2.5 text-muted-foreground">{row.developerName || "—"}</td>
-                      <td className="p-2.5">
-                        {row.taskTotal > 0 ? (
-                          <div className="flex items-center gap-1.5">
-                            <div className="w-14 h-1.5 rounded-full bg-muted overflow-hidden">
-                              <div
-                                className={`h-full rounded-full transition-all ${
-                                  row.taskCompleted === row.taskTotal
-                                    ? "bg-green-500"
-                                    : row.taskCompleted > 0
-                                      ? "bg-blue-500"
-                                      : "bg-gray-300"
-                                }`}
-                                style={{ width: `${Math.round((row.taskCompleted / row.taskTotal) * 100)}%` }}
-                              />
-                            </div>
-                            <span className="text-[10px] text-muted-foreground">
-                              {row.taskCompleted}/{row.taskTotal}
-                            </span>
-                          </div>
-                        ) : t.tasksSpawnedAt ? (
-                          <span className="text-[10px] text-muted-foreground">0 tasks</span>
-                        ) : (
-                          <span className="text-[10px] text-muted-foreground italic">Not spawned</span>
-                        )}
-                      </td>
-                      <td className="p-2.5">
-                        {(() => {
-                          if (t.status === "Completed" || t.status === "Cancelled")
-                            return <span className="text-[10px] text-muted-foreground">Done</span>;
-                          if (overdue)
-                            return (
-                              <span className="text-[10px] text-red-600 font-medium flex items-center gap-0.5">
-                                <AlertCircle className="h-3 w-3" />
-                                Overdue — follow up
-                              </span>
-                            );
-                          if (t.status === "On Hold")
-                            return <span className="text-[10px] text-orange-600 font-medium">Unblock to resume</span>;
-                          if (t.status === "Draft")
-                            return (
-                              <span className="text-[10px] text-violet-600 font-medium flex items-center gap-0.5">
-                                <ArrowRight className="h-3 w-3" />
-                                Start ticket
-                              </span>
-                            );
-                          if (row.taskTotal > 0 && row.taskCompleted < row.taskTotal)
-                            return (
-                              <span className="text-[10px] text-blue-600 font-medium">
-                                {row.taskTotal - row.taskCompleted} task
-                                {row.taskTotal - row.taskCompleted !== 1 ? "s" : ""} remaining
-                              </span>
-                            );
-                          if (row.taskTotal > 0 && row.taskCompleted === row.taskTotal)
-                            return <span className="text-[10px] text-green-600 font-medium">Ready to complete</span>;
-                          return <span className="text-[10px] text-muted-foreground">In progress</span>;
-                        })()}
-                      </td>
-                      <td className="p-2.5 text-muted-foreground">{row.designerName || "—"}</td>
-                      {canDeleteTicket && (
-                        <td className="p-2.5 pr-3 text-right" onClick={(e) => e.stopPropagation()}>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="h-7 w-7 text-muted-foreground hover:text-red-600 hover:bg-red-50"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDeleteTarget({
-                                ticket: { id: t.id, projectSiteName: t.projectSiteName },
-                                taskTotal: row.taskTotal,
-                              });
-                            }}
-                            title="Delete ticket"
-                            aria-label={`Delete ticket ${t.projectSiteName || t.id}`}
-                            data-testid={`btn-delete-ticket-${t.id}`}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </td>
-                      )}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            <TablePagination {...ticketPagination} />
-          </div>
-        )}
-      </div>
-
-      {/* ---- Delete confirmation dialog ---- */}
-      <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-red-600">Delete Project Development Ticket</DialogTitle>
-          </DialogHeader>
-          <div className="py-3 space-y-2 text-sm">
-            <p>Are you sure you want to permanently delete this ticket?</p>
-            {deleteTarget && (
-              <p className="font-medium">
-                {deleteTarget.ticket.projectSiteName || `Ticket #${deleteTarget.ticket.id}`}
-              </p>
-            )}
-            {deleteTarget && deleteTarget.taskTotal > 0 && (
-              <p className="text-amber-600">
-                This will also delete {deleteTarget.taskTotal} linked engineering task
-                {deleteTarget.taskTotal !== 1 ? "s" : ""}.
-              </p>
-            )}
-            <p className="text-xs text-muted-foreground">
-              The linked project and client will <span className="font-semibold">not</span> be deleted. This action cannot be undone.
-            </p>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)} data-testid="btn-cancel-delete-ticket">
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => deleteTarget && deleteTicketMutation.mutate(deleteTarget.ticket.id)}
-              disabled={deleteTicketMutation.isPending}
-              data-testid="btn-confirm-delete-ticket"
-            >
-              {deleteTicketMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-1" />
-              ) : (
-                <Trash2 className="h-4 w-4 mr-1" />
-              )}
-              Delete Ticket
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Unified Opportunity drawer (2026-04-20 merge) — opens on row click.
+          On desktop, the detail body is rendered inline in the right panel
+          above; the Sheet drawer is suppressed to avoid double-rendering. */}
+      <OpportunityDrawer
+        opportunityId={drawerOppId}
+        open={drawerOppId != null && !isDesktop}
+        onClose={() => setDrawerOppId(null)}
+      />
 
       <Dialog open={!!dlg.target} onOpenChange={(open) => { if (!open) updateDlg("reset"); }}>
         <DialogContent className="max-w-xl">
           <DialogHeader>
-            <DialogTitle>Create Engineering Ticket — Mapping</DialogTitle>
+            <DialogTitle>
+              {dlg.skipMapping ? "Add Engineering Ticket" : "Create Engineering Ticket — Mapping"}
+            </DialogTitle>
             <DialogDescription>
-              Project Developer is the mapping authority. Choose how this opportunity maps to client/project before ticket creation.
+              {dlg.skipMapping
+                ? "This opportunity already has tickets — re-using the existing client/project mapping. Add another ticket below."
+                : "Project Developer is the mapping authority. Choose how this opportunity maps to client/project before ticket creation."}
             </DialogDescription>
           </DialogHeader>
 
@@ -1072,6 +1274,7 @@ export default function OpportunitiesPage() {
                 <p>Linked client: {mappingContext?.linkedClient ? "Yes" : "No"} • Linked project: {mappingContext?.linkedProject ? "Yes" : "No"}</p>
               </div>
 
+              {!dlg.skipMapping && (
               <div className="space-y-2">
                 <Label className="text-xs">Mapping mode</Label>
                 <div className="grid gap-1 text-sm">
@@ -1080,8 +1283,9 @@ export default function OpportunitiesPage() {
                   <label className="flex items-center gap-2"><input type="radio" checked={dlg.mappingMode === "new_new"} onChange={() => updateDlg({ mappingMode: "new_new" })} /> Create new client + new project shell</label>
                 </div>
               </div>
+              )}
 
-              {dlg.mappingMode !== "new_new" && (
+              {!dlg.skipMapping && dlg.mappingMode !== "new_new" && (
                 <div className="space-y-1">
                   <Label className="text-xs">Client</Label>
                   <select className="w-full border rounded-md h-9 px-2 text-sm" value={dlg.existingClientId} onChange={(e) => updateDlg({ existingClientId: e.target.value })}>
@@ -1091,7 +1295,7 @@ export default function OpportunitiesPage() {
                 </div>
               )}
 
-              {dlg.mappingMode === "existing_existing" && (
+              {!dlg.skipMapping && dlg.mappingMode === "existing_existing" && (
                 <div className="space-y-1">
                   <Label className="text-xs">Project</Label>
                   <select className="w-full border rounded-md h-9 px-2 text-sm" value={dlg.existingProjectId} onChange={(e) => updateDlg({ existingProjectId: e.target.value })}>
@@ -1101,14 +1305,14 @@ export default function OpportunitiesPage() {
                 </div>
               )}
 
-              {dlg.mappingMode === "existing_new" && (
+              {!dlg.skipMapping && dlg.mappingMode === "existing_new" && (
                 <div className="space-y-1">
                   <Label className="text-xs">New project shell name</Label>
                   <Input value={dlg.newProjectName} onChange={(e) => updateDlg({ newProjectName: e.target.value })} placeholder="Enter project shell name" />
                 </div>
               )}
 
-              {dlg.mappingMode === "new_new" && (
+              {!dlg.skipMapping && dlg.mappingMode === "new_new" && (
                 <div className="grid gap-2">
                   <div className="space-y-1">
                     <Label className="text-xs">New client name</Label>
@@ -1133,15 +1337,24 @@ export default function OpportunitiesPage() {
                     Mapping resolved • client #{dlg.resolvedClientId} • project #{dlg.resolvedProjectId}
                   </div>
 
-                  <div className="space-y-2">
-                    <Label className="text-xs">Ticket creation mode</Label>
-                    <div className="grid gap-1 text-sm">
-                      <label className="flex items-center gap-2"><input type="radio" checked={dlg.ticketMode === "phase_template"} onChange={() => updateDlg({ ticketMode: "phase_template" })} /> Phase template</label>
-                      <label className="flex items-center gap-2"><input type="radio" checked={dlg.ticketMode === "custom"} onChange={() => updateDlg({ ticketMode: "custom" })} /> Custom ticket</label>
+                  {phaseTemplates.length > 0 ? (
+                    <div className="space-y-2">
+                      <Label className="text-xs">Ticket creation mode</Label>
+                      <div className="grid gap-1 text-sm">
+                        <label className="flex items-center gap-2"><input type="radio" checked={dlg.ticketMode === "phase_template"} onChange={() => updateDlg({ ticketMode: "phase_template" })} /> Phase template</label>
+                        <label className="flex items-center gap-2"><input type="radio" checked={dlg.ticketMode === "custom"} onChange={() => updateDlg({ ticketMode: "custom" })} /> Custom ticket</label>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    // No phase templates seeded — only "custom" makes sense.
+                    // We coerce ticketMode to "custom" so the form below
+                    // renders the right inputs.
+                    <p className="text-[11px] text-slate-500 italic">
+                      No phase templates are configured. Use the custom ticket form below.
+                    </p>
+                  )}
 
-                  {dlg.ticketMode === "phase_template" ? (
+                  {dlg.ticketMode === "phase_template" && phaseTemplates.length > 0 ? (
                     <div className="grid gap-2">
                       <div className="space-y-1">
                         <Label className="text-xs">Predefined phase template</Label>
@@ -1162,32 +1375,75 @@ export default function OpportunitiesPage() {
                   ) : (
                     <div className="grid gap-2">
                       <div className="space-y-1">
-                        <Label className="text-xs">Title</Label>
-                        <Input value={dlg.customTitle} onChange={(e) => updateDlg({ customTitle: e.target.value })} />
+                        <Label className="text-xs">Title <span className="text-red-600">*</span></Label>
+                        <Input value={dlg.customTitle} onChange={(e) => updateDlg({ customTitle: e.target.value })} data-testid="input-custom-title" />
                       </div>
                       <div className="space-y-1">
-                        <Label className="text-xs">Phase</Label>
-                        <Input value={dlg.customPhase} onChange={(e) => updateDlg({ customPhase: e.target.value })} placeholder="e.g. First Assessment" />
+                        <Label className="text-xs">Phase <span className="text-red-600">*</span></Label>
+                        <select
+                          className="w-full border rounded-md h-9 px-2 text-sm bg-white"
+                          value={dlg.customPhase}
+                          onChange={(e) => updateDlg({ customPhase: e.target.value })}
+                          data-testid="select-custom-phase"
+                        >
+                          {PHASE_LABELS.map((label) => (
+                            <option key={label} value={label}>{label}</option>
+                          ))}
+                        </select>
                       </div>
                       <div className="space-y-1">
-                        <Label className="text-xs">Description / Scope</Label>
-                        <Input value={dlg.customDescriptionScope} onChange={(e) => updateDlg({ customDescriptionScope: e.target.value })} />
+                        <Label className="text-xs">Description / Scope <span className="text-red-600">*</span></Label>
+                        <Input value={dlg.customDescriptionScope} onChange={(e) => updateDlg({ customDescriptionScope: e.target.value })} data-testid="input-custom-scope" />
                       </div>
                       <div className="grid grid-cols-2 gap-2">
                         <div className="space-y-1">
-                          <Label className="text-xs">Due date</Label>
-                          <Input type="date" value={dlg.customDueDate} onChange={(e) => updateDlg({ customDueDate: e.target.value })} />
+                          <Label className="text-xs">Due date <span className="text-red-600">*</span></Label>
+                          <Input type="date" value={dlg.customDueDate} onChange={(e) => updateDlg({ customDueDate: e.target.value })} data-testid="input-custom-due" />
                         </div>
                         <div className="space-y-1">
                           <Label className="text-xs">Priority</Label>
-                          <select className="w-full border rounded-md h-9 px-2 text-sm" value={dlg.customPriority} onChange={(e) => updateDlg({ customPriority: e.target.value })}>
+                          <select className="w-full border rounded-md h-9 px-2 text-sm" value={dlg.customPriority} onChange={(e) => updateDlg({ customPriority: e.target.value })} data-testid="select-custom-priority">
                             {["Critical", "High", "Medium", "Low"].map((p) => <option key={p} value={p}>{p}</option>)}
                           </select>
                         </div>
                       </div>
                       <div className="space-y-1">
-                        <Label className="text-xs">Required output</Label>
-                        <Input value={dlg.customRequiredOutput} onChange={(e) => updateDlg({ customRequiredOutput: e.target.value })} />
+                        <Label className="text-xs">Required output <span className="text-red-600">*</span></Label>
+                        <Input value={dlg.customRequiredOutput} onChange={(e) => updateDlg({ customRequiredOutput: e.target.value })} data-testid="input-custom-required-output" />
+                      </div>
+
+                      <div className="border-t pt-2 mt-1">
+                        <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+                          Operational metadata <span className="font-normal normal-case text-slate-400">(optional — pre-filled from opportunity)</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <Label className="text-xs">Funding type</Label>
+                            <Input value={dlg.customFundingType} onChange={(e) => updateDlg({ customFundingType: e.target.value })} placeholder="e.g. Cash, PPA, Lease" data-testid="input-custom-funding" />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Size (kWp)</Label>
+                            <Input type="number" inputMode="decimal" value={dlg.customSizeKwp} onChange={(e) => updateDlg({ customSizeKwp: e.target.value })} data-testid="input-custom-kwp" />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Province</Label>
+                            <Input value={dlg.customProvince} onChange={(e) => updateDlg({ customProvince: e.target.value })} data-testid="input-custom-province" />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">GPS coordinates</Label>
+                            <Input value={dlg.customGpsCoordinates} onChange={(e) => updateDlg({ customGpsCoordinates: e.target.value })} placeholder="-26.1234, 28.1234" data-testid="input-custom-gps" />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-[auto_1fr] gap-2 mt-2 items-end">
+                          <label className="flex items-center gap-2 text-xs h-9">
+                            <input type="checkbox" checked={dlg.customBatteriesNeeded} onChange={(e) => updateDlg({ customBatteriesNeeded: e.target.checked })} data-testid="checkbox-custom-batteries" />
+                            Batteries needed
+                          </label>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Battery size (kWh)</Label>
+                            <Input type="number" inputMode="decimal" value={dlg.customBatterySize} onChange={(e) => updateDlg({ customBatterySize: e.target.value })} disabled={!dlg.customBatteriesNeeded} data-testid="input-custom-battery-size" />
+                          </div>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -1205,21 +1461,6 @@ export default function OpportunitiesPage() {
             ) : (
               <Button onClick={() => createEngineeringTicketsMutation.mutate()} disabled={createEngineeringTicketsMutation.isPending}>
                 {createEngineeringTicketsMutation.isPending ? "Creating…" : dlg.ticketMode === "phase_template" ? "Generate Template Ticket(s)" : "Create Custom Ticket"}
-              </Button>
-            )}
-            {mappingResolved && (
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  const q = new URLSearchParams({
-                    opportunityId: String(dlg.target!.id),
-                    clientId: String(dlg.resolvedClientId),
-                    projectId: String(dlg.resolvedProjectId),
-                  });
-                  navigate(`/pd/tickets/create?${q.toString()}`);
-                }}
-              >
-                Open full manual form
               </Button>
             )}
           </DialogFooter>

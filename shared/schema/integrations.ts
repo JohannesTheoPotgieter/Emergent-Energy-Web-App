@@ -378,6 +378,9 @@ export type QuickBooksCostAllocation = typeof quickbooksCostAllocations.$inferSe
  * `CustomerRef.value = qbCustomerId` so the per-project view only
  * shows invoices that belong to that project's client.
  */
+export const QUICKBOOKS_MAPPING_SOURCES = ["manual", "suggestion", "cascade", "import"] as const;
+export type QuickBooksMappingSource = (typeof QUICKBOOKS_MAPPING_SOURCES)[number];
+
 export const quickbooksCustomerMappings = pgTable(
   "quickbooks_customer_mappings",
   {
@@ -394,6 +397,15 @@ export const quickbooksCustomerMappings = pgTable(
     qbRealmId: text("qb_realm_id").notNull(),
     /** Free-form note. */
     notes: text("notes"),
+    /** How this mapping was created: manual | suggestion | cascade | import */
+    source: text("source").notNull().default("manual"),
+    /** When created via fuzzy suggestion: 0–100 confidence score from the matcher. */
+    confidence: decimal("confidence", { precision: 5, scale: 2 }),
+    /** When set, only admin can change/clear this mapping. */
+    lockedAt: timestamp("locked_at"),
+    lockedBy: integer("locked_by"),
+    /** Audit pointer to the suggestion run that produced this mapping (if any). */
+    suggestionRunId: integer("suggestion_run_id"),
     createdBy: integer("created_by"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -449,6 +461,15 @@ export const quickbooksVendorMappings = pgTable(
     /** Snapshot of the counterparty name at mapping time (audit). */
     counterpartyName: text("counterparty_name"),
     notes: text("notes"),
+    /** How this mapping was created: manual | suggestion | cascade | import */
+    source: text("source").notNull().default("manual"),
+    /** When created via fuzzy suggestion: 0–100 confidence score. */
+    confidence: decimal("confidence", { precision: 5, scale: 2 }),
+    /** When set, only admin can change/clear this mapping. */
+    lockedAt: timestamp("locked_at"),
+    lockedBy: integer("locked_by"),
+    /** Audit pointer to the suggestion run that produced this mapping (if any). */
+    suggestionRunId: integer("suggestion_run_id"),
     createdBy: integer("created_by"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -476,6 +497,79 @@ export const insertQuickBooksVendorMappingSchema = createInsertSchema(
 } as any);
 export type InsertQuickBooksVendorMapping = z.infer<typeof insertQuickBooksVendorMappingSchema>;
 export type QuickBooksVendorMapping = typeof quickbooksVendorMappings.$inferSelect;
+
+// ===================== QUICKBOOKS MATCH SUGGESTIONS + CASCADE RUNS =====================
+
+/**
+ * Admin-only fuzzy match suggestions. One row per "Suggest matches" run on a
+ * given scope (customer | vendor | expense_invoice | incoming_invoice). The
+ * candidate list is denormalised into JSONB so the UI can replay the run
+ * without re-running the matcher; the accept flow records which candidate was
+ * accepted and links the resulting cascade_run for full traceability.
+ */
+export const QUICKBOOKS_SUGGEST_SCOPES = [
+  "customer",
+  "vendor",
+  "expense_invoice",
+  "incoming_invoice",
+] as const;
+export type QuickBooksSuggestScope = (typeof QUICKBOOKS_SUGGEST_SCOPES)[number];
+
+export const quickbooksMatchSuggestions = pgTable(
+  "quickbooks_match_suggestions",
+  {
+    id: serial("id").primaryKey(),
+    scope: text("scope").notNull(),
+    qbRealmId: text("qb_realm_id").notNull(),
+    /** App-side anchor (project id, counterparty id, cost line id, revenue line id) */
+    appEntityId: integer("app_entity_id"),
+    appEntityLabel: text("app_entity_label"),
+    candidates: jsonb("candidates").notNull(),
+    requestedBy: integer("requested_by"),
+    requestedAt: timestamp("requested_at").notNull().defaultNow(),
+    acceptedAt: timestamp("accepted_at"),
+    acceptedBy: integer("accepted_by"),
+    acceptedQbId: text("accepted_qb_id"),
+    acceptedConfidence: decimal("accepted_confidence", { precision: 5, scale: 2 }),
+  },
+  (table) => ({
+    scopeIdx: index("quickbooks_match_suggestions_scope_idx").on(table.scope, table.qbRealmId),
+  }),
+);
+export type QuickBooksMatchSuggestion = typeof quickbooksMatchSuggestions.$inferSelect;
+
+export const QUICKBOOKS_CASCADE_STATUSES = ["preview", "committed", "aborted"] as const;
+export type QuickBooksCascadeStatus = (typeof QUICKBOOKS_CASCADE_STATUSES)[number];
+
+/**
+ * Admin-only cascade preview/commit log. Created with status='preview' when
+ * admin previews a cascade; status flips to 'committed' on accept, or
+ * 'aborted' on cancel. The preview/commit JSONB carries the per-row
+ * willUpdate / willSkipLocked / willSkipReconciled lists with reasons.
+ */
+export const quickbooksCascadeRuns = pgTable(
+  "quickbooks_cascade_runs",
+  {
+    id: serial("id").primaryKey(),
+    suggestionId: integer("suggestion_id"),
+    scope: text("scope").notNull(),
+    qbRealmId: text("qb_realm_id").notNull(),
+    /** The mapping/link being changed: customer mapping id, vendor mapping id, etc. */
+    sourceEntityType: text("source_entity_type").notNull(),
+    sourceEntityId: integer("source_entity_id"),
+    preview: jsonb("preview").notNull(),
+    commit: jsonb("commit"),
+    status: text("status").notNull().default("preview"),
+    triggeredBy: integer("triggered_by"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    committedAt: timestamp("committed_at"),
+  },
+  (table) => ({
+    suggestionIdx: index("quickbooks_cascade_runs_suggestion_idx").on(table.suggestionId),
+    scopeIdx: index("quickbooks_cascade_runs_scope_idx").on(table.scope),
+  }),
+);
+export type QuickBooksCascadeRun = typeof quickbooksCascadeRuns.$inferSelect;
 
 // ===================== SEED LIST =====================
 
@@ -549,3 +643,78 @@ export const INTEGRATION_SEED: Array<{
     alertTarget: "COO_ADMIN",
   },
 ];
+
+/**
+ * QB Reconciliation — Tracker Gap support tables (C004).
+ *
+ * Backed by migrations/0008_qb_recon_tables.sql. Pure annotation tables —
+ * trackers stay the source of truth; these only record finance's
+ * disposition of QB bills surfaced by the gap report.
+ */
+export const qbReconIgnores = pgTable("qb_recon_ignores", {
+  id: serial("id").primaryKey(),
+  qbBillId: text("qb_bill_id").notNull(),
+  qbLineId: text("qb_line_id"),
+  qbDocNumber: text("qb_doc_number"),
+  vendorName: text("vendor_name"),
+  lineAmountExVat: decimal("line_amount_ex_vat", { precision: 14, scale: 2 }),
+  resolvedProjectName: text("resolved_project_name"),
+  reason: text("reason").notNull(),
+  ignoredByUserId: integer("ignored_by_user_id"),
+  ignoredByName: text("ignored_by_name"),
+  ignoredAt: timestamp("ignored_at").defaultNow().notNull(),
+  deletedAt: timestamp("deleted_at"),
+});
+export type QbReconIgnore = typeof qbReconIgnores.$inferSelect;
+
+export const qbClassProjectOverrides = pgTable("qb_class_project_overrides", {
+  id: serial("id").primaryKey(),
+  classRefName: text("class_ref_name").notNull(),
+  projectName: text("project_name").notNull(),
+  note: text("note"),
+  createdByUserId: integer("created_by_user_id"),
+  createdByName: text("created_by_name"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  deletedAt: timestamp("deleted_at"),
+});
+export type QbClassProjectOverride = typeof qbClassProjectOverrides.$inferSelect;
+
+/**
+ * QB Reconciliation — Revenue Tracker Gap support tables (Task #18).
+ *
+ * Parallel to qb_recon_ignores / qb_class_project_overrides but keyed on
+ * QB Invoices + Customers (revenue side) rather than Bills + Classes
+ * (cost side). Two separate tables instead of polymorphising the existing
+ * ones, to avoid touching live COS data.
+ *
+ * Pure annotation tables — `normalized_revenue_lines` stays the source
+ * of truth; these only record finance's disposition of QB invoices
+ * surfaced by the revenue gap report.
+ */
+export const qbRevenueReconIgnores = pgTable("qb_revenue_recon_ignores", {
+  id: serial("id").primaryKey(),
+  qbInvoiceId: text("qb_invoice_id").notNull(),
+  qbLineId: text("qb_line_id"),
+  qbDocNumber: text("qb_doc_number"),
+  customerName: text("customer_name"),
+  lineAmountExVat: decimal("line_amount_ex_vat", { precision: 14, scale: 2 }),
+  resolvedProjectName: text("resolved_project_name"),
+  reason: text("reason").notNull(),
+  ignoredByUserId: integer("ignored_by_user_id"),
+  ignoredByName: text("ignored_by_name"),
+  ignoredAt: timestamp("ignored_at").defaultNow().notNull(),
+  deletedAt: timestamp("deleted_at"),
+});
+export type QbRevenueReconIgnore = typeof qbRevenueReconIgnores.$inferSelect;
+
+export const qbCustomerProjectOverrides = pgTable("qb_customer_project_overrides", {
+  id: serial("id").primaryKey(),
+  customerRefName: text("customer_ref_name").notNull(),
+  projectName: text("project_name").notNull(),
+  note: text("note"),
+  createdByUserId: integer("created_by_user_id"),
+  createdByName: text("created_by_name"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  deletedAt: timestamp("deleted_at"),
+});
+export type QbCustomerProjectOverride = typeof qbCustomerProjectOverrides.$inferSelect;

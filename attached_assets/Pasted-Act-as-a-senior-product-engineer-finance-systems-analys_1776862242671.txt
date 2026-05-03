@@ -1,0 +1,140 @@
+Act as a senior product engineer, finance systems analyst, QA lead, and integration architect working directly inside the existing Emergent Energy repository.
+
+Your job is to perform a full professional review and assessment of the QuickBooks integration as it exists today in this repo, then harden it. Do not start coding immediately. First inspect and report.
+
+NON-NEGOTIABLE
+- Verify current behaviour before changing anything.
+- Do not break working finance logic, existing routes, permissions, or reconciliation history.
+- Do not invent business rules.
+- Do not leave misleading labels, dead-end buttons, fake states, placeholder flows, or duplicate logic alive.
+- Preserve the rule that QuickBooks is evidence/reconciliation support, not operational truth.
+- Preserve the canonical rule that COS realisation must not be mutated from QuickBooks screens.
+- Preserve auditability.
+
+REPO AREAS TO INSPECT FIRST
+Backend:
+- server/quickbooks-routes.ts
+- server/services/quickbooks-service.ts
+- server/services/quickbooks-reconciliation-service.ts
+- server/repositories/quickbooks-links-repository.ts
+- shared/schema/integrations.ts
+- migrations related to quickbooks / vendor mappings / allocation tables
+
+Frontend:
+- client/src/pages/quickbooks-home.tsx
+- client/src/pages/admin-quickbooks.tsx
+- client/src/pages/finance-quickbooks-links.tsx
+- client/src/pages/finance-quickbooks-customer-mapping.tsx
+- client/src/pages/finance-quickbooks-throughput.tsx
+- client/src/components/tabs/QuickBooksReconciliationTab.tsx
+- client/src/config/route-components.ts
+
+PHASE 1 — CURRENT STATE REVIEW
+Map the full QuickBooks integration:
+1. OAuth flow
+2. connection status
+3. sync-now flow
+4. sync log
+5. invoices, bills, customers, vendors, P&L endpoints
+6. customer mapping
+7. vendor mapping
+8. global bill/invoice linking
+9. project-level reconciliation
+10. audit trail
+11. stale-data signalling
+12. permissions and route visibility
+
+For every QuickBooks page, answer:
+- what is its exact purpose
+- who should use it
+- what source data it reads
+- what actions it allows
+- whether it is redundant with another page
+- whether it is production-safe, beta-only, misleading, or half-built
+
+SPECIFIC THINGS TO VERIFY
+- Is the frontend contract aligned with backend responses on every QuickBooks page?
+- Are there field mismatches like frontend expecting fields the backend does not return?
+- Are status enums consistent end to end?
+- Are labels accurate? Example: bill vs invoice, customer vs client, supplier vs vendor.
+- Are drilldowns truly scoped to the number shown?
+- Are global linking flows duplicating project-level reconciliation flows?
+- Are there hidden or duplicate matching rules?
+- Are sync freshness and stale warnings shown consistently?
+- Are permissions clean between:
+  - financial_integration view
+  - financials view
+  - financials edit
+  - admin
+- Is any action available to a role that should only inspect?
+- Is any important action hidden from the role that owns it?
+- Are there pages that should be merged, hidden, or downgraded behind a beta banner?
+
+KNOWN RISK AREAS TO TEST HARD
+- quickbooks-home sync log status mapping vs backend sync-log response
+- misleading navigation labels
+- duplication between quickbooks-home, admin-quickbooks, finance-quickbooks-throughput, finance-quickbooks-links, and project reconciliation tab
+- stale QuickBooks data giving false confidence
+- contract drift between frontend interfaces and API payloads
+- permission drift between visibility and edit actions
+- manual linking, unlinking, and allocation flows
+- customer mapping and vendor mapping maintenance
+- route discoverability and dead ends
+
+PHASE 2 — FINDINGS REPORT
+Return a concise but professional findings report in this exact structure:
+1. Executive summary
+2. Current QuickBooks surface map
+3. Contract mismatches
+4. UX / terminology problems
+5. Permission / role problems
+6. Workflow duplication or overlap
+7. Trust / reconciliation risks
+8. Half-built or misleading functionality
+9. Production blockers
+10. Recommended target architecture
+
+PHASE 3 — IMPLEMENTATION PLAN
+After findings, propose fixes in three buckets:
+- quick wins
+- medium fixes
+- structural fixes
+
+For every fix, state:
+- affected files
+- risk
+- user impact
+- whether it should be implemented now, hidden, or deferred
+
+PHASE 4 — IMPLEMENT
+Only then implement approved-safe fixes with these priorities:
+1. fix contract mismatches
+2. fix misleading labels and dead ends
+3. fix permission drift
+4. remove or hide duplicate / confusing QuickBooks surfaces
+5. make one clean primary QuickBooks entry point
+6. ensure consistent stale-data messaging
+7. ensure all summary numbers and actions are traceable
+8. preserve audit trail and finance controls
+
+DEFINITION OF DONE
+This is only done when:
+- one clear QuickBooks navigation model exists
+- frontend and backend contracts align
+- role visibility and edit permissions are clean
+- stale data is visible and honest
+- labels are correct
+- no misleading or duplicate QuickBooks workflow remains exposed
+- link / unlink / mapping / sync actions work correctly
+- trust is improved, not just styling
+
+DELIVERABLE FORMAT
+Return:
+1. findings
+2. recommended design
+3. implementation plan
+4. files changed
+5. tests added or updated
+6. hidden/removed functionality
+7. remaining risks
+8. what was deliberately not changed

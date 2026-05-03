@@ -1,6 +1,17 @@
 import { useState, useMemo, Fragment } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Search, Plus, Users, Building2, Pencil, X, Check, ChevronDown, ChevronRight, Link2, Unlink, ChevronsUpDown, FolderKanban, Workflow } from "lucide-react";
+import { Search, Plus, Users, Building2, Pencil, X, Check, ChevronDown, ChevronRight, Link2, Unlink, ChevronsUpDown, FolderKanban, Workflow, MoreHorizontal, GitMerge, Trash2 } from "lucide-react";
+import { ClientEditDialog, type ClientForEdit } from "@/components/clients/ClientEditDialog";
+import { MergeClientDialog } from "@/components/clients/MergeClientDialog";
+import { DeleteClientDialog } from "@/components/clients/DeleteClientDialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { usePermission } from "@/hooks/use-permissions";
 import { Link } from "wouter";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -81,11 +92,19 @@ export default function ClientsPage() {
   const [newName, setNewName] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editName, setEditName] = useState("");
+  const [detailsEditClient, setDetailsEditClient] = useState<ClientForEdit | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
   const [assignClientId, setAssignClientId] = useState<number | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [projectPopoverOpen, setProjectPopoverOpen] = useState(false);
+  // Task #73 — merge / soft-delete UI state.
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [mergeLoser, setMergeLoser] = useState<Client | null>(null);
+  const [mergeInitialSurvivorId, setMergeInitialSurvivorId] = useState<number | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Client | null>(null);
+  const { allowed: canDeleteClients } = usePermission("pd_clients", "delete");
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -403,17 +422,72 @@ export default function ClientsPage() {
                       <TableCell>
                         <div className="flex items-center gap-1">
                           {editingId !== client.id && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                startEdit(client);
-                              }}
-                              data-testid={`button-edit-client-${client.id}`}
-                            >
-                              <Pencil className="w-4 h-4" />
-                            </Button>
+                            <>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  startEdit(client);
+                                }}
+                                title="Rename client"
+                                data-testid={`button-edit-client-${client.id}`}
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDetailsEditClient(client);
+                                }}
+                                title="Edit details (contacts, billing, email domains)"
+                                data-testid={`button-edit-client-details-${client.id}`}
+                              >
+                                <Building2 className="w-4 h-4" />
+                              </Button>
+                              {canDeleteClients && (
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={(e) => e.stopPropagation()}
+                                      title="More actions"
+                                      data-testid={`button-client-actions-${client.id}`}
+                                    >
+                                      <MoreHorizontal className="w-4 h-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem
+                                      onSelect={() => {
+                                        setMergeLoser(client);
+                                        setMergeInitialSurvivorId(null);
+                                        setMergeOpen(true);
+                                      }}
+                                      data-testid={`menu-merge-client-${client.id}`}
+                                    >
+                                      <GitMerge className="w-4 h-4 mr-2" />
+                                      Merge into another client…
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                      className="text-destructive focus:text-destructive"
+                                      onSelect={() => {
+                                        setDeleteTarget(client);
+                                        setDeleteOpen(true);
+                                      }}
+                                      data-testid={`menu-delete-client-${client.id}`}
+                                    >
+                                      <Trash2 className="w-4 h-4 mr-2" />
+                                      Delete client…
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              )}
+                            </>
                           )}
                         </div>
                       </TableCell>
@@ -594,6 +668,34 @@ export default function ClientsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Super-user full-fidelity client edit (contacts, billing, domains) */}
+      {detailsEditClient && (
+        <ClientEditDialog
+          open={detailsEditClient !== null}
+          onOpenChange={(o) => { if (!o) setDetailsEditClient(null); }}
+          client={detailsEditClient}
+        />
+      )}
+
+      {/* Task #73 — merge & soft-delete dialogs */}
+      <MergeClientDialog
+        open={mergeOpen}
+        onOpenChange={(o) => { setMergeOpen(o); if (!o) { setMergeLoser(null); setMergeInitialSurvivorId(null); } }}
+        loser={mergeLoser}
+        candidateClients={clients.map(c => ({ id: c.id, clientId: c.clientId, name: c.name }))}
+        initialSurvivorId={mergeInitialSurvivorId}
+      />
+      <DeleteClientDialog
+        open={deleteOpen}
+        onOpenChange={(o) => { setDeleteOpen(o); if (!o) setDeleteTarget(null); }}
+        client={deleteTarget}
+        onPivotToMerge={(c) => {
+          setMergeLoser(c as Client);
+          setMergeInitialSurvivorId(null);
+          setMergeOpen(true);
+        }}
+      />
     </PageShell>
   );
 }

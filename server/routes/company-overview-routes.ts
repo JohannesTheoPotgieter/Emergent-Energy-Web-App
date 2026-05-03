@@ -1,10 +1,11 @@
 import type { Express } from "express";
 import { requireAuth } from "../auth-context";
+import { requirePermission } from "../permission-middleware";
 import { getCompanyOverviewData } from "../services/company-overview-service";
 import { setFinanceTrustHeaders } from "../lib/finance-trust/envelope";
 
 export function registerCompanyOverviewRoutes(app: Express) {
-  app.get("/api/company-overview", requireAuth, async (_req, res) => {
+  app.get("/api/company-overview", requireAuth, requirePermission("execution_board", "view"), async (_req, res) => {
     try {
       const data = await getCompanyOverviewData();
       setFinanceTrustHeaders(res, {

@@ -3,7 +3,7 @@
 // add explicit ': any' to .map/.filter callback params on db result rows.
 import { Router, type Express, type Request, type Response, type NextFunction } from "express";
 import { requireAuth, requireAdmin, requireCosOverrideRole } from './shared-middleware';
-import { PLACEHOLDER_INVOICES } from '../lib/finance/cos-realisation';
+import { PLACEHOLDER_INVOICES, OVERRIDE_NOT_REALISED } from '../lib/finance/cos-realisation';
 import {
   checkCosPeriodLock,
   lockCosPeriod,
@@ -15,12 +15,80 @@ import {
 import { logAuditFromReq } from '../audit-logger';
 import { storage } from "../storage";
 import { db } from "../db";
-import { paramStr } from "../lib/req-params";
+import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import * as schema from "@shared/schema";
+import { paramStr, parseIntParam } from "../lib/req-params";
 import { requirePermission } from "../permission-middleware";
 import { requireTrackerPermission } from "../lib/finance-route-access";
 import { z } from "zod";
+import { validateBody } from "../middleware/validateBody";
+
+// ── Finance write-surface Zod schemas (Phase 2b-PR2) ──
+// .passthrough() for now so existing UI payloads survive; tighten in a
+// follow-up PR once traffic confirms the shape.
+const isoDateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "YYYY-MM-DD");
+const decimalLike = z.union([z.string(), z.number()]);
+const expenseDateOverrideSchema = z
+  .object({
+    expenseId: z.coerce.number().int().positive(),
+    dateOverride: isoDateStr.nullable().optional(),
+    reason: z.string().max(500).optional().nullable(),
+  })
+  .passthrough();
+const inflowDateOverrideSchema = z
+  .object({
+    inflowId: z.coerce.number().int().positive(),
+    dateOverride: isoDateStr.nullable().optional(),
+    reason: z.string().max(500).optional().nullable(),
+  })
+  .passthrough();
+const openingBalanceSchema = z
+  .object({
+    weekStartDate: isoDateStr,
+    openingBalance: decimalLike,
+    computedValue: decimalLike.nullable().optional(),
+    clearForward: z.boolean().optional(),
+  })
+  .passthrough();
+const opexBudgetSchema = z
+  .object({
+    monthKey: z.string().regex(/^\d{4}-\d{2}$/, "YYYY-MM"),
+    amount: decimalLike,
+  })
+  .passthrough();
+const opexWeeklySchema = z
+  .object({
+    weekStartDate: isoDateStr,
+    opexAmount: decimalLike,
+  })
+  .passthrough();
+const cosPeriodLockSchema = z
+  .object({ notes: z.string().max(500).optional().nullable() })
+  .passthrough();
+const planningOverridesSchema = z
+  .object({
+    overrides: z.array(z.object({
+      projectName: z.string().min(1),
+      overrideValue: decimalLike,
+    }).passthrough()).min(1),
+    overrideCategory: z.string().min(1),
+    overrideComment: z.string().min(3).max(1000),
+  })
+  .passthrough();
+const revenueTrackingOverridesSchema = z
+  .object({
+    overrides: z.array(z.object({
+      projectName: z.string().min(1),
+    }).passthrough()).min(1),
+    overrideCategory: z.string().min(1),
+    overrideComment: z.string().min(3).max(1000),
+  })
+  .passthrough();
+import { applyManualOverride, manualOverridesEnabled } from "../lib/manual-overrides";
+import { EXPENDITURE_TRACKED_FIELDS, REVENUE_TRACKED_FIELDS } from "@shared/excel-vs-app/contract";
 import {
   approvals,
+  auditEvents,
   changeSets,
   fieldChanges,
   financialEditRequests,
@@ -30,6 +98,10 @@ import {
   normalizedRevenueLines,
   OVERRIDE_CATEGORIES,
   projectInfo,
+  qbClassProjectOverrides,
+  qbReconIgnores,
+  qbRevenueReconIgnores,
+  qbCustomerProjectOverrides,
   quickbooksInvoiceLinks,
   users,
 } from "@shared/schema";
@@ -67,8 +139,19 @@ import {
 import { buildFinanceCoreTrustReport } from "../services/finance-core-trust-service";
 import { setFinanceTrustHeaders as setFinanceTrustHeadersShared } from "../lib/finance-trust/envelope";
 import type { FinanceTrustHeaderParams } from "../lib/finance-trust/envelope";
-import { getBills, getInvoices, getMonthlyPnLReport, getQuickBooksConnectionStatus } from "../services/quickbooks-service";
-import { billRawToSummary, invoiceRawToSummary, parsePnLCosMonthly } from "../services/quickbooks-reconciliation-service";
+import { getBills, getInvoices, getMonthlyPnLReport, getQuickBooksConnectionStatus, extractMonthlyAccountTotalsFromPnL } from "../services/quickbooks-service";
+import {
+  billRawToSummary,
+  billRawToLineRows,
+  buildQbProjectResolver,
+  buildRevenueProjectResolver,
+  invoiceRawToSummary,
+  invoiceRawToLineRows,
+  normalizeProjectKey,
+  parsePnLCosMonthly,
+  rankRevenueProjectSuggestions,
+  type QbProjectResolution,
+} from "../services/quickbooks-reconciliation-service";
 import {
   deriveInflowsQbStatus,
   deriveOutflowsQbStatus,
@@ -79,14 +162,20 @@ import { QuickBooksLinksRepository } from "../repositories/quickbooks-links-repo
 const FINANCIAL_APPROVER_ROLES = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"];
 
 async function getHighRiskProjectCostReadRows(projectName: string, projectIdParam?: number | null): Promise<any[]> {
+  // Operational-tab read: overlay manual_overrides on top of the live
+  // column for tracked fields so the operator sees their override.
+  // Gated by USE_MANUAL_OVERRIDES — when off (legacy mode), the live
+  // column already holds the operator's value (writes still go to the
+  // live column), so the overlay is a no-op anyway.
+  const opts = { applyOverrides: manualOverridesEnabled() };
   if (projectIdParam != null && Number.isFinite(projectIdParam)) {
-    return getCanonicalProjectCostLines(projectIdParam as number);
+    return getCanonicalProjectCostLines(projectIdParam as number, opts);
   }
-  return getCanonicalProjectCostLinesByName(projectName).then((r) => r.rows);
+  return getCanonicalProjectCostLinesByName(projectName, opts).then((r) => r.rows);
 }
 
 async function getHighRiskAllCostReadRows(): Promise<any[]> {
-  return getCanonicalAllCurrentCostLines();
+  return getCanonicalAllCurrentCostLines({ applyOverrides: manualOverridesEnabled() });
 }
 
 /**
@@ -185,7 +274,36 @@ function isCosRealised(exp: any): boolean {
 // Per business rules: "committed from prior month must NOT silently become realised
 // unless it matches the invoice rule." If the line has an invoice, isCosRealised()
 // will return true regardless. If it does not, it stays committed.
+/**
+ * Past-month auto-promote eligibility.
+ *
+ * Returns true iff the line:
+ *   - sits in a closed month (monthKey strictly < currentMonthKey),
+ *   - has a non-empty, non-placeholder invoice number,
+ *   - has NOT been admin-overridden to a not-realised status (PLANNED, COMMITTED, INVOICED, APPROVED, PAID).
+ *
+ * Mirrors the override + placeholder gates in `isCanonicalCosRealised` so that
+ * past-month lines respect explicit finance intent (overrides) and don't get
+ * promoted on placeholder values like "TBC" / "N/A".
+ */
+function isPastMonthAutoRealised(exp: any, monthKey: string | null, currentMonthKey: string): boolean {
+  if (!monthKey || monthKey >= currentMonthKey) return false;
+  const override = String(exp?.cosStatusOverride ?? "").toUpperCase().trim();
+  if (OVERRIDE_NOT_REALISED.has(override)) return false;
+  const invoiceTrimmed = String(exp?.expenseInvoiceNumber ?? "").trim();
+  if (!invoiceTrimmed) return false;
+  if (PLACEHOLDER_INVOICES.has(invoiceTrimmed.toLowerCase())) return false;
+  return true;
+}
+
 function isEffectivelyRealised(exp: any, monthKey: string | null, currentMonthKey: string): boolean {
+  // Past-month auto-promote: once a month has closed, an invoice-bearing line
+  // (with no admin "not realised" override and no placeholder invoice value)
+  // is treated as realised regardless of the Excel font-color confirmation
+  // flag. Font-color is a current-month vetting heuristic that stops being
+  // meaningful for periods finance is no longer actively reviewing — without
+  // this rule historical rows sit in "Committed" limbo forever.
+  if (isPastMonthAutoRealised(exp, monthKey, currentMonthKey)) return true;
   if (!isCosRealisedShared(exp)) return false;
   // Realised lines are effective for current and past months only
   return monthKey ? monthKey <= currentMonthKey : true;
@@ -193,6 +311,11 @@ function isEffectivelyRealised(exp: any, monthKey: string | null, currentMonthKe
 
 // Returns true if a cost is still actively committed (has PO or invoice-in-progress but not yet realised).
 function isEffectivelyCommitted(exp: any, monthKey: string | null, currentMonthKey: string): boolean {
+  // Past-month mirror: lines that auto-promoted to Realised must NOT also
+  // count as Committed. PO-only lines (no invoice) and override-suppressed
+  // lines in past months remain Committed — the supplier hasn't billed us
+  // yet, or finance has explicitly held the line.
+  if (isPastMonthAutoRealised(exp, monthKey, currentMonthKey)) return false;
   if (isCosRealisedShared(exp)) return false;
   const cosStatus = classifyCosStatusFull(exp);
   return cosStatus === 'Committed';
@@ -1321,7 +1444,7 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
 
 // ==================== ADMIN DATE OVERRIDE ENDPOINTS ====================
 
-router.post("/api/cashflow-2026/expense-date-override", requireAuth, requirePermission("cashflow", "edit"), async (req, res) => {
+router.post("/api/cashflow-2026/expense-date-override", requireAuth, requirePermission("cashflow", "edit"), validateBody(expenseDateOverrideSchema), async (req, res) => {
   try {
     const { expenseId, dateOverride, reason } = req.body;
     if (!expenseId) {
@@ -1344,7 +1467,10 @@ router.post("/api/cashflow-2026/expense-date-override", requireAuth, requirePerm
     // Try normalizedCostLines first (IDs from the detail endpoint come from this table)
     const updated = await db.update(normalizedCostLines)
       .set(overrideFields)
-      .where(eq(normalizedCostLines.id, expenseId))
+      .where(and(
+        eq(normalizedCostLines.id, expenseId),
+        isNull(normalizedCostLines.effectiveTo),
+      ))
       .returning();
 
     let row: any;
@@ -1416,7 +1542,7 @@ router.post("/api/cashflow-2026/expense-date-override", requireAuth, requirePerm
   }
 });
 
-router.post("/api/cashflow-2026/inflow-date-override", requireAuth, requirePermission("cashflow", "edit"), async (req, res) => {
+router.post("/api/cashflow-2026/inflow-date-override", requireAuth, requirePermission("cashflow", "edit"), validateBody(inflowDateOverrideSchema), async (req, res) => {
   try {
     const { inflowId, dateOverride, reason } = req.body;
     if (!inflowId) {
@@ -1439,7 +1565,10 @@ router.post("/api/cashflow-2026/inflow-date-override", requireAuth, requirePermi
     // Try normalizedRevenueLines first (IDs from the detail endpoint come from this table)
     const updated = await db.update(normalizedRevenueLines)
       .set(overrideFields)
-      .where(eq(normalizedRevenueLines.id, inflowId))
+      .where(and(
+        eq(normalizedRevenueLines.id, inflowId),
+        isNull(normalizedRevenueLines.effectiveTo),
+      ))
       .returning();
 
     let row: any;
@@ -1513,7 +1642,7 @@ router.post("/api/cashflow-2026/inflow-date-override", requireAuth, requirePermi
 
 // ==================== MANUAL INPUT ENDPOINTS ====================
 
-router.post("/api/cashflow-2026/opening-balance", requireAuth, requirePermission("cashflow", "edit"), async (req, res) => {
+router.post("/api/cashflow-2026/opening-balance", requireAuth, requirePermission("cashflow", "edit"), validateBody(openingBalanceSchema), async (req, res) => {
   try {
     const { weekStartDate, openingBalance, computedValue, clearForward } = req.body;
     if (!weekStartDate || openingBalance == null) {
@@ -1596,7 +1725,7 @@ router.delete("/api/cashflow-2026/opening-balance", requireAuth, requirePermissi
   }
 });
 
-router.post("/api/cashflow-2026/opex-budget", requireAuth, requirePermission("cashflow", "edit"), async (req, res) => {
+router.post("/api/cashflow-2026/opex-budget", requireAuth, requirePermission("cashflow", "edit"), validateBody(opexBudgetSchema), async (req, res) => {
   try {
     const { monthKey, amount } = req.body;
     if (!monthKey || amount == null) {
@@ -1620,7 +1749,7 @@ router.get("/api/cashflow-2026/opex-budget", requireAuth, requirePermission("cas
   }
 });
 
-router.post("/api/cashflow-2026/opex-weekly", requireAuth, requirePermission("cashflow", "edit"), async (req, res) => {
+router.post("/api/cashflow-2026/opex-weekly", requireAuth, requirePermission("cashflow", "edit"), validateBody(opexWeeklySchema), async (req, res) => {
   try {
     const { weekStartDate, opexAmount } = req.body;
     if (!weekStartDate || opexAmount == null) {
@@ -1741,6 +1870,12 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
     const plannedByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
     const appOnlyPendingByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
 
+    // Past-month auto-promote anchor: any month strictly before this key is
+    // treated as closed for the purposes of font-color confirmation. See the
+    // per-project helpers above for the matching rule.
+    const nowAnchor = new Date();
+    const cosCurrentMonthKey = `${nowAnchor.getUTCFullYear()}-${String(nowAnchor.getUTCMonth() + 1).padStart(2, '0')}`;
+
     const addProjectAmount = (
       map: Map<string, { total: number; projects: Map<string, number> }>,
       monthKey: string,
@@ -1783,14 +1918,24 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       const projectName = (row.projectName || '').replace(/_Tracker$/i, '');
       if (!projectName) continue;
       const hasInvoice = !!(row.invoiceNumber && String(row.invoiceNumber).trim());
-      const hasPo = !!(row.poNumber && String(row.poNumber).trim());
+      const isPastMonth = monthKey < cosCurrentMonthKey;
       const invoiceDateConfirmed =
-        !!row.invoiceDate && (row.invoiceDateFontColor === 'black' || row.invoiceDateConfirmed === true);
+        !!row.invoiceDate && (
+          row.invoiceDateFontColor === 'black' ||
+          row.invoiceDateConfirmed === true ||
+          // Past-month auto-promote: invoice number on a closed month IS
+          // the confirmation.
+          (isPastMonth && hasInvoice)
+        );
 
-      // COS classification must come from app-side recognition rules, not QB links.
+      // COS classification — purchase order is intentionally NOT part of the
+      // logic per finance rule. A PO without an invoice is still "Planned".
+      //   Realised  = invoice present AND invoice date confirmed (black)
+      //   Committed = invoice present AND invoice date unconfirmed (red)
+      //   Planned   = no invoice
       if (hasInvoice && invoiceDateConfirmed) {
         addProjectAmount(realisedByMonth, monthKey, projectName, amount);
-      } else if (hasInvoice || hasPo) {
+      } else if (hasInvoice) {
         addProjectAmount(committedByMonth, monthKey, projectName, amount);
       } else {
         addProjectAmount(plannedByMonth, monthKey, projectName, amount);
@@ -1813,7 +1958,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
 
     const months: any[] = [];
     const startMonth = new Date(Date.UTC(2025, 8, 1));
-    let ytdCOS = 0, ytdBudget = 0, ytdRealised = 0, ytdCommitted = 0, ytdPlanned = 0, ytdQbOnly = 0, ytdAppOnlyPending = 0;
+    let ytdCOS = 0, ytdBudget = 0, ytdRealised = 0, ytdCommitted = 0, ytdPlanned = 0, ytdQbOnly = 0, ytdAppOnlyPending = 0, ytdCosPlanned = 0, ytdCosUnrealised = 0;
 
     for (let i = 0; i < 12; i++) {
       const monthDate = new Date(startMonth);
@@ -1834,6 +1979,17 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       // the YTD figure (~R339M vs QB truth ~R220M-R230M).
       const plannedCOS = plannedBucket?.total ?? 0;
       const totalCOS = realisedCOS + committedCOS;
+      // cosPlanned = full app-side baseline (every cost line in the month
+      // regardless of state). Per finance rule the "COS Planned" grid row
+      // shows this. Variance against budget is also computed against this
+      // baseline. totalCOS (= R+C, "recognised") is retained only for the
+      // QB-vs-App reconciliation metric below.
+      const cosPlanned = realisedCOS + committedCOS + plannedCOS;
+      // cosUnrealised = the part of the baseline that is NOT yet realised
+      // = lines with no invoice (planned bucket) + lines whose invoice date
+      // is still red/unconfirmed (committed bucket). Mirrors finance rule
+      // "all planned without an invoice and invoice date red".
+      const cosUnrealised = plannedCOS + committedCOS;
       const qbOnlyActual = qbCosByMonth.get(monthKey) ?? 0;
       const appOnlyPendingBucket = appOnlyPendingByMonth.get(monthKey);
       const appOnlyPending = appOnlyPendingBucket?.total ?? 0;
@@ -1847,10 +2003,14 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       const qbVsAppVariance = qbOnlyActual - totalCOS;
       const qbVsAppVariancePct = qbOnlyActual !== 0 ? (qbVsAppVariance / qbOnlyActual) * 100 : 0;
 
-      const variance = totalCOS - budget;
+      // Variance vs budget uses the full baseline so the row sits directly
+      // beneath "COS Planned" with consistent arithmetic (planned − budget).
+      const variance = cosPlanned - budget;
       const variancePct = budget !== 0 ? (variance / budget) * 100 : 0;
 
-      ytdCOS += totalCOS;
+      ytdCOS += cosPlanned;
+      ytdCosPlanned += cosPlanned;
+      ytdCosUnrealised += cosUnrealised;
       ytdRealised += realisedCOS;
       ytdCommitted += committedCOS;
       ytdPlanned += plannedCOS;
@@ -1864,6 +2024,8 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
         monthKey,
         monthLabel: monthDate.toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }),
         totalCOS,
+        cosPlanned,
+        cosUnrealised,
         realisedCOS,
         committedCOS,
         plannedCOS,
@@ -1876,6 +2038,8 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
         qbVsAppVariance,
         qbVsAppVariancePct,
         ytdCOS,
+        ytdCosPlanned,
+        ytdCosUnrealised,
         ytdRealised,
         ytdCommitted,
         ytdPlanned,
@@ -1888,6 +2052,26 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
         realisedProjects: mapToSortedArray(realisedBucket?.projects ?? new Map()),
         committedProjects: mapToSortedArray(committedBucket?.projects ?? new Map()),
         plannedProjects: mapToSortedArray(plannedBucket?.projects ?? new Map()),
+        // Per-project breakdown for the "COS Planned" row = combined R+C+P.
+        cosPlannedProjects: (() => {
+          const merged = new Map<string, number>();
+          for (const bucket of [realisedBucket, committedBucket, plannedBucket]) {
+            for (const [name, val] of bucket?.projects ?? new Map()) {
+              merged.set(name, (merged.get(name) ?? 0) + val);
+            }
+          }
+          return mapToSortedArray(merged);
+        })(),
+        // Per-project breakdown for the "COS Unrealised" row = Planned + Committed.
+        cosUnrealisedProjects: (() => {
+          const merged = new Map<string, number>();
+          for (const bucket of [plannedBucket, committedBucket]) {
+            for (const [name, val] of bucket?.projects ?? new Map()) {
+              merged.set(name, (merged.get(name) ?? 0) + val);
+            }
+          }
+          return mapToSortedArray(merged);
+        })(),
         qbOnlyProjects: [],
         appOnlyPendingProjects: mapToSortedArray(appOnlyPendingBucket?.projects ?? new Map()),
       });
@@ -1919,7 +2103,9 @@ router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res
     const itemsByMonth = new Map<string, any[]>();
 
     const nowDate = new Date();
-    const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, '0')}`;
+    // UTC anchor — must match `cosCurrentMonthKey` in /api/cos-tracker so the
+    // same line classifies the same way in aggregate and per-project views.
+    const currentMonthKey = `${nowDate.getUTCFullYear()}-${String(nowDate.getUTCMonth() + 1).padStart(2, '0')}`;
 
     for (const exp of projectExpenses) {
       if (exp.rowType !== 'item') continue;
@@ -2034,15 +2220,40 @@ router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res
 
 router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
   try {
-    const { monthKey, project, state: stateFilter } = req.query as { monthKey?: string; project?: string; state?: string };
+    const { monthKey, fromMonthKey, project, state: stateFilter } = req.query as { monthKey?: string; fromMonthKey?: string; project?: string; state?: string };
     if (!monthKey) return res.status(400).json({ error: "monthKey required" });
 
     const match = monthKey.match(/^(\d{4})-(\d{2})$/);
     if (!match) return res.status(400).json({ error: "Invalid monthKey format" });
 
-    const monthStart = `${monthKey}-01`;
+    // YTD drilldown: when fromMonthKey is set, the response covers every month
+    // from fromMonthKey through monthKey inclusive. Used by the YTD rows on
+    // the COS grid (ytdRealised, ytdCommitted, ytdQbOnly) so their drawers
+    // sum to the cumulative figure shown in the cell.
+    let fromMatch: RegExpMatchArray | null = null;
+    if (fromMonthKey) {
+      fromMatch = fromMonthKey.match(/^(\d{4})-(\d{2})$/);
+      if (!fromMatch) return res.status(400).json({ error: "Invalid fromMonthKey format" });
+      if (fromMonthKey > monthKey) return res.status(400).json({ error: "fromMonthKey must be <= monthKey" });
+    }
+    const startKey = fromMonthKey || monthKey;
+    const startMatch = fromMatch || match;
+    const monthStart = `${startKey}-01`;
     const lastDay = new Date(Number(match[1]), Number(match[2]), 0).getDate();
     const monthEnd = `${monthKey}-${String(lastDay).padStart(2, '0')}`;
+    void startMatch;
+
+    // The drilldown MUST classify lines using the same app-side rules the
+    // aggregate /api/cos-tracker uses, otherwise drawer rows won't sum to the
+    // clicked cell value. Bucketing rules (mirror of aggregate):
+    //   realised  = hasInvoice && invoiceDateConfirmed (with past-month auto-promote)
+    //   committed = !realised && (hasInvoice || hasPo)
+    //   planned   = !realised && !committed (no invoice, no PO)
+    // QB linkage is a separate concern surfaced via matchStatus only — it does
+    // NOT change which bucket the line falls into.
+    const nowAnchor = new Date();
+    const cosCurrentMonthKey = `${nowAnchor.getUTCFullYear()}-${String(nowAnchor.getUTCMonth() + 1).padStart(2, '0')}`;
+
     const [allCostLines, links, rawBills] = await Promise.all([
       db.select().from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
       db.select().from(quickbooksInvoiceLinks).where(and(
@@ -2063,6 +2274,11 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       lineItem: string | null;
       appAmount: number | null;
       qbAmount: number | null;
+      // contributionAmount is the value this row contributes to the bucket
+      // shown in the grid cell. For app states (realised/committed/planned) it
+      // equals appAmount; for qb_actual it equals qbAmount. The drawer sums
+      // contributionAmount so the displayed total always equals the cell.
+      contributionAmount: number;
       invoiceNumber: string | null;
       qbBillNumber: string | null;
       invoiceDate: string | null;
@@ -2078,6 +2294,10 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       matchStatus: "matched" | "qb_only" | "app_only";
       cosState: "realised" | "committed" | "planned" | "qb_actual";
       reasonBucket: "matched realised" | "matched committed" | "QB-only actual" | "app-only pending" | "planned";
+      // Smart Import v2 tracker check flag from normalized_cost_lines.
+      // Surfaced so the COS drawer can show whether a line was flagged
+      // for review on the source workbook.
+      checkFlag: string | null;
     }
 
     const items: LineItem[] = [];
@@ -2092,46 +2312,71 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
     const billById = new Map<string, any>();
     for (const bill of bills) billById.set(String(bill.id), bill);
 
+    // The "COS Planned" row in the grid shows the full app-side baseline =
+    // realised + committed + planned. Clicking it drills down with
+    // state=recognised, which on this route now means "all app states"
+    // (every cost line regardless of stage). This is intentionally a
+    // superset of realised+committed; QB-only bills are still excluded.
+    // "unrealised" filter = planned + committed (everything not yet realised).
+    const stateFilterNorm = stateFilter === "recognised" ? "recognised" : stateFilter;
+
     for (const row of allCostLines) {
       const appAmount = row.amountExVat ? Number(row.amountExVat) : 0;
       if (!Number.isFinite(appAmount) || appAmount === 0) continue;
       const projectName = (row.projectName || '').replace(/_Tracker$/i, '') || null;
-      // Skip rows without a project association (OPEX / admin lines) to keep the
-      // drill-down project-scoped and consistent with the aggregate tracker.
       if (!projectName) continue;
-      const hasInvoice = !!(row.invoiceNumber && String(row.invoiceNumber).trim());
-      const invoiceDateConfirmed =
-        !!row.invoiceDate && (row.invoiceDateFontColor === 'black' || row.invoiceDateConfirmed === true);
-      const link = linksByCostLineId.get(row.id);
-      const linkedBill = link ? billById.get(String(link.qbEntityId)) : null;
-      const linkedBillMonth = linkedBill?.txnDate?.slice(0, 7) ?? null;
-      // COS bucketing — invoice_date only (see /api/cos-tracker comment).
+
+      // Month bucket — invoice_date only, identical to the aggregate.
       const appMonth = String(row.invoiceDate || '').slice(0, 7) || null;
-      const inTargetMonth = linkedBillMonth === monthKey || (!linkedBill && appMonth === monthKey);
-      if (!inTargetMonth) continue;
+      if (!appMonth) continue;
+      if (fromMonthKey) {
+        if (appMonth < fromMonthKey || appMonth > monthKey) continue;
+      } else {
+        if (appMonth !== monthKey) continue;
+      }
       if (project && projectName !== project) continue;
 
-      let matchStatus: "matched" | "qb_only" | "app_only" = "app_only";
-      let cosState: "realised" | "committed" | "planned" | "qb_actual" = "planned";
-      let reasonBucket: "matched realised" | "matched committed" | "QB-only actual" | "app-only pending" | "planned" = "planned";
-      if (linkedBill) {
-        matchStatus = "matched";
-        if (hasInvoice && invoiceDateConfirmed) {
-          cosState = "realised";
-          reasonBucket = "matched realised";
-        } else {
-          cosState = "committed";
-          reasonBucket = "matched committed";
-        }
-      } else {
-        if (hasInvoice && !invoiceDateConfirmed) reasonBucket = "app-only pending";
-        else reasonBucket = "planned";
-      }
+      const hasInvoice = !!(row.invoiceNumber && String(row.invoiceNumber).trim());
+      // YTD-aware: each line's "past month" check uses its own appMonth, not
+      // the URL's monthKey — otherwise a Sep line in a YTD-through-Jan range
+      // would lose its past-month auto-promote.
+      const isPastMonth = appMonth < cosCurrentMonthKey;
+      const invoiceDateConfirmed =
+        !!row.invoiceDate && (
+          (row as any).invoiceDateFontColor === 'black' ||
+          (row as any).invoiceDateConfirmed === true ||
+          (isPastMonth && hasInvoice)
+        );
 
-      if (stateFilter === "realised" && cosState !== "realised") continue;
-      if (stateFilter === "committed" && cosState !== "committed") continue;
-      if (stateFilter === "planned" && cosState !== "planned") continue;
-      if (stateFilter === "qb_actual" && matchStatus === "app_only") continue;
+      // App-side classification (matches aggregate exactly). Purchase order
+      // is intentionally NOT part of the logic — a PO without an invoice
+      // is still "Planned".
+      let cosState: "realised" | "committed" | "planned";
+      if (hasInvoice && invoiceDateConfirmed) cosState = "realised";
+      else if (hasInvoice) cosState = "committed";
+      else cosState = "planned";
+
+      const link = linksByCostLineId.get(row.id);
+      const linkedBill = link ? billById.get(String(link.qbEntityId)) : null;
+      const matchStatus: "matched" | "app_only" = linkedBill ? "matched" : "app_only";
+
+      const reasonBucket: LineItem["reasonBucket"] =
+        cosState === "realised" ? "matched realised"
+        : cosState === "committed" ? "matched committed"
+        : (hasInvoice && !invoiceDateConfirmed) ? "app-only pending"
+        : "planned";
+
+      // App-side filters: only keep rows whose cosState matches.
+      if (stateFilterNorm === "realised" && cosState !== "realised") continue;
+      if (stateFilterNorm === "committed" && cosState !== "committed") continue;
+      if (stateFilterNorm === "planned" && cosState !== "planned") continue;
+      if (stateFilterNorm === "unrealised" && !(cosState === "planned" || cosState === "committed")) continue;
+      // "recognised" filter = all app-side states (R+C+P) so it matches the
+      // "COS Planned" row total. QB-only bills are always excluded for this
+      // filter (handled by the includeQbOnly gate further down).
+      // (No-op: every app row passes; the filter exists only to suppress QB.)
+      // qb_actual filter only returns QB-only bills (handled below); skip app rows.
+      if (stateFilterNorm === "qb_actual") continue;
 
       items.push({
         id: `app-${row.id}`,
@@ -2140,13 +2385,15 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
         lineItem: row.description || null,
         appAmount,
         qbAmount: linkedBill?.totalAmount ?? null,
+        contributionAmount: appAmount,
         invoiceNumber: row.invoiceNumber || null,
         qbBillNumber: linkedBill?.docNumber ?? null,
         invoiceDate: row.invoiceDate ? String(row.invoiceDate) : null,
         invoiceDateConfirmed,
         supplier: row.counterpartyName || linkedBill?.vendorName || null,
-        month: linkedBillMonth || appMonth || monthKey,
+        month: appMonth || monthKey,
         poNumber: row.poNumber || null,
+        checkFlag: (row as any).checkFlag ?? null,
         qbTransactionType: linkedBill ? "Bill" : null,
         qbTransactionDate: linkedBill?.txnDate ?? null,
         recognitionDate: row.invoiceDate ? String(row.invoiceDate) : (linkedBill?.txnDate ?? null),
@@ -2158,50 +2405,70 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       });
     }
 
-    for (const bill of bills) {
-      if (linkedBillIds.has(String(bill.id))) continue;
-      const billMonth = bill.txnDate?.slice(0, 7);
-      if (billMonth !== monthKey) continue;
-      items.push({
-        id: `qb-${bill.id}`,
-        projectName: null,
-        category: null,
-        lineItem: null,
-        appAmount: null,
-        qbAmount: bill.totalAmount ?? 0,
-        invoiceNumber: null,
-        qbBillNumber: bill.docNumber,
-        invoiceDate: bill.txnDate,
-        invoiceDateConfirmed: true,
-        supplier: bill.vendorName || null,
-        month: billMonth,
-        poNumber: null,
-        qbTransactionType: "Bill",
-        qbTransactionDate: bill.txnDate,
-        recognitionDate: bill.txnDate,
-        syncSource: "quickbooks",
-        sourceTraceId: `qb-bill:${bill.id}`,
-        matchStatus: "qb_only",
-        cosState: "qb_actual",
-        reasonBucket: "QB-only actual",
-      });
+    // QB-only bills are only relevant when the user clicked the QuickBooks COS
+    // cell (state=qb_actual) or opened the drawer with no filter (state=all).
+    // For app-side filters they would dilute the displayed total.
+    const includeQbOnly = !stateFilterNorm || stateFilterNorm === "all" || stateFilterNorm === "qb_actual";
+    if (includeQbOnly) {
+      for (const bill of bills) {
+        if (linkedBillIds.has(String(bill.id))) continue;
+        const billMonth = bill.txnDate?.slice(0, 7);
+        if (!billMonth) continue;
+        if (fromMonthKey) {
+          if (billMonth < fromMonthKey || billMonth > monthKey) continue;
+        } else {
+          if (billMonth !== monthKey) continue;
+        }
+        const qbAmt = bill.totalAmount ?? 0;
+        items.push({
+          id: `qb-${bill.id}`,
+          projectName: null,
+          category: null,
+          lineItem: null,
+          appAmount: null,
+          qbAmount: qbAmt,
+          contributionAmount: qbAmt,
+          invoiceNumber: null,
+          qbBillNumber: bill.docNumber,
+          invoiceDate: bill.txnDate,
+          invoiceDateConfirmed: true,
+          supplier: bill.vendorName || null,
+          month: billMonth,
+          poNumber: null,
+          checkFlag: null,
+          qbTransactionType: "Bill",
+          qbTransactionDate: bill.txnDate,
+          recognitionDate: bill.txnDate,
+          syncSource: "quickbooks",
+          sourceTraceId: `qb-bill:${bill.id}`,
+          matchStatus: "qb_only",
+          cosState: "qb_actual",
+          reasonBucket: "QB-only actual",
+        });
+      }
     }
 
-    items.sort((a, b) => (b.qbAmount ?? b.appAmount ?? 0) - (a.qbAmount ?? a.appAmount ?? 0));
+    items.sort((a, b) => (b.contributionAmount ?? 0) - (a.contributionAmount ?? 0));
 
-    const realisedTotal = items
-      .filter(i => i.reasonBucket === "matched realised")
-      .reduce((s, i) => s + (i.qbAmount ?? 0), 0);
-    const committedTotal = items
-      .filter(i => i.reasonBucket === "matched committed")
-      .reduce((s, i) => s + (i.qbAmount ?? 0), 0);
-    const plannedTotal = items
-      .filter(i => i.reasonBucket === "app-only pending")
-      .reduce((s, i) => s + (i.appAmount ?? 0), 0);
-    const qbOnlyTotal = items
-      .filter(i => i.reasonBucket === "QB-only actual")
-      .reduce((s, i) => s + (i.qbAmount ?? 0), 0);
-    const totalActual = items.reduce((s, i) => s + (i.qbAmount ?? 0), 0);
+    const realisedTotal = items.filter(i => i.cosState === "realised").reduce((s, i) => s + (i.appAmount ?? 0), 0);
+    const committedTotal = items.filter(i => i.cosState === "committed").reduce((s, i) => s + (i.appAmount ?? 0), 0);
+    const plannedTotal = items.filter(i => i.cosState === "planned").reduce((s, i) => s + (i.appAmount ?? 0), 0);
+    const qbOnlyTotal = items.filter(i => i.cosState === "qb_actual").reduce((s, i) => s + (i.qbAmount ?? 0), 0);
+    // recognisedTotal = full app-side baseline (R+C+P) to match the
+    // "COS Planned" grid row that drills down with state=recognised.
+    const recognisedTotal = realisedTotal + committedTotal + plannedTotal;
+    // unrealisedTotal = planned + committed = everything not yet realised.
+    const unrealisedTotal = plannedTotal + committedTotal;
+    // expectedTotal = sum of contributions for the active filter — this is what
+    // the cell shows, so the drawer header can verify the math out of the box.
+    const expectedTotal =
+      stateFilterNorm === "realised" ? realisedTotal
+      : stateFilterNorm === "committed" ? committedTotal
+      : stateFilterNorm === "planned" ? plannedTotal
+      : stateFilterNorm === "unrealised" ? unrealisedTotal
+      : stateFilterNorm === "qb_actual" ? qbOnlyTotal
+      : stateFilterNorm === "recognised" ? recognisedTotal
+      : (realisedTotal + committedTotal + plannedTotal + qbOnlyTotal);
 
     setFinanceTrustHeaders(res, {
       sourceLayer: "canonical",
@@ -2210,20 +2477,1293 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
     res.json({
       monthKey,
       lineCount: items.length,
-      totalAmount: totalActual,
+      totalAmount: realisedTotal + committedTotal + qbOnlyTotal,
       realisedTotal,
       committedTotal,
       plannedTotal,
+      recognisedTotal,
+      unrealisedTotal,
       qbOnlyTotal,
+      expectedTotal,
       appOnlyPendingTotal: plannedTotal,
-      realisedCount: items.filter(i => i.reasonBucket === "matched realised").length,
-      committedCount: items.filter(i => i.reasonBucket === "matched committed").length,
-      plannedCount: items.filter(i => i.reasonBucket === "app-only pending").length,
+      realisedCount: items.filter(i => i.cosState === "realised").length,
+      committedCount: items.filter(i => i.cosState === "committed").length,
+      plannedCount: items.filter(i => i.cosState === "planned").length,
       items,
     });
   } catch (error) {
     console.error("COS month detail error:", error);
     res.status(500).json({ error: "Failed to fetch COS month detail" });
+  }
+});
+
+/**
+ * QuickBooks → Project resolver coverage report (Phase 1, admin-only).
+ *
+ * Pulls QB Bills for a date range, runs the line-row extractor + project
+ * resolver, and returns a JSON report so finance can validate which QB
+ * bills are unmapped (Class typo / missing Class) and which are resolved
+ * to projects but missing from the Excel trackers (the source of truth).
+ *
+ * READ-ONLY. Never writes to normalized_cost_lines or quickbooks_invoice_links.
+ * Trackers stay the source of truth — this just shows what's missing.
+ *
+ *   GET /api/cos-tracker/qb-coverage-report?start=2025-09-01&end=2025-10-31
+ */
+router.get("/api/cos-tracker/qb-coverage-report", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const start = String(req.query.start || "");
+    const end = String(req.query.end || "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) {
+      return res.status(400).json({ error: "start and end required as YYYY-MM-DD" });
+    }
+
+    // Project-name universe = project_info ∪ active normalized_cost_lines.project_name
+    const [projects, ncl] = await Promise.all([
+      db.select({ name: projectInfo.projectName }).from(projectInfo),
+      db
+        .select({ name: normalizedCostLines.projectName })
+        .from(normalizedCostLines)
+        .where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
+    ]);
+    const universe = new Set<string>();
+    for (const p of projects) if (p.name) universe.add(p.name);
+    for (const r of ncl) if (r.name) universe.add(r.name);
+    const projectNames = [...universe];
+
+    // Active cost lines bucketed by normalised project key for tracker_gap preview.
+    const activeCostLines = await db
+      .select({
+        id: normalizedCostLines.id,
+        projectName: normalizedCostLines.projectName,
+        invoiceNumber: normalizedCostLines.invoiceNumber,
+        invoiceDate: normalizedCostLines.invoiceDate,
+        amountExVat: normalizedCostLines.amountExVat,
+        counterpartyName: normalizedCostLines.counterpartyName,
+      })
+      .from(normalizedCostLines)
+      .where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)));
+    const costLinesByProjectKey = new Map<string, typeof activeCostLines>();
+    for (const cl of activeCostLines) {
+      const key = normalizeProjectKey(cl.projectName);
+      if (!key) continue;
+      if (!costLinesByProjectKey.has(key)) costLinesByProjectKey.set(key, []);
+      costLinesByProjectKey.get(key)!.push(cl);
+    }
+
+    const billsResp = await getBills(start, end);
+    const bills: any[] = billsResp?.QueryResponse?.Bill ?? [];
+
+    const resolveProject = buildQbProjectResolver(projectNames);
+    const rows: any[] = [];
+    for (const bill of bills) {
+      for (const lr of billRawToLineRows(bill)) {
+        const resolution = resolveProject({
+          classRefName: lr.classRefName,
+          customerRefName: lr.customerRefName,
+        });
+        let closest: any = null;
+        if (resolution.projectName) {
+          const candidates =
+            costLinesByProjectKey.get(normalizeProjectKey(resolution.projectName)) ?? [];
+          const target = lr.lineAmountExVat ?? 0;
+          const close = candidates
+            .map((c: any) => ({ c, diff: Math.abs(Number(c.amountExVat ?? 0) - target) }))
+            .filter((x: any) => x.diff <= 1)
+            .sort((a: any, b: any) => a.diff - b.diff)[0];
+          if (close) {
+            closest = {
+              id: close.c.id,
+              invoiceNumber: close.c.invoiceNumber,
+              invoiceDate: close.c.invoiceDate ? String(close.c.invoiceDate) : null,
+              amountExVat:
+                close.c.amountExVat !== null && close.c.amountExVat !== undefined
+                  ? Number(close.c.amountExVat)
+                  : null,
+              counterpartyName: close.c.counterpartyName,
+            };
+          }
+        }
+        rows.push({
+          ...lr,
+          resolvedProjectName: resolution.projectName,
+          strategy: resolution.strategy,
+          matchedFrom: resolution.matchedFrom,
+          closestCostLineMatch: closest,
+        });
+      }
+    }
+
+    // Aggregations.
+    const byStrategy: Record<string, { count: number; amount: number }> = {};
+    let totalAmount = 0;
+    let resolvedAmount = 0;
+    let trackerGapAmount = 0;
+    let trackerGapCount = 0;
+    for (const r of rows) {
+      const amt = r.lineAmountExVat ?? 0;
+      totalAmount += amt;
+      if (!byStrategy[r.strategy]) byStrategy[r.strategy] = { count: 0, amount: 0 };
+      byStrategy[r.strategy]!.count += 1;
+      byStrategy[r.strategy]!.amount += amt;
+      if (r.resolvedProjectName) {
+        resolvedAmount += amt;
+        if (!r.closestCostLineMatch) {
+          trackerGapAmount += amt;
+          trackerGapCount += 1;
+        }
+      }
+    }
+    const unmappedClasses = new Map<string, { count: number; amount: number }>();
+    for (const r of rows) {
+      if (r.strategy === "unmapped_class" && r.classRefName) {
+        if (!unmappedClasses.has(r.classRefName))
+          unmappedClasses.set(r.classRefName, { count: 0, amount: 0 });
+        const slot = unmappedClasses.get(r.classRefName)!;
+        slot.count += 1;
+        slot.amount += r.lineAmountExVat ?? 0;
+      }
+    }
+    const unmappedClassList = [...unmappedClasses.entries()]
+      .map(([classRefName, v]) => ({ classRefName, ...v }))
+      .sort((a, b) => b.amount - a.amount);
+
+    const fuzzyMatches = rows
+      .filter((r) => r.strategy === "class_substring" || r.strategy === "customer_substring")
+      .map((r) => ({
+        billId: r.billId,
+        docNumber: r.docNumber,
+        txnDate: r.txnDate,
+        vendorName: r.vendorName,
+        lineAmountExVat: r.lineAmountExVat,
+        matchedFrom: r.matchedFrom,
+        resolvedProjectName: r.resolvedProjectName,
+        strategy: r.strategy,
+      }));
+
+    const trackerGapPreview = rows
+      .filter((r) => r.resolvedProjectName && !r.closestCostLineMatch)
+      .map((r) => ({
+        project: r.resolvedProjectName,
+        billId: r.billId,
+        docNumber: r.docNumber,
+        txnDate: r.txnDate,
+        vendorName: r.vendorName,
+        lineAmountExVat: r.lineAmountExVat,
+        classRefName: r.classRefName,
+        description: r.description,
+      }))
+      .sort((a, b) => (b.lineAmountExVat ?? 0) - (a.lineAmountExVat ?? 0));
+
+    res.json({
+      generatedAt: new Date().toISOString(),
+      window: { start, end },
+      summary: {
+        totalBills: bills.length,
+        totalLineRows: rows.length,
+        totalAmountExVat: Math.round(totalAmount * 100) / 100,
+        resolvedAmountExVat: Math.round(resolvedAmount * 100) / 100,
+        resolvedPct: totalAmount > 0 ? Math.round((resolvedAmount / totalAmount) * 10000) / 100 : 0,
+        trackerGapCount,
+        trackerGapAmountExVat: Math.round(trackerGapAmount * 100) / 100,
+        projectUniverseSize: projectNames.length,
+      },
+      byStrategy,
+      unmappedClasses: unmappedClassList,
+      fuzzyMatches,
+      trackerGapPreview,
+    });
+  } catch (err) {
+    console.error("[qb-coverage-report]", err);
+    res
+      .status(500)
+      .json({ error: "qb_coverage_report_failed", detail: "An unexpected server error occurred" });
+  }
+});
+
+/**
+ * Tracker Gap (C004) — admin-only annotated coverage report.
+ *
+ * Wraps `qb-coverage-report` and merges in user annotations:
+ *   - active rows from `qb_recon_ignores` (suppress matching tracker_gap rows)
+ *   - active rows from `qb_class_project_overrides` (rescue unmapped_class rows)
+ *
+ * READ-ONLY against `normalized_cost_lines` / `quickbooks_invoice_links`.
+ * Trackers remain the source of truth — the only writes here are to the
+ * annotation tables (`POST /ignore`, `POST /class-override`).
+ *
+ *   GET /api/cos-tracker/tracker-gap?start=YYYY-MM-DD&end=YYYY-MM-DD
+ */
+router.get("/api/cos-tracker/tracker-gap", requireAuth, requirePermission("cos", "edit"), async (req, res) => {
+  try {
+    const start = String(req.query.start || "");
+    const end = String(req.query.end || "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) {
+      return res.status(400).json({ error: "start and end required as YYYY-MM-DD" });
+    }
+
+    // Project-name universe = project_info ∪ active normalized_cost_lines.project_name
+    const [projects, ncl, classOverrides, ignores] = await Promise.all([
+      db.select({ name: projectInfo.projectName }).from(projectInfo),
+      db
+        .select({ name: normalizedCostLines.projectName })
+        .from(normalizedCostLines)
+        .where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
+      db.select().from(qbClassProjectOverrides).where(isNull(qbClassProjectOverrides.deletedAt)),
+      db.select().from(qbReconIgnores).where(isNull(qbReconIgnores.deletedAt)),
+    ]);
+    const universe = new Set<string>();
+    for (const p of projects) if (p.name) universe.add(p.name);
+    for (const r of ncl) if (r.name) universe.add(r.name);
+    const projectNames = [...universe];
+
+    // Class override lookup (case-insensitive on classRefName)
+    const overrideByClass = new Map<string, string>();
+    for (const o of classOverrides) {
+      overrideByClass.set(o.classRefName.toLowerCase().trim(), o.projectName);
+    }
+
+    // Ignore lookup keyed on `${qbBillId}::${qbLineId ?? ""}`
+    const ignoreKey = (billId: string | null, lineId: string | null) =>
+      `${billId ?? ""}::${lineId ?? ""}`;
+
+    // Active cost lines bucketed by normalised project key for tracker_gap matching.
+    const activeCostLines = await db
+      .select({
+        id: normalizedCostLines.id,
+        projectName: normalizedCostLines.projectName,
+        invoiceNumber: normalizedCostLines.invoiceNumber,
+        invoiceDate: normalizedCostLines.invoiceDate,
+        amountExVat: normalizedCostLines.amountExVat,
+        counterpartyName: normalizedCostLines.counterpartyName,
+      })
+      .from(normalizedCostLines)
+      .where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)));
+    const costLinesByProjectKey = new Map<string, typeof activeCostLines>();
+    for (const cl of activeCostLines) {
+      const key = normalizeProjectKey(cl.projectName);
+      if (!key) continue;
+      if (!costLinesByProjectKey.has(key)) costLinesByProjectKey.set(key, []);
+      costLinesByProjectKey.get(key)!.push(cl);
+    }
+
+    let billsResp: any;
+    try {
+      billsResp = await getBills(start, end);
+    } catch (qbErr) {
+      console.error("[tracker-gap] QB getBills failed:", qbErr);
+      return res.status(503).json({
+        error: "qb_not_connected",
+        detail: "QuickBooks integration is unavailable. Reconnect QB to refresh the gap report.",
+        message: qbErr instanceof Error ? qbErr.message : String(qbErr),
+      });
+    }
+    const bills: any[] = billsResp?.QueryResponse?.Bill ?? [];
+
+    const resolveProject = buildQbProjectResolver(projectNames);
+
+    type GapBucket = "tracker_gap" | "unmapped_class" | "unmapped_no_class" | "matched" | "fuzzy";
+    interface GapRow {
+      bucket: GapBucket;
+      billId: string | null;
+      qbLineId: string | null;
+      docNumber: string | null;
+      txnDate: string | null;
+      vendorName: string | null;
+      lineAmountExVat: number | null;
+      classRefName: string | null;
+      customerRefName: string | null;
+      accountRefName: string | null;
+      description: string | null;
+      resolvedProjectName: string | null;
+      strategy: string;
+      matchedFrom: string | null;
+      isOverride: boolean;
+      isIgnored: boolean;
+      ignoreReason: string | null;
+      ignoredByName: string | null;
+      ignoredAt: string | null;
+      closestCostLineId: number | null;
+    }
+
+    const ignoreMeta = new Map<string, { reason: string; ignoredByName: string | null; ignoredAt: string }>();
+    for (const ig of ignores) {
+      ignoreMeta.set(ignoreKey(ig.qbBillId, ig.qbLineId), {
+        reason: ig.reason,
+        ignoredByName: ig.ignoredByName,
+        ignoredAt: ig.ignoredAt.toISOString(),
+      });
+    }
+
+    const rows: GapRow[] = [];
+    for (const bill of bills) {
+      for (const lr of billRawToLineRows(bill)) {
+        let resolution = resolveProject({
+          classRefName: lr.classRefName,
+          customerRefName: lr.customerRefName,
+        });
+        let isOverride = false;
+        if (!resolution.projectName && lr.classRefName) {
+          const override = overrideByClass.get(lr.classRefName.toLowerCase().trim());
+          if (override) {
+            resolution = {
+              projectName: override,
+              strategy: "class_override" as any,
+              matchedFrom: lr.classRefName,
+            };
+            isOverride = true;
+          }
+        }
+
+        // Match against tracker cost lines (project + amount within R1)
+        let closestId: number | null = null;
+        if (resolution.projectName) {
+          const candidates = costLinesByProjectKey.get(normalizeProjectKey(resolution.projectName)) ?? [];
+          const target = lr.lineAmountExVat ?? 0;
+          const close = candidates
+            .map((c: any) => ({ c, diff: Math.abs(Number(c.amountExVat ?? 0) - target) }))
+            .filter((x: any) => x.diff <= 1)
+            .sort((a: any, b: any) => a.diff - b.diff)[0];
+          if (close) closestId = close.c.id;
+        }
+
+        let bucket: GapBucket;
+        if (resolution.projectName && closestId) bucket = "matched";
+        else if (resolution.projectName) bucket = "tracker_gap"; // fuzzy-resolved rows fold in here; UI shows the strategy badge so finance can confirm
+        else if (lr.classRefName) bucket = "unmapped_class";
+        else bucket = "unmapped_no_class";
+
+        const igk = ignoreKey(lr.billId, lr.lineId);
+        const ig = ignoreMeta.get(igk);
+
+        rows.push({
+          bucket,
+          billId: lr.billId,
+          qbLineId: lr.lineId,
+          docNumber: lr.docNumber,
+          txnDate: lr.txnDate,
+          vendorName: lr.vendorName,
+          lineAmountExVat: lr.lineAmountExVat,
+          classRefName: lr.classRefName,
+          customerRefName: lr.customerRefName,
+          accountRefName: lr.accountRefName,
+          description: lr.description,
+          resolvedProjectName: resolution.projectName,
+          strategy: resolution.strategy,
+          matchedFrom: resolution.matchedFrom,
+          isOverride,
+          isIgnored: !!ig,
+          ignoreReason: ig?.reason ?? null,
+          ignoredByName: ig?.ignoredByName ?? null,
+          ignoredAt: ig?.ignoredAt ?? null,
+          closestCostLineId: closestId,
+        });
+      }
+    }
+
+    // Aggregations — exclude ignored from "open" totals, keep them surfaced separately.
+    let totalAmount = 0;
+    let openTrackerGapAmount = 0;
+    let openTrackerGapCount = 0;
+    let ignoredAmount = 0;
+    let ignoredCount = 0;
+    const byBucket: Record<GapBucket, { count: number; amount: number; openCount: number; openAmount: number }> = {
+      tracker_gap: { count: 0, amount: 0, openCount: 0, openAmount: 0 },
+      unmapped_class: { count: 0, amount: 0, openCount: 0, openAmount: 0 },
+      unmapped_no_class: { count: 0, amount: 0, openCount: 0, openAmount: 0 },
+      matched: { count: 0, amount: 0, openCount: 0, openAmount: 0 },
+      fuzzy: { count: 0, amount: 0, openCount: 0, openAmount: 0 },
+    };
+    for (const r of rows) {
+      const amt = r.lineAmountExVat ?? 0;
+      totalAmount += amt;
+      byBucket[r.bucket].count += 1;
+      byBucket[r.bucket].amount += amt;
+      if (!r.isIgnored) {
+        byBucket[r.bucket].openCount += 1;
+        byBucket[r.bucket].openAmount += amt;
+      } else {
+        ignoredAmount += amt;
+        ignoredCount += 1;
+      }
+      if (r.bucket === "tracker_gap" && !r.isIgnored) {
+        openTrackerGapAmount += amt;
+        openTrackerGapCount += 1;
+      }
+    }
+
+    // Per-project rollup (for tracker_gap rows only — that's the actionable bucket)
+    const byProject = new Map<string, { project: string; count: number; openCount: number; amount: number; openAmount: number }>();
+    for (const r of rows) {
+      if (r.bucket !== "tracker_gap") continue;
+      const key = r.resolvedProjectName ?? "(unknown)";
+      if (!byProject.has(key)) byProject.set(key, { project: key, count: 0, openCount: 0, amount: 0, openAmount: 0 });
+      const slot = byProject.get(key)!;
+      slot.count += 1;
+      slot.amount += r.lineAmountExVat ?? 0;
+      if (!r.isIgnored) {
+        slot.openCount += 1;
+        slot.openAmount += r.lineAmountExVat ?? 0;
+      }
+    }
+
+    // Unmapped-class rollup with current override hint (suggest most-frequent customer name as guess)
+    const unmappedClassMap = new Map<string, { classRefName: string; count: number; amount: number; sampleVendors: Set<string>; sampleCustomers: Set<string> }>();
+    for (const r of rows) {
+      if (r.bucket !== "unmapped_class" || !r.classRefName) continue;
+      if (!unmappedClassMap.has(r.classRefName))
+        unmappedClassMap.set(r.classRefName, { classRefName: r.classRefName, count: 0, amount: 0, sampleVendors: new Set(), sampleCustomers: new Set() });
+      const slot = unmappedClassMap.get(r.classRefName)!;
+      slot.count += 1;
+      slot.amount += r.lineAmountExVat ?? 0;
+      if (r.vendorName) slot.sampleVendors.add(r.vendorName);
+      if (r.customerRefName) slot.sampleCustomers.add(r.customerRefName);
+    }
+    const unmappedClassList = [...unmappedClassMap.values()]
+      .map((v) => ({
+        classRefName: v.classRefName,
+        count: v.count,
+        amount: Math.round(v.amount * 100) / 100,
+        sampleVendors: [...v.sampleVendors].slice(0, 5),
+        sampleCustomers: [...v.sampleCustomers].slice(0, 5),
+      }))
+      .sort((a, b) => b.amount - a.amount);
+
+    res.json({
+      generatedAt: new Date().toISOString(),
+      window: { start, end },
+      summary: {
+        totalLineRows: rows.length,
+        totalAmountExVat: Math.round(totalAmount * 100) / 100,
+        openTrackerGapCount,
+        openTrackerGapAmountExVat: Math.round(openTrackerGapAmount * 100) / 100,
+        ignoredCount,
+        ignoredAmountExVat: Math.round(ignoredAmount * 100) / 100,
+        projectUniverseSize: projectNames.length,
+        classOverridesActive: classOverrides.length,
+      },
+      byBucket: Object.fromEntries(
+        Object.entries(byBucket).map(([k, v]) => [
+          k,
+          {
+            count: v.count,
+            amount: Math.round(v.amount * 100) / 100,
+            openCount: v.openCount,
+            openAmount: Math.round(v.openAmount * 100) / 100,
+          },
+        ]),
+      ),
+      byProject: [...byProject.values()].sort((a: any, b: any) => b.openAmount - a.openAmount),
+      unmappedClasses: unmappedClassList,
+      classOverrides: classOverrides.map((o: any) => ({
+        id: o.id,
+        classRefName: o.classRefName,
+        projectName: o.projectName,
+        note: o.note,
+        createdByName: o.createdByName,
+        createdAt: o.createdAt instanceof Date ? o.createdAt.toISOString() : String(o.createdAt),
+      })),
+      rows,
+    });
+  } catch (err) {
+    console.error("[tracker-gap]", err);
+    res.status(500).json({ error: "tracker_gap_failed", detail: "An unexpected server error occurred" });
+  }
+});
+
+const ignoreBodySchema = z.object({
+  qbBillId: z.string().min(1),
+  qbLineId: z.string().nullable().optional(),
+  qbDocNumber: z.string().nullable().optional(),
+  vendorName: z.string().nullable().optional(),
+  lineAmountExVat: z.number().nullable().optional(),
+  resolvedProjectName: z.string().nullable().optional(),
+  reason: z.string().min(1).max(500),
+});
+
+router.post("/api/cos-tracker/tracker-gap/ignore", requireAuth, requirePermission("cos", "edit"), validateBody(ignoreBodySchema), async (req, res) => {
+  try {
+    const body = req.body as z.infer<typeof ignoreBodySchema>;
+    const user = (req as any).user;
+    const [created] = await db
+      .insert(qbReconIgnores)
+      .values({
+        qbBillId: body.qbBillId,
+        qbLineId: body.qbLineId ?? null,
+        qbDocNumber: body.qbDocNumber ?? null,
+        vendorName: body.vendorName ?? null,
+        lineAmountExVat: body.lineAmountExVat != null ? String(body.lineAmountExVat) : null,
+        resolvedProjectName: body.resolvedProjectName ?? null,
+        reason: body.reason,
+        ignoredByUserId: user?.id ?? null,
+        ignoredByName: user?.name ?? user?.email ?? null,
+      })
+      .returning();
+    // Audit: every ignore is captured with reason + actor + before/after for forensic replay.
+    await logAuditFromReq(req, {
+      entityType: "qb_recon_ignore",
+      entityId: String(created.id),
+      action: "create",
+      changesJson: {
+        previous_state: null,
+        new_state: {
+          qbBillId: body.qbBillId,
+          qbLineId: body.qbLineId ?? null,
+          qbDocNumber: body.qbDocNumber ?? null,
+          vendorName: body.vendorName ?? null,
+          lineAmountExVat: body.lineAmountExVat ?? null,
+          resolvedProjectName: body.resolvedProjectName ?? null,
+        },
+        reason: body.reason,
+      },
+      projectName: body.resolvedProjectName ?? undefined,
+    });
+    res.json({ ok: true, ignore: created });
+  } catch (err) {
+    console.error("[tracker-gap/ignore]", err);
+    res.status(500).json({ error: "ignore_failed", detail: "An unexpected server error occurred" });
+  }
+});
+
+const ignoreUndoBodySchema = z.object({
+  reason: z.string().min(1).max(500),
+});
+
+router.delete("/api/cos-tracker/tracker-gap/ignore/:id", requireAuth, requirePermission("cos", "edit"), validateBody(ignoreUndoBodySchema), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
+    const body = req.body as z.infer<typeof ignoreUndoBodySchema>;
+    // Capture pre-state so the audit row records what is being undone.
+    const [prev] = await db.select().from(qbReconIgnores).where(eq(qbReconIgnores.id, id));
+    if (!prev) return res.status(404).json({ error: "not_found" });
+    await db.update(qbReconIgnores).set({ deletedAt: new Date() }).where(eq(qbReconIgnores.id, id));
+    await logAuditFromReq(req, {
+      entityType: "qb_recon_ignore",
+      entityId: String(id),
+      action: "delete",
+      changesJson: {
+        previous_state: {
+          qbBillId: prev.qbBillId,
+          qbDocNumber: prev.qbDocNumber,
+          reason: prev.reason,
+          ignoredByName: prev.ignoredByName,
+        },
+        new_state: null,
+        reason: body.reason,
+      },
+      projectName: prev.resolvedProjectName ?? undefined,
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[tracker-gap/ignore/delete]", err);
+    res.status(500).json({ error: "ignore_delete_failed", detail: "An unexpected server error occurred" });
+  }
+});
+
+const overrideBodySchema = z.object({
+  classRefName: z.string().min(1).max(200),
+  projectName: z.string().min(1).max(200),
+  // Mandatory rationale per COS hardening brief — every QB class→project mapping must record
+  // *why* it was created so the override trail is auditable, not just *who*.
+  note: z.string().min(1).max(500),
+});
+
+router.post("/api/cos-tracker/tracker-gap/class-override", requireAuth, requirePermission("cos", "edit"), validateBody(overrideBodySchema), async (req, res) => {
+  try {
+    const body = req.body as z.infer<typeof overrideBodySchema>;
+    const user = (req as any).user;
+    // Atomic supersede: soft-delete any active row for this class then insert, all in one tx.
+    // The partial unique index on LOWER(class_ref_name) WHERE deleted_at IS NULL means a concurrent
+    // writer can still trip 23505; we surface that as 409 so the client can retry deterministically.
+    const created = await db.transaction(async (tx: any) => {
+      await tx
+        .update(qbClassProjectOverrides)
+        .set({ deletedAt: new Date() })
+        .where(
+          and(
+            isNull(qbClassProjectOverrides.deletedAt),
+            sql`LOWER(${qbClassProjectOverrides.classRefName}) = LOWER(${body.classRefName})`,
+          ),
+        );
+      const [row] = await tx
+        .insert(qbClassProjectOverrides)
+        .values({
+          classRefName: body.classRefName,
+          projectName: body.projectName,
+          note: body.note ?? null,
+          createdByUserId: user?.id ?? null,
+          createdByName: user?.name ?? user?.email ?? null,
+        })
+        .returning();
+      return row;
+    });
+    await logAuditFromReq(req, {
+      entityType: "qb_class_project_override",
+      entityId: String(created.id),
+      action: "create",
+      changesJson: {
+        previous_state: null,
+        new_state: { classRefName: body.classRefName, projectName: body.projectName },
+        reason: body.note,
+      },
+      projectName: body.projectName,
+    });
+    res.json({ ok: true, override: created });
+  } catch (err: any) {
+    const code = err?.code ?? err?.cause?.code;
+    if (code === "23505") {
+      console.warn("[tracker-gap/class-override] concurrent insert collided", err?.message);
+      return res.status(409).json({ error: "concurrent_update", detail: "Another mapping was just saved for this class. Refresh and retry." });
+    }
+    console.error("[tracker-gap/class-override]", err);
+    res.status(500).json({ error: "override_failed", detail: "An unexpected server error occurred" });
+  }
+});
+
+const overrideUndoBodySchema = z.object({
+  reason: z.string().min(1).max(500),
+});
+
+router.delete("/api/cos-tracker/tracker-gap/class-override/:id", requireAuth, requirePermission("cos", "edit"), validateBody(overrideUndoBodySchema), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
+    const body = req.body as z.infer<typeof overrideUndoBodySchema>;
+    const [prev] = await db.select().from(qbClassProjectOverrides).where(eq(qbClassProjectOverrides.id, id));
+    if (!prev) return res.status(404).json({ error: "not_found" });
+    await db.update(qbClassProjectOverrides).set({ deletedAt: new Date() }).where(eq(qbClassProjectOverrides.id, id));
+    await logAuditFromReq(req, {
+      entityType: "qb_class_project_override",
+      entityId: String(id),
+      action: "delete",
+      changesJson: {
+        previous_state: { classRefName: prev.classRefName, projectName: prev.projectName, note: prev.note },
+        new_state: null,
+        reason: body.reason,
+      },
+      projectName: prev.projectName,
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[tracker-gap/class-override/delete]", err);
+    res.status(500).json({ error: "override_delete_failed", detail: "An unexpected server error occurred" });
+  }
+});
+
+// =====================================================================
+// REVENUE Tracker-Gap maintenance workspace (Task #18 — mirrors COS).
+//
+// Same architecture as the COS endpoints above, but works on QuickBooks
+// Invoices + Customers instead of Bills + Classes, and writes to
+// qb_revenue_recon_ignores / qb_customer_project_overrides.
+// READ-ONLY against `normalized_revenue_lines` / `quickbooks_invoice_links`.
+// =====================================================================
+
+router.get(
+  "/api/revenue-tracker/tracker-gap",
+  requireAuth,
+  requirePermission("revenue_tracker", "edit"),
+  async (req, res) => {
+    try {
+      const start = String(req.query.start || "");
+      const end = String(req.query.end || "");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) {
+        return res.status(400).json({ error: "start and end required as YYYY-MM-DD" });
+      }
+
+      const [projects, nrl, custOverrides, ignores] = await Promise.all([
+        db.select({ name: projectInfo.projectName }).from(projectInfo),
+        db
+          .select({ name: normalizedRevenueLines.projectName })
+          .from(normalizedRevenueLines)
+          .where(and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt))),
+        db.select().from(qbCustomerProjectOverrides).where(isNull(qbCustomerProjectOverrides.deletedAt)),
+        db.select().from(qbRevenueReconIgnores).where(isNull(qbRevenueReconIgnores.deletedAt)),
+      ]);
+
+      const universe = new Set<string>();
+      for (const p of projects) if (p.name) universe.add(p.name);
+      for (const r of nrl) if (r.name) universe.add(r.name);
+      const projectNames = [...universe];
+
+      const overrideByCustomer = new Map<string, string>();
+      for (const o of custOverrides) {
+        overrideByCustomer.set(o.customerRefName.toLowerCase().trim(), o.projectName);
+      }
+
+      const ignoreKey = (invoiceId: string | null, lineId: string | null) =>
+        `${invoiceId ?? ""}::${lineId ?? ""}`;
+
+      const activeRevLines = await db
+        .select({
+          id: normalizedRevenueLines.id,
+          projectName: normalizedRevenueLines.projectName,
+          invoiceNumber: normalizedRevenueLines.invoiceNumber,
+          invoiceDate: normalizedRevenueLines.invoiceDate,
+          amountExVat: normalizedRevenueLines.amountExVat,
+        })
+        .from(normalizedRevenueLines)
+        .where(and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt)));
+      const revLinesByProjectKey = new Map<string, typeof activeRevLines>();
+      for (const rl of activeRevLines) {
+        const key = normalizeProjectKey(rl.projectName);
+        if (!key) continue;
+        if (!revLinesByProjectKey.has(key)) revLinesByProjectKey.set(key, []);
+        revLinesByProjectKey.get(key)!.push(rl);
+      }
+
+      let invoicesResp: { QueryResponse?: { Invoice?: unknown[] } } | undefined;
+      try {
+        invoicesResp = await getInvoices(start, end);
+      } catch (qbErr) {
+        console.error("[revenue tracker-gap] QB getInvoices failed:", qbErr);
+        return res.status(503).json({
+          error: "qb_not_connected",
+          detail: "QuickBooks integration is unavailable. Reconnect QB to refresh the gap report.",
+          message: qbErr instanceof Error ? qbErr.message : String(qbErr),
+        });
+      }
+      const invoices: unknown[] = invoicesResp?.QueryResponse?.Invoice ?? [];
+
+      // Revenue resolution prioritises CUSTOMER over CLASS (opposite of COS).
+      const resolveProject = buildRevenueProjectResolver(projectNames);
+
+      type GapBucket = "tracker_gap" | "unmapped_customer" | "unmapped_no_customer" | "matched" | "fuzzy";
+      interface GapRow {
+        bucket: GapBucket;
+        invoiceId: string | null;
+        qbLineId: string | null;
+        docNumber: string | null;
+        txnDate: string | null;
+        customerName: string | null;
+        lineAmountExVat: number | null;
+        classRefName: string | null;
+        itemRefName: string | null;
+        description: string | null;
+        balance: number | null;
+        resolvedProjectName: string | null;
+        strategy: string;
+        matchedFrom: string | null;
+        isOverride: boolean;
+        isIgnored: boolean;
+        ignoreReason: string | null;
+        ignoredByName: string | null;
+        ignoredAt: string | null;
+        closestRevenueLineId: number | null;
+      }
+
+      const ignoreMeta = new Map<string, { reason: string; ignoredByName: string | null; ignoredAt: string }>();
+      for (const ig of ignores) {
+        ignoreMeta.set(ignoreKey(ig.qbInvoiceId, ig.qbLineId), {
+          reason: ig.reason,
+          ignoredByName: ig.ignoredByName,
+          ignoredAt: ig.ignoredAt.toISOString(),
+        });
+      }
+
+      const rows: GapRow[] = [];
+      for (const inv of invoices) {
+        for (const lr of invoiceRawToLineRows(inv)) {
+          let resolution: QbProjectResolution = resolveProject({
+            classRefName: lr.classRefName,
+            customerRefName: lr.customerName,
+          });
+          let isOverride = false;
+          if (!resolution.projectName && lr.customerName) {
+            const override = overrideByCustomer.get(lr.customerName.toLowerCase().trim());
+            if (override) {
+              resolution = {
+                projectName: override,
+                strategy: "customer_override",
+                matchedFrom: lr.customerName,
+              };
+              isOverride = true;
+            }
+          }
+
+          let closestId: number | null = null;
+          if (resolution.projectName) {
+            const candidates = revLinesByProjectKey.get(normalizeProjectKey(resolution.projectName)) ?? [];
+            const target = lr.lineAmountExVat ?? 0;
+            type Cand = (typeof candidates)[number];
+            const close = candidates
+              .map((c: Cand) => ({ c, diff: Math.abs(Number(c.amountExVat ?? 0) - target) }))
+              .filter((x: { diff: number }) => x.diff <= 1)
+              .sort((a: { diff: number }, b: { diff: number }) => a.diff - b.diff)[0];
+            if (close) closestId = close.c.id;
+          }
+
+          let bucket: GapBucket;
+          if (resolution.projectName && closestId) bucket = "matched";
+          else if (resolution.projectName) bucket = "tracker_gap";
+          else if (lr.customerName) bucket = "unmapped_customer";
+          else bucket = "unmapped_no_customer";
+
+          const igk = ignoreKey(lr.invoiceId, lr.lineId);
+          const ig = ignoreMeta.get(igk);
+
+          rows.push({
+            bucket,
+            invoiceId: lr.invoiceId,
+            qbLineId: lr.lineId,
+            docNumber: lr.docNumber,
+            txnDate: lr.txnDate,
+            customerName: lr.customerName,
+            lineAmountExVat: lr.lineAmountExVat,
+            classRefName: lr.classRefName,
+            itemRefName: lr.itemRefName,
+            description: lr.description,
+            balance: lr.balance,
+            resolvedProjectName: resolution.projectName,
+            strategy: resolution.strategy,
+            matchedFrom: resolution.matchedFrom,
+            isOverride,
+            isIgnored: !!ig,
+            ignoreReason: ig?.reason ?? null,
+            ignoredByName: ig?.ignoredByName ?? null,
+            ignoredAt: ig?.ignoredAt ?? null,
+            closestRevenueLineId: closestId,
+          });
+        }
+      }
+
+      let totalAmount = 0;
+      let openTrackerGapAmount = 0;
+      let openTrackerGapCount = 0;
+      let ignoredAmount = 0;
+      let ignoredCount = 0;
+      const byBucket: Record<GapBucket, { count: number; amount: number; openCount: number; openAmount: number }> = {
+        tracker_gap: { count: 0, amount: 0, openCount: 0, openAmount: 0 },
+        unmapped_customer: { count: 0, amount: 0, openCount: 0, openAmount: 0 },
+        unmapped_no_customer: { count: 0, amount: 0, openCount: 0, openAmount: 0 },
+        matched: { count: 0, amount: 0, openCount: 0, openAmount: 0 },
+        fuzzy: { count: 0, amount: 0, openCount: 0, openAmount: 0 },
+      };
+      for (const r of rows) {
+        const amt = r.lineAmountExVat ?? 0;
+        totalAmount += amt;
+        byBucket[r.bucket].count += 1;
+        byBucket[r.bucket].amount += amt;
+        if (!r.isIgnored) {
+          byBucket[r.bucket].openCount += 1;
+          byBucket[r.bucket].openAmount += amt;
+        } else {
+          ignoredAmount += amt;
+          ignoredCount += 1;
+        }
+        if (r.bucket === "tracker_gap" && !r.isIgnored) {
+          openTrackerGapAmount += amt;
+          openTrackerGapCount += 1;
+        }
+      }
+
+      const byProject = new Map<string, { project: string; count: number; openCount: number; amount: number; openAmount: number }>();
+      for (const r of rows) {
+        if (r.bucket !== "tracker_gap") continue;
+        const key = r.resolvedProjectName ?? "(unknown)";
+        if (!byProject.has(key)) byProject.set(key, { project: key, count: 0, openCount: 0, amount: 0, openAmount: 0 });
+        const slot = byProject.get(key)!;
+        slot.count += 1;
+        slot.amount += r.lineAmountExVat ?? 0;
+        if (!r.isIgnored) {
+          slot.openCount += 1;
+          slot.openAmount += r.lineAmountExVat ?? 0;
+        }
+      }
+
+      const unmappedCustomerMap = new Map<string, { customerName: string; count: number; amount: number; sampleClasses: Set<string>; sampleItems: Set<string> }>();
+      for (const r of rows) {
+        if (r.bucket !== "unmapped_customer" || !r.customerName) continue;
+        if (!unmappedCustomerMap.has(r.customerName))
+          unmappedCustomerMap.set(r.customerName, { customerName: r.customerName, count: 0, amount: 0, sampleClasses: new Set(), sampleItems: new Set() });
+        const slot = unmappedCustomerMap.get(r.customerName)!;
+        slot.count += 1;
+        slot.amount += r.lineAmountExVat ?? 0;
+        if (r.classRefName) slot.sampleClasses.add(r.classRefName);
+        if (r.itemRefName) slot.sampleItems.add(r.itemRefName);
+      }
+      // Per-customer suggestion engine — ranked candidates for each unmapped
+      // customer. Scoring blends prior overrides for the same customer (rare
+      // but strongest signal), normalised name overlap with project names,
+      // and amount-window co-occurrence with active revenue lines.
+      const customerAmountsMap = new Map<string, number[]>();
+      for (const r of rows) {
+        if (r.bucket !== "unmapped_customer" || !r.customerName) continue;
+        if (!customerAmountsMap.has(r.customerName)) customerAmountsMap.set(r.customerName, []);
+        customerAmountsMap.get(r.customerName)!.push(r.lineAmountExVat ?? 0);
+      }
+      const overridesByCustomerHistory = new Map<string, { projectName: string }[]>();
+      for (const o of custOverrides) {
+        const k = o.customerRefName.toLowerCase().trim();
+        if (!overridesByCustomerHistory.has(k)) overridesByCustomerHistory.set(k, []);
+        overridesByCustomerHistory.get(k)!.push({ projectName: o.projectName });
+      }
+      const unmappedCustomerList = [...unmappedCustomerMap.values()]
+        .map((v) => ({
+          customerName: v.customerName,
+          count: v.count,
+          amount: Math.round(v.amount * 100) / 100,
+          sampleClasses: [...v.sampleClasses].slice(0, 5),
+          sampleItems: [...v.sampleItems].slice(0, 5),
+          suggestions: rankRevenueProjectSuggestions({
+            customerName: v.customerName,
+            customerAmounts: customerAmountsMap.get(v.customerName) ?? [],
+            projectNames,
+            revenueLinesByProjectKey: revLinesByProjectKey,
+            priorOverridesForCustomer: overridesByCustomerHistory.get(v.customerName.toLowerCase().trim()) ?? [],
+          }),
+        }))
+        .sort((a, b) => b.amount - a.amount);
+
+      res.json({
+        generatedAt: new Date().toISOString(),
+        window: { start, end },
+        summary: {
+          totalLineRows: rows.length,
+          totalAmountExVat: Math.round(totalAmount * 100) / 100,
+          openTrackerGapCount,
+          openTrackerGapAmountExVat: Math.round(openTrackerGapAmount * 100) / 100,
+          ignoredCount,
+          ignoredAmountExVat: Math.round(ignoredAmount * 100) / 100,
+          projectUniverseSize: projectNames.length,
+          customerOverridesActive: custOverrides.length,
+        },
+        byBucket: Object.fromEntries(
+          Object.entries(byBucket).map(([k, v]) => [
+            k,
+            {
+              count: v.count,
+              amount: Math.round(v.amount * 100) / 100,
+              openCount: v.openCount,
+              openAmount: Math.round(v.openAmount * 100) / 100,
+            },
+          ]),
+        ),
+        byProject: [...byProject.values()].sort((a: any, b: any) => b.openAmount - a.openAmount),
+        unmappedCustomers: unmappedCustomerList,
+        customerOverrides: custOverrides.map((o: any) => ({
+          id: o.id,
+          customerRefName: o.customerRefName,
+          projectName: o.projectName,
+          note: o.note,
+          createdByName: o.createdByName,
+          createdAt: o.createdAt instanceof Date ? o.createdAt.toISOString() : String(o.createdAt),
+        })),
+        rows,
+      });
+    } catch (err) {
+      console.error("[revenue tracker-gap]", err);
+      res.status(500).json({ error: "revenue_tracker_gap_failed", detail: "An unexpected server error occurred" });
+    }
+  },
+);
+
+const revenueIgnoreBodySchema = z.object({
+  qbInvoiceId: z.string().min(1),
+  qbLineId: z.string().nullable().optional(),
+  qbDocNumber: z.string().nullable().optional(),
+  customerName: z.string().nullable().optional(),
+  lineAmountExVat: z.number().nullable().optional(),
+  resolvedProjectName: z.string().nullable().optional(),
+  reason: z.string().min(1).max(500),
+});
+
+router.post(
+  "/api/revenue-tracker/tracker-gap/ignore",
+  requireAuth,
+  requirePermission("revenue_tracker", "edit"),
+  validateBody(revenueIgnoreBodySchema),
+  async (req, res) => {
+    try {
+      const body = req.body as z.infer<typeof revenueIgnoreBodySchema>;
+      const user = req.user;
+      const [created] = await db
+        .insert(qbRevenueReconIgnores)
+        .values({
+          qbInvoiceId: body.qbInvoiceId,
+          qbLineId: body.qbLineId ?? null,
+          qbDocNumber: body.qbDocNumber ?? null,
+          customerName: body.customerName ?? null,
+          lineAmountExVat: body.lineAmountExVat != null ? String(body.lineAmountExVat) : null,
+          resolvedProjectName: body.resolvedProjectName ?? null,
+          reason: body.reason,
+          ignoredByUserId: user?.id ?? null,
+          ignoredByName: user?.name ?? user?.email ?? null,
+        })
+        .returning();
+      // Audit entityId is the (qbInvoiceId,qbLineId) composite — not the
+      // ignore-table row id — so the maintenance UI can look up history by
+      // the same key it already has on every gap row. Format mirrors the COS
+      // workspace convention: "<invoiceId>:<lineId or _>".
+      const ignoreAuditEntityId = `${body.qbInvoiceId}:${body.qbLineId ?? "_"}`;
+      await logAuditFromReq(req, {
+        entityType: "qb_revenue_recon_ignore",
+        entityId: ignoreAuditEntityId,
+        action: "create",
+        changesJson: {
+          ignoreRowId: created.id,
+          previous_state: null,
+          new_state: {
+            qbInvoiceId: body.qbInvoiceId,
+            qbLineId: body.qbLineId ?? null,
+            qbDocNumber: body.qbDocNumber ?? null,
+            customerName: body.customerName ?? null,
+            lineAmountExVat: body.lineAmountExVat ?? null,
+            resolvedProjectName: body.resolvedProjectName ?? null,
+          },
+          reason: body.reason,
+        },
+        projectName: body.resolvedProjectName ?? undefined,
+      });
+      res.json({ ok: true, ignore: created });
+    } catch (err) {
+      console.error("[revenue tracker-gap/ignore]", err);
+      res.status(500).json({ error: "ignore_failed", detail: "An unexpected server error occurred" });
+    }
+  },
+);
+
+const revenueIgnoreUndoBodySchema = z.object({ reason: z.string().min(1).max(500) });
+
+router.delete(
+  "/api/revenue-tracker/tracker-gap/ignore/:id",
+  requireAuth,
+  requirePermission("revenue_tracker", "edit"),
+  validateBody(revenueIgnoreUndoBodySchema),
+  async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
+      const body = req.body as z.infer<typeof revenueIgnoreUndoBodySchema>;
+      const [prev] = await db.select().from(qbRevenueReconIgnores).where(eq(qbRevenueReconIgnores.id, id));
+      if (!prev) return res.status(404).json({ error: "not_found" });
+      await db.update(qbRevenueReconIgnores).set({ deletedAt: new Date() }).where(eq(qbRevenueReconIgnores.id, id));
+      const undoAuditEntityId = `${prev.qbInvoiceId}:${prev.qbLineId ?? "_"}`;
+      await logAuditFromReq(req, {
+        entityType: "qb_revenue_recon_ignore",
+        entityId: undoAuditEntityId,
+        action: "delete",
+        changesJson: {
+          ignoreRowId: id,
+          previous_state: {
+            qbInvoiceId: prev.qbInvoiceId,
+            qbLineId: prev.qbLineId,
+            qbDocNumber: prev.qbDocNumber,
+            reason: prev.reason,
+            ignoredByName: prev.ignoredByName,
+          },
+          new_state: null,
+          reason: body.reason,
+        },
+        projectName: prev.resolvedProjectName ?? undefined,
+      });
+      res.json({ ok: true });
+    } catch (err) {
+      console.error("[revenue tracker-gap/ignore/delete]", err);
+      res.status(500).json({ error: "ignore_delete_failed", detail: "An unexpected server error occurred" });
+    }
+  },
+);
+
+const customerOverrideBodySchema = z.object({
+  customerRefName: z.string().min(1).max(200),
+  projectName: z.string().min(1).max(200),
+  note: z.string().min(1).max(500),
+});
+
+router.post(
+  "/api/revenue-tracker/tracker-gap/customer-override",
+  requireAuth,
+  requirePermission("revenue_tracker", "edit"),
+  validateBody(customerOverrideBodySchema),
+  async (req, res) => {
+    try {
+      const body = req.body as z.infer<typeof customerOverrideBodySchema>;
+      const user = req.user;
+      const created = await db.transaction(async (tx: NodePgDatabase<typeof schema>) => {
+        await tx
+          .update(qbCustomerProjectOverrides)
+          .set({ deletedAt: new Date() })
+          .where(
+            and(
+              isNull(qbCustomerProjectOverrides.deletedAt),
+              sql`LOWER(${qbCustomerProjectOverrides.customerRefName}) = LOWER(${body.customerRefName})`,
+            ),
+          );
+        const [row] = await tx
+          .insert(qbCustomerProjectOverrides)
+          .values({
+            customerRefName: body.customerRefName,
+            projectName: body.projectName,
+            note: body.note ?? null,
+            createdByUserId: user?.id ?? null,
+            createdByName: user?.name ?? user?.email ?? null,
+          })
+          .returning();
+        return row;
+      });
+      await logAuditFromReq(req, {
+        entityType: "qb_customer_project_override",
+        entityId: String(created.id),
+        action: "create",
+        changesJson: {
+          previous_state: null,
+          new_state: { customerRefName: body.customerRefName, projectName: body.projectName },
+          reason: body.note,
+        },
+        projectName: body.projectName,
+      });
+      res.json({ ok: true, override: created });
+    } catch (err) {
+      const e = err as { code?: string; cause?: { code?: string } };
+      const code = e?.code ?? e?.cause?.code;
+      if (code === "23505") {
+        return res.status(409).json({ error: "concurrent_update", detail: "Another mapping was just saved for this customer. Refresh and retry." });
+      }
+      console.error("[revenue tracker-gap/customer-override]", err);
+      res.status(500).json({ error: "override_failed", detail: "An unexpected server error occurred" });
+    }
+  },
+);
+
+router.delete(
+  "/api/revenue-tracker/tracker-gap/customer-override/:id",
+  requireAuth,
+  requirePermission("revenue_tracker", "edit"),
+  validateBody(z.object({ reason: z.string().min(1).max(500) })),
+  async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
+      const body = req.body as { reason: string };
+      const [prev] = await db.select().from(qbCustomerProjectOverrides).where(eq(qbCustomerProjectOverrides.id, id));
+      if (!prev) return res.status(404).json({ error: "not_found" });
+      await db.update(qbCustomerProjectOverrides).set({ deletedAt: new Date() }).where(eq(qbCustomerProjectOverrides.id, id));
+      await logAuditFromReq(req, {
+        entityType: "qb_customer_project_override",
+        entityId: String(id),
+        action: "delete",
+        changesJson: {
+          previous_state: { customerRefName: prev.customerRefName, projectName: prev.projectName, note: prev.note },
+          new_state: null,
+          reason: body.reason,
+        },
+        projectName: prev.projectName,
+      });
+      res.json({ ok: true });
+    } catch (err) {
+      console.error("[revenue tracker-gap/customer-override/delete]", err);
+      res.status(500).json({ error: "override_delete_failed", detail: "An unexpected server error occurred" });
+    }
+  },
+);
+
+// Revenue audit-history viewer (mirrors /api/cos-tracker/audit-history).
+router.get(
+  "/api/revenue-tracker/audit-history",
+  requireAuth,
+  requirePermission("revenue_tracker", "edit"),
+  async (req, res) => {
+    try {
+      const schema = z.object({
+        entityType: z.enum([
+          "qb_revenue_recon_ignore",
+          "qb_customer_project_override",
+          "quickbooks_invoice_link",
+          "normalized_revenue_line",
+          "revenue_line",
+        ]),
+        entityId: z.string().min(1).max(100),
+      });
+      const parsed = schema.safeParse({ entityType: req.query.entityType, entityId: req.query.entityId });
+      if (!parsed.success) return res.status(400).json({ error: "invalid_query", detail: parsed.error.format() });
+      const { entityType, entityId } = parsed.data;
+      const events: (typeof auditEvents.$inferSelect)[] = await db
+        .select()
+        .from(auditEvents)
+        .where(and(eq(auditEvents.entityType, entityType), eq(auditEvents.entityId, entityId)))
+        .orderBy(desc(auditEvents.createdAt))
+        .limit(200);
+      res.json({
+        entityType,
+        entityId,
+        count: events.length,
+        events: events.map((e) => ({
+          id: e.id,
+          action: e.action,
+          actorRole: e.actorRole,
+          userName: e.userName,
+          userId: e.userId,
+          source: e.source,
+          changes: e.changesJson,
+          projectName: e.projectName,
+          createdAt: e.createdAt instanceof Date ? e.createdAt.toISOString() : String(e.createdAt),
+        })),
+      });
+    } catch (err) {
+      console.error("[revenue tracker-gap/audit-history]", err);
+      res.status(500).json({ error: "audit_history_failed", detail: "An unexpected server error occurred" });
+    }
+  },
+);
+
+/**
+ * Audit-history viewer for any tracker-gap or COS reconciliation entity. Returns up to 200 of the
+ * most-recent `audit_events` rows for the given entityType+entityId, newest-first, so the UI can
+ * render a "what happened to this row" timeline (link / unlink / ignore / override / undo). The
+ * client is responsible for reversing the order if it wants oldest-first display.
+ *
+ * Permission mirrors the maintenance workspace itself (`cos:edit`) so site-leads can self-audit
+ * their own actions; senior finance/admin retain full read-anywhere via the audit explorer.
+ */
+const auditHistoryQuerySchema = z.object({
+  entityType: z.enum([
+    "qb_recon_ignore",
+    "qb_class_project_override",
+    "quickbooks_invoice_link",
+    "normalized_cost_line",
+    "cost_line",
+  ]),
+  entityId: z.string().min(1).max(100),
+});
+
+router.get("/api/cos-tracker/audit-history", requireAuth, requirePermission("cos", "edit"), async (req, res) => {
+  try {
+    const parsed = auditHistoryQuerySchema.safeParse({
+      entityType: req.query.entityType,
+      entityId: req.query.entityId,
+    });
+    if (!parsed.success) {
+      return res.status(400).json({ error: "invalid_query", detail: parsed.error.format() });
+    }
+    const { entityType, entityId } = parsed.data;
+    const events = await db
+      .select()
+      .from(auditEvents)
+      .where(and(eq(auditEvents.entityType, entityType), eq(auditEvents.entityId, entityId)))
+      .orderBy(desc(auditEvents.createdAt))
+      .limit(200);
+    res.json({
+      entityType,
+      entityId,
+      count: events.length,
+      events: events.map((e: any) => ({
+        id: e.id,
+        action: e.action,
+        actorRole: e.actorRole,
+        userName: e.userName,
+        userId: e.userId,
+        source: e.source,
+        changes: e.changesJson,
+        projectName: e.projectName,
+        requestPath: e.requestPath,
+        createdAt: e.createdAt instanceof Date ? e.createdAt.toISOString() : String(e.createdAt),
+      })),
+    });
+  } catch (err) {
+    console.error("[cos-tracker/audit-history]", err);
+    res.status(500).json({ error: "audit_history_failed", detail: "An unexpected server error occurred" });
   }
 });
 
@@ -2379,7 +3919,7 @@ async function updateExpenseFieldsDualTable(
 
 router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const id = parseInt(String(req.params.id || ""), 10);
+    const id = parseIntParam(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid expense id" });
 
     const { realised, expectedUpdatedAt } = req.body as { realised: boolean; expectedUpdatedAt?: string };
@@ -2500,7 +4040,7 @@ router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, 
 
 router.patch("/api/cos-tracker/override-status/:id", requireAuth, requireCosOverrideRole, async (req, res) => {
   try {
-    const id = parseInt(String(req.params.id || ""), 10);
+    const id = parseIntParam(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid expense id" });
 
     const { cosStatus, invoiceDate, invoiceDateConfirmed: invoiceDateConfirmedOverride, reason, expectedUpdatedAt } = req.body as {
@@ -2610,7 +4150,11 @@ router.patch("/api/cos-tracker/override-status/:id", requireAuth, requireCosOver
 
     if (expense.projectId) refreshProjectMetricsAsync(expense.projectId);
   } catch (error: any) {
-    if (error.status === 409) return res.status(409).json({ error: error.message });
+    // 409 business conflict — user-authored message is safe to surface.
+    if (error.status === 409) {
+      // eslint-disable-next-line no-restricted-syntax -- intentional: 409 business error message is user-authored
+      return res.status(409).json({ error: error.message });
+    }
     console.error("COS status override error:", error);
     res.status(500).json({ error: "Failed to override COS status" });
   }
@@ -2682,7 +4226,7 @@ router.get("/api/cos-periods/status", requireAuth, async (req, res) => {
   }
 });
 
-router.post("/api/cos-periods/:yyyyMm/lock", requireAuth, requirePeriodLockRole, async (req, res) => {
+router.post("/api/cos-periods/:yyyyMm/lock", requireAuth, requirePeriodLockRole, validateBody(cosPeriodLockSchema), async (req, res) => {
   try {
     const period = parsePeriodParam(String(req.params.yyyyMm));
     if (!period) return res.status(400).json({ error: "Invalid period. Expected YYYY-MM." });
@@ -2721,7 +4265,7 @@ router.post("/api/cos-periods/:yyyyMm/lock", requireAuth, requirePeriodLockRole,
   }
 });
 
-router.post("/api/cos-periods/:yyyyMm/unlock", requireAuth, requirePeriodLockRole, async (req, res) => {
+router.post("/api/cos-periods/:yyyyMm/unlock", requireAuth, requirePeriodLockRole, validateBody(cosPeriodLockSchema), async (req, res) => {
   try {
     const period = parsePeriodParam(String(req.params.yyyyMm));
     if (!period) return res.status(400).json({ error: "Invalid period. Expected YYYY-MM." });
@@ -2761,14 +4305,18 @@ router.post("/api/cos-periods/:yyyyMm/unlock", requireAuth, requirePeriodLockRol
 
 router.patch("/api/cost-lines/:id/no-revenue-linked", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const id = parseInt(String(req.params.id || ""), 10);
+    const id = parseIntParam(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid cost line id" });
     const { noRevenueLinked, expectedUpdatedAt } = req.body as { noRevenueLinked: boolean; expectedUpdatedAt?: string };
     if (typeof noRevenueLinked !== 'boolean') return res.status(400).json({ error: "noRevenueLinked (boolean) required" });
     await updateExpenseFieldsDualTable(id, { noRevenueLinked }, expectedUpdatedAt, req.user?.id ?? null);
     res.json({ success: true, id, noRevenueLinked });
   } catch (error: any) {
-    if (error.status === 409) return res.status(409).json({ error: error.message });
+    // 409 business conflict — user-authored message is safe to surface.
+    if (error.status === 409) {
+      // eslint-disable-next-line no-restricted-syntax -- intentional: 409 business error message is user-authored
+      return res.status(409).json({ error: error.message });
+    }
     console.error("Toggle no-revenue-linked error:", error);
     res.status(500).json({ error: "Failed to toggle no-revenue-linked" });
   }
@@ -2801,7 +4349,9 @@ router.get("/api/revenue-tracker/project/:projectName", requireAuth, requirePerm
     }, 0);
 
     const nowDate = new Date();
-    const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, '0')}`;
+    // UTC anchor — must match `cosCurrentMonthKey` in /api/cos-tracker so the
+    // same line classifies the same way in aggregate and per-project views.
+    const currentMonthKey = `${nowDate.getUTCFullYear()}-${String(nowDate.getUTCMonth() + 1).padStart(2, '0')}`;
 
     const revByMonth = new Map<string, number>();
     const realisedRevByMonth = new Map<string, number>();
@@ -2963,7 +4513,9 @@ router.get("/api/gp-tracker", requireAuth, requirePermission("gp_tracker", "view
     }
 
     const nowDate = new Date();
-    const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, '0')}`;
+    // UTC anchor — must match `cosCurrentMonthKey` in /api/cos-tracker so the
+    // same line classifies the same way in aggregate and per-project views.
+    const currentMonthKey = `${nowDate.getUTCFullYear()}-${String(nowDate.getUTCMonth() + 1).padStart(2, '0')}`;
 
     const cosByMonth = new Map<string, number>();
     const realisedCosByMonth = new Map<string, number>();
@@ -3120,7 +4672,9 @@ router.get("/api/gp-tracker/project/:projectName", requireAuth, requirePermissio
     }, 0);
 
     const nowDate = new Date();
-    const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, '0')}`;
+    // UTC anchor — must match `cosCurrentMonthKey` in /api/cos-tracker so the
+    // same line classifies the same way in aggregate and per-project views.
+    const currentMonthKey = `${nowDate.getUTCFullYear()}-${String(nowDate.getUTCMonth() + 1).padStart(2, '0')}`;
 
     const cosByMonth = new Map<string, number>();
     const realisedCosByMonth = new Map<string, number>();
@@ -3348,13 +4902,14 @@ async function revenueTrackerHandler(req: Request, res: Response) {
       storage.getTrackerMonthlyManual('REV'),
       Promise.resolve(new Map()),
     ]);
-    const [revenueLinks, qbInvoicesRaw] = await Promise.all([
+    const [revenueLinks, qbInvoicesRaw, qbMonthlyPnL] = await Promise.all([
       db.select().from(quickbooksInvoiceLinks).where(and(
         eq(quickbooksInvoiceLinks.appEntityType, "revenue_line"),
         eq(quickbooksInvoiceLinks.qbEntityType, "invoice"),
         isNull(quickbooksInvoiceLinks.deletedAt),
       )),
       getInvoices("2025-09-01", "2026-08-31").catch(() => ({ QueryResponse: { Invoice: [] } })),
+      getMonthlyPnLReport("2025-09-01", "2026-08-31").catch(() => null),
     ]);
 
 
@@ -3387,7 +4942,9 @@ async function revenueTrackerHandler(req: Request, res: Response) {
     }
 
     const nowDate = new Date();
-    const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, '0')}`;
+    // UTC anchor — must match `cosCurrentMonthKey` in /api/cos-tracker so the
+    // same line classifies the same way in aggregate and per-project views.
+    const currentMonthKey = `${nowDate.getUTCFullYear()}-${String(nowDate.getUTCMonth() + 1).padStart(2, '0')}`;
 
     const revByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
     const realisedByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
@@ -3434,27 +4991,53 @@ async function revenueTrackerHandler(req: Request, res: Response) {
     }
 
     const qbInvoices = ((qbInvoicesRaw as any)?.QueryResponse?.Invoice ?? []).map(invoiceRawToSummary);
-    const linkedInvoiceIds = new Set(revenueLinks.map((l: any) => String(l.qbEntityId)));
+    void revenueLinks; // (kept fetched for invoice-link-based drilldowns elsewhere)
     const qbRevenueByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
-    // All QB invoices contribute to QB Revenue actual. Previously, only
-    // manually linked invoices were counted — which meant QB Revenue read
-    // R0 everywhere until every single invoice had been hand-linked in the
-    // QB Bill Linking screen. Finance trusts QB as the source of revenue
-    // truth, so the full picture is surfaced here and linked vs unlinked
-    // is differentiated for drill-down.
-    for (const inv of qbInvoices) {
-      const recognitionDate = inv.txnDate;
-      const dm = String(recognitionDate || "").match(/^(\d{4})-(\d{2})/);
-      if (!dm) continue;
-      const monthKey = `${dm[1]}-${dm[2]}`;
-      const amount = Number(inv.totalAmount ?? 0);
-      if (!Number.isFinite(amount) || amount === 0) continue;
+    // QB Revenue actual = monthly credits to account 1000000 "Sales" from
+    // the QB ProfitAndLoss report. This is finance's canonical revenue-
+    // recognition source: ex-VAT, accrual-based, and includes both
+    // invoice income and journal-entry recognition (e.g. milestone moves
+    // from Deferred Revenue → Sales). Previously this row summed
+    // Invoice.TotalAmt across all A/R invoices, which is VAT-inclusive
+    // and double-counts deposits posted to liability accounts — producing
+    // overstated figures (e.g. Sep 2025 reported R 11.76M vs QB Sales
+    // ledger R 2.49M; Oct R 20.02M vs R 16.29M).
+    const monthlySales = qbMonthlyPnL
+      ? extractMonthlyAccountTotalsFromPnL(qbMonthlyPnL, (acc) => {
+          if (acc.id === "1000000") return true;
+          const name = (acc.name || "").trim().toLowerCase();
+          return name === "sales";
+        })
+      : new Map<string, number>();
+    if (qbMonthlyPnL && monthlySales.size === 0) {
+      // Diagnostic: parser found no Sales row. Dump the income-section
+      // account names + ids visible in the report so we can see what the
+      // realm actually returns. Logs once per request.
+      try {
+        const seen: Array<{ id: string | null; name: string | null; type: string }> = [];
+        const walk = (row: any) => {
+          if (!row) return;
+          const hCell = row?.Header?.ColData?.[0];
+          const dCell = Array.isArray(row?.ColData) ? row.ColData[0] : null;
+          if (hCell)
+            seen.push({ id: hCell.id ?? null, name: hCell.value ?? null, type: "Section" });
+          if (dCell)
+            seen.push({ id: dCell.id ?? null, name: dCell.value ?? null, type: row.type ?? "?" });
+          for (const c of row?.Rows?.Row ?? []) walk(c);
+        };
+        for (const r of qbMonthlyPnL?.Rows?.Row ?? []) walk(r);
+        console.warn("[qb-revenue] No 1000000/Sales row matched. Accounts visible in P&L:", JSON.stringify(seen.slice(0, 60)));
+      } catch (e) {
+        console.warn("[qb-revenue] diagnostic dump failed:", (e as Error)?.message);
+      }
+    }
+    monthlySales.forEach((amount, monthKey) => {
+      if (!Number.isFinite(amount) || amount === 0) return;
       if (!qbRevenueByMonth.has(monthKey)) qbRevenueByMonth.set(monthKey, { total: 0, projects: new Map() });
       const bucket = qbRevenueByMonth.get(monthKey)!;
       bucket.total += amount;
-      const bucketKey = linkedInvoiceIds.has(String(inv.id)) ? "Mapped QB Revenue" : "Unmapped QB Revenue";
-      bucket.projects.set(bucketKey, (bucket.projects.get(bucketKey) || 0) + amount);
-    }
+      bucket.projects.set("Sales (a/c 1000000)", (bucket.projects.get("Sales (a/c 1000000)") || 0) + amount);
+    });
 
     const months: any[] = [];
     const startMonth = new Date(Date.UTC(2025, 8, 1));
@@ -3599,7 +5182,9 @@ router.get("/api/revenue-tracker/month-detail", requireAuth, requirePermission("
     }
 
     const nowDate = new Date();
-    const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, '0')}`;
+    // UTC anchor — must match `cosCurrentMonthKey` in /api/cos-tracker so the
+    // same line classifies the same way in aggregate and per-project views.
+    const currentMonthKey = `${nowDate.getUTCFullYear()}-${String(nowDate.getUTCMonth() + 1).padStart(2, '0')}`;
 
     const items: any[] = [];
     for (const exp of allExpenses) {
@@ -3668,6 +5253,15 @@ router.get("/api/revenue-tracker/month-detail", requireAuth, requirePermission("
       const invMonth = String(inv.txnDate || "").slice(0, 7);
       if (invMonth !== monthKey) continue;
       if (stateFilter && stateFilter.toLowerCase() !== "qb_actual") continue;
+      // Task #18 — txnDate fallback flag. QB Invoice rarely carries an
+      // explicit settlement date in the snapshot; we fall back to TxnDate
+      // (issue date) and surface that to the UI via dateSource so finance
+      // can see it's an issue-date proxy, not a confirmed payment date.
+      const balance = Number((inv as any).balance ?? 0);
+      const dateSource = balance === 0 ? "qb_txn_date_paid" : "qb_txn_date_fallback";
+      const dateSourceLabel = balance === 0
+        ? "QB Issue date (invoice fully paid)"
+        : "QB Issue date — no settlement/payment date in QB; using TxnDate as proxy";
       items.push({
         id: Number(`9${String(inv.id).replace(/\D/g, "").slice(0, 8)}`) || 0,
         canonicalLineKey: null,
@@ -3684,6 +5278,8 @@ router.get("/api/revenue-tracker/month-detail", requireAuth, requirePermission("
         noRevenueLinked: false,
         revState: "QB Actual",
         dataSource: "quickbooks",
+        dateSource,
+        dateSourceLabel,
         qbTransactionType: "Invoice",
         qbDocNumber: inv.docNumber || null,
         paymentReference: null,
@@ -4138,7 +5734,7 @@ router.get("/api/cashflow", requireAuth, async (req, res) => {
     res.json(points);
   } catch (error) {
     console.error("Cashflow API error:", error);
-    res.status(500).json({ error: "Failed to fetch cashflow data", message: error instanceof Error ? error.message : "Unknown error" });
+    res.status(500).json({ error: "Failed to fetch cashflow data" });
   }
 });
 
@@ -4156,7 +5752,7 @@ router.get("/api/cashflow/planning-overrides", requireAuth, async (req, res) => 
   }
 });
 
-router.post("/api/cashflow/planning-overrides", requireAuth, requireAdmin, async (req, res) => {
+router.post("/api/cashflow/planning-overrides", requireAuth, requireAdmin, validateBody(planningOverridesSchema), async (req, res) => {
   try {
     const { overrides, overrideCategory, overrideComment } = req.body;
 
@@ -4208,8 +5804,7 @@ router.post("/api/cashflow/planning-overrides", requireAuth, requireAdmin, async
     res.json({ message: "Planning overrides saved", count: saved.length, overrides: saved });
   } catch (error) {
     res.status(500).json({
-      error: "Failed to save planning overrides",
-      message: error instanceof Error ? error.message : "Failed to save planning overrides"
+      error: "Failed to save planning overrides"
     });
   }
 });
@@ -4241,7 +5836,7 @@ router.get("/api/revenue-tracking/overrides", requireAuth, async (req, res) => {
   }
 });
 
-router.post("/api/revenue-tracking/overrides", requireAuth, requireAdminOrFinancialEditor, requirePermission('financials', 'edit'), async (req, res) => {
+router.post("/api/revenue-tracking/overrides", requireAuth, requireAdminOrFinancialEditor, requirePermission('financials', 'edit'), validateBody(revenueTrackingOverridesSchema), async (req, res) => {
   try {
     const { overrides, overrideCategory, overrideComment } = req.body;
     if (!Array.isArray(overrides)) {
@@ -4286,7 +5881,23 @@ router.post("/api/revenue-tracking/overrides", requireAuth, requireAdminOrFinanc
       );
     }
 
-    // Apply overrides directly to the base table (normalized_revenue_lines)
+    // Apply overrides directly to the base table (normalized_revenue_lines).
+    // Workstream B: tracked fields go to manual_overrides JSONB; untracked
+    // fields (presentation metadata like font colours) keep writing to the
+    // live column. Gated by USE_MANUAL_OVERRIDES.
+    const revenueLegacyToCanonical: Record<string, string> = {
+      milestoneInvoiceNumber: "invoiceNumber",
+      invoiceRaisedDate: "invoiceDate",
+      paymentReceivedDate: "paidDate",
+      plannedPaymentDate: "expectedPaymentDate",
+      milestoneAmount: "amountExVat",
+      milestoneNotes: "milestoneNotes",
+      invoiceDateConfirmed: "invoiceDateConfirmed",
+      paidDateConfirmed: "paidDateConfirmed",
+    };
+    const revenueTrackedSet = new Set<string>(REVENUE_TRACKED_FIELDS as readonly string[]);
+    const useOverridesRev = manualOverridesEnabled();
+
     for (const pn of projectNames) {
       const projectOverrides = overrides.filter((o: any) => o.projectName === pn);
       const inflows = baselineRowsByProject.get(pn)!;
@@ -4295,21 +5906,58 @@ router.post("/api/revenue-tracking/overrides", requireAuth, requireAdminOrFinanc
       for (const ov of projectOverrides) {
         const inflow = inflows.get(ov.rowNumber);
         if (!inflow) continue;
-        if (!rowGroups.has(inflow.id)) rowGroups.set(inflow.id, {});
-        const fields = rowGroups.get(inflow.id)!;
+        // The id from the inflow may be a negative legacy adapter id;
+        // resolve to the canonical normalized_revenue_lines id.
+        const rawId = inflow.id as number;
+        const canonicalId = rawId < 0 ? -rawId : (rawId >= 900000 ? rawId - 900000 : rawId);
+        if (!rowGroups.has(canonicalId)) rowGroups.set(canonicalId, {});
+        const fields = rowGroups.get(canonicalId)!;
         const effectiveValue = ov.overrideValue === "__null__" ? null : ov.overrideValue;
         fields[ov.fieldName] = effectiveValue;
       }
 
-      for (const [inflowId, fields] of rowGroups.entries()) {
-        if (Object.keys(fields).length > 0) {
-          const result = await storage.updateProgramInflowFields(inflowId, fields);
+      for (const [revRowId, fields] of rowGroups.entries()) {
+        if (Object.keys(fields).length === 0) continue;
+        if (!useOverridesRev) {
+          const result = await storage.updateProgramInflowFields(revRowId, fields);
           if (result) saved.push(result);
+          continue;
+        }
+        const trackedEntries: [string, any][] = [];
+        const untrackedFields: Record<string, any> = {};
+        for (const [legacyKey, value] of Object.entries(fields)) {
+          const canonicalKey = revenueLegacyToCanonical[legacyKey] ?? legacyKey;
+          if (revenueTrackedSet.has(canonicalKey)) {
+            trackedEntries.push([canonicalKey, value]);
+          } else {
+            untrackedFields[legacyKey] = value;
+          }
+        }
+        for (const [canonicalKey, value] of trackedEntries) {
+          await applyManualOverride({
+            table: "normalized_revenue_lines",
+            rowId: revRowId,
+            fieldName: canonicalKey,
+            value: value as any,
+            editedBy: userId ?? null,
+            note: overrideComment.trim(),
+          });
+        }
+        if (Object.keys(untrackedFields).length > 0) {
+          const result = await storage.updateProgramInflowFields(revRowId, untrackedFields);
+          if (result) saved.push(result);
+        } else {
+          // Track save count even when only override fields changed.
+          saved.push({ id: revRowId, _viaManualOverrides: true });
         }
       }
     }
 
-    // Sync inBank status on updated rows
+    // Sync inBank status on updated rows.
+    // Workstream B: paidDateConfirmed / paidDate / inBankDate are tracked
+    // fields, so when USE_MANUAL_OVERRIDES is on the sync writes through
+    // applyManualOverride; paidDateFontColor is presentation metadata
+    // (untracked) and keeps writing to the live column directly.
     try {
       for (const projectName of projectNames) {
         const appliedRows = await storage.getProgramInflowsByProject(projectName);
@@ -4330,17 +5978,58 @@ router.post("/api/revenue-tracking/overrides", requireAuth, requireAdminOrFinanc
           const paidDateConfirmed = isInBank;
           const paidDateFontColor = isInBank ? 'black' : 'red';
           const paidDate = isInBank ? (r.paymentReceivedDate || r.plannedPaymentDate || null) : null;
+          // Resolve canonical row id from the legacy adapter shape.
+          const rawId = r.id as number;
+          const canonicalRevId = rawId < 0 ? -rawId : (rawId >= 900000 ? rawId - 900000 : rawId);
+          if (!useOverridesRev) {
+            await db.update(normalizedRevenueLines)
+              .set({
+                paidDateConfirmed,
+                paidDateFontColor,
+                paidDate: paidDate,
+                inBankDate: isInBank ? (paidDate || null) : null,
+              })
+              .where(
+                and(
+                  eq(normalizedRevenueLines.projectName, projectName),
+                  eq(normalizedRevenueLines.sourceRow, rowNum),
+                  isNull(normalizedRevenueLines.effectiveTo),
+                )
+              );
+            continue;
+          }
+          // Tracked fields → manual_overrides
+          await applyManualOverride({
+            table: "normalized_revenue_lines",
+            rowId: canonicalRevId,
+            fieldName: "paidDateConfirmed",
+            value: paidDateConfirmed,
+            editedBy: userId ?? null,
+            note: "inBank sync after revenue override",
+          });
+          await applyManualOverride({
+            table: "normalized_revenue_lines",
+            rowId: canonicalRevId,
+            fieldName: "paidDate",
+            value: paidDate,
+            editedBy: userId ?? null,
+            note: "inBank sync after revenue override",
+          });
+          await applyManualOverride({
+            table: "normalized_revenue_lines",
+            rowId: canonicalRevId,
+            fieldName: "inBankDate",
+            value: isInBank ? (paidDate || null) : null,
+            editedBy: userId ?? null,
+            note: "inBank sync after revenue override",
+          });
+          // Untracked: font colour to live column.
           await db.update(normalizedRevenueLines)
-            .set({
-              paidDateConfirmed,
-              paidDateFontColor,
-              paidDate: paidDate,
-              inBankDate: isInBank ? (paidDate || null) : null,
-            })
+            .set({ paidDateFontColor })
             .where(
               and(
-                eq(normalizedRevenueLines.projectName, projectName),
-                eq(normalizedRevenueLines.sourceRow, rowNum),
+                eq(normalizedRevenueLines.id, canonicalRevId),
+                isNull(normalizedRevenueLines.effectiveTo),
               )
             );
         }
@@ -4382,7 +6071,7 @@ router.post("/api/revenue-tracking/overrides", requireAuth, requireAdminOrFinanc
       }
     } catch (_) { /* non-blocking */ }
   } catch (error) {
-    res.status(500).json({ error: "Failed to save revenue tracking overrides", message: error instanceof Error ? error.message : "Failed to save revenue tracking overrides" });
+    res.status(500).json({ error: "Failed to save revenue tracking overrides" });
   }
 });
 
@@ -4409,7 +6098,9 @@ router.get("/api/revenue-tab/:projectName", requireAuth, async (req, res) => {
     try { useCanonical = await isWorkItemsEnabled(); } catch (_e) { /* feature flag unavailable */ }
 
     const [rawInflows, overrides, projectInfoList, savedSummary, canonicalTasks, legacyOperationalTasks, planTasks, taskLinks] = await Promise.all([
-      storage.getProgramInflowsByProject(projectName),
+      // Operational-tab read: overlay manual_overrides on top of the
+      // live column for tracked revenue fields.
+      storage.getProgramInflowsByProject(projectName, { applyOverrides: manualOverridesEnabled() }),
       Promise.resolve([]),
       storage.getAllProjectInfo(),
       storage.getProjectRevenueSummary(projectName).catch(() => undefined),
@@ -4630,6 +6321,10 @@ router.get("/api/revenue-tab/:projectName", requireAuth, async (req, res) => {
         flags,
         hasOverride,
         milestoneNotes: r.milestoneNotes,
+        // Smart Import v2 cell formatting (font/fill colour) for the
+        // milestone row. Surfaced so the existing Revenue tab can render
+        // the same per-cell colours as the new revenue-tracking replica.
+        cellFormat: r.cellFormat ?? null,
         dependentTask: linkedTask ? { id: linkedTask.id, title: linkedTask.title, status: linkedTask.status, dueDate: linkedTask.dueDate } : null,
         dateOverride: link?.dateOverride || null,
         dateOverrideReason: link?.dateOverrideReason || null,
@@ -5100,7 +6795,7 @@ router.post("/api/revenue-tab/:projectName/date-override", requireAuth, requireA
 router.delete("/api/revenue-tab/:projectName/link-task/:milestoneRowNumber", requireAuth, requireAdmin, async (req, res) => {
   try {
     const projectName = paramStr(req.params.projectName);
-    const milestoneRowNumber = parseInt(paramStr(req.params.milestoneRowNumber));
+    const milestoneRowNumber = parseIntParam(req.params.milestoneRowNumber);
     const existingLinks = await storage.getMilestoneTaskLinks(projectName);
     const previousLink = existingLinks.find((link: any) => link.milestoneRowNumber === milestoneRowNumber);
     await storage.deleteMilestoneTaskLink(projectName, milestoneRowNumber);
@@ -5207,8 +6902,35 @@ router.post("/api/expenditure/overrides", requireAuth, requireAdminOrFinancialEd
       supplierName: "supplierName",
     };
 
+    // Workstream B (live=Excel invariant): map legacy client field names
+    // to canonical normalized_cost_lines column names so we can route
+    // tracked fields into manual_overrides instead of the live column.
+    // Fields not in this map (or not in EXPENDITURE_TRACKED_FIELDS)
+    // continue writing to the live column via the legacy
+    // updateProgramExpenseFields path.
+    const legacyToCanonical: Record<string, string> = {
+      expenseLineItem: "description",
+      expenseActualTotal: "amountExVat",
+      expenseInvoiceNumber: "invoiceNumber",
+      expenseInvoicedDate: "invoiceDate",
+      expensePaymentDate: "paidDate",
+      expensePoNumber: "poNumber",
+      forecastPaymentDate: "forecastPaymentDate",
+      supplierName: "counterpartyName",
+      budgetTotal: "budgetTotal",
+      budgetQty: "budgetQty",
+      budgetRateUnit: "budgetRate",
+      // boolean confirmation flags
+      invoiceDateConfirmed: "invoiceDateConfirmed",
+      paymentDateConfirmed: "paidDateConfirmed",
+    };
+    const trackedSet = new Set<string>(EXPENDITURE_TRACKED_FIELDS as readonly string[]);
+    const useOverrides = manualOverridesEnabled();
+
     for (const pn of projectNames) {
       const projectOverrides = overrides.filter((o: any) => o.projectName === pn);
+      // Use the raw (no-overlay) canonical reader here so the lookup
+      // sees actual row IDs, not overlaid display values.
       const { rows: expenses } = await getCanonicalProjectCostLinesByName(pn as string);
       const rowMap = new Map(expenses.map((e: any) => [e.rowNumber, e]));
 
@@ -5231,8 +6953,37 @@ router.post("/api/expenditure/overrides", requireAuth, requireAdminOrFinancialEd
       }
 
       for (const [expenseId, fields] of rowGroups.entries()) {
-        if (Object.keys(fields).length > 0) {
+        if (Object.keys(fields).length === 0) continue;
+        if (!useOverrides) {
+          // Feature flag off: legacy behaviour — write everything to the
+          // live column.
           await storage.updateProgramExpenseFields(expenseId, fields);
+          continue;
+        }
+        // Split tracked fields → manual_overrides; untracked fields →
+        // legacy live-column write.
+        const trackedEntries: [string, any][] = [];
+        const untrackedFields: Record<string, any> = {};
+        for (const [legacyKey, value] of Object.entries(fields)) {
+          const canonicalKey = legacyToCanonical[legacyKey] ?? legacyKey;
+          if (trackedSet.has(canonicalKey)) {
+            trackedEntries.push([canonicalKey, value]);
+          } else {
+            untrackedFields[legacyKey] = value;
+          }
+        }
+        for (const [canonicalKey, value] of trackedEntries) {
+          await applyManualOverride({
+            table: "normalized_cost_lines",
+            rowId: expenseId,
+            fieldName: canonicalKey,
+            value: value as any,
+            editedBy: userId ?? null,
+            note: overrideComment.trim(),
+          });
+        }
+        if (Object.keys(untrackedFields).length > 0) {
+          await storage.updateProgramExpenseFields(expenseId, untrackedFields);
         }
       }
     }
@@ -5252,7 +7003,7 @@ router.post("/api/expenditure/overrides", requireAuth, requireAdminOrFinancialEd
     }
   } catch (error) {
     console.error("Failed to save expenditure overrides:", error);
-    res.status(500).json({ error: "Failed to save expenditure overrides", message: error instanceof Error ? error.message : "Failed to save expenditure overrides" });
+    res.status(500).json({ error: "Failed to save expenditure overrides" });
   }
 });
 
@@ -5314,7 +7065,7 @@ router.post("/api/expense-task-links/:projectName", requireAuth, requireAdminOrF
 
 router.delete("/api/expense-task-links/:projectName/:expenseId", requireAuth, requireAdminOrFinancialEditor, async (req, res) => {
   try {
-    const expenseId = parseInt(paramStr(req.params.expenseId));
+    const expenseId = parseIntParam(req.params.expenseId);
     await storage.deleteExpenseTaskLink(paramStr(req.params.projectName), expenseId);
 
     try {
@@ -5344,7 +7095,7 @@ router.post("/api/expense-task-links/:projectName/:expenseId/date-override", req
   try {
     const { dateOverride, reason } = req.body;
     const expProjectName = paramStr(req.params.projectName);
-    await storage.updateExpenseTaskLinkDateOverride(expProjectName, parseInt(paramStr(req.params.expenseId)), dateOverride, reason);
+    await storage.updateExpenseTaskLinkDateOverride(expProjectName, parseIntParam(req.params.expenseId), dateOverride, reason);
 
     res.json({ success: true });
 
@@ -5852,7 +7603,7 @@ router.post("/api/finance/revenue/overrides", requireAuth, requireAdmin, require
       console.warn("[finance] Finance revenue override metrics refresh failed:", metricsErr.message);
     }
   } catch (error) {
-    res.status(500).json({ error: "Failed to save finance revenue overrides", message: error instanceof Error ? error.message : "Failed to save finance revenue overrides" });
+    res.status(500).json({ error: "Failed to save finance revenue overrides" });
   }
 });
 
@@ -5927,7 +7678,7 @@ router.post("/api/finance/cos/overrides", requireAuth, requireAdmin, requirePerm
       console.warn("[finance] Finance COS override metrics refresh failed:", metricsErr.message);
     }
   } catch (error) {
-    res.status(500).json({ error: "Failed to save finance COS overrides", message: error instanceof Error ? error.message : "Failed to save finance COS overrides" });
+    res.status(500).json({ error: "Failed to save finance COS overrides" });
   }
 });
 

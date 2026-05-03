@@ -69,6 +69,176 @@ export function deriveHealthFromRagStatuses(ragStatuses: string[]): PriorityHeal
   return "healthy";
 }
 
+const HEALTH_RANK: Record<PriorityHealth, number> = {
+  healthy: 0,
+  at_risk: 1,
+  critical: 2,
+};
+
+function worstHealth(...candidates: (PriorityHealth | null | undefined)[]): PriorityHealth {
+  let worst: PriorityHealth = "healthy";
+  for (const c of candidates) {
+    if (!c) continue;
+    if (HEALTH_RANK[c] > HEALTH_RANK[worst]) worst = c;
+  }
+  return worst;
+}
+
+export interface EffectivePriorityHealthInput {
+  /** Manual override set by owner (optional). */
+  manualHealth: PriorityHealth | null | undefined;
+  /** Health derived from linked projects' RAG (null if no projects). */
+  derivedHealth: PriorityHealth | null | undefined;
+  /** Priority severity — "critical" amplifies overdue signals. */
+  severity: string | null | undefined;
+  /** Due date as ISO date string ("YYYY-MM-DD") or null. */
+  dueDate: string | null | undefined;
+  /** Status — "closed" / "complete" short-circuit to healthy. */
+  status: string | null | undefined;
+  /** Count of open blocker work-items on linked projects. */
+  blockerCount: number;
+  /** Count of blocked engineering stages on linked projects (Tier 4 · PR 3). */
+  engBlockerCount?: number;
+  /** Count of open quality defects / failed QC items on linked projects. */
+  qualityDefectCount?: number;
+  /** Count of open HSE incidents (any high+ severity) on linked projects. */
+  hseIncidentCount?: number;
+  /** Count of open HSE incidents with severity='critical'. Drives immediate critical health. */
+  hseCriticalCount?: number;
+  /** PD signal: stalled opportunities (>60d stuck OR past expected close). */
+  staleOpportunityCount?: number;
+  /** PD signal: open pre-engineering tickets tied to linked opportunities. */
+  openPdTicketCount?: number;
+  /** Optional "now" override, for deterministic tests. Defaults to new Date(). */
+  now?: Date;
+}
+
+export interface EffectivePriorityHealthResult {
+  health: PriorityHealth;
+  /** Human-readable reasons, ordered by contribution. */
+  reasons: string[];
+}
+
+/**
+ * Computes the effective health of a priority by taking the worst-of
+ * across every available signal:
+ *   - manual override by the owner
+ *   - linked-projects' RAG (from priority_derived_metrics.derived_health)
+ *   - overdue-days amplified by severity
+ *   - open blocker count
+ *
+ * If status is "complete" or "closed" the priority is always healthy
+ * regardless of other inputs — finished work shouldn't keep signalling.
+ */
+export function computeEffectivePriorityHealth(
+  input: EffectivePriorityHealthInput,
+): EffectivePriorityHealthResult {
+  const reasons: string[] = [];
+  const status = (input.status || "").toLowerCase();
+  if (status === "complete" || status === "closed") {
+    return { health: "healthy", reasons: [] };
+  }
+
+  // Overdue signal — date-only comparison so timezone doesn't flip the day.
+  let overdueSignal: PriorityHealth | null = null;
+  if (input.dueDate) {
+    const today = (input.now ?? new Date()).toISOString().slice(0, 10);
+    if (input.dueDate < today) {
+      const dueMs = Date.parse(input.dueDate + "T00:00:00Z");
+      const todayMs = Date.parse(today + "T00:00:00Z");
+      const overdueDays = Math.floor((todayMs - dueMs) / 86_400_000);
+      const severityCritical = (input.severity || "").toLowerCase() === "critical";
+      if (overdueDays >= 30 || (severityCritical && overdueDays >= 14)) {
+        overdueSignal = "critical";
+        reasons.push(`${overdueDays}d overdue${severityCritical ? " (critical severity)" : ""}`);
+      } else if (overdueDays >= 1) {
+        overdueSignal = "at_risk";
+        reasons.push(`${overdueDays}d overdue`);
+      }
+    }
+  }
+
+  // Blocker signal
+  let blockerSignal: PriorityHealth | null = null;
+  if (input.blockerCount >= 3) {
+    blockerSignal = "critical";
+    reasons.push(`${input.blockerCount} blockers`);
+  } else if (input.blockerCount >= 1) {
+    blockerSignal = "at_risk";
+    reasons.push(`${input.blockerCount} blocker${input.blockerCount > 1 ? "s" : ""}`);
+  }
+
+  // Engineering signal — any blocked eng stage is at_risk; 3+ is critical.
+  let engSignal: PriorityHealth | null = null;
+  const engBlockers = input.engBlockerCount ?? 0;
+  if (engBlockers >= 3) {
+    engSignal = "critical";
+    reasons.push(`${engBlockers} engineering gates blocked`);
+  } else if (engBlockers >= 1) {
+    engSignal = "at_risk";
+    reasons.push(`${engBlockers} engineering gate${engBlockers === 1 ? "" : "s"} blocked`);
+  }
+
+  // Quality signal — 5+ open QC defects is at_risk; 15+ is critical.
+  let qualitySignal: PriorityHealth | null = null;
+  const qcDefects = input.qualityDefectCount ?? 0;
+  if (qcDefects >= 15) {
+    qualitySignal = "critical";
+    reasons.push(`${qcDefects} open QC defects`);
+  } else if (qcDefects >= 5) {
+    qualitySignal = "at_risk";
+    reasons.push(`${qcDefects} open QC defects`);
+  }
+
+  // HSE signal — any high-severity open incident is at_risk; any critical is critical.
+  let hseSignal: PriorityHealth | null = null;
+  const hseCritical = input.hseCriticalCount ?? 0;
+  const hseOpen = input.hseIncidentCount ?? 0;
+  if (hseCritical >= 1) {
+    hseSignal = "critical";
+    reasons.push(`${hseCritical} critical HSE incident${hseCritical === 1 ? "" : "s"}`);
+  } else if (hseOpen >= 1) {
+    hseSignal = "at_risk";
+    reasons.push(`${hseOpen} open HSE incident${hseOpen === 1 ? "" : "s"}`);
+  }
+
+  // PD signal — stalled opportunities are at_risk; 3+ is critical. Open
+  // PD tickets are at_risk contributors (don't flip to critical by themselves
+  // since they're common steady-state work).
+  let pdSignal: PriorityHealth | null = null;
+  const staleOpps = input.staleOpportunityCount ?? 0;
+  const openPdTickets = input.openPdTicketCount ?? 0;
+  if (staleOpps >= 3) {
+    pdSignal = "critical";
+    reasons.push(`${staleOpps} stalled opportunities`);
+  } else if (staleOpps >= 1) {
+    pdSignal = "at_risk";
+    reasons.push(`${staleOpps} stalled opportunit${staleOpps === 1 ? "y" : "ies"}`);
+  } else if (openPdTickets >= 5) {
+    pdSignal = "at_risk";
+    reasons.push(`${openPdTickets} open PD tickets`);
+  }
+
+  if (input.derivedHealth && input.derivedHealth !== "healthy") {
+    reasons.push(`project RAG ${input.derivedHealth === "critical" ? "red" : "amber"}`);
+  }
+  if (input.manualHealth && input.manualHealth !== "healthy") {
+    reasons.push(`manually flagged ${input.manualHealth === "critical" ? "critical" : "at risk"}`);
+  }
+
+  const health = worstHealth(
+    input.manualHealth,
+    input.derivedHealth,
+    overdueSignal,
+    blockerSignal,
+    engSignal,
+    qualitySignal,
+    hseSignal,
+    pdSignal,
+  );
+  return { health, reasons };
+}
+
 export type KpiSourceLayer = "foundation" | "business_logic" | "derived_kpi" | "view_model";
 
 export interface KpiDefinition {
@@ -89,13 +259,13 @@ export const KPI_DEFINITIONS: Record<string, KpiDefinition> = {
     id: "revenue_planned",
     name: "Total Planned Revenue",
     sourceLayer: "foundation",
-    sourceTable: "project_revenue_summary",
-    sourceFields: "planned_revenue",
-    businessRule: "Portfolio and dashboard revenue rollups sum canonical planned revenue.",
-    formula: "SUM(project_revenue_summary.planned_revenue)",
-    aggregationPath: "project_revenue_summary -> revenue rollup -> dashboard/portfolio cards",
-    apiEndpoint: "/api/revenue-summary",
-    consumingComponent: "GpTrackerTab, Dashboard SummaryCard",
+    sourceTable: "normalized_revenue_lines",
+    sourceFields: "amount_ex_vat, invoice_number, paid_date, effective_to",
+    businessRule: "Dashboard and tracker revenue values read canonical current-snapshot inflow rows (effective_to IS NULL) and apply realised/unrealised state from invoice/payment confirmation rules.",
+    formula: "SUM(normalized_revenue_lines.amount_ex_vat) WHERE effective_to IS NULL (state-specific totals derived by finance tracker rules)",
+    aggregationPath: "normalized_revenue_lines -> FinanceInflowsRepository/getAllRevenueLinesForCashflow -> finance dashboards/trackers",
+    apiEndpoint: "/api/program-dashboard,/api/revenue-tracker",
+    consumingComponent: "Dashboard Page, Revenue Tracker Page, Revenue Tracker Tab",
   },
   eng_progress_pct: {
     id: "eng_progress_pct",
@@ -106,8 +276,8 @@ export const KPI_DEFINITIONS: Record<string, KpiDefinition> = {
     businessRule: "Only canonical complete engineering statuses contribute to completion percentage.",
     formula: "(complete / total) * 100",
     aggregationPath: "project_eng_stages -> summarizeEngineeringStatuses -> dashboard/portfolio",
-    apiEndpoint: "/api/engineering-standup,/api/portfolio-dashboard",
-    consumingComponent: "EngineeringDashboard, Dashboard SummaryCard, Portfolios",
+    apiEndpoint: "/api/portfolio-dashboard",
+    consumingComponent: "Portfolios",
   },
   quality_pass_rate: {
     id: "quality_pass_rate",
@@ -125,24 +295,24 @@ export const KPI_DEFINITIONS: Record<string, KpiDefinition> = {
     id: "project_avg_progress",
     name: "Average Project Progress %",
     sourceLayer: "business_logic",
-    sourceTable: "project_plan/work_items",
+    sourceTable: "work_items",
     sourceFields: "actual_pct_complete, expected_pct_complete, duration_days",
-    businessRule: "Weighted completion is duration-weighted and delta thresholds drive RAG and behind counts.",
-    formula: "weighted_avg(actual_pct_complete) and weighted_avg(expected_pct_complete)",
-    aggregationPath: "project plan tasks -> computeProjectCompletion -> summarizeSchedule -> portfolio/dashboard",
-    apiEndpoint: "/api/project-plan/:project,/api/portfolio-dashboard",
-    consumingComponent: "ProjectPlanTab, Dashboard, PortfolioDetail",
+    businessRule: "Project plan progress reads PM SMART_IMPORT work_items (deleted_at IS NULL). Portfolio-level health uses duration-aware completion plus expected-vs-actual deltas for behind/risk signals.",
+    formula: "Task-level: actual_pct_complete from work_items; portfolio rollup: computeProjectCompletion + summarizeSchedule",
+    aggregationPath: "work_items -> storage.getProjectPlansByProject/getAllPMWorkItemsAsProjectPlan -> computeProjectCompletion/summarizeSchedule -> project + portfolio views",
+    apiEndpoint: "/api/project-plan/:projectName,/api/portfolio-dashboard",
+    consumingComponent: "Projects Page, Portfolios",
   },
   // ─── Finance tracker KPIs (added for traceability) ───
   cos_tracker_realised: {
     id: "cos_tracker_realised",
     name: "COS Realised (Tracker)",
     sourceLayer: "business_logic",
-    sourceTable: "program_expense",
-    sourceFields: "expense_actual_total, expense_invoice_number, expense_invoiced_date",
-    businessRule: "COS is realised when both invoice number and invoice date are present (classifyCosStatus === 'COS Realised').",
-    formula: "SUM(expense_actual_total) WHERE classifyCosStatus(line) = 'COS Realised' AND monthKey <= currentMonth",
-    aggregationPath: "program_expense -> isCosRealised (financeUtils) -> cos-tracker/gp-tracker -> COS/GP pages",
+    sourceTable: "normalized_cost_lines",
+    sourceFields: "amount_ex_vat, invoice_number, invoice_date, invoice_date_confirmed, invoice_date_font_color, effective_to",
+    businessRule: "COS is realised only when invoice evidence is present and the invoice date is confirmed (or closed-month auto-promote applies). Current-snapshot cost rows only.",
+    formula: "SUM(normalized_cost_lines.amount_ex_vat) WHERE effective_to IS NULL AND isEffectivelyRealised(line, monthKey, currentMonthKey)",
+    aggregationPath: "normalized_cost_lines -> /api/cos-tracker state classification -> COS Tracker + downstream GP/Revenue allocation",
     apiEndpoint: "/api/cos-tracker,/api/gp-tracker",
     consumingComponent: "COS Tracker Page, GP Tracker Page, Dashboard COS Card",
   },
@@ -150,11 +320,11 @@ export const KPI_DEFINITIONS: Record<string, KpiDefinition> = {
     id: "gp_tracker_actual",
     name: "GP Actual (Tracker)",
     sourceLayer: "derived_kpi",
-    sourceTable: "program_expense, program_inflows",
-    sourceFields: "expense_actual_total, milestone_amount",
-    businessRule: "Revenue is allocated proportionally to COS per project (COS-ratio method). GP = allocated revenue − COS. Uses financeUtils.allocateRevenue().",
-    formula: "GP = allocateRevenue(lineItemCOS, totalProjectCOS, totalProjectRevenue) − lineItemCOS",
-    aggregationPath: "program_expense + program_inflows -> allocateRevenue -> gp-tracker -> GP Tracker Page",
+    sourceTable: "normalized_cost_lines, normalized_revenue_lines",
+    sourceFields: "expense_actual_total/revenue_recognition_amount, amount_ex_vat/milestone_amount, effective_to",
+    businessRule: "GP tracker uses canonical current cost + inflow snapshots. Revenue allocation follows persisted revenue-recognition logic; GP = allocated revenue − COS.",
+    formula: "GP = revenueRecognitionAmount (or proportional allocation where applicable) − expenseActualTotal",
+    aggregationPath: "canonical cost read service + FinanceInflowsRepository -> /api/gp-tracker aggregation -> GP Tracker UI",
     apiEndpoint: "/api/gp-tracker,/api/gp-tracker/month-detail",
     consumingComponent: "GP Tracker Page, GP Tracker Tab",
   },
@@ -162,11 +332,11 @@ export const KPI_DEFINITIONS: Record<string, KpiDefinition> = {
     id: "revenue_tracker_allocated",
     name: "Revenue Allocated (Tracker)",
     sourceLayer: "derived_kpi",
-    sourceTable: "program_expense, program_inflows",
-    sourceFields: "expense_actual_total, milestone_amount",
-    businessRule: "Revenue is allocated to COS line items proportionally. allocateRevenue(lineItemCOS, totalProjectCOS, totalProjectRevenue). Items with noRevenueLinked flag get zero allocation.",
-    formula: "(lineItemCOS / totalProjectCOS) × totalProjectRevenue",
-    aggregationPath: "program_expense + program_inflows -> allocateRevenue -> revenue-tracker -> Revenue Tracker Page",
+    sourceTable: "normalized_cost_lines, normalized_revenue_lines",
+    sourceFields: "revenue_recognition_amount, expense_actual_total, no_revenue_linked, effective_to",
+    businessRule: "Revenue tracker reads canonical snapshot rows and uses stored revenue-recognition amounts; items flagged noRevenueLinked contribute zero allocation.",
+    formula: "Allocated revenue = revenueRecognitionAmount (fallback proportional method: (lineCOS / totalProjectCOS) × totalProjectRevenue)",
+    aggregationPath: "canonical cost read service + FinanceInflowsRepository -> /api/revenue-tracker -> Revenue Tracker UI",
     apiEndpoint: "/api/revenue-tracker,/api/revenue-tracker/month-detail",
     consumingComponent: "Revenue Tracker Page, Revenue Tracker Tab",
   },

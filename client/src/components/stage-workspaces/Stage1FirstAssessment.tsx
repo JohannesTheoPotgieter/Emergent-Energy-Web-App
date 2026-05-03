@@ -49,7 +49,7 @@ const FIELDS: FieldDef[] = [
     { value: "no", label: "No" },
   ]},
   { key: "go_no_go_recommendation", label: "Go / No-Go Recommendation", type: "select", required: true, options: [
-    { value: "go", label: "Go — Progress to Design & Cost Proposal" },
+    { value: "go", label: "Go — Progress to Cost Proposal & Design" },
     { value: "park", label: "Park — Put on hold" },
     { value: "no_go", label: "No-Go — Close" },
   ]},
@@ -141,7 +141,7 @@ export function Stage1FirstAssessment({ projectId, isAdmin }: Stage1Props) {
               </CardHeader>
               <CardContent>
                 <p className="text-xs text-muted-foreground">
-                  First Assessment cannot progress to Design & Cost Proposal until PD confirms Go recommendation.
+                  First Assessment cannot progress to Cost Proposal & Design until PD confirms Go recommendation.
                   Bypass allowed with admin override + reason.
                 </p>
               </CardContent>

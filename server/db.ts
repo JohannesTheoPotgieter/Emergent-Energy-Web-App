@@ -299,6 +299,9 @@ async function ensureSqliteSchema() {
     try {
       await db.run(sql.raw(`ALTER TABLE users ADD COLUMN deleted_at TEXT`));
     } catch {}
+    try {
+      await db.run(sql.raw(`ALTER TABLE users ADD COLUMN location TEXT`));
+    } catch {}
 
     // Project Info table (matches Drizzle schema)
     await db.run(sql`
@@ -1329,6 +1332,7 @@ async function ensureSqliteSchema() {
     try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN opportunity_id INTEGER`)); } catch {}
     try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN delivery_model TEXT`)); } catch {}
     try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN project_code TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN deleted_at TEXT`)); } catch {}
 
     console.log('[DB] SQLite schema verified');
   } catch (err: unknown) {

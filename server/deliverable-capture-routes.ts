@@ -11,6 +11,7 @@ import { getEffectiveUser, jwtAuth, requireAuth, type AuthenticatedUser } from "
 import { requirePermission } from "./permission-middleware";
 import { getAssignmentsForEntity, getAssignmentsForEntities, setEntityAssignment } from "./services/assignment-service";
 import { allowedMimeFilter, validateMagicBytes } from "./lib/file-validation";
+import { parseIntParam } from "./lib/req-params";
 
 const uploadDir = path.join(process.cwd(), "uploads", "_private_deliverables");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -35,7 +36,7 @@ function getUser(req: Request): AuthenticatedUser | null {
 export function registerDeliverableCaptureRoutes(app: Express) {
   app.get("/api/deliverable-capture/linkable-items/:projectId", jwtAuth, requireAuth, async (req, res) => {
     try {
-      const projectId = parseInt(String(req.params.projectId));
+      const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
 
       const [taskRows, costRows, revenueRows] = await Promise.all([
@@ -181,11 +182,17 @@ export function registerDeliverableCaptureRoutes(app: Express) {
         if (linkType === "cost_line") {
           await db.update(normalizedCostLines)
             .set({ invoiceNumber: fileNameWithoutExt })
-            .where(eq(normalizedCostLines.id, lId));
+            .where(and(
+              eq(normalizedCostLines.id, lId),
+              isNull(normalizedCostLines.effectiveTo),
+            ));
         } else if (linkType === "revenue_line") {
           await db.update(normalizedRevenueLines)
             .set({ invoiceNumber: fileNameWithoutExt })
-            .where(eq(normalizedRevenueLines.id, lId));
+            .where(and(
+              eq(normalizedRevenueLines.id, lId),
+              isNull(normalizedRevenueLines.effectiveTo),
+            ));
         }
       }
 
@@ -221,7 +228,7 @@ export function registerDeliverableCaptureRoutes(app: Express) {
 
   app.get("/api/deliverable-capture/list/:projectId", jwtAuth, requireAuth, async (req, res) => {
     try {
-      const projectId = parseInt(String(req.params.projectId));
+      const projectId = parseIntParam(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
 
       const rows = await db.execute(sql`
@@ -260,7 +267,7 @@ export function registerDeliverableCaptureRoutes(app: Express) {
 
   app.get("/api/deliverable-capture/download/:id", jwtAuth, requireAuth, async (req, res) => {
     try {
-      const id = parseInt(String(req.params.id));
+      const id = parseIntParam(req.params.id);
       const rows = await db.execute(sql`
         SELECT file_path, original_file_name, mime_type
         FROM deliverables WHERE id = ${id}

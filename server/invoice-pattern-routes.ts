@@ -18,7 +18,7 @@ import { requirePermission } from "./permission-middleware";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
 import { badRequest, notFound, sendError } from "./lib/api-error";
 import { logAuditFromReq } from "./audit-logger";
-import { paramStr } from "./lib/req-params";
+import { paramStr, parseIntParam } from "./lib/req-params";
 import { blockInProduction, requireDestructiveOpsFlag } from "./middleware/production-safety";
 
 const router = Router();
@@ -265,7 +265,7 @@ router.get("/api/invoice-patterns", requireAuth, async (_req: Request, res: Resp
       .orderBy(desc(invoicePatternRules.timesMatched));
     res.json(rules);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -311,13 +311,13 @@ router.post("/api/invoice-patterns", requireAuth, requirePermission('procurement
       .returning();
     res.json(rule);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
 router.patch("/api/invoice-patterns/:id", requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
   try {
-    const id = parseInt(paramStr(req.params.id));
+    const id = parseIntParam(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
     const updates: any = {};
     if (req.body.isActive !== undefined) updates.isActive = req.body.isActive;
@@ -333,15 +333,17 @@ router.patch("/api/invoice-patterns/:id", requireAuth, requirePermission('procur
     if (!updated) return res.status(404).json({ error: "Rule not found" });
     res.json(updated);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
 router.delete("/api/invoice-patterns/:id", requireAuth, requirePermission('procurement', 'delete'), async (req: Request, res: Response) => {
   try {
-    const id = parseInt(paramStr(req.params.id));
+    const id = parseIntParam(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
     await db.transaction(async (tx: any) => {
+      // Intentional: clears patternRuleId on all snapshots (current + historical) so deleting
+      // the parent rule doesn't leave dangling references.
       await tx.update(normalizedCostLines)
         .set({ patternRuleId: null, patternClassifiedAt: null, patternInferredType: null })
         .where(eq(normalizedCostLines.patternRuleId, id));
@@ -350,13 +352,13 @@ router.delete("/api/invoice-patterns/:id", requireAuth, requirePermission('procu
     });
     res.json({ ok: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
 router.post("/api/smart-import/:runId/classify", requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
   try {
-    const runId = parseInt(paramStr(req.params.runId));
+    const runId = parseIntParam(req.params.runId);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
 
     const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));
@@ -384,13 +386,13 @@ router.post("/api/smart-import/:runId/classify", requireAuth, requirePermission(
     res.json({ classifications });
   } catch (err: any) {
     console.error("[invoice-classify] Error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
 router.post("/api/smart-import/:runId/classify-review", requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
   try {
-    const runId = parseInt(paramStr(req.params.runId));
+    const runId = parseIntParam(req.params.runId);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
 
     const { sourceRow, action, selectedType, selectedCounterpartyId, overrideReason, applyToSimilar } = req.body;
@@ -515,7 +517,7 @@ router.post("/api/smart-import/:runId/classify-review", requireAuth, requirePerm
     res.json({ classification, classifications });
   } catch (err: any) {
     console.error("[invoice-classify-review] Error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -662,7 +664,7 @@ router.post("/api/procurement-analysis/classify", requireAuth, requirePermission
     });
   } catch (err: any) {
     console.error("[procurement-classify] Error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -709,7 +711,7 @@ router.get("/api/procurement-analysis/pattern-stats", requireAuth, async (_req: 
       })),
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -723,7 +725,7 @@ router.get("/api/invoice-pattern-matches", requireAuth, async (req: Request, res
     const matches = await query;
     res.json(matches);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -743,6 +745,9 @@ router.post("/api/procurement-analysis/reset-tags", requireAuth, requirePermissi
     const matchesBefore = await db.select({ count: sql<number>`count(*)` }).from(invoicePatternMatches);
 
     await db.transaction(async (tx: any) => {
+      // Intentional: explicit COO/CEO admin reset — clears pattern tags across all snapshots
+      // (current + historical). taggedBefore counter only reflects active rows for reporting,
+      // so logged "cleared" count understates the historical rows touched. That's accepted.
       await tx.update(normalizedCostLines).set({
         patternRuleId: null,
         patternClassifiedAt: null,
@@ -768,7 +773,7 @@ router.post("/api/procurement-analysis/reset-tags", requireAuth, requirePermissi
     });
   } catch (err: any) {
     console.error("[reset-tags] Error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -864,7 +869,7 @@ router.post("/api/admin/wipe-all-data", requireAuth, requirePermission('admin', 
     });
   } catch (err: any) {
     console.error("[wipe-all] Error:", err);
-    res.status(500).json({ error: err.message });
+    throw err;
   }
 });
 
@@ -923,7 +928,7 @@ router.get("/api/counterparties", requireAuth, requirePermission('procurement', 
 
 router.get("/api/counterparties/:id", requireAuth, requirePermission('procurement', 'view'), async (req: Request, res: Response) => {
   try {
-    const id = parseInt(paramStr(req.params.id), 10);
+    const id = parseIntParam(req.params.id);
     if (isNaN(id)) {
       throw badRequest("Invalid counterparty ID");
     }
@@ -1027,7 +1032,7 @@ router.post("/api/counterparties", requireAuth, requirePermission('procurement',
 
 router.patch("/api/counterparties/:id", requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
   try {
-    const id = parseInt(paramStr(req.params.id), 10);
+    const id = parseIntParam(req.params.id);
     if (isNaN(id)) {
       throw badRequest("Invalid counterparty ID");
     }
@@ -1085,7 +1090,7 @@ router.patch("/api/counterparties/:id", requireAuth, requirePermission('procurem
 
 router.post("/api/counterparties/:id/contacts", requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
   try {
-    const counterpartyId = parseInt(paramStr(req.params.id), 10);
+    const counterpartyId = parseIntParam(req.params.id);
     if (isNaN(counterpartyId)) {
       throw badRequest("Invalid counterparty ID");
     }
@@ -1126,8 +1131,8 @@ router.post("/api/counterparties/:id/contacts", requireAuth, requirePermission('
 
 router.patch("/api/counterparties/:id/contacts/:contactId", requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
   try {
-    const counterpartyId = parseInt(paramStr(req.params.id), 10);
-    const contactId = parseInt(paramStr(req.params.contactId), 10);
+    const counterpartyId = parseIntParam(req.params.id);
+    const contactId = parseIntParam(req.params.contactId);
     if (isNaN(counterpartyId) || isNaN(contactId)) {
       throw badRequest("Invalid counterparty or contact ID");
     }
@@ -1173,11 +1178,13 @@ router.patch("/api/counterparties/:id/contacts/:contactId", requireAuth, require
 
 router.delete("/api/counterparties/:id", requireAuth, requirePermission('procurement', 'delete'), async (req: Request, res: Response) => {
   try {
-    const id = parseInt(paramStr(req.params.id), 10);
+    const id = parseIntParam(req.params.id);
     if (isNaN(id)) {
       throw badRequest("Invalid counterparty ID");
     }
     await db.transaction(async (tx: any) => {
+      // Intentional: clears counterpartyId on all snapshots (current + historical) so deleting
+      // the parent counterparty doesn't leave dangling references.
       await tx.update(normalizedCostLines)
         .set({ counterpartyId: null })
         .where(eq(normalizedCostLines.counterpartyId, id));

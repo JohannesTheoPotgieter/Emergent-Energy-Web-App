@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/sheet";
 import { CheckCircle, XCircle, AlertTriangle, Clock, Shield } from "lucide-react";
 import { PageSkeleton } from "@/components/ui/page-states";
+import { OwnerName } from "@/components/OwnerName";
 
 export function QualityGovernanceDrawer({ trigger }: { trigger: React.ReactNode }) {
   const { data, isLoading } = useQualityGovernance();
@@ -87,7 +88,11 @@ export function QualityGovernanceDrawer({ trigger }: { trigger: React.ReactNode 
                         <div className="flex-1 min-w-0">
                           <span className="font-medium">{s.project_name}</span>
                           <span className="text-muted-foreground ml-2">{s.status}</span>
-                          {s.owner_name && <span className="text-muted-foreground ml-2">({s.owner_name})</span>}
+                          {(s.owner_user_id || s.owner_name) && (
+                            <span className="text-muted-foreground ml-2">
+                              (<OwnerName ownerUserId={s.owner_user_id} fallbackName={s.owner_name} emptyLabel="" />)
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
                           <span className="flex items-center gap-0.5 text-muted-foreground">

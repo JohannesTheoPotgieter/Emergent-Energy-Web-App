@@ -15,11 +15,34 @@ interface Notification {
   eventType: string;
   title: string;
   body: string | null;
+  entityType?: string | null;
+  entityId?: number | string | null;
   projectName: string | null;
   linkedTaskId: number | null;
   linkedDeliverableId: number | null;
   isRead: boolean;
   createdAt: string;
+}
+
+function getNotificationEntityPath(notification: Notification): string | null {
+  if (!notification.entityType || notification.entityId === null || notification.entityId === undefined) {
+    return null;
+  }
+  const id = String(notification.entityId);
+  if (!id) return null;
+
+  switch (notification.entityType) {
+    case "approval":
+      return `/approvals/${id}`;
+    case "invoice":
+      return `/finance/invoices/${id}`;
+    case "po":
+      return `/procurement/po/${id}`;
+    case "project":
+      return `/projects/${id}`;
+    default:
+      return null;
+  }
 }
 
 function timeAgo(dateStr: string): string {
@@ -79,6 +102,14 @@ export function NotificationBell() {
     }
   }, [markRead, setLocation]);
 
+  const handleEntityLinkClick = useCallback((n: Notification) => {
+    const path = getNotificationEntityPath(n);
+    if (!path) return;
+    if (!n.isRead) markRead(n.id);
+    setOpen(false);
+    setLocation(path);
+  }, [markRead, setLocation]);
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -118,7 +149,21 @@ export function NotificationBell() {
                   <div className="flex-1 min-w-0">
                     <div className="text-xs font-medium truncate">{n.title}</div>
                     {n.body && <div className="text-[10px] text-muted-foreground mt-0.5 line-clamp-2">{n.body}</div>}
-                    <div className="text-[9px] text-muted-foreground/70 mt-1">{timeAgo(n.createdAt)}</div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <div className="text-[9px] text-muted-foreground/70">{timeAgo(n.createdAt)}</div>
+                      {getNotificationEntityPath(n) && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEntityLinkClick(n);
+                          }}
+                          className="text-[10px] text-primary hover:underline"
+                        >
+                          View
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>

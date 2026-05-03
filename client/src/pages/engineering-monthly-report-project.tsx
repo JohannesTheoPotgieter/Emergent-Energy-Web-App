@@ -4,9 +4,11 @@ import { useRoute, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Loader2, Download } from "lucide-react";
+import { ArrowLeft, Download } from "lucide-react";
+import { PageHeader } from "@/components/ui/page-header";
+import { QueryLoading, QueryError } from "@/components/ui/query-states";
+import { PageLayout, DetailLayout } from "@/components/layout";
 
 function getAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = {};
@@ -90,7 +92,7 @@ export default function EngineeringMonthlyReportProject() {
   const projectId = params?.projectId || "";
   const [activeTab, setActiveTab] = useState("tasks");
 
-  const { data: report } = useQuery({
+  const { data: report, isLoading: reportLoading, isError: reportError, error: reportQueryError, refetch: refetchReport } = useQuery({
     queryKey: ["/api/reports/engineering/monthly", month],
     queryFn: async () => {
       const res = await fetch(`/api/reports/engineering/monthly?month=${month}`, { headers: getAuthHeaders() });
@@ -102,7 +104,7 @@ export default function EngineeringMonthlyReportProject() {
 
   const reportId = report?.id;
 
-  const { data: projectData, isLoading, error } = useQuery({
+  const { data: projectData, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["/api/reports/engineering/monthly/project", reportId, projectId],
     queryFn: async () => {
       const res = await fetch(`/api/reports/engineering/monthly/${reportId}/project/${projectId}`, { headers: getAuthHeaders() });
@@ -181,23 +183,41 @@ export default function EngineeringMonthlyReportProject() {
     ...rowsApprovals.filter((r: any) => r.comments).map((r: any) => ({ source: "Approval comment", item: r.approverRole, owner: r.approverUserId, detail: r.comments, status: r.status })),
   ];
 
+  const pageTitle = summary?.projectName ? `Engineering — ${summary.projectName}` : "Engineering Project Drill-down";
+
   return (
-    <div className="container mx-auto p-6 space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => navigate(`/reports/engineering/monthly?month=${month}`)}>
-            <ArrowLeft className="w-4 h-4" />
-          </Button>
-          <h1 className="text-2xl font-bold">Engineering Project Drill-down</h1>
-          <span className="text-sm text-muted-foreground">{month}</span>
-        </div>
-        <Button variant="outline" size="sm" onClick={exportTab}><Download className="h-4 w-4 mr-2" />Export current tab</Button>
-      </div>
-
-      {error && <p className="text-sm text-red-600">{(error as Error).message}</p>}
-
-      {isLoading ? (
-        <div className="flex items-center justify-center min-h-[30vh]"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
+    <PageLayout
+      data-testid="eng-monthly-report-project-page"
+      header={
+        <PageHeader
+          title={pageTitle}
+          subtitle={month}
+          actions={
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => navigate(`/reports/engineering/monthly?month=${month}`)}
+                data-testid="btn-back-eng-monthly"
+              >
+                <ArrowLeft className="w-4 h-4 mr-1" /> Back
+              </Button>
+              <Button variant="outline" size="sm" onClick={exportTab} data-testid="btn-export-active-tab">
+                <Download className="h-4 w-4 mr-2" />Export current tab
+              </Button>
+            </>
+          }
+        />
+      }
+    >
+      {reportLoading ? (
+        <QueryLoading />
+      ) : reportError ? (
+        <QueryError error={reportQueryError} onRetry={() => refetchReport()} />
+      ) : isLoading ? (
+        <QueryLoading />
+      ) : isError ? (
+        <QueryError error={error} onRetry={() => refetch()} />
       ) : (
         <>
           {summary && (
@@ -205,101 +225,113 @@ export default function EngineeringMonthlyReportProject() {
               <CardHeader className="pb-2"><CardTitle className="text-sm">Project Summary — {summary.projectName}</CardTitle></CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 text-sm">
-                  <div><p className="text-xs text-muted-foreground">Total</p><p className="font-bold">{summary.totalTasks}</p></div>
-                  <div><p className="text-xs text-muted-foreground">Completed</p><p className="font-bold text-emerald-600">{summary.completed}</p></div>
-                  <div><p className="text-xs text-muted-foreground">In Progress</p><p className="font-bold text-blue-600">{summary.inProgress}</p></div>
-                  <div><p className="text-xs text-muted-foreground">Overdue</p><p className="font-bold text-red-600">{summary.overdue}</p></div>
-                  <div><p className="text-xs text-muted-foreground">Done %</p><p className="font-bold">{summary.completionPct?.toFixed(0)}%</p></div>
-                  <div><p className="text-xs text-muted-foreground">Completed this month</p><p className="font-bold">{summary.completedThisMonth}</p></div>
+                  <div><p className="text-xs text-muted-foreground">Total</p><p className="font-bold tabular-nums">{summary.totalTasks}</p></div>
+                  <div><p className="text-xs text-muted-foreground">Completed</p><p className="font-bold text-emerald-600 tabular-nums">{summary.completed}</p></div>
+                  <div><p className="text-xs text-muted-foreground">In Progress</p><p className="font-bold text-blue-600 tabular-nums">{summary.inProgress}</p></div>
+                  <div><p className="text-xs text-muted-foreground">Overdue</p><p className="font-bold text-red-600 tabular-nums">{summary.overdue}</p></div>
+                  <div><p className="text-xs text-muted-foreground">Done %</p><p className="font-bold tabular-nums">{summary.completionPct?.toFixed(0)}%</p></div>
+                  <div><p className="text-xs text-muted-foreground">Completed this month</p><p className="font-bold tabular-nums">{summary.completedThisMonth}</p></div>
                 </div>
               </CardContent>
             </Card>
           )}
 
-          <Tabs defaultValue="tasks" onValueChange={setActiveTab}>
-            <TabsList className="w-full justify-start">
-              <TabsTrigger value="tasks">Engineering tasks</TabsTrigger>
-              <TabsTrigger value="deliverables">Deliverables</TabsTrigger>
-              <TabsTrigger value="stages">Stage gates</TabsTrigger>
-              <TabsTrigger value="approvals">Approvals</TabsTrigger>
-              <TabsTrigger value="blockers">Blockers / comments</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="tasks" className="mt-4">
-              <DrillTable
-                title="Engineering task line-items"
-                rows={rowsTasks}
-                columns={[
-                  { key: "taskName", label: "Task" },
-                  { key: "owner", label: "Owner" },
-                  { key: "status", label: "Status", render: (v) => <Badge variant="outline" className="text-[10px]">{v || "—"}</Badge> },
-                  { key: "endDate", label: "Due date" },
-                  { key: "agingDays", label: "Aging" },
-                  { key: "sourceSheet", label: "Source sheet" },
-                  { key: "sourceRow", label: "Source row" },
-                ]}
-              />
-            </TabsContent>
-
-            <TabsContent value="deliverables" className="mt-4">
-              <DrillTable
-                title="Deliverable register line-items"
-                rows={rowsDeliverables}
-                columns={[
-                  { key: "title", label: "Deliverable" },
-                  { key: "type", label: "Type" },
-                  { key: "status", label: "Approval state", render: (v) => <Badge variant="outline" className="text-[10px]">{v}</Badge> },
-                  { key: "currentVersion", label: "Version" },
-                  { key: "createdAt", label: "Created" },
-                  { key: "updatedAt", label: "Updated", render: (v) => fmtDate(v) },
-                ]}
-              />
-            </TabsContent>
-
-            <TabsContent value="stages" className="mt-4">
-              <DrillTable
-                title="Stage gate records"
-                rows={rowsStages}
-                columns={[
-                  { key: "stageTemplateId", label: "Stage template" },
-                  { key: "status", label: "Status", render: (v) => <Badge variant="outline" className="text-[10px]">{v}</Badge> },
-                  { key: "startedAt", label: "Started", render: (v) => fmtDate(v) },
-                  { key: "completedAt", label: "Completed", render: (v) => fmtDate(v) },
-                  { key: "overrideReason", label: "Blocker / reason" },
-                ]}
-              />
-            </TabsContent>
-
-            <TabsContent value="approvals" className="mt-4">
-              <DrillTable
-                title="Approval records"
-                rows={rowsApprovals}
-                columns={[
-                  { key: "approverRole", label: "Type" },
-                  { key: "status", label: "Status", render: (v) => <Badge variant="outline" className="text-[10px]">{v}</Badge> },
-                  { key: "approverUserId", label: "Approver" },
-                  { key: "updatedAt", label: "Date", render: (v) => fmtDate(v) },
-                  { key: "comments", label: "Comments" },
-                ]}
-              />
-            </TabsContent>
-
-            <TabsContent value="blockers" className="mt-4">
-              <DrillTable
-                title="Blockers / comments"
-                rows={blockersAndComments}
-                columns={[
-                  { key: "source", label: "Source" },
-                  { key: "item", label: "Item" },
-                  { key: "owner", label: "Owner" },
-                  { key: "status", label: "Status" },
-                  { key: "detail", label: "Detail" },
-                ]}
-              />
-            </TabsContent>
-          </Tabs>
+          <DetailLayout
+            defaultTab="tasks"
+            onTabChange={setActiveTab}
+            tabs={[
+              {
+                key: "tasks",
+                label: "Engineering tasks",
+                content: (
+                  <DrillTable
+                    title="Engineering task line-items"
+                    rows={rowsTasks}
+                    columns={[
+                      { key: "taskName", label: "Task" },
+                      { key: "owner", label: "Owner" },
+                      { key: "status", label: "Status", render: (v) => <Badge variant="outline" className="text-[10px]">{v || "—"}</Badge> },
+                      { key: "endDate", label: "Due date" },
+                      { key: "agingDays", label: "Aging" },
+                      { key: "sourceSheet", label: "Source sheet" },
+                      { key: "sourceRow", label: "Source row" },
+                    ]}
+                  />
+                ),
+              },
+              {
+                key: "deliverables",
+                label: "Deliverables",
+                content: (
+                  <DrillTable
+                    title="Deliverable register line-items"
+                    rows={rowsDeliverables}
+                    columns={[
+                      { key: "title", label: "Deliverable" },
+                      { key: "type", label: "Type" },
+                      { key: "status", label: "Approval state", render: (v) => <Badge variant="outline" className="text-[10px]">{v}</Badge> },
+                      { key: "currentVersion", label: "Version" },
+                      { key: "createdAt", label: "Created" },
+                      { key: "updatedAt", label: "Updated", render: (v) => fmtDate(v) },
+                    ]}
+                  />
+                ),
+              },
+              {
+                key: "stages",
+                label: "Stage gates",
+                content: (
+                  <DrillTable
+                    title="Stage gate records"
+                    rows={rowsStages}
+                    columns={[
+                      { key: "stageTemplateId", label: "Stage template" },
+                      { key: "status", label: "Status", render: (v) => <Badge variant="outline" className="text-[10px]">{v}</Badge> },
+                      { key: "startedAt", label: "Started", render: (v) => fmtDate(v) },
+                      { key: "completedAt", label: "Completed", render: (v) => fmtDate(v) },
+                      { key: "overrideReason", label: "Blocker / reason" },
+                    ]}
+                  />
+                ),
+              },
+              {
+                key: "approvals",
+                label: "Approvals",
+                content: (
+                  <DrillTable
+                    title="Approval records"
+                    rows={rowsApprovals}
+                    columns={[
+                      { key: "approverRole", label: "Type" },
+                      { key: "status", label: "Status", render: (v) => <Badge variant="outline" className="text-[10px]">{v}</Badge> },
+                      { key: "approverUserId", label: "Approver" },
+                      { key: "updatedAt", label: "Date", render: (v) => fmtDate(v) },
+                      { key: "comments", label: "Comments" },
+                    ]}
+                  />
+                ),
+              },
+              {
+                key: "blockers",
+                label: "Blockers / comments",
+                content: (
+                  <DrillTable
+                    title="Blockers / comments"
+                    rows={blockersAndComments}
+                    columns={[
+                      { key: "source", label: "Source" },
+                      { key: "item", label: "Item" },
+                      { key: "owner", label: "Owner" },
+                      { key: "status", label: "Status" },
+                      { key: "detail", label: "Detail" },
+                    ]}
+                  />
+                ),
+              },
+            ]}
+          />
         </>
       )}
-    </div>
+    </PageLayout>
   );
 }

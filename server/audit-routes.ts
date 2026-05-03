@@ -4,105 +4,90 @@ import { changeSets, fieldChanges, auditEvents, OVERRIDE_CATEGORIES } from "@sha
 import { eq, desc, and, sql, gte, lte, or, like, count } from "drizzle-orm";
 import { requireAuth } from "./auth-context";
 import { requireAdmin } from "./middleware/requireAdmin";
+import { parseIntParam } from "./lib/req-params";
 
 export function registerAuditRoutes(app: Express) {
   // Project History Timeline - get all ChangeSets for a specific project
   app.get("/api/audit/project-history/:projectId", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const projectId = parseInt(req.params.projectId as string);
-      if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
+    const projectId = parseIntParam(req.params.projectId);
+    if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
 
-      const page = parseInt(req.query.page as string) || 1;
-      const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
-      const offset = (page - 1) * limit;
-      const sourceFilter = req.query.source as string;
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+    const offset = (page - 1) * limit;
+    const sourceFilter = req.query.source as string;
 
-      const conditions = [eq(changeSets.projectId, projectId)];
-      if (sourceFilter) {
-        conditions.push(eq(changeSets.source, sourceFilter as any));
-      }
-
-      const whereClause = conditions.length > 1 ? and(...conditions) : conditions[0];
-
-      const [items, totalResult] = await Promise.all([
-        db.select().from(changeSets)
-          .where(whereClause)
-          .orderBy(desc(changeSets.createdAt))
-          .limit(limit)
-          .offset(offset),
-        db.select({ total: count() }).from(changeSets).where(whereClause),
-      ]);
-
-      const total = totalResult[0]?.total || 0;
-
-      res.json({
-        items,
-        pagination: { page, limit, total, totalPages: Math.ceil(Number(total) / limit) },
-      });
-    } catch (err: unknown) {
-      console.error("[audit] project-history error:", err);
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    const conditions = [eq(changeSets.projectId, projectId)];
+    if (sourceFilter) {
+      conditions.push(eq(changeSets.source, sourceFilter as any));
     }
+
+    const whereClause = conditions.length > 1 ? and(...conditions) : conditions[0];
+
+    const [items, totalResult] = await Promise.all([
+      db.select().from(changeSets)
+        .where(whereClause)
+        .orderBy(desc(changeSets.createdAt))
+        .limit(limit)
+        .offset(offset),
+      db.select({ total: count() }).from(changeSets).where(whereClause),
+    ]);
+
+    const total = totalResult[0]?.total || 0;
+
+    res.json({
+      items,
+      pagination: { page, limit, total, totalPages: Math.ceil(Number(total) / limit) },
+    });
   });
 
   // Project history by project name
   app.get("/api/audit/project-history-by-name/:projectName", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const projectName = decodeURIComponent(req.params.projectName as string);
-      const page = parseInt(req.query.page as string) || 1;
-      const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
-      const offset = (page - 1) * limit;
-      const sourceFilter = req.query.source as string;
+    const projectName = decodeURIComponent(req.params.projectName as string);
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+    const offset = (page - 1) * limit;
+    const sourceFilter = req.query.source as string;
 
-      const conditions: any[] = [eq(changeSets.projectName, projectName)];
-      if (sourceFilter) {
-        conditions.push(eq(changeSets.source, sourceFilter as any));
-      }
-
-      const whereClause = conditions.length > 1 ? and(...conditions) : conditions[0];
-
-      const [items, totalResult] = await Promise.all([
-        db.select().from(changeSets)
-          .where(whereClause)
-          .orderBy(desc(changeSets.createdAt))
-          .limit(limit)
-          .offset(offset),
-        db.select({ total: count() }).from(changeSets).where(whereClause),
-      ]);
-
-      const total = totalResult[0]?.total || 0;
-
-      res.json({
-        items,
-        pagination: { page, limit, total, totalPages: Math.ceil(Number(total) / limit) },
-      });
-    } catch (err: unknown) {
-      console.error("[audit] project-history-by-name error:", err);
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    const conditions: any[] = [eq(changeSets.projectName, projectName)];
+    if (sourceFilter) {
+      conditions.push(eq(changeSets.source, sourceFilter as any));
     }
+
+    const whereClause = conditions.length > 1 ? and(...conditions) : conditions[0];
+
+    const [items, totalResult] = await Promise.all([
+      db.select().from(changeSets)
+        .where(whereClause)
+        .orderBy(desc(changeSets.createdAt))
+        .limit(limit)
+        .offset(offset),
+      db.select({ total: count() }).from(changeSets).where(whereClause),
+    ]);
+
+    const total = totalResult[0]?.total || 0;
+
+    res.json({
+      items,
+      pagination: { page, limit, total, totalPages: Math.ceil(Number(total) / limit) },
+    });
   });
 
   // Get ChangeSet detail with field changes (drill-down)
   app.get("/api/audit/changeset/:id", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const id = parseInt(req.params.id as string);
-      if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+    const id = parseIntParam(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
-      const [cs] = await db.select().from(changeSets).where(eq(changeSets.id, id));
-      if (!cs) return res.status(404).json({ error: "ChangeSet not found" });
+    const [cs] = await db.select().from(changeSets).where(eq(changeSets.id, id));
+    if (!cs) return res.status(404).json({ error: "ChangeSet not found" });
 
-      const fields = await db.select().from(fieldChanges).where(eq(fieldChanges.changeSetId, id));
+    const fields = await db.select().from(fieldChanges).where(eq(fieldChanges.changeSetId, id));
 
-      res.json({ ...cs, fieldChanges: fields });
-    } catch (err: unknown) {
-      console.error("[audit] changeset detail error:", err);
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
-    }
+    res.json({ ...cs, fieldChanges: fields });
   });
 
   app.get("/api/audit/activity-log", requireAuth, requireAdmin, async (req: Request, res: Response) => {
-    try {
-      const page = parseInt(req.query.page as string) || 1;
+    const page = parseInt(req.query.page as string) || 1;
       const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
       const offset = (page - 1) * limit;
       const sourceFilter = req.query.source as string;
@@ -206,26 +191,21 @@ export function registerAuditRoutes(app: Express) {
       const total = Number((countResult as any).rows?.[0]?.total || (countResult as any)[0]?.total || 0);
       const filterData = (filtersResult as any).rows?.[0] || (filtersResult as any)[0] || {};
 
-      res.json({
-        items,
-        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
-        filters: {
-          sources: filterData.sources || [],
-          entityTypes: filterData.entity_types || [],
-          actions: filterData.actions || [],
-          projectNames: (filterData.project_names || []).filter(Boolean),
-          userNames: (filterData.user_names || []).filter(Boolean),
-        },
-      });
-    } catch (err: unknown) {
-      console.error("[audit] activity-log error:", err);
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
-    }
+    res.json({
+      items,
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      filters: {
+        sources: filterData.sources || [],
+        entityTypes: filterData.entity_types || [],
+        actions: filterData.actions || [],
+        projectNames: (filterData.project_names || []).filter(Boolean),
+        userNames: (filterData.user_names || []).filter(Boolean),
+      },
+    });
   });
 
   app.get("/api/audit/activity-log/export", requireAuth, requireAdmin, async (req: Request, res: Response) => {
-    try {
-      const sourceFilter = req.query.source as string;
+    const sourceFilter = req.query.source as string;
       const entityTypeFilter = req.query.entityType as string;
       const projectNameFilter = req.query.projectName as string;
       const actionFilter = req.query.action as string;
@@ -306,13 +286,9 @@ export function registerAuditRoutes(app: Express) {
         ...csvRows.map((row: string[]) => row.map(v => `"${v}"`).join(',')),
       ].join('\n');
 
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', `attachment; filename="activity-log-${new Date().toISOString().slice(0, 10)}.csv"`);
-      res.send(csvContent);
-    } catch (err: unknown) {
-      console.error("[audit] activity-log export error:", err);
-      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
-    }
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="activity-log-${new Date().toISOString().slice(0, 10)}.csv"`);
+    res.send(csvContent);
   });
 
   // Override categories reference endpoint
