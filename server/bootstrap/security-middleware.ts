@@ -151,6 +151,15 @@ function generalApiRateLimit(req: Request, res: Response, next: NextFunction): v
     return;
   }
 
+  // Mirror the auth limiter's loopback exemption — the API test suite
+  // and dev workflows hammer the same endpoint thousands of times in
+  // seconds, far above any human pattern. Gate strictly on NODE_ENV so
+  // the exemption never leaks to prod.
+  if (isNonProdLoopback(req)) {
+    next();
+    return;
+  }
+
   const ip = typeof req.headers["x-forwarded-for"] === "string"
     ? req.headers["x-forwarded-for"].split(",")[0].trim()
     : req.ip;

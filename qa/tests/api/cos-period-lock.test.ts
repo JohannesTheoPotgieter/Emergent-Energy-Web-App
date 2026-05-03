@@ -46,7 +46,11 @@ async function apiRequest<T = unknown>(
 ): Promise<ApiResponse<T>> {
   const headers: Record<string, string> = {};
   if (options.body !== undefined) headers["Content-Type"] = "application/json";
-  if (options.cookie) headers.Cookie = options.cookie;
+  if (options.cookie) {
+    headers.Cookie = options.cookie;
+    const csrfMatch = options.cookie.match(/(?:^|;\s*)csrf-token=([^;]+)/);
+    if (csrfMatch) headers["X-CSRF-Token"] = decodeURIComponent(csrfMatch[1]);
+  }
 
   const res = await fetch(`${BASE_URL}${path}`, {
     method,

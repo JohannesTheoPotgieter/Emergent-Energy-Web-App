@@ -36,9 +36,14 @@ export async function registerAllRoutes(options: {
   await registerInfoRoutes(app);
   await registerProjectRoutes(app);
   await registerSupportRoutes(app);
+  // Register the extracted (newer) routes BEFORE department routes — Express
+  // resolves the first matching handler, so the older duplicate POST
+  // /api/mytool/tasks in server/departments/exco-routes.ts must not win
+  // over the newer one in server/routes/mytool-routes.ts (which has the
+  // x-idempotency-key dedup).
+  await registerExtractedRoutes(app);
   await registerDepartmentRoutes(app);
   await registerAdminSupportRoutes(app);
-  await registerExtractedRoutes(app);
   // Calls the orphan-registry's registerRoutes which now activates
   // tracker-replica + 11 sibling domains, then chains to the legacy
   // shell.

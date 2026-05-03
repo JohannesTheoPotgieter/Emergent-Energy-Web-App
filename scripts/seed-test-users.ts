@@ -45,6 +45,13 @@ const TEST_USERS: SeedUser[] = [
     role: "PROJECT_MANAGER_SITE",
     password: "2035",
   },
+  {
+    username: "task110_target",
+    email: "task110_target@example.test",
+    name: "Task110 Target",
+    role: "PROJECT_MANAGER_SITE",
+    password: "Active110!",
+  },
 ];
 
 async function main() {

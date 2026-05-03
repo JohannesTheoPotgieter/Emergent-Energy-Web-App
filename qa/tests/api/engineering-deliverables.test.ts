@@ -23,11 +23,18 @@ describe("API: Engineering Deliverables & Approval Flows", () => {
 
   beforeAll(async () => {
     token = await loginAdmin();
-    // Create a test task
+    // POST /api/eng/tasks now requires either projectId or projectName —
+    // pick the first project in the seeded fixture so the create succeeds.
+    const projectsRes = await apiRequest("GET", "/api/project-info", undefined, token);
+    expect(projectsRes.status).toBe(200);
+    const projectId = projectsRes.data?.[0]?.id;
+    expect(projectId).toBeTruthy();
+
     const createRes = await apiRequest("POST", "/api/eng/tasks", {
       title: "Deliverable Test Task",
       status: "IN PROGRESS",
       priority: "Med",
+      projectId,
     }, token);
     expect(createRes.status).toBe(200);
     testTaskId = createRes.data?.id || createRes.data?.workItemId;
@@ -55,7 +62,7 @@ describe("API: Engineering Deliverables & Approval Flows", () => {
       note: "Test deliverable",
     }, token);
     expect(res.status).toBe(400);
-    expect(res.data?.error).toContain("recipient");
+    expect(res.data?.message ?? res.data?.error ?? "").toContain("recipient");
   });
 
   it("GET /api/eng/tasks/:id/deliverables returns deliverable list", async () => {

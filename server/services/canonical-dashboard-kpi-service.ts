@@ -216,7 +216,7 @@ export async function getCanonicalTaskSummaryByProjectIds(projectIds: number[]):
       COUNT(*) FILTER (WHERE UPPER(TRIM(COALESCE(status, ''))) = 'NEEDS APPROVAL')::int AS needs_approval,
       COUNT(*) FILTER (
         WHERE end_date IS NOT NULL
-          AND end_date < CURRENT_DATE::text
+          AND end_date < CURRENT_DATE
           AND UPPER(TRIM(COALESCE(status, ''))) NOT IN ('COMPLETE', 'COMPLETED', 'DONE', 'QC APPROVED')
       )::int AS overdue,
       COUNT(*) FILTER (

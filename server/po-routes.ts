@@ -184,6 +184,35 @@ function rowsFromResult(result: unknown): Record<string, unknown>[] {
 
 export function registerPoRoutes(app: Express) {
 
+  // ===================== ELIGIBLE APPROVERS =====================
+  // Registered BEFORE the catch-all /api/po/:projectName so the literal
+  // path "eligible-approvers" is not captured as a project-name param.
+  app.get("/api/po/eligible-approvers", jwtAuth, requireAuth, async (_req: Request, res: Response) => {
+    try {
+      // Drizzle expands a plain array into individual placeholders, so
+      // `ANY(${arr}::text[])` becomes `ANY(($1,$2,...)::text[])` which is
+      // invalid syntax. Build the array literal explicitly via sql.join
+      // so the cast applies to a real array.
+      const result = await db.execute(sql`
+        SELECT id, name, email, role
+        FROM users
+        WHERE role = ANY(ARRAY[${sql.join(PO_APPROVAL_ELIGIBLE_ROLES.map((r) => sql`${r}`), sql`, `)}]::text[])
+          AND is_active = true
+        ORDER BY role, name
+      `);
+      const approvers = rowsFromResult(result).map((u) => ({
+        id: Number(u.id),
+        name: String(u.name || ""),
+        email: String(u.email || ""),
+        role: String(u.role || ""),
+      }));
+      res.json({ eligibleRoles: PO_APPROVAL_ELIGIBLE_ROLES, approvers });
+    } catch (err: unknown) {
+      console.error("[PO] Eligible approvers error:", err instanceof Error ? err.message : String(err));
+      res.status(500).json({ error: "Failed to load eligible approvers" });
+    }
+  });
+
   // ===================== LIST POs =====================
   // Supports both project-scoped and board-wide listing
 
@@ -770,32 +799,6 @@ export function registerPoRoutes(app: Express) {
     } catch (err: unknown) {
       console.error("[PO] Delegate error:", err instanceof Error ? err.message : String(err));
       res.status(500).json({ error: "Failed to delegate PO approval" });
-    }
-  });
-
-  // ===================== ELIGIBLE APPROVERS LIST (B2) =====================
-  // Returns the list of active users who can be assigned as a PO approver.
-  // Used by the UI to populate the "Assign approver" dropdown on the PO
-  // submit form and the "Delegate to" picker.
-  app.get("/api/po/eligible-approvers", jwtAuth, requireAuth, async (_req: Request, res: Response) => {
-    try {
-      const result = await db.execute(sql`
-        SELECT id, name, email, role
-        FROM users
-        WHERE role = ANY(${PO_APPROVAL_ELIGIBLE_ROLES}::text[])
-          AND is_active = true
-        ORDER BY role, name
-      `);
-      const approvers = rowsFromResult(result).map((u) => ({
-        id: Number(u.id),
-        name: String(u.name || ""),
-        email: String(u.email || ""),
-        role: String(u.role || ""),
-      }));
-      res.json({ eligibleRoles: PO_APPROVAL_ELIGIBLE_ROLES, approvers });
-    } catch (err: unknown) {
-      console.error("[PO] Eligible approvers error:", err instanceof Error ? err.message : String(err));
-      res.status(500).json({ error: "Failed to load eligible approvers" });
     }
   });
 

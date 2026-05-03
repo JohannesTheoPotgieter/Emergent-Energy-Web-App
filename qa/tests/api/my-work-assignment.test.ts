@@ -28,13 +28,16 @@ describe("API: my-work task assignment", () => {
 
     const stamp = Date.now();
     const created = await apiRequest("POST", "/api/mytool/tasks", { title: `Assignment E2E ${stamp}`, priority: "normal", status: "todo" }, admin.token);
-    expect(created.status).toBe(201);
+    expect(created.status).toBe(200);
     const taskId = created.data?.id;
     expect(taskId).toBeTruthy();
 
     const assignable = await apiRequest("GET", "/api/users/assignable", undefined, admin.token);
     expect(assignable.status).toBe(200);
-    const target = (assignable.data || []).find((u: any) => u.username === "eon");
+    // /api/users/assignable returns each entry's `username` populated with
+    // `displayLabel` (the user's full name). Match by email instead to
+    // pick the canonical `eon@emergent.energy` user.
+    const target = (assignable.data || []).find((u: any) => u.email === "eon@emergent.energy");
     expect(target?.id).toBeTruthy();
 
     const reassign = await apiRequest("PATCH", "/api/tasks/reassign", { taskId, taskSource: "personal", userId: target.id }, admin.token);
@@ -54,7 +57,7 @@ describe("API: my-work task assignment", () => {
     expect(admin.status).toBe(200);
 
     const created = await apiRequest("POST", "/api/mytool/tasks", { title: `Canonical Assignment ${Date.now()}`, priority: "normal", status: "todo" }, admin.token);
-    expect(created.status).toBe(201);
+    expect(created.status).toBe(200);
 
     const assignable = await apiRequest("GET", "/api/users/assignable", undefined, admin.token);
     expect(assignable.status).toBe(200);
@@ -79,7 +82,7 @@ describe("API: my-work task assignment", () => {
     expect(admin.status).toBe(200);
 
     const created = await apiRequest("POST", "/api/mytool/tasks", { title: `Invalid Assignment ${Date.now()}`, priority: "normal", status: "todo" }, admin.token);
-    expect(created.status).toBe(201);
+    expect(created.status).toBe(200);
 
     const reassign = await apiRequest(
       "PATCH",

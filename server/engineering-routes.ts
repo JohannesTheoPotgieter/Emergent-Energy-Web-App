@@ -773,6 +773,21 @@ export function registerEngineeringRoutes(app: Express) {
         return sendError(res, badRequest(`Invalid status. Must be one of: ${TASK_STATUSES.join(", ")}`));
       }
 
+      // toCanonicalStatus silently falls back to "not_started" for any
+      // unrecognized input. Reject obviously-invalid inputs so callers
+      // catch typos instead of silently overwriting status.
+      if (rawStatus && canonicalStatus === "not_started") {
+        const normalized = String(rawStatus).trim().toLowerCase().replace(/\s+/g, "_");
+        const looksLegacyValid =
+          normalized === "not_started" ||
+          normalized === "to_do" ||
+          normalized === "todo" ||
+          normalized === "open";
+        if (!looksLegacyValid) {
+          return sendError(res, badRequest(`Invalid status. Must be one of: ${TASK_STATUSES.join(", ")}`));
+        }
+      }
+
       if (canonicalStatus) {
         try {
           const context = await buildTaskWorkflowContext(id, existing.status as string);
