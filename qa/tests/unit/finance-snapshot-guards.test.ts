@@ -109,3 +109,69 @@ describe("finance margin scale — project-header-kpi-service.ts", () => {
     ).not.toMatch(/currentMarginPct\s*\/\s*100/);
   });
 });
+
+/**
+ * Gate auto-evaluator snapshot guards (PR #739).
+ *
+ * The evaluator builds a per-project context that downstream evaluators
+ * filter and aggregate. Three reads were missing the `effectiveTo IS NULL`
+ * guard, so on any re-imported project the context contained the active
+ * snapshot AND every superseded historical snapshot. Result: false-positive
+ * "milestone billed" gates (sums doubled), false-negative "all closed"
+ * gates (length checks fail), non-deterministic revenueSummary picks.
+ */
+describe("gate auto-evaluator snapshot guards — gate-auto-evaluator-service.ts", () => {
+  const source = read("server/services/gate-auto-evaluator-service.ts");
+
+  it("imports isNull and desc from drizzle-orm", () => {
+    expect(
+      source,
+      "evaluator must import isNull (snapshot guard) and desc (deterministic order on .limit(1))",
+    ).toMatch(
+      /import\s*\{[^}]*\bisNull\b[^}]*\}\s*from\s*["']drizzle-orm["']/,
+    );
+    expect(source).toMatch(
+      /import\s*\{[^}]*\bdesc\b[^}]*\}\s*from\s*["']drizzle-orm["']/,
+    );
+  });
+
+  it("projectRevenueSummary lookup filters effectiveTo IS NULL", () => {
+    const tail = windowAfter(source, ".from(projectRevenueSummary)", 300);
+    expect(
+      tail,
+      "projectRevenueSummary read must filter effectiveTo IS NULL (else .limit(1) can return a soft-closed historical row)",
+    ).toMatch(/isNull\(\s*projectRevenueSummary\.effectiveTo\s*\)/);
+  });
+
+  it("projectRevenueSummary lookup is ordered by capturedAt desc", () => {
+    const tail = windowAfter(source, ".from(projectRevenueSummary)", 300);
+    expect(
+      tail,
+      "projectRevenueSummary .limit(1) without orderBy is non-deterministic across PG vacuums; must orderBy desc(capturedAt)",
+    ).toMatch(/orderBy\(\s*desc\(\s*projectRevenueSummary\.capturedAt\s*\)\s*\)/);
+  });
+
+  it("normalizedRevenueLines context read filters effectiveTo + deletedAt", () => {
+    const tail = windowAfter(source, ".from(normalizedRevenueLines)", 300);
+    expect(
+      tail,
+      "context build must filter effectiveTo (else evaluators receive historical snapshots and double-count)",
+    ).toMatch(/isNull\(\s*normalizedRevenueLines\.effectiveTo\s*\)/);
+    expect(
+      tail,
+      "context build must filter deletedAt (else soft-deleted rows inflate sums)",
+    ).toMatch(/isNull\(\s*normalizedRevenueLines\.deletedAt\s*\)/);
+  });
+
+  it("normalizedCostLines context read filters effectiveTo + deletedAt", () => {
+    const tail = windowAfter(source, ".from(normalizedCostLines)", 300);
+    expect(
+      tail,
+      "context build must filter effectiveTo (else evaluators receive historical snapshots and double-count)",
+    ).toMatch(/isNull\(\s*normalizedCostLines\.effectiveTo\s*\)/);
+    expect(
+      tail,
+      "context build must filter deletedAt (else soft-deleted rows inflate sums)",
+    ).toMatch(/isNull\(\s*normalizedCostLines\.deletedAt\s*\)/);
+  });
+});
