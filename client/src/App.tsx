@@ -61,7 +61,15 @@ const APP_ROUTES: RouteConfig[] = [
     }
 
     for (const alias of page.aliases ?? []) {
-      routes.push({ path: alias, redirectTo: page.path });
+      // Parametric aliases (e.g. /project/:projectName → /project/id/:projectId) can't
+      // be redirected because the param names differ. Render the same component directly
+      // — the page itself handles canonical-URL redirect once it resolves the identity.
+      const aliasHasParams = alias.includes(":");
+      if (aliasHasParams && page.routeComponentKey && ROUTE_COMPONENTS[page.routeComponentKey]) {
+        routes.push({ path: alias, component: ROUTE_COMPONENTS[page.routeComponentKey] });
+      } else {
+        routes.push({ path: alias, redirectTo: page.path });
+      }
     }
 
     return routes;
