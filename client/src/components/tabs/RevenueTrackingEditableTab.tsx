@@ -16,6 +16,7 @@ import {
   Save, RotateCcw, Loader2, Plus, X, DollarSign,
   FileText, Landmark, AlertTriangle, CircleDot
 } from "lucide-react";
+import { humaniseField } from "@/lib/field-labels";
 
 interface RevenueTrackingEditableTabProps {
   projectName: string;
@@ -448,7 +449,22 @@ export function RevenueTrackingEditableTab({ projectName }: RevenueTrackingEdita
                             </OverrideDotWrapper>
                           </TableCell>
 
-                          <TableCell>{getStatusBadge(row.status)}</TableCell>
+                          <TableCell>
+                            <div className="flex flex-col items-center gap-0.5">
+                              {getStatusBadge(row.status)}
+                              {(overridesByRow.get(row.rowNumber)?.size ?? 0) > 0 && (
+                                <span
+                                  className="inline-flex items-center gap-0.5 text-[9px] font-medium text-amber-600 cursor-help mt-1"
+                                  title={`${overridesByRow.get(row.rowNumber)!.size} field edit(s): ${Array.from(overridesByRow.get(row.rowNumber)!.keys()).map(humaniseField).join(", ")}`}
+                                  data-testid={`override-badge-${row.id}`}
+                                >
+                                  <span aria-hidden="true">✎</span>
+                                  <span className="sr-only">Edited:</span>
+                                  {" "}{overridesByRow.get(row.rowNumber)!.size} field edits
+                                </span>
+                              )}
+                            </div>
+                          </TableCell>
                         </TableRow>
                       );
                     })}

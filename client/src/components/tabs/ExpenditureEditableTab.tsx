@@ -18,6 +18,7 @@ import {
   TrendingUp, TrendingDown, DollarSign, BarChart3, Percent,
   CircleDot, Wallet, CheckCircle2, AlertTriangle
 } from "lucide-react";
+import { humaniseField } from "@/lib/field-labels";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   DropdownMenu,
@@ -1262,15 +1263,29 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
       case "poNumber": {
         const missingPo = !!exp.expenseInvoiceNumber && !exp.expensePoNumber;
         return (
-          <div className="flex items-center gap-1">
-            <EditableCell rowId={exp.id} field="expensePoNumber" value={exp.expensePoNumber} rowNumber={exp.rowNumber} />
+          <div className="flex flex-col gap-0.5">
+            <div className="flex items-center gap-1">
+              <EditableCell rowId={exp.id} field="expensePoNumber" value={exp.expensePoNumber} rowNumber={exp.rowNumber} />
+              {missingPo && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span
+                        className="inline-flex"
+                        data-testid={`missing-po-icon-${exp.id}`}
+                      >
+                        <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0" aria-hidden="true" />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      <p className="text-xs">Invoice recorded but no PO number — check with your finance team.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+            </div>
             {missingPo && (
-              <span title="Invoice captured without a PO — PO must exist before invoice is recorded">
-              <AlertTriangle
-                className="h-3.5 w-3.5 text-red-500 shrink-0"
-                data-testid={`missing-po-icon-${exp.id}`}
-              />
-            </span>
+              <span className="text-[9px] text-red-600 font-medium leading-none">Missing PO</span>
             )}
           </div>
         );
@@ -1763,11 +1778,13 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
                               {getRowStatusBadge(exp)}
                               {exp.trust?.editedFields && exp.trust.editedFields.length > 0 && (
                                 <span
-                                  className="inline-flex items-center gap-0.5 text-[9px] font-medium text-amber-600 cursor-help"
-                                  title={`${exp.trust.editedFields.length} field(s) overridden: ${exp.trust.editedFields.join(", ")}`}
+                                  className="inline-flex items-center gap-0.5 text-[9px] font-medium text-amber-600 cursor-help gap-1"
+                                  title={`${exp.trust.editedFields.length} field edit(s): ${exp.trust.editedFields.map(humaniseField).join(", ")}`}
                                   data-testid={`override-badge-${exp.id}`}
                                 >
-                                  ✎ {exp.trust.editedFields.length} edited
+                                  <span aria-hidden="true">✎</span>
+                                  <span className="sr-only">Edited:</span>
+                                  {" "}{exp.trust.editedFields.length} field edits
                                 </span>
                               )}
                             </div>
