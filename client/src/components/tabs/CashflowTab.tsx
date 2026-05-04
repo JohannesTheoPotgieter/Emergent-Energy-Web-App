@@ -12,6 +12,7 @@ import {
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { FinanceTrustStrip } from "@/components/finance/FinanceTrustStrip";
 import {
   Loader2,
   DollarSign,
@@ -487,6 +488,17 @@ export function CashflowTab({ projectName, projectNames, title, canOverrideFinan
 
   return (
     <div className="space-y-4" data-testid="cashflow-tab-fy26">
+      <FinanceTrustStrip
+        source="Cashflow app model"
+        lastImportDate={new Date().toISOString()}
+        quickBooksLinkStatus="partial"
+        readOnly={!canOverrideFinance}
+        metrics={[
+          { label: "Unresolved drift", value: "Unknown / not yet measured", href: "/excel-vs-app", tone: "warning", testId: "trust-drift-badge" },
+          { label: "Manual overrides", value: "Unknown / not yet measured", href: "/manual-overrides" },
+          { label: "Missing PO", value: "Unknown / not yet measured", href: "/project-financial-management", testId: "trust-missing-po-badge" },
+        ]}
+      />
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <KpiMini
           label="Total Inflows"
