@@ -114,6 +114,31 @@ describe("invoice-matches — every mutating endpoint writes audit", () => {
   });
 });
 
+describe("invoice-matches — vendor/customer mapping upsert (item 4)", () => {
+  it("approve handler imports upsertVendorMapping from reconciliation service", () => {
+    expect(ROUTES).toContain("upsertVendorMapping");
+    expect(ROUTES).toContain("upsertCustomerMapping");
+  });
+
+  it("approve handler checks for locked vendor mapping before upserting", () => {
+    expect(ROUTES).toMatch(/vmResult\.wasLocked[\s\S]{0,80}mapping_locked/);
+  });
+
+  it("approve handler only upserts vendor mapping when mapVendor=true and qbCounterpartyId present", () => {
+    expect(ROUTES).toMatch(/body\.mapVendor[\s\S]{0,80}chosen\.qbCounterpartyId/);
+  });
+});
+
+describe("invoice-matches — qbCounterpartyId threaded through scorer", () => {
+  it("ScoredCandidate carries qbCounterpartyId field in the service", () => {
+    expect(SERVICE).toContain("qbCounterpartyId");
+  });
+
+  it("QbCandidateLike interface includes qbCounterpartyId", () => {
+    expect(SERVICE).toMatch(/qbCounterpartyId:\s*string \| null/);
+  });
+});
+
 describe("invoice-matches — cascade policy untouched", () => {
   it("legacy /suggest-matches endpoint still pins scope to customer + vendor only", () => {
     expect(LEGACY).toContain('z.enum(["customer", "vendor"])');
