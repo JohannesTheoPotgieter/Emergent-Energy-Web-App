@@ -448,6 +448,26 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
   const { tx, projectId, projectName, runId, userId, matchedRows, mergeResults, conflictDecisions } = ctx;
   const { workItemsTable: workItems } = ctx;
   const { eq, and, sql: sqlTag, isNull, inArray } = await import("drizzle-orm");
+  const { users } = await import("@shared/schema");
+
+  // Build a name/email → userId lookup map for owner resolution.
+  // Keyed by lowercase name and lowercase email so both match styles work.
+  // Populated once per import run; re-imports of the same workbook hit the
+  // map rather than the DB.
+  const userByKey = new Map<string, number>();
+  const userRows = await tx
+    .select({ id: users.id, name: users.name, email: users.email })
+    .from(users)
+    .where(and(eq(users.isActive, true), isNull(users.deletedAt)));
+  for (const u of userRows as Array<{ id: number; name: string; email: string }>) {
+    userByKey.set(u.email.toLowerCase(), u.id);
+    // name goes in last so email wins on collision
+    userByKey.set(u.name.toLowerCase(), u.id);
+  }
+  function resolveOwnerUserId(ownerText: unknown): number | null {
+    if (!ownerText || typeof ownerText !== "string") return null;
+    return userByKey.get(ownerText.trim().toLowerCase()) ?? null;
+  }
 
   const counts: CommitCounts = { inserted: 0, updated: 0, unchanged: 0, missing: 0, conflictsResolved: 0 };
   const insertedIds: number[] = [];
@@ -740,6 +760,7 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
             indentLevel: fileRow.indentLevel ?? 0,
             isMilestone: fileRow.isMilestone ?? false,
             phase: fileRow.phase || null,
+            ownerUserId: resolveOwnerUserId(fileRow.owner),
             ownerName: fileRow.owner || null,
             sourceRow: fileRow.sourceRow || null,
             sourceSheet: fileRow.sourceSheet || null,
@@ -789,7 +810,7 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
           isMilestone: fileRow.isMilestone ?? false,
           phase: fileRow.phase || null,
           parentId: null,
-          ownerUserId: null,
+          ownerUserId: resolveOwnerUserId(fileRow.owner),
           ownerName: fileRow.owner || null,
           isShared: false,
           externalRef: canonicalRef,
@@ -878,6 +899,8 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
             ? resolved.manualOverrides
             : null;
         }
+        // Refresh ownerUserId from the incoming owner text on every update.
+        wiUpdates.ownerUserId = resolveOwnerUserId(typeof fileRow.owner === "string" ? fileRow.owner : null);
 
         await tx.update(workItems).set(wiUpdates).where(eq(workItems.id, existingId));
         updatedIds.push(existingId);
