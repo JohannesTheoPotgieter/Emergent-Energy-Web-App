@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useCallback, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import {
   ExecutionDashboardProject,
@@ -92,31 +93,34 @@ export function useExecutionData(): ExecutionDashboardContextValue {
 }
 
 export function useExecutionDataProvider(setLocation: (to: string) => void) {
-  const [dashboard, setDashboard] = useState<ExecutionDashboardResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<ExecutionFilters>(defaultFilters);
-  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const [trust, setTrust] = useState<FinanceTrustMeta | null>(null);
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data: dashboard = null, isLoading: loading, error: queryError } = useQuery<ExecutionDashboardResponse>({
+    queryKey: ["execution-dashboard"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/lifecycle-board/execution-dashboard");
+      const trustMeta = extractTrustHeaders(res);
+      setTrust(trustMeta);
+      setLastRefresh(new Date());
+      return res.json();
+    },
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+  });
+
+  const error = queryError ? (queryError as Error).message : null;
 
   const loadData = useCallback(async () => {
     try {
-      setLoading(true);
-      setError(null);
-      const res = await apiRequest("GET", "/api/lifecycle-board/execution-dashboard");
-      const trustMeta = extractTrustHeaders(res);
-      const data: ExecutionDashboardResponse = await res.json();
-      setDashboard(data);
-      setTrust(trustMeta);
-      setLastRefresh(new Date());
+      await queryClient.invalidateQueries({ queryKey: ["execution-dashboard"] });
     } catch (err: any) {
-      setError(err.message || "Failed to load execution dashboard");
       toast({ title: "Error", description: err.message || "Failed to load execution dashboard", variant: "destructive" });
-    } finally {
-      setLoading(false);
     }
-  }, [toast]);
+  }, [queryClient, toast]);
 
   const allProjects = dashboard?.projects || [];
   const fyLabel = dashboard?.financialYear?.label || "Current FY";
