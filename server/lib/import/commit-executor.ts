@@ -448,6 +448,26 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
   const { tx, projectId, projectName, runId, userId, matchedRows, mergeResults, conflictDecisions } = ctx;
   const { workItemsTable: workItems } = ctx;
   const { eq, and, sql: sqlTag, isNull, inArray } = await import("drizzle-orm");
+  const { users } = await import("@shared/schema");
+
+  // Build a name/email → userId lookup map for owner resolution.
+  // Keyed by lowercase name and lowercase email so both match styles work.
+  // Populated once per import run; re-imports of the same workbook hit the
+  // map rather than the DB.
+  const userByKey = new Map<string, number>();
+  const userRows = await tx
+    .select({ id: users.id, name: users.name, email: users.email })
+    .from(users)
+    .where(and(eq(users.isActive, true), isNull(users.deletedAt)));
+  for (const u of userRows as Array<{ id: number; name: string; email: string }>) {
+    userByKey.set(u.email.toLowerCase(), u.id);
+    // name goes in last so email wins on collision
+    userByKey.set(u.name.toLowerCase(), u.id);
+  }
+  function resolveOwnerUserId(ownerText: unknown): number | null {
+    if (!ownerText || typeof ownerText !== "string") return null;
+    return userByKey.get(ownerText.trim().toLowerCase()) ?? null;
+  }
 
   const counts: CommitCounts = { inserted: 0, updated: 0, unchanged: 0, missing: 0, conflictsResolved: 0 };
   const insertedIds: number[] = [];
@@ -740,6 +760,7 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
             indentLevel: fileRow.indentLevel ?? 0,
             isMilestone: fileRow.isMilestone ?? false,
             phase: fileRow.phase || null,
+            ownerUserId: resolveOwnerUserId(fileRow.owner),
             ownerName: fileRow.owner || null,
             sourceRow: fileRow.sourceRow || null,
             sourceSheet: fileRow.sourceSheet || null,
@@ -789,7 +810,7 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
           isMilestone: fileRow.isMilestone ?? false,
           phase: fileRow.phase || null,
           parentId: null,
-          ownerUserId: null,
+          ownerUserId: resolveOwnerUserId(fileRow.owner),
           ownerName: fileRow.owner || null,
           isShared: false,
           externalRef: canonicalRef,
@@ -878,6 +899,8 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
             ? resolved.manualOverrides
             : null;
         }
+        // Refresh ownerUserId from the incoming owner text on every update.
+        wiUpdates.ownerUserId = resolveOwnerUserId(typeof fileRow.owner === "string" ? fileRow.owner : null);
 
         await tx.update(workItems).set(wiUpdates).where(eq(workItems.id, existingId));
         updatedIds.push(existingId);
@@ -946,6 +969,55 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
       await tx.update(workItems)
         .set({ deletedAt: commitNow })
         .where(inArray(workItems.id, stale));
+    }
+  }
+
+  // ── parentId pass ──
+  // Walk all active SMART_IMPORT rows for this project ordered by
+  // outlineNumber and set parentId to the nearest row whose outlineNumber
+  // is a strict prefix. This is idempotent: re-importing recomputes from
+  // scratch so hierarchy is always derived from the current outline numbers.
+  if (seenRowHashes.size > 0) {
+    const planRows = await tx
+      .select({ id: workItems.id, outlineNumber: workItems.outlineNumber, parentId: workItems.parentId })
+      .from(workItems)
+      .where(and(
+        eq(workItems.projectId, projectId),
+        eq(workItems.source, "SMART_IMPORT"),
+        isNull(workItems.deletedAt),
+      ));
+
+    // Sort by outline number so parents always appear before children.
+    // Comparison treats each segment as a number so "2.10" sorts after "2.9".
+    function parseOutline(s: string): number[] {
+      return s.split(".").map(n => parseInt(n, 10) || 0);
+    }
+    function cmpOutline(a: string, b: string): number {
+      const pa = parseOutline(a), pb = parseOutline(b);
+      for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+        const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
+        if (diff !== 0) return diff;
+      }
+      return 0;
+    }
+    const sorted = (planRows as Array<{ id: number; outlineNumber: string | null; parentId: number | null }>)
+      .filter(r => r.outlineNumber)
+      .sort((a, b) => cmpOutline(a.outlineNumber!, b.outlineNumber!));
+
+    // Build outline → id map as we walk (parents always come first after sort).
+    const outlineToId = new Map<string, number>();
+    for (const row of sorted) {
+      const outline = row.outlineNumber!;
+      const lastDot = outline.lastIndexOf(".");
+      const parentOutline = lastDot >= 0 ? outline.slice(0, lastDot) : null;
+      const resolvedParentId = parentOutline ? (outlineToId.get(parentOutline) ?? null) : null;
+      // Only write when parentId has changed to avoid unnecessary UPDATE churn.
+      if (resolvedParentId !== row.parentId) {
+        await tx.update(workItems)
+          .set({ parentId: resolvedParentId })
+          .where(eq(workItems.id, row.id));
+      }
+      outlineToId.set(outline, row.id);
     }
   }
 
@@ -1452,7 +1524,7 @@ export async function writeRevenueIncremental(ctx: TemporalWriteContext): Promis
 export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Promise<SectionCommitResult> {
   const { tx, projectId, projectName, runId, userId, matchedRows, mergeResults, conflictDecisions, commitTimestamp } = ctx;
   const { eq, and, isNull, inArray } = await import("drizzle-orm");
-  const { normalizedCostLines } = await import("@shared/schema");
+  const { normalizedCostLines, counterparties } = await import("@shared/schema");
   const {
     applyQbPrecedence,
     lookupQbLink,
@@ -1461,6 +1533,30 @@ export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Pr
     isQbPrecedenceEnabled,
   } = await import("./qb-precedence");
   const qbPrecedenceOn = await isQbPrecedenceEnabled();
+
+  // Build a normalised-name → {id, type} lookup for counterparty resolution.
+  // Covers nameCanonical and every entry in nameAliases (JSONB string array).
+  // Cached once for the duration of this import run.
+  type CounterpartyMatch = { id: number; type: string };
+  const counterpartyByName = new Map<string, CounterpartyMatch>();
+  const cpRows = await tx
+    .select({ id: counterparties.id, name: counterparties.nameCanonical, aliases: counterparties.nameAliases, type: counterparties.typeDefault })
+    .from(counterparties)
+    .where(and(eq(counterparties.isActive, true), isNull(counterparties.deletedAt)));
+  for (const cp of cpRows as Array<{ id: number; name: string; aliases: unknown; type: string }>) {
+    const hit: CounterpartyMatch = { id: cp.id, type: cp.type };
+    counterpartyByName.set(cp.name.trim().toLowerCase(), hit);
+    const aliases = Array.isArray(cp.aliases) ? cp.aliases : [];
+    for (const alias of aliases) {
+      if (typeof alias === "string" && alias.trim()) {
+        counterpartyByName.set(alias.trim().toLowerCase(), hit);
+      }
+    }
+  }
+  function resolveCounterparty(name: unknown): CounterpartyMatch | null {
+    if (!name || typeof name !== "string") return null;
+    return counterpartyByName.get(name.trim().toLowerCase()) ?? null;
+  }
 
   const counts: CommitCounts = { inserted: 0, updated: 0, unchanged: 0, missing: 0, conflictsResolved: 0 };
   const insertedIds: number[] = [];
@@ -1703,11 +1799,14 @@ export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Pr
         // Falls through to the CHANGED block below.
       } else {
         const insertSnapshot = buildSnapshot(costFileForMerge, EXPENDITURE_MERGE_FIELDS);
+        const cpMatch = resolveCounterparty(f.counterpartyName);
         const [inserted] = await tx.insert(normalizedCostLines).values({
           projectId,
           projectName,
           costCategory: f.costCategory,
           counterpartyName: f.counterpartyName,
+          counterpartyId: cpMatch?.id ?? null,
+          counterpartyType: (cpMatch?.type as any) ?? null,
           description: f.description,
           amountExVat: f.amountExVat,
           invoiceNumber: f.invoiceNumber,
@@ -1840,11 +1939,19 @@ export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Pr
       const insertManualOverrides = Object.keys(resolved.manualOverrides).length > 0
         ? resolved.manualOverrides
         : null;
+      // Re-resolve counterparty from the incoming name (file wins on CHANGED rows;
+      // falls back to the existing FK when the name didn't change and had a match).
+      const changedCpName = resolved.values.counterpartyName ?? existing.counterpartyName;
+      const changedCpMatch = resolveCounterparty(changedCpName) ?? (
+        existing.counterpartyId ? { id: existing.counterpartyId as number, type: existing.counterpartyType as string } : null
+      );
       const [inserted] = await tx.insert(normalizedCostLines).values({
         projectId,
         projectName,
         costCategory: resolved.values.costCategory ?? existing.costCategory,
-        counterpartyName: resolved.values.counterpartyName ?? existing.counterpartyName,
+        counterpartyName: changedCpName,
+        counterpartyId: changedCpMatch?.id ?? null,
+        counterpartyType: (changedCpMatch?.type as any) ?? null,
         description: existing.description,
         amountExVat: resolved.values.amountExVat ?? existing.amountExVat,
         invoiceNumber: resolved.values.invoiceNumber ?? existing.invoiceNumber,
