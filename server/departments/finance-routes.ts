@@ -178,24 +178,7 @@ async function getHighRiskAllCostReadRows(): Promise<any[]> {
   return getCanonicalAllCurrentCostLines({ applyOverrides: manualOverridesEnabled() });
 }
 
-/**
- * Reads revenue lines for a specific project using the SAME data source as the
- * portfolio routes. This ensures project-level and portfolio-level views produce
- * identical per-project revenue totals.
- *
- * The portfolio route reads all revenue lines via getAllRevenueLinesForCashflow()
- * and filters by normalized project name. The legacy per-project call
- * (getProgramInflowsByProject) uses an exact SQL string match which can miss
- * lines with variant names (e.g., "Mondi_Tracker" vs "Mondi").
- */
-async function getProjectRevenueLinesConsistent(projectName: string): Promise<any[]> {
-  const allInflows = await storage.getAllRevenueLinesForCashflow();
-  const normalizedTarget = (projectName || "").replace(/_Tracker$/i, "").trim().toLowerCase();
-  return allInflows.filter((r: any) => {
-    const rName = (r.projectName || "").replace(/_Tracker$/i, "").trim().toLowerCase();
-    return rName === normalizedTarget;
-  });
-}
+
 
 function requireAdminOrFinancialEditor(req: Request, res: Response, next: NextFunction) {
   const role = req.user?.role;
@@ -4330,7 +4313,7 @@ router.get("/api/revenue-tracker/project/:projectName", requireAuth, requirePerm
     const projectIdParam = req.query.projectId ? parseInt(String(req.query.projectId), 10) : null;
     const [projectExpenses, revLines, manualEntries] = await Promise.all([
       getHighRiskProjectCostReadRows(projectName, projectIdParam),
-      getProjectRevenueLinesConsistent(projectName),
+      storage.getProgramInflowsByProject(projectName),
       storage.getTrackerMonthlyManual('REV'),
     ]);
 
@@ -4654,7 +4637,7 @@ router.get("/api/gp-tracker/project/:projectName", requireAuth, requirePermissio
     const projectIdParam = req.query.projectId ? parseInt(String(req.query.projectId), 10) : null;
     const [projectExpenses, revLines, cosOverrideMapProj] = await Promise.all([
       getHighRiskProjectCostReadRows(projectName, projectIdParam),
-      getProjectRevenueLinesConsistent(projectName),
+      storage.getProgramInflowsByProject(projectName),
       Promise.resolve(new Map()),
     ]);
 
@@ -5161,7 +5144,7 @@ router.get("/api/revenue-tracker/month-detail", requireAuth, requirePermission("
 
 
     const allInflowsRaw = project
-      ? await getProjectRevenueLinesConsistent(project)
+      ? await storage.getProgramInflowsByProject(project)
       : await storage.getAllRevenueLinesForCashflow();
 
     const revenueByProject = new Map<string, number>();
@@ -5532,16 +5515,13 @@ router.get("/api/program-inflows", requireAuth, async (req, res) => {
     if (projectName && typeof projectName === 'string') {
       inflows = await storage.getProgramInflowsByProject(projectName);
       setFinanceTrustHeaders(res, {
-        sourceLayer: "legacy",
+        sourceLayer: "canonical",
         canonicalTable: "normalized_revenue_lines",
-        uncertainty: "compatibility_route_project_name_filter",
       });
-
-      // Override data now baked into base rows
     } else {
       inflows = await storage.getAllProgramInflows();
       setFinanceTrustHeaders(res, {
-        sourceLayer: "legacy",
+        sourceLayer: "canonical",
         canonicalTable: "normalized_revenue_lines",
       });
     }
@@ -5588,9 +5568,8 @@ router.get("/api/projects/:projectName/revenue-lines", requireAuth, async (req, 
     const { startDate, endDate } = req.query;
     let inflows = await storage.getProgramInflowsByProject(projectName);
     setFinanceTrustHeaders(res, {
-      sourceLayer: "legacy",
+      sourceLayer: "canonical",
       canonicalTable: "normalized_revenue_lines",
-      uncertainty: "compatibility_route_project_name_filter",
     });
 
     if (startDate && typeof startDate === 'string') {
