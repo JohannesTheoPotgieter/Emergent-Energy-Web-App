@@ -16,7 +16,7 @@
  * helpers (apply / clear) live in `server/lib/manual-overrides.ts`
  * because they're shared between the import engine and the diff page.
  */
-import { eq, and, isNull, asc, desc } from "drizzle-orm";
+import { eq, and, isNull, asc, desc, inArray } from "drizzle-orm";
 import {
   normalizedRevenueLines,
   normalizedCostLines,
@@ -34,6 +34,7 @@ import {
 import { workItems, type WorkItem } from "@shared/schema/tasks";
 import { projectInfo } from "@shared/schema/projects";
 import { smartImportRuns } from "@shared/schema/imports";
+import { users } from "@shared/schema/users";
 import { db } from "../db";
 
 export class TrackerReplicaRepository {
@@ -237,6 +238,7 @@ export class TrackerReplicaRepository {
           value: entry.value as string | number | boolean | null,
           fromValue: entry.fromValue as string | number | boolean | null,
           editedBy: typeof entry.editedBy === "number" ? entry.editedBy : null,
+          editedByName: null,
           editedAt: typeof entry.editedAt === "string" ? entry.editedAt : "",
         });
       }
@@ -303,6 +305,22 @@ export class TrackerReplicaRepository {
 
     // Newest edits first.
     out.sort((a, b) => (a.editedAt < b.editedAt ? 1 : a.editedAt > b.editedAt ? -1 : 0));
+
+    // Resolve user IDs to display names in a single batch query.
+    const uniqueIds = [...new Set(out.map(e => e.editedBy).filter((id): id is number => id !== null))];
+    if (uniqueIds.length > 0) {
+      const userRows = await this.dbInstance
+        .select({ id: users.id, name: users.name })
+        .from(users)
+        .where(inArray(users.id, uniqueIds));
+      const nameMap = new Map(userRows.map(u => [u.id, u.name]));
+      for (const entry of out) {
+        if (entry.editedBy !== null) {
+          entry.editedByName = nameMap.get(entry.editedBy) ?? null;
+        }
+      }
+    }
+
     return out;
   }
 
@@ -747,6 +765,7 @@ export interface ManualOverrideEntry {
   value: string | number | boolean | null;
   fromValue: string | number | boolean | null;
   editedBy: number | null;
+  editedByName: string | null;
   editedAt: string;
 }
 
