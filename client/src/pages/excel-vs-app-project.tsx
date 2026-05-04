@@ -268,7 +268,7 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
         metrics={[
           { label: "Unresolved drift", value: sections.reduce((n, s) => n + (s.summary?.unverified ?? 0), 0), href: `/excel-vs-app/project/${projectId}`, tone: "warning", testId: "trust-drift-badge" },
           { label: "Manual overrides", value: sections.reduce((n, s) => n + (s.summary?.verified ?? 0), 0), href: "/manual-overrides" },
-          { label: "Missing PO", value: 0, href: `/project-financial-management?projectId=${projectId}`, testId: "trust-missing-po-badge" },
+          { label: "Missing PO", value: "Unknown / not yet measured", href: `/project-financial-management?projectId=${projectId}`, testId: "trust-missing-po-badge" },
         ]}
       />
       <div className="flex items-start justify-between gap-4">

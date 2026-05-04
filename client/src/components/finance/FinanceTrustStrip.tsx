@@ -40,12 +40,17 @@ export function buildTrustStripState(params: {
   const staleImport = isStaleImport(params.lastImportDate);
   const driftMetric = params.metrics.find((m) => m.label.toLowerCase().includes("drift"));
   const missingPoMetric = params.metrics.find((m) => m.label.toLowerCase().includes("missing po"));
+  const asCount = (v: string | number | undefined): number | null => {
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    if (typeof v === "string" && /^\d+$/.test(v.trim())) return Number(v.trim());
+    return null;
+  };
   return {
     staleImport,
     qbLinked: params.quickBooksLinkStatus === "linked",
     qbUnmatched: params.quickBooksLinkStatus === "unmatched",
-    driftCount: Number(driftMetric?.value ?? 0),
-    missingPoCount: Number(missingPoMetric?.value ?? 0),
+    driftCount: asCount(driftMetric?.value),
+    missingPoCount: asCount(missingPoMetric?.value),
     readOnly: !!params.readOnly,
   };
 }
