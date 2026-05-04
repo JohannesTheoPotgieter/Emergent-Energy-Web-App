@@ -500,8 +500,27 @@ function buildDateClause(field: string, startDate?: string, endDate?: string): s
 export async function getInvoices(startDate?: string, endDate?: string): Promise<any> {
   if (isConnectorMocked("quickbooks")) return qbMocks.mockInvoices(startDate, endDate);
   const where = buildDateClause("TxnDate", startDate, endDate);
-  const query = `SELECT * FROM Invoice${where} ORDERBY TxnDate DESC MAXRESULTS 500`;
-  return queryQuickBooks("Invoice", query);
+  const maxResults = 500;
+  let startPosition = 1;
+  const allInvoices: any[] = [];
+
+  while (true) {
+    const query = `SELECT * FROM Invoice${where} ORDERBY TxnDate DESC STARTPOSITION ${startPosition} MAXRESULTS ${maxResults}`;
+    const page = await queryQuickBooks<any>("Invoice", query);
+    const invoices = page?.QueryResponse?.Invoice ?? [];
+    allInvoices.push(...invoices);
+    if (invoices.length < maxResults) break;
+    startPosition += maxResults;
+  }
+
+  return {
+    QueryResponse: {
+      ...(allInvoices.length > 0 ? { Invoice: allInvoices } : {}),
+      startPosition: 1,
+      maxResults: allInvoices.length,
+    },
+    time: new Date().toISOString(),
+  };
 }
 
 export async function getCustomers(): Promise<any> {
