@@ -902,7 +902,7 @@ function dataFreshnessLabel(updatedAt?: number) {
   return { label: `${hrs}h old`, stale: true };
 }
 
-function TrustMarker({ label, source, updatedAt, drift, stale }: { label: string; source: string; updatedAt?: number; drift?: string | null; stale?: boolean }) {
+function TrustMarker({ label, source, updatedAt, drift, stale, loadError }: { label: string; source: string; updatedAt?: number; drift?: string | null; stale?: boolean; loadError?: boolean }) {
   const freshness = dataFreshnessLabel(updatedAt);
   const isStale = stale ?? freshness.stale;
   return (
@@ -912,6 +912,7 @@ function TrustMarker({ label, source, updatedAt, drift, stale }: { label: string
       <span className={isStale ? "text-amber-700" : "text-muted-foreground"}>Updated {formatUpdatedAt(updatedAt)}</span>
       <Badge variant={isStale ? "secondary" : "outline"} className="h-4 text-[9px]">{freshness.label}</Badge>
       {drift ? <Badge variant="secondary" className="h-4 text-[9px]">Drift: {drift}</Badge> : null}
+      {loadError ? <Badge variant="destructive" className="h-4 text-[9px]">Unable to load</Badge> : null}
     </div>
   );
 }
@@ -1143,7 +1144,7 @@ export default function ProjectDetailPage() {
     enabled: !!projectName,
   });
 
-  const { data: revenueData = [], dataUpdatedAt: revenueUpdatedAt, isFetching: revenueFetching } = useQuery({
+  const { data: revenueData = [], dataUpdatedAt: revenueUpdatedAt, isFetching: revenueFetching, isError: revenueLoadError } = useQuery({
     queryKey: ["program-inflows", projectName],
     queryFn: async () => {
       const res = await engFetch(`/api/projects/${encodeURIComponent(projectName)}/revenue-lines`);
@@ -1153,7 +1154,7 @@ export default function ProjectDetailPage() {
     enabled: !!projectName,
   });
 
-  const { data: expenseData = [] } = useQuery({
+  const { data: expenseData = [], isError: expenseLoadError } = useQuery({
     queryKey: ["program-expenses", projectName],
     queryFn: async () => {
       const res = await engFetch(`/api/projects/${encodeURIComponent(projectName)}/cost-lines`);
@@ -1196,7 +1197,7 @@ export default function ProjectDetailPage() {
     enabled: !!projectInfoId && canViewTab.finance && (activeSection === "commercial" || activeSection === "delivery"),
   });
 
-  const { data: cashflowData = [], dataUpdatedAt: cashflowUpdatedAt, isFetching: cashflowFetching } = useQuery({
+  const { data: cashflowData = [], dataUpdatedAt: cashflowUpdatedAt, isFetching: cashflowFetching, isError: cashflowLoadError } = useQuery({
     queryKey: ["cashflow", projectName],
     queryFn: async () => {
       const res = await engFetch(`/api/cashflow?project=${encodeURIComponent(projectName)}`);
@@ -1216,7 +1217,7 @@ export default function ProjectDetailPage() {
     enabled: !!projectInfo?.project_info_id,
   });
 
-  const { data: qualityData, dataUpdatedAt: qualityUpdatedAt, isFetching: qualityFetching } = useQuery({
+  const { data: qualityData, dataUpdatedAt: qualityUpdatedAt, isFetching: qualityFetching, isError: qualityLoadError } = useQuery({
     queryKey: ["quality-summary", projectName],
     queryFn: async () => {
       const res = await engFetch(`/api/quality/project/${encodeURIComponent(projectName)}/summary`);
@@ -1633,10 +1634,10 @@ export default function ProjectDetailPage() {
       })()}
 
       <div className="flex flex-wrap gap-1.5" data-testid="project-trust-markers">
-        <TrustMarker label="Project" source="App" updatedAt={v2DetailUpdatedAt} stale={v2DetailFetching} />
-        <TrustMarker label="Revenue" source="Excel / App" updatedAt={revenueUpdatedAt} drift={revenueTrustData?.reconciliation?.status || null} stale={revenueFetching} />
-        <TrustMarker label="Cashflow" source="QuickBooks / App" updatedAt={cashflowUpdatedAt} stale={cashflowFetching} />
-        <TrustMarker label="Quality" source="Manual override / App" updatedAt={qualityUpdatedAt} stale={qualityFetching} />
+        <TrustMarker label="Project" source="App" updatedAt={v2DetailUpdatedAt} stale={v2DetailFetching} loadError={!v2Detail && !v2DetailFetching} />
+        <TrustMarker label="Revenue" source="Excel / App" updatedAt={revenueUpdatedAt} drift={revenueTrustData?.reconciliation?.status || null} stale={revenueFetching} loadError={revenueLoadError} />
+        <TrustMarker label="Cashflow" source="QuickBooks / App" updatedAt={cashflowUpdatedAt} stale={cashflowFetching} loadError={cashflowLoadError} />
+        <TrustMarker label="Quality" source="Manual override / App" updatedAt={qualityUpdatedAt} stale={qualityFetching} loadError={qualityLoadError} />
       </div>
 
       {topAlerts.length > 0 && (
@@ -1876,6 +1877,10 @@ export default function ProjectDetailPage() {
               <span className="text-muted-foreground">Cost</span>
             </div>
             {budgetTotal > 0 && <div><span className="text-muted-foreground">Margin:</span> <span className={`font-semibold ${marginDelta >= 0 ? "text-emerald-600" : "text-red-600"}`}>{marginDelta >= 0 ? "+" : ""}{marginDelta.toFixed(1)}%</span></div>}
+          {(revenueLoadError || expenseLoadError || cashflowLoadError) && (
+            <div className="text-red-700 font-semibold" data-testid="finance-load-warning">Unable to load one or more finance feeds.</div>
+          )}
+
           </div>
 
           {/* Finance sub-tabs */}

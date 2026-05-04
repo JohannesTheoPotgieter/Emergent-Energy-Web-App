@@ -1265,11 +1265,12 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
           <div className="flex items-center gap-1">
             <EditableCell rowId={exp.id} field="expensePoNumber" value={exp.expensePoNumber} rowNumber={exp.rowNumber} />
             {missingPo && (
+              <span title="Invoice captured without a PO — PO must exist before invoice is recorded">
               <AlertTriangle
                 className="h-3.5 w-3.5 text-red-500 shrink-0"
-                title="Invoice captured without a PO — PO must exist before invoice is recorded"
                 data-testid={`missing-po-icon-${exp.id}`}
               />
+            </span>
             )}
           </div>
         );
