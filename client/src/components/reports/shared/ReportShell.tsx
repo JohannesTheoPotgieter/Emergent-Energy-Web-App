@@ -19,6 +19,12 @@ interface ReportShellProps {
   periodStart?: string;
   periodEnd?: string;
   snapshotBehavior?: string;
+  /**
+   * Server-computed signal: true when canonical underlying data has
+   * changed since the snapshot was generated. Distinct from `isStale`,
+   * which compares the snapshot to the last import date.
+   */
+  snapshotFreshness?: { isStale: boolean; lastDataChangeAt: string | null; generatedAt: string | null };
   onRegenerate?: () => void;
   onReview?: () => void;
   onPublish?: () => void;
@@ -70,6 +76,19 @@ export default function ReportShell(props: ReportShellProps) {
         <div className="flex items-center gap-2 p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700">
           <AlertTriangle className="w-4 h-4 shrink-0" />
           Data staleness warning: {props.daysSinceImport ?? "Unknown"} day(s) since import (threshold {props.stalenessThresholdDays ?? "n/a"} days).
+        </div>
+      )}
+
+      {props.snapshotFreshness?.isStale && (
+        <div className="flex items-center gap-2 p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span>
+            Underlying data has changed since this report was generated
+            {props.snapshotFreshness.lastDataChangeAt
+              ? ` (last change ${new Date(props.snapshotFreshness.lastDataChangeAt).toLocaleString("en-ZA")})`
+              : ""}
+            . Regenerate to refresh.
+          </span>
         </div>
       )}
 
