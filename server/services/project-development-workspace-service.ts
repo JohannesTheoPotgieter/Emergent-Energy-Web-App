@@ -704,7 +704,31 @@ export function computePdPmSubmitBlockers(params: {
     }
   }
 
+  // PD→PM V2 required readiness sections.
+  const handoverFormData = params.handover?.handoverFormData ?? params.handover?.handover_form_data ?? {};
+  const hasObject = handoverFormData && typeof handoverFormData === "object";
+  const risksTable = Array.isArray(handoverFormData?.risksTable) ? handoverFormData.risksTable : [];
+  const paymentMilestones = Array.isArray(handoverFormData?.paymentMilestones) ? handoverFormData.paymentMilestones : [];
+  const requiredDocs = [
+    textOrNull(deliverables?.handoverCharter?.reference),
+    textOrNull(deliverables?.siteVisitReport?.reference),
+    textOrNull(deliverables?.signedCostProposal?.reference),
+  ].filter(Boolean);
+
+  need(hasObject && (!!textOrNull(handoverFormData?.fundingModel) || paymentMilestones.length > 0), "Commercial readiness section");
+  need(hasObject && (!!textOrNull(handoverFormData?.systemType) || !!textOrNull(handoverFormData?.systemSizeKwp)), "Design readiness section");
+  need(hasObject && (!!textOrNull(handoverFormData?.clientName) || !!textOrNull(handoverFormData?.siteAddress)), "Client / site readiness section");
+  need(hasObject && (!!textOrNull(handoverFormData?.fundingModel) || !!textOrNull(deliverables?.signedCostProposal?.reference)), "Finance readiness section");
+  need((!!textOrNull(params.handover?.risks) || risksTable.length > 0) && !!textOrNull(params.handover?.assumptions), "Risks and assumptions section");
+  need(requiredDocs.length === 3, "Required documents section");
+  need(!!params.handover?.pdSignOffAt || statusEquals(params.handover?.status, "SUBMITTED_FOR_PM_REVIEW") || statusEquals(params.handover?.status, "ACCEPTED") || statusEquals(params.handover?.status, "REJECTED") || statusEquals(params.handover?.status, "HANDOVER_COMPLETE"), "PD sign-off");
+  need(statusEquals(params.handover?.status, "ACCEPTED") || statusEquals(params.handover?.status, "REJECTED") || !!params.handover?.pmSignOffAt, "PM acceptance / rejection");
+
   return missingItems;
+}
+
+function statusEquals(status: unknown, expected: string) {
+  return String(status || "").toUpperCase() === expected;
 }
 
 export async function getProjectDevelopmentWorkspace(params: {

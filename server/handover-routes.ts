@@ -465,6 +465,9 @@ export function registerHandoverRoutes(app: Express) {
 
         const blockers = [
           !deliverablesComplete ? "Missing deliverables evidence" : null,
+        ].filter(Boolean) as string[];
+
+        const warnings = [
           !trackerLinked ? "Tracker not linked" : null,
           !executionEnabled && status === "HANDOVER_COMPLETE" ? "Execution not enabled" : null,
         ].filter(Boolean) as string[];
@@ -477,7 +480,8 @@ export function registerHandoverRoutes(app: Express) {
                 Math.min(
                   100,
                   Number(row.readiness_score ?? 0) -
-                    blockers.length * 15 -
+                    blockers.length * 20 -
+                    warnings.length * 5 -
                     (daysInStatus > 7 ? 10 : 0),
                 ),
               );
@@ -493,12 +497,24 @@ export function registerHandoverRoutes(app: Express) {
           action_owner: actionOwner,
           health_score: healthScore,
           health_blockers: blockers,
+          health_warnings: warnings,
           health_missing_inputs: missingInputs,
           health_not_enough_data: missingInputs.length > 0,
         };
       });
 
-      res.json({ items });
+      const startOfMonth = new Date();
+      startOfMonth.setUTCDate(1);
+      startOfMonth.setUTCHours(0, 0, 0, 0);
+
+      const dashboard = {
+        readyForPmReview: items.filter((r: any) => r.handover_status === "SUBMITTED_FOR_PM_REVIEW").length,
+        rejectedReturnedToPd: items.filter((r: any) => r.handover_status === "REJECTED").length,
+        overdueHandovers: items.filter((r: any) => r.handover_status === "SUBMITTED_FOR_PM_REVIEW" && Number(r.days_in_status || 0) > 5).length,
+        missingRequiredEvidence: items.filter((r: any) => (Array.isArray(r.health_blockers) && r.health_blockers.includes("Missing deliverables evidence")) || r.health_not_enough_data).length,
+        acceptedThisMonth: items.filter((r: any) => r.handover_status === "ACCEPTED" && r.pm_sign_off_at && new Date(r.pm_sign_off_at).getTime() >= startOfMonth.getTime()).length,
+      };
+      res.json({ items, dashboard });
     } catch (err: any) {
       const msg = err?.message || '';
       if (/relation.*does not exist|no such table/i.test(msg) || err?.code === '42P01') {
@@ -756,10 +772,23 @@ export function registerHandoverRoutes(app: Express) {
       const trafficLight: "green" | "amber" | "red" =
         readinessPct >= 100 ? "green" : readinessPct >= 80 ? "amber" : "red";
       const hasGaps = missing.length > 0 || !evidence.pass;
+      const userRole = String(user?.role || "");
+      const cooOverrideRequested = req.body?.cooOverride === true;
+      const cooOverrideReason = String(req.body?.cooOverrideReason || "").trim();
+      const cooOverrideAllowed = ["COO_ADMIN", "CEO_ADMIN"].includes(userRole) && cooOverrideRequested && cooOverrideReason.length > 0;
+
+      if (hasGaps && !cooOverrideAllowed) {
+        return res.status(400).json({
+          error: "Cannot submit handover: mandatory sections are incomplete. Complete all blockers or obtain COO override to submit with exceptions.",
+          missingItems: missing,
+          evidencePass: evidence.pass,
+          canSubmitWithExceptions: ["COO_ADMIN", "CEO_ADMIN"].includes(userRole),
+        });
+      }
 
       await db.update(projectPdPmHandover).set({
         status: "SUBMITTED_FOR_PM_REVIEW",
-        handoverStatusText: "Submitted for PM Review",
+        handoverStatusText: hasGaps ? "Submitted with Exceptions" : "Submitted for PM Review",
         submittedBy: user?.name || "Unknown",
         submittedAt: new Date(),
         updatedAt: new Date(),
@@ -767,7 +796,7 @@ export function registerHandoverRoutes(app: Express) {
       await insertPdPmHandoverHistory({
         projectId,
         req,
-        action: hasGaps ? "PD_PM_HANDOVER_SUBMITTED_WITH_GAPS" : "PD_PM_HANDOVER_SUBMITTED",
+        action: hasGaps ? "PD_PM_HANDOVER_SUBMITTED_WITH_EXCEPTIONS" : "PD_PM_HANDOVER_SUBMITTED",
         details: {
           missingItems: missing,
           evidencePass: evidence.pass,
@@ -777,6 +806,9 @@ export function registerHandoverRoutes(app: Express) {
           trafficLight,
           readinessStatus: handover.handoverReadinessStatus || null,
           integrationFreshness,
+          submittedWithExceptions: hasGaps,
+          cooOverrideAllowed: hasGaps ? cooOverrideAllowed : false,
+          cooOverrideReason: hasGaps ? cooOverrideReason : null,
         },
       });
       logAuditFromReq(req, {
@@ -918,6 +950,21 @@ export function registerHandoverRoutes(app: Express) {
         return res.status(400).json({ error: "Cannot accept handover: no submitted handover found for PM review." });
       }
       const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
+      if (!project) return res.status(404).json({ error: "Project not found." });
+      const workspace = await getProjectDevelopmentWorkspace({
+        projectId,
+        projectName: project.projectName,
+        canonicalProjectId: project.canonicalProjectId,
+        clientId: project.clientId,
+        phase: project.phase,
+        executionGateStatus: project.executionGateStatus,
+        executionEnabled: project.executionEnabled,
+        handover,
+      });
+      const missingItems = computePdPmSubmitBlockers({ project, handover, workspace });
+      if (missingItems.length > 0) {
+        return res.status(400).json({ error: "Cannot accept handover: mandatory sections are incomplete.", missingItems });
+      }
       await db.update(projectPdPmHandover).set({
         status: "ACCEPTED",
         handoverStatusText: "Accepted",
