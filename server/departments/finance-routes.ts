@@ -5468,6 +5468,8 @@ router.get("/api/program-expenses", requireAuth, async (req, res) => {
   }
 });
 
+// DEPRECATED — prefer /api/projects/:projectName/cost-lines.
+// Scheduled for removal in the next release after consumers migrate.
 router.get("/api/program-expenses/:projectName", requireAuth, async (req, res) => {
   try {
     const projectName = paramStr(req.params.projectName);
@@ -5477,6 +5479,7 @@ router.get("/api/program-expenses/:projectName", requireAuth, async (req, res) =
       canonicalTable: "normalized_cost_lines",
     });
 
+    res.set("Deprecation", "true");
     res.json(expenses);
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch program expenses", message: "Failed to fetch program expenses" });
@@ -5519,6 +5522,8 @@ router.get("/api/finance/trust-core-report", requireAuth, requireAdmin, async (_
 });
 
 
+// DEPRECATED — prefer /api/projects/:projectName/revenue-lines.
+// Scheduled for removal in the next release after consumers migrate.
 router.get("/api/program-inflows", requireAuth, async (req, res) => {
   try {
     const { projectName, startDate, endDate, applyOverrides } = req.query;
@@ -5554,9 +5559,56 @@ router.get("/api/program-inflows", requireAuth, async (req, res) => {
       );
     }
 
+    res.set("Deprecation", "true");
     res.json(inflows);
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch program inflows", message: "Failed to fetch program inflows" });
+  }
+});
+
+// ==================== CANONICAL PROJECT FINANCE LINES ====================
+
+router.get("/api/projects/:projectName/cost-lines", requireAuth, async (req, res) => {
+  try {
+    const projectName = paramStr(req.params.projectName);
+    const expenses = await getCanonicalProjectCostLinesByName(projectName).then((r) => r.rows);
+    setFinanceTrustHeaders(res, {
+      sourceLayer: "canonical",
+      canonicalTable: "normalized_cost_lines",
+    });
+    res.json(expenses);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch cost lines", message: "Failed to fetch cost lines" });
+  }
+});
+
+router.get("/api/projects/:projectName/revenue-lines", requireAuth, async (req, res) => {
+  try {
+    const projectName = paramStr(req.params.projectName);
+    const { startDate, endDate } = req.query;
+    let inflows = await storage.getProgramInflowsByProject(projectName);
+    setFinanceTrustHeaders(res, {
+      sourceLayer: "legacy",
+      canonicalTable: "normalized_revenue_lines",
+      uncertainty: "compatibility_route_project_name_filter",
+    });
+
+    if (startDate && typeof startDate === 'string') {
+      inflows = inflows.filter(i =>
+        (i.paymentReceivedDate && i.paymentReceivedDate >= startDate) ||
+        (i.plannedPaymentDate && i.plannedPaymentDate >= startDate)
+      );
+    }
+    if (endDate && typeof endDate === 'string') {
+      inflows = inflows.filter(i =>
+        (i.paymentReceivedDate && i.paymentReceivedDate <= endDate) ||
+        (i.plannedPaymentDate && i.plannedPaymentDate <= endDate)
+      );
+    }
+
+    res.json(inflows);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch revenue lines", message: "Failed to fetch revenue lines" });
   }
 });
 

@@ -12,7 +12,7 @@ export function ExpenditureTab({ projectName }: ExpenditureTabProps) {
   const { data: expenses = [], isLoading, error } = useQuery({
     queryKey: ["program-expenses", projectName],
     queryFn: async () => {
-      const res = await fetch(`/api/program-expenses?projectName=${encodeURIComponent(projectName)}`, { credentials: "include" });
+      const res = await fetch(`/api/projects/${encodeURIComponent(projectName)}/cost-lines`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch expenditure data");
       return res.json();
     },
