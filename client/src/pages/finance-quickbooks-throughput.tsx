@@ -32,7 +32,7 @@ import { formatRand } from "@/lib/safeMoney";
 import { FinanceShell } from "@/components/layout/FinanceShell";
 import { useAuth } from "@/hooks/use-auth";
 import { SuggestMatchesDialog } from "@/components/quickbooks/SuggestMatchesDialog";
-import { FindQbMatchesPanel } from "@/components/quickbooks/FindQbMatchesPanel";
+import { QbMatchingWorkbench } from "@/components/quickbooks/QbMatchingWorkbench";
 import { FieldHint } from "@/components/ui/field-hint";
 import { Sparkles } from "lucide-react";
 
@@ -1885,7 +1885,7 @@ function ReconciliationTab({ isConnected }: { isConnected: boolean }) {
       <Tabs value={sub} onValueChange={setSub}>
         <TabsList className="h-auto p-1 bg-muted/50">
           <TabsTrigger value="find" className="gap-1.5 text-xs">
-            <Sparkles className="h-3 w-3" /> Find QB Matches
+            <Sparkles className="h-3 w-3" /> Matching Workbench
           </TabsTrigger>
           <TabsTrigger value="bills" className="gap-1.5 text-xs">
             <Banknote className="h-3 w-3" /> Bills (COS)
@@ -1896,7 +1896,7 @@ function ReconciliationTab({ isConnected }: { isConnected: boolean }) {
         </TabsList>
         <TabsContent value="find" className="mt-3">
           {isConnected ? (
-            <FindQbMatchesPanel defaultScope="cost" />
+            <QbMatchingWorkbench defaultScope="cost" />
           ) : (
             <Card className="border-amber-200 bg-amber-50/40">
               <CardContent className="p-4 text-xs text-amber-800">
