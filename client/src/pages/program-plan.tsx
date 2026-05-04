@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { fetchQueryFn } from "@/lib/queryClient";
 import { styleForCell } from "@/lib/tracker-cell-format";
+import { humaniseField } from "@/lib/field-labels";
 import { Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface ProgramPlanResponse {
@@ -163,10 +164,12 @@ export function ProgramPlanContent({ projectId }: { projectId: number }) {
                         {Object.keys(t.manualOverrides ?? {}).length > 0 && (
                           <span
                             className="inline-flex items-center gap-0.5 text-[9px] font-medium text-amber-600 cursor-help"
-                            title={`${Object.keys(t.manualOverrides!).length} field(s) overridden: ${Object.keys(t.manualOverrides!).join(", ")}`}
+                            title={`${Object.keys(t.manualOverrides!).length} field edit(s): ${Object.keys(t.manualOverrides!).map(humaniseField).join(", ")}`}
                             data-testid={`override-badge-${t.id}`}
                           >
-                            ✎ {Object.keys(t.manualOverrides!).length} edited
+                            <span aria-hidden="true">✎</span>
+                            <span className="sr-only">Edited:</span>
+                            {" "}{Object.keys(t.manualOverrides!).length} field edits
                           </span>
                         )}
                       </div>
