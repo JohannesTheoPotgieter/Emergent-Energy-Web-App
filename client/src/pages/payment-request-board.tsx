@@ -3,17 +3,20 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { PageShell, SectionHeader } from "@/components/layout/page-shell";
-import { CreditCard, Clock, AlertTriangle, CheckCircle } from "lucide-react";
+import { PageLayout } from "@/components/layout";
+import { PageHeader } from "@/components/ui/page-header";
+import {
+  CreditCard, Clock, CheckCircle2, AlertTriangle, Loader2,
+} from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
 
 interface PaymentRequest {
   id: number;
@@ -32,119 +35,292 @@ interface PaymentRequest {
   proof_count: number;
 }
 
-const STATUS_COLUMNS = ["new", "in_review", "loaded_for_payment", "proof_attached", "complete", "requires_info", "blocked"];
+// ── Formatting helpers ──────────────────────────────────────────────────────
 
-const STATUS_LABELS: Record<string, string> = {
-  new: "New",
-  in_review: "In Review",
-  loaded_for_payment: "Loaded for Payment",
-  proof_attached: "Proof of Payment",
-  complete: "Complete",
-  requires_info: "Requires Info",
-  blocked: "Blocked",
-};
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
-const STATUS_COLORS: Record<string, string> = {
-  new: "bg-blue-100 text-blue-700",
-  in_review: "bg-yellow-100 text-yellow-700",
-  loaded_for_payment: "bg-indigo-100 text-indigo-700",
-  proof_attached: "bg-purple-100 text-purple-700",
-  complete: "bg-green-100 text-green-700",
-  requires_info: "bg-orange-100 text-orange-700",
-  blocked: "bg-red-100 text-red-700",
-};
-
-function formatCurrency(val: string | number): string {
-  return `R ${Number(val).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function fmtDate(val: string | null | undefined): string {
+  if (!val) return "—";
+  const m = val.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${Number(m[3])} ${MONTHS[Number(m[2]) - 1]} ${m[1]}`;
+  const d = new Date(val);
+  if (Number.isNaN(d.getTime())) return val;
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
 }
 
-function PaymentRequestCard({ pr, onRefresh }: { pr: PaymentRequest; onRefresh: () => void }) {
+function fmtZAR(val: string | number | null | undefined): string {
+  const n = Number(val ?? 0);
+  if (!Number.isFinite(n)) return "—";
+  const hasCents = Math.round(n * 100) % 100 !== 0;
+  return "R " + Math.abs(n).toLocaleString("en-ZA", {
+    minimumFractionDigits: hasCents ? 2 : 0,
+    maximumFractionDigits: hasCents ? 2 : 0,
+  });
+}
+
+// ── Status configuration ────────────────────────────────────────────────────
+
+const STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
+  new:                { label: "New",              cls: "bg-slate-100 text-slate-600 border-slate-200" },
+  in_review:          { label: "In Review",        cls: "bg-amber-100 text-amber-700 border-amber-200" },
+  loaded_for_payment: { label: "Loaded",           cls: "bg-sky-100 text-sky-700 border-sky-200" },
+  proof_attached:     { label: "Proof Attached",   cls: "bg-violet-100 text-violet-700 border-violet-200" },
+  complete:           { label: "Complete",         cls: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+  requires_info:      { label: "Requires Info",    cls: "bg-orange-100 text-orange-700 border-orange-200" },
+  blocked:            { label: "Blocked",          cls: "bg-rose-100 text-rose-700 border-rose-200" },
+};
+
+function StatusBadge({ status }: { status: string }) {
+  const cfg = STATUS_CONFIG[status] ?? { label: status, cls: "bg-slate-100 text-slate-700 border-slate-200" };
+  return <Badge variant="outline" className={`${cfg.cls} text-xs whitespace-nowrap`}>{cfg.label}</Badge>;
+}
+
+// ── Filter tabs ─────────────────────────────────────────────────────────────
+
+type FilterKey = "all" | "open" | "loaded" | "complete" | "blocked";
+
+const FILTERS: { key: FilterKey; label: string }[] = [
+  { key: "all",      label: "All" },
+  { key: "open",     label: "Open" },
+  { key: "loaded",   label: "Loaded for Payment" },
+  { key: "complete", label: "Complete" },
+  { key: "blocked",  label: "Blocked / Info" },
+];
+
+const OPEN_STATUSES   = new Set(["new", "in_review"]);
+const LOADED_STATUSES = new Set(["loaded_for_payment", "proof_attached"]);
+const BLOCKED_STATUSES = new Set(["requires_info", "blocked"]);
+
+function filterRequests(all: PaymentRequest[], key: FilterKey): PaymentRequest[] {
+  switch (key) {
+    case "open":     return all.filter(r => OPEN_STATUSES.has(r.status));
+    case "loaded":   return all.filter(r => LOADED_STATUSES.has(r.status));
+    case "complete": return all.filter(r => r.status === "complete");
+    case "blocked":  return all.filter(r => BLOCKED_STATUSES.has(r.status));
+    default:         return all;
+  }
+}
+
+// ── Confirm "Load for Payment" dialog ──────────────────────────────────────
+
+function LoadConfirmDialog({
+  pr,
+  open,
+  onClose,
+  onDone,
+}: {
+  pr: PaymentRequest;
+  open: boolean;
+  onClose: () => void;
+  onDone: () => void;
+}) {
   const { toast } = useToast();
 
-  const statusMutation = useMutation({
+  const loadMut = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/payment-requests/${pr.id}/review`, { decision: "loaded_for_payment" });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Failed"); }
+      return res.json();
+    },
+    onSuccess: () => { toast({ title: "Loaded for payment" }); onClose(); onDone(); },
+    onError: (e: Error) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Load for payment?</DialogTitle>
+          <DialogDescription>
+            Invoice <strong className="font-mono">{pr.invoice_number ?? "—"}</strong>
+            {" from "}
+            <strong>{pr.counterparty_name ?? "—"}</strong>
+            {" — "}
+            <strong>{fmtZAR(pr.amount)}</strong>
+            {" ex-VAT — will be marked as loaded into the payment run. This will include it in the next batch."}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => loadMut.mutate()} disabled={loadMut.isPending}>
+            {loadMut.isPending && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
+            Load for Payment
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Request row ─────────────────────────────────────────────────────────────
+
+function RequestRow({
+  pr,
+  onRefresh,
+}: {
+  pr: PaymentRequest;
+  onRefresh: () => void;
+}) {
+  const { toast } = useToast();
+  const [loadOpen, setLoadOpen] = useState(false);
+
+  const statusMut = useMutation({
     mutationFn: async (newStatus: string) => {
       const res = await apiRequest("PATCH", `/api/payment-requests/${pr.id}/status`, { status: newStatus });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Failed"); }
       return res.json();
     },
     onSuccess: () => { toast({ title: "Status updated" }); onRefresh(); },
-    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
   });
 
-  const reviewMutation = useMutation({
+  const reviewMut = useMutation({
     mutationFn: async (decision: string) => {
       const res = await apiRequest("POST", `/api/payment-requests/${pr.id}/review`, { decision });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Failed"); }
       return res.json();
     },
-    onSuccess: () => { toast({ title: "Review recorded" }); onRefresh(); },
-    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+    onSuccess: () => { toast({ title: "Updated" }); onRefresh(); },
+    onError: (e: Error) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
   });
 
+  const anyPending = statusMut.isPending || reviewMut.isPending;
+  const isOverdue  = pr.due_date && new Date(pr.due_date) < new Date() && pr.status !== "complete";
+
   return (
-    <Card className="mb-2 shadow-sm">
-      <CardContent className="p-3">
-        <div className="flex justify-between items-start">
-          <div className="min-w-0">
-            <p className="font-medium text-sm truncate">{pr.project_name}</p>
-            <p className="text-xs text-muted-foreground truncate">{pr.counterparty_name || "—"}</p>
-            {pr.po_ref && <p className="text-xs text-muted-foreground">PO: {pr.po_ref}</p>}
-            {pr.invoice_number && <p className="text-xs text-muted-foreground">INV: {pr.invoice_number}</p>}
+    <>
+      <TableRow data-testid={`row-pr-${pr.id}`} className="align-top">
+        {/* Invoice # */}
+        <TableCell>
+          <div className="font-medium font-mono text-sm">{pr.invoice_number ?? "—"}</div>
+          {pr.po_ref && (
+            <div className="text-xs text-muted-foreground">PO: {pr.po_ref}</div>
+          )}
+        </TableCell>
+
+        {/* Project / Supplier */}
+        <TableCell>
+          <div className="text-sm font-medium">{pr.project_name}</div>
+          <div className="text-xs text-muted-foreground">{pr.counterparty_name ?? "—"}</div>
+          {pr.submitted_by_name && (
+            <div className="text-xs text-muted-foreground">By: {pr.submitted_by_name}</div>
+          )}
+        </TableCell>
+
+        {/* Amount */}
+        <TableCell className="text-right font-semibold font-mono tabular-nums">
+          {fmtZAR(pr.amount)}
+        </TableCell>
+
+        {/* Due date */}
+        <TableCell>
+          {pr.due_date ? (
+            <span className={`text-sm ${isOverdue ? "text-rose-600 font-medium" : "text-foreground"}`}>
+              {isOverdue && <AlertTriangle className="h-3.5 w-3.5 inline mr-1 -mt-0.5" />}
+              {fmtDate(pr.due_date)}
+            </span>
+          ) : <span className="text-muted-foreground text-sm">—</span>}
+          {pr.cutoff_date && (
+            <div className="text-[10px] text-muted-foreground flex items-center gap-1 mt-0.5">
+              <Clock className="h-2.5 w-2.5" />
+              Cutoff {fmtDate(pr.cutoff_date)}
+            </div>
+          )}
+        </TableCell>
+
+        {/* Status */}
+        <TableCell>
+          <StatusBadge status={pr.status} />
+          {pr.proof_count > 0 && (
+            <div className="text-[10px] text-muted-foreground mt-1">
+              {pr.proof_count} proof{pr.proof_count !== 1 ? "s" : ""} attached
+            </div>
+          )}
+        </TableCell>
+
+        {/* Actions */}
+        <TableCell>
+          <div className="flex gap-1.5 flex-wrap">
+            {pr.status === "new" && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs"
+                onClick={() => statusMut.mutate("in_review")}
+                disabled={anyPending}
+                data-testid={`btn-start-review-${pr.id}`}
+              >
+                {anyPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Start Review"}
+              </Button>
+            )}
+            {pr.status === "in_review" && (
+              <>
+                <Button
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => setLoadOpen(true)}
+                  disabled={anyPending}
+                  data-testid={`btn-load-payment-${pr.id}`}
+                >
+                  Load for Payment
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  onClick={() => reviewMut.mutate("requires_info")}
+                  disabled={anyPending}
+                  data-testid={`btn-request-info-${pr.id}`}
+                >
+                  Request Info
+                </Button>
+              </>
+            )}
+            {(pr.status === "requires_info" || pr.status === "blocked") && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs"
+                onClick={() => statusMut.mutate("new")}
+                disabled={anyPending}
+                data-testid={`btn-resubmit-${pr.id}`}
+              >
+                Resubmit
+              </Button>
+            )}
+            {pr.status === "proof_attached" && (
+              <Button
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => statusMut.mutate("complete")}
+                disabled={anyPending}
+                data-testid={`btn-complete-${pr.id}`}
+              >
+                {anyPending
+                  ? <Loader2 className="h-3 w-3 animate-spin" />
+                  : <CheckCircle2 className="h-3 w-3 mr-1" />}
+                Complete
+              </Button>
+            )}
           </div>
-          <p className="font-semibold text-sm whitespace-nowrap ml-2">{formatCurrency(pr.amount)}</p>
-        </div>
-        {pr.due_date && (
-          <p className="text-xs text-muted-foreground mt-1">
-            Due: {new Date(pr.due_date).toLocaleDateString("en-ZA")}
-          </p>
-        )}
-        {pr.cutoff_date && (
-          <Badge variant="outline" className="text-xs mt-1">
-            <Clock className="h-3 w-3 mr-1" />
-            Cutoff: {new Date(pr.cutoff_date).toLocaleDateString("en-ZA")}
-          </Badge>
-        )}
-        <div className="flex gap-1 mt-2 flex-wrap">
-          {pr.status === "new" && (
-            <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => statusMutation.mutate("in_review")} disabled={statusMutation.isPending}>
-              Start Review
-            </Button>
-          )}
-          {pr.status === "in_review" && (
-            <>
-              <Button size="sm" className="text-xs h-7" onClick={() => reviewMutation.mutate("loaded_for_payment")} disabled={reviewMutation.isPending}>
-                Load for Payment
-              </Button>
-              <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => reviewMutation.mutate("requires_info")} disabled={reviewMutation.isPending}>
-                Request Info
-              </Button>
-            </>
-          )}
-          {pr.status === "requires_info" && (
-            <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => statusMutation.mutate("new")} disabled={statusMutation.isPending}>
-              Resubmit
-            </Button>
-          )}
-          {pr.status === "blocked" && (
-            <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => statusMutation.mutate("new")} disabled={statusMutation.isPending}>
-              Resubmit
-            </Button>
-          )}
-          {pr.status === "proof_attached" && (
-            <Button size="sm" className="text-xs h-7" onClick={() => statusMutation.mutate("complete")} disabled={statusMutation.isPending}>
-              <CheckCircle className="h-3 w-3 mr-1" /> Complete
-            </Button>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+        </TableCell>
+      </TableRow>
+
+      <LoadConfirmDialog
+        pr={pr}
+        open={loadOpen}
+        onClose={() => setLoadOpen(false)}
+        onDone={onRefresh}
+      />
+    </>
   );
 }
 
+// ── Page ────────────────────────────────────────────────────────────────────
+
 export default function PaymentRequestBoardPage() {
   const queryClient = useQueryClient();
-  const { toast } = useToast();
-  const [createOpen, setCreateOpen] = useState(false);
+  const [activeFilter, setActiveFilter] = useState<FilterKey>("open");
 
   const { data, isLoading, isError, error } = useQuery<{ requests: PaymentRequest[]; currentCutoff: string }>({
     queryKey: ["/api/payment-requests/board"],
@@ -159,58 +335,116 @@ export default function PaymentRequestBoardPage() {
     queryClient.invalidateQueries({ queryKey: ["/api/payment-requests/board"] });
   };
 
-  if (isLoading) return <PageSkeleton lines={5} />;
-  if (isError) return <PageShell className="p-4"><PageError title="Unable to load Payment Request Board" message={error instanceof Error ? error.message : "Failed"} onRetry={handleRefresh} /></PageShell>;
+  if (isLoading) return <PageSkeleton lines={8} />;
+  if (isError) return (
+    <PageError
+      title="Unable to load Payment Request Board"
+      message={error instanceof Error ? error.message : "Something went wrong"}
+      onRetry={handleRefresh}
+    />
+  );
 
-  const requests = data?.requests || [];
-  const cutoff = data?.currentCutoff;
-  const grouped = STATUS_COLUMNS.reduce<Record<string, PaymentRequest[]>>((acc, status) => {
-    acc[status] = requests.filter(r => r.status === status);
-    return acc;
-  }, {});
+  const requests = data?.requests ?? [];
+  const cutoff   = data?.currentCutoff;
 
-  const totalPending = requests.filter(r => !["complete", "blocked"].includes(r.status)).reduce((sum, r) => sum + Number(r.amount), 0);
+  const openCount    = requests.filter(r => OPEN_STATUSES.has(r.status)).length;
+  const loadedCount  = requests.filter(r => LOADED_STATUSES.has(r.status)).length;
+  const blockedCount = requests.filter(r => BLOCKED_STATUSES.has(r.status)).length;
+  const doneCount    = requests.filter(r => r.status === "complete").length;
+
+  const pendingTotal = requests
+    .filter(r => !["complete", "blocked"].includes(r.status))
+    .reduce((sum, r) => sum + Number(r.amount), 0);
+
+  const displayed = filterRequests(requests, activeFilter);
+
+  const subtitle = [
+    `${requests.length} request${requests.length !== 1 ? "s" : ""}`,
+    `${openCount} open`,
+    `${loadedCount} loaded`,
+    blockedCount > 0 ? `${blockedCount} need attention` : null,
+  ].filter(Boolean).join(" · ");
 
   return (
-    <PageShell className="p-4 md:p-6" data-testid="page-payment-request-board">
-      <SectionHeader
-        icon={<CreditCard className="h-5 w-5" />}
-        eyebrow="Finance"
-        title="Payment Requests"
-        description="Track supplier payment request lifecycle"
-      />
-
-      <div className="flex items-center gap-4 mb-4 flex-wrap">
-        {cutoff && (
-          <Badge variant="outline" className="text-sm">
-            <Clock className="h-4 w-4 mr-1" />
-            Tuesday cutoff: {new Date(cutoff).toLocaleDateString("en-ZA")}
-          </Badge>
-        )}
-        <Badge variant="secondary" className="text-sm">
-          Pending total: {formatCurrency(totalPending)}
-        </Badge>
-        <span className="text-sm text-muted-foreground">{requests.length} request(s)</span>
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 overflow-x-auto">
-        {STATUS_COLUMNS.map((status) => (
-          <div key={status} className="min-w-[200px]">
-            <div className="flex items-center gap-2 mb-2">
-              <Badge className={STATUS_COLORS[status]}>{STATUS_LABELS[status]}</Badge>
-              <span className="text-xs text-muted-foreground">({grouped[status]?.length || 0})</span>
-            </div>
-            <div className="space-y-0">
-              {grouped[status]?.map((pr) => (
-                <PaymentRequestCard key={pr.id} pr={pr} onRefresh={handleRefresh} />
-              ))}
-              {(!grouped[status] || grouped[status].length === 0) && (
-                <p className="text-xs text-muted-foreground py-4 text-center">None</p>
+    <PageLayout
+      data-testid="page-payment-request-board"
+      header={
+        <PageHeader
+          title="Payment Requests"
+          subtitle={subtitle}
+          actions={
+            <div className="flex items-center gap-3 flex-wrap">
+              {cutoff && (
+                <Badge variant="outline" className="gap-1.5 text-xs">
+                  <Clock className="h-3.5 w-3.5" />
+                  Cutoff: {fmtDate(cutoff)}
+                </Badge>
               )}
+              <Badge variant="secondary" className="gap-1.5 text-xs font-mono">
+                <CreditCard className="h-3.5 w-3.5" />
+                Pending: {fmtZAR(pendingTotal)}
+              </Badge>
             </div>
-          </div>
-        ))}
+          }
+        />
+      }
+    >
+      {/* Filter tabs */}
+      <div className="flex items-center gap-1 flex-wrap">
+        {FILTERS.map((f) => {
+          const count =
+            f.key === "all"      ? requests.length :
+            f.key === "open"     ? openCount :
+            f.key === "loaded"   ? loadedCount :
+            f.key === "complete" ? doneCount :
+            f.key === "blocked"  ? blockedCount : 0;
+
+          return (
+            <Button
+              key={f.key}
+              size="sm"
+              variant={activeFilter === f.key ? "default" : "outline"}
+              onClick={() => setActiveFilter(f.key)}
+              className="text-xs h-8"
+            >
+              {f.label}
+              <Badge
+                variant="secondary"
+                className={`ml-1.5 text-[10px] h-4 px-1.5 ${activeFilter === f.key ? "bg-primary-foreground/20 text-primary-foreground" : ""}`}
+              >
+                {count}
+              </Badge>
+            </Button>
+          );
+        })}
       </div>
-    </PageShell>
+
+      {/* Table */}
+      <Card>
+        {displayed.length === 0 ? (
+          <CardContent className="p-8 text-center text-sm text-muted-foreground">
+            No payment requests match this filter.
+          </CardContent>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-32">Invoice #</TableHead>
+                <TableHead>Project / Supplier</TableHead>
+                <TableHead className="text-right w-36">Amount ex-VAT</TableHead>
+                <TableHead className="w-36">Due Date</TableHead>
+                <TableHead className="w-36">Status</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {displayed.map((pr) => (
+                <RequestRow key={pr.id} pr={pr} onRefresh={handleRefresh} />
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </Card>
+    </PageLayout>
   );
 }
