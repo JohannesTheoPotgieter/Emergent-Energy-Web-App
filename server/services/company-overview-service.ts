@@ -25,11 +25,12 @@ import {
   qcWarning,
   snags,
   handoverPacks,
-  deliverables,
   projectEngStages,
   projectEngTasks,
   projectEngDeliverables,
+  pendingApprovals,
 } from "@shared/schema";
+import { PHASES, PHASE_BY_CODE, resolveCanonicalPhase } from "@shared/phases";
 import {
   ALL_DEPARTMENTS,
   DEPARTMENT_WEIGHTS,
@@ -115,6 +116,7 @@ export async function getCompanyOverviewData() {
     db.select().from(projectEngDeliverables),
     db.select().from(clientUpdates),
     db.select().from(users),
+    db.select().from(pendingApprovals).where(eq(pendingApprovals.status, "pending")),
   ]);
   const allProjects: any[] = results[0];
   const allExecState: any[] = results[1];
@@ -136,6 +138,7 @@ export async function getCompanyOverviewData() {
   const engDeliverables: any[] = results[17];
   const clientUpdateRows: any[] = results[18];
   const allUsers: any[] = results[19];
+  const pendingApprovalRows: any[] = results[20];
 
   // ── Build lookup maps ──────────────────────────────────────────────
   const execByProjectId = new Map(allExecState.map((e) => [e.projectId, e]));
@@ -257,6 +260,50 @@ export async function getCompanyOverviewData() {
     else if (rag === "amber") atRisk++;
     else offTrack++;
   }
+
+  // ── Phase distribution (canonical phases) ─────────────────────────
+  const phaseDistribution: Array<{ code: string; label: string; count: number }> = [];
+  const phaseCounts = new Map<string, number>();
+  let unmatchedPhaseCount = 0;
+  for (const p of activeProjects) {
+    const exec = execByProjectId.get(p.id);
+    const rawPhase = exec?.currentStageCode || exec?.phase || null;
+    const resolved = resolveCanonicalPhase(rawPhase);
+    if (resolved) {
+      phaseCounts.set(resolved.code, (phaseCounts.get(resolved.code) || 0) + 1);
+    } else {
+      unmatchedPhaseCount++;
+    }
+  }
+  for (const phase of PHASES) {
+    const count = phaseCounts.get(phase.code) || 0;
+    if (count > 0) {
+      phaseDistribution.push({ code: phase.code, label: phase.label, count });
+    }
+  }
+  if (unmatchedPhaseCount > 0) {
+    phaseDistribution.push({ code: "unknown", label: "Unassigned", count: unmatchedPhaseCount });
+  }
+
+  // ── Schedule health (avg actual % vs expected %) ────────────────
+  const activeWorkItems = allWorkItems.filter((wi) => {
+    if (!activeProjectIds.has(wi.projectId!)) return false;
+    const status = String(wi.status || "").toLowerCase();
+    return !["complete", "completed", "done", "cancelled"].includes(status);
+  });
+  let totalActualPct = 0, totalExpectedPct = 0, scheduleItemCount = 0;
+  for (const wi of activeWorkItems) {
+    const actual = Number(wi.percentComplete);
+    const expected = Number(wi.expectedPctComplete);
+    if (Number.isFinite(actual) && Number.isFinite(expected) && expected > 0) {
+      totalActualPct += actual;
+      totalExpectedPct += expected;
+      scheduleItemCount++;
+    }
+  }
+  const avgActualPct = scheduleItemCount > 0 ? Math.round((totalActualPct / scheduleItemCount) * 10) / 10 : null;
+  const avgExpectedPct = scheduleItemCount > 0 ? Math.round((totalExpectedPct / scheduleItemCount) * 10) / 10 : null;
+  const scheduleDelta = avgActualPct != null && avgExpectedPct != null ? Math.round((avgActualPct - avgExpectedPct) * 10) / 10 : null;
 
   // Blocked gates
   const blockedGates = stageRequirements.filter(
@@ -812,7 +859,10 @@ export async function getCompanyOverviewData() {
         { label: "Missing Weekly Updates", formula: "COUNT(active projects with no client update in last 7 days)", source: "client_updates + project_info", owner: "Project Delivery", timeBasis: "rolling 7 days", thresholds: ">0 needs action", drilldownTarget: "/gates/client-updates", trustStatus: "trusted", visible: true },
       ],
     },
-    trustedTopStrip,
+    trustedTopStrip: {
+      ...trustedTopStrip,
+      pendingApprovals: pendingApprovalRows.length,
+    },
     drilldownReconciliation,
     companyScore,
     departmentScores: visibleDepartmentScores,
@@ -850,6 +900,13 @@ export async function getCompanyOverviewData() {
       upcomingMilestones: upcomingMilestones.length,
       practicalCompletionDue: practicalCompletionDue.length,
       handoversDue: handoversDue.length,
+      phaseDistribution,
+      scheduleHealth: {
+        avgActualPct,
+        avgExpectedPct,
+        scheduleDelta,
+        trackedItems: scheduleItemCount,
+      },
     },
     financeSnapshot: {
       // Cash concepts
