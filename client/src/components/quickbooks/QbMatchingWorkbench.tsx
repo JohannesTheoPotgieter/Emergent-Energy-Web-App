@@ -19,7 +19,7 @@
  *  - Manual override (financials:override) remains single-row only
  */
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -60,11 +60,23 @@ import { apiRequest } from "@/lib/queryClient";
 import { isApiError } from "@/lib/api-error";
 import { formatRand } from "@/lib/safeMoney";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+import {
+  type FindResponse,
+  type RowLane,
+  type RowStatus,
+  type Scope,
+  type ScoredCandidate,
+  type WorkbenchRow,
+  buildBulkApproveItems,
+  buildExceptionsCSV,
+  classifyLane,
+  confidenceBadge,
+  counterpartyNameMatch,
+  laneBadge,
+  WARNING_LABEL,
+} from "./qb-matching-workbench-logic";
 
-type Scope = "cost" | "revenue";
-type RowLane = "safe" | "review" | "exception";
-type RowStatus = "idle" | "searching" | "found" | "approved" | "rejected" | "error";
+// ─── Local interfaces (internal to this module) ───────────────────────────────
 
 interface AppCostLineRow {
   id: number;
@@ -88,107 +100,7 @@ interface AppRevenueLineRow {
   milestoneName: string | null;
 }
 
-interface ScoredCandidate {
-  qbEntityId: string;
-  qbEntityType: "bill" | "invoice";
-  qbDocNumber: string | null;
-  qbTxnDate: string | null;
-  qbCounterpartyName: string | null;
-  qbCounterpartyId: string | null;
-  qbAmountExVat: number | null;
-  qbBalance: number | null;
-  qbPaymentStatus: string | null;
-  confidence: number;
-  reasons: string[];
-  warnings: string[];
-  qbAlreadyLinkedElsewhere: boolean;
-}
-
-interface FindResponse {
-  suggestionId: number;
-  scope: Scope;
-  app: {
-    id: number;
-    invoiceNumber: string | null;
-    invoiceDate: string | null;
-    amountExVat: number | null;
-    counterpartyName: string | null;
-    poNumber: string | null;
-    projectId: number | null;
-  };
-  warnings: { no_po: boolean; already_linked: boolean };
-  candidates: ScoredCandidate[];
-}
-
-interface WorkbenchRow {
-  id: number;
-  appLine: {
-    id: number;
-    projectId: number;
-    projectName: string | null;
-    invoiceNumber: string | null;
-    invoiceDate: string | null;
-    amountExVat: number | null;
-    counterpartyName: string | null;
-  };
-  findResult: FindResponse | null;
-  status: RowStatus;
-  lane: RowLane | null;
-  errorMessage: string | null;
-}
-
-// ─── Lane Classification ──────────────────────────────────────────────────────
-
-const EXCEPTION_CANDIDATE_WARNINGS = new Set([
-  "amount_mismatch",
-  "vendor_mismatch",
-  "qb_already_linked_elsewhere",
-  "qb_payment_inconsistent",
-]);
-
-function classifyLane(result: FindResponse): RowLane {
-  if (result.warnings.no_po || result.warnings.already_linked) return "exception";
-  const best = result.candidates[0];
-  if (!best) return "exception";
-  if (best.qbAlreadyLinkedElsewhere) return "exception";
-  if (best.warnings.some((w) => EXCEPTION_CANDIDATE_WARNINGS.has(w))) return "exception";
-  if (best.confidence >= 90 && best.warnings.length === 0) return "safe";
-  if (best.confidence >= 70) return "review";
-  return "exception";
-}
-
-// ─── Display Helpers ──────────────────────────────────────────────────────────
-
-const WARNING_LABEL: Record<string, string> = {
-  no_po: "No PO number — cannot bulk-approve",
-  already_linked: "App line already linked to QB",
-  amount_mismatch: "Amount mismatch",
-  vendor_mismatch: "Vendor/customer mismatch",
-  qb_already_linked_elsewhere: "QB doc already linked to another row",
-  qb_payment_inconsistent: "QB shows paid but balance is non-zero",
-  qb_amount_unknown: "QB doc has no amount",
-};
-
-function laneBadge(lane: RowLane | null): { label: string; cls: string } {
-  switch (lane) {
-    case "safe":
-      return { label: "Safe", cls: "bg-emerald-100 text-emerald-800 border-emerald-300" };
-    case "review":
-      return { label: "Review", cls: "bg-amber-100 text-amber-800 border-amber-300" };
-    case "exception":
-      return { label: "Exception", cls: "bg-rose-100 text-rose-800 border-rose-300" };
-    default:
-      return { label: "—", cls: "bg-slate-100 text-slate-500 border-slate-200" };
-  }
-}
-
-function confidenceBadge(confidence: number): { label: string; cls: string } {
-  if (confidence >= 90)
-    return { label: `${confidence}%`, cls: "bg-emerald-100 text-emerald-700 border-emerald-200" };
-  if (confidence >= 70)
-    return { label: `${confidence}%`, cls: "bg-amber-100 text-amber-700 border-amber-200" };
-  return { label: `${confidence}%`, cls: "bg-rose-100 text-rose-700 border-rose-200" };
-}
+// ─── Display helper (component-local) ────────────────────────────────────────
 
 function statusIndicator(status: RowStatus, lane: RowLane | null): string {
   switch (status) {
@@ -207,59 +119,6 @@ function statusIndicator(status: RowStatus, lane: RowLane | null): string {
   }
 }
 
-// ─── CSV Export ───────────────────────────────────────────────────────────────
-
-function exportExceptionsCSV(rows: WorkbenchRow[], scope: Scope): void {
-  const exceptions = rows.filter((r) => r.lane === "exception" && r.findResult);
-  if (exceptions.length === 0) return;
-
-  const headers = [
-    "App Line ID",
-    "Project",
-    "Invoice #",
-    "Date",
-    scope === "cost" ? "Supplier" : "Milestone",
-    "App Amount",
-    "Best QB Doc #",
-    "QB Amount",
-    "Score",
-    "App Warnings",
-    "Candidate Warnings",
-  ];
-
-  const rows_csv = exceptions.map((r) => {
-    const best = r.findResult!.candidates[0] ?? null;
-    const appW: string[] = [];
-    if (r.findResult!.warnings.no_po) appW.push("no_po");
-    if (r.findResult!.warnings.already_linked) appW.push("already_linked");
-    return [
-      r.appLine.id,
-      r.appLine.projectName ?? r.appLine.projectId,
-      r.appLine.invoiceNumber ?? "",
-      r.appLine.invoiceDate ?? "",
-      r.appLine.counterpartyName ?? "",
-      r.appLine.amountExVat ?? "",
-      best?.qbDocNumber ?? "",
-      best?.qbAmountExVat ?? "",
-      best?.confidence ?? "",
-      appW.join("|"),
-      best?.warnings.join("|") ?? "",
-    ];
-  });
-
-  const csv = [headers, ...rows_csv]
-    .map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","))
-    .join("\n");
-
-  const blob = new Blob([csv], { type: "text/csv" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `qb-exceptions-${new Date().toISOString().slice(0, 10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export interface QbMatchingWorkbenchProps {
@@ -274,7 +133,7 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
   const [search, setSearch] = useState("");
   const [laneFilter, setLaneFilter] = useState<RowLane | "all">("all");
 
-  // Per-row state lives in a ref-backed map for imperatively-fast updates
+  // Per-row state — ref kept only for async function stale-closure avoidance
   const [rows, setRows] = useState<WorkbenchRow[]>([]);
   const rowsRef = useRef<WorkbenchRow[]>([]);
 
@@ -318,7 +177,7 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
     enabled: scope === "revenue",
   });
 
-  // Sync query results into workbench rows (merge: keep existing find state)
+  // Normalize query results into a stable shape
   const sourceLines = useMemo(() => {
     if (scope === "cost") {
       return (costQuery.data?.costLines ?? []).map((c) => ({
@@ -342,32 +201,33 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
     }));
   }, [scope, costQuery.data, revenueQuery.data]);
 
-  // Reconcile source lines into workbench rows without losing find results
-  const reconciledRows = useMemo<WorkbenchRow[]>(() => {
-    const existing = new Map(rows.map((r) => [r.id, r]));
-    return sourceLines.map((line) => {
-      const ex = existing.get(line.id);
-      if (ex) return { ...ex, appLine: line };
-      return { id: line.id, appLine: line, findResult: null, status: "idle", lane: null, errorMessage: null };
+  // Reconcile source lines into workbench rows without losing find results.
+  // useEffect avoids the render-phase setState anti-pattern.
+  useEffect(() => {
+    setRows((prev) => {
+      const existing = new Map(prev.map((r) => [r.id, r]));
+      const next = sourceLines.map((line) => {
+        const ex = existing.get(line.id);
+        if (ex) return { ...ex, appLine: line };
+        return {
+          id: line.id,
+          appLine: line,
+          findResult: null,
+          status: "idle" as RowStatus,
+          lane: null,
+          errorMessage: null,
+        };
+      });
+      rowsRef.current = next;
+      return next;
     });
-  }, [sourceLines]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sourceLines]);
 
-  // Sync reconciled into state once per source change
-  const prevSourceRef = useRef<typeof sourceLines>([]);
-  if (prevSourceRef.current !== sourceLines) {
-    prevSourceRef.current = sourceLines;
-    const merged = reconciledRows;
-    rowsRef.current = merged;
-    // Use functional update to avoid stale closure
-    setRows(merged);
-  }
-
-  // ── Filtered view ─────────────────────────────────────────────────────────
+  // ── Filtered view — reads only from `rows` state ──────────────────────────
 
   const visibleRows = useMemo(() => {
-    if (laneFilter === "all") return rowsRef.current.length > 0 ? rowsRef.current : rows;
-    const source = rowsRef.current.length > 0 ? rowsRef.current : rows;
-    return source.filter((r) => r.lane === laneFilter);
+    if (laneFilter === "all") return rows;
+    return rows.filter((r) => r.lane === laneFilter);
   }, [rows, laneFilter]);
 
   // ── Find mutation ─────────────────────────────────────────────────────────
@@ -432,7 +292,6 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
     onSuccess: (data, vars) => {
       toast({ title: "Match approved", description: `Link #${data.linkId} created.` });
       queryClient.invalidateQueries({ queryKey: ["/api/quickbooks/links"] });
-      // Find the row with this suggestionId and mark approved
       const row = rowsRef.current.find((r) => r.findResult?.suggestionId === vars.suggestionId);
       if (row) updateRow(row.id, { status: "approved" });
       setDrawerRowId(null);
@@ -450,29 +309,22 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
   // ── Bulk-approve ──────────────────────────────────────────────────────────
 
   const safeRows = useMemo(
-    () => (rowsRef.current.length > 0 ? rowsRef.current : rows).filter((r) => r.lane === "safe" && r.findResult),
+    () => rows.filter((r) => r.lane === "safe" && r.findResult),
     [rows],
   );
 
   const bulkApprovePreview = useMemo(() => {
-    const items = safeRows
-      .filter((r) => r.findResult)
-      .map((r) => ({
-        suggestionId: r.findResult!.suggestionId,
-        candidateIndex: 0,
-      }));
+    const items = buildBulkApproveItems(safeRows);
     const totalZar = safeRows.reduce(
       (sum, r) => sum + (r.findResult?.candidates[0]?.qbAmountExVat ?? r.appLine.amountExVat ?? 0),
       0,
     );
     const projects = [...new Set(safeRows.map((r) => r.appLine.projectName ?? `#${r.appLine.projectId}`))];
     const vendors = [...new Set(safeRows.map((r) => r.appLine.counterpartyName ?? "—"))];
-    const warningsExcluded = (rowsRef.current.length > 0 ? rowsRef.current : rows).filter(
+    const warningsExcluded = rows.filter(
       (r) => r.findResult && (r.lane === "review" || r.lane === "exception"),
     ).length;
-    const idleRows = (rowsRef.current.length > 0 ? rowsRef.current : rows).filter(
-      (r) => r.status === "idle",
-    ).length;
+    const idleRows = rows.filter((r) => r.status === "idle").length;
     return { items, totalZar, projects, vendors, warningsExcluded, idleRows };
   }, [safeRows, rows]);
 
@@ -492,7 +344,6 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/quickbooks/links"] });
-      // Mark individual rows
       for (const r of data.results) {
         const row = rowsRef.current.find((row) => row.findResult?.suggestionId === r.suggestionId);
         if (!row) continue;
@@ -587,25 +438,39 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
     }
   }
 
-  // ── Lane counts ───────────────────────────────────────────────────────────
+  // ── Lane counts — reads only from `rows` state ────────────────────────────
 
   const laneCounts = useMemo(() => {
-    const source = rowsRef.current.length > 0 ? rowsRef.current : rows;
     return {
-      safe: source.filter((r) => r.lane === "safe").length,
-      review: source.filter((r) => r.lane === "review").length,
-      exception: source.filter((r) => r.lane === "exception").length,
-      idle: source.filter((r) => r.status === "idle").length,
+      safe: rows.filter((r) => r.lane === "safe").length,
+      review: rows.filter((r) => r.lane === "review").length,
+      exception: rows.filter((r) => r.lane === "exception").length,
+      idle: rows.filter((r) => r.status === "idle").length,
     };
   }, [rows]);
 
   const isLoading = costQuery.isLoading || revenueQuery.isLoading;
 
-  // ── Drawer row ────────────────────────────────────────────────────────────
+  // ── Drawer row — reads only from `rows` state ─────────────────────────────
 
-  const drawerRow = drawerRowId !== null
-    ? (rowsRef.current.length > 0 ? rowsRef.current : rows).find((r) => r.id === drawerRowId) ?? null
-    : null;
+  const drawerRow = useMemo(
+    () => (drawerRowId !== null ? rows.find((r) => r.id === drawerRowId) ?? null : null),
+    [drawerRowId, rows],
+  );
+
+  // ── CSV export (pure build from logic + DOM trigger here) ─────────────────
+
+  function triggerExceptionsDownload() {
+    const csv = buildExceptionsCSV(rows, scope);
+    if (!csv) return;
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `qb-exceptions-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -668,9 +533,7 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">
-              All lanes ({(rowsRef.current.length > 0 ? rowsRef.current : rows).length})
-            </SelectItem>
+            <SelectItem value="all">All lanes ({rows.length})</SelectItem>
             <SelectItem value="safe">Safe ({laneCounts.safe})</SelectItem>
             <SelectItem value="review">Review ({laneCounts.review})</SelectItem>
             <SelectItem value="exception">Exception ({laneCounts.exception})</SelectItem>
@@ -734,7 +597,7 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
           variant="ghost"
           className="h-7 text-[10px]"
           disabled={laneCounts.exception === 0}
-          onClick={() => exportExceptionsCSV(rowsRef.current.length > 0 ? rowsRef.current : rows, scope)}
+          onClick={triggerExceptionsDownload}
           data-testid="btn-export-exceptions"
         >
           <Download className="h-3 w-3 mr-1" />
@@ -744,18 +607,18 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
 
       {/* ── Lane summary chips ────────────────────────────────────────────── */}
       {laneCounts.safe + laneCounts.review + laneCounts.exception > 0 && (
-        <div className="flex gap-2 text-[10px]">
-          <span className="px-2 py-0.5 rounded-full border bg-emerald-100 text-emerald-800 border-emerald-300">
+        <div className="flex gap-2 text-[10px]" data-testid="lane-summary">
+          <span className="px-2 py-0.5 rounded-full border bg-emerald-100 text-emerald-800 border-emerald-300" data-testid="lane-count-safe">
             ✓ Safe: {laneCounts.safe}
           </span>
-          <span className="px-2 py-0.5 rounded-full border bg-amber-100 text-amber-800 border-amber-300">
+          <span className="px-2 py-0.5 rounded-full border bg-amber-100 text-amber-800 border-amber-300" data-testid="lane-count-review">
             ~ Review: {laneCounts.review}
           </span>
-          <span className="px-2 py-0.5 rounded-full border bg-rose-100 text-rose-800 border-rose-300">
+          <span className="px-2 py-0.5 rounded-full border bg-rose-100 text-rose-800 border-rose-300" data-testid="lane-count-exception">
             ✕ Exception: {laneCounts.exception}
           </span>
           {laneCounts.idle > 0 && (
-            <span className="px-2 py-0.5 rounded-full border bg-slate-100 text-slate-500">
+            <span className="px-2 py-0.5 rounded-full border bg-slate-100 text-slate-500" data-testid="lane-count-idle">
               — Not searched: {laneCounts.idle}
             </span>
           )}
@@ -790,7 +653,7 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
           </thead>
           <tbody>
             {isLoading && (
-              <tr>
+              <tr data-testid="table-loading">
                 <td colSpan={12} className="px-3 py-4 text-center text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin inline mr-2" />
                   Loading…
@@ -798,7 +661,7 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
               </tr>
             )}
             {!isLoading && visibleRows.length === 0 && (
-              <tr>
+              <tr data-testid="table-empty">
                 <td colSpan={12} className="px-3 py-4 text-center text-muted-foreground">
                   {search ? "No results — try a different search." : "Type to search for app lines."}
                 </td>
@@ -822,24 +685,28 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
                 >
                   <td
                     className="px-2 py-1.5"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedIds((prev) => {
-                        const next = new Set(prev);
-                        next.has(row.id) ? next.delete(row.id) : next.add(row.id);
-                        return next;
-                      });
-                    }}
+                    onClick={(e) => e.stopPropagation()}
                   >
                     <Checkbox
                       checked={isSelected}
-                      onCheckedChange={() => {}}
+                      onCheckedChange={(checked) => {
+                        setSelectedIds((prev) => {
+                          const next = new Set(prev);
+                          checked ? next.add(row.id) : next.delete(row.id);
+                          return next;
+                        });
+                      }}
                       aria-label={`Select row ${row.id}`}
+                      data-testid={`checkbox-row-${row.id}`}
                     />
                   </td>
 
                   {/* Lane */}
-                  <td className="px-2 py-1.5">
+                  <td
+                    className="px-2 py-1.5"
+                    data-testid={`row-lane-${row.id}`}
+                    data-lane={row.lane ?? "none"}
+                  >
                     {row.lane ? (
                       <Badge className={`text-[10px] ${lb.cls}`}>{lb.label}</Badge>
                     ) : (
@@ -887,7 +754,10 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
                   </td>
 
                   {/* Score */}
-                  <td className="px-2 py-1.5 text-center">
+                  <td
+                    className="px-2 py-1.5 text-center"
+                    data-testid={`row-score-${row.id}`}
+                  >
                     {best ? (
                       <Badge className={`text-[10px] ${confidenceBadge(best.confidence).cls}`}>
                         {confidenceBadge(best.confidence).label}
@@ -905,6 +775,7 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
                           key={w}
                           className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] bg-amber-100 text-amber-800 border border-amber-200"
                           title={WARNING_LABEL[w] ?? w}
+                          data-testid={`row-warning-${row.id}-${w}`}
                         >
                           <AlertTriangle className="h-2.5 w-2.5" />
                           {w.replace(/_/g, " ")}
@@ -917,7 +788,11 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
                   </td>
 
                   {/* Status */}
-                  <td className={`px-2 py-1.5 text-[10px] ${statusIndicator(row.status, row.lane)}`}>
+                  <td
+                    className={`px-2 py-1.5 text-[10px] ${statusIndicator(row.status, row.lane)}`}
+                    data-testid={`row-status-${row.id}`}
+                    data-status={row.status}
+                  >
                     {row.status === "searching" ? (
                       <span className="flex items-center gap-1">
                         <Loader2 className="h-3 w-3 animate-spin" /> Searching…
@@ -1002,20 +877,24 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div className="rounded border p-2">
                 <div className="text-muted-foreground uppercase text-[10px] mb-1">Matches to approve</div>
-                <div className="text-xl font-bold text-emerald-700">{bulkApprovePreview.items.length}</div>
+                <div className="text-xl font-bold text-emerald-700" data-testid="modal-approve-count">
+                  {bulkApprovePreview.items.length}
+                </div>
               </div>
               <div className="rounded border p-2">
                 <div className="text-muted-foreground uppercase text-[10px] mb-1">Total ZAR value</div>
-                <div className="text-base font-semibold">{formatRand(bulkApprovePreview.totalZar)}</div>
+                <div className="text-base font-semibold" data-testid="modal-approve-total">
+                  {formatRand(bulkApprovePreview.totalZar)}
+                </div>
               </div>
             </div>
             <div className="rounded border p-2 text-xs space-y-1">
-              <div>
+              <div data-testid="modal-approve-projects">
                 <span className="text-muted-foreground">Projects affected: </span>
                 {bulkApprovePreview.projects.slice(0, 5).join(", ")}
                 {bulkApprovePreview.projects.length > 5 && ` +${bulkApprovePreview.projects.length - 5} more`}
               </div>
-              <div>
+              <div data-testid="modal-approve-vendors">
                 <span className="text-muted-foreground">
                   {scope === "cost" ? "Vendors" : "Customers"} affected:{" "}
                 </span>
@@ -1102,7 +981,7 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
 
 // ─── Proof Drawer Content ─────────────────────────────────────────────────────
 
-interface ProofDrawerProps {
+export interface ProofDrawerProps {
   row: WorkbenchRow;
   scope: Scope;
   onApprove: (candidateIndex: number) => void;
@@ -1110,7 +989,7 @@ interface ProofDrawerProps {
   onRejectDone: () => void;
 }
 
-function ProofDrawerContent({ row, scope, onApprove, approvePending }: ProofDrawerProps) {
+export function ProofDrawerContent({ row, scope, onApprove, approvePending }: ProofDrawerProps) {
   const { toast } = useToast();
   const [selectedCandidateIdx, setSelectedCandidateIdx] = useState(0);
   const [rejectReason, setRejectReason] = useState("");
@@ -1166,53 +1045,23 @@ function ProofDrawerContent({ row, scope, onApprove, approvePending }: ProofDraw
   if (result?.warnings.no_po) appWarnings.push("no_po");
   if (result?.warnings.already_linked) appWarnings.push("already_linked");
 
-  function FieldRow({
-    label,
-    appVal,
-    qbVal,
-    match,
-  }: {
-    label: string;
-    appVal: string | null;
-    qbVal: string | null;
-    match?: boolean;
-  }) {
-    return (
-      <tr className="border-t text-xs">
-        <td className="py-1.5 pr-3 text-muted-foreground font-medium w-28">{label}</td>
-        <td className="py-1.5 pr-3 font-mono">{appVal ?? "—"}</td>
-        <td className="py-1.5 pr-3 font-mono">{qbVal ?? "—"}</td>
-        <td className="py-1.5 text-center">
-          {match === undefined ? null : match ? (
-            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 inline" />
-          ) : (
-            <X className="h-3.5 w-3.5 text-rose-500 inline" />
-          )}
-        </td>
-      </tr>
-    );
-  }
-
   const invoiceMatch =
     !!chosenCandidate?.qbDocNumber &&
     !!appLine.invoiceNumber &&
     chosenCandidate.qbDocNumber.replace(/\D/g, "") === appLine.invoiceNumber.replace(/\D/g, "");
 
   const amountDiff =
-    chosenCandidate?.qbAmountExVat !== null && appLine.amountExVat !== null
-      ? Math.abs((chosenCandidate?.qbAmountExVat ?? 0) - (appLine.amountExVat ?? 0))
+    chosenCandidate?.qbAmountExVat !== null &&
+    chosenCandidate?.qbAmountExVat !== undefined &&
+    appLine.amountExVat !== null
+      ? Math.abs((chosenCandidate.qbAmountExVat ?? 0) - (appLine.amountExVat ?? 0))
       : null;
   const amountMatch = amountDiff !== null ? amountDiff <= 0.01 : undefined;
 
-  const counterpartyMatch =
-    !!chosenCandidate?.qbCounterpartyName && !!appLine.counterpartyName
-      ? chosenCandidate.qbCounterpartyName
-          .toLowerCase()
-          .includes(appLine.counterpartyName.toLowerCase().slice(0, 5))
-      : undefined;
+  const cpMatch = counterpartyNameMatch(appLine.counterpartyName, chosenCandidate?.qbCounterpartyName);
 
   return (
-    <div className="space-y-4 text-sm mt-2">
+    <div className="space-y-4 text-sm mt-2" data-testid="proof-drawer">
       <SheetHeader>
         <SheetTitle className="text-sm flex items-center gap-2">
           {appLine.invoiceNumber ?? `App Line #${appLine.id}`}
@@ -1241,20 +1090,24 @@ function ProofDrawerContent({ row, scope, onApprove, approvePending }: ProofDraw
       )}
 
       {/* No result yet */}
-      {!result && (
-        <div className="text-muted-foreground text-xs py-4 text-center">
-          {row.status === "searching" ? (
-            <span className="flex justify-center items-center gap-2">
-              <Loader2 className="h-3 w-3 animate-spin" /> Searching QuickBooks…
-            </span>
-          ) : (
-            "No matches found yet. Use the Find button to search."
-          )}
+      {!result && row.status === "searching" && (
+        <div className="text-muted-foreground text-xs py-4 text-center" data-testid="drawer-state-searching">
+          <span className="flex justify-center items-center gap-2">
+            <Loader2 className="h-3 w-3 animate-spin" /> Searching QuickBooks…
+          </span>
+        </div>
+      )}
+      {!result && row.status !== "searching" && (
+        <div className="text-muted-foreground text-xs py-4 text-center" data-testid="drawer-state-idle">
+          No matches found yet. Use the Find button to search.
         </div>
       )}
 
       {result && result.candidates.length === 0 && (
-        <div className="rounded border bg-slate-50 p-3 text-xs text-slate-600">
+        <div
+          className="rounded border bg-slate-50 p-3 text-xs text-slate-600"
+          data-testid="drawer-state-no-candidates"
+        >
           No QB candidates found. Try the manual link below if you know the QB ID.
         </div>
       )}
@@ -1263,7 +1116,7 @@ function ProofDrawerContent({ row, scope, onApprove, approvePending }: ProofDraw
         <>
           {/* Candidate selector */}
           {result.candidates.length > 1 && (
-            <div className="flex gap-1 flex-wrap">
+            <div className="flex gap-1 flex-wrap" data-testid="drawer-candidates">
               {result.candidates.map((c, i) => (
                 <button
                   key={c.qbEntityId}
@@ -1273,6 +1126,7 @@ function ProofDrawerContent({ row, scope, onApprove, approvePending }: ProofDraw
                       ? "bg-emerald-100 border-emerald-300 text-emerald-800"
                       : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
                   }`}
+                  data-testid={`drawer-candidate-${i}`}
                 >
                   #{i + 1} · {c.qbDocNumber ?? c.qbEntityId} · {c.confidence}%
                 </button>
@@ -1285,7 +1139,7 @@ function ProofDrawerContent({ row, scope, onApprove, approvePending }: ProofDraw
             <div className="text-[10px] text-muted-foreground uppercase mb-1 font-medium">
               Side-by-side Evidence
             </div>
-            <table className="w-full">
+            <table className="w-full" data-testid="proof-table">
               <thead className="text-[10px] text-muted-foreground uppercase">
                 <tr>
                   <th className="text-left py-1 w-28">Field</th>
@@ -1295,31 +1149,40 @@ function ProofDrawerContent({ row, scope, onApprove, approvePending }: ProofDraw
                 </tr>
               </thead>
               <tbody>
-                <FieldRow
+                <ProofFieldRow
+                  field="invoice-num"
                   label="Invoice #"
                   appVal={appLine.invoiceNumber}
                   qbVal={chosenCandidate?.qbDocNumber ?? null}
                   match={invoiceMatch}
                 />
-                <FieldRow
+                <ProofFieldRow
+                  field="date"
                   label="Date"
                   appVal={appLine.invoiceDate}
                   qbVal={chosenCandidate?.qbTxnDate ?? null}
                 />
-                <FieldRow
+                <ProofFieldRow
+                  field="amount"
                   label="Amount ex-VAT"
                   appVal={formatRand(appLine.amountExVat)}
                   qbVal={formatRand(chosenCandidate?.qbAmountExVat ?? null)}
                   match={amountMatch}
                 />
-                <FieldRow
+                <ProofFieldRow
+                  field="counterparty"
                   label="Counterparty"
                   appVal={appLine.counterpartyName}
                   qbVal={chosenCandidate?.qbCounterpartyName ?? null}
-                  match={counterpartyMatch}
+                  match={cpMatch}
                 />
                 {scope === "cost" && result.app.poNumber && (
-                  <FieldRow label="PO Number" appVal={result.app.poNumber} qbVal={null} />
+                  <ProofFieldRow
+                    field="po-number"
+                    label="PO Number"
+                    appVal={result.app.poNumber}
+                    qbVal={null}
+                  />
                 )}
               </tbody>
             </table>
@@ -1332,18 +1195,20 @@ function ProofDrawerContent({ row, scope, onApprove, approvePending }: ProofDraw
                 Score Reasons
               </div>
               <div className="flex items-center gap-2 mb-1">
-                <Badge
-                  className={`text-[10px] ${confidenceBadge(chosenCandidate.confidence).cls}`}
-                >
+                <Badge className={`text-[10px] ${confidenceBadge(chosenCandidate.confidence).cls}`}>
                   {chosenCandidate.confidence}% confidence
                 </Badge>
                 <Badge className={`text-[10px] ${laneBadge(row.lane).cls}`}>
                   {laneBadge(row.lane).label} lane
                 </Badge>
               </div>
-              <ul className="space-y-0.5">
+              <ul className="space-y-0.5" data-testid="drawer-score-reasons">
                 {chosenCandidate.reasons.map((r, i) => (
-                  <li key={i} className="flex items-center gap-1 text-xs">
+                  <li
+                    key={i}
+                    className="flex items-center gap-1 text-xs"
+                    data-testid={`drawer-reason-${i}`}
+                  >
                     <CheckCircle2 className="h-3 w-3 text-emerald-600 shrink-0" />
                     {r}
                   </li>
@@ -1354,13 +1219,17 @@ function ProofDrawerContent({ row, scope, onApprove, approvePending }: ProofDraw
 
           {/* Warning details */}
           {chosenCandidate && chosenCandidate.warnings.length > 0 && (
-            <div>
+            <div data-testid="drawer-warnings">
               <div className="text-[10px] text-muted-foreground uppercase mb-1 font-medium">
                 Warning Details
               </div>
               <ul className="space-y-1">
-                {chosenCandidate.warnings.map((w, i) => (
-                  <li key={i} className="flex items-start gap-1 text-xs text-amber-800">
+                {chosenCandidate.warnings.map((w) => (
+                  <li
+                    key={w}
+                    className="flex items-start gap-1 text-xs text-amber-800"
+                    data-testid={`drawer-warning-${w}`}
+                  >
                     <ShieldAlert className="h-3.5 w-3.5 mt-0.5 shrink-0" />
                     <span>
                       <strong>{w}:</strong> {WARNING_LABEL[w] ?? w}
@@ -1373,7 +1242,7 @@ function ProofDrawerContent({ row, scope, onApprove, approvePending }: ProofDraw
 
           {/* Payment status */}
           {chosenCandidate?.qbPaymentStatus && (
-            <div className="rounded border p-2 text-xs">
+            <div className="rounded border p-2 text-xs" data-testid="drawer-payment-status">
               <div className="text-[10px] text-muted-foreground uppercase mb-1">QB Payment Status</div>
               <div className="flex items-center gap-2">
                 <Badge
@@ -1398,7 +1267,7 @@ function ProofDrawerContent({ row, scope, onApprove, approvePending }: ProofDraw
 
           {/* Approve / Reject actions */}
           {row.status === "found" && (
-            <div className="space-y-3 pt-2 border-t">
+            <div className="space-y-3 pt-2 border-t" data-testid="drawer-actions">
               {/* Approve */}
               <div>
                 <Button
@@ -1457,13 +1326,18 @@ function ProofDrawerContent({ row, scope, onApprove, approvePending }: ProofDraw
 
           {/* Approved / Rejected status */}
           {row.status === "approved" && (
-            <div className="flex items-center gap-2 text-xs text-emerald-700">
+            <div
+              className="flex items-center gap-2 text-xs text-emerald-700"
+              data-testid="drawer-state-approved"
+            >
               <CheckCircle2 className="h-4 w-4" />
               <span>This match has been approved and linked.</span>
             </div>
           )}
           {row.status === "rejected" && (
-            <div className="text-xs text-slate-500">This suggestion has been rejected.</div>
+            <div className="text-xs text-slate-500" data-testid="drawer-state-rejected">
+              This suggestion has been rejected.
+            </div>
           )}
         </>
       )}
@@ -1498,5 +1372,40 @@ function ProofDrawerContent({ row, scope, onApprove, approvePending }: ProofDraw
         </Button>
       </div>
     </div>
+  );
+}
+
+// ─── Proof Field Row ──────────────────────────────────────────────────────────
+
+function ProofFieldRow({
+  field,
+  label,
+  appVal,
+  qbVal,
+  match,
+}: {
+  field: string;
+  label: string;
+  appVal: string | null;
+  qbVal: string | null;
+  match?: boolean;
+}) {
+  return (
+    <tr className="border-t text-xs" data-testid={`proof-field-${field}`}>
+      <td className="py-1.5 pr-3 text-muted-foreground font-medium w-28">{label}</td>
+      <td className="py-1.5 pr-3 font-mono" data-testid={`proof-app-value-${field}`}>
+        {appVal ?? "—"}
+      </td>
+      <td className="py-1.5 pr-3 font-mono" data-testid={`proof-qb-value-${field}`}>
+        {qbVal ?? "—"}
+      </td>
+      <td className="py-1.5 text-center" data-testid={`proof-match-${field}`}>
+        {match === undefined ? null : match ? (
+          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 inline" />
+        ) : (
+          <X className="h-3.5 w-3.5 text-rose-500 inline" />
+        )}
+      </td>
+    </tr>
   );
 }
