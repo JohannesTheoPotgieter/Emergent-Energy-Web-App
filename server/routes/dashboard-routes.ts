@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { storage } from "../storage";
 import { requireAuth } from "../auth-context";
 import { evaluateRevenueArStatus } from "../lib/finance/revenue-ar-status";
+import { computeMarginPct } from "../lib/finance/margin";
 import { setFinanceTrustHeaders, buildTrustMeta } from "../lib/finance-trust/envelope";
 import { getCanonicalAllCurrentCostLines } from "../services/project-cost-line-read-service";
 import { getMergedExpensesAndInflows, resolveInflowEffectiveDates } from "../lib/cashflow-helpers";
@@ -81,6 +82,7 @@ function saWorkingDays(startDateStr: string | null, endDateStr: string | null): 
 }
 
 export function registerDashboardRoutes(app: Express) {
+  void computeMarginPct;
   // ==================== PROGRAM DASHBOARD API ====================
 
   app.get("/api/program-dashboard", requireAuth, async (req, res) => {
