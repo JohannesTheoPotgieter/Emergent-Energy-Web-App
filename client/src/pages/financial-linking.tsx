@@ -172,7 +172,7 @@ export default function FinancialLinkingPage() {
   const { data: expenses = [], isLoading: loadingExpenses } = useQuery<ExpenseLine[]>({
     queryKey: ["program-expenses", projectName],
     queryFn: async () => {
-      const res = await engFetch(`/api/program-expenses/${encodeURIComponent(projectName)}`);
+      const res = await engFetch(`/api/projects/${encodeURIComponent(projectName)}/cost-lines`);
       if (!res.ok) return [];
       return res.json();
     },
