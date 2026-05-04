@@ -10,7 +10,7 @@
  * transitions (healthy -> failing) to the notification engine.
  */
 
-import { pgTable, text, integer, timestamp, serial, jsonb, decimal, uniqueIndex, index } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, timestamp, serial, jsonb, decimal, uniqueIndex, index, boolean } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -531,6 +531,12 @@ export const quickbooksMatchSuggestions = pgTable(
     acceptedBy: integer("accepted_by"),
     acceptedQbId: text("accepted_qb_id"),
     acceptedConfidence: decimal("accepted_confidence", { precision: 5, scale: 2 }),
+    /** Set when the user dismissed the entire suggestion run without picking a candidate. */
+    rejectedAt: timestamp("rejected_at"),
+    rejectedBy: integer("rejected_by"),
+    rejectionReason: text("rejection_reason"),
+    /** True when accepted candidate was hand-entered rather than picked from suggestions. */
+    manualOverride: boolean("manual_override").notNull().default(false),
   },
   (table) => ({
     scopeIdx: index("quickbooks_match_suggestions_scope_idx").on(table.scope, table.qbRealmId),
