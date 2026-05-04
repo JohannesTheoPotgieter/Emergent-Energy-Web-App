@@ -11,9 +11,7 @@
  *   - Request approval   — file a financial_edit_requests row routed
  *                          to the section's resolvers.
  *
- * Per-call cap of 50 entries (decision §6.3 of the diff plan). The
- * server enforces the cap and the per-section RBAC; the client mirrors
- * the cap for UX so the operator sees an early error before submit.
+ * The server enforces per-section RBAC.
  */
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -84,7 +82,6 @@ interface SelectedEntry {
   fieldName: string;
 }
 
-const ENTRY_CAP = 50;
 
 const SECTION_TO_TABLE: Record<DiffSection, SectionTable> = {
   PLAN: "work_items",
@@ -211,14 +208,6 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
 
   function submitAcceptExcel() {
     if (selected.size === 0) return;
-    if (selected.size > ENTRY_CAP) {
-      toast({
-        title: "Selection too large",
-        description: `Cap is ${ENTRY_CAP} fields per action. You have ${selected.size} selected.`,
-        variant: "destructive",
-      });
-      return;
-    }
     resolveMutation.mutate({
       action: "accept_excel",
       entries: Array.from(selected.values()),
@@ -227,10 +216,6 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
 
   function openKeepApp() {
     if (selected.size === 0) return;
-    if (selected.size > ENTRY_CAP) {
-      toast({ title: "Selection too large", description: `Cap is ${ENTRY_CAP} fields.`, variant: "destructive" });
-      return;
-    }
     setReason("");
     setReasonOpen({ action: "keep_app" });
   }
@@ -238,10 +223,6 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
   function openRequestApproval(section: DiffSection) {
     const entries = selectedBySection[section];
     if (entries.length === 0) return;
-    if (entries.length > ENTRY_CAP) {
-      toast({ title: "Selection too large", description: `Cap is ${ENTRY_CAP} fields.`, variant: "destructive" });
-      return;
-    }
     setReason("");
     setReasonOpen({ action: "request_approval", section });
   }
@@ -314,13 +295,12 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
           <CardContent className="p-4 flex items-center justify-between gap-4">
             <div className="text-sm">
               <span className="font-semibold">{totalSelected}</span> field{totalSelected === 1 ? "" : "s"} selected
-              {totalSelected > ENTRY_CAP ? <span className="text-red-600 ml-2">(over cap of {ENTRY_CAP})</span> : null}
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              <Button size="sm" variant="default" onClick={submitAcceptExcel} disabled={resolveMutation.isPending || totalSelected > ENTRY_CAP}>
+              <Button size="sm" variant="default" onClick={submitAcceptExcel} disabled={resolveMutation.isPending}>
                 <RotateCcw className="h-3.5 w-3.5 mr-1" /> Accept Excel ({totalSelected})
               </Button>
-              <Button size="sm" variant="secondary" onClick={openKeepApp} disabled={resolveMutation.isPending || totalSelected > ENTRY_CAP}>
+              <Button size="sm" variant="secondary" onClick={openKeepApp} disabled={resolveMutation.isPending}>
                 <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Keep app + reason
               </Button>
               {(["PLAN", "REVENUE", "EXPENDITURE"] as DiffSection[]).map((sec) =>

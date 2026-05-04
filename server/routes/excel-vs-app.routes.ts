@@ -17,8 +17,7 @@
  *         { action: "request_approval", section, entries: [...] }
  *
  *     Per-section RBAC enforced server-side via DRIFT_RESOLVER_ROLES
- *     from `shared/excel-vs-app/contract.ts`. Per-call cap of 50 entries
- *     so one request can never wipe more than 50 manual overrides.
+ *     from `shared/excel-vs-app/contract.ts`.
  *
  * RBAC:
  *   - All GET endpoints: `requirePermission("excel_vs_app", "view")`.
@@ -100,8 +99,6 @@ function deriveSection(
   return "MIXED";
 }
 
-const BULK_ENTRY_CAP = 50;
-
 const driftEntrySchema = z.object({
   table: z.enum([
     "normalized_cost_lines",
@@ -114,20 +111,20 @@ const driftEntrySchema = z.object({
 
 const acceptExcelSchema = z.object({
   action: z.literal("accept_excel"),
-  entries: z.array(driftEntrySchema).min(1).max(BULK_ENTRY_CAP),
+  entries: z.array(driftEntrySchema).min(1),
 });
 
 const keepAppSchema = z.object({
   action: z.literal("keep_app"),
   reason: z.string().min(3).max(500),
-  entries: z.array(driftEntrySchema).min(1).max(BULK_ENTRY_CAP),
+  entries: z.array(driftEntrySchema).min(1),
 });
 
 const requestApprovalSchema = z.object({
   action: z.literal("request_approval"),
   section: z.enum(["PLAN", "REVENUE", "EXPENDITURE"]),
   reason: z.string().min(3).max(500),
-  entries: z.array(driftEntrySchema).min(1).max(BULK_ENTRY_CAP),
+  entries: z.array(driftEntrySchema).min(1),
 });
 
 const resolveSchema = z.discriminatedUnion("action", [
