@@ -78,7 +78,7 @@ const SECTION_OPTIONS: { value: SectionFilter; label: string }[] = [
   { value: "work_items", label: "Plan" },
 ];
 
-function ManualOverridesContent({ projectId }: { projectId: number }) {
+export function ManualOverridesContent({ projectId }: { projectId: number }) {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [sectionFilter, setSectionFilter] = useState<SectionFilter>("all");
