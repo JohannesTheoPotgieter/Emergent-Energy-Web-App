@@ -74,10 +74,7 @@ function num(v: number | string | null): string {
   return isFinite(n) ? n.toLocaleString("en-ZA", { maximumFractionDigits: 2 }) : String(v);
 }
 
-export default function ProgramPlanPage() {
-  const params = useParams<{ projectId: string }>();
-  const projectId = Number(params.projectId);
-
+export function ProgramPlanContent({ projectId }: { projectId: number }) {
   const { data, isLoading, error } = useQuery<ProgramPlanResponse>({
     queryKey: [`/api/tracker-replica/${projectId}/program-plan`],
     queryFn: fetchQueryFn(`/api/tracker-replica/${projectId}/program-plan`),
@@ -93,12 +90,7 @@ export default function ProgramPlanPage() {
 
   const m = data.metadata;
   return (
-    <div className="p-6 space-y-6" data-testid="program-plan-page">
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Program Plan</h1>
-        <Badge variant="outline">Tracker replica · Project #{projectId}</Badge>
-      </header>
-
+    <div className="space-y-6" data-testid="program-plan-content">
       <Card>
         <CardHeader><CardTitle className="text-base">Project Plan Header</CardTitle></CardHeader>
         <CardContent className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
@@ -372,5 +364,19 @@ function GanttSection({ tasks, startDate }: GanttSectionProps) {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+export default function ProgramPlanPage() {
+  const params = useParams<{ projectId: string }>();
+  const projectId = Number(params.projectId);
+  return (
+    <div className="p-6 space-y-6" data-testid="program-plan-page">
+      <header className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">Program Plan</h1>
+        <Badge variant="outline">Tracker replica · Project #{projectId}</Badge>
+      </header>
+      <ProgramPlanContent projectId={projectId} />
+    </div>
   );
 }
