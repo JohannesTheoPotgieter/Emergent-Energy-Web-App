@@ -1475,7 +1475,7 @@ export async function writeRevenueIncremental(ctx: TemporalWriteContext): Promis
 export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Promise<SectionCommitResult> {
   const { tx, projectId, projectName, runId, userId, matchedRows, mergeResults, conflictDecisions, commitTimestamp } = ctx;
   const { eq, and, isNull, inArray } = await import("drizzle-orm");
-  const { normalizedCostLines } = await import("@shared/schema");
+  const { normalizedCostLines, counterparties } = await import("@shared/schema");
   const {
     applyQbPrecedence,
     lookupQbLink,
@@ -1484,6 +1484,30 @@ export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Pr
     isQbPrecedenceEnabled,
   } = await import("./qb-precedence");
   const qbPrecedenceOn = await isQbPrecedenceEnabled();
+
+  // Build a normalised-name → {id, type} lookup for counterparty resolution.
+  // Covers nameCanonical and every entry in nameAliases (JSONB string array).
+  // Cached once for the duration of this import run.
+  type CounterpartyMatch = { id: number; type: string };
+  const counterpartyByName = new Map<string, CounterpartyMatch>();
+  const cpRows = await tx
+    .select({ id: counterparties.id, name: counterparties.nameCanonical, aliases: counterparties.nameAliases, type: counterparties.typeDefault })
+    .from(counterparties)
+    .where(and(eq(counterparties.isActive, true), isNull(counterparties.deletedAt)));
+  for (const cp of cpRows as Array<{ id: number; name: string; aliases: unknown; type: string }>) {
+    const hit: CounterpartyMatch = { id: cp.id, type: cp.type };
+    counterpartyByName.set(cp.name.trim().toLowerCase(), hit);
+    const aliases = Array.isArray(cp.aliases) ? cp.aliases : [];
+    for (const alias of aliases) {
+      if (typeof alias === "string" && alias.trim()) {
+        counterpartyByName.set(alias.trim().toLowerCase(), hit);
+      }
+    }
+  }
+  function resolveCounterparty(name: unknown): CounterpartyMatch | null {
+    if (!name || typeof name !== "string") return null;
+    return counterpartyByName.get(name.trim().toLowerCase()) ?? null;
+  }
 
   const counts: CommitCounts = { inserted: 0, updated: 0, unchanged: 0, missing: 0, conflictsResolved: 0 };
   const insertedIds: number[] = [];
@@ -1726,11 +1750,14 @@ export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Pr
         // Falls through to the CHANGED block below.
       } else {
         const insertSnapshot = buildSnapshot(costFileForMerge, EXPENDITURE_MERGE_FIELDS);
+        const cpMatch = resolveCounterparty(f.counterpartyName);
         const [inserted] = await tx.insert(normalizedCostLines).values({
           projectId,
           projectName,
           costCategory: f.costCategory,
           counterpartyName: f.counterpartyName,
+          counterpartyId: cpMatch?.id ?? null,
+          counterpartyType: (cpMatch?.type as any) ?? null,
           description: f.description,
           amountExVat: f.amountExVat,
           invoiceNumber: f.invoiceNumber,
@@ -1863,11 +1890,19 @@ export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Pr
       const insertManualOverrides = Object.keys(resolved.manualOverrides).length > 0
         ? resolved.manualOverrides
         : null;
+      // Re-resolve counterparty from the incoming name (file wins on CHANGED rows;
+      // falls back to the existing FK when the name didn't change and had a match).
+      const changedCpName = resolved.values.counterpartyName ?? existing.counterpartyName;
+      const changedCpMatch = resolveCounterparty(changedCpName) ?? (
+        existing.counterpartyId ? { id: existing.counterpartyId as number, type: existing.counterpartyType as string } : null
+      );
       const [inserted] = await tx.insert(normalizedCostLines).values({
         projectId,
         projectName,
         costCategory: resolved.values.costCategory ?? existing.costCategory,
-        counterpartyName: resolved.values.counterpartyName ?? existing.counterpartyName,
+        counterpartyName: changedCpName,
+        counterpartyId: changedCpMatch?.id ?? null,
+        counterpartyType: (changedCpMatch?.type as any) ?? null,
         description: existing.description,
         amountExVat: resolved.values.amountExVat ?? existing.amountExVat,
         invoiceNumber: resolved.values.invoiceNumber ?? existing.invoiceNumber,
