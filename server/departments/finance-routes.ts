@@ -178,24 +178,7 @@ async function getHighRiskAllCostReadRows(): Promise<any[]> {
   return getCanonicalAllCurrentCostLines({ applyOverrides: manualOverridesEnabled() });
 }
 
-/**
- * Reads revenue lines for a specific project using the SAME data source as the
- * portfolio routes. This ensures project-level and portfolio-level views produce
- * identical per-project revenue totals.
- *
- * The portfolio route reads all revenue lines via getAllRevenueLinesForCashflow()
- * and filters by normalized project name. The legacy per-project call
- * (getProgramInflowsByProject) uses an exact SQL string match which can miss
- * lines with variant names (e.g., "Mondi_Tracker" vs "Mondi").
- */
-async function getProjectRevenueLinesConsistent(projectName: string): Promise<any[]> {
-  const allInflows = await storage.getAllRevenueLinesForCashflow();
-  const normalizedTarget = (projectName || "").replace(/_Tracker$/i, "").trim().toLowerCase();
-  return allInflows.filter((r: any) => {
-    const rName = (r.projectName || "").replace(/_Tracker$/i, "").trim().toLowerCase();
-    return rName === normalizedTarget;
-  });
-}
+
 
 function requireAdminOrFinancialEditor(req: Request, res: Response, next: NextFunction) {
   const role = req.user?.role;
@@ -4330,7 +4313,7 @@ router.get("/api/revenue-tracker/project/:projectName", requireAuth, requirePerm
     const projectIdParam = req.query.projectId ? parseInt(String(req.query.projectId), 10) : null;
     const [projectExpenses, revLines, manualEntries] = await Promise.all([
       getHighRiskProjectCostReadRows(projectName, projectIdParam),
-      getProjectRevenueLinesConsistent(projectName),
+      storage.getProgramInflowsByProject(projectName),
       storage.getTrackerMonthlyManual('REV'),
     ]);
 
@@ -4654,7 +4637,7 @@ router.get("/api/gp-tracker/project/:projectName", requireAuth, requirePermissio
     const projectIdParam = req.query.projectId ? parseInt(String(req.query.projectId), 10) : null;
     const [projectExpenses, revLines, cosOverrideMapProj] = await Promise.all([
       getHighRiskProjectCostReadRows(projectName, projectIdParam),
-      getProjectRevenueLinesConsistent(projectName),
+      storage.getProgramInflowsByProject(projectName),
       Promise.resolve(new Map()),
     ]);
 
@@ -5161,7 +5144,7 @@ router.get("/api/revenue-tracker/month-detail", requireAuth, requirePermission("
 
 
     const allInflowsRaw = project
-      ? await getProjectRevenueLinesConsistent(project)
+      ? await storage.getProgramInflowsByProject(project)
       : await storage.getAllRevenueLinesForCashflow();
 
     const revenueByProject = new Map<string, number>();
@@ -5468,6 +5451,8 @@ router.get("/api/program-expenses", requireAuth, async (req, res) => {
   }
 });
 
+// DEPRECATED — prefer /api/projects/:projectName/cost-lines.
+// Scheduled for removal in the next release after consumers migrate.
 router.get("/api/program-expenses/:projectName", requireAuth, async (req, res) => {
   try {
     const projectName = paramStr(req.params.projectName);
@@ -5477,6 +5462,7 @@ router.get("/api/program-expenses/:projectName", requireAuth, async (req, res) =
       canonicalTable: "normalized_cost_lines",
     });
 
+    res.set("Deprecation", "true");
     res.json(expenses);
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch program expenses", message: "Failed to fetch program expenses" });
@@ -5519,6 +5505,8 @@ router.get("/api/finance/trust-core-report", requireAuth, requireAdmin, async (_
 });
 
 
+// DEPRECATED — prefer /api/projects/:projectName/revenue-lines.
+// Scheduled for removal in the next release after consumers migrate.
 router.get("/api/program-inflows", requireAuth, async (req, res) => {
   try {
     const { projectName, startDate, endDate, applyOverrides } = req.query;
@@ -5527,16 +5515,13 @@ router.get("/api/program-inflows", requireAuth, async (req, res) => {
     if (projectName && typeof projectName === 'string') {
       inflows = await storage.getProgramInflowsByProject(projectName);
       setFinanceTrustHeaders(res, {
-        sourceLayer: "legacy",
+        sourceLayer: "canonical",
         canonicalTable: "normalized_revenue_lines",
-        uncertainty: "compatibility_route_project_name_filter",
       });
-
-      // Override data now baked into base rows
     } else {
       inflows = await storage.getAllProgramInflows();
       setFinanceTrustHeaders(res, {
-        sourceLayer: "legacy",
+        sourceLayer: "canonical",
         canonicalTable: "normalized_revenue_lines",
       });
     }
@@ -5554,9 +5539,55 @@ router.get("/api/program-inflows", requireAuth, async (req, res) => {
       );
     }
 
+    res.set("Deprecation", "true");
     res.json(inflows);
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch program inflows", message: "Failed to fetch program inflows" });
+  }
+});
+
+// ==================== CANONICAL PROJECT FINANCE LINES ====================
+
+router.get("/api/projects/:projectName/cost-lines", requireAuth, async (req, res) => {
+  try {
+    const projectName = paramStr(req.params.projectName);
+    const expenses = await getCanonicalProjectCostLinesByName(projectName).then((r) => r.rows);
+    setFinanceTrustHeaders(res, {
+      sourceLayer: "canonical",
+      canonicalTable: "normalized_cost_lines",
+    });
+    res.json(expenses);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch cost lines", message: "Failed to fetch cost lines" });
+  }
+});
+
+router.get("/api/projects/:projectName/revenue-lines", requireAuth, async (req, res) => {
+  try {
+    const projectName = paramStr(req.params.projectName);
+    const { startDate, endDate } = req.query;
+    let inflows = await storage.getProgramInflowsByProject(projectName);
+    setFinanceTrustHeaders(res, {
+      sourceLayer: "canonical",
+      canonicalTable: "normalized_revenue_lines",
+    });
+
+    if (startDate && typeof startDate === 'string') {
+      inflows = inflows.filter(i =>
+        (i.paymentReceivedDate && i.paymentReceivedDate >= startDate) ||
+        (i.plannedPaymentDate && i.plannedPaymentDate >= startDate)
+      );
+    }
+    if (endDate && typeof endDate === 'string') {
+      inflows = inflows.filter(i =>
+        (i.paymentReceivedDate && i.paymentReceivedDate <= endDate) ||
+        (i.plannedPaymentDate && i.plannedPaymentDate <= endDate)
+      );
+    }
+
+    res.json(inflows);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch revenue lines", message: "Failed to fetch revenue lines" });
   }
 });
 
