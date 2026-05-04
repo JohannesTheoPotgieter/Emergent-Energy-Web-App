@@ -116,7 +116,7 @@ describe("meeting-routes personal-task write canonicalization", () => {
 });
 
 describe("KPI traceability personal-task count canonicalization", () => {
-  const src = readFile("server/kpi-traceability-routes.ts");
+  const src = readFile("server/repositories/kpi-traceability-repository.ts");
 
   it("counts personal tasks from work_items, not mytool_tasks", () => {
     // The personal tasks count query should use work_items with PERSONAL workstream
@@ -129,9 +129,10 @@ describe("KPI traceability personal-task count canonicalization", () => {
   });
 
   it("KPI metadata references work_items as source table for personal tasks", () => {
-    // The mywork_personal_tasks KPI should reference work_items
-    const personalKpiStart = src.indexOf('"mywork_personal_tasks"');
-    const personalKpiBlock = src.slice(personalKpiStart, personalKpiStart + 300);
+    // The mywork_personal_tasks KPI metadata lives in the routes file
+    const routesSrc = readFile("server/kpi-traceability-routes.ts");
+    const personalKpiStart = routesSrc.indexOf('"mywork_personal_tasks"');
+    const personalKpiBlock = routesSrc.slice(personalKpiStart, personalKpiStart + 300);
     expect(personalKpiBlock).toContain('sourceTable: "work_items"');
   });
 });
