@@ -11,6 +11,7 @@ const ALLOWLIST = [
   "server/admin-control-routes.ts",
   "server/admin-recovery-routes.ts",
   "server/kpi-traceability-routes.ts",
+  "server/repositories/kpi-traceability-repository.ts",
   "server/lifecycle-routes.ts",
   "server/bootstrap/backfills/role-lens-backfill.ts",
   "server/departments/data-backfill-routes.ts",

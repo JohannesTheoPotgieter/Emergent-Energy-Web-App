@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { Pencil, Plus, Save, Shield, ShieldCheck, Trash2, UserCheck, X } from "lucide-react";
-import { COMPANY_ROLES, WORKSTREAM_VISIBILITY_DEFAULTS, ROLE_DEPARTMENT_MAP } from "@shared/schema";
+import { COMPANY_ROLES, WORKSTREAM_KEYS, WORKSTREAM_VISIBILITY_DEFAULTS, ROLE_DEPARTMENT_MAP } from "@shared/schema";
 import * as api from "../settings-api";
 import type { PdVisConfig, UserSummary, WorkstreamVisConfig } from "../settings-types";
 
@@ -23,9 +23,11 @@ const PD_SCOPE_OPTIONS = [
   { value: "own", label: "Own Tickets Only", description: "Can only see tickets they created or are assigned to" },
 ];
 
-const PD_CONFIGURABLE_ROLES = ["PROJECT_DEVELOPER", "KEY_ACCOUNTS_MANAGER", "ENGINEER", "PROGRAM_MANAGER", "COO_ADMIN", "CEO_ADMIN", "CCO"];
+// Derived from COMPANY_ROLES so new roles are automatically included.
+const PD_CONFIGURABLE_ROLES = COMPANY_ROLES;
 
-const ALL_WORKSTREAMS = ["PD", "ENG", "QUALITY", "PM", "FINANCE", "GOVERNANCE", "PERSONAL"] as const;
+// Derived from WORKSTREAM_KEYS so new workstreams are automatically included.
+const ALL_WORKSTREAMS = WORKSTREAM_KEYS;
 
 const WORKSTREAM_LABELS: Record<string, string> = {
   PD: "Project Development", ENG: "Engineering", QUALITY: "Quality", PM: "Project Management",

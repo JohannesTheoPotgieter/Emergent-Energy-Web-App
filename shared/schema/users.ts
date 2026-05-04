@@ -588,6 +588,23 @@ export const WORKSTREAM_VISIBILITY_DEFAULTS: Record<string, { workstreams: strin
   SSEG_MANAGER: { workstreams: ['ENG', 'QUALITY', 'PM'], ticketTypes: ['engineering'], scope: 'all', sections: ['HOME', 'HSE', 'QUALITY', 'ENGINEERING'] },
 };
 
+/**
+ * The 11 current navigation sections (excludes legacy keys).
+ * Used by the admin UI to build the navigation access matrix without
+ * hardcoding section keys.
+ */
+export const CURRENT_APP_SECTIONS = [
+  'HOME', 'PORTFOLIO', 'PRIORITIES', 'PROJECT_DEVELOPMENT', 'PROJECT_DELIVERY',
+  'ENGINEERING', 'QUALITY', 'HSE', 'FINANCE', 'REPORTS', 'ADMIN',
+] as const satisfies readonly AppSection[];
+
+/**
+ * Canonical workstream codes used across the workstream visibility system.
+ * Import this instead of hardcoding the array in component files.
+ */
+export const WORKSTREAM_KEYS = ['PD', 'ENG', 'QUALITY', 'PM', 'FINANCE', 'GOVERNANCE', 'PERSONAL'] as const;
+export type WorkstreamKey = typeof WORKSTREAM_KEYS[number];
+
 export const DEFAULT_ROLE_PERMISSIONS: InsertRolePermission[] = [
   { role: "COO_ADMIN", label: "COO", description: "Full executive access, settings, user management", sections: ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY", "ENGINEERING", "QUALITY", "HSE", "FINANCE", "REPORTS", "ADMIN"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
   { role: "CEO_ADMIN", label: "CEO", description: "Full executive access, strategic oversight", sections: ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY", "FINANCE", "REPORTS", "ADMIN"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
