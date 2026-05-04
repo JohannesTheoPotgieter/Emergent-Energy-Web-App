@@ -498,7 +498,18 @@ export function registerHandoverRoutes(app: Express) {
         };
       });
 
-      res.json({ items });
+      const startOfMonth = new Date();
+      startOfMonth.setUTCDate(1);
+      startOfMonth.setUTCHours(0, 0, 0, 0);
+
+      const dashboard = {
+        readyForPmReview: items.filter((r: any) => r.handover_status === "SUBMITTED_FOR_PM_REVIEW").length,
+        rejectedReturnedToPd: items.filter((r: any) => r.handover_status === "REJECTED").length,
+        overdueHandovers: items.filter((r: any) => r.handover_status === "SUBMITTED_FOR_PM_REVIEW" && Number(r.days_in_status || 0) > 5).length,
+        missingRequiredEvidence: items.filter((r: any) => (Array.isArray(r.health_blockers) && r.health_blockers.includes("Missing deliverables evidence")) || r.health_not_enough_data).length,
+        acceptedThisMonth: items.filter((r: any) => r.handover_status === "ACCEPTED" && r.pm_sign_off_at && new Date(r.pm_sign_off_at).getTime() >= startOfMonth.getTime()).length,
+      };
+      res.json({ items, dashboard });
     } catch (err: any) {
       const msg = err?.message || '';
       if (/relation.*does not exist|no such table/i.test(msg) || err?.code === '42P01') {
