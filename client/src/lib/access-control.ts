@@ -21,18 +21,13 @@
 //
 // =============================================================================
 
-export function normalizeRole(role?: string | null): string {
-  const normalized = (role || "").trim().toUpperCase();
-  const aliases: Record<string, string> = {
-    ADMIN: "COO_ADMIN",
-    COO: "COO_ADMIN",
-    COO_SUPER_ADMIN: "COO_ADMIN",
-    CEO: "CEO_ADMIN",
-  };
-  return aliases[normalized] || normalized;
-}
+import { normalizeRoleForPermissions, ADMIN_ROLES } from "@shared/schema";
+
+// Re-export the canonical normalizer under the legacy name so existing callers
+// don't need to be updated.
+export { normalizeRoleForPermissions as normalizeRole };
 
 export function isSuperAdmin(userRole?: string | null, companyRole?: string | null): boolean {
-  const roles = [normalizeRole(userRole), normalizeRole(companyRole)];
-  return roles.includes("COO_ADMIN") || roles.includes("CEO_ADMIN");
+  const roles = [normalizeRoleForPermissions(userRole), normalizeRoleForPermissions(companyRole)];
+  return roles.some((r) => (ADMIN_ROLES as readonly string[]).includes(r));
 }

@@ -1,4 +1,5 @@
 import type { PermissionAction, PermissionEntity } from "@shared/schema";
+import { ENTITY_REGISTRY } from "@shared/permissions/registry";
 
 export type RoleSummary = {
   role: string;
@@ -135,7 +136,9 @@ export const NAV_SECTIONS = [
   { key: "ADMIN", label: "Admin", description: "Control Center, Roles & Permissions, Smart Import, Audit Log, Processes & SOPs, Templates, Recovery" },
 ];
 
-export const ENTITY_DESCRIPTIONS: Record<string, string> = {
+// Registry descriptions always win; the static map below covers UI-only
+// entities that have no backend RBAC entry in ENTITY_REGISTRY.
+const _STATIC_ENTITY_DESCRIPTIONS: Record<string, string> = {
   home: "Home page dashboard & landing",
   my_work: "My Work hub — tasks, calendar, meetings",
   my_tool: "My Work task planner (Today, Week, Backlog)",
@@ -265,6 +268,13 @@ export const ENTITY_DESCRIPTIONS: Record<string, string> = {
   company_team: "Company > Team — workforce directory and utilisation summary",
 };
 
+// Registry descriptions win; the static map above covers UI-only entities
+// not present in ENTITY_REGISTRY (no backend RBAC gate).
+export const ENTITY_DESCRIPTIONS: Record<string, string> = {
+  ..._STATIC_ENTITY_DESCRIPTIONS,
+  ...Object.fromEntries(ENTITY_REGISTRY.map((e) => [e.entity, e.description])),
+};
+
 export const ENTITY_CATEGORIES: Record<string, { label: string; entities: string[] }> = {
   home: {
     label: "Home",
@@ -315,6 +325,24 @@ export const ENTITY_CATEGORIES: Record<string, { label: string; entities: string
     entities: ["pd_overview", "pd_plan", "pd_gantt", "pd_finance", "pd_revenue", "pd_cashflow", "pd_cos_tracker", "pd_expenditure", "pd_history", "pd_key_dates", "pd_quality", "pd_engineering", "pd_eng_tasks", "pd_eng_stages", "pd_collaboration", "pd_subcontractors", "pd_change_control", "pd_commissioning", "pd_dependencies", "pd_raid"],
   },
 };
+
+// Auto-inject registry entities that are not yet listed in any category above
+// into an "uncategorized" bucket so they appear in the admin UI without manual
+// maintenance of this file.
+(function () {
+  const categorized = new Set(
+    Object.values(ENTITY_CATEGORIES).flatMap((c) => c.entities),
+  );
+  const uncategorized = ENTITY_REGISTRY.map((e) => e.entity).filter(
+    (entity) => !categorized.has(entity),
+  );
+  if (uncategorized.length > 0) {
+    (ENTITY_CATEGORIES as Record<string, { label: string; entities: string[] }>).uncategorized = {
+      label: "Other",
+      entities: uncategorized,
+    };
+  }
+})();
 
 export const NAV_SECTION_TO_PERM_CATEGORY: Record<string, string> = {
   HOME: "home",
