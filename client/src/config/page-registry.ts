@@ -110,7 +110,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "projectLifecycleClientOverview", path: "/project-lifecycle/client-overview", label: "Client Overview", permissionEntity: "pd_clients", routeComponentKey: "ProjectLifecyclePage" },
   { id: "projects", path: "/projects", label: "Project List", iconKey: "FileSpreadsheet", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "projects", showInSidebar: true, routeComponentKey: "ProjectsSummary" },
   { id: "projectFinancialLinking", path: "/project/:projectName/financial-linking", label: "Financial Linking", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "financial_linking", routeComponentKey: "FinancialLinkingPage" },
-  { id: "projectDetail", path: "/project/id/:projectId", label: "Project Detail", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "projects", routeComponentKey: "ProjectDetailPage", aliases: ["/project/:projectName"] },
+  { id: "projectDetail", path: "/project/id/:projectId", label: "Project Detail", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "projects", routeComponentKey: "ProjectDetailPage", aliases: ["/project/:projectName"], matchSubRoutes: true },
   { id: "projectStageGate", path: "/project/id/:projectId/gate/:stageCode", label: "Project Stage Gate", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "stage_lifecycle", routeComponentKey: "ProjectStageGatePage", aliases: ["/project/:projectName/gate/:stageCode"] },
   { id: "cashflow", path: "/cashflow", label: "Cashflow", iconKey: "Wallet", navGroup: "FINANCE", permissionEntity: "cashflow", showInSidebar: true, routeComponentKey: "CashflowPage", roleLandingEligibility: ["CFO", "PROGRAM_FINANCE_MANAGER", "ACCOUNTANT"] },
   { id: "cashflowAnalysis", path: "/cashflow/analysis", label: "Cashflow Analysis", iconKey: "BarChart3", navGroup: "FINANCE", permissionEntity: "cashflow", showInSidebar: true, routeComponentKey: "CashflowAnalysisPage" },
@@ -379,7 +379,21 @@ function matchesPagePath(page: PageRegistryEntry, normalizedPath: string): boole
   const pagePath = normalizePathname(page.path);
   if (normalizedPath === pagePath) return true;
 
-  if (page.aliases?.some((alias) => normalizePathname(alias) === normalizedPath)) {
+  if (page.aliases?.some((alias) => {
+    const normalizedAlias = normalizePathname(alias);
+    if (normalizedAlias === normalizedPath) return true;
+    if (alias.includes(":") && matchesPattern(normalizedPath, alias)) return true;
+    if (page.matchSubRoutes && alias.includes(":")) {
+      const aliasParts = normalizedAlias.split("/").filter(Boolean);
+      const pathParts = normalizedPath.split("/").filter(Boolean);
+      if (pathParts.length > aliasParts.length) {
+        const prefix = "/" + pathParts.slice(0, aliasParts.length).join("/");
+        if (matchesPattern(prefix, alias)) return true;
+      }
+    }
+    if (page.matchSubRoutes && normalizedPath.startsWith(`${normalizedAlias}/`)) return true;
+    return false;
+  })) {
     return true;
   }
 

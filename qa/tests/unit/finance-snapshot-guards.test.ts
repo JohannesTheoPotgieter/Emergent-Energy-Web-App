@@ -46,8 +46,8 @@ function windowAfter(haystack: string, needle: string, chars = 300): string {
   return haystack.slice(idx, idx + chars);
 }
 
-describe("finance snapshot guards — kpi-traceability-routes.ts", () => {
-  const source = read("server/kpi-traceability-routes.ts");
+describe("finance snapshot guards — kpi-traceability-repository.ts", () => {
+  const source = read("server/repositories/kpi-traceability-repository.ts");
 
   it("SUM over project_revenue_summary filters effective_to IS NULL", () => {
     const tail = windowAfter(source, "FROM project_revenue_summary", 120);
