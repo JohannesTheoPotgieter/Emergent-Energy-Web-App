@@ -147,6 +147,69 @@ export function registerTrackerReplicaRoutes(app: Express): void {
     },
   );
 
+  // ---- Drift count badge -------------------------------------------
+  // Returns only the verified / unverified field-level drift counts for
+  // a project. Gated at excel_vs_app:view (all 16 company roles) so every
+  // Execution user sees the badge. Does NOT return per-field detail — only
+  // aggregate counts per section. The full diff lives at
+  // /api/excel-vs-app/projects/:projectId.
+  app.get(
+    "/api/tracker-replica/:projectId/drift-count",
+    requireAuth,
+    requirePermission("excel_vs_app", "view"),
+    async (req: Request, res: Response) => {
+      const projectId = parseProjectId(req.params.projectId);
+
+      try {
+        const exists = await trackerReplicaRepository.projectExists(projectId);
+        if (!exists) throw notFound("Project");
+
+        const detail = await trackerReplicaRepository.getDriftDetail(projectId);
+        const { PLAN, REVENUE, EXPENDITURE } = detail.summary;
+        res.json({
+          projectId,
+          unverified: PLAN.unverified + REVENUE.unverified + EXPENDITURE.unverified,
+          verified:   PLAN.verified   + REVENUE.verified   + EXPENDITURE.verified,
+          bySection: {
+            PLAN:        { unverified: PLAN.unverified,        verified: PLAN.verified },
+            REVENUE:     { unverified: REVENUE.unverified,     verified: REVENUE.verified },
+            EXPENDITURE: { unverified: EXPENDITURE.unverified, verified: EXPENDITURE.verified },
+          },
+        });
+      } catch (err) {
+        if (err instanceof ApiError) throw err;
+        console.error("[tracker-replica] drift-count error:", err);
+        throw serverError("Failed to load drift count");
+      }
+    },
+  );
+
+  // ---- Import freshness badge ---------------------------------------
+  // Returns the last committed Smart Import run date + staleness flag
+  // for a project. Gated at work_items:view (broadest Execution gate)
+  // so every role that can view a project can see when tracker data was
+  // last synced. Does NOT expose import run details or financial data.
+  app.get(
+    "/api/tracker-replica/:projectId/import-freshness",
+    requireAuth,
+    requirePermission("work_items", "view"),
+    async (req: Request, res: Response) => {
+      const projectId = parseProjectId(req.params.projectId);
+
+      try {
+        const exists = await trackerReplicaRepository.projectExists(projectId);
+        if (!exists) throw notFound("Project");
+
+        const freshness = await trackerReplicaRepository.getImportFreshness(projectId);
+        res.json({ projectId, ...freshness });
+      } catch (err) {
+        if (err instanceof ApiError) throw err;
+        console.error("[tracker-replica] import-freshness error:", err);
+        throw serverError("Failed to load import freshness");
+      }
+    },
+  );
+
   // ---- Project / Program Plan sheet ---------------------------------
   // WBS task list + project-plan metadata. Gated by `work_items:view`
   // to mirror existing PM-section permissions.

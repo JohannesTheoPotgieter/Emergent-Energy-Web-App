@@ -16,7 +16,7 @@
  * helpers (apply / clear) live in `server/lib/manual-overrides.ts`
  * because they're shared between the import engine and the diff page.
  */
-import { eq, and, isNull, asc } from "drizzle-orm";
+import { eq, and, isNull, asc, desc } from "drizzle-orm";
 import {
   normalizedRevenueLines,
   normalizedCostLines,
@@ -33,6 +33,7 @@ import {
 } from "@shared/schema/finance";
 import { workItems, type WorkItem } from "@shared/schema/tasks";
 import { projectInfo } from "@shared/schema/projects";
+import { smartImportRuns } from "@shared/schema/imports";
 import { db } from "../db";
 
 export class TrackerReplicaRepository {
@@ -54,6 +55,55 @@ export class TrackerReplicaRepository {
       .where(eq(projectInfo.id, projectId))
       .limit(1);
     return rows.length > 0;
+  }
+
+  /**
+   * Returns the most recent committed Smart Import run for this project.
+   * Used to render the "Tracker last synced: X days ago" badge on project
+   * pages for all Execution roles — gated at work_items:view on the route.
+   * Queries by projectId first; falls back to projectName match so projects
+   * imported before projectId was wired (pre-v2) are still covered.
+   */
+  async getImportFreshness(projectId: number): Promise<{
+    lastImportAt: string | null;
+    daysSinceImport: number | null;
+    isStale: boolean;
+  }> {
+    // Resolve project name for the fallback query.
+    const [proj] = await this.dbInstance
+      .select({ projectName: projectInfo.projectName })
+      .from(projectInfo)
+      .where(eq(projectInfo.id, projectId))
+      .limit(1);
+
+    if (!proj) return { lastImportAt: null, daysSinceImport: null, isStale: true };
+
+    // Latest committed run for this project — prefer projectId match, fall
+    // back to projectName match for legacy runs where projectId was NULL.
+    const byId = await this.dbInstance
+      .select({ committedAt: smartImportRuns.committedAt })
+      .from(smartImportRuns)
+      .where(and(eq(smartImportRuns.projectId, projectId), eq(smartImportRuns.status, "committed")))
+      .orderBy(desc(smartImportRuns.committedAt))
+      .limit(1);
+
+    const byName = byId.length === 0
+      ? await this.dbInstance
+          .select({ committedAt: smartImportRuns.committedAt })
+          .from(smartImportRuns)
+          .where(and(eq(smartImportRuns.projectName, proj.projectName), eq(smartImportRuns.status, "committed")))
+          .orderBy(desc(smartImportRuns.committedAt))
+          .limit(1)
+      : [];
+
+    const row = byId[0] ?? byName[0] ?? null;
+    if (!row?.committedAt) return { lastImportAt: null, daysSinceImport: null, isStale: true };
+
+    const lastImportAt = row.committedAt.toISOString();
+    const daysSinceImport = Math.floor((Date.now() - row.committedAt.getTime()) / 86_400_000);
+    const isStale = daysSinceImport > 7;
+
+    return { lastImportAt, daysSinceImport, isStale };
   }
 
   /** Latest active tracker_revenue_summary row for the project, or null. */

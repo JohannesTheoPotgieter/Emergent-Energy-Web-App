@@ -510,7 +510,7 @@ router.post("/api/smart-import/upload", requireAuth, requirePermission("smart_im
 });
 
 // GET /api/smart-import/history/:projectName
-router.get("/api/smart-import/history/:projectName", requireAuth, async (req: Request, res: Response) => {
+router.get("/api/smart-import/history/:projectName", requireAuth, requirePermission("smart_import", "view"), async (req: Request, res: Response) => {
   try {
     const projectName = decodeURIComponent(req.params.projectName as string);
     const runs = await db
@@ -747,7 +747,7 @@ router.patch("/api/smart-import/:runId/assign-project", requireAuth, requirePerm
 
 // GET /api/smart-import/:runId
 // Optional query param: ?includePlan=true to include v2 planner output
-router.get("/api/smart-import/:runId", requireAuth, async (req: Request, res: Response) => {
+router.get("/api/smart-import/:runId", requireAuth, requirePermission("smart_import", "view"), async (req: Request, res: Response) => {
   try {
     const runId = parseIntParam(req.params.runId);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
@@ -782,7 +782,7 @@ router.get("/api/smart-import/:runId", requireAuth, async (req: Request, res: Re
 });
 
 // GET /api/smart-import/:runId/diff — Compute delta between incoming data and existing DB records
-router.get("/api/smart-import/:runId/diff", requireAuth, async (req: Request, res: Response) => {
+router.get("/api/smart-import/:runId/diff", requireAuth, requirePermission("smart_import", "view"), async (req: Request, res: Response) => {
   try {
     const runId = parseIntParam(req.params.runId);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
@@ -904,7 +904,7 @@ router.get("/api/smart-import/:runId/diff", requireAuth, async (req: Request, re
 // GET /api/smart-import/:runId/plan — Smart Import v2 planner output
 // Returns structured diff with row-level classifications:
 //   NEW / CHANGED / UNCHANGED / MISSING_FROM_UPLOAD / CONFLICT_PLACEHOLDER
-router.get("/api/smart-import/:runId/plan", requireAuth, async (req: Request, res: Response) => {
+router.get("/api/smart-import/:runId/plan", requireAuth, requirePermission("smart_import", "view"), async (req: Request, res: Response) => {
   try {
     const runId = parseIntParam(req.params.runId);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
@@ -942,7 +942,7 @@ router.get("/api/smart-import/:runId/plan", requireAuth, async (req: Request, re
 // - Which fields are locked from spreadsheet overrides
 // Used by the Smart Import v2 flow to show the user, before they commit, what
 // will and will NOT be touched on linked rows.
-router.get("/api/smart-import/:runId/qb-protections", requireAuth, async (req: Request, res: Response) => {
+router.get("/api/smart-import/:runId/qb-protections", requireAuth, requirePermission("smart_import", "view"), async (req: Request, res: Response) => {
   const runId = parseIntParam(req.params.runId);
   if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
 
@@ -1039,7 +1039,7 @@ router.get("/api/smart-import/:runId/qb-protections", requireAuth, async (req: R
 //
 // Net change per side = newTotal + changedDelta − qbBlockedDelta − missingRemovedTotal.
 // All amounts are in ZAR. NULL/blank amounts are treated as 0.
-router.post("/api/smart-import/:runId/money-impact", requireAuth, validateBody(moneyImpactBodySchema), async (req: Request, res: Response) => {
+router.post("/api/smart-import/:runId/money-impact", requireAuth, requirePermission("smart_import", "view"), validateBody(moneyImpactBodySchema), async (req: Request, res: Response) => {
   const runId = parseIntParam(req.params.runId);
   if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
 
@@ -1241,7 +1241,7 @@ router.post("/api/smart-import/:runId/money-impact", requireAuth, validateBody(m
 // Note: this is intentionally separate from `import_issues` (which is the
 // persisted blocker / acknowledgement table). This is a fresh dry-run on
 // the parsed file so it stays accurate even if persisted issues are stale.
-router.get("/api/smart-import/:runId/integrity-check", requireAuth, async (req: Request, res: Response) => {
+router.get("/api/smart-import/:runId/integrity-check", requireAuth, requirePermission("smart_import", "view"), async (req: Request, res: Response) => {
   const runId = parseIntParam(req.params.runId);
   if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
 

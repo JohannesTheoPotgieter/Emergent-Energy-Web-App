@@ -16,7 +16,7 @@ import {
   Columns, ChevronsUpDown, ChevronsDownUp, Plus, Link, Unlink,
   X, Search, ListPlus, ClipboardList, CalendarIcon, Palette,
   TrendingUp, TrendingDown, DollarSign, BarChart3, Percent,
-  CircleDot, Wallet, CheckCircle2
+  CircleDot, Wallet, CheckCircle2, AlertTriangle
 } from "lucide-react";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
@@ -1259,8 +1259,21 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
             colorClass={!exp.expenseActualTotal && (exp as any).quotedTotal ? "text-muted-foreground/50 italic" : ""}
           />
         );
-      case "poNumber":
-        return <EditableCell rowId={exp.id} field="expensePoNumber" value={exp.expensePoNumber} rowNumber={exp.rowNumber} />;
+      case "poNumber": {
+        const missingPo = !!exp.expenseInvoiceNumber && !exp.expensePoNumber;
+        return (
+          <div className="flex items-center gap-1">
+            <EditableCell rowId={exp.id} field="expensePoNumber" value={exp.expensePoNumber} rowNumber={exp.rowNumber} />
+            {missingPo && (
+              <AlertTriangle
+                className="h-3.5 w-3.5 text-red-500 shrink-0"
+                title="Invoice captured without a PO — PO must exist before invoice is recorded"
+                data-testid={`missing-po-icon-${exp.id}`}
+              />
+            )}
+          </div>
+        );
+      }
       case "invoiceNo":
         return <EditableCell rowId={exp.id} field="expenseInvoiceNumber" value={exp.expenseInvoiceNumber} rowNumber={exp.rowNumber} />;
       case "invoiceDate":
@@ -1716,11 +1729,15 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
                         ))}
                         <TableCell />
                       </TableRow>
-                      {!isCollapsed && group.items.map((exp, rowIdx) => (
+                      {!isCollapsed && group.items.map((exp, rowIdx) => {
+                        const isMissingPo = !!exp.expenseInvoiceNumber && !exp.expensePoNumber;
+                        return (
                         <TableRow key={exp.canonicalLineKey || exp.id}
                           data-row-id={exp.id}
                           data-testid={`row-expense-${exp.id}`}
+                          data-missing-po={isMissingPo || undefined}
                           className={`border-b border-border hover:bg-blue-50/30 transition-colors
+                            ${isMissingPo ? "border-l-2 border-l-red-400" : ""}
                             ${highlightedRowId === exp.id ? "bg-amber-50 ring-2 ring-amber-400 ring-inset" : rowIdx % 2 === 0 ? "bg-card " : "bg-muted/20 /30"}`}>
                           <TableCell className="px-2 py-1.5 text-center text-[10px] text-muted-foreground font-mono sticky left-0 z-10 bg-inherit">
                             {exp.rowNumber}
@@ -1741,10 +1758,22 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
                             );
                           })}
                           <TableCell className="px-2 py-1.5 text-center">
-                            {getRowStatusBadge(exp)}
+                            <div className="flex flex-col items-center gap-0.5">
+                              {getRowStatusBadge(exp)}
+                              {exp.trust?.editedFields && exp.trust.editedFields.length > 0 && (
+                                <span
+                                  className="inline-flex items-center gap-0.5 text-[9px] font-medium text-amber-600 cursor-help"
+                                  title={`${exp.trust.editedFields.length} field(s) overridden: ${exp.trust.editedFields.join(", ")}`}
+                                  data-testid={`override-badge-${exp.id}`}
+                                >
+                                  ✎ {exp.trust.editedFields.length} edited
+                                </span>
+                              )}
+                            </div>
                           </TableCell>
                         </TableRow>
-                      ))}
+                        );
+                      })}
                     </React.Fragment>
                   );
                 })}
