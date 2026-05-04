@@ -437,9 +437,9 @@ export function RevenueTrackerTab({ projectName, projectId }: RevenueTrackerTabP
         lastImportDate={new Date().toISOString()}
         quickBooksLinkStatus="partial"
         metrics={[
-          { label: "Unresolved drift", value: 0, href: `/excel-vs-app/project/${projectId ?? 0}`, tone: "warning", testId: "trust-drift-badge" },
-          { label: "Manual overrides", value: 0, href: "/manual-overrides" },
-          { label: "Missing PO", value: 0, href: `/project-financial-management?projectId=${projectId ?? 0}`, testId: "trust-missing-po-badge" },
+          { label: "Unresolved drift", value: "Unknown / not yet measured", href: `/excel-vs-app/project/${projectId ?? 0}`, tone: "warning", testId: "trust-drift-badge" },
+          { label: "Manual overrides", value: "Unknown / not yet measured", href: "/manual-overrides" },
+          { label: "Missing PO", value: "Unknown / not yet measured", href: `/project-financial-management?projectId=${projectId ?? 0}`, testId: "trust-missing-po-badge" },
         ]}
       />
       <Card className="border-emerald-200/80 bg-gradient-to-r from-emerald-50 to-emerald-50/30 shadow-sm" data-testid="card-revenue-guidance">
