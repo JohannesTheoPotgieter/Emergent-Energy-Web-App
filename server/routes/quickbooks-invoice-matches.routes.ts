@@ -69,6 +69,8 @@ import {
   confirmRevenueLineLink,
   billRawToSummary,
   invoiceRawToSummary,
+  upsertVendorMapping,
+  upsertCustomerMapping,
   QuickBooksLinkConflictError,
 } from "../services/quickbooks-reconciliation-service";
 import {
@@ -291,6 +293,7 @@ function billsToCandidates(
       qbDocNumber: summary.docNumber,
       qbTxnDate: summary.txnDate,
       qbCounterpartyName: summary.vendorName,
+      qbCounterpartyId: summary.vendorId ?? null,
       qbAmountExVat: summary.qbAmountExVat,
       qbBalance: balance,
       qbPaymentStatus: status,
@@ -315,12 +318,14 @@ function invoicesToCandidates(
       else if (balance < total) status = "partial";
       else status = "unpaid";
     }
+    const qbCustomerId = (raw as { CustomerRef?: { value?: string } })?.CustomerRef?.value ?? null;
     return {
       qbEntityId: summary.id,
       qbEntityType: "invoice" as const,
       qbDocNumber: summary.docNumber,
       qbTxnDate: summary.txnDate,
       qbCounterpartyName: summary.customerName,
+      qbCounterpartyId: qbCustomerId,
       qbAmountExVat: summary.totalAmount, // already ex-VAT after invoiceRawToSummary
       qbBalance: balance,
       qbPaymentStatus: status,
@@ -524,7 +529,7 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
                 taxUncertain: false,
                 balance: chosen.qbBalance,
                 vendorName: chosen.qbCounterpartyName,
-                vendorId: null,
+                vendorId: chosen.qbCounterpartyId ?? null,
               },
               matchType: chosen.confidence >= 90 ? "auto_exact" : "auto_fuzzy",
               notes: body.notes ?? null,
@@ -552,16 +557,57 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
             createdLinkId = link.id;
           }
 
-          // Vendor / customer mapping is intentionally NOT upserted here.
-          // The chosen candidate carries the QB doc Id, not the QB
-          // CustomerRef / VendorRef Id — those live on the doc payload and
-          // require the dedicated /customer-mappings or /vendor-mappings
-          // endpoint (which also enforces lock policy). We surface the
-          // request flag in the audit log so finance can follow up via the
-          // dedicated mapping flow.
+          // Vendor / customer mapping — only executed when the caller opts in.
+          // Lock policy is enforced: a locked mapping is not silently overwritten;
+          // a 409 is returned so the caller must use the admin unlock endpoint first.
+          const suggestionRealmId = suggestion.qbRealmId;
+          const mappingResult: {
+            vendorMapped?: boolean;
+            customerMapped?: boolean;
+          } = {};
+
+          if (isCost && body.mapVendor && chosen.qbCounterpartyId) {
+            // Load counterpartyId from the cost line (required by vendor mapping table).
+            const [clRow] = await db
+              .select({ counterpartyId: normalizedCostLines.counterpartyId })
+              .from(normalizedCostLines)
+              .where(eq(normalizedCostLines.id, appEntityId))
+              .limit(1);
+            if (clRow?.counterpartyId) {
+              const vmResult = await upsertVendorMapping({
+                qbVendorId: chosen.qbCounterpartyId,
+                qbVendorName: chosen.qbCounterpartyName ?? null,
+                qbRealmId: suggestionRealmId,
+                counterpartyId: clRow.counterpartyId,
+                notes: body.notes ?? null,
+                createdBy: userId,
+              });
+              if (vmResult.wasLocked) {
+                return res.status(409).json({
+                  error: "mapping_locked",
+                  message: "Vendor mapping is locked — ask an admin to unlock it first.",
+                });
+              }
+              mappingResult.vendorMapped = true;
+            }
+          }
+
+          if (isRevenue && body.mapCustomer && chosen.qbCounterpartyId && projectId) {
+            await upsertCustomerMapping({
+              projectId,
+              qbCustomerId: chosen.qbCounterpartyId,
+              qbCustomerName: chosen.qbCounterpartyName ?? null,
+              qbRealmId: suggestionRealmId,
+              notes: body.notes ?? null,
+              createdBy: userId,
+            });
+            mappingResult.customerMapped = true;
+          }
+
           const mappingRequested = {
             mapVendor: !!body.mapVendor,
             mapCustomer: !!body.mapCustomer,
+            ...mappingResult,
           };
 
           // Mark suggestion accepted
