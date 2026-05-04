@@ -29,6 +29,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
@@ -66,6 +67,7 @@ interface ScoredCandidate {
   qbDocNumber: string | null;
   qbTxnDate: string | null;
   qbCounterpartyName: string | null;
+  qbCounterpartyId: string | null;
   qbAmountExVat: number | null;
   qbBalance: number | null;
   qbPaymentStatus: string | null;
@@ -146,6 +148,7 @@ export function FindQbMatchesPanel({ defaultScope = "cost" }: FindQbMatchesPanel
   const [findResult, setFindResult] = useState<FindResponse | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [manualQbId, setManualQbId] = useState("");
+  const [mapCounterparty, setMapCounterparty] = useState(true);
 
   // -------- Search the app side (reuses existing endpoints) -------------
   const costSearch = useQuery<{ costLines: AppCostSearchRow[] }>({
@@ -217,11 +220,22 @@ export function FindQbMatchesPanel({ defaultScope = "cost" }: FindQbMatchesPanel
   });
 
   const approveMut = useMutation({
-    mutationFn: async (vars: { suggestionId: number; candidateIndex: number; notes?: string }) => {
+    mutationFn: async (vars: {
+      suggestionId: number;
+      candidateIndex: number;
+      notes?: string;
+      mapVendor?: boolean;
+      mapCustomer?: boolean;
+    }) => {
       const res = await apiRequest(
         "POST",
         `/api/quickbooks/invoice-matches/${vars.suggestionId}/approve`,
-        { candidateIndex: vars.candidateIndex, notes: vars.notes },
+        {
+          candidateIndex: vars.candidateIndex,
+          notes: vars.notes,
+          mapVendor: vars.mapVendor,
+          mapCustomer: vars.mapCustomer,
+        },
       );
       return res.json();
     },
@@ -231,6 +245,7 @@ export function FindQbMatchesPanel({ defaultScope = "cost" }: FindQbMatchesPanel
       setFindResult(null);
       setSelectedAppLine(null);
       setAppLineSearch("");
+      setMapCounterparty(true);
     },
     onError: (err: Error) => {
       const isConflict = isApiError(err) && err.status === 409;
@@ -257,6 +272,7 @@ export function FindQbMatchesPanel({ defaultScope = "cost" }: FindQbMatchesPanel
       setRejectReason("");
       setSelectedAppLine(null);
       setAppLineSearch("");
+      setMapCounterparty(true);
     },
     onError: (err: Error) => {
       toast({ title: "Reject failed", description: err.message, variant: "destructive" });
@@ -429,15 +445,20 @@ export function FindQbMatchesPanel({ defaultScope = "cost" }: FindQbMatchesPanel
               setFindResult(null);
               setSelectedAppLine(null);
               setAppLineSearch("");
+              setMapCounterparty(true);
             }}
             onApprove={(candidateIndex) =>
               approveMut.mutate({
                 suggestionId: findResult.suggestionId,
                 candidateIndex,
                 notes: undefined,
+                mapVendor: scope === "cost" ? mapCounterparty : undefined,
+                mapCustomer: scope === "revenue" ? mapCounterparty : undefined,
               })
             }
             approvePending={approveMut.isPending}
+            mapCounterparty={mapCounterparty}
+            setMapCounterparty={setMapCounterparty}
             onReject={() => {
               if (!rejectReason.trim()) {
                 toast({
@@ -485,6 +506,8 @@ function FindResults({
   onClose,
   onApprove,
   approvePending,
+  mapCounterparty,
+  setMapCounterparty,
   onReject,
   rejectReason,
   setRejectReason,
@@ -498,6 +521,8 @@ function FindResults({
   onClose: () => void;
   onApprove: (candidateIndex: number) => void;
   approvePending: boolean;
+  mapCounterparty: boolean;
+  setMapCounterparty: (b: boolean) => void;
   onReject: () => void;
   rejectReason: string;
   setRejectReason: (s: string) => void;
@@ -563,6 +588,21 @@ function FindResults({
               <li key={w}>{WARNING_LABEL[w] ?? w}</li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {result.candidates.some((c) => c.qbCounterpartyId) && (
+        <div className="flex items-center gap-2 text-xs text-slate-700" data-testid="mapping-upsert-toggle">
+          <Checkbox
+            id="map-counterparty"
+            checked={mapCounterparty}
+            onCheckedChange={(v) => setMapCounterparty(!!v)}
+          />
+          <label htmlFor="map-counterparty" className="cursor-pointer select-none">
+            {result.scope === "cost"
+              ? "Update vendor mapping when approving"
+              : "Update customer mapping when approving"}
+          </label>
         </div>
       )}
 
