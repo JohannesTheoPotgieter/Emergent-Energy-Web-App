@@ -187,28 +187,6 @@ export function registerPoRoutes(app: Express) {
   // ===================== LIST POs =====================
   // Supports both project-scoped and board-wide listing
 
-  app.get("/api/po/:projectName", jwtAuth, requireAuth, async (req: Request, res: Response) => {
-    try {
-      const { projectName } = req.params;
-      const rows = await db.execute(sql`
-        SELECT po.id, po.po_ref, po.po_number, po.project_name, po.project_id,
-               po.supplier_name, po.supplier_vat, po.supplier_address, po.supplier_contact,
-               po.line_items, po.subtotal, po.vat_amount, po.total,
-               po.payment_terms, po.delivery_date, po.delivery_address, po.site_contact,
-               po.comments, po.project_manager, po.status, po.created_by,
-               po.created_at, po.updated_at, po.sent_at
-        FROM purchase_orders po
-        WHERE po.project_name = ${projectName}
-        ORDER BY po.created_at DESC
-      `);
-      res.json(rows.rows || []);
-    } catch (err: unknown) {
-      const errMessage = err instanceof Error ? err.message : String(err);
-      console.error("[PO] List error:", errMessage);
-      res.status(500).json({ error: "Failed to list POs" });
-    }
-  });
-
   // ===================== PO APPROVAL BOARD =====================
   // All POs grouped by status with reviewer info
 
@@ -798,6 +776,32 @@ export function registerPoRoutes(app: Express) {
       res.status(500).json({ error: "Failed to load eligible approvers" });
     }
   });
+
+  // Keep static /api/po/* routes above this parameterized route.
+  // Otherwise /api/po/board/all, /api/po/board/my-reviews, and
+  // /api/po/eligible-approvers are shadowed by first-match semantics.
+  app.get("/api/po/:projectName", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { projectName } = req.params;
+      const rows = await db.execute(sql`
+        SELECT po.id, po.po_ref, po.po_number, po.project_name, po.project_id,
+               po.supplier_name, po.supplier_vat, po.supplier_address, po.supplier_contact,
+               po.line_items, po.subtotal, po.vat_amount, po.total,
+               po.payment_terms, po.delivery_date, po.delivery_address, po.site_contact,
+               po.comments, po.project_manager, po.status, po.created_by,
+               po.created_at, po.updated_at, po.sent_at
+        FROM purchase_orders po
+        WHERE po.project_name = ${projectName}
+        ORDER BY po.created_at DESC
+      `);
+      res.json(rows.rows || []);
+    } catch (err: unknown) {
+      const errMessage = err instanceof Error ? err.message : String(err);
+      console.error("[PO] List error:", errMessage);
+      res.status(500).json({ error: "Failed to list POs" });
+    }
+  });
+
 
   // ===================== UPDATE PO STATUS (with state machine) =====================
 
