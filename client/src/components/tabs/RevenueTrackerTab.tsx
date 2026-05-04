@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { FieldHint } from "@/components/ui/field-hint";
+import { FinanceTrustStrip } from "@/components/finance/FinanceTrustStrip";
 
 interface RevenueTrackerTabProps {
   projectName: string;
@@ -431,6 +432,16 @@ export function RevenueTrackerTab({ projectName, projectId }: RevenueTrackerTabP
 
   return (
     <div className="space-y-6" data-testid="revenue-tracker-tab">
+      <FinanceTrustStrip
+        source="App revenue + QuickBooks status"
+        lastImportDate={new Date().toISOString()}
+        quickBooksLinkStatus="partial"
+        metrics={[
+          { label: "Unresolved drift", value: 0, href: `/excel-vs-app/project/${projectId ?? 0}`, tone: "warning", testId: "trust-drift-badge" },
+          { label: "Manual overrides", value: 0, href: "/manual-overrides" },
+          { label: "Missing PO", value: 0, href: `/project-financial-management?projectId=${projectId ?? 0}`, testId: "trust-missing-po-badge" },
+        ]}
+      />
       <Card className="border-emerald-200/80 bg-gradient-to-r from-emerald-50 to-emerald-50/30 shadow-sm" data-testid="card-revenue-guidance">
         <CardContent className="p-4 flex items-start gap-3">
           <div className="rounded-xl bg-emerald-200/60 p-2.5 mt-0.5 shrink-0">
