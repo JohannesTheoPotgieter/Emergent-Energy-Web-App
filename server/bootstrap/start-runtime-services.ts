@@ -109,5 +109,19 @@ export async function startRuntimeServices(options: {
     log(`[Periodic Sync] Failed to start: ${err}`, "Startup:Runtime");
   }
 
+  // QB payment-status refresh: nightly walk of active invoice links.
+  // Skipped in SQLite mode (no real QB connection) and when QB tokens are absent.
+  if (!isSqlite) {
+    try {
+      const { scheduleQbPaymentRefresh } = await import("./qb-payment-refresh-scheduler");
+      scheduleQbPaymentRefresh();
+      started.push("qb-payment-refresh-scheduler");
+    } catch (err) {
+      log(`[QB Payment Refresh Scheduler] Failed to start: ${err}`, "Startup:Runtime");
+    }
+  } else {
+    log("Skipped QB payment-refresh scheduler in SQLite mode.", "Startup:Runtime");
+  }
+
   return started;
 }
