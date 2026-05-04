@@ -18,6 +18,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fetchQueryFn } from "@/lib/queryClient";
 import { Loader2 } from "lucide-react";
 import { FIELD_LABELS, humaniseField } from "@/lib/field-labels";
@@ -150,18 +151,17 @@ function ManualOverridesContent({ projectId }: { projectId: number }) {
               />
             </div>
             <div className="flex flex-col gap-1">
-              <Label htmlFor="section-filter" className="text-xs text-muted-foreground">Section</Label>
-              <select
-                id="section-filter"
-                data-testid="filter-section"
-                value={sectionFilter}
-                onChange={e => setSectionFilter(e.target.value as SectionFilter)}
-                className="h-8 rounded-md border border-input bg-background px-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring"
-              >
-                {SECTION_OPTIONS.map(o => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
+              <Label className="text-xs text-muted-foreground">Section</Label>
+              <Select value={sectionFilter} onValueChange={v => setSectionFilter(v as SectionFilter)}>
+                <SelectTrigger className="h-8 w-40" data-testid="filter-section">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SECTION_OPTIONS.map(o => (
+                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             {hasDateOrSectionFilter && (
               <button
