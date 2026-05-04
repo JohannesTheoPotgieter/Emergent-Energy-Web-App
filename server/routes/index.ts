@@ -3,6 +3,7 @@ import type { Server } from 'http';
 import { registerRoutes as registerLegacyRoutes } from '../routes';
 import { registerTemplateGovernanceRoutes } from './template-governance-routes';
 import { registerQuickBooksRoutes } from '../quickbooks-routes';
+import { registerQuickBooksInvoiceMatchRoutes } from './quickbooks-invoice-matches.routes';
 import { registerFinanceTrustRoutes } from './finance-trust-routes';
 import { registerPdIntakeRoutes } from './pd-intake.routes';
 // D6 Phase 5 — `registerControlledDocumentRoutes` is the legacy
@@ -29,6 +30,7 @@ import { registerExcelVsAppRoutes } from './excel-vs-app.routes';
 export async function registerRoutes(httpServer: Server, app: Express) {
   registerTemplateGovernanceRoutes(app);
   registerQuickBooksRoutes(app);
+  registerQuickBooksInvoiceMatchRoutes(app);
   registerFinanceTrustRoutes(app);
   registerPdIntakeRoutes(app);
   // registerControlledDocumentRoutes(app); — retired in D6 Phase 5.
