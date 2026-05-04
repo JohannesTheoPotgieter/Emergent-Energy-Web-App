@@ -1106,7 +1106,7 @@ export default function ProjectDetailPage() {
   const { data: revenueData = [], dataUpdatedAt: revenueUpdatedAt, isFetching: revenueFetching } = useQuery({
     queryKey: ["program-inflows", projectName],
     queryFn: async () => {
-      const res = await engFetch(`/api/program-inflows?projectName=${encodeURIComponent(projectName)}`);
+      const res = await engFetch(`/api/projects/${encodeURIComponent(projectName)}/revenue-lines`);
       if (!res.ok) return [];
       return res.json();
     },
@@ -1116,7 +1116,7 @@ export default function ProjectDetailPage() {
   const { data: expenseData = [] } = useQuery({
     queryKey: ["program-expenses", projectName],
     queryFn: async () => {
-      const res = await engFetch(`/api/program-expenses/${encodeURIComponent(projectName)}`);
+      const res = await engFetch(`/api/projects/${encodeURIComponent(projectName)}/cost-lines`);
       if (!res.ok) return [];
       return res.json();
     },

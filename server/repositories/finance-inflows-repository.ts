@@ -112,15 +112,19 @@ export class FinanceInflowsRepository {
 
   async getProgramInflowsByProject(projectName: string, opts?: { applyOverrides?: boolean }): Promise<any[]> {
     const { adaptRevenueToInflow } = await import("../lib/data-merge");
-    // Resolve project_id for the requested name so we also catch legacy rows
-    // where project_name is NULL but project_id is set.
+    // Build all name variants so "Mondi" and "Mondi_Tracker" resolve to the
+    // same row set. Strip _Tracker suffix, then include both bare and suffixed
+    // forms to cover rows stored under either spelling.
+    const baseName = projectName.replace(/_Tracker$/i, "").trim();
+    const nameVariants = Array.from(new Set([projectName, baseName, `${baseName}_Tracker`]));
+
+    // Resolve project IDs for all variants to also catch legacy rows where
+    // project_name is NULL but project_id is set.
     const projectMatches = await this.dbInstance.select({ id: projectInfo.id })
       .from(projectInfo)
-      .where(eq(projectInfo.projectName, projectName));
+      .where(inArray(projectInfo.projectName, nameVariants));
     const projectIds = projectMatches.map((p: { id: number }) => p.id);
 
-    // Filter in the DB rather than fetching all rows and filtering in memory.
-    const projectNameFilter = eq(normalizedRevenueLines.projectName, projectName);
     const projectIdFilter = projectIds.length > 0
       ? inArray(normalizedRevenueLines.projectId, projectIds)
       : sql`FALSE`;
@@ -129,7 +133,7 @@ export class FinanceInflowsRepository {
       .where(and(
         isNull(normalizedRevenueLines.effectiveTo),
         isNull(normalizedRevenueLines.deletedAt),
-        or(projectNameFilter, projectIdFilter),
+        or(inArray(normalizedRevenueLines.projectName, nameVariants), projectIdFilter),
       ));
 
     // Optional read-side overlay (workstream B). When enabled, applies
