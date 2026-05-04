@@ -10,6 +10,7 @@ describe('project detail trust and permission UX guards', () => {
     expect(source).toContain('data-testid="project-trust-markers"');
     expect(source).toContain('TrustMarker label="Revenue" source="Excel / App"');
     expect(source).toContain('TrustMarker label="Cashflow" source="QuickBooks / App"');
+    expect(source).toContain('Unable to load');
   });
 
   it('surfaces permission reasons when sections are unavailable', () => {
