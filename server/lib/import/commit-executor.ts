@@ -972,6 +972,55 @@ export async function writePlanIncremental(ctx: PlanWriteContext): Promise<Secti
     }
   }
 
+  // ── parentId pass ──
+  // Walk all active SMART_IMPORT rows for this project ordered by
+  // outlineNumber and set parentId to the nearest row whose outlineNumber
+  // is a strict prefix. This is idempotent: re-importing recomputes from
+  // scratch so hierarchy is always derived from the current outline numbers.
+  if (seenRowHashes.size > 0) {
+    const planRows = await tx
+      .select({ id: workItems.id, outlineNumber: workItems.outlineNumber, parentId: workItems.parentId })
+      .from(workItems)
+      .where(and(
+        eq(workItems.projectId, projectId),
+        eq(workItems.source, "SMART_IMPORT"),
+        isNull(workItems.deletedAt),
+      ));
+
+    // Sort by outline number so parents always appear before children.
+    // Comparison treats each segment as a number so "2.10" sorts after "2.9".
+    function parseOutline(s: string): number[] {
+      return s.split(".").map(n => parseInt(n, 10) || 0);
+    }
+    function cmpOutline(a: string, b: string): number {
+      const pa = parseOutline(a), pb = parseOutline(b);
+      for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+        const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
+        if (diff !== 0) return diff;
+      }
+      return 0;
+    }
+    const sorted = (planRows as Array<{ id: number; outlineNumber: string | null; parentId: number | null }>)
+      .filter(r => r.outlineNumber)
+      .sort((a, b) => cmpOutline(a.outlineNumber!, b.outlineNumber!));
+
+    // Build outline → id map as we walk (parents always come first after sort).
+    const outlineToId = new Map<string, number>();
+    for (const row of sorted) {
+      const outline = row.outlineNumber!;
+      const lastDot = outline.lastIndexOf(".");
+      const parentOutline = lastDot >= 0 ? outline.slice(0, lastDot) : null;
+      const resolvedParentId = parentOutline ? (outlineToId.get(parentOutline) ?? null) : null;
+      // Only write when parentId has changed to avoid unnecessary UPDATE churn.
+      if (resolvedParentId !== row.parentId) {
+        await tx.update(workItems)
+          .set({ parentId: resolvedParentId })
+          .where(eq(workItems.id, row.id));
+      }
+      outlineToId.set(outline, row.id);
+    }
+  }
+
   return { canonicalSource: CANONICAL_SOURCES.PLAN, counts, insertedIds, updatedIds, warnings, mergeConflicts };
 }
 
