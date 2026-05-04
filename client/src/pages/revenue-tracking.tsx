@@ -67,10 +67,7 @@ function fmtDate(v: string | null): string {
   return v.length >= 10 ? v.slice(0, 10) : v;
 }
 
-export default function RevenueTrackingPage() {
-  const params = useParams<{ projectId: string }>();
-  const projectId = Number(params.projectId);
-
+export function RevenueTrackingContent({ projectId }: { projectId: number }) {
   const { data, isLoading, error } = useQuery<RevenueTrackingResponse>({
     queryKey: [`/api/tracker-replica/${projectId}/revenue-tracking`],
     queryFn: fetchQueryFn(`/api/tracker-replica/${projectId}/revenue-tracking`),
@@ -93,12 +90,7 @@ export default function RevenueTrackingPage() {
   ];
 
   return (
-    <div className="p-6 space-y-6" data-testid="revenue-tracking-page">
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Revenue Tracking</h1>
-        <Badge variant="outline">Tracker replica · Project #{projectId}</Badge>
-      </header>
-
+    <div className="space-y-6" data-testid="revenue-tracking-content">
       <Card>
         <CardHeader>
           <CardTitle className="text-base">High-level Project Revenue Tracking</CardTitle>
@@ -166,6 +158,20 @@ export default function RevenueTrackingPage() {
           </Table>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+export default function RevenueTrackingPage() {
+  const params = useParams<{ projectId: string }>();
+  const projectId = Number(params.projectId);
+  return (
+    <div className="p-6 space-y-6" data-testid="revenue-tracking-page">
+      <header className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">Revenue Tracking</h1>
+        <Badge variant="outline">Tracker replica · Project #{projectId}</Badge>
+      </header>
+      <RevenueTrackingContent projectId={projectId} />
     </div>
   );
 }

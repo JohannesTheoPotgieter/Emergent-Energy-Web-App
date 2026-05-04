@@ -98,9 +98,7 @@ const SECTION_LABEL: Record<DiffSection, string> = {
   EXPENDITURE: "Costs / Expenses",
 };
 
-export default function ExcelVsAppProjectPage() {
-  const [, params] = useRoute("/projects/:projectId/excel-vs-app");
-  const projectId = Number(params?.projectId);
+export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [selected, setSelected] = useState<Map<string, SelectedEntry>>(new Map());
@@ -260,7 +258,7 @@ export default function ExcelVsAppProjectPage() {
 
   if (!Number.isFinite(projectId) || projectId <= 0) {
     return (
-      <div className="container mx-auto py-6 max-w-7xl">
+      <div className="py-6">
         <p className="text-sm text-red-600">Invalid project id.</p>
       </div>
     );
@@ -269,14 +267,10 @@ export default function ExcelVsAppProjectPage() {
   const totalSelected = selected.size;
 
   return (
-    <div className="container mx-auto py-6 space-y-6 max-w-7xl">
+    <div className="space-y-6" data-testid="excel-vs-app-content">
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1">
-          <Link href="/program/excel-vs-app" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-2">
-            <ArrowLeft className="h-3.5 w-3.5" /> Back to program view
-          </Link>
-          <h1 className="text-2xl font-semibold tracking-tight">Excel vs App — Project {projectId}</h1>
-          <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
+          <p className="text-sm text-muted-foreground max-w-2xl">
             Live state vs the most recent Tracker workbook. Pick rows where the live value disagrees and either accept the Excel value, keep the app value with a reason, or request approval to push the change back to Excel.
           </p>
         </div>
@@ -376,6 +370,24 @@ export default function ExcelVsAppProjectPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+export default function ExcelVsAppProjectPage() {
+  const [, params] = useRoute("/projects/:projectId/excel-vs-app");
+  const projectId = Number(params?.projectId);
+  return (
+    <div className="container mx-auto py-6 space-y-6 max-w-7xl">
+      <div className="flex items-center justify-between">
+        <div>
+          <Link href="/program/excel-vs-app" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-2">
+            <ArrowLeft className="h-3.5 w-3.5" /> Back to program view
+          </Link>
+          <h1 className="text-2xl font-semibold tracking-tight">Excel vs App — Project {projectId}</h1>
+        </div>
+      </div>
+      <ExcelVsAppProjectContent projectId={projectId} />
     </div>
   );
 }

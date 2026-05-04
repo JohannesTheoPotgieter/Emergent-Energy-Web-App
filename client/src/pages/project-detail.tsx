@@ -55,7 +55,11 @@ import { useProjectsSummary } from "@/hooks/use-projects-summary";
 import { useAuth } from "@/hooks/use-auth";
 import DataSourceDebug from "@/components/DataSourceDebug";
 import { ProjectCommandHeader } from "@/components/ProjectCommandHeader";
-import { TrackerReplicaLinks } from "@/components/tracker-replica-links";
+import { RevenueTrackingContent } from "@/pages/revenue-tracking";
+import { ExpenditureBreakdownContent } from "@/pages/expenditure-breakdown";
+import { ProgramPlanContent } from "@/pages/program-plan";
+import { ManualOverridesContent } from "@/pages/manual-overrides";
+import { ExcelVsAppProjectContent } from "@/pages/excel-vs-app-project";
 import { CriticalControlPanel } from "@/components/stage-lifecycle/CriticalControlPanel";
 import { StageTimeline } from "@/components/stage-lifecycle/StageTimeline";
 import { useProjectStages } from "@/hooks/use-stage-lifecycle";
@@ -865,6 +869,12 @@ const OLD_TAB_TO_DEPT: Record<string, { dept: string; subTab: string }> = {
   "sharepoint": { dept: "pd", subTab: "documents" },
   "local-files": { dept: "pd", subTab: "documents" },
   "collaboration": { dept: "pd", subTab: "documents" },
+  // Excel Import department
+  "revenue-replica": { dept: "excel", subTab: "rev-replica" },
+  "expenditure-replica": { dept: "excel", subTab: "exp-replica" },
+  "program-plan-replica": { dept: "excel", subTab: "plan-replica" },
+  "manual-overrides": { dept: "excel", subTab: "edit-log" },
+  "excel-vs-app": { dept: "excel", subTab: "drift" },
 };
 
 const DEPT_DEFAULT_SUBTAB: Record<string, string> = {
@@ -873,6 +883,7 @@ const DEPT_DEFAULT_SUBTAB: Record<string, string> = {
   quality: "checklist",
   finance: "revenue",
   pd: "changes",
+  excel: "rev-replica",
 };
 
 
@@ -1485,10 +1496,6 @@ export default function ProjectDetailPage() {
       />
       </div>{/* /cockpit-command-header */}
 
-      {/* Tracker Replica nav — links to the per-project 1:1 source-workbook
-          replica screens added in the 2026-04-29 release. Renders nothing
-          when projectInfoId hasn't resolved yet. */}
-      <TrackerReplicaLinks projectId={projectInfoId ?? null} />
 
       {/* Project status / DLP badges — only render when non-default */}
       {(() => {
@@ -1621,6 +1628,7 @@ export default function ProjectDetailPage() {
           { key: "quality", label: "Quality", icon: ShieldCheck, visible: canViewTab.quality || canViewTab.history },
           { key: "finance", label: "Finance", icon: Landmark, visible: canViewTab.finance },
           { key: "pd", label: "Project Development", icon: TrendingUp, visible: true },
+          { key: "excel", label: "Excel Import", icon: FileText, visible: true },
         ].filter(t => t.visible).map((tab) => {
           const Icon = tab.icon;
           const isActive = activeDept === tab.key;
@@ -1894,6 +1902,30 @@ export default function ProjectDetailPage() {
           )}
           {activeSubTab === "documents" && <LocalFolderTab projectName={projectName} />}
           {activeSubTab === "comms" && <ProjectChatTab projectName={projectName} projectInfoId={projectInfoId ?? null} />}
+        </div>
+      )}
+
+      {activeDept === "excel" && (
+        <div className="space-y-3" data-testid="dept-excel-section">
+          <div className="flex items-center gap-1.5 flex-wrap overflow-x-auto scrollbar-hide" data-testid="excel-sub-tabs">
+            {[
+              { key: "rev-replica", label: "Revenue Tracking", icon: DollarSign, visible: true },
+              { key: "exp-replica", label: "Expenditure Breakdown", icon: CreditCard, visible: true },
+              { key: "plan-replica", label: "Program Plan", icon: CalendarDays, visible: true },
+              { key: "edit-log", label: "Manual Edit Log", icon: History, visible: true },
+              { key: "drift", label: "Excel vs App", icon: AlertTriangle, visible: true },
+            ].filter(st => st.visible).map(st => (
+              <Button key={st.key} size="sm" variant={activeSubTab === st.key ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab(st.key)} data-testid={`subtab-${st.key}`}>
+                <st.icon className="h-3 w-3 mr-1" /> {st.label}
+              </Button>
+            ))}
+          </div>
+
+          {activeSubTab === "rev-replica" && projectInfoId && <RevenueTrackingContent projectId={projectInfoId} />}
+          {activeSubTab === "exp-replica" && projectInfoId && <ExpenditureBreakdownContent projectId={projectInfoId} />}
+          {activeSubTab === "plan-replica" && projectInfoId && <ProgramPlanContent projectId={projectInfoId} />}
+          {activeSubTab === "edit-log" && projectInfoId && <ManualOverridesContent projectId={projectInfoId} />}
+          {activeSubTab === "drift" && projectInfoId && <ExcelVsAppProjectContent projectId={projectInfoId} />}
         </div>
       )}
 
