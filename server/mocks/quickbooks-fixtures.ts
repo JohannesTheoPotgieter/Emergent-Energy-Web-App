@@ -117,6 +117,7 @@ export function mockBills(startDate?: string, endDate?: string) {
       Balance: 0,
       VendorRef: { value: "vend-1", name: "Acme Solar Supplies" },
       CurrencyRef: { value: "ZAR" },
+      TxnTaxDetail: { TotalTax: 6375 },
       Line: [
         { Amount: 42500, Description: "Jinko Tiger 545W panels ×12" },
         { Amount: 6375, Description: "VAT 15%" },
@@ -131,6 +132,7 @@ export function mockBills(startDate?: string, endDate?: string) {
       Balance: 147200,
       VendorRef: { value: "vend-2", name: "XYZ Electrical" },
       CurrencyRef: { value: "ZAR" },
+      TxnTaxDetail: { TotalTax: 19200 },
       Line: [
         { Amount: 128000, Description: "Site electrical install — Umhlanga" },
         { Amount: 19200, Description: "VAT 15%" },
@@ -145,10 +147,55 @@ export function mockBills(startDate?: string, endDate?: string) {
       Balance: 345000,
       VendorRef: { value: "vend-3", name: "Atlas Construction" },
       CurrencyRef: { value: "ZAR" },
+      TxnTaxDetail: { TotalTax: 45000 },
       Line: [
         { Amount: 300000, Description: "Civil works — Sandton" },
         { Amount: 45000, Description: "VAT 15%" },
       ],
+    },
+    // Scoring fixture: tier 2 (95) — invoice number exact + amount within R0.01.
+    // App line invoiceNumber="ACME-4711-DUP", amountExVat=42500 → exact hit.
+    {
+      Id: "bill-4",
+      DocNumber: "ACME-4711-DUP",
+      TxnDate: iso(20),
+      DueDate: iso(-10),
+      TotalAmt: 48875,
+      Balance: 0,
+      VendorRef: { value: "vend-1", name: "Acme Solar Supplies" },
+      CurrencyRef: { value: "ZAR" },
+      TxnTaxDetail: { TotalTax: 6375 },
+      Line: [{ Amount: 42500, Description: "Duplicate invoice — for scoring demo" }],
+    },
+    // Scoring fixture: tier 3 (85) + amount_mismatch warning.
+    // Same invoice number as an app line but QB amount differs.
+    {
+      Id: "bill-5",
+      DocNumber: "XYZ-MISMATCH",
+      TxnDate: iso(4),
+      DueDate: iso(-26),
+      TotalAmt: 109250,
+      Balance: 109250,
+      VendorRef: { value: "vend-2", name: "XYZ Electrical" },
+      CurrencyRef: { value: "ZAR" },
+      TxnTaxDetail: { TotalTax: 14250 },
+      Line: [{ Amount: 95000, Description: "Electrical supply — revised quote" }],
+    },
+    // Scoring fixture: qb_payment_inconsistent warning.
+    // QB balance is 0.008 (rounds to 0.01 after toMoney), which is ≤ 0.01
+    // so the route computes status="paid", yet the stored balance is 0.01 > 0.
+    // This simulates a rounding residual after full payment application.
+    {
+      Id: "bill-6",
+      DocNumber: "ATLAS-PAID-RESIDUAL",
+      TxnDate: iso(11),
+      DueDate: iso(-19),
+      TotalAmt: 150000,
+      Balance: 0.008,
+      VendorRef: { value: "vend-3", name: "Atlas Construction" },
+      CurrencyRef: { value: "ZAR" },
+      TxnTaxDetail: { TotalTax: 19565.22 },
+      Line: [{ Amount: 130434.78, Description: "Civil works — Randburg (payment residual demo)" }],
     },
   ];
   const start = startDate ? new Date(startDate).getTime() : -Infinity;
@@ -163,6 +210,11 @@ export function mockBills(startDate?: string, endDate?: string) {
 export function mockBillById(id: string) {
   const { QueryResponse } = mockBills();
   return QueryResponse.Bill.find((b) => b.Id === id) ?? null;
+}
+
+export function mockInvoiceById(id: string) {
+  const { QueryResponse } = mockInvoices();
+  return QueryResponse.Invoice.find((inv) => inv.Id === id) ?? null;
 }
 
 export function mockProfitAndLossReport(_startDate: string, _endDate: string) {

@@ -39,6 +39,8 @@ export interface QbCandidateLike {
   qbDocNumber: string | null;
   qbTxnDate: string | null; // YYYY-MM-DD
   qbCounterpartyName: string | null;
+  /** QB VendorRef.value (cost) or CustomerRef.value (revenue) for mapping upserts. */
+  qbCounterpartyId: string | null;
   /** Ex-VAT amount in app currency. Required for amount comparison. */
   qbAmountExVat: number | null;
   qbBalance: number | null;
@@ -51,6 +53,9 @@ export interface ScoredCandidate {
   qbDocNumber: string | null;
   qbTxnDate: string | null;
   qbCounterpartyName: string | null;
+  /** QB VendorRef.value (cost) or CustomerRef.value (revenue) — used by the
+   *  approve endpoint to upsert a vendor/customer mapping when the caller opts in. */
+  qbCounterpartyId: string | null;
   qbAmountExVat: number | null;
   qbBalance: number | null;
   qbPaymentStatus: string | null;
@@ -225,6 +230,7 @@ export function scoreInvoiceMatch(
     qbDocNumber: qb.qbDocNumber,
     qbTxnDate: qb.qbTxnDate,
     qbCounterpartyName: qb.qbCounterpartyName,
+    qbCounterpartyId: qb.qbCounterpartyId,
     qbAmountExVat: qb.qbAmountExVat,
     qbBalance: qb.qbBalance,
     qbPaymentStatus: qb.qbPaymentStatus,

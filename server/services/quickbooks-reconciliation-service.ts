@@ -25,10 +25,12 @@ import {
   quickbooksCostAllocations,
   quickbooksDocuments,
   quickbooksCustomerMappings,
+  quickbooksVendorMappings,
   quickbooksInvoiceLinks,
   type NormalizedCostLine,
   type NormalizedRevenueLine,
   type QuickBooksCustomerMapping,
+  type QuickBooksVendorMapping,
   type QuickBooksInvoiceLink,
 } from "@shared/schema";
 import { db } from "../db";
@@ -1590,6 +1592,81 @@ export async function softDeleteCustomerMapping(
     .set({ deletedAt: new Date(), updatedAt: new Date() } as any)
     .where(eq(quickbooksCustomerMappings.id, id));
   return row;
+}
+
+export interface UpsertVendorMappingInput {
+  qbVendorId: string;
+  qbVendorName?: string | null;
+  qbRealmId: string;
+  counterpartyId: number;
+  counterpartyName?: string | null;
+  notes?: string | null;
+  createdBy?: number | null;
+}
+
+export interface UpsertVendorMappingResult {
+  mapping: QuickBooksVendorMapping;
+  /** True when an existing unlocked mapping was updated. */
+  updated: boolean;
+  /** True when the existing mapping has lockedAt set — caller must check before calling. */
+  wasLocked: boolean;
+}
+
+/**
+ * Upsert a QB vendor → counterparty mapping.
+ *
+ * Returns `wasLocked=true` without writing if the existing mapping is locked —
+ * the caller is responsible for enforcing the admin-only override gate before
+ * calling this function.
+ */
+export async function upsertVendorMapping(
+  input: UpsertVendorMappingInput,
+): Promise<UpsertVendorMappingResult> {
+  const [existing] = await db
+    .select()
+    .from(quickbooksVendorMappings)
+    .where(
+      and(
+        eq(quickbooksVendorMappings.qbVendorId, input.qbVendorId),
+        eq(quickbooksVendorMappings.qbRealmId, input.qbRealmId),
+        isNull(quickbooksVendorMappings.deletedAt),
+      ),
+    )
+    .limit(1);
+
+  if (existing?.lockedAt) {
+    return { mapping: existing, updated: false, wasLocked: true };
+  }
+
+  if (existing) {
+    const [updated] = await db
+      .update(quickbooksVendorMappings)
+      .set({
+        counterpartyId: input.counterpartyId,
+        counterpartyName: input.counterpartyName ?? null,
+        qbVendorName: input.qbVendorName ?? null,
+        notes: input.notes ?? null,
+        updatedAt: new Date(),
+      })
+      .where(eq(quickbooksVendorMappings.id, existing.id))
+      .returning();
+    return { mapping: updated!, updated: true, wasLocked: false };
+  }
+
+  const [created] = await db
+    .insert(quickbooksVendorMappings)
+    .values({
+      qbVendorId: input.qbVendorId,
+      qbVendorName: input.qbVendorName ?? null,
+      qbRealmId: input.qbRealmId,
+      counterpartyId: input.counterpartyId,
+      counterpartyName: input.counterpartyName ?? null,
+      notes: input.notes ?? null,
+      source: "suggestion",
+      createdBy: input.createdBy ?? null,
+    })
+    .returning();
+  return { mapping: created!, updated: false, wasLocked: false };
 }
 
 // ===================== REVENUE (INVOICES) RECONCILIATION =====================
