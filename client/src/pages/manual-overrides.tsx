@@ -160,12 +160,7 @@ export default function ManualOverridesPage() {
   }
 
   return (
-    <div className="p-6 space-y-6" data-testid="manual-overrides-page">
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Manual Edit Log</h1>
-        <Badge variant="outline">Project #{projectId}</Badge>
-      </header>
-
+    <div className="space-y-6" data-testid="manual-overrides-content">
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Filters</CardTitle>
@@ -260,6 +255,20 @@ export default function ManualOverridesPage() {
           </Table>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+export default function ManualOverridesPage() {
+  const params = useParams<{ projectId: string }>();
+  const projectId = Number(params.projectId);
+  return (
+    <div className="p-6 space-y-6" data-testid="manual-overrides-page">
+      <header className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">Manual Edit Log</h1>
+        <Badge variant="outline">Project #{projectId}</Badge>
+      </header>
+      <ManualOverridesContent projectId={projectId} />
     </div>
   );
 }

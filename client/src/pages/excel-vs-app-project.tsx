@@ -11,9 +11,7 @@
  *   - Request approval   — file a financial_edit_requests row routed
  *                          to the section's resolvers.
  *
- * Per-call cap of 50 entries (decision §6.3 of the diff plan). The
- * server enforces the cap and the per-section RBAC; the client mirrors
- * the cap for UX so the operator sees an early error before submit.
+ * The server enforces per-section RBAC.
  */
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -84,7 +82,6 @@ interface SelectedEntry {
   fieldName: string;
 }
 
-const ENTRY_CAP = 50;
 
 const SECTION_TO_TABLE: Record<DiffSection, SectionTable> = {
   PLAN: "work_items",
@@ -98,9 +95,7 @@ const SECTION_LABEL: Record<DiffSection, string> = {
   EXPENDITURE: "Costs / Expenses",
 };
 
-export default function ExcelVsAppProjectPage() {
-  const [, params] = useRoute("/projects/:projectId/excel-vs-app");
-  const projectId = Number(params?.projectId);
+export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [selected, setSelected] = useState<Map<string, SelectedEntry>>(new Map());
@@ -197,6 +192,17 @@ export default function ExcelVsAppProjectPage() {
     setSelected(next);
   }
 
+  function toggleAllInSection(sectionKey: DiffSection, visibleEntries: Array<{ table: SectionTable; rowId: number; fieldName: string }>) {
+    const next = new Map(selected);
+    const allSelected = visibleEntries.every(e => next.has(entryKey(e.table, e.rowId, e.fieldName)));
+    if (allSelected) {
+      for (const e of visibleEntries) next.delete(entryKey(e.table, e.rowId, e.fieldName));
+    } else {
+      for (const e of visibleEntries) next.set(entryKey(e.table, e.rowId, e.fieldName), e);
+    }
+    setSelected(next);
+  }
+
   function clearSelection() {
     setSelected(new Map());
   }
@@ -213,14 +219,6 @@ export default function ExcelVsAppProjectPage() {
 
   function submitAcceptExcel() {
     if (selected.size === 0) return;
-    if (selected.size > ENTRY_CAP) {
-      toast({
-        title: "Selection too large",
-        description: `Cap is ${ENTRY_CAP} fields per action. You have ${selected.size} selected.`,
-        variant: "destructive",
-      });
-      return;
-    }
     resolveMutation.mutate({
       action: "accept_excel",
       entries: Array.from(selected.values()),
@@ -229,10 +227,6 @@ export default function ExcelVsAppProjectPage() {
 
   function openKeepApp() {
     if (selected.size === 0) return;
-    if (selected.size > ENTRY_CAP) {
-      toast({ title: "Selection too large", description: `Cap is ${ENTRY_CAP} fields.`, variant: "destructive" });
-      return;
-    }
     setReason("");
     setReasonOpen({ action: "keep_app" });
   }
@@ -240,10 +234,6 @@ export default function ExcelVsAppProjectPage() {
   function openRequestApproval(section: DiffSection) {
     const entries = selectedBySection[section];
     if (entries.length === 0) return;
-    if (entries.length > ENTRY_CAP) {
-      toast({ title: "Selection too large", description: `Cap is ${ENTRY_CAP} fields.`, variant: "destructive" });
-      return;
-    }
     setReason("");
     setReasonOpen({ action: "request_approval", section });
   }
@@ -271,7 +261,7 @@ export default function ExcelVsAppProjectPage() {
 
   if (!Number.isFinite(projectId) || projectId <= 0) {
     return (
-      <div className="container mx-auto py-6 max-w-7xl">
+      <div className="py-6">
         <p className="text-sm text-red-600">Invalid project id.</p>
       </div>
     );
@@ -280,14 +270,10 @@ export default function ExcelVsAppProjectPage() {
   const totalSelected = selected.size;
 
   return (
-    <div className="container mx-auto py-6 space-y-6 max-w-7xl">
+    <div className="space-y-6" data-testid="excel-vs-app-content">
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1">
-          <Link href="/program/excel-vs-app" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-2">
-            <ArrowLeft className="h-3.5 w-3.5" /> Back to program view
-          </Link>
-          <h1 className="text-2xl font-semibold tracking-tight">Excel vs App — Project {projectId}</h1>
-          <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
+          <p className="text-sm text-muted-foreground max-w-2xl">
             Live state vs the most recent Tracker workbook. Pick rows where the live value disagrees and either accept the Excel value, keep the app value with a reason, or request approval to push the change back to Excel.
           </p>
         </div>
@@ -327,13 +313,12 @@ export default function ExcelVsAppProjectPage() {
           <CardContent className="p-4 flex items-center justify-between gap-4">
             <div className="text-sm">
               <span className="font-semibold">{totalSelected}</span> field{totalSelected === 1 ? "" : "s"} selected
-              {totalSelected > ENTRY_CAP ? <span className="text-red-600 ml-2">(over cap of {ENTRY_CAP})</span> : null}
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              <Button size="sm" variant="default" onClick={submitAcceptExcel} disabled={resolveMutation.isPending || totalSelected > ENTRY_CAP}>
+              <Button size="sm" variant="default" onClick={submitAcceptExcel} disabled={resolveMutation.isPending}>
                 <RotateCcw className="h-3.5 w-3.5 mr-1" /> Accept Excel ({totalSelected})
               </Button>
-              <Button size="sm" variant="secondary" onClick={openKeepApp} disabled={resolveMutation.isPending || totalSelected > ENTRY_CAP}>
+              <Button size="sm" variant="secondary" onClick={openKeepApp} disabled={resolveMutation.isPending}>
                 <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Keep app + reason
               </Button>
               {(["PLAN", "REVENUE", "EXPENDITURE"] as DiffSection[]).map((sec) =>
@@ -399,6 +384,24 @@ export default function ExcelVsAppProjectPage() {
   );
 }
 
+export default function ExcelVsAppProjectPage() {
+  const [, params] = useRoute("/projects/:projectId/excel-vs-app");
+  const projectId = Number(params?.projectId);
+  return (
+    <div className="container mx-auto py-6 space-y-6 max-w-7xl">
+      <div className="flex items-center justify-between">
+        <div>
+          <Link href="/program/excel-vs-app" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-2">
+            <ArrowLeft className="h-3.5 w-3.5" /> Back to program view
+          </Link>
+          <h1 className="text-2xl font-semibold tracking-tight">Excel vs App — Project {projectId}</h1>
+        </div>
+      </div>
+      <ExcelVsAppProjectContent projectId={projectId} />
+    </div>
+  );
+}
+
 function DriftSectionCard({
   section,
   label,
@@ -439,6 +442,20 @@ function DriftSectionCard({
 
   const driftCount = (summary?.verified ?? 0) + (summary?.unverified ?? 0);
 
+  const table = SECTION_TO_TABLE[section];
+  const allVisibleEntries = useMemo(() => {
+    return visibleRows.flatMap((row) =>
+      row.fields.map((field) => ({ table, rowId: row.id, fieldName: field.fieldName }))
+    );
+  }, [visibleRows, table]);
+
+  const allVisibleSelected = allVisibleEntries.length > 0 && allVisibleEntries.every(
+    (e) => selected.has(`${e.table}::${e.rowId}::${e.fieldName}`)
+  );
+  const someVisibleSelected = !allVisibleSelected && allVisibleEntries.some(
+    (e) => selected.has(`${e.table}::${e.rowId}::${e.fieldName}`)
+  );
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
@@ -475,7 +492,17 @@ function DriftSectionCard({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-left text-muted-foreground">
-                  <th className="py-2 font-medium w-8" />
+                  <th className="py-2 font-medium w-8">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-slate-300"
+                      checked={allVisibleSelected}
+                      ref={(el) => { if (el) el.indeterminate = someVisibleSelected; }}
+                      onChange={() => onToggleAll(allVisibleEntries)}
+                      data-testid={`select-all-${section.toLowerCase()}`}
+                      title="Select all"
+                    />
+                  </th>
                   <th className="py-2 font-medium">Row</th>
                   <th className="py-2 font-medium">Field</th>
                   <th className="py-2 font-medium">Excel value</th>

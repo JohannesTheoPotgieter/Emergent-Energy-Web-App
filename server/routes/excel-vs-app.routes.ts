@@ -17,8 +17,7 @@
  *         { action: "request_approval", section, entries: [...] }
  *
  *     Per-section RBAC enforced server-side via DRIFT_RESOLVER_ROLES
- *     from `shared/excel-vs-app/contract.ts`. Per-call cap of 50 entries
- *     so one request can never wipe more than 50 manual overrides.
+ *     from `shared/excel-vs-app/contract.ts`.
  *
  * RBAC:
  *   - All GET endpoints: `requirePermission("excel_vs_app", "view")`.
@@ -100,8 +99,6 @@ function deriveSection(
   return "MIXED";
 }
 
-const BULK_ENTRY_CAP = 50;
-
 const driftEntrySchema = z.object({
   table: z.enum([
     "normalized_cost_lines",
@@ -114,20 +111,20 @@ const driftEntrySchema = z.object({
 
 const acceptExcelSchema = z.object({
   action: z.literal("accept_excel"),
-  entries: z.array(driftEntrySchema).min(1).max(BULK_ENTRY_CAP),
+  entries: z.array(driftEntrySchema).min(1),
 });
 
 const keepAppSchema = z.object({
   action: z.literal("keep_app"),
   reason: z.string().min(3).max(500),
-  entries: z.array(driftEntrySchema).min(1).max(BULK_ENTRY_CAP),
+  entries: z.array(driftEntrySchema).min(1),
 });
 
 const requestApprovalSchema = z.object({
   action: z.literal("request_approval"),
   section: z.enum(["PLAN", "REVENUE", "EXPENDITURE"]),
   reason: z.string().min(3).max(500),
-  entries: z.array(driftEntrySchema).min(1).max(BULK_ENTRY_CAP),
+  entries: z.array(driftEntrySchema).min(1),
 });
 
 const resolveSchema = z.discriminatedUnion("action", [
@@ -251,7 +248,11 @@ export function registerExcelVsAppRoutes(app: Express): void {
             for (const e of body.entries) {
               const beforeOverride = await readManualOverrideValue(e.table, e.rowId, e.fieldName, tx);
               const liveValue = await readLiveValue(e.table, e.rowId, e.fieldName, tx);
+              const snapValue = await readSnapshotValue(e.table, e.rowId, e.fieldName, tx);
               await clearManualOverride(e.table, e.rowId, e.fieldName, tx);
+              if (snapValue === null && liveValue !== null) {
+                await patchImportSnapshot(e.table, e.rowId, e.fieldName, liveValue, tx);
+              }
               auditEntries.push({ entry: e, before: beforeOverride, live: liveValue });
               resolved++;
             }
@@ -442,6 +443,55 @@ async function readLiveValue(
  * Read the current `manual_overrides[fieldName].value` for an audit
  * trail entry. Returns null when no override exists.
  */
+async function readSnapshotValue(
+  table: "normalized_cost_lines" | "normalized_revenue_lines" | "work_items",
+  rowId: number,
+  fieldName: string,
+  tx: typeof db = db,
+): Promise<unknown> {
+  const { normalizedCostLines, normalizedRevenueLines } = await import("@shared/schema/finance");
+  const { workItems } = await import("@shared/schema/tasks");
+  let row: { importSnapshot: unknown } | undefined;
+  if (table === "normalized_cost_lines") {
+    [row] = await tx.select({ importSnapshot: normalizedCostLines.importSnapshot }).from(normalizedCostLines).where(eq(normalizedCostLines.id, rowId)).limit(1);
+  } else if (table === "normalized_revenue_lines") {
+    [row] = await tx.select({ importSnapshot: normalizedRevenueLines.importSnapshot }).from(normalizedRevenueLines).where(eq(normalizedRevenueLines.id, rowId)).limit(1);
+  } else {
+    [row] = await tx.select({ importSnapshot: workItems.importSnapshot }).from(workItems).where(eq(workItems.id, rowId)).limit(1);
+  }
+  const snap = row?.importSnapshot;
+  if (!snap || typeof snap !== "object") return null;
+  return (snap as Record<string, unknown>)[fieldName] ?? null;
+}
+
+async function patchImportSnapshot(
+  table: "normalized_cost_lines" | "normalized_revenue_lines" | "work_items",
+  rowId: number,
+  fieldName: string,
+  value: unknown,
+  tx: typeof db = db,
+): Promise<void> {
+  const { normalizedCostLines, normalizedRevenueLines } = await import("@shared/schema/finance");
+  const { workItems } = await import("@shared/schema/tasks");
+  let row: { importSnapshot: unknown } | undefined;
+  if (table === "normalized_cost_lines") {
+    [row] = await tx.select({ importSnapshot: normalizedCostLines.importSnapshot }).from(normalizedCostLines).where(eq(normalizedCostLines.id, rowId)).limit(1);
+  } else if (table === "normalized_revenue_lines") {
+    [row] = await tx.select({ importSnapshot: normalizedRevenueLines.importSnapshot }).from(normalizedRevenueLines).where(eq(normalizedRevenueLines.id, rowId)).limit(1);
+  } else {
+    [row] = await tx.select({ importSnapshot: workItems.importSnapshot }).from(workItems).where(eq(workItems.id, rowId)).limit(1);
+  }
+  const existing = (row?.importSnapshot && typeof row.importSnapshot === "object") ? row.importSnapshot as Record<string, unknown> : {};
+  const next = { ...existing, [fieldName]: value };
+  if (table === "normalized_cost_lines") {
+    await tx.update(normalizedCostLines).set({ importSnapshot: next }).where(eq(normalizedCostLines.id, rowId));
+  } else if (table === "normalized_revenue_lines") {
+    await tx.update(normalizedRevenueLines).set({ importSnapshot: next }).where(eq(normalizedRevenueLines.id, rowId));
+  } else {
+    await tx.update(workItems).set({ importSnapshot: next }).where(eq(workItems.id, rowId));
+  }
+}
+
 async function readManualOverrideValue(
   table: "normalized_cost_lines" | "normalized_revenue_lines" | "work_items",
   rowId: number,
