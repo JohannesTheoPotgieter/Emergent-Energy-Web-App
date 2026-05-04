@@ -16,6 +16,7 @@ import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
+import { QUERY_KEYS } from "@/lib/query-keys";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { FinanceTrustStrip } from "@/components/finance/FinanceTrustStrip";
@@ -31,8 +32,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, AlertTriangle, CheckCircle2, RotateCcw, MailQuestion, RefreshCw } from "lucide-react";
+import { ArrowLeft, AlertTriangle, CheckCircle2, RotateCcw, MailQuestion, RefreshCw, ShieldAlert, Info } from "lucide-react";
 import { styleForCell } from "@/lib/tracker-cell-format";
+import { ReconciliationDrawer } from "@/components/reconciliation/ReconciliationDrawer";
+import type { ReconciliationException } from "@/components/reconciliation/ReconciliationDrawer";
 
 type DiffSection = "PLAN" | "REVENUE" | "EXPENDITURE";
 type SectionTable = "normalized_cost_lines" | "normalized_revenue_lines" | "work_items";
@@ -94,6 +97,75 @@ const SECTION_LABEL: Record<DiffSection, string> = {
   EXPENDITURE: "Costs / Expenses",
 };
 
+// ---------------------------------------------------------------------------
+// Client-side risk classification (mirrors server mismatch-classifier logic)
+// ---------------------------------------------------------------------------
+
+const DATE_FIELDS = new Set(["startDate","endDate","actualStart","actualEnd","expectedPaymentDate","invoiceDate","paidDate","inBankDate"]);
+const AMOUNT_FIELDS = new Set(["amountExVat","vat","milestonePercent","budgetQty","budgetRate","budgetTotal","budgetCos"]);
+const FINANCE_SECTIONS = new Set<DiffSection>(["REVENUE","EXPENDITURE"]);
+
+function classifyFieldRisk(fieldName: string, section: DiffSection): "high" | "medium" | "low" {
+  if (fieldName === "status") return "high";
+  if (AMOUNT_FIELDS.has(fieldName) && FINANCE_SECTIONS.has(section)) return "high";
+  if (DATE_FIELDS.has(fieldName) && FINANCE_SECTIONS.has(section)) return "medium";
+  if (AMOUNT_FIELDS.has(fieldName)) return "medium";
+  if (DATE_FIELDS.has(fieldName)) return "low";
+  return FINANCE_SECTIONS.has(section) ? "medium" : "low";
+}
+
+function buildDrawerException(
+  row: DriftRow,
+  field: DriftRowField,
+  section: DiffSection,
+  projectId: number,
+  projectName: string | null,
+): ReconciliationException {
+  const risk = classifyFieldRisk(field.fieldName, section);
+  const isFinance = FINANCE_SECTIONS.has(section);
+  return {
+    id: `drift-${section}-${row.id}-${field.fieldName}`,
+    projectId,
+    projectName: projectName ?? `Project ${projectId}`,
+    tracker: SECTION_LABEL[section],
+    issueType: field.fieldName === "status" ? "status_mismatch" : AMOUNT_FIELDS.has(field.fieldName) ? "amount_mismatch" : DATE_FIELDS.has(field.fieldName) ? "date_mismatch" : "value_mismatch",
+    displayIssue: `${field.fieldName} differs between tracker and app`,
+    excelValue: field.snapshotValue != null ? String(field.snapshotValue) : null,
+    appValue: field.liveValue != null ? String(field.liveValue) : null,
+    variance: (field.snapshotValue != null && field.liveValue != null)
+      ? `${field.snapshotValue} → ${field.liveValue}`
+      : null,
+    risk,
+    suggestedOwner: isFinance ? "Finance Manager" : "Project Manager",
+    status: field.drift === "verified" ? "reviewed" : "open",
+    lastUpdated: field.overrideEditedAt,
+    drilldownUrl: `/projects/${projectId}/excel-vs-app`,
+    businessImpact: risk === "high"
+      ? "This field affects financial reporting (revenue, COS, or GP). Verify and resolve before the next reporting period."
+      : "Verify this field matches expected values between tracker and app.",
+    allowBulkClose: risk === "low",
+    requireOwnerNote: risk === "high",
+    sourceProof: {
+      app: {
+        table: SECTION_TO_TABLE[section],
+        field: field.fieldName,
+        recordId: row.id,
+        value: field.liveValue != null ? String(field.liveValue) : null,
+      },
+      excel: row.sourceRow != null ? {
+        sheet: SECTION_LABEL[section],
+        value: field.snapshotValue != null ? String(field.snapshotValue) : null,
+      } : null,
+      qb: null,
+    },
+    ruleUsed: field.drift === "verified" && field.overrideReason
+      ? `Verified: ${field.overrideReason}`
+      : "Tracker field values must match app values or be explicitly verified.",
+    selectedTruthSource: "excel_import",
+  };
+}
+
+
 export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -103,9 +175,10 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
   const [reasonOpen, setReasonOpen] = useState<{ action: "keep_app" | "request_approval"; section?: DiffSection } | null>(null);
   const [reason, setReason] = useState("");
   const [resolveNotice, setResolveNotice] = useState<{ count: number; action: string } | null>(null);
+  const [drawerException, setDrawerException] = useState<ReconciliationException | null>(null);
 
   const { data, isLoading, isError, error, dataUpdatedAt, isFetching } = useQuery<DriftDetailResponse>({
-    queryKey: ["excel-vs-app-project", projectId],
+    queryKey: QUERY_KEYS.excelVsAppProject(projectId),
     queryFn: async () => {
       const res = await apiRequest("GET", `/api/excel-vs-app/projects/${projectId}`);
       if (!res.ok) throw new Error(await res.text() || "Failed to load difference detail");
@@ -115,13 +188,13 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
   });
 
   function handleRefresh() {
-    queryClient.invalidateQueries({ queryKey: ["excel-vs-app-project", projectId] });
+    queryClient.invalidateQueries({ queryKey: QUERY_KEYS.excelVsAppProject(projectId) });
     queryClient.invalidateQueries({ queryKey: ["financial-edit-requests"] });
   }
 
   const projectName = data?.projectName ?? null;
   const pendingRequestsQuery = useQuery<any[]>({
-    queryKey: ["financial-edit-requests", projectName, "pending"],
+    queryKey: QUERY_KEYS.financialEditRequests(projectName ?? "", "pending"),
     queryFn: async () => {
       if (!projectName) return [];
       const url = `/api/financial-edit-requests?projectName=${encodeURIComponent(projectName)}&status=pending`;
@@ -153,7 +226,7 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
       setSelected(new Map());
       setReason("");
       setReasonOpen(null);
-      queryClient.invalidateQueries({ queryKey: ["excel-vs-app-project", projectId] });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.excelVsAppProject(projectId) });
       queryClient.invalidateQueries({ queryKey: ["excel-vs-app-program"] });
       queryClient.invalidateQueries({ queryKey: ["financial-edit-requests"] });
     },
@@ -312,7 +385,10 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
           </div>
           {dataUpdatedAt > 0 && (
             <span className="text-[11px] text-muted-foreground">
-              Updated {new Date(dataUpdatedAt).toLocaleTimeString()}
+              Updated{" "}
+              <time dateTime={new Date(dataUpdatedAt).toISOString()}>
+                {new Date(dataUpdatedAt).toLocaleTimeString()}
+              </time>
             </span>
           )}
         </div>
@@ -329,7 +405,7 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
         <Card className="border-emerald-200 bg-emerald-50/50">
           <CardContent className="p-4 space-y-3">
             <div className="flex items-center justify-between gap-4">
-              <div className="text-sm">
+              <div className="text-sm" role="status" aria-live="polite" data-testid="selection-count">
                 <span className="font-semibold">{totalSelected}</span> field{totalSelected === 1 ? "" : "s"} selected
               </div>
               <div className="flex items-center gap-2 flex-wrap">
@@ -364,8 +440,16 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
         </Card>
       )}
 
-      {isLoading && <SkeletonSection />}
-      {isError && <div className="text-sm text-red-600">Failed to load difference detail: {error instanceof Error ? error.message : String(error)}</div>}
+      {isLoading && <div data-testid="loading-state"><SkeletonSection /></div>}
+      {isError && (
+        <div
+          className="text-sm text-red-600"
+          role="alert"
+          data-testid="error-state"
+        >
+          Failed to load difference detail: {error instanceof Error ? error.message : String(error)}
+        </div>
+      )}
       {!isLoading && !isError && data && (
         <div className="space-y-6">
           {sections.filter(s => sectionFilter === "all" || s.key === sectionFilter).map((section) => (
@@ -377,16 +461,25 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
               summary={section.summary}
               filter={filter}
               selected={selected}
+              projectId={projectId}
+              projectName={data.projectName ?? null}
               onToggle={(rowId, fieldName) => toggleEntry(SECTION_TO_TABLE[section.key], rowId, fieldName)}
               onToggleAll={(entries) => toggleAllInSection(entries)}
               onSelectAllUnverified={handleSelectAllUnverified}
+              onOpenDrawer={setDrawerException}
             />
           ))}
         </div>
       )}
 
+      <ReconciliationDrawer
+        open={!!drawerException}
+        onClose={() => setDrawerException(null)}
+        exception={drawerException}
+      />
+
       <Dialog open={reasonOpen !== null} onOpenChange={(open) => !open && setReasonOpen(null)}>
-        <DialogContent>
+        <DialogContent data-testid="reason-dialog">
           <DialogHeader>
             <DialogTitle>
               {reasonOpen?.action === "keep_app" ? "Keep my value" : `Send for approval — ${reasonOpen?.section}`}
@@ -402,10 +495,16 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             rows={4}
+            data-testid="reason-input"
+            aria-label="Reason for keeping app value"
           />
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setReasonOpen(null)}>Cancel</Button>
-            <Button onClick={submitReason} disabled={resolveMutation.isPending || reason.trim().length < 3}>
+            <Button variant="ghost" onClick={() => setReasonOpen(null)} data-testid="btn-cancel-reason">Cancel</Button>
+            <Button
+              onClick={submitReason}
+              disabled={resolveMutation.isPending || reason.trim().length < 3}
+              data-testid="btn-submit-reason"
+            >
               Submit
             </Button>
           </DialogFooter>
@@ -440,9 +539,12 @@ function DriftSectionCard({
   summary,
   filter,
   selected,
+  projectId,
+  projectName,
   onToggle,
   onToggleAll,
   onSelectAllUnverified,
+  onOpenDrawer,
 }: {
   section: DiffSection;
   label: string;
@@ -450,9 +552,12 @@ function DriftSectionCard({
   summary?: { verified: number; unverified: number };
   filter: "all" | "unverified" | "verified";
   selected: Map<string, SelectedEntry>;
+  projectId: number;
+  projectName: string | null;
   onToggle: (rowId: number, fieldName: string) => void;
   onToggleAll: (entries: Array<{ table: SectionTable; rowId: number; fieldName: string }>) => void;
   onSelectAllUnverified: (entries: SelectedEntry[]) => void;
+  onOpenDrawer: (exc: ReconciliationException) => void;
 }) {
   const visibleRows = useMemo(() => {
     return rows
@@ -529,7 +634,7 @@ function DriftSectionCard({
       </CardHeader>
       <CardContent>
         {visibleRows.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground" data-testid={`empty-state-${section.toLowerCase()}`}>
             No changes to show for this filter. Try switching to &lsquo;All differences&rsquo; to see everything.
           </p>
         ) : (
@@ -554,6 +659,8 @@ function DriftSectionCard({
                   <th scope="col" className="py-2 font-medium">Live value</th>
                   <th scope="col" className="py-2 font-medium">Edit</th>
                   <th scope="col" className="py-2 font-medium">Status</th>
+                  <th scope="col" className="py-2 font-medium">Risk</th>
+                  <th scope="col" className="py-2 w-8" />
                 </tr>
               </thead>
               <tbody>
@@ -562,13 +669,19 @@ function DriftSectionCard({
                     const key = `${SECTION_TO_TABLE[section]}::${row.id}::${field.fieldName}`;
                     const isSelected = selected.has(key);
                     return (
-                      <tr key={key} className="border-b last:border-0 hover:bg-muted/40">
+                      <tr
+                        key={key}
+                        className="border-b last:border-0 hover:bg-muted/40"
+                        data-testid={`drift-row-${SECTION_TO_TABLE[section]}-${row.id}-${field.fieldName}`}
+                      >
                         <td className="py-2">
                           <input
                             type="checkbox"
                             className="h-4 w-4 rounded border-slate-300"
                             checked={isSelected}
                             onChange={() => onToggle(row.id, field.fieldName)}
+                            data-testid={`drift-row-checkbox-${SECTION_TO_TABLE[section]}-${row.id}-${field.fieldName}`}
+                            aria-label={`Select ${field.fieldName} for ${row.displayLabel || `Row ${row.id}`}`}
                           />
                         </td>
                         <td className="py-2 align-top">
@@ -587,7 +700,7 @@ function DriftSectionCard({
                             <div>
                               <ValueCell value={field.overrideValue} />
                               {field.overrideReason ? <div className="text-xs text-muted-foreground mt-0.5">{field.overrideReason}</div> : null}
-                              {field.overrideEditedAt ? <div className="text-[11px] text-muted-foreground">{new Date(field.overrideEditedAt).toLocaleString()}</div> : null}
+                              {field.overrideEditedAt ? <div className="text-[11px] text-muted-foreground"><time dateTime={field.overrideEditedAt}>{new Date(field.overrideEditedAt).toLocaleString()}</time></div> : null}
                             </div>
                           ) : (
                             <span className="text-muted-foreground">—</span>
@@ -603,6 +716,37 @@ function DriftSectionCard({
                               <CheckCircle2 className="h-3 w-3" aria-hidden="true" /> Confirmed
                             </Badge>
                           ) : null}
+                        </td>
+                        <td className="py-2 align-top whitespace-nowrap">
+                          {(() => {
+                            const risk = classifyFieldRisk(field.fieldName, section);
+                            if (risk === "high") return (
+                              <Badge variant="destructive" className="text-xs gap-1 py-0">
+                                <ShieldAlert className="h-2.5 w-2.5" />High
+                              </Badge>
+                            );
+                            if (risk === "medium") return (
+                              <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-xs gap-1 py-0">
+                                <AlertTriangle className="h-2.5 w-2.5" />Med
+                              </Badge>
+                            );
+                            return (
+                              <Badge variant="outline" className="text-muted-foreground text-xs gap-1 py-0">
+                                <Info className="h-2.5 w-2.5" />Low
+                              </Badge>
+                            );
+                          })()}
+                        </td>
+                        <td className="py-2 align-top">
+                          <button
+                            type="button"
+                            className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                            aria-label={`View source proof for ${field.fieldName}`}
+                            data-testid={`btn-view-source-proof-${section.toLowerCase()}-${row.id}-${field.fieldName}`}
+                            onClick={() => onOpenDrawer(buildDrawerException(row, field, section, projectId, projectName))}
+                          >
+                            <Info className="h-3.5 w-3.5" aria-hidden="true" />
+                          </button>
                         </td>
                       </tr>
                     );
@@ -654,7 +798,7 @@ function PendingRequestsPanel({
                   <td className="py-1 font-mono">{r.editType}</td>
                   <td className="py-1">{r.editSummary}</td>
                   <td className="py-1">{r.requestedBy?.name ?? "—"}</td>
-                  <td className="py-1">{r.createdAt ? new Date(r.createdAt).toLocaleString() : "—"}</td>
+                  <td className="py-1">{r.createdAt ? <time dateTime={r.createdAt}>{new Date(r.createdAt).toLocaleString()}</time> : "—"}</td>
                 </tr>
               ))}
             </tbody>
