@@ -259,6 +259,28 @@ describe("project development workspace service", () => {
   });
 });
 
+
+  it("requires explicit readiness sections and sign-off markers for V2 handover", () => {
+    const workspace = buildProjectDevelopmentWorkspaceFromSources({
+      project: { id: 1, canonicalProjectId: 1, clientId: 2, phase: "P0_FIRST_ASSESSMENT", executionGateStatus: "NOT_ELIGIBLE", executionEnabled: false },
+      handover: {}, latestUpdate: { text: "x", updatedAt: "2026-04-01T00:00:00.000Z", updatedBy: "PD" },
+      intakeRequestRows: [], intakeTaskRows: [], pdTicketRows: [], pdTicketTaskRows: [], workItemRows: [], workItemDependencyRows: [], raidRows: [], microsoftRows: [], communicationTimelineRows: [], phaseHistoryRows: [],
+    });
+    const blockers = computePdPmSubmitBlockers({
+      project: { pm: "PM", pd: "PD", clientId: 2 },
+      handover: { deliverables: {}, summary: "scope", engineering_status: "Ready", risks: "Some", assumptions: "Some", feasibility_status: "FEASIBLE", feasibility_notes: "ok", dependency_summary: "ok", handover_readiness_status: "READY_FOR_HANDOVER", handover_readiness_notes: "ok", status: "DRAFT", handover_form_data: {} },
+      workspace,
+    });
+    expect(blockers).toEqual(expect.arrayContaining([
+      "Commercial readiness section",
+      "Design readiness section",
+      "Client / site readiness section",
+      "Finance readiness section",
+      "Required documents section",
+      "PD sign-off",
+      "PM acceptance / rejection",
+    ]));
+  });
 describe("getProjectDevelopmentWorkspaceRollup (Task #34)", () => {
   it("returns an array of WorkspaceRollupRow objects with the required shape and is idempotent", async () => {
     const a = await getProjectDevelopmentWorkspaceRollup();
