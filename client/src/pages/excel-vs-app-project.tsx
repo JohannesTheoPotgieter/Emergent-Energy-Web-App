@@ -16,6 +16,7 @@ import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
+import { QUERY_KEYS } from "@/lib/query-keys";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { FinanceTrustStrip } from "@/components/finance/FinanceTrustStrip";
@@ -177,7 +178,7 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
   const [drawerException, setDrawerException] = useState<ReconciliationException | null>(null);
 
   const { data, isLoading, isError, error, dataUpdatedAt, isFetching } = useQuery<DriftDetailResponse>({
-    queryKey: ["excel-vs-app-project", projectId],
+    queryKey: QUERY_KEYS.excelVsAppProject(projectId),
     queryFn: async () => {
       const res = await apiRequest("GET", `/api/excel-vs-app/projects/${projectId}`);
       if (!res.ok) throw new Error(await res.text() || "Failed to load difference detail");
@@ -187,13 +188,13 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
   });
 
   function handleRefresh() {
-    queryClient.invalidateQueries({ queryKey: ["excel-vs-app-project", projectId] });
+    queryClient.invalidateQueries({ queryKey: QUERY_KEYS.excelVsAppProject(projectId) });
     queryClient.invalidateQueries({ queryKey: ["financial-edit-requests"] });
   }
 
   const projectName = data?.projectName ?? null;
   const pendingRequestsQuery = useQuery<any[]>({
-    queryKey: ["financial-edit-requests", projectName, "pending"],
+    queryKey: QUERY_KEYS.financialEditRequests(projectName ?? "", "pending"),
     queryFn: async () => {
       if (!projectName) return [];
       const url = `/api/financial-edit-requests?projectName=${encodeURIComponent(projectName)}&status=pending`;
@@ -225,7 +226,7 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
       setSelected(new Map());
       setReason("");
       setReasonOpen(null);
-      queryClient.invalidateQueries({ queryKey: ["excel-vs-app-project", projectId] });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.excelVsAppProject(projectId) });
       queryClient.invalidateQueries({ queryKey: ["excel-vs-app-program"] });
       queryClient.invalidateQueries({ queryKey: ["financial-edit-requests"] });
     },
@@ -384,7 +385,10 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
           </div>
           {dataUpdatedAt > 0 && (
             <span className="text-[11px] text-muted-foreground">
-              Updated {new Date(dataUpdatedAt).toLocaleTimeString()}
+              Updated{" "}
+              <time dateTime={new Date(dataUpdatedAt).toISOString()}>
+                {new Date(dataUpdatedAt).toLocaleTimeString()}
+              </time>
             </span>
           )}
         </div>
@@ -401,7 +405,7 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
         <Card className="border-emerald-200 bg-emerald-50/50">
           <CardContent className="p-4 space-y-3">
             <div className="flex items-center justify-between gap-4">
-              <div className="text-sm">
+              <div className="text-sm" role="status" aria-live="polite" data-testid="selection-count">
                 <span className="font-semibold">{totalSelected}</span> field{totalSelected === 1 ? "" : "s"} selected
               </div>
               <div className="flex items-center gap-2 flex-wrap">
@@ -436,8 +440,16 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
         </Card>
       )}
 
-      {isLoading && <SkeletonSection />}
-      {isError && <div className="text-sm text-red-600">Failed to load difference detail: {error instanceof Error ? error.message : String(error)}</div>}
+      {isLoading && <div data-testid="loading-state"><SkeletonSection /></div>}
+      {isError && (
+        <div
+          className="text-sm text-red-600"
+          role="alert"
+          data-testid="error-state"
+        >
+          Failed to load difference detail: {error instanceof Error ? error.message : String(error)}
+        </div>
+      )}
       {!isLoading && !isError && data && (
         <div className="space-y-6">
           {sections.filter(s => sectionFilter === "all" || s.key === sectionFilter).map((section) => (
@@ -467,7 +479,7 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
       />
 
       <Dialog open={reasonOpen !== null} onOpenChange={(open) => !open && setReasonOpen(null)}>
-        <DialogContent>
+        <DialogContent data-testid="reason-dialog">
           <DialogHeader>
             <DialogTitle>
               {reasonOpen?.action === "keep_app" ? "Keep my value" : `Send for approval — ${reasonOpen?.section}`}
@@ -483,10 +495,16 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             rows={4}
+            data-testid="reason-input"
+            aria-label="Reason for keeping app value"
           />
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setReasonOpen(null)}>Cancel</Button>
-            <Button onClick={submitReason} disabled={resolveMutation.isPending || reason.trim().length < 3}>
+            <Button variant="ghost" onClick={() => setReasonOpen(null)} data-testid="btn-cancel-reason">Cancel</Button>
+            <Button
+              onClick={submitReason}
+              disabled={resolveMutation.isPending || reason.trim().length < 3}
+              data-testid="btn-submit-reason"
+            >
               Submit
             </Button>
           </DialogFooter>
@@ -616,7 +634,7 @@ function DriftSectionCard({
       </CardHeader>
       <CardContent>
         {visibleRows.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground" data-testid={`empty-state-${section.toLowerCase()}`}>
             No changes to show for this filter. Try switching to &lsquo;All differences&rsquo; to see everything.
           </p>
         ) : (
@@ -651,13 +669,19 @@ function DriftSectionCard({
                     const key = `${SECTION_TO_TABLE[section]}::${row.id}::${field.fieldName}`;
                     const isSelected = selected.has(key);
                     return (
-                      <tr key={key} className="border-b last:border-0 hover:bg-muted/40">
+                      <tr
+                        key={key}
+                        className="border-b last:border-0 hover:bg-muted/40"
+                        data-testid={`drift-row-${SECTION_TO_TABLE[section]}-${row.id}-${field.fieldName}`}
+                      >
                         <td className="py-2">
                           <input
                             type="checkbox"
                             className="h-4 w-4 rounded border-slate-300"
                             checked={isSelected}
                             onChange={() => onToggle(row.id, field.fieldName)}
+                            data-testid={`drift-row-checkbox-${SECTION_TO_TABLE[section]}-${row.id}-${field.fieldName}`}
+                            aria-label={`Select ${field.fieldName} for ${row.displayLabel || `Row ${row.id}`}`}
                           />
                         </td>
                         <td className="py-2 align-top">
@@ -676,7 +700,7 @@ function DriftSectionCard({
                             <div>
                               <ValueCell value={field.overrideValue} />
                               {field.overrideReason ? <div className="text-xs text-muted-foreground mt-0.5">{field.overrideReason}</div> : null}
-                              {field.overrideEditedAt ? <div className="text-[11px] text-muted-foreground">{new Date(field.overrideEditedAt).toLocaleString()}</div> : null}
+                              {field.overrideEditedAt ? <div className="text-[11px] text-muted-foreground"><time dateTime={field.overrideEditedAt}>{new Date(field.overrideEditedAt).toLocaleString()}</time></div> : null}
                             </div>
                           ) : (
                             <span className="text-muted-foreground">—</span>
@@ -717,10 +741,11 @@ function DriftSectionCard({
                           <button
                             type="button"
                             className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                            title="View source proof"
+                            aria-label={`View source proof for ${field.fieldName}`}
+                            data-testid={`btn-view-source-proof-${section.toLowerCase()}-${row.id}-${field.fieldName}`}
                             onClick={() => onOpenDrawer(buildDrawerException(row, field, section, projectId, projectName))}
                           >
-                            <Info className="h-3.5 w-3.5" />
+                            <Info className="h-3.5 w-3.5" aria-hidden="true" />
                           </button>
                         </td>
                       </tr>
@@ -773,7 +798,7 @@ function PendingRequestsPanel({
                   <td className="py-1 font-mono">{r.editType}</td>
                   <td className="py-1">{r.editSummary}</td>
                   <td className="py-1">{r.requestedBy?.name ?? "—"}</td>
-                  <td className="py-1">{r.createdAt ? new Date(r.createdAt).toLocaleString() : "—"}</td>
+                  <td className="py-1">{r.createdAt ? <time dateTime={r.createdAt}>{new Date(r.createdAt).toLocaleString()}</time> : "—"}</td>
                 </tr>
               ))}
             </tbody>
