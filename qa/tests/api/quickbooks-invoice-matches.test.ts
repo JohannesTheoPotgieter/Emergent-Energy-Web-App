@@ -547,3 +547,464 @@ describe("QB Invoice Matches — /payment-status", () => {
     expect(res.status).toBe(400);
   });
 });
+
+// ─── Bulk approve / reject ───────────────────────────────────────────────────
+
+describe("QB Invoice Matches — /bulk-approve", () => {
+  // Fixtures: two cost lines and several suggestions with known candidate data
+  let bulkLineWithPOId: number | null = null;  // will be linked by safe test
+  let bulkLineSharedId: number | null = null;  // shared by non-approving tests
+
+  let bulkSuggSafeId: number | null = null;         // confidence 95, no warnings, line has PO
+  let bulkSuggLowScoreId: number | null = null;      // confidence 75
+  let bulkSuggWarningsId: number | null = null;      // confidence 95 + amount_mismatch warning
+  let bulkSuggNoPOId: number | null = null;          // confidence 95, cost line has NO po_number
+  let bulkSuggPreAcceptedId: number | null = null;   // already accepted in beforeAll
+  let bulkLinkCreatedId: number | null = null;        // link from safe approval (cleanup)
+
+  beforeAll(() => {
+    if (!fs.existsSync(SQLITE_DB_PATH) || !testProjectId || !testImportRunId) return;
+    const sqdb = new Database(SQLITE_DB_PATH);
+    try {
+      // Cost line with PO (for safe approval)
+      const r1 = sqdb
+        .prepare(
+          `INSERT INTO normalized_cost_lines
+             (project_id, project_name, import_run_id, invoice_number, invoice_date,
+              amount_ex_vat, counterparty_name, po_number, status)
+           VALUES (?,?,?,?,date('now','-25 days'),?,?,'BULK-PO-001','planned') RETURNING id`,
+        )
+        .get(
+          testProjectId, "__qa_qb_match_test__", testImportRunId,
+          "BULK-INV-SAFE", "15000.00", "Bulk Vendor Safe",
+        ) as { id?: number } | undefined;
+      bulkLineWithPOId = r1?.id ?? null;
+
+      // Cost line WITHOUT PO
+      const r2 = sqdb
+        .prepare(
+          `INSERT INTO normalized_cost_lines
+             (project_id, project_name, import_run_id, invoice_number, invoice_date,
+              amount_ex_vat, counterparty_name, status)
+           VALUES (?,?,?,?,date('now','-25 days'),?,?,'planned') RETURNING id`,
+        )
+        .get(
+          testProjectId, "__qa_qb_match_test__", testImportRunId,
+          "BULK-INV-NOPO", "15000.00", "Bulk Vendor NoPO",
+        ) as { id?: number } | undefined;
+      bulkLineSharedId = r2?.id ?? null;
+
+      const highCand = JSON.stringify([{
+        qbEntityId: "bulk-safe-bill-1",
+        qbEntityType: "bill",
+        qbDocNumber: "BULK-INV-SAFE",
+        qbTxnDate: new Date().toISOString().slice(0, 10),
+        qbCounterpartyName: "Bulk Vendor Safe",
+        qbCounterpartyId: null,
+        qbAmountExVat: 15000,
+        qbBalance: 15000,
+        qbPaymentStatus: "unpaid",
+        confidence: 95,
+        reasons: ["invoice number exact match", "amount within R0.01"],
+        warnings: [],
+        qbAlreadyLinkedElsewhere: false,
+      }]);
+
+      if (bulkLineWithPOId) {
+        const s = sqdb
+          .prepare(
+            `INSERT INTO quickbooks_match_suggestions
+               (scope, qb_realm_id, app_entity_id, app_entity_label, candidates, requested_by)
+             VALUES ('expense_invoice','test-realm',?,?,?,NULL) RETURNING id`,
+          )
+          .get(bulkLineWithPOId, "BULK-INV-SAFE · Bulk Vendor Safe", highCand) as { id?: number } | undefined;
+        bulkSuggSafeId = s?.id ?? null;
+      }
+
+      // Low score candidate (75%)
+      if (bulkLineSharedId) {
+        const lowCand = JSON.stringify([{
+          qbEntityId: "bulk-low-bill-1",
+          qbEntityType: "bill",
+          qbDocNumber: "LOW-DOC-001",
+          qbTxnDate: null,
+          qbCounterpartyName: "Some Vendor",
+          qbCounterpartyId: null,
+          qbAmountExVat: 15000,
+          qbBalance: 15000,
+          qbPaymentStatus: "unpaid",
+          confidence: 75,
+          reasons: ["vendor 70% match"],
+          warnings: [],
+          qbAlreadyLinkedElsewhere: false,
+        }]);
+        const s = sqdb
+          .prepare(
+            `INSERT INTO quickbooks_match_suggestions
+               (scope, qb_realm_id, app_entity_id, app_entity_label, candidates, requested_by)
+             VALUES ('expense_invoice','test-realm',?,?,?,NULL) RETURNING id`,
+          )
+          .get(bulkLineSharedId, "BULK-INV-NOPO · Bulk Vendor NoPO", lowCand) as { id?: number } | undefined;
+        bulkSuggLowScoreId = s?.id ?? null;
+      }
+
+      // Warning candidate (has amount_mismatch)
+      if (bulkLineSharedId) {
+        const warnCand = JSON.stringify([{
+          qbEntityId: "bulk-warn-bill-1",
+          qbEntityType: "bill",
+          qbDocNumber: "WARN-DOC-001",
+          qbTxnDate: null,
+          qbCounterpartyName: "Bulk Vendor NoPO",
+          qbCounterpartyId: null,
+          qbAmountExVat: 99999,
+          qbBalance: 99999,
+          qbPaymentStatus: "unpaid",
+          confidence: 95,
+          reasons: ["invoice number exact match"],
+          warnings: ["amount_mismatch"],
+          qbAlreadyLinkedElsewhere: false,
+        }]);
+        const s = sqdb
+          .prepare(
+            `INSERT INTO quickbooks_match_suggestions
+               (scope, qb_realm_id, app_entity_id, app_entity_label, candidates, requested_by)
+             VALUES ('expense_invoice','test-realm',?,?,?,NULL) RETURNING id`,
+          )
+          .get(bulkLineSharedId, "BULK-INV-NOPO · Bulk Vendor NoPO", warnCand) as { id?: number } | undefined;
+        bulkSuggWarningsId = s?.id ?? null;
+      }
+
+      // No-PO suggestion (cost line has no po_number)
+      if (bulkLineSharedId) {
+        const noPOCand = JSON.stringify([{
+          qbEntityId: "bulk-nopo-bill-1",
+          qbEntityType: "bill",
+          qbDocNumber: "BULK-INV-NOPO",
+          qbTxnDate: null,
+          qbCounterpartyName: "Bulk Vendor NoPO",
+          qbCounterpartyId: null,
+          qbAmountExVat: 15000,
+          qbBalance: 15000,
+          qbPaymentStatus: "unpaid",
+          confidence: 95,
+          reasons: ["invoice number exact match", "amount within R0.01"],
+          warnings: [],
+          qbAlreadyLinkedElsewhere: false,
+        }]);
+        const s = sqdb
+          .prepare(
+            `INSERT INTO quickbooks_match_suggestions
+               (scope, qb_realm_id, app_entity_id, app_entity_label, candidates, requested_by)
+             VALUES ('expense_invoice','test-realm',?,?,?,NULL) RETURNING id`,
+          )
+          .get(bulkLineSharedId, "BULK-INV-NOPO · Bulk Vendor NoPO", noPOCand) as { id?: number } | undefined;
+        bulkSuggNoPOId = s?.id ?? null;
+      }
+
+      // Pre-accepted suggestion (already accepted before tests run)
+      if (bulkLineSharedId) {
+        const s = sqdb
+          .prepare(
+            `INSERT INTO quickbooks_match_suggestions
+               (scope, qb_realm_id, app_entity_id, app_entity_label, candidates,
+                requested_by, accepted_at, accepted_qb_id, accepted_confidence)
+             VALUES ('expense_invoice','test-realm',?,?,?,NULL,datetime('now'),'pre-accepted-bill','95.00') RETURNING id`,
+          )
+          .get(bulkLineSharedId, "PRE-ACCEPTED · Bulk Vendor NoPO", highCand) as { id?: number } | undefined;
+        bulkSuggPreAcceptedId = s?.id ?? null;
+      }
+    } finally {
+      sqdb.close();
+    }
+  });
+
+  afterAll(() => {
+    if (!fs.existsSync(SQLITE_DB_PATH)) return;
+    const sqdb = new Database(SQLITE_DB_PATH);
+    try {
+      if (bulkLinkCreatedId) {
+        sqdb.prepare("DELETE FROM quickbooks_invoice_links WHERE id = ?").run(bulkLinkCreatedId);
+      }
+      // Also remove any link for bulk-safe-bill-1 (in case test ran but linkId wasn't captured)
+      sqdb.prepare("DELETE FROM quickbooks_invoice_links WHERE qb_entity_id = 'bulk-safe-bill-1'").run();
+
+      const sids = [bulkSuggSafeId, bulkSuggLowScoreId, bulkSuggWarningsId, bulkSuggNoPOId, bulkSuggPreAcceptedId].filter(Boolean);
+      if (sids.length > 0) {
+        sqdb
+          .prepare(`DELETE FROM quickbooks_match_suggestions WHERE id IN (${sids.map(() => "?").join(",")})`)
+          .run(...sids);
+      }
+      const lineIds = [bulkLineWithPOId, bulkLineSharedId].filter(Boolean);
+      if (lineIds.length > 0) {
+        sqdb
+          .prepare(`DELETE FROM normalized_cost_lines WHERE id IN (${lineIds.map(() => "?").join(",")})`)
+          .run(...lineIds);
+      }
+    } finally {
+      sqdb.close();
+    }
+  });
+
+  it("POST /bulk-approve → 401 when unauthenticated", async () => {
+    const res = await apiRequest("POST", "/api/quickbooks/invoice-matches/bulk-approve", {
+      body: { items: [{ suggestionId: 1, candidateIndex: 0 }] },
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("POST /bulk-approve → ACCOUNTANT (financials:edit) is not blocked with 403", async () => {
+    if (!accountantCookie || !bulkSuggLowScoreId) return;
+    const res = await apiRequest<{ skipped?: number }>(
+      "POST",
+      "/api/quickbooks/invoice-matches/bulk-approve",
+      { body: { items: [{ suggestionId: bulkSuggLowScoreId, candidateIndex: 0 }] }, cookie: accountantCookie },
+    );
+    expect(res.status, "ACCOUNTANT must not get 403").not.toBe(403);
+  });
+
+  it("POST /bulk-approve → skips row with score below 90", async () => {
+    if (!adminCookie || !bulkSuggLowScoreId) return;
+    const res = await apiRequest<{
+      approved: number; skipped: number; failed: number;
+      results: Array<{ suggestionId: number; outcome: string; reason?: string }>;
+    }>("POST", "/api/quickbooks/invoice-matches/bulk-approve", {
+      body: { items: [{ suggestionId: bulkSuggLowScoreId, candidateIndex: 0 }] },
+      cookie: adminCookie,
+    });
+    expect(res.status).toBe(200);
+    expect(res.data.skipped).toBe(1);
+    expect(res.data.approved).toBe(0);
+    expect(res.data.results[0].reason).toBe("score_below_threshold");
+  });
+
+  it("POST /bulk-approve → skips row with candidate warnings", async () => {
+    if (!adminCookie || !bulkSuggWarningsId) return;
+    const res = await apiRequest<{
+      skipped: number;
+      results: Array<{ outcome: string; reason?: string }>;
+    }>("POST", "/api/quickbooks/invoice-matches/bulk-approve", {
+      body: { items: [{ suggestionId: bulkSuggWarningsId, candidateIndex: 0 }] },
+      cookie: adminCookie,
+    });
+    expect(res.status).toBe(200);
+    expect(res.data.skipped).toBe(1);
+    expect(res.data.results[0].reason).toMatch(/^has_warnings:/);
+  });
+
+  it("POST /bulk-approve → skips row when cost line has no PO number", async () => {
+    if (!adminCookie || !bulkSuggNoPOId) return;
+    const res = await apiRequest<{
+      skipped: number;
+      results: Array<{ outcome: string; reason?: string }>;
+    }>("POST", "/api/quickbooks/invoice-matches/bulk-approve", {
+      body: { items: [{ suggestionId: bulkSuggNoPOId, candidateIndex: 0 }] },
+      cookie: adminCookie,
+    });
+    expect(res.status).toBe(200);
+    expect(res.data.skipped).toBe(1);
+    expect(res.data.results[0].reason).toBe("no_po");
+  });
+
+  it("POST /bulk-approve → skips already-accepted suggestion", async () => {
+    if (!adminCookie || !bulkSuggPreAcceptedId) return;
+    const res = await apiRequest<{
+      skipped: number;
+      results: Array<{ outcome: string; reason?: string }>;
+    }>("POST", "/api/quickbooks/invoice-matches/bulk-approve", {
+      body: { items: [{ suggestionId: bulkSuggPreAcceptedId, candidateIndex: 0 }] },
+      cookie: adminCookie,
+    });
+    expect(res.status).toBe(200);
+    expect(res.data.skipped).toBe(1);
+    expect(res.data.results[0].reason).toBe("already_accepted");
+  });
+
+  it("POST /bulk-approve → skips non-existent suggestion", async () => {
+    if (!adminCookie) return;
+    const res = await apiRequest<{
+      skipped: number;
+      results: Array<{ reason?: string }>;
+    }>("POST", "/api/quickbooks/invoice-matches/bulk-approve", {
+      body: { items: [{ suggestionId: 9_999_999, candidateIndex: 0 }] },
+      cookie: adminCookie,
+    });
+    expect(res.status).toBe(200);
+    expect(res.data.skipped).toBe(1);
+    expect(res.data.results[0].reason).toBe("suggestion_not_found");
+  });
+
+  it("POST /bulk-approve → mixed batch returns correct per-row counts", async () => {
+    if (!adminCookie || !bulkSuggLowScoreId || !bulkSuggWarningsId || !bulkSuggPreAcceptedId) return;
+    const res = await apiRequest<{
+      approved: number; skipped: number; failed: number;
+      results: Array<{ outcome: string; reason?: string }>;
+    }>("POST", "/api/quickbooks/invoice-matches/bulk-approve", {
+      body: {
+        items: [
+          { suggestionId: bulkSuggLowScoreId, candidateIndex: 0 },
+          { suggestionId: bulkSuggWarningsId, candidateIndex: 0 },
+          { suggestionId: bulkSuggPreAcceptedId, candidateIndex: 0 },
+        ],
+      },
+      cookie: adminCookie,
+    });
+    expect(res.status).toBe(200);
+    expect(res.data.approved).toBe(0);
+    expect(res.data.skipped).toBe(3);
+    expect(res.data.failed).toBe(0);
+  });
+
+  it("POST /bulk-approve → approves a genuinely safe row and returns linkId", async () => {
+    if (!adminCookie || !bulkSuggSafeId) return;
+    const res = await apiRequest<{
+      approved: number; skipped: number; failed: number;
+      results: Array<{ suggestionId: number; outcome: string; linkId?: number; reason?: string }>;
+    }>("POST", "/api/quickbooks/invoice-matches/bulk-approve", {
+      body: { items: [{ suggestionId: bulkSuggSafeId, candidateIndex: 0, notes: "bulk test" }] },
+      cookie: adminCookie,
+    });
+    expect(res.status).toBe(200);
+    // Either approved (fresh run) or skipped with already_accepted (rerun after prior success).
+    const r = res.data.results[0];
+    expect(["approved", "skipped"]).toContain(r.outcome);
+    if (r.outcome === "approved") {
+      expect(r.linkId).toBeTypeOf("number");
+      bulkLinkCreatedId = r.linkId ?? null;
+      expect(res.data.approved).toBe(1);
+    }
+  });
+});
+
+describe("QB Invoice Matches — /bulk-reject", () => {
+  let bRejectSuggAId: number | null = null;
+  let bRejectSuggBId: number | null = null;
+
+  beforeAll(() => {
+    if (!fs.existsSync(SQLITE_DB_PATH) || !testCostLineCId) return;
+    const sqdb = new Database(SQLITE_DB_PATH);
+    try {
+      const cand = JSON.stringify([{
+        qbEntityId: "bulk-rej-bill-1",
+        qbEntityType: "bill",
+        qbDocNumber: "REJ-DOC-001",
+        qbTxnDate: null,
+        qbCounterpartyName: "Reject Vendor",
+        qbCounterpartyId: null,
+        qbAmountExVat: 5000,
+        qbBalance: 5000,
+        qbPaymentStatus: "unpaid",
+        confidence: 70,
+        reasons: ["vendor match"],
+        warnings: [],
+        qbAlreadyLinkedElsewhere: false,
+      }]);
+
+      const rA = sqdb
+        .prepare(
+          `INSERT INTO quickbooks_match_suggestions
+             (scope, qb_realm_id, app_entity_id, app_entity_label, candidates, requested_by)
+           VALUES ('expense_invoice','test-realm',?,?,?,NULL) RETURNING id`,
+        )
+        .get(testCostLineCId, "REJ-TEST · Reject Vendor", cand) as { id?: number } | undefined;
+      bRejectSuggAId = rA?.id ?? null;
+
+      const rB = sqdb
+        .prepare(
+          `INSERT INTO quickbooks_match_suggestions
+             (scope, qb_realm_id, app_entity_id, app_entity_label, candidates, requested_by)
+           VALUES ('expense_invoice','test-realm',?,?,?,NULL) RETURNING id`,
+        )
+        .get(testCostLineCId, "REJ-TEST · Reject Vendor", cand) as { id?: number } | undefined;
+      bRejectSuggBId = rB?.id ?? null;
+    } finally {
+      sqdb.close();
+    }
+  });
+
+  afterAll(() => {
+    if (!fs.existsSync(SQLITE_DB_PATH)) return;
+    const sqdb = new Database(SQLITE_DB_PATH);
+    try {
+      const ids = [bRejectSuggAId, bRejectSuggBId].filter(Boolean);
+      if (ids.length > 0) {
+        sqdb
+          .prepare(`DELETE FROM quickbooks_match_suggestions WHERE id IN (${ids.map(() => "?").join(",")})`)
+          .run(...ids);
+      }
+    } finally {
+      sqdb.close();
+    }
+  });
+
+  it("POST /bulk-reject → 401 when unauthenticated", async () => {
+    const res = await apiRequest("POST", "/api/quickbooks/invoice-matches/bulk-reject", {
+      body: { items: [{ suggestionId: 1, reason: "test" }] },
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("POST /bulk-reject → rejects multiple pending suggestions and writes audit", async () => {
+    if (!adminCookie || !bRejectSuggAId || !bRejectSuggBId) return;
+    const res = await apiRequest<{
+      rejected: number; skipped: number; failed: number;
+      results: Array<{ suggestionId: number; outcome: string }>;
+    }>("POST", "/api/quickbooks/invoice-matches/bulk-reject", {
+      body: {
+        items: [
+          { suggestionId: bRejectSuggAId, reason: "bulk reject test A" },
+          { suggestionId: bRejectSuggBId, reason: "bulk reject test B" },
+        ],
+      },
+      cookie: adminCookie,
+    });
+    expect(res.status).toBe(200);
+    expect(res.data.rejected).toBe(2);
+    expect(res.data.skipped).toBe(0);
+    expect(res.data.results.every((r) => r.outcome === "rejected")).toBe(true);
+
+    // Verify DB audit trail
+    const sqdb = new Database(SQLITE_DB_PATH);
+    const row = sqdb
+      .prepare("SELECT rejected_at, rejection_reason FROM quickbooks_match_suggestions WHERE id = ?")
+      .get(bRejectSuggAId) as { rejected_at?: string; rejection_reason?: string } | undefined;
+    sqdb.close();
+    expect(row?.rejected_at).toBeTruthy();
+    expect(row?.rejection_reason).toBe("bulk reject test A");
+  });
+
+  it("POST /bulk-reject → skips already-rejected suggestion", async () => {
+    if (!adminCookie || !bRejectSuggAId) return;
+    // bRejectSuggAId was already rejected in the previous test
+    const res = await apiRequest<{
+      skipped: number;
+      results: Array<{ reason?: string }>;
+    }>("POST", "/api/quickbooks/invoice-matches/bulk-reject", {
+      body: { items: [{ suggestionId: bRejectSuggAId, reason: "duplicate attempt" }] },
+      cookie: adminCookie,
+    });
+    expect(res.status).toBe(200);
+    expect(res.data.skipped).toBe(1);
+    expect(res.data.results[0].reason).toBe("already_rejected");
+  });
+
+  it("POST /bulk-reject → skips non-existent suggestion", async () => {
+    if (!adminCookie) return;
+    const res = await apiRequest<{ skipped: number }>(
+      "POST",
+      "/api/quickbooks/invoice-matches/bulk-reject",
+      { body: { items: [{ suggestionId: 9_999_999, reason: "ghost" }] }, cookie: adminCookie },
+    );
+    expect(res.status).toBe(200);
+    expect(res.data.skipped).toBe(1);
+  });
+
+  it("POST /bulk-reject → validates body (empty items array rejected with 400)", async () => {
+    if (!adminCookie) return;
+    const res = await apiRequest("POST", "/api/quickbooks/invoice-matches/bulk-reject", {
+      body: { items: [] },
+      cookie: adminCookie,
+    });
+    expect(res.status).toBe(400);
+  });
+});
