@@ -194,6 +194,17 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
     setSelected(next);
   }
 
+  function toggleAllInSection(sectionKey: DiffSection, visibleEntries: Array<{ table: SectionTable; rowId: number; fieldName: string }>) {
+    const next = new Map(selected);
+    const allSelected = visibleEntries.every(e => next.has(entryKey(e.table, e.rowId, e.fieldName)));
+    if (allSelected) {
+      for (const e of visibleEntries) next.delete(entryKey(e.table, e.rowId, e.fieldName));
+    } else {
+      for (const e of visibleEntries) next.set(entryKey(e.table, e.rowId, e.fieldName), e);
+    }
+    setSelected(next);
+  }
+
   function clearSelection() {
     setSelected(new Map());
   }
@@ -339,6 +350,7 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
               filter={filter}
               selected={selected}
               onToggle={(rowId, fieldName) => toggleEntry(SECTION_TO_TABLE[section.key], rowId, fieldName)}
+              onToggleAll={(visibleEntries) => toggleAllInSection(section.key, visibleEntries)}
             />
           ))}
         </div>
@@ -400,6 +412,7 @@ function DriftSectionCard({
   filter,
   selected,
   onToggle,
+  onToggleAll,
 }: {
   section: DiffSection;
   label: string;
@@ -408,6 +421,7 @@ function DriftSectionCard({
   filter: "all" | "unverified" | "verified";
   selected: Map<string, SelectedEntry>;
   onToggle: (rowId: number, fieldName: string) => void;
+  onToggleAll: (visibleEntries: Array<{ table: SectionTable; rowId: number; fieldName: string }>) => void;
 }) {
   const visibleRows = useMemo(() => {
     return rows
@@ -424,6 +438,20 @@ function DriftSectionCard({
   }, [rows, filter]);
 
   const driftCount = (summary?.verified ?? 0) + (summary?.unverified ?? 0);
+
+  const table = SECTION_TO_TABLE[section];
+  const allVisibleEntries = useMemo(() => {
+    return visibleRows.flatMap((row) =>
+      row.fields.map((field) => ({ table, rowId: row.id, fieldName: field.fieldName }))
+    );
+  }, [visibleRows, table]);
+
+  const allVisibleSelected = allVisibleEntries.length > 0 && allVisibleEntries.every(
+    (e) => selected.has(`${e.table}::${e.rowId}::${e.fieldName}`)
+  );
+  const someVisibleSelected = !allVisibleSelected && allVisibleEntries.some(
+    (e) => selected.has(`${e.table}::${e.rowId}::${e.fieldName}`)
+  );
 
   return (
     <Card>
@@ -443,7 +471,17 @@ function DriftSectionCard({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-left text-muted-foreground">
-                  <th className="py-2 font-medium w-8" />
+                  <th className="py-2 font-medium w-8">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-slate-300"
+                      checked={allVisibleSelected}
+                      ref={(el) => { if (el) el.indeterminate = someVisibleSelected; }}
+                      onChange={() => onToggleAll(allVisibleEntries)}
+                      data-testid={`select-all-${section.toLowerCase()}`}
+                      title="Select all"
+                    />
+                  </th>
                   <th className="py-2 font-medium">Row</th>
                   <th className="py-2 font-medium">Field</th>
                   <th className="py-2 font-medium">Excel value</th>
