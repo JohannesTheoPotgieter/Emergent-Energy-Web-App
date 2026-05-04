@@ -5548,7 +5548,7 @@ router.get("/api/program-inflows", requireAuth, async (req, res) => {
 
 // ==================== CANONICAL PROJECT FINANCE LINES ====================
 
-router.get("/api/projects/:projectName/cost-lines", requireAuth, async (req, res) => {
+router.get("/api/projects/:projectName/cost-lines", requireAuth, requirePermission("cashflow", "view"), async (req, res) => {
   try {
     const projectName = paramStr(req.params.projectName);
     const expenses = await getCanonicalProjectCostLinesByName(projectName).then((r) => r.rows);
@@ -5562,7 +5562,7 @@ router.get("/api/projects/:projectName/cost-lines", requireAuth, async (req, res
   }
 });
 
-router.get("/api/projects/:projectName/revenue-lines", requireAuth, async (req, res) => {
+router.get("/api/projects/:projectName/revenue-lines", requireAuth, requirePermission("cashflow", "view"), async (req, res) => {
   try {
     const projectName = paramStr(req.params.projectName);
     const { startDate, endDate } = req.query;
