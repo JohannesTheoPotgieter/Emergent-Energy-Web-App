@@ -32,19 +32,18 @@ export async function getMergedExpensesAndInflows(
  *   1. adminDateOverride (manual override from admin)
  *   2. paymentReceivedDate (actual bank receipt — never overridden)
  *   3. dateOverride from milestone_task_links (manual override)
- *   4. Linked operational/plan task dueDate
+ *   4. Linked work-item/normalized revenue task date fields
  *   5. Canonical computed forecast date (computedForecastReceiptDate)
  *   6. Legacy fallback planned date (plannedPaymentDate)
  *
- * NOTE: plannedPaymentDate is retained only as a hybrid compatibility fallback
- * while older imports are normalized. Do not remove without migration proof that
- * computedForecastReceiptDate is backfilled for all active revenue lines.
+ * NOTE: plannedPaymentDate is retained as an explicit compatibility fallback while
+ * computedForecastReceiptDate backfills finish across active revenue lines.
  */
 export function resolveInflowEffectiveDates(
   inflows: any[],
   taskLinks: any[],
-  operationalTasks: any[],
-  planTasks: any[]
+  _operationalTasks: any[],
+  _planTasks: any[]
 ): any[] {
   const normalizeProjectName = (value: unknown): string => String(value || "").trim().toLowerCase();
 
@@ -67,16 +66,6 @@ export function resolveInflowEffectiveDates(
       existing.push(link);
       linksByRowNumber.set(rowNumber, existing);
     }
-  }
-
-  const opTaskMap = new Map<number, any>();
-  for (const t of operationalTasks) {
-    opTaskMap.set(t.id, t);
-  }
-
-  const planTaskMap = new Map<number, any>();
-  for (const t of planTasks) {
-    planTaskMap.set(t.id, t);
   }
 
   return inflows.map(inf => {
@@ -104,18 +93,21 @@ export function resolveInflowEffectiveDates(
         return { ...inf, effectiveDate: link.dateOverride };
       }
 
-      const taskId = link.taskId;
-      if (taskId > 0) {
-        const opTask = opTaskMap.get(taskId);
-        if (opTask?.dueDate && /^\d{4}-\d{2}-\d{2}/.test(opTask.dueDate)) {
-          return { ...inf, effectiveDate: opTask.dueDate };
-        }
-      } else if (taskId < 0) {
-        const planTask = planTaskMap.get(Math.abs(taskId));
-        const dueDate = (planTask as any)?.actualEnd || (planTask as any)?.baselineEnd || null;
-        if (dueDate && /^\d{4}-\d{2}-\d{2}/.test(dueDate)) {
-          return { ...inf, effectiveDate: dueDate };
-        }
+      // Canonical linked-task fallback:
+      // resolve from inflow/link payload fields only (no legacy task-table reads).
+      const linkedTaskDate =
+        inf.linkedWorkItemDueDate ||
+        inf.linkedTaskDueDate ||
+        inf.linkedTaskActualEnd ||
+        inf.linkedTaskBaselineEnd ||
+        link.linkedWorkItemDueDate ||
+        link.linkedTaskDueDate ||
+        link.linkedTaskActualEnd ||
+        link.linkedTaskBaselineEnd ||
+        null;
+
+      if (linkedTaskDate && /^\d{4}-\d{2}-\d{2}/.test(linkedTaskDate)) {
+        return { ...inf, effectiveDate: linkedTaskDate };
       }
     }
 
