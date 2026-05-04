@@ -34,6 +34,7 @@ function qb(partial: Partial<QbCandidateLike>): QbCandidateLike {
     qbDocNumber: null,
     qbTxnDate: null,
     qbCounterpartyName: null,
+    qbCounterpartyId: null,
     qbAmountExVat: null,
     qbBalance: null,
     qbPaymentStatus: null,

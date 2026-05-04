@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { fetchQueryFn } from "@/lib/queryClient";
 import { styleForCell } from "@/lib/tracker-cell-format";
+import { humaniseField } from "@/lib/field-labels";
 import { Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface ProgramPlanResponse {
@@ -55,6 +56,7 @@ interface ProgramPlanResponse {
     resource1: string | null;
     resource2: string | null;
     cellFormat: unknown;
+    manualOverrides?: Record<string, unknown> | null;
   }>;
 }
 
@@ -156,7 +158,22 @@ export function ProgramPlanContent({ projectId }: { projectId: number }) {
                 return (
                   <TableRow key={t.id}>
                     <TableCell className="font-mono" style={{ paddingLeft: `${0.5 + indent * 1}rem`, ...styleForCell(t.cellFormat, "wbsCode") }}>{t.wbsCode ?? t.outlineNumber ?? "—"}</TableCell>
-                    <TableCell style={styleForCell(t.cellFormat, "title")}>{t.title}</TableCell>
+                    <TableCell style={styleForCell(t.cellFormat, "title")}>
+                      <div className="flex flex-col gap-0.5">
+                        <span>{t.title}</span>
+                        {Object.keys(t.manualOverrides ?? {}).length > 0 && (
+                          <span
+                            className="inline-flex items-center gap-0.5 text-[9px] font-medium text-amber-600 cursor-help"
+                            title={`${Object.keys(t.manualOverrides!).length} field edit(s): ${Object.keys(t.manualOverrides!).map(humaniseField).join(", ")}`}
+                            data-testid={`override-badge-${t.id}`}
+                          >
+                            <span aria-hidden="true">✎</span>
+                            <span className="sr-only">Edited:</span>
+                            {" "}{Object.keys(t.manualOverrides!).length} field edits
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell style={styleForCell(t.cellFormat, "ownerName")}>{t.ownerName ?? "—"}</TableCell>
                     <TableCell style={styleForCell(t.cellFormat, "trackerComments")} className="max-w-xs truncate">{t.trackerComments ?? "—"}</TableCell>
                     <TableCell style={styleForCell(t.cellFormat, "lead")}>{t.lead ?? "—"}</TableCell>

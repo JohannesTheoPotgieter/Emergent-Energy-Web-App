@@ -27,6 +27,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { fetchQueryFn } from "@/lib/queryClient";
 import { styleForCell } from "@/lib/tracker-cell-format";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Loader2, AlertTriangle } from "lucide-react";
 
 interface ExpenditureBreakdownResponse {
@@ -193,12 +194,26 @@ export function ExpenditureBreakdownContent({ projectId }: { projectId: number }
                           <td className="border p-1 text-right" style={styleForCell(c.cellFormat, "actualRate")}>{num(c.actualRate)}</td>
                           <td className="border p-1 text-right" style={styleForCell(c.cellFormat, "amountExVat")}>{money(c.amountExVat)}</td>
                           <td className={`border p-1 ${!!c.invoiceNumber && !c.poNumber ? "bg-red-50" : ""}`} style={styleForCell(c.cellFormat, "poNumber")}>
-                            <span className="inline-flex items-center gap-1">
-                              {c.poNumber ?? "—"}
+                            <div className="flex flex-col gap-0.5">
+                              <span className="inline-flex items-center gap-1">
+                                {c.poNumber ?? "—"}
+                                {!!c.invoiceNumber && !c.poNumber && (
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <span className="inline-flex"><AlertTriangle className="h-3 w-3 text-red-500 shrink-0" aria-hidden="true" /></span>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="top">
+                                        <p className="text-xs">Invoice recorded but no PO number — check with your finance team.</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                )}
+                              </span>
                               {!!c.invoiceNumber && !c.poNumber && (
-                                <span title="Invoice without PO"><AlertTriangle className="h-3 w-3 text-red-500 shrink-0" /></span>
+                                <span className="text-[9px] text-red-600 font-medium leading-none">Missing PO</span>
                               )}
-                            </span>
+                            </div>
                           </td>
                           <td className="border p-1" style={styleForCell(c.cellFormat, "invoiceNumber")}>{c.invoiceNumber ?? "—"}</td>
                           <td className="border p-1" style={styleForCell(c.cellFormat, "invoiceDate")}>{fmtDate(c.invoiceDate)}</td>
@@ -217,12 +232,26 @@ export function ExpenditureBreakdownContent({ projectId }: { projectId: number }
                           <td className="border p-1 text-right" style={styleForCell(batches[0].cellFormat, "rate")}>{num(batches[0].rate)}</td>
                           <td className="border p-1 text-right" style={styleForCell(batches[0].cellFormat, "actualTotal")}>{money(batches[0].actualTotal)}</td>
                           <td className={`border p-1 ${!!batches[0].invoiceNumber && !batches[0].poNumber ? "bg-red-50" : ""}`} style={styleForCell(batches[0].cellFormat, "poNumber")}>
-                            <span className="inline-flex items-center gap-1">
-                              {batches[0].poNumber ?? "—"}
+                            <div className="flex flex-col gap-0.5">
+                              <span className="inline-flex items-center gap-1">
+                                {batches[0].poNumber ?? "—"}
+                                {!!batches[0].invoiceNumber && !batches[0].poNumber && (
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <span className="inline-flex"><AlertTriangle className="h-3 w-3 text-red-500 shrink-0" aria-hidden="true" /></span>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="top">
+                                        <p className="text-xs">Invoice recorded but no PO number — check with your finance team.</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                )}
+                              </span>
                               {!!batches[0].invoiceNumber && !batches[0].poNumber && (
-                                <span title="Invoice without PO"><AlertTriangle className="h-3 w-3 text-red-500 shrink-0" /></span>
+                                <span className="text-[9px] text-red-600 font-medium leading-none">Missing PO</span>
                               )}
-                            </span>
+                            </div>
                           </td>
                           <td className="border p-1" style={styleForCell(batches[0].cellFormat, "invoiceNumber")}>{batches[0].invoiceNumber ?? "—"}</td>
                           <td className="border p-1" style={styleForCell(batches[0].cellFormat, "invoiceDate")}>{fmtDate(batches[0].invoiceDate)}</td>
@@ -243,12 +272,26 @@ export function ExpenditureBreakdownContent({ projectId }: { projectId: number }
                         <td className="border p-1 text-right" style={styleForCell(b.cellFormat, "rate")}>{num(b.rate)}</td>
                         <td className="border p-1 text-right" style={styleForCell(b.cellFormat, "actualTotal")}>{money(b.actualTotal)}</td>
                         <td className={`border p-1 ${!!b.invoiceNumber && !b.poNumber ? "bg-red-50" : ""}`} style={styleForCell(b.cellFormat, "poNumber")}>
-                          <span className="inline-flex items-center gap-1">
-                            {b.poNumber ?? "—"}
+                          <div className="flex flex-col gap-0.5">
+                            <span className="inline-flex items-center gap-1">
+                              {b.poNumber ?? "—"}
+                              {!!b.invoiceNumber && !b.poNumber && (
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="inline-flex"><AlertTriangle className="h-3 w-3 text-red-500 shrink-0" aria-hidden="true" /></span>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="top">
+                                      <p className="text-xs">Invoice recorded but no PO number — check with your finance team.</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              )}
+                            </span>
                             {!!b.invoiceNumber && !b.poNumber && (
-                              <span title="Invoice without PO"><AlertTriangle className="h-3 w-3 text-red-500 shrink-0" /></span>
+                              <span className="text-[9px] text-red-600 font-medium leading-none">Missing PO</span>
                             )}
-                          </span>
+                          </div>
                         </td>
                         <td className="border p-1" style={styleForCell(b.cellFormat, "invoiceNumber")}>{b.invoiceNumber ?? "—"}</td>
                         <td className="border p-1" style={styleForCell(b.cellFormat, "invoiceDate")}>{fmtDate(b.invoiceDate)}</td>

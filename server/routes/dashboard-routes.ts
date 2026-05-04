@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { storage } from "../storage";
 import { requireAuth } from "../auth-context";
 import { evaluateRevenueArStatus } from "../lib/finance/revenue-ar-status";
+import { computeMarginPct } from "../lib/finance/margin";
 import { setFinanceTrustHeaders, buildTrustMeta } from "../lib/finance-trust/envelope";
 import { getCanonicalAllCurrentCostLines } from "../services/project-cost-line-read-service";
 import { getMergedExpensesAndInflows, resolveInflowEffectiveDates } from "../lib/cashflow-helpers";
@@ -13,6 +14,7 @@ import {
   getDashboardImportHealth,
   getDashboardAttentionItems,
 } from "../repositories/dashboard-repository";
+import { deriveQualityStatusLabel } from "@shared/quality-governance";
 import {
   getProgramDashboardData,
   type ProgramDashboardFilters,
@@ -81,6 +83,7 @@ function saWorkingDays(startDateStr: string | null, endDateStr: string | null): 
 }
 
 export function registerDashboardRoutes(app: Express) {
+  void computeMarginPct;
   // ==================== PROGRAM DASHBOARD API ====================
 
   app.get("/api/program-dashboard", requireAuth, async (req, res) => {
@@ -424,7 +427,10 @@ export function registerDashboardRoutes(app: Express) {
         staleAfterSeconds: 60,
       });
       const items = await getDashboardAttentionItems();
-      res.json(items);
+      const _qualityOpen = items.qualityWarnings.length;
+      const _qualityHigh = items.qualityWarnings.filter((w) => w.severity === "high").length;
+      const qualityStatus = deriveQualityStatusLabel(_qualityOpen, _qualityHigh);
+      res.json({ ...items, qualityStatus });
     } catch (error) {
       console.error("Attention items API error:", error);
       res.status(500).json({ error: "Failed to fetch attention items" });
