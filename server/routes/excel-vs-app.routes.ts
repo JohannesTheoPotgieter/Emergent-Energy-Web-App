@@ -250,7 +250,7 @@ export function registerExcelVsAppRoutes(app: Express): void {
               const liveValue = await readLiveValue(e.table, e.rowId, e.fieldName, tx);
               const snapValue = await readSnapshotValue(e.table, e.rowId, e.fieldName, tx);
               await clearManualOverride(e.table, e.rowId, e.fieldName, tx);
-              if (snapValue === null && liveValue !== null) {
+              if (snapValue !== liveValue) {
                 await patchImportSnapshot(e.table, e.rowId, e.fieldName, liveValue, tx);
               }
               auditEntries.push({ entry: e, before: beforeOverride, live: liveValue });
