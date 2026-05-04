@@ -89,7 +89,7 @@ const findBodySchema = z
     scope: z.enum(SCOPES),
     costLineId: z.number().int().positive().optional(),
     revenueLineId: z.number().int().positive().optional(),
-    /** When ±N days are passed, only QB docs within that window are pulled. */
+    /** @deprecated No longer used — all QB docs are fetched and date differences are surfaced as warnings. */
     dateWindowDays: z.number().int().min(7).max(365).optional(),
   })
   .refine((b) => (b.scope === "cost" ? !!b.costLineId : !!b.revenueLineId), {
@@ -390,14 +390,15 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
           return sendError(res, notFound(body.scope === "cost" ? "Cost line" : "Revenue line"));
         }
 
-        // 2. Load candidate population (date-windowed if anchor date present)
-        const window = widenDateRange(app.invoiceDate, body.dateWindowDays ?? 90);
+        // 2. Load candidate population — fetch ALL QB docs so invoice-number
+        //    and amount matches aren't silently excluded by a date window.
+        //    Date differences are surfaced as warnings instead of filters.
         let candidates: QbCandidateLike[];
         if (body.scope === "cost") {
-          const billsRaw = await getBills(window.start, window.end);
+          const billsRaw = await getBills();
           candidates = billsToCandidates(billsRaw);
         } else {
-          const invoicesRaw = await getInvoices(window.start, window.end);
+          const invoicesRaw = await getInvoices();
           candidates = invoicesToCandidates(invoicesRaw);
         }
 

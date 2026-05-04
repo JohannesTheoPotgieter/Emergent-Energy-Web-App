@@ -191,6 +191,12 @@ export function scoreInvoiceMatch(
     confidence = 78;
     reasons.push("amount within R0.01", `vendor ${Math.round(sim * 100)}% match`, "same month");
   }
+  // Tier 4b — amount exact only (no name/month required)
+  else if (amountExact) {
+    confidence = 68;
+    reasons.push("amount within R0.01");
+    if (!nameStrong) warnings.push("vendor_not_matched");
+  }
   // Tier 5 — name strong + amount fuzzy + ±60 days
   else if (nameStrong && amountFuzzy && dateClose) {
     confidence = 62;
@@ -200,6 +206,12 @@ export function scoreInvoiceMatch(
       `${dayDiff}d apart`,
     );
   }
+  // Tier 5b — amount fuzzy only (no name required)
+  else if (amountFuzzy) {
+    confidence = 50;
+    reasons.push("amount within 5%");
+    if (!nameStrong) warnings.push("vendor_not_matched");
+  }
   // Tier 6 — any name overlap (lowest)
   else if (sim > 0) {
     confidence = 45;
@@ -207,12 +219,18 @@ export function scoreInvoiceMatch(
     if (!amountFuzzy) warnings.push("amount_mismatch");
     if (sim < NAME_SIM_FLOOR) warnings.push("vendor_mismatch");
   } else {
-    return null; // No usable signal at all.
+    return null;
   }
 
-  // Universal warnings layered on top — these don't change the confidence
-  // score but they surface in the UI so a reviewer notices issues before
-  // approving a high-confidence match.
+  // Date warnings — surface date mismatches so the reviewer is aware
+  if (app.invoiceDate && qb.qbTxnDate && !monthMatch) {
+    warnings.push("date_mismatch");
+    if (dayDiff !== null) {
+      reasons.push(`${dayDiff}d apart`);
+    }
+  }
+
+  // Universal warnings layered on top
   if (
     qb.qbPaymentStatus === "paid" &&
     qb.qbBalance !== null &&

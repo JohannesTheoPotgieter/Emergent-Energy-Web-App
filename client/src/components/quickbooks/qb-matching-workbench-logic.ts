@@ -85,6 +85,8 @@ export const WARNING_LABEL: Record<string, string> = {
   already_linked: "App line already linked to QB",
   amount_mismatch: "Amount mismatch",
   vendor_mismatch: "Vendor/customer mismatch",
+  vendor_not_matched: "Vendor/customer not matched",
+  date_mismatch: "Invoice dates differ",
   qb_already_linked_elsewhere: "QB doc already linked to another row",
   qb_payment_inconsistent: "QB shows paid but balance is non-zero",
   qb_amount_unknown: "QB doc has no amount",
