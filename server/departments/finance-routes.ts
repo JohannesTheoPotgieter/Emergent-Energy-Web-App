@@ -3143,6 +3143,25 @@ router.delete("/api/cos-tracker/tracker-gap/class-override/:id", requireAuth, re
 // READ-ONLY against `normalized_revenue_lines` / `quickbooks_invoice_links`.
 // =====================================================================
 
+/**
+ * Reads revenue lines for a specific project using the SAME data source as the
+ * portfolio routes. This ensures project-level and portfolio-level views produce
+ * identical per-project revenue totals (including revenue_recognition_amount).
+ *
+ * The portfolio route reads all lines via getAllRevenueLinesForCashflow() and
+ * filters by normalized project name. The legacy per-project call
+ * (getProgramInflowsByProject) uses an exact SQL string match which can miss
+ * variant names (e.g. "Mondi_Tracker" vs "Mondi"). Read-only.
+ */
+async function getProjectRevenueLinesConsistent(projectName: string): Promise<any[]> {
+  const allInflows = await storage.getAllRevenueLinesForCashflow();
+  const normalizedTarget = (projectName || "").replace(/_Tracker$/i, "").trim().toLowerCase();
+  return allInflows.filter((r: any) => {
+    const rName = ((r.projectName as string) || "").replace(/_Tracker$/i, "").trim().toLowerCase();
+    return rName === normalizedTarget;
+  });
+}
+
 router.get(
   "/api/revenue-tracker/tracker-gap",
   requireAuth,
