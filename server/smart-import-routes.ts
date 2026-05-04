@@ -2660,11 +2660,14 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           catNameToKeyId.set(ca.categoryKey.toLowerCase(), { key: ca.categoryKey, id: catAllocIdByKey.get(ca.categoryKey)! });
         }
 
-        // Fetch ALL active NCL rows for this project (includes UNCHANGED ones)
+        // Fetch ALL active NCL rows for this project (includes UNCHANGED ones).
+        // categoryAllocationId is included so the condition below can skip
+        // rows that are already fully up-to-date, avoiding unnecessary writes.
         const activeNclRows = await tx.select({
           id: normalizedCostLines.id,
           costCategory: normalizedCostLines.costCategory,
           categoryKey: normalizedCostLines.categoryKey,
+          categoryAllocationId: normalizedCostLines.categoryAllocationId,
         })
           .from(normalizedCostLines)
           .where(and(
@@ -2672,11 +2675,14 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
             and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)),
           ));
 
-        // Update each row that needs category_key or category_allocation_id
+        // Update each row whose categoryKey or categoryAllocationId is wrong.
+        // Because category_revenue_allocations are soft-closed and re-inserted
+        // on every import, the FK always needs refreshing — even for rows that
+        // already have the correct key string.
         for (const row of activeNclRows) {
           const catName = (row.costCategory || "").toLowerCase().trim();
           const match = catNameToKeyId.get(catName);
-          if (match && (row.categoryKey !== match.key)) {
+          if (match && (row.categoryKey !== match.key || row.categoryAllocationId !== match.id)) {
             await tx.update(normalizedCostLines)
               .set({
                 categoryKey: match.key,
@@ -2686,15 +2692,31 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
                 eq(normalizedCostLines.id, row.id),
                 isNull(normalizedCostLines.effectiveTo),
               ));
-          } else if (match && !row.categoryKey) {
-            // Row already has the right categoryKey but is missing the FK
-            await tx.update(normalizedCostLines)
-              .set({ categoryAllocationId: match.id })
-              .where(and(
-                eq(normalizedCostLines.id, row.id),
-                isNull(normalizedCostLines.effectiveTo),
-              ));
           }
+        }
+      }
+
+      // ── S11: noRevenueLinked recon ──
+      // For cost lines inserted in this run that have no category allocation
+      // FK (and no explicit revenueRecognitionAmount), there is no formula
+      // linking them to a revenue milestone, so mark noRevenueLinked = true.
+      // Only runs when the workbook provided category allocations (catAllocIdByKey
+      // non-empty), so imports without a budget pane don't mass-flag every line.
+      // Only touches rows from this run (importRunId = runId) to leave
+      // manually-set flags on older rows undisturbed.
+      if (costResult && costResult.counts.inserted > 0 && catAllocIdByKey.size > 0) {
+        try {
+          await tx.update(normalizedCostLines)
+            .set({ noRevenueLinked: true })
+            .where(and(
+              eq(normalizedCostLines.projectId, projectId),
+              eq(normalizedCostLines.importRunId, runId),
+              isNull(normalizedCostLines.effectiveTo),
+              isNull(normalizedCostLines.categoryAllocationId),
+              isNull(normalizedCostLines.revenueRecognitionAmount),
+            ));
+        } catch (reconErr: unknown) {
+          console.warn("[SmartImport] noRevenueLinked recon failed (non-blocking):", reconErr instanceof Error ? reconErr.message : String(reconErr));
         }
       }
 
