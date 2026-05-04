@@ -18,6 +18,7 @@ import { useRoute, Link } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { FinanceTrustStrip } from "@/components/finance/FinanceTrustStrip";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
@@ -276,6 +277,16 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
 
   return (
     <div className="space-y-6" data-testid="excel-vs-app-content">
+      <FinanceTrustStrip
+        source="Excel snapshot vs app"
+        lastImportDate={dataUpdatedAt ? new Date(dataUpdatedAt).toISOString() : "Unknown"}
+        quickBooksLinkStatus="unknown"
+        metrics={[
+          { label: "Unresolved drift", value: sections.reduce((n, s) => n + (s.summary?.unverified ?? 0), 0), href: `/excel-vs-app/project/${projectId}`, tone: "warning", testId: "trust-drift-badge" },
+          { label: "Manual overrides", value: sections.reduce((n, s) => n + (s.summary?.verified ?? 0), 0), href: "/manual-overrides" },
+          { label: "Missing PO", value: "Unknown / not yet measured", href: `/project-financial-management?projectId=${projectId}`, testId: "trust-missing-po-badge" },
+        ]}
+      />
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1">
           <div className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900 max-w-2xl">
