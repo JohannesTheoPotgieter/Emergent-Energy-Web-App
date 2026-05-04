@@ -45,7 +45,7 @@ const STATUS_DISPLAY: Record<string, string> = {
 };
 
 export default function HandoverControlPage() {
-  const { data, isLoading, error } = useQuery<{ items: any[] }>({
+  const { data, isLoading, error } = useQuery<{ items: any[]; dashboard?: { readyForPmReview: number; rejectedReturnedToPd: number; overdueHandovers: number; missingRequiredEvidence: number; acceptedThisMonth: number } }>({
     queryKey: ["/api/engineering-pm-handover/control"],
   });
 
@@ -53,11 +53,11 @@ export default function HandoverControlPage() {
     const rows = data?.items || [];
     return {
       total: rows.length,
-      pending: rows.filter((r) => r.handover_status === "SUBMITTED_FOR_PM_REVIEW").length,
-      overdue: rows.filter((r) => r.handover_status === "SUBMITTED_FOR_PM_REVIEW" && daysBetween(r.submitted_date || r.updated_at) > 5).length,
-      noTracker: rows.filter((r) => r.handover_status === "ACCEPTED" && !r.tracker_linked).length,
-      complete: rows.filter((r) => r.handover_status === "HANDOVER_COMPLETE").length,
-      stale: rows.filter((r) => daysBetween(r.updated_at) > 7 && r.handover_status !== "HANDOVER_COMPLETE").length,
+      pending: data?.dashboard?.readyForPmReview ?? rows.filter((r) => r.handover_status === "SUBMITTED_FOR_PM_REVIEW").length,
+      overdue: data?.dashboard?.overdueHandovers ?? rows.filter((r) => r.handover_status === "SUBMITTED_FOR_PM_REVIEW" && daysBetween(r.submitted_date || r.updated_at) > 5).length,
+      noTracker: data?.dashboard?.missingRequiredEvidence ?? rows.filter((r) => r.handover_status === "ACCEPTED" && !r.tracker_linked).length,
+      complete: data?.dashboard?.acceptedThisMonth ?? rows.filter((r) => r.handover_status === "HANDOVER_COMPLETE").length,
+      stale: data?.dashboard?.rejectedReturnedToPd ?? rows.filter((r) => daysBetween(r.updated_at) > 7 && r.handover_status !== "HANDOVER_COMPLETE").length,
     };
   }, [data]);
 
@@ -69,9 +69,9 @@ export default function HandoverControlPage() {
         <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Total</p><p className="text-xl font-semibold">{totals.total}</p></CardContent></Card>
         <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Waiting PM</p><p className="text-xl font-semibold">{totals.pending}</p></CardContent></Card>
         <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Overdue review</p><p className="text-xl font-semibold text-red-600">{totals.overdue}</p></CardContent></Card>
-        <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">No tracker</p><p className="text-xl font-semibold text-amber-600">{totals.noTracker}</p></CardContent></Card>
-        <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Complete</p><p className="text-xl font-semibold text-emerald-600">{totals.complete}</p></CardContent></Card>
-        <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Stale (7d+)</p><p className="text-xl font-semibold text-rose-600">{totals.stale}</p></CardContent></Card>
+        <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Missing evidence</p><p className="text-xl font-semibold text-amber-600">{totals.noTracker}</p></CardContent></Card>
+        <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Accepted this month</p><p className="text-xl font-semibold text-emerald-600">{totals.complete}</p></CardContent></Card>
+        <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Rejected / returned</p><p className="text-xl font-semibold text-rose-600">{totals.stale}</p></CardContent></Card>
       </div>
 
       {isLoading ? <p className="text-sm text-muted-foreground">Loading handover control view...</p> : null}
