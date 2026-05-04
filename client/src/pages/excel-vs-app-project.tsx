@@ -1,15 +1,14 @@
 /**
  * Excel-vs-App per-project diff page.
  *
- * Three sections (Plan / Revenue / Expenditure) showing every drifted
- * field. Per-row checkbox selection enables bulk actions:
- *   - Accept Excel       — clear the manual_overrides entry; live
- *                          column was already at Excel-truth, so the
- *                          field reverts automatically.
- *   - Keep app + reason  — record the live value as a manual override
- *                          with the operator-supplied reason.
- *   - Request approval   — file a financial_edit_requests row routed
- *                          to the section's resolvers.
+ * Three sections (Plan / Revenue / Expenditure) showing every field
+ * that differs. Per-row checkbox selection enables bulk actions:
+ *   - Use workbook value  — clear the manual_overrides entry; live
+ *                           column reverts automatically.
+ *   - Keep my value + reason — record the live value as an intentional
+ *                           edit with the operator-supplied reason.
+ *   - Send for approval  — file a financial_edit_requests row routed
+ *                           to the section's resolvers.
  *
  * The server enforces per-section RBAC.
  */
@@ -20,7 +19,6 @@ import { apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -103,12 +101,13 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
   const [sectionFilter, setSectionFilter] = useState<"all" | DiffSection>("all");
   const [reasonOpen, setReasonOpen] = useState<{ action: "keep_app" | "request_approval"; section?: DiffSection } | null>(null);
   const [reason, setReason] = useState("");
+  const [resolveNotice, setResolveNotice] = useState<{ count: number; action: string } | null>(null);
 
   const { data, isLoading, isError, error, dataUpdatedAt, isFetching } = useQuery<DriftDetailResponse>({
     queryKey: ["excel-vs-app-project", projectId],
     queryFn: async () => {
       const res = await apiRequest("GET", `/api/excel-vs-app/projects/${projectId}`);
-      if (!res.ok) throw new Error(await res.text() || "Failed to load drift detail");
+      if (!res.ok) throw new Error(await res.text() || "Failed to load difference detail");
       return res.json();
     },
     enabled: Number.isFinite(projectId) && projectId > 0,
@@ -119,10 +118,6 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
     queryClient.invalidateQueries({ queryKey: ["financial-edit-requests"] });
   }
 
-  // Project-level pending financial_edit_requests queue. Includes
-  // requests filed by this diff page's "Request approval" action AND
-  // any other PM-Site-style cost/revenue overrides awaiting approval
-  // for the project. Single queue for the project's financial edits.
   const projectName = data?.projectName ?? null;
   const pendingRequestsQuery = useQuery<any[]>({
     queryKey: ["financial-edit-requests", projectName, "pending"],
@@ -145,9 +140,14 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
     },
     onSuccess: (json: any) => {
       if (json?.status === "pending_approval") {
-        toast({ title: "Approval requested", description: `Submitted ${json.submitted} entr${json.submitted === 1 ? "y" : "ies"} for approval.` });
+        const count = json.submitted as number;
+        setResolveNotice({ count, action: "sent for approval" });
+        toast({ title: "Approval requested", description: `Submitted ${count} entr${count === 1 ? "y" : "ies"} for approval.` });
       } else {
-        toast({ title: "Drift resolved", description: `${json.resolved} entr${json.resolved === 1 ? "y" : "ies"} ${json.action === "accept_excel" ? "accepted Excel" : "kept app value"}.` });
+        const count = json.resolved as number;
+        const actionLabel = json.action === "accept_excel" ? "set to workbook value" : "kept with reason";
+        setResolveNotice({ count, action: actionLabel });
+        toast({ title: "Changes resolved", description: `${count} entr${count === 1 ? "y" : "ies"} ${actionLabel}.` });
       }
       setSelected(new Map());
       setReason("");
@@ -157,6 +157,7 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
       queryClient.invalidateQueries({ queryKey: ["financial-edit-requests"] });
     },
     onError: (e: unknown) => {
+      setResolveNotice(null);
       toast({ title: "Resolution failed", description: e instanceof Error ? e.message : String(e), variant: "destructive" });
     },
   });
@@ -190,21 +191,24 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
     if (next.has(key)) next.delete(key);
     else next.set(key, { table, rowId, fieldName });
     setSelected(next);
+    setResolveNotice(null);
   }
 
-  function toggleAllInSection(sectionKey: DiffSection, visibleEntries: Array<{ table: SectionTable; rowId: number; fieldName: string }>) {
+  function toggleAllInSection(allVisibleEntries: Array<{ table: SectionTable; rowId: number; fieldName: string }>) {
     const next = new Map(selected);
-    const allSelected = visibleEntries.every(e => next.has(entryKey(e.table, e.rowId, e.fieldName)));
+    const allSelected = allVisibleEntries.every(e => next.has(entryKey(e.table, e.rowId, e.fieldName)));
     if (allSelected) {
-      for (const e of visibleEntries) next.delete(entryKey(e.table, e.rowId, e.fieldName));
+      for (const e of allVisibleEntries) next.delete(entryKey(e.table, e.rowId, e.fieldName));
     } else {
-      for (const e of visibleEntries) next.set(entryKey(e.table, e.rowId, e.fieldName), e);
+      for (const e of allVisibleEntries) next.set(entryKey(e.table, e.rowId, e.fieldName), e);
     }
     setSelected(next);
+    setResolveNotice(null);
   }
 
   function clearSelection() {
     setSelected(new Map());
+    setResolveNotice(null);
   }
 
   function handleSelectAllUnverified(entries: SelectedEntry[]) {
@@ -215,6 +219,7 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
       }
       return next;
     });
+    setResolveNotice(null);
   }
 
   function submitAcceptExcel() {
@@ -273,20 +278,21 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
     <div className="space-y-6" data-testid="excel-vs-app-content">
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1">
-          <p className="text-sm text-muted-foreground max-w-2xl">
-            Live state vs the most recent Tracker workbook. Pick rows where the live value disagrees and either accept the Excel value, keep the app value with a reason, or request approval to push the change back to Excel.
-          </p>
+          <div className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900 max-w-2xl">
+            This page compares live app data against the most recent tracker workbook import.
+            Rows marked <span className="font-semibold">Needs review</span> changed in the app but don't have a recorded reason — pick what to do with each one.
+          </div>
         </div>
         <div className="flex flex-col items-end gap-2">
           <div className="flex items-center gap-2">
-            <FilterTab active={filter === "unverified"} onClick={() => setFilter("unverified")} data-testid="drift-filter-unverified">Unverified only</FilterTab>
-            <FilterTab active={filter === "verified"} onClick={() => setFilter("verified")} data-testid="drift-filter-verified">Verified</FilterTab>
-            <FilterTab active={filter === "all"} onClick={() => setFilter("all")} data-testid="drift-filter-all">All drift</FilterTab>
-            <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isFetching} data-testid="btn-refresh">
-              <RefreshCw className={"h-3.5 w-3.5 mr-1 " + (isFetching ? "animate-spin" : "")} /> Refresh
+            <FilterTab active={filter === "unverified"} onClick={() => setFilter("unverified")} data-testid="drift-filter-unverified">Unexplained only</FilterTab>
+            <FilterTab active={filter === "verified"} onClick={() => setFilter("verified")} data-testid="drift-filter-verified">Confirmed</FilterTab>
+            <FilterTab active={filter === "all"} onClick={() => setFilter("all")} data-testid="drift-filter-all">All differences</FilterTab>
+            <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isFetching} data-testid="btn-refresh" aria-label="Refresh data">
+              <RefreshCw className={"h-3.5 w-3.5 mr-1 " + (isFetching ? "animate-spin" : "")} aria-hidden="true" /> Refresh
             </Button>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5" aria-label="Filter by section" role="group">
             <span className="text-[11px] text-muted-foreground mr-1">Section:</span>
             <FilterTab active={sectionFilter === "all"} onClick={() => setSectionFilter("all")} data-testid="section-filter-all">All</FilterTab>
             <FilterTab active={sectionFilter === "PLAN"} onClick={() => setSectionFilter("PLAN")} data-testid="section-filter-plan">Plan</FilterTab>
@@ -310,32 +316,45 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
 
       {totalSelected > 0 && (
         <Card className="border-emerald-200 bg-emerald-50/50">
-          <CardContent className="p-4 flex items-center justify-between gap-4">
-            <div className="text-sm">
-              <span className="font-semibold">{totalSelected}</span> field{totalSelected === 1 ? "" : "s"} selected
+          <CardContent className="p-4 space-y-3">
+            <div className="flex items-center justify-between gap-4">
+              <div className="text-sm">
+                <span className="font-semibold">{totalSelected}</span> field{totalSelected === 1 ? "" : "s"} selected
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Button size="sm" variant="default" onClick={submitAcceptExcel} disabled={resolveMutation.isPending}>
+                  <RotateCcw className="h-3.5 w-3.5 mr-1" aria-hidden="true" /> Use workbook value ({totalSelected})
+                </Button>
+                <Button size="sm" variant="secondary" onClick={openKeepApp} disabled={resolveMutation.isPending}>
+                  <CheckCircle2 className="h-3.5 w-3.5 mr-1" aria-hidden="true" /> Keep my value + reason
+                </Button>
+                {(["PLAN", "REVENUE", "EXPENDITURE"] as DiffSection[]).map((sec) =>
+                  selectedBySection[sec].length > 0 ? (
+                    <Button key={sec} size="sm" variant="outline" onClick={() => openRequestApproval(sec)} disabled={resolveMutation.isPending}>
+                      <MailQuestion className="h-3.5 w-3.5 mr-1" aria-hidden="true" /> Send for approval ({sec.toLowerCase()}, {selectedBySection[sec].length})
+                    </Button>
+                  ) : null,
+                )}
+                <Button size="sm" variant="ghost" onClick={clearSelection} disabled={resolveMutation.isPending}>Clear</Button>
+              </div>
             </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <Button size="sm" variant="default" onClick={submitAcceptExcel} disabled={resolveMutation.isPending}>
-                <RotateCcw className="h-3.5 w-3.5 mr-1" /> Accept Excel ({totalSelected})
-              </Button>
-              <Button size="sm" variant="secondary" onClick={openKeepApp} disabled={resolveMutation.isPending}>
-                <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Keep app + reason
-              </Button>
-              {(["PLAN", "REVENUE", "EXPENDITURE"] as DiffSection[]).map((sec) =>
-                selectedBySection[sec].length > 0 ? (
-                  <Button key={sec} size="sm" variant="outline" onClick={() => openRequestApproval(sec)} disabled={resolveMutation.isPending}>
-                    <MailQuestion className="h-3.5 w-3.5 mr-1" /> Request approval ({sec.toLowerCase()}, {selectedBySection[sec].length})
-                  </Button>
-                ) : null,
-              )}
-              <Button size="sm" variant="ghost" onClick={clearSelection} disabled={resolveMutation.isPending}>Clear</Button>
-            </div>
+            <p className="text-xs text-muted-foreground border-t pt-2">
+              <span className="font-medium">Use workbook value</span> — reverts to the Excel number (no reason needed).{" "}
+              <span className="font-medium">Keep my value + reason</span> — keeps the app number and records why.{" "}
+              <span className="font-medium">Send for approval</span> — routes to your manager for sign-off.
+            </p>
+            {resolveNotice && (
+              <div className="flex items-center gap-2 text-sm text-emerald-800 bg-emerald-100 rounded px-3 py-2" role="status">
+                <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />
+                {resolveNotice.count} field{resolveNotice.count === 1 ? "" : "s"} {resolveNotice.action}.
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
 
       {isLoading && <SkeletonSection />}
-      {isError && <div className="text-sm text-red-600">Failed to load drift detail: {error instanceof Error ? error.message : String(error)}</div>}
+      {isError && <div className="text-sm text-red-600">Failed to load difference detail: {error instanceof Error ? error.message : String(error)}</div>}
       {!isLoading && !isError && data && (
         <div className="space-y-6">
           {sections.filter(s => sectionFilter === "all" || s.key === sectionFilter).map((section) => (
@@ -348,6 +367,7 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
               filter={filter}
               selected={selected}
               onToggle={(rowId, fieldName) => toggleEntry(SECTION_TO_TABLE[section.key], rowId, fieldName)}
+              onToggleAll={(entries) => toggleAllInSection(entries)}
               onSelectAllUnverified={handleSelectAllUnverified}
             />
           ))}
@@ -358,11 +378,11 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {reasonOpen?.action === "keep_app" ? "Keep app value" : `Request approval — ${reasonOpen?.section}`}
+              {reasonOpen?.action === "keep_app" ? "Keep my value" : `Send for approval — ${reasonOpen?.section}`}
             </DialogTitle>
             <DialogDescription>
               {reasonOpen?.action === "keep_app"
-                ? `Recording ${selected.size} field${selected.size === 1 ? "" : "s"} as deliberate operator overrides on top of Excel-truth. Reason will be persisted alongside the override.`
+                ? `Recording ${selected.size} field${selected.size === 1 ? "" : "s"} as intentional edits over the workbook value. Reason will be saved alongside the edit.`
                 : `Filing an approval request for ${reasonOpen?.section ? selectedBySection[reasonOpen.section].length : 0} field${reasonOpen?.section && selectedBySection[reasonOpen.section].length === 1 ? "" : "s"}. The request will appear in the "Pending edit requests" panel above for ${reasonOpen?.section === "EXPENDITURE" ? "PROGRAM_FINANCE_MANAGER / CFO" : reasonOpen?.section === "REVENUE" ? "PROGRAM_FINANCE_MANAGER / CCO" : "PROGRAM_MANAGER"} review. Until they act on it, the affected fields stay unchanged.`}
             </DialogDescription>
           </DialogHeader>
@@ -392,7 +412,7 @@ export default function ExcelVsAppProjectPage() {
       <div className="flex items-center justify-between">
         <div>
           <Link href="/program/excel-vs-app" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-2">
-            <ArrowLeft className="h-3.5 w-3.5" /> Back to program view
+            <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" /> Back to program view
           </Link>
           <h1 className="text-2xl font-semibold tracking-tight">Excel vs App — Project {projectId}</h1>
         </div>
@@ -410,6 +430,7 @@ function DriftSectionCard({
   filter,
   selected,
   onToggle,
+  onToggleAll,
   onSelectAllUnverified,
 }: {
   section: DiffSection;
@@ -419,6 +440,7 @@ function DriftSectionCard({
   filter: "all" | "unverified" | "verified";
   selected: Map<string, SelectedEntry>;
   onToggle: (rowId: number, fieldName: string) => void;
+  onToggleAll: (entries: Array<{ table: SectionTable; rowId: number; fieldName: string }>) => void;
   onSelectAllUnverified: (entries: SelectedEntry[]) => void;
 }) {
   const visibleRows = useMemo(() => {
@@ -461,9 +483,19 @@ function DriftSectionCard({
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
         <CardTitle className="text-base">{label}</CardTitle>
         <div className="flex items-center gap-2 text-xs">
-          {summary?.unverified ? <Badge variant="destructive">{summary.unverified} unverified</Badge> : null}
-          {summary?.verified ? <Badge variant="secondary">{summary.verified} verified</Badge> : null}
-          {driftCount === 0 ? <Badge variant="outline">No drift</Badge> : null}
+          {summary?.unverified ? (
+            <Badge role="status" aria-label={`${summary.unverified} unexplained changes`} variant="destructive">
+              {summary.unverified} needs review
+            </Badge>
+          ) : null}
+          {summary?.verified ? (
+            <Badge role="status" aria-label={`${summary.verified} confirmed changes`} variant="secondary">
+              {summary.verified} confirmed
+            </Badge>
+          ) : null}
+          {driftCount === 0 ? (
+            <Badge role="status" aria-label="All fields in sync" variant="outline">In sync</Badge>
+          ) : null}
           {(summary?.unverified ?? 0) > 0 && (
             <Button
               size="sm"
@@ -479,20 +511,22 @@ function DriftSectionCard({
                 onSelectAllUnverified(entries);
               }}
             >
-              Select all unverified
+              Select all unexplained
             </Button>
           )}
         </div>
       </CardHeader>
       <CardContent>
         {visibleRows.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No rows in this view.</p>
+          <p className="text-sm text-muted-foreground">
+            No changes to show for this filter. Try switching to &lsquo;All differences&rsquo; to see everything.
+          </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-left text-muted-foreground">
-                  <th className="py-2 font-medium w-8">
+                  <th scope="col" className="py-2 font-medium w-8">
                     <input
                       type="checkbox"
                       className="h-4 w-4 rounded border-slate-300"
@@ -500,15 +534,15 @@ function DriftSectionCard({
                       ref={(el) => { if (el) el.indeterminate = someVisibleSelected; }}
                       onChange={() => onToggleAll(allVisibleEntries)}
                       data-testid={`select-all-${section.toLowerCase()}`}
-                      title="Select all"
+                      aria-label="Select all visible rows"
                     />
                   </th>
-                  <th className="py-2 font-medium">Row</th>
-                  <th className="py-2 font-medium">Field</th>
-                  <th className="py-2 font-medium">Excel value</th>
-                  <th className="py-2 font-medium">Live value</th>
-                  <th className="py-2 font-medium">Override</th>
-                  <th className="py-2 font-medium">Status</th>
+                  <th scope="col" className="py-2 font-medium">Row</th>
+                  <th scope="col" className="py-2 font-medium">Field</th>
+                  <th scope="col" className="py-2 font-medium">Workbook value</th>
+                  <th scope="col" className="py-2 font-medium">Live value</th>
+                  <th scope="col" className="py-2 font-medium">Edit</th>
+                  <th scope="col" className="py-2 font-medium">Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -528,7 +562,7 @@ function DriftSectionCard({
                         </td>
                         <td className="py-2 align-top">
                           <div className="font-medium">{row.displayLabel || `Row ${row.id}`}</div>
-                          {row.sourceRow != null ? <div className="text-xs text-muted-foreground">Excel row {row.sourceRow}</div> : null}
+                          {row.sourceRow != null ? <div className="text-xs text-muted-foreground">Workbook row {row.sourceRow}</div> : null}
                         </td>
                         <td className="py-2 align-top font-mono text-xs">{field.fieldName}</td>
                         <td className="py-2 align-top">
@@ -550,9 +584,13 @@ function DriftSectionCard({
                         </td>
                         <td className="py-2 align-top">
                           {field.drift === "unverified" ? (
-                            <Badge variant="destructive" className="gap-1"><AlertTriangle className="h-3 w-3" /> Unverified</Badge>
+                            <Badge role="status" aria-label="Needs review" variant="destructive" className="gap-1">
+                              <AlertTriangle className="h-3 w-3" aria-hidden="true" /> Needs review
+                            </Badge>
                           ) : field.drift === "verified" ? (
-                            <Badge variant="secondary" className="gap-1"><CheckCircle2 className="h-3 w-3" /> Verified</Badge>
+                            <Badge role="status" aria-label="Confirmed" variant="secondary" className="gap-1">
+                              <CheckCircle2 className="h-3 w-3" aria-hidden="true" /> Confirmed
+                            </Badge>
                           ) : null}
                         </td>
                       </tr>
@@ -581,7 +619,7 @@ function PendingRequestsPanel({
     <Card className="border-blue-200 bg-blue-50/40">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-semibold flex items-center gap-2 text-blue-900">
-          <MailQuestion className="h-4 w-4" />
+          <MailQuestion className="h-4 w-4" aria-hidden="true" />
           Pending edit requests ({requests.length})
         </CardTitle>
       </CardHeader>
@@ -593,10 +631,10 @@ function PendingRequestsPanel({
           <table className="w-full text-xs">
             <thead>
               <tr className="text-left text-blue-900/70">
-                <th className="py-1 font-medium">Edit type</th>
-                <th className="py-1 font-medium">Summary</th>
-                <th className="py-1 font-medium">Requested by</th>
-                <th className="py-1 font-medium">Filed</th>
+                <th scope="col" className="py-1 font-medium">Edit type</th>
+                <th scope="col" className="py-1 font-medium">Summary</th>
+                <th scope="col" className="py-1 font-medium">Requested by</th>
+                <th scope="col" className="py-1 font-medium">Filed</th>
               </tr>
             </thead>
             <tbody>
@@ -631,20 +669,20 @@ function BackfillBanner({
   return (
     <Card className="border-amber-300 bg-amber-50">
       <CardContent className="p-4 flex gap-3 items-start">
-        <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+        <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" aria-hidden="true" />
         <div className="space-y-1">
           <div className="font-semibold text-amber-900 text-sm">
-            Backfill required — drift counts may be misleading
+            Backfill required — difference counts may be misleading
           </div>
           <p className="text-xs text-amber-800">
             {total} active row{total === 1 ? "" : "s"} on this project ({parts.join(", ")}) have no
             <code className="mx-1 bg-amber-100 px-1 rounded">import_snapshot</code> populated yet.
-            For those rows, drift detection treats every value as drifted.
+            For those rows, difference detection treats every value as changed.
           </p>
           <p className="text-xs text-amber-800">
             An ops engineer needs to run
             <code className="mx-1 bg-amber-100 px-1 rounded">npx tsx scripts/backfill-import-snapshot.ts --project-id={" "}<em>this-project</em></code>
-            once. Until then, focus on rows where Excel and live values are obviously different — and double-check before clicking Accept Excel.
+            once. Until then, focus on rows where workbook and live values are obviously different — and double-check before clicking Use workbook value.
           </p>
         </div>
       </CardContent>
@@ -692,7 +730,7 @@ function FilterTab({
 
 function SkeletonSection() {
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" aria-label="Loading…">
       {Array.from({ length: 3 }).map((_, i) => (
         <Card key={i}>
           <CardHeader>
