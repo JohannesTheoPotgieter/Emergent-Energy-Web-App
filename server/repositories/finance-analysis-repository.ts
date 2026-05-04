@@ -17,9 +17,12 @@ import {
   projectPlan,
   cashflowPoints,
   financialIntegrationRules,
+  opexBudgetMonthly,
 } from "@shared/schema/finance";
 import { projectInfo, projectRevenueSummary } from "@shared/schema/projects";
 import { diffDays } from "@shared/lib/financeAnalysis";
+import { isCanonicalCosRealised } from "../lib/finance/cos-realisation";
+import { getFyWindow } from "../lib/fy-window";
 
 const COS_TOLERANCE_RULE_TYPE = "cos_tolerance_band_pct";
 
@@ -584,6 +587,296 @@ export async function upsertCosToleranceBand(
       isActive: true,
     });
   }
+}
+
+// ─── Dashboard Financial Summary ─────────────────────────────────────
+//
+// Powers GET /api/dashboard/financial-summary. Three tiles —
+// Revenue & COS read canonical Excel-mastered lines; OpEx reads the
+// app-mastered opex_budget_monthly table (no actual ledger, so
+// actual = forecast = plan for the OpEx tile).
+//
+// Plan / actual / forecast reflect the selected period; trend is a
+// fixed 6-month window ending today regardless of period, matching
+// the FinancialSummaryTiles component's sparkline.
+
+export type FinancialSummaryPeriod =
+  | "ytd" | "current_fy" | "this_month" | "last_month" | "custom";
+
+export interface FinancialSummaryTile {
+  key: "revenue" | "cos" | "opex";
+  label: string;
+  plan: number;
+  actual: number;
+  forecast: number;
+  trend: Array<{ month: string; value: number }>;
+}
+
+export interface FinancialSummaryResult {
+  period: FinancialSummaryPeriod;
+  from: string;
+  to: string;
+  metrics: FinancialSummaryTile[];
+}
+
+export interface FinancialSummaryOptions {
+  period: FinancialSummaryPeriod;
+  /** Required when period === "custom". ISO date "YYYY-MM-DD". */
+  from?: string;
+  /** Required when period === "custom". ISO date "YYYY-MM-DD". */
+  to?: string;
+  /** Test-only: pin the reference "now". */
+  now?: Date;
+  /** Test-only: in-memory inputs to bypass the DB. */
+  inputs?: {
+    revenueLines: any[];
+    costLines: any[];
+    opexBudget: Array<{ monthKey: string; amount: string | number | null }>;
+  };
+}
+
+const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function startOfMonthIso(date: Date): string {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1)).toISOString().slice(0, 10);
+}
+
+function endOfMonthIso(date: Date): string {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).toISOString().slice(0, 10);
+}
+
+function monthKey(iso: string): string {
+  return iso.slice(0, 7);
+}
+
+function resolvePeriodWindow(opts: FinancialSummaryOptions): { from: string; to: string } {
+  const now = opts.now ?? new Date();
+  const todayIso = now.toISOString().slice(0, 10);
+  switch (opts.period) {
+    case "current_fy": {
+      const fy = getFyWindow({ date: now });
+      return { from: fy.fyStartIso, to: fy.fyEndIso };
+    }
+    case "ytd": {
+      const fy = getFyWindow({ date: now });
+      return { from: fy.fyStartIso, to: todayIso };
+    }
+    case "this_month": {
+      return { from: startOfMonthIso(now), to: endOfMonthIso(now) };
+    }
+    case "last_month": {
+      const prev = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+      return { from: startOfMonthIso(prev), to: endOfMonthIso(prev) };
+    }
+    case "custom": {
+      if (!opts.from || !opts.to) {
+        const err = new Error("custom period requires from and to ISO dates");
+        (err as any).status = 400;
+        throw err;
+      }
+      return { from: opts.from, to: opts.to };
+    }
+  }
+}
+
+function trailing6Months(now: Date): Array<{ key: string; label: string; from: string; to: string }> {
+  const out: Array<{ key: string; label: string; from: string; to: string }> = [];
+  for (let i = 5; i >= 0; i -= 1) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+    out.push({
+      key: monthKey(d.toISOString().slice(0, 10)),
+      label: SHORT_MONTHS[d.getUTCMonth()],
+      from: startOfMonthIso(d),
+      to: endOfMonthIso(d),
+    });
+  }
+  return out;
+}
+
+function num(v: unknown): number {
+  if (v == null) return 0;
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function isoOrNull(v: unknown): string | null {
+  if (!v) return null;
+  if (v instanceof Date) {
+    return Number.isNaN(v.getTime()) ? null : v.toISOString().slice(0, 10);
+  }
+  if (typeof v !== "string") return null;
+  const trimmed = v.trim();
+  if (!trimmed) return null;
+  return trimmed.length >= 10 ? trimmed.slice(0, 10) : null;
+}
+
+function inWindow(iso: string | null, from: string, to: string): boolean {
+  return iso != null && iso >= from && iso <= to;
+}
+
+export async function getFinancialSummary(
+  opts: FinancialSummaryOptions,
+): Promise<FinancialSummaryResult> {
+  const { from, to } = resolvePeriodWindow(opts);
+  const now = opts.now ?? new Date();
+  const todayIso = now.toISOString().slice(0, 10);
+  const trailing = trailing6Months(now);
+
+  // Read canonical-current revenue + cost lines and the OpEx budget.
+  // The two finance tables enforce the standard `effective_to IS NULL`
+  // + `deleted_at IS NULL` guard required for snapshot aggregates.
+  const [revRows, costRows, opexRows] = opts.inputs
+    ? [opts.inputs.revenueLines, opts.inputs.costLines, opts.inputs.opexBudget]
+    : await Promise.all([
+        db
+          .select({
+            amount: normalizedRevenueLines.amountExVat,
+            expectedDate: normalizedRevenueLines.expectedPaymentDate,
+            adminOverride: normalizedRevenueLines.adminDateOverride,
+            paidDate: normalizedRevenueLines.paidDate,
+          })
+          .from(normalizedRevenueLines)
+          .where(and(
+            isNull(normalizedRevenueLines.effectiveTo),
+            isNull(normalizedRevenueLines.deletedAt),
+          )),
+        db
+          .select({
+            amount: normalizedCostLines.amountExVat,
+            budgetTotal: normalizedCostLines.budgetTotal,
+            invoiceDate: normalizedCostLines.invoiceDate,
+            invoiceNumber: normalizedCostLines.invoiceNumber,
+            poNumber: normalizedCostLines.poNumber,
+            forecastDate: normalizedCostLines.forecastPaymentDate,
+            adminOverride: normalizedCostLines.adminDateOverride,
+            paidDate: normalizedCostLines.paidDate,
+            status: normalizedCostLines.status,
+            cosStatusOverride: normalizedCostLines.cosStatusOverride,
+            cosRealised: normalizedCostLines.cosRealised,
+            invoiceDateFontColor: normalizedCostLines.invoiceDateFontColor,
+            invoiceDateConfirmed: normalizedCostLines.invoiceDateConfirmed,
+          })
+          .from(normalizedCostLines)
+          .where(and(
+            isNull(normalizedCostLines.effectiveTo),
+            isNull(normalizedCostLines.deletedAt),
+          )),
+        db
+          .select({ monthKey: opexBudgetMonthly.monthKey, amount: opexBudgetMonthly.amount })
+          .from(opexBudgetMonthly),
+      ]);
+
+  // ── Revenue tile ─────────────────────────────────────────────────
+  // plan      = expected (or admin-overridden) payment date in window
+  // actual    = paid date in window
+  // forecast  = paid-to-date in window + unpaid lines whose expected
+  //             date falls in window (best estimate of period inflow)
+  // trend     = paid amount per month, last 6 months
+  let revPlan = 0, revActual = 0, revForecastUnpaid = 0;
+  const revTrend = new Map<string, number>(trailing.map((m) => [m.key, 0]));
+  for (const r of revRows) {
+    const amount = num(r.amount);
+    const paidIso = isoOrNull(r.paidDate);
+    const expectedIso = isoOrNull((r as any).adminOverride ?? r.expectedDate);
+
+    if (inWindow(expectedIso, from, to)) revPlan += amount;
+    if (paidIso != null && inWindow(paidIso, from, to)) revActual += amount;
+    if (paidIso == null && inWindow(expectedIso, from, to)) revForecastUnpaid += amount;
+
+    if (paidIso != null) {
+      const k = monthKey(paidIso);
+      if (revTrend.has(k)) revTrend.set(k, (revTrend.get(k) ?? 0) + amount);
+    }
+  }
+  const revenueTile: FinancialSummaryTile = {
+    key: "revenue",
+    label: "Revenue",
+    plan: Math.round(revPlan),
+    actual: Math.round(revActual),
+    forecast: Math.round(revActual + revForecastUnpaid),
+    trend: trailing.map((m) => ({ month: m.label, value: Math.round(revTrend.get(m.key) ?? 0) })),
+  };
+
+  // ── COS tile ─────────────────────────────────────────────────────
+  // plan      = SUM(budgetTotal) where forecast/invoice date in window
+  // actual    = SUM(amountExVat) for lines that pass isCanonicalCosRealised()
+  //             AND whose invoice date (the realisation gate) is in window
+  // forecast  = actual + unrealised lines whose forecast date is in window
+  // trend     = realised amount per month (by invoice date), last 6 months
+  let cosPlan = 0, cosActual = 0, cosForecastUnrealised = 0;
+  const cosTrend = new Map<string, number>(trailing.map((m) => [m.key, 0]));
+  for (const c of costRows) {
+    const amount = num(c.amount);
+    const budget = num(c.budgetTotal);
+    const invoiceIso = isoOrNull(c.invoiceDate);
+    const forecastIso = isoOrNull((c as any).adminOverride ?? c.forecastDate);
+    const planDateIso = forecastIso ?? invoiceIso; // best-known cost date for plan window
+
+    if (inWindow(planDateIso, from, to)) cosPlan += budget;
+
+    const realised = isCanonicalCosRealised({
+      status: (c.status as any) ?? null,
+      cosStatusOverride: (c.cosStatusOverride as any) ?? null,
+      cosRealised: (c.cosRealised as any) ?? null,
+      expenseInvoiceNumber: (c.invoiceNumber as any) ?? null,
+      expenseInvoicedDate: invoiceIso,
+      expensePoNumber: (c.poNumber as any) ?? null,
+      paymentDate: isoOrNull(c.paidDate),
+      today: todayIso,
+      amountExVat: c.amount as any,
+      invoiceDateFontColor: (c.invoiceDateFontColor as any) ?? null,
+      invoiceDateConfirmed: (c.invoiceDateConfirmed as any) ?? null,
+    });
+
+    if (realised) {
+      if (inWindow(invoiceIso, from, to)) cosActual += amount;
+      if (invoiceIso != null) {
+        const k = monthKey(invoiceIso);
+        if (cosTrend.has(k)) cosTrend.set(k, (cosTrend.get(k) ?? 0) + amount);
+      }
+    } else if (inWindow(forecastIso, from, to)) {
+      cosForecastUnrealised += amount;
+    }
+  }
+  const cosTile: FinancialSummaryTile = {
+    key: "cos",
+    label: "Cost of Sales",
+    plan: Math.round(cosPlan),
+    actual: Math.round(cosActual),
+    forecast: Math.round(cosActual + cosForecastUnrealised),
+    trend: trailing.map((m) => ({ month: m.label, value: Math.round(cosTrend.get(m.key) ?? 0) })),
+  };
+
+  // ── OpEx tile ────────────────────────────────────────────────────
+  // App-mastered: opex_budget_monthly carries plan only. No actual
+  // ledger exists for OpEx, so actual = forecast = plan and the trend
+  // shows monthly budget.
+  const opexByMonth = new Map<string, number>();
+  for (const o of opexRows) {
+    if (!o.monthKey) continue;
+    opexByMonth.set(o.monthKey, num(o.amount));
+  }
+  let opexPlan = 0;
+  const fromMonth = monthKey(from);
+  const toMonth = monthKey(to);
+  for (const [mk, amt] of opexByMonth) {
+    if (mk >= fromMonth && mk <= toMonth) opexPlan += amt;
+  }
+  const opexTile: FinancialSummaryTile = {
+    key: "opex",
+    label: "Operating Expenditure",
+    plan: Math.round(opexPlan),
+    actual: Math.round(opexPlan),
+    forecast: Math.round(opexPlan),
+    trend: trailing.map((m) => ({ month: m.label, value: Math.round(opexByMonth.get(m.key) ?? 0) })),
+  };
+
+  return {
+    period: opts.period,
+    from,
+    to,
+    metrics: [revenueTile, cosTile, opexTile],
+  };
 }
 
 // Re-export `eq` so route file callers don't need both imports.
