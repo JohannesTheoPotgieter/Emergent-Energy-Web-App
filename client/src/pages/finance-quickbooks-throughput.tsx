@@ -32,6 +32,7 @@ import { formatRand } from "@/lib/safeMoney";
 import { FinanceShell } from "@/components/layout/FinanceShell";
 import { useAuth } from "@/hooks/use-auth";
 import { SuggestMatchesDialog } from "@/components/quickbooks/SuggestMatchesDialog";
+import { FindQbMatchesPanel } from "@/components/quickbooks/FindQbMatchesPanel";
 import { FieldHint } from "@/components/ui/field-hint";
 import { Sparkles } from "lucide-react";
 
@@ -1878,11 +1879,14 @@ function InvoicesReconciliationView({ isConnected }: { isConnected: boolean }) {
 }
 
 function ReconciliationTab({ isConnected }: { isConnected: boolean }) {
-  const [sub, setSub] = useState<string>("bills");
+  const [sub, setSub] = useState<string>("find");
   return (
     <div className="space-y-3">
       <Tabs value={sub} onValueChange={setSub}>
         <TabsList className="h-auto p-1 bg-muted/50">
+          <TabsTrigger value="find" className="gap-1.5 text-xs">
+            <Sparkles className="h-3 w-3" /> Find QB Matches
+          </TabsTrigger>
           <TabsTrigger value="bills" className="gap-1.5 text-xs">
             <Banknote className="h-3 w-3" /> Bills (COS)
           </TabsTrigger>
@@ -1890,6 +1894,18 @@ function ReconciliationTab({ isConnected }: { isConnected: boolean }) {
             <Receipt className="h-3 w-3" /> Invoices (Revenue)
           </TabsTrigger>
         </TabsList>
+        <TabsContent value="find" className="mt-3">
+          {isConnected ? (
+            <FindQbMatchesPanel defaultScope="cost" />
+          ) : (
+            <Card className="border-amber-200 bg-amber-50/40">
+              <CardContent className="p-4 text-xs text-amber-800">
+                Connect QuickBooks to start fuzzy-matching app invoices to QB
+                records.
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
         <TabsContent value="bills" className="mt-3">
           <BillsReconciliationView isConnected={isConnected} />
         </TabsContent>

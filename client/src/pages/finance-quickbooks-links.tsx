@@ -14,7 +14,6 @@ import { formatRand } from "@/lib/safeMoney";
 import { ReportTrustNotice } from "@/components/reports/ReportTrustNotice";
 import { FinanceLimitedBetaBanner } from "@/components/reports/FinanceLimitedBetaBanner";
 import { FieldHint } from "@/components/ui/field-hint";
-import { FindQbMatchesPanel } from "@/components/quickbooks/FindQbMatchesPanel";
 
 interface QbBillRaw {
   Id: string;
@@ -195,12 +194,6 @@ export default function FinanceQuickBooksLinksPage() {
         lastUpdatedAt={status.lastSuccessfulSyncAt ?? null}
         note="A QuickBooks 'bill' is a supplier invoice the company owes. App cost lines remain the source of truth for COS recognition — linking only attaches QB bill evidence to a cost line, it does not move money or realise COS."
       />
-
-      {/* Fuzzy "Find QB Matches" review flow — sits above the manual table
-          flow below. Suggestions never auto-approve. */}
-      <section>
-        <FindQbMatchesPanel defaultScope="cost" />
-      </section>
 
       {/* Step 1: pick a bill */}
       <section>
