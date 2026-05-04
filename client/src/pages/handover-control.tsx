@@ -96,6 +96,7 @@ export default function HandoverControlPage() {
               const healthScore = typeof row.health_score === "number" ? row.health_score : null;
               const missingInputs = Array.isArray(row.health_missing_inputs) ? row.health_missing_inputs : [];
               const blockers = Array.isArray(row.health_blockers) ? row.health_blockers : [];
+              const warnings = Array.isArray(row.health_warnings) ? row.health_warnings : [];
               const lessonsReviewed = row.lessons_reviewed === true;
               return (
                 <tr key={row.project_id} className={`border-t ${rowColour(row)}`}>
@@ -128,6 +129,7 @@ export default function HandoverControlPage() {
                   <td className="p-2 max-w-[200px]" title={row.next_action || ''}>
                     <div className="truncate">{row.next_action || '—'}</div>
                     {blockers.length > 0 ? <div className="text-[10px] text-rose-700 truncate" title={blockers.join(", ")}>Blockers: {blockers.join(", ")}</div> : null}
+                    {warnings.length > 0 ? <div className="text-[10px] text-amber-700 truncate" title={warnings.join(", ")}>Warnings: {warnings.join(", ")}</div> : null}
                   </td>
                   <td className="p-2">
                     <div>{row.action_owner || '—'}</div>
