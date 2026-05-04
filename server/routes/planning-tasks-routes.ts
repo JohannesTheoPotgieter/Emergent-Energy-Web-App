@@ -199,9 +199,10 @@ export function registerPlanningTasksRoutes(app: Express) {
       if (useCanonical) {
         const canonicalTasks = await getAllWorkItemsForPlanTab(projectName);
         if (canonicalTasks.length > 0) {
+          const canonicalIds = new Set(canonicalTasks.map((t: any) => Number(t.workItemId ?? t.id)).filter(Number.isFinite));
           const allOps = await storage.getOperationalTasksByProject(projectName);
           const nonClickupOps = allOps.filter((t: any) => t.externalSource !== "clickup");
-          unlinkedOperationalRaw = nonClickupOps.filter((t: any) => t.importedTaskId == null && t.linkedPlanItemId == null);
+          unlinkedOperationalRaw = nonClickupOps.filter((t: any) => t.importedTaskId == null && t.linkedPlanItemId == null && !canonicalIds.has(t.id));
           unlinkedOperationalCount = unlinkedOperationalRaw.length;
 
           // Smart Import v2 tracker columns + cellFormat live on
