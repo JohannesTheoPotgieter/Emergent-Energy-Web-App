@@ -2696,6 +2696,30 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         }
       }
 
+      // ── S11: noRevenueLinked recon ──
+      // For cost lines inserted in this run that have no category allocation
+      // FK (and no explicit revenueRecognitionAmount), there is no formula
+      // linking them to a revenue milestone, so mark noRevenueLinked = true.
+      // Only runs when the workbook provided category allocations (catAllocIdByKey
+      // non-empty), so imports without a budget pane don't mass-flag every line.
+      // Only touches rows from this run (importRunId = runId) to leave
+      // manually-set flags on older rows undisturbed.
+      if (costResult && costResult.counts.inserted > 0 && catAllocIdByKey.size > 0) {
+        try {
+          await tx.update(normalizedCostLines)
+            .set({ noRevenueLinked: true })
+            .where(and(
+              eq(normalizedCostLines.projectId, projectId),
+              eq(normalizedCostLines.importRunId, runId),
+              isNull(normalizedCostLines.effectiveTo),
+              isNull(normalizedCostLines.categoryAllocationId),
+              isNull(normalizedCostLines.revenueRecognitionAmount),
+            ));
+        } catch (reconErr: unknown) {
+          console.warn("[SmartImport] noRevenueLinked recon failed (non-blocking):", reconErr instanceof Error ? reconErr.message : String(reconErr));
+        }
+      }
+
       v2Result = {
         sections: {
           PLAN: planResult,
