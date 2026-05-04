@@ -100,6 +100,7 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
   const { toast } = useToast();
   const [selected, setSelected] = useState<Map<string, SelectedEntry>>(new Map());
   const [filter, setFilter] = useState<"all" | "unverified" | "verified">("unverified");
+  const [sectionFilter, setSectionFilter] = useState<"all" | DiffSection>("all");
   const [reasonOpen, setReasonOpen] = useState<{ action: "keep_app" | "request_approval"; section?: DiffSection } | null>(null);
   const [reason, setReason] = useState("");
 
@@ -206,6 +207,16 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
     setSelected(new Map());
   }
 
+  function handleSelectAllUnverified(entries: SelectedEntry[]) {
+    setSelected(prev => {
+      const next = new Map(prev);
+      for (const e of entries) {
+        next.set(entryKey(e.table, e.rowId, e.fieldName), e);
+      }
+      return next;
+    });
+  }
+
   function submitAcceptExcel() {
     if (selected.size === 0) return;
     resolveMutation.mutate({
@@ -268,12 +279,19 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
         </div>
         <div className="flex flex-col items-end gap-2">
           <div className="flex items-center gap-2">
-            <FilterTab active={filter === "unverified"} onClick={() => setFilter("unverified")}>Unverified only</FilterTab>
-            <FilterTab active={filter === "verified"} onClick={() => setFilter("verified")}>Verified</FilterTab>
-            <FilterTab active={filter === "all"} onClick={() => setFilter("all")}>All drift</FilterTab>
-            <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isFetching}>
+            <FilterTab active={filter === "unverified"} onClick={() => setFilter("unverified")} data-testid="drift-filter-unverified">Unverified only</FilterTab>
+            <FilterTab active={filter === "verified"} onClick={() => setFilter("verified")} data-testid="drift-filter-verified">Verified</FilterTab>
+            <FilterTab active={filter === "all"} onClick={() => setFilter("all")} data-testid="drift-filter-all">All drift</FilterTab>
+            <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isFetching} data-testid="btn-refresh">
               <RefreshCw className={"h-3.5 w-3.5 mr-1 " + (isFetching ? "animate-spin" : "")} /> Refresh
             </Button>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] text-muted-foreground mr-1">Section:</span>
+            <FilterTab active={sectionFilter === "all"} onClick={() => setSectionFilter("all")} data-testid="section-filter-all">All</FilterTab>
+            <FilterTab active={sectionFilter === "PLAN"} onClick={() => setSectionFilter("PLAN")} data-testid="section-filter-plan">Plan</FilterTab>
+            <FilterTab active={sectionFilter === "REVENUE"} onClick={() => setSectionFilter("REVENUE")} data-testid="section-filter-revenue">Revenue</FilterTab>
+            <FilterTab active={sectionFilter === "EXPENDITURE"} onClick={() => setSectionFilter("EXPENDITURE")} data-testid="section-filter-expenditure">Expenditure</FilterTab>
           </div>
           {dataUpdatedAt > 0 && (
             <span className="text-[11px] text-muted-foreground">
@@ -320,7 +338,7 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
       {isError && <div className="text-sm text-red-600">Failed to load drift detail: {error instanceof Error ? error.message : String(error)}</div>}
       {!isLoading && !isError && data && (
         <div className="space-y-6">
-          {sections.map((section) => (
+          {sections.filter(s => sectionFilter === "all" || s.key === sectionFilter).map((section) => (
             <DriftSectionCard
               key={section.key}
               section={section.key}
@@ -330,7 +348,7 @@ export function ExcelVsAppProjectContent({ projectId }: { projectId: number }) {
               filter={filter}
               selected={selected}
               onToggle={(rowId, fieldName) => toggleEntry(SECTION_TO_TABLE[section.key], rowId, fieldName)}
-              onToggleAll={(visibleEntries) => toggleAllInSection(section.key, visibleEntries)}
+              onSelectAllUnverified={handleSelectAllUnverified}
             />
           ))}
         </div>
@@ -392,7 +410,7 @@ function DriftSectionCard({
   filter,
   selected,
   onToggle,
-  onToggleAll,
+  onSelectAllUnverified,
 }: {
   section: DiffSection;
   label: string;
@@ -401,18 +419,23 @@ function DriftSectionCard({
   filter: "all" | "unverified" | "verified";
   selected: Map<string, SelectedEntry>;
   onToggle: (rowId: number, fieldName: string) => void;
-  onToggleAll: (visibleEntries: Array<{ table: SectionTable; rowId: number; fieldName: string }>) => void;
+  onSelectAllUnverified: (entries: SelectedEntry[]) => void;
 }) {
   const visibleRows = useMemo(() => {
     return rows
       .map((r) => ({
         ...r,
-        fields: r.fields.filter((f) => {
-          if (f.drift === "none") return false;
-          if (filter === "verified" && f.drift !== "verified") return false;
-          if (filter === "unverified" && f.drift !== "unverified") return false;
-          return true;
-        }),
+        fields: r.fields
+          .filter((f) => {
+            if (f.drift === "none") return false;
+            if (filter === "verified" && f.drift !== "verified") return false;
+            if (filter === "unverified" && f.drift !== "unverified") return false;
+            return true;
+          })
+          .sort((a, b) => {
+            if (a.drift === b.drift) return 0;
+            return a.drift === "unverified" ? -1 : 1;
+          }),
       }))
       .filter((r) => r.fields.length > 0);
   }, [rows, filter]);
@@ -441,6 +464,24 @@ function DriftSectionCard({
           {summary?.unverified ? <Badge variant="destructive">{summary.unverified} unverified</Badge> : null}
           {summary?.verified ? <Badge variant="secondary">{summary.verified} verified</Badge> : null}
           {driftCount === 0 ? <Badge variant="outline">No drift</Badge> : null}
+          {(summary?.unverified ?? 0) > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-6 text-xs px-2"
+              data-testid={`select-all-unverified-${section.toLowerCase()}`}
+              onClick={() => {
+                const entries = rows.flatMap(row =>
+                  row.fields
+                    .filter(f => f.drift === "unverified")
+                    .map(f => ({ table: SECTION_TO_TABLE[section], rowId: row.id, fieldName: f.fieldName })),
+                );
+                onSelectAllUnverified(entries);
+              }}
+            >
+              Select all unverified
+            </Button>
+          )}
         </div>
       </CardHeader>
       <CardContent>
@@ -625,15 +666,18 @@ function FilterTab({
   active,
   onClick,
   children,
+  "data-testid": testId,
 }: {
   active: boolean;
   onClick: () => void;
   children: React.ReactNode;
+  "data-testid"?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      data-testid={testId}
       className={
         "px-3 py-1 rounded-md text-xs font-medium transition-colors border " +
         (active
