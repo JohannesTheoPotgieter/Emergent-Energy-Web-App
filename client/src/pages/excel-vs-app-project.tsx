@@ -293,19 +293,19 @@ export default function ExcelVsAppProjectPage() {
         </div>
         <div className="flex flex-col items-end gap-2">
           <div className="flex items-center gap-2">
-            <FilterTab active={filter === "unverified"} onClick={() => setFilter("unverified")}>Unverified only</FilterTab>
-            <FilterTab active={filter === "verified"} onClick={() => setFilter("verified")}>Verified</FilterTab>
-            <FilterTab active={filter === "all"} onClick={() => setFilter("all")}>All drift</FilterTab>
-            <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isFetching}>
+            <FilterTab active={filter === "unverified"} onClick={() => setFilter("unverified")} data-testid="drift-filter-unverified">Unverified only</FilterTab>
+            <FilterTab active={filter === "verified"} onClick={() => setFilter("verified")} data-testid="drift-filter-verified">Verified</FilterTab>
+            <FilterTab active={filter === "all"} onClick={() => setFilter("all")} data-testid="drift-filter-all">All drift</FilterTab>
+            <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isFetching} data-testid="btn-refresh">
               <RefreshCw className={"h-3.5 w-3.5 mr-1 " + (isFetching ? "animate-spin" : "")} /> Refresh
             </Button>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="text-[11px] text-muted-foreground mr-1">Section:</span>
-            <FilterTab active={sectionFilter === "all"} onClick={() => setSectionFilter("all")}>All</FilterTab>
-            <FilterTab active={sectionFilter === "PLAN"} onClick={() => setSectionFilter("PLAN")}>Plan</FilterTab>
-            <FilterTab active={sectionFilter === "REVENUE"} onClick={() => setSectionFilter("REVENUE")}>Revenue</FilterTab>
-            <FilterTab active={sectionFilter === "EXPENDITURE"} onClick={() => setSectionFilter("EXPENDITURE")}>Expenditure</FilterTab>
+            <FilterTab active={sectionFilter === "all"} onClick={() => setSectionFilter("all")} data-testid="section-filter-all">All</FilterTab>
+            <FilterTab active={sectionFilter === "PLAN"} onClick={() => setSectionFilter("PLAN")} data-testid="section-filter-plan">Plan</FilterTab>
+            <FilterTab active={sectionFilter === "REVENUE"} onClick={() => setSectionFilter("REVENUE")} data-testid="section-filter-revenue">Revenue</FilterTab>
+            <FilterTab active={sectionFilter === "EXPENDITURE"} onClick={() => setSectionFilter("EXPENDITURE")} data-testid="section-filter-expenditure">Expenditure</FilterTab>
           </div>
           {dataUpdatedAt > 0 && (
             <span className="text-[11px] text-muted-foreground">
@@ -452,6 +452,7 @@ function DriftSectionCard({
               size="sm"
               variant="outline"
               className="h-6 text-xs px-2"
+              data-testid={`select-all-unverified-${section.toLowerCase()}`}
               onClick={() => {
                 const entries = rows.flatMap(row =>
                   row.fields
@@ -638,15 +639,18 @@ function FilterTab({
   active,
   onClick,
   children,
+  "data-testid": testId,
 }: {
   active: boolean;
   onClick: () => void;
   children: React.ReactNode;
+  "data-testid"?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      data-testid={testId}
       className={
         "px-3 py-1 rounded-md text-xs font-medium transition-colors border " +
         (active

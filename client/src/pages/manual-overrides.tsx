@@ -136,15 +136,17 @@ export default function ManualOverridesPage() {
   const filteredEntries = useMemo(() => {
     const entries = data?.entries ?? [];
     return entries.filter(e => {
+      const at = new Date(e.editedAt);
+      if (isNaN(at.getTime())) return true; // don't drop unparseable entries
       if (fromDate) {
-        const at = new Date(e.editedAt);
-        if (isNaN(at.getTime()) || at < new Date(fromDate)) return false;
+        // "T00:00:00" (no Z) → local midnight so the boundary matches the
+        // user's wall-clock date rather than UTC midnight.
+        const from = new Date(fromDate + "T00:00:00");
+        if (at < from) return false;
       }
       if (toDate) {
-        const at = new Date(e.editedAt);
-        const to = new Date(toDate);
-        to.setHours(23, 59, 59, 999);
-        if (isNaN(at.getTime()) || at > to) return false;
+        const to = new Date(toDate + "T23:59:59.999");
+        if (at > to) return false;
       }
       return true;
     });
@@ -174,6 +176,7 @@ export default function ManualOverridesPage() {
               <Label htmlFor="from-date" className="text-xs text-muted-foreground">From</Label>
               <Input
                 id="from-date"
+                data-testid="filter-from-date"
                 type="date"
                 value={fromDate}
                 onChange={e => setFromDate(e.target.value)}
@@ -184,6 +187,7 @@ export default function ManualOverridesPage() {
               <Label htmlFor="to-date" className="text-xs text-muted-foreground">To</Label>
               <Input
                 id="to-date"
+                data-testid="filter-to-date"
                 type="date"
                 value={toDate}
                 onChange={e => setToDate(e.target.value)}
@@ -193,13 +197,14 @@ export default function ManualOverridesPage() {
             {(fromDate || toDate) && (
               <button
                 type="button"
+                data-testid="filter-clear"
                 onClick={() => { setFromDate(""); setToDate(""); }}
                 className="text-xs text-muted-foreground hover:text-foreground underline pb-1"
               >
                 Clear
               </button>
             )}
-            <span className="text-xs text-muted-foreground pb-1">
+            <span data-testid="filter-entry-count" className="text-xs text-muted-foreground pb-1">
               {filteredEntries.length} of {data.entries.length} entries
             </span>
           </div>
