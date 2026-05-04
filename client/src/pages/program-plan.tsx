@@ -55,6 +55,7 @@ interface ProgramPlanResponse {
     resource1: string | null;
     resource2: string | null;
     cellFormat: unknown;
+    manualOverrides?: Record<string, unknown> | null;
   }>;
 }
 
@@ -73,10 +74,7 @@ function num(v: number | string | null): string {
   return isFinite(n) ? n.toLocaleString("en-ZA", { maximumFractionDigits: 2 }) : String(v);
 }
 
-export default function ProgramPlanPage() {
-  const params = useParams<{ projectId: string }>();
-  const projectId = Number(params.projectId);
-
+export function ProgramPlanContent({ projectId }: { projectId: number }) {
   const { data, isLoading, error } = useQuery<ProgramPlanResponse>({
     queryKey: [`/api/tracker-replica/${projectId}/program-plan`],
     queryFn: fetchQueryFn(`/api/tracker-replica/${projectId}/program-plan`),
@@ -92,12 +90,7 @@ export default function ProgramPlanPage() {
 
   const m = data.metadata;
   return (
-    <div className="p-6 space-y-6" data-testid="program-plan-page">
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Program Plan</h1>
-        <Badge variant="outline">Tracker replica · Project #{projectId}</Badge>
-      </header>
-
+    <div className="space-y-6" data-testid="program-plan-content">
       <Card>
         <CardHeader><CardTitle className="text-base">Project Plan Header</CardTitle></CardHeader>
         <CardContent className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
@@ -164,7 +157,20 @@ export default function ProgramPlanPage() {
                 return (
                   <TableRow key={t.id}>
                     <TableCell className="font-mono" style={{ paddingLeft: `${0.5 + indent * 1}rem`, ...styleForCell(t.cellFormat, "wbsCode") }}>{t.wbsCode ?? t.outlineNumber ?? "—"}</TableCell>
-                    <TableCell style={styleForCell(t.cellFormat, "title")}>{t.title}</TableCell>
+                    <TableCell style={styleForCell(t.cellFormat, "title")}>
+                      <div className="flex flex-col gap-0.5">
+                        <span>{t.title}</span>
+                        {Object.keys(t.manualOverrides ?? {}).length > 0 && (
+                          <span
+                            className="inline-flex items-center gap-0.5 text-[9px] font-medium text-amber-600 cursor-help"
+                            title={`${Object.keys(t.manualOverrides!).length} field(s) overridden: ${Object.keys(t.manualOverrides!).join(", ")}`}
+                            data-testid={`override-badge-${t.id}`}
+                          >
+                            ✎ {Object.keys(t.manualOverrides!).length} edited
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell style={styleForCell(t.cellFormat, "ownerName")}>{t.ownerName ?? "—"}</TableCell>
                     <TableCell style={styleForCell(t.cellFormat, "trackerComments")} className="max-w-xs truncate">{t.trackerComments ?? "—"}</TableCell>
                     <TableCell style={styleForCell(t.cellFormat, "lead")}>{t.lead ?? "—"}</TableCell>
@@ -358,5 +364,19 @@ function GanttSection({ tasks, startDate }: GanttSectionProps) {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+export default function ProgramPlanPage() {
+  const params = useParams<{ projectId: string }>();
+  const projectId = Number(params.projectId);
+  return (
+    <div className="p-6 space-y-6" data-testid="program-plan-page">
+      <header className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">Program Plan</h1>
+        <Badge variant="outline">Tracker replica · Project #{projectId}</Badge>
+      </header>
+      <ProgramPlanContent projectId={projectId} />
+    </div>
   );
 }

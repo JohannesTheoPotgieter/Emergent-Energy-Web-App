@@ -71,7 +71,7 @@ One row per user-facing function. Priority scale:
 |---|---|---|---|---|---|---|
 | Revenue Tracker | `server/departments/finance-routes.ts:4433` | normalized_revenue_lines | direct select | ✓ Canonical | None | 4 |
 | Revenue Milestone Linking | `server/departments/finance-routes.ts:5053` | normalized_revenue_lines | direct update | ✓ Canonical | None | 4 |
-| **Inflow Effective Dates** | `server/lib/cashflow-helpers.ts:38` | normalized_revenue_lines **+** operational_tasks **+** normalized_plan_tasks | `resolveInflowEffectiveDates()` — **hybrid** | ⚠ Hybrid | **1** — dual source for date hierarchy | **1** |
+| **Inflow Effective Dates** | `server/lib/cashflow-helpers.ts:38` | normalized_revenue_lines + milestone_task_links + canonical linked-task date fields | `resolveInflowEffectiveDates()` | ✓ Canonical | None | 4 |
 
 ### Projects
 
@@ -101,7 +101,7 @@ One row per user-facing function. Priority scale:
 
 ## §3 Cross-cutting observations
 
-1. **Hybrid inflow-date resolution** (only Priority-1 item remaining). `resolveInflowEffectiveDates()` at `server/lib/cashflow-helpers.ts:38` still reads legacy `operational_tasks` and `normalized_plan_tasks` to resolve milestone → effective-date hierarchy for revenue recognition. It's an internal helper (not a page-level read) but it feeds the Cashflow forecast. Migration target: fold task-link logic into `normalized_revenue_lines` extension columns or `project_execution_state.financialReviewId`.
+1. **Inflow effective-date resolution is now canonicalized.** `resolveInflowEffectiveDates()` at `server/lib/cashflow-helpers.ts:38` resolves hierarchy from inflow rows + milestone links only (admin override → paid date → link override → linked task date fields → computed forecast → planned fallback), with no legacy task-table reads.
 
 2. **Legacy finance tables fully decommissioned at read layer.** `program_expense` and `program_inflows` are no longer read anywhere in the route handlers. `manualEditFlags` retains a reference for audit-trail purposes only. Safe to archive (not drop) after a 90-day observation window.
 
@@ -123,10 +123,10 @@ One row per user-facing function. Priority scale:
 
 Priority-ordered. Top five are the only Phase 2–3 work surfaces where canonical paths need change. Everything else is incremental polish.
 
-1. **Extract inflow-date resolution from legacy tasks** (Priority 1 — only multi-source function)
-   - Location: `server/lib/cashflow-helpers.ts:resolveInflowEffectiveDates()` and callers in `server/routes/cos-control-routes.ts`.
-   - Move task-link lookup to `normalized_revenue_lines` extension or `project_execution_state.financialReviewId`.
-   - Redirect: `operational_tasks.dueDate` → `work_items` by name/milestone.
+1. **Backfill linked-task dates on normalized revenue feeds** (Priority 2 — data completeness hardening)
+   - Location: `server/lib/cashflow-helpers.ts:resolveInflowEffectiveDates()` and inflow read adapters.
+   - Ensure linked date fields (`linkedWorkItemDueDate`/`linkedTaskDueDate`/`linkedTaskActualEnd`/`linkedTaskBaselineEnd`) are consistently emitted for all active projects.
+   - Keep `plannedPaymentDate` fallback until parity checks show full coverage.
 
 2. **Archive `program_expense` + `program_inflows` tables** (Priority 2 — legacy-only)
    - Remove from `safe-query.ts:32-33` allowlist after 30-day post-cutover window (target 2026-05-21).
@@ -143,8 +143,9 @@ Priority-ordered. Top five are the only Phase 2–3 work surfaces where canonica
    - Add typed read-service paralleling `project-cost-line-read-service`.
    - Consider index on `(phase, gate_status, financial_review_status)` to support dashboard aggregations.
 
-5. **Eliminate legacy `operational_tasks` reads in finance date resolution** (Priority 2)
-   - `server/lib/cashflow-helpers.ts:76-84` maps `operationalTasks` — replace with `work_items` JOIN on `projectName + workstream='ENG'`.
+5. **Remove legacy inflow helper call signatures** (Priority 4)
+   - `server/lib/cashflow-helpers.ts` still accepts legacy task-array params for caller compatibility.
+   - After downstream routes are updated, remove deprecated args and enforce typed canonical input contract.
 
 6. **Standardise approvals read patterns** (Priority 4 — low risk)
    - Add `approval-service-read` analogous to `project-cost-line-read-service` for reuse across routes.
