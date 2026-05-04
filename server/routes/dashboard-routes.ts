@@ -14,6 +14,7 @@ import {
   getDashboardImportHealth,
   getDashboardAttentionItems,
 } from "../repositories/dashboard-repository";
+import { deriveQualityStatusLabel } from "@shared/quality-governance";
 import {
   getProgramDashboardData,
   type ProgramDashboardFilters,
@@ -426,7 +427,10 @@ export function registerDashboardRoutes(app: Express) {
         staleAfterSeconds: 60,
       });
       const items = await getDashboardAttentionItems();
-      res.json(items);
+      const _qualityOpen = items.qualityWarnings.length;
+      const _qualityHigh = items.qualityWarnings.filter((w) => w.severity === "high").length;
+      const qualityStatus = deriveQualityStatusLabel(_qualityOpen, _qualityHigh);
+      res.json({ ...items, qualityStatus });
     } catch (error) {
       console.error("Attention items API error:", error);
       res.status(500).json({ error: "Failed to fetch attention items" });
