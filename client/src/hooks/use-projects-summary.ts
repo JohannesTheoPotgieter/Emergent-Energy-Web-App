@@ -16,7 +16,7 @@ export function useProjectsSummary() {
     queryKey: ["/api/projects-summary"],
     queryFn: overviewApi.getProjectsSummary,
     enabled: isAuthenticated && !authLoading,
-    staleTime: 30_000,
+    staleTime: 0,
     refetchOnWindowFocus: true,
   });
 

@@ -1255,7 +1255,8 @@ export default function ProjectDetailPage() {
       return res.json();
     },
     enabled: !!projectName,
-    staleTime: 30_000,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
 
   const { data: headerKpis } = useQuery<{
@@ -1272,7 +1273,8 @@ export default function ProjectDetailPage() {
       return res.json();
     },
     enabled: !!projectInfoId,
-    staleTime: 30_000,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
 
   // Revenue milestones (from revenue-tab endpoint — provides milestone-level detail not in V2)

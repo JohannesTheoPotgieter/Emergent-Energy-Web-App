@@ -89,4 +89,5 @@ export function invalidateProjectV2Queries(queryClient: QueryClient, projectId: 
   queryClient.invalidateQueries({ queryKey: ["v2-project-quality", projectId] });
   queryClient.invalidateQueries({ queryKey: ["v2-project-engineering", projectId] });
   queryClient.invalidateQueries({ queryKey: ["project-header-kpis", projectId] });
+  queryClient.invalidateQueries({ queryKey: ["health-summary"] });
 }

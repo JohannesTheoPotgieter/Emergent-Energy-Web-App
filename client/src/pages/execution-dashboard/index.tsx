@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React from "react";
 import { useLocation } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -46,8 +46,6 @@ export default function ExecutionDashboard() {
   const [location, setLocation] = useLocation();
   const activeView = resolveView(location);
   const ctx = useExecutionDataProvider(setLocation);
-
-  useEffect(() => { ctx.loadData(); }, [ctx.loadData]);
 
   if (ctx.loading) {
     return (
