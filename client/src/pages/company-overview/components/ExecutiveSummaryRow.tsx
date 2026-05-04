@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   Ban,
   CalendarClock,
+  ClipboardCheck,
 } from "lucide-react";
 
 interface TrustedTopStripData {
@@ -13,6 +14,7 @@ interface TrustedTopStripData {
   blockedGates: number;
   overdueItems: number;
   missingUpdates: number;
+  pendingApprovals?: number;
 }
 
 export function ExecutiveSummaryRow({
@@ -24,8 +26,8 @@ export function ExecutiveSummaryRow({
 }) {
   if (isLoading || !data) {
     return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        {Array.from({ length: 4 }).map((_, i) => (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+        {Array.from({ length: 5 }).map((_, i) => (
           <Card key={i} className="border-border/50">
             <CardContent className="p-4">
               <Skeleton className="h-4 w-24 mb-3" />
@@ -38,8 +40,10 @@ export function ExecutiveSummaryRow({
     );
   }
 
+  const hasPending = (data.pendingApprovals ?? 0) > 0;
+
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
       <Link href="/gates">
         <Card className="border-border/50 hover:border-primary/30 hover:shadow-sm transition-all cursor-pointer group">
           <CardContent className="p-4">
@@ -86,10 +90,23 @@ export function ExecutiveSummaryRow({
           <CardContent className="p-4">
             <div className="flex items-center gap-1.5 text-muted-foreground mb-2">
               <CalendarClock className="w-4 h-4 text-amber-500" />
-              <span className="text-[11px] uppercase tracking-wide font-medium">Missing Weekly Updates</span>
+              <span className="text-[11px] uppercase tracking-wide font-medium">Missing Updates</span>
             </div>
             <span className={`text-2xl font-bold font-mono ${data.missingUpdates > 0 ? "text-amber-600" : "text-emerald-600"}`}>{data.missingUpdates}</span>
             <p className="text-[11px] text-muted-foreground mt-1.5">No client update in 7+ days</p>
+          </CardContent>
+        </Card>
+      </Link>
+
+      <Link href="/pending-approvals">
+        <Card className="border-border/50 hover:border-primary/30 hover:shadow-sm transition-all cursor-pointer group">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-1.5 text-muted-foreground mb-2">
+              <ClipboardCheck className={`w-4 h-4 ${hasPending ? "text-amber-500" : ""}`} />
+              <span className="text-[11px] uppercase tracking-wide font-medium">Pending Approvals</span>
+            </div>
+            <span className={`text-2xl font-bold font-mono ${hasPending ? "text-amber-600" : "text-emerald-600"}`}>{data.pendingApprovals ?? 0}</span>
+            <p className="text-[11px] text-muted-foreground mt-1.5">Awaiting decision</p>
           </CardContent>
         </Card>
       </Link>

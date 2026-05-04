@@ -13,6 +13,19 @@ import {
   CheckCircle2,
 } from "lucide-react";
 
+interface PhaseEntry {
+  code: string;
+  label: string;
+  count: number;
+}
+
+interface ScheduleHealth {
+  avgActualPct: number | null;
+  avgExpectedPct: number | null;
+  scheduleDelta: number | null;
+  trackedItems: number;
+}
+
 interface PortfolioSnapshot {
   activeProjects: number;
   onTrack: number;
@@ -22,6 +35,8 @@ interface PortfolioSnapshot {
   upcomingMilestones: number;
   practicalCompletionDue: number;
   handoversDue: number;
+  phaseDistribution?: PhaseEntry[];
+  scheduleHealth?: ScheduleHealth;
 }
 
 interface FinanceSnapshot {
@@ -128,7 +143,45 @@ export function PortfolioFinanceRow({
             <StatLine icon={<Milestone className="w-3.5 h-3.5" />} label="Upcoming Milestones (14d)" value={portfolio.upcomingMilestones} />
             <StatLine icon={<CheckCircle2 className="w-3.5 h-3.5" />} label="Practical Completion Due (month)" value={portfolio.practicalCompletionDue} />
             <StatLine icon={<Calendar className="w-3.5 h-3.5" />} label="Handovers Due (month)" value={portfolio.handoversDue} />
+            {portfolio.scheduleHealth && portfolio.scheduleHealth.trackedItems > 0 && (
+              <div className="flex items-center justify-between py-1.5">
+                <span className="text-xs text-muted-foreground">Schedule Health</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-mono text-muted-foreground">
+                    {portfolio.scheduleHealth.avgActualPct}% actual
+                  </span>
+                  <span className="text-xs text-muted-foreground">vs</span>
+                  <span className="text-xs font-mono text-muted-foreground">
+                    {portfolio.scheduleHealth.avgExpectedPct}% expected
+                  </span>
+                  {portfolio.scheduleHealth.scheduleDelta != null && (
+                    <Badge
+                      variant="secondary"
+                      className={`text-[10px] ${
+                        portfolio.scheduleHealth.scheduleDelta >= 0
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          : "bg-red-50 text-red-700 border-red-200"
+                      }`}
+                    >
+                      {portfolio.scheduleHealth.scheduleDelta >= 0 ? "+" : ""}{portfolio.scheduleHealth.scheduleDelta}%
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
+          {portfolio.phaseDistribution && portfolio.phaseDistribution.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-border/30">
+              <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Projects by Phase</span>
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {portfolio.phaseDistribution.map((p) => (
+                  <Badge key={p.code} variant="outline" className="text-[10px] px-1.5 py-0.5 font-normal">
+                    {p.label} <span className="font-semibold ml-1">{p.count}</span>
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
