@@ -448,7 +448,20 @@ export function RevenueTrackingEditableTab({ projectName }: RevenueTrackingEdita
                             </OverrideDotWrapper>
                           </TableCell>
 
-                          <TableCell>{getStatusBadge(row.status)}</TableCell>
+                          <TableCell>
+                            <div className="flex flex-col items-center gap-0.5">
+                              {getStatusBadge(row.status)}
+                              {(overridesByRow.get(row.rowNumber)?.size ?? 0) > 0 && (
+                                <span
+                                  className="inline-flex items-center gap-0.5 text-[9px] font-medium text-amber-600 cursor-help"
+                                  title={`${overridesByRow.get(row.rowNumber)!.size} field(s) overridden: ${Array.from(overridesByRow.get(row.rowNumber)!.keys()).join(", ")}`}
+                                  data-testid={`override-badge-${row.id}`}
+                                >
+                                  ✎ {overridesByRow.get(row.rowNumber)!.size} edited
+                                </span>
+                              )}
+                            </div>
+                          </TableCell>
                         </TableRow>
                       );
                     })}
