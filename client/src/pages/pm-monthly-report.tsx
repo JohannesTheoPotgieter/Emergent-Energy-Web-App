@@ -227,6 +227,7 @@ export default function PmMonthlyReport() {
       periodStart={reportData.meta?.periodStart}
       periodEnd={reportData.meta?.periodEnd}
       snapshotBehavior={reportData.meta?.snapshotBehavior}
+      snapshotFreshness={(report as any)?.freshness}
       onRegenerate={reportId ? () => safeAction(() => apiPost(`/api/reports/pm/monthly/${reportId}/regenerate`), "Regenerate") : undefined}
       onReview={reportId && status === "draft" ? () => safeAction(() => apiPost(`/api/reports/pm/monthly/${reportId}/review`), "Review") : undefined}
       onPublish={reportId && status === "reviewed" ? () => safeAction(() => apiPost(`/api/reports/pm/monthly/${reportId}/publish`), "Publish") : undefined}

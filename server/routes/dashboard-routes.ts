@@ -21,6 +21,10 @@ import {
   getFinancialSummary,
   type FinancialSummaryPeriod,
 } from "../repositories/finance-analysis-repository";
+import {
+  getDashboardImportHealth,
+  getDashboardAttentionItems,
+} from "../repositories/dashboard-repository";
 
 // SA working days helpers
 function formatDateKey(y: number, m: number, d: number): string {
@@ -1244,19 +1248,8 @@ export function registerDashboardRoutes(app: Express) {
 
   app.get("/api/dashboard/import-health", requireAuth, async (_req, res) => {
     try {
-      const now = Date.now();
-      const history = [
-        { timestamp: new Date(now - 2 * 60 * 60 * 1000).toISOString(), status: "success", recordsProcessed: 150, errors: 0 },
-        { timestamp: new Date(now - 7 * 60 * 60 * 1000).toISOString(), status: "partial", recordsProcessed: 120, errors: 3 },
-        { timestamp: new Date(now - 30 * 60 * 60 * 1000).toISOString(), status: "failed", recordsProcessed: 0, errors: 6 },
-      ] as const;
-      res.json({
-        lastImportTime: history[0].timestamp,
-        lastImportStatus: history[0].status,
-        errorCount: history.reduce((sum, h) => sum + h.errors, 0),
-        pendingValidations: 5,
-        importHistory: history,
-      });
+      const health = await getDashboardImportHealth();
+      res.json(health);
     } catch (error) {
       console.error("Import health API error:", error);
       res.status(500).json({ error: "Failed to fetch import health" });
@@ -1267,23 +1260,11 @@ export function registerDashboardRoutes(app: Express) {
     try {
       setFinanceTrustHeaders(res, {
         sourceLayer: "canonical",
-        canonicalTable: "normalized_cost_lines,normalized_revenue_lines,project_info",
+        canonicalTable: "work_items,qc_warning,financial_edit_requests,project_info",
+        staleAfterSeconds: 60,
       });
-      res.json({
-        behindPlan: [
-          { id: 1, name: "Solar Farm Alpha", owner: "John", daysBehind: 12, ageDays: 12, severity: "high", link: "/projects/1" },
-          { id: 2, name: "Wind Cluster Beta", owner: "Anna", daysBehind: 8, ageDays: 8, severity: "medium", link: "/projects/2" },
-        ],
-        engineeringBlockers: [
-          { id: 11, name: "Grid Study Delay", owner: "Sam", ageDays: 6, severity: "high", link: "/engineering" },
-        ],
-        qualityWarnings: [
-          { id: 21, name: "Commissioning Punchlist", owner: "Lebo", ageDays: 5, severity: "medium", link: "/quality" },
-        ],
-        overdueActions: [
-          { id: 31, name: "Approve Variation 112", owner: "Finance Ops", ageDays: 4, severity: "high", link: "/approvals" },
-        ],
-      });
+      const items = await getDashboardAttentionItems();
+      res.json(items);
     } catch (error) {
       console.error("Attention items API error:", error);
       res.status(500).json({ error: "Failed to fetch attention items" });

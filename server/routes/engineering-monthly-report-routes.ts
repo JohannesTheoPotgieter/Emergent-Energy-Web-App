@@ -8,7 +8,7 @@ import { monthlyReportSnapshots, users } from "@shared/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { requirePermission } from "../permission-middleware";
 import { generateEngineeringReportData } from "../services/engineering-monthly-report-service";
-import { requireAuth, validateMonth, computeKpiDeltas } from "./monthly-report-shared";
+import { requireAuth, validateMonth, computeKpiDeltas, computeReportFreshness } from "./monthly-report-shared";
 import { getEngineeringDrilldownRows, writeDrilldownExcel } from "../services/report-drilldown-service";
 import { parseIntParam } from "../lib/req-params";
 
@@ -69,6 +69,8 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
         publishedByName = u?.name || null;
       }
 
+      const freshness = await computeReportFreshness(snapshot.regeneratedAt ?? snapshot.generatedAt);
+
       res.json({
         id: snapshot.id,
         reportType: snapshot.reportType,
@@ -81,6 +83,7 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
         reviewedAt: snapshot.reviewedAt,
         publishedBy: publishedByName,
         publishedAt: snapshot.publishedAt,
+        freshness,
       });
     } catch (err: unknown) {
       console.error("[Engineering Monthly Report] Error:", (err instanceof Error ? err.message : String(err)));
