@@ -17,6 +17,10 @@ import { evaluateRevenueArStatus } from "../lib/finance/revenue-ar-status";
 import { setFinanceTrustHeaders, buildTrustMeta } from "../lib/finance-trust/envelope";
 import { getCanonicalAllCurrentCostLines } from "../services/project-cost-line-read-service";
 import { getMergedExpensesAndInflows, resolveInflowEffectiveDates } from "../lib/cashflow-helpers";
+import {
+  getFinancialSummary,
+  type FinancialSummaryPeriod,
+} from "../repositories/finance-analysis-repository";
 
 // SA working days helpers
 function formatDateKey(y: number, m: number, d: number): string {
@@ -1288,67 +1292,28 @@ export function registerDashboardRoutes(app: Express) {
 
   app.get("/api/dashboard/financial-summary", requireAuth, async (req, res) => {
     try {
-      const period = String(req.query.period || "ytd");
+      const periodRaw = String(req.query.period || "ytd");
+      const allowed: FinancialSummaryPeriod[] = ["ytd", "current_fy", "this_month", "last_month", "custom"];
+      const period = (allowed as string[]).includes(periodRaw)
+        ? (periodRaw as FinancialSummaryPeriod)
+        : "ytd";
+      const from = typeof req.query.from === "string" ? req.query.from : undefined;
+      const to = typeof req.query.to === "string" ? req.query.to : undefined;
+
       setFinanceTrustHeaders(res, {
         sourceLayer: "canonical",
-        canonicalTable: "normalized_cost_lines,normalized_revenue_lines",
-        derivedTable: "finance_cos_monthly,finance_revenue_monthly,dashboard_project_metrics",
-        cacheLayer: "dashboard_project_metrics_5min_cooldown",
-        staleAfterSeconds: 300,
+        canonicalTable: "normalized_cost_lines,normalized_revenue_lines,opex_budget_monthly",
+        staleAfterSeconds: 60,
       });
-      res.json({
-        period,
-        metrics: [
-          {
-            key: "revenue",
-            label: "Revenue",
-            plan: 12000000,
-            actual: 11100000,
-            forecast: 12500000,
-            trend: [
-              { month: "Oct", value: 1600000 },
-              { month: "Nov", value: 1700000 },
-              { month: "Dec", value: 1800000 },
-              { month: "Jan", value: 1900000 },
-              { month: "Feb", value: 2050000 },
-              { month: "Mar", value: 2200000 },
-            ],
-          },
-          {
-            key: "cos",
-            label: "Cost of Sales",
-            plan: 7600000,
-            actual: 8100000,
-            forecast: 8400000,
-            trend: [
-              { month: "Oct", value: 900000 },
-              { month: "Nov", value: 1100000 },
-              { month: "Dec", value: 1200000 },
-              { month: "Jan", value: 1300000 },
-              { month: "Feb", value: 1500000 },
-              { month: "Mar", value: 1600000 },
-            ],
-          },
-          {
-            key: "opex",
-            label: "Operating Expenditure",
-            plan: 1200000,
-            actual: 980000,
-            forecast: 1150000,
-            trend: [
-              { month: "Oct", value: 180000 },
-              { month: "Nov", value: 150000 },
-              { month: "Dec", value: 160000 },
-              { month: "Jan", value: 170000 },
-              { month: "Feb", value: 160000 },
-              { month: "Mar", value: 160000 },
-            ],
-          },
-        ],
+
+      const summary = await getFinancialSummary({ period, from, to });
+      res.json(summary);
+    } catch (error: any) {
+      const status = error?.status === 400 ? 400 : 500;
+      if (status === 500) console.error("Financial summary API error:", error);
+      res.status(status).json({
+        error: status === 400 ? error.message : "Failed to fetch financial summary",
       });
-    } catch (error) {
-      console.error("Financial summary API error:", error);
-      res.status(500).json({ error: "Failed to fetch financial summary" });
     }
   });
 
