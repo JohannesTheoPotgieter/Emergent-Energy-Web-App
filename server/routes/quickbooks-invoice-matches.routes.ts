@@ -117,6 +117,31 @@ const manualLinkBodySchema = z.object({
   notes: z.string().max(500).optional(),
 });
 
+const bulkApproveBodySchema = z.object({
+  items: z
+    .array(
+      z.object({
+        suggestionId: z.number().int().positive(),
+        candidateIndex: z.number().int().min(0),
+        notes: z.string().max(500).optional(),
+      }),
+    )
+    .min(1)
+    .max(50),
+});
+
+const bulkRejectBodySchema = z.object({
+  items: z
+    .array(
+      z.object({
+        suggestionId: z.number().int().positive(),
+        reason: z.string().min(1).max(500),
+      }),
+    )
+    .min(1)
+    .max(50),
+});
+
 interface FindResponseShape {
   suggestionId: number;
   scope: Scope;
@@ -956,6 +981,349 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
       } catch (err) {
         logApiError("qb.invoice_match.payment_status", err);
         return sendError(res, serverError("Failed to fetch QB payment status."));
+      }
+    },
+  );
+
+  // -------- POST /bulk-approve -------------------------------------------
+  // Safely approves multiple pending suggestions in one request.
+  // Each row is independently validated against the "safe bulk" criteria:
+  //   - confidence >= 90
+  //   - candidate has no warnings
+  //   - app line not already linked
+  //   - cost lines must have a PO number
+  // Rows that fail safety checks are SKIPPED (not failed). Only rows where
+  // the DB confirm* call throws are counted as failed. The batch never aborts
+  // on a single-row failure — partial success is returned.
+  // Counter-party mappings are intentionally omitted from bulk approve;
+  // use the single-approve flow for rows requiring mapping decisions.
+  app.post(
+    "/api/quickbooks/invoice-matches/bulk-approve",
+    requireAuth,
+    requirePermission("financials", "edit"),
+    validateBody(bulkApproveBodySchema),
+    async (req: Request, res: Response) => {
+      try {
+        const body = req.body as z.infer<typeof bulkApproveBodySchema>;
+        const userId = getEffectiveUser(req)?.id ?? null;
+
+        type RowOutcome = "approved" | "skipped" | "failed";
+        const results: Array<{
+          suggestionId: number;
+          outcome: RowOutcome;
+          linkId?: number;
+          reason?: string;
+        }> = [];
+        let approvedCount = 0;
+        let skippedCount = 0;
+        let failedCount = 0;
+
+        for (const item of body.items) {
+          try {
+            const [suggestion] = await db
+              .select()
+              .from(quickbooksMatchSuggestions)
+              .where(eq(quickbooksMatchSuggestions.id, item.suggestionId))
+              .limit(1);
+
+            if (!suggestion) {
+              results.push({ suggestionId: item.suggestionId, outcome: "skipped", reason: "suggestion_not_found" });
+              skippedCount++;
+              continue;
+            }
+            if (suggestion.acceptedAt) {
+              results.push({ suggestionId: item.suggestionId, outcome: "skipped", reason: "already_accepted" });
+              skippedCount++;
+              continue;
+            }
+            if (suggestion.rejectedAt) {
+              results.push({ suggestionId: item.suggestionId, outcome: "skipped", reason: "already_rejected" });
+              skippedCount++;
+              continue;
+            }
+
+            const isCost = suggestion.scope === "expense_invoice";
+            const isRevenue = suggestion.scope === "incoming_invoice";
+            if (!isCost && !isRevenue) {
+              results.push({ suggestionId: item.suggestionId, outcome: "skipped", reason: "invalid_scope" });
+              skippedCount++;
+              continue;
+            }
+
+            const candidates = (
+              suggestion.candidates as unknown as (ScoredCandidate & { qbAlreadyLinkedElsewhere: boolean })[]
+            ) ?? [];
+            const chosen = candidates[item.candidateIndex];
+            if (!chosen) {
+              results.push({ suggestionId: item.suggestionId, outcome: "skipped", reason: "candidate_index_out_of_range" });
+              skippedCount++;
+              continue;
+            }
+
+            // Safety gate 1: score must be >= 90
+            if (chosen.confidence < 90) {
+              results.push({ suggestionId: item.suggestionId, outcome: "skipped", reason: "score_below_threshold" });
+              skippedCount++;
+              continue;
+            }
+
+            // Safety gate 2: no warnings on the candidate (includes qb_already_linked_elsewhere)
+            if (chosen.warnings.length > 0) {
+              results.push({
+                suggestionId: item.suggestionId,
+                outcome: "skipped",
+                reason: `has_warnings:${chosen.warnings.join(",")}`,
+              });
+              skippedCount++;
+              continue;
+            }
+
+            const appEntityId = suggestion.appEntityId;
+            if (!appEntityId) {
+              results.push({ suggestionId: item.suggestionId, outcome: "skipped", reason: "no_app_entity" });
+              skippedCount++;
+              continue;
+            }
+
+            // Safety gate 3: re-check active link (state may have changed since find)
+            const appEntityType = isCost ? "cost_line" as const : "revenue_line" as const;
+            const alreadyLinked = await hasActiveLink(appEntityType, appEntityId);
+            if (alreadyLinked) {
+              results.push({ suggestionId: item.suggestionId, outcome: "skipped", reason: "app_already_linked" });
+              skippedCount++;
+              continue;
+            }
+
+            // Safety gate 4: cost lines must have a PO number
+            if (isCost) {
+              const [clRow] = await db
+                .select({ poNumber: normalizedCostLines.poNumber })
+                .from(normalizedCostLines)
+                .where(and(eq(normalizedCostLines.id, appEntityId), isNull(normalizedCostLines.effectiveTo)))
+                .limit(1);
+              if (!clRow?.poNumber || !String(clRow.poNumber).trim()) {
+                results.push({ suggestionId: item.suggestionId, outcome: "skipped", reason: "no_po" });
+                skippedCount++;
+                continue;
+              }
+            }
+
+            // Resolve project
+            let projectId: number | null = null;
+            if (isCost) {
+              const [row] = await db
+                .select({ projectId: normalizedCostLines.projectId })
+                .from(normalizedCostLines)
+                .where(eq(normalizedCostLines.id, appEntityId))
+                .limit(1);
+              projectId = row?.projectId ?? null;
+            } else {
+              const [row] = await db
+                .select({ projectId: normalizedRevenueLines.projectId })
+                .from(normalizedRevenueLines)
+                .where(eq(normalizedRevenueLines.id, appEntityId))
+                .limit(1);
+              projectId = row?.projectId ?? null;
+            }
+
+            // Attempt to create the link — this is the final atomic guard
+            try {
+              let createdLinkId: number;
+              if (isCost) {
+                const link = await confirmCostLineLink({
+                  projectId,
+                  costLineId: appEntityId,
+                  bill: {
+                    id: chosen.qbEntityId,
+                    docNumber: chosen.qbDocNumber,
+                    txnDate: chosen.qbTxnDate,
+                    dueDate: null,
+                    totalAmount: chosen.qbAmountExVat,
+                    qbAmountIncVat: null,
+                    qbTaxAmount: null,
+                    qbAmountExVat: chosen.qbAmountExVat,
+                    taxUncertain: false,
+                    balance: chosen.qbBalance,
+                    vendorName: chosen.qbCounterpartyName,
+                    vendorId: (chosen as ScoredCandidate & { qbCounterpartyId?: string | null }).qbCounterpartyId ?? null,
+                  },
+                  matchType: "auto_exact",
+                  notes: item.notes ?? null,
+                  confirmedBy: userId,
+                });
+                createdLinkId = link.id;
+              } else {
+                const link = await confirmRevenueLineLink({
+                  projectId,
+                  revenueLineId: appEntityId,
+                  invoice: {
+                    id: chosen.qbEntityId,
+                    docNumber: chosen.qbDocNumber,
+                    txnDate: chosen.qbTxnDate,
+                    dueDate: null,
+                    totalAmount: chosen.qbAmountExVat,
+                    balance: chosen.qbBalance,
+                    customerName: chosen.qbCounterpartyName,
+                    customerId: null,
+                  },
+                  matchType: "auto_exact",
+                  notes: item.notes ?? null,
+                  confirmedBy: userId,
+                });
+                createdLinkId = link.id;
+              }
+
+              await db
+                .update(quickbooksMatchSuggestions)
+                .set({
+                  acceptedAt: new Date(),
+                  acceptedBy: userId,
+                  acceptedQbId: chosen.qbEntityId,
+                  acceptedConfidence: String(chosen.confidence) as unknown as never,
+                })
+                .where(eq(quickbooksMatchSuggestions.id, item.suggestionId));
+
+              logAuditFromReq(req, {
+                entityType: "qb_invoice_match_suggestion",
+                entityId: String(item.suggestionId),
+                action: "qb.invoice_match.bulk_approve",
+                source: "UI",
+                changesJson: {
+                  scope: isCost ? "cost" : "revenue",
+                  appEntityId,
+                  qbEntityId: chosen.qbEntityId,
+                  qbDocNumber: chosen.qbDocNumber,
+                  confidence: chosen.confidence,
+                  linkId: createdLinkId,
+                  notes: item.notes ?? null,
+                },
+              });
+
+              results.push({ suggestionId: item.suggestionId, outcome: "approved", linkId: createdLinkId });
+              approvedCount++;
+            } catch (inner) {
+              if (inner instanceof QuickBooksLinkConflictError) {
+                logAuditFromReq(req, {
+                  entityType: "qb_invoice_match_suggestion",
+                  entityId: String(item.suggestionId),
+                  action: "qb.invoice_match.conflict",
+                  source: "UI",
+                  changesJson: { qbEntityId: chosen.qbEntityId, reason: inner.reason },
+                });
+                results.push({
+                  suggestionId: item.suggestionId,
+                  outcome: "failed",
+                  reason: `conflict:${inner.reason}`,
+                });
+                failedCount++;
+              } else {
+                logApiError("qb.invoice_match.bulk_approve.row", inner);
+                results.push({ suggestionId: item.suggestionId, outcome: "failed", reason: "unexpected_error" });
+                failedCount++;
+              }
+            }
+          } catch (outerErr) {
+            logApiError("qb.invoice_match.bulk_approve.outer", outerErr);
+            results.push({ suggestionId: item.suggestionId, outcome: "failed", reason: "unexpected_error" });
+            failedCount++;
+          }
+        }
+
+        return res.json({ approved: approvedCount, skipped: skippedCount, failed: failedCount, results });
+      } catch (err) {
+        logApiError("qb.invoice_match.bulk_approve", err);
+        return sendError(res, serverError("Failed to bulk approve matches."));
+      }
+    },
+  );
+
+  // -------- POST /bulk-reject --------------------------------------------
+  // Rejects multiple pending suggestions in one request. Suggestions that
+  // are already accepted/rejected are silently skipped (not failed).
+  app.post(
+    "/api/quickbooks/invoice-matches/bulk-reject",
+    requireAuth,
+    requirePermission("financials", "edit"),
+    validateBody(bulkRejectBodySchema),
+    async (req: Request, res: Response) => {
+      try {
+        const body = req.body as z.infer<typeof bulkRejectBodySchema>;
+        const userId = getEffectiveUser(req)?.id ?? null;
+
+        type RowOutcome = "rejected" | "skipped" | "failed";
+        const results: Array<{
+          suggestionId: number;
+          outcome: RowOutcome;
+          reason?: string;
+        }> = [];
+        let rejectedCount = 0;
+        let skippedCount = 0;
+        let failedCount = 0;
+
+        for (const item of body.items) {
+          try {
+            const [suggestion] = await db
+              .select({
+                id: quickbooksMatchSuggestions.id,
+                scope: quickbooksMatchSuggestions.scope,
+                appEntityId: quickbooksMatchSuggestions.appEntityId,
+                acceptedAt: quickbooksMatchSuggestions.acceptedAt,
+                rejectedAt: quickbooksMatchSuggestions.rejectedAt,
+              })
+              .from(quickbooksMatchSuggestions)
+              .where(eq(quickbooksMatchSuggestions.id, item.suggestionId))
+              .limit(1);
+
+            if (!suggestion) {
+              results.push({ suggestionId: item.suggestionId, outcome: "skipped", reason: "suggestion_not_found" });
+              skippedCount++;
+              continue;
+            }
+            if (suggestion.acceptedAt) {
+              results.push({ suggestionId: item.suggestionId, outcome: "skipped", reason: "already_accepted" });
+              skippedCount++;
+              continue;
+            }
+            if (suggestion.rejectedAt) {
+              results.push({ suggestionId: item.suggestionId, outcome: "skipped", reason: "already_rejected" });
+              skippedCount++;
+              continue;
+            }
+
+            await db
+              .update(quickbooksMatchSuggestions)
+              .set({
+                rejectedAt: new Date(),
+                rejectedBy: userId,
+                rejectionReason: item.reason,
+              })
+              .where(eq(quickbooksMatchSuggestions.id, item.suggestionId));
+
+            logAuditFromReq(req, {
+              entityType: "qb_invoice_match_suggestion",
+              entityId: String(item.suggestionId),
+              action: "qb.invoice_match.bulk_reject",
+              source: "UI",
+              changesJson: {
+                scope: suggestion.scope,
+                appEntityId: suggestion.appEntityId,
+                reason: item.reason,
+              },
+            });
+
+            results.push({ suggestionId: item.suggestionId, outcome: "rejected" });
+            rejectedCount++;
+          } catch (rowErr) {
+            logApiError("qb.invoice_match.bulk_reject.row", rowErr);
+            results.push({ suggestionId: item.suggestionId, outcome: "failed", reason: "unexpected_error" });
+            failedCount++;
+          }
+        }
+
+        return res.json({ rejected: rejectedCount, skipped: skippedCount, failed: failedCount, results });
+      } catch (err) {
+        logApiError("qb.invoice_match.bulk_reject", err);
+        return sendError(res, serverError("Failed to bulk reject matches."));
       }
     },
   );
