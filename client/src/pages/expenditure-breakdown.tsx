@@ -93,17 +93,13 @@ function fmtDate(v: string | null): string {
   return v.length >= 10 ? v.slice(0, 10) : v;
 }
 
-export default function ExpenditureBreakdownPage() {
-  const params = useParams<{ projectId: string }>();
-  const projectId = Number(params.projectId);
-
+export function ExpenditureBreakdownContent({ projectId }: { projectId: number }) {
   const { data, isLoading, error } = useQuery<ExpenditureBreakdownResponse>({
     queryKey: [`/api/tracker-replica/${projectId}/expenditure-breakdown`],
     queryFn: fetchQueryFn(`/api/tracker-replica/${projectId}/expenditure-breakdown`),
     enabled: Number.isFinite(projectId),
   });
 
-  // Group 1:N actual batches by their parent cost line.
   const actualsByCostLine = useMemo(() => {
     const map = new Map<number, ExpenditureBreakdownResponse["actualBatches"]>();
     for (const a of data?.actualBatches ?? []) {
@@ -122,12 +118,7 @@ export default function ExpenditureBreakdownPage() {
   }
 
   return (
-    <div className="p-6 space-y-6" data-testid="expenditure-breakdown-page">
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Expenditure Breakdown</h1>
-        <Badge variant="outline">Tracker replica · Project #{projectId}</Badge>
-      </header>
-
+    <div className="space-y-6" data-testid="expenditure-breakdown-content">
       <Card>
         <CardContent className="p-4 grid grid-cols-2 gap-6 text-sm">
           <div>
@@ -205,7 +196,7 @@ export default function ExpenditureBreakdownPage() {
                             <span className="inline-flex items-center gap-1">
                               {c.poNumber ?? "—"}
                               {!!c.invoiceNumber && !c.poNumber && (
-                                <AlertTriangle className="h-3 w-3 text-red-500 shrink-0" title="Invoice without PO" />
+                                <span title="Invoice without PO"><AlertTriangle className="h-3 w-3 text-red-500 shrink-0" /></span>
                               )}
                             </span>
                           </td>
@@ -218,7 +209,6 @@ export default function ExpenditureBreakdownPage() {
                           <td className="border p-1 max-w-xs truncate" style={styleForCell(c.cellFormat, "comments")}>{c.comments ?? "—"}</td>
                         </>
                       ) : (
-                        // First actual batch
                         <>
                           <td className="border p-1 text-center">{batches[0].actualNo}</td>
                           <td className="border p-1" style={styleForCell(batches[0].cellFormat, "costCategory")}>{c.categoryKey ?? c.costCategory ?? "—"}</td>
@@ -230,7 +220,7 @@ export default function ExpenditureBreakdownPage() {
                             <span className="inline-flex items-center gap-1">
                               {batches[0].poNumber ?? "—"}
                               {!!batches[0].invoiceNumber && !batches[0].poNumber && (
-                                <AlertTriangle className="h-3 w-3 text-red-500 shrink-0" title="Invoice without PO" />
+                                <span title="Invoice without PO"><AlertTriangle className="h-3 w-3 text-red-500 shrink-0" /></span>
                               )}
                             </span>
                           </td>
@@ -256,7 +246,7 @@ export default function ExpenditureBreakdownPage() {
                           <span className="inline-flex items-center gap-1">
                             {b.poNumber ?? "—"}
                             {!!b.invoiceNumber && !b.poNumber && (
-                              <AlertTriangle className="h-3 w-3 text-red-500 shrink-0" title="Invoice without PO" />
+                              <span title="Invoice without PO"><AlertTriangle className="h-3 w-3 text-red-500 shrink-0" /></span>
                             )}
                           </span>
                         </td>
@@ -279,6 +269,20 @@ export default function ExpenditureBreakdownPage() {
           </table>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+export default function ExpenditureBreakdownPage() {
+  const params = useParams<{ projectId: string }>();
+  const projectId = Number(params.projectId);
+  return (
+    <div className="p-6 space-y-6" data-testid="expenditure-breakdown-page">
+      <header className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">Expenditure Breakdown</h1>
+        <Badge variant="outline">Tracker replica · Project #{projectId}</Badge>
+      </header>
+      <ExpenditureBreakdownContent projectId={projectId} />
     </div>
   );
 }
