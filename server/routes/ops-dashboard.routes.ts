@@ -7,53 +7,45 @@ const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 60;
 
 let pool: Pool | null = null;
-let poolInitFailed = false;
+
+// Non-secret connection constants. These are deliberately not env vars: they
+// describe *which* database this route reads from (Neon claude_readonly view
+// schema) and never change between environments. Only the password is secret.
+const CLAUDE_RO_HOST = "ep-damp-dawn-ajbdpxyq.c-3.us-east-2.aws.neon.tech";
+const CLAUDE_RO_DB = "neondb";
+const CLAUDE_RO_USER = "claude_readonly";
 
 function resolveClaudeRoUrl(): string | null {
+  // Preferred: build the URL at runtime from CLAUDE_RO_PASSWORD so we keep a
+  // single source of truth for the credential and never duplicate the secret.
+  const pwd = process.env.CLAUDE_RO_PASSWORD;
+  if (pwd && pwd.length > 0) {
+    return `postgresql://${CLAUDE_RO_USER}:${encodeURIComponent(pwd)}@${CLAUDE_RO_HOST}/${CLAUDE_RO_DB}?sslmode=require`;
+  }
+  // Override: a fully-formed CLAUDE_RO_DATABASE_URL is honoured if supplied
+  // (useful for staging or for pointing at a different read-only branch).
   const explicit = process.env.CLAUDE_RO_DATABASE_URL;
   if (!explicit) return null;
-  // First-class path: secret is already a valid URL with percent-encoded password.
   try {
     const u = new URL(explicit);
     if (u.hostname && u.hostname !== "base") return explicit;
   } catch {
-    /* fall through to recovery */
-  }
-  // Recovery path: secret was pasted with a raw (unencoded) password. Rewrite
-  // the user-info segment with proper percent-encoding so the URL parses.
-  // Greedy on the password so it can absorb arbitrary characters (including
-  // additional '@' or ':') up to the LAST '@', which separates userinfo from
-  // host. Pattern: scheme://user:PASSWORD@host[/...][?...]
-  const m = /^([a-z][a-z0-9+.-]*:\/\/)([^:@/?#]+):(.+)@([^@]+)$/i.exec(explicit);
-  if (!m) {
-    console.error(
-      "[ops-dashboard] CLAUDE_RO_DATABASE_URL is unparseable as a URL " +
-        `(length=${explicit.length}, prefix="${explicit.slice(0, 25).replace(/[^a-z0-9:/.@_-]/gi, "?")}")`,
-    );
-    return null;
-  }
-  const [, scheme, user, rawPwd, rest] = m;
-  const rebuilt = `${scheme}${encodeURIComponent(user!)}:${encodeURIComponent(rawPwd!)}@${rest}`;
-  try {
-    const u2 = new URL(rebuilt);
-    if (u2.hostname && u2.hostname !== "base") return rebuilt;
-  } catch {
     /* fall through */
   }
   console.error(
-    "[ops-dashboard] CLAUDE_RO_DATABASE_URL could not be normalised " +
-      "(check that the password contains no '@' character).",
+    "[ops-dashboard] CLAUDE_RO_DATABASE_URL is unparseable " +
+      `(length=${explicit.length}). Set CLAUDE_RO_PASSWORD instead.`,
   );
   return null;
 }
 
 function getPool(): Pool | null {
-  if (pool || poolInitFailed) return pool;
+  if (pool) return pool;
   const url = resolveClaudeRoUrl();
-  if (!url) {
-    poolInitFailed = true;
-    return null;
-  }
+  // Do NOT cache the "no URL" outcome: if the operator fixes the secret while
+  // the process is running, the next request should pick it up automatically
+  // without needing a workflow restart.
+  if (!url) return null;
   // Neon enforces TLS via sslmode=require in the connection string; we let
   // node-postgres derive the verified TLS context from the URL rather than
   // disabling certificate verification.
