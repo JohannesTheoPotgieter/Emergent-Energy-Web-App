@@ -322,6 +322,7 @@ interface FindResponseShape {
     counterpartyName: string | null;
     poNumber: string | null;
     projectId: number | null;
+    description: string | null;
   };
   warnings: ReturnType<typeof appSideWarnings>;
   candidates: (ScoredCandidate & {
@@ -385,6 +386,7 @@ async function loadCostLine(
       amountExVat: normalizedCostLines.amountExVat,
       counterpartyName: normalizedCostLines.counterpartyName,
       poNumber: normalizedCostLines.poNumber,
+      description: normalizedCostLines.description,
     })
     .from(normalizedCostLines)
     .where(
@@ -404,6 +406,7 @@ async function loadCostLine(
     amountExVat: amountToNumber(row.amountExVat),
     counterpartyName: row.counterpartyName ?? null,
     poNumber: row.poNumber ?? null,
+    description: row.description ?? null,
   };
 }
 
@@ -421,6 +424,8 @@ async function loadRevenueLine(
       // QB customer mapping when available, else null. The matcher uses
       // counterparty similarity as a tier-3+ signal so this is acceptable.
       projectName: normalizedRevenueLines.projectName,
+      description: normalizedRevenueLines.description,
+      milestoneName: normalizedRevenueLines.milestoneName,
     })
     .from(normalizedRevenueLines)
     .where(
@@ -440,6 +445,11 @@ async function loadRevenueLine(
     amountExVat: amountToNumber(row.amountExVat),
     counterpartyName: row.projectName ?? null,
     poNumber: null,
+    // Revenue lines don't carry a free-text "description" the way cost
+    // lines do — the milestoneName is the most user-meaningful label
+    // (e.g. "Practical Completion"), so prefer it and fall back to the
+    // raw description column for legacy rows that have one.
+    description: row.milestoneName ?? row.description ?? null,
   };
 }
 
@@ -510,6 +520,8 @@ function billsToCandidates(
       qbAmountExVat: summary.qbAmountExVat,
       qbBalance: balance,
       qbPaymentStatus: status,
+      qbDescription:
+        ((raw as { PrivateNote?: unknown })?.PrivateNote as string | undefined) ?? null,
     };
   });
 }
@@ -542,6 +554,8 @@ function invoicesToCandidates(
       qbAmountExVat: summary.totalAmount, // already ex-VAT after invoiceRawToSummary
       qbBalance: balance,
       qbPaymentStatus: status,
+      qbDescription:
+        ((raw as { PrivateNote?: unknown })?.PrivateNote as string | undefined) ?? null,
     };
   });
 }
@@ -697,6 +711,7 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
             counterpartyName: app.counterpartyName,
             poNumber: app.poNumber ?? null,
             projectId: app.projectId,
+            description: app.description ?? null,
           },
           warnings,
           candidates: annotated,

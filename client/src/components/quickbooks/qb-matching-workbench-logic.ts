@@ -19,6 +19,8 @@ export interface ScoredCandidate {
   qbAmountExVat: number | null;
   qbBalance: number | null;
   qbPaymentStatus: string | null;
+  /** QB doc memo / PrivateNote — shown in the proof drawer for context. */
+  qbDescription: string | null;
   confidence: number;
   reasons: string[];
   warnings: string[];
@@ -53,6 +55,7 @@ export interface FindResponse {
     counterpartyName: string | null;
     poNumber: string | null;
     projectId: number | null;
+    description: string | null;
   };
   warnings: { no_po: boolean; already_linked: boolean };
   candidates: ScoredCandidate[];
@@ -68,6 +71,7 @@ export interface WorkbenchRow {
     invoiceDate: string | null;
     amountExVat: number | null;
     counterpartyName: string | null;
+    description: string | null;
   };
   findResult: FindResponse | null;
   status: RowStatus;
