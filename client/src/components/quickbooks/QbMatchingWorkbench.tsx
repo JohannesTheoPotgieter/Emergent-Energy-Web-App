@@ -323,6 +323,52 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
     },
   });
 
+  // Task #142 — multi-QB approve: a single suggestion's app line is
+  // allocated across N QB docs in one transactional pre-validated call.
+  // The drawer falls back to this when the operator selects > 1
+  // candidate or adds sibling app lines to any of them.
+  const multiApproveMut = useMutation({
+    mutationFn: async (vars: {
+      suggestionId: number;
+      notes?: string;
+      allocations: Array<{
+        candidateIndex: number;
+        lineAllocations: Array<{
+          appEntityType: "cost_line" | "revenue_line";
+          appEntityId: number;
+          allocatedAmountExVat: number;
+        }>;
+      }>;
+    }) => {
+      const res = await apiRequest(
+        "POST",
+        `/api/quickbooks/invoice-matches/${vars.suggestionId}/approve-multi`,
+        { notes: vars.notes, allocations: vars.allocations },
+      );
+      return res.json() as Promise<{
+        linkId: number;
+        results: Array<{ qbEntityId: string; linkId: number }>;
+      }>;
+    },
+    onSuccess: (data, vars) => {
+      toast({
+        title: "Match approved",
+        description: `Linked to ${data.results.length} QB doc${data.results.length === 1 ? "" : "s"}.`,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/quickbooks/links"] });
+      const row = rowsRef.current.find((r) => r.findResult?.suggestionId === vars.suggestionId);
+      if (row) updateRow(row.id, { status: "approved" });
+      setDrawerRowId(null);
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Multi-QB approve failed",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   // ── Bulk-approve ──────────────────────────────────────────────────────────
 
   const safeRows = useMemo(
@@ -897,7 +943,14 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
                   lineAllocations,
                 });
               }}
-              approvePending={singleApproveMut.isPending}
+              onApproveMulti={(allocations) => {
+                if (!drawerRow.findResult) return;
+                multiApproveMut.mutate({
+                  suggestionId: drawerRow.findResult.suggestionId,
+                  allocations,
+                });
+              }}
+              approvePending={singleApproveMut.isPending || multiApproveMut.isPending}
               onRejectDone={() => setDrawerRowId(null)}
             />
           )}
@@ -1026,24 +1079,76 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
 
 // ─── Proof Drawer Content ─────────────────────────────────────────────────────
 
+export type ApproveLineAllocation = {
+  appEntityType: "cost_line" | "revenue_line";
+  appEntityId: number;
+  allocatedAmountExVat: number;
+};
+
 export interface ProofDrawerProps {
   row: WorkbenchRow;
   scope: Scope;
   onApprove: (
     candidateIndex: number,
-    lineAllocations?: Array<{
-      appEntityType: "cost_line" | "revenue_line";
-      appEntityId: number;
-      allocatedAmountExVat: number;
+    lineAllocations?: Array<ApproveLineAllocation>,
+  ) => void;
+  /**
+   * Task #142 — multi-QB approve callback. Used when the operator
+   * selects > 1 candidate (one app line allocated across N QB docs)
+   * OR when they add sibling app lines via the in-drawer search.
+   */
+  onApproveMulti: (
+    allocations: Array<{
+      candidateIndex: number;
+      lineAllocations: Array<ApproveLineAllocation>;
     }>,
   ) => void;
   approvePending: boolean;
   onRejectDone: () => void;
 }
 
-export function ProofDrawerContent({ row, scope, onApprove, approvePending }: ProofDrawerProps) {
+type AddedAppLine = {
+  appEntityType: "cost_line" | "revenue_line";
+  appEntityId: number;
+  label: string;
+  allocStr: string;
+};
+
+export function ProofDrawerContent({ row, scope, onApprove, onApproveMulti, approvePending }: ProofDrawerProps) {
   const { toast } = useToast();
-  const [selectedCandidateIdx, setSelectedCandidateIdx] = useState(0);
+  // Task #142 — multi-QB selection. The first selected candidate is the
+  // "primary" one rendered in the proof table / score reasons / warnings.
+  const [selectedSet, setSelectedSet] = useState<Set<number>>(() => new Set([0]));
+  const [primaryIdx, setPrimaryIdx] = useState(0);
+  const selectedCandidateIdx = primaryIdx;
+  const setSelectedCandidateIdx = (i: number) => {
+    setPrimaryIdx(i);
+    setSelectedSet((prev) => {
+      if (prev.has(i)) return prev;
+      const next = new Set(prev);
+      next.add(i);
+      return next;
+    });
+  };
+  const toggleCandidate = (i: number) => {
+    setSelectedSet((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) {
+        if (next.size === 1) return next; // can't deselect the only one
+        next.delete(i);
+        if (i === primaryIdx) {
+          const remaining = [...next].sort((a, b) => a - b);
+          setPrimaryIdx(remaining[0]!);
+        }
+      } else {
+        next.add(i);
+      }
+      return next;
+    });
+  };
+  // Per-QB editor state keyed by qbEntityId.
+  const [allocStrByQb, setAllocStrByQb] = useState<Record<string, string>>({});
+  const [addedLinesByQb, setAddedLinesByQb] = useState<Record<string, AddedAppLine[]>>({});
   const [rejectReason, setRejectReason] = useState("");
   const [manualQbId, setManualQbId] = useState("");
   const manualMut = useMutation({
@@ -1101,52 +1206,58 @@ export function ProofDrawerContent({ row, scope, onApprove, approvePending }: Pr
   const appLine = row.appLine;
 
   const chosenCandidate = result?.candidates[selectedCandidateIdx] ?? null;
-
-  // ── Task #142 — per-link allocation editor (this app line only) ──────────
-  // Default this app line's allocation to the QB doc's remaining capacity
-  // (or the app amount when the QB doc has no existing siblings).
   const appEntityType: "cost_line" | "revenue_line" =
     scope === "cost" ? "cost_line" : "revenue_line";
-  const sib = chosenCandidate?.qbAllocation;
-  const otherSiblings = useMemo(
-    () =>
-      (sib?.siblings ?? []).filter(
-        (s) => !(s.appEntityType === appEntityType && s.appEntityId === appLine.id),
-      ),
-    [sib, appEntityType, appLine.id],
-  );
-  const otherSiblingSum = useMemo(
-    () => otherSiblings.reduce((a, s) => a + (Number(s.allocatedAmountExVat) || 0), 0),
-    [otherSiblings],
-  );
-  const qbTotal = chosenCandidate?.qbAmountExVat ?? null;
-  const defaultThisAlloc = useMemo(() => {
-    if (qbTotal !== null) {
-      const remaining = Number((qbTotal - otherSiblingSum).toFixed(2));
-      const app = Number(appLine.amountExVat ?? remaining);
-      // Clamp default to whichever is smaller — never propose >app amount.
-      return Math.max(0, Math.min(remaining, app));
-    }
-    return Number(appLine.amountExVat ?? 0);
-  }, [qbTotal, otherSiblingSum, appLine.amountExVat]);
-  const [thisAllocStr, setThisAllocStr] = useState<string>(
-    defaultThisAlloc.toFixed(2),
-  );
-  const isMultiAllocActive = !!sib && (otherSiblings.length > 0 || thisAllocStr !== "");
-  // Reset the editor whenever the candidate or its siblings change.
-  useEffect(() => {
-    setThisAllocStr(defaultThisAlloc.toFixed(2));
-  }, [chosenCandidate?.qbEntityId, defaultThisAlloc]);
 
-  const thisAllocNum = Number(thisAllocStr);
-  const allocSumCheck = useMemo(() => {
-    if (!chosenCandidate) return null;
+  // Task #142 — Per-candidate allocation derivation. Called once per
+  // selected candidate inside the render loop. Pure function (no hooks)
+  // so it's safe to call in a loop. State (`allocStrByQb`,
+  // `addedLinesByQb`) is keyed by qbEntityId and persists across
+  // re-renders.
+  function computeCandidateAlloc(c: ScoredCandidate) {
+    const sib = c.qbAllocation;
+    const otherSiblings = (sib?.siblings ?? []).filter(
+      (s) => !(s.appEntityType === appEntityType && s.appEntityId === appLine.id),
+    );
+    const otherSiblingSum = otherSiblings.reduce(
+      (a, s) => a + (Number(s.allocatedAmountExVat) || 0),
+      0,
+    );
+    const qbTotal = c.qbAmountExVat ?? null;
+    const added = addedLinesByQb[c.qbEntityId] ?? [];
+    const addedSum = added.reduce((a, l) => a + (Number(l.allocStr) || 0), 0);
+    const defaultThisAlloc = qbTotal !== null
+      ? Math.max(0, Math.min(
+          Number((qbTotal - otherSiblingSum - addedSum).toFixed(2)),
+          Number(appLine.amountExVat ?? qbTotal),
+        ))
+      : Number(appLine.amountExVat ?? 0);
+    const allocStr = allocStrByQb[c.qbEntityId] ?? defaultThisAlloc.toFixed(2);
+    const allocNum = Number(allocStr);
     const allAllocations = [
       ...otherSiblings.map((s) => ({ allocatedAmountExVat: s.allocatedAmountExVat })),
-      { allocatedAmountExVat: Number.isFinite(thisAllocNum) ? thisAllocNum : 0 },
+      ...added.map((l) => ({ allocatedAmountExVat: Number(l.allocStr) || 0 })),
+      { allocatedAmountExVat: Number.isFinite(allocNum) ? allocNum : 0 },
     ];
-    return checkQbAllocationSum(qbTotal, allAllocations);
-  }, [chosenCandidate, qbTotal, otherSiblings, thisAllocNum]);
+    const allocSumCheck = checkQbAllocationSum(qbTotal, allAllocations);
+    return {
+      otherSiblings,
+      qbTotal,
+      added,
+      defaultThisAlloc,
+      allocStr,
+      allocNum,
+      allocSumCheck,
+    };
+  }
+
+  // Primary candidate's allocation (used by the Manual Link override
+  // section's "did the operator edit the allocation?" check).
+  const primaryAlloc = chosenCandidate
+    ? computeCandidateAlloc(chosenCandidate)
+    : null;
+  const thisAllocNum = primaryAlloc?.allocNum ?? NaN;
+  const defaultThisAlloc = primaryAlloc?.defaultThisAlloc ?? 0;
 
   const appWarnings: string[] = [];
   if (result?.warnings.no_po) appWarnings.push("no_po");
@@ -1221,23 +1332,56 @@ export function ProofDrawerContent({ row, scope, onApprove, approvePending }: Pr
 
       {result && result.candidates.length > 0 && (
         <>
-          {/* Candidate selector */}
-          {result.candidates.length > 1 && (
-            <div className="flex gap-1 flex-wrap" data-testid="drawer-candidates">
-              {result.candidates.map((c, i) => (
-                <button
-                  key={c.qbEntityId}
-                  onClick={() => setSelectedCandidateIdx(i)}
-                  className={`px-2 py-0.5 rounded text-[10px] border ${
-                    i === selectedCandidateIdx
-                      ? "bg-emerald-100 border-emerald-300 text-emerald-800"
-                      : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
-                  }`}
-                  data-testid={`drawer-candidate-${i}`}
-                >
-                  #{i + 1} · {c.qbDocNumber ?? c.qbEntityId} · {c.confidence}%
-                </button>
-              ))}
+          {/* Task #142 — Multi-QB candidate selector. Each candidate is
+              a checkbox; the operator can link this app line to multiple
+              QB docs in one approve action. The "primary" one (radio
+              indicator) drives the proof table / score reasons / warnings
+              display above. */}
+          {result.candidates.length > 0 && (
+            <div className="space-y-1" data-testid="drawer-candidates">
+              <div className="text-[10px] text-muted-foreground uppercase font-medium">
+                QB Candidates ({selectedSet.size}/{result.candidates.length} selected)
+              </div>
+              <div className="flex gap-1 flex-wrap">
+                {result.candidates.map((c, i) => {
+                  const checked = selectedSet.has(i);
+                  const isPrimary = i === primaryIdx;
+                  return (
+                    <label
+                      key={c.qbEntityId}
+                      className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] border cursor-pointer ${
+                        checked
+                          ? isPrimary
+                            ? "bg-emerald-100 border-emerald-300 text-emerald-800"
+                            : "bg-sky-50 border-sky-200 text-sky-800"
+                          : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                      }`}
+                      data-testid={`drawer-candidate-${i}`}
+                    >
+                      <Checkbox
+                        checked={checked}
+                        onCheckedChange={() => toggleCandidate(i)}
+                        className="h-3 w-3"
+                        data-testid={`drawer-candidate-checkbox-${i}`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setSelectedCandidateIdx(i)}
+                        className="flex items-center gap-1"
+                        data-testid={`drawer-candidate-primary-${i}`}
+                      >
+                        <span className="font-medium">#{i + 1}</span>
+                        <span>· {c.qbDocNumber ?? c.qbEntityId} · {c.confidence}%</span>
+                        {isPrimary && checked && (
+                          <span className="text-[9px] uppercase font-semibold text-emerald-700">
+                            primary
+                          </span>
+                        )}
+                      </button>
+                    </label>
+                  );
+                })}
+              </div>
             </div>
           )}
 
@@ -1347,95 +1491,40 @@ export function ProofDrawerContent({ row, scope, onApprove, approvePending }: Pr
             </div>
           )}
 
-          {/* Task #142 — QB Allocation panel: sibling allocations + per-link
-              Rand editor for THIS app line + live tolerance gate. */}
-          {chosenCandidate && (
-            <div
-              className="rounded border border-slate-200 bg-slate-50/60 p-3 space-y-2"
-              data-testid="drawer-qb-allocation"
-            >
-              <div className="flex items-center justify-between">
-                <div className="text-[10px] text-muted-foreground uppercase font-medium">
-                  QB Allocation
-                </div>
-                <div className="text-[10px] text-muted-foreground">
-                  QB total: <span className="font-mono">{formatRand(qbTotal)}</span>
-                </div>
-              </div>
-
-              {/* Sibling rows (other app lines already linked to this QB doc) */}
-              {otherSiblings.length > 0 ? (
-                <div
-                  className="space-y-1 text-[11px]"
-                  data-testid="drawer-allocation-siblings"
-                >
-                  {otherSiblings.map((s) => (
-                    <div
-                      key={s.linkId}
-                      className="flex items-center justify-between rounded bg-white px-2 py-1 border border-slate-200"
-                      data-testid={`drawer-allocation-sibling-${s.linkId}`}
-                    >
-                      <span className="text-slate-600">
-                        {s.appEntityType === "cost_line" ? "Cost line" : "Revenue line"} #
-                        {s.appEntityId}
-                      </span>
-                      <span className="font-mono tabular-nums">
-                        {formatRand(s.allocatedAmountExVat)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-[10px] text-muted-foreground">
-                  No other app lines linked to this QB doc.
-                </div>
-              )}
-
-              {/* This app line's editable allocation */}
-              <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-200">
-                <Label className="text-[11px] text-slate-700">
-                  This line allocation (R)
-                </Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  className="h-7 text-xs font-mono w-32 text-right"
-                  value={thisAllocStr}
-                  onChange={(e) => setThisAllocStr(e.target.value)}
-                  data-testid="drawer-input-this-allocation"
-                />
-              </div>
-
-              {/* Live tolerance summary */}
-              {allocSumCheck && (
-                <div
-                  className={`text-[10px] flex items-center justify-between rounded px-2 py-1 ${
-                    allocSumCheck.ok
-                      ? allocSumCheck.toleranceApplied
-                        ? "bg-amber-50 text-amber-800 border border-amber-200"
-                        : "bg-emerald-50 text-emerald-800 border border-emerald-200"
-                      : "bg-rose-50 text-rose-800 border border-rose-200"
-                  }`}
-                  data-testid="drawer-allocation-summary"
-                >
-                  <span>
-                    Sum {formatRand(allocSumCheck.sum)}
-                    {allocSumCheck.delta !== null && (
-                      <> · Δ {formatRand(allocSumCheck.delta)}</>
-                    )}
-                  </span>
-                  <span>
-                    {allocSumCheck.ok
-                      ? allocSumCheck.toleranceApplied
-                        ? `within ±${formatRand(allocSumCheck.tolerance)} tol.`
-                        : "balanced"
-                      : `exceeds ±${formatRand(allocSumCheck.tolerance)} tol.`}
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
+          {/* Task #142 — One QB Allocation panel per selected candidate.
+              Each panel shows existing siblings + this-app-line editor +
+              any operator-added sibling app lines + live tolerance gate. */}
+          {[...selectedSet].sort((a, b) => a - b).map((idx) => {
+            const c = result.candidates[idx];
+            if (!c) return null;
+            const ca = computeCandidateAlloc(c);
+            return (
+              <QbAllocationPanel
+                key={c.qbEntityId}
+                candidate={c}
+                candidateIndex={idx}
+                appEntityType={appEntityType}
+                appLine={appLine}
+                projectId={result.app.projectId}
+                scope={scope}
+                otherSiblings={ca.otherSiblings}
+                qbTotal={ca.qbTotal}
+                allocStr={ca.allocStr}
+                onAllocStrChange={(v) =>
+                  setAllocStrByQb((prev) => ({ ...prev, [c.qbEntityId]: v }))
+                }
+                addedLines={ca.added}
+                onAddedLinesChange={(updater) =>
+                  setAddedLinesByQb((prev) => ({
+                    ...prev,
+                    [c.qbEntityId]: updater(prev[c.qbEntityId] ?? []),
+                  }))
+                }
+                allocSumCheck={ca.allocSumCheck}
+                isPrimary={idx === primaryIdx}
+              />
+            );
+          })}
 
           {/* Payment status */}
           {chosenCandidate?.qbPaymentStatus && (
@@ -1467,57 +1556,111 @@ export function ProofDrawerContent({ row, scope, onApprove, approvePending }: Pr
             <div className="space-y-3 pt-2 border-t" data-testid="drawer-actions">
               {/* Approve */}
               <div>
-                <Button
-                  size="sm"
-                  className="h-7 text-xs w-full bg-emerald-600 hover:bg-emerald-700 text-white"
-                  disabled={
-                    approvePending ||
-                    !chosenCandidate ||
-                    (chosenCandidate?.qbAlreadyLinkedElsewhere ?? false) ||
-                    result.warnings.already_linked ||
-                    // Task #142 — block approve when the per-link Rand sum
-                    // would breach tolerance. Always-true when QB total is
-                    // unknown (writer skips the check).
-                    (allocSumCheck ? !allocSumCheck.ok : false)
-                  }
-                  onClick={() => {
-                    // Task #142 — when there are siblings (or the operator
-                    // edited the per-link amount away from the app total),
-                    // route through the allocation-aware writer.
-                    const editedAway =
-                      Number.isFinite(thisAllocNum) &&
-                      Math.abs(thisAllocNum - Number(appLine.amountExVat ?? 0)) > 0.01;
-                    const useAllocations = isMultiAllocActive && (otherSiblings.length > 0 || editedAway);
-                    if (useAllocations && Number.isFinite(thisAllocNum)) {
-                      const allocations = [
-                        ...otherSiblings.map((s) => ({
+                {(() => {
+                  // Task #142 — Build allocation blocks for every selected
+                  // QB candidate. Approve gates on every block being
+                  // balanced (or every block having an unknown QB total).
+                  const selectedIdxes = [...selectedSet].sort((a, b) => a - b);
+                  const blocks = selectedIdxes
+                    .map((idx) => {
+                      const c = result.candidates[idx];
+                      if (!c) return null;
+                      const ca = computeCandidateAlloc(c);
+                      const lineAllocations: ApproveLineAllocation[] = [
+                        ...ca.otherSiblings.map((s) => ({
                           appEntityType: s.appEntityType,
                           appEntityId: s.appEntityId,
                           allocatedAmountExVat: s.allocatedAmountExVat,
                         })),
+                        ...ca.added.map((l) => ({
+                          appEntityType: l.appEntityType,
+                          appEntityId: l.appEntityId,
+                          allocatedAmountExVat: Number(l.allocStr) || 0,
+                        })),
                         {
                           appEntityType,
                           appEntityId: appLine.id,
-                          allocatedAmountExVat: thisAllocNum,
+                          allocatedAmountExVat: ca.allocNum,
                         },
                       ];
-                      onApprove(selectedCandidateIdx, allocations);
-                    } else {
-                      onApprove(selectedCandidateIdx);
-                    }
-                  }}
-                  data-testid="drawer-btn-approve"
-                >
-                  {approvePending ? (
-                    <Loader2 className="h-3 w-3 animate-spin mr-2" />
-                  ) : (
-                    <Link2 className="h-3 w-3 mr-2" />
-                  )}
-                  Approve Match #{selectedCandidateIdx + 1}
-                </Button>
-                {(chosenCandidate?.qbAlreadyLinkedElsewhere || result.warnings.already_linked) && (
+                      return {
+                        candidateIndex: idx,
+                        lineAllocations,
+                        balanced: ca.allocSumCheck.ok,
+                        hasInvalidAlloc:
+                          !Number.isFinite(ca.allocNum) || ca.allocNum <= 0,
+                        hasInvalidAddedAlloc: ca.added.some(
+                          (l) => !Number.isFinite(Number(l.allocStr)) || Number(l.allocStr) <= 0,
+                        ),
+                      };
+                    })
+                    .filter((b): b is NonNullable<typeof b> => b !== null);
+                  const allBalanced = blocks.length > 0 && blocks.every((b) => b.balanced);
+                  const anyInvalidAlloc = blocks.some(
+                    (b) => b.hasInvalidAlloc || b.hasInvalidAddedAlloc,
+                  );
+                  const isMulti =
+                    blocks.length > 1 ||
+                    blocks.some((b) => b.lineAllocations.length > 1);
+                  return (
+                    <Button
+                      size="sm"
+                      className="h-7 text-xs w-full bg-emerald-600 hover:bg-emerald-700 text-white"
+                      disabled={
+                        approvePending ||
+                        blocks.length === 0 ||
+                        result.warnings.already_linked ||
+                        !allBalanced ||
+                        anyInvalidAlloc
+                      }
+                      onClick={() => {
+                        if (isMulti) {
+                          onApproveMulti(
+                            blocks.map((b) => ({
+                              candidateIndex: b.candidateIndex,
+                              lineAllocations: b.lineAllocations,
+                            })),
+                          );
+                        } else {
+                          // Single QB doc with single (own) line — preserve
+                          // legacy single-approve path. If the operator
+                          // edited the allocation, forward it; else send
+                          // without allocations to use the legacy 100% path.
+                          const only = blocks[0]!;
+                          const editedAway =
+                            only.lineAllocations.length > 1 ||
+                            Math.abs(
+                              only.lineAllocations[0]!.allocatedAmountExVat -
+                                Number(appLine.amountExVat ?? 0),
+                            ) > 0.01;
+                          onApprove(
+                            only.candidateIndex,
+                            editedAway ? only.lineAllocations : undefined,
+                          );
+                        }
+                      }}
+                      data-testid="drawer-btn-approve"
+                    >
+                      {approvePending ? (
+                        <Loader2 className="h-3 w-3 animate-spin mr-2" />
+                      ) : (
+                        <Link2 className="h-3 w-3 mr-2" />
+                      )}
+                      {isMulti
+                        ? `Approve & Link to ${blocks.length} QB Doc${blocks.length === 1 ? "" : "s"}`
+                        : `Approve Match #${selectedCandidateIdx + 1}`}
+                    </Button>
+                  );
+                })()}
+                {result.warnings.already_linked && (
                   <p className="text-[10px] text-rose-700 mt-1">
-                    Cannot approve: link conflict detected.
+                    Cannot approve: this app line is already linked.
+                  </p>
+                )}
+                {chosenCandidate?.qbAlreadyLinkedElsewhere && !result.warnings.already_linked && (
+                  <p className="text-[10px] text-amber-700 mt-1">
+                    This QB doc already pays other app lines — your allocation will join the
+                    existing sibling group below.
                   </p>
                 )}
               </div>
@@ -1611,7 +1754,322 @@ export function ProofDrawerContent({ row, scope, onApprove, approvePending }: Pr
   );
 }
 
-// ─── Proof Field Row ──────────────────────────────────────────────────────────
+// ─── QB Allocation Panel (Task #142) ──────────────────────────────────────────
+// One panel per selected QB candidate. Shows existing siblings, an editable
+// "this app line" allocation, an "add another app line" search/typeahead,
+// and a live tolerance gate.
+
+interface AppLineSearchHit {
+  appEntityType: "cost_line" | "revenue_line";
+  appEntityId: number;
+  invoiceNumber: string | null;
+  invoiceDate: string | null;
+  amountExVat: number | null;
+  counterpartyName: string | null;
+  projectId: number | null;
+  projectName: string | null;
+}
+
+function QbAllocationPanel(props: {
+  candidate: ScoredCandidate;
+  candidateIndex: number;
+  appEntityType: "cost_line" | "revenue_line";
+  appLine: { id: number; amountExVat: number | null; invoiceNumber: string | null };
+  projectId: number | null;
+  scope: Scope;
+  otherSiblings: NonNullable<ScoredCandidate["qbAllocation"]>["siblings"];
+  qbTotal: number | null;
+  allocStr: string;
+  onAllocStrChange: (v: string) => void;
+  addedLines: AddedAppLine[];
+  onAddedLinesChange: (updater: (prev: AddedAppLine[]) => AddedAppLine[]) => void;
+  allocSumCheck: ReturnType<typeof checkQbAllocationSum>;
+  isPrimary: boolean;
+}) {
+  const {
+    candidate: c,
+    candidateIndex,
+    appEntityType,
+    appLine,
+    projectId,
+    scope,
+    otherSiblings,
+    qbTotal,
+    allocStr,
+    onAllocStrChange,
+    addedLines,
+    onAddedLinesChange,
+    allocSumCheck,
+    isPrimary,
+  } = props;
+
+  // Typeahead search state for "+ Add another app line".
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 250);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const searchQuery = useQuery({
+    queryKey: [
+      "/api/quickbooks/invoice-matches/app-lines/search",
+      scope,
+      debouncedSearch,
+      projectId,
+    ],
+    enabled: debouncedSearch.length >= 2,
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      params.set("scope", scope === "cost" ? "cost" : "revenue");
+      params.set("q", debouncedSearch);
+      if (projectId !== null) params.set("projectId", String(projectId));
+      params.set("limit", "10");
+      const res = await apiRequest(
+        "GET",
+        `/api/quickbooks/invoice-matches/app-lines/search?${params.toString()}`,
+      );
+      return (await res.json()) as { items: AppLineSearchHit[] };
+    },
+    staleTime: 30_000,
+  });
+
+  const candidateAppLineIds = new Set<string>([
+    `${appEntityType}:${appLine.id}`,
+    ...otherSiblings.map((s) => `${s.appEntityType}:${s.appEntityId}`),
+    ...addedLines.map((l) => `${l.appEntityType}:${l.appEntityId}`),
+  ]);
+
+  const addLine = (hit: AppLineSearchHit) => {
+    const key = `${hit.appEntityType}:${hit.appEntityId}`;
+    if (candidateAppLineIds.has(key)) return;
+    const remaining = qbTotal !== null
+      ? Math.max(0, Number((qbTotal -
+          otherSiblings.reduce((a, s) => a + (Number(s.allocatedAmountExVat) || 0), 0) -
+          addedLines.reduce((a, l) => a + (Number(l.allocStr) || 0), 0) -
+          (Number(allocStr) || 0)
+        ).toFixed(2)))
+      : Number(hit.amountExVat ?? 0);
+    const proposed = Math.min(remaining, Number(hit.amountExVat ?? remaining)) || 0.01;
+    onAddedLinesChange((prev) => [
+      ...prev,
+      {
+        appEntityType: hit.appEntityType,
+        appEntityId: hit.appEntityId,
+        label: `${hit.appEntityType === "cost_line" ? "Cost" : "Revenue"} #${hit.appEntityId}${
+          hit.invoiceNumber ? ` · ${hit.invoiceNumber}` : ""
+        }${hit.counterpartyName ? ` · ${hit.counterpartyName}` : ""}`,
+        allocStr: proposed.toFixed(2),
+      },
+    ]);
+    setSearch("");
+    setDebouncedSearch("");
+  };
+
+  const removeAddedLine = (idx: number) => {
+    onAddedLinesChange((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const updateAddedAlloc = (idx: number, v: string) => {
+    onAddedLinesChange((prev) =>
+      prev.map((l, i) => (i === idx ? { ...l, allocStr: v } : l)),
+    );
+  };
+
+  return (
+    <div
+      className={`rounded border p-3 space-y-2 ${
+        isPrimary ? "border-emerald-300 bg-emerald-50/40" : "border-slate-200 bg-slate-50/60"
+      }`}
+      data-testid={`drawer-qb-allocation-${candidateIndex}`}
+    >
+      <div className="flex items-center justify-between">
+        <div className="text-[10px] text-muted-foreground uppercase font-medium">
+          QB Allocation · #{candidateIndex + 1} {c.qbDocNumber ?? c.qbEntityId}
+          {isPrimary && (
+            <span className="ml-1 text-[9px] uppercase font-semibold text-emerald-700">
+              primary
+            </span>
+          )}
+        </div>
+        <div className="text-[10px] text-muted-foreground">
+          QB total: <span className="font-mono">{formatRand(qbTotal)}</span>
+        </div>
+      </div>
+
+      {/* Existing sibling rows */}
+      {otherSiblings.length > 0 && (
+        <div
+          className="space-y-1 text-[11px]"
+          data-testid={`drawer-allocation-siblings-${candidateIndex}`}
+        >
+          {otherSiblings.map((s) => (
+            <div
+              key={s.linkId}
+              className="flex items-center justify-between rounded bg-white px-2 py-1 border border-slate-200"
+              data-testid={`drawer-allocation-sibling-${s.linkId}`}
+            >
+              <span className="text-slate-600">
+                {s.appEntityType === "cost_line" ? "Cost line" : "Revenue line"} #
+                {s.appEntityId}
+              </span>
+              <span className="font-mono tabular-nums">
+                {formatRand(s.allocatedAmountExVat)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Operator-added sibling rows (this approve action only) */}
+      {addedLines.length > 0 && (
+        <div
+          className="space-y-1 text-[11px]"
+          data-testid={`drawer-allocation-added-${candidateIndex}`}
+        >
+          {addedLines.map((l, i) => (
+            <div
+              key={`${l.appEntityType}:${l.appEntityId}`}
+              className="flex items-center gap-2 rounded bg-sky-50/60 px-2 py-1 border border-sky-200"
+              data-testid={`drawer-allocation-added-row-${candidateIndex}-${i}`}
+            >
+              <span className="text-slate-700 flex-1 truncate">{l.label}</span>
+              <Input
+                type="number"
+                step="0.01"
+                min="0.01"
+                className="h-6 text-[11px] font-mono w-24 text-right"
+                value={l.allocStr}
+                onChange={(e) => updateAddedAlloc(i, e.target.value)}
+                data-testid={`drawer-allocation-added-input-${candidateIndex}-${i}`}
+              />
+              <button
+                type="button"
+                onClick={() => removeAddedLine(i)}
+                className="text-rose-600 hover:text-rose-700"
+                data-testid={`drawer-allocation-added-remove-${candidateIndex}-${i}`}
+                aria-label="Remove added line"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* This app line's editable allocation */}
+      <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-200">
+        <Label className="text-[11px] text-slate-700">
+          This line allocation (R) — {appEntityType === "cost_line" ? "Cost" : "Revenue"} #
+          {appLine.id}
+        </Label>
+        <Input
+          type="number"
+          step="0.01"
+          min="0.01"
+          className="h-7 text-xs font-mono w-32 text-right"
+          value={allocStr}
+          onChange={(e) => onAllocStrChange(e.target.value)}
+          data-testid={`drawer-input-this-allocation-${candidateIndex}`}
+        />
+      </div>
+
+      {/* + Add another app line — search combobox */}
+      <div className="space-y-1 pt-1 border-t border-slate-200">
+        <Label className="text-[10px] text-slate-600">
+          + Add another app line to this QB doc
+        </Label>
+        <div className="relative">
+          <Input
+            placeholder="Search by invoice #, counterparty, or project (min 2 chars)…"
+            className="h-7 text-xs"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            data-testid={`drawer-app-line-search-${candidateIndex}`}
+          />
+          {debouncedSearch.length >= 2 && (
+            <div
+              className="absolute z-10 mt-1 w-full rounded border border-slate-200 bg-white shadow-md max-h-60 overflow-y-auto"
+              data-testid={`drawer-app-line-search-results-${candidateIndex}`}
+            >
+              {searchQuery.isLoading && (
+                <div className="px-2 py-2 text-[11px] text-muted-foreground">
+                  Searching…
+                </div>
+              )}
+              {!searchQuery.isLoading &&
+                (searchQuery.data?.items.length ?? 0) === 0 && (
+                  <div className="px-2 py-2 text-[11px] text-muted-foreground">
+                    No matches.
+                  </div>
+                )}
+              {(searchQuery.data?.items ?? []).map((hit) => {
+                const key = `${hit.appEntityType}:${hit.appEntityId}`;
+                const already = candidateAppLineIds.has(key);
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => !already && addLine(hit)}
+                    disabled={already}
+                    className={`w-full text-left px-2 py-1.5 text-[11px] border-b border-slate-100 last:border-b-0 ${
+                      already
+                        ? "bg-slate-50 text-slate-400 cursor-not-allowed"
+                        : "hover:bg-emerald-50 text-slate-700"
+                    }`}
+                    data-testid={`drawer-app-line-search-hit-${candidateIndex}-${hit.appEntityId}`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate">
+                        {hit.invoiceNumber ?? `#${hit.appEntityId}`}
+                        {hit.counterpartyName && ` · ${hit.counterpartyName}`}
+                        {hit.projectName && ` · ${hit.projectName}`}
+                      </span>
+                      <span className="font-mono shrink-0">
+                        {formatRand(hit.amountExVat)}
+                      </span>
+                    </div>
+                    {already && (
+                      <div className="text-[9px] text-slate-400">
+                        already in this allocation
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Live tolerance summary */}
+      <div
+        className={`text-[10px] flex items-center justify-between rounded px-2 py-1 ${
+          allocSumCheck.ok
+            ? allocSumCheck.toleranceApplied
+              ? "bg-amber-50 text-amber-800 border border-amber-200"
+              : "bg-emerald-50 text-emerald-800 border border-emerald-200"
+            : "bg-rose-50 text-rose-800 border border-rose-200"
+        }`}
+        data-testid={`drawer-allocation-summary-${candidateIndex}`}
+      >
+        <span>
+          Sum {formatRand(allocSumCheck.sum)}
+          {allocSumCheck.delta !== null && (
+            <> · Δ {formatRand(allocSumCheck.delta)}</>
+          )}
+        </span>
+        <span>
+          {allocSumCheck.ok
+            ? allocSumCheck.toleranceApplied
+              ? `within ±${formatRand(allocSumCheck.tolerance)} tol.`
+              : "balanced"
+            : `exceeds ±${formatRand(allocSumCheck.tolerance)} tol.`}
+        </span>
+      </div>
+    </div>
+  );
+}
 
 function ProofFieldRow({
   field,

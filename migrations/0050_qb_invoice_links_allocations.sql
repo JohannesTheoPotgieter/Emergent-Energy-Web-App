@@ -29,12 +29,16 @@
 ALTER TABLE quickbooks_invoice_links
   ADD COLUMN IF NOT EXISTS allocated_amount_ex_vat numeric(15, 2);
 
+-- Backfill legacy single-link rows as 100% allocations of their QB doc.
+-- Use 0.01 as a floor so the strict `> 0` invariant added below is never
+-- violated by rows whose `qb_amount` was missing (these are anomalies the
+-- writer would never produce; the floor keeps the migration non-destructive
+-- so the operator can clean them up post-migrate).
 UPDATE quickbooks_invoice_links
-SET allocated_amount_ex_vat = COALESCE(qb_amount, 0)
+SET allocated_amount_ex_vat = GREATEST(COALESCE(qb_amount, 0.01), 0.01)
 WHERE allocated_amount_ex_vat IS NULL;
 
 ALTER TABLE quickbooks_invoice_links
-  ALTER COLUMN allocated_amount_ex_vat SET DEFAULT 0,
   ALTER COLUMN allocated_amount_ex_vat SET NOT NULL;
 
 ALTER TABLE quickbooks_invoice_links
@@ -48,18 +52,23 @@ CREATE INDEX IF NOT EXISTS quickbooks_invoice_links_qb_entity_idx
   ON quickbooks_invoice_links (qb_entity_type, qb_entity_id, qb_realm_id)
   WHERE deleted_at IS NULL;
 
--- Sanity guard: allocation must be non-negative. Zero is allowed for
--- transitional rows but rejected by the writer in normal flows.
+-- Strict invariant: every allocation must consume a positive Rand value.
+-- The writer also rejects zero allocations, but the DB CHECK is the
+-- authoritative guard. Drop any prior `>= 0` variant first so re-runs of
+-- this migration converge on the strict version.
 -- PostgreSQL does not support `ADD CONSTRAINT IF NOT EXISTS`, so wrap the
 -- ALTER in a DO block that checks pg_constraint first (idempotent re-run).
+ALTER TABLE quickbooks_invoice_links
+  DROP CONSTRAINT IF EXISTS quickbooks_invoice_links_allocated_non_neg;
+
 DO $$
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint
-    WHERE conname = 'quickbooks_invoice_links_allocated_non_neg'
+    WHERE conname = 'quickbooks_invoice_links_allocated_positive'
   ) THEN
     ALTER TABLE quickbooks_invoice_links
-      ADD CONSTRAINT quickbooks_invoice_links_allocated_non_neg
-      CHECK (allocated_amount_ex_vat >= 0);
+      ADD CONSTRAINT quickbooks_invoice_links_allocated_positive
+      CHECK (allocated_amount_ex_vat > 0);
   END IF;
 END$$;

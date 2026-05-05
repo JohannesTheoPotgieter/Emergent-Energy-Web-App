@@ -33,7 +33,7 @@
  */
 
 import type { Express, Request, Response } from "express";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ilike, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "../db";
@@ -68,6 +68,8 @@ import {
   confirmCostLineLink,
   confirmRevenueLineLink,
   confirmLinksWithAllocations,
+  confirmLinksWithAllocationsTx,
+  validateConfirmAllocationsInput,
   getSiblingLinksForQbEntity,
   billRawToSummary,
   invoiceRawToSummary,
@@ -220,12 +222,46 @@ const approveBodySchema = z.object({
       z.object({
         appEntityType: z.enum(["cost_line", "revenue_line"]),
         appEntityId: z.number().int().positive(),
-        allocatedAmountExVat: z.number().nonnegative(),
+        allocatedAmountExVat: z.number().positive(),
       }),
     )
     .min(1)
     .max(50)
     .optional(),
+});
+
+/**
+ * Task #142 — multi-QB approve payload. Allocates the same suggestion's
+ * app line across N QB docs in one call, each with its own sibling
+ * line-allocations. Each entry is validated against its QB doc total via
+ * `confirmLinksWithAllocations`; the route validates ALL entries up-front
+ * before persisting any to keep partial-failure surface area minimal.
+ *
+ * `lineAllocations` for each entry MUST include the suggestion's own
+ * app line (same rule as the single-QB path).
+ */
+const approveMultiBodySchema = z.object({
+  notes: z.string().max(500).optional(),
+  mapVendor: z.boolean().optional(),
+  mapCustomer: z.boolean().optional(),
+  allocations: z
+    .array(
+      z.object({
+        candidateIndex: z.number().int().min(0),
+        lineAllocations: z
+          .array(
+            z.object({
+              appEntityType: z.enum(["cost_line", "revenue_line"]),
+              appEntityId: z.number().int().positive(),
+              allocatedAmountExVat: z.number().positive(),
+            }),
+          )
+          .min(1)
+          .max(50),
+      }),
+    )
+    .min(1)
+    .max(20),
 });
 
 const rejectBodySchema = z.object({
@@ -1025,6 +1061,366 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
             suggestionId: Number(req.params.suggestionId),
           });
         }
+        return res.status(cls.statusCode).json({
+          error: cls.code,
+          code: cls.code,
+          reason: cls.reason,
+          message: cls.message,
+        });
+      }
+    },
+  );
+
+  // -------- GET /app-lines/search ----------------------------------------
+  // Task #142 — typeahead search for sibling app lines in the drawer's
+  // "Add another app line to this QB doc" combobox. Searches by invoice
+  // number / counterparty / project name, optionally scoped to a
+  // projectId, returns up to `limit` matches.
+  app.get(
+    "/api/quickbooks/invoice-matches/app-lines/search",
+    requireAuth,
+    requirePermission("financials", "view"),
+    async (req: Request, res: Response) => {
+      try {
+        const scope = req.query.scope === "cost" ? "cost" : "revenue";
+        const q = String(req.query.q ?? "").trim();
+        const limit = Math.min(20, Math.max(1, Number(req.query.limit) || 10));
+        const projectId = req.query.projectId ? Number(req.query.projectId) : null;
+        if (!q || q.length < 2) return res.json({ items: [] });
+        const like = `%${q}%`;
+        if (scope === "cost") {
+          const rows = await db
+            .select({
+              id: normalizedCostLines.id,
+              invoiceNumber: normalizedCostLines.invoiceNumber,
+              invoiceDate: normalizedCostLines.invoiceDate,
+              amountExVat: normalizedCostLines.amountExVat,
+              counterpartyName: normalizedCostLines.counterpartyName,
+              projectId: normalizedCostLines.projectId,
+              projectName: normalizedCostLines.projectName,
+            })
+            .from(normalizedCostLines)
+            .where(
+              and(
+                isNull(normalizedCostLines.effectiveTo),
+                isNull(normalizedCostLines.deletedAt),
+                projectId ? eq(normalizedCostLines.projectId, projectId) : sql`true`,
+                or(
+                  ilike(normalizedCostLines.invoiceNumber, like),
+                  ilike(normalizedCostLines.counterpartyName, like),
+                  ilike(normalizedCostLines.projectName, like),
+                ),
+              ),
+            )
+            .orderBy(desc(normalizedCostLines.invoiceDate))
+            .limit(limit);
+          return res.json({
+            items: (rows as Array<typeof rows[number]>).map((r) => ({
+              appEntityType: "cost_line" as const,
+              appEntityId: r.id,
+              invoiceNumber: r.invoiceNumber,
+              invoiceDate: r.invoiceDate ? String(r.invoiceDate) : null,
+              amountExVat: amountToNumber(r.amountExVat),
+              counterpartyName: r.counterpartyName,
+              projectId: r.projectId,
+              projectName: r.projectName,
+            })),
+          });
+        } else {
+          const rows = await db
+            .select({
+              id: normalizedRevenueLines.id,
+              invoiceNumber: normalizedRevenueLines.invoiceNumber,
+              invoiceDate: normalizedRevenueLines.invoiceDate,
+              amountExVat: normalizedRevenueLines.amountExVat,
+              projectId: normalizedRevenueLines.projectId,
+              projectName: normalizedRevenueLines.projectName,
+            })
+            .from(normalizedRevenueLines)
+            .where(
+              and(
+                isNull(normalizedRevenueLines.effectiveTo),
+                isNull(normalizedRevenueLines.deletedAt),
+                projectId ? eq(normalizedRevenueLines.projectId, projectId) : sql`true`,
+                or(
+                  ilike(normalizedRevenueLines.invoiceNumber, like),
+                  ilike(normalizedRevenueLines.projectName, like),
+                ),
+              ),
+            )
+            .orderBy(desc(normalizedRevenueLines.invoiceDate))
+            .limit(limit);
+          return res.json({
+            items: (rows as Array<typeof rows[number]>).map((r) => ({
+              appEntityType: "revenue_line" as const,
+              appEntityId: r.id,
+              invoiceNumber: r.invoiceNumber,
+              invoiceDate: r.invoiceDate ? String(r.invoiceDate) : null,
+              amountExVat: amountToNumber(r.amountExVat),
+              counterpartyName: r.projectName,
+              projectId: r.projectId,
+              projectName: r.projectName,
+            })),
+          });
+        }
+      } catch (err) {
+        logApiError("qb.invoice_match.app_line_search", {
+          name: (err as Error)?.name,
+          message: (err as Error)?.message,
+        });
+        return sendError(res, serverError("App-line search failed"));
+      }
+    },
+  );
+
+  // -------- POST /:suggestionId/approve-multi ----------------------------
+  // Task #142 — approves the suggestion across N QB docs. Validates every
+  // allocation block up-front (sum tolerance, duplicates, non-positive)
+  // BEFORE any DB writes, then persists every block + the suggestion-accept
+  // update inside a single outer DB transaction so the operation is truly
+  // atomic across all selected QB candidates. A failure on any block (or
+  // the suggestion update) rolls back every block.
+  app.post(
+    "/api/quickbooks/invoice-matches/:suggestionId/approve-multi",
+    requireAuth,
+    requirePermission("financials", "edit"),
+    validateBody(approveMultiBodySchema),
+    async (req: Request, res: Response) => {
+      try {
+        const suggestionId = Number(req.params.suggestionId);
+        if (!Number.isFinite(suggestionId) || suggestionId <= 0) {
+          return sendError(res, badRequest("Invalid suggestionId"));
+        }
+        const body = req.body as z.infer<typeof approveMultiBodySchema>;
+        const userId = getEffectiveUser(req)?.id ?? null;
+
+        const [suggestion] = await db
+          .select()
+          .from(quickbooksMatchSuggestions)
+          .where(eq(quickbooksMatchSuggestions.id, suggestionId))
+          .limit(1);
+        if (!suggestion) return sendError(res, notFound("Suggestion"));
+        if (suggestion.acceptedAt) {
+          return sendError(res, conflict("Suggestion already accepted."));
+        }
+        if (suggestion.rejectedAt) {
+          return sendError(res, conflict("Suggestion was already rejected."));
+        }
+        const isCost = suggestion.scope === "expense_invoice";
+        const isRevenue = suggestion.scope === "incoming_invoice";
+        if (!isCost && !isRevenue) {
+          return sendError(res, badRequest("This suggestion is not an invoice-match suggestion."));
+        }
+        const candidates = (suggestion.candidates as unknown as ScoredCandidate[]) ?? [];
+        const appEntityId = suggestion.appEntityId;
+        if (!appEntityId) return sendError(res, badRequest("Suggestion has no app entity reference"));
+        const appEntityType: "cost_line" | "revenue_line" = isCost ? "cost_line" : "revenue_line";
+
+        // Validate every block up-front.
+        const seenCandidates = new Set<number>();
+        for (const block of body.allocations) {
+          if (seenCandidates.has(block.candidateIndex)) {
+            return sendError(res, badRequest(
+              `Duplicate candidateIndex ${block.candidateIndex} in allocations.`,
+            ));
+          }
+          seenCandidates.add(block.candidateIndex);
+          const cand = candidates[block.candidateIndex];
+          if (!cand) {
+            return sendError(res, badRequest(
+              `candidateIndex ${block.candidateIndex} out of range.`,
+            ));
+          }
+          const includesCurrent = block.lineAllocations.some(
+            (a) => a.appEntityType === appEntityType && a.appEntityId === appEntityId,
+          );
+          if (!includesCurrent) {
+            return sendError(res, badRequest(
+              `Allocation block for candidate ${block.candidateIndex} must include the suggestion's app line.`,
+            ));
+          }
+        }
+
+        // ---- Phase 1: build normalised inputs for every block (read-only).
+        type WriterInput = Parameters<typeof validateConfirmAllocationsInput>[0];
+        const blockInputs: Array<{
+          qbEntityId: string;
+          input: WriterInput;
+          tolerance: ReturnType<typeof validateConfirmAllocationsInput>;
+        }> = [];
+        try {
+          for (const block of body.allocations) {
+            const chosen = candidates[block.candidateIndex]!;
+            const allocations = await Promise.all(
+              block.lineAllocations.map(async (a) => {
+                if (a.appEntityType === "cost_line") {
+                  const [r] = await db
+                    .select({ projectId: normalizedCostLines.projectId })
+                    .from(normalizedCostLines)
+                    .where(eq(normalizedCostLines.id, a.appEntityId))
+                    .limit(1);
+                  return {
+                    appEntityType: "cost_line" as const,
+                    appEntityId: a.appEntityId,
+                    projectId: r?.projectId ?? null,
+                    allocatedAmountExVat: a.allocatedAmountExVat,
+                  };
+                } else {
+                  const [r] = await db
+                    .select({ projectId: normalizedRevenueLines.projectId })
+                    .from(normalizedRevenueLines)
+                    .where(eq(normalizedRevenueLines.id, a.appEntityId))
+                    .limit(1);
+                  return {
+                    appEntityType: "revenue_line" as const,
+                    appEntityId: a.appEntityId,
+                    projectId: r?.projectId ?? null,
+                    allocatedAmountExVat: a.allocatedAmountExVat,
+                  };
+                }
+              }),
+            );
+            const input: WriterInput = {
+              qbEntityType: isCost ? "bill" : "invoice",
+              qbEntityId: chosen.qbEntityId,
+              qbRealmId: suggestion.qbRealmId,
+              qbDocSnapshot: {
+                qbDocNumber: chosen.qbDocNumber,
+                qbTxnDate: chosen.qbTxnDate,
+                qbAmount: chosen.qbAmountExVat,
+                qbCounterpartyName: chosen.qbCounterpartyName,
+              },
+              qbDocTotalExVat: chosen.qbAmountExVat,
+              allocations,
+              matchType: chosen.confidence >= 90 ? "auto_exact" : "auto_fuzzy",
+              notes: body.notes ?? null,
+              confirmedBy: userId,
+            };
+            // Validation only — throws on tolerance / duplicate / non-positive.
+            const tolerance = validateConfirmAllocationsInput(input);
+            blockInputs.push({ qbEntityId: chosen.qbEntityId, input, tolerance });
+          }
+        } catch (inner) {
+          if (inner instanceof QuickBooksAllocationToleranceError) {
+            logAuditFromReq(req, {
+              entityType: "qb_invoice_match_suggestion",
+              entityId: String(suggestionId),
+              action: "qb.invoice_match.allocation_tolerance_violation",
+              source: "UI",
+              changesJson: { ...inner.details, multiQb: true },
+            });
+            return res.status(422).json({
+              error: "allocation_tolerance",
+              code: inner.code,
+              message: inner.message,
+              details: inner.details,
+              partialResults: [],
+            });
+          }
+          throw inner;
+        }
+
+        // ---- Phase 2: write every block + suggestion-accept in ONE outer tx.
+        const firstChosen = candidates[body.allocations[0]!.candidateIndex]!;
+        const txOutcome = await db.transaction(async (tx: any) => {
+          const results: Array<{
+            qbEntityId: string;
+            linkId: number;
+            tolerance: {
+              sum: number;
+              delta: number | null;
+              tolerance: number;
+              toleranceApplied: boolean;
+            };
+          }> = [];
+          let primaryLinkId: number | null = null;
+          for (const blk of blockInputs) {
+            const writerResult = await confirmLinksWithAllocationsTx(
+              tx,
+              blk.input,
+              blk.tolerance,
+            );
+            const ownLink = writerResult.links.find(
+              (l) => l.appEntityType === appEntityType && l.appEntityId === appEntityId,
+            );
+            const linkId = ownLink?.id ?? writerResult.links[0]!.id;
+            if (primaryLinkId === null) primaryLinkId = linkId;
+            results.push({
+              qbEntityId: blk.qbEntityId,
+              linkId,
+              tolerance: {
+                sum: writerResult.tolerance.sum,
+                delta: writerResult.tolerance.delta,
+                tolerance: writerResult.tolerance.tolerance,
+                toleranceApplied: writerResult.tolerance.toleranceApplied,
+              },
+            });
+          }
+          // Task #142 — compare-and-swap: only accept if still pending. If a
+          // concurrent request already accepted/rejected this suggestion, the
+          // update affects 0 rows and we throw to roll back the entire tx
+          // (link writes included). This guarantees one-winner approval
+          // semantics under concurrency.
+          const claimed = await tx
+            .update(quickbooksMatchSuggestions)
+            .set({
+              acceptedAt: new Date(),
+              acceptedBy: userId,
+              acceptedQbId: firstChosen.qbEntityId,
+              acceptedConfidence: String(firstChosen.confidence) as unknown as never,
+            })
+            .where(
+              and(
+                eq(quickbooksMatchSuggestions.id, suggestionId),
+                isNull(quickbooksMatchSuggestions.acceptedAt),
+                isNull(quickbooksMatchSuggestions.rejectedAt),
+              ),
+            )
+            .returning({ id: quickbooksMatchSuggestions.id });
+          if (claimed.length !== 1) {
+            const err = new Error("Suggestion was already accepted or rejected by another request.");
+            (err as Error & { __code?: string }).__code = "suggestion_already_resolved";
+            throw err;
+          }
+          return { results, primaryLinkId };
+        });
+        const { results, primaryLinkId } = txOutcome;
+
+        logAuditFromReq(req, {
+          entityType: "qb_invoice_match_suggestion",
+          entityId: String(suggestionId),
+          action: "qb.invoice_match.approve_multi",
+          source: "UI",
+          changesJson: {
+            scope: isCost ? "cost" : "revenue",
+            appEntityId,
+            allocationCount: results.length,
+            results,
+            notes: body.notes ?? null,
+          },
+        });
+
+        return res.status(201).json({
+          ok: true,
+          linkId: primaryLinkId,
+          results,
+        });
+      } catch (err) {
+        const code = (err as Error & { __code?: string })?.__code;
+        if (code === "suggestion_already_resolved") {
+          return res.status(409).json({
+            error: "conflict",
+            code,
+            message: (err as Error).message,
+          });
+        }
+        const cls = classifyApproveError(err);
+        logApiError("qb.invoice_match.approve_multi", {
+          name: cls.errorName,
+          message: cls.errorMessage,
+          stack: cls.stack,
+          suggestionId: Number(req.params.suggestionId),
+        });
         return res.status(cls.statusCode).json({
           error: cls.code,
           code: cls.code,
