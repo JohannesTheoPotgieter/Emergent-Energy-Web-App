@@ -36,6 +36,7 @@ import { db } from "../db";
 import { applyManualOverride, clearManualOverride } from "../lib/manual-overrides";
 import { recordOverride } from "../lib/audit/diff-engine";
 import { emitExcelVsAppMetric } from "../lib/excel-vs-app-metrics";
+import { sendExcelUpdateRequest } from "../services/excel-update-request-mailer";
 import {
   DRIFT_RESOLVER_ROLES,
   type DiffSection,
@@ -339,6 +340,20 @@ export function registerExcelVsAppRoutes(app: Express): void {
             actorRole: actorRole ?? null,
             actorUserId: actorId,
           });
+          // Fire-and-forget: ask the workbook owners to update Excel so it
+          // re-establishes itself as source of truth. Mailer swallows its
+          // own failures — never fails the resolve response.
+          void sendExcelUpdateRequest({
+            projectId,
+            projectName,
+            resolveAction: "keep_app",
+            section: deriveSection(body.entries) ?? "MIXED",
+            entries: body.entries,
+            reason: body.reason,
+            requesterUserId: actorId,
+            requesterName: req.user?.name ?? null,
+            requesterEmail: req.user?.email ?? null,
+          });
           res.json({ status: "ok", action: body.action, resolved });
           return;
         }
@@ -392,6 +407,18 @@ export function registerExcelVsAppRoutes(app: Express): void {
           count: body.entries.length,
           actorRole: actorRole ?? null,
           actorUserId: actorId,
+        });
+        void sendExcelUpdateRequest({
+          projectId,
+          projectName,
+          resolveAction: "request_approval",
+          section: body.section,
+          entries: body.entries,
+          reason: body.reason,
+          requesterUserId: actorId,
+          requesterName: req.user?.name ?? null,
+          requesterEmail: req.user?.email ?? null,
+          requestId: saved.id,
         });
         res.json({
           status: "pending_approval",
