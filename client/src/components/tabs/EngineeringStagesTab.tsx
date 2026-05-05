@@ -58,6 +58,12 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   complete: { label: "Complete", color: "bg-green-100 text-green-600" },
   skipped: { label: "Skipped", color: "bg-yellow-100 text-yellow-600" },
 };
+const STAGE_TO_WORK_ITEM_STATUS: Record<string, string> = {
+  pending: "TO DO",
+  in_progress: "IN PROGRESS",
+  complete: "COMPLETE",
+  skipped: "COMPLETE",
+};
 
 interface EngineeringStagesTabProps {
   projectId: number;
@@ -690,6 +696,8 @@ function TaskRow({ task, projectId, stageId, allDeliverables, isCoo, userRole }:
 
   const cfg = TASK_STATUS_CONFIG[task.status] || TASK_STATUS_CONFIG.pending;
   const taskDeliverables = allDeliverables.filter((d: any) => d.projectEngTaskId === task.id);
+  const hasLinkedWorkItem = Boolean(task.workItemId);
+  const statusSynced = hasLinkedWorkItem && task.workItemStatus === STAGE_TO_WORK_ITEM_STATUS[task.status];
   // `hasApprovedDeliverable` here means "has passed QC review" — not
   // "has been issued for construction". Keep the variable name locally
   // stable but the user-facing copy says "QC review".
@@ -898,6 +906,16 @@ function TaskRow({ task, projectId, stageId, allDeliverables, isCoo, userRole }:
                 )}
               </div>
             )}
+            <div className="flex items-center gap-1 mt-1">
+              {hasLinkedWorkItem ? (
+                <Badge variant="outline" className="text-[9px] px-1">Linked to Task Board</Badge>
+              ) : (
+                <Badge className="bg-amber-100 text-amber-800 text-[9px] px-1">Unlinked legacy task</Badge>
+              )}
+              {statusSynced && (
+                <Badge className="bg-emerald-100 text-emerald-800 text-[9px] px-1">Status synced</Badge>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-2">
             {task.dueDate && (

@@ -72,6 +72,28 @@ describe("API: Engineering Stages", () => {
 
     const res = await apiRequest("PATCH", `/api/eng-stages/tasks/${firstTask.id}`, { status: "in_progress" }, token);
     expect(res.status).toBe(200);
+
+    const updatedStage = await apiRequest("GET", `/api/projects/${projectId}/eng-stages/${firstStage.id}`, undefined, token);
+    const updatedTask = updatedStage.data?.tasks?.find((t: any) => t.id === firstTask.id);
+    expect(updatedTask?.workItemId).toBeTruthy();
+    expect(updatedTask?.workItemStatus).toBe("IN PROGRESS");
+  });
+
+  it("PATCH /api/eng/tasks/:id status updates linked stage task status", async () => {
+    const stages = await apiRequest("GET", `/api/projects/${projectId}/eng-stages`, undefined, token);
+    const firstStage = stages.data?.stages?.[0];
+    if (!firstStage) return;
+
+    const detail = await apiRequest("GET", `/api/projects/${projectId}/eng-stages/${firstStage.id}`, undefined, token);
+    const linkedTask = detail.data?.tasks?.find((t: any) => !!t.workItemId);
+    if (!linkedTask) return;
+
+    const engUpdate = await apiRequest("PATCH", `/api/eng/tasks/${linkedTask.workItemId}`, { status: "COMPLETE" }, token);
+    expect(engUpdate.status).toBe(200);
+
+    const after = await apiRequest("GET", `/api/projects/${projectId}/eng-stages/${firstStage.id}`, undefined, token);
+    const updatedTask = after.data?.tasks?.find((t: any) => t.id === linkedTask.id);
+    expect(updatedTask?.status).toBe("complete");
   });
 
   it("POST /api/eng-stages/stages/:id/complete validates missing items", async () => {
