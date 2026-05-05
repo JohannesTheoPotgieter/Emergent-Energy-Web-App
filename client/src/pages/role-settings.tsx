@@ -125,9 +125,12 @@ const SECTION_META: Record<SectionId, { label: string; icon: any; description: s
 };
 
 export default function RoleSettingsPage() {
+  // Task #139: `isAdmin` already resolves both executive-admin roles via
+  // the canonical `isSuperAdmin` helper (it inspects both the live user role
+  // and the persisted company_role). The previous explicit role-literal
+  // OR-branch was redundant and missed the CEO admin case.
   const { isAdmin } = useAuth();
-  const companyRole = localStorage.getItem("company_role");
-  const canManageSettings = companyRole === "COO_ADMIN" || isAdmin;
+  const canManageSettings = isAdmin;
   const [activeSection, setActiveSection] = useState<SectionId>("connections");
 
   if (!canManageSettings) {
@@ -200,9 +203,10 @@ export default function RoleSettingsPage() {
 export function ConnectionsSection() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  // Task #139: see RoleSettingsPage above — isAdmin is the single source of
+  // truth for executive-admin gating; redundant role literal removed.
   const { isAdmin } = useAuth();
-  const companyRole = localStorage.getItem("company_role");
-  const canManageSettings = companyRole === "COO_ADMIN" || isAdmin;
+  const canManageSettings = isAdmin;
   const [refreshingOutlook, setRefreshingOutlook] = useState(false);
 
   const integrationStatusQuery = useQuery<MsIntegrationStatus, Error>({

@@ -87,7 +87,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { usePermission } from "@/hooks/use-permissions";
-import { PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
+import { PROJECT_PHASE_LABELS, normalizeRoleForPermissions, type ProjectPhase } from "@shared/schema";
 import {
   TASK_STATUSES,
   canTransition,
@@ -1344,7 +1344,7 @@ export function TaskDetailDrawer({
                 mode="multi"
                 size="sm"
                 invalidateKeys={["engineering-tickets", "eng-tasks", "/api/my-work/all-tasks"]}
-                disableRemove={user?.role === "ENGINEER"}
+                disableRemove={normalizeRoleForPermissions(user?.role) === "ENGINEER"}
               />
               {task.assignees && task.assignees.length > 1 && (
                 <div className="flex flex-wrap gap-1 mt-1">

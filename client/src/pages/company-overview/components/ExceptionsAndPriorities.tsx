@@ -54,8 +54,10 @@ export function ExceptionsAndPriorities({
   priorities: PriorityItem[] | null;
   isLoading: boolean;
 }) {
-  const { user } = useAuth();
-  const isAdmin = (user as any)?.role === "COO_ADMIN" || (user as any)?.role === "CEO_ADMIN";
+  // Task #139: consume the canonical admin gate from useAuth so this
+  // component honours both user.role and the company_role storage fallback,
+  // keeping a single source of truth (ADMIN_ROLES in shared/schema/users.ts).
+  const { isAdmin } = useAuth();
 
   if (isLoading) {
     return (
