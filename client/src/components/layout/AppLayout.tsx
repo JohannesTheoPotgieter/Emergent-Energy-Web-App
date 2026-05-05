@@ -231,36 +231,71 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <SheetTrigger asChild>
               <Button variant="ghost" size="icon" className="lg:hidden" data-testid="button-mobile-menu" aria-label="Open navigation menu"><Menu className="h-5 w-5" /></Button>
             </SheetTrigger>
-            <SheetContent side="left" className="w-[300px] border-r border-border" data-testid="nav-mobile-sheet">
-              <SheetHeader><SheetTitle>Emergent Energy</SheetTitle></SheetHeader>
-              <div className="mt-6 space-y-2">
+            <SheetContent side="left" className="w-[300px] border-r border-border p-0" data-testid="nav-mobile-sheet">
+              <SheetHeader className="px-5 pt-5 pb-3 border-b border-border/60">
+                <SheetTitle className="flex items-center gap-2">
+                  <img src="/emergent-leaf.png" alt="" className="h-6 w-6 object-contain" />
+                  <span>Emergent Energy</span>
+                </SheetTitle>
+              </SheetHeader>
+              <div className="px-3 py-4 space-y-1 overflow-y-auto max-h-[calc(100vh-72px)]">
                 {visibleSections.map((section) => {
                   const isActive = section.label === activeSection.label;
-                  const hasMany = section.secondary.length >= 4;
+                  const hasMany = section.secondary.length >= 5;
+                  // Filter groups to allowed-only
+                  const allowedPaths = new Set(section.secondary.map((s) => s.path));
+                  const groups = section.secondaryGroups
+                    ?.map((g) => ({ label: g.label, items: g.items.filter((i) => allowedPaths.has(i.path)) }))
+                    .filter((g) => g.items.length > 0);
                   return (
                     <div key={section.label} className="space-y-1">
                       <Link
                         href={section.path}
-                        className={cn("block rounded-md px-3 py-2 text-sm font-medium transition-colors", isActive ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground")}
+                        className={cn(
+                          "flex items-center justify-between rounded-md px-3 py-2.5 text-sm font-semibold transition-colors min-h-[44px]",
+                          isActive ? "bg-primary/10 text-primary" : "text-foreground/85 hover:bg-muted/60 hover:text-foreground",
+                        )}
                         onClick={() => trackNavClick(section.label)}
                         data-testid={`mobile-nav-section-${section.key}`}
                         data-active={isActive ? "true" : undefined}
                       >
-                        {section.label}
+                        <span>{section.label}</span>
+                        {section.secondary.length > 0 && (
+                          <span className="text-[10px] font-medium text-muted-foreground/70 tabular-nums">
+                            {section.secondary.length}
+                          </span>
+                        )}
                       </Link>
                       {isActive ? (
-                        hasMany ? (
+                        groups && groups.length > 0 ? (
+                          <div className="ml-3 border-l-2 border-primary/25 pl-3 pb-2 space-y-3">
+                            {groups.map((group) => (
+                              <div key={group.label} className="space-y-0.5">
+                                <div className="px-2 pt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
+                                  {group.label}
+                                </div>
+                                {group.items.map((item) => (
+                                  item.disabled ? (
+                                    <span key={item.path} className="block rounded px-2 py-2 text-[13px] text-muted-foreground/60 cursor-not-allowed">{item.label}</span>
+                                  ) : (
+                                    <Link key={item.path} href={item.path} className={cn("block rounded px-2 py-2 text-[13px] min-h-[40px] transition-colors", linkIsActive(location, item.path) ? "bg-primary/15 text-primary font-medium" : "text-foreground/75 hover:bg-muted/60 hover:text-foreground")}>{item.label}</Link>
+                                  )
+                                ))}
+                              </div>
+                            ))}
+                          </div>
+                        ) : hasMany ? (
                           <MobileCollapsibleSubNav
                             items={section.secondary}
                             location={location}
                           />
                         ) : (
-                          <div className="ml-3 border-l border-primary/30 pl-3 space-y-1">
+                          <div className="ml-3 border-l-2 border-primary/25 pl-3 pb-2 space-y-0.5">
                             {section.secondary.map((item) => (
                               item.disabled ? (
-                                <span key={item.path} className="block rounded px-2 py-1.5 text-xs text-muted-foreground/60 cursor-not-allowed">{item.label}</span>
+                                <span key={item.path} className="block rounded px-2 py-2 text-[13px] text-muted-foreground/60 cursor-not-allowed">{item.label}</span>
                               ) : (
-                                <Link key={item.path} href={item.path} className={cn("block rounded px-2 py-1.5 text-xs", linkIsActive(location, item.path) ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted/60")}>{item.label}</Link>
+                                <Link key={item.path} href={item.path} className={cn("block rounded px-2 py-2 text-[13px] min-h-[40px] transition-colors", linkIsActive(location, item.path) ? "bg-primary/15 text-primary font-medium" : "text-foreground/75 hover:bg-muted/60 hover:text-foreground")}>{item.label}</Link>
                               )
                             ))}
                           </div>
@@ -406,25 +441,22 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </DropdownMenu>
         </div>
 
-        <div className="hidden lg:block">
-          <nav className="flex px-6 py-1 gap-0.5 overflow-x-auto mx-auto w-full max-w-[1440px]" data-testid="nav-top-sections">
+        <div className="hidden lg:block border-t border-border/40">
+          <nav className="flex px-6 py-1.5 gap-1 overflow-x-auto no-scrollbar mx-auto w-full max-w-[1440px]" data-testid="nav-top-sections">
             {visibleSections.map((section) => {
               const active = section.label === activeSection.label;
               return (
                 <Link
                   key={section.label}
                   href={section.path}
-                  className={cn(
-                    "relative px-3.5 py-2 text-[13px] font-medium whitespace-nowrap transition-colors rounded-md",
-                    active ? "text-primary" : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
-                  )}
+                  className={cn("ee-topnav-link", active && "ee-topnav-link-active")}
                   onClick={() => trackNavClick(section.label)}
                   data-testid={`nav-section-${section.key}`}
                   data-active={active ? "true" : undefined}
                   {...prefetch(section.path)}
                 >
                   {section.label}
-                  {active && <span className="absolute bottom-0 left-3 right-3 h-[2px] bg-primary rounded-full" />}
+                  {active && <span className="pointer-events-none absolute -bottom-[7px] left-3 right-3 h-[2.5px] bg-primary rounded-full" />}
                 </Link>
               );
             })}
@@ -506,7 +538,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               {activeSection.secondary.length > 0 && (
                 <div
                   ref={subNavRef}
-                  className={cn("flex gap-1.5 overflow-x-auto no-scrollbar pb-2", breadcrumbs.length > 0 ? "pt-0" : "pt-0.5")}
+                  className={cn("flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-2", breadcrumbs.length > 0 ? "pt-0" : "pt-1")}
                   role="tablist"
                   aria-label={`${activeSection.label} navigation`}
                   data-testid="nav-subnav-pills"
@@ -524,40 +556,64 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     links[nextIdx]?.focus();
                   }}
                 >
-                  {activeSection.secondary.map((item) => {
-                    const active = linkIsActive(location, item.path);
-                    const testId = `subnav-pill-${item.path.replace(/\W+/g, "-").replace(/^-|-$/g, "") || "root"}`;
-                    return item.disabled ? (
-                      <span
-                        key={item.path}
-                        className="ee-subnav-pill cursor-not-allowed whitespace-nowrap opacity-55"
-                        aria-disabled="true"
-                        role="tab"
-                        data-testid={testId}
-                        data-disabled="true"
-                      >
-                        {item.label}
-                      </span>
-                    ) : (
-                      <Link
-                        key={item.path}
-                        href={item.path}
-                        className={cn(
-                          "ee-subnav-pill whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                          active ? "ee-subnav-pill-active" : "",
-                        )}
-                        role="tab"
-                        aria-selected={active}
-                        tabIndex={active ? 0 : -1}
-                        onClick={() => trackNavClick(activeSection.label, item.label)}
-                        data-testid={testId}
-                        data-active={active ? "true" : undefined}
-                        {...prefetch(item.path)}
-                      >
-                        {item.label}
-                      </Link>
-                    );
-                  })}
+                  {(() => {
+                    const renderItem = (item: { label: string; path: string; disabled?: boolean }) => {
+                      const active = linkIsActive(location, item.path);
+                      const testId = `subnav-pill-${item.path.replace(/\W+/g, "-").replace(/^-|-$/g, "") || "root"}`;
+                      return item.disabled ? (
+                        <span
+                          key={item.path}
+                          className="ee-subnav-pill cursor-not-allowed whitespace-nowrap opacity-55"
+                          aria-disabled="true"
+                          role="tab"
+                          data-testid={testId}
+                          data-disabled="true"
+                        >
+                          {item.label}
+                        </span>
+                      ) : (
+                        <Link
+                          key={item.path}
+                          href={item.path}
+                          className={cn(
+                            "ee-subnav-pill whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            active ? "ee-subnav-pill-active" : "",
+                          )}
+                          role="tab"
+                          aria-selected={active}
+                          tabIndex={active ? 0 : -1}
+                          onClick={() => trackNavClick(activeSection.label, item.label)}
+                          data-testid={testId}
+                          data-active={active ? "true" : undefined}
+                          {...prefetch(item.path)}
+                        >
+                          {item.label}
+                        </Link>
+                      );
+                    };
+
+                    // Filter groups to only include items that survived access filtering (kept in `secondary`).
+                    const allowedPaths = new Set(activeSection.secondary.map((s) => s.path));
+                    const groups = activeSection.secondaryGroups
+                      ?.map((g) => ({
+                        label: g.label,
+                        items: g.items.filter((i) => allowedPaths.has(i.path)),
+                      }))
+                      .filter((g) => g.items.length > 0);
+
+                    if (groups && groups.length > 0) {
+                      return groups.map((group, gi) => (
+                        <div key={group.label} className="flex items-center gap-1.5 shrink-0">
+                          {gi > 0 && <span className="ee-subnav-group-divider" aria-hidden="true" />}
+                          <span className="ee-subnav-group-label" data-testid={`subnav-group-label-${group.label.replace(/\W+/g, "-").toLowerCase()}`}>
+                            {group.label}
+                          </span>
+                          {group.items.map(renderItem)}
+                        </div>
+                      ));
+                    }
+                    return activeSection.secondary.map(renderItem);
+                  })()}
                 </div>
               )}
             </div>
@@ -612,35 +668,40 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 /** Collapsible sub-nav for mobile drawer — shows first 2 items, collapses the rest */
 function MobileCollapsibleSubNav({ items, location }: { items: { label: string; path: string; disabled?: boolean }[]; location: string }) {
   const [open, setOpen] = useState(false);
-  const visible = items.slice(0, 2);
-  const hidden = items.slice(2);
+  const visible = items.slice(0, 3);
+  const hidden = items.slice(3);
+  const linkClass = (active: boolean) =>
+    cn(
+      "block rounded px-2 py-2 text-[13px] min-h-[40px] transition-colors",
+      active ? "bg-primary/15 text-primary font-medium" : "text-foreground/75 hover:bg-muted/60 hover:text-foreground",
+    );
 
   return (
-    <div className="ml-3 border-l border-primary/30 pl-3 space-y-1">
+    <div className="ml-3 border-l-2 border-primary/25 pl-3 pb-2 space-y-0.5">
       {visible.map((item) => (
         item.disabled ? (
-          <span key={item.path} className="block rounded px-2 py-1.5 text-xs text-muted-foreground/60 cursor-not-allowed">{item.label}</span>
+          <span key={item.path} className="block rounded px-2 py-2 text-[13px] min-h-[40px] text-muted-foreground/60 cursor-not-allowed">{item.label}</span>
         ) : (
-          <Link key={item.path} href={item.path} className={cn("block rounded px-2 py-1.5 text-xs", linkIsActive(location, item.path) ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted/60")}>{item.label}</Link>
+          <Link key={item.path} href={item.path} className={linkClass(linkIsActive(location, item.path))}>{item.label}</Link>
         )
       ))}
       {hidden.length > 0 && (
         <Collapsible open={open} onOpenChange={setOpen}>
           <CollapsibleContent>
-            <div className="space-y-1">
+            <div className="space-y-0.5">
               {hidden.map((item) => (
                 item.disabled ? (
-                  <span key={item.path} className="block rounded px-2 py-1.5 text-xs text-muted-foreground/60 cursor-not-allowed">{item.label}</span>
+                  <span key={item.path} className="block rounded px-2 py-2 text-[13px] min-h-[40px] text-muted-foreground/60 cursor-not-allowed">{item.label}</span>
                 ) : (
-                  <Link key={item.path} href={item.path} className={cn("block rounded px-2 py-1.5 text-xs", linkIsActive(location, item.path) ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted/60")}>{item.label}</Link>
+                  <Link key={item.path} href={item.path} className={linkClass(linkIsActive(location, item.path))}>{item.label}</Link>
                 )
               ))}
             </div>
           </CollapsibleContent>
           <CollapsibleTrigger asChild>
-            <button className="flex items-center gap-1 px-2 py-1 text-[11px] text-primary hover:underline">
-              <ChevronDown className={cn("h-3 w-3 transition-transform", open && "rotate-180")} />
-              {open ? "Show less" : `+${hidden.length} more`}
+            <button className="flex items-center gap-1.5 px-2 py-2 min-h-[40px] text-[12px] font-medium text-primary hover:underline">
+              <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-180")} />
+              {open ? "Show less" : `Show ${hidden.length} more`}
             </button>
           </CollapsibleTrigger>
         </Collapsible>
