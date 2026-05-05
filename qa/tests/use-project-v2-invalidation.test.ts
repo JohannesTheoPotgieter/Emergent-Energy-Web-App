@@ -16,6 +16,7 @@ describe("invalidateProjectV2Queries", () => {
       ["v2-project-quality", 42],
       ["v2-project-engineering", 42],
       ["project-header-kpis", 42],
+      ["health-summary"],
     ]);
   });
 
