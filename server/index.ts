@@ -79,6 +79,11 @@ async function bootstrap() {
 
   applySecurityAndParsingMiddleware(app);
 
+  // Trust the Replit/Cloudflare front-door so X-Forwarded-For yields the real
+  // client IP for the ops-dashboard rate limiter (which is mounted next, before
+  // the session bootstrap that would otherwise set this).
+  app.set("trust proxy", 1);
+
   // Service-to-service ops dashboard endpoint — Bearer auth, no session/CSRF.
   // Mounted before session/auth middleware so it never consumes a session cookie
   // and is not subject to user-login or CSRF checks.
