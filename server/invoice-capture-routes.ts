@@ -37,6 +37,80 @@ function oldInvoiceRefFallback(id: number): string {
   return `INV-${id}`;
 }
 
+
+async function syncInvoiceCaptureToActuals(req: Request, payload: {
+  invoiceCaptureId: number;
+  projectId: number;
+  linkedPoId: number | null;
+  linkedProcurementItemId: number | null;
+  invoiceNumber: string | null;
+  invoiceDate: string | null;
+  amount: string | number | null;
+}): Promise<void> {
+  const invoiceRef = payload.invoiceNumber || oldInvoiceRefFallback(payload.invoiceCaptureId);
+  const invoiceDate = payload.invoiceDate || null;
+  const amountNum = payload.amount == null ? null : Number(payload.amount);
+
+  if (payload.linkedProcurementItemId && amountNum !== null && Number.isFinite(amountNum)) {
+    await db.update(procurementItems)
+      .set({ actualCost: String(amountNum.toFixed(2)), updatedAt: new Date() } as Record<string, unknown>)
+      .where(eq(procurementItems.id, payload.linkedProcurementItemId));
+  }
+
+  if (!payload.linkedPoId || !invoiceDate) return;
+
+  const synced = await db.execute(sql`
+    WITH po AS (
+      SELECT po_number
+      FROM purchase_orders
+      WHERE id = ${payload.linkedPoId}
+      LIMIT 1
+    )
+    UPDATE normalized_cost_lines ncl
+    SET
+      invoice_number = CASE
+        WHEN (ncl.invoice_number IS NULL OR btrim(ncl.invoice_number) = '') THEN ${invoiceRef}
+        ELSE ncl.invoice_number
+      END,
+      invoice_date = CASE
+        WHEN ncl.invoice_date IS NULL THEN ${invoiceDate}::date
+        ELSE ncl.invoice_date
+      END,
+      invoice_date_confirmed = CASE
+        WHEN ncl.invoice_date IS NULL THEN true
+        ELSE ncl.invoice_date_confirmed
+      END,
+      invoice_date_font_color = CASE
+        WHEN ncl.invoice_date IS NULL THEN '#2563eb'
+        ELSE ncl.invoice_date_font_color
+      END,
+      updated_at = NOW()
+    FROM po
+    WHERE ncl.project_id = ${payload.projectId}
+      AND ncl.effective_to IS NULL
+      AND ncl.deleted_at IS NULL
+      AND ncl.po_number = po.po_number
+      AND ncl.manual_overrides IS NULL
+    RETURNING ncl.id, ncl.po_number
+  `);
+
+  const syncedRows = rowsFromResult(synced);
+  if (syncedRows.length > 0) {
+    logAuditFromReq(req, {
+      entityType: 'invoice_capture',
+      entityId: String(payload.invoiceCaptureId),
+      action: 'sync_actuals',
+      changesJson: {
+        target: 'normalized_cost_lines',
+        syncMode: 'po_match_fill_blanks_only',
+        syncedRows: syncedRows.length,
+        invoiceNumber: invoiceRef,
+        invoiceDate,
+      },
+    });
+  }
+}
+
 export function registerInvoiceCaptureRoutes(app: Express): void {
   app.get("/api/invoice-captures/project/:projectId", jwtAuth, requireAuth, requirePermission("procurement", "view"), async (req: Request, res: Response) => {
     try {
@@ -118,6 +192,17 @@ export function registerInvoiceCaptureRoutes(app: Express): void {
           } as Record<string, unknown>)
           .where(eq(procurementItems.id, result[0].linkedProcurementItemId));
       }
+
+
+      await syncInvoiceCaptureToActuals(req, {
+        invoiceCaptureId: result[0].id,
+        projectId: result[0].projectId,
+        linkedPoId: result[0].linkedPoId ?? null,
+        linkedProcurementItemId: result[0].linkedProcurementItemId ?? null,
+        invoiceNumber: result[0].invoiceNumber ?? null,
+        invoiceDate: result[0].invoiceDate ?? null,
+        amount: result[0].amount ?? null,
+      });
 
       logAuditFromReq(req, {
         entityType: "invoice_capture",
@@ -203,6 +288,17 @@ export function registerInvoiceCaptureRoutes(app: Express): void {
           } as Record<string, unknown>)
           .where(eq(procurementItems.id, result[0].linkedProcurementItemId));
       }
+
+
+      await syncInvoiceCaptureToActuals(req, {
+        invoiceCaptureId: result[0].id,
+        projectId: result[0].projectId,
+        linkedPoId: (result[0].linkedPoId ?? old.linkedPoId) ?? null,
+        linkedProcurementItemId: (result[0].linkedProcurementItemId ?? old.linkedProcurementItemId) ?? null,
+        invoiceNumber: result[0].invoiceNumber ?? old.invoiceNumber ?? null,
+        invoiceDate: result[0].invoiceDate ?? old.invoiceDate ?? null,
+        amount: result[0].amount ?? old.amount ?? null,
+      });
 
       logAuditFromReq(req, {
         entityType: "invoice_capture",
