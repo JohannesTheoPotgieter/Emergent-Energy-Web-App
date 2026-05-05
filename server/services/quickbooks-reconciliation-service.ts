@@ -948,6 +948,11 @@ import {
  * the failing reason inline (the Approve button is also pre-gated on the
  * client side).
  */
+export type QuickBooksAllocationFailureReason =
+  | "out_of_tolerance"
+  | "duplicate_app_entity"
+  | "non_positive_allocation";
+
 export class QuickBooksAllocationToleranceError extends Error {
   readonly code = "quickbooks_allocation_out_of_tolerance";
   constructor(
@@ -957,15 +962,41 @@ export class QuickBooksAllocationToleranceError extends Error {
       sum: number;
       delta: number | null;
       tolerance: number;
+      /**
+       * Why this allocation request failed. Defaults to `out_of_tolerance`
+       * for backward compat with the original sum-tolerance gate; the
+       * writer also raises `duplicate_app_entity` (two entries for the
+       * same app line) and `non_positive_allocation` (allocation <= 0)
+       * with this same error type so the route layer can map them all
+       * to a single 422 response shape.
+       */
+      reason?: QuickBooksAllocationFailureReason;
+      /**
+       * Set when `reason === "duplicate_app_entity"` — the
+       * `appEntityType:appEntityId` key that appeared twice.
+       */
+      duplicateKey?: string;
     },
   ) {
     const fmt = (n: number | null) =>
       n === null ? "(unknown)" : `R${n.toFixed(2)}`;
-    super(
-      `QuickBooks doc ${details.qbEntityId} allocations sum to ${fmt(details.sum)} ` +
+    const reason = details.reason ?? "out_of_tolerance";
+    let msg: string;
+    if (reason === "duplicate_app_entity") {
+      msg =
+        `QuickBooks doc ${details.qbEntityId} allocation rejected: ` +
+        `duplicate app entity entry "${details.duplicateKey ?? "?"}".`;
+    } else if (reason === "non_positive_allocation") {
+      msg =
+        `QuickBooks doc ${details.qbEntityId} allocation rejected: ` +
+        `allocations must be > 0.`;
+    } else {
+      msg =
+        `QuickBooks doc ${details.qbEntityId} allocations sum to ${fmt(details.sum)} ` +
         `vs total ${fmt(details.qbDocTotalExVat)} (delta ${fmt(details.delta)}, ` +
-        `tolerance ±R${details.tolerance.toFixed(2)}).`,
-    );
+        `tolerance ±R${details.tolerance.toFixed(2)}).`;
+    }
+    super(msg);
     this.name = "QuickBooksAllocationToleranceError";
   }
 }
@@ -1076,18 +1107,15 @@ export async function getSiblingLinksForQbEntity(
  * Returns the resulting active link rows + tolerance result so the route
  * layer can audit-log the drift and the UI can show the new balance.
  */
-export async function confirmLinksWithAllocations(
+/**
+ * Task #142 — Pure validation step extracted so callers (single-QB route
+ * or multi-QB route) can run the full preflight up front before opening
+ * any DB transaction. Throws `QuickBooksAllocationToleranceError` with a
+ * typed `reason` on failure (no DB writes).
+ */
+export function validateConfirmAllocationsInput(
   input: ConfirmAllocationsInput,
-): Promise<{
-  links: QuickBooksInvoiceLink[];
-  tolerance: ReturnType<typeof checkQbAllocationSum>;
-  removedLinkIds: number[];
-}> {
-  // Task #142 — guard against duplicate (appEntityType, appEntityId) entries
-  // in the payload. Two entries for the same app line would pass tolerance
-  // by summed input but the upsert loop would persist only the LAST entry,
-  // so the actually-stored total would silently differ from the validated
-  // total. Hard-fail before any writes.
+): ReturnType<typeof checkQbAllocationSum> {
   const seen = new Set<string>();
   for (const a of input.allocations) {
     const key = `${a.appEntityType}:${a.appEntityId}`;
@@ -1100,12 +1128,21 @@ export async function confirmLinksWithAllocations(
         tolerance: 0,
         reason: "duplicate_app_entity",
         duplicateKey: key,
-      } as any);
+      });
     }
     seen.add(key);
+    if (!Number.isFinite(a.allocatedAmountExVat) || a.allocatedAmountExVat <= 0) {
+      throw new QuickBooksAllocationToleranceError({
+        qbEntityId: input.qbEntityId,
+        qbDocTotalExVat: input.qbDocTotalExVat,
+        sum: 0,
+        delta: null,
+        tolerance: 0,
+        reason: "non_positive_allocation",
+        duplicateKey: key,
+      });
+    }
   }
-
-  // Sum-tolerance check up front. Fail fast before any writes.
   const tolerance = checkQbAllocationSum(input.qbDocTotalExVat, input.allocations);
   if (!tolerance.ok && !input.allowOutOfTolerance) {
     throw new QuickBooksAllocationToleranceError({
@@ -1116,8 +1153,49 @@ export async function confirmLinksWithAllocations(
       tolerance: tolerance.tolerance,
     });
   }
+  return tolerance;
+}
 
+/**
+ * Task #142 — Inner write step. Operates inside an existing tx (so the
+ * multi-QB route can wrap N calls in one outer transaction for true
+ * all-or-nothing semantics). Assumes `validateConfirmAllocationsInput`
+ * has already passed.
+ */
+export async function confirmLinksWithAllocationsTx(
+  tx: any,
+  input: ConfirmAllocationsInput,
+  tolerance: ReturnType<typeof checkQbAllocationSum>,
+): Promise<{
+  links: QuickBooksInvoiceLink[];
+  tolerance: ReturnType<typeof checkQbAllocationSum>;
+  removedLinkIds: number[];
+}> {
+  return runConfirmLinksWithAllocationsInTx(tx, input, tolerance);
+}
+
+export async function confirmLinksWithAllocations(
+  input: ConfirmAllocationsInput,
+): Promise<{
+  links: QuickBooksInvoiceLink[];
+  tolerance: ReturnType<typeof checkQbAllocationSum>;
+  removedLinkIds: number[];
+}> {
+  const tolerance = validateConfirmAllocationsInput(input);
   return await db.transaction(async (tx: any) => {
+    return runConfirmLinksWithAllocationsInTx(tx, input, tolerance);
+  });
+}
+
+async function runConfirmLinksWithAllocationsInTx(
+  tx: any,
+  input: ConfirmAllocationsInput,
+  tolerance: ReturnType<typeof checkQbAllocationSum>,
+): Promise<{
+  links: QuickBooksInvoiceLink[];
+  tolerance: ReturnType<typeof checkQbAllocationSum>;
+  removedLinkIds: number[];
+}> {
     const existing = await tx
       .select()
       .from(quickbooksInvoiceLinks)
@@ -1202,7 +1280,6 @@ export async function confirmLinksWithAllocations(
     }
 
     return { links: upserted, tolerance, removedLinkIds };
-  });
 }
 
 /**
