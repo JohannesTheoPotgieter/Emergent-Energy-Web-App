@@ -43,6 +43,7 @@ import {
   type QuickBooksMatchSuggestion,
 } from "@shared/schema";
 import { logAuditFromReq } from "../audit-logger";
+import { refreshProjectMetricsAsync } from "./dashboard-metrics";
 
 // =========================================================================
 // Normalisation + scoring (kept here so this engine has no hidden coupling
@@ -483,6 +484,7 @@ export async function commitCustomerCascade(input: {
     },
     source: "SETTINGS",
   });
+  refreshProjectMetricsAsync(input.projectId);
   return { mappingId, updatedLinkIds };
 }
 

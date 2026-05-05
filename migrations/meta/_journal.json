@@ -358,6 +358,13 @@
       "when": 1777980702494,
       "tag": "0051_drop_legacy_claude_view_on_app_db",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1777999701612,
+      "tag": "0051_qb_link_proposed_cascades",
+      "breakpoints": true
     }
   ]
 }

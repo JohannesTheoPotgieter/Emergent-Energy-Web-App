@@ -36,6 +36,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { isApiError } from "@/lib/api-error";
 import { formatRand } from "@/lib/safeMoney";
+import { QbCascadeProposalsPanel } from "./QbCascadeProposalsPanel";
 
 type Scope = "cost" | "revenue";
 
@@ -151,6 +152,23 @@ export function FindQbMatchesPanel({ defaultScope = "cost" }: FindQbMatchesPanel
   const [rejectReason, setRejectReason] = useState("");
   const [manualQbId, setManualQbId] = useState("");
   const [mapCounterparty, setMapCounterparty] = useState(true);
+  const [lastApprovedLink, setLastApprovedLink] = useState<{
+    linkId: number;
+    proposals: Array<{
+      id: number;
+      linkId: number;
+      projectId: number | null;
+      targetTable: string;
+      targetId: number | null;
+      proposalType: string;
+      fieldName: string | null;
+      appValue: string | null;
+      qbValue: string | null;
+      reason: string | null;
+      status: "pending" | "accepted" | "declined";
+      createdAt: string;
+    }>;
+  } | null>(null);
 
   // -------- Search the app side (reuses existing endpoints) -------------
   const costSearch = useQuery<{ costLines: AppCostSearchRow[] }>({
@@ -241,9 +259,33 @@ export function FindQbMatchesPanel({ defaultScope = "cost" }: FindQbMatchesPanel
       );
       return res.json();
     },
-    onSuccess: (data: { linkId: number }) => {
-      toast({ title: "Match approved", description: `Link #${data.linkId} created.` });
+    onSuccess: (data: {
+      linkId: number;
+      proposals?: Array<{
+        id: number;
+        linkId: number;
+        projectId: number | null;
+        targetTable: string;
+        targetId: number | null;
+        proposalType: string;
+        fieldName: string | null;
+        appValue: string | null;
+        qbValue: string | null;
+        reason: string | null;
+        status: "pending" | "accepted" | "declined";
+        createdAt: string;
+      }>;
+    }) => {
+      const proposalCount = data.proposals?.length ?? 0;
+      toast({
+        title: "Match approved",
+        description:
+          proposalCount > 0
+            ? `Link #${data.linkId} created — ${proposalCount} proposed update${proposalCount === 1 ? "" : "s"} below.`
+            : `Link #${data.linkId} created — QB and app already agree.`,
+      });
       queryClient.invalidateQueries({ queryKey: ["/api/quickbooks/links"] });
+      setLastApprovedLink({ linkId: data.linkId, proposals: data.proposals ?? [] });
       setFindResult(null);
       setSelectedAppLine(null);
       setAppLineSearch("");
@@ -497,6 +539,28 @@ export function FindQbMatchesPanel({ defaultScope = "cost" }: FindQbMatchesPanel
             setManualQbId={setManualQbId}
             manualPending={manualMut.isPending}
           />
+        )}
+        {lastApprovedLink && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="text-xs text-muted-foreground">
+                Link #{lastApprovedLink.linkId} — review proposed cascades
+                before they touch app data.
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setLastApprovedLink(null)}
+                data-testid="button-dismiss-proposals"
+              >
+                <X className="h-3 w-3 mr-1" /> Hide
+              </Button>
+            </div>
+            <QbCascadeProposalsPanel
+              linkId={lastApprovedLink.linkId}
+              initialProposals={lastApprovedLink.proposals}
+            />
+          </div>
         )}
       </CardContent>
     </Card>

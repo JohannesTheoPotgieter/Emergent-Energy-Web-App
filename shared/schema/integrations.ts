@@ -597,6 +597,107 @@ export const quickbooksCascadeRuns = pgTable(
 );
 export type QuickBooksCascadeRun = typeof quickbooksCascadeRuns.$inferSelect;
 
+// ===================== QUICKBOOKS LINK PROPOSED CASCADES =====================
+
+/**
+ * Per-link cascade proposals surfaced to the reviewer.
+ *
+ * When a `quickbooks_invoice_links` row is created (manual approve, bulk
+ * approve, force-relink, or admin cascade), the QB-vs-app divergence
+ * detector records one row here per app-side mutation it would *propose*
+ * to make. The link itself is created immediately, but every downstream
+ * change (vendor mapping, counterpartyId backfill, paid_date overwrite,
+ * VAT decomposition, ignore-row clear, etc.) stays `pending` until the
+ * reviewer clicks Accept or Decline. Nothing on the app side is mutated
+ * silently — that's the contract the user explicitly asked for.
+ *
+ * Lifecycle:
+ *   - status='pending'  : created at link time, awaiting review
+ *   - status='accepted' : reviewer approved, the proposed mutation was
+ *                         applied (resolvedBy + resolvedAt populated)
+ *   - status='declined' : reviewer rejected, no mutation applied
+ *
+ * Two proposals for the same (linkId, proposalType, fieldName) are
+ * deduplicated at insert time — re-running the detector for the same link
+ * does not produce stacking pending rows.
+ */
+export const QB_PROPOSAL_TYPES = [
+  "vendor_mapping",
+  "customer_mapping",
+  "counterparty_id",
+  "project_id",
+  "paid_date",
+  "invoice_date",
+  "invoice_number",
+  "amount_ex_vat",
+  "vat_amount",
+  "name_alias",
+  "recon_ignore_clear",
+  "cost_category",
+] as const;
+export type QbProposalType = (typeof QB_PROPOSAL_TYPES)[number];
+
+export const QB_PROPOSAL_STATUSES = ["pending", "accepted", "declined"] as const;
+export type QbProposalStatus = (typeof QB_PROPOSAL_STATUSES)[number];
+
+export const qbLinkProposedCascades = pgTable(
+  "qb_link_proposed_cascades",
+  {
+    id: serial("id").primaryKey(),
+    /** FK to quickbooks_invoice_links.id (no hard FK — links are soft-deleted) */
+    linkId: integer("link_id").notNull(),
+    /** Convenience pointer for per-project filtering on the inbox */
+    projectId: integer("project_id"),
+    /** Logical target — 'normalized_cost_lines' | 'normalized_revenue_lines' |
+     *  'counterparties' | 'qb_recon_ignores' | 'qb_revenue_recon_ignores' |
+     *  'quickbooks_vendor_mappings' | 'quickbooks_customer_mappings' */
+    targetTable: text("target_table").notNull(),
+    /** Row id on `targetTable`. Null when the proposal isn't a row-level
+     *  update (e.g. a name-alias append where the target is the whole row). */
+    targetId: integer("target_id"),
+    proposalType: text("proposal_type").notNull(),
+    /** Field name on the target row (e.g. 'paid_date'). Null for
+     *  whole-row proposals like `recon_ignore_clear`. */
+    fieldName: text("field_name"),
+    /** Current value on the app side, stringified. Null when the app
+     *  had no value (i.e. the proposal is a fill, not an overwrite). */
+    appValue: text("app_value"),
+    /** Proposed value from QB, stringified. */
+    qbValue: text("qb_value"),
+    /** Human-readable reason — e.g. "QB shows R110.00, app shows R100.00". */
+    reason: text("reason"),
+    status: text("status").notNull().default("pending"),
+    createdBy: integer("created_by"),
+    resolvedBy: integer("resolved_by"),
+    resolvedAt: timestamp("resolved_at"),
+    /** Free-text note left by the reviewer at accept/decline time. */
+    resolutionNote: text("resolution_note"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at"),
+  },
+  (table) => ({
+    // De-duplicate pending proposals for the same (link, type, field).
+    uniquePending: uniqueIndex("qb_link_proposed_cascades_unique_pending_idx")
+      .on(table.linkId, table.proposalType, table.fieldName)
+      .where(sql`${table.status} = 'pending' AND ${table.deletedAt} IS NULL`),
+    linkIdx: index("qb_link_proposed_cascades_link_idx").on(table.linkId),
+    statusIdx: index("qb_link_proposed_cascades_status_idx").on(table.status),
+    projectIdx: index("qb_link_proposed_cascades_project_idx").on(table.projectId),
+  }),
+);
+
+export const insertQbLinkProposedCascadeSchema = createInsertSchema(
+  qbLinkProposedCascades,
+).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  deletedAt: true,
+} as any);
+export type InsertQbLinkProposedCascade = z.infer<typeof insertQbLinkProposedCascadeSchema>;
+export type QbLinkProposedCascade = typeof qbLinkProposedCascades.$inferSelect;
+
 // ===================== SEED LIST =====================
 
 /**

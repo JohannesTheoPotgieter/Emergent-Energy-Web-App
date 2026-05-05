@@ -65,6 +65,18 @@ import {
   type ScoredCandidate,
 } from "../services/quickbooks-invoice-match-service";
 import {
+  detectAndPersistProposals,
+  loadCostLineContext,
+  loadRevenueLineContext,
+  acceptProposal,
+  declineProposal,
+  listPendingProposalsForLink,
+  ProposalApplyError,
+  type AppRowContext,
+  type QbDocSnapshot,
+} from "../services/quickbooks-cascade-proposals-service";
+import { refreshProjectMetricsAsync } from "../services/dashboard-metrics";
+import {
   confirmCostLineLink,
   confirmRevenueLineLink,
   confirmLinksWithAllocations,
@@ -73,8 +85,6 @@ import {
   getSiblingLinksForQbEntity,
   billRawToSummary,
   invoiceRawToSummary,
-  upsertVendorMapping,
-  upsertCustomerMapping,
   QuickBooksApproveValidationError,
   QuickBooksLinkConflictError,
   QuickBooksAllocationToleranceError,
@@ -592,6 +602,36 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
           return sendError(res, notFound(body.scope === "cost" ? "Cost line" : "Revenue line"));
         }
 
+        // Already-linked rows are not candidates for re-matching. Once
+        // linked, the only way to repoint the link is the admin-only
+        // POST /api/quickbooks/links/:id/force-relink endpoint. Returning
+        // an empty candidate list here keeps the auto-suggest path
+        // idempotent — no stacking suggestions, no "approve same link
+        // twice" footgun.
+        const appAlreadyLinked = await hasActiveLink(
+          body.scope === "cost" ? "cost_line" : "revenue_line",
+          app.id,
+        );
+        if (appAlreadyLinked) {
+          return res.json({
+            suggestionId: null,
+            scope: body.scope,
+            app: {
+              id: app.id,
+              invoiceNumber: app.invoiceNumber,
+              invoiceDate: app.invoiceDate,
+              amountExVat: app.amountExVat,
+              counterpartyName: app.counterpartyName,
+              poNumber: app.poNumber ?? null,
+              projectId: app.projectId,
+              description: app.description ?? null,
+            },
+            warnings: { no_po: false, already_linked: true },
+            candidates: [],
+            alreadyLinked: true,
+          });
+        }
+
         // 2. Load candidate population — fetch ALL QB docs so invoice-number
         //    and amount matches aren't silently excluded by a date window.
         //    Date differences are surfaced as warnings instead of filters.
@@ -634,7 +674,7 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
             siblingByQbId.set(qbId, summary);
           }),
         );
-        const annotated = ranked.map((c) => {
+        const annotatedAll = ranked.map((c) => {
           const sib = siblingByQbId.get(c.qbEntityId)!;
           const otherAppLinkedElsewhere = sib.links.some(
             (l) =>
@@ -664,6 +704,13 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
             },
           };
         });
+        // Drop candidates whose QB doc is already fully linked to other app
+        // rows. The user explicitly asked that already-linked items not be
+        // re-tried for matching — reviewers must use the admin force-relink
+        // path to repoint an existing link.
+        const annotated = annotatedAll.filter(
+          (c) => !c.qbAlreadyLinkedElsewhere,
+        );
 
         // 5. App-side warnings (per row, not per candidate)
         const appActiveLink = await hasActiveLink(
@@ -916,58 +963,45 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
             createdLinkId = link.id;
           }
 
-          // Vendor / customer mapping — only executed when the caller opts in.
-          // Lock policy is enforced: a locked mapping is not silently overwritten;
-          // a 409 is returned so the caller must use the admin unlock endpoint first.
-          const suggestionRealmId = suggestion.qbRealmId;
-          const mappingResult: {
-            vendorMapped?: boolean;
-            customerMapped?: boolean;
-          } = {};
-
-          if (isCost && body.mapVendor && chosen.qbCounterpartyId) {
-            // Load counterpartyId from the cost line (required by vendor mapping table).
-            const [clRow] = await db
-              .select({ counterpartyId: normalizedCostLines.counterpartyId })
-              .from(normalizedCostLines)
-              .where(eq(normalizedCostLines.id, appEntityId))
-              .limit(1);
-            if (clRow?.counterpartyId) {
-              const vmResult = await upsertVendorMapping({
-                qbVendorId: chosen.qbCounterpartyId,
-                qbVendorName: chosen.qbCounterpartyName ?? null,
-                qbRealmId: suggestionRealmId,
-                counterpartyId: clRow.counterpartyId,
-                notes: body.notes ?? null,
+          // The link itself is now persisted. Every downstream cascade
+          // (vendor / customer mapping, counterpartyId backfill, paid_date
+          // overwrite, recon-ignore clear, name-alias learn, etc.) is
+          // recorded as a `qb_link_proposed_cascades` row in `pending`
+          // status. The reviewer accepts/declines each from the drawer.
+          // The legacy `mapVendor` / `mapCustomer` body flags remain
+          // accepted for backward compatibility but no longer trigger
+          // immediate writes — they're informational only.
+          const [createdLink] = await db
+            .select()
+            .from(quickbooksInvoiceLinks)
+            .where(eq(quickbooksInvoiceLinks.id, createdLinkId))
+            .limit(1);
+          let proposals: Awaited<ReturnType<typeof listPendingProposalsForLink>> = [];
+          if (createdLink) {
+            const appCtx: AppRowContext | null = isCost
+              ? await loadCostLineContext(appEntityId)
+              : await loadRevenueLineContext(appEntityId);
+            if (appCtx) {
+              const qbSnapshot: QbDocSnapshot = {
+                qbEntityType: isCost ? "bill" : "invoice",
+                qbEntityId: chosen.qbEntityId,
+                qbRealmId: suggestion.qbRealmId,
+                qbDocNumber: chosen.qbDocNumber,
+                qbTxnDate: chosen.qbTxnDate,
+                qbAmountExVat: chosen.qbAmountExVat,
+                qbPaymentStatus: chosen.qbPaymentStatus,
+                qbBalance: chosen.qbBalance,
+                qbCounterpartyId: chosen.qbCounterpartyId,
+                qbCounterpartyName: chosen.qbCounterpartyName,
+              };
+              proposals = await detectAndPersistProposals({
+                link: createdLink,
+                app: appCtx,
+                qb: qbSnapshot,
                 createdBy: userId,
               });
-              if (vmResult.wasLocked) {
-                return res.status(409).json({
-                  error: "mapping_locked",
-                  message: "Vendor mapping is locked — ask an admin to unlock it first.",
-                });
-              }
-              mappingResult.vendorMapped = true;
             }
           }
-
-          if (isRevenue && body.mapCustomer && chosen.qbCounterpartyId && projectId) {
-            await upsertCustomerMapping({
-              projectId,
-              qbCustomerId: chosen.qbCounterpartyId,
-              qbCustomerName: chosen.qbCounterpartyName ?? null,
-              qbRealmId: suggestionRealmId,
-              notes: body.notes ?? null,
-              createdBy: userId,
-            });
-            mappingResult.customerMapped = true;
-          }
-
-          const mappingRequested = {
-            mapVendor: !!body.mapVendor,
-            mapCustomer: !!body.mapCustomer,
-            ...mappingResult,
-          };
 
           // Mark suggestion accepted
           await db
@@ -979,6 +1013,10 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
               acceptedConfidence: String(chosen.confidence) as unknown as never,
             })
             .where(eq(quickbooksMatchSuggestions.id, suggestionId));
+
+          if (projectId) {
+            refreshProjectMetricsAsync(projectId);
+          }
 
           logAuditFromReq(req, {
             entityType: "qb_invoice_match_suggestion",
@@ -995,7 +1033,8 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
               warnings: chosen.warnings,
               linkId: createdLinkId,
               notes: body.notes ?? null,
-              mappingRequested,
+              proposalCount: proposals.length,
+              proposalTypes: proposals.map((p) => p.proposalType),
               lineAllocations: body.lineAllocations ?? null,
               allocationTolerance: allocationToleranceMeta,
             },
@@ -1004,7 +1043,7 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
           return res.status(201).json({
             ok: true,
             linkId: createdLinkId,
-            mappingRequested,
+            proposals,
             allocationTolerance: allocationToleranceMeta,
           });
         } catch (inner) {
@@ -1764,6 +1803,7 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
           outcome: RowOutcome;
           linkId?: number;
           reason?: string;
+          proposalCount?: number;
         }> = [];
         let approvedCount = 0;
         let skippedCount = 0;
@@ -1926,6 +1966,46 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
                 createdLinkId = link.id;
               }
 
+              // Persist cascade proposals so the bulk path matches the
+              // single-approve UX — every downstream change goes through
+              // the proposals inbox and never silently mutates app data.
+              const [createdLink] = await db
+                .select()
+                .from(quickbooksInvoiceLinks)
+                .where(eq(quickbooksInvoiceLinks.id, createdLinkId))
+                .limit(1);
+              let proposalCount = 0;
+              if (createdLink) {
+                const appCtx = isCost
+                  ? await loadCostLineContext(appEntityId)
+                  : await loadRevenueLineContext(appEntityId);
+                if (appCtx) {
+                  const candidateAny = chosen as ScoredCandidate & {
+                    qbCounterpartyId?: string | null;
+                    qbPaymentStatus?: string | null;
+                    qbBalance?: number | null;
+                  };
+                  const proposals = await detectAndPersistProposals({
+                    link: createdLink,
+                    app: appCtx,
+                    qb: {
+                      qbEntityType: isCost ? "bill" : "invoice",
+                      qbEntityId: chosen.qbEntityId,
+                      qbRealmId: suggestion.qbRealmId,
+                      qbDocNumber: chosen.qbDocNumber,
+                      qbTxnDate: chosen.qbTxnDate,
+                      qbAmountExVat: chosen.qbAmountExVat,
+                      qbPaymentStatus: candidateAny.qbPaymentStatus ?? null,
+                      qbBalance: candidateAny.qbBalance ?? null,
+                      qbCounterpartyId: candidateAny.qbCounterpartyId ?? null,
+                      qbCounterpartyName: chosen.qbCounterpartyName,
+                    },
+                    createdBy: userId,
+                  });
+                  proposalCount = proposals.length;
+                }
+              }
+
               await db
                 .update(quickbooksMatchSuggestions)
                 .set({
@@ -1935,6 +2015,10 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
                   acceptedConfidence: String(chosen.confidence) as unknown as never,
                 })
                 .where(eq(quickbooksMatchSuggestions.id, item.suggestionId));
+
+              if (projectId) {
+                refreshProjectMetricsAsync(projectId);
+              }
 
               logAuditFromReq(req, {
                 entityType: "qb_invoice_match_suggestion",
@@ -1949,10 +2033,11 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
                   confidence: chosen.confidence,
                   linkId: createdLinkId,
                   notes: item.notes ?? null,
+                  proposalCount,
                 },
               });
 
-              results.push({ suggestionId: item.suggestionId, outcome: "approved", linkId: createdLinkId });
+              results.push({ suggestionId: item.suggestionId, outcome: "approved", linkId: createdLinkId, proposalCount });
               approvedCount++;
             } catch (inner) {
               if (inner instanceof QuickBooksLinkConflictError) {
@@ -2091,6 +2176,151 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
       } catch (err) {
         logApiError("qb.invoice_match.bulk_reject", err);
         return sendError(res, serverError("Failed to bulk reject matches."));
+      }
+    },
+  );
+
+  // ========================================================================
+  // Cascade proposal endpoints
+  // ========================================================================
+  //
+  // After approve / bulk-approve / cascade-commit creates a link, the
+  // detector emits one `qb_link_proposed_cascades` row per app-side
+  // mutation it would propose (vendor mapping, paid_date overwrite, etc.).
+  // The reviewer accepts each from the drawer; nothing on the app side is
+  // mutated without an explicit accept. Decline records the reviewer's
+  // choice so the inbox stops nagging.
+
+  // GET /api/quickbooks/invoice-matches/links/:linkId/proposals
+  //    — return all pending proposals for a given link.
+  app.get(
+    "/api/quickbooks/invoice-matches/links/:linkId/proposals",
+    requireAuth,
+    requirePermission("financials", "view"),
+    async (req: Request, res: Response) => {
+      try {
+        const linkId = Number(req.params.linkId);
+        if (!Number.isFinite(linkId) || linkId <= 0) {
+          return sendError(res, badRequest("Invalid linkId"));
+        }
+        const proposals = await listPendingProposalsForLink(linkId);
+        return res.json({ linkId, proposals });
+      } catch (err) {
+        logApiError("qb.cascade_proposals.list", err);
+        return sendError(res, serverError("Failed to load proposals."));
+      }
+    },
+  );
+
+  // POST /api/quickbooks/invoice-matches/proposals/:id/accept
+  //    body: { note?: string }
+  // POST /api/quickbooks/invoice-matches/proposals/:id/decline
+  //    body: { note?: string }
+  const proposalActionBody = z.object({
+    note: z.string().max(500).optional(),
+  });
+
+  app.post(
+    "/api/quickbooks/invoice-matches/proposals/:id/accept",
+    requireAuth,
+    requirePermission("financials", "edit"),
+    validateBody(proposalActionBody),
+    async (req: Request, res: Response) => {
+      try {
+        const id = Number(req.params.id);
+        if (!Number.isFinite(id) || id <= 0) {
+          return sendError(res, badRequest("Invalid proposal id"));
+        }
+        const body = req.body as z.infer<typeof proposalActionBody>;
+        const userId = getEffectiveUser(req)?.id ?? null;
+        try {
+          const updated = await acceptProposal({
+            proposalId: id,
+            userId,
+            note: body.note ?? null,
+          });
+          if (updated.projectId) {
+            refreshProjectMetricsAsync(updated.projectId);
+          }
+          logAuditFromReq(req, {
+            entityType: "qb_link_proposed_cascade",
+            entityId: String(id),
+            action: "qb.cascade_proposal.accept",
+            source: "UI",
+            changesJson: {
+              proposalType: updated.proposalType,
+              fieldName: updated.fieldName,
+              targetTable: updated.targetTable,
+              targetId: updated.targetId,
+              linkId: updated.linkId,
+              appValue: updated.appValue,
+              qbValue: updated.qbValue,
+              note: body.note ?? null,
+            },
+          });
+          return res.json({ ok: true, proposal: updated });
+        } catch (inner) {
+          if (inner instanceof ProposalApplyError) {
+            return res.status(409).json({
+              error: "proposal_apply_failed",
+              code: inner.code,
+              message: inner.message,
+            });
+          }
+          throw inner;
+        }
+      } catch (err) {
+        logApiError("qb.cascade_proposals.accept", err);
+        return sendError(res, serverError("Failed to accept proposal."));
+      }
+    },
+  );
+
+  app.post(
+    "/api/quickbooks/invoice-matches/proposals/:id/decline",
+    requireAuth,
+    requirePermission("financials", "edit"),
+    validateBody(proposalActionBody),
+    async (req: Request, res: Response) => {
+      try {
+        const id = Number(req.params.id);
+        if (!Number.isFinite(id) || id <= 0) {
+          return sendError(res, badRequest("Invalid proposal id"));
+        }
+        const body = req.body as z.infer<typeof proposalActionBody>;
+        const userId = getEffectiveUser(req)?.id ?? null;
+        try {
+          const updated = await declineProposal({
+            proposalId: id,
+            userId,
+            note: body.note ?? null,
+          });
+          logAuditFromReq(req, {
+            entityType: "qb_link_proposed_cascade",
+            entityId: String(id),
+            action: "qb.cascade_proposal.decline",
+            source: "UI",
+            changesJson: {
+              proposalType: updated.proposalType,
+              fieldName: updated.fieldName,
+              linkId: updated.linkId,
+              note: body.note ?? null,
+            },
+          });
+          return res.json({ ok: true, proposal: updated });
+        } catch (inner) {
+          if (inner instanceof ProposalApplyError) {
+            return res.status(409).json({
+              error: "proposal_apply_failed",
+              code: inner.code,
+              message: inner.message,
+            });
+          }
+          throw inner;
+        }
+      } catch (err) {
+        logApiError("qb.cascade_proposals.decline", err);
+        return sendError(res, serverError("Failed to decline proposal."));
       }
     },
   );
