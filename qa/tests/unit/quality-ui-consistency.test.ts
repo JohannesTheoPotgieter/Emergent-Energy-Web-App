@@ -36,15 +36,15 @@ describe("quality terminology consistency", () => {
     expect(qualityTab).not.toContain("sent for approval");
   });
 
-  it("uses 'Failed QC' not 'Resubmission' as the governance card label", () => {
+  it("uses 'Failed / resubmission' not a standalone 'Resubmission needed' as the governance card label", () => {
     const qualityTab = read("client/src/components/tabs/quality/QualityGovernanceSummary.tsx");
     const dashboard = read("client/src/pages/qm-dashboard.tsx");
 
-    // Governance summary component
-    expect(qualityTab).toContain("Failed QC");
-    expect(qualityTab).toContain("Items that failed inspection");
+    // Governance summary component uses the combined "Failed / resubmission" label
+    expect(qualityTab).toContain("Failed / resubmission");
+    expect(qualityTab).not.toContain('"Resubmission needed"');
 
-    // Dashboard must match
+    // Dashboard still uses the short "Failed QC" label in its stat card
     expect(dashboard).toContain("Failed QC");
     expect(dashboard).not.toContain('"Resubmission needed"');
   });
@@ -59,8 +59,8 @@ describe("quality terminology consistency", () => {
     // Filter button
     expect(qualityTab).toContain('label: "In Review"');
 
-    // Governance summary card header
-    expect(govSummary).toContain(">In Review</p>");
+    // Governance summary action card label for pending review items
+    expect(govSummary).toContain("Pending review");
   });
 
   it("uses 'Not Started' instead of 'Pending' in phase summary counts", () => {
@@ -80,10 +80,10 @@ describe("quality terminology consistency", () => {
     expect(govSummary).not.toContain("quality context");
   });
 
-  it("uses 'Quality status' as the governance summary title, not 'governance view'", () => {
+  it("uses 'Quality Action Centre' as the governance summary title, not 'governance view'", () => {
     const govSummary = read("client/src/components/tabs/quality/QualityGovernanceSummary.tsx");
 
-    expect(govSummary).toContain("Quality status");
+    expect(govSummary).toContain("Quality Action Centre");
     expect(govSummary).not.toContain("Quality governance view");
   });
 });
