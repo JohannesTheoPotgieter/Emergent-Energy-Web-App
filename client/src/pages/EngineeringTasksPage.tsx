@@ -3980,6 +3980,29 @@ export default function EngineeringTasksPage() {
     workloadStateFilter,
   ]);
 
+  const activeFilterChips = useMemo(() => {
+    const chips: { key: string; label: string; onClear: () => void }[] = [];
+    if (statusFilter !== "all") chips.push({ key: "status", label: `Status: ${getTaskStatusLabel(statusFilter)}`, onClear: () => setStatusFilter("all") });
+    if (priorityFilter !== "all") chips.push({ key: "priority", label: `Priority: ${taskPriorityLabel(normalizeTaskPriority(priorityFilter))}`, onClear: () => setPriorityFilter("all") });
+    if (assigneeFilter !== "all") chips.push({ key: "assignee", label: `Assignee: ${assigneeFilter}`, onClear: () => setAssigneeFilter("all") });
+    if (projectFilter !== "all") chips.push({ key: "project", label: `Project: ${projectFilter}`, onClear: () => setProjectFilter("all") });
+    if (dueDateFilter !== "all") {
+      const option = DUE_DATE_FILTER_OPTIONS.find((item) => item.value === dueDateFilter);
+      chips.push({ key: "dueDate", label: `Due: ${option?.label || dueDateFilter}`, onClear: () => setDueDateFilter("all") });
+    }
+    if (workloadStateFilter !== "all") {
+      const option = WORKLOAD_STATE_OPTIONS.find((item) => item.value === workloadStateFilter);
+      chips.push({ key: "workload", label: `Workload: ${option?.label || workloadStateFilter}`, onClear: () => setWorkloadStateFilter("all") });
+    }
+    if (linkedSourceFilter !== "all") {
+      const option = LINKED_SOURCE_OPTIONS.find((item) => item.value === linkedSourceFilter);
+      chips.push({ key: "linkedSource", label: `Linked: ${option?.label || linkedSourceFilter}`, onClear: () => setLinkedSourceFilter("all") });
+    }
+    if (searchTerm.trim()) chips.push({ key: "search", label: `Search: ${searchTerm.trim()}`, onClear: () => setSearchTerm("") });
+    if (myTasksOnly) chips.push({ key: "myTasks", label: "My tasks only", onClear: () => setMyTasksOnly(false) });
+    return chips;
+  }, [assigneeFilter, dueDateFilter, linkedSourceFilter, myTasksOnly, priorityFilter, projectFilter, searchTerm, statusFilter, workloadStateFilter]);
+
   const isPresetActive = useCallback((preset: typeof SAVED_FILTERS[0]) => {
     return (
       (preset.filter.status || "all") === statusFilter &&
@@ -4510,6 +4533,24 @@ export default function EngineeringTasksPage() {
         <p className="text-xs text-muted-foreground" data-testid="engineering-filter-summary">
           Showing {filtered.length} of {basePool.length} tasks in scope.
         </p>
+      )}
+
+      {activeFilterChips.length > 0 && (
+        <div className="flex flex-wrap gap-1.5" data-testid="engineering-active-filter-chips">
+          {activeFilterChips.map((chip) => (
+            <Badge key={chip.key} variant="secondary" className="gap-1 pr-1 text-[10px] font-medium">
+              <span>{chip.label}</span>
+              <button
+                type="button"
+                aria-label={`Clear ${chip.label}`}
+                className="rounded p-0.5 hover:bg-black/10"
+                onClick={chip.onClear}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          ))}
+        </div>
       )}
 
       {microWalkthroughEnabled ? <MicroWalkthrough screenId="eng-tasks" steps={engWalkthroughSteps} /> : null}
