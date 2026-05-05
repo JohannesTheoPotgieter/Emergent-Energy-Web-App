@@ -1,0 +1,72 @@
+TASK
+Provision a least-privilege read-only Postgres role on our Neon database so an external dashboard can read operational data safely. Do this on a Neon BRANCH first, test, then promote to production.
+
+CONTEXT
+- This is the production database for our SA C&I solar/BESS EPC business.
+- The current owner role (neondb_owner) password was leaked and has already been rotated separately — assume current env vars are correct.
+- The reader is an AI dashboard that must never write, never DDL, never see PII, banking, payroll, or contractor identity data.
+- We want least privilege: a dedicated role with SELECT on a narrow set of curated views, NOT pg_read_all_data, NOT direct table access.
+
+CONSTRAINTS
+- Neon control plane validates passwords: ≥12 chars mixed case + digit + symbol + ≥60 bits entropy. Generate with a CSPRNG.
+- Do NOT paste the role's password into chat, code, comments, or commit history. Store it as a Replit Secret named `CLAUDE_RO_PASSWORD` and reference it from there only.
+- Do NOT modify the existing `neondb_owner` role or any application-facing role.
+- Do NOT grant on the `public` schema directly — only via the new `claude_views` schema.
+- All schema/role/grant changes happen on a NEW Neon branch first. Verify there. Only after green tests do you replicate to the primary branch.
+
+STEPS
+
+1. Inspect the current `public` schema. List every table with row count + 3 sample column names. Group tables into:
+   (a) OPERATIONAL — projects, project stages, milestones, purchase orders, suppliers, schedules, retentions, BOM/equipment lists. Safe to expose.
+   (b) FINANCIAL OPS — invoices (header only, amounts, dates, status — NOT bank account numbers), payments (amounts/dates/status only).
+   (c) SENSITIVE — anything with personal contact details (ID numbers, home addresses, banking, salary), session/auth tables, audit logs containing PII, raw client documents. Exclude entirely.
+
+2. Output the classification table for human review BEFORE making changes. Stop and wait for confirmation if any table is ambiguous.
+
+3. Create a Neon branch named `claude-ro-setup` from current production. All subsequent steps run on this branch.
+
+4. On the branch:
+   a. Create role `claude_readonly` with a CSPRNG-generated password meeting Neon's rules. Use SQL `CREATE ROLE … LOGIN PASSWORD …` if Neon's control plane accepts it for your project; if it returns HTTP 400, fall back to creating the role via Neon API or Console and continue.
+   b. Store the password as Replit Secret `CLAUDE_RO_PASSWORD`.
+   c. Run:
+      GRANT CONNECT ON DATABASE neondb TO claude_readonly;
+      CREATE SCHEMA IF NOT EXISTS claude_views;
+      GRANT USAGE ON SCHEMA claude_views TO claude_readonly;
+      REVOKE ALL ON SCHEMA public FROM claude_readonly;
+      REVOKE ALL ON ALL TABLES IN SCHEMA public FROM claude_readonly;
+   d. For each OPERATIONAL and FINANCIAL OPS table, create a view in `claude_views` that selects ONLY the columns needed for ops reporting. Examples:
+      - claude_views.projects(id, name, current_stage, hold_status, blocked_status, last_modified, client_id, expected_kwp, expected_kwh, scheduled_pac_date)
+      - claude_views.milestones(id, project_id, milestone_name, planned_date, actual_date, status, value)
+      - claude_views.purchase_orders(id, project_id, supplier_id, item_description, value, ordered_date, promised_eta, received_date, status)
+      - claude_views.purchase_order_lines(po_id, item, qty, unit_price, line_value, lead_time_days)
+      - claude_views.suppliers(id, name, category)
+      - claude_views.project_schedule(project_id, activity, planned_start, planned_end, actual_start, actual_end)
+      - claude_views.retentions(project_id, retention_value, hold_until, released_date)
+      - claude_views.invoices(id, project_id, invoice_number, amount, raised_date, due_date, paid_date, status) -- NO bank/account fields
+   e. Adapt column names to whatever exists in our actual schema. Skip any view whose source table has no equivalent. Document substitutions.
+   f. Run:
+      GRANT SELECT ON ALL TABLES IN SCHEMA claude_views TO claude_readonly;
+      ALTER DEFAULT PRIVILEGES IN SCHEMA claude_views GRANT SELECT ON TABLES TO claude_readonly;
+
+5. Test (still on branch):
+   a. Open a fresh psql session as claude_readonly.
+   b. Verify: SELECT works on every claude_views.* view.
+   c. Verify: SELECT on any public.* table is DENIED.
+   d. Verify: INSERT / UPDATE / DELETE / CREATE / DROP all DENIED everywhere.
+   e. Verify: cannot SET ROLE to neondb_owner.
+   Output the test results.
+
+6. Only if all tests pass: replicate the role + schema + views + grants on the primary branch (production). Use the same password (Replit Secret). Confirm again with the same test suite on primary.
+
+7. Output (in this order, in chat — NOT in commit messages, NOT in code):
+   a. Connection string for claude_readonly with the password as a `${CLAUDE_RO_PASSWORD}` placeholder, NOT the literal value.
+   b. Final list of views created with their column lists.
+   c. List of source tables you intentionally EXCLUDED with one-line reason each.
+   d. Any deviations from this plan and why.
+
+DO NOT
+- Commit the password.
+- Use neondb_owner connection string for the dashboard.
+- Grant pg_read_all_data, pg_read_server_files, or any superuser-adjacent role.
+- Skip the branch step.
+- Continue past step 2 if the table classification has ambiguous items.

@@ -63,14 +63,17 @@ describe("QuickBooks link — many-to-many allocations (Task #142)", () => {
     expect(schema).toMatch(/allocationToleranceApplied/);
   });
 
-  it("enforces non-negative allocation via a CHECK constraint (idempotent)", () => {
-    // PostgreSQL does not support `ADD CONSTRAINT IF NOT EXISTS`, so the
-    // migration must wrap the ALTER in a DO-block that probes
-    // pg_constraint first. A bare `ADD CONSTRAINT IF NOT EXISTS` would
-    // silently fail on the live PG runtime.
-    expect(migration).toContain("quickbooks_invoice_links_allocated_non_neg");
-    expect(migration).toContain("CHECK (allocated_amount_ex_vat >= 0)");
-    expect(migration).toMatch(/FROM pg_constraint[\s\S]*allocated_non_neg/);
+  it("enforces strictly positive allocation via a CHECK constraint (idempotent)", () => {
+    // Task #142 — the writer rejects zero allocations and the DB CHECK
+    // is the authoritative guard. Migration drops any prior `>= 0`
+    // variant and installs the strict `> 0` constraint inside a DO-block
+    // (PostgreSQL does not support `ADD CONSTRAINT IF NOT EXISTS`).
+    expect(migration).toContain("quickbooks_invoice_links_allocated_positive");
+    expect(migration).toContain("CHECK (allocated_amount_ex_vat > 0)");
+    expect(migration).toMatch(
+      /DROP CONSTRAINT IF EXISTS quickbooks_invoice_links_allocated_non_neg/,
+    );
+    expect(migration).toMatch(/FROM pg_constraint[\s\S]*allocated_positive/);
     // Guard the executable statement, not the explanatory comment that
     // names the unsupported syntax for context. Only inspect non-comment
     // lines (anything not starting with `--`).
@@ -83,8 +86,12 @@ describe("QuickBooks link — many-to-many allocations (Task #142)", () => {
 
   it("backfills allocated_amount_ex_vat from qb_amount for legacy rows", () => {
     // Backfill is what makes the migration truly additive — every legacy
-    // single-link row reads as a 100% allocation of its QB doc.
-    expect(migration).toMatch(/SET allocated_amount_ex_vat = COALESCE\(qb_amount, 0\)/);
+    // single-link row reads as a 100% allocation of its QB doc. We use a
+    // `GREATEST(..., 0.01)` floor so the strict `> 0` invariant is never
+    // violated by anomaly rows whose `qb_amount` was missing.
+    expect(migration).toMatch(
+      /SET allocated_amount_ex_vat = GREATEST\(COALESCE\(qb_amount, 0\.01\), 0\.01\)/,
+    );
   });
 
   it("enforces ONE customer mapping per (project, realm)", () => {

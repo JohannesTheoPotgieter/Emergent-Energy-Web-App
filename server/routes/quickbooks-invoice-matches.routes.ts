@@ -279,7 +279,11 @@ const manualLinkBodySchema = z.object({
    * is used as the per-link allocation and the writer SKIPS the sum
    * tolerance check (manual override path — operator accepts the drift).
    */
-  allocatedAmountExVat: z.number().nonnegative().optional(),
+  // Task #142 — DB CHECK requires `> 0`. Reject zero/negative allocations
+  // up-front so the API returns a structured 400/422 instead of a 500 at
+  // INSERT time. Optional because legacy callers may omit it (single 1:1
+  // link path) and the writer falls back to qb_amount.
+  allocatedAmountExVat: z.number().positive().optional(),
 });
 
 const bulkApproveBodySchema = z.object({
