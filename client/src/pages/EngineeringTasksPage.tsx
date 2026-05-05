@@ -3566,10 +3566,14 @@ export default function EngineeringTasksPage() {
     (initialUrlParams.get("dueDate") as EngineeringDueDateFilter) || (savedDefaults?.dueDateFilter as EngineeringDueDateFilter) || "all",
   );
   const [workloadStateFilter, setWorkloadStateFilter] = useState<EngineeringWorkloadStateFilter>(
-    (savedDefaults?.workloadStateFilter as EngineeringWorkloadStateFilter) || "all",
+    (initialUrlParams.get("workloadState") as EngineeringWorkloadStateFilter) ||
+      (savedDefaults?.workloadStateFilter as EngineeringWorkloadStateFilter) ||
+      "all",
   );
   const [linkedSourceFilter, setLinkedSourceFilter] = useState<EngineeringLinkedSourceFilter>(
-    (savedDefaults?.linkedSourceFilter as EngineeringLinkedSourceFilter) || "all",
+    (initialUrlParams.get("linkedSource") as EngineeringLinkedSourceFilter) ||
+      (savedDefaults?.linkedSourceFilter as EngineeringLinkedSourceFilter) ||
+      "all",
   );
   const [hasCustomDefault, setHasCustomDefault] = useState(!!savedDefaults);
   const [searchTerm, setSearchTerm] = useState(() => initialUrlParams.get("q") || "");
@@ -3584,6 +3588,8 @@ export default function EngineeringTasksPage() {
     if (priorityFilter !== "all") params.set("priority", priorityFilter);
     if (assigneeFilter !== "all") params.set("assignee", assigneeFilter);
     if (dueDateFilter !== "all") params.set("dueDate", dueDateFilter);
+    if (workloadStateFilter !== "all") params.set("workloadState", workloadStateFilter);
+    if (linkedSourceFilter !== "all") params.set("linkedSource", linkedSourceFilter);
     if (projectFilter !== "all") params.set("project", projectFilter);
     if (searchTerm) params.set("q", searchTerm);
     const qs = params.toString();
@@ -3591,7 +3597,7 @@ export default function EngineeringTasksPage() {
     if (url !== window.location.pathname + window.location.search) {
       window.history.replaceState(null, "", url);
     }
-  }, [viewMode, statusFilter, priorityFilter, assigneeFilter, dueDateFilter, projectFilter, searchTerm]);
+  }, [viewMode, statusFilter, priorityFilter, assigneeFilter, dueDateFilter, workloadStateFilter, linkedSourceFilter, projectFilter, searchTerm]);
 
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
