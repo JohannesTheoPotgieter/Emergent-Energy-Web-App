@@ -351,6 +351,13 @@
       "when": 1777895558911,
       "tag": "0049_qb_match_suggestions_rejection",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1777980702494,
+      "tag": "0051_drop_legacy_claude_view_on_app_db",
+      "breakpoints": true
     }
   ]
 }
