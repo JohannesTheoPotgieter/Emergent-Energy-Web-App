@@ -18,6 +18,7 @@ import { db } from "../db";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "@shared/schema";
 import { paramStr, parseIntParam } from "../lib/req-params";
+import { effectiveAllocatedAmountExVat } from "@shared/config/qb-allocations";
 import { requirePermission } from "../permission-middleware";
 import { requireTrackerPermission } from "../lib/finance-route-access";
 import { z } from "zod";
@@ -1840,9 +1841,14 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
     ]);
 
     const manualMap = new Map(manualEntries.map((e: any) => [e.monthKey, e]));
-    const linksByCostLineId = new Map<number, any>();
+    // Task #142 — many-to-many: an app cost line may now be linked to >1 QB
+    // bill (sibling allocations summing to the bill total). Multimap so we
+    // don't silently drop siblings.
+    const linksByCostLineId = new Map<number, any[]>();
     for (const link of links) {
-      linksByCostLineId.set(link.appEntityId, link);
+      const arr = linksByCostLineId.get(link.appEntityId) ?? [];
+      arr.push(link);
+      linksByCostLineId.set(link.appEntityId, arr);
     }
 
     // QB COS totals from the P&L report (matches the QB P&L / Excel view)
@@ -2284,10 +2290,13 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
     }
 
     const items: LineItem[] = [];
-    const linksByCostLineId = new Map<number, any>();
+    // Task #142 multimap (see /api/cos-tracker note above).
+    const linksByCostLineId = new Map<number, any[]>();
     const linkedBillIds = new Set<string>();
     for (const link of links) {
-      linksByCostLineId.set(link.appEntityId, link);
+      const arr = linksByCostLineId.get(link.appEntityId) ?? [];
+      arr.push(link);
+      linksByCostLineId.set(link.appEntityId, arr);
       linkedBillIds.add(String(link.qbEntityId));
     }
 
@@ -2339,9 +2348,14 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       else if (hasInvoice) cosState = "committed";
       else cosState = "planned";
 
-      const link = linksByCostLineId.get(row.id);
+      const linksForRow = linksByCostLineId.get(row.id) ?? [];
+      // Pick the first sibling as the representative for legacy display
+      // fields (qbEntityId, billById lookup). Sum of allocated amounts is
+      // computed below for the qbAmount column so partial allocations are
+      // preserved.
+      const link = linksForRow[0];
       const linkedBill = link ? billById.get(String(link.qbEntityId)) : null;
-      const matchStatus: "matched" | "app_only" = linkedBill ? "matched" : "app_only";
+      const matchStatus: "matched" | "app_only" = linksForRow.length > 0 ? "matched" : "app_only";
 
       const reasonBucket: LineItem["reasonBucket"] =
         cosState === "realised" ? "matched realised"
@@ -3784,7 +3798,13 @@ router.get("/api/cos-tracker/reconciliation", requireAuth, async (req, res) => {
 
     const bills = (rawBills?.QueryResponse?.Bill ?? []).map(billRawToSummary);
     const billById = new Map<string, any>(bills.map((b: any) => [String(b.id), b]));
-    const linkByCost = new Map<number, any>(links.map((l: any) => [l.appEntityId, l]));
+    // Task #142 multimap.
+    const linkByCost = new Map<number, any[]>();
+    for (const l of links as any[]) {
+      const arr = linkByCost.get(l.appEntityId) ?? [];
+      arr.push(l);
+      linkByCost.set(l.appEntityId, arr);
+    }
     const linkedBillIds = new Set<string>(links.map((l: any) => String(l.qbEntityId)));
     const recRows: Array<any> = [];
 
@@ -3807,18 +3827,31 @@ router.get("/api/cos-tracker/reconciliation", requireAuth, async (req, res) => {
     };
 
     for (const row of allCostLines as any[]) {
-      const link = linkByCost.get(row.id);
+      const siblings = linkByCost.get(row.id) ?? [];
+      const link = siblings[0];
       const bill = link ? billById.get(String(link.qbEntityId)) : null;
       const month = String(bill?.txnDate || row.invoiceDate || "").slice(0, 7);
       if (!month) continue;
       if (monthKey && month !== monthKey) continue;
       const reasons = link ? reasonCodesFor(row, bill) : reasonCodesFor(row, null);
       const tab = link ? (reasons.length ? "exceptions" : "matched") : "app_only";
+      // Task #142 — sum the allocations attributed to THIS app cost line
+      // across its sibling links so we don't credit a multi-line bill's
+      // total to every linked app row.
+      const allocatedQbAmount = siblings.reduce(
+        (acc: number, l: any) =>
+          acc +
+          (effectiveAllocatedAmountExVat({
+            allocatedAmountExVat: l.allocatedAmountExVat ?? null,
+            qbAmount: l.qbAmount ?? null,
+          }) ?? 0),
+        0,
+      );
       recRows.push({
         month,
         project: (row.projectName || "").replace(/_Tracker$/i, "") || "Unknown Project",
         appAmount: Number(row.amountExVat || 0),
-        qbAmount: Number(bill?.totalAmount || 0),
+        qbAmount: link ? Number(allocatedQbAmount) : 0,
         appId: row.id,
         qbId: bill?.id ?? null,
         matchStatus: link ? "matched" : "app_only",
@@ -5318,7 +5351,13 @@ router.get("/api/revenue-tracker/reconciliation", requireAuth, requirePermission
 
     const invoices = ((qbInvoicesRaw as any)?.QueryResponse?.Invoice ?? []).map(invoiceRawToSummary);
     const invoiceById = new Map<string, any>(invoices.map((inv: any) => [String(inv.id), inv]));
-    const linkByRevenue = new Map<number, any>(links.map((l: any) => [l.appEntityId, l]));
+    // Task #142 multimap.
+    const linkByRevenue = new Map<number, any[]>();
+    for (const l of links as any[]) {
+      const arr = linkByRevenue.get(l.appEntityId) ?? [];
+      arr.push(l);
+      linkByRevenue.set(l.appEntityId, arr);
+    }
     const linkedInvoiceIds = new Set<string>(links.map((l: any) => String(l.qbEntityId)));
     const recRows: Array<any> = [];
 
@@ -5339,7 +5378,8 @@ router.get("/api/revenue-tracker/reconciliation", requireAuth, requirePermission
     };
 
     for (const row of revenueRows as any[]) {
-      const link = linkByRevenue.get(row.id);
+      const siblings = linkByRevenue.get(row.id) ?? [];
+      const link = siblings[0];
       const inv = link ? invoiceById.get(String(link.qbEntityId)) : null;
       // REV bucketing — invoice_date first; fall back to QB invoice txn date if
       // the app row has no invoice_date yet.
@@ -5348,11 +5388,23 @@ router.get("/api/revenue-tracker/reconciliation", requireAuth, requirePermission
       if (monthKey && month !== monthKey) continue;
       const reasons = link ? revenueReasonsFor(row, inv) : revenueReasonsFor(row, null);
       const tab = link ? (reasons.length ? "exceptions" : "matched") : "app_only";
+      // Task #142 — sum the allocations attributed to THIS app revenue line
+      // across its sibling links so we don't credit a multi-line invoice's
+      // total to every linked app row.
+      const allocatedQbAmount = siblings.reduce(
+        (acc: number, l: any) =>
+          acc +
+          (effectiveAllocatedAmountExVat({
+            allocatedAmountExVat: l.allocatedAmountExVat ?? null,
+            qbAmount: l.qbAmount ?? null,
+          }) ?? 0),
+        0,
+      );
       recRows.push({
         month,
         project: (row.projectName || "").replace(/_Tracker$/i, "") || "Unknown Project",
         appAmount: Number(row.amountExVat || 0),
-        qbAmount: Number(inv?.totalAmount || 0),
+        qbAmount: link ? Number(allocatedQbAmount) : 0,
         appId: row.id,
         qbId: inv?.id ?? null,
         matchStatus: link ? "matched" : "app_only",

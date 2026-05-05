@@ -749,6 +749,17 @@ export interface CreateLinkInput {
   matchType?: "manual" | "auto_exact" | "auto_fuzzy";
   notes?: string | null;
   confirmedBy?: number | null;
+  /**
+   * Per-link Rand allocation against the QB doc total (ex-VAT). When
+   * omitted, defaults to `qbAmount` so the legacy single-link callers
+   * (recon UI, `confirmCostLineLink`, `confirmRevenueLineLink`) keep
+   * behaving as before — one link == 100% of the QB doc.
+   * Many-to-many callers (Task #142 transactional writer) supply this
+   * explicitly so the sum-tolerance invariant can be enforced.
+   */
+  allocatedAmountExVat?: number | null;
+  /** Set true by the many-to-many writer when sum drift was within tolerance. */
+  allocationToleranceApplied?: boolean;
 }
 
 /**
@@ -832,21 +843,27 @@ export class QuickBooksLinkConflictError extends Error {
 
 /**
  * Create or refresh a link row between an app finance line and a QuickBooks
- * document. Enforces the 1:1 invariant:
+ * document. Many-to-many semantics (Task #142):
  *
- *   - If the exact pair already exists (same app line + same QB doc),
- *     refresh its snapshot fields and return it — this is the "click
- *     Confirm twice" idempotent path.
- *   - If the app line is already linked to a DIFFERENT QB doc in the same
- *     realm → throw QuickBooksLinkConflictError. Caller must unlink first.
- *   - If the QB doc is already linked to a DIFFERENT app line in the same
- *     realm → throw QuickBooksLinkConflictError. Caller must unlink first.
+ *   - The same app line MAY now be linked to multiple QB docs at the same
+ *     time (e.g. one large invoice paid off by two QB receipts).
+ *   - The same QB doc MAY now be linked to multiple app lines at the same
+ *     time (e.g. one bank deposit settling ten invoices).
+ *   - Each link carries an explicit `allocated_amount_ex_vat` — the Rand
+ *     value it consumes from the QB doc total.
+ *   - The base 5-tuple uniqueness (app+qb+realm) still prevents duplicate
+ *     links between the *same* pair — re-confirming that pair is the
+ *     idempotent refresh path.
  *
- * This function never force-supersedes an existing link; that is a policy
- * decision and belongs in an explicit admin flow (not implemented in this
- * pass). The DB-level partial unique indexes are the belt-and-braces
- * backstop — this function is the suspenders that return a clean error
- * instead of a raw unique-violation exception.
+ * `QuickBooksLinkConflictError` is no longer raised by this writer for
+ * many-to-many situations; it remains in the type system for legacy
+ * callers that may still hit a base 5-tuple collision via the underlying
+ * unique index (e.g. concurrent inserts from two browser tabs).
+ *
+ * Default allocation behavior: when `allocatedAmountExVat` is omitted, the
+ * link inherits the QB doc total (`qbAmount`) so legacy single-link
+ * callers (`confirmCostLineLink`, `confirmRevenueLineLink`, `/api/quickbooks/links`)
+ * preserve their previous "one link == 100%" semantics.
  */
 export async function createOrUpdateLink(
   input: CreateLinkInput,
@@ -855,6 +872,13 @@ export async function createOrUpdateLink(
     input.qbRealmId ?? ((await loadQuickBooksMetadata()).realmId ?? "unknown");
 
   const now = new Date();
+  const allocated =
+    input.allocatedAmountExVat !== null && input.allocatedAmountExVat !== undefined
+      ? Number(input.allocatedAmountExVat)
+      : input.qbAmount !== null && input.qbAmount !== undefined
+        ? Number(input.qbAmount)
+        : 0;
+
   const values = {
     projectId: input.projectId ?? null,
     appEntityType: input.appEntityType,
@@ -870,76 +894,17 @@ export async function createOrUpdateLink(
         : null,
     qbCounterpartyName: input.qbCounterpartyName ?? null,
     matchType: input.matchType ?? "manual",
+    allocatedAmountExVat: Number.isFinite(allocated) ? allocated.toFixed(2) : "0",
+    allocationToleranceApplied: !!input.allocationToleranceApplied,
     notes: input.notes ?? null,
     confirmedBy: input.confirmedBy ?? null,
     confirmedAt: now,
     updatedAt: now,
   };
 
-  // --- 1. Conflict detection on the app-entity side. ---
-  // Active links for this app line in this realm. More than one here would
-  // already be a historical corruption; we surface ALL of them to the caller
-  // so they can resolve.
-  const activeAppLinks = await db
-    .select()
-    .from(quickbooksInvoiceLinks)
-    .where(
-      and(
-        eq(quickbooksInvoiceLinks.appEntityType, values.appEntityType),
-        eq(quickbooksInvoiceLinks.appEntityId, values.appEntityId),
-        eq(quickbooksInvoiceLinks.qbRealmId, values.qbRealmId),
-        isNull(quickbooksInvoiceLinks.deletedAt),
-      ),
-    );
-
-  // --- 2. Conflict detection on the QB-entity side. ---
-  const activeQbLinks = await db
-    .select()
-    .from(quickbooksInvoiceLinks)
-    .where(
-      and(
-        eq(quickbooksInvoiceLinks.qbEntityType, values.qbEntityType),
-        eq(quickbooksInvoiceLinks.qbEntityId, values.qbEntityId),
-        eq(quickbooksInvoiceLinks.qbRealmId, values.qbRealmId),
-        isNull(quickbooksInvoiceLinks.deletedAt),
-      ),
-    );
-
-  // --- 3. Idempotent refresh path: the exact same pair already exists. ---
-  const idempotent = activeAppLinks.find(
-    (l: QuickBooksInvoiceLink) =>
-      l.qbEntityType === values.qbEntityType &&
-      l.qbEntityId === values.qbEntityId,
-  );
-  if (idempotent) {
-    const updated = await db
-      .update(quickbooksInvoiceLinks)
-      .set({ ...values, deletedAt: null } as any)
-      .where(eq(quickbooksInvoiceLinks.id, idempotent.id))
-      .returning();
-    return updated[0]!;
-  }
-
-  // --- 4. Real conflict: app line or QB doc already linked elsewhere. ---
-  const appConflicts = activeAppLinks; // all of these are "different QB doc"
-  const qbConflicts = activeQbLinks;   // all of these are "different app line"
-  if (appConflicts.length > 0 || qbConflicts.length > 0) {
-    const reason: QuickBooksLinkConflictError["reason"] =
-      appConflicts.length > 0 && qbConflicts.length > 0
-        ? "both"
-        : appConflicts.length > 0
-          ? "app_entity_already_linked"
-          : "qb_entity_already_linked";
-    throw new QuickBooksLinkConflictError({
-      reason,
-      conflicts: [...appConflicts, ...qbConflicts],
-    });
-  }
-
-  // --- 5. Clean insert. If a soft-deleted row exists for the exact 5-tuple
-  // (which the base unique index would otherwise hit), revive it instead of
-  // inserting a new one so the base unique index stays consistent.
-  const softDeletedExact = await db
+  // Idempotent / revive path — the base 5-tuple unique index would otherwise
+  // raise. We refresh the snapshot fields and the allocation amount.
+  const exact = await db
     .select()
     .from(quickbooksInvoiceLinks)
     .where(
@@ -953,8 +918,8 @@ export async function createOrUpdateLink(
     )
     .limit(1);
 
-  if (softDeletedExact.length > 0) {
-    const row = softDeletedExact[0]!;
+  if (exact.length > 0) {
+    const row = exact[0]!;
     const updated = await db
       .update(quickbooksInvoiceLinks)
       .set({ ...values, deletedAt: null } as any)
@@ -968,6 +933,276 @@ export async function createOrUpdateLink(
     .values(values as any)
     .returning();
   return inserted[0]!;
+}
+
+// ===================== TASK #142: many-to-many allocations =====================
+
+import {
+  checkQbAllocationSum,
+  effectiveAllocatedAmountExVat,
+} from "@shared/config/qb-allocations";
+
+/**
+ * Raised when a many-to-many allocation request fails the sum-tolerance
+ * invariant. Routes translate this to HTTP 422 so the drawer can render
+ * the failing reason inline (the Approve button is also pre-gated on the
+ * client side).
+ */
+export class QuickBooksAllocationToleranceError extends Error {
+  readonly code = "quickbooks_allocation_out_of_tolerance";
+  constructor(
+    public readonly details: {
+      qbEntityId: string;
+      qbDocTotalExVat: number | null;
+      sum: number;
+      delta: number | null;
+      tolerance: number;
+    },
+  ) {
+    const fmt = (n: number | null) =>
+      n === null ? "(unknown)" : `R${n.toFixed(2)}`;
+    super(
+      `QuickBooks doc ${details.qbEntityId} allocations sum to ${fmt(details.sum)} ` +
+        `vs total ${fmt(details.qbDocTotalExVat)} (delta ${fmt(details.delta)}, ` +
+        `tolerance ±R${details.tolerance.toFixed(2)}).`,
+    );
+    this.name = "QuickBooksAllocationToleranceError";
+  }
+}
+
+export interface QbDocAllocation {
+  appEntityId: number;
+  appEntityType: "cost_line" | "revenue_line";
+  projectId: number | null;
+  allocatedAmountExVat: number;
+}
+
+export interface ConfirmAllocationsInput {
+  qbEntityType: "bill" | "invoice";
+  qbEntityId: string;
+  qbRealmId: string;
+  qbDocSnapshot: {
+    qbDocNumber: string | null;
+    qbTxnDate: string | null;
+    qbAmount: number | null;
+    qbCounterpartyName: string | null;
+  };
+  /** QB doc total ex-VAT used for the sum-tolerance check. */
+  qbDocTotalExVat: number | null;
+  /** New allocations the caller wants ACTIVE for this QB doc after the call. */
+  allocations: QbDocAllocation[];
+  matchType?: "manual" | "auto_exact" | "auto_fuzzy";
+  notes?: string | null;
+  confirmedBy?: number | null;
+  /** When true, skip the sum-tolerance enforcement (manual override path). */
+  allowOutOfTolerance?: boolean;
+}
+
+export interface SiblingLinkSummary {
+  qbEntityType: "bill" | "invoice";
+  qbEntityId: string;
+  qbRealmId: string;
+  links: QuickBooksInvoiceLink[];
+  totalAllocatedExVat: number;
+  qbDocTotalExVat: number | null;
+  remainingExVat: number | null;
+}
+
+/**
+ * Read all ACTIVE sibling links for a single QB doc + realm and return the
+ * canonical aggregate (sum of allocated amounts + remaining unallocated).
+ * Used by the find endpoint, the unlink endpoint and the drawer to show
+ * "QB doc has R X already allocated, R Y remaining".
+ */
+export async function getSiblingLinksForQbEntity(
+  qbEntityType: "bill" | "invoice",
+  qbEntityId: string,
+  qbRealmId: string,
+  qbDocTotalExVat: number | null = null,
+): Promise<SiblingLinkSummary> {
+  const links = await db
+    .select()
+    .from(quickbooksInvoiceLinks)
+    .where(
+      and(
+        eq(quickbooksInvoiceLinks.qbEntityType, qbEntityType),
+        eq(quickbooksInvoiceLinks.qbEntityId, qbEntityId),
+        eq(quickbooksInvoiceLinks.qbRealmId, qbRealmId),
+        isNull(quickbooksInvoiceLinks.deletedAt),
+      ),
+    );
+
+  const total = links.reduce((acc: number, l: QuickBooksInvoiceLink) => {
+    const v = effectiveAllocatedAmountExVat({
+      allocatedAmountExVat: l.allocatedAmountExVat as unknown as string | null,
+      qbAmount: l.qbAmount as unknown as string | null,
+    });
+    return acc + (v ?? 0);
+  }, 0);
+
+  // Resolve a doc-total fallback from the snapshot fields if the caller
+  // didn't pass one in. Prefer caller > first link's qbAmount.
+  const fallback =
+    qbDocTotalExVat ??
+    (links.length > 0 && links[0]!.qbAmount !== null
+      ? Number(links[0]!.qbAmount)
+      : null);
+
+  return {
+    qbEntityType,
+    qbEntityId,
+    qbRealmId,
+    links,
+    totalAllocatedExVat: Number(total.toFixed(2)),
+    qbDocTotalExVat: fallback,
+    remainingExVat:
+      fallback === null ? null : Number((fallback - total).toFixed(2)),
+  };
+}
+
+/**
+ * Transactional many-to-many writer for QB doc → app lines.
+ *
+ * The caller declares the COMPLETE set of allocations they want active for
+ * this QB doc after the call. The writer:
+ *   1. Loads existing active siblings.
+ *   2. Validates `sum(new allocations) == qbDocTotalExVat ± tolerance`
+ *      (unless `allowOutOfTolerance`).
+ *   3. Soft-deletes any existing sibling whose `appEntityId` is NOT in the
+ *      new set (the user removed those lines from the group).
+ *   4. Upserts each new allocation via `createOrUpdateLink` (idempotent on
+ *      the base 5-tuple).
+ *
+ * Returns the resulting active link rows + tolerance result so the route
+ * layer can audit-log the drift and the UI can show the new balance.
+ */
+export async function confirmLinksWithAllocations(
+  input: ConfirmAllocationsInput,
+): Promise<{
+  links: QuickBooksInvoiceLink[];
+  tolerance: ReturnType<typeof checkQbAllocationSum>;
+  removedLinkIds: number[];
+}> {
+  // Task #142 — guard against duplicate (appEntityType, appEntityId) entries
+  // in the payload. Two entries for the same app line would pass tolerance
+  // by summed input but the upsert loop would persist only the LAST entry,
+  // so the actually-stored total would silently differ from the validated
+  // total. Hard-fail before any writes.
+  const seen = new Set<string>();
+  for (const a of input.allocations) {
+    const key = `${a.appEntityType}:${a.appEntityId}`;
+    if (seen.has(key)) {
+      throw new QuickBooksAllocationToleranceError({
+        qbEntityId: input.qbEntityId,
+        qbDocTotalExVat: input.qbDocTotalExVat,
+        sum: 0,
+        delta: null,
+        tolerance: 0,
+        reason: "duplicate_app_entity",
+        duplicateKey: key,
+      } as any);
+    }
+    seen.add(key);
+  }
+
+  // Sum-tolerance check up front. Fail fast before any writes.
+  const tolerance = checkQbAllocationSum(input.qbDocTotalExVat, input.allocations);
+  if (!tolerance.ok && !input.allowOutOfTolerance) {
+    throw new QuickBooksAllocationToleranceError({
+      qbEntityId: input.qbEntityId,
+      qbDocTotalExVat: input.qbDocTotalExVat,
+      sum: tolerance.sum,
+      delta: tolerance.delta,
+      tolerance: tolerance.tolerance,
+    });
+  }
+
+  return await db.transaction(async (tx: any) => {
+    const existing = await tx
+      .select()
+      .from(quickbooksInvoiceLinks)
+      .where(
+        and(
+          eq(quickbooksInvoiceLinks.qbEntityType, input.qbEntityType),
+          eq(quickbooksInvoiceLinks.qbEntityId, input.qbEntityId),
+          eq(quickbooksInvoiceLinks.qbRealmId, input.qbRealmId),
+          isNull(quickbooksInvoiceLinks.deletedAt),
+        ),
+      );
+
+    const newKeys = new Set(
+      input.allocations.map((a) => `${a.appEntityType}:${a.appEntityId}`),
+    );
+    const toRemove = existing.filter(
+      (l: QuickBooksInvoiceLink) => !newKeys.has(`${l.appEntityType}:${l.appEntityId}`),
+    );
+    const removedLinkIds: number[] = [];
+    for (const l of toRemove) {
+      await tx
+        .update(quickbooksInvoiceLinks)
+        .set({ deletedAt: new Date(), updatedAt: new Date() } as any)
+        .where(eq(quickbooksInvoiceLinks.id, l.id));
+      removedLinkIds.push(l.id);
+    }
+
+    const upserted: QuickBooksInvoiceLink[] = [];
+    for (const a of input.allocations) {
+      const exact = await tx
+        .select()
+        .from(quickbooksInvoiceLinks)
+        .where(
+          and(
+            eq(quickbooksInvoiceLinks.appEntityType, a.appEntityType),
+            eq(quickbooksInvoiceLinks.appEntityId, a.appEntityId),
+            eq(quickbooksInvoiceLinks.qbEntityType, input.qbEntityType),
+            eq(quickbooksInvoiceLinks.qbEntityId, input.qbEntityId),
+            eq(quickbooksInvoiceLinks.qbRealmId, input.qbRealmId),
+          ),
+        )
+        .limit(1);
+
+      const values = {
+        projectId: a.projectId ?? null,
+        appEntityType: a.appEntityType,
+        appEntityId: a.appEntityId,
+        qbEntityType: input.qbEntityType,
+        qbEntityId: input.qbEntityId,
+        qbRealmId: input.qbRealmId,
+        qbDocNumber: input.qbDocSnapshot.qbDocNumber ?? null,
+        qbTxnDate: input.qbDocSnapshot.qbTxnDate ?? null,
+        qbAmount:
+          input.qbDocSnapshot.qbAmount !== null && input.qbDocSnapshot.qbAmount !== undefined
+            ? Number(input.qbDocSnapshot.qbAmount).toFixed(2)
+            : null,
+        qbCounterpartyName: input.qbDocSnapshot.qbCounterpartyName ?? null,
+        matchType: input.matchType ?? "manual",
+        allocatedAmountExVat: Number(a.allocatedAmountExVat).toFixed(2),
+        allocationToleranceApplied: tolerance.toleranceApplied,
+        notes: input.notes ?? null,
+        confirmedBy: input.confirmedBy ?? null,
+        confirmedAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      if (exact.length > 0) {
+        const row = exact[0]!;
+        const [updated] = await tx
+          .update(quickbooksInvoiceLinks)
+          .set({ ...values, deletedAt: null } as any)
+          .where(eq(quickbooksInvoiceLinks.id, row.id))
+          .returning();
+        upserted.push(updated!);
+      } else {
+        const [inserted] = await tx
+          .insert(quickbooksInvoiceLinks)
+          .values(values as any)
+          .returning();
+        upserted.push(inserted!);
+      }
+    }
+
+    return { links: upserted, tolerance, removedLinkIds };
+  });
 }
 
 /**
@@ -1449,6 +1684,14 @@ export async function confirmCostLineLink(params: {
   notes?: string | null;
   /** Realm to associate the link with. When omitted, falls back to current connection metadata. */
   qbRealmId?: string | null;
+  /**
+   * Per-link Rand allocation for Task #142 many-to-many. When omitted the
+   * legacy 100%-of-bill behaviour is preserved (allocation defaults to
+   * `bill.totalAmount`). Callers who supply this MUST also reconcile the
+   * sibling group sum themselves (use `confirmLinksWithAllocations` for
+   * the transactional path).
+   */
+  allocatedAmountExVat?: number | null;
 }): Promise<QuickBooksInvoiceLink> {
   if (!params.bill?.id) {
     throw new QuickBooksApproveValidationError({
@@ -1470,6 +1713,7 @@ export async function confirmCostLineLink(params: {
     matchType: params.matchType ?? "manual",
     notes: params.notes ?? null,
     confirmedBy: params.confirmedBy ?? null,
+    allocatedAmountExVat: params.allocatedAmountExVat ?? null,
   });
 }
 
@@ -2119,6 +2363,8 @@ export async function confirmRevenueLineLink(params: {
   notes?: string | null;
   /** Realm to associate the link with. When omitted, falls back to current connection metadata. */
   qbRealmId?: string | null;
+  /** Per-link Rand allocation for Task #142 many-to-many. See confirmCostLineLink. */
+  allocatedAmountExVat?: number | null;
 }): Promise<QuickBooksInvoiceLink> {
   if (!params.invoice?.id) {
     throw new QuickBooksApproveValidationError({
@@ -2148,6 +2394,7 @@ export async function confirmRevenueLineLink(params: {
     matchType: params.matchType ?? "manual",
     notes: params.notes ?? null,
     confirmedBy: params.confirmedBy ?? null,
+    allocatedAmountExVat: params.allocatedAmountExVat ?? null,
   });
 
   if (realmId) {

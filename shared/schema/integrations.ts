@@ -155,6 +155,28 @@ export const quickbooksInvoiceLinks = pgTable(
     qbCounterpartyName: text("qb_counterparty_name"),
     /** 'manual' | 'auto_exact' | 'auto_fuzzy' */
     matchType: text("match_type").notNull().default("manual"),
+    /**
+     * Rand value this link consumes from the QB doc total (ex-VAT).
+     * Many-to-many: the SUM of `allocated_amount_ex_vat` across all active
+     * sibling links sharing the same (qbEntityType, qbEntityId, qbRealmId)
+     * must equal the QB doc total within the tolerance defined in
+     * `shared/config/qb-allocations.ts`. Legacy single-link rows pre-dating
+     * Task #142 are stored with their original `qbAmount` here (full 100%)
+     * so reads continue to balance.
+     */
+    allocatedAmountExVat: decimal("allocated_amount_ex_vat", {
+      precision: 15,
+      scale: 2,
+    }).notNull().default("0"),
+    /**
+     * True when the sibling group was approved with a sum that differed
+     * from the QB doc total by less than the configured tolerance (small
+     * rounding / bank fee). Surfaced in the audit log so finance can
+     * inspect the cumulative drift later.
+     */
+    allocationToleranceApplied: boolean("allocation_tolerance_applied")
+      .notNull()
+      .default(false),
     /** Free-form note the confirming user can leave. */
     notes: text("notes"),
     /** User who confirmed / created the link. */
@@ -176,13 +198,11 @@ export const quickbooksInvoiceLinks = pgTable(
       table.qbEntityId,
       table.qbRealmId,
     ),
-    // 1:1 enforcement — one ACTIVE QB doc per (app line, realm).
-    // Partial index so soft-deleted rows don't block re-linking.
-    appEntityOneToOne: uniqueIndex("uq_qb_links_app_entity_active")
-      .on(table.appEntityType, table.appEntityId, table.qbRealmId)
-      .where(sql`${table.deletedAt} IS NULL`),
-    // 1:1 enforcement — one ACTIVE app line per (QB doc, realm).
-    qbEntityOneToOne: uniqueIndex("uq_qb_links_qb_entity_active")
+    // Many-to-many sibling-group lookup: all active links pointing at the
+    // same QB doc. Replaces the now-removed `uq_qb_links_qb_entity_active`
+    // unique index — the 1:1 invariant has been deliberately relaxed in
+    // favour of explicit per-link `allocated_amount_ex_vat`.
+    qbEntityIdx: index("quickbooks_invoice_links_qb_entity_idx")
       .on(table.qbEntityType, table.qbEntityId, table.qbRealmId)
       .where(sql`${table.deletedAt} IS NULL`),
     projectIdx: index("quickbooks_invoice_links_project_idx").on(table.projectId),
