@@ -189,6 +189,7 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
         invoiceDate: c.invoiceDate,
         amountExVat: c.amountExVat,
         counterpartyName: c.counterpartyName,
+        description: c.description,
       }));
     }
     return (revenueQuery.data?.revenueLines ?? []).map((r) => ({
@@ -204,6 +205,10 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
       // here was a bug: it compared "Practical Completion" against the
       // QB DisplayName and always failed.
       counterpartyName: r.projectName,
+      // For revenue, the milestone is the user-facing description of
+      // what's being billed (e.g. "Practical Completion"); fall back to
+      // the raw description column for legacy rows.
+      description: r.milestoneName ?? r.description,
     }));
   }, [scope, costQuery.data, revenueQuery.data]);
 
@@ -1431,6 +1436,12 @@ export function ProofDrawerContent({ row, scope, onApprove, onApproveMulti, appr
                   appVal={appLine.counterpartyName}
                   qbVal={chosenCandidate?.qbCounterpartyName ?? null}
                   match={cpMatch}
+                />
+                <ProofFieldRow
+                  field="description"
+                  label="Description"
+                  appVal={appLine.description ?? result.app.description ?? null}
+                  qbVal={chosenCandidate?.qbDescription ?? null}
                 />
                 {scope === "cost" && result.app.poNumber && (
                   <ProofFieldRow

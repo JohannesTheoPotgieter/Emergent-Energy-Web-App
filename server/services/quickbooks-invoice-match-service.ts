@@ -31,6 +31,13 @@ export interface AppInvoiceLike {
   amountExVat: number | null;
   counterpartyName: string | null;
   poNumber?: string | null; // cost-side only; null on revenue lines
+  /**
+   * Free-text description of the app line — vendor description for cost,
+   * milestone/description for revenue. Surfaced verbatim in the proof
+   * drawer alongside the QB doc memo so reviewers can sanity-check what
+   * they're matching.
+   */
+  description?: string | null;
 }
 
 export interface QbCandidateLike {
@@ -45,6 +52,8 @@ export interface QbCandidateLike {
   qbAmountExVat: number | null;
   qbBalance: number | null;
   qbPaymentStatus: string | null; // 'paid' | 'partial' | 'unpaid' | null
+  /** QB doc memo / PrivateNote — shown in the proof drawer for context. */
+  qbDescription: string | null;
 }
 
 export interface ScoredCandidate {
@@ -59,6 +68,8 @@ export interface ScoredCandidate {
   qbAmountExVat: number | null;
   qbBalance: number | null;
   qbPaymentStatus: string | null;
+  /** QB doc memo / PrivateNote — passed through from the candidate. */
+  qbDescription: string | null;
   confidence: number; // 0–100
   reasons: string[];
   warnings: string[]; // per-candidate flags surfaced in the UI
@@ -252,6 +263,7 @@ export function scoreInvoiceMatch(
     qbAmountExVat: qb.qbAmountExVat,
     qbBalance: qb.qbBalance,
     qbPaymentStatus: qb.qbPaymentStatus,
+    qbDescription: qb.qbDescription,
     confidence,
     reasons,
     warnings,
