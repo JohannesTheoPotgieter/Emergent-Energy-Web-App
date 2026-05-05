@@ -1,6 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, ArrowRight } from "lucide-react";
 
 function getRiskLevelClass(level: string) {
   switch ((level || "").toLowerCase()) {
@@ -19,6 +19,7 @@ interface GovernanceCounts {
   unansweredRisk: number;
   triggeredRisk: number;
   linkedMicrosoftItems: number;
+  openWarnings?: number;
 }
 
 interface HandoverInfo {
@@ -36,15 +37,26 @@ interface QualityGovernanceSummaryProps {
   counts: GovernanceCounts;
   risk: RiskInfo;
   handover: HandoverInfo | null;
+  onSelectFilter?: (filter: string) => void;
+  highSeverityWarningCount?: number;
 }
 
-export function QualityGovernanceSummary({ counts, risk, handover }: QualityGovernanceSummaryProps) {
+export function QualityGovernanceSummary({ counts, risk, handover, onSelectFilter, highSeverityWarningCount = 0 }: QualityGovernanceSummaryProps) {
+  const actionCards = [
+    { key: "handover", label: "Handover blocked", value: handover?.blocked ? 1 : 0, filter: "handover_blocking", why: "Shown when quality gate blockers stop PD → PM handover." },
+    { key: "evidence", label: "Evidence gaps", value: counts.evidenceRequired, filter: "evidence_gap", why: "Shown for applicable items requiring evidence with no uploaded proof." },
+    { key: "review", label: "Pending review", value: counts.pendingReview, filter: "review", why: "Shown for items sent for approval that are awaiting QC decision." },
+    { key: "failed", label: "Failed / resubmission", value: counts.resubmissionNeeded, filter: "fail", why: "Shown for items failed in review and requiring rework + resubmission." },
+    { key: "overdue", label: "Overdue items", value: counts.overdue, filter: "overdue", why: "Shown when an unresolved item due date is before today." },
+    { key: "warnings", label: "High warnings", value: highSeverityWarningCount, filter: "high_warnings", why: "Shown for open warnings with High severity." },
+  ];
+
   return (
     <Card className="border-border/70" data-testid="quality-governance-summary">
       <CardContent className="p-4 space-y-4">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <p className="text-sm font-semibold">Quality status</p>
+            <p className="text-sm font-semibold">Quality Action Centre</p>
             <p className="text-xs text-muted-foreground mt-1">
               {risk.summary || "Overview of outstanding quality actions, evidence, and handover readiness."}
             </p>
@@ -61,37 +73,28 @@ export function QualityGovernanceSummary({ counts, risk, handover }: QualityGove
           </div>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-          <div className="rounded-lg border border-red-100 bg-red-50/50 px-3 py-3">
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Overdue</p>
-            <p className="text-lg font-bold text-red-600 mt-1">{counts.overdue}</p>
-            <p className="text-[11px] text-muted-foreground mt-1">Past due and unresolved</p>
-          </div>
-          <div className="rounded-lg border border-amber-100 bg-amber-50/50 px-3 py-3">
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Failed QC</p>
-            <p className="text-lg font-bold text-amber-600 mt-1">{counts.resubmissionNeeded}</p>
-            <p className="text-[11px] text-muted-foreground mt-1">Items that failed inspection — fix and resubmit</p>
-          </div>
-          <div className="rounded-lg border border-sky-100 bg-sky-50/50 px-3 py-3">
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Evidence gaps</p>
-            <p className="text-lg font-bold text-sky-600 mt-1">{counts.evidenceRequired}</p>
-            <p className="text-[11px] text-muted-foreground mt-1">Required proof still missing</p>
-          </div>
-          <div className="rounded-lg border border-violet-100 bg-violet-50/50 px-3 py-3">
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">In Review</p>
-            <p className="text-lg font-bold text-violet-600 mt-1">{counts.pendingReview}</p>
-            <p className="text-[11px] text-muted-foreground mt-1">Items submitted and awaiting QC decision</p>
-          </div>
-          <div className="rounded-lg border border-orange-100 bg-orange-50/50 px-3 py-3">
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Risk answers</p>
-            <p className="text-lg font-bold text-orange-600 mt-1">{counts.unansweredRisk} open / {counts.triggeredRisk} triggered</p>
-            <p className="text-[11px] text-muted-foreground mt-1">Unanswered or triggered risk questions</p>
-          </div>
-          <div className="rounded-lg border border-emerald-100 bg-emerald-50/50 px-3 py-3">
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Linked Microsoft</p>
-            <p className="text-lg font-bold text-emerald-600 mt-1">{counts.linkedMicrosoftItems}</p>
-            <p className="text-[11px] text-muted-foreground mt-1">Quality-linked comms and follow-ups</p>
-          </div>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {actionCards.map((card) => {
+            const hasItems = card.value > 0;
+            return (
+              <button
+                key={card.key}
+                type="button"
+                onClick={() => onSelectFilter?.(card.filter)}
+                className="rounded-lg border px-3 py-3 text-left transition-colors hover:bg-muted/40 disabled:opacity-70"
+                disabled={!onSelectFilter}
+                data-testid={`quality-action-card-${card.key}`}
+              >
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{card.label}</p>
+                <div className="mt-1 flex items-center justify-between">
+                  <p className="text-lg font-bold">{card.value}</p>
+                  <ArrowRight className="w-3.5 h-3.5 text-muted-foreground" />
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-1">Why shown: {card.why}</p>
+                {!hasItems && <p className="text-[11px] text-emerald-700 mt-1">No action needed right now.</p>}
+              </button>
+            );
+          })}
         </div>
 
         {handover?.blocked && (
