@@ -37,6 +37,7 @@ export type SecondaryItem = {
   requiredSectionKey?: SectionKey;
   requiredAnySectionKeys?: SectionKey[];
   requiredPathPermissions?: string[];
+  requiredRoles?: CompanyRole[];
 };
 export type SecondaryGroup = {
   label: string;
@@ -219,15 +220,15 @@ export const TOP_SECTIONS: TopSection[] = [
   {
     label: "Reports",
     key: "REPORTS",
-    path: "/reports/pm/monthly",
-    match: (pathname) => startsWithAny(pathname, ["/reports"]),
+    path: "/reports/center",
+    match: (pathname) => startsWithAny(pathname, ["/reports", "/ceo", "/coo"]),
     secondary: [
-      { label: "Program-wide Assessment", path: "/reports/program-wide-assessment" },
+      { label: "Report Center", path: "/reports/center" },
       { label: "Programme Reports", path: "/reports/programme" },
       { label: "PM Monthly", path: "/reports/pm/monthly" },
       { label: "Engineering Monthly", path: "/reports/engineering/monthly" },
-      { label: "CEO Dashboard", path: "/ceo" },
-      { label: "COO Dashboard", path: "/coo" },
+      { label: "CEO Report View", path: "/ceo", requiredRoles: ["CEO_ADMIN"] },
+      { label: "COO Report View", path: "/coo", requiredRoles: ["COO_ADMIN"] },
     ],
   },
   {
@@ -281,7 +282,7 @@ export const DISPLAY_TOP_NAV: DisplayTopNavItem[] = [
     requiredAnySectionKeys: ["ENGINEERING", "QUALITY", "HSE"],
     sectionKeys: ["ENGINEERING", "QUALITY", "HSE"],
   },
-  { label: "Reports", path: "/reports/pm/monthly", requiredSectionKey: "REPORTS", sectionKeys: ["REPORTS"] },
+  { label: "Reports", path: "/reports/center", requiredSectionKey: "REPORTS", sectionKeys: ["REPORTS"] },
   { label: "Admin", path: "/settings", requiredSectionKey: "ADMIN", sectionKeys: ["ADMIN"] },
 ];
 
@@ -422,6 +423,7 @@ export function buildVisibleTopSections(options: {
   const canAccessByPathPerms = (item: { requiredPathPermissions?: string[] }) =>
     !item.requiredPathPermissions || item.requiredPathPermissions.every((path) => canViewPath(path));
   const filterSecondaryItem = (item: SecondaryItem, sectionDisabled?: Set<string>) => {
+    if (item.requiredRoles && (!companyRole || !item.requiredRoles.includes(companyRole as CompanyRole))) return false;
     if (sectionDisabled && sectionDisabled.has(item.path)) return false;
     if (!canAccessBySection(item)) return false;
     if (!canAccessByPathPerms(item)) return false;
