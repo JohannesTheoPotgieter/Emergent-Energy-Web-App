@@ -38,7 +38,7 @@ describe("gates top-nav section", () => {
     expect(projects.match("/gates/commitments")).toBe(false);
   });
 
-  it("shows Gates only when existing PORTFOLIO/lifecycle permissions can surface it", () => {
+  it("shows Gates for PORTFOLIO and also for PROJECT_DELIVERY holders", () => {
     const canViewPath = () => true;
 
     const withPortfolio = buildVisibleTopSections({
@@ -47,10 +47,19 @@ describe("gates top-nav section", () => {
     });
     expect(withPortfolio.some((section) => section.label === "Gates")).toBe(true);
 
+    // Gates declares requiredAnySectionKeys: ["PORTFOLIO", "PROJECT_DELIVERY"],
+    // so delivery roles (e.g. PROJECT_MANAGER_SITE) can also reach it.
     const withDeliveryOnly = buildVisibleTopSections({
       canViewPath,
       allowedSectionKeys: ["HOME", "PROJECT_DELIVERY"],
     });
-    expect(withDeliveryOnly.some((section) => section.label === "Gates")).toBe(false);
+    expect(withDeliveryOnly.some((section) => section.label === "Gates")).toBe(true);
+
+    // A user with no project access at all should not see Gates.
+    const withFinanceOnly = buildVisibleTopSections({
+      canViewPath,
+      allowedSectionKeys: ["HOME", "FINANCE"],
+    });
+    expect(withFinanceOnly.some((section) => section.label === "Gates")).toBe(false);
   });
 });
