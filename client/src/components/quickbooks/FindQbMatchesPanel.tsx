@@ -37,6 +37,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { isApiError } from "@/lib/api-error";
 import { formatRand } from "@/lib/safeMoney";
 import { QbCascadeProposalsPanel } from "./QbCascadeProposalsPanel";
+import { QbAutoSuggestInbox } from "./QbAutoSuggestInbox";
 
 type Scope = "cost" | "revenue";
 
@@ -396,6 +397,8 @@ export function FindQbMatchesPanel({ defaultScope = "cost" }: FindQbMatchesPanel
             </Button>
           </div>
         </div>
+
+        <QbAutoSuggestInbox />
 
         {showSearch && (
           <div className="space-y-2">
