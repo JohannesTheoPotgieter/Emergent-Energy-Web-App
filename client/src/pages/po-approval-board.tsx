@@ -18,6 +18,9 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 
 interface POReviewer {
   id: number;
@@ -44,6 +47,13 @@ interface PurchaseOrder {
   project_manager: string | null;
   submitted_by_name: string | null;
   reviewers: POReviewer[] | null;
+}
+
+interface EligibleApprover {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
 }
 
 // ── Formatting helpers ──────────────────────────────────────────────────────
@@ -218,22 +228,44 @@ function ReviewDialog({
 function PORow({
   po,
   onRefresh,
+  eligibleApprovers,
 }: {
   po: PurchaseOrder;
   onRefresh: () => void;
+  eligibleApprovers: EligibleApprover[];
 }) {
   const { toast } = useToast();
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [submitOpen, setSubmitOpen] = useState(false);
+  const [selectedApproverId, setSelectedApproverId] = useState<string>("");
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const submitMut = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", `/api/po/${po.id}/submit`);
+    mutationFn: async (approverId: number) => {
+      const res = await apiRequest("POST", `/api/po/${po.id}/submit`, {
+        assignedApproverUserId: approverId,
+      });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Failed"); }
       return res.json();
     },
-    onSuccess: () => { toast({ title: "PO submitted for review" }); onRefresh(); },
+    onSuccess: () => {
+      toast({ title: "PO submitted for review" });
+      setSubmitOpen(false);
+      setSelectedApproverId("");
+      setSubmitError(null);
+      onRefresh();
+    },
     onError: (e: Error) => toast({ title: "Submit failed", description: e.message, variant: "destructive" }),
   });
+
+  const handleSubmit = () => {
+    if (!selectedApproverId) {
+      setSubmitError("Please select an approver before submitting this PO.");
+      return;
+    }
+    setSubmitError(null);
+    submitMut.mutate(Number(selectedApproverId));
+  };
 
   return (
     <>
@@ -269,7 +301,7 @@ function PORow({
                   size="sm"
                   variant="outline"
                   className="h-7 text-xs"
-                  onClick={() => submitMut.mutate()}
+                  onClick={() => setSubmitOpen(true)}
                   disabled={submitMut.isPending}
                   data-testid={`btn-submit-po-${po.id}`}
                 >
@@ -298,6 +330,46 @@ function PORow({
         onClose={() => setReviewOpen(false)}
         onDone={onRefresh}
       />
+
+      <Dialog open={submitOpen} onOpenChange={(v) => { if (!v) setSubmitOpen(false); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Assign approver and submit</DialogTitle>
+            <DialogDescription>
+              Select an eligible approver for <span className="font-medium">{po.po_ref}</span> before submission.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Select
+              value={selectedApproverId}
+              onValueChange={(value) => {
+                setSelectedApproverId(value);
+                setSubmitError(null);
+              }}
+            >
+              <SelectTrigger data-testid={`select-approver-po-${po.id}`}>
+                <SelectValue placeholder="Select eligible approver" />
+              </SelectTrigger>
+              <SelectContent>
+                {eligibleApprovers.map((approver) => (
+                  <SelectItem key={approver.id} value={String(approver.id)}>
+                    {approver.name} ({approver.role})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {submitError && (
+              <p className="text-sm text-rose-600" data-testid={`submit-approver-error-po-${po.id}`}>{submitError}</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSubmitOpen(false)} disabled={submitMut.isPending}>Cancel</Button>
+            <Button onClick={handleSubmit} disabled={submitMut.isPending} data-testid={`confirm-submit-po-${po.id}`}>
+              {submitMut.isPending && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}Submit
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
@@ -325,6 +397,16 @@ export default function POApprovalBoardPage() {
       return res.json();
     },
     enabled: activeFilter === "my-reviews",
+  });
+
+  const { data: eligibleApprovers = [] } = useQuery<EligibleApprover[]>({
+    queryKey: ["/api/po/eligible-approvers"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/po/eligible-approvers");
+      if (!res.ok) throw new Error("Failed to fetch eligible approvers");
+      const data = await res.json();
+      return Array.isArray(data?.approvers) ? data.approvers : [];
+    },
   });
 
   const handleRefresh = () => {
@@ -418,7 +500,7 @@ export default function POApprovalBoardPage() {
             </TableHeader>
             <TableBody>
               {displayPos.map((po) => (
-                <PORow key={po.id} po={po} onRefresh={handleRefresh} />
+                <PORow key={po.id} po={po} onRefresh={handleRefresh} eligibleApprovers={eligibleApprovers} />
               ))}
             </TableBody>
           </Table>
