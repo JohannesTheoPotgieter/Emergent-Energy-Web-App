@@ -19,6 +19,7 @@ import { getEnvironmentStatus } from "./bootstrap/environment-status";
 import { getRuntimeMutationPolicy } from "./bootstrap/runtime-mutation-policy";
 import { createStartupReport, logStartupSummary } from "./bootstrap/startup-report";
 import { runStartupOrchestrator } from "./bootstrap/startup-orchestrator";
+import { registerOpsDashboardRoute } from "./routes/ops-dashboard.routes";
 
 declare module "http" {
   interface IncomingMessage {
@@ -77,6 +78,12 @@ async function bootstrap() {
   await initializeDatabase();
 
   applySecurityAndParsingMiddleware(app);
+
+  // Service-to-service ops dashboard endpoint — Bearer auth, no session/CSRF.
+  // Mounted before session/auth middleware so it never consumes a session cookie
+  // and is not subject to user-login or CSRF checks.
+  registerOpsDashboardRoute(app);
+
   configureSession({
     app,
     sessionSecret,
