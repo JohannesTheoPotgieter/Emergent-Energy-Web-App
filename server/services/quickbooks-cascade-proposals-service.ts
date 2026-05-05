@@ -21,12 +21,14 @@
  * the freshly-created link id.
  */
 
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 
 import { db } from "../db";
 import {
   counterparties,
   importQbVariances,
+  invoiceDescriptionPatterns,
+  invoicePatternRules,
   normalizedCostLines,
   normalizedRevenueLines,
   qbLinkProposedCascades,
@@ -41,6 +43,10 @@ import {
   type QbLinkProposedCascade,
   type QuickBooksInvoiceLink,
 } from "@shared/schema";
+import {
+  generateRuleFromInvoice,
+  normalizeInvoiceNumber as normInvoiceNumberV2,
+} from "../lib/import/invoice-classifier";
 
 // =========================================================================
 // Types
@@ -67,6 +73,8 @@ export interface QbDocSnapshot {
   qbCounterpartyName: string | null;
   /** ClassRef.value when present — used by class→project override proposal. */
   qbClassRefName?: string | null;
+  /** QB PrivateNote / memo. Used by Phase 2 description-token learning. */
+  qbDescription?: string | null;
 }
 
 /** Per-app-row context the detector needs alongside the QB doc. */
@@ -82,6 +90,10 @@ export interface AppRowContext {
   counterpartyId: number | null;
   counterpartyName: string | null;
   costCategory?: string | null;
+  /** Free-text app description — vendor description for cost lines, milestone
+   *  name / description for revenue lines. Used by Phase 2 description-token
+   *  learning. */
+  description?: string | null;
 }
 
 export interface DetectorInput {
@@ -101,6 +113,41 @@ const AMOUNT_EQ_TOL = 0.01;
 
 /** Counterparty-name token-set Jaccard floor for an alias proposal. */
 const ALIAS_NAME_SIM_FLOOR = 0.6;
+
+/** Stop words excluded from description-token fingerprints. Kept short and
+ *  South-Africa-finance-shaped — extend as we see more memo language. */
+const DESCRIPTION_STOP_WORDS = new Set<string>([
+  "the", "and", "for", "from", "with", "this", "that", "your", "our",
+  "vat", "inc", "incl", "incl.", "ex", "excl", "excluding", "including",
+  "invoice", "inv", "bill", "no", "ref", "reference", "po", "tax", "rsa",
+  "pty", "ltd", "cc", "trust", "trading", "as", "of", "to", "in", "on",
+  "at", "by", "via", "per", "due", "paid", "amount", "total", "net",
+]);
+
+const DESCRIPTION_MIN_TOKENS = 3;
+const DESCRIPTION_MAX_TOKENS = 12;
+
+export function extractDescriptionTokens(...sources: Array<string | null | undefined>): string[] {
+  const merged = sources.filter(Boolean).join(" ");
+  if (!merged) return [];
+  const cleaned = merged
+    .replace(/[^a-zA-Z0-9 ]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+  const seen = new Set<string>();
+  const tokens: string[] = [];
+  for (const raw of cleaned.split(" ")) {
+    if (raw.length < 3) continue;
+    if (DESCRIPTION_STOP_WORDS.has(raw)) continue;
+    if (/^\d+$/.test(raw)) continue; // pure numbers — usually invoice IDs
+    if (seen.has(raw)) continue;
+    seen.add(raw);
+    tokens.push(raw);
+    if (tokens.length >= DESCRIPTION_MAX_TOKENS) break;
+  }
+  return tokens.length >= DESCRIPTION_MIN_TOKENS ? tokens.sort() : [];
+}
 
 // =========================================================================
 // Pure helpers
@@ -425,6 +472,108 @@ export async function detectProposals(input: DetectorInput): Promise<ProposalDra
           appValue: cp.nameCanonical,
           qbValue: qb.qbCounterpartyName,
           reason: `QB calls this vendor "${qb.qbCounterpartyName}" (${Math.round(sim * 100)}% match) — add as alias on counterparty #${cp.id}?`,
+          createdBy,
+        });
+      }
+    }
+  }
+
+  // ---- Pattern learning (cost-line scope only — revenue lines have no
+  //      counterpartyId, so they're skipped for now) ---------------------
+
+  if (
+    app.appEntityType === "cost_line" &&
+    app.counterpartyId !== null &&
+    app.counterpartyName
+  ) {
+    // Invoice-number pattern (PREFIX or TOKEN_SHAPE).
+    const norm = normInvoiceNumberV2(app.invoiceNumber ?? qb.qbDocNumber);
+    if (norm) {
+      const generated = generateRuleFromInvoice(
+        norm,
+        "SUPPLIER",
+        app.counterpartyId,
+        app.counterpartyName,
+      );
+      const [existingRule] = await db
+        .select({ id: invoicePatternRules.id })
+        .from(invoicePatternRules)
+        .where(
+          and(
+            eq(invoicePatternRules.counterpartyId, app.counterpartyId),
+            eq(invoicePatternRules.patternType, generated.patternType),
+            eq(invoicePatternRules.patternValue, generated.patternValue),
+            eq(invoicePatternRules.isActive, true),
+          ),
+        )
+        .limit(1);
+      if (!existingRule) {
+        // Encode patternType + patternValue + sample so the apply step can
+        // write the rule without re-deriving from the link snapshot.
+        const payload = JSON.stringify({
+          patternType: generated.patternType,
+          patternValue: generated.patternValue,
+          normalizedExample: norm,
+          counterpartyId: app.counterpartyId,
+          counterpartyName: app.counterpartyName,
+          inferredType: "SUPPLIER" as const,
+        });
+        pushUnique(drafts, {
+          linkId,
+          projectId,
+          targetTable: "invoice_pattern_rules",
+          targetId: null,
+          proposalType: "pattern_rule_create",
+          fieldName: generated.patternType,
+          appValue: null,
+          qbValue: payload,
+          reason: `Learn invoice-number pattern (${generated.patternType}: "${generated.patternValue}") for counterparty "${app.counterpartyName}" — future bills matching this shape will get a confidence boost.`,
+          createdBy,
+        });
+      }
+    }
+
+    // Description-token fingerprint.
+    const tokens = extractDescriptionTokens(app.description, qb.qbDescription);
+    if (tokens.length >= DESCRIPTION_MIN_TOKENS) {
+      const tokenKey = tokens.join("|");
+      const activeForCp = await db
+        .select({
+          id: invoiceDescriptionPatterns.id,
+          tokenSet: invoiceDescriptionPatterns.tokenSet,
+        })
+        .from(invoiceDescriptionPatterns)
+        .where(
+          and(
+            eq(invoiceDescriptionPatterns.counterpartyId, app.counterpartyId),
+            eq(invoiceDescriptionPatterns.isActive, true),
+            isNull(invoiceDescriptionPatterns.deletedAt),
+          ),
+        );
+      const alreadyKnown = activeForCp.some(
+        (r: { id: number; tokenSet: unknown }) =>
+          Array.isArray(r.tokenSet) && (r.tokenSet as string[]).join("|") === tokenKey,
+      );
+      if (!alreadyKnown) {
+        const payload = JSON.stringify({
+          counterpartyId: app.counterpartyId,
+          counterpartyName: app.counterpartyName,
+          tokens,
+          normalizedExample: [app.description ?? "", qb.qbDescription ?? ""]
+            .filter(Boolean)
+            .join(" — ")
+            .slice(0, 240),
+        });
+        pushUnique(drafts, {
+          linkId,
+          projectId,
+          targetTable: "invoice_description_patterns",
+          targetId: null,
+          proposalType: "description_pattern_create",
+          fieldName: "token_set",
+          appValue: null,
+          qbValue: payload,
+          reason: `Learn memo fingerprint (${tokens.length} tokens: ${tokens.slice(0, 5).join(", ")}${tokens.length > 5 ? ", …" : ""}) for counterparty "${app.counterpartyName}".`,
           createdBy,
         });
       }
@@ -841,6 +990,120 @@ async function applyMutation(
       }
       return;
     }
+    case "pattern_rule_create": {
+      if (!proposal.qbValue) return;
+      let payload: {
+        patternType: "PREFIX" | "REGEX" | "TOKEN_SHAPE";
+        patternValue: string;
+        normalizedExample: string | null;
+        counterpartyId: number;
+        counterpartyName: string | null;
+        inferredType: "INSTALLER" | "SUPPLIER" | "OTHER";
+      };
+      try {
+        payload = JSON.parse(proposal.qbValue);
+      } catch {
+        throw new ProposalApplyError("Pattern proposal payload is malformed", "bad_payload");
+      }
+      // Upsert: re-activate a soft-disabled rule with the same shape, or
+      // insert fresh. The existing classifier reads `is_active = true`
+      // rules only, so flipping that is enough to make it live.
+      const [existing] = await tx
+        .select({ id: invoicePatternRules.id })
+        .from(invoicePatternRules)
+        .where(
+          and(
+            eq(invoicePatternRules.counterpartyId, payload.counterpartyId),
+            eq(invoicePatternRules.patternType, payload.patternType),
+            eq(invoicePatternRules.patternValue, payload.patternValue),
+          ),
+        )
+        .limit(1);
+      if (existing) {
+        await tx
+          .update(invoicePatternRules)
+          .set({
+            isActive: true,
+            timesConfirmed: sql`${invoicePatternRules.timesConfirmed} + 1`,
+            lastConfirmedAt: new Date(),
+          })
+          .where(eq(invoicePatternRules.id, existing.id));
+      } else {
+        await tx.insert(invoicePatternRules).values({
+          patternType: payload.patternType,
+          patternValue: payload.patternValue,
+          normalizedExample: payload.normalizedExample,
+          counterpartyId: payload.counterpartyId,
+          counterpartyName: payload.counterpartyName,
+          inferredType: payload.inferredType,
+          confidenceWeight: 50,
+          createdBy: proposal.createdBy,
+          lastConfirmedAt: new Date(),
+        });
+      }
+      return;
+    }
+    case "description_pattern_create": {
+      if (!proposal.qbValue) return;
+      let payload: {
+        counterpartyId: number;
+        counterpartyName: string | null;
+        tokens: string[];
+        normalizedExample: string | null;
+      };
+      try {
+        payload = JSON.parse(proposal.qbValue);
+      } catch {
+        throw new ProposalApplyError(
+          "Description-pattern payload is malformed",
+          "bad_payload",
+        );
+      }
+      if (!Array.isArray(payload.tokens) || payload.tokens.length === 0) return;
+      // Compare against active rows for this counterparty. Identical token
+      // sets are reactivated; otherwise insert fresh.
+      const tokenKey = payload.tokens.slice().sort().join("|");
+      const existing = await tx
+        .select({
+          id: invoiceDescriptionPatterns.id,
+          tokenSet: invoiceDescriptionPatterns.tokenSet,
+        })
+        .from(invoiceDescriptionPatterns)
+        .where(
+          and(
+            eq(invoiceDescriptionPatterns.counterpartyId, payload.counterpartyId),
+            isNull(invoiceDescriptionPatterns.deletedAt),
+          ),
+        );
+      const match = existing.find(
+        (r: { id: number; tokenSet: unknown }) =>
+          Array.isArray(r.tokenSet) &&
+          (r.tokenSet as string[]).slice().sort().join("|") === tokenKey,
+      );
+      if (match) {
+        await tx
+          .update(invoiceDescriptionPatterns)
+          .set({
+            isActive: true,
+            timesConfirmed: sql`${invoiceDescriptionPatterns.timesConfirmed} + 1`,
+            lastConfirmedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(invoiceDescriptionPatterns.id, match.id));
+      } else {
+        await tx.insert(invoiceDescriptionPatterns).values({
+          counterpartyId: payload.counterpartyId,
+          counterpartyName: payload.counterpartyName,
+          tokenSet: payload.tokens.slice().sort(),
+          normalizedExample: payload.normalizedExample,
+          confidenceWeight: 50,
+          isActive: true,
+          createdBy: proposal.createdBy,
+          lastConfirmedAt: new Date(),
+        });
+      }
+      return;
+    }
     case "recon_ignore_clear": {
       if (!proposal.targetId) return;
       if (proposal.targetTable === "qb_recon_ignores") {
@@ -970,6 +1233,7 @@ export async function loadCostLineContext(
     counterpartyId: row.counterpartyId,
     counterpartyName: row.counterpartyName,
     costCategory: row.costCategory,
+    description: row.description,
   };
 }
 
@@ -1000,5 +1264,6 @@ export async function loadRevenueLineContext(
     counterpartyId: null,
     counterpartyName: row.projectName,
     costCategory: null,
+    description: row.milestoneName ?? row.description,
   };
 }
