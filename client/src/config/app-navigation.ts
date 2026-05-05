@@ -5,7 +5,7 @@
  *   Home | Company | Project Development | Project Delivery | Finance | Engineering | HSE | Quality | Reports | Admin
  *
  * Role-based visibility determines which sections each role sees.
- * "Gates" is not a top-level section — it lives inside Portfolio and functional areas.
+ * "Gates" is a top-level display nav item.
  * Labels are consistent across the company.
  *
  * Note: the section key "PORTFOLIO" is the stable identifier used in DB-stored
@@ -88,9 +88,8 @@ export const TOP_SECTIONS: TopSection[] = [
       "/company-overview",
       "/company/team",
       "/lifecycle-board",
-      "/gates", "/exceptions",
       "/project-lifecycle",
-    ]) && !matchesPathPrefix(pathname, "/gates/commitments"),
+    ]),
     secondary: [
       { label: "Company Overview", path: "/company-overview" },
       { label: "Team", path: "/company/team" },
@@ -135,6 +134,28 @@ export const TOP_SECTIONS: TopSection[] = [
     ],
   },
   {
+    label: "Gates",
+    key: "PORTFOLIO",
+    path: "/gates",
+    requiredAnySectionKeys: ["PORTFOLIO", "PROJECT_DELIVERY"],
+    requiredPathPermissions: ["/gates"],
+    match: (pathname) => startsWithAny(pathname, [
+      "/gates",
+      "/exceptions",
+      "/dashboard",
+    ]),
+    secondary: [
+      { label: "Gates Pipeline", path: "/gates" },
+      { label: "Blocked Gates", path: "/gates/blocked" },
+      { label: "Ready Gates", path: "/gates/ready" },
+      { label: "Gate Exceptions", path: "/gates/exceptions" },
+      { label: "Client Updates", path: "/gates/client-updates" },
+      { label: "Handover Queue", path: "/gates/handovers" },
+      { label: "Open Queries", path: "/gates/queries" },
+      { label: "Client Commitments", path: "/gates/commitments" },
+    ],
+  },
+  {
     label: "Project Development",
     key: "PROJECT_DEVELOPMENT",
     path: "/pd",
@@ -164,7 +185,6 @@ export const TOP_SECTIONS: TopSection[] = [
       "/pm", "/sites",
       "/governance/financial-reviews",
       "/po-approval-board", "/payment-request-board", "/payment-batch-manager",
-      "/gates/commitments",
       "/milestone-tracker",
       "/weekly-reviews",
       "/pm-dashboard",
