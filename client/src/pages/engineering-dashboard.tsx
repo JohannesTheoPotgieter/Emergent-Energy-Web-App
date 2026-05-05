@@ -154,6 +154,17 @@ function displayProject(name: string | null | undefined) {
   return name.replace(/_Tracker.*$/i, "").replace(/_/g, " ");
 }
 
+interface ActionCentreCard {
+  key: string;
+  title: string;
+  count: number;
+  href: string;
+  icon: React.ReactNode;
+  tone: string;
+  whyShown: string;
+  emptyState: string;
+}
+
 function TaskRow({ task, showProject = true }: { task: StandupTask; showProject?: boolean }) {
   const [, setLocation] = useLocation();
   const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && !isTaskComplete(task.status);
@@ -916,6 +927,109 @@ export default function EngineeringDashboard() {
 
       <AttentionBadges items={engAttentionItems} threshold={5} testId="eng-attention-needed" />
       <KpiStrip summary={summary} />
+
+      <Card className="shadow-sm border-orange-200/70" data-testid="engineering-action-centre">
+        <CardContent className="p-4 space-y-3">
+          <div>
+            <h3 className="text-sm font-semibold tracking-wide uppercase text-orange-700">Engineering Action Centre</h3>
+            <p className="text-xs text-muted-foreground">Immediate queue for risk, ownership, approvals, and delivery flow.</p>
+          </div>
+          {(() => {
+            const unassignedCount = [...inProgressHighlights, ...otherActive].filter(
+              (t) => !t.assignees || t.assignees.length === 0,
+            ).length;
+            const deliverableActionCount = [...needsApproval, ...upcomingThisWeek].filter(
+              (t) => (t.taskTypeTag || "").toLowerCase().includes("deliverable"),
+            ).length;
+            const cards: ActionCentreCard[] = [
+              {
+                key: "overdue",
+                title: "Overdue tasks",
+                count: blockers?.overdue?.length ?? 0,
+                href: "/engineering/tasks?dueDate=overdue",
+                icon: <AlertTriangle className="h-4 w-4" />,
+                tone: "text-red-700 border-red-200 bg-red-50/70",
+                whyShown: "Past due and incomplete tasks are a schedule risk.",
+                emptyState: "No overdue engineering work",
+              },
+              {
+                key: "blocked",
+                title: "Blocked / on hold",
+                count: blockers?.hold?.length ?? 0,
+                href: "/engineering/tasks?workloadState=blocked",
+                icon: <PauseCircle className="h-4 w-4" />,
+                tone: "text-amber-700 border-amber-200 bg-amber-50/70",
+                whyShown: "Blocked work cannot progress until a dependency is cleared.",
+                emptyState: "No blocked tasks",
+              },
+              {
+                key: "unassigned",
+                title: "Unassigned tasks",
+                count: unassignedCount,
+                href: "/engineering/tasks?workloadState=unassigned",
+                icon: <Users className="h-4 w-4" />,
+                tone: "text-slate-700 border-slate-200 bg-slate-50/70",
+                whyShown: "Tasks without owners risk silent delay.",
+                emptyState: "No unassigned tasks",
+              },
+              {
+                key: "approvals",
+                title: "Pending approvals",
+                count: needsApproval.length,
+                href: "/engineering/tasks?workloadState=approval",
+                icon: <ShieldAlert className="h-4 w-4" />,
+                tone: "text-purple-700 border-purple-200 bg-purple-50/70",
+                whyShown: "Approval queue items gate downstream execution.",
+                emptyState: "No approvals waiting",
+              },
+              {
+                key: "due_this_week",
+                title: "Due this week",
+                count: upcomingThisWeek.length,
+                href: "/engineering/tasks?dueDate=this_week",
+                icon: <Timer className="h-4 w-4" />,
+                tone: "text-indigo-700 border-indigo-200 bg-indigo-50/70",
+                whyShown: "Near-term due dates need sequencing before they become overdue.",
+                emptyState: "No tasks due this week",
+              },
+              {
+                key: "deliverables",
+                title: "Deliverables requiring action",
+                count: deliverableActionCount,
+                href: "/engineering/tasks?workloadState=deliverable",
+                icon: <Send className="h-4 w-4" />,
+                tone: "text-cyan-700 border-cyan-200 bg-cyan-50/70",
+                whyShown: "Deliverable-linked tasks impact issue/approval handoffs.",
+                emptyState: "No deliverables awaiting action",
+              },
+            ];
+
+            return (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2.5">
+                {cards.map((card) => (
+                  <Link key={card.key} href={card.href}>
+                    <button
+                      type="button"
+                      className={`w-full text-left rounded-lg border p-3 hover:shadow-sm transition ${card.tone}`}
+                      data-testid={`action-centre-${card.key}`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-1.5 font-semibold text-sm">
+                          {card.icon}
+                          <span>{card.title}</span>
+                        </div>
+                        <span className="text-lg font-bold leading-none">{card.count}</span>
+                      </div>
+                      <p className="text-[11px] mt-2 opacity-90">{card.whyShown}</p>
+                      {card.count === 0 && <p className="text-[11px] mt-1 font-medium">{card.emptyState}</p>}
+                    </button>
+                  </Link>
+                ))}
+              </div>
+            );
+          })()}
+        </CardContent>
+      </Card>
 
       {totalBlockers > 0 && (
         <CollapsibleSection
