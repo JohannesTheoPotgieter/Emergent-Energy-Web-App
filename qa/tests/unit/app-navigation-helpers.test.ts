@@ -122,4 +122,35 @@ describe("app navigation helpers", () => {
       "/priorities?tab=company",
     ]);
   });
+
+
+  it("shows executive report links only for matching executive roles", () => {
+    const ceoSections = buildVisibleTopSections({
+      companyRole: "CEO_ADMIN",
+      canViewPath: () => true,
+    });
+    const cooSections = buildVisibleTopSections({
+      companyRole: "COO_ADMIN",
+      canViewPath: () => true,
+    });
+    const pmSections = buildVisibleTopSections({
+      companyRole: "PROGRAM_MANAGER",
+      canViewPath: () => true,
+    });
+
+    const ceoReports = ceoSections.find((section) => section.key === "REPORTS");
+    const cooReports = cooSections.find((section) => section.key === "REPORTS");
+    const pmReports = pmSections.find((section) => section.key === "REPORTS");
+
+    expect(ceoReports?.path).toBe("/reports/center");
+    expect(ceoReports?.secondary.map((item) => item.label)).toContain("CEO Report View");
+    expect(ceoReports?.secondary.map((item) => item.label)).not.toContain("COO Report View");
+
+    expect(cooReports?.secondary.map((item) => item.label)).toContain("COO Report View");
+    expect(cooReports?.secondary.map((item) => item.label)).not.toContain("CEO Report View");
+
+    expect(pmReports?.secondary.map((item) => item.label)).not.toContain("CEO Report View");
+    expect(pmReports?.secondary.map((item) => item.label)).not.toContain("COO Report View");
+  });
+
 });
