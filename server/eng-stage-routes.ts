@@ -508,6 +508,8 @@ export function registerEngStageRoutes(app: Express) {
         completedAt: projectEngTasks.completedAt,
         completedBy: projectEngTasks.completedBy,
         hasDeliverable: projectEngTasks.hasDeliverable,
+        workItemId: projectEngTasks.workItemId,
+        workItemStatus: workItems.status,
         templateTitle: engTaskTemplates.title,
         templateDescription: engTaskTemplates.description,
         isRequired: engTaskTemplates.isRequired,
@@ -518,6 +520,7 @@ export function registerEngStageRoutes(app: Express) {
       })
         .from(projectEngTasks)
         .innerJoin(engTaskTemplates, eq(projectEngTasks.taskTemplateId, engTaskTemplates.id))
+        .leftJoin(workItems, eq(projectEngTasks.workItemId, workItems.id))
         .where(eq(projectEngTasks.projectEngStageId, stageId))
         .orderBy(engTaskTemplates.sequence);
 
