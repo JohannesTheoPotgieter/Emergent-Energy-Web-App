@@ -59,6 +59,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { isApiError } from "@/lib/api-error";
 import { formatRand } from "@/lib/safeMoney";
+import { checkQbAllocationSum } from "@shared/config/qb-allocations";
 
 import {
   type FindResponse,
@@ -281,11 +282,27 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
   // ── Single-approve (from drawer) ──────────────────────────────────────────
 
   const singleApproveMut = useMutation({
-    mutationFn: async (vars: { suggestionId: number; candidateIndex: number; notes?: string }) => {
+    mutationFn: async (vars: {
+      suggestionId: number;
+      candidateIndex: number;
+      notes?: string;
+      // Task #142 — when present, the approve route routes via
+      // confirmLinksWithAllocations and validates the per-link Rand sum
+      // against the QB doc total within tolerance.
+      lineAllocations?: Array<{
+        appEntityType: "cost_line" | "revenue_line";
+        appEntityId: number;
+        allocatedAmountExVat: number;
+      }>;
+    }) => {
       const res = await apiRequest(
         "POST",
         `/api/quickbooks/invoice-matches/${vars.suggestionId}/approve`,
-        { candidateIndex: vars.candidateIndex, notes: vars.notes },
+        {
+          candidateIndex: vars.candidateIndex,
+          notes: vars.notes,
+          ...(vars.lineAllocations ? { lineAllocations: vars.lineAllocations } : {}),
+        },
       );
       return res.json() as Promise<{ linkId: number }>;
     },
@@ -735,7 +752,34 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
                   {/* Best QB match */}
                   <td className="px-2 py-1.5">
                     {best ? (
-                      <span className="font-medium">{best.qbDocNumber ?? best.qbEntityId}</span>
+                      <span className="font-medium inline-flex items-center gap-1">
+                        {best.qbDocNumber ?? best.qbEntityId}
+                        {/* Task #142 — bulk(N) badge surfaces when this QB
+                            doc already has N>=1 sibling allocations to
+                            other app lines, so the operator knows the
+                            doc is being split. */}
+                        {(() => {
+                          const sib = best.qbAllocation;
+                          const siblingsForOthers = sib
+                            ? sib.siblings.filter(
+                                (s) =>
+                                  !(
+                                    s.appEntityType ===
+                                      (scope === "cost" ? "cost_line" : "revenue_line") &&
+                                    s.appEntityId === row.appLine.id
+                                  ),
+                              ).length
+                            : 0;
+                          return siblingsForOthers > 0 ? (
+                            <Badge
+                              className="text-[9px] bg-sky-100 text-sky-800 border-sky-200"
+                              data-testid={`row-bulk-badge-${row.id}`}
+                            >
+                              bulk({siblingsForOthers + 1})
+                            </Badge>
+                          ) : null;
+                        })()}
+                      </span>
                     ) : row.status === "searching" ? (
                       <Loader2 className="h-3 w-3 animate-spin text-amber-500" />
                     ) : (
@@ -845,11 +889,12 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
             <ProofDrawerContent
               row={drawerRow}
               scope={scope}
-              onApprove={(candidateIndex) => {
+              onApprove={(candidateIndex, lineAllocations) => {
                 if (!drawerRow.findResult) return;
                 singleApproveMut.mutate({
                   suggestionId: drawerRow.findResult.suggestionId,
                   candidateIndex,
+                  lineAllocations,
                 });
               }}
               approvePending={singleApproveMut.isPending}
@@ -984,7 +1029,14 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
 export interface ProofDrawerProps {
   row: WorkbenchRow;
   scope: Scope;
-  onApprove: (candidateIndex: number) => void;
+  onApprove: (
+    candidateIndex: number,
+    lineAllocations?: Array<{
+      appEntityType: "cost_line" | "revenue_line";
+      appEntityId: number;
+      allocatedAmountExVat: number;
+    }>,
+  ) => void;
   approvePending: boolean;
   onRejectDone: () => void;
 }
@@ -995,12 +1047,21 @@ export function ProofDrawerContent({ row, scope, onApprove, approvePending }: Pr
   const [rejectReason, setRejectReason] = useState("");
   const [manualQbId, setManualQbId] = useState("");
   const manualMut = useMutation({
-    mutationFn: async (vars: { qbEntityId: string; appEntityId: number }) => {
+    mutationFn: async (vars: {
+      qbEntityId: string;
+      appEntityId: number;
+      // Task #142 — optional per-link override allocation. When omitted
+      // the server treats the link as a 100% allocation of the QB doc.
+      allocatedAmountExVat?: number;
+    }) => {
       const res = await apiRequest("POST", "/api/quickbooks/invoice-matches/manual-link", {
         scope,
         appEntityId: vars.appEntityId,
         qbEntityId: vars.qbEntityId,
         notes: "manual_override via QB Matching Workbench",
+        ...(vars.allocatedAmountExVat !== undefined
+          ? { allocatedAmountExVat: vars.allocatedAmountExVat }
+          : {}),
       });
       return res.json();
     },
@@ -1040,6 +1101,52 @@ export function ProofDrawerContent({ row, scope, onApprove, approvePending }: Pr
   const appLine = row.appLine;
 
   const chosenCandidate = result?.candidates[selectedCandidateIdx] ?? null;
+
+  // ── Task #142 — per-link allocation editor (this app line only) ──────────
+  // Default this app line's allocation to the QB doc's remaining capacity
+  // (or the app amount when the QB doc has no existing siblings).
+  const appEntityType: "cost_line" | "revenue_line" =
+    scope === "cost" ? "cost_line" : "revenue_line";
+  const sib = chosenCandidate?.qbAllocation;
+  const otherSiblings = useMemo(
+    () =>
+      (sib?.siblings ?? []).filter(
+        (s) => !(s.appEntityType === appEntityType && s.appEntityId === appLine.id),
+      ),
+    [sib, appEntityType, appLine.id],
+  );
+  const otherSiblingSum = useMemo(
+    () => otherSiblings.reduce((a, s) => a + (Number(s.allocatedAmountExVat) || 0), 0),
+    [otherSiblings],
+  );
+  const qbTotal = chosenCandidate?.qbAmountExVat ?? null;
+  const defaultThisAlloc = useMemo(() => {
+    if (qbTotal !== null) {
+      const remaining = Number((qbTotal - otherSiblingSum).toFixed(2));
+      const app = Number(appLine.amountExVat ?? remaining);
+      // Clamp default to whichever is smaller — never propose >app amount.
+      return Math.max(0, Math.min(remaining, app));
+    }
+    return Number(appLine.amountExVat ?? 0);
+  }, [qbTotal, otherSiblingSum, appLine.amountExVat]);
+  const [thisAllocStr, setThisAllocStr] = useState<string>(
+    defaultThisAlloc.toFixed(2),
+  );
+  const isMultiAllocActive = !!sib && (otherSiblings.length > 0 || thisAllocStr !== "");
+  // Reset the editor whenever the candidate or its siblings change.
+  useEffect(() => {
+    setThisAllocStr(defaultThisAlloc.toFixed(2));
+  }, [chosenCandidate?.qbEntityId, defaultThisAlloc]);
+
+  const thisAllocNum = Number(thisAllocStr);
+  const allocSumCheck = useMemo(() => {
+    if (!chosenCandidate) return null;
+    const allAllocations = [
+      ...otherSiblings.map((s) => ({ allocatedAmountExVat: s.allocatedAmountExVat })),
+      { allocatedAmountExVat: Number.isFinite(thisAllocNum) ? thisAllocNum : 0 },
+    ];
+    return checkQbAllocationSum(qbTotal, allAllocations);
+  }, [chosenCandidate, qbTotal, otherSiblings, thisAllocNum]);
 
   const appWarnings: string[] = [];
   if (result?.warnings.no_po) appWarnings.push("no_po");
@@ -1240,6 +1347,96 @@ export function ProofDrawerContent({ row, scope, onApprove, approvePending }: Pr
             </div>
           )}
 
+          {/* Task #142 — QB Allocation panel: sibling allocations + per-link
+              Rand editor for THIS app line + live tolerance gate. */}
+          {chosenCandidate && (
+            <div
+              className="rounded border border-slate-200 bg-slate-50/60 p-3 space-y-2"
+              data-testid="drawer-qb-allocation"
+            >
+              <div className="flex items-center justify-between">
+                <div className="text-[10px] text-muted-foreground uppercase font-medium">
+                  QB Allocation
+                </div>
+                <div className="text-[10px] text-muted-foreground">
+                  QB total: <span className="font-mono">{formatRand(qbTotal)}</span>
+                </div>
+              </div>
+
+              {/* Sibling rows (other app lines already linked to this QB doc) */}
+              {otherSiblings.length > 0 ? (
+                <div
+                  className="space-y-1 text-[11px]"
+                  data-testid="drawer-allocation-siblings"
+                >
+                  {otherSiblings.map((s) => (
+                    <div
+                      key={s.linkId}
+                      className="flex items-center justify-between rounded bg-white px-2 py-1 border border-slate-200"
+                      data-testid={`drawer-allocation-sibling-${s.linkId}`}
+                    >
+                      <span className="text-slate-600">
+                        {s.appEntityType === "cost_line" ? "Cost line" : "Revenue line"} #
+                        {s.appEntityId}
+                      </span>
+                      <span className="font-mono tabular-nums">
+                        {formatRand(s.allocatedAmountExVat)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-[10px] text-muted-foreground">
+                  No other app lines linked to this QB doc.
+                </div>
+              )}
+
+              {/* This app line's editable allocation */}
+              <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-200">
+                <Label className="text-[11px] text-slate-700">
+                  This line allocation (R)
+                </Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  className="h-7 text-xs font-mono w-32 text-right"
+                  value={thisAllocStr}
+                  onChange={(e) => setThisAllocStr(e.target.value)}
+                  data-testid="drawer-input-this-allocation"
+                />
+              </div>
+
+              {/* Live tolerance summary */}
+              {allocSumCheck && (
+                <div
+                  className={`text-[10px] flex items-center justify-between rounded px-2 py-1 ${
+                    allocSumCheck.ok
+                      ? allocSumCheck.toleranceApplied
+                        ? "bg-amber-50 text-amber-800 border border-amber-200"
+                        : "bg-emerald-50 text-emerald-800 border border-emerald-200"
+                      : "bg-rose-50 text-rose-800 border border-rose-200"
+                  }`}
+                  data-testid="drawer-allocation-summary"
+                >
+                  <span>
+                    Sum {formatRand(allocSumCheck.sum)}
+                    {allocSumCheck.delta !== null && (
+                      <> · Δ {formatRand(allocSumCheck.delta)}</>
+                    )}
+                  </span>
+                  <span>
+                    {allocSumCheck.ok
+                      ? allocSumCheck.toleranceApplied
+                        ? `within ±${formatRand(allocSumCheck.tolerance)} tol.`
+                        : "balanced"
+                      : `exceeds ±${formatRand(allocSumCheck.tolerance)} tol.`}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Payment status */}
           {chosenCandidate?.qbPaymentStatus && (
             <div className="rounded border p-2 text-xs" data-testid="drawer-payment-status">
@@ -1277,9 +1474,38 @@ export function ProofDrawerContent({ row, scope, onApprove, approvePending }: Pr
                     approvePending ||
                     !chosenCandidate ||
                     (chosenCandidate?.qbAlreadyLinkedElsewhere ?? false) ||
-                    result.warnings.already_linked
+                    result.warnings.already_linked ||
+                    // Task #142 — block approve when the per-link Rand sum
+                    // would breach tolerance. Always-true when QB total is
+                    // unknown (writer skips the check).
+                    (allocSumCheck ? !allocSumCheck.ok : false)
                   }
-                  onClick={() => onApprove(selectedCandidateIdx)}
+                  onClick={() => {
+                    // Task #142 — when there are siblings (or the operator
+                    // edited the per-link amount away from the app total),
+                    // route through the allocation-aware writer.
+                    const editedAway =
+                      Number.isFinite(thisAllocNum) &&
+                      Math.abs(thisAllocNum - Number(appLine.amountExVat ?? 0)) > 0.01;
+                    const useAllocations = isMultiAllocActive && (otherSiblings.length > 0 || editedAway);
+                    if (useAllocations && Number.isFinite(thisAllocNum)) {
+                      const allocations = [
+                        ...otherSiblings.map((s) => ({
+                          appEntityType: s.appEntityType,
+                          appEntityId: s.appEntityId,
+                          allocatedAmountExVat: s.allocatedAmountExVat,
+                        })),
+                        {
+                          appEntityType,
+                          appEntityId: appLine.id,
+                          allocatedAmountExVat: thisAllocNum,
+                        },
+                      ];
+                      onApprove(selectedCandidateIdx, allocations);
+                    } else {
+                      onApprove(selectedCandidateIdx);
+                    }
+                  }}
                   data-testid="drawer-btn-approve"
                 >
                   {approvePending ? (
@@ -1363,7 +1589,17 @@ export function ProofDrawerContent({ row, scope, onApprove, approvePending }: Pr
           className="h-7 text-[10px] w-full"
           disabled={manualMut.isPending || !/^[A-Za-z0-9_-]+$/.test(manualQbId.trim())}
           onClick={() =>
-            manualMut.mutate({ qbEntityId: manualQbId.trim(), appEntityId: row.appLine.id })
+            manualMut.mutate({
+              qbEntityId: manualQbId.trim(),
+              appEntityId: row.appLine.id,
+              // Forward the operator's per-link Rand if they edited it
+              // away from the candidate's default (which is also the app
+              // amount when no QB total is known).
+              ...(Number.isFinite(thisAllocNum) &&
+              Math.abs(thisAllocNum - defaultThisAlloc) > 0.001
+                ? { allocatedAmountExVat: thisAllocNum }
+                : {}),
+            })
           }
           data-testid="drawer-btn-manual-link"
         >

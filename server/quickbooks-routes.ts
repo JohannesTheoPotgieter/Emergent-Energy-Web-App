@@ -78,6 +78,7 @@ import {
   searchRevenueLines,
   softDeleteCustomerMapping,
   softDeleteLink,
+  getSiblingLinksForQbEntity,
   upsertCustomerMapping,
   type QuickBooksBillSummary,
   type QuickBooksInvoiceSummary,
@@ -715,6 +716,15 @@ export function registerQuickBooksRoutes(app: Express): void {
         res.status(404).json({ error: "not_found", message: "Link not found" });
         return;
       }
+      // Task #142 — surface remaining sibling allocation so the caller can
+      // immediately reflect "X of Y still allocated" without an extra round
+      // trip. Soft-deleting one link does NOT touch the others.
+      const remainingSiblings = await getSiblingLinksForQbEntity(
+        previous.qbEntityType as "bill" | "invoice",
+        previous.qbEntityId,
+        previous.qbRealmId,
+        previous.qbAmount != null ? Number(previous.qbAmount) : null,
+      );
       logAuditFromReq(req, {
         entityType: "quickbooks_invoice_link",
         entityId: String(id),
@@ -728,9 +738,23 @@ export function registerQuickBooksRoutes(app: Express): void {
           projectId: previous.projectId,
           qbDocNumber: previous.qbDocNumber,
           qbAmount: previous.qbAmount,
+          remainingSiblingCount: remainingSiblings.links.length,
+          remainingAllocatedExVat: remainingSiblings.totalAllocatedExVat,
         },
       });
-      res.json({ ok: true });
+      res.json({
+        ok: true,
+        qbEntity: {
+          qbEntityType: previous.qbEntityType,
+          qbEntityId: previous.qbEntityId,
+          qbAmount: previous.qbAmount,
+        },
+        remainingSiblings: {
+          count: remainingSiblings.links.length,
+          totalAllocatedExVat: remainingSiblings.totalAllocatedExVat,
+          remainingExVat: remainingSiblings.remainingExVat,
+        },
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to delete link";
       res.status(500).json({ error: "quickbooks_link_delete_failed", message });

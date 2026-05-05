@@ -23,6 +23,23 @@ export interface ScoredCandidate {
   reasons: string[];
   warnings: string[];
   qbAlreadyLinkedElsewhere: boolean;
+  /**
+   * Task #142 sibling-allocation snapshot. Present on every candidate
+   * returned by `/api/quickbooks/invoice-matches/find` — describes the
+   * existing allocation state of this QB doc so the drawer can render
+   * sibling rows + remaining capacity without a second round-trip.
+   */
+  qbAllocation?: {
+    siblingCount: number;
+    totalAllocatedExVat: number;
+    remainingExVat: number | null;
+    siblings: Array<{
+      linkId: number;
+      appEntityType: "cost_line" | "revenue_line";
+      appEntityId: number;
+      allocatedAmountExVat: number;
+    }>;
+  };
 }
 
 export interface FindResponse {

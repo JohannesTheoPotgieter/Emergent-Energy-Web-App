@@ -12,6 +12,7 @@ import { db } from "../db";
 import { quickbooksInvoiceLinks, quickbooksDocuments } from "@shared/schema";
 import { and, eq, isNull } from "drizzle-orm";
 import { getCanonicalAllCurrentCostLines } from "../services/project-cost-line-read-service";
+import { effectiveAllocatedAmountExVat } from "@shared/config/qb-allocations";
 
 const requireAuth = sharedRequireAuth;
 
@@ -198,6 +199,7 @@ export function registerCashflow2026Routes(app: Express) {
             qbEntityId: quickbooksInvoiceLinks.qbEntityId,
             qbDocNumber: quickbooksInvoiceLinks.qbDocNumber,
             qbAmount: quickbooksInvoiceLinks.qbAmount,
+            allocatedAmountExVat: quickbooksInvoiceLinks.allocatedAmountExVat,
             qbPaymentStatus: quickbooksDocuments.qbPaymentStatus,
           })
           .from(quickbooksInvoiceLinks)
@@ -215,12 +217,28 @@ export function registerCashflow2026Routes(app: Express) {
       const resolvedInflows = resolveInflowEffectiveDates(mergedDetail.inflows, allTaskLinks, allOpTasks, allPlanTasks);
 
       // Build lookup maps: QB links by app entity id for fast join on row render.
-      const qbByCostLine = new Map<number, typeof qbLinks[number]>();
-      const qbByRevenueLine = new Map<number, typeof qbLinks[number]>();
+      // Task #142 — multimap so partial-allocation siblings aren't dropped.
+      type QbLinkRow = typeof qbLinks[number];
+      const qbByCostLine = new Map<number, QbLinkRow[]>();
+      const qbByRevenueLine = new Map<number, QbLinkRow[]>();
       for (const l of qbLinks) {
-        if (l.appEntityType === "cost_line") qbByCostLine.set(l.appEntityId, l);
-        else if (l.appEntityType === "revenue_line") qbByRevenueLine.set(l.appEntityId, l);
+        const target = l.appEntityType === "cost_line" ? qbByCostLine : qbByRevenueLine;
+        const arr = target.get(l.appEntityId) ?? [];
+        arr.push(l);
+        target.set(l.appEntityId, arr);
       }
+      const sumAllocated = (rows: QbLinkRow[] | undefined) =>
+        rows && rows.length > 0
+          ? rows.reduce(
+              (acc, r) =>
+                acc +
+                (effectiveAllocatedAmountExVat({
+                  allocatedAmountExVat: (r as any).allocatedAmountExVat ?? null,
+                  qbAmount: r.qbAmount as unknown as string | null,
+                }) ?? 0),
+              0,
+            )
+          : null;
 
       const outflows = mergedDetail.expenses
         .filter((e: any) => {
@@ -247,10 +265,17 @@ export function registerCashflow2026Routes(app: Express) {
           // surface the QB doc number + amount so the cashflow row shows
           // "QB Confirmed" with the reference. Otherwise mark as unlinked.
           const costLineId = Number(e.costLineId ?? e.normalizedCostLineId ?? e.id);
-          const qbLink = Number.isFinite(costLineId) ? qbByCostLine.get(costLineId) : undefined;
+          const qbLinks = Number.isFinite(costLineId) ? qbByCostLine.get(costLineId) : undefined;
+          const qbLink = qbLinks?.[0];
           const qbStatus = qbLink ? "confirmed" : "unlinked";
-          const qbDocNumber = qbLink?.qbDocNumber ?? null;
-          const qbAmount = qbLink?.qbAmount != null ? parseFloat(qbLink.qbAmount as any) : null;
+          // For multi-link rows, surface "<doc> (+N)" so the cashflow row
+          // makes the split visible without changing the existing field.
+          const qbDocNumber = qbLink
+            ? qbLinks!.length > 1
+              ? `${qbLink.qbDocNumber ?? qbLink.qbEntityId} (+${qbLinks!.length - 1})`
+              : (qbLink.qbDocNumber ?? null)
+            : null;
+          const qbAmount = sumAllocated(qbLinks);
           const qbPaymentStatus = qbLink?.qbPaymentStatus ?? null;
 
           return {
@@ -288,10 +313,15 @@ export function registerCashflow2026Routes(app: Express) {
           // invoice, surface the QB doc number + amount so the cashflow row
           // shows "QB Confirmed" with the reference. Otherwise mark as unlinked.
           const revenueLineId = Number(inf.revenueLineId ?? inf.normalizedRevenueLineId ?? inf.id);
-          const qbLink = Number.isFinite(revenueLineId) ? qbByRevenueLine.get(revenueLineId) : undefined;
+          const qbLinks = Number.isFinite(revenueLineId) ? qbByRevenueLine.get(revenueLineId) : undefined;
+          const qbLink = qbLinks?.[0];
           const qbStatus = qbLink ? "confirmed" : "unlinked";
-          const qbDocNumber = qbLink?.qbDocNumber ?? null;
-          const qbAmount = qbLink?.qbAmount != null ? parseFloat(qbLink.qbAmount as any) : null;
+          const qbDocNumber = qbLink
+            ? qbLinks!.length > 1
+              ? `${qbLink.qbDocNumber ?? qbLink.qbEntityId} (+${qbLinks!.length - 1})`
+              : (qbLink.qbDocNumber ?? null)
+            : null;
+          const qbAmount = sumAllocated(qbLinks);
           const qbPaymentStatus = qbLink?.qbPaymentStatus ?? null;
 
           return {

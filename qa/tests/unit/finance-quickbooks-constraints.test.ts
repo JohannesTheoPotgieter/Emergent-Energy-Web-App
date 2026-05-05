@@ -25,23 +25,66 @@ function read(relPath: string): string {
   return fs.readFileSync(path.join(process.cwd(), relPath), "utf8");
 }
 
-describe("QuickBooks link — partial unique indexes on active rows", () => {
+describe("QuickBooks link — many-to-many allocations (Task #142)", () => {
   const schema = read("shared/schema/integrations.ts");
+  const migration = read("migrations/0050_qb_invoice_links_allocations.sql");
 
-  it("enforces ONE active link per app-entity tuple (by realm)", () => {
-    expect(schema).toContain('"uq_qb_links_app_entity_active"');
-    // Partial index MUST be restricted to non-soft-deleted rows so
-    // re-linking after unlink still works.
-    const idx = schema.indexOf('"uq_qb_links_app_entity_active"');
-    const block = schema.slice(idx, idx + 300);
-    expect(block).toMatch(/deletedAt.*IS NULL/);
+  it("DROPS the legacy 1:1 partial unique indexes (now multimap)", () => {
+    // Task #142 — both 1:1 partial unique indexes are dropped so a single
+    // app line may link to multiple QB docs AND a single QB doc may link
+    // to multiple app lines. The migration must contain the DROPs and the
+    // schema mirror must NOT re-declare these indexes.
+    expect(migration).toMatch(/DROP INDEX IF EXISTS uq_qb_links_app_entity_active/);
+    expect(migration).toMatch(/DROP INDEX IF EXISTS uq_qb_links_qb_entity_active/);
+    // Pinning the index NAMES being absent from the live schema mirror
+    // would catch any accidental re-add.
+    expect(schema).not.toMatch(/"uq_qb_links_app_entity_active"/);
+    expect(schema).not.toMatch(/"uq_qb_links_qb_entity_active"/);
   });
 
-  it("enforces ONE active link per QB-entity tuple (by realm)", () => {
-    expect(schema).toContain('"uq_qb_links_qb_entity_active"');
-    const idx = schema.indexOf('"uq_qb_links_qb_entity_active"');
-    const block = schema.slice(idx, idx + 300);
-    expect(block).toMatch(/deletedAt.*IS NULL/);
+  it("retains the base 5-tuple uniqueness so the SAME pair can't double-link", () => {
+    // The base unique index on (app_entity_type, app_entity_id,
+    // qb_entity_type, qb_entity_id, qb_realm_id) MUST stay in place — it
+    // is the duplicate-pair guard that the dropped 1:1 indexes used to
+    // imply.
+    expect(schema).toContain("quickbooks_invoice_links_unique_idx");
+  });
+
+  it("adds the per-QB-doc fan-out index for sibling resolution", () => {
+    expect(migration).toMatch(/quickbooks_invoice_links_qb_entity_idx/);
+  });
+
+  it("adds allocated_amount_ex_vat + allocation_tolerance_applied columns", () => {
+    expect(migration).toMatch(/allocated_amount_ex_vat numeric\(15, 2\)/);
+    expect(migration).toMatch(/allocation_tolerance_applied boolean NOT NULL DEFAULT false/);
+    // Schema mirror exposes the new columns to Drizzle so the writer can
+    // type-check them.
+    expect(schema).toMatch(/allocatedAmountExVat/);
+    expect(schema).toMatch(/allocationToleranceApplied/);
+  });
+
+  it("enforces non-negative allocation via a CHECK constraint (idempotent)", () => {
+    // PostgreSQL does not support `ADD CONSTRAINT IF NOT EXISTS`, so the
+    // migration must wrap the ALTER in a DO-block that probes
+    // pg_constraint first. A bare `ADD CONSTRAINT IF NOT EXISTS` would
+    // silently fail on the live PG runtime.
+    expect(migration).toContain("quickbooks_invoice_links_allocated_non_neg");
+    expect(migration).toContain("CHECK (allocated_amount_ex_vat >= 0)");
+    expect(migration).toMatch(/FROM pg_constraint[\s\S]*allocated_non_neg/);
+    // Guard the executable statement, not the explanatory comment that
+    // names the unsupported syntax for context. Only inspect non-comment
+    // lines (anything not starting with `--`).
+    const executable = migration
+      .split("\n")
+      .filter((l) => !l.trim().startsWith("--"))
+      .join("\n");
+    expect(executable).not.toMatch(/ADD CONSTRAINT IF NOT EXISTS/);
+  });
+
+  it("backfills allocated_amount_ex_vat from qb_amount for legacy rows", () => {
+    // Backfill is what makes the migration truly additive — every legacy
+    // single-link row reads as a 100% allocation of its QB doc.
+    expect(migration).toMatch(/SET allocated_amount_ex_vat = COALESCE\(qb_amount, 0\)/);
   });
 
   it("enforces ONE customer mapping per (project, realm)", () => {

@@ -67,13 +67,17 @@ import {
 import {
   confirmCostLineLink,
   confirmRevenueLineLink,
+  confirmLinksWithAllocations,
+  getSiblingLinksForQbEntity,
   billRawToSummary,
   invoiceRawToSummary,
   upsertVendorMapping,
   upsertCustomerMapping,
   QuickBooksApproveValidationError,
   QuickBooksLinkConflictError,
+  QuickBooksAllocationToleranceError,
 } from "../services/quickbooks-reconciliation-service";
+import { effectiveAllocatedAmountExVat } from "@shared/config/qb-allocations";
 import {
   getBillById,
   getBills,
@@ -200,6 +204,28 @@ const approveBodySchema = z.object({
   mapVendor: z.boolean().optional(),
   /** Upsert customer mapping (revenue scope only). Defaults to false. */
   mapCustomer: z.boolean().optional(),
+  /**
+   * Task #142 many-to-many: when present, the chosen QB doc is allocated
+   * across N app lines transactionally via `confirmLinksWithAllocations`.
+   * The CURRENT app line (suggestion.appEntityId) MUST appear in the
+   * array; sibling app lines may be added/removed in the same call.
+   * The sum of `allocatedAmountExVat` is validated against the QB doc
+   * total within the configured tolerance — a 422 with `details` is
+   * returned on failure.
+   *
+   * Omit for the legacy "single link == 100% of QB doc" path.
+   */
+  lineAllocations: z
+    .array(
+      z.object({
+        appEntityType: z.enum(["cost_line", "revenue_line"]),
+        appEntityId: z.number().int().positive(),
+        allocatedAmountExVat: z.number().nonnegative(),
+      }),
+    )
+    .min(1)
+    .max(50)
+    .optional(),
 });
 
 const rejectBodySchema = z.object({
@@ -211,6 +237,13 @@ const manualLinkBodySchema = z.object({
   appEntityId: z.number().int().positive(),
   qbEntityId: z.string().trim().min(1).max(64).regex(/^[A-Za-z0-9_-]+$/),
   notes: z.string().max(500).optional(),
+  /**
+   * Optional Task #142 allocation. When omitted the link is created with
+   * the legacy "100% of QB doc total" semantic. When provided, the value
+   * is used as the per-link allocation and the writer SKIPS the sum
+   * tolerance check (manual override path — operator accepts the drift).
+   */
+  allocatedAmountExVat: z.number().nonnegative().optional(),
 });
 
 const bulkApproveBodySchema = z.object({
@@ -251,7 +284,26 @@ interface FindResponseShape {
     projectId: number | null;
   };
   warnings: ReturnType<typeof appSideWarnings>;
-  candidates: (ScoredCandidate & { qbAlreadyLinkedElsewhere: boolean })[];
+  candidates: (ScoredCandidate & {
+    qbAlreadyLinkedElsewhere: boolean;
+    /**
+     * Task #142 — sibling allocation snapshot for this QB doc, taken at
+     * find time. The drawer uses this to render the "R X allocated of
+     * R Y total · R Z remaining" badge so the user knows whether the
+     * doc has room for another partial allocation.
+     */
+    qbAllocation: {
+      siblingCount: number;
+      totalAllocatedExVat: number;
+      remainingExVat: number | null;
+      siblings: Array<{
+        linkId: number;
+        appEntityType: "cost_line" | "revenue_line";
+        appEntityId: number;
+        allocatedAmountExVat: number;
+      }>;
+    };
+  })[];
 }
 
 // ============================================================================
@@ -369,6 +421,9 @@ async function hasActiveLink(
   return !!row;
 }
 
+// Retained for tests + potential future callers. The /find endpoint now
+// uses the richer `getSiblingLinksForQbEntity` helper instead.
+const linkedSetUnused: unknown = null;
 async function findQbIdsAlreadyLinked(
   qbEntityType: "bill" | "invoice",
   qbRealmId: string,
@@ -501,18 +556,64 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
         // 3. Score
         const ranked = rankInvoiceMatches(app, candidates, 10);
 
-        // 4. Mark candidates already linked elsewhere
+        // 4. Mark candidates already linked elsewhere AND attach the
+        //    Task #142 sibling-allocation snapshot for each candidate.
+        //    `qbAlreadyLinkedElsewhere` becomes "all existing links for
+        //    this QB doc are for OTHER app lines" — siblings that include
+        //    the current app row are NOT a conflict (re-confirm path).
         const qbIds = ranked.map((c) => c.qbEntityId);
         const qbEntityType = body.scope === "cost" ? "bill" : "invoice";
-        const linkedSet = await findQbIdsAlreadyLinked(qbEntityType, qbRealmId, qbIds);
+        const appEntityType: "cost_line" | "revenue_line" =
+          body.scope === "cost" ? "cost_line" : "revenue_line";
+
+        const siblingByQbId = new Map<
+          string,
+          Awaited<ReturnType<typeof getSiblingLinksForQbEntity>>
+        >();
+        await Promise.all(
+          qbIds.map(async (qbId) => {
+            const candidate = ranked.find((c) => c.qbEntityId === qbId);
+            const total = candidate?.qbAmountExVat ?? null;
+            const summary = await getSiblingLinksForQbEntity(
+              qbEntityType,
+              qbId,
+              qbRealmId,
+              total,
+            );
+            siblingByQbId.set(qbId, summary);
+          }),
+        );
         const annotated = ranked.map((c) => {
-          const already = linkedSet.has(c.qbEntityId);
+          const sib = siblingByQbId.get(c.qbEntityId)!;
+          const otherAppLinkedElsewhere = sib.links.some(
+            (l) =>
+              !(l.appEntityType === appEntityType && l.appEntityId === app.id),
+          );
+          const siblings = sib.links.map((l) => ({
+            linkId: l.id,
+            appEntityType: l.appEntityType as "cost_line" | "revenue_line",
+            appEntityId: l.appEntityId,
+            allocatedAmountExVat:
+              effectiveAllocatedAmountExVat({
+                allocatedAmountExVat: l.allocatedAmountExVat as unknown as string | null,
+                qbAmount: l.qbAmount as unknown as string | null,
+              }) ?? 0,
+          }));
           return {
             ...c,
-            qbAlreadyLinkedElsewhere: already,
-            warnings: already ? [...c.warnings, "qb_already_linked_elsewhere"] : c.warnings,
+            qbAlreadyLinkedElsewhere: otherAppLinkedElsewhere,
+            warnings: otherAppLinkedElsewhere
+              ? [...c.warnings, "qb_already_linked_elsewhere"]
+              : c.warnings,
+            qbAllocation: {
+              siblingCount: sib.links.length,
+              totalAllocatedExVat: sib.totalAllocatedExVat,
+              remainingExVat: sib.remainingExVat,
+              siblings,
+            },
           };
         });
+        void linkedSetUnused;
 
         // 5. App-side warnings (per row, not per candidate)
         const appActiveLink = await hasActiveLink(
@@ -632,10 +733,93 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
           projectId = row?.projectId ?? null;
         }
 
-        // Build the QB summary expected by confirm*Link helpers
+        // Build the QB summary expected by confirm*Link helpers.
+        // Task #142 — when the caller supplies `lineAllocations`, route via
+        // the transactional many-to-many writer instead so the sum-tolerance
+        // invariant is enforced atomically across all sibling links.
         try {
           let createdLinkId: number;
-          if (isCost) {
+          let allocationToleranceMeta: {
+            sum: number;
+            delta: number | null;
+            tolerance: number;
+            toleranceApplied: boolean;
+          } | null = null;
+          if (body.lineAllocations && body.lineAllocations.length > 0) {
+            const appEntityType: "cost_line" | "revenue_line" = isCost
+              ? "cost_line"
+              : "revenue_line";
+            const includesCurrent = body.lineAllocations.some(
+              (a) =>
+                a.appEntityType === appEntityType && a.appEntityId === appEntityId,
+            );
+            if (!includesCurrent) {
+              return sendError(
+                res,
+                badRequest(
+                  "lineAllocations must include the current app line (the suggestion's appEntityId).",
+                ),
+              );
+            }
+
+            const allocations = await Promise.all(
+              body.lineAllocations.map(async (a) => {
+                if (a.appEntityType === "cost_line") {
+                  const [r] = await db
+                    .select({ projectId: normalizedCostLines.projectId })
+                    .from(normalizedCostLines)
+                    .where(eq(normalizedCostLines.id, a.appEntityId))
+                    .limit(1);
+                  return {
+                    appEntityType: "cost_line" as const,
+                    appEntityId: a.appEntityId,
+                    projectId: r?.projectId ?? null,
+                    allocatedAmountExVat: a.allocatedAmountExVat,
+                  };
+                } else {
+                  const [r] = await db
+                    .select({ projectId: normalizedRevenueLines.projectId })
+                    .from(normalizedRevenueLines)
+                    .where(eq(normalizedRevenueLines.id, a.appEntityId))
+                    .limit(1);
+                  return {
+                    appEntityType: "revenue_line" as const,
+                    appEntityId: a.appEntityId,
+                    projectId: r?.projectId ?? null,
+                    allocatedAmountExVat: a.allocatedAmountExVat,
+                  };
+                }
+              }),
+            );
+
+            const writerResult = await confirmLinksWithAllocations({
+              qbEntityType: isCost ? "bill" : "invoice",
+              qbEntityId: chosen.qbEntityId,
+              qbRealmId: suggestion.qbRealmId,
+              qbDocSnapshot: {
+                qbDocNumber: chosen.qbDocNumber,
+                qbTxnDate: chosen.qbTxnDate,
+                qbAmount: chosen.qbAmountExVat,
+                qbCounterpartyName: chosen.qbCounterpartyName,
+              },
+              qbDocTotalExVat: chosen.qbAmountExVat,
+              allocations,
+              matchType: chosen.confidence >= 90 ? "auto_exact" : "auto_fuzzy",
+              notes: body.notes ?? null,
+              confirmedBy: userId,
+            });
+            const ownLink = writerResult.links.find(
+              (l) =>
+                l.appEntityType === appEntityType && l.appEntityId === appEntityId,
+            );
+            createdLinkId = ownLink?.id ?? writerResult.links[0]!.id;
+            allocationToleranceMeta = {
+              sum: writerResult.tolerance.sum,
+              delta: writerResult.tolerance.delta,
+              tolerance: writerResult.tolerance.tolerance,
+              toleranceApplied: writerResult.tolerance.toleranceApplied,
+            };
+          } else if (isCost) {
             const link = await confirmCostLineLink({
               projectId,
               costLineId: appEntityId,
@@ -761,6 +945,8 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
               linkId: createdLinkId,
               notes: body.notes ?? null,
               mappingRequested,
+              lineAllocations: body.lineAllocations ?? null,
+              allocationTolerance: allocationToleranceMeta,
             },
           });
 
@@ -768,8 +954,27 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
             ok: true,
             linkId: createdLinkId,
             mappingRequested,
+            allocationTolerance: allocationToleranceMeta,
           });
         } catch (inner) {
+          if (inner instanceof QuickBooksAllocationToleranceError) {
+            logAuditFromReq(req, {
+              entityType: "qb_invoice_match_suggestion",
+              entityId: String(suggestionId),
+              action: "qb.invoice_match.allocation_tolerance_violation",
+              source: "UI",
+              changesJson: {
+                ...inner.details,
+                qbEntityId: chosen.qbEntityId,
+              },
+            });
+            return res.status(422).json({
+              error: "allocation_tolerance",
+              code: inner.code,
+              message: inner.message,
+              details: inner.details,
+            });
+          }
           if (inner instanceof QuickBooksLinkConflictError) {
             logAuditFromReq(req, {
               entityType: "qb_invoice_match_suggestion",
@@ -950,6 +1155,7 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
               matchType: "manual",
               notes: body.notes ?? "manual_override",
               confirmedBy: userId,
+              allocatedAmountExVat: body.allocatedAmountExVat ?? null,
             });
             linkId = link.id;
           } else {
@@ -960,6 +1166,7 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
               matchType: "manual",
               notes: body.notes ?? "manual_override",
               confirmedBy: userId,
+              allocatedAmountExVat: body.allocatedAmountExVat ?? null,
             });
             linkId = link.id;
           }
@@ -993,6 +1200,7 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
               qbEntityId: body.qbEntityId,
               linkId,
               notes: body.notes ?? null,
+              allocatedAmountExVat: body.allocatedAmountExVat ?? null,
             },
           });
 
