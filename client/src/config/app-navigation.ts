@@ -202,6 +202,8 @@ export const TOP_SECTIONS: TopSection[] = [
       { label: "Programme Reports", path: "/reports/programme" },
       { label: "PM Monthly", path: "/reports/pm/monthly" },
       { label: "Engineering Monthly", path: "/reports/engineering/monthly" },
+      { label: "CEO Dashboard", path: "/ceo" },
+      { label: "COO Dashboard", path: "/coo" },
     ],
   },
   {
@@ -215,8 +217,7 @@ export const TOP_SECTIONS: TopSection[] = [
     secondary: [
       { label: "Settings", path: "/settings" },
       { label: "Roles & Permissions", path: "/admin/roles" },
-      { label: "Control Center", path: "/admin/control-center" },
-      { label: "Smart Import", path: "/admin/smart-import" },
+            { label: "Smart Import", path: "/admin/smart-import" },
       { label: "Audit Log", path: "/admin/activity-log" },
       { label: "Processes & SOPs", path: "/ee-info" },
       { label: "Templates", path: "/admin/phase-templates" },

@@ -25,8 +25,8 @@ const SECTION_HELP_TEXT: Partial<Record<SectionKey, string>> = {
   ENGINEERING: "Engineering Dashboard, Task Board, Standup",
   HSE: "HSE Dashboard",
   QUALITY: "Quality Dashboard, Commissioning",
-  REPORTS: "Report Center, Programme Reports, PM Monthly, Engineering Monthly, Performance",
-  ADMIN: "Control Center, Roles & Permissions, Smart Import, Audit Log, Processes & SOPs, Templates, Recovery",
+  REPORTS: "Report Center, Programme Reports, PM Monthly, Engineering Monthly, Performance, CEO Dashboard, COO Dashboard",
+  ADMIN: "Roles & Permissions, Smart Import, Audit Log, Processes & SOPs, Templates, Recovery",
 };
 
 function basePath(path: string) {
