@@ -81,9 +81,9 @@ export const TOP_SECTIONS: TopSection[] = [
     ],
   },
   {
-    label: "Company",
+    label: "Projects",
     key: "PORTFOLIO",
-    path: "/lifecycle-board",
+    path: "/execution-board",
     match: (pathname) => startsWithAny(pathname, [
       "/company-overview",
       "/company/team",
@@ -95,9 +95,43 @@ export const TOP_SECTIONS: TopSection[] = [
       { label: "Company Overview", path: "/company-overview" },
       { label: "Team", path: "/company/team" },
       { label: "Lifecycle Board", path: "/lifecycle-board" },
-      { label: "Gate Tracker", path: "/gates" },
-      { label: "Blocked Gates", path: "/gates/blocked" },
-      { label: "Exceptions", path: "/gates/exceptions" },
+      { label: "Portfolios", path: "/portfolios", requiredSectionKey: "PROJECT_DELIVERY" },
+      { label: "PD Dashboard", path: "/pd", requiredSectionKey: "PROJECT_DEVELOPMENT" },
+      { label: "Pipeline / Opportunities", path: "/opportunities", requiredSectionKey: "PROJECT_DEVELOPMENT" },
+      { label: "Clients", path: "/clients", requiredSectionKey: "PROJECT_DEVELOPMENT" },
+      { label: "Handover Queue", path: "/handover-control", requiredSectionKey: "PROJECT_DEVELOPMENT" },
+      { label: "Execution Dashboard", path: "/execution-board", requiredSectionKey: "PROJECT_DELIVERY" },
+      { label: "PM Dashboard", path: "/pm-dashboard", requiredSectionKey: "PROJECT_DELIVERY" },
+      { label: "All Projects", path: "/projects", requiredSectionKey: "PROJECT_DELIVERY" },
+      { label: "Sites", path: "/sites", requiredSectionKey: "PROJECT_DELIVERY" },
+      { label: "Milestone Tracker", path: "/milestone-tracker", requiredSectionKey: "PROJECT_DELIVERY" },
+      { label: "PM Approvals", path: "/pm/approvals", requiredSectionKey: "PROJECT_DELIVERY" },
+      { label: "Handover & Closeout", path: "/handover", requiredSectionKey: "PROJECT_DELIVERY" },
+      { label: "PM On-The-Go", path: "/pm/on-the-go", requiredSectionKey: "PROJECT_DELIVERY" },
+    ],
+    secondaryGroups: [
+      { label: "Portfolio", items: [
+        { label: "Company Overview", path: "/company-overview" },
+        { label: "Team", path: "/company/team" },
+        { label: "Lifecycle Board", path: "/lifecycle-board" },
+        { label: "Portfolios", path: "/portfolios", requiredSectionKey: "PROJECT_DELIVERY" },
+      ] },
+      { label: "Project Development", items: [
+        { label: "PD Dashboard", path: "/pd", requiredSectionKey: "PROJECT_DEVELOPMENT" },
+        { label: "Pipeline / Opportunities", path: "/opportunities", requiredSectionKey: "PROJECT_DEVELOPMENT" },
+        { label: "Clients", path: "/clients", requiredSectionKey: "PROJECT_DEVELOPMENT" },
+        { label: "Handover Queue", path: "/handover-control", requiredSectionKey: "PROJECT_DEVELOPMENT" },
+      ] },
+      { label: "Project Delivery", items: [
+        { label: "Execution Dashboard", path: "/execution-board", requiredSectionKey: "PROJECT_DELIVERY" },
+        { label: "PM Dashboard", path: "/pm-dashboard", requiredSectionKey: "PROJECT_DELIVERY" },
+        { label: "All Projects", path: "/projects", requiredSectionKey: "PROJECT_DELIVERY" },
+        { label: "Sites", path: "/sites", requiredSectionKey: "PROJECT_DELIVERY" },
+        { label: "Milestone Tracker", path: "/milestone-tracker", requiredSectionKey: "PROJECT_DELIVERY" },
+        { label: "PM Approvals", path: "/pm/approvals", requiredSectionKey: "PROJECT_DELIVERY" },
+        { label: "Handover & Closeout", path: "/handover", requiredSectionKey: "PROJECT_DELIVERY" },
+        { label: "PM On-The-Go", path: "/pm/on-the-go", requiredSectionKey: "PROJECT_DELIVERY" },
+      ] },
     ],
   },
   {
@@ -110,7 +144,7 @@ export const TOP_SECTIONS: TopSection[] = [
       "/engineering-board", "/engineering-dashboard",
     ]),
     secondary: [
-      { label: "Project Development Dashboard", path: "/pd" },
+      { label: "PD Dashboard", path: "/pd" },
       { label: "Pipeline / Opportunities", path: "/opportunities" },
       { label: "Clients", path: "/clients" },
       { label: "Handover Queue", path: "/handover-control" },
@@ -138,13 +172,11 @@ export const TOP_SECTIONS: TopSection[] = [
     secondary: [
       { label: "Execution Dashboard", path: "/execution-board" },
       { label: "PM Dashboard", path: "/pm-dashboard" },
-      { label: "Portfolio Dashboard", path: "/portfolios" },
       { label: "All Projects", path: "/projects" },
       { label: "PO Approvals", path: "/po-approval-board" },
       { label: "Payment Requests", path: "/payment-request-board" },
       { label: "Payment Batches", path: "/payment-batch-manager" },
       { label: "Milestone Tracker", path: "/milestone-tracker" },
-      { label: "Standups", path: "/standups" },
       { label: "PM Approvals", path: "/pm/approvals" },
       { label: "PM On-The-Go", path: "/pm/on-the-go" },
       { label: "Handover & Closeout", path: "/handover" },
@@ -246,7 +278,7 @@ export const DISPLAY_TOP_NAV: DisplayTopNavItem[] = [
   { label: "Home", path: "/", requiredSectionKey: "HOME", sectionKeys: ["HOME"] },
   {
     label: "Projects",
-    path: "/lifecycle-board",
+    path: "/execution-board",
     requiredAnySectionKeys: ["PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY"],
     sectionKeys: ["PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY"],
   },
@@ -507,7 +539,7 @@ export function getBreadcrumbs(pathname: string, activeSection: TopSection): Bre
   // --- Portfolio detail ---
   const portfolioMatch = pathname.match(/^\/portfolios\/([^/]+)$/);
   if (portfolioMatch) return [
-    { label: "Company", path: "/lifecycle-board" },
+    { label: "Projects", path: "/execution-board" },
     { label: decodeURIComponent(portfolioMatch[1]) },
   ];
 
@@ -578,7 +610,7 @@ export function getBreadcrumbs(pathname: string, activeSection: TopSection): Bre
 
   // --- Gates workspace ---
   if (pathname.startsWith("/gates")) return [
-    { label: "Company", path: "/lifecycle-board" },
+    { label: "Projects", path: "/execution-board" },
     { label: "Gate Tracker", path: "/gates" },
     ...(pathname !== "/gates" ? [{
       label: activeSection.secondary.filter((item) => linkIsActive(pathname, item.path)).sort((a, b) => b.path.length - a.path.length)[0]?.label || pathname.split("/").pop() || "",
