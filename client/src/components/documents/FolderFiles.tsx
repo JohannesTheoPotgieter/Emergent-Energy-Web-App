@@ -12,7 +12,7 @@
  *   - "Request approval" button (opens RequestApprovalDialog)
  */
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -27,8 +27,10 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import { useFolderFiles, type FolderFile } from "@/hooks/use-folder-files";
-import { useRequestManagedDocApproval } from "@/hooks/use-managed-document-approvals";
-import { useUserNames } from "@/hooks/use-user-names";
+import {
+  useRequestManagedDocApproval,
+  useApproverCandidates,
+} from "@/hooks/use-managed-document-approvals";
 import {
   CheckCircle2, Clock, AlertTriangle, FileText, ExternalLink, Send, Loader2,
 } from "lucide-react";
@@ -208,16 +210,13 @@ function ApprovalStatusBadge(props: { status: string; pendingCount: number }) {
 
 function RequestApprovalDialog(props: { target: FolderFile; onClose: () => void }) {
   const { target, onClose } = props;
-  const { userMap } = useUserNames();
+  const candidates = useApproverCandidates(target.document.id);
   const request = useRequestManagedDocApproval();
   const [selected, setSelected] = useState<number[]>([]);
   const [comment, setComment] = useState("");
 
-  const candidateUsers = useMemo(() => {
-    return Array.from(userMap.entries())
-      .map(([id, name]) => ({ id, name }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [userMap]);
+  const candidateUsers = candidates.data?.candidates ?? [];
+  const requiredRoles = candidates.data?.requiredRoles ?? null;
 
   function toggle(id: number) {
     setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
@@ -265,10 +264,22 @@ function RequestApprovalDialog(props: { target: FolderFile; onClose: () => void 
 
         <div className="space-y-3">
           <div className="space-y-1">
-            <Label>Approvers</Label>
+            <Label>
+              Approvers
+              {requiredRoles && (
+                <span className="ml-2 text-[10px] font-normal text-muted-foreground">
+                  ({requiredRoles.join(", ")} only)
+                </span>
+              )}
+            </Label>
             <div className="max-h-56 overflow-y-auto rounded-md border p-2 space-y-1">
-              {candidateUsers.length === 0 ? (
-                <div className="text-xs text-muted-foreground">No users to pick from.</div>
+              {candidates.isLoading ? (
+                <div className="text-xs text-muted-foreground">Loading eligible approvers…</div>
+              ) : candidateUsers.length === 0 ? (
+                <div className="text-xs text-muted-foreground">
+                  No eligible approvers found
+                  {requiredRoles ? ` for role(s): ${requiredRoles.join(", ")}` : ""}.
+                </div>
               ) : (
                 candidateUsers.map((u) => (
                   <label

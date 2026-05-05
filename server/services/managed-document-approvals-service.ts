@@ -93,6 +93,17 @@ export interface QueueRow {
   requestedBy: Pick<User, "id" | "name" | "email"> | null;
 }
 
+export interface ApproverCandidate {
+  id: number;
+  name: string;
+  role: string;
+}
+
+export interface ApproverCandidatesResult {
+  candidates: ApproverCandidate[];
+  requiredRoles: string[] | null;
+}
+
 // =========================================================================
 // Reads
 // =========================================================================
@@ -199,6 +210,27 @@ export async function requestApproval(input: RequestApprovalInput): Promise<Requ
   }
 
   const requirement = await loadRequirementForDocument(doc);
+
+  // Reject if any nominated approver does not hold a role allowed by the requirement.
+  if (requirement?.approverRoles && requirement.approverRoles.length > 0) {
+    const allowedRoles = new Set(requirement.approverRoles);
+    const approverRecords: Array<{ id: number; role: string }> = await db
+      .select({ id: users.id, role: users.role })
+      .from(users)
+      .where(inArray(users.id, dedup));
+    const approverMap = new Map<number, string>(
+      approverRecords.map((r) => [r.id, r.role] as [number, string]),
+    );
+    const invalid = dedup.filter((id) => {
+      const role = approverMap.get(id);
+      return !role || !allowedRoles.has(role);
+    });
+    if (invalid.length > 0) {
+      throw new Error(
+        `Approver(s) with ID [${invalid.join(", ")}] do not hold a required role (${requirement.approverRoles.join(", ")}).`,
+      );
+    }
+  }
 
   const insertRows = dedup.map((approverUserId) => ({
     type: MANAGED_DOCUMENT_APPROVAL_TYPE,
@@ -456,4 +488,37 @@ export async function recordRejection(input: RecordRejectionInput): Promise<Reco
   }
 
   return { approval: decided, document, cancelledSiblings };
+}
+
+/**
+ * Returns the list of users eligible to approve a given managed document,
+ * filtered to those who hold a role in the matching approval requirement
+ * (if one is configured). Falls back to all active, non-deleted users when
+ * no requirement or no approverRoles are set.
+ */
+export async function getApproverCandidatesForDocument(
+  documentId: number,
+): Promise<ApproverCandidatesResult> {
+  const doc = await getManagedDocumentById(documentId);
+  if (!doc) throw new Error(`Document ${documentId} not found`);
+  const requirement = await loadRequirementForDocument(doc);
+
+  const requiredRoles =
+    requirement?.approverRoles && requirement.approverRoles.length > 0
+      ? requirement.approverRoles
+      : null;
+
+  const rows: ApproverCandidate[] = await db
+    .select({ id: users.id, name: users.name, role: users.role })
+    .from(users)
+    .where(
+      requiredRoles
+        ? and(isNull(users.deletedAt), eq(users.isActive, true), inArray(users.role, requiredRoles))
+        : and(isNull(users.deletedAt), eq(users.isActive, true)),
+    );
+
+  return {
+    candidates: rows.sort((a, b) => a.name.localeCompare(b.name)),
+    requiredRoles,
+  };
 }
