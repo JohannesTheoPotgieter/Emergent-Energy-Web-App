@@ -1,6 +1,6 @@
 import { db } from "./db";
 import { eq, and, isNull, sql, asc, desc, inArray } from "drizzle-orm";
-import { workItems, workItemAssignments, projectInfo, TASK_STATUSES, engineeringTickets, type WorkItem, type WorkItemAssignment } from "@shared/schema";
+import { workItems, workItemAssignments, projectInfo, TASK_STATUSES, engineeringTickets, projectEngTasks, type WorkItem, type WorkItemAssignment } from "@shared/schema";
 import { normalizeEngineeringTicketStatus } from "@shared/engineering-ticket-status";
 import { getFeatureFlag } from "./lib/feature-flags";
 import { queryWorkItems, getAssignmentsByWorkItemIds } from "./lib/work-item-queries";
@@ -909,6 +909,26 @@ export async function updateEngineeringWorkItem(workItemId: number, updates: {
       await db.update(engineeringTickets)
         .set(ticketSet)
         .where(and(eq(engineeringTickets.id, updated.engineeringTicketId), isNull(engineeringTickets.deletedAt)));
+    }
+  }
+
+  // Keep stage task rows in sync when linked engineering work_items
+  // are updated from the task board.
+  if (updates.status !== undefined) {
+    const stageStatusMap: Record<string, "pending" | "in_progress" | "complete"> = {
+      "TO DO": "pending",
+      "IN PROGRESS": "in_progress",
+      "COMPLETE": "complete",
+    };
+    const mappedStageStatus = stageStatusMap[updates.status];
+    if (mappedStageStatus) {
+      await db.update(projectEngTasks)
+        .set({
+          status: mappedStageStatus,
+          completedAt: mappedStageStatus === "complete" ? new Date() : null,
+          completedBy: mappedStageStatus === "complete" ? (updated.ownerUserId ?? null) : null,
+        })
+        .where(eq(projectEngTasks.workItemId, workItemId));
     }
   }
 
