@@ -877,7 +877,23 @@ export async function createOrUpdateLink(
       ? Number(input.allocatedAmountExVat)
       : input.qbAmount !== null && input.qbAmount !== undefined
         ? Number(input.qbAmount)
-        : 0;
+        : NaN;
+  // DB CHECK requires `> 0`. Reject up-front so the API surfaces a typed
+  // error instead of a 500 at INSERT/UPDATE time.
+  if (!Number.isFinite(allocated) || allocated <= 0) {
+    throw new QuickBooksAllocationToleranceError({
+      qbEntityId: String(input.qbEntityId),
+      qbDocTotalExVat:
+        input.qbAmount !== null && input.qbAmount !== undefined
+          ? Number(input.qbAmount)
+          : 0,
+      sum: 0,
+      delta: null,
+      tolerance: 0,
+      reason: "non_positive_allocation",
+      duplicateKey: `${input.appEntityType}:${input.appEntityId}`,
+    });
+  }
 
   const values = {
     projectId: input.projectId ?? null,
@@ -894,7 +910,7 @@ export async function createOrUpdateLink(
         : null,
     qbCounterpartyName: input.qbCounterpartyName ?? null,
     matchType: input.matchType ?? "manual",
-    allocatedAmountExVat: Number.isFinite(allocated) ? allocated.toFixed(2) : "0",
+    allocatedAmountExVat: allocated.toFixed(2),
     allocationToleranceApplied: !!input.allocationToleranceApplied,
     notes: input.notes ?? null,
     confirmedBy: input.confirmedBy ?? null,

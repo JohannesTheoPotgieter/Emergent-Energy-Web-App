@@ -167,7 +167,7 @@ export const quickbooksInvoiceLinks = pgTable(
     allocatedAmountExVat: decimal("allocated_amount_ex_vat", {
       precision: 15,
       scale: 2,
-    }).notNull().default("0"),
+    }).notNull(),
     /**
      * True when the sibling group was approved with a sum that differed
      * from the QB doc total by less than the configured tolerance (small
