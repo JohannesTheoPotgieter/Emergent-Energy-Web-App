@@ -58,16 +58,21 @@ export function POGenerator({ projectName, projectManager }: POGeneratorProps) {
   const { toast } = useToast();
   const qc = useQueryClient();
 
-  const { data: eligibleApprovers = [], isLoading: loadingApprovers } = useQuery<any[]>({
+  const {
+    data: eligibleApprovers = [],
+    isLoading: loadingApprovers,
+    error: approversError,
+  } = useQuery<Array<{ id: number; name: string; role: string; email?: string }>>({
     queryKey: ["po-eligible-approvers"],
     queryFn: async () => {
       const res = await fetch(`/api/po/eligible-approvers`, { headers: authHeaders() });
-      if (!res.ok) return [];
+      if (!res.ok) throw new Error("Failed to load approvers");
       const data = await res.json();
       return Array.isArray(data) ? data : (data?.approvers ?? []);
     },
     enabled: open,
   });
+  const isLoadingApprovers = loadingApprovers;
 
   const { data: supplierList = [] } = useQuery<any[]>({
     queryKey: ["supplier-list"],
@@ -162,16 +167,6 @@ export function POGenerator({ projectName, projectManager }: POGeneratorProps) {
     onError: (err: any) => toast({ title: "Failed to generate PO", description: err.message, variant: "destructive" }),
   });
 
-
-  const { data: eligibleApprovers, isLoading: isLoadingApprovers, error: approversError } = useQuery<{ approvers: Array<{ id: number; name: string; role: string }> }>({
-    queryKey: ["po-eligible-approvers"],
-    queryFn: async () => {
-      const res = await fetch("/api/po/eligible-approvers", { headers: authHeaders() });
-      if (!res.ok) throw new Error("Failed to load approvers");
-      return res.json();
-    },
-    enabled: open,
-  });
 
   const [selectedApproverByPo, setSelectedApproverByPo] = useState<Record<number, string>>({});
 
@@ -452,7 +447,7 @@ export function POGenerator({ projectName, projectManager }: POGeneratorProps) {
                                   data-testid={`select-po-approver-${po.id}`}
                                 >
                                   <option value="">Select approver</option>
-                                  {(eligibleApprovers?.approvers || []).map((approver) => (
+                                  {eligibleApprovers.map((approver) => (
                                     <option key={approver.id} value={String(approver.id)}>{approver.name} ({approver.role})</option>
                                   ))}
                                 </select>
