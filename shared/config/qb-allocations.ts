@@ -35,14 +35,26 @@ export function qbAllocationToleranceFor(qbDocTotal: number | null): number {
 export interface QbAllocationToleranceResult {
   /** Sum of allocations passed in (rounded to 2dp). */
   sum: number;
-  /** Absolute difference between sum and QB doc total (or null if total unknown). */
+  /** Signed difference between sum and QB doc total (negative = under-allocated, positive = over). Null if total unknown. */
   delta: number | null;
   /** Effective tolerance (max of fixed + pct rules). */
   tolerance: number;
-  /** True when |delta| ≤ tolerance, OR when total is unknown. */
+  /**
+   * True when the writer accepts the allocation: total unknown, balanced
+   * within tolerance, OR under-allocated (partial settlement). Only
+   * over-allocation beyond tolerance is rejected.
+   */
   ok: boolean;
   /** True when |delta| > 0 but ≤ tolerance — caller flags `allocation_tolerance_applied`. */
   toleranceApplied: boolean;
+  /**
+   * True when sum is below QB total by more than tolerance — operator is
+   * intentionally partially settling the QB doc; the remaining portion
+   * stays unallocated and can be linked to other app lines later.
+   */
+  partial: boolean;
+  /** Remaining unallocated Rand on the QB doc (0 when balanced or over). */
+  remaining: number;
 }
 
 /**
@@ -58,17 +70,23 @@ export function checkQbAllocationSum(
     allocations.reduce((acc, a) => acc + (Number.isFinite(a.allocatedAmountExVat) ? a.allocatedAmountExVat : 0), 0).toFixed(2),
   );
   if (qbDocTotal === null || qbDocTotal === undefined) {
-    return { sum, delta: null, tolerance: 0, ok: true, toleranceApplied: false };
+    return { sum, delta: null, tolerance: 0, ok: true, toleranceApplied: false, partial: false, remaining: 0 };
   }
   const delta = Number((sum - qbDocTotal).toFixed(2));
   const tolerance = qbAllocationToleranceFor(qbDocTotal);
   const absDelta = Math.abs(delta);
+  const withinTol = absDelta <= tolerance + 1e-9;
+  const overAllocated = delta > tolerance + 1e-9;
+  const partial = delta < -(tolerance + 1e-9);
+  const remaining = partial ? Number((-delta).toFixed(2)) : 0;
   return {
     sum,
     delta,
     tolerance: Number(tolerance.toFixed(4)),
-    ok: absDelta <= tolerance + 1e-9,
-    toleranceApplied: absDelta > 0 && absDelta <= tolerance + 1e-9,
+    ok: !overAllocated,
+    toleranceApplied: withinTol && absDelta > 0,
+    partial,
+    remaining,
   };
 }
 

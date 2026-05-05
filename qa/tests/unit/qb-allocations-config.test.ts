@@ -7,8 +7,11 @@
  * pin the contract:
  *
  *   * tolerance = max(R0.50, 0.5% of |qbDocTotal|)
- *   * sum check is `ok` when |sum - total| ≤ tolerance
+ *   * sum check is `ok` when sum ≤ total + tolerance (under-allocation
+ *     is allowed as a partial settlement; only over-allocation rejects)
  *   * `toleranceApplied` is true only for non-zero deltas inside tolerance
+ *   * `partial` is true when sum < total - tolerance, with `remaining`
+ *     reporting the unallocated Rand on the QB doc
  *   * null QB doc total ⇒ writer skips the sum check (`ok=true`,
  *     `delta=null`) — UI still renders the editor.
  *   * `effectiveAllocatedAmountExVat` falls back to `qb_amount` for legacy
@@ -47,7 +50,7 @@ describe("qbAllocationToleranceFor", () => {
 });
 
 describe("checkQbAllocationSum", () => {
-  it("balanced sum is ok and not tolerance-applied", () => {
+  it("balanced sum is ok, not partial, not tolerance-applied", () => {
     const r = checkQbAllocationSum(1000, [
       { allocatedAmountExVat: 600 },
       { allocatedAmountExVat: 400 },
@@ -56,9 +59,11 @@ describe("checkQbAllocationSum", () => {
     expect(r.delta).toBe(0);
     expect(r.ok).toBe(true);
     expect(r.toleranceApplied).toBe(false);
+    expect(r.partial).toBe(false);
+    expect(r.remaining).toBe(0);
   });
 
-  it("delta within tolerance flags toleranceApplied", () => {
+  it("delta within tolerance flags toleranceApplied (under)", () => {
     // R10k tolerance = R50; supply R5 short.
     const r = checkQbAllocationSum(10_000, [
       { allocatedAmountExVat: 9_995 },
@@ -66,12 +71,25 @@ describe("checkQbAllocationSum", () => {
     expect(r.delta).toBe(-5);
     expect(r.ok).toBe(true);
     expect(r.toleranceApplied).toBe(true);
+    expect(r.partial).toBe(false);
   });
 
-  it("delta exceeding tolerance fails", () => {
-    const r = checkQbAllocationSum(1000, [{ allocatedAmountExVat: 990 }]);
-    // tolerance = max(0.50, 0.5% * 1000) = R5; delta R10 ⇒ fail
+  it("under-allocation beyond tolerance is allowed as partial", () => {
+    // R5,813,800 doc, tolerance R29,069; allocate R290,690 only.
+    const r = checkQbAllocationSum(5_813_800, [{ allocatedAmountExVat: 290_690 }]);
+    expect(r.delta).toBe(-5_523_110);
+    expect(r.ok).toBe(true);
+    expect(r.partial).toBe(true);
+    expect(r.remaining).toBe(5_523_110);
+    expect(r.toleranceApplied).toBe(false);
+  });
+
+  it("over-allocation beyond tolerance is rejected", () => {
+    const r = checkQbAllocationSum(1000, [{ allocatedAmountExVat: 1010 }]);
+    // tolerance = max(0.50, 0.5% * 1000) = R5; delta +R10 ⇒ fail
+    expect(r.delta).toBe(10);
     expect(r.ok).toBe(false);
+    expect(r.partial).toBe(false);
     expect(r.toleranceApplied).toBe(false);
   });
 

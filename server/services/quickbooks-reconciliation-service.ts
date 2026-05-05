@@ -1008,9 +1008,10 @@ export class QuickBooksAllocationToleranceError extends Error {
         `allocations must be > 0.`;
     } else {
       msg =
-        `QuickBooks doc ${details.qbEntityId} allocations sum to ${fmt(details.sum)} ` +
-        `vs total ${fmt(details.qbDocTotalExVat)} (delta ${fmt(details.delta)}, ` +
-        `tolerance ±R${details.tolerance.toFixed(2)}).`;
+        `QuickBooks doc ${details.qbEntityId} is over-allocated: ` +
+        `sum ${fmt(details.sum)} exceeds total ${fmt(details.qbDocTotalExVat)} ` +
+        `(delta ${fmt(details.delta)}, tolerance ±R${details.tolerance.toFixed(2)}). ` +
+        `Under-allocation is allowed as a partial settlement; reduce the allocation to fit.`;
     }
     super(msg);
     this.name = "QuickBooksAllocationToleranceError";

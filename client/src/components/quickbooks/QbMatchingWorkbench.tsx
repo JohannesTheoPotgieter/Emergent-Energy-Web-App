@@ -2045,11 +2045,11 @@ function QbAllocationPanel(props: {
       {/* Live tolerance summary */}
       <div
         className={`text-[10px] flex items-center justify-between rounded px-2 py-1 ${
-          allocSumCheck.ok
-            ? allocSumCheck.toleranceApplied
+          !allocSumCheck.ok
+            ? "bg-rose-50 text-rose-800 border border-rose-200"
+            : allocSumCheck.partial || allocSumCheck.toleranceApplied
               ? "bg-amber-50 text-amber-800 border border-amber-200"
               : "bg-emerald-50 text-emerald-800 border border-emerald-200"
-            : "bg-rose-50 text-rose-800 border border-rose-200"
         }`}
         data-testid={`drawer-allocation-summary-${candidateIndex}`}
       >
@@ -2060,11 +2060,13 @@ function QbAllocationPanel(props: {
           )}
         </span>
         <span>
-          {allocSumCheck.ok
-            ? allocSumCheck.toleranceApplied
-              ? `within ±${formatRand(allocSumCheck.tolerance)} tol.`
-              : "balanced"
-            : `exceeds ±${formatRand(allocSumCheck.tolerance)} tol.`}
+          {!allocSumCheck.ok
+            ? `over by more than ±${formatRand(allocSumCheck.tolerance)} tol.`
+            : allocSumCheck.partial
+              ? `partial — ${formatRand(allocSumCheck.remaining)} remaining`
+              : allocSumCheck.toleranceApplied
+                ? `within ±${formatRand(allocSumCheck.tolerance)} tol.`
+                : "balanced"}
         </span>
       </div>
     </div>
