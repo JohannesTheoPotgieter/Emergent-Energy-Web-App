@@ -108,7 +108,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "projectLifecycleStageGates", path: "/project-lifecycle/stage-gates", label: "Stage Gates", permissionEntity: "lifecycle", routeComponentKey: "ProjectLifecyclePage" },
   { id: "projectLifecycleLatestUpdates", path: "/project-lifecycle/latest-updates", label: "Latest Updates", permissionEntity: "projects", routeComponentKey: "ProjectLifecyclePage" },
   { id: "projectLifecycleClientOverview", path: "/project-lifecycle/client-overview", label: "Client Overview", permissionEntity: "pd_clients", routeComponentKey: "ProjectLifecyclePage" },
-  { id: "projects", path: "/projects", label: "Project List", iconKey: "FileSpreadsheet", navGroup: "FINANCE", permissionEntity: "projects", showInSidebar: true, routeComponentKey: "ProjectsSummary" },
+  { id: "projects", path: "/projects", label: "Project List", iconKey: "FileSpreadsheet", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "projects", showInSidebar: true, routeComponentKey: "ProjectsSummary" },
   { id: "projectFinancialLinking", path: "/project/:projectName/financial-linking", label: "Financial Linking", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "financial_linking", routeComponentKey: "FinancialLinkingPage" },
   { id: "projectDetail", path: "/project/id/:projectId", label: "Project Detail", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "projects", routeComponentKey: "ProjectDetailPage", aliases: ["/project/:projectName"], matchSubRoutes: true },
   { id: "projectStageGate", path: "/project/id/:projectId/gate/:stageCode", label: "Project Stage Gate", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "stage_lifecycle", routeComponentKey: "ProjectStageGatePage", aliases: ["/project/:projectName/gate/:stageCode"] },

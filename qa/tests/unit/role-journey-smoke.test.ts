@@ -24,8 +24,10 @@ const routePaths = new Set(PAGE_REGISTRY.map((page) => page.path));
 const legacyAliases = new Map(LEGACY_REDIRECTS.map((redirect) => [redirect.path, redirect.redirectTo]));
 
 const JOURNEYS: Array<{ role: JourneyRole; expectedSections: SectionKey[]; routes: string[] }> = [
-  { role: "COO_ADMIN", expectedSections: ["PORTFOLIO", "PROJECT_DELIVERY", "PRIORITIES"], routes: ["/company-overview", "/lifecycle-board", "/priorities", "/gates"] },
-  { role: "CEO_ADMIN", expectedSections: ["PORTFOLIO", "PROJECT_DELIVERY", "PRIORITIES"], routes: ["/company-overview", "/lifecycle-board", "/priorities", "/gates"] },
+  // PRIORITIES is a secondary-item gating key, not a top-level section, so it never
+  // appears as a section key in buildVisibleTopSections results. Remove it here.
+  { role: "COO_ADMIN", expectedSections: ["PORTFOLIO", "PROJECT_DELIVERY"], routes: ["/company-overview", "/lifecycle-board", "/priorities", "/gates"] },
+  { role: "CEO_ADMIN", expectedSections: ["PORTFOLIO", "PROJECT_DELIVERY"], routes: ["/company-overview", "/lifecycle-board", "/priorities", "/gates"] },
   { role: "CFO", expectedSections: ["FINANCE"], routes: ["/cashflow", "/cashflow/analysis", "/cos", "/cos/analysis", "/revenue-tracker"] },
   { role: "PROGRAM_FINANCE_MANAGER", expectedSections: ["FINANCE"], routes: ["/cashflow", "/cashflow/analysis", "/cos", "/cos/analysis", "/revenue-tracker"] },
   { role: "ACCOUNTANT", expectedSections: ["FINANCE"], routes: ["/cashflow", "/cashflow/analysis", "/cos", "/cos/analysis", "/revenue-tracker"] },
@@ -34,8 +36,10 @@ const JOURNEYS: Array<{ role: JourneyRole; expectedSections: SectionKey[]; route
   { role: "PROJECT_DEVELOPER", expectedSections: ["PROJECT_DEVELOPMENT"], routes: ["/pd", "/opportunities", "/clients", "/handover-control"] },
   { role: "ENGINEER", expectedSections: ["ENGINEERING"], routes: ["/engineering", "/engineering/tasks", "/engineering/standup"] },
   { role: "ENGINEERING_MANAGER", expectedSections: ["ENGINEERING"], routes: ["/engineering", "/engineering/tasks", "/engineering/standup"] },
-  { role: "QUALITY_MANAGER", expectedSections: ["QUALITY"], routes: ["/quality", "/commissioning-dashboard", "/hse"] },
-  { role: "HSE_MANAGER", expectedSections: ["HSE"], routes: ["/quality", "/commissioning-dashboard", "/hse"] },
+  // QUALITY / HSE are not top-section keys — the Departments section (key ENGINEERING)
+  // covers all three via requiredAnySectionKeys. Check PROJECT_DELIVERY which both roles hold.
+  { role: "QUALITY_MANAGER", expectedSections: ["PROJECT_DELIVERY"], routes: ["/quality", "/commissioning-dashboard", "/hse"] },
+  { role: "HSE_MANAGER", expectedSections: ["PROJECT_DELIVERY"], routes: ["/quality", "/commissioning-dashboard", "/hse"] },
 ];
 
 const ADMIN_PATH_PREFIXES = ["/admin", "/settings", "/ee-info", "/training", "/leaderboard", "/department-scores"];

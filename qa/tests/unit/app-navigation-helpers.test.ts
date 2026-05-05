@@ -18,7 +18,11 @@ describe("app navigation helpers", () => {
       disabledSubPages: disabled,
     });
 
-    expect(sections.some((section) => section.key === "PORTFOLIO")).toBe(false);
+    // "Projects" section (key PORTFOLIO, no requiredAnySectionKeys) is hidden for PROJECT_MANAGER_SITE
+    // because they lack PORTFOLIO access. "Gates" (key PORTFOLIO, requiredAnySectionKeys includes
+    // PROJECT_DELIVERY) IS visible for this role.
+    expect(sections.some((s) => s.label === "Projects")).toBe(false);
+    expect(sections.some((s) => s.label === "Gates")).toBe(true);
 
     const delivery = sections.find((section) => section.key === "PROJECT_DELIVERY");
     expect(delivery).toBeTruthy();
@@ -38,11 +42,11 @@ describe("app navigation helpers", () => {
 
   it("getBreadcrumbs returns business-readable crumbs for key nested routes", () => {
     const projectDelivery = TOP_SECTIONS.find((section) => section.key === "PROJECT_DELIVERY");
-    const company = TOP_SECTIONS.find((section) => section.key === "PORTFOLIO");
+    const gatesSection = TOP_SECTIONS.find((section) => section.label === "Gates");
     const reports = TOP_SECTIONS.find((section) => section.key === "REPORTS");
 
     expect(projectDelivery).toBeTruthy();
-    expect(company).toBeTruthy();
+    expect(gatesSection).toBeTruthy();
     expect(reports).toBeTruthy();
 
     expect(getBreadcrumbs("/project/Solar%20Alpha", projectDelivery!)).toEqual([
@@ -50,10 +54,12 @@ describe("app navigation helpers", () => {
       { label: "Solar Alpha" },
     ]);
 
-    expect(getBreadcrumbs("/gates/exceptions", company!)).toEqual([
-      { label: "Company", path: "/lifecycle-board" },
+    // Gates breadcrumbs always root to Projects + Gate Tracker; the leaf label
+    // comes from the active section's secondary list (Gates section).
+    expect(getBreadcrumbs("/gates/exceptions", gatesSection!)).toEqual([
+      { label: "Projects", path: "/execution-board" },
       { label: "Gate Tracker", path: "/gates" },
-      { label: "Exceptions" },
+      { label: "Gate Exceptions" },
     ]);
 
     expect(getBreadcrumbs("/reports/pm/monthly/history", reports!)).toEqual([
@@ -106,21 +112,30 @@ describe("app navigation helpers", () => {
   });
 
   it("supports grouped secondary items while keeping flat secondary compatibility", () => {
-    const priorities = TOP_SECTIONS.find((section) => section.key === "PRIORITIES");
-    expect(priorities?.secondary).toEqual([]);
-    expect(priorities?.secondaryGroups?.length).toBeGreaterThan(0);
+    // Projects and Departments are the two sections that use secondaryGroups.
+    const projectsSection = TOP_SECTIONS.find((section) => section.label === "Projects");
+    const deptsSection = TOP_SECTIONS.find((section) => section.label === "Departments");
+    expect(projectsSection?.secondaryGroups?.length).toBe(3); // Portfolio, Project Development, Project Delivery
+    expect(deptsSection?.secondaryGroups?.length).toBe(3);    // Engineering, Quality, HSE
 
+    // Finance has no secondaryGroups — flat fallback is used.
+    const financeSection = TOP_SECTIONS.find((section) => section.key === "FINANCE");
+    expect(financeSection?.secondaryGroups).toBeUndefined();
+    expect(financeSection?.secondary.length).toBeGreaterThan(0);
+
+    // buildVisibleTopSections filters groups by access rights.
+    // ENGINEERING-only user sees Departments but only the Engineering group survives.
     const sections = buildVisibleTopSections({
-      allowedSectionKeys: ["HOME", "PRIORITIES"],
+      allowedSectionKeys: ["HOME", "ENGINEERING"],
       canViewPath: () => true,
     });
 
-    const visiblePriorities = sections.find((section) => section.key === "PRIORITIES");
-    expect(visiblePriorities?.secondary).toEqual([]);
-    expect(visiblePriorities?.secondaryGroups?.[0]?.items.map((i) => i.path)).toEqual([
-      "/priorities?tab=department",
-      "/priorities?tab=company",
-    ]);
+    const visibleDepts = sections.find((s) => s.label === "Departments");
+    expect(visibleDepts).toBeDefined();
+    const groupLabels = visibleDepts?.secondaryGroups?.map((g) => g.label) ?? [];
+    expect(groupLabels).toContain("Engineering");
+    expect(groupLabels).not.toContain("Quality");
+    expect(groupLabels).not.toContain("HSE");
   });
 
 
