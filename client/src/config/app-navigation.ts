@@ -222,33 +222,32 @@ export const TOP_SECTIONS: TopSection[] = [
     ],
   },
   {
-    label: "Engineering",
+    label: "Departments",
     key: "ENGINEERING",
     path: "/engineering",
-    match: (pathname) => startsWithAny(pathname, ["/engineering"]),
+    requiredAnySectionKeys: ["ENGINEERING", "QUALITY", "HSE"],
+    match: (pathname) => startsWithAny(pathname, ["/engineering", "/quality", "/commissioning-dashboard", "/hse"]),
     secondary: [
-      { label: "Engineering Dashboard", path: "/engineering" },
-      { label: "Task Board", path: "/engineering/tasks" },
-      { label: "Standup", path: "/engineering/standup" },
+      { label: "Engineering Dashboard", path: "/engineering", requiredSectionKey: "ENGINEERING" },
+      { label: "Task Board", path: "/engineering/tasks", requiredSectionKey: "ENGINEERING" },
+      { label: "Standup", path: "/engineering/standup", requiredSectionKey: "ENGINEERING" },
+      { label: "Quality Dashboard", path: "/quality", requiredSectionKey: "QUALITY" },
+      { label: "Commissioning", path: "/commissioning-dashboard", requiredSectionKey: "QUALITY" },
+      { label: "HSE Dashboard", path: "/hse", requiredSectionKey: "HSE" },
     ],
-  },
-  {
-    label: "HSE",
-    key: "HSE",
-    path: "/hse",
-    match: (pathname) => startsWithAny(pathname, ["/hse"]),
-    secondary: [
-      { label: "HSE Dashboard", path: "/hse" },
-    ],
-  },
-  {
-    label: "Quality",
-    key: "QUALITY",
-    path: "/quality",
-    match: (pathname) => startsWithAny(pathname, ["/quality", "/commissioning-dashboard"]),
-    secondary: [
-      { label: "Quality Dashboard", path: "/quality" },
-      { label: "Commissioning", path: "/commissioning-dashboard" },
+    secondaryGroups: [
+      { label: "Engineering", items: [
+        { label: "Engineering Dashboard", path: "/engineering", requiredSectionKey: "ENGINEERING" },
+        { label: "Task Board", path: "/engineering/tasks", requiredSectionKey: "ENGINEERING" },
+        { label: "Standup", path: "/engineering/standup", requiredSectionKey: "ENGINEERING" },
+      ] },
+      { label: "Quality", items: [
+        { label: "Quality Dashboard", path: "/quality", requiredSectionKey: "QUALITY" },
+        { label: "Commissioning", path: "/commissioning-dashboard", requiredSectionKey: "QUALITY" },
+      ] },
+      { label: "HSE", items: [
+        { label: "HSE Dashboard", path: "/hse", requiredSectionKey: "HSE" },
+      ] },
     ],
   },
   {
@@ -469,7 +468,8 @@ export function buildVisibleTopSections(options: {
       if (!canAccessBySection(section)) return null;
       if (!canAccessByPathPerms(section)) return null;
       if (allowedKeys && !allowedKeys.includes(section.key)) {
-        return null;
+        const hasAnyAccess = section.requiredAnySectionKeys?.some((key) => allowedKeys.includes(key)) ?? false;
+        if (!hasAnyAccess) return null;
       }
 
       const sectionDisabled = disabledSubPages?.get(section.key);
