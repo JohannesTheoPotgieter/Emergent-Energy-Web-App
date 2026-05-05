@@ -254,6 +254,19 @@ function PhaseHistoryTimeline({ projectId }: { projectId: number }) {
   );
 }
 
+interface QualityWorkspaceSummary {
+  hasChecklist: boolean;
+  counts: {
+    evidenceRequired: number;
+    pendingReview: number;
+    resubmissionNeeded: number;
+    blockedHandover: boolean;
+  };
+  handover?: {
+    blocked?: boolean;
+  } | null;
+}
+
 const STATUS_DOT: Record<string, string> = {
   "TO DO": "text-gray-400", "IN PROGRESS": "text-blue-500", "HOLD": "text-red-500",
   "NEEDS APPROVAL": "text-amber-500", "COMPLETE": "text-green-500",
@@ -1226,6 +1239,19 @@ export default function ProjectDetailPage() {
     },
     enabled: !!projectName,
   });
+  const {
+    data: qualityWorkspace,
+    isLoading: qualityWorkspaceLoading,
+    isError: qualityWorkspaceError,
+  } = useQuery<QualityWorkspaceSummary>({
+    queryKey: ["quality-workspace-summary", projectName],
+    queryFn: async () => {
+      const res = await engFetch(`/api/quality/project/${encodeURIComponent(projectName)}/workspace`);
+      if (!res.ok) throw new Error("Failed to load quality workspace");
+      return res.json();
+    },
+    enabled: !!projectName && canViewTab.quality,
+  });
 
   const { data: projectExceptions } = useQuery<{ items: Array<{ id: string; title: string; severity: string; sourceLink: string; reason: string }>; summary?: { total: number; bySeverity: Record<string, number> } }>({
     queryKey: ["project-exceptions", projectInfoId],
@@ -1641,6 +1667,39 @@ export default function ProjectDetailPage() {
         <TrustMarker label="Cashflow" source="QuickBooks / App" updatedAt={cashflowUpdatedAt} stale={cashflowFetching} loadError={cashflowLoadError} />
         <TrustMarker label="Quality" source="Manual override / App" updatedAt={qualityUpdatedAt} stale={qualityFetching} loadError={qualityLoadError} />
       </div>
+
+      {canViewTab.quality && (
+        <div className="rounded-md border bg-card px-3 py-2 text-xs" data-testid="project-quality-readiness-strip">
+          {qualityWorkspaceLoading ? (
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Loading quality readiness…
+            </div>
+          ) : qualityWorkspaceError ? (
+            <div className="text-red-700">Could not load quality readiness. Open the Quality tab to retry.</div>
+          ) : !qualityWorkspace?.hasChecklist ? (
+            <div className="text-muted-foreground">No quality checklist is active for this project.</div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button type="button" onClick={() => setLocation(`/${projectName}?dept=quality&subTab=checklist`)} className="rounded border px-2 py-1 hover:bg-muted">
+                Quality status: <span className="font-semibold">{Math.round(qualityProgressPct)}%</span>
+              </button>
+              <button type="button" onClick={() => setLocation(`/${projectName}?dept=quality&subTab=checklist&chip=quality-evidence-gaps&qualityFilter=evidence_gap`)} className="rounded border px-2 py-1 hover:bg-muted">
+                Evidence gaps: <span className="font-semibold">{qualityWorkspace.counts.evidenceRequired}</span>
+              </button>
+              <button type="button" onClick={() => setLocation(`/${projectName}?dept=quality&subTab=checklist&chip=pending-quality-approvals&qualityFilter=review`)} className="rounded border px-2 py-1 hover:bg-muted">
+                Pending approvals: <span className="font-semibold">{qualityWorkspace.counts.pendingReview}</span>
+              </button>
+              <button type="button" onClick={() => setLocation(`/${projectName}?dept=quality&subTab=checklist&qualityFilter=fail`)} className="rounded border px-2 py-1 hover:bg-muted">
+                Failed/resubmission: <span className="font-semibold">{qualityWorkspace.counts.resubmissionNeeded}</span>
+              </button>
+              <button type="button" onClick={() => setLocation(`/${projectName}?dept=quality&subTab=checklist&chip=handover-blocked&qualityFilter=handover_blocking`)} className={`rounded border px-2 py-1 ${qualityWorkspace.counts.blockedHandover || qualityWorkspace.handover?.blocked ? "border-red-300 bg-red-50 text-red-800" : "hover:bg-muted"}`}>
+                Handover blocked: <span className="font-semibold">{qualityWorkspace.counts.blockedHandover || qualityWorkspace.handover?.blocked ? "Yes" : "No"}</span>
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {topAlerts.length > 0 && (
         <div className="flex flex-wrap gap-1.5" data-testid="cockpit-exception-strip">
