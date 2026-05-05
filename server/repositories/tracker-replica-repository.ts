@@ -313,7 +313,9 @@ export class TrackerReplicaRepository {
         .select({ id: users.id, name: users.name })
         .from(users)
         .where(inArray(users.id, uniqueIds));
-      const nameMap = new Map(userRows.map(u => [u.id, u.name]));
+      const nameMap = new Map<number, string | null>(
+        userRows.map((u: { id: number; name: string | null }) => [u.id, u.name]),
+      );
       for (const entry of out) {
         if (entry.editedBy !== null) {
           entry.editedByName = nameMap.get(entry.editedBy) ?? null;

@@ -1,15 +1,16 @@
 import { useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import {
   FileText, Plus, Trash2, Download, Send, Package, Loader2,
-  ChevronDown, ChevronUp, Eye, Copy, ArrowUp, ArrowDown, GripVertical,
+  ChevronDown, ChevronUp, Eye, Copy, ArrowUp, ArrowDown, GripVertical, ShieldCheck,
 } from "lucide-react";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -49,9 +50,22 @@ export function POGenerator({ projectName, projectManager }: POGeneratorProps) {
   const [siteContact, setSiteContact] = useState("");
   const [comments, setComments] = useState("");
   const [expandedPo, setExpandedPo] = useState<number | null>(null);
+  const [submitForPoId, setSubmitForPoId] = useState<number | null>(null);
+  const [selectedApproverId, setSelectedApproverId] = useState<string>("");
 
   const { toast } = useToast();
   const qc = useQueryClient();
+
+  const { data: eligibleApprovers = [], isLoading: loadingApprovers } = useQuery<any[]>({
+    queryKey: ["po-eligible-approvers"],
+    queryFn: async () => {
+      const res = await fetch(`/api/po/eligible-approvers`, { headers: authHeaders() });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data) ? data : (data?.approvers ?? []);
+    },
+    enabled: open,
+  });
 
   const { data: supplierList = [] } = useQuery<any[]>({
     queryKey: ["supplier-list"],
@@ -160,6 +174,31 @@ export function POGenerator({ projectName, projectManager }: POGeneratorProps) {
       qc.invalidateQueries({ queryKey: ["po-list", projectName] });
       toast({ title: "PO status updated" });
     },
+  });
+
+  const submitMutation = useMutation({
+    mutationFn: async ({ poId, assignedApproverUserId }: { poId: number; assignedApproverUserId: number }) => {
+      const res = await fetch(`/api/po/${poId}/submit`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ assignedApproverUserId }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: "Failed to submit" }));
+        throw new Error(err.message || err.error || "Failed to submit");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["po-list", projectName] });
+      toast({
+        title: "Submitted for approval",
+        description: data?.assignedApproverName ? `Assigned to ${data.assignedApproverName}` : undefined,
+      });
+      setSubmitForPoId(null);
+      setSelectedApproverId("");
+    },
+    onError: (err: any) => toast({ title: "Submit failed", description: err.message, variant: "destructive" }),
   });
 
   const deleteMutation = useMutation({
@@ -369,35 +408,32 @@ export function POGenerator({ projectName, projectManager }: POGeneratorProps) {
                           >
                             <Download className="h-3.5 w-3.5 mr-1" /> PDF
                           </Button>
-                          {po.status === "draft" && (
+                          {(po.status === "draft" || po.status === "requires_info" || po.status === "blocked") && (
                             <>
                               <Button
-                                variant="outline"
+                                variant="default"
                                 size="sm"
-                                onClick={() => statusMutation.mutate({ poId: po.id, status: "sent" })}
-                                data-testid={`btn-mark-sent-${po.id}`}
+                                onClick={() => { setSubmitForPoId(po.id); setSelectedApproverId(""); }}
+                                data-testid={`btn-submit-po-${po.id}`}
                               >
-                                <Send className="h-3.5 w-3.5 mr-1" /> Mark Sent
+                                <Send className="h-3.5 w-3.5 mr-1" /> Submit for Approval
                               </Button>
-                              <Button
-                                variant="destructive"
-                                size="sm"
-                                onClick={() => { if (confirm("Delete this draft PO?")) deleteMutation.mutate(po.id); }}
-                                data-testid={`btn-delete-po-${po.id}`}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
+                              {po.status === "draft" && (
+                                <Button
+                                  variant="destructive"
+                                  size="sm"
+                                  onClick={() => { if (confirm("Delete this draft PO?")) deleteMutation.mutate(po.id); }}
+                                  data-testid={`btn-delete-po-${po.id}`}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              )}
                             </>
                           )}
-                          {po.status === "sent" && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => statusMutation.mutate({ poId: po.id, status: "approved" })}
-                              data-testid={`btn-approve-po-${po.id}`}
-                            >
-                              Approve
-                            </Button>
+                          {(po.status === "submitted" || po.status === "in_review") && (
+                            <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200" data-testid={`badge-po-awaiting-review-${po.id}`}>
+                              <ShieldCheck className="h-3 w-3 mr-1" /> Awaiting review on PO Approval Board
+                            </Badge>
                           )}
                         </div>
                       </div>
@@ -693,6 +729,50 @@ export function POGenerator({ projectName, projectManager }: POGeneratorProps) {
           </div>
         )}
       </DialogContent>
+
+      <Dialog open={submitForPoId !== null} onOpenChange={(v) => { if (!v) { setSubmitForPoId(null); setSelectedApproverId(""); } }}>
+        <DialogContent className="max-w-md" data-testid="dialog-submit-po">
+          <DialogHeader>
+            <DialogTitle>Submit PO for Approval</DialogTitle>
+            <DialogDescription>
+              Pick the person who should review and approve this PO. Only CFO, Program Finance Manager, Program Manager and COO are eligible.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <Label className="text-xs">Assigned approver</Label>
+            <Select value={selectedApproverId} onValueChange={setSelectedApproverId}>
+              <SelectTrigger data-testid="select-po-approver">
+                <SelectValue placeholder={loadingApprovers ? "Loading…" : "Choose an approver"} />
+              </SelectTrigger>
+              <SelectContent>
+                {eligibleApprovers.length === 0 && !loadingApprovers && (
+                  <div className="px-3 py-2 text-xs text-muted-foreground">No eligible approvers found.</div>
+                )}
+                {eligibleApprovers.map((a: any) => (
+                  <SelectItem key={a.id} value={String(a.id)} data-testid={`option-approver-${a.id}`}>
+                    {a.name}{a.role ? ` — ${String(a.role).replace(/_/g, " ")}` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setSubmitForPoId(null); setSelectedApproverId(""); }} data-testid="btn-cancel-submit-po">Cancel</Button>
+            <Button
+              onClick={() => {
+                if (submitForPoId !== null && selectedApproverId) {
+                  submitMutation.mutate({ poId: submitForPoId, assignedApproverUserId: Number(selectedApproverId) });
+                }
+              }}
+              disabled={!selectedApproverId || submitMutation.isPending}
+              data-testid="btn-confirm-submit-po"
+            >
+              {submitMutation.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Send className="h-4 w-4 mr-1" />}
+              Submit
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }
