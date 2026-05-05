@@ -71,6 +71,7 @@ import {
   invoiceRawToSummary,
   upsertVendorMapping,
   upsertCustomerMapping,
+  QuickBooksApproveValidationError,
   QuickBooksLinkConflictError,
 } from "../services/quickbooks-reconciliation-service";
 import {
@@ -83,6 +84,101 @@ import {
 
 const SCOPES = ["cost", "revenue"] as const;
 type Scope = (typeof SCOPES)[number];
+
+/**
+ * Maps an arbitrary error thrown from the approve / bulk-approve helpers to
+ * the actual HTTP envelope. Keeps the conflict-error handling untouched
+ * (those are intercepted earlier with their own audit log entry) and turns
+ * every other failure mode into a user-meaningful message instead of the
+ * legacy hard-coded "Failed to approve match." toast.
+ */
+function classifyApproveError(err: unknown): {
+  statusCode: number;
+  code: string;
+  reason: string;
+  message: string;
+  errorName: string;
+  errorMessage: string;
+  stack?: string;
+} {
+  // Validation faults raised by the confirm*Link helpers.
+  if (err instanceof QuickBooksApproveValidationError) {
+    return {
+      statusCode: err.statusCode,
+      code: err.code,
+      reason: err.reason,
+      message: err.message,
+      errorName: err.name,
+      errorMessage: err.message,
+      stack: err.stack,
+    };
+  }
+
+  // Conflicts in places that re-throw past their dedicated 409 branch.
+  if (err instanceof QuickBooksLinkConflictError) {
+    return {
+      statusCode: 409,
+      code: err.code,
+      reason: err.reason,
+      message: err.message,
+      errorName: err.name,
+      errorMessage: err.message,
+      stack: err.stack,
+    };
+  }
+
+  // ApiError thrown earlier in the route (badRequest / notFound / etc.) —
+  // honour its status and message so the toast stays specific.
+  if (err instanceof ApiError) {
+    return {
+      statusCode: err.statusCode,
+      code: err.code,
+      reason: err.code,
+      message: err.message,
+      errorName: err.name,
+      errorMessage: err.message,
+      stack: err.stack,
+    };
+  }
+
+  // Postgres / Drizzle constraint violations — surface the constraint name
+  // (or message) so the operator can act, but use a 500 because this is
+  // unexpected territory we should fix in code.
+  const anyErr = err as { code?: string; constraint?: string; message?: string; stack?: string; name?: string };
+  if (anyErr && typeof anyErr === "object" && typeof anyErr.code === "string" && /^\d{5}$/.test(anyErr.code)) {
+    const constraint = anyErr.constraint ? ` (${anyErr.constraint})` : "";
+    return {
+      statusCode: 500,
+      code: "database_error",
+      reason: `pg_${anyErr.code}`,
+      message: `Database error${constraint}: ${anyErr.message ?? "unknown"}`,
+      errorName: anyErr.name ?? "DatabaseError",
+      errorMessage: anyErr.message ?? "unknown",
+      stack: anyErr.stack,
+    };
+  }
+
+  if (err instanceof Error) {
+    return {
+      statusCode: 500,
+      code: "approve_failed",
+      reason: "unexpected_error",
+      message: err.message || "Failed to approve match.",
+      errorName: err.name,
+      errorMessage: err.message,
+      stack: err.stack,
+    };
+  }
+
+  return {
+    statusCode: 500,
+    code: "approve_failed",
+    reason: "unexpected_error",
+    message: "Failed to approve match.",
+    errorName: "Unknown",
+    errorMessage: String(err),
+  };
+}
 
 const findBodySchema = z
   .object({
@@ -560,6 +656,7 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
               matchType: chosen.confidence >= 90 ? "auto_exact" : "auto_fuzzy",
               notes: body.notes ?? null,
               confirmedBy: userId,
+              qbRealmId: suggestion.qbRealmId,
             });
             createdLinkId = link.id;
           } else {
@@ -574,11 +671,12 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
                 totalAmount: chosen.qbAmountExVat,
                 balance: chosen.qbBalance,
                 customerName: chosen.qbCounterpartyName,
-                customerId: null,
+                customerId: chosen.qbCounterpartyId ?? null,
               },
               matchType: chosen.confidence >= 90 ? "auto_exact" : "auto_fuzzy",
               notes: body.notes ?? null,
               confirmedBy: userId,
+              qbRealmId: suggestion.qbRealmId,
             });
             createdLinkId = link.id;
           }
@@ -690,11 +788,44 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
               message: inner.message,
             });
           }
+          // Log structured context for the next operator. The outer catch
+          // will translate the error into the HTTP envelope.
+          const cls = classifyApproveError(inner);
+          logApiError("qb.invoice_match.approve", {
+            name: cls.errorName,
+            message: cls.errorMessage,
+            stack: cls.stack,
+            suggestionId,
+            scope: isCost ? "cost" : "revenue",
+            appEntityId,
+            chosenQbEntityId: chosen.qbEntityId,
+            qbRealmId: suggestion.qbRealmId,
+          });
           throw inner;
         }
       } catch (err) {
-        logApiError("qb.invoice_match.approve", err);
-        return sendError(res, serverError("Failed to approve match."));
+        const cls = classifyApproveError(err);
+        // Log a fallback entry only for errors that didn't pass through the
+        // inner catch's structured log call (i.e. failures BEFORE the
+        // confirm*Link try block).
+        if (
+          !(err instanceof QuickBooksApproveValidationError) &&
+          !(err instanceof QuickBooksLinkConflictError) &&
+          !(err instanceof ApiError)
+        ) {
+          logApiError("qb.invoice_match.approve.outer", {
+            name: cls.errorName,
+            message: cls.errorMessage,
+            stack: cls.stack,
+            suggestionId: Number(req.params.suggestionId),
+          });
+        }
+        return res.status(cls.statusCode).json({
+          error: cls.code,
+          code: cls.code,
+          reason: cls.reason,
+          message: cls.message,
+        });
       }
     },
   );
@@ -1151,6 +1282,7 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
                   matchType: "auto_exact",
                   notes: item.notes ?? null,
                   confirmedBy: userId,
+                  qbRealmId: suggestion.qbRealmId,
                 });
                 createdLinkId = link.id;
               } else {
@@ -1165,11 +1297,12 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
                     totalAmount: chosen.qbAmountExVat,
                     balance: chosen.qbBalance,
                     customerName: chosen.qbCounterpartyName,
-                    customerId: null,
+                    customerId: (chosen as ScoredCandidate & { qbCounterpartyId?: string | null }).qbCounterpartyId ?? null,
                   },
                   matchType: "auto_exact",
                   notes: item.notes ?? null,
                   confirmedBy: userId,
+                  qbRealmId: suggestion.qbRealmId,
                 });
                 createdLinkId = link.id;
               }
@@ -1218,8 +1351,22 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
                 });
                 failedCount++;
               } else {
-                logApiError("qb.invoice_match.bulk_approve.row", inner);
-                results.push({ suggestionId: item.suggestionId, outcome: "failed", reason: "unexpected_error" });
+                const cls = classifyApproveError(inner);
+                logApiError("qb.invoice_match.bulk_approve.row", {
+                  name: cls.errorName,
+                  message: cls.errorMessage,
+                  stack: cls.stack,
+                  suggestionId: item.suggestionId,
+                  scope: isCost ? "cost" : "revenue",
+                  appEntityId,
+                  chosenQbEntityId: chosen.qbEntityId,
+                  qbRealmId: suggestion.qbRealmId,
+                });
+                results.push({
+                  suggestionId: item.suggestionId,
+                  outcome: "failed",
+                  reason: cls.message,
+                });
                 failedCount++;
               }
             }

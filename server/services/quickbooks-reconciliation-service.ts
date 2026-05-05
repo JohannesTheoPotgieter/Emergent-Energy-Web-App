@@ -783,6 +783,29 @@ export class QuickBooksBillNotFoundError extends Error {
   }
 }
 
+/**
+ * Thrown by the confirm*Link helpers when an approve attempt fails for a
+ * caller-meaningful reason (missing referenced row, invalid QB payload, etc.)
+ * — distinct from a 1:1 link conflict (QuickBooksLinkConflictError) and from
+ * a generic database/runtime fault.
+ *
+ * The route layer catches this and returns a 4xx with `message` so the
+ * end-user toast can show the actual cause instead of a hard-coded generic
+ * "Approve failed."
+ */
+export class QuickBooksApproveValidationError extends Error {
+  readonly code = "quickbooks_approve_validation";
+  readonly reason: string;
+  readonly statusCode: number;
+
+  constructor(params: { reason: string; message: string; statusCode?: number }) {
+    super(params.message);
+    this.name = "QuickBooksApproveValidationError";
+    this.reason = params.reason;
+    this.statusCode = params.statusCode ?? 400;
+  }
+}
+
 export class QuickBooksLinkConflictError extends Error {
   readonly code = "quickbooks_link_conflict";
   readonly conflicts: QuickBooksInvoiceLink[];
@@ -1424,13 +1447,22 @@ export async function confirmCostLineLink(params: {
   matchType?: "manual" | "auto_exact" | "auto_fuzzy";
   confirmedBy?: number | null;
   notes?: string | null;
+  /** Realm to associate the link with. When omitted, falls back to current connection metadata. */
+  qbRealmId?: string | null;
 }): Promise<QuickBooksInvoiceLink> {
+  if (!params.bill?.id) {
+    throw new QuickBooksApproveValidationError({
+      reason: "qb_bill_id_missing",
+      message: "QuickBooks bill is missing an Id — refresh QB data and try again.",
+    });
+  }
   return createOrUpdateLink({
     projectId: params.projectId,
     appEntityType: "cost_line",
     appEntityId: params.costLineId,
     qbEntityType: "bill",
     qbEntityId: params.bill.id,
+    qbRealmId: params.qbRealmId ?? undefined,
     qbDocNumber: params.bill.docNumber ?? null,
     qbTxnDate: params.bill.txnDate ?? null,
     qbAmount: params.bill.totalAmount ?? null,
@@ -2085,13 +2117,30 @@ export async function confirmRevenueLineLink(params: {
   matchType?: "manual" | "auto_exact" | "auto_fuzzy";
   confirmedBy?: number | null;
   notes?: string | null;
+  /** Realm to associate the link with. When omitted, falls back to current connection metadata. */
+  qbRealmId?: string | null;
 }): Promise<QuickBooksInvoiceLink> {
+  if (!params.invoice?.id) {
+    throw new QuickBooksApproveValidationError({
+      reason: "qb_invoice_id_missing",
+      message: "QuickBooks invoice is missing an Id — refresh QB data and try again.",
+    });
+  }
+
+  // Prefer the realmId carried on the suggestion so the link and the
+  // mirrored quickbooks_documents row are stored under the SAME realm even
+  // if the active connection metadata flips mid-request. Falling back to
+  // metadata keeps the legacy callers (manual link, recon UI) working.
+  const realmId =
+    params.qbRealmId ?? (await loadQuickBooksMetadata()).realmId ?? null;
+
   const link = await createOrUpdateLink({
     projectId: params.projectId,
     appEntityType: "revenue_line",
     appEntityId: params.revenueLineId,
     qbEntityType: "invoice",
     qbEntityId: params.invoice.id,
+    qbRealmId: realmId ?? undefined,
     qbDocNumber: params.invoice.docNumber ?? null,
     qbTxnDate: params.invoice.txnDate ?? null,
     qbAmount: params.invoice.totalAmount ?? null,
@@ -2101,7 +2150,6 @@ export async function confirmRevenueLineLink(params: {
     confirmedBy: params.confirmedBy ?? null,
   });
 
-  const realmId = (await loadQuickBooksMetadata()).realmId;
   if (realmId) {
     await upsertQuickBooksDocumentFromInvoice(
       params.projectId,
