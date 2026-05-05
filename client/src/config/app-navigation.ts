@@ -1,8 +1,8 @@
 /**
  * Master Navigation Structure
  *
- * 11-section model reflecting the real business system:
- *   Home | Company | Priorities | Project Development | Project Delivery | Finance | Engineering | HSE | Quality | Reports | Admin
+ * 10-section top-nav model reflecting the real business system:
+ *   Home | Company | Project Development | Project Delivery | Finance | Engineering | HSE | Quality | Reports | Admin
  *
  * Role-based visibility determines which sections each role sees.
  * "Gates" is not a top-level section — it lives inside Portfolio and functional areas.
@@ -68,7 +68,7 @@ export const TOP_SECTIONS: TopSection[] = [
     label: "Home",
     key: "HOME",
     path: "/",
-    match: (pathname) => pathname === "/" || startsWithAny(pathname, ["/my-work", "/inbox"]),
+    match: (pathname) => pathname === "/" || startsWithAny(pathname, ["/my-work", "/inbox", "/priorities"]),
     // Prompt 0.7: "Approvals" removed — duplicate of Project Delivery →
     // PM Approvals which points at the canonical /pm/approvals page.
     // /my-work/approvals remains as a redirect alias for bookmarks.
@@ -77,6 +77,7 @@ export const TOP_SECTIONS: TopSection[] = [
       { label: "My Tasks", path: "/my-work/tasks" },
       { label: "Calendar", path: "/my-work/calendar" },
       { label: "Meetings", path: "/my-work/meetings" },
+      { label: "Priorities", path: "/priorities", requiredSectionKey: "PRIORITIES" },
     ],
   },
   {
@@ -97,25 +98,6 @@ export const TOP_SECTIONS: TopSection[] = [
       { label: "Gate Tracker", path: "/gates" },
       { label: "Blocked Gates", path: "/gates/blocked" },
       { label: "Exceptions", path: "/gates/exceptions" },
-    ],
-  },
-  {
-    label: "Priorities",
-    key: "PRIORITIES",
-    path: "/priorities",
-    match: (pathname) => startsWithAny(pathname, ["/priorities"]),
-    // Sub-tabs are rendered inside the Priorities page itself (Department /
-    // Company) so we don't duplicate them in the secondary nav. Keep the
-    // empty array so consumers that map over `secondary` don't crash.
-    secondary: [],
-    secondaryGroups: [
-      {
-        label: "Priority Views",
-        items: [
-          { label: "Department Priorities", path: "/priorities?tab=department" },
-          { label: "Company Priorities", path: "/priorities?tab=company" },
-        ],
-      },
     ],
   },
   {
