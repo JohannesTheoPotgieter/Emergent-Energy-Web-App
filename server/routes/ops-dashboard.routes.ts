@@ -1,6 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { Pool } from "pg";
-import { randomUUID, timingSafeEqual } from "crypto";
+import { createHash, randomUUID, timingSafeEqual } from "crypto";
 
 const CACHE_TTL_MS = 60_000;
 const RATE_LIMIT_WINDOW_MS = 60_000;
@@ -9,9 +9,30 @@ const RATE_LIMIT_MAX = 60;
 let pool: Pool | null = null;
 let poolInitFailed = false;
 
+const CLAUDE_RO_HOST = "ep-damp-dawn-ajbdpxyq.c-3.us-east-2.aws.neon.tech";
+const CLAUDE_RO_DB = "neondb";
+const CLAUDE_RO_USER = "claude_readonly";
+
+function resolveClaudeRoUrl(): string | null {
+  const explicit = process.env.CLAUDE_RO_DATABASE_URL;
+  if (explicit) {
+    try {
+      // Validate parse — if user pasted unescaped chars, this will throw or
+      // produce an empty host (e.g. "base"), and we fall through to build it.
+      const u = new URL(explicit);
+      if (u.hostname && u.hostname !== "base") return explicit;
+    } catch {
+      /* fall through */
+    }
+  }
+  const pwd = process.env.CLAUDE_RO_PASSWORD;
+  if (!pwd) return null;
+  return `postgresql://${CLAUDE_RO_USER}:${encodeURIComponent(pwd)}@${CLAUDE_RO_HOST}/${CLAUDE_RO_DB}?sslmode=require`;
+}
+
 function getPool(): Pool | null {
   if (pool || poolInitFailed) return pool;
-  const url = process.env.CLAUDE_RO_DATABASE_URL;
+  const url = resolveClaudeRoUrl();
   if (!url) {
     poolInitFailed = true;
     return null;
@@ -34,6 +55,7 @@ interface CacheEntry {
   expiresAt: number;
 }
 let cache: CacheEntry | null = null;
+let inflight: Promise<string> | null = null;
 
 interface RateBucket {
   count: number;
@@ -61,10 +83,10 @@ setInterval(() => {
 }, 5 * RATE_LIMIT_WINDOW_MS).unref?.();
 
 function clientIp(req: Request): string {
-  const fwd = req.headers["x-forwarded-for"];
-  if (typeof fwd === "string" && fwd.length > 0) return fwd.split(",")[0]!.trim();
-  if (Array.isArray(fwd) && fwd[0]) return fwd[0].split(",")[0]!.trim();
-  return req.socket.remoteAddress || "unknown";
+  // req.ip honours the global `trust proxy` setting (configured in
+  // server/index.ts before this route is registered) and is therefore
+  // resistant to X-Forwarded-For spoofing from arbitrary upstreams.
+  return req.ip || req.socket.remoteAddress || "unknown";
 }
 
 function logRequest(req: Request, status: number, extra?: string) {
@@ -88,10 +110,11 @@ function checkBearer(req: Request): boolean {
   if (typeof header !== "string") return false;
   const m = /^Bearer\s+(.+)$/.exec(header);
   if (!m) return false;
-  const provided = m[1]!.trim();
-  const a = Buffer.from(provided, "utf8");
-  const b = Buffer.from(expected, "utf8");
-  if (a.length !== b.length) return false;
+  const provided = m[1]!;
+  // Constant-length compare via SHA-256 fingerprint so length mismatches
+  // do not introduce a timing side channel.
+  const a = createHash("sha256").update(provided, "utf8").digest();
+  const b = createHash("sha256").update(expected, "utf8").digest();
   try {
     return timingSafeEqual(a, b);
   } catch {
@@ -130,9 +153,12 @@ async function buildPayload(): Promise<string> {
       ),
       client.query(
         `SELECT
-           m.id, m.project_id, m.project_name, m.project_code,
-           m.phase, s.current_stage_code, m.rag_status,
-           m.contract_value, p.size_kwp,
+           p.id, p.id AS project_id, p.project_name, p.project_code,
+           COALESCE(m.phase, p.phase) AS phase,
+           s.current_stage_code,
+           COALESCE(m.rag_status, p.rag_status) AS rag_status,
+           COALESCE(m.contract_value, p.contract_value) AS contract_value,
+           p.size_kwp,
            m.gross_profit, m.gross_margin_pct, m.margin_pct,
            m.actual_progress_pct, m.expected_progress_pct, m.schedule_variance_pct,
            m.task_count, m.tasks_overdue, m.open_warnings,
@@ -165,7 +191,7 @@ async function buildPayload(): Promise<string> {
          LEFT JOIN claude_views.v_suppliers sup ON sup.id = pi.supplier_id
          LEFT JOIN claude_views.v_projects pr ON pr.id = pi.project_id
          WHERE pi.is_long_lead = true
-           AND (pi.status IS NULL OR pi.status NOT IN ('cancelled','complete'))
+           AND (pi.status IS NULL OR LOWER(pi.status::text) NOT IN ('cancelled','complete','completed','closed','done'))
          ORDER BY pi.required_date NULLS LAST, pi.id`
       ),
       client.query(
@@ -189,14 +215,14 @@ async function buildPayload(): Promise<string> {
                 client_linked, created_at, updated_at
          FROM claude_views.v_change_requests
          WHERE final_decision IS NULL
-           AND (status IS NULL OR status NOT IN ('cancelled','withdrawn'))
+           AND (status IS NULL OR LOWER(status::text) NOT IN ('cancelled','withdrawn','rejected'))
          ORDER BY updated_at DESC NULLS LAST, id`
       ),
       client.query(
         `SELECT id, project_id, project_name, severity, warning_type, title,
                 status, due_date, created_at
          FROM claude_views.v_qc_warnings
-         WHERE status IS NULL OR status NOT IN ('closed','resolved')
+         WHERE status IS NULL OR LOWER(status::text) NOT IN ('closed','resolved','dismissed')
          ORDER BY due_date ASC NULLS LAST, severity, id`
       ),
     ]);
@@ -272,8 +298,18 @@ export function registerOpsDashboardRoute(app: Express) {
         return res.status(200).send(cache.body);
       }
 
-      const body = await buildPayload();
-      cache = { body, expiresAt: now + CACHE_TTL_MS };
+      // Single-flight: concurrent cache misses share one DB roundtrip.
+      if (!inflight) {
+        inflight = buildPayload()
+          .then((body) => {
+            cache = { body, expiresAt: Date.now() + CACHE_TTL_MS };
+            return body;
+          })
+          .finally(() => {
+            inflight = null;
+          });
+      }
+      const body = await inflight;
 
       res.setHeader("Content-Type", "application/json; charset=utf-8");
       res.setHeader("Cache-Control", "private, max-age=60");
