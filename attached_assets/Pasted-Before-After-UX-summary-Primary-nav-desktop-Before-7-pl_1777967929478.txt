@@ -1,0 +1,33 @@
+Before / After UX summary
+Primary nav (desktop)
+
+Before: 7 plain text links sharing a row with the search bar's bottom edge; small underline-only active state.
+After: dedicated nav row separated by a subtle border-top from the toolbar; each link gets a soft hover background and primary-tinted active background plus a thicker (2.5px) underline tucked under the row separator.
+Secondary subnav (desktop)
+
+Before: every section dumped its full pill list into one horizontal scroll. "Projects" exposed up to 15 pills with no grouping; "Departments" mixed Engineering / Quality / HSE pills indistinguishably.
+After: when a section defines secondaryGroups (Projects, Departments), pills render in labelled clusters separated by a thin vertical divider — e.g. PORTFOLIO · pills · │ · PROJECT DEVELOPMENT · pills · │ · PROJECT DELIVERY · pills. Group items are filtered against the access-allowed list so role-hidden items still don't show. Pills get a slightly more substantial active state (subtle 1px primary shadow) without changing the colour palette.
+Mobile drawer
+
+Before: 300px sheet with a plain title; section labels in 2 lines tall rows; child links 12px text in tiny rows; only first 2 child items shown before "+N more".
+After: branded header with leaf logo and a divider; each section row is 44px tall and shows an item-count badge on the right so the user knows the depth before tapping in; the active section's children render in a primary-rail rail using uppercase group labels when groups exist, otherwise the existing collapsible pattern is preserved but enlarged to 40px touch targets and 13px text; the visible-before-collapse count was raised from 2 to 3 to reduce taps.
+Screens changed
+Every screen using the global app shell — desktop top bar, breadcrumb/subnav band, and mobile drawer.
+No page bodies were touched.
+Mobile behaviour
+Bottom-sheet drawer redesigned with sticky branded header, scrollable list, item-count badges, 44px section rows, 40px child link rows, and grouped child rendering for Projects and Departments.
+Subnav pills preserve their horizontal scroll with auto-scroll-to-active.
+Files changed
+client/src/components/layout/AppLayout.tsx — primary-nav classes, grouped subnav rendering (desktop + mobile), redesigned MobileCollapsibleSubNav with 40px targets.
+client/src/index.css — new .ee-topnav-link, .ee-topnav-link-active, .ee-subnav-group-label, .ee-subnav-group-divider utilities; subtle pill active-state polish.
+Risks
+Low — purely presentational. No routes, permissions, data, or business logic touched.
+Group rendering only activates when secondaryGroups is populated AND at least one item survives access filtering; otherwise we fall back to the existing flat-pill list, so no role can lose access to a link.
+Sub-pages not promoted to top nav remain reachable through their parent section's subnav (e.g. /gates/blocked, /admin/recovery, /finance/quickbooks) exactly as before.
+TypeScript clean; visual change only — no behavioural test impact.
+The task is already complete and merged. The navigation visual polish has been delivered:
+
+Desktop primary nav: dedicated row with subtle separator, soft hover/active backgrounds, and a thicker underline
+Desktop subnav: long pill rows for Projects (15 items) and Departments now render in labelled groups with vertical dividers, making them genuinely scannable
+Mobile drawer: branded header, 44px section rows with item-count badges, grouped child lists, 40px touch targets, and a refreshed "Show N more" collapsible
+No routes, permissions, theme, or business logic were touched. Hidden detail pages remain reachable via their parent section's subnav.
