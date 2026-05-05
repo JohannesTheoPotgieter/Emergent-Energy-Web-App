@@ -1,3 +1,4 @@
+
 -- Auto-generated duplicate of 0045_qb_match_suggestions_rejection.sql.
 -- 0045 is the canonical, hand-written, idempotent version that already
 -- added these four columns. This file is retained because it is recorded

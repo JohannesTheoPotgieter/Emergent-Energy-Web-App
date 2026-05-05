@@ -48,6 +48,7 @@ import {
   Download,
   CheckCircle,
   Wallet,
+  TriangleAlert,
 } from "lucide-react";
 
 interface ProjectProcurementTabProps {
@@ -1873,6 +1874,8 @@ function InvoicesSubTab({
         supplierOptions={supplierOptions}
         poOptions={poOptions}
         itemOptions={itemOptions}
+        poList={poList}
+        invoices={invoices}
       />
     </div>
   );
@@ -1885,6 +1888,8 @@ function CaptureInvoiceDialog({
   supplierOptions,
   poOptions,
   itemOptions,
+  poList,
+  invoices,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -1892,6 +1897,8 @@ function CaptureInvoiceDialog({
   supplierOptions: { value: string; label: string }[];
   poOptions: { value: string; label: string }[];
   itemOptions: { value: string; label: string }[];
+  poList: any[];
+  invoices: any[];
 }) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState({
@@ -1906,8 +1913,33 @@ function CaptureInvoiceDialog({
     budgetLine: "",
     linkedDeliverableId: "",
     linkedMilestone: "",
+    exceptionReason: "",
   });
   const [file, setFile] = useState<File | null>(null);
+  const linkedPo = poList.find((po: any) => String(po.id) === form.linkedPoId);
+  const poAmount = linkedPo ? parseFloat(linkedPo.total_amount ?? linkedPo.amount ?? linkedPo.po_total ?? "0") || 0 : 0;
+  const invoiceAmount = parseFloat(form.amount || "0") || 0;
+  const hasNoPo = !form.linkedPoId;
+  const poNotApproved = !!(linkedPo && linkedPo.status !== "approved");
+  const exceedsPoAmount = !!(linkedPo && poAmount > 0 && invoiceAmount > poAmount);
+  const duplicateInvoice = invoices.some((inv: any) =>
+    String(inv.project_id) === String(projectId) &&
+    String(inv.supplier_id || "") === String(form.supplierId || "") &&
+    String(inv.invoice_number || "").trim().toLowerCase() === form.invoiceNumber.trim().toLowerCase()
+  );
+
+  const canSubmit = Boolean(
+    form.supplierId &&
+    form.invoiceNumber.trim() &&
+    form.invoiceDate &&
+    form.amount &&
+    form.vatAmount &&
+    form.linkedProcurementItemId &&
+    !poNotApproved &&
+    !exceedsPoAmount &&
+    !duplicateInvoice &&
+    (!hasNoPo || form.exceptionReason.trim())
+  );
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -1921,6 +1953,7 @@ function CaptureInvoiceDialog({
       if (form.linkedPoId) formData.append("linkedPoId", form.linkedPoId);
       if (form.linkedProcurementItemId) formData.append("linkedProcurementItemId", form.linkedProcurementItemId);
       if (form.notes) formData.append("notes", form.notes);
+      if (form.exceptionReason) formData.append("exceptionReason", form.exceptionReason);
       if (file) formData.append("document", file);
 
       const token = localStorage.getItem("auth_token");
@@ -1940,7 +1973,7 @@ function CaptureInvoiceDialog({
       queryClient.invalidateQueries({ queryKey: ["invoice-captures", projectId] });
       invalidateProjectV2Queries(queryClient, projectId);
       onOpenChange(false);
-      setForm({ invoiceNumber: "", invoiceDate: "", amount: "", vatAmount: "", supplierId: "", linkedPoId: "", linkedProcurementItemId: "", notes: "", budgetLine: "", linkedDeliverableId: "", linkedMilestone: "" });
+      setForm({ invoiceNumber: "", invoiceDate: "", amount: "", vatAmount: "", supplierId: "", linkedPoId: "", linkedProcurementItemId: "", notes: "", budgetLine: "", linkedDeliverableId: "", linkedMilestone: "", exceptionReason: "" });
       setFile(null);
     },
   });
@@ -1976,7 +2009,7 @@ function CaptureInvoiceDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label className="text-xs">Amount (R)</Label>
+              <Label className="text-xs">Amount ex VAT (R)</Label>
               <Input
                 type="number"
                 className="h-8 text-sm"
@@ -2009,6 +2042,12 @@ function CaptureInvoiceDialog({
               triggerClassName="h-8 text-xs w-full"
               data-testid="select-invoice-supplier"
             />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {hasNoPo && <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-700"><TriangleAlert className="w-3 h-3 mr-1" />No PO linked</Badge>}
+            {poNotApproved && <Badge variant="outline" className="text-[10px] border-red-300 text-red-700"><TriangleAlert className="w-3 h-3 mr-1" />PO not approved</Badge>}
+            {exceedsPoAmount && <Badge variant="outline" className="text-[10px] border-red-300 text-red-700"><TriangleAlert className="w-3 h-3 mr-1" />Invoice amount exceeds PO amount</Badge>}
+            {duplicateInvoice && <Badge variant="outline" className="text-[10px] border-red-300 text-red-700"><TriangleAlert className="w-3 h-3 mr-1" />Duplicate invoice number for same supplier/project</Badge>}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
@@ -2056,6 +2095,16 @@ function CaptureInvoiceDialog({
               data-testid="input-invoice-notes"
             />
           </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Exception Reason</Label>
+            <Textarea
+              className="text-sm min-h-[50px]"
+              value={form.exceptionReason}
+              onChange={(e) => setForm({ ...form, exceptionReason: e.target.value })}
+              placeholder="Required when no PO is linked"
+              data-testid="input-invoice-exception-reason"
+            />
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" size="sm" onClick={() => onOpenChange(false)} data-testid="btn-cancel-invoice">
@@ -2064,7 +2113,7 @@ function CaptureInvoiceDialog({
           <Button
             size="sm"
             className="bg-[#16A34A] hover:bg-[#15803d] text-white"
-            disabled={createMutation.isPending}
+            disabled={createMutation.isPending || !canSubmit}
             onClick={() => createMutation.mutate()}
             data-testid="btn-submit-invoice"
           >

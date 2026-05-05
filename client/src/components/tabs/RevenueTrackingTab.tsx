@@ -559,12 +559,32 @@ export function RevenueTrackingTab({ projectName, highlightId, projectId }: Reve
       invoiceNumber: row.milestoneInvoiceNumber || "",
       invoiceRaisedDate: formatDateForInput(row.invoiceRaisedDate),
       date: formatDateForInput(row.date),
+      notes: row.milestoneNotes || "",
     });
   };
 
   const cancelEditing = () => { setEditingRow(null); setEditValues({}); };
 
   const saveRowEdits = (rowNumber: number) => {
+    const row = milestones.find((m) => m.rowNumber === rowNumber);
+    const invoiceNumber = String(editValues.invoiceNumber || "").trim();
+    const invoiceRaisedDate = String(editValues.invoiceRaisedDate || "").trim();
+    const expectedPaymentDate = String(editValues.date || "").trim();
+
+    if (invoiceNumber && !invoiceRaisedDate) {
+      toast({ title: "Invoice raised date required", description: "Invoice number cannot be saved without invoice raised date.", variant: "destructive" });
+      return;
+    }
+    if (invoiceRaisedDate && expectedPaymentDate && expectedPaymentDate < invoiceRaisedDate) {
+      toast({ title: "Invalid payment date", description: "Expected payment date cannot be before invoice raised date.", variant: "destructive" });
+      return;
+    }
+    const dup = milestones.find((m) => m.rowNumber !== rowNumber && (m.milestoneInvoiceNumber || "").trim().toLowerCase() === invoiceNumber.toLowerCase() && invoiceNumber);
+    if (dup) {
+      toast({ title: "Duplicate invoice number", description: `Invoice ${invoiceNumber} already exists in this project for milestone ${dup.milestoneNo}.`, variant: "destructive" });
+      return;
+    }
+
     const overrides: RevenueOverride[] = [];
     if (editValues.invoiceNumber !== undefined)
       overrides.push({ rowNumber, fieldName: "milestoneInvoiceNumber", overrideValue: editValues.invoiceNumber || null });
@@ -573,6 +593,10 @@ export function RevenueTrackingTab({ projectName, highlightId, projectId }: Reve
     if (editValues.date !== undefined) {
       overrides.push({ rowNumber, fieldName: "plannedPaymentDate", overrideValue: editValues.date || null });
     }
+    if (editValues.notes !== undefined) {
+      overrides.push({ rowNumber, fieldName: "milestoneNotes", overrideValue: editValues.notes || null });
+    }
+    if (overrides.length === 0) return;
     saveMutation.mutate(overrides);
     setEditingRow(null);
     setEditValues({});
@@ -1179,6 +1203,26 @@ export function RevenueTrackingTab({ projectName, highlightId, projectId }: Reve
                               <span title={m.trust?.fieldAudits?.invoiceRaisedDate?.overrideComment || buildMilestoneTrustTitle(m)}>
                                 {formatDate(m.invoiceRaisedDate)}
                               </span>
+                            )}
+                          </TableCell>
+
+                          {/* Expected Payment Date (editable in raise-invoice flow) */}
+                          <TableCell className="text-xs">
+                            {isEditing ? (
+                              <Input type="date" value={editValues.date || ""} onChange={(e) => setEditValues({ ...editValues, date: e.target.value })}
+                                className="h-7 text-xs w-[110px]" data-testid={`input-expected-payment-${m.rowNumber}`} />
+                            ) : (
+                              <span>{formatDate(m.date)}</span>
+                            )}
+                          </TableCell>
+
+                          {/* Notes */}
+                          <TableCell className="text-xs max-w-[220px]">
+                            {isEditing ? (
+                              <Input value={editValues.notes || ""} onChange={(e) => setEditValues({ ...editValues, notes: e.target.value })}
+                                className="h-7 text-xs" placeholder="Invoice notes" data-testid={`input-notes-${m.rowNumber}`} />
+                            ) : (
+                              <span className="truncate block" title={m.milestoneNotes || ""}>{m.milestoneNotes || "-"}</span>
                             )}
                           </TableCell>
 
