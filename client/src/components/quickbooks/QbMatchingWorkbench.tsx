@@ -198,7 +198,12 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
       invoiceNumber: r.invoiceNumber,
       invoiceDate: r.invoiceDate,
       amountExVat: r.amountExVat,
-      counterpartyName: r.milestoneName,
+      // Revenue rows have no per-line counterparty column — the customer
+      // is the project's customer, so fall back to projectName for the
+      // side-by-side evidence vs QB customer name. Showing milestoneName
+      // here was a bug: it compared "Practical Completion" against the
+      // QB DisplayName and always failed.
+      counterpartyName: r.projectName,
     }));
   }, [scope, costQuery.data, revenueQuery.data]);
 
