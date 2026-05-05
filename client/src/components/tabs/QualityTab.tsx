@@ -234,6 +234,7 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
   const [newItemName, setNewItemName] = useState("");
   const [dragOverItem, setDragOverItem] = useState<number | null>(null);
   const [evidenceUploading, setEvidenceUploading] = useState<number | null>(null);
+  const [evidenceUploadState, setEvidenceUploadState] = useState<Record<number, { state: "uploading" | "uploaded" | "failed" | "too_large"; message: string }>>({});
   const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
   const isQmOrAdmin = ['admin', 'COO_ADMIN', 'CEO_ADMIN'].includes(user?.role || '') || (user?.role || '').toUpperCase() === 'QUALITY_MANAGER';
@@ -510,9 +511,14 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
 
   const handleEvidenceFileUpload = async (instanceId: number, file: File) => {
     if (file.size > MAX_EVIDENCE_FILE_SIZE) {
+      setEvidenceUploadState((prev) => ({
+        ...prev,
+        [instanceId]: { state: "too_large", message: `File too large (${Math.round(file.size / (1024 * 1024))}MB). Max 50MB.` },
+      }));
       toast({ title: "File too large", description: `Maximum file size is 50MB. Selected file is ${Math.round(file.size / (1024 * 1024))}MB.`, variant: "destructive" });
       return;
     }
+    setEvidenceUploadState((prev) => ({ ...prev, [instanceId]: { state: "uploading", message: `Uploading ${file.name}...` } }));
     setEvidenceUploading(instanceId);
     try {
       const formData = new FormData();
@@ -533,8 +539,13 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
       queryClient.invalidateQueries({ queryKey: ["quality-checklist", projectName] });
       invalidateAll();
       invalidateProjectV2Queries(queryClient, projectInfoId ?? null);
+      setEvidenceUploadState((prev) => ({ ...prev, [instanceId]: { state: "uploaded", message: `${file.name} uploaded` } }));
       toast({ title: "Evidence uploaded" });
     } catch (err: any) {
+      setEvidenceUploadState((prev) => ({
+        ...prev,
+        [instanceId]: { state: "failed", message: err?.message || "Upload failed. Try again." },
+      }));
       toast({ title: "Upload failed", description: err.message, variant: "destructive" });
     } finally {
       setEvidenceUploading(null);
@@ -860,6 +871,19 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
   // early returns (React's Rules of Hooks). `allInstances` is still kept here
   // because other code paths below (e.g. bulk actions) reference it post-load.
   const allInstances: any[] = checklistData?.itemInstances || [];
+  const blockedApprovalSelections = Array.from(selectedItems)
+    .map((id) => allInstances.find((instance: any) => instance.id === id))
+    .filter((instance: any) => instance)
+    .map((instance: any) => {
+      const ti = templateItems.find((t: any) => t.id === instance.templateItemId);
+      const evidenceCount = (checklistData?.evidence || []).filter((e: any) => e.itemInstanceId === instance.id).length;
+      if (ti?.isEvidenceRequired && evidenceCount === 0) return { id: instance.id, reason: "Required evidence missing" };
+      if (instance.approvalState === "pending_review") return { id: instance.id, reason: "Already pending review" };
+      if (instance.approvalState === "approved") return { id: instance.id, reason: "Already approved" };
+      if (instance.qmStatus === "not_started") return { id: instance.id, reason: "Set item status before submit" };
+      return null;
+    })
+    .filter(Boolean) as Array<{ id: number; reason: string }>;
 
   const selectAllVisibleDrillDown = () => {
     setSelectedItems(new Set(drillDownInPhase.map((i: any) => i.id)));
@@ -1280,6 +1304,7 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
                 <Button
                   size="sm"
                   className="h-7 text-xs bg-amber-500 hover:bg-amber-600 gap-1"
+                  disabled={selectedItems.size === blockedApprovalSelections.length}
                   onClick={() => { setBulkApprover(""); setBulkApproverDialogOpen(true); }}
                   data-testid="bulk-send-for-approval"
                 >
@@ -1305,6 +1330,15 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
                   <X className="w-3 h-3 mr-1" /> Clear
                 </Button>
               </div>
+            </div>
+          )}
+          {selectedItems.size > 0 && blockedApprovalSelections.length > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800 space-y-1" data-testid="bulk-blocked-reasons">
+              <p className="font-medium">Some selected items cannot be submitted for review:</p>
+              {blockedApprovalSelections.slice(0, 4).map((item) => (
+                <p key={item.id}>• Item #{item.id}: {item.reason}</p>
+              ))}
+              {blockedApprovalSelections.length > 4 && <p>• +{blockedApprovalSelections.length - 4} more blocked item(s)</p>}
             </div>
           )}
 
@@ -1822,6 +1856,20 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
                                               <span className="text-xs text-muted-foreground">Drop file here or click to upload</span>
                                             </div>
                                           )}
+                                        </div>
+                                      )}
+                                      {evidenceUploadState[instance.id] && (
+                                        <div
+                                          className={`mt-2 text-xs rounded-md border px-2.5 py-1.5 ${
+                                            evidenceUploadState[instance.id].state === "uploaded"
+                                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                              : evidenceUploadState[instance.id].state === "uploading"
+                                                ? "bg-blue-50 text-blue-700 border-blue-200"
+                                                : "bg-red-50 text-red-700 border-red-200"
+                                          }`}
+                                          data-testid={`evidence-upload-status-${instance.id}`}
+                                        >
+                                          {evidenceUploadState[instance.id].message}
                                         </div>
                                       )}
                                     </div>
