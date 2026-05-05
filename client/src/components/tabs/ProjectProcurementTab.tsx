@@ -1817,8 +1817,16 @@ function InvoicesSubTab({
                 ) : (
                   invoices.map((inv: any) => {
                     const linkedPo = poList.find((po: any) => po.id === inv.linked_po_id);
+                    const hasInvoiceNumber = !!(inv.invoice_number && String(inv.invoice_number).trim());
+                    const missingPo = !inv.linked_po_id;
+                    const isRedFlag = missingPo && hasInvoiceNumber;
                     return (
-                      <TableRow key={inv.id} data-testid={`row-invoice-${inv.id}`}>
+                      <TableRow
+                        key={inv.id}
+                        className={isRedFlag ? "bg-red-50/60 hover:bg-red-50 border-l-4 border-l-red-500" : ""}
+                        data-testid={`row-invoice-${inv.id}`}
+                        data-red-flag={isRedFlag ? "invoice-without-po" : undefined}
+                      >
                         <TableCell className="text-sm font-mono" data-testid={`text-invoice-number-${inv.id}`}>{inv.invoice_number || "—"}</TableCell>
                         <TableCell className="text-sm text-muted-foreground" data-testid={`text-invoice-supplier-${inv.id}`}>{inv.supplier_name || "—"}</TableCell>
                         <TableCell className="text-sm font-mono text-right" data-testid={`text-invoice-amount-${inv.id}`}>{formatRand(parseFloat(inv.amount))}</TableCell>
@@ -1829,8 +1837,23 @@ function InvoicesSubTab({
                             {inv.status}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-sm font-mono text-muted-foreground" data-testid={`text-invoice-po-${inv.id}`}>
-                          {linkedPo?.po_ref || (inv.linked_po_id ? `PO #${inv.linked_po_id}` : "—")}
+                        <TableCell className="text-sm font-mono" data-testid={`text-invoice-po-${inv.id}`}>
+                          {linkedPo?.po_ref ? (
+                            <span className="text-muted-foreground">{linkedPo.po_ref}</span>
+                          ) : inv.linked_po_id ? (
+                            <span className="text-muted-foreground">{`PO #${inv.linked_po_id}`}</span>
+                          ) : isRedFlag ? (
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] bg-red-100 text-red-700 border-red-300 inline-flex items-center gap-1"
+                              title="Invoice captured without a linked PO. This is a procurement red flag — every supplier invoice should reference a Purchase Order."
+                              data-testid={`badge-invoice-without-po-${inv.id}`}
+                            >
+                              <AlertCircle className="w-3 h-3" /> No PO
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground max-w-[150px] truncate" data-testid={`text-invoice-notes-${inv.id}`}>{inv.notes || "—"}</TableCell>
                       </TableRow>

@@ -825,6 +825,20 @@ export function registerPoRoutes(app: Express) {
         });
       }
 
+      // Guard: approval/rejection decisions must flow through the canonical
+      // review path (POST /api/po/:poId/review) so po_review_assignments and
+      // the formal audit trail stay authoritative. Reject any back-channel
+      // attempt to flip a PO straight to approved/blocked/requires_info via
+      // the generic status PATCH endpoint.
+      const REVIEW_DECISION_STATUSES = new Set(["approved", "blocked", "requires_info"]);
+      if (REVIEW_DECISION_STATUSES.has(String(status))) {
+        return res.status(400).json({
+          error: "use_review_endpoint",
+          message:
+            "Approve / Block / Request Info must be issued via POST /api/po/:poId/review by the assigned reviewer on the PO Approval Board.",
+        });
+      }
+
       if (status === "sent") {
         // Legacy compat: map 'sent' to 'submitted'
         await db.execute(sql`
