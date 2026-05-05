@@ -30,13 +30,28 @@ export const SECTION_KEYS = [
 ] as const;
 export type SectionKey = typeof SECTION_KEYS[number];
 
-export type SecondaryItem = { label: string; path: string; disabled?: boolean };
+export type SecondaryItem = {
+  label: string;
+  path: string;
+  disabled?: boolean;
+  requiredSectionKey?: SectionKey;
+  requiredAnySectionKeys?: SectionKey[];
+  requiredPathPermissions?: string[];
+};
+export type SecondaryGroup = {
+  label: string;
+  items: SecondaryItem[];
+};
 export type TopSection = {
   label: string;
   key: SectionKey;
   path: string;
   match: (pathname: string) => boolean;
   secondary: SecondaryItem[];
+  secondaryGroups?: SecondaryGroup[];
+  requiredSectionKey?: SectionKey;
+  requiredAnySectionKeys?: SectionKey[];
+  requiredPathPermissions?: string[];
 };
 
 function matchesPathPrefix(pathname: string, prefix: string) {
@@ -92,6 +107,15 @@ export const TOP_SECTIONS: TopSection[] = [
     // Company) so we don't duplicate them in the secondary nav. Keep the
     // empty array so consumers that map over `secondary` don't crash.
     secondary: [],
+    secondaryGroups: [
+      {
+        label: "Priority Views",
+        items: [
+          { label: "Department Priorities", path: "/priorities?tab=department" },
+          { label: "Company Priorities", path: "/priorities?tab=company" },
+        ],
+      },
+    ],
   },
   {
     label: "Project Development",
@@ -226,6 +250,41 @@ export const TOP_SECTIONS: TopSection[] = [
   },
 ];
 
+export type DisplayTopNavItem = {
+  label: "Home" | "Projects" | "Gates" | "Finance" | "Departments" | "Reports" | "Admin";
+  path: string;
+  requiredSectionKey?: SectionKey;
+  requiredAnySectionKeys?: SectionKey[];
+  requiredPathPermissions?: string[];
+  sectionKeys: SectionKey[];
+};
+
+export const DISPLAY_TOP_NAV: DisplayTopNavItem[] = [
+  { label: "Home", path: "/", requiredSectionKey: "HOME", sectionKeys: ["HOME"] },
+  {
+    label: "Projects",
+    path: "/lifecycle-board",
+    requiredAnySectionKeys: ["PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY"],
+    sectionKeys: ["PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY"],
+  },
+  {
+    label: "Gates",
+    path: "/gates",
+    requiredAnySectionKeys: ["PORTFOLIO", "PROJECT_DELIVERY", "QUALITY", "HSE"],
+    requiredPathPermissions: ["/gates"],
+    sectionKeys: ["PORTFOLIO", "PROJECT_DELIVERY", "QUALITY", "HSE"],
+  },
+  { label: "Finance", path: "/cashflow", requiredSectionKey: "FINANCE", sectionKeys: ["FINANCE"] },
+  {
+    label: "Departments",
+    path: "/engineering",
+    requiredAnySectionKeys: ["ENGINEERING", "QUALITY", "HSE"],
+    sectionKeys: ["ENGINEERING", "QUALITY", "HSE"],
+  },
+  { label: "Reports", path: "/reports/pm/monthly", requiredSectionKey: "REPORTS", sectionKeys: ["REPORTS"] },
+  { label: "Admin", path: "/settings", requiredSectionKey: "ADMIN", sectionKeys: ["ADMIN"] },
+];
+
 /**
  * Role-based section visibility.
  * Keys match TopSection.key values.
@@ -354,22 +413,38 @@ export function buildVisibleTopSections(options: {
 
   const allowedKeys = allowedSectionKeys
     ?? (companyRole ? ROLE_VISIBLE_SECTIONS[companyRole as CompanyRole] ?? null : null);
+  const canAccessBySection = (section: { requiredSectionKey?: SectionKey; requiredAnySectionKeys?: SectionKey[] }) => {
+    if (!allowedKeys) return true;
+    if (section.requiredSectionKey && !allowedKeys.includes(section.requiredSectionKey)) return false;
+    if (section.requiredAnySectionKeys && !section.requiredAnySectionKeys.some((key) => allowedKeys.includes(key))) return false;
+    return true;
+  };
+  const canAccessByPathPerms = (item: { requiredPathPermissions?: string[] }) =>
+    !item.requiredPathPermissions || item.requiredPathPermissions.every((path) => canViewPath(path));
+  const filterSecondaryItem = (item: SecondaryItem, sectionDisabled?: Set<string>) => {
+    if (sectionDisabled && sectionDisabled.has(item.path)) return false;
+    if (!canAccessBySection(item)) return false;
+    if (!canAccessByPathPerms(item)) return false;
+    return item.path === "/" || canViewPath(item.path);
+  };
 
   return TOP_SECTIONS
     .map((section) => {
+      if (!canAccessBySection(section)) return null;
+      if (!canAccessByPathPerms(section)) return null;
       if (allowedKeys && !allowedKeys.includes(section.key)) {
         return null;
       }
 
       const sectionDisabled = disabledSubPages?.get(section.key);
-      const secondary = section.secondary.filter((item) => {
-        if (sectionDisabled && sectionDisabled.has(item.path)) return false;
-        return item.path === "/" || canViewPath(item.path);
-      });
+      const secondary = section.secondary.filter((item) => filterSecondaryItem(item, sectionDisabled));
+      const secondaryGroups = section.secondaryGroups
+        ?.map((group) => ({ ...group, items: group.items.filter((item) => filterSecondaryItem(item, sectionDisabled)) }))
+        .filter((group) => group.items.length > 0);
       const firstVisiblePath = secondary[0]?.path || section.path;
 
       if (section.key === "HOME") {
-        return { ...section, path: firstVisiblePath, secondary };
+        return { ...section, path: firstVisiblePath, secondary, secondaryGroups };
       }
 
       const sectionRootDisabled = sectionDisabled && sectionDisabled.has(section.path);
@@ -382,6 +457,7 @@ export function buildVisibleTopSections(options: {
         ...section,
         path: canSeeSectionRoot ? section.path : firstVisiblePath,
         secondary,
+        secondaryGroups,
       };
     })
     .filter(Boolean) as TopSection[];

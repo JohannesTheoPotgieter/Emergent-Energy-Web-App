@@ -5,6 +5,7 @@ import {
   linkIsActive,
   parseDisabledSubPages,
   TOP_SECTIONS,
+  DISPLAY_TOP_NAV,
   validateDisabledSubPages,
 } from "../../../client/src/config/app-navigation";
 
@@ -81,5 +82,44 @@ describe("app navigation helpers", () => {
     const parsed = parseDisabledSubPages(entries);
     expect(Array.from(parsed.get("FINANCE") ?? [])).toEqual(["/cashflow", "/"]);
     expect(parsed.has("HOME")).toBe(false);
+  });
+
+  it("supports requiredAnySectionKeys + requiredPathPermissions for composite display nav", () => {
+    const sections = buildVisibleTopSections({
+      allowedSectionKeys: ["HOME", "PROJECT_DELIVERY", "QUALITY"],
+      canViewPath: (path) => path !== "/gates",
+    });
+
+    expect(sections.some((s) => s.key === "PROJECT_DELIVERY")).toBe(true);
+
+    const allowed = new Set(["HOME", "PROJECT_DELIVERY", "QUALITY"]);
+    const visibleComposite = DISPLAY_TOP_NAV.filter((item) => {
+      if (item.requiredSectionKey && !allowed.has(item.requiredSectionKey)) return false;
+      if (item.requiredAnySectionKeys && !item.requiredAnySectionKeys.some((key) => allowed.has(key))) return false;
+      if (item.requiredPathPermissions && !item.requiredPathPermissions.every((path) => path !== "/gates")) return false;
+      return true;
+    });
+
+    expect(visibleComposite.map((x) => x.label)).toContain("Projects");
+    expect(visibleComposite.map((x) => x.label)).toContain("Departments");
+    expect(visibleComposite.map((x) => x.label)).not.toContain("Gates");
+  });
+
+  it("supports grouped secondary items while keeping flat secondary compatibility", () => {
+    const priorities = TOP_SECTIONS.find((section) => section.key === "PRIORITIES");
+    expect(priorities?.secondary).toEqual([]);
+    expect(priorities?.secondaryGroups?.length).toBeGreaterThan(0);
+
+    const sections = buildVisibleTopSections({
+      allowedSectionKeys: ["HOME", "PRIORITIES"],
+      canViewPath: () => true,
+    });
+
+    const visiblePriorities = sections.find((section) => section.key === "PRIORITIES");
+    expect(visiblePriorities?.secondary).toEqual([]);
+    expect(visiblePriorities?.secondaryGroups?.[0]?.items.map((i) => i.path)).toEqual([
+      "/priorities?tab=department",
+      "/priorities?tab=company",
+    ]);
   });
 });
