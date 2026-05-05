@@ -217,6 +217,7 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
   const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [activeChip, setActiveChip] = useState<string | null>(null);
+  const [warningsHighOnly, setWarningsHighOnly] = useState(false);
   const [showRiskQuestions, setShowRiskQuestions] = useState(false);
   const [linkingItemId, setLinkingItemId] = useState<number | null>(null);
   const [linkingPhaseId, setLinkingPhaseId] = useState<number | null>(null);
@@ -752,6 +753,7 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
 
   const { phases = [], groups = [], templateItems = [], itemInstances = [], riskQuestions = [], riskAnswers = [], evidence = [] } = checklistData;
   const activeWarnings = Array.isArray(warnings) ? warnings.filter((w: any) => w.status !== "resolved") : [];
+  const highSeverityWarnings = activeWarnings.filter((w: any) => String(w.severity || "").toLowerCase() === "high");
   const governanceCounts = workspaceData?.counts || {
     overdue: 0,
     resubmissionNeeded: 0,
@@ -1058,6 +1060,15 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
           blockers: workspaceData.handover.blockers || [],
           rejectionReason: workspaceData.handover.rejectionReason,
         } : null}
+        highSeverityWarningCount={highSeverityWarnings.length}
+        onSelectFilter={(filter) => {
+          if (filter === "high_warnings") {
+            setWarningsHighOnly(true);
+            return;
+          }
+          setWarningsHighOnly(false);
+          setStatusFilter(filter);
+        }}
       />
 
       {(governanceFocusItems.length > 0 || relevantMicrosoftItems.length > 0) && (
@@ -1152,7 +1163,7 @@ export function QualityTab({ projectName, projectInfoId, initialStatusFilter, ch
         </div>
       )}
 
-      <QualityWarningsPanel warnings={activeWarnings} />
+      <QualityWarningsPanel warnings={activeWarnings} highOnly={warningsHighOnly} onClearHighOnly={() => setWarningsHighOnly(false)} />
 
       <div className="bg-card rounded-lg border" data-testid="phase-tabs">
         <div className="flex items-stretch overflow-x-auto">
