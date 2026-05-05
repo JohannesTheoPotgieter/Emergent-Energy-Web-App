@@ -150,4 +150,13 @@ describe("quality component decomposition", () => {
     expect(qualityTab).toContain("btn-send-for-approval-");
     expect(qualityTab).toContain("Link Task");
   });
+
+  it("keeps evidence-required approval blocking in place for single and bulk submit", () => {
+    const qualityTab = read("client/src/components/tabs/QualityTab.tsx");
+
+    expect(qualityTab).toContain("Evidence is required before this item can be submitted for review.");
+    expect(qualityTab).toContain("disabled={governance.evidenceMissing}");
+    expect(qualityTab).toContain("data-testid=\"bulk-blocked-reasons\"");
+    expect(qualityTab).toContain("Required evidence missing");
+  });
 });
