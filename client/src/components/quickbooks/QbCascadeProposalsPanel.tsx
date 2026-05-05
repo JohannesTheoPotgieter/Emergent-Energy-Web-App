@@ -65,6 +65,8 @@ const PROPOSAL_TYPE_LABEL: Record<string, string> = {
   name_alias: "Counterparty alias",
   recon_ignore_clear: "Clear recon-ignore",
   cost_category: "Cost category",
+  pattern_rule_create: "Learn invoice-number pattern",
+  description_pattern_create: "Learn memo fingerprint",
 };
 
 function formatProposalType(type: string): string {

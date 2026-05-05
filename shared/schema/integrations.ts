@@ -634,6 +634,15 @@ export const QB_PROPOSAL_TYPES = [
   "name_alias",
   "recon_ignore_clear",
   "cost_category",
+  /** Phase 2 — learn an invoice-number pattern (PREFIX / TOKEN_SHAPE) for the
+   *  cost line's counterparty. The proposal carries patternType +
+   *  patternValue in fieldName/qbValue so the apply step can write
+   *  `invoice_pattern_rules` directly without re-deriving. */
+  "pattern_rule_create",
+  /** Phase 2 — learn a description-token fingerprint for the counterparty.
+   *  qbValue holds the JSON-encoded token set that will be written to
+   *  `invoice_description_patterns.token_set`. */
+  "description_pattern_create",
 ] as const;
 export type QbProposalType = (typeof QB_PROPOSAL_TYPES)[number];
 

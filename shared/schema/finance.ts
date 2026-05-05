@@ -853,6 +853,68 @@ export const insertInvoicePatternMatchSchema = createInsertSchema(invoicePattern
 export type InsertInvoicePatternMatch = z.infer<typeof insertInvoicePatternMatchSchema>;
 export type InvoicePatternMatch = typeof invoicePatternMatches.$inferSelect;
 
+// ===================== INVOICE DESCRIPTION PATTERNS =====================
+
+/**
+ * Per-counterparty memo / description fingerprint.
+ *
+ * Companion to `invoice_pattern_rules` (which fingerprints the invoice
+ * NUMBER) — this table stores the canonical token set extracted from a
+ * counterparty's bills' descriptions / QuickBooks PrivateNote / app
+ * cost-line description. When a future QuickBooks bill arrives with a
+ * memo whose token set has Jaccard similarity ≥ 0.6 against any active
+ * row for the cost line's counterparty, the matcher boosts the candidate
+ * by +12 confidence and surfaces "learned pattern" in the reasons list.
+ *
+ * Patterns are seeded one at a time from approved QB ↔ app links — never
+ * silently. Each new fingerprint is emitted as a `description_pattern_create`
+ * cascade proposal that the reviewer Accepts before the row is written.
+ *
+ * Counter semantics:
+ *   - timesMatched   : the matcher used this rule to boost a candidate
+ *   - timesConfirmed : the boosted candidate was approved (auto-increment)
+ *   - timesOverridden: the boosted candidate was rejected (decay signal)
+ *
+ * The matcher decays a rule's effective weight when timesOverridden / total
+ * ≥ 0.3 — see `server/services/quickbooks-invoice-match-service.ts`.
+ */
+export const invoiceDescriptionPatterns = pgTable("invoice_description_patterns", {
+  id: serial("id").primaryKey(),
+  counterpartyId: integer("counterparty_id").notNull().references(() => counterparties.id, { onDelete: "cascade" }),
+  /** Snapshot of the counterparty name at pattern-write time (audit). */
+  counterpartyName: text("counterparty_name"),
+  /** Sorted, lower-cased, stop-word-filtered token list. JSONB array of strings. */
+  tokenSet: jsonb("token_set").notNull(),
+  /** Original memo / description used to seed the pattern (audit + UI display). */
+  normalizedExample: text("normalized_example"),
+  /** 0–100 baseline weight; learner may decay this via override ratio. */
+  confidenceWeight: integer("confidence_weight").notNull().default(50),
+  timesMatched: integer("times_matched").notNull().default(0),
+  timesConfirmed: integer("times_confirmed").notNull().default(0),
+  timesOverridden: integer("times_overridden").notNull().default(0),
+  lastConfirmedAt: timestamp("last_confirmed_at"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
+}, (table) => ({
+  counterpartyIdx: index("invoice_description_patterns_counterparty_idx").on(table.counterpartyId),
+  activeIdx: index("invoice_description_patterns_active_idx")
+    .on(table.counterpartyId, table.isActive)
+    .where(sql`${table.deletedAt} IS NULL`),
+}));
+export const insertInvoiceDescriptionPatternSchema = createInsertSchema(invoiceDescriptionPatterns).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  timesMatched: true,
+  timesConfirmed: true,
+  timesOverridden: true,
+} as any);
+export type InsertInvoiceDescriptionPattern = z.infer<typeof insertInvoiceDescriptionPatternSchema>;
+export type InvoiceDescriptionPattern = typeof invoiceDescriptionPatterns.$inferSelect;
+
 // ===================== OVERRIDE GOVERNANCE =====================
 
 export const OVERRIDE_CATEGORIES = [

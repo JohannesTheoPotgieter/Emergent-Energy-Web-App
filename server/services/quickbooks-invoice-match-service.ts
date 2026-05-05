@@ -54,6 +54,24 @@ export interface QbCandidateLike {
   qbPaymentStatus: string | null; // 'paid' | 'partial' | 'unpaid' | null
   /** QB doc memo / PrivateNote — shown in the proof drawer for context. */
   qbDescription: string | null;
+  /**
+   * Phase 2 — learned-pattern hits precomputed by the route layer.
+   * Each entry references an active `invoice_pattern_rules` /
+   * `invoice_description_patterns` row that matched this candidate against
+   * the app row's counterparty. Triggers a tier-2.5 +12 confidence boost
+   * and is surfaced in the audit trail so timesConfirmed / timesOverridden
+   * counters can be updated when the user approves / declines.
+   */
+  learnedPatternMatches?: LearnedPatternMatch[];
+}
+
+export interface LearnedPatternMatch {
+  source: "invoice_number" | "description";
+  ruleId: number;
+  /** Token-set Jaccard for description rules; 1.0 for exact invoice-number prefix. */
+  similarity: number;
+  /** Display label surfaced in the candidate reasons list. */
+  label: string;
 }
 
 export interface ScoredCandidate {
@@ -73,6 +91,10 @@ export interface ScoredCandidate {
   confidence: number; // 0–100
   reasons: string[];
   warnings: string[]; // per-candidate flags surfaced in the UI
+  /** Phase 2 — pattern rules that boosted this candidate. Persisted on the
+   *  suggestion so timesConfirmed / timesOverridden can be updated when the
+   *  user approves / declines. */
+  learnedPatternMatches?: LearnedPatternMatch[];
 }
 
 export interface InvoiceMatchWarnings {
@@ -229,8 +251,36 @@ export function scoreInvoiceMatch(
     reasons.push(`vendor ${Math.round(sim * 100)}% match`);
     if (!amountFuzzy) warnings.push("amount_mismatch");
     if (sim < NAME_SIM_FLOOR) warnings.push("vendor_mismatch");
+  }
+  // Tier 6.5 — learned-pattern match with zero other signal. Common when a
+  // vendor's QB record carries a different name than the app counterparty
+  // but the memo / invoice-prefix matches a fingerprint we've already
+  // approved. Surfaces as a low-confidence candidate with the learned
+  // reason — the reviewer still has the call.
+  else if ((qb.learnedPatternMatches ?? []).length > 0) {
+    confidence = 40;
+    reasons.push("learned pattern match (no other signal)");
+    if (!amountFuzzy) warnings.push("amount_mismatch");
+    warnings.push("vendor_mismatch");
   } else {
     return null;
+  }
+
+  // Tier-2.5 — learned-pattern boost. When the route precomputed pattern
+  // matches against active `invoice_pattern_rules` /
+  // `invoice_description_patterns` rows for the app row's counterparty,
+  // each match adds +6 confidence (capped at +12 for two or more matches)
+  // and surfaces a "learned pattern" reason. This is what makes the
+  // matcher get smarter as finance approves more bills from the same
+  // vendor — it's the "auto-suggest similar invoices for approval" loop
+  // the user explicitly asked for.
+  const learnedMatches = qb.learnedPatternMatches ?? [];
+  if (learnedMatches.length > 0) {
+    const boost = Math.min(12, learnedMatches.length * 6);
+    confidence = Math.min(100, confidence + boost);
+    for (const m of learnedMatches) {
+      reasons.push(`learned: ${m.label}`);
+    }
   }
 
   // Date warnings — surface date mismatches so the reviewer is aware
@@ -267,6 +317,7 @@ export function scoreInvoiceMatch(
     confidence,
     reasons,
     warnings,
+    learnedPatternMatches: learnedMatches.length > 0 ? learnedMatches : undefined,
   };
 }
 

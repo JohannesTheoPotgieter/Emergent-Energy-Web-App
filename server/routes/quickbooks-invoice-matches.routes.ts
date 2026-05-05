@@ -51,6 +51,8 @@ import {
   logApiError,
 } from "../lib/api-error";
 import {
+  invoiceDescriptionPatterns,
+  invoicePatternRules,
   normalizedCostLines,
   normalizedRevenueLines,
   quickbooksDocuments,
@@ -62,6 +64,7 @@ import {
   appSideWarnings,
   type AppInvoiceLike,
   type QbCandidateLike,
+  type LearnedPatternMatch,
   type ScoredCandidate,
 } from "../services/quickbooks-invoice-match-service";
 import {
@@ -501,6 +504,199 @@ async function findQbIdsAlreadyLinked(
   return new Set((rows as Array<{ qbEntityId: string }>).map((r) => r.qbEntityId));
 }
 
+/**
+ * Phase 2 — load active per-counterparty pattern rules and check each QB
+ * candidate's invoice number / memo against them. Returns a `Map<qbEntityId,
+ * LearnedPatternMatch[]>` so the scorer can lift candidates that match a
+ * known fingerprint into a higher tier ("learned: PREFIX SOL-" etc.).
+ *
+ * Cheap on the hot path — one query for the invoice-number rules, one for
+ * the description token rules. Both indexed on counterpartyId.
+ */
+async function loadLearnedMatchesForCounterparty(
+  counterpartyId: number | null | undefined,
+  candidates: QbCandidateLike[],
+): Promise<Map<string, LearnedPatternMatch[]>> {
+  const out = new Map<string, LearnedPatternMatch[]>();
+  if (!counterpartyId || candidates.length === 0) return out;
+
+  const [numberRules, descriptionRules] = await Promise.all([
+    db
+      .select({
+        id: invoicePatternRules.id,
+        patternType: invoicePatternRules.patternType,
+        patternValue: invoicePatternRules.patternValue,
+        confidenceWeight: invoicePatternRules.confidenceWeight,
+      })
+      .from(invoicePatternRules)
+      .where(
+        and(
+          eq(invoicePatternRules.counterpartyId, counterpartyId),
+          eq(invoicePatternRules.isActive, true),
+          isNull(invoicePatternRules.deletedAt),
+        ),
+      ),
+    db
+      .select({
+        id: invoiceDescriptionPatterns.id,
+        tokenSet: invoiceDescriptionPatterns.tokenSet,
+        confidenceWeight: invoiceDescriptionPatterns.confidenceWeight,
+      })
+      .from(invoiceDescriptionPatterns)
+      .where(
+        and(
+          eq(invoiceDescriptionPatterns.counterpartyId, counterpartyId),
+          eq(invoiceDescriptionPatterns.isActive, true),
+          isNull(invoiceDescriptionPatterns.deletedAt),
+        ),
+      ),
+  ]);
+
+  if (numberRules.length === 0 && descriptionRules.length === 0) return out;
+
+  const normNum = (s: string | null | undefined) =>
+    (s ?? "").replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
+  const tokensFor = (s: string | null | undefined) => {
+    if (!s) return new Set<string>();
+    return new Set(
+      s
+        .replace(/[^a-zA-Z0-9 ]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase()
+        .split(" ")
+        .filter((t) => t.length >= 3),
+    );
+  };
+  const jaccard = (a: Set<string>, b: Set<string>) => {
+    if (a.size === 0 || b.size === 0) return 0;
+    let inter = 0;
+    for (const t of a) if (b.has(t)) inter++;
+    const union = a.size + b.size - inter;
+    return union === 0 ? 0 : inter / union;
+  };
+
+  for (const c of candidates) {
+    const matches: LearnedPatternMatch[] = [];
+
+    // Invoice-number rules
+    const docNum = normNum(c.qbDocNumber);
+    for (const rule of numberRules) {
+      if (!docNum) break;
+      const ruleNum = normNum(rule.patternValue);
+      if (rule.patternType === "PREFIX" && ruleNum && docNum.startsWith(ruleNum)) {
+        matches.push({
+          source: "invoice_number",
+          ruleId: rule.id,
+          similarity: 1,
+          label: `${rule.patternType} ${rule.patternValue}`,
+        });
+        break; // one invoice-number match is enough — avoid double-counting
+      }
+      if (rule.patternType === "REGEX") {
+        try {
+          if (new RegExp(rule.patternValue, "i").test(c.qbDocNumber ?? "")) {
+            matches.push({
+              source: "invoice_number",
+              ruleId: rule.id,
+              similarity: 1,
+              label: `regex /${rule.patternValue}/`,
+            });
+            break;
+          }
+        } catch {
+          /* malformed regex — skip */
+        }
+      }
+    }
+
+    // Description-token rules
+    const candTokens = tokensFor(c.qbDescription);
+    if (candTokens.size > 0) {
+      for (const rule of descriptionRules) {
+        const ruleTokens = new Set(
+          (Array.isArray(rule.tokenSet) ? (rule.tokenSet as string[]) : []) as string[],
+        );
+        const sim = jaccard(candTokens, ruleTokens);
+        if (sim >= 0.6) {
+          matches.push({
+            source: "description",
+            ruleId: rule.id,
+            similarity: sim,
+            label: `memo ${Math.round(sim * 100)}% match`,
+          });
+          break; // one description match is enough
+        }
+      }
+    }
+
+    if (matches.length > 0) out.set(c.qbEntityId, matches);
+  }
+
+  return out;
+}
+
+/**
+ * Phase 2 — bump per-rule counters when a learned-pattern-boosted candidate
+ * is approved or rejected. Splits the matches by source so the right table
+ * is updated. Idempotent on re-run within a single approve.
+ */
+async function bumpLearnedPatternCounters(
+  matches: LearnedPatternMatch[] | undefined,
+  outcome: "approved" | "rejected",
+): Promise<void> {
+  if (!matches || matches.length === 0) return;
+  const numberRuleIds = matches
+    .filter((m) => m.source === "invoice_number")
+    .map((m) => m.ruleId);
+  const descriptionRuleIds = matches
+    .filter((m) => m.source === "description")
+    .map((m) => m.ruleId);
+
+  if (numberRuleIds.length > 0) {
+    if (outcome === "approved") {
+      await db
+        .update(invoicePatternRules)
+        .set({
+          timesConfirmed: sql`${invoicePatternRules.timesConfirmed} + 1`,
+          timesMatched: sql`${invoicePatternRules.timesMatched} + 1`,
+          lastConfirmedAt: new Date(),
+        })
+        .where(inArray(invoicePatternRules.id, numberRuleIds));
+    } else {
+      await db
+        .update(invoicePatternRules)
+        .set({
+          timesOverridden: sql`${invoicePatternRules.timesOverridden} + 1`,
+          timesMatched: sql`${invoicePatternRules.timesMatched} + 1`,
+        })
+        .where(inArray(invoicePatternRules.id, numberRuleIds));
+    }
+  }
+  if (descriptionRuleIds.length > 0) {
+    if (outcome === "approved") {
+      await db
+        .update(invoiceDescriptionPatterns)
+        .set({
+          timesConfirmed: sql`${invoiceDescriptionPatterns.timesConfirmed} + 1`,
+          timesMatched: sql`${invoiceDescriptionPatterns.timesMatched} + 1`,
+          lastConfirmedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(inArray(invoiceDescriptionPatterns.id, descriptionRuleIds));
+    } else {
+      await db
+        .update(invoiceDescriptionPatterns)
+        .set({
+          timesOverridden: sql`${invoiceDescriptionPatterns.timesOverridden} + 1`,
+          timesMatched: sql`${invoiceDescriptionPatterns.timesMatched} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(inArray(invoiceDescriptionPatterns.id, descriptionRuleIds));
+    }
+  }
+}
+
 function billsToCandidates(
   rawBills: unknown,
 ): QbCandidateLike[] {
@@ -642,6 +838,37 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
         } else {
           const invoicesRaw = await getInvoices();
           candidates = invoicesToCandidates(invoicesRaw);
+        }
+
+        // 2b. Phase 2 — annotate candidates with learned-pattern matches for
+        //     the app row's counterparty so tier-2.5 fires in the scorer.
+        //     Cost-line scope only — revenue lines don't carry a
+        //     counterpartyId on the row itself.
+        if (body.scope === "cost") {
+          const [cpRow] = await db
+            .select({ counterpartyId: normalizedCostLines.counterpartyId })
+            .from(normalizedCostLines)
+            .where(
+              and(
+                eq(normalizedCostLines.id, app.id),
+                isNull(normalizedCostLines.effectiveTo),
+                isNull(normalizedCostLines.deletedAt),
+              ),
+            )
+            .limit(1);
+          if (cpRow?.counterpartyId) {
+            const learned = await loadLearnedMatchesForCounterparty(
+              cpRow.counterpartyId,
+              candidates,
+            );
+            if (learned.size > 0) {
+              candidates = candidates.map((c) =>
+                learned.has(c.qbEntityId)
+                  ? { ...c, learnedPatternMatches: learned.get(c.qbEntityId) }
+                  : c,
+              );
+            }
+          }
         }
 
         // 3. Score
@@ -1017,6 +1244,15 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
           if (projectId) {
             refreshProjectMetricsAsync(projectId);
           }
+
+          // Phase 2 — bump learned-pattern rule counters when the chosen
+          // candidate was lifted by a per-counterparty fingerprint. Approval
+          // = positive feedback (timesConfirmed++), so future bills matching
+          // the same shape get progressively stronger boosts.
+          await bumpLearnedPatternCounters(
+            (chosen as ScoredCandidate).learnedPatternMatches,
+            "approved",
+          );
 
           logAuditFromReq(req, {
             entityType: "qb_invoice_match_suggestion",
@@ -1522,6 +1758,17 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
           })
           .where(eq(quickbooksMatchSuggestions.id, suggestionId));
 
+        // Phase 2 — decay any rules that contributed to this suggestion's
+        // top-ranked candidate. Reject = timesOverridden++ across all
+        // matched rules; if the override ratio crosses 30% the matcher
+        // will eventually stop boosting the same shape.
+        const candidatesInSuggestion =
+          (suggestion.candidates as unknown as ScoredCandidate[]) ?? [];
+        const top = candidatesInSuggestion[0];
+        if (top) {
+          await bumpLearnedPatternCounters(top.learnedPatternMatches, "rejected");
+        }
+
         logAuditFromReq(req, {
           entityType: "qb_invoice_match_suggestion",
           entityId: String(suggestionId),
@@ -2019,6 +2266,11 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
               if (projectId) {
                 refreshProjectMetricsAsync(projectId);
               }
+
+              await bumpLearnedPatternCounters(
+                (chosen as ScoredCandidate).learnedPatternMatches,
+                "approved",
+              );
 
               logAuditFromReq(req, {
                 entityType: "qb_invoice_match_suggestion",
