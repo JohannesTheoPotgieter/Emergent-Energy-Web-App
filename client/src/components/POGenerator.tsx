@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -9,8 +9,10 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import {
+  
   FileText, Plus, Trash2, Download, Send, Package, Loader2,
   ChevronDown, ChevronUp, Eye, Copy, ArrowUp, ArrowDown, GripVertical, ShieldCheck,
+
 } from "lucide-react";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -160,20 +162,37 @@ export function POGenerator({ projectName, projectManager }: POGeneratorProps) {
     onError: (err: any) => toast({ title: "Failed to generate PO", description: err.message, variant: "destructive" }),
   });
 
-  const statusMutation = useMutation({
-    mutationFn: async ({ poId, status }: { poId: number; status: string }) => {
-      const res = await fetch(`/api/po/${poId}/status`, {
-        method: "PATCH",
+
+  const { data: eligibleApprovers, isLoading: isLoadingApprovers, error: approversError } = useQuery<{ approvers: Array<{ id: number; name: string; role: string }> }>({
+    queryKey: ["po-eligible-approvers"],
+    queryFn: async () => {
+      const res = await fetch("/api/po/eligible-approvers", { headers: authHeaders() });
+      if (!res.ok) throw new Error("Failed to load approvers");
+      return res.json();
+    },
+    enabled: open,
+  });
+
+  const [selectedApproverByPo, setSelectedApproverByPo] = useState<Record<number, string>>({});
+
+  const submitForApprovalMutation = useMutation({
+    mutationFn: async ({ poId, assignedApproverUserId }: { poId: number; assignedApproverUserId: number }) => {
+      const res = await fetch(`/api/po/${poId}/submit`, {
+        method: "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ assignedApproverUserId }),
       });
-      if (!res.ok) throw new Error("Failed");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Failed to submit PO" }));
+        throw new Error(err.error || err.message || "Failed to submit PO");
+      }
       return res.json();
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["po-list", projectName] });
-      toast({ title: "PO status updated" });
+      toast({ title: "PO submitted for approval" });
     },
+    onError: (err: any) => toast({ title: "Failed to submit PO", description: err.message, variant: "destructive" }),
   });
 
   const submitMutation = useMutation({
@@ -297,8 +316,11 @@ export function POGenerator({ projectName, projectManager }: POGeneratorProps) {
 
   const statusColor: Record<string, string> = {
     draft: "bg-muted text-foreground",
-    sent: "bg-blue-100 text-blue-700",
+    submitted: "bg-blue-100 text-blue-700",
+    in_review: "bg-indigo-100 text-indigo-700",
     approved: "bg-green-100 text-green-700",
+    requires_info: "bg-amber-100 text-amber-700",
+    blocked: "bg-orange-100 text-orange-700",
     cancelled: "bg-red-100 text-red-700",
   };
 
@@ -323,6 +345,8 @@ export function POGenerator({ projectName, projectManager }: POGeneratorProps) {
 
         {!showForm && (
           <div className="space-y-4">
+            {isLoadingApprovers && <div className="text-xs text-muted-foreground flex items-center gap-2"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading approver options…</div>}
+            {approversError && <div className="text-xs text-red-600 flex items-center gap-2"><AlertCircle className="h-3.5 w-3.5" /> Failed to load approver options.</div>}
             <div className="flex justify-between items-center">
               <p className="text-sm text-muted-foreground">
                 {poList.length} purchase order{poList.length !== 1 ? "s" : ""}
@@ -369,7 +393,11 @@ export function POGenerator({ projectName, projectManager }: POGeneratorProps) {
                     </div>
                     {expandedPo === po.id && (
                       <div className="px-4 pb-3 pt-1 border-t space-y-3">
-                        <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-muted-foreground">
+                          <div>Project: {po.project_name || projectName}</div>
+                          <div>Linked procurement item: {po.procurement_item_id || "N/A"}</div>
+                          <div>Linked budget/cost line: {po.budget_line_id || po.cost_line_id || "N/A"}</div>
+                          <div>Approver: {po.assigned_approver_name || "Pending assignment"}</div>
                           <div>Supplier VAT: {po.supplier_vat || "N/A"}</div>
                           <div>Created: {new Date(po.created_at).toLocaleDateString()}</div>
                           <div>Address: {po.supplier_address || "N/A"}</div>
@@ -399,7 +427,12 @@ export function POGenerator({ projectName, projectManager }: POGeneratorProps) {
                             </TableBody>
                           </Table>
                         )}
-                        <div className="flex gap-2 justify-end">
+                        <div className="text-xs text-muted-foreground grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          <div>Subtotal: R {parseFloat(po.subtotal || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}</div>
+                          <div>VAT: R {parseFloat(po.vat_amount || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}</div>
+                          <div className="font-medium text-foreground">Total: R {parseFloat(po.total || 0).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}</div>
+                        </div>
+                        <div className="flex gap-2 justify-end flex-wrap">
                           <Button
                             variant="outline"
                             size="sm"
@@ -410,13 +443,29 @@ export function POGenerator({ projectName, projectManager }: POGeneratorProps) {
                           </Button>
                           {(po.status === "draft" || po.status === "requires_info" || po.status === "blocked") && (
                             <>
+                              <div className="flex items-center gap-2">
+                                <Label className="text-xs">Approver</Label>
+                                <select
+                                  className="h-8 rounded-md border bg-background px-2 text-xs"
+                                  value={selectedApproverByPo[po.id] || ""}
+                                  onChange={(e) => setSelectedApproverByPo((prev) => ({ ...prev, [po.id]: e.target.value }))}
+                                  data-testid={`select-po-approver-${po.id}`}
+                                >
+                                  <option value="">Select approver</option>
+                                  {(eligibleApprovers?.approvers || []).map((approver) => (
+                                    <option key={approver.id} value={String(approver.id)}>{approver.name} ({approver.role})</option>
+                                  ))}
+                                </select>
+                              </div>
                               <Button
                                 variant="default"
                                 size="sm"
+
                                 onClick={() => { setSubmitForPoId(po.id); setSelectedApproverId(""); }}
                                 data-testid={`btn-submit-po-${po.id}`}
                               >
                                 <Send className="h-3.5 w-3.5 mr-1" /> Submit for Approval
+
                               </Button>
                               {po.status === "draft" && (
                                 <Button
@@ -430,11 +479,13 @@ export function POGenerator({ projectName, projectManager }: POGeneratorProps) {
                               )}
                             </>
                           )}
+
                           {(po.status === "submitted" || po.status === "in_review") && (
                             <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200" data-testid={`badge-po-awaiting-review-${po.id}`}>
                               <ShieldCheck className="h-3 w-3 mr-1" /> Awaiting review on PO Approval Board
                             </Badge>
                           )}
+
                         </div>
                       </div>
                     )}
@@ -723,7 +774,7 @@ export function POGenerator({ projectName, projectManager }: POGeneratorProps) {
                 ) : (
                   <FileText className="h-4 w-4 mr-1" />
                 )}
-                Generate PO & Download PDF
+                Save Draft, Generate & Download PDF
               </Button>
             </div>
           </div>

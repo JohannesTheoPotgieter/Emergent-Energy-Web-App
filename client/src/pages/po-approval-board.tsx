@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -6,11 +6,12 @@ import { Button } from "@/components/ui/button";
 import { PageLayout } from "@/components/layout";
 import { PageHeader } from "@/components/ui/page-header";
 import {
-  FileText, CheckCircle2, XCircle, Clock, AlertTriangle, Eye, Loader2,
+  CheckCircle2, XCircle, Clock, AlertTriangle, Eye, Loader2, ChevronDown, ChevronUp, Download,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
@@ -18,412 +19,121 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 
-interface POReviewer {
-  id: number;
-  reviewerUserId: number;
-  reviewerRole: string;
-  decision: string;
-  decidedAt: string | null;
-  reviewerName: string;
-}
+interface POReviewer { id: number; reviewerUserId: number; reviewerRole: string; decision: string; decidedAt: string | null; reviewerName: string; notes?: string | null; }
+interface PurchaseOrder { id: number; po_ref: string; project_name: string; project_id: number | null; supplier_name: string; total: string; status: string; created_at: string; submitted_at: string | null; project_manager: string | null; submitted_by_name: string | null; reviewers: POReviewer[] | null; line_items?: Array<{ description?: string; qty?: number | string; pricePerUnit?: number | string }>; comments?: string | null; pdf_data?: string | null; }
+interface EligibleApprover { id: number; name: string; email: string; role: string; }
 
-interface PurchaseOrder {
-  id: number;
-  po_ref: string;
-  po_number: number;
-  project_name: string;
-  project_id: number | null;
-  supplier_name: string;
-  total: string;
-  status: string;
-  created_at: string;
-  submitted_at: string | null;
-  approved_at: string | null;
-  counterparty_name: string | null;
-  project_manager: string | null;
-  submitted_by_name: string | null;
-  reviewers: POReviewer[] | null;
-}
-
-// ── Formatting helpers ──────────────────────────────────────────────────────
+type FilterKey = "my-reviews" | "all-active" | "requires-info" | "approved" | "blocked-cancelled";
+const FILTERS: { key: FilterKey; label: string }[] = [
+  { key: "my-reviews", label: "My Reviews" },
+  { key: "all-active", label: "All Active" },
+  { key: "requires-info", label: "Requires Info" },
+  { key: "approved", label: "Approved" },
+  { key: "blocked-cancelled", label: "Blocked / Cancelled" },
+];
+const ACTIVE_STATUSES = new Set(["submitted", "in_review", "requires_info"]);
+const DELEGATE_ADMIN_ROLES = new Set(["COO_ADMIN", "CFO", "CEO_ADMIN"]);
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-
-function fmtDate(val: string | null | undefined): string {
-  if (!val) return "—";
-  const m = val.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (m) return `${Number(m[3])} ${MONTHS[Number(m[2]) - 1]} ${m[1]}`;
-  const d = new Date(val);
-  if (Number.isNaN(d.getTime())) return val;
-  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
-}
-
-function fmtZAR(val: string | number | null | undefined): string {
-  const n = Number(val ?? 0);
-  if (!Number.isFinite(n)) return "—";
-  const hasCents = Math.round(n * 100) % 100 !== 0;
-  return "R " + Math.abs(n).toLocaleString("en-ZA", {
-    minimumFractionDigits: hasCents ? 2 : 0,
-    maximumFractionDigits: hasCents ? 2 : 0,
-  });
-}
-
-// ── Status configuration ────────────────────────────────────────────────────
-
-const STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
-  draft:         { label: "Draft",          cls: "bg-slate-100 text-slate-600 border-slate-200" },
-  submitted:     { label: "Submitted",      cls: "bg-sky-100 text-sky-700 border-sky-200" },
-  in_review:     { label: "In Review",      cls: "bg-amber-100 text-amber-700 border-amber-200" },
-  requires_info: { label: "Requires Info",  cls: "bg-orange-100 text-orange-700 border-orange-200" },
-  blocked:       { label: "Blocked",        cls: "bg-rose-100 text-rose-700 border-rose-200" },
-  approved:      { label: "Approved",       cls: "bg-emerald-100 text-emerald-700 border-emerald-200" },
-  cancelled:     { label: "Cancelled",      cls: "bg-slate-100 text-slate-500 border-slate-200" },
-};
+const fmtDate = (v?: string | null) => !v ? "—" : `${new Date(v).getUTCDate()} ${MONTHS[new Date(v).getUTCMonth()]} ${new Date(v).getUTCFullYear()}`;
+const fmtZAR = (v?: string | number | null) => Number(v || 0).toLocaleString("en-ZA", { style: "currency", currency: "ZAR", minimumFractionDigits: 0, maximumFractionDigits: 2 });
+const ageDays = (createdAt: string) => Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 86400000));
 
 function StatusBadge({ status }: { status: string }) {
-  const cfg = STATUS_CONFIG[status] ?? { label: status, cls: "bg-slate-100 text-slate-700 border-slate-200" };
-  return <Badge variant="outline" className={`${cfg.cls} text-xs whitespace-nowrap`}>{cfg.label}</Badge>;
+  const map: Record<string, string> = { draft: "bg-slate-100", submitted: "bg-sky-100", in_review: "bg-amber-100", requires_info: "bg-orange-100", blocked: "bg-rose-100", approved: "bg-emerald-100", cancelled: "bg-slate-100" };
+  return <Badge variant="outline" className={`${map[status] || "bg-slate-100"} text-xs`}>{status.replace("_", " ")}</Badge>;
 }
 
-// ── Reviewer decision badges ────────────────────────────────────────────────
-
-function ReviewerBadges({ reviewers }: { reviewers: POReviewer[] | null }) {
-  if (!reviewers?.length) return null;
-  return (
-    <div className="flex gap-1 flex-wrap">
-      {reviewers.map((r) => (
-        <Badge
-          key={r.id}
-          variant="outline"
-          className={`text-[10px] gap-1 ${
-            r.decision === "approved"      ? "border-emerald-300 text-emerald-700 bg-emerald-50" :
-            r.decision === "blocked"       ? "border-rose-300 text-rose-700 bg-rose-50" :
-            r.decision === "requires_info" ? "border-orange-300 text-orange-700 bg-orange-50" :
-                                             "border-slate-200 text-slate-500"
-          }`}
-        >
-          {r.decision === "approved"      ? <CheckCircle2 className="h-2.5 w-2.5" /> :
-           r.decision === "blocked"       ? <XCircle className="h-2.5 w-2.5" /> :
-           r.decision === "requires_info" ? <AlertTriangle className="h-2.5 w-2.5" /> :
-                                            <Clock className="h-2.5 w-2.5" />}
-          {r.reviewerName || r.reviewerRole}
-        </Badge>
-      ))}
-    </div>
-  );
+function ReviewerHistory({ reviewers }: { reviewers: POReviewer[] | null }) {
+  if (!reviewers?.length) return <p className="text-xs text-muted-foreground">No reviewer history yet.</p>;
+  return <div className="space-y-1">{reviewers.map((r) => <div key={r.id} className="text-xs"><span className="font-medium">{r.reviewerName || r.reviewerRole}</span>: {r.decision}{r.decidedAt ? ` · ${fmtDate(r.decidedAt)}` : ""}{r.notes ? ` · ${r.notes}` : ""}</div>)}</div>;
 }
 
-// ── Filter tabs ─────────────────────────────────────────────────────────────
-
-type FilterKey = "all" | "active" | "my-reviews" | "approved" | "archived";
-
-const FILTERS: { key: FilterKey; label: string }[] = [
-  { key: "all",        label: "All" },
-  { key: "active",     label: "Active" },
-  { key: "my-reviews", label: "My Reviews" },
-  { key: "approved",   label: "Approved" },
-  { key: "archived",   label: "Archived" },
-];
-
-const ACTIVE_STATUSES = new Set(["draft", "submitted", "in_review", "requires_info", "blocked"]);
-
-// ── Review dialog ───────────────────────────────────────────────────────────
-
-function ReviewDialog({
-  po,
-  open,
-  onClose,
-  onDone,
-}: {
-  po: PurchaseOrder;
-  open: boolean;
-  onClose: () => void;
-  onDone: () => void;
-}) {
-  const { toast } = useToast();
-  const [notes, setNotes] = useState("");
-
-  const reviewMut = useMutation({
-    mutationFn: async (decision: string) => {
-      const res = await apiRequest("POST", `/api/po/${po.id}/review`, { decision, notes });
-      if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Failed"); }
-      return res.json();
-    },
-    onSuccess: (data) => {
-      toast({ title: `PO ${data.decision}` });
-      setNotes("");
-      onClose();
-      onDone();
-    },
-    onError: (e: Error) => toast({ title: "Review failed", description: e.message, variant: "destructive" }),
-  });
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Review {po.po_ref}</DialogTitle>
-          <DialogDescription>
-            <span className="font-medium">{po.counterparty_name || po.supplier_name}</span>
-            {" — "}
-            <span className="font-semibold font-mono">{fmtZAR(po.total)}</span>
-            {" ex-VAT · "}
-            {po.project_name}
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3 py-1">
-          <Textarea
-            placeholder="Notes (optional — required when requesting info or blocking)"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={3}
-          />
-          {po.reviewers && po.reviewers.length > 0 && (
-            <div className="space-y-1.5">
-              <p className="text-xs text-muted-foreground font-medium">Reviewer decisions so far</p>
-              <ReviewerBadges reviewers={po.reviewers} />
-            </div>
-          )}
-        </div>
-        <DialogFooter className="gap-2 flex-wrap">
-          <Button
-            variant="outline"
-            onClick={() => reviewMut.mutate("requires_info")}
-            disabled={reviewMut.isPending}
-            className="text-orange-700 border-orange-300 hover:bg-orange-50"
-          >
-            Request Info
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => reviewMut.mutate("blocked")}
-            disabled={reviewMut.isPending}
-            className="text-rose-700 border-rose-300 hover:bg-rose-50"
-          >
-            Block
-          </Button>
-          <Button onClick={() => reviewMut.mutate("approved")} disabled={reviewMut.isPending}>
-            {reviewMut.isPending && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
-            <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" /> Approve
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ── PO row ──────────────────────────────────────────────────────────────────
-
-function PORow({
-  po,
-  onRefresh,
-}: {
-  po: PurchaseOrder;
-  onRefresh: () => void;
-}) {
+function RowActions({ po, onRefresh, eligibleApprovers, canDelegate }: { po: PurchaseOrder; onRefresh: () => void; eligibleApprovers: EligibleApprover[]; canDelegate: boolean; }) {
   const { toast } = useToast();
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [delegateOpen, setDelegateOpen] = useState(false);
+  const [notes, setNotes] = useState("");
+  const [toUserId, setToUserId] = useState("");
 
-  const submitMut = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", `/api/po/${po.id}/submit`);
-      if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Failed"); }
+  const actMut = useMutation({
+    mutationFn: async (decision: string) => {
+      const res = await apiRequest("POST", `/api/po/${po.id}/review`, { decision, notes });
+      if (!res.ok) throw new Error((await res.json()).error || "Action failed");
       return res.json();
     },
-    onSuccess: () => { toast({ title: "PO submitted for review" }); onRefresh(); },
-    onError: (e: Error) => toast({ title: "Submit failed", description: e.message, variant: "destructive" }),
+    onSuccess: () => { toast({ title: "Decision submitted" }); setReviewOpen(false); setNotes(""); onRefresh(); },
+    onError: (e: Error) => toast({ title: "Decision failed", description: e.message, variant: "destructive" }),
   });
 
-  return (
-    <>
-      <TableRow data-testid={`row-po-${po.id}`} className="align-top">
-        <TableCell className="font-medium font-mono text-sm">{po.po_ref}</TableCell>
-        <TableCell>
-          <div className="text-sm font-medium">{po.project_name}</div>
-          {po.project_manager && (
-            <div className="text-xs text-muted-foreground">PM: {po.project_manager}</div>
-          )}
-        </TableCell>
-        <TableCell>
-          <div className="text-sm">{po.counterparty_name || po.supplier_name}</div>
-          {po.submitted_by_name && (
-            <div className="text-xs text-muted-foreground">Submitted by: {po.submitted_by_name}</div>
-          )}
-        </TableCell>
-        <TableCell className="text-right font-semibold font-mono tabular-nums">
-          {fmtZAR(po.total)}
-        </TableCell>
-        <TableCell>
-          <StatusBadge status={po.status} />
-        </TableCell>
-        <TableCell className="text-sm text-muted-foreground">
-          {fmtDate(po.submitted_at || po.created_at)}
-        </TableCell>
-        <TableCell>
-          <div className="space-y-1.5">
-            <ReviewerBadges reviewers={po.reviewers} />
-            <div className="flex gap-1.5">
-              {po.status === "draft" && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-xs"
-                  onClick={() => submitMut.mutate()}
-                  disabled={submitMut.isPending}
-                  data-testid={`btn-submit-po-${po.id}`}
-                >
-                  {submitMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Submit"}
-                </Button>
-              )}
-              {(po.status === "submitted" || po.status === "in_review") && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-xs"
-                  onClick={() => setReviewOpen(true)}
-                  data-testid={`btn-review-po-${po.id}`}
-                >
-                  <Eye className="h-3 w-3 mr-1" /> Review
-                </Button>
-              )}
-            </div>
-          </div>
-        </TableCell>
-      </TableRow>
+  const delegateMut = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/po/${po.id}/delegate`, { toUserId: Number(toUserId), reason: notes || null });
+      if (!res.ok) throw new Error((await res.json()).error || "Delegation failed");
+      return res.json();
+    },
+    onSuccess: () => { toast({ title: "Delegated" }); setDelegateOpen(false); setToUserId(""); onRefresh(); },
+    onError: (e: Error) => toast({ title: "Delegation failed", description: e.message, variant: "destructive" }),
+  });
 
-      <ReviewDialog
-        po={po}
-        open={reviewOpen}
-        onClose={() => setReviewOpen(false)}
-        onDone={onRefresh}
-      />
-    </>
-  );
+  return <>
+    <div className="flex gap-1.5 flex-wrap">
+      {(po.status === "submitted" || po.status === "in_review") && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setReviewOpen(true)}><Eye className="h-3 w-3 mr-1" />Review</Button>}
+      {canDelegate && (po.status === "submitted" || po.status === "in_review") && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setDelegateOpen(true)}>Delegate</Button>}
+    </div>
+
+    <Dialog open={reviewOpen} onOpenChange={setReviewOpen}><DialogContent><DialogHeader><DialogTitle>Review {po.po_ref}</DialogTitle><DialogDescription>{po.project_name} · {fmtZAR(po.total)}</DialogDescription></DialogHeader><Textarea placeholder="Decision notes" value={notes} onChange={(e) => setNotes(e.target.value)} /><DialogFooter className="gap-2 flex-wrap"><Button variant="outline" onClick={() => actMut.mutate("requires_info")}>Request Info</Button><Button variant="outline" onClick={() => actMut.mutate("blocked")}>Block</Button><Button onClick={() => actMut.mutate("approved")}>{actMut.isPending && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}Approve</Button></DialogFooter></DialogContent></Dialog>
+
+    <Dialog open={delegateOpen} onOpenChange={setDelegateOpen}><DialogContent><DialogHeader><DialogTitle>Delegate {po.po_ref}</DialogTitle><DialogDescription>Delegate to an eligible approver per backend rules.</DialogDescription></DialogHeader><Select value={toUserId} onValueChange={setToUserId}><SelectTrigger><SelectValue placeholder="Select approver" /></SelectTrigger><SelectContent>{eligibleApprovers.map((a) => <SelectItem key={a.id} value={String(a.id)}>{a.name} ({a.role})</SelectItem>)}</SelectContent></Select><DialogFooter><Button onClick={() => delegateMut.mutate()} disabled={!toUserId || delegateMut.isPending}>Confirm Delegate</Button></DialogFooter></DialogContent></Dialog>
+  </>;
 }
 
-// ── Page ────────────────────────────────────────────────────────────────────
-
 export default function POApprovalBoardPage() {
-  const [activeFilter, setActiveFilter] = useState<FilterKey>("active");
+  const { user } = useAuth();
+  const [activeFilter, setActiveFilter] = useState<FilterKey>("all-active");
+  const [expanded, setExpanded] = useState<number | null>(null);
   const queryClient = useQueryClient();
 
-  const { data: allPos = [], isLoading, isError, error } = useQuery<PurchaseOrder[]>({
-    queryKey: ["/api/po/board/all"],
-    queryFn: async () => {
-      const res = await apiRequest("GET", "/api/po/board/all");
-      if (!res.ok) throw new Error("Failed to fetch PO board");
-      return res.json();
-    },
-  });
-
-  const { data: myReviews = [], isLoading: myLoading } = useQuery<PurchaseOrder[]>({
-    queryKey: ["/api/po/board/my-reviews"],
-    queryFn: async () => {
-      const res = await apiRequest("GET", "/api/po/board/my-reviews");
-      if (!res.ok) throw new Error("Failed to fetch my reviews");
-      return res.json();
-    },
-    enabled: activeFilter === "my-reviews",
-  });
+  const { data: allPos = [], isLoading, isError, error } = useQuery<PurchaseOrder[]>({ queryKey: ["/api/po/board/all"], queryFn: async () => { const res = await apiRequest("GET", "/api/po/board/all"); if (!res.ok) throw new Error("Failed to fetch PO board"); return res.json(); } });
+  const { data: myReviews = [] } = useQuery<PurchaseOrder[]>({ queryKey: ["/api/po/board/my-reviews"], queryFn: async () => { const res = await apiRequest("GET", "/api/po/board/my-reviews"); if (!res.ok) throw new Error("Failed to fetch my reviews"); return res.json(); } });
+  const { data: eligibleApprovers = [] } = useQuery<EligibleApprover[]>({ queryKey: ["/api/po/eligible-approvers"], queryFn: async () => { const res = await apiRequest("GET", "/api/po/eligible-approvers"); if (!res.ok) throw new Error("Failed to fetch eligible approvers"); const data = await res.json(); return Array.isArray(data?.approvers) ? data.approvers : []; } });
 
   const handleRefresh = () => {
     queryClient.invalidateQueries({ queryKey: ["/api/po/board/all"] });
     queryClient.invalidateQueries({ queryKey: ["/api/po/board/my-reviews"] });
   };
 
-  if (isLoading) return <PageSkeleton lines={8} />;
-  if (isError) return (
-    <PageError
-      title="Unable to load PO Board"
-      message={error instanceof Error ? error.message : "Something went wrong"}
-      onRetry={handleRefresh}
-    />
-  );
-
-  function filterPos(key: FilterKey): PurchaseOrder[] {
-    switch (key) {
-      case "active":     return allPos.filter(p => ACTIVE_STATUSES.has(p.status));
+  const displayPos = useMemo(() => {
+    switch (activeFilter) {
       case "my-reviews": return myReviews;
-      case "approved":   return allPos.filter(p => p.status === "approved");
-      case "archived":   return allPos.filter(p => p.status === "cancelled");
-      default:           return allPos;
+      case "all-active": return allPos.filter((p) => ACTIVE_STATUSES.has(p.status));
+      case "requires-info": return allPos.filter((p) => p.status === "requires_info");
+      case "approved": return allPos.filter((p) => p.status === "approved");
+      case "blocked-cancelled": return allPos.filter((p) => p.status === "blocked" || p.status === "cancelled");
     }
-  }
+  }, [activeFilter, allPos, myReviews]);
 
-  const displayPos = filterPos(activeFilter);
-  const activeCount   = allPos.filter(p => ACTIVE_STATUSES.has(p.status)).length;
-  const approvedCount = allPos.filter(p => p.status === "approved").length;
+  if (isLoading) return <PageSkeleton lines={8} />;
+  if (isError) return <PageError title="Unable to load PO Board" message={error instanceof Error ? error.message : "Something went wrong"} onRetry={handleRefresh} />;
 
-  const subtitle = `${allPos.length} purchase order${allPos.length !== 1 ? "s" : ""} · ${activeCount} active · ${approvedCount} approved`;
-
-  return (
-    <PageLayout
-      data-testid="page-po-approval-board"
-      header={
-        <PageHeader
-          title="PO Approval Board"
-          subtitle={subtitle}
-        />
-      }
-    >
-      {/* Filter tabs */}
-      <div className="flex items-center gap-1 flex-wrap">
-        {FILTERS.map((f) => {
-          const count =
-            f.key === "all"        ? allPos.length :
-            f.key === "active"     ? activeCount :
-            f.key === "my-reviews" ? myReviews.length :
-            f.key === "approved"   ? approvedCount :
-            f.key === "archived"   ? allPos.filter(p => p.status === "cancelled").length : 0;
-
-          return (
-            <Button
-              key={f.key}
-              size="sm"
-              variant={activeFilter === f.key ? "default" : "outline"}
-              onClick={() => setActiveFilter(f.key)}
-              className="text-xs h-8"
-            >
-              {f.label}
-              <Badge
-                variant="secondary"
-                className={`ml-1.5 text-[10px] h-4 px-1.5 ${activeFilter === f.key ? "bg-primary-foreground/20 text-primary-foreground" : ""}`}
-              >
-                {f.key === "my-reviews" && myLoading ? "…" : count}
-              </Badge>
-            </Button>
-          );
+  return <PageLayout header={<PageHeader title="PO Approval Board" subtitle={`${allPos.length} purchase orders`} />}>
+    <div className="flex items-center gap-1 flex-wrap">{FILTERS.map((f) => <Button key={f.key} size="sm" variant={activeFilter === f.key ? "default" : "outline"} onClick={() => setActiveFilter(f.key)} className="text-xs h-8">{f.label}</Button>)}</div>
+    <Card>
+      {displayPos.length === 0 ? <CardContent className="p-8 text-center text-sm text-muted-foreground">No purchase orders match this filter.</CardContent> :
+      <Table><TableHeader><TableRow><TableHead>PO reference</TableHead><TableHead>Project</TableHead><TableHead>Supplier</TableHead><TableHead className="text-right">Total</TableHead><TableHead>Requested by</TableHead><TableHead>Assigned approver</TableHead><TableHead>Status</TableHead><TableHead>Age</TableHead><TableHead>Reviewer decision history</TableHead><TableHead>Actions</TableHead></TableRow></TableHeader><TableBody>
+        {displayPos.map((po) => {
+          const assigned = po.reviewers?.find((r) => r.decision === "pending") || po.reviewers?.[po.reviewers.length - 1];
+          const canDelegate = !!user && (!!assigned && assigned.reviewerUserId === user.id || DELEGATE_ADMIN_ROLES.has(String((user as any).role || "")));
+          return <>
+            <TableRow key={po.id} className="align-top"><TableCell className="font-medium font-mono text-sm">{po.po_ref}</TableCell><TableCell>{po.project_name}</TableCell><TableCell>{po.supplier_name}</TableCell><TableCell className="text-right font-semibold font-mono tabular-nums">{fmtZAR(po.total)}</TableCell><TableCell>{po.submitted_by_name || "—"}</TableCell><TableCell>{assigned?.reviewerName || assigned?.reviewerRole || "—"}</TableCell><TableCell><StatusBadge status={po.status} /></TableCell><TableCell>{ageDays(po.created_at)}d</TableCell><TableCell><ReviewerHistory reviewers={po.reviewers} /></TableCell><TableCell><div className="flex gap-1"><RowActions po={po} onRefresh={handleRefresh} eligibleApprovers={eligibleApprovers} canDelegate={canDelegate} /><Button size="sm" variant="ghost" onClick={() => setExpanded(expanded === po.id ? null : po.id)}>{expanded === po.id ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</Button></div></TableCell></TableRow>
+            {expanded === po.id && <TableRow><TableCell colSpan={10}><div className="grid gap-2 text-sm"><p><span className="font-medium">Notes:</span> {po.comments || "—"}</p><div><p className="font-medium">Line items</p>{po.line_items?.length ? <ul className="list-disc pl-5">{po.line_items.map((li, i) => <li key={i}>{li.description || "Item"} · {li.qty || 0} × {fmtZAR(li.pricePerUnit || 0)}</li>)}</ul> : <p className="text-muted-foreground">Line items not available from board API.</p>}</div><div className="flex gap-2 flex-wrap"><Button size="sm" variant="outline" onClick={() => window.open(`/api/po/${encodeURIComponent(po.project_name)}/${po.id}/pdf`, "_blank")}> <Download className="h-3 w-3 mr-1" /> PDF download </Button>{po.project_id ? <Button size="sm" variant="outline" onClick={() => window.location.href = `/project/${po.project_id}?tab=procurement`}>Budget / procurement link</Button> : <span className="text-xs text-muted-foreground">Budget/procurement link unavailable.</span>}</div></div></TableCell></TableRow>}
+          </>;
         })}
-      </div>
-
-      {/* Table */}
-      <Card>
-        {displayPos.length === 0 ? (
-          <CardContent className="p-8 text-center text-sm text-muted-foreground">
-            No purchase orders match this filter.
-          </CardContent>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-28">PO Ref</TableHead>
-                <TableHead>Project</TableHead>
-                <TableHead>Supplier</TableHead>
-                <TableHead className="text-right w-36">Total ex-VAT</TableHead>
-                <TableHead className="w-36">Status</TableHead>
-                <TableHead className="w-32">Date</TableHead>
-                <TableHead>Reviewers / Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {displayPos.map((po) => (
-                <PORow key={po.id} po={po} onRefresh={handleRefresh} />
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </Card>
-    </PageLayout>
-  );
+      </TableBody></Table>}
+    </Card>
+  </PageLayout>;
 }
