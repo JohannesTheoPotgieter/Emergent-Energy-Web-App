@@ -461,9 +461,6 @@ async function hasActiveLink(
   return !!row;
 }
 
-// Retained for tests + potential future callers. The /find endpoint now
-// uses the richer `getSiblingLinksForQbEntity` helper instead.
-const linkedSetUnused: unknown = null;
 async function findQbIdsAlreadyLinked(
   qbEntityType: "bill" | "invoice",
   qbRealmId: string,
@@ -653,7 +650,6 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
             },
           };
         });
-        void linkedSetUnused;
 
         // 5. App-side warnings (per row, not per candidate)
         const appActiveLink = await hasActiveLink(
