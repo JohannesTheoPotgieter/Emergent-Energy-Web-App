@@ -38,6 +38,7 @@ import {
   recordRejection,
   getApprovalQueueForUser,
   listApprovalsForDocument,
+  getApproverCandidatesForDocument,
 } from "../services/managed-document-approvals-service";
 
 const docIdParam = z.coerce.number().int().positive();
@@ -63,6 +64,9 @@ function toApiError(err: unknown, fallback = "Request failed"): ApiError {
   }
   if (/only the assigned approver|not a managed-document/i.test(msg)) {
     return forbidden(msg);
+  }
+  if (/do not hold a required role/i.test(msg)) {
+    return badRequest(msg);
   }
   return badRequest(msg || fallback);
 }
@@ -106,6 +110,28 @@ export function registerManagedDocumentApprovalRoutes(app: Express): void {
       } catch (err) {
         console.error("[managed-doc-approvals] request error:", err);
         throw toApiError(err, "Failed to request approval");
+      }
+    },
+  );
+
+  // ====================================================================
+  // GET /api/managed-documents/:id/approver-candidates
+  // Returns eligible approvers (role-filtered if a requirement exists).
+  // ====================================================================
+  app.get(
+    "/api/managed-documents/:id/approver-candidates",
+    requireAuth,
+    requirePermission("documents", "view"),
+    async (req: Request, res: Response) => {
+      const parsedId = docIdParam.safeParse(req.params.id);
+      if (!parsedId.success) throw badRequest("Invalid document id");
+      try {
+        const result = await getApproverCandidatesForDocument(parsedId.data);
+        res.json(result);
+      } catch (err) {
+        if (err instanceof ApiError) throw err;
+        console.error("[managed-doc-approvals] candidates error:", err);
+        throw toApiError(err, "Failed to load approver candidates");
       }
     },
   );

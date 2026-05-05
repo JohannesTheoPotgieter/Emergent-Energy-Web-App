@@ -11,6 +11,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { FolderPlus, Upload, FolderTree, Server, ExternalLink } from "lucide-react";
+import { toast } from "@/hooks/use-toast";
 import { RootSelector } from "@/components/documents/RootSelector";
 import { FileListTable } from "@/components/documents/FileListTable";
 import { DocumentsBreadcrumb, type Crumb } from "@/components/documents/Breadcrumb";
@@ -95,7 +96,14 @@ export default function DocumentsPage() {
     const headers: Record<string, string> = {};
     if (token) headers["Authorization"] = `Bearer ${token}`;
     const res = await fetch(url, { credentials: "include", headers });
-    if (!res.ok) return;
+    if (!res.ok) {
+      toast({
+        title: "Download failed",
+        description: `${res.status} — ${res.statusText || "Could not download the file."}`,
+        variant: "destructive",
+      });
+      return;
+    }
     const blob = await res.blob();
     const objectUrl = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -253,9 +261,18 @@ export default function DocumentsPage() {
 function ActiveClientsView() {
   const { projectsSummary, isLoading: projectsLoading } = useProjectsSummary();
   const taxonomy = usePublicFolderTaxonomy();
+  const roots = useDocumentRoots();
   const [projectId, setProjectId] = useState<number | null>(null);
   const folders = useProjectFolders(projectId);
   const [expandedFolderId, setExpandedFolderId] = useState<number | null>(null);
+  const [uploadFolderId, setUploadFolderId] = useState<number | null>(null);
+  const [uploadFolderItemId, setUploadFolderItemId] = useState<string | null>(null);
+
+  const projectRootId = useMemo(() => {
+    if (!projectId || !roots.data) return null;
+    const root = roots.data.project.find((r) => r.projectId === projectId);
+    return root?.id ?? null;
+  }, [projectId, roots.data]);
 
   const projectOptions = (projectsSummary ?? []).filter(
     (p) => typeof p.project_info_id === "number",
@@ -341,44 +358,61 @@ function ActiveClientsView() {
                       className="rounded-md border"
                       data-testid={`active-clients-folder-${f.taxonomyKey}`}
                     >
-                      <button
-                        type="button"
-                        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-muted/30"
-                        onClick={() => setExpandedFolderId(isExpanded ? null : f.id)}
-                        data-testid={`btn-active-clients-folder-toggle-${f.taxonomyKey}`}
-                      >
-                        <FolderTree className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-sm font-medium">
-                          {tax?.displayName ?? f.taxonomyKey}
-                        </span>
-                        <span className="text-[10px] font-mono text-muted-foreground">
-                          {f.taxonomyKey}
-                        </span>
-                        {f.itemId ? (
-                          <Badge
-                            variant="outline"
-                            className="text-[10px] bg-emerald-50 text-emerald-700"
-                          >
-                            Provisioned
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-800">
-                            Not provisioned
-                          </Badge>
-                        )}
+                      <div className="flex items-center gap-2 px-3 py-2">
+                        <button
+                          type="button"
+                          className="flex-1 flex items-center gap-2 text-left hover:bg-muted/30 min-w-0"
+                          onClick={() => setExpandedFolderId(isExpanded ? null : f.id)}
+                          data-testid={`btn-active-clients-folder-toggle-${f.taxonomyKey}`}
+                        >
+                          <FolderTree className="h-4 w-4 text-muted-foreground shrink-0" />
+                          <span className="text-sm font-medium">
+                            {tax?.displayName ?? f.taxonomyKey}
+                          </span>
+                          <span className="text-[10px] font-mono text-muted-foreground">
+                            {f.taxonomyKey}
+                          </span>
+                          {f.itemId ? (
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] bg-emerald-50 text-emerald-700"
+                            >
+                              Provisioned
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-800">
+                              Not provisioned
+                            </Badge>
+                          )}
+                        </button>
                         {f.webUrl && (
                           <a
                             href={f.webUrl}
                             target="_blank"
                             rel="noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="ml-auto text-xs text-emerald-700 hover:underline inline-flex items-center gap-1"
+                            className="text-xs text-emerald-700 hover:underline inline-flex items-center gap-1 shrink-0"
+                            data-testid={`link-active-clients-folder-open-${f.taxonomyKey}`}
                           >
                             <ExternalLink className="h-3 w-3" />
                             Open
                           </a>
                         )}
-                      </button>
+                        {f.itemId && projectRootId && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-6 text-xs px-2 shrink-0"
+                            onClick={() => {
+                              setUploadFolderId(f.id);
+                              setUploadFolderItemId(f.itemId);
+                            }}
+                            data-testid={`btn-active-clients-upload-${f.taxonomyKey}`}
+                          >
+                            <Upload className="h-3 w-3 mr-1" />
+                            Upload
+                          </Button>
+                        )}
+                      </div>
                       {isExpanded && f.itemId && projectId && (
                         <div className="border-t bg-muted/10">
                           <FolderFiles
@@ -395,6 +429,21 @@ function ActiveClientsView() {
           )}
         </CardContent>
       </Card>
+
+      {projectRootId !== null && (
+        <UploadDialog
+          open={uploadFolderId !== null}
+          onOpenChange={(open) => {
+            if (!open) {
+              setUploadFolderId(null);
+              setUploadFolderItemId(null);
+            }
+          }}
+          scope="project"
+          rootId={projectRootId}
+          parentItemId={uploadFolderItemId}
+        />
+      )}
     </div>
   );
 }

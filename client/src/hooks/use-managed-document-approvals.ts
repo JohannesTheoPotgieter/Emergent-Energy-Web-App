@@ -77,6 +77,28 @@ export function useApprovalsForDocument(documentId: number | null) {
   });
 }
 
+export interface ApproverCandidate {
+  id: number;
+  name: string;
+  role: string;
+}
+
+interface ApproverCandidatesResponse {
+  candidates: ApproverCandidate[];
+  requiredRoles: string[] | null;
+}
+
+export function useApproverCandidates(documentId: number | null) {
+  return useQuery<ApproverCandidatesResponse>({
+    queryKey: documentId
+      ? [`/api/managed-documents/${documentId}/approver-candidates`]
+      : ["/api/managed-documents/0/approver-candidates"],
+    queryFn: getQueryFn({ on401: "throw" }),
+    enabled: typeof documentId === "number" && documentId > 0,
+    staleTime: 60_000,
+  });
+}
+
 // =========================================================================
 // Writes
 // =========================================================================
