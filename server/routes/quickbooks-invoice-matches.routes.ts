@@ -2577,4 +2577,323 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
     },
   );
 
+  // ========================================================================
+  // Phase 3 — auto-suggest engine
+  // ========================================================================
+  //
+  // Iterates over unlinked app cost lines whose counterparty has at least
+  // one active learned-pattern rule (Phase 2 invoice-number prefix or
+  // description-token fingerprint), finds their best QuickBooks bill
+  // match using the same scorer the manual /find flow uses, and writes a
+  // `quickbooks_match_suggestions` row when the top candidate scores
+  // ≥ threshold. The reviewer still has to Approve from the inbox — the
+  // engine never auto-creates links.
+  //
+  // Skips any (app row, QB doc) pair that's already linked, and dedupes
+  // against pending suggestions for the same app row so re-running the
+  // engine doesn't stack duplicates.
+
+  const autoSuggestBodySchema = z.object({
+    threshold: z.number().int().min(60).max(100).optional(),
+    /** Cap on app rows scanned per run. Defaults to 200 to avoid runaway
+     *  on a fresh sync. */
+    limit: z.number().int().min(1).max(500).optional(),
+  });
+
+  app.post(
+    "/api/quickbooks/invoice-matches/auto-suggest/run",
+    requireAuth,
+    requirePermission("financials", "edit"),
+    validateBody(autoSuggestBodySchema),
+    async (req: Request, res: Response) => {
+      try {
+        const body = req.body as z.infer<typeof autoSuggestBodySchema>;
+        const threshold = body.threshold ?? 85;
+        const limit = body.limit ?? 200;
+        const userId = getEffectiveUser(req)?.id ?? null;
+
+        const status = await getQuickBooksConnectionStatus();
+        if (!status.connected || !status.realmId) {
+          return sendError(
+            res,
+            new ApiError(409, "quickbooks_not_connected", "QuickBooks is not connected"),
+          );
+        }
+        const qbRealmId = status.realmId;
+
+        // 1. Find candidate app cost lines: have a counterparty with at
+        //    least one active pattern rule, and have NO active QB link.
+        //    Subqueries avoid pulling thousands of rows just to filter.
+        const counterpartiesWithRules = db
+          .selectDistinct({ counterpartyId: invoicePatternRules.counterpartyId })
+          .from(invoicePatternRules)
+          .where(
+            and(
+              eq(invoicePatternRules.isActive, true),
+              isNull(invoicePatternRules.deletedAt),
+            ),
+          );
+        const counterpartiesWithDescPatterns = db
+          .selectDistinct({ counterpartyId: invoiceDescriptionPatterns.counterpartyId })
+          .from(invoiceDescriptionPatterns)
+          .where(
+            and(
+              eq(invoiceDescriptionPatterns.isActive, true),
+              isNull(invoiceDescriptionPatterns.deletedAt),
+            ),
+          );
+        const numberRuleCpIds = (await counterpartiesWithRules).map(
+          (r: { counterpartyId: number | null }) => r.counterpartyId,
+        );
+        const descRuleCpIds = (await counterpartiesWithDescPatterns).map(
+          (r: { counterpartyId: number | null }) => r.counterpartyId,
+        );
+        const cpIdSet = new Set<number>();
+        for (const id of numberRuleCpIds) if (id !== null) cpIdSet.add(id);
+        for (const id of descRuleCpIds) if (id !== null) cpIdSet.add(id);
+        if (cpIdSet.size === 0) {
+          return res.json({
+            ok: true,
+            docsScanned: 0,
+            candidatesScanned: 0,
+            suggestionsCreated: 0,
+            skippedAlreadyLinked: 0,
+            skippedAlreadyPending: 0,
+            message: "No counterparties with active pattern rules — nothing to auto-suggest.",
+          });
+        }
+
+        const cpIds = Array.from(cpIdSet);
+        // Active cost lines tied to those counterparties
+        const candidateRows = await db
+          .select({
+            id: normalizedCostLines.id,
+            projectId: normalizedCostLines.projectId,
+            invoiceNumber: normalizedCostLines.invoiceNumber,
+            invoiceDate: normalizedCostLines.invoiceDate,
+            amountExVat: normalizedCostLines.amountExVat,
+            counterpartyName: normalizedCostLines.counterpartyName,
+            poNumber: normalizedCostLines.poNumber,
+            description: normalizedCostLines.description,
+            counterpartyId: normalizedCostLines.counterpartyId,
+          })
+          .from(normalizedCostLines)
+          .where(
+            and(
+              inArray(normalizedCostLines.counterpartyId, cpIds),
+              isNull(normalizedCostLines.effectiveTo),
+              isNull(normalizedCostLines.deletedAt),
+            ),
+          )
+          .limit(limit);
+
+        // 2. Filter out app rows that are already linked OR have a pending
+        //    auto-suggestion already in the queue.
+        const candidateIds = candidateRows.map(
+          (r: { id: number }) => r.id,
+        );
+        const linkedAppIds = new Set<number>();
+        const pendingAppIds = new Set<number>();
+        if (candidateIds.length > 0) {
+          const linkedRows = await db
+            .select({ appEntityId: quickbooksInvoiceLinks.appEntityId })
+            .from(quickbooksInvoiceLinks)
+            .where(
+              and(
+                eq(quickbooksInvoiceLinks.appEntityType, "cost_line"),
+                inArray(quickbooksInvoiceLinks.appEntityId, candidateIds),
+                isNull(quickbooksInvoiceLinks.deletedAt),
+              ),
+            );
+          for (const r of linkedRows as Array<{ appEntityId: number }>) {
+            linkedAppIds.add(r.appEntityId);
+          }
+          const pendingRows = await db
+            .select({ appEntityId: quickbooksMatchSuggestions.appEntityId })
+            .from(quickbooksMatchSuggestions)
+            .where(
+              and(
+                eq(quickbooksMatchSuggestions.scope, "expense_invoice"),
+                inArray(
+                  quickbooksMatchSuggestions.appEntityId,
+                  candidateIds,
+                ),
+                isNull(quickbooksMatchSuggestions.acceptedAt),
+                isNull(quickbooksMatchSuggestions.rejectedAt),
+              ),
+            );
+          for (const r of pendingRows as Array<{ appEntityId: number | null }>) {
+            if (r.appEntityId !== null) pendingAppIds.add(r.appEntityId);
+          }
+        }
+        const eligibleRows = candidateRows.filter(
+          (r: { id: number }) =>
+            !linkedAppIds.has(r.id) && !pendingAppIds.has(r.id),
+        );
+
+        // 3. Pull all QB bills once, candidate-ify, drop already-linked.
+        const billsRaw = await getBills();
+        const allQbCandidates = billsToCandidates(billsRaw);
+        const linkedQbIds = await findQbIdsAlreadyLinked(
+          "bill",
+          qbRealmId,
+          allQbCandidates.map((c) => c.qbEntityId),
+        );
+        const unlinkedQbCandidates = allQbCandidates.filter(
+          (c) => !linkedQbIds.has(c.qbEntityId),
+        );
+
+        let suggestionsCreated = 0;
+        const createdSuggestionIds: number[] = [];
+
+        for (const row of eligibleRows) {
+          const app: AppInvoiceLike = {
+            id: row.id,
+            invoiceNumber: row.invoiceNumber,
+            invoiceDate: row.invoiceDate ? String(row.invoiceDate) : null,
+            amountExVat: amountToNumber(row.amountExVat),
+            counterpartyName: row.counterpartyName,
+            poNumber: row.poNumber,
+            description: row.description,
+          };
+
+          // Annotate candidates with learned-pattern matches for THIS row's
+          // counterparty (Phase 2 tier-2.5 boost is the whole point of the
+          // engine — without it we'd recreate manual /find).
+          const learned = await loadLearnedMatchesForCounterparty(
+            row.counterpartyId,
+            unlinkedQbCandidates,
+          );
+          const enriched = unlinkedQbCandidates.map((c) =>
+            learned.has(c.qbEntityId)
+              ? { ...c, learnedPatternMatches: learned.get(c.qbEntityId) }
+              : c,
+          );
+
+          const ranked = rankInvoiceMatches(app, enriched, 5);
+          const top = ranked[0];
+          if (!top || top.confidence < threshold) continue;
+
+          // De-dupe: don't re-insert if (during this run) another row
+          // already grabbed this QB doc.
+          if (linkedQbIds.has(top.qbEntityId)) continue;
+
+          const [suggestion] = await db
+            .insert(quickbooksMatchSuggestions)
+            .values({
+              scope: "expense_invoice",
+              qbRealmId,
+              appEntityId: row.id,
+              appEntityLabel: `${row.invoiceNumber ?? "(no invoice #)"} · ${row.counterpartyName ?? "—"}`,
+              candidates: ranked as unknown as object,
+              requestedBy: userId,
+            })
+            .returning({ id: quickbooksMatchSuggestions.id });
+          if (suggestion) {
+            createdSuggestionIds.push(suggestion.id);
+            suggestionsCreated++;
+            // Reserve the QB doc for this app row so two runs of the same
+            // engine pass don't both target it. (No DB-level reservation —
+            // the linkedQbIds set is a per-pass guard only.)
+            linkedQbIds.add(top.qbEntityId);
+          }
+        }
+
+        logAuditFromReq(req, {
+          entityType: "qb_invoice_match_suggestion",
+          entityId: "auto_suggest",
+          action: "qb.invoice_match.auto_suggest_run",
+          source: "UI",
+          changesJson: {
+            threshold,
+            limit,
+            counterpartiesWithRules: cpIdSet.size,
+            candidatesScanned: candidateRows.length,
+            eligible: eligibleRows.length,
+            qbDocsScanned: unlinkedQbCandidates.length,
+            suggestionsCreated,
+            createdSuggestionIds,
+          },
+        });
+
+        return res.json({
+          ok: true,
+          docsScanned: unlinkedQbCandidates.length,
+          candidatesScanned: eligibleRows.length,
+          skippedAlreadyLinked: linkedAppIds.size,
+          skippedAlreadyPending: pendingAppIds.size,
+          suggestionsCreated,
+          createdSuggestionIds,
+        });
+      } catch (err) {
+        logApiError("qb.invoice_match.auto_suggest_run", err);
+        return sendError(res, serverError("Auto-suggest run failed."));
+      }
+    },
+  );
+
+  // GET /api/quickbooks/invoice-matches/auto-suggest/pending
+  // Lists pending system-generated (or recently-created) suggestions so
+  // the dashboard can render an inbox count. Ordered by requestedAt desc.
+  app.get(
+    "/api/quickbooks/invoice-matches/auto-suggest/pending",
+    requireAuth,
+    requirePermission("financials", "view"),
+    async (_req: Request, res: Response) => {
+      try {
+        const rows = await db
+          .select({
+            id: quickbooksMatchSuggestions.id,
+            scope: quickbooksMatchSuggestions.scope,
+            appEntityId: quickbooksMatchSuggestions.appEntityId,
+            appEntityLabel: quickbooksMatchSuggestions.appEntityLabel,
+            candidates: quickbooksMatchSuggestions.candidates,
+            requestedAt: quickbooksMatchSuggestions.requestedAt,
+          })
+          .from(quickbooksMatchSuggestions)
+          .where(
+            and(
+              isNull(quickbooksMatchSuggestions.acceptedAt),
+              isNull(quickbooksMatchSuggestions.rejectedAt),
+            ),
+          )
+          .orderBy(desc(quickbooksMatchSuggestions.requestedAt))
+          .limit(100);
+
+        const summarised = rows.map(
+          (r: {
+            id: number;
+            scope: string;
+            appEntityId: number | null;
+            appEntityLabel: string | null;
+            candidates: unknown;
+            requestedAt: Date;
+          }) => {
+            const candidates = (r.candidates as ScoredCandidate[] | null) ?? [];
+            const top = candidates[0];
+            return {
+              id: r.id,
+              scope: r.scope,
+              appEntityId: r.appEntityId,
+              appEntityLabel: r.appEntityLabel,
+              requestedAt: r.requestedAt,
+              topConfidence: top?.confidence ?? null,
+              topQbDocNumber: top?.qbDocNumber ?? null,
+              topQbCounterpartyName: top?.qbCounterpartyName ?? null,
+              candidateCount: candidates.length,
+              hasLearnedPatternMatch: candidates.some(
+                (c) => Array.isArray(c.learnedPatternMatches) && c.learnedPatternMatches.length > 0,
+              ),
+            };
+          },
+        );
+
+        return res.json({ pending: summarised, total: summarised.length });
+      } catch (err) {
+        logApiError("qb.invoice_match.auto_suggest_pending", err);
+        return sendError(res, serverError("Failed to load pending suggestions."));
+      }
+    },
+  );
+
 }
