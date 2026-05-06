@@ -450,7 +450,12 @@ function DetailRow({ weekStart, project, colSpan = 8 }: { weekStart: string; pro
                 </h4>
               </div>
               {filteredInflows.length === 0 ? (
-                <p className="text-xs text-muted-foreground p-4 text-center">No inflows this week</p>
+                <EmptyState
+                  icon={TrendingUp}
+                  title="No inflows this week"
+                  description="No payments are forecast or received in this window. Use the project planner to add an inflow milestone, or wait for the next sync from QuickBooks."
+                  className="m-3"
+                />
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs border-collapse" data-testid={`table-inflows-${weekStart}`}>
@@ -538,7 +543,12 @@ function DetailRow({ weekStart, project, colSpan = 8 }: { weekStart: string; pro
                 </h4>
               </div>
               {filteredOutflows.length === 0 ? (
-                <p className="text-xs text-muted-foreground p-4 text-center">No outflows this week</p>
+                <EmptyState
+                  icon={TrendingDown}
+                  title="No outflows this week"
+                  description="No expenses are forecast or paid in this window. Use the project planner to add an expense line, or wait for the next sync from QuickBooks."
+                  className="m-3"
+                />
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs border-collapse" data-testid={`table-outflows-${weekStart}`}>
