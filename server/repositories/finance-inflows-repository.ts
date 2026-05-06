@@ -224,6 +224,21 @@ export class FinanceInflowsRepository {
     await softCloseByProjectName(this.dbInstance, "normalized_revenue_lines", projectName);
   }
 
+  /**
+   * All current revenue-line rows. Filters historical snapshots
+   * (`isNull(effectiveTo)`) and soft-deletes. Used by report builders
+   * that need the full active population (raw row shape).
+   */
+  async listAllActiveRevenueLines(): Promise<Array<typeof normalizedRevenueLines.$inferSelect>> {
+    return this.dbInstance
+      .select()
+      .from(normalizedRevenueLines)
+      .where(and(
+        isNull(normalizedRevenueLines.effectiveTo),
+        isNull(normalizedRevenueLines.deletedAt),
+      ));
+  }
+
   // ── QB invoice-matching reads (active rows only) ──
 
   async getRevenueLineForMatching(id: number): Promise<{
