@@ -5,8 +5,13 @@ import { db } from "../db";
 import { requirePermission } from "../permission-middleware";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { OVERRIDE_CATEGORIES, users, projectInfo } from "@shared/schema";
+import { OVERRIDE_CATEGORIES } from "@shared/schema";
 import { eq } from "drizzle-orm";
+import { UsersRepository } from "../repositories/users-repository";
+import { ProjectInfoRepository } from "../repositories/project-info-repository";
+
+const usersRepository = new UsersRepository();
+const projectInfoRepository = new ProjectInfoRepository();
 import { recordOverride } from "../lib/audit/diff-engine";
 import { classifyExpenseState, isDateBlack } from "../lib/calculations/stateClassifier";
 import { isCosRealised, classifyCosStatusFull } from "../lib/calculations/financeUtils";
@@ -1966,13 +1971,8 @@ router.get("/api/project-info", requireAuth, async (req, res) => {
 
 router.get("/api/pm-assignable-users", requireAuth, async (_req, res) => {
   try {
-    const pmUsers = await db.select({
-      id: users.id,
-      name: users.name,
-      username: users.username,
-      role: users.role,
-    }).from(users).where(eq(users.role, "PROJECT_MANAGER_SITE"));
-    res.json(pmUsers.map((u: any) => ({ id: u.id, name: u.name, username: u.username, role: u.role })));
+    const pmUsers = await usersRepository.listAssignableByRole("PROJECT_MANAGER_SITE");
+    res.json(pmUsers);
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch users" });
   }
@@ -1980,13 +1980,8 @@ router.get("/api/pm-assignable-users", requireAuth, async (_req, res) => {
 
 router.get("/api/pd-assignable-users", requireAuth, async (_req, res) => {
   try {
-    const pdUsers = await db.select({
-      id: users.id,
-      name: users.name,
-      username: users.username,
-      role: users.role,
-    }).from(users).where(eq(users.role, "PROJECT_DEVELOPER"));
-    res.json(pdUsers.map((u: any) => ({ id: u.id, name: u.name, username: u.username, role: u.role })));
+    const pdUsers = await usersRepository.listAssignableByRole("PROJECT_DEVELOPER");
+    res.json(pdUsers);
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch users" });
   }
@@ -2007,7 +2002,7 @@ router.patch("/api/project-info/:id/assign-pm", requireAuth, requirePermission('
     if (!updated) return res.status(404).json({ error: "Project not found" });
 
     if (pmUserId) {
-      await db.update(projectInfo).set({ pmUserId }).where(eq(projectInfo.id, id));
+      await projectInfoRepository.updateById(id, { pmUserId });
     }
 
     const pName = updated?.projectName || "Unknown";
