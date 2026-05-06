@@ -13,6 +13,7 @@ import { SectionHeader } from "@/components/layout/page-shell";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { Tooltip as UiTooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { fetchQueryFn, apiRequest, invalidateDashboardQueries } from "@/lib/queryClient";
+import { DataSourceBadge } from "@/components/finance/DataSourceBadge";
 import { usePermission } from "@/hooks/use-permissions";
 import {
   Bar,
@@ -375,6 +376,7 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                   <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">Category</th>
                   <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">Line Item</th>
                   <th className="text-center px-3 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">Status</th>
+                  <th className="text-center px-3 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px]" title="Where this row came from: imported from Smart Import v2, edited after import, manually entered, or covered by an admin override.">Source</th>
                   <th className="text-right px-3 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">COS</th>
                   <th className="text-right px-3 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">Revenue</th>
                 </tr>
@@ -405,6 +407,9 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                         <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold ${stateBadgeColor(item.revState)}`}>
                           {item.revState}
                         </span>
+                      </td>
+                      <td className="px-3 py-2.5 text-center">
+                        <DataSourceBadge source={item.dataSource} testId={`data-source-rev-${item.id}`} />
                       </td>
                       <td className="px-3 py-2.5 text-right font-mono text-muted-foreground">{formatRand(item.costAmount)}</td>
                       <td className={`px-3 py-2.5 text-right font-mono font-semibold ${item.isRealised ? 'text-foreground' : 'text-amber-700'}`}>
