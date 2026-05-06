@@ -1,0 +1,230 @@
+You are a senior full-stack engineer working inside an EXISTING Replit codebase called “Workflow Program”. There is a module/section called “My Tool” with tabs: Today / Week / Backlog / Settings. Your job is to make this section stable, fast, and seamless, and to add Outlook integration + an in-app Help page.
+
+NON-NEGOTIABLES
+- Do NOT remove, rename, or break any existing routes, models, or UI behaviour. Extend only.
+- Do NOT create placeholder UI, placeholder buttons, placeholder code paths, or “coming soon” stubs. If it’s in the UI it must work end-to-end.
+- If a user cannot resolve an issue via the UI, the UI is wrong. Improve the UX and error handling so the user always has a clear next step.
+- One source of truth:
+  - Outlook Calendar is the source of truth for meetings/events.
+  - “My Tool” is the source of truth for personal planning (time blocks + end-of-day wrap).
+  - The existing company task system in this codebase remains the source of truth for company tasks (do not replace it).
+- Store all timestamps in UTC in the database. Display in Africa/Johannesburg unless the user already has a timezone setting.
+- No silent failures. Every error must:
+  1) show a plain-language message to the user,
+  2) be logged server-side with a correlationId,
+  3) be written to an Error Log table with context (user, route, action, payload shape, timestamp, correlationId).
+
+GOAL
+Make “My Tool” production-grade and add Microsoft Outlook integration so that:
+1) Outlook meetings show inside Today/Week (read-only).
+2) Time Blocks created in My Tool can sync to Outlook.
+3) Approvals emails can be sent from the app via Outlook (send-only for now).
+4) A built-in Help page exists and “Report a problem” works end-to-end.
+
+SCOPE A — MAKE MY TOOL SMOOTH (NO REGRESSIONS)
+Today page:
+- Quick add task must be reliable (Enter and Add button must both work).
+- Status counts (Planned / In Progress / Blocked / Done) must always match persisted data.
+- Any drag/drop (if it exists) must never lose data.
+- Use optimistic UI updates with safe rollback if the server rejects the change.
+- On save failure show: “Couldn’t save. Retry / View details”. Retry must work.
+
+Week page:
+- Weekly grid must load fast and not drift dates.
+- Prev/Next week navigation must be correct.
+- Adding a task to a day must persist immediately and update totals.
+- If a task has a due date already, it must display consistently in the correct day.
+
+Backlog page:
+- Search and filters must be responsive (debounce search).
+- Create task must never duplicate.
+- Priorities section must load even when there are zero tasks.
+
+Settings page:
+- Preferences save must validate and be bulletproof.
+- Workday start/end must validate (end must be later than start).
+- Add Outlook connect/disconnect here and show connection status clearly.
+
+SCOPE B — IN-APP HELP (NO PLACEHOLDERS)
+Add a Help icon in the My Tool header AND a route: /my-tool/help
+The Help page must render actual content (no stub content).
+Include these sections:
+- What My Tool is (and what it is not)
+- How Today works (daily rhythm)
+- How Week works (weekly rhythm)
+- How Backlog works (parking lot and priorities)
+- How Settings works
+- Outlook integration rules (meetings read-only, time blocks sync)
+- Troubleshooting (what to do when something fails)
+
+Add “Report a problem” on the Help page:
+- Opens a modal with: Summary (required), Steps to reproduce (required), Optional screenshot upload (if supported).
+- Automatically includes: current route, user id, browser user-agent, timestamp, and correlationId.
+- Submitting creates a row in the Error Log table (or a separate Support Tickets table if one exists), and shows a success confirmation.
+
+SCOPE C — OUTLOOK INTEGRATION (MICROSOFT GRAPH)
+Implement Outlook integration using Microsoft Graph.
+
+C1) Auth + Connection
+- Add an OAuth connect flow from Settings.
+- Store tokens securely (encrypt at rest). Handle refresh tokens and expiry.
+- Add disconnect (revokes local tokens and clears connection state).
+
+C2) Calendar Read (Meetings Display)
+- Show Outlook meetings inside Today and Week views.
+- Meetings/events are read-only in My Tool. Do not allow editing/deleting Outlook meetings from the app.
+- Fetch events for the relevant date range (today and current week).
+- Handle recurring events safely (display only).
+
+C3) Time Blocks Writeback (Create/Update/Delete)
+- Time blocks are created/edited/deleted inside My Tool.
+- Time blocks must sync to Outlook as calendar events.
+- Do NOT edit meetings created by humans. Only edit/delete events created by My Tool.
+- Mark My Tool events in Outlook using ONE of these approaches:
+  - Preferred: a dedicated calendar named “EE – My Tool Blocks”.
+  - Fallback: a category named “My Tool”.
+- Store outlookEventId (and calendarId if applicable) on each time block row in the database.
+- Prevent duplicates using idempotency keys (if the same create request is retried, it must not create a second event).
+
+C4) Timezones
+- Store UTC in DB.
+- Convert correctly to Africa/Johannesburg for display.
+- Ensure Graph calls use correct timezone handling (explicit timezone header OR server-side conversion to UTC).
+
+C5) Sync reliability
+- Start with range-based fetch on load.
+- Then implement incremental sync using Graph delta queries where possible.
+- If delta sync is implemented, store the delta cursor per user.
+
+C6) Graph Permissions
+Calendar:
+- Calendars.Read (required)
+- Calendars.ReadWrite (required for time blocks)
+Mail:
+- Mail.Send (required only for sending approvals)
+
+SCOPE D — APPROVAL EMAILS (SEND-ONLY MVP)
+Implement outbound approval emails via Outlook (Graph Mail.Send).
+- Emails must contain two action links: Approve / Reject.
+- Clicking approve/reject must land in the app, authenticate the user, and write the decision to an Approvals table with a complete audit trail:
+  - approval item id, title/type, requested_by, requested_at, decided_by, decided_at, status, optional decision_note
+- The app is the source of truth for approval status. Email replies are ignored (do not use “reply yes/no” logic).
+
+DATA / DB
+Do not redesign the entire database. Extend minimal.
+If the following tables/columns do not exist, add them with migrations. If equivalents exist, reuse them.
+
+1) user_preferences
+- user_id (PK or unique)
+- default_view
+- workday_start_local (time)
+- workday_end_local (time)
+- timezone (default Africa/Johannesburg)
+
+2) time_blocks
+- id
+- user_id
+- title
+- start_utc (datetime)
+- end_utc (datetime)
+- outlook_event_id (nullable)
+- outlook_calendar_id (nullable)
+- created_at
+- updated_at
+
+3) outlook_accounts
+- user_id (unique)
+- tenant_id
+- outlook_user_id
+- access_token_encrypted
+- refresh_token_encrypted
+- token_expiry_utc
+- connected_at
+- last_sync_at
+- delta_cursor (nullable)
+
+4) error_logs
+- id
+- user_id
+- route
+- action
+- correlation_id
+- error_message
+- error_stack (nullable)
+- payload_shape (json/text)
+- created_at
+
+5) approvals
+- id
+- type
+- title
+- status (pending/approved/rejected)
+- requested_by
+- requested_at
+- decided_by (nullable)
+- decided_at (nullable)
+- decision_note (nullable)
+
+API ENDPOINTS (ADJUST TO CURRENT ROUTING STYLE)
+Add or extend endpoints so the UI has real, working calls (no stubs):
+- Preferences:
+  - GET/PUT user preferences
+- Tasks:
+  - create/update/status change/list for Today/Week/Backlog views
+- Time Blocks:
+  - create/update/delete + list by date range
+- Outlook:
+  - connect, callback, disconnect
+  - list events (date range)
+  - sync time blocks to outlook on create/update/delete
+- Approvals:
+  - create approval request (server)
+  - approve/reject endpoints hit by email action links
+
+UI/UX REQUIREMENTS
+- Skeleton loaders for lists and week grid.
+- Clear empty states (not blank).
+- Clear error states with Retry.
+- Conflict detection: if a time block overlaps an Outlook meeting, show a conflict indicator and a suggestion (move block).
+- No refresh-required flows. If something fails, the UI must guide the fix.
+
+PERFORMANCE REQUIREMENTS
+- Avoid refetch loops.
+- Debounce search.
+- Cache week data per user/session where appropriate.
+- Use pagination if task lists can become large.
+
+QUALITY GATES (DEFINITION OF DONE)
+- No regressions in My Tool navigation and existing behaviour.
+- Today counts always correct.
+- Adding/editing tasks never duplicates or disappears.
+- Outlook connect works end-to-end.
+- Meetings show in Today/Week (read-only).
+- Time blocks sync to Outlook reliably (create/update/delete) with no duplicates.
+- Approval emails send and Approve/Reject links update the app with full audit trail.
+- Help page and Report-a-problem submission work end-to-end.
+- All errors produce user message + server log + DB error_log entry with correlationId.
+
+DELIVERY PROCESS (DO THIS IN ORDER)
+1) Inspect the existing codebase and summarise current stack (frontend, backend, DB, auth, routing).
+2) Fix any existing My Tool bugs first (counts, date drift, persistence, duplicates).
+3) Implement Help page + Report a problem.
+4) Implement Outlook connect + calendar read.
+5) Implement time blocks writeback and conflict detection.
+6) Implement Mail.Send approval emails + audit trail.
+7) Add basic automated tests for the critical flows above.
+
+OUTPUT REQUIRED FROM YOU
+When you finish, provide:
+- A short summary of changes (by area: Today/Week/Backlog/Settings/Outlook/Help/Approvals).
+- A list of DB migrations applied.
+- A list of environment variables required for Microsoft Graph (client id/secret/redirect uri/tenant settings).
+- A step-by-step test checklist to validate everything end-to-end.
+- A rollback plan (how to disable Outlook integration safely without breaking My Tool).
+
+FIRST RESPONSE REQUIREMENT
+Before coding, reply with:
+- The detected tech stack.
+- The existing models/endpoints you will reuse.
+- Any risks you see (timezone, recurring meetings, auth).
+Then proceed to implement without asking me follow-up questions.

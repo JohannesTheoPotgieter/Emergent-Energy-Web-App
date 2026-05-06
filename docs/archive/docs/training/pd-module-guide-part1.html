@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PD Module Training Guide — Part 1 | Emergent Energy</title>
+<link rel="stylesheet" href="ee-styles.css">
+</head>
+<body>
+<div class="page">
+
+<!-- COVER -->
+<div class="cover">
+  <img src="assets/emergent-logo.png" alt="Emergent Energy">
+  <h1>Project Development Module</h1>
+  <div class="subtitle">Training &amp; SOP Guide</div>
+  <div class="doc-info">
+    <strong>Document:</strong> EE-SOP-PD-001 | Version 1.0<br>
+    <strong>Date:</strong> March 2026<br>
+    <strong>Classification:</strong> Internal — All Staff<br>
+    <strong>Module:</strong> Project Development (PD)<br>
+    <strong>Audience:</strong> Project Developers, Engineers, Project Managers, Leadership
+  </div>
+</div>
+
+<!-- TABLE OF CONTENTS -->
+<div class="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li><a href="#about">What is the PD Module?</a></li>
+    <li><a href="#roles">Who Uses It &amp; What They See</a></li>
+    <li><a href="#nav">Finding Your Way Around</a></li>
+    <li><a href="#dashboard">The PD Dashboard</a></li>
+    <li><a href="#create">Creating a PD Ticket (Step-by-Step)</a></li>
+    <li><a href="#tickets">The Tickets List</a></li>
+    <li><a href="#detail">Ticket Detail Page</a></li>
+    <li><a href="#handover">The Handover Workflow</a></li>
+    <li><a href="#reports">Reports &amp; Metrics</a></li>
+    <li><a href="#notifications">Notifications</a></li>
+    <li><a href="#quickref">Quick Reference Cards</a></li>
+    <li><a href="#glossary">Glossary</a></li>
+  </ol>
+</div>
+
+<!-- ============================================================ -->
+<h1 id="about">1. What is the PD Module?</h1>
+<!-- ============================================================ -->
+
+<p>The <strong>Project Development (PD) module</strong> is where the PD team's work becomes visible to the rest of the company. It is <strong>not</strong> a replacement for Pipedrive — the PD team continues using Pipedrive for their CRM/sales pipeline.</p>
+
+<p>Instead, this module is where:</p>
+<ul>
+  <li><strong>Engineers</strong> see their feasibility work assignments and track technical assessments</li>
+  <li><strong>Project Managers</strong> see what's approaching handover and review readiness</li>
+  <li><strong>Leadership (COO/MD)</strong> gets pipeline visibility for planning, forecasting, and board reporting</li>
+  <li><strong>PD team</strong> manages the handover workflow to move projects into execution</li>
+</ul>
+
+<div class="callout callout-info">
+  <span class="icon">&#x2139;&#xFE0F;</span>
+  <div><strong>Think of it this way</strong>
+  Pipedrive = where PD tracks their sales pipeline internally.<br>
+  This module = where everyone else in the company sees PD's work and where formal handovers happen.</div>
+</div>
+
+<h2>The Big Picture Flow</h2>
+
+<div class="wireframe">
+  Client Inquiry          PD Creates           Engineering          Ready for           PM Reviews
+  (from Pipedrive)  --->  PD Ticket    --->    Tasks Spawn   --->  Handover    --->    &amp; Accepts
+       |                     |                     |                  |                   |
+  External CRM         Internal Ticket       Work Gets Done     Checklist Met      Project Goes
+  (not this app)       (this module)         (ENG module)       (this module)      to Execution
+</div>
+
+<!-- ============================================================ -->
+<h1 id="roles">2. Who Uses It &amp; What They See</h1>
+<!-- ============================================================ -->
+
+<table>
+  <thead>
+    <tr>
+      <th>Role</th>
+      <th>What They See</th>
+      <th>What They Can Do</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><span class="role-tag role-pd">Project Developer</span></td>
+      <td>All tickets they created or are assigned to</td>
+      <td>Create tickets, edit tickets, spawn tasks, draft handovers, submit for PM review</td>
+    </tr>
+    <tr>
+      <td><span class="role-tag role-eng">Engineer</span></td>
+      <td>Engineering-related tickets (Feasibility, Design Review, IFC, Grid, Battery, Site Assessment, Full EPC) + tickets with tasks assigned to them</td>
+      <td>View tickets, view task details, navigate to engineering tasks</td>
+    </tr>
+    <tr>
+      <td><span class="role-tag role-pm">Project Manager</span></td>
+      <td>Tickets submitted for handover review</td>
+      <td>Review handovers, accept or reject with reasons</td>
+    </tr>
+    <tr>
+      <td><span class="role-tag role-admin">COO / CEO / Admin</span></td>
+      <td>Everything — full pipeline visibility</td>
+      <td>All actions: create, edit, review, accept, reject</td>
+    </tr>
+    <tr>
+      <td><span class="role-tag role-leader">CCO</span></td>
+      <td>All tickets (read-only pipeline view)</td>
+      <td>View all tickets, dashboard, reports</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ============================================================ -->
+<h1 id="nav">3. Finding Your Way Around</h1>
+<!-- ============================================================ -->
+
+<p>The PD module lives under the <strong>"Project Development"</strong> section in the top navigation bar.</p>
+
+<div class="wireframe">
+ ┌─────────────────────────────────────────────────────────────────────────────┐
+ │  [Emergent Logo]    Dashboard  Lifecycle  Engineering  PD  PM  Finance  ⚙  │
+ │                                                        ▲                   │
+ │                                                   You are here             │
+ ├─────────────────────────────────────────────────────────────────────────────┤
+ │  Sub-navigation:                                                           │
+ │  [ PD Dashboard ]  [ PD Tickets ]  [ PD Reports ]  [ Clients ]            │
+ └─────────────────────────────────────────────────────────────────────────────┘
+</div>
+
+<table>
+  <thead><tr><th>Page</th><th>URL</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td>PD Dashboard</td><td><code>/pd</code></td><td>Overview — stats, pipeline, recent tickets</td></tr>
+    <tr><td>PD Tickets</td><td><code>/pd/tickets</code></td><td>Full ticket list with filters</td></tr>
+    <tr><td>Create Ticket</td><td><code>/pd/tickets/create</code></td><td>3-step wizard to create a new ticket</td></tr>
+    <tr><td>Ticket Detail</td><td><code>/pd/tickets/:id</code></td><td>View/edit a specific ticket</td></tr>
+    <tr><td>PD Reports</td><td><code>/pd/reports</code></td><td>Metrics, charts, board pack data</td></tr>
+    <tr><td>Handover</td><td><code>/pd/handover/:projectId</code></td><td>PD→PM handover workspace</td></tr>
+  </tbody>
+</table>
+
+<!-- ============================================================ -->
+<h1 id="dashboard">4. The PD Dashboard</h1>
+<!-- ============================================================ -->
+
+<p>The dashboard is your home base. It gives you a quick snapshot of everything happening in PD.</p>
+
+<h2>4.1 What You See</h2>
+
+<div class="wireframe">
+ ┌──────────────────────────────────────────────────────────────────────┐
+ │  ⚡ Project Development                          [Reports] [+ New] │
+ │  PD ticket overview and quick actions                               │
+ ├──────────────────────────────────────────────────────────────────────┤
+ │                                                                     │
+ │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌────────┐ ┌────┐│
+ │  │  Total  │ │ Active  │ │ Overdue │ │Due Week │ │On Hold │ │Done││
+ │  │   42    │ │   18    │ │    5    │ │    3    │ │   2    │ │ 17 ││
+ │  └─────────┘ └─────────┘ └─────────┘ └─────────┘ └────────┘ └────┘│
+ │                                                                     │
+ │  Pipeline Summary               Pipeline Value: R 12,500,000       │
+ │  ┌─────────┐ ┌──────────┐ ┌─────────┐ ┌──────────┐ ┌──────────┐  │
+ │  │   New   │ │In Progress│ │ Review  │ │Ready H/O │ │Handed Ovr│  │
+ │  │    8    │ │    12     │ │    3    │ │     2    │ │    17    │  │
+ │  └─────────┘ └──────────┘ └─────────┘ └──────────┘ └──────────┘  │
+ │  [Cost Proposal: 5] [IFC Planning: 3] [Feasibility: 4] ...        │
+ │                                                                     │
+ │  ⚠ 5 overdue tickets: 2 this week, 1 (1-2 weeks), 2 (2+ weeks)   │
+ │                                                                     │
+ │  Handover Readiness                      [View control center →]   │
+ │  ┌──────────┐ ┌───────────┐ ┌──────────┐ ┌──────────┐             │
+ │  │ Drafts   │ │Awaiting PM│ │Overdue >5d│ │ Accepted │             │
+ │  │    4     │ │     2     │ │     1     │ │    6     │             │
+ │  └──────────┘ └───────────┘ └──────────┘ └──────────┘             │
+ │                                                                     │
+ │  Recent Tickets                  [Table ▾ | Kanban]  [View all →]  │
+ │  ┌──────────────────────────────────────────────────────────────┐  │
+ │  │ ☀ Solar Park Alpha  [Cost Proposal]  ClientX  ██░░ 3/4  ●  │  │
+ │  │ ☀ Warehouse Beta    [IFC Planning]   ClientY  ░░░░ 0/5  ●  │  │
+ │  │ ☀ Mall Gamma        [Feasibility]    ClientZ  ████ 4/4  ●  │  │
+ │  └──────────────────────────────────────────────────────────────┘  │
+ └──────────────────────────────────────────────────────────────────────┘
+</div>
+
+<h2>4.2 Dashboard Sections Explained</h2>
+
+<h3>Metric Cards (Top Row)</h3>
+<p>Six cards showing ticket counts. Click any card to jump to the full ticket list.</p>
+<ul>
+  <li><strong>Total</strong> — Every PD ticket ever created</li>
+  <li><strong>Active</strong> — Tickets in "Draft" or "In Progress" status</li>
+  <li><strong>Overdue</strong> — Past their due date and not completed/cancelled</li>
+  <li><strong>Due This Week</strong> — Due within the next 7 days</li>
+  <li><strong>On Hold</strong> — Paused tickets needing unblocking</li>
+  <li><strong>Completed</strong> — Finished tickets</li>
+</ul>
+
+<h3>Pipeline Summary</h3>
+<p>Shows how tickets flow through the stages. The <strong>Pipeline Value</strong> badge (top-right) shows the total estimated project value of all active tickets that have financial estimates.</p>
+
+<h3>View Toggle: Table vs Kanban</h3>
+<p>You can switch between two views:</p>
+<ul>
+  <li><strong>Table view</strong> — A flat list of recent tickets (default)</li>
+  <li><strong>Kanban view</strong> — A board with columns: New → In Progress → Under Review → Ready for Handover → Handed Over</li>
+</ul>
+
+<div class="callout callout-success">
+  <span class="icon">&#x2705;</span>
+  <div><strong>Tip</strong> Use Kanban view in team standups to quickly see where every ticket sits in the pipeline.</div>
+</div>
+
+<div class="doc-footer">
+  <span>Emergent Energy (Pty) Ltd | Confidential</span>
+  <span>EE-SOP-PD-001 v1.0 — Part 1 of 4</span>
+</div>
+</div>
+</body>
+</html>

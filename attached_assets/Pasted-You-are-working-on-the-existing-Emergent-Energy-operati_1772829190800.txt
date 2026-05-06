@@ -1,0 +1,422 @@
+You are working on the existing Emergent Energy operational web application.
+
+Do NOT build new modules.
+Do NOT redesign the app randomly.
+Do NOT break existing working functionality.
+
+This pass is a focused pre-go-live UX, routing, and permissions correction pass.
+
+The goal is to improve productivity, prioritisation, ownership clarity, and permission accuracy so the app behaves like a real role-based operating system and not a generic task dump.
+
+==================================================
+PRIMARY OBJECTIVE
+
+Fix and improve the current application so that:
+
+My Work / My Tasks is productivity-focused by default
+
+closed/completed work is hidden by default from live working views
+
+unassigned tasks and unassigned projects route to the correct management queues
+
+Project Managers only see what they should operationally own
+
+COO and Program Manager dashboards surface exceptions and assignment gaps
+
+the roles and permissions UI reflects actual system behavior more accurately
+
+UX consistency improves without creating new disconnected functionality
+
+all changes are regression-tested end to end
+
+==================================================
+DO NOT DO
+
+do not create a new task engine
+
+do not create a new permissions system separate from the existing one
+
+do not break engineering, quality, finance, project management, reporting, or admin tools
+
+do not change core architecture unnecessarily
+
+do not add cosmetic-only changes without logic improvements underneath
+
+==================================================
+
+MY WORK / MY TASKS PRODUCTIVITY FIX
+==================================================
+
+Improve the My Work / My Tasks screen so it behaves like an execution surface.
+
+Required changes:
+
+A. Default filtering
+
+completed tasks must be hidden by default
+
+cancelled/closed/archived tasks must be hidden by default
+
+live view should focus on active, overdue, due soon, blocked, and approvals-pending items
+
+B. Default prioritisation
+Sort or surface by:
+
+overdue
+
+blocked
+
+due in next 3 days
+
+approvals waiting on user
+
+high priority active items
+
+other active items
+
+C. KPI cards
+Replace or improve current KPI emphasis so cards focus on actionable work, not history.
+Preferred KPI cards:
+
+Overdue
+
+Due This Week
+
+Waiting On Me
+
+Blocked
+Optional:
+
+Approvals Pending
+
+Completed should not be a primary hero KPI in the default live work view.
+
+D. Filter structure
+Improve filtering so the user can first filter by urgency/ownership and then by task type.
+Examples:
+
+Mine
+
+Overdue
+
+Due Today
+
+Due This Week
+
+Approvals
+
+Blocked
+
+Completed (off by default)
+
+Task type filters can remain secondary:
+
+Plan
+
+Engineering
+
+Quality
+
+Personal
+
+Approval
+
+Tracking
+
+E. UX clarity
+Reduce visual clutter and improve density, readability, and prioritisation.
+The screen should answer: “what do I need to act on now?”
+
+==================================================
+2. UNASSIGNED TASK ROUTING LOGIC
+
+Implement or correct routing logic for unassigned tasks.
+
+Rules:
+
+if a task is linked to a project and the project has a Project Manager, it should surface under that Project Manager’s operational scope
+
+if a task is linked to a project but no Project Manager is assigned, it must surface as an exception under the Program Manager and COO dashboards
+
+if a task is not linked to a project, it must not clutter normal PM work views and should instead surface in COO / Program Manager triage or exception views
+
+unassigned work should be treated as a management exception, not a standard user task list item
+
+Ensure this logic applies consistently in:
+
+My Work / My Tasks
+
+execution dashboards
+
+relevant project/task views
+
+==================================================
+3. UNASSIGNED PROJECT AND CLOSED PROJECT LOGIC
+
+Implement or correct routing and default visibility logic for projects.
+
+Rules:
+
+projects without assigned ownership should surface in COO / Program Manager exception or triage views
+
+they should not appear as if owned by a Project Manager unless explicitly assigned
+
+closed projects must be hidden by default from live execution surfaces
+
+closed projects should remain accessible through archive/history/reporting views or explicit filter toggles
+
+Apply similar logic to project-linked tasks where appropriate.
+
+==================================================
+4. CALENDAR / MY TASKS PANEL CLEANUP
+
+Improve the calendar page and My Tasks side panel.
+
+Requirements:
+
+do not show huge flat task lists by default
+
+in calendar context, show only relevant task windows such as:
+
+overdue
+
+due today
+
+due this week
+
+urgent approvals
+
+allow “View all tasks” as a separate action if needed
+
+reduce overload and improve usability for weekly planning
+
+==================================================
+5. ROLE-SPECIFIC DEFAULT VIEWS
+
+Improve default landing/filter logic per role.
+
+Examples:
+
+COO: exception view, overdue, blocked, unassigned tasks/projects, approvals requiring escalation
+
+Program Manager: program-level gaps, unassigned project-linked work, overdue work by owner, at-risk items
+
+Project Manager: active owned project work, due soon tasks, approvals, blockers
+
+Engineer: assigned engineering tasks, due items, approvals, blockers
+
+Quality Manager: due inspections, approvals, issues, closeout items
+
+Finance / Program Finance: approvals, invoice/PO actions, reporting exceptions if relevant
+
+Use current role and permission framework. Do not invent a disconnected system.
+
+==================================================
+6. ROLES & PERMISSIONS UI CORRECTION
+
+The current Users & Roles / Roles & Permissions page is too simplified relative to actual operational behavior.
+
+Improve it so it reflects real system control more accurately.
+
+Requirements:
+
+A. Keep existing role and permission framework intact
+Do not replace the backend permission architecture unless required for consistency.
+
+B. Improve the UI model to show at least:
+
+section/sidebar access
+
+feature/entity access
+
+action permissions:
+
+view
+
+create
+
+edit
+
+assign
+
+approve
+
+delete
+
+recover/admin fix
+
+scope logic where possible:
+
+all
+
+assigned
+
+owned project
+
+program-level
+
+admin only
+
+C. The UI must not imply that route visibility alone equals full permission control
+
+D. Clearly distinguish:
+
+navigation access
+
+functional access
+
+admin/recovery access
+
+E. If some backend permissions do not yet support scope-level enforcement, reflect that honestly in the UI and documentation rather than pretending it exists
+
+==================================================
+7. END-TO-END QA
+
+After implementing the fixes above, run focused end-to-end QA and regression testing.
+
+Test at minimum:
+
+My Work default filters
+
+completed hidden by default
+
+active prioritisation works
+
+KPI cards reflect actionable work
+
+Unassigned task routing
+
+project-linked with PM
+
+project-linked without PM
+
+no project linked
+
+Closed project/task visibility
+
+hidden by default
+
+visible when explicitly requested
+
+Role-based landing behavior
+
+COO
+
+Program Manager
+
+Project Manager
+
+Engineer
+
+Quality Manager
+
+Roles & permissions UI
+
+accurately reflects actual backend behavior
+
+does not expose false controls
+
+admin restrictions still work
+
+Calendar side panel
+
+limited relevant tasks by default
+
+view-all path still works
+
+Regression
+
+engineering
+
+quality
+
+finance
+
+project reporting
+
+admin tools
+
+audit logs
+
+existing routes and filters
+
+==================================================
+REQUIRED DELIVERABLES
+
+Create or update the following files:
+
+PRE_GO_LIVE_UX_FIXES.md
+
+what was changed
+
+why it was changed
+
+role-by-role default behavior
+
+TASK_ROUTING_RULES.md
+
+exact routing logic for:
+
+assigned tasks
+
+unassigned tasks
+
+project-linked tasks
+
+non-project tasks
+
+closed tasks
+
+closed projects
+
+PERMISSIONS_UI_ALIGNMENT.md
+
+what was misleading before
+
+how the UI now better reflects real permission logic
+
+any remaining backend limitations
+
+PRE_GO_LIVE_QA_MATRIX.md
+
+tests executed
+
+expected vs actual
+
+pass/fail
+
+defects and retests
+
+PRE_GO_LIVE_RELEASE_NOTE.md
+
+what is now improved
+
+what is still intentionally deferred
+
+recommendation for go-live readiness
+
+==================================================
+SUCCESS CRITERIA
+
+This pass is complete only when:
+
+My Work is less noisy and more action-oriented
+
+completed/closed work is hidden by default in live work views
+
+unassigned tasks and projects route correctly to management exception views
+
+Project Managers are not shown irrelevant unassigned work
+
+the calendar side panel is more usable
+
+role-based defaults improve productivity
+
+the Roles & Permissions UI is more honest and aligned to actual behavior
+
+regression testing confirms no key functionality is broken
+
+Do not optimize for prettiness.
+Optimize for operational clarity, ownership, prioritisation, and trust.
+
+Work like true engineers.

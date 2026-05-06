@@ -1,0 +1,45 @@
+~/workspace$ psql "postgresql://neondb_owner:npg_hpZAyitsFf93@ep-damp-dawn-ajbdpxyq.c-3.us-east-2.aws.neon.tech/neondb?sslmode=require" -At -F'|' <<'EOF'
+SELECT '0007_pd_feed_open_pd_ticket', (SELECT COUNT(*) FROM information_schema.columns WHERE table_name='priority_derived_metrics' AND column_name='open_pd_ticket_count') UNION ALL SELECT
+       '0007_pd_feed_stale_opp'     , (SELECT COUNT(*) FROM information_schema.columns WHERE table_name='priority_derived_metrics' AND column_name='stale_opportunity_count') UNION ALL SELECT
+       '0012_controlled_documents'  , (SELECT COUNT(*) FROM information_schema.tables  WHERE table_name='controlled_documents')                                            UNION ALL SELECT
+       '0012_ctrl_doc_types'        , (SELECT COUNT(*) FROM information_schema.tables  WHERE table_name='controlled_document_types')                                       UNION ALL SELECT
+       '0012_sp_roots'              , (SELECT COUNT(*) FROM information_schema.tables  WHERE table_name='project_sharepoint_roots')                                        UNION ALL SELECT
+       '0012_sp_roots_uniq_constr'  , (SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_name='project_sharepoint_roots_project_unique' AND constraint_type='UNIQUE') UNION ALL SELECT
+       '0012_sp_roots_uniq_index'   , (SELECT COUNT(*) FROM pg_indexes WHERE indexname='project_sharepoint_roots_project_unique') UNION ALL SELECT
+       '0013_primary_email_domain'  , (SELECT COUNT(*) FROM information_schema.columns WHERE table_name='clients' AND column_name='primary_email_domain')                  UNION ALL SELECT
+       '0013_additional_domains'    , (SELECT COUNT(*) FROM information_schema.columns WHERE table_name='clients' AND column_name='additional_email_domains')              UNION ALL SELECT
+       '0014_attendees'             , (SELECT COUNT(*) FROM information_schema.columns WHERE table_name='stage_acceptances' AND column_name='attendees')                   UNION ALL SELECT
+       '0014_section_notes'         , (SELECT COUNT(*) FROM information_schema.columns WHERE table_name='stage_acceptances' AND column_name='section_notes')               UNION ALL SELECT
+       '0015_email_links'           , (SELECT COUNT(*) FROM information_schema.tables  WHERE table_name='email_project_links')                                             UNION ALL SELECT
+       '0015_teams_links'           , (SELECT COUNT(*) FROM information_schema.tables  WHERE table_name='teams_project_links')                                             UNION ALL SELECT
+       '0016_qb_rev_ignores'        , (SELECT COUNT(*) FROM information_schema.tables  WHERE table_name='qb_revenue_recon_ignores')                                        UNION ALL SELECT
+       '0016_qb_cust_overrides'     , (SELECT COUNT(*) FROM information_schema.tables  WHERE table_name='qb_customer_project_overrides')                                   UNION ALL SELECT
+       '0017_cust_locked_at'        , (SELECT COUNT(*) FROM information_schema.columns WHERE table_name='quickbooks_customer_mappings' AND column_name='locked_at')        UNION ALL SELECT
+       '0017_vend_locked_at'        , (SELECT COUNT(*) FROM information_schema.columns WHERE table_name='quickbooks_vendor_mappings'   AND column_name='locked_at')        UNION ALL SELECT
+       '0017_match_suggestions'     , (SELECT COUNT(*) FROM information_schema.tables  WHERE table_name='quickbooks_match_suggestions')                                    UNION ALL SELECT
+       '0017_cascade_runs'          , (SELECT COUNT(*) FROM information_schema.tables  WHERE table_name='quickbooks_cascade_runs')                                         UNION ALL SELECT
+       '0018_pipedrive_uniq_idx'    , (SELECT COUNT(*) FROM pg_indexes WHERE indexname='clients_pipedrive_org_id_uniq');
+EOF
+0007_pd_feed_open_pd_ticket|0
+0007_pd_feed_stale_opp|0
+0012_controlled_documents|0
+0012_ctrl_doc_types|0
+0012_sp_roots|0
+0012_sp_roots_uniq_constr|0
+0012_sp_roots_uniq_index|0
+0013_primary_email_domain|0
+0013_additional_domains|0
+0014_attendees|0
+0014_section_notes|0
+0015_email_links|0
+0015_teams_links|0
+0016_qb_rev_ignores|0
+0016_qb_cust_overrides|0
+0017_cust_locked_at|0
+0017_vend_locked_at|0
+0017_match_suggestions|0
+0017_cascade_runs|0
+0018_pipedrive_uniq_idx|0
+~/workspace$ 
+
+

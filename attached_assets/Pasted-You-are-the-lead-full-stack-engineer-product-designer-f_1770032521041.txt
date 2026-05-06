@@ -1,0 +1,192 @@
+You are the lead full-stack engineer + product designer for Emergent Energy’s internal Program Dashboard app.
+
+Task:
+Upgrade the “Project Plan” screen (per-project detail view) from read-only to a fully editable scheduling tool with:
+1) task CRUD (add/edit/delete),
+2) a Gantt chart at the bottom with drag/drop scheduling,
+3) critical path calculation + visualization,
+4) warning + governance prompts when edits affect critical path / project end date.
+
+Non-negotiable:
+- Must preserve imported tracker data as immutable baseline.
+- Edits must be stored as a “Working Plan” scenario (overlay) so we can always recover original imported values.
+- The grid and the Gantt must always reflect the same underlying data and stay in sync.
+- Critical path must be real CPM logic (not vibes). If dependencies are missing, we must allow adding them.
+
+Current UI context:
+The screen currently shows a table of tasks (No., Task/Programme, Start Date, Duration, End Date, Actual %, Expected %).
+It shows “34 items” and tasks display correctly in table.
+We now need full scheduling functionality.
+
+Implementation requirements
+
+A) Data model (Postgres)
+Create/extend these entities:
+
+1) imported_project_plan_task
+- id (pk)
+- project_id (fk)
+- wbs_code (e.g. "1", "1.1", "3.4")
+- name
+- planned_start_date
+- planned_end_date
+- duration_days (derived or stored)
+- actual_start_date (nullable)
+- actual_end_date (nullable)
+- actual_percent (nullable)
+- expected_percent (nullable)
+- comment (nullable)
+- sort_index
+- created_at, updated_at
+
+2) imported_project_plan_dependency
+- id
+- project_id
+- predecessor_task_id
+- successor_task_id
+- type (FS default; allow SS/FF/SF optional later)
+- lag_days (default 0)
+
+3) working_plan_scenario
+- id
+- project_id
+- name (default "Working Plan")
+- created_at, updated_at
+- is_active (true for default)
+
+4) working_plan_task_override
+- id
+- scenario_id
+- imported_task_id
+- override_start_date (nullable)
+- override_end_date (nullable)
+- override_duration_days (nullable)
+- override_name (nullable)
+- override_comment (nullable)
+- deleted_flag (boolean default false)
+- created_at, updated_at
+
+5) working_plan_dependency_override (optional but recommended)
+- id
+- scenario_id
+- imported_dependency_id (nullable if newly created dependency)
+- predecessor_imported_task_id
+- successor_imported_task_id
+- type
+- lag_days
+- deleted_flag
+- created_at, updated_at
+
+Principle:
+- Imported tables are immutable after upload.
+- Working plan is overlay: effective value = override if present else imported.
+- Deleting a task in working plan = set deleted_flag; never delete imported rows.
+
+B) API endpoints
+- GET /api/projects/:id/plan?scenario=active
+  Returns effective tasks + effective dependencies + parse warnings if any.
+- POST /api/projects/:id/plan/tasks (create new working-only task)
+- PATCH /api/projects/:id/plan/tasks/:taskId (edit fields)
+- DELETE /api/projects/:id/plan/tasks/:taskId (soft delete in scenario)
+- POST /api/projects/:id/plan/dependencies
+- DELETE /api/projects/:id/plan/dependencies/:depId (soft delete)
+- POST /api/projects/:id/plan/scenario/reset (reset working plan to imported baseline)
+All writes must be transactional and validated.
+
+C) UI/UX requirements (Project Plan tab)
+1) Top toolbar
+- [Edit mode toggle] default OFF
+- [Add task]
+- [Add dependency]
+- [Reset working plan] (confirm modal)
+- [Undo] optional if feasible
+- [Save status indicator] “Saved” / “Saving…” / “Error”
+- Show “Baseline: Imported” and “Scenario: Working Plan”
+
+2) Editable task grid (top)
+- Use a proper data grid (TanStack Table + inline editing or AG Grid Community).
+- Inline edits for: name, start, duration, end (calculate one from others), comment
+- Allow add row, delete row (soft delete)
+- WBS structure: allow expand/collapse parent tasks
+- Show a “Critical” badge/icon for tasks on the critical path
+- Show slack (float) if available (optional but ideal)
+
+3) Gantt chart (bottom)
+- Implement a Gantt component that supports drag/drop and dependencies.
+  Prefer MIT-friendly libs (e.g. gantt-task-react + custom dependency drawing, or frappe-gantt if it meets requirements).
+- Must display:
+  - tasks (with WBS indentation)
+  - dependencies (lines)
+  - critical path highlighting (critical tasks visually distinct)
+  - today marker
+- Drag/drop:
+  - Drag task bar to change start date (and end date updates)
+  - Resize to change duration
+  - If task has predecessors, enforce constraint: successor start >= predecessor finish + lag (unless user explicitly overrides and gets warned)
+- Changing in Gantt must update grid instantly, and vice versa.
+
+D) Critical Path (CPM) engine
+Implement CPM using effective tasks + dependencies:
+- Only tasks with valid duration and dates participate.
+- Compute:
+  - ES/EF (earliest start/finish)
+  - LS/LF (latest start/finish)
+  - Slack = LS - ES
+  - Critical if slack <= 0 (with tolerance)
+- Determine project finish date as max(EF) across tasks in the network.
+- Recompute after any edit.
+- If dependencies missing:
+  - Still show Gantt without CP; show banner: “No dependencies set. Add dependencies to calculate critical path.”
+
+E) Warning + governance guardrail
+Whenever a user attempts to save changes (or on drag end):
+Trigger a warning modal IF any of these conditions become true vs previous saved state:
+1) Project finish date changes (moves later or earlier)
+2) The set of critical tasks changes (task becomes critical or leaves critical path)
+3) Any milestone date changes (commissioning / handover / client handover) IF those milestones are represented in tasks or separately stored project dates
+
+Warning modal must say (plain language):
+- “This change impacts the critical path and/or shifts project end date.”
+- Show before/after:
+  - Old finish date → New finish date
+  - List of tasks that became critical / changed
+- Include a fixed reminder text:
+  - “Reminder: if this affects contractual dates, inform the client and document it (programme revision + change control).”
+- Provide actions:
+  1) “Continue and save”
+  2) “Cancel changes”
+  3) “Create Schedule Change Notice” (recommended)
+If user selects “Create Schedule Change Notice”, automatically create a log record (see section F).
+
+F) Schedule Change Notice log (new mini-governance feature)
+Add table schedule_change_notice:
+- id, project_id, created_at
+- summary
+- old_finish_date, new_finish_date
+- changed_tasks JSON (taskId, field, old, new)
+- critical_path_delta JSON (became_critical[], no_longer_critical[])
+- user_note
+- client_notified boolean (default false)
+- documentation_updated boolean (default false)
+Expose in UI as a side panel or link from Project Plan:
+- “Change notices (history)”
+
+G) Acceptance tests (must pass)
+1) Grid edit changes gantt and persists on refresh.
+2) Gantt drag changes grid and persists.
+3) Add task works; delete task hides it in working plan but imported baseline remains intact.
+4) Add dependency; critical path calculates and highlights tasks.
+5) Moving a task that shifts project finish triggers warning modal with before/after.
+6) Choosing “Create Schedule Change Notice” creates a log record with deltas.
+
+H) Questions you must ask BEFORE implementing (do not guess)
+1) Do we already store dependencies anywhere in the tracker, or do we create them manually in the app?
+2) Do we treat weekends as non-working days or count all calendar days?
+3) Which dates are considered contractual milestones that must trigger client-change warnings (Commissioning, Client Handover, etc.)?
+4) Should edits be restricted to PM role only later, or open for now?
+
+Deliverables
+- Implement the above end-to-end.
+- Keep UI clean and aligned to EE theme.
+- Provide a short “How to use Project Plan editing” guide in README.
+- Do not ship until acceptance tests pass.

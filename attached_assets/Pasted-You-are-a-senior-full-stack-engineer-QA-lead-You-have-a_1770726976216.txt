@@ -1,0 +1,166 @@
+You are a senior full-stack engineer + QA lead. You have access to an existing codebase in this Replit project. Your job is NOT to reinvent the app — it’s to confirm (and finish) 1:1 functional parity with an Excel workbook and prove it with automated tests.
+
+SOURCE OF TRUTH
+Excel workbook: “0.Program Dashboard FY26.xlsm”
+Sheets to match (UI + calculations + filters + drilldowns):
+1) Program Dashboard
+2) Projects Summary 2026
+3) Cashflow 2026
+4) REV Tracker 26
+5) COS Tracker 26
+
+Hidden data sources inside the workbook (these drive everything):
+- ProjectInfo (table: tblProjectInfo; columns: ProjectName, Info, InfoValue)
+- ProgramPlan (table: tblProjectPlan; columns: ProjectName, TaskNumber, TaskDescription, ActualStartDate, ActualDurationDays, ActualEndDate, Actual%Complete, Expected%Complete)
+- ProgramExpense (table: tblProgramExpense; columns: ProjectName, TrackerRow, TrackerLocator, ExpenseCategory, ExpenseLineItem, ExpenseQTY, ExpenseRateUnit, ExpenseActualTotal, ExpensePONumber, ExpenseInvoiceNumber, ExpenseInvoicedDate, RevenueAmount, ExpensePaymentDate, COSAmount)
+- ProgramInflows (table: tblProgramInflows; columns: ProjectName, MilestoneDesciption, Milestone%, MilstoneAmount, MilestoneInvoiceNumber, MilestoneInvoiceRaisedDate, PaymentRecievedDate, MilestoneRequirement, MilestoneCompleted)
+- Meta Data (dropdown lists etc; optional but nice)
+
+CRITICAL DATE + NUMBER RULES (must match Excel semantics)
+- Timezone: Africa/Johannesburg
+- Week starts on Monday (Excel: WEEKDAY(date,2))
+- Weekly windows: >= weekStart AND < (weekStart + 7 days)
+- Monthly windows: >= first day of month AND <= end of month (EOMONTH logic)
+- Handle Excel date serials as well as ISO dates. Some date fields may arrive as numbers (e.g., 46009) or invalid/out-of-range. Do NOT crash; treat invalid as null and follow IFERROR behavior.
+- Currency is ZAR; avoid float drift (use Decimal or integer cents internally).
+
+WHAT THE APP MUST DO (FUNCTIONAL PARITY REQUIREMENTS)
+
+A) Projects Summary 2026 (core project table)
+Render a table equivalent to Excel “tblProjects” with these columns:
+- Project Name (computed): unique list of non-empty ProjectInfo.ProjectName
+- Size (computed): ProjectInfo where Info == “PROJECT SIZE (KWP)”
+- PD (computed): ProjectInfo where Info == “PROJECT DEVELOPER”
+- PM (computed): ProjectInfo where Info == “PROJECT MANAGERS”
+- Cost Proposal Signed (manual/editable field, persisted)
+- Funding Signed (manual/editable field, persisted)
+- EPC Contract Signed (manual/editable field, persisted)
+- Phase (computed): ProjectInfo where Info contains “PHASE” (case-insensitive)
+- PD Handover date (computed): max(ActualEndDate) for tasks where TaskDescription contains “BD handover” OR “Project charter handover”
+- Construction Start date (computed): max(ActualEndDate) where TaskDescription contains “site establishment”
+- Commissioning Date (computed): max(ActualEndDate) where TaskDescription contains “commissioning”
+- O&M Handover Date (computed): max(ActualEndDate) where TaskDescription contains “handover to matriarch”
+- Client Handover Date (computed): max(ActualEndDate) where TaskDescription contains “handover to client”
+- Duration (computed): DAYS(Client Handover Date, Construction Start date)
+- kW/Week (computed): Size / DAYS(Commissioning Date, Construction Start date) * 7
+- Project % Complete (computed): average(Actual%Complete) across ProgramPlan rows for that project
+- Expected % Completed (computed): average(Expected%Complete) across ProgramPlan rows for that project
+- Delta vs Expected (computed): Project% - Expected%
+- Actual Revenue (computed): SUM(MilstoneAmount) from ProgramInflows for that project
+- Actual Expenses (computed): SUM(ExpenseActualTotal) from ProgramExpense for that project
+- GP % (computed): 1 - (ActualExpenses / ActualRevenue) ; if revenue = 0 then blank/0 per Excel behavior
+- Revenue Outstanding (computed): SUM(MilstoneAmount) where ProjectName matches AND PaymentRecievedDate <= today AND MilestoneInvoiceNumber is blank
+- Expenses Due (computed): SUM(ExpenseActualTotal) where ProjectName matches AND ExpensePaymentDate < today AND ExpenseInvoiceNumber is blank
+- Current VO Total (manual/editable field, persisted)
+- Comments (manual/editable field, persisted)
+
+UI expectations:
+- Sorting, searching, filtering (PM, Phase, date ranges)
+- Drill into a project to see: inflow milestones + expense lines + plan tasks (read-only is fine if parity matches)
+
+B) Cashflow 2026 (weekly cashflow + drilldown)
+Create a Cashflow view with:
+1) Weekly header timeline starting FY26 week 1 = 2025-09-01 and increment by 7 days across the FY.
+2) Summary rows per week:
+- Opening Balance (manual/editable per week; persist)
+- Project Inflows (computed): SUM(ProgramInflows.MilstoneAmount) where PaymentRecievedDate in week window
+- Operational Outflows (computed): Excel references an external “[1]Income Statement” monthly row and allocates per week.
+  In the app: implement an “OPEX Budget” input per month and allocate across weeks in that month (prorate evenly by number of weeks in that month like Excel does). Default to 0 if not configured.
+- Project Outflows (computed): SUM(ProgramExpense.ExpenseActualTotal) where ExpensePaymentDate in week window
+- Closing Balance (computed): Opening + Inflows - OperationalOutflows - ProjectOutflows
+- Available Payment (computed): Opening + Inflows
+- Closing Balance Diff (computed): next week opening - prior week closing (flag if non-zero)
+3) “Show Detail” toggle + filters:
+- Week selector (default: next Monday from today; Excel shows a selected week cell)
+- Project selector with (All projects)
+When “Show Detail” is on, show TWO detail tables:
+- Outflow detail lines (from ProgramExpense filtered by week + optional project):
+  columns: Project, Category, Item, Invoice, PaymentDate, Amount, TrackerLocator
+  plus total Amount.
+- Inflow detail lines (from ProgramInflows filtered by week + optional project):
+  columns: Project, Milestone, Invoice, PaymentDate, Amount, MilestoneRequirement, MilestoneCompleted, Days to Receipt
+  Days to Receipt: if both InvoiceRaisedDate and PaymentRecievedDate exist, diff in days; else blank.
+
+C) REV Tracker 26 and COS Tracker 26 (monthly plan vs budget vs actual)
+Build two tracker views with months Sep 2025 → Aug 2026 and these rows:
+REV Tracker:
+- Planned REV (computed): SUM(ProgramExpense.RevenueAmount) where ExpenseInvoicedDate is within month
+- Realised REV (manual input per month; persist)
+- Outstanding REV (manual input per month; persist)
+- Budget REV (manual input per month; persist)  [Excel references external Income Statement]
+- Variance R (computed): Planned - Budget
+- Variance % (computed): if Budget=0 => 0 else (Planned-Budget)/Budget
+- YTD Planned/Realised/Outstanding/Budget (running sum across months)
+- YTD Variance R and % (same logic)
+
+COS Tracker:
+- Planned COS (computed): SUM(ProgramExpense.ExpenseActualTotal) where ExpenseInvoicedDate is within month
+- Realised COS (manual input per month; persist)
+- Outstanding COS (manual input per month; persist)
+- Budget COS (manual input per month; persist) [Excel references external Income Statement, sign handled there; in app store as positive COS budget and treat variance consistently]
+- Variance + YTD same as REV
+
+D) Program Dashboard (executive snapshot)
+Create a dashboard with these KPIs (computed off the Projects Summary + Cashflow logic):
+- Site Establishment (Next 10 Days): count of projects where Construction Start date is between today and today+10 inclusive
+- Commissioning (Next 10 Days): count where Commissioning Date between today and today+10
+- O&M Handover (Next 10 Days): count where O&M Handover Date between today and today+10
+- Client Hand Over (Next 10 Days): count where Client Handover Date between today and today+10
+- Revenue Outstanding: SUM of Projects Summary “Revenue Outstanding”
+- Expense Overdue: SUM of Projects Summary “Expenses Due”
+- Project Inflows (This Week): inflows for current week (weekStart = today - WEEKDAY(today,2) + 1)
+- Project Outflows (This Week): outflows for current week (same weekStart)
+- PM table:
+  PM list = unique non-empty PM values from Projects Summary
+  For each PM:
+    * Active Projects: count where PM matches AND Client Handover Date >= today
+    * Commissioning (This Month): count where PM matches AND Commissioning Date within current month
+    * Client Handover (This Month): count where PM matches AND Client Handover Date within current month
+
+THEME + UI (Emergent Energy)
+- Make it sleek, modern, and fast. Responsive layout.
+- Implement a theme system (design tokens) for colors, typography, spacing.
+- Use Emergent Energy branding:
+  1) First look for existing brand assets in repo (logo, colors, CSS variables).
+  2) If missing, derive primary/secondary colors from the Excel styling or current app palette, then centralize them in a theme file.
+- Use clean components (tables, cards, date pickers, filters). No clutter.
+
+TESTING (non-negotiable)
+Goal: prove parity with the Excel workbook, automatically.
+1) Build a “parity test harness”:
+   - Read the Excel file (prefer Python openpyxl or a Node XLSX lib).
+   - Export the hidden tables into JSON fixtures (ProjectInfo, ProgramPlan, ProgramExpense, ProgramInflows).
+   - Load the workbook in data_only mode and capture expected outputs for:
+     - Program Dashboard KPI cells
+     - A sampled set of Projects Summary rows/columns
+     - A sampled set of Cashflow weeks (rows 2–8) + detail line counts/totals for a chosen week
+     - REV/COS tracker totals for each month (planned + YTD)
+2) Implement unit tests for the calculation engine (pure functions).
+3) Implement integration tests for the API endpoints that the UI uses.
+4) Implement e2e UI smoke tests (Playwright/Cypress) covering:
+   - Dashboard renders
+   - Filters work
+   - Cashflow detail toggle + week/project filters
+   - Trackers accept manual inputs and recompute variances/YTD
+
+Definition of Done:
+- Parity tests pass with tolerances: currency within 0.01, percentages within 0.0001.
+- UI matches required views and interactions.
+- No silent date parsing bugs (serials + invalid dates handled).
+- Provide a short “Parity Report” in the repo:
+  - Feature matrix (Excel feature → app feature)
+  - Known gaps (if any) + how resolved
+  - How to run tests locally + in CI
+
+WORKFLOW YOU MUST FOLLOW
+1) Audit the current codebase: identify what exists vs missing.
+2) Produce a parity checklist (as a markdown file) before changing logic.
+3) Implement a dedicated calculation layer (don’t scatter logic across UI).
+4) Wire UI to the calculation layer via API or shared modules.
+5) Add tests alongside each feature.
+6) Final pass: performance + UX polish.
+
+Start by generating:
+- A gap analysis (what the app has vs what Excel requires)
+- A concrete implementation plan (ordered steps)
+Then implement and commit in small, reviewable chunks.
