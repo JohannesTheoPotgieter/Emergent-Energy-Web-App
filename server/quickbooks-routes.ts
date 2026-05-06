@@ -745,7 +745,7 @@ export function registerQuickBooksRoutes(app: Express): void {
   // finance can't accidentally re-shuffle reconciled allocations. The
   // canonical "I want to repoint this link" flow is the new POST
   // /api/quickbooks/links/:id/force-relink endpoint, which is also admin-only.
-  app.delete("/api/quickbooks/links/:id", requireAuth, requireAdmin, async (req, res) => {
+  app.delete("/api/quickbooks/links/:id", requireAuth, requirePermission("financials", "edit"), requireAdmin, async (req, res) => {
     try {
       const id = Number(req.params.id);
       if (!Number.isFinite(id) || id <= 0) {

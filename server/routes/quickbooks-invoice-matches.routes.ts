@@ -1046,14 +1046,14 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
           const [row] = await db
             .select({ projectId: normalizedCostLines.projectId })
             .from(normalizedCostLines)
-            .where(eq(normalizedCostLines.id, appEntityId))
+            .where(and(eq(normalizedCostLines.id, appEntityId), isNull(normalizedCostLines.effectiveTo)))
             .limit(1);
           projectId = row?.projectId ?? null;
         } else {
           const [row] = await db
             .select({ projectId: normalizedRevenueLines.projectId })
             .from(normalizedRevenueLines)
-            .where(eq(normalizedRevenueLines.id, appEntityId))
+            .where(and(eq(normalizedRevenueLines.id, appEntityId), isNull(normalizedRevenueLines.effectiveTo)))
             .limit(1);
           projectId = row?.projectId ?? null;
         }
@@ -1093,7 +1093,7 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
                   const [r] = await db
                     .select({ projectId: normalizedCostLines.projectId })
                     .from(normalizedCostLines)
-                    .where(eq(normalizedCostLines.id, a.appEntityId))
+                    .where(and(eq(normalizedCostLines.id, a.appEntityId), isNull(normalizedCostLines.effectiveTo)))
                     .limit(1);
                   return {
                     appEntityType: "cost_line" as const,
@@ -1105,7 +1105,7 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
                   const [r] = await db
                     .select({ projectId: normalizedRevenueLines.projectId })
                     .from(normalizedRevenueLines)
-                    .where(eq(normalizedRevenueLines.id, a.appEntityId))
+                    .where(and(eq(normalizedRevenueLines.id, a.appEntityId), isNull(normalizedRevenueLines.effectiveTo)))
                     .limit(1);
                   return {
                     appEntityType: "revenue_line" as const,
@@ -1547,7 +1547,7 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
                   const [r] = await db
                     .select({ projectId: normalizedCostLines.projectId })
                     .from(normalizedCostLines)
-                    .where(eq(normalizedCostLines.id, a.appEntityId))
+                    .where(and(eq(normalizedCostLines.id, a.appEntityId), isNull(normalizedCostLines.effectiveTo)))
                     .limit(1);
                   return {
                     appEntityType: "cost_line" as const,
@@ -1559,7 +1559,7 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
                   const [r] = await db
                     .select({ projectId: normalizedRevenueLines.projectId })
                     .from(normalizedRevenueLines)
-                    .where(eq(normalizedRevenueLines.id, a.appEntityId))
+                    .where(and(eq(normalizedRevenueLines.id, a.appEntityId), isNull(normalizedRevenueLines.effectiveTo)))
                     .limit(1);
                   return {
                     appEntityType: "revenue_line" as const,
@@ -1828,7 +1828,7 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
           const [row] = await db
             .select({ projectId: normalizedCostLines.projectId })
             .from(normalizedCostLines)
-            .where(eq(normalizedCostLines.id, body.appEntityId))
+            .where(and(eq(normalizedCostLines.id, body.appEntityId), isNull(normalizedCostLines.effectiveTo)))
             .limit(1);
           if (!row) return sendError(res, notFound("Cost line"));
           projectId = row.projectId ?? null;
@@ -1836,7 +1836,7 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
           const [row] = await db
             .select({ projectId: normalizedRevenueLines.projectId })
             .from(normalizedRevenueLines)
-            .where(eq(normalizedRevenueLines.id, body.appEntityId))
+            .where(and(eq(normalizedRevenueLines.id, body.appEntityId), isNull(normalizedRevenueLines.effectiveTo)))
             .limit(1);
           if (!row) return sendError(res, notFound("Revenue line"));
           projectId = row.projectId ?? null;
@@ -2152,14 +2152,14 @@ export function registerQuickBooksInvoiceMatchRoutes(app: Express): void {
               const [row] = await db
                 .select({ projectId: normalizedCostLines.projectId })
                 .from(normalizedCostLines)
-                .where(eq(normalizedCostLines.id, appEntityId))
+                .where(and(eq(normalizedCostLines.id, appEntityId), isNull(normalizedCostLines.effectiveTo)))
                 .limit(1);
               projectId = row?.projectId ?? null;
             } else {
               const [row] = await db
                 .select({ projectId: normalizedRevenueLines.projectId })
                 .from(normalizedRevenueLines)
-                .where(eq(normalizedRevenueLines.id, appEntityId))
+                .where(and(eq(normalizedRevenueLines.id, appEntityId), isNull(normalizedRevenueLines.effectiveTo)))
                 .limit(1);
               projectId = row?.projectId ?? null;
             }
