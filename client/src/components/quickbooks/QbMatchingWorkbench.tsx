@@ -776,7 +776,9 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
               </th>
               <th className="px-2 py-1.5 text-left">Lane</th>
               <th className="px-2 py-1.5 text-left">App Ref</th>
-              <th className="px-2 py-1.5 text-left">{scope === "cost" ? "Supplier" : "Milestone"}</th>
+              <th className="px-2 py-1.5 text-left">Counterparty</th>
+              <th className="px-2 py-1.5 text-left">Project</th>
+              <th className="px-2 py-1.5 text-left">{scope === "cost" ? "Line Item" : "Milestone"}</th>
               <th className="px-2 py-1.5 text-right">App Amount</th>
               <th className="px-2 py-1.5 text-left">Best QB Match</th>
               <th className="px-2 py-1.5 text-left">QB Counterparty</th>
@@ -790,7 +792,7 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
           <tbody>
             {isLoading && (
               <tr data-testid="table-loading">
-                <td colSpan={12} className="px-3 py-4 text-center text-muted-foreground">
+                <td colSpan={14} className="px-3 py-4 text-center text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin inline mr-2" />
                   Loading…
                 </td>
@@ -798,7 +800,7 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
             )}
             {!isLoading && visibleRows.length === 0 && (
               <tr data-testid="table-empty">
-                <td colSpan={12} className="px-3 py-4 text-center text-muted-foreground">
+                <td colSpan={14} className="px-3 py-4 text-center text-muted-foreground">
                   {search ? "No results — try a different search." : "Type to search for app lines."}
                 </td>
               </tr>
@@ -858,15 +860,24 @@ export function QbMatchingWorkbench({ defaultScope = "cost" }: QbMatchingWorkben
                     </div>
                   </td>
 
-                  {/* App counterparty (cost) / milestone (revenue) — header
-                      label flips with `scope` above. For revenue rows the
-                      `description` field carries the milestone name (set in
-                      sourceLines mapping), since revenue lines have no
-                      per-line counterparty column. */}
+                  {/* Counterparty — vendor for cost; for revenue we don't
+                      have a per-line customer column, so we fall back to
+                      projectName (which is what the matcher uses as the
+                      proxy against QB CustomerRef). */}
                   <td className="px-2 py-1.5 max-w-[10rem] truncate">
-                    {(scope === "cost"
-                      ? row.appLine.counterpartyName
-                      : row.appLine.description) ?? "—"}
+                    {row.appLine.counterpartyName ?? "—"}
+                  </td>
+
+                  {/* Project name — same source for both scopes. */}
+                  <td className="px-2 py-1.5 max-w-[10rem] truncate">
+                    {row.appLine.projectName ?? `Project ${row.appLine.projectId}`}
+                  </td>
+
+                  {/* Line item (cost) / milestone (revenue) — both come
+                      from `description`, which sourceLines maps to
+                      milestoneName for revenue. */}
+                  <td className="px-2 py-1.5 max-w-[12rem] truncate">
+                    {row.appLine.description ?? "—"}
                   </td>
 
                   {/* App amount */}
