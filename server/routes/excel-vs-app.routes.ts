@@ -33,7 +33,17 @@ import { trackerReplicaRepository, trackerReplicaWriteRepository } from "../repo
 import { ApiError, badRequest, notFound, forbidden, serverError } from "../lib/api-error";
 import { validateBody } from "../middleware/validateBody";
 import { db } from "../db";
-import { applyManualOverride, clearManualOverride } from "../lib/manual-overrides";
+import {
+  bulkAcceptExcelForRow,
+  bulkKeepAppForRow,
+  chunk,
+  groupByRow,
+  mapWithConcurrency,
+  RESOLVE_CHUNK_CONCURRENCY,
+  RESOLVE_CHUNK_ROWS,
+  type AcceptExcelFieldResult,
+  type KeepAppFieldResult,
+} from "../lib/excel-vs-app-bulk";
 import { recordOverride } from "../lib/audit/diff-engine";
 import { emitExcelVsAppMetric } from "../lib/excel-vs-app-metrics";
 import { sendExcelUpdateRequest } from "../services/excel-update-request-mailer";
@@ -64,16 +74,6 @@ function actorCanResolveSection(role: string | undefined, section: DiffSection):
   if (!role) return false;
   const allowed = DRIFT_RESOLVER_ROLES[section] as readonly string[];
   return allowed.includes(role);
-}
-
-/** Narrow `unknown` to the OverrideValue domain. JSONB columns return
- *  `unknown`; at runtime every tracked field is one of these primitives.
- *  Anything else (an unexpected object, an array) is coerced to null
- *  so the schema validation in `applyManualOverride` sees a clean value. */
-function coerceToOverrideValue(v: unknown): string | number | boolean | null {
-  if (v === null || v === undefined) return null;
-  if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") return v;
-  return null;
 }
 
 /** PLAN-section owner exception: a work-item owner can resolve drift
@@ -238,26 +238,83 @@ export function registerExcelVsAppRoutes(app: Express): void {
           `Project ${projectId}`;
 
         if (body.action === "accept_excel") {
-          // Atomic bulk: any failure rolls back the whole batch so a
-          // partially-resolved bulk action can never leave the row state
-          // inconsistent. Audit writes (recordOverride below) live
-          // outside the tx so a transient audit fault does not roll back
-          // the resolution itself.
-          let resolved = 0;
+          // Bulk-resolve strategy:
+          //   1) Group entries by (table, rowId) → 1 read + 1 write per
+          //      row instead of per field. A typical bulk has 4-6 fields
+          //      per row; this alone cuts round-trips ~5x.
+          //   2) Chunk row-groups into transactions of RESOLVE_CHUNK_ROWS
+          //      so each commit stays well under any per-query timeout
+          //      (Neon was killing the previous one-giant-tx approach
+          //      ~5s in with "Failed query: rollback / Query read
+          //      timeout"). Chunks are committed independently; partial
+          //      bulks are reported via `failed`/`status:'partial'` and
+          //      the operator can re-submit the unfinished selection
+          //      (the row ops are idempotent).
+          //   3) Run RESOLVE_CHUNK_CONCURRENCY chunks in parallel for
+          //      throughput, bounded so we don't exhaust the pool.
+          //   4) Audit writes (recordOverride) and the Excel-update
+          //      email run AFTER all chunks complete, so an audit fault
+          //      can never roll back a successful resolution.
+          const rowOps = Array.from(
+            groupByRow(body.entries.map((e) => ({ table: e.table, rowId: e.rowId, fieldName: e.fieldName }))).values(),
+          ).map((g) => ({ table: g.table, rowId: g.rowId, fields: g.entries.map((x) => x.fieldName) }));
+          const chunks = chunk(rowOps, RESOLVE_CHUNK_ROWS);
           const auditEntries: Array<{ entry: typeof body.entries[number]; before: unknown; live: unknown }> = [];
-          await db.transaction(async (tx: typeof db) => {
-            for (const e of body.entries) {
-              const beforeOverride = await readManualOverrideValue(e.table, e.rowId, e.fieldName, tx);
-              const liveValue = await readLiveValue(e.table, e.rowId, e.fieldName, tx);
-              const snapValue = await readSnapshotValue(e.table, e.rowId, e.fieldName, tx);
-              await clearManualOverride(e.table, e.rowId, e.fieldName, tx);
-              if (snapValue !== liveValue) {
-                await patchImportSnapshot(e.table, e.rowId, e.fieldName, liveValue, tx);
-              }
-              auditEntries.push({ entry: e, before: beforeOverride, live: liveValue });
-              resolved++;
+          let resolved = 0;
+          let failed = 0;
+          const errors: Array<{ table: string; rowId: number; message: string; affectedFields: number }> = [];
+          const chunkResults = await mapWithConcurrency(chunks, RESOLVE_CHUNK_CONCURRENCY, async (chunkRows) => {
+            try {
+              const perRow: Array<{ table: typeof chunkRows[number]["table"]; rowId: number; results: AcceptExcelFieldResult[] }> = [];
+              await db.transaction(async (tx: typeof db) => {
+                for (const op of chunkRows) {
+                  const results = await bulkAcceptExcelForRow(tx, op);
+                  perRow.push({ table: op.table, rowId: op.rowId, results });
+                }
+              });
+              return { ok: true as const, perRow };
+            } catch (err: any) {
+              const msg = err?.message ?? String(err);
+              console.error(`[excel-vs-app] accept_excel chunk failed (${chunkRows.length} rows):`, msg);
+              return { ok: false as const, msg, chunkRows };
             }
           });
+          for (const c of chunkResults) {
+            if (c.ok) {
+              for (const row of c.perRow) {
+                for (const r of row.results) {
+                  resolved++;
+                  auditEntries.push({
+                    entry: { table: row.table, rowId: row.rowId, fieldName: r.fieldName },
+                    before: r.beforeOverride,
+                    live: r.liveValue,
+                  });
+                }
+              }
+            } else {
+              for (const op of c.chunkRows) {
+                failed += op.fields.length;
+                errors.push({ table: op.table, rowId: op.rowId, message: c.msg, affectedFields: op.fields.length });
+              }
+            }
+          }
+          // Per-row consolidated log line for observability — replaces
+          // the old per-field "manual-overrides clear" lines (which on
+          // a 6k-field bulk produced 6k log lines).
+          if (resolved > 0) {
+            console.log(JSON.stringify({
+              tag: "excel-vs-app",
+              op: "accept_excel_bulk",
+              projectId,
+              rows: rowOps.length,
+              fields: resolved,
+              failedFields: failed,
+              chunkRows: RESOLVE_CHUNK_ROWS,
+              concurrency: RESOLVE_CHUNK_CONCURRENCY,
+              actorUserId: actorId,
+            }));
+          }
+          // Audit fire-and-forget after the resolution is durable.
           for (const a of auditEntries) {
             try {
               await recordOverride({
@@ -286,32 +343,73 @@ export function registerExcelVsAppRoutes(app: Express): void {
             actorRole: actorRole ?? null,
             actorUserId: actorId,
           });
-          res.json({ status: "ok", action: body.action, resolved });
+          const status = failed === 0 ? "ok" : (resolved === 0 ? "failed" : "partial");
+          res.json({ status, action: body.action, resolved, failed, errors: failed > 0 ? errors : undefined });
           return;
         }
 
         if (body.action === "keep_app") {
-          let resolved = 0;
+          // See accept_excel above for the bulk-resolve strategy notes —
+          // same shape, different per-row helper.
+          const rowOps = Array.from(
+            groupByRow(body.entries.map((e) => ({ table: e.table, rowId: e.rowId, fieldName: e.fieldName }))).values(),
+          ).map((g) => ({
+            table: g.table,
+            rowId: g.rowId,
+            fields: g.entries.map((x) => ({ fieldName: x.fieldName, reason: body.reason, editedBy: actorId })),
+          }));
+          const chunks = chunk(rowOps, RESOLVE_CHUNK_ROWS);
           const auditEntries: Array<{ entry: typeof body.entries[number]; live: unknown }> = [];
-          await db.transaction(async (tx: typeof db) => {
-            for (const e of body.entries) {
-              const liveValue = await readLiveValue(e.table, e.rowId, e.fieldName, tx);
-              await applyManualOverride({
-                table: e.table,
-                rowId: e.rowId,
-                fieldName: e.fieldName,
-                // liveValue is `unknown` from the dynamic field read but
-                // every tracked column is one of the OverrideValue
-                // primitives at runtime — coerce explicitly so the
-                // helper sees a typed value.
-                value: coerceToOverrideValue(liveValue),
-                editedBy: actorId,
-                note: body.reason,
-              }, tx);
-              auditEntries.push({ entry: e, live: liveValue });
-              resolved++;
+          let resolved = 0;
+          let failed = 0;
+          const errors: Array<{ table: string; rowId: number; message: string; affectedFields: number }> = [];
+          const chunkResults = await mapWithConcurrency(chunks, RESOLVE_CHUNK_CONCURRENCY, async (chunkRows) => {
+            try {
+              const perRow: Array<{ table: typeof chunkRows[number]["table"]; rowId: number; results: KeepAppFieldResult[] }> = [];
+              await db.transaction(async (tx: typeof db) => {
+                for (const op of chunkRows) {
+                  const results = await bulkKeepAppForRow(tx, op);
+                  perRow.push({ table: op.table, rowId: op.rowId, results });
+                }
+              });
+              return { ok: true as const, perRow };
+            } catch (err: any) {
+              const msg = err?.message ?? String(err);
+              console.error(`[excel-vs-app] keep_app chunk failed (${chunkRows.length} rows):`, msg);
+              return { ok: false as const, msg, chunkRows };
             }
           });
+          for (const c of chunkResults) {
+            if (c.ok) {
+              for (const row of c.perRow) {
+                for (const r of row.results) {
+                  resolved++;
+                  auditEntries.push({
+                    entry: { table: row.table, rowId: row.rowId, fieldName: r.fieldName },
+                    live: r.liveValue,
+                  });
+                }
+              }
+            } else {
+              for (const op of c.chunkRows) {
+                failed += op.fields.length;
+                errors.push({ table: op.table, rowId: op.rowId, message: c.msg, affectedFields: op.fields.length });
+              }
+            }
+          }
+          if (resolved > 0) {
+            console.log(JSON.stringify({
+              tag: "excel-vs-app",
+              op: "keep_app_bulk",
+              projectId,
+              rows: rowOps.length,
+              fields: resolved,
+              failedFields: failed,
+              chunkRows: RESOLVE_CHUNK_ROWS,
+              concurrency: RESOLVE_CHUNK_CONCURRENCY,
+              actorUserId: actorId,
+            }));
+          }
           for (const a of auditEntries) {
             try {
               await recordOverride({
@@ -341,22 +439,24 @@ export function registerExcelVsAppRoutes(app: Express): void {
             actorUserId: actorId,
           });
           // Ask the workbook owners to update Excel so it re-establishes
-          // itself as source of truth. Awaited so the response carries
-          // the email/bell outcome — useful for FE testers and the
-          // metrics surface. The mailer never throws (failures are
+          // itself as source of truth. Only fire the email when at least
+          // one resolution committed; mailer never throws (failures are
           // logged inside).
-          const mail = await sendExcelUpdateRequest({
-            projectId,
-            projectName,
-            resolveAction: "keep_app",
-            section: deriveSection(body.entries) ?? "MIXED",
-            entries: body.entries,
-            reason: body.reason,
-            requesterUserId: actorId,
-            requesterName: req.user?.name ?? null,
-            requesterEmail: req.user?.email ?? null,
-          });
-          res.json({ status: "ok", action: body.action, resolved, mail });
+          const mail = resolved > 0
+            ? await sendExcelUpdateRequest({
+                projectId,
+                projectName,
+                resolveAction: "keep_app",
+                section: deriveSection(body.entries) ?? "MIXED",
+                entries: body.entries,
+                reason: body.reason,
+                requesterUserId: actorId,
+                requesterName: req.user?.name ?? null,
+                requesterEmail: req.user?.email ?? null,
+              })
+            : null;
+          const status = failed === 0 ? "ok" : (resolved === 0 ? "failed" : "partial");
+          res.json({ status, action: body.action, resolved, failed, errors: failed > 0 ? errors : undefined, mail });
           return;
         }
 
@@ -438,16 +538,11 @@ export function registerExcelVsAppRoutes(app: Express): void {
   );
 }
 
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /**
- * Read the live value for a (table, rowId, fieldName). Used by the
- * "keep_app" action when there's no existing override entry — we
- * want to record the value the operator currently sees. Accepts
- * an optional `tx` so reads inside a transaction see the same
- * snapshot as the writes.
- *
- * Per-table dispatch to keep Drizzle's strict typing — the dynamic
- * `fieldName` lookup is inherently un-type-checkable (it's a string
- * resolved at runtime), but the table chain stays narrowly typed.
+ * Legacy per-field readers. Kept for reference / potential reuse but
+ * no longer wired to the resolve path — see `lib/excel-vs-app-bulk.ts`.
+ * @deprecated Replaced by row-grouped bulk helpers.
  */
 async function readLiveValue(
   table: "normalized_cost_lines" | "normalized_revenue_lines" | "work_items",
