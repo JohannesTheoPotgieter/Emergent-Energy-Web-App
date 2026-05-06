@@ -148,7 +148,9 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "quality", path: "/quality", label: "Quality", iconKey: "ShieldCheck", navGroup: "QUALITY", permissionEntity: "quality", showInSidebar: true, routeComponentKey: "QmDashboardPage", roleLandingEligibility: ["QUALITY_MANAGER"] },
   { id: "qualityDashboardV2", path: "/quality/dashboard", label: "Quality Dashboard (Project)", type: "alias", permissionEntity: "quality", redirectTo: "/quality" },
   { id: "qualityNcrList", path: "/quality/ncrs", label: "NCR List (Legacy)", type: "alias", permissionEntity: "quality", showInSidebar: false, redirectTo: "/quality" },
-  { id: "qualityNcrDetail", path: "/quality/ncr/:id", label: "NCR Detail (Legacy)", type: "alias", permissionEntity: "quality", showInSidebar: false, redirectTo: "/quality" },
+  // Legacy NCR detail deep links: forward to /quality with the id preserved
+  // as ?ncr=<id> so external bookmarks/email/Teams links don't lose context.
+  { id: "qualityNcrDetail", path: "/quality/ncr/:id", label: "NCR Detail (Legacy)", permissionEntity: "quality", showInSidebar: false, routeComponentKey: "NcrLegacyRedirect" },
   { id: "engineering", path: "/engineering", label: "Engineering", iconKey: "Wrench", navGroup: "ENGINEERING", permissionEntity: "engineering", showInSidebar: true, routeComponentKey: "EngineeringDashboardPage", roleLandingEligibility: ["ENGINEERING_MANAGER", "ENGINEER"] },
   { id: "engineeringTasks", path: "/engineering/tasks", label: "Task Board", iconKey: "ListTodo", navGroup: "ENGINEERING", permissionEntity: "eng_tasks", showInSidebar: true, routeComponentKey: "EngineeringTasksPage" },
   { id: "engineeringStandup", path: "/engineering/standup", label: "Engineering Standup", iconKey: "Users", navGroup: "ENGINEERING", permissionEntity: "standups", showInSidebar: true, routeComponentKey: "EngineeringStandupPage" },

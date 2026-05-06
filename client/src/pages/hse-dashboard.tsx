@@ -54,6 +54,10 @@ const SEVERITIES = [
   { value: "critical", label: "Critical" },
 ];
 
+interface ProjectOption { id: number; project_name: string }
+
+const EMPTY_FORM = { projectId: "" as string | number, incidentType: "near_miss", severity: "low", description: "", location: "", evidenceLink: "", incidentDate: new Date().toISOString().slice(0, 10) };
+
 export default function HseDashboardPage() {
   // HSE backend (server/departments/hse-routes.ts header) is intentionally
   // open: any authenticated user may CREATE an incident or EDIT non-status
@@ -65,11 +69,30 @@ export default function HseDashboardPage() {
   const canApproveStatus = canAccessEntityAction("hse_incidents", "approve");
   const [tab, setTab] = useState<"incidents" | "corrective_actions">("incidents");
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ incidentType: "near_miss", severity: "low", description: "", location: "", evidenceLink: "", incidentDate: new Date().toISOString().slice(0, 10) });
+  const [form, setForm] = useState({ ...EMPTY_FORM });
   const [editingIncident, setEditingIncident] = useState<HseIncidentSummary | null>(null);
   const [editForm, setEditForm] = useState({ incidentType: "near_miss", severity: "low", description: "", location: "", evidenceLink: "", incidentDate: new Date().toISOString().slice(0, 10) });
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // hse_incidents.project_id is NOT NULL with an FK to project_info.id
+  // (shared/schema/hse.ts:13). Loading the active project list lets users
+  // pick a real project — never write `projectId: 0`, which would either
+  // 500 on the FK or orphan the incident if id 0 ever existed.
+  const { data: projects = [] } = useQuery<ProjectOption[]>({
+    queryKey: ["/api/projects-summary", "hse-incident-form"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/projects-summary");
+      const data = await res.json();
+      return (Array.isArray(data) ? data : [])
+        .filter((p: any) => p?.is_active !== false && (String(p?.phase || "").toLowerCase() !== "completed"))
+        .map((p: any) => ({ id: Number(p.id ?? p.project_id), project_name: String(p.project_name ?? p.name ?? "") }))
+        .filter((p) => Number.isFinite(p.id) && p.project_name)
+        .sort((a, b) => a.project_name.localeCompare(b.project_name));
+    },
+    enabled: showCreate,
+    staleTime: 60_000,
+  });
 
   const createMutation = useMutation({
     mutationFn: async (body: Record<string, unknown>) => {
@@ -80,7 +103,7 @@ export default function HseDashboardPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/hse/incidents"] });
       toast({ title: "Incident reported" });
       setShowCreate(false);
-      setForm({ incidentType: "near_miss", severity: "low", description: "", location: "", evidenceLink: "", incidentDate: new Date().toISOString().slice(0, 10) });
+      setForm({ ...EMPTY_FORM });
     },
     onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
   });
@@ -275,6 +298,15 @@ export default function HseDashboardPage() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader><DialogTitle>Report HSE Incident</DialogTitle></DialogHeader>
           <div className="space-y-3">
+            <div>
+              <Label className="text-xs">Project *</Label>
+              <SearchableSelect
+                value={form.projectId === "" ? "" : String(form.projectId)}
+                onValueChange={(v) => setForm((f) => ({ ...f, projectId: v ? Number(v) : "" }))}
+                options={projects.map((p) => ({ value: String(p.id), label: p.project_name }))}
+                placeholder="Select project"
+              />
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label className="text-xs">Type *</Label><SearchableSelect value={form.incidentType} onValueChange={v => setForm(f => ({ ...f, incidentType: v }))} options={INCIDENT_TYPES} /></div>
               <div><Label className="text-xs">Severity *</Label><SearchableSelect value={form.severity} onValueChange={v => setForm(f => ({ ...f, severity: v }))} options={SEVERITIES} /></div>
@@ -286,7 +318,26 @@ export default function HseDashboardPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreate(false)}>Cancel</Button>
-            <Button onClick={() => createMutation.mutate({ projectId: 0, incidentType: form.incidentType, severity: form.severity, description: form.description, incidentDate: form.incidentDate, location: form.location || null, evidenceLink: form.evidenceLink || null })} disabled={!form.description.trim() || createMutation.isPending}>Report</Button>
+            <Button
+              onClick={() => {
+                if (typeof form.projectId !== "number") {
+                  toast({ title: "Project required", description: "Pick the project this incident relates to.", variant: "destructive" });
+                  return;
+                }
+                createMutation.mutate({
+                  projectId: form.projectId,
+                  incidentType: form.incidentType,
+                  severity: form.severity,
+                  description: form.description,
+                  incidentDate: form.incidentDate,
+                  location: form.location || null,
+                  evidenceLink: form.evidenceLink || null,
+                });
+              }}
+              disabled={typeof form.projectId !== "number" || !form.description.trim() || createMutation.isPending}
+            >
+              Report
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

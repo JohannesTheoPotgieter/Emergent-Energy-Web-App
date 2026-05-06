@@ -1,7 +1,7 @@
 // Site / Execution Controls — Execution enablement and handover controls
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -44,7 +44,25 @@ const STATUS_DISPLAY: Record<string, string> = {
   HANDOVER_COMPLETE: "Handover Complete",
 };
 
+// Same data, two audiences: PM/PD-facing handover queue vs. admin/COO health view.
+// Title and description shift based on the mounted route so users see framing
+// that matches their context.
+const VIEW_BY_PATH: Record<string, { title: string; description: string }> = {
+  "/admin/handover-health": {
+    title: "Handover Health Score",
+    description: "COO view: execution enablement, handover controls, and health scoring.",
+  },
+  "/handover-control": {
+    title: "Handover Queue",
+    description: "Project Development handovers pending PM review, accepted, or returned for rework.",
+  },
+};
+
+const DEFAULT_VIEW = VIEW_BY_PATH["/handover-control"];
+
 export default function HandoverControlPage() {
+  const [location] = useLocation();
+  const view = VIEW_BY_PATH[location] ?? DEFAULT_VIEW;
   const { data, isLoading, error } = useQuery<{ items: any[]; dashboard?: { readyForPmReview: number; rejectedReturnedToPd: number; overdueHandovers: number; missingRequiredEvidence: number; acceptedThisMonth: number } }>({
     queryKey: ["/api/engineering-pm-handover/control"],
   });
@@ -63,7 +81,7 @@ export default function HandoverControlPage() {
 
   return (
     <PageShell className="p-4 md:p-6" data-testid="handover-control-page">
-      <SectionHeader icon={<Handshake className="h-5 w-5" />} title="Handover Health Score" description="COO view: execution enablement, handover controls, and health scoring." />
+      <SectionHeader icon={<Handshake className="h-5 w-5" />} title={view.title} description={view.description} />
 
       <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-4">
         <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Total</p><p className="text-xl font-semibold">{totals.total}</p></CardContent></Card>
