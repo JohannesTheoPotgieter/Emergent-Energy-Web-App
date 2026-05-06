@@ -22,4 +22,9 @@ export {
   SmartImportBulkResultNext,
   type BulkResultProject,
 } from "./SmartImportBulkFlow";
+export {
+  BulkConflictDialog,
+  type V2ConflictRow,
+  type V2ConflictField,
+} from "./BulkConflictDialog";
 export * from "./labels";
