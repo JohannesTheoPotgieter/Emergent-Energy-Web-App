@@ -23,7 +23,12 @@ export function useAccessMatrix() {
     ? normalizeRoleForPermissions(lens.effectivePermissionRole)
     : normalizeRoleForPermissions(companyRole || user?.role || null);
 
-  const { data: permissions, isLoading: permissionsLoading } = useQuery<PermissionsResponse>({
+  const {
+    data: permissions,
+    isLoading: permissionsLoading,
+    isError: permissionsError,
+    refetch: refetchPermissions,
+  } = useQuery<PermissionsResponse>({
     queryKey: ["auth-permissions-matrix", effectiveRole],
     queryFn: async () => {
       const token = localStorage.getItem("auth_token");
@@ -31,10 +36,12 @@ export function useAccessMatrix() {
       if (token) headers.Authorization = `Bearer ${token}`;
       if (effectiveRole) headers["x-company-role"] = effectiveRole;
       const res = await fetch("/api/auth/permissions", { headers, credentials: "include" });
+      if (!res.ok) throw new Error(`permissions http ${res.status}`);
       return res.json();
     },
     enabled: !!effectiveRole,
     staleTime: 30_000,
+    retry: 1,
   });
 
   const disabledSubPages = useMemo(() => {
@@ -94,5 +101,7 @@ export function useAccessMatrix() {
     canViewPath,
     disabledSubPages,
     loading: authLoading || permissionsLoading,
+    permissionsError,
+    refetchPermissions,
   };
 }

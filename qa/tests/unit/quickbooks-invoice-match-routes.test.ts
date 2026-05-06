@@ -114,18 +114,30 @@ describe("invoice-matches — every mutating endpoint writes audit", () => {
   });
 });
 
-describe("invoice-matches — vendor/customer mapping upsert (item 4)", () => {
-  it("approve handler imports upsertVendorMapping from reconciliation service", () => {
-    expect(ROUTES).toContain("upsertVendorMapping");
-    expect(ROUTES).toContain("upsertCustomerMapping");
+describe("invoice-matches — vendor/customer mapping cascade (item 4, post-cascade redesign)", () => {
+  // Originally these tests pinned an immediate `upsertVendorMapping` call inside
+  // the approve handler. That contract was deliberately replaced by the
+  // qb_link_proposed_cascades pipeline: vendor + customer mappings are now
+  // recorded as `proposalType: "vendor_mapping"` rows for explicit per-cascade
+  // reviewer approval (see `server/services/quickbooks-cascade-proposals-service.ts`).
+  // The vendor lock continues to be enforced — but inside the cascade evaluator,
+  // not the route handler.
+  const SERVICE_PROPOSALS = read(
+    "server/services/quickbooks-cascade-proposals-service.ts",
+  );
+
+  it("approve handler delegates vendor/customer mapping to detectAndPersistProposals", () => {
+    expect(ROUTES).toContain("detectAndPersistProposals");
   });
 
-  it("approve handler checks for locked vendor mapping before upserting", () => {
-    expect(ROUTES).toMatch(/vmResult\.wasLocked[\s\S]{0,80}mapping_locked/);
+  it("cascade-proposals service emits a vendor_mapping proposal type", () => {
+    expect(SERVICE_PROPOSALS).toContain('proposalType: "vendor_mapping"');
+    expect(SERVICE_PROPOSALS).toContain('targetTable: "quickbooks_vendor_mappings"');
   });
 
-  it("approve handler only upserts vendor mapping when mapVendor=true and qbCounterpartyId present", () => {
-    expect(ROUTES).toMatch(/body\.mapVendor[\s\S]{0,80}chosen\.qbCounterpartyId/);
+  it("legacy mapVendor / mapCustomer body flags are still accepted (kept informational)", () => {
+    expect(ROUTES).toMatch(/mapVendor:\s*z\.boolean\(\)\.optional\(\)/);
+    expect(ROUTES).toMatch(/mapCustomer:\s*z\.boolean\(\)\.optional\(\)/);
   });
 });
 

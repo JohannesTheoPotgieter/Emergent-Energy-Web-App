@@ -53,8 +53,11 @@ export interface PageRegistryEntry {
  * Kept separate from PAGE_REGISTRY so they don't pollute command palette or sidebar.
  */
 export const LEGACY_REDIRECTS: Array<{ path: string; redirectTo: string }> = [
-  // Legacy: /dashboard → /execution-board → /gates. Collapsed to direct.
-  { path: "/dashboard", redirectTo: "/gates" },
+  // /dashboard now points to the canonical company surface (matches the
+  // executive landing), so bookmarks that say "open the dashboard" land on
+  // something that actually looks like one. /gates remains reachable from
+  // the sidebar for stage-gate workflows.
+  { path: "/dashboard", redirectTo: "/execution-board" },
   { path: "/revenue", redirectTo: "/revenue-tracker" },
   { path: "/my-tool", redirectTo: "/" },
   { path: "/my-tool/week", redirectTo: "/my-work/calendar" },
@@ -92,8 +95,11 @@ export const LEGACY_REDIRECTS: Array<{ path: string; redirectTo: string }> = [
 export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "companyOverview", path: "/company-overview", label: "Company Overview", iconKey: "Activity", navGroup: "PORTFOLIO", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "CompanyOverviewPage" },
   { id: "companyTeam", path: "/company/team", label: "Team", iconKey: "Users", navGroup: "PORTFOLIO", permissionEntity: "company_team", showInSidebar: true, routeComponentKey: "CompanyTeamPage" },
-  { id: "ceoHome", path: "/ceo", label: "CEO Dashboard", iconKey: "Sun", navGroup: "REPORTS", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "CeoHomePage", roleLandingEligibility: ["CEO_ADMIN"] },
-  { id: "cooHome", path: "/coo", label: "COO Dashboard", iconKey: "Activity", navGroup: "REPORTS", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "CooHomePage", roleLandingEligibility: ["COO_ADMIN"] },
+  // Role-specific dashboards stay reachable from the sidebar but executives
+  // land on /execution-board so leadership numbers come from the canonical
+  // company surface (matches navigation-safety-cleanup contract).
+  { id: "ceoHome", path: "/ceo", label: "CEO Dashboard", iconKey: "Sun", navGroup: "REPORTS", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "CeoHomePage" },
+  { id: "cooHome", path: "/coo", label: "COO Dashboard", iconKey: "Activity", navGroup: "REPORTS", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "CooHomePage" },
   { id: "settingsHome", path: "/settings", label: "Settings", iconKey: "SlidersHorizontal", navGroup: "SYSTEM", permissionEntity: "admin_roles", showInSidebar: true, routeComponentKey: "SettingsHomePage" },
   { id: "projectDocuments", path: "/projects/:projectId/documents", label: "Project Documents", permissionEntity: "projects", routeComponentKey: "ProjectDocumentsPage" },
   // /quickbooks merged into the existing /finance/quickbooks (Throughput).
@@ -149,7 +155,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "standups", path: "/standups", label: "Standups", type: "alias", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "standups", showInSidebar: false, redirectTo: "/engineering/standup" },
   { id: "engineeringAudit", path: "/engineering/audit", label: "Engineering Audit Log", iconKey: "Activity", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "EngineeringAuditPage" },
   { id: "lifecycle", path: "/lifecycle-board", label: "Lifecycle Board", iconKey: "Layers", navGroup: "PORTFOLIO", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "LifecycleBoardPage" },
-  { id: "executionBoard", path: "/execution-board", label: "Execution Board", iconKey: "LayoutDashboard", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "ExecutionBoardPage", aliases: ["/execution-dashboard"], roleLandingEligibility: ["PROJECT_MANAGER_SITE", "PROGRAM_MANAGER", "CONSTRUCTION_MANAGER"], matchSubRoutes: true },
+  { id: "executionBoard", path: "/execution-board", label: "Execution Board", iconKey: "LayoutDashboard", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "ExecutionBoardPage", aliases: ["/execution-dashboard"], roleLandingEligibility: ["CEO_ADMIN", "COO_ADMIN", "PROJECT_MANAGER_SITE", "PROGRAM_MANAGER", "CONSTRUCTION_MANAGER"], matchSubRoutes: true },
   { id: "executionBoardProgram", path: "/execution-board/program", label: "Program View", permissionEntity: "execution_board", showInSidebar: false, routeComponentKey: "ExecutionBoardPage" },
   { id: "executionBoardFinance", path: "/execution-board/finance", label: "Program Finance", permissionEntity: "execution_board", showInSidebar: false, routeComponentKey: "ExecutionBoardPage" },
   { id: "smartImport", path: "/admin/smart-import", label: "Smart Import", iconKey: "FileSpreadsheet", navGroup: "SYSTEM", permissionEntity: "smart_import", showInSidebar: false, routeComponentKey: "SmartImportPage" },

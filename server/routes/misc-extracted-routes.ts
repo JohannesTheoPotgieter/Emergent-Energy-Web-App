@@ -45,20 +45,24 @@ export function registerMiscExtractedRoutes(app: Express): void {
         db.execute(sql`
           SELECT id, description, project_name, cost_category as category, counterparty_name as supplier, amount_ex_vat as total_cost, cost_line_status as status, invoice_number, po_number
           FROM normalized_cost_lines
-          WHERE LOWER(description) LIKE ${containsPattern}
-             OR LOWER(counterparty_name) LIKE ${containsPattern}
-             OR LOWER(cost_category) LIKE ${containsPattern}
-             OR LOWER(COALESCE(invoice_number, '')) LIKE ${containsPattern}
-             OR LOWER(COALESCE(po_number, '')) LIKE ${containsPattern}
+          WHERE effective_to IS NULL
+            AND deleted_at IS NULL
+            AND (LOWER(description) LIKE ${containsPattern}
+              OR LOWER(counterparty_name) LIKE ${containsPattern}
+              OR LOWER(cost_category) LIKE ${containsPattern}
+              OR LOWER(COALESCE(invoice_number, '')) LIKE ${containsPattern}
+              OR LOWER(COALESCE(po_number, '')) LIKE ${containsPattern})
           ORDER BY CASE WHEN LOWER(COALESCE(invoice_number, '')) LIKE ${startsWithPattern} OR LOWER(COALESCE(po_number, '')) LIKE ${startsWithPattern} THEN 0 ELSE 1 END, description
           LIMIT ${lim}
         `),
         db.execute(sql`
           SELECT id, description, project_name, milestone_name, amount_ex_vat as amount, status, invoice_number
           FROM normalized_revenue_lines
-          WHERE LOWER(description) LIKE ${containsPattern}
-             OR LOWER(milestone_name) LIKE ${containsPattern}
-             OR LOWER(COALESCE(invoice_number, '')) LIKE ${containsPattern}
+          WHERE effective_to IS NULL
+            AND deleted_at IS NULL
+            AND (LOWER(description) LIKE ${containsPattern}
+              OR LOWER(milestone_name) LIKE ${containsPattern}
+              OR LOWER(COALESCE(invoice_number, '')) LIKE ${containsPattern})
           ORDER BY CASE WHEN LOWER(COALESCE(invoice_number, '')) LIKE ${startsWithPattern} THEN 0 ELSE 1 END, description
           LIMIT ${lim}
         `),

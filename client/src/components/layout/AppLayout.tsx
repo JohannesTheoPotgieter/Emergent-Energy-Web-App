@@ -32,6 +32,7 @@ import { usePrefetchRoute } from "@/hooks/use-prefetch-route";
 import { useRolloutFlag } from "@/hooks/use-rollout-flag";
 import { useScreenAvailability } from "@/hooks/use-screen-availability";
 import { PAGE_REGISTRY } from "@/config/page-registry";
+import { ConnectorModeBanner } from "@/components/ConnectorModeBanner";
 
 type SearchResult = { id: string; title: string; subtitle?: string; type: string; url?: string | null };
 
@@ -226,6 +227,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen ee-shell">
       <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-[100] focus:top-2 focus:left-2 focus:px-4 focus:py-2 focus:bg-primary focus:text-primary-foreground focus:rounded-md focus:text-sm focus:font-medium">Skip to content</a>
+      <ConnectorModeBanner />
       <header className="sticky top-0 z-50 border-b border-border/60 bg-background/95 backdrop-blur-lg">
         <div className="px-4 lg:px-6 py-2.5 flex items-center gap-3 mx-auto w-full max-w-[1440px]">
           <Sheet>

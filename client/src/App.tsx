@@ -123,7 +123,7 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
     (window as any).__navMode = navMode;
   }
 
-  const { canViewPath, loading: accessLoading } = useAccessMatrix();
+  const { canViewPath, loading: accessLoading, permissionsError, refetchPermissions } = useAccessMatrix();
 
   // Wait for the permissions matrix to finish loading before deciding the
   // user is denied — otherwise navigation flashes the "Access Denied" page
@@ -131,15 +131,43 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
   // suddenly renders the real page. See user feedback 2026-04-21 on
   // /opportunities.
   //
-  // If the matrix query failed entirely the hook returns `loading=false`
-  // with no permissions snapshot. We still render the children so the
-  // page-level error/empty handling can kick in instead of leaving a
-  // blank screen indefinitely.
+  // EE-QA-019 — when the matrix query has errored, render an explicit
+  // "permission service unavailable" retry banner instead of falling
+  // through to the page (which previously rendered with an empty
+  // permission map and looked like an inconsistent UI bug).
+  if (effectiveRole && !accessLoading && permissionsError) {
+    return <PermissionServiceError onRetry={() => void refetchPermissions()} />;
+  }
+
   if (effectiveRole && !accessLoading && !canViewPath(location)) {
     return <AccessDenied />;
   }
 
   return <>{children}</>;
+}
+
+function PermissionServiceError({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="min-h-[60vh] flex items-center justify-center">
+      <div className="text-center space-y-4 max-w-md px-4" data-testid="permissions-service-error">
+        <div className="w-16 h-16 rounded-full bg-amber-50 flex items-center justify-center mx-auto">
+          <ShieldAlert className="h-8 w-8 text-amber-500" />
+        </div>
+        <h2 className="text-xl font-semibold text-foreground">Permission service unavailable</h2>
+        <p className="text-sm text-muted-foreground">
+          We could not load your access policy. Other parts of the app may show stale or
+          missing data until this resolves. Try again, or contact your administrator if
+          the problem persists.
+        </p>
+        <button
+          onClick={onRetry}
+          className="inline-flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-md bg-emerald-600 text-white hover:bg-emerald-700"
+        >
+          Retry
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function usePageTitle(location: string) {

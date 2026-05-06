@@ -379,6 +379,13 @@
       "when": 1778037529425,
       "tag": "0053_qb_match_suggestions_auto_generated",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1778037529426,
+      "tag": "0050_qb_invoice_links_allocations",
+      "breakpoints": true
     }
   ]
 }
