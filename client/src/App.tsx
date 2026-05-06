@@ -13,7 +13,7 @@ import { normalizeRoleForPermissions } from "@shared/schema";
 import { ShieldAlert, ArrowLeft } from "lucide-react";
 import { LoadingState } from "@/components/ui/loading-state";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { PAGE_REGISTRY, LEGACY_REDIRECTS, ROLE_LANDING_PAGE } from "@/config/page-registry";
+import { PAGE_REGISTRY, LEGACY_REDIRECTS } from "@/config/page-registry";
 import { useScrollRestoration } from "@/hooks/use-scroll-restoration";
 import { LensProvider } from "@/hooks/use-lens-context";
 import { Suspense, useEffect, useState } from "react";
@@ -36,17 +36,6 @@ const NAVIGATION_MODE = {
   desktop: "cockpit",
   mobile: "capture-check-approve-update-escalate",
 } as const;
-
-function resolveHomePath(userRole?: string | null, companyRole?: string | null) {
-  const effectiveRole = normalizeRoleForPermissions(userRole || companyRole);
-  return ROLE_LANDING_PAGE[effectiveRole] || "/dashboard";
-}
-
-function HomeRedirect() {
-  const { user } = useAuth();
-  const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
-  return <Redirect to={resolveHomePath(user?.role, companyRole)} />;
-}
 
 const APP_ROUTES: RouteConfig[] = [
   // Legacy redirects (old bookmarks / deep links)
