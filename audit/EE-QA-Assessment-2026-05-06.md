@@ -1218,6 +1218,55 @@ For each of the 16 roles in `COMPANY_ROLES`:
 
 ---
 
+## 19a. Wave 5 Changelog (post-merge progress on EE-QA-011)
+
+This section is appended after the Wave 1–4 PR (#816) merged. It tracks the running tally for the
+EE-QA-011 repository-pattern workstream so future waves have a single ledger to update.
+
+| Wave | PR | File(s) closed | `db.*` sites moved | Lint errors before → after |
+|------|------|----------------|---------------------|-----------------------------|
+| 5.1  | #817 | `server/routes/planning-extracted-routes.ts` | 16 (grep matches; not lint-blocked — file uses the legacy hyphen-pattern and is outside the eslint glob `server/routes/**/*.routes.ts`) | 47 → 47 (structural-only; CLAUDE.md spirit) |
+| 5.2  | _this PR_ | `server/routes/quickbooks-invoice-matches.routes.ts` | 46 (lint-blocked) + 2 `selectDistinct` (folded for consistency) | 47 → 1 |
+
+**Repos created or extended in Wave 5:**
+
+- New: `server/repositories/notifications-repository.ts` (Wave 5.1)
+- New: `server/repositories/quickbooks-invoice-matches-repository.ts` (Wave 5.2)
+- Extended: `server/repositories/users-repository.ts` (Wave 5.1)
+- Extended: `server/repositories/work-management-repository.ts` (Wave 5.1)
+- Extended: `server/repositories/quickbooks-links-repository.ts` (Wave 5.2)
+- Extended: `server/repositories/finance-expense-engine-repository.ts` (Wave 5.2)
+- Extended: `server/repositories/finance-inflows-repository.ts` (Wave 5.2)
+
+**Snapshot guards preserved:** every new `normalized_cost_lines` /
+`normalized_revenue_lines` read on the QB-matching path carries
+`isNull(effectiveTo)` (and `isNull(deletedAt)` where the original did).
+No snapshot-guard regressions introduced.
+
+**Out-of-scope follow-ups flagged with `TODO(EE-QA-011)`:**
+
+- `server/routes/planning-extracted-routes.ts` — two `db.transaction(...)` blocks
+  (`convertToMilestoneWI`, `convertToTaskWI`) still own an inline `tx` repo for
+  `convertWorkItemTypeInPlace`. Not lint-blocked.
+- `server/routes/quickbooks-invoice-matches.routes.ts` — one `db.transaction(...)`
+  outer-tx in `approve-multi` for `confirmLinksWithAllocationsTx` plus the
+  CAS suggestion-accept update. Not lint-blocked.
+
+**Remaining lint-error files after Wave 5.2 (target = 0):**
+
+| File | `no-restricted-syntax` errors | Notes |
+|---|---:|---|
+| `server/lib/api-error.ts` | 1 | Raw err.message-leak rule (EE-QA-011 sibling, will fold into the next wave). |
+| (every other `*.routes.ts`) | 0 | — |
+
+**Files outside the eslint glob** (`server/*-routes.ts`, `server/departments/*.ts`,
+`server/report-routes.ts`) still carry direct `db.{select|insert|update|delete}`
+calls per the audit's File(s) list — these violate CLAUDE.md spirit but not
+the current lint rule. Closing them needs the rule to be broadened (or the
+files renamed to the dot-pattern) and is sequenced after Wave 5.2.
+
+---
+
 ## 19. Final Recommendation
 
 **Is the app ready for frontend testing?** **No.** The build does not compile (EE-QA-001). 11 unit tests fail. CI permission baseline is breached. Fix Day-1 items before any QA tester touches it.

@@ -1,4 +1,4 @@
-import { eq, and, isNull, or, inArray, sql } from "drizzle-orm";
+import { eq, and, desc, ilike, isNull, or, inArray, sql } from "drizzle-orm";
 import { softCloseByProjectName } from "../lib/temporal-helpers";
 import { logAudit } from "../audit-logger";
 import {
@@ -222,5 +222,92 @@ export class FinanceInflowsRepository {
   async deleteProgramInflowsByProject(projectName: string): Promise<void> {
     // Temporal: soft-close instead of hard delete (Prompt 10)
     await softCloseByProjectName(this.dbInstance, "normalized_revenue_lines", projectName);
+  }
+
+  // ── QB invoice-matching reads (active rows only) ──
+
+  async getRevenueLineForMatching(id: number): Promise<{
+    id: number;
+    projectId: number | null;
+    invoiceNumber: string | null;
+    invoiceDate: string | null;
+    amountExVat: string | null;
+    projectName: string | null;
+    description: string | null;
+    milestoneName: string | null;
+  } | null> {
+    const [row] = await this.dbInstance
+      .select({
+        id: normalizedRevenueLines.id,
+        projectId: normalizedRevenueLines.projectId,
+        invoiceNumber: normalizedRevenueLines.invoiceNumber,
+        invoiceDate: normalizedRevenueLines.invoiceDate,
+        amountExVat: normalizedRevenueLines.amountExVat,
+        projectName: normalizedRevenueLines.projectName,
+        description: normalizedRevenueLines.description,
+        milestoneName: normalizedRevenueLines.milestoneName,
+      })
+      .from(normalizedRevenueLines)
+      .where(
+        and(
+          eq(normalizedRevenueLines.id, id),
+          isNull(normalizedRevenueLines.effectiveTo),
+          isNull(normalizedRevenueLines.deletedAt),
+        ),
+      )
+      .limit(1);
+    return row ?? null;
+  }
+
+  async getRevenueLineProjectId(id: number): Promise<number | null> {
+    const [row] = await this.dbInstance
+      .select({ projectId: normalizedRevenueLines.projectId })
+      .from(normalizedRevenueLines)
+      .where(
+        and(
+          eq(normalizedRevenueLines.id, id),
+          isNull(normalizedRevenueLines.effectiveTo),
+        ),
+      )
+      .limit(1);
+    return row?.projectId ?? null;
+  }
+
+  async searchRevenueLinesByText(
+    query: string,
+    projectId: number | null,
+    limit: number,
+  ): Promise<Array<{
+    id: number;
+    invoiceNumber: string | null;
+    invoiceDate: string | null;
+    amountExVat: string | null;
+    projectId: number | null;
+    projectName: string | null;
+  }>> {
+    const like = `%${query}%`;
+    return this.dbInstance
+      .select({
+        id: normalizedRevenueLines.id,
+        invoiceNumber: normalizedRevenueLines.invoiceNumber,
+        invoiceDate: normalizedRevenueLines.invoiceDate,
+        amountExVat: normalizedRevenueLines.amountExVat,
+        projectId: normalizedRevenueLines.projectId,
+        projectName: normalizedRevenueLines.projectName,
+      })
+      .from(normalizedRevenueLines)
+      .where(
+        and(
+          isNull(normalizedRevenueLines.effectiveTo),
+          isNull(normalizedRevenueLines.deletedAt),
+          projectId ? eq(normalizedRevenueLines.projectId, projectId) : sql`true`,
+          or(
+            ilike(normalizedRevenueLines.invoiceNumber, like),
+            ilike(normalizedRevenueLines.projectName, like),
+          ),
+        ),
+      )
+      .orderBy(desc(normalizedRevenueLines.invoiceDate))
+      .limit(limit);
   }
 }
