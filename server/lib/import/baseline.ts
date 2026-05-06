@@ -14,6 +14,7 @@ import {
 } from "@shared/schema";
 import { eq, and, desc, isNull } from "drizzle-orm";
 import type { NormalizationResult } from "./normalizer";
+import { snapshotBaselineEnabled } from "./feature-flags";
 
 export type ImportMode = "BASELINE" | "INCREMENTAL";
 
@@ -206,4 +207,178 @@ export async function loadBaselineNormalization(
   if (!summary?.normalization) return null;
 
   return summary.normalization as NormalizationResult;
+}
+
+// ---------------------------------------------------------------------------
+// Per-row snapshot baseline — aligns planner with writer engine
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the 3-way merge baseline (B) from each canonical table's per-row
+ * `import_snapshot` JSONB instead of `summaryJson.normalization`.
+ *
+ * Why this exists: the writer engine (`merge-engine.ts`) uses
+ * `import_snapshot` as its baseline. The planner / pre-commit gate
+ * (`conflict-engine.ts`) historically used `summaryJson.normalization`
+ * from the last committed run. Those two baselines drift apart because
+ * the snapshot is refreshed on every commit AND every manual cell edit,
+ * while `summaryJson.normalization` is only ever written when the run
+ * is created.
+ *
+ * The mismatch produces the user-visible "More conflicts found — data
+ * changed while you were resolving" loop: the planner clears the user's
+ * resolutions, the writer reclassifies using its own snapshot baseline
+ * and re-throws 409 with a different conflict set, and the cycle
+ * repeats. Aligning both engines on the same per-row snapshot is the
+ * fix.
+ *
+ * The returned shape is `NormalizationResult`-compatible (only
+ * `planTasks`, `revenueLines`, `costLines` are populated) so the
+ * existing `runConflictEngine(... baselineNormalization, ...)` consumer
+ * sees no change at the call boundary.
+ *
+ * Snapshot-key → normalizer-field mapping is required for PLAN because
+ * the snapshot uses work_items column names (`duration`, `actualStart`,
+ * `ownerName`, `percentComplete`, `description`, `outlineNumber`)
+ * whereas `PLAN_COMPARE_FIELDS` uses normalizer names (`durationDays`,
+ * `actualStartDate`, `owner`, `pctComplete`, `comment`, `parentTaskNo`).
+ * REVENUE and EXPENDITURE snapshots already use compare-field naming.
+ */
+export async function loadBaselineFromSnapshots(
+  projectId: number,
+): Promise<NormalizationResult | null> {
+  // Load the live current state for each section AND the per-row
+  // `importSnapshot` JSONB. Live rows already come back with normalizer
+  // field naming (the existing `loadCurrent*Rows` helpers do that
+  // mapping for PLAN), so they double as the per-row fallback when the
+  // snapshot is null/empty — exactly mirroring the writer engine's
+  // `const snapSource = importSnapshot ?? existingRow` behaviour
+  // (merge-engine.ts:154). That keeps legacy / pre-PR2C-backfill rows
+  // from poisoning the baseline with `undefined` tracked fields.
+  const [
+    planLive, revenueLive, costLive,
+    planSnapRows, revenueSnapRows, costSnapRows,
+  ] = await Promise.all([
+    loadCurrentPlanRows(projectId),
+    loadCurrentRevenueRows(projectId),
+    loadCurrentCostRows(projectId),
+    db.select({ id: workItems.id, importSnapshot: workItems.importSnapshot })
+      .from(workItems)
+      .where(and(
+        eq(workItems.projectId, projectId),
+        eq(workItems.source, "SMART_IMPORT"),
+        eq(workItems.workstream, "PM"),
+        isNull(workItems.deletedAt),
+      )),
+    db.select({ id: normalizedRevenueLines.id, importSnapshot: normalizedRevenueLines.importSnapshot })
+      .from(normalizedRevenueLines)
+      .where(and(
+        eq(normalizedRevenueLines.projectId, projectId),
+        isNull(normalizedRevenueLines.effectiveTo),
+        isNull(normalizedRevenueLines.deletedAt),
+      )),
+    db.select({ id: normalizedCostLines.id, importSnapshot: normalizedCostLines.importSnapshot })
+      .from(normalizedCostLines)
+      .where(and(
+        eq(normalizedCostLines.projectId, projectId),
+        isNull(normalizedCostLines.effectiveTo),
+        isNull(normalizedCostLines.deletedAt),
+      )),
+  ]);
+
+  // No active rows at all → no snapshot baseline to build. Caller will
+  // typically fall back to `loadBaselineNormalization`.
+  if (planLive.length === 0 && revenueLive.length === 0 && costLive.length === 0) {
+    return null;
+  }
+
+  const snapById = (rows: ReadonlyArray<{ id: number; importSnapshot: unknown }>) => {
+    const m = new Map<number, Record<string, unknown>>();
+    for (const r of rows) {
+      const raw = r.importSnapshot;
+      if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+        m.set(r.id, raw as Record<string, unknown>);
+      }
+    }
+    return m;
+  };
+  const planSnapById = snapById(planSnapRows);
+  const revenueSnapById = snapById(revenueSnapRows);
+  const costSnapById = snapById(costSnapRows);
+
+  // Map snapshot keys (work_items column names) → normalizer field
+  // names for PLAN. The snapshot is the merge-engine's per-row B; the
+  // conflict engine compares it against `PLAN_COMPARE_FIELDS` which
+  // uses the normalizer naming, so we project here. Pass-through keys
+  // (startDate, endDate, status, expectedPctComplete, isMilestone,
+  // lead, resource1, resource2, trackerComments, workDays) keep their
+  // names via the `?? k` fallback below.
+  const PLAN_SNAPSHOT_TO_NORM: Record<string, string> = {
+    duration: "durationDays",
+    actualStart: "actualStartDate",
+    actualEnd: "actualEndDate",
+    actualDuration: "actualDurationDays",
+    ownerName: "owner",
+    percentComplete: "pctComplete",
+    description: "comment",
+    outlineNumber: "parentTaskNo",
+  };
+
+  // For each live row, start from the live (normalizer-shaped) row as
+  // the per-row fallback baseline, then overlay the snapshot values
+  // (mapped where needed). Snapshot wins over live where present;
+  // missing snapshot keys leave the live value as the baseline. This
+  // matches `merge-engine.ts:154` (`importSnapshot ?? existingRow`).
+  const planTasks = planLive.map((r: typeof planLive[number]) => {
+    const out: Record<string, any> = { ...r };
+    const snap = planSnapById.get(r.id);
+    if (snap) {
+      for (const [k, v] of Object.entries(snap)) {
+        const normKey = PLAN_SNAPSHOT_TO_NORM[k] ?? k;
+        out[normKey] = v;
+      }
+    }
+    return out;
+  });
+
+  const revenueLines = revenueLive.map((r: typeof revenueLive[number]) => {
+    const out: Record<string, any> = { ...r };
+    const snap = revenueSnapById.get(r.id);
+    if (snap) Object.assign(out, snap);
+    return out;
+  });
+
+  const costLines = costLive.map((r: typeof costLive[number]) => {
+    const out: Record<string, any> = { ...r };
+    const snap = costSnapById.get(r.id);
+    if (snap) Object.assign(out, snap);
+    return out;
+  });
+
+  return {
+    planTasks,
+    revenueLines,
+    costLines,
+    // The conflict engine never reads these fields off the baseline —
+    // they're only on the type. Cast keeps the structural-typing happy
+    // without forcing us to fabricate phase metadata, issues, etc.
+  } as unknown as NormalizationResult;
+}
+
+/**
+ * Unified baseline loader honouring the `USE_SNAPSHOT_BASELINE` flag.
+ *
+ * Returns the per-row snapshot baseline when the flag is ON (default)
+ * and falls back to `loadBaselineNormalization` (the legacy
+ * `summaryJson.normalization` source) when the flag is OFF or the
+ * snapshot loader returns null because no active rows exist yet.
+ */
+export async function loadBaselineForPlanner(
+  projectId: number,
+): Promise<NormalizationResult | null> {
+  if (snapshotBaselineEnabled()) {
+    const fromSnap = await loadBaselineFromSnapshots(projectId);
+    if (fromSnap) return fromSnap;
+  }
+  return loadBaselineNormalization(projectId);
 }
