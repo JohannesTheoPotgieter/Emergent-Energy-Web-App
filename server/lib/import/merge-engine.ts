@@ -78,7 +78,17 @@ export function valuesEqual(a: FieldValue, b: FieldValue): boolean {
   if (an === null && bn === null) return true;
   if (an === null || bn === null) return false;
   if (typeof an === "number" && typeof bn === "number") {
-    return Math.abs(an - bn) < 1e-9;
+    // Tolerance must absorb round-trip noise from PostgreSQL `real`
+    // (single-precision, ~7 decimal digits) columns such as
+    // percentComplete / expectedPctComplete — without this, a value like
+    // 0.5363636363636364 stored in `real` reads back as 0.53636366, the
+    // ~3e-8 delta beats a tight 1e-9 epsilon, and the merge engine
+    // surfaces a phantom conflict every time the user reopens an import.
+    // Use 1e-6 absolute (safe for percent values 0..1 and amounts up to
+    // ~1000), and 1e-9 relative for very large numbers (currency in
+    // millions still gets ~milli-Rand resolution).
+    const tolerance = Math.max(1e-6, Math.abs(an) * 1e-9, Math.abs(bn) * 1e-9);
+    return Math.abs(an - bn) < tolerance;
   }
   return an === bn;
 }
