@@ -89,24 +89,28 @@ import { applyManualOverride, manualOverridesEnabled } from "../lib/manual-overr
 import { EXPENDITURE_TRACKED_FIELDS, REVENUE_TRACKED_FIELDS } from "@shared/excel-vs-app/contract";
 import {
   approvals,
-  auditEvents,
   changeSets,
-  fieldChanges,
-  financialEditRequests,
-  manualEditFlags,
   msObjects,
-  normalizedCostLines,
-  normalizedRevenueLines,
   OVERRIDE_CATEGORIES,
   projectInfo,
-  qbClassProjectOverrides,
-  qbReconIgnores,
-  qbRevenueReconIgnores,
-  qbCustomerProjectOverrides,
-  quickbooksInvoiceLinks,
-  users,
 } from "@shared/schema";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { FinanceExpenseEngineRepository } from "../repositories/finance-expense-engine-repository";
+import { FinanceInflowsRepository } from "../repositories/finance-inflows-repository";
+import { ProjectInfoRepository } from "../repositories/project-info-repository";
+import { ManualEditFlagsRepository } from "../repositories/manual-edit-flags-repository";
+import { QbReconciliationOverridesRepository } from "../repositories/qb-reconciliation-overrides-repository";
+import { FinancialIntegrationRepository } from "../repositories/financial-integration-repository";
+import { UsersRepository } from "../repositories/users-repository";
+
+const financeExpenseRepository = new FinanceExpenseEngineRepository();
+const financeInflowsRepository = new FinanceInflowsRepository();
+const projectInfoRepository = new ProjectInfoRepository();
+const manualEditFlagsRepository = new ManualEditFlagsRepository();
+const qbReconRepository = new QbReconciliationOverridesRepository();
+const financialIntegrationRepository = new FinancialIntegrationRepository();
+const usersRepository = new UsersRepository();
+const qbLinksRepository = new QuickBooksLinksRepository();
 import { recordManualEdit } from "../lib/audit/diff-engine";
 import { classifyExpenseState } from "../lib/calculations/stateClassifier";
 import {
@@ -200,7 +204,7 @@ async function createPendingEditRequest(
   editPayload: any,
   editSummary: string
 ) {
-  const [saved] = await db.insert(financialEditRequests).values({
+  const saved = await financialIntegrationRepository.createEditRequest({
     projectName,
     requestedByUserId: userId,
     editType,
@@ -212,12 +216,11 @@ async function createPendingEditRequest(
     affectsExpenditure: editType.includes("expenditure"),
     affectsQuality: false,
     status: "pending",
-  }).returning();
+  });
 
   // Notify financial approvers about the pending edit request
   try {
-    const approvers = await db.select({ id: users.id, role: users.role }).from(users)
-      .where(inArray(users.role, FINANCIAL_APPROVER_ROLES));
+    const approvers = await usersRepository.listByRoles(FINANCIAL_APPROVER_ROLES);
     for (const approver of approvers) {
       if (approver.id === userId) continue; // don't notify the requester
       await createNotification({
@@ -639,24 +642,7 @@ async function loadProjectFinanceGovernanceContext(
           .orderBy(desc(approvals.requestedAt))
           .limit(25)
       : Promise.resolve([] as any[]),
-    db
-      .select({
-        id: financialEditRequests.id,
-        editType: financialEditRequests.editType,
-        editTarget: financialEditRequests.editTarget,
-        editSummary: financialEditRequests.editSummary,
-        affectsRevenue: financialEditRequests.affectsRevenue,
-        affectsExpenditure: financialEditRequests.affectsExpenditure,
-        status: financialEditRequests.status,
-        createdAt: financialEditRequests.createdAt,
-        requestedByUserId: financialEditRequests.requestedByUserId,
-        requestedByName: users.name,
-      })
-      .from(financialEditRequests)
-      .leftJoin(users, eq(financialEditRequests.requestedByUserId, users.id))
-      .where(eq(financialEditRequests.projectName, projectName))
-      .orderBy(desc(financialEditRequests.createdAt))
-      .limit(25),
+    financialIntegrationRepository.listEditRequestsForProjectWithRequester(projectName, 25),
     db
       .select({
         id: changeSets.id,
@@ -695,9 +681,7 @@ async function loadProjectFinanceGovernanceContext(
   ]);
 
   const changeSetIds = changeRows.map((row: any) => row.id).filter((id: any): id is number => typeof id === "number");
-  const changeFieldRows = changeSetIds.length
-    ? await db.select().from(fieldChanges).where(inArray(fieldChanges.changeSetId, changeSetIds))
-    : [];
+  const changeFieldRows = await qbReconRepository.listFieldChangesByChangeSetIds(changeSetIds);
 
   const userIds = Array.from(
     new Set(
@@ -709,15 +693,7 @@ async function loadProjectFinanceGovernanceContext(
     )
   );
 
-  const userRows = userIds.length
-    ? await db
-        .select({
-          id: users.id,
-          name: users.name,
-        })
-        .from(users)
-        .where(inArray(users.id, userIds))
-    : [];
+  const userRows = await usersRepository.listIdNameByIds(userIds);
 
   const userNameById = new Map<number, string>(
     userRows.map((row: any) => [row.id, row.name || `User ${row.id}`])
@@ -1449,55 +1425,27 @@ router.post("/api/cashflow-2026/expense-date-override", requireAuth, requirePerm
     };
 
     // Try normalizedCostLines first (IDs from the detail endpoint come from this table)
-    const updated = await db.update(normalizedCostLines)
-      .set(overrideFields)
-      .where(and(
-        eq(normalizedCostLines.id, expenseId),
-        isNull(normalizedCostLines.effectiveTo),
-      ))
-      .returning();
-
-    let row: any;
-    if (updated.length > 0) {
-      row = updated[0];
-      // PE sync removed — normalizedCostLines is the canonical source.
-      // program_expense is deprecated for writes; reads are being migrated.
-    } else {
+    const row = await financeExpenseRepository.updateCostLineAdminDateOverride(expenseId, overrideFields);
+    if (!row) {
       // No matching NCL row — this expense line is not in the canonical source
       return res.status(404).json({ error: "Expense line not found in canonical cost lines" });
     }
 
     // Insert/update manualEditFlags for smart import conflict detection
+    const flagKey = {
+      entityType: "program_expense",
+      entityId: Number(expenseId),
+      fieldName: "adminDateOverride",
+    } as const;
     if (dateOverride) {
-      const existingFlag = await db.select().from(manualEditFlags)
-        .where(and(
-          eq(manualEditFlags.entityType, "program_expense"),
-          eq(manualEditFlags.entityId, Number(expenseId)),
-          eq(manualEditFlags.fieldName, "adminDateOverride"),
-        ));
-      if (existingFlag.length === 0) {
-        await db.insert(manualEditFlags).values({
-          entityType: "program_expense",
-          entityId: Number(expenseId),
-          fieldName: "adminDateOverride",
-          editedByUserId: userId,
-          editedAt: now,
-          isProtected: true,
-          protectedAt: now,
-          protectedByUserId: userId,
-        });
+      const existingId = await manualEditFlagsRepository.findFlagId(flagKey);
+      if (existingId === null) {
+        await manualEditFlagsRepository.createProtectedFlag({ ...flagKey, editedByUserId: userId, editedAt: now });
       } else {
-        await db.update(manualEditFlags)
-          .set({ editedByUserId: userId, editedAt: now, isProtected: true, protectedAt: now, protectedByUserId: userId })
-          .where(eq(manualEditFlags.id, existingFlag[0].id));
+        await manualEditFlagsRepository.refreshProtectedFlag(existingId, { editedByUserId: userId, editedAt: now });
       }
     } else {
-      await db.delete(manualEditFlags)
-        .where(and(
-          eq(manualEditFlags.entityType, "program_expense"),
-          eq(manualEditFlags.entityId, Number(expenseId)),
-          eq(manualEditFlags.fieldName, "adminDateOverride"),
-        ));
+      await manualEditFlagsRepository.deleteFlag(flagKey);
     }
 
     // Audit trail
@@ -1547,55 +1495,27 @@ router.post("/api/cashflow-2026/inflow-date-override", requireAuth, requirePermi
     };
 
     // Try normalizedRevenueLines first (IDs from the detail endpoint come from this table)
-    const updated = await db.update(normalizedRevenueLines)
-      .set(overrideFields)
-      .where(and(
-        eq(normalizedRevenueLines.id, inflowId),
-        isNull(normalizedRevenueLines.effectiveTo),
-      ))
-      .returning();
-
-    let row: any;
-    if (updated.length > 0) {
-      row = updated[0];
-      // PI sync removed — normalizedRevenueLines is the canonical source.
-      // program_inflows is deprecated for writes; reads are being migrated.
-    } else {
+    const row = await financeInflowsRepository.updateRevenueLineAdminDateOverride(inflowId, overrideFields);
+    if (!row) {
       // No matching NRL row — this inflow line is not in the canonical source
       return res.status(404).json({ error: "Inflow line not found in canonical revenue lines" });
     }
 
     // Insert/update manualEditFlags for smart import conflict detection
+    const flagKey = {
+      entityType: "program_inflows",
+      entityId: Number(inflowId),
+      fieldName: "adminDateOverride",
+    } as const;
     if (dateOverride) {
-      const existingFlag = await db.select().from(manualEditFlags)
-        .where(and(
-          eq(manualEditFlags.entityType, "program_inflows"),
-          eq(manualEditFlags.entityId, Number(inflowId)),
-          eq(manualEditFlags.fieldName, "adminDateOverride"),
-        ));
-      if (existingFlag.length === 0) {
-        await db.insert(manualEditFlags).values({
-          entityType: "program_inflows",
-          entityId: Number(inflowId),
-          fieldName: "adminDateOverride",
-          editedByUserId: userId,
-          editedAt: now,
-          isProtected: true,
-          protectedAt: now,
-          protectedByUserId: userId,
-        });
+      const existingId = await manualEditFlagsRepository.findFlagId(flagKey);
+      if (existingId === null) {
+        await manualEditFlagsRepository.createProtectedFlag({ ...flagKey, editedByUserId: userId, editedAt: now });
       } else {
-        await db.update(manualEditFlags)
-          .set({ editedByUserId: userId, editedAt: now, isProtected: true, protectedAt: now, protectedByUserId: userId })
-          .where(eq(manualEditFlags.id, existingFlag[0].id));
+        await manualEditFlagsRepository.refreshProtectedFlag(existingId, { editedByUserId: userId, editedAt: now });
       }
     } else {
-      await db.delete(manualEditFlags)
-        .where(and(
-          eq(manualEditFlags.entityType, "program_inflows"),
-          eq(manualEditFlags.entityId, Number(inflowId)),
-          eq(manualEditFlags.fieldName, "adminDateOverride"),
-        ));
+      await manualEditFlagsRepository.deleteFlag(flagKey);
     }
 
     // Audit trail
@@ -1828,15 +1748,8 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
   try {
     const [manualEntries, rawCostLines, links, pnlReport] = await Promise.all([
       storage.getTrackerMonthlyManual('COS'),
-      db.select().from(normalizedCostLines).where(and(
-        and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)),
-        isNull(normalizedCostLines.deletedAt),
-      )),
-      db.select().from(quickbooksInvoiceLinks).where(and(
-        eq(quickbooksInvoiceLinks.appEntityType, "cost_line"),
-        eq(quickbooksInvoiceLinks.qbEntityType, "bill"),
-        isNull(quickbooksInvoiceLinks.deletedAt),
-      )),
+      financeExpenseRepository.listAllActiveCostLines(),
+      qbLinksRepository.listActiveLinksByPair("cost_line", "bill"),
       getMonthlyPnLReport("2025-09-01", "2026-08-31").catch(() => null),
     ]);
 
@@ -2244,12 +2157,8 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
     const cosCurrentMonthKey = `${nowAnchor.getUTCFullYear()}-${String(nowAnchor.getUTCMonth() + 1).padStart(2, '0')}`;
 
     const [allCostLines, links, rawBills] = await Promise.all([
-      db.select().from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
-      db.select().from(quickbooksInvoiceLinks).where(and(
-        eq(quickbooksInvoiceLinks.appEntityType, "cost_line"),
-        eq(quickbooksInvoiceLinks.qbEntityType, "bill"),
-        isNull(quickbooksInvoiceLinks.deletedAt),
-      )),
+      financeExpenseRepository.listAllActiveCostLines(),
+      qbLinksRepository.listActiveLinksByPair("cost_line", "bill"),
       getBills(monthStart, monthEnd).catch((err) => {
         console.warn("[cos-month-detail] getBills failed — continuing with app-only data:", err instanceof Error ? err.message : err);
         return { QueryResponse: { Bill: [] } };
@@ -2378,7 +2287,7 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       items.push({
         id: `app-${row.id}`,
         projectName,
-        category: row.category || null,
+        category: (row as any).category || null,
         lineItem: row.description || null,
         appAmount,
         qbAmount: linkedBill?.totalAmount ?? null,
@@ -2517,11 +2426,8 @@ router.get("/api/cos-tracker/qb-coverage-report", requireAuth, requireAdmin, asy
 
     // Project-name universe = project_info ∪ active normalized_cost_lines.project_name
     const [projects, ncl] = await Promise.all([
-      db.select({ name: projectInfo.projectName }).from(projectInfo),
-      db
-        .select({ name: normalizedCostLines.projectName })
-        .from(normalizedCostLines)
-        .where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
+      projectInfoRepository.listAllProjectNames(),
+      financeExpenseRepository.listActiveCostLineProjectNames(),
     ]);
     const universe = new Set<string>();
     for (const p of projects) if (p.name) universe.add(p.name);
@@ -2529,17 +2435,7 @@ router.get("/api/cos-tracker/qb-coverage-report", requireAuth, requireAdmin, asy
     const projectNames = [...universe];
 
     // Active cost lines bucketed by normalised project key for tracker_gap preview.
-    const activeCostLines = await db
-      .select({
-        id: normalizedCostLines.id,
-        projectName: normalizedCostLines.projectName,
-        invoiceNumber: normalizedCostLines.invoiceNumber,
-        invoiceDate: normalizedCostLines.invoiceDate,
-        amountExVat: normalizedCostLines.amountExVat,
-        counterpartyName: normalizedCostLines.counterpartyName,
-      })
-      .from(normalizedCostLines)
-      .where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)));
+    const activeCostLines = await financeExpenseRepository.listActiveCostLinesForTrackerGap();
     const costLinesByProjectKey = new Map<string, typeof activeCostLines>();
     for (const cl of activeCostLines) {
       const key = normalizeProjectKey(cl.projectName);
@@ -2701,13 +2597,10 @@ router.get("/api/cos-tracker/tracker-gap", requireAuth, requirePermission("cos",
 
     // Project-name universe = project_info ∪ active normalized_cost_lines.project_name
     const [projects, ncl, classOverrides, ignores] = await Promise.all([
-      db.select({ name: projectInfo.projectName }).from(projectInfo),
-      db
-        .select({ name: normalizedCostLines.projectName })
-        .from(normalizedCostLines)
-        .where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
-      db.select().from(qbClassProjectOverrides).where(isNull(qbClassProjectOverrides.deletedAt)),
-      db.select().from(qbReconIgnores).where(isNull(qbReconIgnores.deletedAt)),
+      projectInfoRepository.listAllProjectNames(),
+      financeExpenseRepository.listActiveCostLineProjectNames(),
+      qbReconRepository.listActiveClassOverrides(),
+      qbReconRepository.listActiveReconIgnores(),
     ]);
     const universe = new Set<string>();
     for (const p of projects) if (p.name) universe.add(p.name);
@@ -2725,17 +2618,7 @@ router.get("/api/cos-tracker/tracker-gap", requireAuth, requirePermission("cos",
       `${billId ?? ""}::${lineId ?? ""}`;
 
     // Active cost lines bucketed by normalised project key for tracker_gap matching.
-    const activeCostLines = await db
-      .select({
-        id: normalizedCostLines.id,
-        projectName: normalizedCostLines.projectName,
-        invoiceNumber: normalizedCostLines.invoiceNumber,
-        invoiceDate: normalizedCostLines.invoiceDate,
-        amountExVat: normalizedCostLines.amountExVat,
-        counterpartyName: normalizedCostLines.counterpartyName,
-      })
-      .from(normalizedCostLines)
-      .where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt)));
+    const activeCostLines = await financeExpenseRepository.listActiveCostLinesForTrackerGap();
     const costLinesByProjectKey = new Map<string, typeof activeCostLines>();
     for (const cl of activeCostLines) {
       const key = normalizeProjectKey(cl.projectName);
@@ -2982,20 +2865,17 @@ router.post("/api/cos-tracker/tracker-gap/ignore", requireAuth, requirePermissio
   try {
     const body = req.body as z.infer<typeof ignoreBodySchema>;
     const user = (req as any).user;
-    const [created] = await db
-      .insert(qbReconIgnores)
-      .values({
-        qbBillId: body.qbBillId,
-        qbLineId: body.qbLineId ?? null,
-        qbDocNumber: body.qbDocNumber ?? null,
-        vendorName: body.vendorName ?? null,
-        lineAmountExVat: body.lineAmountExVat != null ? String(body.lineAmountExVat) : null,
-        resolvedProjectName: body.resolvedProjectName ?? null,
-        reason: body.reason,
-        ignoredByUserId: user?.id ?? null,
-        ignoredByName: user?.name ?? user?.email ?? null,
-      })
-      .returning();
+    const created = await qbReconRepository.createReconIgnore({
+      qbBillId: body.qbBillId,
+      qbLineId: body.qbLineId ?? null,
+      qbDocNumber: body.qbDocNumber ?? null,
+      vendorName: body.vendorName ?? null,
+      lineAmountExVat: body.lineAmountExVat != null ? String(body.lineAmountExVat) : null,
+      resolvedProjectName: body.resolvedProjectName ?? null,
+      reason: body.reason,
+      ignoredByUserId: user?.id ?? null,
+      ignoredByName: user?.name ?? user?.email ?? null,
+    });
     // Audit: every ignore is captured with reason + actor + before/after for forensic replay.
     await logAuditFromReq(req, {
       entityType: "qb_recon_ignore",
@@ -3032,9 +2912,9 @@ router.delete("/api/cos-tracker/tracker-gap/ignore/:id", requireAuth, requirePer
     if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
     const body = req.body as z.infer<typeof ignoreUndoBodySchema>;
     // Capture pre-state so the audit row records what is being undone.
-    const [prev] = await db.select().from(qbReconIgnores).where(eq(qbReconIgnores.id, id));
+    const prev = await qbReconRepository.getReconIgnoreById(id);
     if (!prev) return res.status(404).json({ error: "not_found" });
-    await db.update(qbReconIgnores).set({ deletedAt: new Date() }).where(eq(qbReconIgnores.id, id));
+    await qbReconRepository.softDeleteReconIgnore(id);
     await logAuditFromReq(req, {
       entityType: "qb_recon_ignore",
       entityId: String(id),
@@ -3073,27 +2953,12 @@ router.post("/api/cos-tracker/tracker-gap/class-override", requireAuth, requireP
     // Atomic supersede: soft-delete any active row for this class then insert, all in one tx.
     // The partial unique index on LOWER(class_ref_name) WHERE deleted_at IS NULL means a concurrent
     // writer can still trip 23505; we surface that as 409 so the client can retry deterministically.
-    const created = await db.transaction(async (tx: any) => {
-      await tx
-        .update(qbClassProjectOverrides)
-        .set({ deletedAt: new Date() })
-        .where(
-          and(
-            isNull(qbClassProjectOverrides.deletedAt),
-            sql`LOWER(${qbClassProjectOverrides.classRefName}) = LOWER(${body.classRefName})`,
-          ),
-        );
-      const [row] = await tx
-        .insert(qbClassProjectOverrides)
-        .values({
-          classRefName: body.classRefName,
-          projectName: body.projectName,
-          note: body.note ?? null,
-          createdByUserId: user?.id ?? null,
-          createdByName: user?.name ?? user?.email ?? null,
-        })
-        .returning();
-      return row;
+    const created = await qbReconRepository.supersedeAndInsertClassOverride({
+      classRefName: body.classRefName,
+      projectName: body.projectName,
+      note: body.note ?? null,
+      createdByUserId: user?.id ?? null,
+      createdByName: user?.name ?? user?.email ?? null,
     });
     await logAuditFromReq(req, {
       entityType: "qb_class_project_override",
@@ -3127,9 +2992,9 @@ router.delete("/api/cos-tracker/tracker-gap/class-override/:id", requireAuth, re
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
     const body = req.body as z.infer<typeof overrideUndoBodySchema>;
-    const [prev] = await db.select().from(qbClassProjectOverrides).where(eq(qbClassProjectOverrides.id, id));
+    const prev = await qbReconRepository.getClassOverrideById(id);
     if (!prev) return res.status(404).json({ error: "not_found" });
-    await db.update(qbClassProjectOverrides).set({ deletedAt: new Date() }).where(eq(qbClassProjectOverrides.id, id));
+    await qbReconRepository.softDeleteClassOverride(id);
     await logAuditFromReq(req, {
       entityType: "qb_class_project_override",
       entityId: String(id),
@@ -3189,13 +3054,10 @@ router.get(
       }
 
       const [projects, nrl, custOverrides, ignores] = await Promise.all([
-        db.select({ name: projectInfo.projectName }).from(projectInfo),
-        db
-          .select({ name: normalizedRevenueLines.projectName })
-          .from(normalizedRevenueLines)
-          .where(and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt))),
-        db.select().from(qbCustomerProjectOverrides).where(isNull(qbCustomerProjectOverrides.deletedAt)),
-        db.select().from(qbRevenueReconIgnores).where(isNull(qbRevenueReconIgnores.deletedAt)),
+        projectInfoRepository.listAllProjectNames(),
+        financeInflowsRepository.listActiveRevenueLineProjectNames(),
+        qbReconRepository.listActiveCustomerOverrides(),
+        qbReconRepository.listActiveRevenueReconIgnores(),
       ]);
 
       const universe = new Set<string>();
@@ -3211,16 +3073,7 @@ router.get(
       const ignoreKey = (invoiceId: string | null, lineId: string | null) =>
         `${invoiceId ?? ""}::${lineId ?? ""}`;
 
-      const activeRevLines = await db
-        .select({
-          id: normalizedRevenueLines.id,
-          projectName: normalizedRevenueLines.projectName,
-          invoiceNumber: normalizedRevenueLines.invoiceNumber,
-          invoiceDate: normalizedRevenueLines.invoiceDate,
-          amountExVat: normalizedRevenueLines.amountExVat,
-        })
-        .from(normalizedRevenueLines)
-        .where(and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt)));
+      const activeRevLines = await financeInflowsRepository.listActiveRevenueLinesForTrackerGap();
       const revLinesByProjectKey = new Map<string, typeof activeRevLines>();
       for (const rl of activeRevLines) {
         const key = normalizeProjectKey(rl.projectName);
@@ -3494,20 +3347,17 @@ router.post(
     try {
       const body = req.body as z.infer<typeof revenueIgnoreBodySchema>;
       const user = req.user;
-      const [created] = await db
-        .insert(qbRevenueReconIgnores)
-        .values({
-          qbInvoiceId: body.qbInvoiceId,
-          qbLineId: body.qbLineId ?? null,
-          qbDocNumber: body.qbDocNumber ?? null,
-          customerName: body.customerName ?? null,
-          lineAmountExVat: body.lineAmountExVat != null ? String(body.lineAmountExVat) : null,
-          resolvedProjectName: body.resolvedProjectName ?? null,
-          reason: body.reason,
-          ignoredByUserId: user?.id ?? null,
-          ignoredByName: user?.name ?? user?.email ?? null,
-        })
-        .returning();
+      const created = await qbReconRepository.createRevenueReconIgnore({
+        qbInvoiceId: body.qbInvoiceId,
+        qbLineId: body.qbLineId ?? null,
+        qbDocNumber: body.qbDocNumber ?? null,
+        customerName: body.customerName ?? null,
+        lineAmountExVat: body.lineAmountExVat != null ? String(body.lineAmountExVat) : null,
+        resolvedProjectName: body.resolvedProjectName ?? null,
+        reason: body.reason,
+        ignoredByUserId: user?.id ?? null,
+        ignoredByName: user?.name ?? user?.email ?? null,
+      });
       // Audit entityId is the (qbInvoiceId,qbLineId) composite — not the
       // ignore-table row id — so the maintenance UI can look up history by
       // the same key it already has on every gap row. Format mirrors the COS
@@ -3552,9 +3402,9 @@ router.delete(
       const id = Number(req.params.id);
       if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
       const body = req.body as z.infer<typeof revenueIgnoreUndoBodySchema>;
-      const [prev] = await db.select().from(qbRevenueReconIgnores).where(eq(qbRevenueReconIgnores.id, id));
+      const prev = await qbReconRepository.getRevenueReconIgnoreById(id);
       if (!prev) return res.status(404).json({ error: "not_found" });
-      await db.update(qbRevenueReconIgnores).set({ deletedAt: new Date() }).where(eq(qbRevenueReconIgnores.id, id));
+      await qbReconRepository.softDeleteRevenueReconIgnore(id);
       const undoAuditEntityId = `${prev.qbInvoiceId}:${prev.qbLineId ?? "_"}`;
       await logAuditFromReq(req, {
         entityType: "qb_revenue_recon_ignore",
@@ -3597,27 +3447,12 @@ router.post(
     try {
       const body = req.body as z.infer<typeof customerOverrideBodySchema>;
       const user = req.user;
-      const created = await db.transaction(async (tx: NodePgDatabase<typeof schema>) => {
-        await tx
-          .update(qbCustomerProjectOverrides)
-          .set({ deletedAt: new Date() })
-          .where(
-            and(
-              isNull(qbCustomerProjectOverrides.deletedAt),
-              sql`LOWER(${qbCustomerProjectOverrides.customerRefName}) = LOWER(${body.customerRefName})`,
-            ),
-          );
-        const [row] = await tx
-          .insert(qbCustomerProjectOverrides)
-          .values({
-            customerRefName: body.customerRefName,
-            projectName: body.projectName,
-            note: body.note ?? null,
-            createdByUserId: user?.id ?? null,
-            createdByName: user?.name ?? user?.email ?? null,
-          })
-          .returning();
-        return row;
+      const created = await qbReconRepository.supersedeAndInsertCustomerOverride({
+        customerRefName: body.customerRefName,
+        projectName: body.projectName,
+        note: body.note ?? null,
+        createdByUserId: user?.id ?? null,
+        createdByName: user?.name ?? user?.email ?? null,
       });
       await logAuditFromReq(req, {
         entityType: "qb_customer_project_override",
@@ -3653,9 +3488,9 @@ router.delete(
       const id = Number(req.params.id);
       if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
       const body = req.body as { reason: string };
-      const [prev] = await db.select().from(qbCustomerProjectOverrides).where(eq(qbCustomerProjectOverrides.id, id));
+      const prev = await qbReconRepository.getCustomerOverrideById(id);
       if (!prev) return res.status(404).json({ error: "not_found" });
-      await db.update(qbCustomerProjectOverrides).set({ deletedAt: new Date() }).where(eq(qbCustomerProjectOverrides.id, id));
+      await qbReconRepository.softDeleteCustomerOverride(id);
       await logAuditFromReq(req, {
         entityType: "qb_customer_project_override",
         entityId: String(id),
@@ -3695,12 +3530,7 @@ router.get(
       const parsed = schema.safeParse({ entityType: req.query.entityType, entityId: req.query.entityId });
       if (!parsed.success) return res.status(400).json({ error: "invalid_query", detail: parsed.error.format() });
       const { entityType, entityId } = parsed.data;
-      const events: (typeof auditEvents.$inferSelect)[] = await db
-        .select()
-        .from(auditEvents)
-        .where(and(eq(auditEvents.entityType, entityType), eq(auditEvents.entityId, entityId)))
-        .orderBy(desc(auditEvents.createdAt))
-        .limit(200);
+      const events = await qbReconRepository.listEntityAuditEvents(entityType, entityId, 200);
       res.json({
         entityType,
         entityId,
@@ -3754,12 +3584,7 @@ router.get("/api/cos-tracker/audit-history", requireAuth, requirePermission("cos
       return res.status(400).json({ error: "invalid_query", detail: parsed.error.format() });
     }
     const { entityType, entityId } = parsed.data;
-    const events = await db
-      .select()
-      .from(auditEvents)
-      .where(and(eq(auditEvents.entityType, entityType), eq(auditEvents.entityId, entityId)))
-      .orderBy(desc(auditEvents.createdAt))
-      .limit(200);
+    const events = await qbReconRepository.listEntityAuditEvents(entityType, entityId, 200);
     res.json({
       entityType,
       entityId,
@@ -3787,12 +3612,8 @@ router.get("/api/cos-tracker/reconciliation", requireAuth, async (req, res) => {
   try {
     const { monthKey } = req.query as { monthKey?: string };
     const [allCostLines, links, rawBills] = await Promise.all([
-      db.select().from(normalizedCostLines).where(and(isNull(normalizedCostLines.effectiveTo), isNull(normalizedCostLines.deletedAt))),
-      db.select().from(quickbooksInvoiceLinks).where(and(
-        eq(quickbooksInvoiceLinks.appEntityType, "cost_line"),
-        eq(quickbooksInvoiceLinks.qbEntityType, "bill"),
-        isNull(quickbooksInvoiceLinks.deletedAt),
-      )),
+      financeExpenseRepository.listAllActiveCostLines(),
+      qbLinksRepository.listActiveLinksByPair("cost_line", "bill"),
       getBills("2025-09-01", "2026-08-31").catch(() => ({ QueryResponse: { Bill: [] } })),
     ]);
 
@@ -4938,11 +4759,7 @@ async function revenueTrackerHandler(req: Request, res: Response) {
       Promise.resolve(new Map()),
     ]);
     const [revenueLinks, qbInvoicesRaw, qbMonthlyPnL] = await Promise.all([
-      db.select().from(quickbooksInvoiceLinks).where(and(
-        eq(quickbooksInvoiceLinks.appEntityType, "revenue_line"),
-        eq(quickbooksInvoiceLinks.qbEntityType, "invoice"),
-        isNull(quickbooksInvoiceLinks.deletedAt),
-      )),
+      qbLinksRepository.listActiveLinksByPair("revenue_line", "invoice"),
       getInvoices("2025-09-01", "2026-08-31").catch(() => ({ QueryResponse: { Invoice: [] } })),
       getMonthlyPnLReport("2025-09-01", "2026-08-31").catch(() => null),
     ]);
@@ -5186,11 +5003,7 @@ router.get("/api/revenue-tracker/month-detail", requireAuth, requirePermission("
       Promise.resolve(new Map()),
     ]);
     const [revenueLinks, qbInvoicesRaw] = await Promise.all([
-      db.select().from(quickbooksInvoiceLinks).where(and(
-        eq(quickbooksInvoiceLinks.appEntityType, "revenue_line"),
-        eq(quickbooksInvoiceLinks.qbEntityType, "invoice"),
-        isNull(quickbooksInvoiceLinks.deletedAt),
-      )),
+      qbLinksRepository.listActiveLinksByPair("revenue_line", "invoice"),
       getInvoices(`${monthKey}-01`, monthEndRev).catch(() => ({ QueryResponse: { Invoice: [] } })),
     ]);
 
@@ -5340,12 +5153,8 @@ router.get("/api/revenue-tracker/reconciliation", requireAuth, requirePermission
   try {
     const { monthKey } = req.query as { monthKey?: string };
     const [revenueRows, links, qbInvoicesRaw] = await Promise.all([
-      db.select().from(normalizedRevenueLines).where(and(isNull(normalizedRevenueLines.effectiveTo), isNull(normalizedRevenueLines.deletedAt))),
-      db.select().from(quickbooksInvoiceLinks).where(and(
-        eq(quickbooksInvoiceLinks.appEntityType, "revenue_line"),
-        eq(quickbooksInvoiceLinks.qbEntityType, "invoice"),
-        isNull(quickbooksInvoiceLinks.deletedAt),
-      )),
+      financeInflowsRepository.listAllActiveRevenueLines(),
+      qbLinksRepository.listActiveLinksByPair("revenue_line", "invoice"),
       getInvoices("2025-09-01", "2026-08-31").catch(() => ({ QueryResponse: { Invoice: [] } })),
     ]);
 
@@ -6084,20 +5893,14 @@ router.post("/api/revenue-tracking/overrides", requireAuth, requireAdminOrFinanc
           const rawId = r.id as number;
           const canonicalRevId = rawId < 0 ? -rawId : (rawId >= 900000 ? rawId - 900000 : rawId);
           if (!useOverridesRev) {
-            await db.update(normalizedRevenueLines)
-              .set({
-                paidDateConfirmed,
-                paidDateFontColor,
-                paidDate: paidDate,
-                inBankDate: isInBank ? (paidDate || null) : null,
-              })
-              .where(
-                and(
-                  eq(normalizedRevenueLines.projectName, projectName),
-                  eq(normalizedRevenueLines.sourceRow, rowNum),
-                  isNull(normalizedRevenueLines.effectiveTo),
-                )
-              );
+            await financeInflowsRepository.updateInBankByProjectAndRow({
+              projectName,
+              sourceRow: rowNum,
+              paidDateConfirmed,
+              paidDateFontColor,
+              paidDate,
+              inBankDate: isInBank ? (paidDate || null) : null,
+            });
             continue;
           }
           // Tracked fields → manual_overrides
@@ -6126,14 +5929,7 @@ router.post("/api/revenue-tracking/overrides", requireAuth, requireAdminOrFinanc
             note: "inBank sync after revenue override",
           });
           // Untracked: font colour to live column.
-          await db.update(normalizedRevenueLines)
-            .set({ paidDateFontColor })
-            .where(
-              and(
-                eq(normalizedRevenueLines.id, canonicalRevId),
-                isNull(normalizedRevenueLines.effectiveTo),
-              )
-            );
+          await financeInflowsRepository.updatePaidDateFontColorById(canonicalRevId, paidDateFontColor);
         }
       }
     } catch (syncErr: any) {

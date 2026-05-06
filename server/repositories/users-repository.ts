@@ -68,15 +68,11 @@ export class UsersRepository {
     return row?.name ?? null;
   }
 
-  async listAssignableByRole(role: string): Promise<AssignableUserRow[]> {
+  async listIdNameByIds(ids: number[]): Promise<Array<{ id: number; name: string }>> {
+    if (ids.length === 0) return [];
     return this.dbInstance
-      .select({
-        id: users.id,
-        name: users.name,
-        username: users.username,
-        role: users.role,
-      })
+      .select({ id: users.id, name: users.name })
       .from(users)
-      .where(eq(users.role, role));
+      .where(inArray(users.id, ids));
   }
 }
