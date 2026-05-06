@@ -1,0 +1,217 @@
+ROLE: You are a senior full-stack engineer working in Replit on an existing Emergent Energy (EE) web application.
+
+MISSION:
+Rewrite/replace the COMPLETE “Engineering” functionality to integrate with PD’s SharePoint List (“Proposals Pipeline”) while NOT changing anything else in the app. Do not break existing modules (PM, dashboards, admin, etc). Keep current theme/look/UX patterns consistent.
+
+IMPORTANT RULES:
+1) Do NOT assume. If anything is unclear, ask Johannes (the COO) concise questions before implementing.
+2) You may ask Johannes for SharePoint access details needed to call the API. Prefer secure OAuth / Azure App Registration over asking for a password. Do not hardcode secrets. Use Replit Secrets/env vars.
+3) No placeholder buttons/code. Everything must work end-to-end.
+4) Preserve existing routing/layout/styles. Only add what is needed for Engineering + SharePoint sync + CP gate.
+5) COO-only permissions for Pull/Push/Mark CP Signed.
+
+CONTEXT (CURRENT STATE):
+- PM module already exists in the app.
+- PD is NOT on the app yet.
+- PD currently tracks Engineering intake work in a SharePoint List:
+  URL: https://emergy.sharepoint.com/sites/EngineeringSupport/Lists/Proposals%20Pipeline/IN%20PROGRESS.aspx?env=WebViewList
+- SharePoint list columns (display names) include:
+  Client, Due Date, Days in progress, Request Type, Priority, Status, Number of Reworks,
+  Project Developer (Person), Designer (Person), Size in kWp, Province,
+  GPS (various formats), Funding Type (multi),
+  Bills/Tariff data, Metering data, Site inspection form,
+  Comments, Working schedule,
+  Batteries needed + Battery Size, Diesel Gen integration needed, Roof replacement needed,
+  HSE Discussed, ClickUpSynced, Item Type, Path
+- CP = “Cost Proposal”
+- “Client” is the unique Project identifier in the web app. If same Client appears again in SharePoint, it should be added as a task/request under that existing Project (NOT a new project).
+- Sync is manual via a COO-only button: Pull from SharePoint, Push to SharePoint (no background polling).
+- CP signed by client (email evidence) triggers creation of PM tabs/modules on that Project + creates Engineering task packs.
+- GPS is nice-to-have (do not block).
+
+HIGH-LEVEL DESIGN (MUST IMPLEMENT):
+A) DATA MODEL (do not assume the existing DB; adapt to existing stack)
+1) Project
+- Keyed by normalized Client string (client_key), display client_name
+- Must store linkage to SharePoint items (store SharePoint Item IDs under the project)
+2) Intake Request (1 per SharePoint list item)
+- Unique key: SharePoint Item ID
+- Belongs to a Project (matched by client_key)
+- Stores all SharePoint fields + sync metadata
+3) Engineering Tasks (generated from templates by Request Type)
+4) Audit Log
+- Records Pull/Push/CP Signed actions with timestamp, actor (COO), counts, errors
+
+B) SHAREPOINT INTEGRATION
+- Use Microsoft Graph API (preferred).
+- Implement secure auth via Azure App Registration OR delegated OAuth flow.
+- Ask Johannes for whichever he can provide:
+  Option 1 (Preferred): Azure AD App registration details (Tenant ID, Client ID, Client Secret/Certificate) + granted permissions + site/list identifiers.
+  Option 2: Delegated user OAuth login in-app (COO signs in and consents).
+- Do NOT ask for or store raw passwords.
+- Must handle SharePoint Person fields and multi-choice fields correctly.
+
+C) MANUAL SYNC (COO-ONLY)
+Add an Engineering “Sync” control (could be within Engineering area or Admin area, but visible only to COO):
+1) PULL FROM SHAREPOINT
+- Fetch list items (either all in view, or full list; ask if unclear).
+- For each item:
+  - compute client_key normalization (lowercase, trim, remove punctuation, collapse spaces)
+  - upsert Project by client_key
+  - upsert Intake Request by SharePoint Item ID
+  - link request to project
+- Detect conflicts (see Option B below).
+- Show Sync Summary:
+  - new projects created
+  - new requests added
+  - updated requests
+  - conflicts found (requires COO decision)
+  - errors
+
+2) PUSH TO SHAREPOINT
+- Push back ONLY app-owned fields + resolved shared fields:
+  - AppLink (hyperlink to the project in the app)
+  - App sync metadata fields (see column additions below)
+  - optionally update SharePoint Status/Comments if COO explicitly chooses to push them
+- Never overwrite PD-owned fields silently.
+
+D) OPTION B (TWO-WAY EDIT) WITH CONFLICT HANDLING
+Johannes chose Option B (two-way editing). This MUST have guardrails:
+- Implement “field ownership” + “conflict UI” (no silent overwrites).
+Define:
+1) SharePoint-owned fields (pull wins by default):
+  Client, Due Date, Request Type, Project Developer, Designer, Funding Type, Size, Province, Working schedule, etc.
+2) App-owned fields (push wins by default):
+  engineering tasks, internal blockers, QA checks, internal notes, CP signed fields, PM creation flags
+3) Shared fields (require conflict resolution if both changed since last sync):
+  Status, Comments
+Conflict rule:
+- Track last_pulled_at, last_pushed_at, and a per-item hash/version (ETag if available).
+- If SharePoint and App both changed shared fields since last sync:
+  - show a diff modal on Pull and force COO to choose:
+    Keep App / Keep SharePoint / Merge (for Comments)
+- Store conflict decisions and include in Audit Log.
+
+E) CP SIGNED GATE (COO-ONLY)
+- Add button “Mark CP Signed” at Project level (COO-only).
+- Require evidence:
+  - Either upload signed CP document OR capture email subject + date + optional attachment.
+  - Store cp_signed=true, cp_signed_date, cp_signed_by.
+- On CP Signed:
+  1) create/enable PM module/tabs for that project (using existing PM structures)
+  2) create PM default task pack
+  3) create Engineering post-CP task pack
+  4) update SharePoint columns CPSigned / CPSignedDate / CPSignedBy / PMCreated (if those columns exist)
+
+F) TASK TEMPLATES (V1)
+Implement request-type-based task generation with Definitions of Done (DoD). Use these initial templates (can refine later):
+1) First Assessment – PowerPoint
+- Gather tariff + metering or log blocker
+- Confirm working schedule + access constraints
+- Capture site constraints (roof/space, genset, BESS, etc.)
+- Preliminary layout + yield model
+- Risks + assumptions section
+- Internal QA review (Tanaka role)
+- Issue to PD + store links in SharePoint/app
+2) Cost Proposal – Word
+- Design basis locked
+- PV*SOL/Helioscope outputs stored
+- BOM + costing aligned to EE template
+- Assumptions/exclusions documented
+- QA gate (Tanaka + Dean as needed)
+- Issue CP pack to PD + store link
+- Await CP signed
+3) Site Visit Report
+- Schedule
+- Capture photos/measurements/constraints
+- Upload inspection form
+- Issue report + close
+4) Meter Installation
+- Confirm requirements + utility contact
+- Schedule
+- Verify monitoring/data
+- Close with evidence
+5) Data Analysis Request
+- Collect dataset
+- Run analysis + recommendation note
+- Review with senior engineer
+- Issue output
+6) Sizing Rational Request
+- Review meter/load profile
+- Recommend sizing + limits
+- Issue updated FA output
+
+G) SHAREPOINT LIST COLUMNS TO ADD (MUST SUPPORT)
+Johannes approved adding columns. Implement logic expecting these columns; if missing, show an admin warning with exact steps.
+Add (display -> suggested internal):
+- AppLink (Hyperlink)
+- AppProjectKey (Single line text)
+- AppLastPulled (Date/Time)
+- AppLastPushed (Date/Time)
+- AppSyncStatus (Choice: Synced/Conflict/Error)
+- AppSyncNotes (Multiple lines)
+- CPSigned (Yes/No)
+- CPSignedDate (Date/Time)
+- CPSignedBy (Person)
+- PMCreated (Yes/No)
+
+NOTE: You cannot assume internal column names. Ask Johannes to provide the internal names OR implement a config screen where COO maps display name -> internal name once.
+
+H) PERMISSIONS
+- Only COO role can:
+  Pull, Push, Mark CP Signed, resolve conflicts
+- Other roles:
+  read Engineering intake + work tasks (as permitted by existing auth model)
+- Log every privileged action.
+
+I) UI/UX REQUIREMENTS
+- Keep existing look/theme.
+- Engineering area must include:
+  1) Engineering Inbox / Pipeline view:
+     - group by Status, Priority, Due date
+     - filter by Designer, Project Developer, Province, Request Type
+     - show “Last Sync” timestamp
+  2) Project Engineering tab:
+     - list Intake Requests under this Project (from SharePoint)
+     - show generated tasks and their DoD
+     - show CP Signed state and evidence
+  3) COO-only Sync page/modal:
+     - Pull / Push
+     - sync summary
+     - conflict resolution UI
+     - audit log view
+
+J) NON-GOALS (DO NOT DO)
+- Do not refactor the entire app.
+- Do not change PM logic except what is required to create PM tabs/tasks on CP signed.
+- Do not create background cron jobs.
+- Do not create a one-off “import tool” separate from the sync button.
+- Do not create new auth systems; use what exists.
+
+WHAT YOU MUST ASK JOHANNES (before final integration):
+1) What stack is the current app using (or inspect repo and report back): DB, ORM, auth, routing.
+2) Provide SharePoint API access method:
+   - Azure Tenant ID, Client ID, Secret/Cert, permissions
+   OR delegated OAuth approach approval
+3) Confirm which list view to sync:
+   - only “IN PROGRESS” view items or the whole list?
+4) Provide internal column names OR approve a one-time mapping screen.
+5) Confirm the exact roles and how “COO” is determined in the app.
+
+DELIVERABLES:
+1) Working Engineering module integrated with SharePoint via manual sync.
+2) COO-only Pull/Push with conflict resolution.
+3) CP Signed gate that creates PM tabs + task packs.
+4) Added SharePoint column support with graceful fallback and clear error messages.
+5) Audit log for all sync + CP signed actions.
+6) No regression elsewhere.
+
+ACCEPTANCE TESTS (DEFINE AND PASS):
+- Pull creates/updates Projects and Intake Requests correctly, grouped by Client.
+- Second SharePoint row with same Client becomes a new Intake Request under same Project.
+- Push writes AppLink and sync fields back to SharePoint.
+- Conflict on Status/Comments forces COO to choose outcome; no silent overwrite.
+- Non-COO cannot see sync controls or mark CP signed.
+- CP signed triggers PM creation exactly once (idempotent).
+
+NOW: Start by inspecting the repo to understand existing Engineering module boundaries, auth roles, DB models, and UI patterns. Then ask Johannes the minimum set of questions required (listed above). Only after answers, implement.

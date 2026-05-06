@@ -1,0 +1,17 @@
+-- Hotfix for "Spawn engineering tasks" bulk button (task #108).
+--
+-- The legacy partial unique index `work_items_active_eng_ticket_uniq`
+-- enforced 1 active ENG-workstream work_item per engineering_ticket_id.
+-- That assumption pre-dated the bulk-spawn feature, which intentionally
+-- inserts MULTIPLE work_items per ticket (one per PD task template, plus
+-- any custom tasks). The first insert per ticket succeeded; the second
+-- raised a unique violation that rolled back the whole per-ticket
+-- transaction, so no rows were left behind for the failed tickets.
+--
+-- The Drizzle mirror (shared/schema/tasks.ts) already declares only the
+-- non-unique partial index `idx_work_items_engineering_ticket_id`, so
+-- dropping this leftover production-only unique index brings the database
+-- back in line with the schema source of truth.
+--
+-- Idempotent: safe to re-run.
+DROP INDEX IF EXISTS public.work_items_active_eng_ticket_uniq;

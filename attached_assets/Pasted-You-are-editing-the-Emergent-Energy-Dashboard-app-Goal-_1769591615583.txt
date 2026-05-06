@@ -1,0 +1,128 @@
+You are editing the Emergent Energy Dashboard app.
+
+Goal: when a user uploads tracker Excel files, ingest the tracker data and populate dashboard metrics + Projects Summary to match the logic in "0.Program Dashboard FY26.xlsm".
+
+Key contract (validated from sample trackers):
+1) Expenditure Breakdown sheet
+- Sheet name: "Expenditure Breakdown"
+- The ACTUAL EXPENDITURE BREAKDOWN header row is row 4 (1-based), columns L to X contain headers:
+  "No.", "Product/ Service", "Description of Work", "QTY", "Rate / Unit", "Actual Total", "PO NUMBER", "INVOICE NUMBER", "INVOICE RAISED DATE", "REVENUE RECOGNITION AMOUNT", "CHECK", "FINANCE PAYMENT DATE", "Total COS"
+- Data starts at row 6.
+- Important columns by letter:
+  L No
+  M ExpenseCategory (Product/ Service)
+  N ExpenseLineItem (Description of Work)
+  O ExpenseQTY
+  P ExpenseRateUnit
+  Q ExpenseActualTotal
+  R ExpensePONumber
+  S ExpenseInvoiceNumber
+  T ExpenseInvoicedDate
+  U RevenueAmount
+  W ExpensePaymentDate
+  X COSAmount
+- Skip rows where (M,N,Q) are all blank.
+
+2) Revenue Tracking sheet
+- Sheet name: "Revenue Tracking"
+- Header row is row 12.
+- Headers exist at these columns:
+  B "No."
+  C "PAYMENT MILESTONE"
+  E "%"
+  F "VALUE"
+  H "PLANNED PAYMENT DATE"
+  L "INVOICE NUMBER"
+  N "INVOICE RAISED DATE"
+  P "PAYMENT RECEIVED DATE"
+  R either "MILESTONE REQUIREMENTS & COMMENTS" OR "MILESTONE NOTES & COMMENTS"
+  S optional "MILESTONE DOCUMENTS RECEIVED"
+- Data starts row 13.
+- IMPORTANT: some trackers have a second table further down (e.g. another "No./PAYMENT MILESTONE" header around row ~40). Only parse the FIRST table. Stop parsing when:
+  - column B contains "KEY:" (starts with KEY),
+  - or column C contains "end of sheet",
+  - or another header row appears (B == "No." and C contains "PAYMENT MILESTONE") after the first header.
+- Coerce dates: values may be Date objects OR strings like "16/01/2026". Support dd/mm/yyyy parsing.
+
+3) Project Plan sheet
+- Sheet name: "Project Plan"
+- Header row is row 8 with:
+  B "No."
+  C "HIGH LEVEL PROGRAMME"
+  I "Actual Start"
+  J "Duration (days)" or "Duration (work days)"
+  K "Actual End"
+  Then two status columns:
+   - first "Status" => Actual%Complete
+   - second "Status" OR "Expected Status" => Expected%Complete
+- Only include rows where No AND HIGH LEVEL PROGRAMME are present.
+- Coerce status to numbers (0..1).
+
+4) ProjectInfo fields:
+- From "Project Plan" fixed cells:
+  E3 size_kWp
+  E4 PD
+  E5 PM
+  E6 contract_value
+  E7 phase
+
+Primary key:
+- Use project_name = uploaded FILE NAME (e.g. "Coega Steels Ph2_Tracker.xlsx") across all data, matching Excel.
+
+Implementation steps:
+A) Backend ingestion
+- In the upload endpoint, after saving the file, parse workbook using SheetJS (xlsx).
+- Store ingested data per project in a persistent store.
+  If DB is already set up (Drizzle/Postgres), create tables:
+    project_info(project_name pk, size_kwp, pd, pm, contract_value, phase, updated_at)
+    program_expense(...)
+    program_inflows(...)
+    project_plan(...)
+  If DB setup is incomplete, use a file-based JSON store at server/data/store.json keyed by project_name. (Prefer DB if already working.)
+
+- Return a validation report after upload:
+  { project_name, expensesParsed, inflowsParsed, planParsed, infoParsed, warnings[] }
+
+B) APIs
+1) GET /api/overview
+- total_program_budget = SUM(project_info.contract_value) (fallback: sum inflows.VALUE)
+- actual_spend_paid = SUM(program_expense.expense_actual_total where expense_payment_date not null AND expense_payment_date <= today)
+- revenue_realised = SUM(program_inflows.milestone_amount where payment_received_date not null AND payment_received_date <= today)
+- active_projects = count distinct project_name
+- include data_as_of = now
+
+2) GET /api/projects-summary
+Return rows with the same columns as Excel “Projects Summary 2026” (placeholders allowed for the certificate fields):
+- Project Name (project_name)
+- Size (size_kwp)
+- PD, PM
+- Cost Proposal Signed (null placeholder)
+- Funding Signed (null placeholder)
+- EPC Contract Signed (null placeholder)
+- Phase - Manual (phase)
+- PD Handover date (null placeholder for now)
+- Construction Start date (null placeholder for now)
+- Duration (null placeholder for now)
+- kW/Week (null placeholder for now)
+- Commissioning Date (null placeholder for now)
+- O&M Handover Date (null placeholder for now)
+- Client Handover Date (null placeholder for now)
+- Project % Complete = avg(project_plan.actual_pct_complete) for that project
+- Expected % Completed = avg(project_plan.expected_pct_complete)
+- Delta vs Expected = Project% - Expected%
+- Actual Revenue = SUM(program_inflows.milestone_amount) for that project (no paid filter; matches Excel)
+- Actual Expenses = SUM(program_expense.expense_actual_total)
+- GP % = 1 - (Actual Expenses / Actual Revenue) when Actual Revenue > 0
+- Revenue Outstanding = SUM(inflows.milestone_amount where payment_received_date <= today AND milestone_invoice_number is empty)
+- Expenses outstanding = SUM(expenses.expense_actual_total where expense_payment_date <= today AND expense_invoice_number is empty)
+- Current VO Total = 0 placeholder
+
+C) Frontend wiring
+- Overview cards must call /api/overview.
+- Projects Summary table must call /api/projects-summary.
+- After uploading trackers, refresh data automatically and show the validation report (counts).
+
+Acceptance test:
+- Uploading the sample trackers:
+  "1 Bolt Ave_Tracker.xlsx" and "Coega Steels Ph2_Tracker.xlsx"
+  must produce non-zero totals and 2 rows in Projects Summary with size/pd/pm/phase populated.
