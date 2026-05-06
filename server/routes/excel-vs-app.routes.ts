@@ -36,6 +36,7 @@ import { db } from "../db";
 import { applyManualOverride, clearManualOverride } from "../lib/manual-overrides";
 import { recordOverride } from "../lib/audit/diff-engine";
 import { emitExcelVsAppMetric } from "../lib/excel-vs-app-metrics";
+import { sendExcelUpdateRequest } from "../services/excel-update-request-mailer";
 import {
   DRIFT_RESOLVER_ROLES,
   type DiffSection,
@@ -339,7 +340,23 @@ export function registerExcelVsAppRoutes(app: Express): void {
             actorRole: actorRole ?? null,
             actorUserId: actorId,
           });
-          res.json({ status: "ok", action: body.action, resolved });
+          // Ask the workbook owners to update Excel so it re-establishes
+          // itself as source of truth. Awaited so the response carries
+          // the email/bell outcome — useful for FE testers and the
+          // metrics surface. The mailer never throws (failures are
+          // logged inside).
+          const mail = await sendExcelUpdateRequest({
+            projectId,
+            projectName,
+            resolveAction: "keep_app",
+            section: deriveSection(body.entries) ?? "MIXED",
+            entries: body.entries,
+            reason: body.reason,
+            requesterUserId: actorId,
+            requesterName: req.user?.name ?? null,
+            requesterEmail: req.user?.email ?? null,
+          });
+          res.json({ status: "ok", action: body.action, resolved, mail });
           return;
         }
 
@@ -393,11 +410,24 @@ export function registerExcelVsAppRoutes(app: Express): void {
           actorRole: actorRole ?? null,
           actorUserId: actorId,
         });
+        const mail = await sendExcelUpdateRequest({
+          projectId,
+          projectName,
+          resolveAction: "request_approval",
+          section: body.section,
+          entries: body.entries,
+          reason: body.reason,
+          requesterUserId: actorId,
+          requesterName: req.user?.name ?? null,
+          requesterEmail: req.user?.email ?? null,
+          requestId: saved.id,
+        });
         res.json({
           status: "pending_approval",
           requestId: saved.id,
           action: body.action,
           submitted: body.entries.length,
+          mail,
         });
       } catch (err) {
         if (err instanceof ApiError) throw err;
