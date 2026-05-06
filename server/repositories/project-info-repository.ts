@@ -26,6 +26,19 @@ export class ProjectInfoRepository {
     return updated;
   }
 
+  /**
+   * Project-name only listing for the active project_info population.
+   * Used by tracker-gap endpoints that build a project-name universe.
+   *
+   * NOTE: similar method exists in Wave 5.4 (`listAll()`) returning
+   * full rows; this is the projection-only variant.
+   */
+  async listAllProjectNames(): Promise<Array<{ name: string | null }>> {
+    return this.dbInstance
+      .select({ name: projectInfo.projectName })
+      .from(projectInfo);
+  }
+
   async upsert(info: InsertProjectInfo, existing: ProjectInfo | undefined): Promise<ProjectInfo> {
     if (existing) {
       const { executionEnabled, ...updateFields } = info as any;

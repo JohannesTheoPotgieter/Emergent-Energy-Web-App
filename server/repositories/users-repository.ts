@@ -60,4 +60,12 @@ export class UsersRepository {
       .where(eq(users.id, id));
     return row?.name ?? null;
   }
+
+  async listIdNameByIds(ids: number[]): Promise<Array<{ id: number; name: string }>> {
+    if (ids.length === 0) return [];
+    return this.dbInstance
+      .select({ id: users.id, name: users.name })
+      .from(users)
+      .where(inArray(users.id, ids));
+  }
 }
