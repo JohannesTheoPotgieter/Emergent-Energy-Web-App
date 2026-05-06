@@ -465,20 +465,6 @@ export class FinanceExpenseEngineRepository {
       .limit(limit);
   }
 
-  /**
-   * NOTE: also added in Waves 5.4/5.5 (PRs #820/#821); resolve any merge
-   * collision by keeping a single copy.
-   */
-  async listAllActiveCostLines(): Promise<Array<typeof normalizedCostLines.$inferSelect>> {
-    return this.dbInstance
-      .select()
-      .from(normalizedCostLines)
-      .where(and(
-        isNull(normalizedCostLines.effectiveTo),
-        isNull(normalizedCostLines.deletedAt),
-      ));
-  }
-
   async listActiveCostLineProjectNames(): Promise<Array<{ name: string | null }>> {
     return this.dbInstance
       .select({ name: normalizedCostLines.projectName })
