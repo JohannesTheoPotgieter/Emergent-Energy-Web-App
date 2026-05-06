@@ -33,6 +33,7 @@ import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
 import UserAssignmentPicker from "@/components/UserAssignmentPicker";
+import { getAuthHeaders } from "@/lib/assignables";
 import {
   format, addDays, differenceInDays, parseISO, isValid, startOfDay,
   eachWeekOfInterval, startOfWeek, endOfWeek, isSameDay,
@@ -888,6 +889,45 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
   const tasks = planData?.tasks ?? [];
   const unlinkedOperationalCount = planData?.unlinkedOperationalCount ?? 0;
   const unlinkedOperationalTasks: UnlinkedOpTask[] = planData?.unlinkedOperationalTasks ?? [];
+
+  // Collect all work-item IDs that will render a UserAssignmentPicker, so we
+  // can fetch all their assignments in one request instead of one per row.
+  const planWorkItemIds = useMemo(() => {
+    const seen = new Set<number>();
+    for (const t of tasks) {
+      const id = (t as any).workItemId;
+      if (typeof id === "number" && Number.isFinite(id) && id > 0) seen.add(id);
+    }
+    return Array.from(seen);
+  }, [tasks]);
+
+  const { data: bulkPlanAssignments } = useQuery<Record<string, unknown[]>>({
+    queryKey: ["/api/entity-assignments/bulk", "plan", planWorkItemIds.length > 0 ? planWorkItemIds.slice().sort((a, b) => a - b).join(",") : "empty"],
+    queryFn: async () => {
+      if (planWorkItemIds.length === 0) return {};
+      const ids = planWorkItemIds.join(",");
+      const res = await fetch(`/api/entity-assignments/bulk?entityType=plan&ids=${ids}`, {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) return {};
+      return res.json();
+    },
+    enabled: planWorkItemIds.length > 0,
+    staleTime: 15000,
+  });
+
+  // Seed individual picker cache entries so each UserAssignmentPicker finds its
+  // data without firing a separate request.
+  useEffect(() => {
+    if (!bulkPlanAssignments) return;
+    for (const [idStr, assignments] of Object.entries(bulkPlanAssignments)) {
+      const id = Number(idStr);
+      if (Number.isFinite(id) && id > 0) {
+        qc.setQueryData(["/api/entity-assignments", "plan", id], assignments);
+      }
+    }
+  }, [bulkPlanAssignments, qc]);
 
   const { data: keyDates = [] } = useQuery<ResolvedKeyDate[]>({
     queryKey: ["key-dates", projectId || projectName],
