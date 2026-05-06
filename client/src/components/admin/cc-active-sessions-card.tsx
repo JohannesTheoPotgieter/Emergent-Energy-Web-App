@@ -1,4 +1,5 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
+import { useApiMutation } from "@/hooks/use-api-mutation";
 import { useAdminFetch } from "@/hooks/use-admin-fetch";
 import { AdminQueryState } from "@/components/admin/admin-shell";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,12 +8,13 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Users, LogOut, Clock } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
 import { getQueryError } from "./cc-utils";
 import type { SessionData } from "./cc-types";
 
 export function CcActiveSessionsCard() {
-  const { toast } = useToast();
+  // EE-QA-021 — `useApiMutation` adds the destructive error toast for free
+  // (with `getErrorMessage(err)` as the description). Success toast is
+  // declared inline for visibility.
   const queryClient = useQueryClient();
 
   const sessionsQuery = useAdminFetch<SessionData>(
@@ -21,7 +23,7 @@ export function CcActiveSessionsCard() {
   );
   const sessions = sessionsQuery.data ?? { count: 0, sessions: [] };
 
-  const forceLogout = useMutation({
+  const forceLogout = useApiMutation({
     mutationFn: async (sid: string) => {
       const token = localStorage.getItem("auth_token");
       const headers: Record<string, string> = {};
@@ -36,8 +38,9 @@ export function CcActiveSessionsCard() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-control-sessions"] });
-      toast({ title: "Session terminated", description: "User has been logged out." });
     },
+    successToast: { title: "Session terminated", description: "User has been logged out." },
+    errorToast: "Failed to terminate session",
   });
 
   return (
