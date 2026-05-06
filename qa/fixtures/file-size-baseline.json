@@ -1,0 +1,200 @@
+{
+  "_documentation": "EE-QA-015 baseline — files above the FILE_SIZE_THRESHOLD LOC. The CI guard `qa/tests/unit/file-size-ratchet.test.ts` fails if any of these grow OR a NEW file lands over the threshold. To regenerate after a split, run `npx tsx scripts/build-file-size-baseline.ts` and commit the new JSON.",
+  "threshold": 1500,
+  "buffer": 50,
+  "generated": "2026-05-06",
+  "files": [
+    {
+      "file": "server/departments/finance-routes.ts",
+      "loc": 7676
+    },
+    {
+      "file": "client/src/pages/EngineeringTasksPage.tsx",
+      "loc": 4870
+    },
+    {
+      "file": "client/src/pages/smart-import.tsx",
+      "loc": 4760
+    },
+    {
+      "file": "server/engineering-routes.ts",
+      "loc": 3685
+    },
+    {
+      "file": "server/smart-import-routes.ts",
+      "loc": 3657
+    },
+    {
+      "file": "client/src/components/tabs/UnifiedPlanTab.tsx",
+      "loc": 2977
+    },
+    {
+      "file": "client/src/pages/projects.tsx",
+      "loc": 2814
+    },
+    {
+      "file": "server/quality-routes.ts",
+      "loc": 2693
+    },
+    {
+      "file": "server/routes/quickbooks-invoice-matches.routes.ts",
+      "loc": 2559
+    },
+    {
+      "file": "server/services/quickbooks-reconciliation-service.ts",
+      "loc": 2505
+    },
+    {
+      "file": "server/lib/import/commit-executor.ts",
+      "loc": 2407
+    },
+    {
+      "file": "server/lifecycle-routes.ts",
+      "loc": 2407
+    },
+    {
+      "file": "client/src/pages/my-work-tasks.tsx",
+      "loc": 2342
+    },
+    {
+      "file": "client/src/pages/ee-info.tsx",
+      "loc": 2262
+    },
+    {
+      "file": "client/src/components/tabs/ExpenditureEditableTab.tsx",
+      "loc": 2243
+    },
+    {
+      "file": "client/src/components/quickbooks/QbMatchingWorkbench.tsx",
+      "loc": 2204
+    },
+    {
+      "file": "server/departments/project-routes.ts",
+      "loc": 2166
+    },
+    {
+      "file": "client/src/components/tabs/ProjectProcurementTab.tsx",
+      "loc": 2128
+    },
+    {
+      "file": "client/src/components/tabs/QualityTab.tsx",
+      "loc": 2126
+    },
+    {
+      "file": "server/lib/import/normalizer.ts",
+      "loc": 2115
+    },
+    {
+      "file": "server/ee-info-routes.ts",
+      "loc": 2111
+    },
+    {
+      "file": "client/src/pages/finance-quickbooks-throughput.tsx",
+      "loc": 2087
+    },
+    {
+      "file": "client/src/pages/lifecycle-board.tsx",
+      "loc": 2082
+    },
+    {
+      "file": "client/src/pages/project-detail.tsx",
+      "loc": 2061
+    },
+    {
+      "file": "server/departments/opportunities-routes.ts",
+      "loc": 2045
+    },
+    {
+      "file": "client/src/pages/cashflow.tsx",
+      "loc": 1973
+    },
+    {
+      "file": "server/departments/priority-strategic-routes.ts",
+      "loc": 1966
+    },
+    {
+      "file": "client/src/components/TaskDetailDrawer.tsx",
+      "loc": 1898
+    },
+    {
+      "file": "server/seed-ee-info-updates.ts",
+      "loc": 1820
+    },
+    {
+      "file": "client/src/pages/collaboration.tsx",
+      "loc": 1788
+    },
+    {
+      "file": "server/departments/exco-routes.ts",
+      "loc": 1779
+    },
+    {
+      "file": "client/src/pages/pd-dashboard.tsx",
+      "loc": 1750
+    },
+    {
+      "file": "server/routes/planning-tasks-routes.ts",
+      "loc": 1735
+    },
+    {
+      "file": "server/storage.ts",
+      "loc": 1729
+    },
+    {
+      "file": "client/src/pages/standups.tsx",
+      "loc": 1726
+    },
+    {
+      "file": "server/departments/fye-revenue-tracking-routes.ts",
+      "loc": 1719
+    },
+    {
+      "file": "client/src/pages/project-lifecycle.tsx",
+      "loc": 1702
+    },
+    {
+      "file": "server/quickbooks-routes.ts",
+      "loc": 1701
+    },
+    {
+      "file": "server/eng-stage-routes.ts",
+      "loc": 1593
+    },
+    {
+      "file": "shared/schema/finance.ts",
+      "loc": 1585
+    },
+    {
+      "file": "shared/schema/projects.ts",
+      "loc": 1577
+    },
+    {
+      "file": "client/src/pages/subcontractor-dashboard.tsx",
+      "loc": 1568
+    },
+    {
+      "file": "client/src/components/tabs/ProjectPlanTab.tsx",
+      "loc": 1554
+    },
+    {
+      "file": "server/services/gate-auto-evaluator-service.ts",
+      "loc": 1538
+    },
+    {
+      "file": "server/services/stage-lifecycle-service.ts",
+      "loc": 1538
+    },
+    {
+      "file": "server/handover-routes.ts",
+      "loc": 1528
+    },
+    {
+      "file": "client/src/pages/cos.tsx",
+      "loc": 1526
+    },
+    {
+      "file": "server/routes/imports-admin-extracted-routes.ts",
+      "loc": 1523
+    }
+  ]
+}
