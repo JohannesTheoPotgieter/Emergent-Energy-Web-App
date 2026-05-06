@@ -8,6 +8,13 @@ export interface UserRoleSummary {
   role: string;
 }
 
+export interface AssignableUserRow {
+  id: number;
+  name: string;
+  username: string;
+  role: string;
+}
+
 export class UsersRepository {
   private _dbInstance?: typeof db;
 

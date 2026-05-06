@@ -1,5 +1,5 @@
-import { eq } from "drizzle-orm";
-import { projectInfo, type InsertProjectInfo, type ProjectInfo } from "@shared/schema";
+import { eq, inArray, sql } from "drizzle-orm";
+import { projectInfo, projectExecutionState, type InsertProjectInfo, type ProjectInfo } from "@shared/schema";
 import { db } from "../db";
 import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "../lib/project-info-sync";
 
