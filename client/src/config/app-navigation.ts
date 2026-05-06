@@ -89,6 +89,7 @@ export const TOP_SECTIONS: TopSection[] = [
       "/company/team",
       "/lifecycle-board",
       "/project-lifecycle",
+      "/portfolios",
     ]),
     secondary: [
       { label: "Company Overview", path: "/company-overview" },
@@ -180,6 +181,7 @@ export const TOP_SECTIONS: TopSection[] = [
       "/portfolios",
       "/projects", "/project", "/project-create",
       "/procurement",
+      "/po-approval-board",
       "/handover",
       "/sseg-submissions",
       "/pm", "/sites",
@@ -207,7 +209,8 @@ export const TOP_SECTIONS: TopSection[] = [
     match: (pathname) => startsWithAny(pathname, [
       "/cashflow", "/cos", "/revenue-tracker", "/finance",
       "/governance/financial-reviews",
-      "/po-approval-board", "/payment-request-board", "/payment-batch-manager",
+      "/program",
+      "/payment-request-board", "/payment-batch-manager",
     ]),
     secondary: [
       { label: "Cashflow", path: "/cashflow" },

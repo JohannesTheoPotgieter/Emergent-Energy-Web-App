@@ -56,7 +56,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [quickCreateOpen, setQuickCreateOpen] = useState(false);
   const [microsoftMenuOpen, setMicrosoftMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const { canAccessEntityAction, canViewPath, disabledSubPages } = useAccessMatrix();
+  const { canAccessEntityAction, canViewPath, disabledSubPages, effectiveRole } = useAccessMatrix();
   const { isScreenEnabled } = useScreenAvailability();
   const { enabled: actionLaunchpadEnabled } = useRolloutFlag("action_launchpad");
   const { enabled: onboardingTourEnabled } = useRolloutFlag("onboarding_tour");
@@ -97,6 +97,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const visibleSections = useMemo(() => {
     const sections = buildVisibleTopSections({
       canViewPath,
+      companyRole: effectiveRole,
       disabledSubPages: disabledSubPages,
     });
 
@@ -126,7 +127,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       });
     }
     return filtered;
-  }, [canViewPath, sectionOrder, disabledSubPages, isScreenEnabled, pathToScreenId]);
+  }, [canViewPath, effectiveRole, sectionOrder, disabledSubPages, isScreenEnabled, pathToScreenId]);
 
   // Redirect to the active lens's landing page on lens switch
   const prevLensRef = useRef(lens.activeLens);
