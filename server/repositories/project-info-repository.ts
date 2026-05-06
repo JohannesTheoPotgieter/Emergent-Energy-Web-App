@@ -26,6 +26,19 @@ export class ProjectInfoRepository {
     return updated;
   }
 
+  /**
+   * NOTE: also added in Waves 5.4/5.5 (PRs #820/#821); resolve any merge
+   * collision by keeping a single copy.
+   */
+  async findIdByProjectName(projectName: string): Promise<number | null> {
+    const [row] = await this.dbInstance
+      .select({ id: projectInfo.id })
+      .from(projectInfo)
+      .where(eq(projectInfo.projectName, projectName))
+      .limit(1);
+    return row?.id ?? null;
+  }
+
   async upsert(info: InsertProjectInfo, existing: ProjectInfo | undefined): Promise<ProjectInfo> {
     if (existing) {
       const { executionEnabled, ...updateFields } = info as any;

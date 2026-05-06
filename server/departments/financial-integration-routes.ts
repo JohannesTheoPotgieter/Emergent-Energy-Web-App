@@ -4,12 +4,18 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { requireAuth, requireAdmin } from "./shared-middleware";
 import { storage } from "../storage";
-import { db } from "../db";
-import { financialEditRequests, financialIntegrationRules, users, workItems, projectInfo, expenseTaskLinks, milestoneTaskLinks } from "@shared/schema";
 import { createNotification } from "../services/notification-service";
-import { eq, and, inArray, isNull, desc, sql } from "drizzle-orm";
 import { paramStr, parseIntParam } from "../lib/req-params";
 import { getCanonicalProjectCostLinesByName } from "../services/project-cost-line-read-service";
+import { FinancialIntegrationRepository } from "../repositories/financial-integration-repository";
+import { ProjectInfoRepository } from "../repositories/project-info-repository";
+import { WorkManagementRepository } from "../repositories/work-management-repository";
+import { UsersRepository } from "../repositories/users-repository";
+
+const financialIntegrationRepository = new FinancialIntegrationRepository();
+const projectInfoRepository = new ProjectInfoRepository();
+const workManagementRepository = new WorkManagementRepository();
+const usersRepository = new UsersRepository();
 
 const router = Router();
 
@@ -37,11 +43,9 @@ function requireFinancialApprover(req: Request, res: Response, next: NextFunctio
 async function detectCriticalPathImpact(projectName: string, taskIds: number[]): Promise<boolean> {
   if (taskIds.length === 0) return false;
   try {
-    const piRow = await db.select({ id: projectInfo.id }).from(projectInfo)
-      .where(eq(projectInfo.projectName, projectName)).limit(1);
-    if (piRow.length === 0) return false;
-    const tasks = await db.select().from(workItems)
-      .where(and(eq(workItems.projectId, piRow[0].id), isNull(workItems.deletedAt)));
+    const projectId = await projectInfoRepository.findIdByProjectName(projectName);
+    if (projectId === null) return false;
+    const tasks = await workManagementRepository.listByProjectIdNonDeleted(projectId);
     const relevantTasks = tasks.filter((t: any) => taskIds.includes(t.sourceRow || t.id));
     for (const task of relevantTasks) {
       if ((task as any).isCriticalPath || (task as any).is_critical_path) return true;
@@ -61,8 +65,7 @@ async function detectCriticalPathImpact(projectName: string, taskIds: number[]):
 async function detectRevenueImpact(projectName: string, taskIds: number[]): Promise<boolean> {
   if (taskIds.length === 0) return false;
   try {
-    const links = await db.select().from(milestoneTaskLinks)
-      .where(eq(milestoneTaskLinks.projectName, projectName));
+    const links = await financialIntegrationRepository.listMilestoneTaskLinksByProject(projectName);
     const linkedTaskIds = links.map((l: any) => l.taskId);
     for (const tid of taskIds) {
       if (linkedTaskIds.includes(tid) || linkedTaskIds.includes(-tid)) return true;
@@ -76,8 +79,7 @@ async function detectRevenueImpact(projectName: string, taskIds: number[]): Prom
 async function detectExpenditureImpact(projectName: string, taskIds: number[]): Promise<boolean> {
   if (taskIds.length === 0) return false;
   try {
-    const links = await db.select().from(expenseTaskLinks)
-      .where(eq(expenseTaskLinks.projectName, projectName));
+    const links = await financialIntegrationRepository.listExpenseTaskLinksByProject(projectName);
     const linkedTaskIds = links.map((l: any) => l.taskId);
     for (const tid of taskIds) {
       if (linkedTaskIds.includes(tid) || linkedTaskIds.includes(-tid)) return true;
@@ -102,8 +104,7 @@ async function sendFinancialWarningNotifications(
     if (flags.affectsExpenditure) tags.push("EXPENDITURE IMPACT");
     const tagStr = tags.length > 0 ? ` [${tags.join(", ")}]` : "";
 
-    const approvers = await db.select({ id: users.id, role: users.role }).from(users)
-      .where(inArray(users.role, FINANCIAL_APPROVER_ROLES));
+    const approvers = await usersRepository.listByRoles(FINANCIAL_APPROVER_ROLES);
     for (const approver of approvers) {
       if (approver.id === requestedByUserId) continue;
       await createNotification({
@@ -129,8 +130,7 @@ async function sendIntegrationWarningNotifications(
   linkedTaskId?: number
 ) {
   try {
-    const approvers = await db.select({ id: users.id, role: users.role }).from(users)
-      .where(inArray(users.role, FINANCIAL_APPROVER_ROLES));
+    const approvers = await usersRepository.listByRoles(FINANCIAL_APPROVER_ROLES);
     for (const approver of approvers) {
       await createNotification({
         recipientUserId: approver.id,
@@ -165,7 +165,7 @@ router.post("/api/financial-edit-requests", requireAuth, requireFinancialEditor,
     const affectsQuality = false;
 
     if (isApproverRole(userRole)) {
-      const [saved] = await db.insert(financialEditRequests).values({
+      const saved = await financialIntegrationRepository.createEditRequest({
         projectName,
         requestedByUserId: userId,
         editType,
@@ -179,7 +179,7 @@ router.post("/api/financial-edit-requests", requireAuth, requireFinancialEditor,
         status: "auto_approved",
         reviewedByUserId: userId,
         reviewedAt: new Date(),
-      }).returning();
+      });
 
       if (isCriticalPath || affectsRevenue || affectsExpenditure) {
         await sendIntegrationWarningNotifications(
@@ -193,7 +193,7 @@ router.post("/api/financial-edit-requests", requireAuth, requireFinancialEditor,
       return res.json({ status: "auto_approved", request: saved, message: "Edit applied directly (authorized role)" });
     }
 
-    const [saved] = await db.insert(financialEditRequests).values({
+    const saved = await financialIntegrationRepository.createEditRequest({
       projectName,
       requestedByUserId: userId,
       editType,
@@ -205,7 +205,7 @@ router.post("/api/financial-edit-requests", requireAuth, requireFinancialEditor,
       affectsExpenditure,
       affectsQuality,
       status: "pending",
-    }).returning();
+    });
 
     await sendFinancialWarningNotifications(
       projectName,
@@ -228,27 +228,11 @@ router.get("/api/financial-edit-requests", requireAuth, async (req: Request, res
     const userRole = req.user!.role;
     const userId = req.user!.id;
 
-    let conditions: any[] = [];
-    if (projectName && typeof projectName === "string") {
-      conditions.push(eq(financialEditRequests.projectName, projectName));
-    }
-    if (filterStatus && typeof filterStatus === "string") {
-      conditions.push(eq(financialEditRequests.status, filterStatus));
-    }
-
-    if (!isApproverRole(userRole)) {
-      conditions.push(eq(financialEditRequests.requestedByUserId, userId));
-    }
-
-    const results = await db.select({
-      request: financialEditRequests,
-      requestedBy: { id: users.id, name: users.name, role: users.role },
-    })
-      .from(financialEditRequests)
-      .leftJoin(users, eq(financialEditRequests.requestedByUserId, users.id))
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .orderBy(desc(financialEditRequests.createdAt))
-      .limit(100);
+    const results = await financialIntegrationRepository.listEditRequests({
+      projectName: typeof projectName === "string" ? projectName : undefined,
+      status: typeof filterStatus === "string" ? filterStatus : undefined,
+      requestedByUserId: isApproverRole(userRole) ? undefined : userId,
+    });
 
     res.json(results.map((r: any) => ({
       ...r.request,
@@ -268,11 +252,8 @@ router.get("/api/financial-edit-requests/pending-count", requireAuth, async (req
       return res.json({ count: 0 });
     }
 
-    const [result] = await db.select({ count: sql<number>`count(*)::int` })
-      .from(financialEditRequests)
-      .where(eq(financialEditRequests.status, "pending"));
-
-    res.json({ count: result?.count || 0 });
+    const count = await financialIntegrationRepository.countEditRequestsByStatus("pending");
+    res.json({ count });
   } catch (error) {
     res.status(500).json({ error: "Failed to get count" });
   }
@@ -284,20 +265,16 @@ router.post("/api/financial-edit-requests/:id/approve", requireAuth, requireFina
     const userId = req.user!.id;
     const { comment } = req.body;
 
-    const [existing] = await db.select().from(financialEditRequests).where(eq(financialEditRequests.id, requestId));
+    const existing = await financialIntegrationRepository.getEditRequestById(requestId);
     if (!existing) return res.status(404).json({ error: "Request not found" });
     if (existing.status !== "pending") return res.status(400).json({ error: "Request is not pending" });
 
-    const [updated] = await db.update(financialEditRequests)
-      .set({
-        status: "approved",
-        reviewedByUserId: userId,
-        reviewComment: comment || null,
-        reviewedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(financialEditRequests.id, requestId))
-      .returning();
+    const updated = await financialIntegrationRepository.updateEditRequest(requestId, {
+      status: "approved",
+      reviewedByUserId: userId,
+      reviewComment: comment || null,
+      reviewedAt: new Date(),
+    });
 
     // Apply the overrides now that they've been approved
     if (existing.editType === "expenditure_override") {
@@ -358,9 +335,10 @@ router.post("/api/financial-edit-requests/:id/approve", requireAuth, requireFina
       } catch (applyErr: any) {
         console.error(`[fin-edit-request] Failed to apply overrides for request #${requestId}:`, applyErr.message);
         // Mark as approved but flag the application failure
-        await db.update(financialEditRequests)
-          .set({ reviewComment: `${comment || ""} [WARNING: Overrides approved but failed to apply: ${applyErr.message}]`.trim() })
-          .where(eq(financialEditRequests.id, requestId));
+        await financialIntegrationRepository.appendReviewCommentOnApprovalFailure(
+          requestId,
+          `${comment || ""} [WARNING: Overrides approved but failed to apply: ${applyErr.message}]`.trim(),
+        );
         return res.status(500).json({ error: "Approved but failed to apply overrides", message: applyErr.message });
       }
     }
@@ -382,20 +360,16 @@ router.post("/api/financial-edit-requests/:id/reject", requireAuth, requireFinan
       return res.status(400).json({ error: "Rejection requires a comment (min 3 characters)" });
     }
 
-    const [existing] = await db.select().from(financialEditRequests).where(eq(financialEditRequests.id, requestId));
+    const existing = await financialIntegrationRepository.getEditRequestById(requestId);
     if (!existing) return res.status(404).json({ error: "Request not found" });
     if (existing.status !== "pending") return res.status(400).json({ error: "Request is not pending" });
 
-    const [updated] = await db.update(financialEditRequests)
-      .set({
-        status: "rejected",
-        reviewedByUserId: userId,
-        reviewComment: comment.trim(),
-        reviewedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(financialEditRequests.id, requestId))
-      .returning();
+    const updated = await financialIntegrationRepository.updateEditRequest(requestId, {
+      status: "rejected",
+      reviewedByUserId: userId,
+      reviewComment: comment.trim(),
+      reviewedAt: new Date(),
+    });
 
     // Notify the requester that their edit was rejected
     try {
@@ -426,13 +400,12 @@ router.get("/api/financial-integration/warnings/:projectName", requireAuth, asyn
 
     const { rows: expenses } = await getCanonicalProjectCostLinesByName(projectName);
     const inflows = await storage.getProgramInflowsByProject(projectName);
-    const piRow = await db.select({ id: projectInfo.id }).from(projectInfo)
-      .where(eq(projectInfo.projectName, projectName)).limit(1);
-    const planTasks = piRow.length > 0
-      ? await db.select().from(workItems).where(and(eq(workItems.projectId, piRow[0].id), isNull(workItems.deletedAt)))
+    const projectId = await projectInfoRepository.findIdByProjectName(projectName);
+    const planTasks = projectId !== null
+      ? await workManagementRepository.listByProjectIdNonDeleted(projectId)
       : [];
-    const expLinks = await db.select().from(expenseTaskLinks).where(eq(expenseTaskLinks.projectName, projectName));
-    const revLinks = await db.select().from(milestoneTaskLinks).where(eq(milestoneTaskLinks.projectName, projectName));
+    const expLinks = await financialIntegrationRepository.listExpenseTaskLinksByProject(projectName);
+    const revLinks = await financialIntegrationRepository.listMilestoneTaskLinksByProject(projectName);
 
     const today = new Date().toISOString().split("T")[0];
 
@@ -554,15 +527,13 @@ router.get("/api/financial-integration/warnings/:projectName", requireAuth, asyn
       });
     }
 
-    const pendingEdits = await db.select({ count: sql<number>`count(*)::int` })
-      .from(financialEditRequests)
-      .where(and(eq(financialEditRequests.projectName, projectName), eq(financialEditRequests.status, "pending")));
-    if ((pendingEdits[0]?.count || 0) > 0) {
+    const pendingEditsCount = await financialIntegrationRepository.countPendingEditRequestsForProject(projectName);
+    if (pendingEditsCount > 0) {
       warnings.push({
         type: "pending_edits",
         severity: "info",
-        message: `${pendingEdits[0].count} edit request(s) pending approval`,
-        details: { count: pendingEdits[0].count },
+        message: `${pendingEditsCount} edit request(s) pending approval`,
+        details: { count: pendingEditsCount },
       });
     }
 
@@ -584,13 +555,12 @@ router.get("/api/financial-integration/sync-status/:projectName", requireAuth, a
 
     const { rows: expenses } = await getCanonicalProjectCostLinesByName(projectName);
     const inflows = await storage.getProgramInflowsByProject(projectName);
-    const piRowSync = await db.select({ id: projectInfo.id }).from(projectInfo)
-      .where(eq(projectInfo.projectName, projectName)).limit(1);
-    const planTasks = piRowSync.length > 0
-      ? await db.select().from(workItems).where(and(eq(workItems.projectId, piRowSync[0].id), isNull(workItems.deletedAt)))
+    const projectIdSync = await projectInfoRepository.findIdByProjectName(projectName);
+    const planTasks = projectIdSync !== null
+      ? await workManagementRepository.listByProjectIdNonDeleted(projectIdSync)
       : [];
-    const expLinks = await db.select().from(expenseTaskLinks).where(eq(expenseTaskLinks.projectName, projectName));
-    const revLinks = await db.select().from(milestoneTaskLinks).where(eq(milestoneTaskLinks.projectName, projectName));
+    const expLinks = await financialIntegrationRepository.listExpenseTaskLinksByProject(projectName);
+    const revLinks = await financialIntegrationRepository.listMilestoneTaskLinksByProject(projectName);
 
     const totalExpenses = expenses.length;
     const linkedExpenses = expenses.filter((e: any) => expLinks.some((l: any) => l.expenseId === e.id)).length;
@@ -633,16 +603,9 @@ router.get("/api/financial-integration/role-access", requireAuth, async (req: Re
 router.get("/api/financial-integration/rules/:projectName", requireAuth, async (req: Request, res: Response) => {
   try {
     const projectName = paramStr(req.params.projectName);
-    const rules = await db.select({
-      rule: financialIntegrationRules,
-      createdBy: { id: users.id, name: users.name },
-    })
-      .from(financialIntegrationRules)
-      .leftJoin(users, eq(financialIntegrationRules.createdByUserId, users.id))
-      .where(eq(financialIntegrationRules.projectName, projectName))
-      .orderBy(desc(financialIntegrationRules.createdAt));
+    const rules = await financialIntegrationRepository.listRulesForProject(projectName);
 
-    res.json(rules.map((r: any) => ({
+    res.json(rules.map((r) => ({
       ...r.rule,
       createdByName: r.createdBy?.name || "Unknown",
     })));
@@ -673,13 +636,13 @@ router.post("/api/financial-integration/rules", requireAuth, requireFinancialApp
       return res.status(400).json({ error: `Invalid rule type. Must be one of: ${validRuleTypes.join(", ")}` });
     }
 
-    const [saved] = await db.insert(financialIntegrationRules).values({
+    const saved = await financialIntegrationRepository.createRule({
       projectName,
       ruleType,
       ruleConfig: typeof ruleConfig === "string" ? ruleConfig : JSON.stringify(ruleConfig),
       isActive: true,
       createdByUserId: userId,
-    }).returning();
+    });
 
     res.json(saved);
   } catch (error: any) {
@@ -701,10 +664,7 @@ router.patch("/api/financial-integration/rules/:ruleId", requireAuth, requireFin
       updates.isActive = isActive;
     }
 
-    const [updated] = await db.update(financialIntegrationRules)
-      .set(updates)
-      .where(eq(financialIntegrationRules.id, ruleId))
-      .returning();
+    const updated = await financialIntegrationRepository.updateRule(ruleId, updates);
 
     if (!updated) return res.status(404).json({ error: "Rule not found" });
     res.json(updated);
@@ -717,9 +677,7 @@ router.patch("/api/financial-integration/rules/:ruleId", requireAuth, requireFin
 router.delete("/api/financial-integration/rules/:ruleId", requireAuth, requireFinancialApprover, async (req: Request, res: Response) => {
   try {
     const ruleId = parseIntParam(req.params.ruleId);
-    const [deleted] = await db.delete(financialIntegrationRules)
-      .where(eq(financialIntegrationRules.id, ruleId))
-      .returning();
+    const deleted = await financialIntegrationRepository.deleteRule(ruleId);
 
     if (!deleted) return res.status(404).json({ error: "Rule not found" });
     res.json({ success: true });
@@ -747,14 +705,12 @@ router.get("/api/financial-integration/suggested-rules/:projectName", requireAut
     const planTasks = await storage.getProjectPlansByProject(projectName);
     const revSummary = await storage.getProjectRevenueSummary(projectName);
 
-    const existingRules = await db.select()
-      .from(financialIntegrationRules)
-      .where(and(eq(financialIntegrationRules.projectName, projectName), eq(financialIntegrationRules.isActive, true)));
+    const existingRules = await financialIntegrationRepository.listActiveRulesForProject(projectName);
 
-    const existingRuleTypes = new Set(existingRules.map((r: any) => r.ruleType));
+    const existingRuleTypes = new Set(existingRules.map((r) => r.ruleType));
 
-    const expLinks = await db.select().from(expenseTaskLinks).where(eq(expenseTaskLinks.projectName, projectName));
-    const revLinks = await db.select().from(milestoneTaskLinks).where(eq(milestoneTaskLinks.projectName, projectName));
+    const expLinks = await financialIntegrationRepository.listExpenseTaskLinksByProject(projectName);
+    const revLinks = await financialIntegrationRepository.listMilestoneTaskLinksByProject(projectName);
 
     const totalBudget = expenses.reduce((s: number, e: any) => s + (Number(e.budgetTotal) || 0), 0);
     const totalActual = expenses.reduce((s: number, e: any) => s + (Number(e.expenseActualTotal) || 0), 0);
