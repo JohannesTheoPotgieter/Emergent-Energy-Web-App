@@ -203,6 +203,7 @@ export const TOP_SECTIONS: TopSection[] = [
       { label: "PM On-The-Go", path: "/pm/on-the-go" },
       { label: "Handover & Closeout", path: "/handover" },
       { label: "SSEG Submissions", path: "/sseg-submissions" },
+      { label: "Weekly Reviews", path: "/weekly-reviews" },
       { label: "Sites", path: "/sites" },
     ],
   },
@@ -281,6 +282,7 @@ export const TOP_SECTIONS: TopSection[] = [
     match: (pathname) => startsWithAny(pathname, [
       "/admin", "/settings", "/ee-info", "/feedback", "/training",
       "/leaderboard", "/department-scores", "/documents", "/pending-approvals",
+      "/engineering/audit",
     ]),
     secondary: [
       // General
@@ -297,6 +299,8 @@ export const TOP_SECTIONS: TopSection[] = [
       { label: "Stage Lifecycle", path: "/admin/stage-lifecycle" },
       { label: "Import Control", path: "/admin/import-control-tower" },
       { label: "Data Migration", path: "/admin/data-migration-status" },
+      { label: "Database Migration", path: "/admin/database-migration" },
+      { label: "Engineering Audit Log", path: "/engineering/audit" },
       { label: "Work Item Linkage", path: "/admin/work-item-linkage" },
       { label: "Eng Templates", path: "/admin/eng-templates" },
       { label: "Document Management", path: "/admin/document-management" },
@@ -329,6 +333,8 @@ export const TOP_SECTIONS: TopSection[] = [
         { label: "Stage Lifecycle", path: "/admin/stage-lifecycle" },
         { label: "Import Control", path: "/admin/import-control-tower" },
         { label: "Data Migration", path: "/admin/data-migration-status" },
+        { label: "Database Migration", path: "/admin/database-migration" },
+        { label: "Engineering Audit Log", path: "/engineering/audit" },
         { label: "Work Item Linkage", path: "/admin/work-item-linkage" },
         { label: "Eng Templates", path: "/admin/eng-templates" },
         { label: "Document Management", path: "/admin/document-management" },
